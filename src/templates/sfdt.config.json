@@ -1,0 +1,29 @@
+{
+  "projectName": "",
+  "sourceApiVersion": "",
+  "packageDirectories": [],
+  "defaultSourcePath": "",
+  "manifestDir": "manifest/release",
+  "deployment": {
+    "keyClasses": [],
+    "coverageThreshold": 75,
+    "excludedProfiles": []
+  },
+  "features": {
+    "ai": true,
+    "notifications": false
+  },
+  "ai": {
+    "provider": "claude",
+    "allowedTools": ["Bash(git*)", "Bash(gh*)"]
+  },
+  "notifications": {
+    "slack": {
+      "webhookUrl": ""
+    }
+  },
+  "smokeTests": {
+    "testClasses": [],
+    "healthChecks": []
+  }
+}

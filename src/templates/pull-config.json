@@ -1,0 +1,11 @@
+{
+  "priorityMetadataTypes": [
+    "ApexClass", "ApexTrigger", "LightningComponentBundle",
+    "Flow", "CustomObject", "CustomField", "PermissionSet"
+  ],
+  "excludedMetadataTypes": [
+    "Profile", "Report", "Dashboard", "ReportType", "EmailTemplate"
+  ],
+  "excludedProfiles": [],
+  "pullGroups": {}
+}

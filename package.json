@@ -1,0 +1,65 @@
+{
+  "name": "@sfdt/cli",
+  "version": "0.1.0",
+  "description": "Salesforce DevTools — Production-grade CLI for Salesforce DX deployment, testing, quality analysis, and release management",
+  "type": "module",
+  "bin": {
+    "sfdt": "./bin/sfdt.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "scripts/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/ bin/",
+    "lint:fix": "eslint src/ bin/ --fix",
+    "dev": "npm link",
+    "prepublishOnly": "npm test && npm run lint"
+  },
+  "keywords": [
+    "salesforce",
+    "sfdx",
+    "sf",
+    "devtools",
+    "deployment",
+    "testing",
+    "cli",
+    "devops",
+    "apex",
+    "lwc",
+    "package-xml",
+    "release-management"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "execa": "^9.5.2",
+    "fs-extra": "^11.3.0",
+    "inquirer": "^12.3.2",
+    "ora": "^8.2.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.1.1",
+    "eslint": "^9.22.0",
+    "vitest": "^3.1.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "homepage": "",
+  "bugs": {
+    "url": ""
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "environments": {
+    "development": {
+      "orgAlias": "",
+      "timeout": 300,
+      "parallelTests": true,
+      "coverageThreshold": 75
+    },
+    "staging": {
+      "orgAlias": "",
+      "timeout": 600,
+      "parallelTests": true,
+      "coverageThreshold": 75
+    },
+    "production": {
+      "orgAlias": "",
+      "timeout": 900,
+      "parallelTests": false,
+      "coverageThreshold": 90
+    }
+  }
+}
