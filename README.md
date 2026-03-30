@@ -127,6 +127,17 @@ Use groups with `sfdt pull --group core` to pull only the metadata types defined
 - **Optional:** [Claude CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code) for AI features
 - **Optional:** [GitHub CLI](https://cli.github.com/) (`gh`) for PR creation during deployments
 
+## Development
+
+```bash
+git clone https://github.com/sfdt-cli/sfdt.git
+cd sfdt
+npm install
+npm link
+```
+
+After `npm link`, the `sfdt` command is available globally and points to your local checkout. Run `npm test` and `npm run lint` before submitting changes.
+
 ## Contributing
 
 Contributions are welcome! Please follow these steps:
