@@ -51,6 +51,19 @@ export async function loadConfig(startDir) {
   merged._configDir = configDir;
   merged._projectRoot = path.dirname(configDir);
 
+  // Enrich with sfdx-project.json values if not already set
+  const sfdxPath = path.join(merged._projectRoot, SFDX_PROJECT_FILE);
+  if (await fs.pathExists(sfdxPath)) {
+    const sfdxProject = await fs.readJson(sfdxPath);
+    if (!merged.sourceApiVersion && sfdxProject.sourceApiVersion) {
+      merged.sourceApiVersion = sfdxProject.sourceApiVersion;
+    }
+    if (!merged.defaultSourcePath && sfdxProject.packageDirectories?.length) {
+      const defaultPkg = sfdxProject.packageDirectories.find((d) => d.default) || sfdxProject.packageDirectories[0];
+      merged.defaultSourcePath = defaultPkg.path + '/main/default';
+    }
+  }
+
   return merged;
 }
 

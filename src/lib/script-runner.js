@@ -20,7 +20,12 @@ export function buildScriptEnv(config) {
 
   env.SFDT_PROJECT_ROOT = config._projectRoot || '';
   env.SFDT_CONFIG_DIR = config._configDir || '';
+  env.SFDT_PROJECT_NAME = config.projectName || 'Salesforce Project';
   env.SFDT_DEFAULT_ORG = config.defaultOrg || '';
+  env.SFDT_SOURCE_PATH = config.defaultSourcePath || 'force-app/main/default';
+  env.SFDT_MANIFEST_DIR = config.manifestDir || 'manifest/release';
+  env.SFDT_API_VERSION = config.sourceApiVersion || '';
+  env.SFDT_COVERAGE_THRESHOLD = String(config.deployment?.coverageThreshold || 75);
 
   // Flatten features
   if (config.features && typeof config.features === 'object') {
