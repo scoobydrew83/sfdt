@@ -2,7 +2,6 @@ import inquirer from 'inquirer';
 import fs from 'fs-extra';
 import path from 'path';
 import { loadConfig } from '../lib/config.js';
-import { runScript } from '../lib/script-runner.js';
 import { isClaudeAvailable, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 import { execa } from 'execa';
