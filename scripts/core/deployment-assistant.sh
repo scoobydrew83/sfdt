@@ -878,14 +878,14 @@ select_test_level() {
 run_validation() {
     print_header "RUNNING DEPLOYMENT VALIDATION"
 
-    local cmd="sf project deploy validate --manifest $MANIFEST_PATH --target-org $TARGET_ORG"
+    local cmd=(sf project deploy validate --manifest "$MANIFEST_PATH" --target-org "$TARGET_ORG")
 
     # Only add --test-level if not skipping tests
     if [ "$TEST_LEVEL" != "Skip Tests (No Apex deployments)" ]; then
-        cmd="$cmd --test-level $TEST_LEVEL"
+        cmd+=(--test-level "$TEST_LEVEL")
 
         if [ "$TEST_LEVEL" == "RunSpecifiedTests" ] && [ -n "$SPECIFIED_TESTS" ]; then
-            cmd="$cmd --tests $SPECIFIED_TESTS"
+            cmd+=(--tests "$SPECIFIED_TESTS")
         fi
     else
         print_warning "Skipping test execution (metadata-only deployment)"
@@ -893,20 +893,20 @@ run_validation() {
 
     if [ -n "$DESTRUCTIVE_PATH" ]; then
         if [ "$DESTRUCTIVE_TIMING" == "pre" ]; then
-            cmd="$cmd --pre-destructive-changes $DESTRUCTIVE_PATH"
+            cmd+=(--pre-destructive-changes "$DESTRUCTIVE_PATH")
             print_warning "Validation includes PRE-destructive changes (delete first)"
         else
-            cmd="$cmd --post-destructive-changes $DESTRUCTIVE_PATH"
+            cmd+=(--post-destructive-changes "$DESTRUCTIVE_PATH")
             print_warning "Validation includes POST-destructive changes (deploy first)"
         fi
     fi
 
-    echo -e "${BLUE}Command:${NC} $cmd"
+    echo -e "${BLUE}Command:${NC} ${cmd[*]}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 
     # Run validation and capture output while streaming to terminal
     local validation_output
-    validation_output=$(eval "$cmd" 2>&1 | tee /dev/tty)
+    validation_output=$("${cmd[@]}" 2>&1 | tee /dev/tty)
     local exit_code=${PIPESTATUS[0]}
 
     echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
@@ -1035,12 +1035,12 @@ run_quick_deploy() {
         return 0
     fi
 
-    local cmd="sf project deploy quick --job-id $VALIDATION_JOB_ID --target-org $TARGET_ORG"
+    local cmd=(sf project deploy quick --job-id "$VALIDATION_JOB_ID" --target-org "$TARGET_ORG")
 
-    echo -e "${BLUE}Command:${NC} $cmd"
+    echo -e "${BLUE}Command:${NC} ${cmd[*]}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 
-    eval "$cmd"
+    "${cmd[@]}"
     local exit_code=$?
 
     echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
@@ -1071,14 +1071,14 @@ run_full_deployment() {
         exit 1
     fi
 
-    local cmd="sf project deploy start --manifest $MANIFEST_PATH --target-org $TARGET_ORG"
+    local cmd=(sf project deploy start --manifest "$MANIFEST_PATH" --target-org "$TARGET_ORG")
 
     # Only add --test-level if not skipping tests
     if [ "$TEST_LEVEL" != "Skip Tests (No Apex deployments)" ]; then
-        cmd="$cmd --test-level $TEST_LEVEL"
+        cmd+=(--test-level "$TEST_LEVEL")
 
         if [ "$TEST_LEVEL" == "RunSpecifiedTests" ] && [ -n "$SPECIFIED_TESTS" ]; then
-            cmd="$cmd --tests $SPECIFIED_TESTS"
+            cmd+=(--tests "$SPECIFIED_TESTS")
         fi
     else
         print_warning "Skipping test execution (metadata-only deployment)"
@@ -1086,18 +1086,18 @@ run_full_deployment() {
 
     if [ -n "$DESTRUCTIVE_PATH" ]; then
         if [ "$DESTRUCTIVE_TIMING" == "pre" ]; then
-            cmd="$cmd --pre-destructive-changes $DESTRUCTIVE_PATH"
+            cmd+=(--pre-destructive-changes "$DESTRUCTIVE_PATH")
             print_warning "Deployment includes PRE-destructive changes (delete first)"
         else
-            cmd="$cmd --post-destructive-changes $DESTRUCTIVE_PATH"
+            cmd+=(--post-destructive-changes "$DESTRUCTIVE_PATH")
             print_warning "Deployment includes POST-destructive changes (deploy first)"
         fi
     fi
 
-    echo -e "${BLUE}Command:${NC} $cmd"
+    echo -e "${BLUE}Command:${NC} ${cmd[*]}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 
-    eval "$cmd"
+    "${cmd[@]}"
     local exit_code=$?
 
     echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"

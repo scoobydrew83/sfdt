@@ -111,10 +111,13 @@ export function registerChangelogCommand(program) {
         // Use a temporary script to invoke the library function
         const scriptContent = `
           source "${path.resolve(config._projectRoot, 'scripts/lib/changelog-utils.sh')}"
-          move_unreleased_to_version "${version}"
+          move_unreleased_to_version "$SFDT_VERSION"
         `;
-        
-        await execa('bash', ['-c', scriptContent], { cwd: config._projectRoot });
+
+        await execa('bash', ['-c', scriptContent], {
+          cwd: config._projectRoot,
+          env: { ...process.env, SFDT_VERSION: version },
+        });
         print.success(`CHANGELOG.md updated: [Unreleased] -> [${version}]`);
       } catch (err) {
         print.error(`Changelog release failed: ${err.message}`);

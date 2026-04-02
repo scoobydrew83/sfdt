@@ -74,11 +74,11 @@ validate_deployment() {
     # Validate with dry run
     log_info "Performing dry-run validation..."
 
-    local validation_cmd="sf project deploy validate --manifest \"$manifest_file\" --test-level RunLocalTests --target-org \"$org_alias\" --wait $VALIDATION_TIMEOUT"
+    local validation_cmd=(sf project deploy validate --manifest "$manifest_file" --test-level RunLocalTests --target-org "$org_alias" --wait "$VALIDATION_TIMEOUT")
 
-    log_debug "Validation command: $validation_cmd"
+    log_debug "Validation command: ${validation_cmd[*]}"
 
-    if eval "$validation_cmd" >> "$DEPLOYMENT_LOG" 2>&1; then
+    if "${validation_cmd[@]}" >> "$DEPLOYMENT_LOG" 2>&1; then
         log_success "Validation passed for $environment environment"
         return 0
     else
@@ -138,19 +138,19 @@ execute_deployment() {
             ;;
     esac
 
-    local deploy_cmd="sf project deploy start --manifest \"$manifest_file\" --target-org \"$org_alias\" --wait $timeout"
+    local deploy_cmd=(sf project deploy start --manifest "$manifest_file" --target-org "$org_alias" --wait "$timeout")
 
     # Add test level based on environment
     if [ "$environment" = "production" ]; then
-        deploy_cmd="$deploy_cmd --test-level RunLocalTests"
+        deploy_cmd+=(--test-level RunLocalTests)
     else
-        deploy_cmd="$deploy_cmd --test-level NoTestRun"
+        deploy_cmd+=(--test-level NoTestRun)
     fi
 
-    log_debug "Deployment command: $deploy_cmd"
+    log_debug "Deployment command: ${deploy_cmd[*]}"
 
     # Execute deployment with real-time logging
-    if eval "$deploy_cmd" | tee -a "$DEPLOYMENT_LOG"; then
+    if "${deploy_cmd[@]}" | tee -a "$DEPLOYMENT_LOG"; then
         log_success "Deployment completed successfully!"
         return 0
     else

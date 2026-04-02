@@ -101,20 +101,22 @@ execute_pull_group() {
     echo -e "\n${YELLOW}Pulling: ${group_desc}...${NC}"
 
     # Build the sf retrieve command with all metadata entries
-    local metadata_args=""
+    local retrieve_cmd=(sf project retrieve start)
+    local has_metadata=false
     while IFS= read -r meta; do
         if [ -n "$meta" ]; then
-            metadata_args="${metadata_args} --metadata \"${meta}\""
+            retrieve_cmd+=(--metadata "$meta")
+            has_metadata=true
         fi
     done < <(get_pull_group_metadata "$index")
 
-    if [ -z "$metadata_args" ]; then
+    if [ "$has_metadata" != true ]; then
         echo -e "${RED}No metadata entries found for group: ${group_name}${NC}"
         return 1
     fi
 
     # Execute the retrieve command
-    eval "sf project retrieve start ${metadata_args}"
+    "${retrieve_cmd[@]}"
 
     # Execute any post-commands
     while IFS= read -r cmd; do
@@ -260,12 +262,12 @@ elif [ "$choice" -eq "$PROFILES_OPTION" ] 2>/dev/null; then
     fi
 
     # Build metadata args for profiles
-    local profile_args=""
+    local profile_cmd=(sf project retrieve start)
     for profile in "${PROFILE_LIST[@]}"; do
-        profile_args="${profile_args} --metadata \"Profile:${profile}\""
+        profile_cmd+=(--metadata "Profile:${profile}")
     done
 
-    eval "sf project retrieve start ${profile_args}"
+    "${profile_cmd[@]}"
 
     echo -e "${GREEN}Standard profiles pulled successfully${NC}"
     echo -e "${BLUE}Custom org-specific profiles were excluded as configured${NC}"
