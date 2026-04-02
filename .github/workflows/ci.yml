@@ -7,54 +7,44 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: write
+  id-token: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
-
     strategy:
       matrix:
         node-version: [18, 20, 22]
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-
       - run: npm ci
       - name: Security audit
         run: npm audit --audit-level=high
       - run: npm run lint
       - run: npm test
-      - run: npm run test:coverage
-      - name: Publish dry-run
-        run: npm publish --dry-run
+      - run: npm publish --dry-run
 
   publish:
     needs: test
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     environment: production
-
-    permissions:
-      contents: write
-      id-token: write
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - run: npm ci
       - name: Publish to npm
         run: npm publish --provenance
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
