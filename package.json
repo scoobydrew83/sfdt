@@ -4,7 +4,11 @@
   "description": "Salesforce DevTools — Production-grade CLI for Salesforce DX deployment, testing, quality analysis, and release management",
   "type": "module",
   "bin": {
-    "sfdt": "./bin/sfdt.js"
+    "sfdt": "bin/sfdt.js"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "files": [
     "bin/",
