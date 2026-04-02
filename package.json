@@ -1,6 +1,6 @@
 {
   "name": "@sfdt/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Salesforce DevTools — Production-grade CLI for Salesforce DX deployment, testing, quality analysis, and release management",
   "type": "module",
   "bin": {
@@ -57,10 +57,10 @@
   },
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "git+https://github.com/scoobydrew83/sfdt.git"
   },
-  "homepage": "",
+  "homepage": "https://github.com/scoobydrew83/sfdt#readme",
   "bugs": {
-    "url": ""
+    "url": "https://github.com/scoobydrew83/sfdt/issues"
   }
 }

@@ -15,6 +15,7 @@ import { registerSmokeCommand } from './commands/smoke.js';
 import { registerReviewCommand } from './commands/review.js';
 import { registerNotifyCommand } from './commands/notify.js';
 import { registerDriftCommand } from './commands/drift.js';
+import { registerChangelogCommand } from './commands/changelog.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
@@ -40,6 +41,7 @@ export function createCli() {
   registerReviewCommand(program);
   registerNotifyCommand(program);
   registerDriftCommand(program);
+  registerChangelogCommand(program);
 
   return program;
 }

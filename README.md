@@ -16,6 +16,7 @@ Production-grade CLI for Salesforce DX deployment, testing, quality analysis, an
 - Deployment rollback support
 - Post-deploy smoke testing
 - Org metadata drift detection
+- AI-powered changelog generation and management
 - AI-powered code review, test failure analysis, and release notes (optional, uses Claude)
 - Slack notifications for deployment events
 - Works with **any** Salesforce DX project
@@ -42,6 +43,7 @@ sfdt deploy
 | `sfdt rollback` | Roll back a deployment | `--target-org`, `--manifest <path>` |
 | `sfdt smoke` | Post-deploy smoke testing | `--target-org`, `--suite <name>` |
 | `sfdt drift` | Detect org metadata drift from source | `--target-org`, `--types <list>` |
+| `sfdt changelog` | Manage project CHANGELOG.md | `generate`, `release`, `check` |
 | `sfdt review` | AI-powered code review | `--from <ref>`, `--to <ref>` |
 | `sfdt pull` | Pull metadata from org using configured groups | `--group <name>`, `--target-org` |
 | `sfdt notify` | Send Slack deployment notifications | `--channel`, `--status <success\|failure>` |
