@@ -43,7 +43,7 @@ jobs:
           node-version: 22
       - run: npm ci
       - name: Publish to npm
-        run: npm publish --provenance
+        run: npx npm@latest publish --provenance --access public
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
