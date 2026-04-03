@@ -1217,18 +1217,40 @@ main_validate_and_deploy() {
     # Run validation
     run_validation
 
-    # Offer quick deploy
+    # Quick deploy requires a job ID and tests to have been run during validation.
+    # When unavailable (no job ID, or metadata-only like Flows), offer full deploy instead.
     echo ""
-    read -p "$(echo -e ${GREEN}Validation successful. Run quick deploy now? \(y/n\)${NC} )" -n 1 -r
-    echo
+    local can_quick_deploy=true
+    if [ -z "$VALIDATION_JOB_ID" ]; then
+        can_quick_deploy=false
+        print_warning "Quick deploy is not available (no validation job ID)"
+    elif [ "$TEST_LEVEL" == "Skip Tests (No Apex deployments)" ]; then
+        can_quick_deploy=false
+        print_warning "Quick deploy is not available (validation ran without tests)"
+    fi
 
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        run_quick_deploy
-        post_deployment_tasks
+    if [ "$can_quick_deploy" == true ]; then
+        read -p "$(echo -e ${GREEN}Validation successful. Run quick deploy now? \(y/n\)${NC} )" -n 1 -r
+        echo
+
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            run_quick_deploy
+            post_deployment_tasks
+        else
+            print_warning "Quick deploy skipped"
+            echo -e "${CYAN}You can run quick deploy later with:${NC}"
+            echo -e "${BOLD}sf project deploy quick --job-id $VALIDATION_JOB_ID --target-org $TARGET_ORG${NC}"
+        fi
     else
-        print_warning "Quick deploy skipped"
-        echo -e "${CYAN}You can run quick deploy later with:${NC}"
-        echo -e "${BOLD}sf project deploy quick --job-id $VALIDATION_JOB_ID --target-org $TARGET_ORG${NC}"
+        read -p "$(echo -e ${GREEN}Validation successful. Run full deployment now? \(y/n\)${NC} )" -n 1 -r
+        echo
+
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            run_full_deployment
+            post_deployment_tasks
+        else
+            print_warning "Deployment skipped"
+        fi
     fi
 }
 

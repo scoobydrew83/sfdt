@@ -647,6 +647,23 @@ generate_manifests() {
     generate_readme
 }
 
+# Run Claude CLI to update CHANGELOG.md
+# Falls back to manual instructions if claude is not available
+run_claude_changelog_update() {
+    local prompt="Document and update CHANGELOG.md for release ${RELEASE_VERSION}. Review git log for changes since ${PREVIOUS_TAG:-initial commit}."
+
+    if command -v claude &> /dev/null; then
+        print_step "Running Claude to update CHANGELOG..."
+        claude -p "$prompt" --allowedTools Read,Write,Edit,Bash 2>&1
+    else
+        print_warning "Claude CLI not found - manual update required"
+        echo -e "${CYAN}Run this command to update CHANGELOG with Claude:${NC}" >&2
+        echo -e "${BOLD}claude '${prompt}'${NC}" >&2
+        echo "" >&2
+        read -p "Press Enter when CHANGELOG has been updated, or Ctrl+C to abort..." >&2
+    fi
+}
+
 # Check if CHANGELOG.md has entry for this version
 check_changelog() {
     local changelog="CHANGELOG.md"
@@ -714,10 +731,7 @@ prompt_move_unreleased_to_version() {
         echo
 
         if [[ $REPLY =~ ^[Yy]$ ]]; then
-            echo -e "${CYAN}Run this command to update CHANGELOG with Claude:${NC}" >&2
-            echo -e "${BOLD}claude 'Document and update CHANGELOG.md for release ${RELEASE_VERSION}'${NC}" >&2
-            echo "" >&2
-            read -p "Press Enter when CHANGELOG has been updated, or Ctrl+C to abort..." >&2
+            run_claude_changelog_update
 
             if has_unreleased_content "CHANGELOG.md"; then
                 print_success "CHANGELOG updated with content"
@@ -769,10 +783,7 @@ prompt_changelog_update() {
     echo
 
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "${CYAN}Run this command to update CHANGELOG with Claude:${NC}" >&2
-        echo -e "${BOLD}claude 'Document and update CHANGELOG.md for release ${RELEASE_VERSION}'${NC}" >&2
-        echo "" >&2
-        read -p "Press Enter when CHANGELOG has been updated, or Ctrl+C to abort..." >&2
+        run_claude_changelog_update
 
         if check_changelog; then
             print_success "CHANGELOG updated"
@@ -789,7 +800,7 @@ commit_and_tag() {
     print_step "Git workflow..."
 
     # Stage manifest files and CHANGELOG if modified
-    git add "${MANIFEST_DIR}/rl-${RELEASE_VERSION}-"*
+    git add -f "${MANIFEST_DIR}/rl-${RELEASE_VERSION}-"*
     if git diff --cached --quiet --exit-code CHANGELOG.md 2>/dev/null; then
         : # CHANGELOG not staged or no changes
     else
@@ -842,7 +853,7 @@ commit_and_tag() {
 
 cleanup_on_exit() {
     # Always cleanup temp files and backups on exit
-    rm -f "$CHANGES_FILE" 2>/dev/null || true
+    rm -f "${CHANGES_FILE:-}" 2>/dev/null || true
     cleanup_changelog_backup 2>/dev/null || true
 }
 
