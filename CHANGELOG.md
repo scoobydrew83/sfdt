@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-04-03
+
+### Fixed
+- Fix unbound `CHANGES_FILE` variable in release cleanup when script exits early (#7)
+- Fix `git add` failure for manifest files ignored by target project's `.gitignore` (#8)
+- Prevent quick deploy from being offered when validation ran without tests (e.g., Flow-only deployments)
+
+### Changed
+- Automate CHANGELOG updates during release by invoking Claude CLI directly instead of requiring manual copy-paste into another terminal
+
 ## [0.1.1] - 2026-04-01
 
 ### Added
