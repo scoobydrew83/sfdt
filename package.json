@@ -52,7 +52,7 @@
     "fs-extra": "^11.3.0",
     "glob": "^13.0.6",
     "inquirer": "^13.3.2",
-    "ora": "^8.2.0"
+    "ora": "^9.3.0"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^3.1.1",
