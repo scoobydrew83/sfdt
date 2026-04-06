@@ -43,6 +43,7 @@ test/           Tests (vitest)
 | `SFDT_DEFAULT_ORG` | `config.defaultOrg` |
 | `SFDT_SOURCE_PATH` | `config.defaultSourcePath` (default: `"force-app/main/default"`) |
 | `SFDT_MANIFEST_DIR` | `config.manifestDir` (default: `"manifest/release"`) |
+| `SFDT_RELEASE_NOTES_DIR` | `config.releaseNotesDir` (default: `"release-notes"`) |
 | `SFDT_API_VERSION` | `config.sourceApiVersion` |
 | `SFDT_COVERAGE_THRESHOLD` | `config.deployment.coverageThreshold` (default: `75`) |
 | `SFDT_FEATURE_*` | Flattened from `config.features` |

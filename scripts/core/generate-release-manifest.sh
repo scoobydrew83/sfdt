@@ -801,9 +801,7 @@ commit_and_tag() {
 
     # Stage manifest files and CHANGELOG if modified
     git add -f "${MANIFEST_DIR}/rl-${RELEASE_VERSION}-"*
-    if git diff --cached --quiet --exit-code CHANGELOG.md 2>/dev/null; then
-        : # CHANGELOG not staged or no changes
-    else
+    if ! git diff --quiet CHANGELOG.md 2>/dev/null; then
         git add CHANGELOG.md
     fi
 
@@ -889,11 +887,8 @@ main() {
         prompt_move_unreleased_to_version || prompt_changelog_update
     fi
 
-    # Git workflow
-    commit_and_tag
-
     # Summary
-    print_header "RELEASE ${RELEASE_VERSION} COMPLETE"
+    print_header "RELEASE ${RELEASE_VERSION} MANIFESTS GENERATED"
     echo -e "${GREEN}Manifests generated:${NC}" >&2
     echo -e "  - ${MANIFEST_DIR}/rl-${RELEASE_VERSION}-package.xml" >&2
 
@@ -909,10 +904,9 @@ main() {
     fi
     echo -e "  - ${MANIFEST_DIR}/rl-${RELEASE_VERSION}-README.md" >&2
     echo "" >&2
-    echo -e "${CYAN}Next steps:${NC}" >&2
-    echo -e "  1. Review generated manifests" >&2
-    echo -e "  2. Deploy using the deployment assistant script" >&2
-    echo "" >&2
+
+    # Output version to stdout for the CLI to capture
+    echo "$RELEASE_VERSION"
 }
 
 # Run main

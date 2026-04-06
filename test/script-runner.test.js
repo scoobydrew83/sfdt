@@ -36,6 +36,7 @@ describe('buildScriptEnv', () => {
       defaultOrg: 'devhub',
       defaultSourcePath: 'src/main/default',
       manifestDir: 'manifest/prod',
+      releaseNotesDir: 'docs/releases',
       sourceApiVersion: '61.0',
       deployment: { coverageThreshold: 80 },
     };
@@ -48,6 +49,7 @@ describe('buildScriptEnv', () => {
     expect(env.SFDT_DEFAULT_ORG).toBe('devhub');
     expect(env.SFDT_SOURCE_PATH).toBe('src/main/default');
     expect(env.SFDT_MANIFEST_DIR).toBe('manifest/prod');
+    expect(env.SFDT_RELEASE_NOTES_DIR).toBe('docs/releases');
     expect(env.SFDT_API_VERSION).toBe('61.0');
     expect(env.SFDT_COVERAGE_THRESHOLD).toBe('80');
   });
@@ -60,6 +62,7 @@ describe('buildScriptEnv', () => {
     expect(env.SFDT_PROJECT_NAME).toBe('Salesforce Project');
     expect(env.SFDT_SOURCE_PATH).toBe('force-app/main/default');
     expect(env.SFDT_MANIFEST_DIR).toBe('manifest/release');
+    expect(env.SFDT_RELEASE_NOTES_DIR).toBe('release-notes');
     expect(env.SFDT_COVERAGE_THRESHOLD).toBe('75');
   });
 

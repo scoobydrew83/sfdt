@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-04-06
+
+### Fixed
+- Fix CHANGELOG.md not staged for commit during release — `git diff --cached` was checking for already-staged changes instead of unstaged working tree modifications (#11)
+- Fix AI-generated release notes only printing to terminal — now written to a configurable directory as `rl-{version}-RELEASE-NOTES.md` (#11)
+- Fix release flow ending abruptly with no transition to deployment — now prompts to proceed to deploy (#11)
+
+### Changed
+- Move git workflow (commit, tag, push) from shell script into release command for proper sequencing — release notes are now staged alongside manifests and CHANGELOG before commit (#11)
+- Add `releaseNotesDir` config option (default: `release-notes`) configurable via `sfdt init` and `.sfdt/config.json`
+- Add `SFDT_RELEASE_NOTES_DIR` environment variable for shell scripts
+- Add `captureStdout` option to script runner for capturing script output while keeping interactive stdin/stderr
+- CI publish now triggers on version bump detection when PRs merge to main, instead of on tag push from any branch
+
 ## [0.1.4] - 2026-04-03
 
 ### Fixed

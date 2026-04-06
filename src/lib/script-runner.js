@@ -24,6 +24,7 @@ export function buildScriptEnv(config) {
   env.SFDT_DEFAULT_ORG = config.defaultOrg || '';
   env.SFDT_SOURCE_PATH = config.defaultSourcePath || 'force-app/main/default';
   env.SFDT_MANIFEST_DIR = config.manifestDir || 'manifest/release';
+  env.SFDT_RELEASE_NOTES_DIR = config.releaseNotesDir || 'release-notes';
   env.SFDT_API_VERSION = config.sourceApiVersion || '';
   env.SFDT_COVERAGE_THRESHOLD = String(config.deployment?.coverageThreshold || 75);
 
@@ -88,6 +89,7 @@ export async function runScript(scriptPath, config, options = {}) {
     cwd,
     env: extraEnv = {},
     interactive = true,
+    captureStdout = false,
   } = options;
 
   const fullPath = path.resolve(SCRIPTS_DIR, scriptPath);
@@ -116,7 +118,10 @@ export async function runScript(scriptPath, config, options = {}) {
     reject: false,
   };
 
-  if (interactive) {
+  if (captureStdout) {
+    // Interactive stdin/stderr but capture stdout for return value
+    execOptions.stdio = ['inherit', 'pipe', 'inherit'];
+  } else if (interactive) {
     execOptions.stdio = 'inherit';
   }
 
