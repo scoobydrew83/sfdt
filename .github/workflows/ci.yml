@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -34,19 +33,50 @@ jobs:
   publish:
     needs: test
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: production
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 22
+      - name: Check for version bump
+        id: version
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No existing tags — first publish"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif [ "v${PACKAGE_VERSION}" != "$LATEST_TAG" ]; then
+            echo "Version bump detected: ${LATEST_TAG} → v${PACKAGE_VERSION}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No version change (${LATEST_TAG})"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Create git tag
+        if: steps.version.outputs.changed == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${RELEASE_VERSION}" -m "Release ${RELEASE_VERSION}"
+          git push origin "v${RELEASE_VERSION}"
       - run: npm ci
+        if: steps.version.outputs.changed == 'true'
       - name: Publish to npm
+        if: steps.version.outputs.changed == 'true'
         run: npx npm@latest publish --provenance --access public
       - name: Create GitHub Release
+        if: steps.version.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.version }}
           generate_release_notes: true
           draft: false
           prerelease: false

@@ -7,10 +7,11 @@ import { print } from '../lib/output.js';
 
 const CONFIG_DIR = '.sfdt';
 
-function buildConfigTemplate({ projectName, defaultOrg, features }) {
+function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir }) {
   return {
     projectName,
     defaultOrg,
+    releaseNotesDir,
     features: {
       ai: features.ai,
       notifications: features.notifications,
@@ -125,6 +126,12 @@ export function registerInitCommand(program) {
             message: 'Enable AI-powered features (requires Claude CLI)?',
             default: true,
           },
+          {
+            type: 'input',
+            name: 'releaseNotesDir',
+            message: 'Release notes output directory:',
+            default: 'release-notes',
+          },
         ]);
 
         // Auto-scan for test classes and apex classes
@@ -162,6 +169,7 @@ export function registerInitCommand(program) {
         const config = buildConfigTemplate({
           projectName: answers.projectName,
           defaultOrg: answers.defaultOrg,
+          releaseNotesDir: answers.releaseNotesDir,
           features: {
             ai: answers.aiEnabled,
             notifications: false,
