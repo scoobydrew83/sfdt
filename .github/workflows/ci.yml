@@ -74,9 +74,7 @@ jobs:
         run: npx npm@latest publish --provenance --access public
       - name: Create GitHub Release
         if: steps.version.outputs.changed == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          generate_release_notes: true
-          draft: false
-          prerelease: false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release create "v${VERSION}" --generate-notes
