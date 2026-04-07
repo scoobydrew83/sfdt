@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # =============================================================================
 # SFDT - Code Quality Analyzer
@@ -9,12 +10,15 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../utils/shared.sh"
 
-# Initialize environment
-init_script_env
-
-# Project configuration
+# Configuration from SFDT_ env vars (set by script-runner.js)
 PROJECT_NAME="${SFDT_PROJECT_NAME:-Salesforce Project}"
 SOURCE_PATH="${SFDT_SOURCE_PATH:-force-app/main/default}"
+LOG_DIR="${SFDT_LOG_DIR:-${SFDT_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}/logs}"
+PROJECT_CONFIG_DIR="${SFDT_CONFIG_DIR:-${SFDT_PROJECT_ROOT:-.}/.sfdt}"
+PROJECT_CONFIG_FILE="${PROJECT_CONFIG_DIR}/config.json"
+ENVIRONMENT_CONFIG_FILE="${PROJECT_CONFIG_DIR}/environments.json"
+PULL_CONFIG_FILE="${PROJECT_CONFIG_DIR}/pull-config.json"
+TEST_CONFIG_FILE="${PROJECT_CONFIG_DIR}/test-config.json"
 
 echo -e "${BLUE}${PROJECT_NAME} - Code Quality Analyzer${NC}"
 echo -e "${YELLOW}====================================================${NC}"
