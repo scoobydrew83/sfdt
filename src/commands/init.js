@@ -1,21 +1,29 @@
 import fs from 'fs-extra';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { glob } from 'glob';
 import inquirer from 'inquirer';
 import { detectProject, getProjectRoot } from '../lib/project-detect.js';
 import { print } from '../lib/output.js';
 
 const CONFIG_DIR = '.sfdt';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const TEMPLATE_PATH = path.join(__dirname, '../templates/sfdt.config.json');
 
-function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir }) {
+async function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir, coverageThreshold }) {
+  const template = await fs.readJson(TEMPLATE_PATH);
   return {
+    ...template,
     projectName,
     defaultOrg,
     releaseNotesDir,
+    deployment: {
+      ...template.deployment,
+      coverageThreshold,
+    },
     features: {
+      ...template.features,
       ai: features.ai,
-      notifications: features.notifications,
-      releaseManagement: features.releaseManagement,
     },
   };
 }
@@ -164,10 +172,11 @@ export function registerInitCommand(program) {
         // Create .sfdt/ directory
         await fs.ensureDir(configDir);
 
-        const config = buildConfigTemplate({
+        const config = await buildConfigTemplate({
           projectName: answers.projectName,
           defaultOrg: answers.defaultOrg,
           releaseNotesDir: answers.releaseNotesDir,
+          coverageThreshold: answers.coverageThreshold,
           features: {
             ai: answers.aiEnabled,
             notifications: false,
