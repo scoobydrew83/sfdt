@@ -28,6 +28,9 @@ export function buildScriptEnv(config) {
   env.SFDT_API_VERSION = config.sourceApiVersion || '';
   env.SFDT_COVERAGE_THRESHOLD = String(config.deployment?.coverageThreshold || 75);
   env.SFDT_LOG_DIR = config.logDir || '';
+  env.SFDT_PREFLIGHT_ENFORCE_TESTS = config.deployment?.preflight?.enforceTests ? 'true' : '';
+  env.SFDT_PREFLIGHT_ENFORCE_BRANCH = config.deployment?.preflight?.enforceBranchNaming ? 'true' : '';
+  env.SFDT_PREFLIGHT_ENFORCE_CHANGELOG = config.deployment?.preflight?.enforceChangelog ? 'true' : '';
 
   // Flatten features
   if (config.features && typeof config.features === 'object') {

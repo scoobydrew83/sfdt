@@ -59,11 +59,34 @@ beforeEach(() => {
   // .sfdt does not exist yet
   fs.pathExists.mockResolvedValue(false);
 
-  // sfdx-project.json content
-  fs.readJson.mockResolvedValue({
-    name: 'test-project',
-    sourceApiVersion: '61.0',
-    packageDirectories: [{ path: 'force-app', default: true }],
+  // fs.readJson: return template or sfdx-project.json based on path
+  fs.readJson.mockImplementation((filePath) => {
+    if (filePath.endsWith('sfdt.config.json')) {
+      return Promise.resolve({
+        projectName: '',
+        defaultOrg: '',
+        releaseNotesDir: 'release-notes',
+        manifestDir: 'manifest/release',
+        deployment: {
+          coverageThreshold: 75,
+          preflight: {
+            enforceTests: false,
+            enforceBranchNaming: false,
+            enforceChangelog: false,
+          },
+        },
+        features: {
+          ai: true,
+          notifications: false,
+          releaseManagement: true,
+        },
+      });
+    }
+    return Promise.resolve({
+      name: 'test-project',
+      sourceApiVersion: '61.0',
+      packageDirectories: [{ path: 'force-app', default: true }],
+    });
   });
 
   fs.ensureDir.mockResolvedValue();
@@ -78,6 +101,7 @@ beforeEach(() => {
     defaultOrg: 'dev',
     coverageThreshold: 75,
     aiEnabled: true,
+    releaseNotesDir: 'release-notes',
   });
 });
 
@@ -104,6 +128,10 @@ describe('init command', () => {
     expect(config.projectName).toBe('test-project');
     expect(config.defaultOrg).toBe('dev');
     expect(config.features.ai).toBe(true);
+    expect(config.deployment.preflight).toBeDefined();
+    expect(config.deployment.preflight.enforceTests).toBe(false);
+    expect(config.deployment.preflight.enforceBranchNaming).toBe(false);
+    expect(config.deployment.preflight.enforceChangelog).toBe(false);
   });
 
   it('prompts for overwrite when .sfdt already exists', async () => {

@@ -14,6 +14,9 @@ COVERAGE_THRESHOLD="${SFDT_COVERAGE_THRESHOLD:-75}"
 DEFAULT_ORG="${SFDT_DEFAULT_ORG:-}"
 STRICT_MODE="${SFDT_PREFLIGHT_STRICT:-}"
 PROJECT_NAME="${SFDT_PROJECT_NAME:-sfdt}"
+ENFORCE_TESTS="${SFDT_PREFLIGHT_ENFORCE_TESTS:-}"
+ENFORCE_BRANCH="${SFDT_PREFLIGHT_ENFORCE_BRANCH:-}"
+ENFORCE_CHANGELOG="${SFDT_PREFLIGHT_ENFORCE_CHANGELOG:-}"
 
 # Track results
 PASS_COUNT=0
@@ -49,6 +52,8 @@ print_step "Checking branch naming..."
 current_branch=$(git rev-parse --abbrev-ref HEAD)
 if [[ "$current_branch" =~ ^(main|master|release/.*|develop/.*)$ ]]; then
     record_result "PASS" "Branch '${current_branch}' matches expected pattern"
+elif [[ -n "$ENFORCE_BRANCH" ]]; then
+    record_result "FAIL" "Branch '${current_branch}' does not match main|release/*|develop/* pattern"
 else
     record_result "WARN" "Branch '${current_branch}' does not match main|release/*|develop/* pattern"
 fi
@@ -56,11 +61,15 @@ fi
 # ── Check 3: CHANGELOG.md exists and has unreleased content ──────────────────
 print_step "Checking CHANGELOG.md..."
 if [[ -f "CHANGELOG.md" ]]; then
-    if changelog_has_unreleased; then
+    if has_unreleased_content; then
         record_result "PASS" "CHANGELOG.md has unreleased content"
+    elif [[ -n "$ENFORCE_CHANGELOG" ]]; then
+        record_result "FAIL" "CHANGELOG.md exists but has no unreleased content"
     else
         record_result "WARN" "CHANGELOG.md exists but has no unreleased content"
     fi
+elif [[ -n "$ENFORCE_CHANGELOG" ]]; then
+    record_result "FAIL" "CHANGELOG.md not found"
 else
     record_result "WARN" "CHANGELOG.md not found"
 fi
@@ -73,38 +82,42 @@ else
     record_result "FAIL" "sfdx-project.json not found"
 fi
 
-# ── Check 5: Run Apex tests ─────────────────────────────────────────────────
-print_step "Running Apex tests (RunLocalTests)..."
-if [[ -z "$DEFAULT_ORG" ]]; then
-    record_result "WARN" "Apex tests skipped" "SFDT_DEFAULT_ORG not set"
+# ── Check 5 & 6: Apex tests + coverage (enforced only) ──────────────────────
+print_step "Checking Apex tests..."
+if [[ -z "$ENFORCE_TESTS" ]]; then
+    record_result "WARN" "Apex tests skipped" "Set deployment.preflight.enforceTests in config to require"
 else
-    TEST_OUTPUT_FILE=$(mktemp)
-    if sf apex run test --test-level RunLocalTests --target-org "$DEFAULT_ORG" --json --wait 30 > "$TEST_OUTPUT_FILE" 2>&1; then
-        test_status=$(jq -r '.result.summary.outcome // "Unknown"' "$TEST_OUTPUT_FILE" 2>/dev/null || echo "Unknown")
-        if [[ "$test_status" == "Passed" ]]; then
-            record_result "PASS" "All Apex tests passed"
+    if [[ -z "$DEFAULT_ORG" ]]; then
+        record_result "FAIL" "Apex tests required but SFDT_DEFAULT_ORG is not set"
+    else
+        TEST_OUTPUT_FILE=$(mktemp)
+        if sf apex run test --test-level RunLocalTests --target-org "$DEFAULT_ORG" --json --wait 30 > "$TEST_OUTPUT_FILE" 2>&1; then
+            test_status=$(jq -r '.result.summary.outcome // "Unknown"' "$TEST_OUTPUT_FILE" 2>/dev/null || echo "Unknown")
+            if [[ "$test_status" == "Passed" ]]; then
+                record_result "PASS" "All Apex tests passed"
+            else
+                failing=$(jq -r '.result.summary.failing // "unknown"' "$TEST_OUTPUT_FILE" 2>/dev/null || echo "unknown")
+                record_result "FAIL" "Apex tests failed" "${failing} test(s) failing"
+            fi
         else
-            failing=$(jq -r '.result.summary.failing // "unknown"' "$TEST_OUTPUT_FILE" 2>/dev/null || echo "unknown")
-            record_result "FAIL" "Apex tests failed" "${failing} test(s) failing"
+            error_msg=$(jq -r '.message // "Unknown error"' "$TEST_OUTPUT_FILE" 2>/dev/null || echo "Test command failed")
+            record_result "FAIL" "Apex test run failed" "$error_msg"
         fi
-    else
-        error_msg=$(jq -r '.message // "Unknown error"' "$TEST_OUTPUT_FILE" 2>/dev/null || echo "Test command failed")
-        record_result "FAIL" "Apex test run failed" "$error_msg"
-    fi
 
-    # ── Check 6: Coverage threshold ──────────────────────────────────────────
-    print_step "Checking code coverage..."
-    coverage_pct=$(jq -r '.result.summary.orgWideCoverage // "0%"' "$TEST_OUTPUT_FILE" 2>/dev/null || echo "0%")
-    coverage_num="${coverage_pct//%/}"
-    if [[ "$coverage_num" =~ ^[0-9]+$ ]] && (( coverage_num >= COVERAGE_THRESHOLD )); then
-        record_result "PASS" "Code coverage ${coverage_pct} meets threshold (${COVERAGE_THRESHOLD}%)"
-    elif [[ "$coverage_num" =~ ^[0-9]+$ ]]; then
-        record_result "FAIL" "Code coverage ${coverage_pct} below threshold (${COVERAGE_THRESHOLD}%)"
-    else
-        record_result "WARN" "Could not parse coverage percentage" "$coverage_pct"
-    fi
+        # ── Check 6: Coverage threshold ──────────────────────────────────────────
+        print_step "Checking code coverage..."
+        coverage_pct=$(jq -r '.result.summary.orgWideCoverage // "0%"' "$TEST_OUTPUT_FILE" 2>/dev/null || echo "0%")
+        coverage_num="${coverage_pct//%/}"
+        if [[ "$coverage_num" =~ ^[0-9]+$ ]] && (( coverage_num >= COVERAGE_THRESHOLD )); then
+            record_result "PASS" "Code coverage ${coverage_pct} meets threshold (${COVERAGE_THRESHOLD}%)"
+        elif [[ "$coverage_num" =~ ^[0-9]+$ ]]; then
+            record_result "FAIL" "Code coverage ${coverage_pct} below threshold (${COVERAGE_THRESHOLD}%)"
+        else
+            record_result "WARN" "Could not parse coverage percentage" "$coverage_pct"
+        fi
 
-    rm -f "$TEST_OUTPUT_FILE"
+        rm -f "$TEST_OUTPUT_FILE"
+    fi
 fi
 
 # ── Check 7: Untracked files in force-app/ ──────────────────────────────────

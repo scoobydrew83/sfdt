@@ -49,6 +49,9 @@ test/           Tests (vitest)
 | `SFDT_COVERAGE_THRESHOLD` | `config.deployment.coverageThreshold` (default: `75`) |
 | `SFDT_LOG_DIR` | `config.logDir` (optional; scripts fall back to `${SFDT_PROJECT_ROOT}/logs`) |
 | `SFDT_BACKUP_BEFORE_ROLLBACK` | `config.deployment.backupBeforeRollback` (default: `true`) |
+| `SFDT_PREFLIGHT_ENFORCE_TESTS` | `"true"` when `config.deployment.preflight.enforceTests` is set; gates Apex test check in preflight |
+| `SFDT_PREFLIGHT_ENFORCE_BRANCH` | `"true"` when `config.deployment.preflight.enforceBranchNaming` is set; promotes branch WARN to FAIL |
+| `SFDT_PREFLIGHT_ENFORCE_CHANGELOG` | `"true"` when `config.deployment.preflight.enforceChangelog` is set; promotes CHANGELOG WARN to FAIL |
 | `SFDT_FEATURE_*` | Flattened from `config.features` |
 | `SFDT_DEFAULT_ENV` | `config.environments.default` |
 | `SFDT_ENV_ORGS` | Comma-joined org aliases from `config.environments.orgs` |
@@ -60,6 +63,14 @@ test/           Tests (vitest)
 | `SFDT_PULL_*` | Flattened from `config.pullConfig` |
 
 When adding a new env var, update both `buildScriptEnv()` in `script-runner.js` and this table.
+
+### Config Template
+
+`src/templates/sfdt.config.json` is the canonical source of truth for the shape and defaults of `.sfdt/config.json`. `sfdt init` reads this template via `fs.readJson` and deep-merges user-provided answers on top. When adding new config keys, add them to the template first — `init.js` will pick them up automatically.
+
+### Known Gaps
+
+- **No `sfdt config` command**: `.sfdt/config.json` must be hand-edited to change settings after `init`. A future `sfdt config set <key> <value>` command would let users and scripts update config without opening a JSON file, and would be especially useful for CI pipelines setting `deployment.preflight.enforce*` flags.
 
 ### Error Handling
 
