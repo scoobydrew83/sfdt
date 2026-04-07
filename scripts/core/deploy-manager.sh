@@ -302,6 +302,30 @@ show_deployment_menu() {
     esac
 }
 
+# Coverage gate: aborts production deploy if coverage is below threshold
+check_coverage_gate() {
+    local environment=$1
+    [[ "$environment" != "production" ]] && return 0
+    if ! command -v jq &>/dev/null; then
+        log_error "jq not found — cannot verify coverage; aborting production deploy"
+        return 1
+    fi
+    log_info "Checking coverage (>=${COVERAGE_THRESHOLD}%) before production deploy..."
+    local org_alias
+    org_alias=$(get_environment_config "$environment" "org_alias")
+    local test_output
+    test_output=$(sf apex run test --test-level RunLocalTests \
+        --target-org "$org_alias" --json --wait 20 2>/dev/null || echo '{}')
+    local coverage
+    coverage=$(echo "$test_output" | jq -r '.result.summary.orgWideCoverage // "0%"' \
+        2>/dev/null | tr -d '%')
+    if [[ "$coverage" =~ ^[0-9]+$ ]] && (( coverage < COVERAGE_THRESHOLD )); then
+        log_error "Coverage ${coverage}% below threshold ${COVERAGE_THRESHOLD}% — aborting"
+        return 1
+    fi
+    log_success "Coverage ${coverage}% meets threshold"
+}
+
 # Deploy to specific environment
 deploy_to_environment() {
     local environment=$1
@@ -418,25 +442,6 @@ emergency_rollback() {
     rollback_deployment "$environment"
 }
 
-# Coverage gate: aborts production deploy if coverage is below threshold
-check_coverage_gate() {
-    local environment=$1
-    [[ "$environment" != "production" ]] && return 0
-    log_info "Checking coverage (>=${COVERAGE_THRESHOLD}%) before production deploy..."
-    local org_alias
-    org_alias=$(get_environment_config "$environment" "org_alias")
-    local test_output
-    test_output=$(sf apex run test --test-level RunLocalTests \
-        --target-org "$org_alias" --json --wait 20 2>/dev/null || echo '{}')
-    local coverage
-    coverage=$(echo "$test_output" | jq -r '.result.summary.orgWideCoverage // "0%"' \
-        2>/dev/null | tr -d '%')
-    if [[ "$coverage" =~ ^[0-9]+$ ]] && (( coverage < COVERAGE_THRESHOLD )); then
-        log_error "Coverage ${coverage}% below threshold ${COVERAGE_THRESHOLD}% — aborting"
-        return 1
-    fi
-    log_success "Coverage ${coverage}% meets threshold"
-}
 
 # Main execution
 main() {
