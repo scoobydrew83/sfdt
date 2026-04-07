@@ -132,6 +132,44 @@ describe('buildScriptEnv', () => {
     expect(env.SFDT_PULL_METADATA_TYPES).toBe('ApexClass,ApexTrigger');
     expect(env.SFDT_PULL_TARGET_DIR).toBe('force-app/main/default');
   });
+
+  it('sets preflight enforce vars to "true" when config flags are set', () => {
+    const config = {
+      features: {},
+      deployment: {
+        preflight: {
+          enforceTests: true,
+          enforceBranchNaming: true,
+          enforceChangelog: true,
+        },
+      },
+    };
+
+    const env = buildScriptEnv(config);
+
+    expect(env.SFDT_PREFLIGHT_ENFORCE_TESTS).toBe('true');
+    expect(env.SFDT_PREFLIGHT_ENFORCE_BRANCH).toBe('true');
+    expect(env.SFDT_PREFLIGHT_ENFORCE_CHANGELOG).toBe('true');
+  });
+
+  it('sets preflight enforce vars to empty string when config flags are false or absent', () => {
+    const config = {
+      features: {},
+      deployment: {
+        preflight: {
+          enforceTests: false,
+          enforceBranchNaming: false,
+          enforceChangelog: false,
+        },
+      },
+    };
+
+    const env = buildScriptEnv(config);
+
+    expect(env.SFDT_PREFLIGHT_ENFORCE_TESTS).toBe('');
+    expect(env.SFDT_PREFLIGHT_ENFORCE_BRANCH).toBe('');
+    expect(env.SFDT_PREFLIGHT_ENFORCE_CHANGELOG).toBe('');
+  });
 });
 
 describe('runScript', () => {
