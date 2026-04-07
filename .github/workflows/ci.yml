@@ -45,19 +45,17 @@ jobs:
       - name: Check for version bump
         id: version
         run: |
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
-          if [ -z "$LATEST_TAG" ]; then
-            echo "No existing tags — first publish"
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif [ "v${PACKAGE_VERSION}" != "$LATEST_TAG" ]; then
-            echo "Version bump detected: ${LATEST_TAG} → v${PACKAGE_VERSION}"
+          CURR_VERSION=$(node -p "require('./package.json').version")
+          PREV_VERSION=$(git show HEAD~1:package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" 2>/dev/null || echo "0.0.0")
+          echo "Current: v${CURR_VERSION}, Previous: v${PREV_VERSION}"
+          if [ "${CURR_VERSION}" != "${PREV_VERSION}" ]; then
+            echo "Version bump detected: v${PREV_VERSION} → v${CURR_VERSION}"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "No version change (${LATEST_TAG})"
+            echo "No version change (${CURR_VERSION})"
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "version=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version=${CURR_VERSION}" >> "$GITHUB_OUTPUT"
       - name: Create git tag
         if: steps.version.outputs.changed == 'true'
         env:
@@ -65,7 +63,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v${RELEASE_VERSION}" -m "Release ${RELEASE_VERSION}"
+          # Remove pre-existing tag if present (e.g. created on a branch before merge)
+          git tag -d "v${RELEASE_VERSION}" 2>/dev/null || true
+          git push origin ":refs/tags/v${RELEASE_VERSION}" 2>/dev/null || true
+          git tag -a "v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
           git push origin "v${RELEASE_VERSION}"
       - run: npm ci
         if: steps.version.outputs.changed == 'true'
