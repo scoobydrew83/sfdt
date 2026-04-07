@@ -32,3 +32,6 @@ npm-debug.log*
 # Skill eval workspaces
 sfdt-cli-workspace/
 skills/*/evals/
+
+# Git worktrees
+.worktrees/
