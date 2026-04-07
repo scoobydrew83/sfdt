@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # =============================================================================
 # SFDT - Smart Deployment Manager
@@ -9,17 +10,21 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../utils/shared.sh"
 
-# Initialize environment
-init_script_env
-
-# Project configuration
+# Configuration from SFDT_ env vars (set by script-runner.js)
 PROJECT_NAME="${SFDT_PROJECT_NAME:-Salesforce Project}"
+LOG_DIR="${SFDT_LOG_DIR:-${SFDT_PROJECT_ROOT:-$(pwd)}/logs}"
+MANIFEST_DIR="${SFDT_MANIFEST_DIR:-manifest/release}"
+COVERAGE_THRESHOLD="${SFDT_COVERAGE_THRESHOLD:-75}"
+PROJECT_CONFIG_DIR="${SFDT_CONFIG_DIR:-${SFDT_PROJECT_ROOT:-.}/.sfdt}"
+PROJECT_CONFIG_FILE="${PROJECT_CONFIG_DIR}/config.json"
+ENVIRONMENT_CONFIG_FILE="${PROJECT_CONFIG_DIR}/environments.json"
+PULL_CONFIG_FILE="${PROJECT_CONFIG_DIR}/pull-config.json"
+TEST_CONFIG_FILE="${PROJECT_CONFIG_DIR}/test-config.json"
 
 echo -e "${BLUE}${PROJECT_NAME} - Smart Deployment Manager${NC}"
 echo -e "${YELLOW}============================================================${NC}"
 
 # Deployment configuration
-MANIFEST_DIR="${SFDT_MANIFEST_DIR:-../../manifest}"
 BACKUP_DIR="$LOG_DIR/deployment-backups"
 DEPLOYMENT_LOG="$LOG_DIR/deployment_$(date +%Y%m%d_%H%M%S).log"
 VALIDATION_TIMEOUT=20
@@ -316,6 +321,11 @@ deploy_to_environment() {
         return 1
     fi
 
+    if ! check_coverage_gate "$environment"; then
+        log_error "Coverage gate failed — aborting deploy"
+        return 1
+    fi
+
     # Execute deployment
     if execute_deployment "$environment" "$manifest_file" "$deployment_type"; then
         # Post-deployment checks
@@ -406,6 +416,26 @@ emergency_rollback() {
 
     log_warning "EMERGENCY ROLLBACK INITIATED"
     rollback_deployment "$environment"
+}
+
+# Coverage gate: aborts production deploy if coverage is below threshold
+check_coverage_gate() {
+    local environment=$1
+    [[ "$environment" != "production" ]] && return 0
+    log_info "Checking coverage (>=${COVERAGE_THRESHOLD}%) before production deploy..."
+    local org_alias
+    org_alias=$(get_environment_config "$environment" "org_alias")
+    local test_output
+    test_output=$(sf apex run test --test-level RunLocalTests \
+        --target-org "$org_alias" --json --wait 20 2>/dev/null || echo '{}')
+    local coverage
+    coverage=$(echo "$test_output" | jq -r '.result.summary.orgWideCoverage // "0%"' \
+        2>/dev/null | tr -d '%')
+    if [[ "$coverage" =~ ^[0-9]+$ ]] && (( coverage < COVERAGE_THRESHOLD )); then
+        log_error "Coverage ${coverage}% below threshold ${COVERAGE_THRESHOLD}% — aborting"
+        return 1
+    fi
+    log_success "Coverage ${coverage}% meets threshold"
 }
 
 # Main execution

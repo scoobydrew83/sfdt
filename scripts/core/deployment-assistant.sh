@@ -17,6 +17,7 @@ NC='\033[0m' # No Color
 # Project configuration
 PROJECT_NAME="${SFDT_PROJECT_NAME:-Salesforce Project}"
 MANIFEST_BASE_DIR="${SFDT_MANIFEST_DIR:-manifest/release}"
+COVERAGE_THRESHOLD="${SFDT_COVERAGE_THRESHOLD:-75}"
 
 # Global variables
 MANIFEST_PATH=""
@@ -983,7 +984,7 @@ check_code_coverage() {
     if [ "$coverage" -eq 0 ]; then
         print_warning "Could not parse code coverage from deployment report"
         echo -e "${YELLOW}Validation succeeded, but coverage percentage not found.${NC}"
-        echo -e "${YELLOW}For production, coverage must be >=75%. Please verify manually:${NC}"
+        echo -e "${YELLOW}For production, coverage must be >=${COVERAGE_THRESHOLD}%. Please verify manually:${NC}"
         echo -e "${CYAN}sf project deploy report --job-id $job_id --target-org $TARGET_ORG${NC}"
         echo ""
         read -p "Continue anyway? (y/n) " -n 1 -r
@@ -996,13 +997,13 @@ check_code_coverage() {
 
     echo -e "${CYAN}Code Coverage: ${BOLD}${coverage}%${NC}"
 
-    if [ "$coverage" -lt 75 ]; then
-        print_error "Code coverage ${coverage}% is below required 75%"
+    if [ "$coverage" -lt "$COVERAGE_THRESHOLD" ]; then
+        print_error "Code coverage ${coverage}% is below required ${COVERAGE_THRESHOLD}%"
         echo -e "${RED}${BOLD}Deployment will fail in production!${NC}"
         echo -e "${YELLOW}Please increase test coverage before deploying.${NC}"
         exit 1
     else
-        print_success "Code coverage ${coverage}% meets requirement (>=75%)"
+        print_success "Code coverage ${coverage}% meets requirement (>=${COVERAGE_THRESHOLD}%)"
     fi
 }
 
