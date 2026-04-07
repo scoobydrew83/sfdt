@@ -110,16 +110,13 @@ export function registerChangelogCommand(program) {
         const config = await loadConfig();
         print.info(`Releasing version ${version} in CHANGELOG.md...`);
 
-        // Use a temporary script to invoke the library function
-        const scriptContent = `
-          source "${path.resolve(config._projectRoot, 'scripts/lib/changelog-utils.sh')}"
-          move_unreleased_to_version "$SFDT_VERSION"
-        `;
-
-        await execa('bash', ['-c', scriptContent], {
-          cwd: config._projectRoot,
-          env: { ...process.env, SFDT_VERSION: version },
-        });
+        // Pass the script path as a positional arg to avoid shell interpolation
+        const scriptPath = path.resolve(config._projectRoot, 'scripts/lib/changelog-utils.sh');
+        await execa(
+          'bash',
+          ['-c', 'source "$1" && move_unreleased_to_version "$SFDT_VERSION"', 'bash', scriptPath],
+          { cwd: config._projectRoot, env: { ...process.env, SFDT_VERSION: version } },
+        );
         print.success(`CHANGELOG.md updated: [Unreleased] -> [${version}]`);
       } catch (err) {
         print.error(`Changelog release failed: ${err.message}`);
@@ -142,18 +139,18 @@ export function registerChangelogCommand(program) {
           cwd: projectRoot,
         });
 
-        // Check if [Unreleased] has content
-        const scriptContent = `
-          source "${path.resolve(projectRoot, 'scripts/lib/changelog-utils.sh')}"
-          if has_unreleased_content; then
-            echo "HAS_CONTENT"
-          else
-            echo "EMPTY"
-          fi
-        `;
-        const { stdout: contentStatus } = await execa('bash', ['-c', scriptContent], {
-          cwd: projectRoot,
-        });
+        // Pass the script path as a positional arg to avoid shell interpolation
+        const scriptPath = path.resolve(projectRoot, 'scripts/lib/changelog-utils.sh');
+        const { stdout: contentStatus } = await execa(
+          'bash',
+          [
+            '-c',
+            'source "$1"; if has_unreleased_content; then echo "HAS_CONTENT"; else echo "EMPTY"; fi',
+            'bash',
+            scriptPath,
+          ],
+          { cwd: projectRoot },
+        );
 
         if (gitStatus && contentStatus.trim() === 'EMPTY') {
           print.warning(

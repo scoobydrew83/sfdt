@@ -71,7 +71,12 @@ describe('changelog release command', () => {
 
     expect(execa).toHaveBeenCalledWith(
       'bash',
-      ['-c', expect.stringContaining('move_unreleased_to_version "$SFDT_VERSION"')],
+      [
+        '-c',
+        'source "$1" && move_unreleased_to_version "$SFDT_VERSION"',
+        'bash',
+        expect.stringContaining('changelog-utils.sh'),
+      ],
       expect.objectContaining({
         env: expect.objectContaining({ SFDT_VERSION: '1.2.3' }),
       }),
@@ -91,6 +96,8 @@ describe('changelog release command', () => {
     expect(scriptBody).not.toContain(maliciousVersion);
     // It must reference the env var instead
     expect(scriptBody).toContain('$SFDT_VERSION');
+    // Path is safely in args, not the script body
+    expect(args[3]).toContain('changelog-utils.sh');
     // The version is safely in env
     const options = execa.mock.calls[0][2];
     expect(options.env.SFDT_VERSION).toBe(maliciousVersion);
