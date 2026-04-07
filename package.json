@@ -15,7 +15,8 @@
     "src/",
     "scripts/",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "SECURITY.md"
   ],
   "scripts": {
     "test": "vitest run",
@@ -25,6 +26,7 @@
     "lint:fix": "eslint src/ bin/ --fix",
     "format": "prettier --write \"src/**/*.js\" \"bin/*.js\" \"test/**/*.js\" \"README.md\" \"package.json\"",
     "dev": "npm link",
+    "postinstall": "node scripts/postinstall.js",
     "prepublishOnly": "npm test && npm run lint"
   },
   "keywords": [

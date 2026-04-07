@@ -19,6 +19,7 @@ src/
   commands/     Command modules (one file per command)
   lib/          Shared libraries (config, output, AI, script-runner, project-detect)
 scripts/        Shell scripts executed by commands (de-parameterized, use SFDT_ env vars)
+                Exception: scripts/postinstall.js is a Node.js ESM file run by npm on install
 test/           Tests (vitest)
 .sfdt/          Per-project config directory (created by `sfdt init` in target projects)
 ```
@@ -26,7 +27,7 @@ test/           Tests (vitest)
 ### Key Patterns
 
 - **Commands** in `src/commands/` export a function that receives the Commander program and registers a subcommand.
-- **Shell scripts** in `scripts/` are de-parameterized — they read configuration from `SFDT_` prefixed environment variables, not from positional arguments. The `script-runner.js` lib handles setting these vars and invoking scripts.
+- **Shell scripts** in `scripts/` are de-parameterized — they read configuration from `SFDT_` prefixed environment variables, not from positional arguments. The `script-runner.js` lib handles setting these vars and invoking scripts. `scripts/postinstall.js` is an exception — it is a Node.js ESM script invoked by npm's `postinstall` lifecycle hook, not by `script-runner.js`.
 - **Config system** uses a `.sfdt/` directory created per-project. Config is loaded by `src/lib/config.js`. At load time, config is enriched with values from `sfdx-project.json` (e.g. `sourceApiVersion`, `defaultSourcePath` derived from `packageDirectories`).
 - **AI features** are optional and gated behind `features.ai` in config. They require the Claude CLI to be installed externally.
 - **File matching** uses the `glob` package (v11) for pattern-based file discovery.

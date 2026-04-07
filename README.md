@@ -3,7 +3,10 @@
 Production-grade CLI for Salesforce DX deployment, testing, quality analysis, and release management.
 
 [![npm version](https://img.shields.io/npm/v/@sfdt/cli.svg)](https://www.npmjs.com/package/@sfdt/cli)
-[![license](https://img.shields.io/npm/l/@sfdt/cli.svg)](https://github.com/sfdt-cli/sfdt/blob/main/LICENSE)
+[![npm downloads](https://img.shields.io/npm/dm/@sfdt/cli.svg)](https://www.npmjs.com/package/@sfdt/cli)
+[![CI](https://github.com/scoobydrew83/sfdt/actions/workflows/ci.yml/badge.svg)](https://github.com/scoobydrew83/sfdt/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/scoobydrew83/sfdt/actions/workflows/codeql.yml/badge.svg)](https://github.com/scoobydrew83/sfdt/actions/workflows/codeql.yml)
+[![license](https://img.shields.io/npm/l/@sfdt/cli.svg)](https://github.com/scoobydrew83/sfdt/blob/main/LICENSE)
 [![node](https://img.shields.io/node/v/@sfdt/cli.svg)](https://nodejs.org)
 
 ## Features
@@ -133,7 +136,7 @@ Use groups with `sfdt pull --group core` to pull only the metadata types defined
 ## Development
 
 ```bash
-git clone https://github.com/sfdt-cli/sfdt.git
+git clone https://github.com/scoobydrew83/sfdt.git
 cd sfdt
 npm install
 npm link
@@ -154,6 +157,10 @@ Contributions are welcome! Please follow these steps:
 7. Push to your fork and open a Pull Request
 
 Please ensure all tests pass and linting is clean before submitting.
+
+## Security
+
+To report a vulnerability, please use [GitHub's private security advisory feature](https://github.com/scoobydrew83/sfdt/security/advisories/new) rather than opening a public issue. See [SECURITY.md](SECURITY.md) for the full policy and scope.
 
 ## License
 
