@@ -1,0 +1,57 @@
+name: Scheduled Security Audit
+
+on:
+  schedule:
+    # Every Monday at 09:00 UTC — after Dependabot runs
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run security audit
+        id: audit
+        run: |
+          npm audit --audit-level=moderate --json > audit-report.json 2>&1 || true
+          VULN_COUNT=$(node -e "
+            const r = require('./audit-report.json');
+            const meta = r.metadata?.vulnerabilities || {};
+            const total = (meta.critical||0) + (meta.high||0) + (meta.moderate||0);
+            console.log(total);
+          ")
+          echo "vuln_count=${VULN_COUNT}" >> "$GITHUB_OUTPUT"
+          if [ "${VULN_COUNT}" -gt 0 ]; then
+            echo "has_vulns=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_vulns=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Print audit summary
+        run: npm audit --audit-level=moderate || true
+
+      - name: Open issue if vulnerabilities found
+        if: steps.audit.outputs.has_vulns == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VULN_COUNT: ${{ steps.audit.outputs.vuln_count }}
+        run: |
+          EXISTING=$(gh issue list --label "security" --state open --json number --jq 'length')
+          if [ "${EXISTING}" -eq 0 ]; then
+            gh issue create \
+              --title "Security: ${VULN_COUNT} vulnerability(s) found in dependencies" \
+              --body "Automated weekly audit found **${VULN_COUNT}** moderate/high/critical vulnerability(s). Run \`npm audit\` locally for details and \`npm audit fix\` to attempt automatic remediation." \
+              --label "security"
+          fi

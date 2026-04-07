@@ -19,6 +19,7 @@ src/
   commands/     Command modules (one file per command)
   lib/          Shared libraries (config, output, AI, script-runner, project-detect)
 scripts/        Shell scripts executed by commands (de-parameterized, use SFDT_ env vars)
+                Exception: scripts/postinstall.js is a Node.js ESM file run by npm on install
 test/           Tests (vitest)
 .sfdt/          Per-project config directory (created by `sfdt init` in target projects)
 ```
@@ -26,7 +27,7 @@ test/           Tests (vitest)
 ### Key Patterns
 
 - **Commands** in `src/commands/` export a function that receives the Commander program and registers a subcommand.
-- **Shell scripts** in `scripts/` are de-parameterized — they read configuration from `SFDT_` prefixed environment variables, not from positional arguments. The `script-runner.js` lib handles setting these vars and invoking scripts.
+- **Shell scripts** in `scripts/` are de-parameterized — they read configuration from `SFDT_` prefixed environment variables, not from positional arguments. The `script-runner.js` lib handles setting these vars and invoking scripts. `scripts/postinstall.js` is an exception — it is a Node.js ESM script invoked by npm's `postinstall` lifecycle hook, not by `script-runner.js`.
 - **Config system** uses a `.sfdt/` directory created per-project. Config is loaded by `src/lib/config.js`. At load time, config is enriched with values from `sfdx-project.json` (e.g. `sourceApiVersion`, `defaultSourcePath` derived from `packageDirectories`).
 - **AI features** are optional and gated behind `features.ai` in config. They require the Claude CLI to be installed externally.
 - **File matching** uses the `glob` package (v11) for pattern-based file discovery.
@@ -48,6 +49,9 @@ test/           Tests (vitest)
 | `SFDT_COVERAGE_THRESHOLD` | `config.deployment.coverageThreshold` (default: `75`) |
 | `SFDT_LOG_DIR` | `config.logDir` (optional; scripts fall back to `${SFDT_PROJECT_ROOT}/logs`) |
 | `SFDT_BACKUP_BEFORE_ROLLBACK` | `config.deployment.backupBeforeRollback` (default: `true`) |
+| `SFDT_PREFLIGHT_ENFORCE_TESTS` | `"true"` when `config.deployment.preflight.enforceTests` is set; gates Apex test check in preflight |
+| `SFDT_PREFLIGHT_ENFORCE_BRANCH` | `"true"` when `config.deployment.preflight.enforceBranchNaming` is set; promotes branch WARN to FAIL |
+| `SFDT_PREFLIGHT_ENFORCE_CHANGELOG` | `"true"` when `config.deployment.preflight.enforceChangelog` is set; promotes CHANGELOG WARN to FAIL |
 | `SFDT_FEATURE_*` | Flattened from `config.features` |
 | `SFDT_DEFAULT_ENV` | `config.environments.default` |
 | `SFDT_ENV_ORGS` | Comma-joined org aliases from `config.environments.orgs` |
@@ -59,6 +63,14 @@ test/           Tests (vitest)
 | `SFDT_PULL_*` | Flattened from `config.pullConfig` |
 
 When adding a new env var, update both `buildScriptEnv()` in `script-runner.js` and this table.
+
+### Config Template
+
+`src/templates/sfdt.config.json` is the canonical source of truth for the shape and defaults of `.sfdt/config.json`. `sfdt init` reads this template via `fs.readJson` and deep-merges user-provided answers on top. When adding new config keys, add them to the template first — `init.js` will pick them up automatically.
+
+### Known Gaps
+
+- **No `sfdt config` command**: `.sfdt/config.json` must be hand-edited to change settings after `init`. A future `sfdt config set <key> <value>` command would let users and scripts update config without opening a JSON file, and would be especially useful for CI pipelines setting `deployment.preflight.enforce*` flags.
 
 ### Error Handling
 
