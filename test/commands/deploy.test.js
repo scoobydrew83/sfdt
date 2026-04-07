@@ -69,7 +69,6 @@ describe('deploy command', () => {
   });
 
   it('sets exitCode 1 on failure', async () => {
-    runScript.mockResolvedValue({ exitCode: 0 });
     runScript.mockRejectedValue(new Error('deploy failed'));
 
     await createProgram().parseAsync(['node', 'sfdt', 'deploy', '--skip-preflight']);
