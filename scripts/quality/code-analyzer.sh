@@ -80,7 +80,7 @@ if [ -d "$FORCE_APP_DIR/classes" ]; then
                     log_warning "Classes without tests found:"
                 fi
                 echo "  $class_name"
-                ((CLASSES_WITHOUT_TESTS++))
+                CLASSES_WITHOUT_TESTS=$((CLASSES_WITHOUT_TESTS + 1))
             fi
         fi
     done < <(find "$FORCE_APP_DIR/classes" -name "*.cls" -print0)
@@ -98,7 +98,7 @@ CONFIG_ISSUES=0
 # Check project.json
 if ! jq empty "$PROJECT_CONFIG_FILE" 2>/dev/null; then
     log_error "Invalid JSON in project.json"
-    ((CONFIG_ISSUES++))
+    CONFIG_ISSUES=$((CONFIG_ISSUES + 1))
 else
     log_success "project.json is valid JSON"
 fi
@@ -106,7 +106,7 @@ fi
 # Check environments.json
 if ! jq empty "$ENVIRONMENT_CONFIG_FILE" 2>/dev/null; then
     log_error "Invalid JSON in environments.json"
-    ((CONFIG_ISSUES++))
+    CONFIG_ISSUES=$((CONFIG_ISSUES + 1))
 else
     log_success "environments.json is valid JSON"
 fi
@@ -114,7 +114,7 @@ fi
 # Check pull-config.json
 if ! jq empty "$PULL_CONFIG_FILE" 2>/dev/null; then
     log_error "Invalid JSON in pull-config.json"
-    ((CONFIG_ISSUES++))
+    CONFIG_ISSUES=$((CONFIG_ISSUES + 1))
 else
     log_success "pull-config.json is valid JSON"
 fi
@@ -122,7 +122,7 @@ fi
 # Check test-config.json
 if ! jq empty "$TEST_CONFIG_FILE" 2>/dev/null; then
     log_error "Invalid JSON in test-config.json"
-    ((CONFIG_ISSUES++))
+    CONFIG_ISSUES=$((CONFIG_ISSUES + 1))
 else
     log_success "test-config.json is valid JSON"
 fi

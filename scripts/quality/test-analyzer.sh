@@ -265,8 +265,8 @@ generate_quality_report() {
 | Metric | Count | Percentage |
 |--------|-------|------------|
 | **Total Apex Classes** | $total_classes | 100% |
-| **Classes with Tests** | $tested_count | $((tested_count * 100 / total_classes))% |
-| **Classes without Tests** | $untested_count | $((untested_count * 100 / total_classes))% |
+| **Classes with Tests** | $tested_count | $((total_classes > 0 ? tested_count * 100 / total_classes : 0))% |
+| **Classes without Tests** | $untested_count | $((total_classes > 0 ? untested_count * 100 / total_classes : 0))% |
 | **Total Test Classes** | ${#PROJECT_TEST_CLASSES[@]} | - |
 | **Total Test Methods** | $total_methods | - |
 | **Total Assertions** | $total_assertions | - |
