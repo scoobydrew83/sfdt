@@ -46,12 +46,12 @@ describe('deploy command', () => {
   it('runs deployment-assistant.sh by default', async () => {
     runScript.mockResolvedValue({ exitCode: 0 });
 
-    await createProgram().parseAsync(['node', 'sfdt', 'deploy']);
+    await createProgram().parseAsync(['node', 'sfdt', 'deploy', '--skip-preflight']);
 
     expect(runScript).toHaveBeenCalledWith(
       'core/deployment-assistant.sh',
       expect.any(Object),
-      expect.objectContaining({ cwd: '/project' })
+      expect.objectContaining({ cwd: '/project' }),
     );
     expect(print.success).toHaveBeenCalled();
   });
@@ -59,21 +59,52 @@ describe('deploy command', () => {
   it('runs deploy-manager.sh with --managed flag', async () => {
     runScript.mockResolvedValue({ exitCode: 0 });
 
-    await createProgram().parseAsync(['node', 'sfdt', 'deploy', '--managed']);
+    await createProgram().parseAsync(['node', 'sfdt', 'deploy', '--managed', '--skip-preflight']);
 
     expect(runScript).toHaveBeenCalledWith(
       'core/deploy-manager.sh',
       expect.any(Object),
-      expect.objectContaining({ cwd: '/project' })
+      expect.objectContaining({ cwd: '/project' }),
     );
   });
 
   it('sets exitCode 1 on failure', async () => {
+    runScript.mockResolvedValue({ exitCode: 0 });
     runScript.mockRejectedValue(new Error('deploy failed'));
+
+    await createProgram().parseAsync(['node', 'sfdt', 'deploy', '--skip-preflight']);
+
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('deploy failed'));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('runs preflight.sh before the deploy script by default', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: '' });
 
     await createProgram().parseAsync(['node', 'sfdt', 'deploy']);
 
-    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('deploy failed'));
+    expect(runScript).toHaveBeenCalledTimes(2);
+    expect(runScript.mock.calls[0][0]).toBe('new/preflight.sh');
+    expect(runScript.mock.calls[1][0]).toBe('core/deployment-assistant.sh');
+  });
+
+  it('skips preflight with --skip-preflight flag', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: '' });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'deploy', '--skip-preflight']);
+
+    expect(runScript).toHaveBeenCalledTimes(1);
+    expect(runScript.mock.calls[0][0]).toBe('core/deployment-assistant.sh');
+  });
+
+  it('aborts deploy and exits 1 when preflight fails', async () => {
+    runScript.mockRejectedValueOnce(new Error('preflight check failed'));
+
+    await createProgram().parseAsync(['node', 'sfdt', 'deploy']);
+
+    expect(runScript).toHaveBeenCalledTimes(1);
+    expect(runScript.mock.calls[0][0]).toBe('new/preflight.sh');
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Preflight failed'));
     expect(process.exitCode).toBe(1);
   });
 });
