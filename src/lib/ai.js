@@ -36,13 +36,7 @@ export async function isClaudeAvailable() {
  *   Returns null if claude is not available or AI is disabled.
  */
 export async function runAiPrompt(prompt, options = {}) {
-  const {
-    allowedTools,
-    input,
-    interactive = false,
-    cwd,
-    aiEnabled = true,
-  } = options;
+  const { allowedTools, input, interactive = false, cwd, aiEnabled = true } = options;
 
   if (!aiEnabled) {
     console.log('AI features are disabled in sfdt configuration. Skipping AI prompt.');
@@ -53,7 +47,7 @@ export async function runAiPrompt(prompt, options = {}) {
   if (!available) {
     console.log(
       'Claude CLI is not installed or not in PATH. Skipping AI prompt.\n' +
-      'Install it from https://docs.anthropic.com/en/docs/claude-cli to enable AI features.'
+        'Install it from https://docs.anthropic.com/en/docs/claude-cli to enable AI features.',
     );
     return null;
   }

@@ -20,7 +20,7 @@ export function getProjectRoot(startDir) {
 
   throw new Error(
     'Not inside a Salesforce DX project.\n' +
-    `Could not find ${SFDX_PROJECT_FILE} in any parent directory of ${startDir || process.cwd()}.`
+      `Could not find ${SFDX_PROJECT_FILE} in any parent directory of ${startDir || process.cwd()}.`,
   );
 }
 
@@ -36,16 +36,14 @@ export async function detectProject(startDir) {
   try {
     projectJson = await fs.readJson(projectFilePath);
   } catch (err) {
-    throw new Error(
-      `Failed to parse ${SFDX_PROJECT_FILE} at ${projectFilePath}: ${err.message}`
-    );
+    throw new Error(`Failed to parse ${SFDX_PROJECT_FILE} at ${projectFilePath}: ${err.message}`);
   }
 
   const packageDirectories = projectJson.packageDirectories || [];
   if (packageDirectories.length === 0) {
     throw new Error(
       `No packageDirectories defined in ${projectFilePath}.\n` +
-      'Your sfdx-project.json must have at least one packageDirectory entry.'
+        'Your sfdx-project.json must have at least one packageDirectory entry.',
     );
   }
 

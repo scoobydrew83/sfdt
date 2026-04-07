@@ -24,9 +24,7 @@ describe('runAiPrompt', () => {
     const result = await runAiPrompt('test prompt', { aiEnabled: false });
 
     expect(result).toBeNull();
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('AI features are disabled')
-    );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('AI features are disabled'));
     consoleSpy.mockRestore();
   });
 
@@ -45,9 +43,7 @@ describe('runAiPrompt', () => {
     });
 
     // Find the actual prompt call (not the --version call)
-    const promptCall = execa.mock.calls.find(
-      (call) => call[1] && call[1].includes('-p')
-    );
+    const promptCall = execa.mock.calls.find((call) => call[1] && call[1].includes('-p'));
 
     expect(promptCall).toBeDefined();
     expect(promptCall[1]).toContain('-p');

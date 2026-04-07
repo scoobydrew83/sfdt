@@ -25,7 +25,9 @@ export function createCli() {
 
   program
     .name('sfdt')
-    .description('Salesforce DevTools — deployment, testing, quality, and release management for any Salesforce DX project')
+    .description(
+      'Salesforce DevTools — deployment, testing, quality, and release management for any Salesforce DX project',
+    )
     .version(pkg.version, '-v, --version');
 
   // Register all commands

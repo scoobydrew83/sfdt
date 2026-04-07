@@ -23,9 +23,7 @@ function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDi
 function buildEnvironmentsTemplate(defaultOrg) {
   return {
     default: defaultOrg,
-    orgs: [
-      { alias: defaultOrg, type: 'development', description: 'Default development org' },
-    ],
+    orgs: [{ alias: defaultOrg, type: 'development', description: 'Default development org' }],
   };
 }
 
@@ -68,8 +66,8 @@ export function registerInitCommand(program) {
         } catch {
           print.error(
             'No sfdx-project.json found in this directory or any parent.\n' +
-            '  Make sure you are inside a Salesforce DX project.\n' +
-            '  Create one with: sf project generate --name my-project'
+              '  Make sure you are inside a Salesforce DX project.\n' +
+              '  Create one with: sf project generate --name my-project',
           );
           process.exitCode = 1;
           return;
@@ -135,7 +133,9 @@ export function registerInitCommand(program) {
         ]);
 
         // Auto-scan for test classes and apex classes
-        const spinner = (await import('../lib/output.js')).createSpinner('Scanning for Apex classes...');
+        const spinner = (await import('../lib/output.js')).createSpinner(
+          'Scanning for Apex classes...',
+        );
         spinner.start();
 
         const packageDirs = project.packageDirectories.map((d) => d.absolutePath);
@@ -144,24 +144,22 @@ export function registerInitCommand(program) {
 
         for (const dir of packageDirs) {
           const testMatches = await glob('**/classes/*Test.cls', { cwd: dir });
-          testClasses.push(
-            ...testMatches.map((f) => path.basename(f, '.cls'))
-          );
+          testClasses.push(...testMatches.map((f) => path.basename(f, '.cls')));
 
           const allMatches = await glob('**/classes/*.cls', { cwd: dir });
           const nonTest = allMatches.filter(
-            (f) => !f.endsWith('Test.cls') && !f.endsWith('.cls-meta.xml')
+            (f) => !f.endsWith('Test.cls') && !f.endsWith('.cls-meta.xml'),
           );
-          apexClasses.push(
-            ...nonTest.map((f) => path.basename(f, '.cls'))
-          );
+          apexClasses.push(...nonTest.map((f) => path.basename(f, '.cls')));
         }
 
         // Deduplicate
         testClasses = [...new Set(testClasses)].sort();
         apexClasses = [...new Set(apexClasses)].sort();
 
-        spinner.succeed(`Found ${testClasses.length} test classes and ${apexClasses.length} Apex classes`);
+        spinner.succeed(
+          `Found ${testClasses.length} test classes and ${apexClasses.length} Apex classes`,
+        );
 
         // Create .sfdt/ directory
         await fs.ensureDir(configDir);
@@ -182,7 +180,7 @@ export function registerInitCommand(program) {
         const testConfig = buildTestConfigTemplate(
           answers.coverageThreshold,
           testClasses,
-          apexClasses
+          apexClasses,
         );
 
         const files = [

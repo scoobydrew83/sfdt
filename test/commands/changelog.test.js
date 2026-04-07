@@ -74,7 +74,7 @@ describe('changelog release command', () => {
       ['-c', expect.stringContaining('move_unreleased_to_version "$SFDT_VERSION"')],
       expect.objectContaining({
         env: expect.objectContaining({ SFDT_VERSION: '1.2.3' }),
-      })
+      }),
     );
     expect(print.success).toHaveBeenCalled();
   });
@@ -109,39 +109,35 @@ describe('changelog release command', () => {
 describe('changelog check command', () => {
   it('reports when git has changes but changelog is empty', async () => {
     execa
-      .mockResolvedValueOnce({ stdout: 'M src/file.js' })  // git status
-      .mockResolvedValueOnce({ stdout: 'EMPTY' });          // has_unreleased_content
+      .mockResolvedValueOnce({ stdout: 'M src/file.js' }) // git status
+      .mockResolvedValueOnce({ stdout: 'EMPTY' }); // has_unreleased_content
 
     await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'check']);
 
     expect(print.warning).toHaveBeenCalledWith(
-      expect.stringContaining('[Unreleased] section in CHANGELOG.md is empty')
+      expect.stringContaining('[Unreleased] section in CHANGELOG.md is empty'),
     );
     expect(process.exitCode).toBe(1);
   });
 
   it('reports success when git has changes and changelog has content', async () => {
     execa
-      .mockResolvedValueOnce({ stdout: 'M src/file.js' })   // git status
-      .mockResolvedValueOnce({ stdout: 'HAS_CONTENT' });     // has_unreleased_content
+      .mockResolvedValueOnce({ stdout: 'M src/file.js' }) // git status
+      .mockResolvedValueOnce({ stdout: 'HAS_CONTENT' }); // has_unreleased_content
 
     await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'check']);
 
-    expect(print.success).toHaveBeenCalledWith(
-      expect.stringContaining('synced')
-    );
+    expect(print.success).toHaveBeenCalledWith(expect.stringContaining('synced'));
   });
 
   it('reports no changes when git is clean and changelog is empty', async () => {
     execa
-      .mockResolvedValueOnce({ stdout: '' })       // git status
+      .mockResolvedValueOnce({ stdout: '' }) // git status
       .mockResolvedValueOnce({ stdout: 'EMPTY' }); // has_unreleased_content
 
     await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'check']);
 
-    expect(print.info).toHaveBeenCalledWith(
-      expect.stringContaining('No changes')
-    );
+    expect(print.info).toHaveBeenCalledWith(expect.stringContaining('No changes'));
   });
 
   it('sets exitCode 1 on failure', async () => {
@@ -165,9 +161,7 @@ describe('changelog generate command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'generate']);
 
-    expect(print.error).toHaveBeenCalledWith(
-      expect.stringContaining('AI features are disabled')
-    );
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('AI features are disabled'));
     expect(runAiPrompt).not.toHaveBeenCalled();
   });
 
@@ -178,9 +172,7 @@ describe('changelog generate command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'generate']);
 
     expect(inquirer.prompt).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ name: 'create' }),
-      ])
+      expect.arrayContaining([expect.objectContaining({ name: 'create' })]),
     );
     // User declined, so no AI call
     expect(runAiPrompt).not.toHaveBeenCalled();
@@ -191,16 +183,14 @@ describe('changelog generate command', () => {
     isClaudeAvailable.mockResolvedValue(true);
     runAiPrompt.mockResolvedValue('### Added\n- New feature');
     inquirer.prompt.mockResolvedValueOnce({ apply: true });
-    fs.readFile.mockResolvedValue(
-      '# Changelog\n\n## [Unreleased]\n\n## [1.0.0]\n'
-    );
+    fs.readFile.mockResolvedValue('# Changelog\n\n## [Unreleased]\n\n## [1.0.0]\n');
     fs.writeFile.mockResolvedValue();
 
     await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'generate']);
 
     expect(fs.writeFile).toHaveBeenCalledWith(
       expect.stringContaining('CHANGELOG.md'),
-      expect.stringContaining('### Added\n- New feature')
+      expect.stringContaining('### Added\n- New feature'),
     );
     expect(print.success).toHaveBeenCalledWith('Updated CHANGELOG.md');
   });

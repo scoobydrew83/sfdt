@@ -7,9 +7,7 @@ import { print } from '../lib/output.js';
 import { execa } from 'execa';
 
 export function registerChangelogCommand(program) {
-  const changelog = program
-    .command('changelog')
-    .description('Manage project CHANGELOG.md');
+  const changelog = program.command('changelog').description('Manage project CHANGELOG.md');
 
   changelog
     .command('generate')
@@ -21,7 +19,7 @@ export function registerChangelogCommand(program) {
         const projectRoot = config._projectRoot;
         const changelogPath = path.join(projectRoot, 'CHANGELOG.md');
 
-        if (!await fs.pathExists(changelogPath)) {
+        if (!(await fs.pathExists(changelogPath))) {
           const { create } = await inquirer.prompt([
             {
               type: 'confirm',
@@ -32,7 +30,8 @@ export function registerChangelogCommand(program) {
           ]);
 
           if (create) {
-            const template = '# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n\n### Added\n\n### Fixed\n\n### Changed\n';
+            const template =
+              '# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n\n### Added\n\n### Fixed\n\n### Changed\n';
             await fs.writeFile(changelogPath, template);
             print.success('Created CHANGELOG.md');
           } else {
@@ -42,7 +41,9 @@ export function registerChangelogCommand(program) {
 
         if (!config.features?.ai || !(await isClaudeAvailable())) {
           print.error('AI features are disabled or Claude CLI is not installed.');
-          print.info('To enable AI, set features.ai: true in .sfdt/config.json and install @anthropic-ai/claude-code');
+          print.info(
+            'To enable AI, set features.ai: true in .sfdt/config.json and install @anthropic-ai/claude-code',
+          );
           return;
         }
 
@@ -73,7 +74,8 @@ export function registerChangelogCommand(program) {
             {
               type: 'confirm',
               name: 'apply',
-              message: 'Would you like to append these entries to your CHANGELOG.md [Unreleased] section?',
+              message:
+                'Would you like to append these entries to your CHANGELOG.md [Unreleased] section?',
               default: true,
             },
           ]);
@@ -82,7 +84,7 @@ export function registerChangelogCommand(program) {
             // Simple append logic for now - in a real tool we'd parse and merge
             const currentContent = await fs.readFile(changelogPath, 'utf8');
             const unreleasedTag = '## [Unreleased]';
-            
+
             if (currentContent.includes(unreleasedTag)) {
               const parts = currentContent.split(unreleasedTag);
               const newContent = `${parts[0]}${unreleasedTag}\n\n${response}${parts[1]}`;
@@ -136,8 +138,10 @@ export function registerChangelogCommand(program) {
         print.info('Checking CHANGELOG.md against git changes...');
 
         // Check if there are uncommitted changes
-        const { stdout: gitStatus } = await execa('git', ['status', '--porcelain'], { cwd: projectRoot });
-        
+        const { stdout: gitStatus } = await execa('git', ['status', '--porcelain'], {
+          cwd: projectRoot,
+        });
+
         // Check if [Unreleased] has content
         const scriptContent = `
           source "${path.resolve(projectRoot, 'scripts/lib/changelog-utils.sh')}"
@@ -147,10 +151,14 @@ export function registerChangelogCommand(program) {
             echo "EMPTY"
           fi
         `;
-        const { stdout: contentStatus } = await execa('bash', ['-c', scriptContent], { cwd: projectRoot });
+        const { stdout: contentStatus } = await execa('bash', ['-c', scriptContent], {
+          cwd: projectRoot,
+        });
 
         if (gitStatus && contentStatus.trim() === 'EMPTY') {
-          print.warning('You have git changes but the [Unreleased] section in CHANGELOG.md is empty.');
+          print.warning(
+            'You have git changes but the [Unreleased] section in CHANGELOG.md is empty.',
+          );
           print.info('Run "sfdt changelog generate" to update it with AI.');
           process.exitCode = 1;
         } else if (!gitStatus && contentStatus.trim() === 'HAS_CONTENT') {

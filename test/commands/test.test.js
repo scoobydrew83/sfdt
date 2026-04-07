@@ -62,7 +62,7 @@ describe('test command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'core/enhanced-test-runner.sh',
       expect.any(Object),
-      expect.objectContaining({ cwd: '/project' })
+      expect.objectContaining({ cwd: '/project' }),
     );
     expect(print.success).toHaveBeenCalled();
   });
@@ -75,7 +75,7 @@ describe('test command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'core/run-tests.sh',
       expect.any(Object),
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -88,7 +88,7 @@ describe('test command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'quality/test-analyzer.sh',
       expect.any(Object),
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -103,7 +103,7 @@ describe('test command', () => {
     expect(inquirer.prompt).toHaveBeenCalled();
     expect(runAiPrompt).toHaveBeenCalledWith(
       expect.stringContaining('Analyze the most recent Apex test failures'),
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(process.exitCode).toBe(1);
   });

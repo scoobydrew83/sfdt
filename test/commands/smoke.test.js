@@ -51,7 +51,7 @@ describe('smoke command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'new/smoke.sh',
       expect.any(Object),
-      expect.objectContaining({ env: { SFDT_TARGET_ORG: 'dev' } })
+      expect.objectContaining({ env: { SFDT_TARGET_ORG: 'dev' } }),
     );
   });
 
@@ -63,7 +63,7 @@ describe('smoke command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'new/smoke.sh',
       expect.any(Object),
-      expect.objectContaining({ env: { SFDT_TARGET_ORG: 'uat' } })
+      expect.objectContaining({ env: { SFDT_TARGET_ORG: 'uat' } }),
     );
   });
 

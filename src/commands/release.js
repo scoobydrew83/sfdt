@@ -33,7 +33,7 @@ export function registerReleaseCommand(program) {
 
         // Offer AI release notes if enabled
         const aiEnabled = config.features?.ai;
-        if (aiEnabled && await isClaudeAvailable()) {
+        if (aiEnabled && (await isClaudeAvailable())) {
           const { generateNotes } = await inquirer.prompt([
             {
               type: 'confirm',

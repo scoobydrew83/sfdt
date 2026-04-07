@@ -50,15 +50,17 @@ export function registerReviewCommand(program) {
         const aiEnabled = config.features?.ai;
 
         if (!aiEnabled) {
-          print.error('AI features are disabled. Enable them in .sfdt/config.json (features.ai: true).');
+          print.error(
+            'AI features are disabled. Enable them in .sfdt/config.json (features.ai: true).',
+          );
           process.exitCode = 1;
           return;
         }
 
-        if (!await isClaudeAvailable()) {
+        if (!(await isClaudeAvailable())) {
           print.error(
             'Claude CLI is not installed or not in PATH.\n' +
-            '  Install from: https://docs.anthropic.com/en/docs/claude-cli'
+              '  Install from: https://docs.anthropic.com/en/docs/claude-cli',
           );
           process.exitCode = 1;
           return;

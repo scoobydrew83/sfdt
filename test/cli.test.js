@@ -18,9 +18,18 @@ describe('createCli', () => {
     const commandNames = program.commands.map((cmd) => cmd.name());
 
     const expected = [
-      'init', 'deploy', 'release', 'test', 'pull',
-      'quality', 'preflight', 'rollback', 'smoke',
-      'review', 'notify', 'drift',
+      'init',
+      'deploy',
+      'release',
+      'test',
+      'pull',
+      'quality',
+      'preflight',
+      'rollback',
+      'smoke',
+      'review',
+      'notify',
+      'drift',
     ];
 
     for (const name of expected) {
