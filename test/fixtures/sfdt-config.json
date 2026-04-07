@@ -1,0 +1,1 @@
+{"defaultOrg":"test-org","projectName":"Test Project","manifestDir":"manifest/release","releaseNotesDir":"release-notes","features":{"ai":false},"deployment":{"coverageThreshold":80,"backupBeforeRollback":true},"logDir":"/tmp/sfdt-test-logs"}

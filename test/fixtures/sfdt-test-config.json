@@ -1,0 +1,1 @@
+{"testClasses":["AccountServiceTest","OpportunityHandlerTest"],"apexClasses":["AccountService","AccountServiceTest","OpportunityHandler","OpportunityHandlerTest"],"coverageThreshold":80,"testLevel":"RunSpecifiedTests"}
