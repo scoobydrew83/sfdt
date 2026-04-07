@@ -31,10 +31,7 @@ const config = {
 };
 
 describe('buildScriptEnv integration', () => {
-  let env;
-
-  // Build once — buildScriptEnv is a pure function
-  env = buildScriptEnv(config);
+  const env = buildScriptEnv(config);
 
   it('maps SFDT_PROJECT_ROOT', () => {
     expect(env.SFDT_PROJECT_ROOT).toBe('/tmp/test-project');
