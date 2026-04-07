@@ -51,7 +51,7 @@ describe('preflight command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'new/preflight.sh',
       expect.any(Object),
-      expect.objectContaining({ cwd: '/project', env: {} })
+      expect.objectContaining({ cwd: '/project', env: {} }),
     );
     expect(print.success).toHaveBeenCalled();
   });
@@ -64,7 +64,7 @@ describe('preflight command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'new/preflight.sh',
       expect.any(Object),
-      expect.objectContaining({ env: { SFDT_PREFLIGHT_STRICT: 'true' } })
+      expect.objectContaining({ env: { SFDT_PREFLIGHT_STRICT: 'true' } }),
     );
   });
 

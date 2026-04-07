@@ -27,6 +27,7 @@ export function buildScriptEnv(config) {
   env.SFDT_RELEASE_NOTES_DIR = config.releaseNotesDir || 'release-notes';
   env.SFDT_API_VERSION = config.sourceApiVersion || '';
   env.SFDT_COVERAGE_THRESHOLD = String(config.deployment?.coverageThreshold || 75);
+  env.SFDT_LOG_DIR = config.logDir || '';
 
   // Flatten features
   if (config.features && typeof config.features === 'object') {
@@ -57,6 +58,12 @@ export function buildScriptEnv(config) {
     if (Array.isArray(config.testConfig.suites)) {
       env.SFDT_TEST_SUITES = config.testConfig.suites.join(',');
     }
+    if (Array.isArray(config.testConfig.testClasses)) {
+      env.SFDT_TEST_CLASSES = config.testConfig.testClasses.join(',');
+    }
+    if (Array.isArray(config.testConfig.apexClasses)) {
+      env.SFDT_APEX_CLASSES = config.testConfig.apexClasses.join(',');
+    }
   }
 
   // Pull config
@@ -84,17 +91,11 @@ export function buildScriptEnv(config) {
  * @param {boolean} [options.interactive] - Use stdio inherit for TTY passthrough (default: true)
  */
 export async function runScript(scriptPath, config, options = {}) {
-  const {
-    args = [],
-    cwd,
-    env: extraEnv = {},
-    interactive = true,
-    captureStdout = false,
-  } = options;
+  const { args = [], cwd, env: extraEnv = {}, interactive = true, captureStdout = false } = options;
 
   const fullPath = path.resolve(SCRIPTS_DIR, scriptPath);
 
-  if (!await fs.pathExists(fullPath)) {
+  if (!(await fs.pathExists(fullPath))) {
     throw new Error(`Script not found: ${fullPath}`);
   }
 
@@ -109,6 +110,7 @@ export async function runScript(scriptPath, config, options = {}) {
   const mergedEnv = {
     ...process.env,
     ...scriptEnv,
+    SFDT_NON_INTERACTIVE: !process.stdin.isTTY || options.interactive === false ? 'true' : 'false',
     ...extraEnv,
   };
 
@@ -130,7 +132,7 @@ export async function runScript(scriptPath, config, options = {}) {
   if (result.exitCode !== 0) {
     const error = new Error(
       `Script "${scriptPath}" exited with code ${result.exitCode}` +
-      (result.stderr ? `\n${result.stderr}` : '')
+        (result.stderr ? `\n${result.stderr}` : ''),
     );
     error.exitCode = result.exitCode;
     error.stdout = result.stdout;

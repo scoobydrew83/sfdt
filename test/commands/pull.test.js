@@ -51,7 +51,7 @@ describe('pull command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'core/pull-org-updates.sh',
       expect.any(Object),
-      expect.objectContaining({ cwd: '/project' })
+      expect.objectContaining({ cwd: '/project' }),
     );
     expect(print.success).toHaveBeenCalled();
   });

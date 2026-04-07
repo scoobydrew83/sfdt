@@ -34,14 +34,12 @@ describe('validateConfig', () => {
 
   it('throws when features is not an object', () => {
     expect(() => validateConfig({ defaultOrg: 'dev', features: 'yes' })).toThrow(
-      '"features" must be an object'
+      '"features" must be an object',
     );
   });
 
   it('passes with valid config', () => {
-    expect(() =>
-      validateConfig({ defaultOrg: 'dev', features: { ai: true } })
-    ).not.toThrow();
+    expect(() => validateConfig({ defaultOrg: 'dev', features: { ai: true } })).not.toThrow();
   });
 });
 
@@ -104,7 +102,10 @@ describe('loadConfig', () => {
       if (p.endsWith('config.json')) return baseConfig;
       if (p.endsWith('environments.json')) return { default: 'dev', orgs: [] };
       if (p.endsWith('sfdx-project.json')) {
-        return { sourceApiVersion: '61.0', packageDirectories: [{ path: 'force-app', default: true }] };
+        return {
+          sourceApiVersion: '61.0',
+          packageDirectories: [{ path: 'force-app', default: true }],
+        };
       }
       return {};
     });
@@ -132,10 +133,7 @@ describe('loadConfig', () => {
       if (p.endsWith('sfdx-project.json')) {
         return {
           sourceApiVersion: '61.0',
-          packageDirectories: [
-            { path: 'force-app', default: true },
-            { path: 'unpackaged' },
-          ],
+          packageDirectories: [{ path: 'force-app', default: true }, { path: 'unpackaged' }],
         };
       }
       return {};
@@ -164,7 +162,10 @@ describe('loadConfig', () => {
     fs.readJson.mockImplementation(async (p) => {
       if (p.endsWith('config.json')) return baseConfig;
       if (p.endsWith('sfdx-project.json')) {
-        return { sourceApiVersion: '61.0', packageDirectories: [{ path: 'force-app', default: true }] };
+        return {
+          sourceApiVersion: '61.0',
+          packageDirectories: [{ path: 'force-app', default: true }],
+        };
       }
       return {};
     });
@@ -188,10 +189,7 @@ describe('loadConfig', () => {
       if (p.endsWith('config.json')) return baseConfig;
       if (p.endsWith('sfdx-project.json')) {
         return {
-          packageDirectories: [
-            { path: 'src' },
-            { path: 'lib' },
-          ],
+          packageDirectories: [{ path: 'src' }, { path: 'lib' }],
         };
       }
       return {};

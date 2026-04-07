@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # =============================================================================
 # SFDT - Test Quality Analyzer
@@ -9,12 +10,11 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../utils/shared.sh"
 
-# Initialize environment
-init_script_env
-
-# Project configuration
+# Configuration from SFDT_ env vars (set by script-runner.js)
 PROJECT_NAME="${SFDT_PROJECT_NAME:-Salesforce Project}"
 SOURCE_PATH="${SFDT_SOURCE_PATH:-force-app/main/default}"
+LOG_DIR="${SFDT_LOG_DIR:-${SFDT_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}/logs}"
+TEST_CONFIG_FILE="${SFDT_CONFIG_DIR:-${SFDT_PROJECT_ROOT:-.}/.sfdt}/test-config.json"
 
 echo -e "${BLUE}${PROJECT_NAME} - Test Quality Analyzer${NC}"
 echo -e "${YELLOW}======================================================${NC}"
@@ -25,11 +25,25 @@ if [ ! -d "$FORCE_APP_DIR" ]; then
     FORCE_APP_DIR="../../${SOURCE_PATH}"
 fi
 
+mkdir -p "$LOG_DIR/test-results"
 TEST_QUALITY_REPORT="$LOG_DIR/test-results/test_quality_$(date +%Y%m%d_%H%M%S).md"
 
 # Load test configuration
-PROJECT_TEST_CLASSES=($(jq -r '.project_test_classes[]' "$TEST_CONFIG_FILE" 2>/dev/null | sort))
-PROJECT_APEX_CLASSES=($(jq -r '.project_apex_classes[]' "$TEST_CONFIG_FILE" 2>/dev/null | sort))
+if [[ -n "${SFDT_TEST_CLASSES:-}" ]]; then
+    IFS=',' read -r -a PROJECT_TEST_CLASSES <<< "$SFDT_TEST_CLASSES"
+elif [[ -f "$TEST_CONFIG_FILE" ]]; then
+    mapfile -t PROJECT_TEST_CLASSES < <(jq -r '.testClasses[]' "$TEST_CONFIG_FILE" 2>/dev/null | sort)
+else
+    PROJECT_TEST_CLASSES=()
+fi
+
+if [[ -n "${SFDT_APEX_CLASSES:-}" ]]; then
+    IFS=',' read -r -a PROJECT_APEX_CLASSES <<< "$SFDT_APEX_CLASSES"
+elif [[ -f "$TEST_CONFIG_FILE" ]]; then
+    mapfile -t PROJECT_APEX_CLASSES < <(jq -r '.apexClasses[]' "$TEST_CONFIG_FILE" 2>/dev/null | sort)
+else
+    PROJECT_APEX_CLASSES=()
+fi
 
 log_info "Analyzing test quality for ${#PROJECT_TEST_CLASSES[@]} test classes"
 
@@ -251,8 +265,8 @@ generate_quality_report() {
 | Metric | Count | Percentage |
 |--------|-------|------------|
 | **Total Apex Classes** | $total_classes | 100% |
-| **Classes with Tests** | $tested_count | $((tested_count * 100 / total_classes))% |
-| **Classes without Tests** | $untested_count | $((untested_count * 100 / total_classes))% |
+| **Classes with Tests** | $tested_count | $((total_classes > 0 ? tested_count * 100 / total_classes : 0))% |
+| **Classes without Tests** | $untested_count | $((total_classes > 0 ? untested_count * 100 / total_classes : 0))% |
 | **Total Test Classes** | ${#PROJECT_TEST_CLASSES[@]} | - |
 | **Total Test Methods** | $total_methods | - |
 | **Total Assertions** | $total_assertions | - |

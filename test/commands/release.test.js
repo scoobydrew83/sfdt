@@ -57,7 +57,13 @@ function createProgram() {
 
 // Helper: mock prompt responses for the full git workflow
 // generateNotes prompt (if AI available), then doCommit, doTag, proceedToDeploy, doPush
-function mockPromptFlow({ generateNotes, doCommit = false, doTag = false, proceedToDeploy = false, doPush = false } = {}) {
+function mockPromptFlow({
+  generateNotes,
+  doCommit = false,
+  doTag = false,
+  proceedToDeploy = false,
+  doPush = false,
+} = {}) {
   const responses = [];
   if (generateNotes !== undefined) {
     responses.push({ generateNotes });
@@ -99,7 +105,7 @@ describe('release command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'core/generate-release-manifest.sh',
       expect.any(Object),
-      expect.objectContaining({ args: [], cwd: '/project', captureStdout: true })
+      expect.objectContaining({ args: [], cwd: '/project', captureStdout: true }),
     );
   });
 
@@ -112,7 +118,7 @@ describe('release command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'core/generate-release-manifest.sh',
       expect.any(Object),
-      expect.objectContaining({ args: ['2.0.0'] })
+      expect.objectContaining({ args: ['2.0.0'] }),
     );
   });
 
@@ -125,7 +131,7 @@ describe('release command', () => {
 
     expect(runAiPrompt).toHaveBeenCalledWith(
       expect.stringContaining('release notes'),
-      expect.objectContaining({ aiEnabled: true, interactive: true })
+      expect.objectContaining({ aiEnabled: true, interactive: true }),
     );
   });
 
@@ -153,11 +159,15 @@ describe('release command', () => {
     isClaudeAvailable.mockResolvedValue(false);
     // CHANGELOG has changes (exitCode 1 = diff detected)
     execa
-      .mockResolvedValueOnce({ exitCode: 0, stdout: '' })   // git add manifests
-      .mockResolvedValueOnce({ exitCode: 1, stdout: '' })   // git diff CHANGELOG (modified)
-      .mockResolvedValueOnce({ exitCode: 0, stdout: '' })   // git add CHANGELOG
-      .mockResolvedValueOnce({ exitCode: 0, stdout: '' })   // git add release notes
-      .mockResolvedValueOnce({ exitCode: 0, stdout: 'A  release-notes/rl-1.0.0-RELEASE-NOTES.md\nA  manifest/release/rl-1.0.0-package.xml\nM  CHANGELOG.md' }); // git status
+      .mockResolvedValueOnce({ exitCode: 0, stdout: '' }) // git add manifests
+      .mockResolvedValueOnce({ exitCode: 1, stdout: '' }) // git diff CHANGELOG (modified)
+      .mockResolvedValueOnce({ exitCode: 0, stdout: '' }) // git add CHANGELOG
+      .mockResolvedValueOnce({ exitCode: 0, stdout: '' }) // git add release notes
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout:
+          'A  release-notes/rl-1.0.0-RELEASE-NOTES.md\nA  manifest/release/rl-1.0.0-package.xml\nM  CHANGELOG.md',
+      }); // git status
 
     mockPromptFlow({ doCommit: true, doTag: false });
 
@@ -165,7 +175,7 @@ describe('release command', () => {
 
     // Verify CHANGELOG was staged
     const addCalls = execa.mock.calls.filter(
-      (c) => c[0] === 'git' && c[1][0] === 'add' && c[1].includes('CHANGELOG.md')
+      (c) => c[0] === 'git' && c[1][0] === 'add' && c[1].includes('CHANGELOG.md'),
     );
     expect(addCalls.length).toBe(1);
   });

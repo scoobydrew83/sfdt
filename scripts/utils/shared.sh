@@ -37,6 +37,31 @@ log_debug() {
     fi
 }
 
+# Print functions for simple output (without prefixes)
+print_header() {
+    echo -e "\n${BLUE}=== $1 ===${NC}"
+}
+
+print_step() {
+    echo -e "${CYAN}>>> $1${NC}"
+}
+
+print_success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}! $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}✗ $1${NC}"
+}
+
+print_info() {
+    echo -e "${BLUE}  $1${NC}"
+}
+
 # Progress indicator function
 show_progress() {
     local duration=$1
@@ -174,5 +199,6 @@ init_script_env() {
 
 # Export functions for use in other scripts
 export -f log_info log_success log_warning log_error log_debug
+export -f print_header print_step print_success print_warning print_error print_info
 export -f show_progress check_sf_cli get_default_org
 export -f load_project_config validate_configs get_timestamp ensure_log_dir init_script_env

@@ -51,7 +51,7 @@ describe('rollback command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'new/rollback.sh',
       expect.any(Object),
-      expect.objectContaining({ env: { SFDT_TARGET_ORG: 'dev' } })
+      expect.objectContaining({ env: expect.objectContaining({ SFDT_TARGET_ORG: 'dev' }) }),
     );
   });
 
@@ -63,7 +63,41 @@ describe('rollback command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'new/rollback.sh',
       expect.any(Object),
-      expect.objectContaining({ env: { SFDT_TARGET_ORG: 'staging' } })
+      expect.objectContaining({ env: expect.objectContaining({ SFDT_TARGET_ORG: 'staging' }) }),
+    );
+  });
+
+  it('passes SFDT_BACKUP_BEFORE_ROLLBACK: true by default', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: '' });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'rollback']);
+
+    expect(runScript).toHaveBeenCalledWith(
+      'new/rollback.sh',
+      expect.any(Object),
+      expect.objectContaining({
+        env: expect.objectContaining({ SFDT_BACKUP_BEFORE_ROLLBACK: 'true' }),
+      }),
+    );
+  });
+
+  it('passes SFDT_BACKUP_BEFORE_ROLLBACK: false when config disables it', async () => {
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/project',
+      defaultOrg: 'dev',
+      features: {},
+      deployment: { backupBeforeRollback: false },
+    });
+    runScript.mockResolvedValue({ exitCode: 0, stdout: '' });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'rollback']);
+
+    expect(runScript).toHaveBeenCalledWith(
+      'new/rollback.sh',
+      expect.any(Object),
+      expect.objectContaining({
+        env: expect.objectContaining({ SFDT_BACKUP_BEFORE_ROLLBACK: 'false' }),
+      }),
     );
   });
 

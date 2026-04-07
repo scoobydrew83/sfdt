@@ -45,9 +45,7 @@ describe('notify command', () => {
   it('rejects unknown events', async () => {
     await createProgram().parseAsync(['node', 'sfdt', 'notify', 'unknown-event']);
 
-    expect(print.error).toHaveBeenCalledWith(
-      expect.stringContaining('Unknown event')
-    );
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Unknown event'));
     expect(process.exitCode).toBe(1);
   });
 
@@ -59,9 +57,7 @@ describe('notify command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'notify', 'deploy-success']);
 
-    expect(print.warning).toHaveBeenCalledWith(
-      expect.stringContaining('not configured')
-    );
+    expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('not configured'));
     expect(process.exitCode).toBe(1);
   });
 
@@ -70,9 +66,14 @@ describe('notify command', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     await createProgram().parseAsync([
-      'node', 'sfdt', 'notify', 'deploy-success',
-      '--version', '1.0.0',
-      '--message', 'Deployed to prod',
+      'node',
+      'sfdt',
+      'notify',
+      'deploy-success',
+      '--version',
+      '1.0.0',
+      '--message',
+      'Deployed to prod',
     ]);
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -80,7 +81,7 @@ describe('notify command', () => {
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-      })
+      }),
     );
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
@@ -100,9 +101,7 @@ describe('notify command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'notify', 'deploy-failure']);
 
-    expect(print.error).toHaveBeenCalledWith(
-      expect.stringContaining('403')
-    );
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('403'));
     expect(process.exitCode).toBe(1);
 
     vi.unstubAllGlobals();
@@ -113,9 +112,14 @@ describe('notify command', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     await createProgram().parseAsync([
-      'node', 'sfdt', 'notify', 'release-created',
-      '--version', '2.0.0',
-      '--org', 'prod',
+      'node',
+      'sfdt',
+      'notify',
+      'release-created',
+      '--version',
+      '2.0.0',
+      '--org',
+      'prod',
     ]);
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
@@ -123,10 +127,7 @@ describe('notify command', () => {
     const fieldTexts = sectionFields.map((f) => f.text);
 
     expect(fieldTexts).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('prod'),
-        expect.stringContaining('2.0.0'),
-      ])
+      expect.arrayContaining([expect.stringContaining('prod'), expect.stringContaining('2.0.0')]),
     );
 
     vi.unstubAllGlobals();

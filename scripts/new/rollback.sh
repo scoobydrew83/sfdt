@@ -13,6 +13,9 @@ MANIFEST_DIR="${SFDT_MANIFEST_DIR:-manifest/release}"
 TARGET_ORG="${SFDT_TARGET_ORG:-}"
 PROJECT_NAME="${SFDT_PROJECT_NAME:-sfdt}"
 DEPLOYED_DIR="${MANIFEST_DIR}/deployed"
+BACKUP_BEFORE_ROLLBACK="${SFDT_BACKUP_BEFORE_ROLLBACK:-true}"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+BACKUP_DIR="${SFDT_LOG_DIR:-${SFDT_PROJECT_ROOT:-.}/logs}/rollback-backups"
 
 print_header "Rollback Deployment: ${PROJECT_NAME}"
 
@@ -94,6 +97,21 @@ read -rp "Proceed with rollback? (y/N): " confirm
 if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
     print_info "Rollback cancelled."
     exit 0
+fi
+
+# ── Step 5b: Backup current org state ────────────────────────────────────────
+if [[ "$BACKUP_BEFORE_ROLLBACK" == "true" ]]; then
+    print_step "Creating pre-rollback backup of current org state..."
+    BACKUP_PATH="${BACKUP_DIR}/pre_rollback_${TIMESTAMP}"
+    mkdir -p "$BACKUP_PATH"
+    if sf project retrieve start \
+        --manifest "$SELECTED_MANIFEST" \
+        --target-org "$TARGET_ORG" \
+        --output-dir "$BACKUP_PATH" 2>/dev/null; then
+        print_success "Pre-rollback backup saved to: ${BACKUP_PATH}"
+    else
+        print_warning "Pre-rollback backup failed — continuing with rollback"
+    fi
 fi
 
 # ── Step 6: Execute deployment ───────────────────────────────────────────────

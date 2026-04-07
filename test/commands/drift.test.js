@@ -51,7 +51,7 @@ describe('drift command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'new/drift.sh',
       expect.any(Object),
-      expect.objectContaining({ env: { SFDT_TARGET_ORG: 'dev' } })
+      expect.objectContaining({ env: { SFDT_TARGET_ORG: 'dev' } }),
     );
   });
 
@@ -63,7 +63,7 @@ describe('drift command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'new/drift.sh',
       expect.any(Object),
-      expect.objectContaining({ env: { SFDT_TARGET_ORG: 'prod' } })
+      expect.objectContaining({ env: { SFDT_TARGET_ORG: 'prod' } }),
     );
   });
 

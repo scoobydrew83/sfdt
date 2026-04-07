@@ -99,24 +99,23 @@ export function registerNotifyCommand(program) {
     .action(async (event, options) => {
       try {
         if (!VALID_EVENTS.includes(event)) {
-          print.error(
-            `Unknown event: "${event}"\n` +
-            `  Valid events: ${VALID_EVENTS.join(', ')}`
-          );
+          print.error(`Unknown event: "${event}"\n` + `  Valid events: ${VALID_EVENTS.join(', ')}`);
           process.exitCode = 1;
           return;
         }
 
         const config = await loadConfig();
 
-        const webhookUrl = config.features?.notifications
-          && config.notifications?.slack?.webhookUrl;
+        const webhookUrl =
+          config.features?.notifications && config.notifications?.slack?.webhookUrl;
 
         if (!webhookUrl) {
           print.warning('Slack notifications are not configured.');
           console.log('');
           print.info('To set up Slack notifications:');
-          print.step('1. Create a Slack Incoming Webhook at https://api.slack.com/messaging/webhooks');
+          print.step(
+            '1. Create a Slack Incoming Webhook at https://api.slack.com/messaging/webhooks',
+          );
           print.step('2. Add the webhook URL to .sfdt/config.json:');
           console.log('');
           print.step('   {');

@@ -46,10 +46,16 @@ test/           Tests (vitest)
 | `SFDT_RELEASE_NOTES_DIR` | `config.releaseNotesDir` (default: `"release-notes"`) |
 | `SFDT_API_VERSION` | `config.sourceApiVersion` |
 | `SFDT_COVERAGE_THRESHOLD` | `config.deployment.coverageThreshold` (default: `75`) |
+| `SFDT_LOG_DIR` | `config.logDir` (optional; scripts fall back to `${SFDT_PROJECT_ROOT}/logs`) |
+| `SFDT_BACKUP_BEFORE_ROLLBACK` | `config.deployment.backupBeforeRollback` (default: `true`) |
 | `SFDT_FEATURE_*` | Flattened from `config.features` |
 | `SFDT_DEFAULT_ENV` | `config.environments.default` |
 | `SFDT_ENV_ORGS` | Comma-joined org aliases from `config.environments.orgs` |
 | `SFDT_TEST_*` | Flattened from `config.testConfig` |
+| `SFDT_TEST_CLASSES` | Comma-joined test class names from `config.testConfig.testClasses` |
+| `SFDT_APEX_CLASSES` | Comma-joined Apex class names from `config.testConfig.apexClasses` |
+| `SFDT_NON_INTERACTIVE` | `"true"` when stdin is not a TTY or `options.interactive === false` |
+| `SFDT_PARALLEL_DELAY` | Seconds between parallel batch launches (default: `1`, set in shell scripts) |
 | `SFDT_PULL_*` | Flattened from `config.pullConfig` |
 
 When adding a new env var, update both `buildScriptEnv()` in `script-runner.js` and this table.

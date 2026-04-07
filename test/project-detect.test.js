@@ -17,9 +17,7 @@ beforeEach(() => {
 
 describe('getProjectRoot', () => {
   it('returns directory containing sfdx-project.json', () => {
-    fs.pathExistsSync.mockImplementation((p) =>
-      p === path.join('/project', 'sfdx-project.json')
-    );
+    fs.pathExistsSync.mockImplementation((p) => p === path.join('/project', 'sfdx-project.json'));
 
     const result = getProjectRoot('/project/src/classes');
     expect(result).toBe('/project');
@@ -33,18 +31,13 @@ describe('getProjectRoot', () => {
 
 describe('detectProject', () => {
   it('returns project metadata from sfdx-project.json', async () => {
-    fs.pathExistsSync.mockImplementation((p) =>
-      p === path.join('/project', 'sfdx-project.json')
-    );
+    fs.pathExistsSync.mockImplementation((p) => p === path.join('/project', 'sfdx-project.json'));
 
     fs.readJson.mockResolvedValue({
       name: 'my-app',
       sourceApiVersion: '61.0',
       namespace: 'myns',
-      packageDirectories: [
-        { path: 'force-app', default: true },
-        { path: 'unpackaged' },
-      ],
+      packageDirectories: [{ path: 'force-app', default: true }, { path: 'unpackaged' }],
     });
 
     const result = await detectProject('/project');
@@ -55,27 +48,19 @@ describe('detectProject', () => {
     expect(result.namespace).toBe('myns');
     expect(result.packageDirectories).toHaveLength(2);
     expect(result.packageDirectories[0].default).toBe(true);
-    expect(result.defaultSourcePath).toBe(
-      path.join('/project', 'force-app', 'main', 'default')
-    );
+    expect(result.defaultSourcePath).toBe(path.join('/project', 'force-app', 'main', 'default'));
   });
 
   it('throws when packageDirectories is empty', async () => {
-    fs.pathExistsSync.mockImplementation((p) =>
-      p === path.join('/project', 'sfdx-project.json')
-    );
+    fs.pathExistsSync.mockImplementation((p) => p === path.join('/project', 'sfdx-project.json'));
 
     fs.readJson.mockResolvedValue({ packageDirectories: [] });
 
-    await expect(detectProject('/project')).rejects.toThrow(
-      'No packageDirectories defined'
-    );
+    await expect(detectProject('/project')).rejects.toThrow('No packageDirectories defined');
   });
 
   it('throws when sfdx-project.json is unparseable', async () => {
-    fs.pathExistsSync.mockImplementation((p) =>
-      p === path.join('/project', 'sfdx-project.json')
-    );
+    fs.pathExistsSync.mockImplementation((p) => p === path.join('/project', 'sfdx-project.json'));
 
     fs.readJson.mockRejectedValue(new Error('Unexpected token'));
 
@@ -83,9 +68,7 @@ describe('detectProject', () => {
   });
 
   it('uses basename when no name in project json', async () => {
-    fs.pathExistsSync.mockImplementation((p) =>
-      p === path.join('/project', 'sfdx-project.json')
-    );
+    fs.pathExistsSync.mockImplementation((p) => p === path.join('/project', 'sfdx-project.json'));
 
     fs.readJson.mockResolvedValue({
       packageDirectories: [{ path: 'force-app', default: true }],
@@ -96,17 +79,13 @@ describe('detectProject', () => {
   });
 
   it('uses first packageDirectory when none marked default', async () => {
-    fs.pathExistsSync.mockImplementation((p) =>
-      p === path.join('/project', 'sfdx-project.json')
-    );
+    fs.pathExistsSync.mockImplementation((p) => p === path.join('/project', 'sfdx-project.json'));
 
     fs.readJson.mockResolvedValue({
       packageDirectories: [{ path: 'src' }, { path: 'lib' }],
     });
 
     const result = await detectProject('/project');
-    expect(result.defaultSourcePath).toBe(
-      path.join('/project', 'src', 'main', 'default')
-    );
+    expect(result.defaultSourcePath).toBe(path.join('/project', 'src', 'main', 'default'));
   });
 });

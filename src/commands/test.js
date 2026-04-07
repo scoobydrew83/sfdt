@@ -15,9 +15,7 @@ export function registerTestCommand(program) {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
 
-        const scriptPath = options.legacy
-          ? 'core/run-tests.sh'
-          : 'core/enhanced-test-runner.sh';
+        const scriptPath = options.legacy ? 'core/run-tests.sh' : 'core/enhanced-test-runner.sh';
 
         print.header(`Running Tests${options.legacy ? ' (legacy)' : ''}`);
 
@@ -47,7 +45,7 @@ export function registerTestCommand(program) {
         // Offer AI analysis on failure
         if (testFailed) {
           const aiEnabled = config.features?.ai;
-          if (aiEnabled && await isClaudeAvailable()) {
+          if (aiEnabled && (await isClaudeAvailable())) {
             const { analyzeFailure } = await inquirer.prompt([
               {
                 type: 'confirm',

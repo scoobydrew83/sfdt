@@ -58,7 +58,7 @@ describe('quality command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'quality/code-analyzer.sh',
       expect.any(Object),
-      expect.objectContaining({ interactive: false })
+      expect.objectContaining({ interactive: false }),
     );
   });
 
@@ -71,7 +71,7 @@ describe('quality command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'quality/test-analyzer.sh',
       expect.any(Object),
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -84,12 +84,12 @@ describe('quality command', () => {
     expect(runScript).toHaveBeenCalledWith(
       'quality/code-analyzer.sh',
       expect.any(Object),
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(runScript).toHaveBeenCalledWith(
       'quality/test-analyzer.sh',
       expect.any(Object),
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -102,7 +102,7 @@ describe('quality command', () => {
 
     expect(runAiPrompt).toHaveBeenCalledWith(
       expect.stringContaining('quality report'),
-      expect.objectContaining({ aiEnabled: true })
+      expect.objectContaining({ aiEnabled: true }),
     );
   });
 
@@ -112,9 +112,7 @@ describe('quality command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'quality', '--fix-plan']);
 
-    expect(print.warning).toHaveBeenCalledWith(
-      expect.stringContaining('not available')
-    );
+    expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('not available'));
   });
 
   it('handles analyzer errors gracefully', async () => {
@@ -124,8 +122,26 @@ describe('quality command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'quality']);
 
-    expect(print.warning).toHaveBeenCalledWith(
-      expect.stringContaining('found issues')
-    );
+    expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('found issues'));
+  });
+
+  it('--generate-stubs calls generate-test-stubs.sh', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: '' });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--generate-stubs']);
+
+    const stubCall = runScript.mock.calls.find((call) => call[0] === 'quality/generate-test-stubs.sh');
+    expect(stubCall).toBeDefined();
+    expect(stubCall[2].env).not.toMatchObject({ SFDT_DRY_RUN: 'true' });
+  });
+
+  it('--generate-stubs --dry-run passes SFDT_DRY_RUN: true', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: '' });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--generate-stubs', '--dry-run']);
+
+    const stubCall = runScript.mock.calls.find((call) => call[0] === 'quality/generate-test-stubs.sh');
+    expect(stubCall).toBeDefined();
+    expect(stubCall[2].env).toMatchObject({ SFDT_DRY_RUN: 'true' });
   });
 });

@@ -29,9 +29,9 @@ export async function loadConfig(startDir) {
   const configDir = getConfigDir(startDir);
 
   const configPath = path.join(configDir, CONFIG_FILES.config);
-  if (!await fs.pathExists(configPath)) {
+  if (!(await fs.pathExists(configPath))) {
     throw new Error(
-      `Configuration file not found: ${configPath}\nRun 'sfdt init' first to create the .sfdt/ configuration directory.`
+      `Configuration file not found: ${configPath}\nRun 'sfdt init' first to create the .sfdt/ configuration directory.`,
     );
   }
 
@@ -59,7 +59,8 @@ export async function loadConfig(startDir) {
       merged.sourceApiVersion = sfdxProject.sourceApiVersion;
     }
     if (!merged.defaultSourcePath && sfdxProject.packageDirectories?.length) {
-      const defaultPkg = sfdxProject.packageDirectories.find((d) => d.default) || sfdxProject.packageDirectories[0];
+      const defaultPkg =
+        sfdxProject.packageDirectories.find((d) => d.default) || sfdxProject.packageDirectories[0];
       merged.defaultSourcePath = defaultPkg.path + '/main/default';
     }
   }
@@ -80,7 +81,7 @@ export function validateConfig(config) {
   if (missing.length > 0) {
     throw new Error(
       `Invalid configuration: missing required keys: ${missing.join(', ')}.\n` +
-      `Run 'sfdt init' to regenerate the configuration.`
+        `Run 'sfdt init' to regenerate the configuration.`,
     );
   }
 
@@ -108,7 +109,7 @@ function findProjectWithConfig(startDir) {
     if (hasSfdxProject && !hasSfdtDir) {
       throw new Error(
         `Found Salesforce DX project at ${current} but no .sfdt/ directory.\n` +
-        `Run 'sfdt init' first to initialize configuration.`
+          `Run 'sfdt init' first to initialize configuration.`,
       );
     }
 
@@ -117,6 +118,6 @@ function findProjectWithConfig(startDir) {
 
   throw new Error(
     `Could not find a Salesforce DX project with .sfdt/ configuration.\n` +
-    `Run 'sfdt init' in your project root to get started.`
+      `Run 'sfdt init' in your project root to get started.`,
   );
 }

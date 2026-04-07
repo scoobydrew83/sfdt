@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # =============================================================================
 # SFDT - Code Quality Analyzer
@@ -9,12 +10,15 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../utils/shared.sh"
 
-# Initialize environment
-init_script_env
-
-# Project configuration
+# Configuration from SFDT_ env vars (set by script-runner.js)
 PROJECT_NAME="${SFDT_PROJECT_NAME:-Salesforce Project}"
 SOURCE_PATH="${SFDT_SOURCE_PATH:-force-app/main/default}"
+LOG_DIR="${SFDT_LOG_DIR:-${SFDT_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}/logs}"
+PROJECT_CONFIG_DIR="${SFDT_CONFIG_DIR:-${SFDT_PROJECT_ROOT:-.}/.sfdt}"
+PROJECT_CONFIG_FILE="${PROJECT_CONFIG_DIR}/config.json"
+ENVIRONMENT_CONFIG_FILE="${PROJECT_CONFIG_DIR}/environments.json"
+PULL_CONFIG_FILE="${PROJECT_CONFIG_DIR}/pull-config.json"
+TEST_CONFIG_FILE="${PROJECT_CONFIG_DIR}/test-config.json"
 
 echo -e "${BLUE}${PROJECT_NAME} - Code Quality Analyzer${NC}"
 echo -e "${YELLOW}====================================================${NC}"
@@ -76,7 +80,7 @@ if [ -d "$FORCE_APP_DIR/classes" ]; then
                     log_warning "Classes without tests found:"
                 fi
                 echo "  $class_name"
-                ((CLASSES_WITHOUT_TESTS++))
+                CLASSES_WITHOUT_TESTS=$((CLASSES_WITHOUT_TESTS + 1))
             fi
         fi
     done < <(find "$FORCE_APP_DIR/classes" -name "*.cls" -print0)
@@ -94,7 +98,7 @@ CONFIG_ISSUES=0
 # Check project.json
 if ! jq empty "$PROJECT_CONFIG_FILE" 2>/dev/null; then
     log_error "Invalid JSON in project.json"
-    ((CONFIG_ISSUES++))
+    CONFIG_ISSUES=$((CONFIG_ISSUES + 1))
 else
     log_success "project.json is valid JSON"
 fi
@@ -102,7 +106,7 @@ fi
 # Check environments.json
 if ! jq empty "$ENVIRONMENT_CONFIG_FILE" 2>/dev/null; then
     log_error "Invalid JSON in environments.json"
-    ((CONFIG_ISSUES++))
+    CONFIG_ISSUES=$((CONFIG_ISSUES + 1))
 else
     log_success "environments.json is valid JSON"
 fi
@@ -110,7 +114,7 @@ fi
 # Check pull-config.json
 if ! jq empty "$PULL_CONFIG_FILE" 2>/dev/null; then
     log_error "Invalid JSON in pull-config.json"
-    ((CONFIG_ISSUES++))
+    CONFIG_ISSUES=$((CONFIG_ISSUES + 1))
 else
     log_success "pull-config.json is valid JSON"
 fi
@@ -118,7 +122,7 @@ fi
 # Check test-config.json
 if ! jq empty "$TEST_CONFIG_FILE" 2>/dev/null; then
     log_error "Invalid JSON in test-config.json"
-    ((CONFIG_ISSUES++))
+    CONFIG_ISSUES=$((CONFIG_ISSUES + 1))
 else
     log_success "test-config.json is valid JSON"
 fi

@@ -87,11 +87,7 @@ describe('buildScriptEnv', () => {
       features: {},
       environments: {
         default: 'staging',
-        orgs: [
-          { alias: 'dev' },
-          { name: 'prod' },
-          {},
-        ],
+        orgs: [{ alias: 'dev' }, { name: 'prod' }, {}],
       },
     };
 
@@ -108,6 +104,8 @@ describe('buildScriptEnv', () => {
         coverageThreshold: 90,
         testLevel: 'RunSpecifiedTests',
         suites: ['smoke', 'integration'],
+        testClasses: ['FooTest', 'BarTest'],
+        apexClasses: ['Foo', 'Bar'],
       },
     };
 
@@ -116,6 +114,8 @@ describe('buildScriptEnv', () => {
     expect(env.SFDT_TEST_COVERAGE_THRESHOLD).toBe('90');
     expect(env.SFDT_TEST_LEVEL).toBe('RunSpecifiedTests');
     expect(env.SFDT_TEST_SUITES).toBe('smoke,integration');
+    expect(env.SFDT_TEST_CLASSES).toBe('FooTest,BarTest');
+    expect(env.SFDT_APEX_CLASSES).toBe('Foo,Bar');
   });
 
   it('flattens pullConfig', () => {
@@ -152,7 +152,7 @@ describe('runScript', () => {
     fs.chmod.mockRejectedValue(new Error('permission denied'));
 
     await expect(runScript('test.sh', config)).rejects.toThrow(
-      'Failed to set executable permission'
+      'Failed to set executable permission',
     );
   });
 
@@ -182,9 +182,7 @@ describe('runScript', () => {
     fs.chmod.mockResolvedValue();
     execa.mockResolvedValue({ exitCode: 1, stdout: '', stderr: 'deploy failed' });
 
-    await expect(runScript('deploy/push.sh', config)).rejects.toThrow(
-      'exited with code 1'
-    );
+    await expect(runScript('deploy/push.sh', config)).rejects.toThrow('exited with code 1');
   });
 
   it('uses stdio inherit when interactive is true', async () => {

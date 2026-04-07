@@ -10,6 +10,8 @@ export function registerQualityCommand(program) {
     .option('--tests', 'Run test-analyzer only')
     .option('--all', 'Run both code-analyzer and test-analyzer')
     .option('--fix-plan', 'Generate an AI-powered fix plan from quality output')
+    .option('--generate-stubs', 'Generate @IsTest stub classes for untested Apex classes')
+    .option('--dry-run', 'Preview --generate-stubs output without writing files')
     .action(async (options) => {
       try {
         const config = await loadConfig();
@@ -50,7 +52,7 @@ export function registerQualityCommand(program) {
         // AI fix plan
         if (options.fixPlan) {
           const aiEnabled = config.features?.ai;
-          if (aiEnabled && await isClaudeAvailable()) {
+          if (aiEnabled && (await isClaudeAvailable())) {
             print.info('Generating AI fix plan...');
 
             const prompt = [
@@ -71,6 +73,20 @@ export function registerQualityCommand(program) {
             });
           } else {
             print.warning('AI features are not available. Skipping fix plan generation.');
+          }
+        }
+        if (options.generateStubs) {
+          print.info('Generating test stubs...');
+          const stubEnv = options.dryRun ? { SFDT_DRY_RUN: 'true' } : {};
+          try {
+            await runScript('quality/generate-test-stubs.sh', config, {
+              cwd: projectRoot,
+              env: stubEnv,
+              interactive: false,
+            });
+            print.success('Stub generation complete.');
+          } catch (err) {
+            print.warning(`Stub generation encountered issues: ${err.message}`);
           }
         }
       } catch (err) {

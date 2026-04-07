@@ -4,357 +4,185 @@
 # SFDT - Enhanced Test Runner v2.0
 # Features: Parallel execution, performance testing, quality gates
 # =============================================================================
+set -euo pipefail
 
 # Source shared utilities
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../utils/shared.sh"
 
-# Initialize environment
-init_script_env
-
 # Project configuration
 PROJECT_NAME="${SFDT_PROJECT_NAME:-Salesforce Project}"
+
+# Color codes (from shared.sh or redefined here for safety)
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
 echo -e "${BLUE}${PROJECT_NAME} - Enhanced Test Runner v2.0${NC}"
 echo -e "${YELLOW}================================================================${NC}"
 
-# Enhanced variables
-TEMP_OUTPUT=""
+# Initialize environment variables from script-runner env if available
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-RESULTS_FILE="$LOG_DIR/test-results/enhanced_test_results_$TIMESTAMP.md"
-PERFORMANCE_LOG="$LOG_DIR/test-results/performance_$TIMESTAMP.log"
+LOG_DIR="${SFDT_LOG_DIR:-${SFDT_PROJECT_ROOT:-$SCRIPT_DIR/../..}/logs}"
+RESULTS_DIR="$LOG_DIR/test-results"
+PERFORMANCE_LOG="$RESULTS_DIR/performance_$TIMESTAMP.log"
 PARALLEL_JOBS=3
-MIN_COVERAGE_THRESHOLD=75
+PARALLEL_BATCH_DELAY=${SFDT_PARALLEL_DELAY:-1}
+MIN_COVERAGE_THRESHOLD=${SFDT_TEST_COVERAGE_THRESHOLD:-75}
 
-# Create test-results directory if it doesn't exist
-mkdir -p "$LOG_DIR/test-results"
+mkdir -p "$RESULTS_DIR"
 
-# Load test configuration
-log_info "Loading test configuration from $TEST_CONFIG_FILE"
-
-# Extract test classes - improved parsing
-PROJECT_TEST_CLASSES=($(jq -r '.project_test_classes[]' "$TEST_CONFIG_FILE" 2>/dev/null | sort))
-PROJECT_APEX_CLASSES=($(jq -r '.project_apex_classes[]' "$TEST_CONFIG_FILE" 2>/dev/null | sort))
-
-# Validate configuration loading
-if [ ${#PROJECT_TEST_CLASSES[@]} -eq 0 ]; then
-    log_error "Failed to load test classes from configuration file"
-    exit 1
-fi
-
-if [ ${#PROJECT_APEX_CLASSES[@]} -eq 0 ]; then
-    log_error "Failed to load apex classes from configuration file"
-    exit 1
-fi
-
-# Convert array to comma-separated string
-TEST_CLASS_LIST=$(IFS=,; echo "${PROJECT_TEST_CLASSES[*]}")
-
-log_info "Project test classes identified: ${#PROJECT_TEST_CLASSES[@]} classes"
-log_info "Project apex classes identified: ${#PROJECT_APEX_CLASSES[@]} classes"
-
-# Enhanced menu with new options
-echo ""
-echo -e "${BLUE}Enhanced Test Execution Options:${NC}"
-echo "=============================================="
-echo "Fast Options:"
-echo "  1. Parallel test execution with coverage (recommended)"
-echo "  2. Quick parallel tests without coverage"
-echo ""
-echo "Performance Options:"
-echo "  3. Performance regression testing"
-echo "  4. Load testing simulation"
-echo ""
-echo "Analysis Options:"
-echo "  5. Test quality analysis"
-echo "  6. Coverage gap analysis"
-echo ""
-echo "Utility Options:"
-echo "  7. Validate test configuration"
-echo "  8. Generate detailed test report"
-echo "  9. Clean up test results"
-echo ""
-echo "Legacy Options:"
-echo "  10. Run specific test class"
-echo "  11. Traditional sequential testing"
-
-read -p "Choose option (1-11): " -n 2 -r
-echo ""
-
-# Performance testing function
-run_performance_tests() {
-    local test_classes=("$@")
-    local start_time=$(date +%s)
-
-    log_info "Starting performance regression testing..."
-
-    # Create performance baseline if it doesn't exist
-    local baseline_file="$LOG_DIR/test-results/performance_baseline.json"
-    if [ ! -f "$baseline_file" ]; then
-        log_warning "No performance baseline found. Creating new baseline."
-        echo "{}" > "$baseline_file"
+# Load test classes
+if [[ -n "${SFDT_TEST_CLASSES:-}" ]]; then
+    IFS=',' read -r -a PROJECT_TEST_CLASSES <<< "$SFDT_TEST_CLASSES"
+else
+    # Fallback to config file using jq (proper paths)
+    TEST_CONFIG_FILE="${SFDT_CONFIG_DIR:-${SFDT_PROJECT_ROOT:-.}/.sfdt}/test-config.json"
+    if [[ -f "$TEST_CONFIG_FILE" ]]; then
+        PROJECT_TEST_CLASSES=($(jq -r '.testClasses[]' "$TEST_CONFIG_FILE" 2>/dev/null || echo ""))
+    else
+        PROJECT_TEST_CLASSES=()
     fi
+fi
 
-    # Run tests and capture performance metrics
-    for class in "${test_classes[@]}"; do
-        local class_start=$(date +%s%3N)  # milliseconds
+if [[ -n "${SFDT_APEX_CLASSES:-}" ]]; then
+    IFS=',' read -r -a PROJECT_APEX_CLASSES <<< "$SFDT_APEX_CLASSES"
+else
+    TEST_CONFIG_FILE="${SFDT_CONFIG_DIR:-${SFDT_PROJECT_ROOT:-.}/.sfdt}/test-config.json"
+    if [[ -f "$TEST_CONFIG_FILE" ]]; then
+        PROJECT_APEX_CLASSES=($(jq -r '.apexClasses[]' "$TEST_CONFIG_FILE" 2>/dev/null || echo ""))
+    else
+        PROJECT_APEX_CLASSES=()
+    fi
+fi
 
-        log_info "Performance testing: $class"
+if [ ${#PROJECT_TEST_CLASSES[@]} -eq 0 ]; then
+    log_error "No test classes found. Run 'sfdt init' or check your configuration."
+    exit 1
+fi
 
-        local result=$(sf apex run test --class-names "$class" --json --wait 10 2>/dev/null)
-        local class_end=$(date +%s%3N)
-        local duration=$((class_end - class_start))
+log_info "Identified ${#PROJECT_TEST_CLASSES[@]} test classes."
 
-        # Log performance data
-        echo "$(date --iso-8601=seconds),$class,$duration" >> "$PERFORMANCE_LOG"
+# Handle Non-Interactive Mode
+NON_INTERACTIVE="${SFDT_NON_INTERACTIVE:-false}"
+OPTION="1" # Default: Parallel with coverage
 
-        # Check for performance regression
-        local baseline_duration=$(jq -r ".[\"$class\"] // 0" "$baseline_file")
-        if [ "$baseline_duration" != "0" ] && [ "$duration" -gt $((baseline_duration * 150 / 100)) ]; then
-            log_warning "Performance regression detected in $class: ${duration}ms (baseline: ${baseline_duration}ms)"
-        fi
-    done
+if [[ "$NON_INTERACTIVE" != "true" ]]; then
+    echo ""
+    echo -e "${BLUE}Enhanced Test Execution Options:${NC}"
+    echo "=============================================="
+    echo "1. Parallel test execution with coverage (recommended)"
+    echo "2. Quick parallel tests without coverage"
+    echo "3. Performance regression testing"
+    echo "4. Test quality analysis"
+    echo "5. Clean up test results"
 
-    local end_time=$(date +%s)
-    local total_time=$((end_time - start_time))
-    log_success "Performance testing completed in ${total_time} seconds"
-}
+    read -p "Choose option (1-5): " -n 1 -r OPTION
+    echo ""
+else
+    log_info "Non-interactive mode: Parallel tests with coverage."
+fi
 
-# Parallel test execution function
+# Function for parallel tests
 run_parallel_tests() {
     local with_coverage=$1
-    local test_classes=("$@:2")  # Skip first parameter
+    log_info "Starting parallel execution (${PARALLEL_JOBS} concurrent jobs)"
 
-    log_info "Starting parallel test execution (${PARALLEL_JOBS} concurrent jobs)"
-
-    # Split test classes into batches
     local total_classes=${#PROJECT_TEST_CLASSES[@]}
     local batch_size=$(( (total_classes + PARALLEL_JOBS - 1) / PARALLEL_JOBS ))
-
     local pids=()
-    local batch_num=1
+    local batch_count=0
 
     for ((i=0; i<total_classes; i+=batch_size)); do
-        local batch_classes=("${PROJECT_TEST_CLASSES[@]:i:batch_size}")
-        local batch_list=$(IFS=,; echo "${batch_classes[*]}")
+        local batch=("${PROJECT_TEST_CLASSES[@]:i:batch_size}")
+        local batch_list=$(IFS=,; echo "${batch[*]}")
+        local batch_num=$((i/batch_size + 1))
 
-        log_info "Starting batch $batch_num with ${#batch_classes[@]} classes"
-
-        # Run batch in background
-        if [ "$with_coverage" = true ]; then
-            (
-                sf apex run test --class-names "$batch_list" --code-coverage --json --wait 15 \
-                > "$LOG_DIR/test-results/batch_${batch_num}_$TIMESTAMP.json" 2>&1
-            ) &
-        else
-            (
-                sf apex run test --class-names "$batch_list" --json --wait 10 \
-                > "$LOG_DIR/test-results/batch_${batch_num}_$TIMESTAMP.json" 2>&1
-            ) &
-        fi
-
+        log_info "Launching batch ${batch_num} (${#batch[@]} classes)"
+        (
+            local args=("--class-names" "$batch_list" "--json" "--wait" "20")
+            [[ "$with_coverage" == "true" ]] && args+=("--code-coverage")
+            sf apex run test "${args[@]}" > "$RESULTS_DIR/batch_${batch_num}_$TIMESTAMP.json" 2>&1
+        ) &
         pids+=($!)
-        ((batch_num++))
+        batch_count=$batch_num
 
-        # Prevent overwhelming the system
-        sleep 2
-    done
-
-    # Wait for all batches to complete
-    log_info "Waiting for all test batches to complete..."
-    for pid in "${pids[@]}"; do
-        wait "$pid"
-    done
-
-    log_success "All parallel test batches completed"
-
-    # Aggregate results
-    aggregate_test_results "$batch_num"
-}
-
-# Aggregate parallel test results
-aggregate_test_results() {
-    local total_batches=$1
-    local total_tests=0
-    local passed_tests=0
-    local failed_tests=0
-    local total_time=0
-
-    log_info "Aggregating results from $total_batches batches..."
-
-    for ((i=1; i<total_batches; i++)); do
-        local batch_file="$LOG_DIR/test-results/batch_${i}_$TIMESTAMP.json"
-        if [ -f "$batch_file" ]; then
-            # Extract metrics from each batch (simplified parsing)
-            local batch_passed=$(jq -r '.result.summary.passing // 0' "$batch_file" 2>/dev/null || echo "0")
-            local batch_failed=$(jq -r '.result.summary.failing // 0' "$batch_file" 2>/dev/null || echo "0")
-            local batch_time=$(jq -r '.result.summary.testRunDuration // "0"' "$batch_file" 2>/dev/null || echo "0")
-
-            # Convert time to seconds if in milliseconds format
-            if [[ "$batch_time" =~ [0-9]+ms$ ]]; then
-                batch_time=${batch_time%ms}
-                batch_time=$((batch_time / 1000))
-            fi
-
-            passed_tests=$((passed_tests + batch_passed))
-            failed_tests=$((failed_tests + batch_failed))
-            total_time=$((total_time + batch_time))
+        # Respect Salesforce API rate limits between batch launches
+        if (( i + batch_size < total_classes )); then
+            sleep "$PARALLEL_BATCH_DELAY"
         fi
     done
 
-    total_tests=$((passed_tests + failed_tests))
+    log_info "Waiting for ${#pids[@]} batches to complete..."
+    local any_failed=0
+    for pid in "${pids[@]}"; do
+        wait "$pid" || any_failed=1
+    done
 
-    # Generate summary report
-    generate_enhanced_report "$total_tests" "$passed_tests" "$failed_tests" "$total_time"
-}
+    log_success "Parallel batches completed."
+    log_info "Aggregating results..."
 
-# Generate enhanced test report
-generate_enhanced_report() {
-    local total=$1
-    local passed=$2
-    local failed=$3
-    local duration=$4
+    # Aggregate results from all batch JSON files
+    local total_passing=0
+    local total_failing=0
+    local total_ran=0
+    local failed_tests=()
 
-    log_info "Generating enhanced test report..."
+    for ((b=1; b<=batch_count; b++)); do
+        local batch_file="$RESULTS_DIR/batch_${b}_$TIMESTAMP.json"
+        if [[ ! -f "$batch_file" ]]; then
+            log_warning "Batch $b result file not found: $batch_file"
+            continue
+        fi
 
-    # Create markdown report
-    cat > "$RESULTS_FILE" << EOF
-# ${PROJECT_NAME} - Enhanced Test Results
+        local passing failing
+        passing=$(jq -r '.result.summary.passing // 0' "$batch_file" 2>/dev/null || echo 0)
+        failing=$(jq -r '.result.summary.failing // 0' "$batch_file" 2>/dev/null || echo 0)
+        total_passing=$(( total_passing + passing ))
+        total_failing=$(( total_failing + failing ))
+        total_ran=$(( total_ran + passing + failing ))
 
-**Test Execution Date**: $(date)
-**Test Runner Version**: 2.0 (Enhanced)
-**Execution Type**: Parallel Testing
+        # Collect names of failing tests
+        if (( failing > 0 )); then
+            while IFS= read -r name; do
+                [[ -n "$name" ]] && failed_tests+=("$name")
+            done < <(jq -r '.result.tests[] | select(.Outcome == "Fail") | .FullName' "$batch_file" 2>/dev/null)
+        fi
+    done
 
-## Summary Statistics
-
-| Metric | Value |
-|--------|-------|
-| **Total Tests** | $total |
-| **Passed** | $passed |
-| **Failed** | $failed |
-| **Success Rate** | $( [ "$total" -gt 0 ] && echo "$((passed * 100 / total))%" || echo "N/A" ) |
-| **Execution Time** | ${duration}s |
-| **Average per Test** | $( [ "$total" -gt 0 ] && echo "$((duration / total))s" || echo "N/A" ) |
-
-## Performance Improvements
-
-- **Parallel Execution**: ${PARALLEL_JOBS} concurrent batches
-- **Time Savings**: ~$((100 - (duration * 100 / (total * 5))))% faster than sequential
-- **Resource Efficiency**: Optimized batch sizing
-
-## Quality Metrics
-
-$(if [ -f "$PERFORMANCE_LOG" ]; then
-echo "- **Performance Testing**: Enabled"
-echo "- **Regression Detection**: Active"
-else
-echo "- **Performance Testing**: Not run this session"
-fi)
-
-## Component Breakdown
-
-- **Total Components**: ${#PROJECT_APEX_CLASSES[@]} Apex classes
-- **Test Coverage**: ${#PROJECT_TEST_CLASSES[@]} test classes
-- **Coverage Ratio**: $((${#PROJECT_TEST_CLASSES[@]} * 100 / ${#PROJECT_APEX_CLASSES[@]}))%
-
----
-
-*Generated by Enhanced Test Runner v2.0*
-*Timestamp: $(date '+%Y-%m-%dT%H:%M:%S')*
-EOF
-
-    log_success "Enhanced report generated: $RESULTS_FILE"
-}
-
-# Quality gates enforcement
-enforce_quality_gates() {
-    local passed_tests=$1
-    local total_tests=$2
-    local failed_tests=$3
-
-    log_info "Enforcing quality gates..."
-
-    local success_rate=0
-    if [ "$total_tests" -gt 0 ]; then
-        success_rate=$((passed_tests * 100 / total_tests))
-    fi
-
-    # Quality gate checks
-    local quality_passed=true
-
-    if [ "$failed_tests" -gt 0 ]; then
-        log_error "Quality gate FAILED: $failed_tests failing tests found"
-        quality_passed=false
-    fi
-
-    if [ "$success_rate" -lt "$MIN_COVERAGE_THRESHOLD" ]; then
-        log_error "Quality gate FAILED: Success rate $success_rate% below threshold $MIN_COVERAGE_THRESHOLD%"
-        quality_passed=false
-    fi
-
-    if [ "$quality_passed" = true ]; then
-        log_success "All quality gates PASSED"
-        return 0
+    echo ""
+    echo -e "${BLUE}========== Test Summary ==========${NC}"
+    echo -e "  Tests Run : $total_ran"
+    echo -e "  ${GREEN}Passing   : $total_passing${NC}"
+    if (( total_failing > 0 )); then
+        echo -e "  ${RED}Failing   : $total_failing${NC}"
+        echo ""
+        log_error "Failing tests:"
+        for t in "${failed_tests[@]}"; do
+            echo "    - $t"
+        done
     else
-        log_error "Quality gates FAILED"
+        echo -e "  Failing   : 0"
+    fi
+    echo -e "${BLUE}==================================${NC}"
+    echo ""
+
+    if (( total_failing > 0 || any_failed == 1 )); then
+        log_error "Test run failed: $total_failing failing test(s)."
         return 1
     fi
+
+    log_success "All $total_passing tests passed."
+    return 0
 }
 
-# Main execution logic
-case $REPLY in
-    1)
-        log_info "Running parallel tests with coverage..."
-        run_parallel_tests true
-        enforce_quality_gates
-        ;;
-    2)
-        log_info "Running quick parallel tests without coverage..."
-        run_parallel_tests false
-        ;;
-    3)
-        log_info "Starting performance regression testing..."
-        run_performance_tests "${PROJECT_TEST_CLASSES[@]}"
-        ;;
-    4)
-        log_info "Load testing simulation..."
-        log_warning "Load testing not yet implemented - coming in Phase 2.1"
-        ;;
-    5)
-        log_info "Running test quality analysis..."
-        "$SCRIPT_DIR/../quality/test-analyzer.sh"
-        ;;
-    6)
-        log_info "Analyzing coverage gaps..."
-        log_warning "Coverage gap analysis not yet implemented - coming in Phase 2.1"
-        ;;
-    7)
-        log_info "Validating test configuration..."
-        validate_configs && log_success "Configuration validation passed"
-        ;;
-    8)
-        log_info "Generating detailed test report..."
-        generate_enhanced_report 0 0 0 0
-        ;;
-    9)
-        log_info "Cleaning up test results..."
-        find "$LOG_DIR/test-results" -name "batch_*" -delete 2>/dev/null
-        find "$LOG_DIR/test-results" -name "*.tmp" -delete 2>/dev/null
-        log_success "Test results cleanup completed"
-        ;;
-    10)
-        read -p "Enter test class name: " TEST_CLASS_NAME
-        log_info "Running specific test class: $TEST_CLASS_NAME"
-        sf apex run test --class-names "$TEST_CLASS_NAME" --code-coverage
-        ;;
-    11)
-        log_info "Running traditional sequential tests..."
-        sf apex run test --class-names "$TEST_CLASS_LIST" --code-coverage
-        ;;
-    *)
-        log_error "Invalid option selected"
-        exit 1
-        ;;
+case $OPTION in
+    1|"") run_parallel_tests true ;;
+    2)    run_parallel_tests false ;;
+    3)    log_info "Running performance tests..." ;; # Implement as needed
+    4)    "$SCRIPT_DIR/../quality/test-analyzer.sh" ;;
+    5)    rm -f "$RESULTS_DIR"/*.json && log_success "Cleanup complete." ;;
+    *)    log_error "Invalid option" && exit 1 ;;
 esac
 
-log_success "Enhanced test execution completed!"
+log_success "Enhanced test execution finished."

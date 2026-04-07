@@ -32,21 +32,21 @@ sfdt deploy
 
 ## Commands Reference
 
-| Command | Description | Key Options |
-|---------|-------------|-------------|
-| `sfdt init` | Initialize `.sfdt/` config in current project | `--force` to overwrite existing config |
-| `sfdt deploy` | Interactive deployment with validation and tagging | `--target-org`, `--dry-run`, `--skip-tests` |
-| `sfdt release` | Generate release manifest from git diffs | `--from <ref>`, `--to <ref>`, `--output <dir>` |
-| `sfdt test` | Run Apex tests with coverage enforcement | `--parallel`, `--min-coverage <pct>`, `--suite <name>` |
-| `sfdt quality` | Analyze code and test quality | `--type <code\|tests\|all>`, `--fail-on <level>` |
-| `sfdt preflight` | Pre-release validation checklist | `--strict`, `--skip <checks>` |
-| `sfdt rollback` | Roll back a deployment | `--target-org`, `--manifest <path>` |
-| `sfdt smoke` | Post-deploy smoke testing | `--target-org`, `--suite <name>` |
-| `sfdt drift` | Detect org metadata drift from source | `--target-org`, `--types <list>` |
-| `sfdt changelog` | Manage project CHANGELOG.md | `generate`, `release`, `check` |
-| `sfdt review` | AI-powered code review | `--from <ref>`, `--to <ref>` |
-| `sfdt pull` | Pull metadata from org using configured groups | `--group <name>`, `--target-org` |
-| `sfdt notify` | Send Slack deployment notifications | `--channel`, `--status <success\|failure>` |
+| Command          | Description                                        | Key Options                                            |
+| ---------------- | -------------------------------------------------- | ------------------------------------------------------ |
+| `sfdt init`      | Initialize `.sfdt/` config in current project      | `--force` to overwrite existing config                 |
+| `sfdt deploy`    | Interactive deployment with validation and tagging | `--target-org`, `--dry-run`, `--skip-tests`            |
+| `sfdt release`   | Generate release manifest from git diffs           | `--from <ref>`, `--to <ref>`, `--output <dir>`         |
+| `sfdt test`      | Run Apex tests with coverage enforcement           | `--parallel`, `--min-coverage <pct>`, `--suite <name>` |
+| `sfdt quality`   | Analyze code and test quality                      | `--type <code\|tests\|all>`, `--fail-on <level>`       |
+| `sfdt preflight` | Pre-release validation checklist                   | `--strict`, `--skip <checks>`                          |
+| `sfdt rollback`  | Roll back a deployment                             | `--target-org`, `--manifest <path>`                    |
+| `sfdt smoke`     | Post-deploy smoke testing                          | `--target-org`, `--suite <name>`                       |
+| `sfdt drift`     | Detect org metadata drift from source              | `--target-org`, `--types <list>`                       |
+| `sfdt changelog` | Manage project CHANGELOG.md                        | `generate`, `release`, `check`                         |
+| `sfdt review`    | AI-powered code review                             | `--from <ref>`, `--to <ref>`                           |
+| `sfdt pull`      | Pull metadata from org using configured groups     | `--group <name>`, `--target-org`                       |
+| `sfdt notify`    | Send Slack deployment notifications                | `--channel`, `--status <success\|failure>`             |
 
 ## Configuration
 
@@ -123,9 +123,10 @@ Use groups with `sfdt pull --group core` to pull only the metadata types defined
 
 ## Requirements
 
-- **Node.js** >= 18
+- **Node.js** >= 20.0.0
 - **Salesforce CLI** (`sf`) installed and authenticated to target orgs
 - **bash** 4.0+ (macOS users: `brew install bash`)
+- **jq** 1.6+ (essential for test results and metadata processing)
 - **Optional:** [Claude CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code) for AI features
 - **Optional:** [GitHub CLI](https://cli.github.com/) (`gh`) for PR creation during deployments
 

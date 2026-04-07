@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-06
+
+### Added
+- `sfdt quality --generate-stubs` generates `@IsTest` stub `.cls` + `-meta.xml` pairs for Apex classes that lack a corresponding test class; respects `SFDT_API_VERSION` for metadata API version
+- `sfdt quality --dry-run` previews stub generation without writing files
+- `sfdt deploy` now runs preflight checks before every deployment; use `--skip-preflight` to bypass
+- Pre-rollback backup: `rollback.sh` retrieves current org state before applying a rollback manifest; configurable via `config.deployment.backupBeforeRollback` (default `true`) and `SFDT_BACKUP_BEFORE_ROLLBACK`
+- Integration tests for `loadConfig()` and `buildScriptEnv()` using real filesystem (no mocks)
+- Test fixtures in `test/fixtures/` for Salesforce DX project structures
+
+### Changed
+- Coverage threshold in `deployment-assistant.sh` and `deploy-manager.sh` is now driven by `SFDT_COVERAGE_THRESHOLD` instead of being hardcoded at 75%
+- `deploy-manager.sh` enforces a coverage gate before production deploys using the configured threshold
+- Quality scripts (`test-analyzer.sh`, `code-analyzer.sh`) updated to use `SFDT_` env var model — removed legacy `init_script_env` calls and aligned jq keys with current config schema (`.testClasses[]`, `.apexClasses[]`)
+- `scripts/utils/shared.sh` now exports `print_header`, `print_step`, `print_success`, `print_warning`, `print_error`, `print_info` helpers used by rollback, preflight, smoke, and drift scripts
+- `buildScriptEnv()` now maps `SFDT_LOG_DIR` from `config.logDir`
+
+### Fixed
+- `((VAR++))` arithmetic in `code-analyzer.sh` replaced with `VAR=$((VAR + 1))` — the post-increment form exits 1 under `set -e` when incrementing from 0, killing the script silently
+- Division-by-zero in `test-analyzer.sh` coverage table when no Apex classes are configured
+
 ## [0.1.5] - 2026-04-06
 
 ### Fixed

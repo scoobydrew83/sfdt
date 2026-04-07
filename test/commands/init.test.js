@@ -54,9 +54,7 @@ beforeEach(() => {
   process.exitCode = undefined;
 
   // Default: project root found
-  fs.pathExistsSync.mockImplementation((p) =>
-    p.endsWith('sfdx-project.json')
-  );
+  fs.pathExistsSync.mockImplementation((p) => p.endsWith('sfdx-project.json'));
 
   // .sfdt does not exist yet
   fs.pathExists.mockResolvedValue(false);
@@ -65,9 +63,7 @@ beforeEach(() => {
   fs.readJson.mockResolvedValue({
     name: 'test-project',
     sourceApiVersion: '61.0',
-    packageDirectories: [
-      { path: 'force-app', default: true },
-    ],
+    packageDirectories: [{ path: 'force-app', default: true }],
   });
 
   fs.ensureDir.mockResolvedValue();
@@ -102,9 +98,7 @@ describe('init command', () => {
   it('writes correct config.json content', async () => {
     await createProgram().parseAsync(['node', 'sfdt', 'init']);
 
-    const configCall = fs.writeJson.mock.calls.find((c) =>
-      c[0].endsWith('config.json')
-    );
+    const configCall = fs.writeJson.mock.calls.find((c) => c[0].endsWith('config.json'));
     const config = configCall[1];
 
     expect(config.projectName).toBe('test-project');
@@ -114,14 +108,12 @@ describe('init command', () => {
 
   it('prompts for overwrite when .sfdt already exists', async () => {
     fs.pathExists.mockResolvedValue(true);
-    inquirer.prompt
-      .mockResolvedValueOnce({ overwrite: true })
-      .mockResolvedValueOnce({
-        projectName: 'test-project',
-        defaultOrg: 'dev',
-        coverageThreshold: 75,
-        aiEnabled: true,
-      });
+    inquirer.prompt.mockResolvedValueOnce({ overwrite: true }).mockResolvedValueOnce({
+      projectName: 'test-project',
+      defaultOrg: 'dev',
+      coverageThreshold: 75,
+      aiEnabled: true,
+    });
 
     await createProgram().parseAsync(['node', 'sfdt', 'init']);
 
@@ -149,9 +141,7 @@ describe('init command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'init']);
 
-    const testConfigCall = fs.writeJson.mock.calls.find((c) =>
-      c[0].endsWith('test-config.json')
-    );
+    const testConfigCall = fs.writeJson.mock.calls.find((c) => c[0].endsWith('test-config.json'));
     const testConfig = testConfigCall[1];
 
     expect(testConfig.testClasses).toContain('MyClassTest');
@@ -165,9 +155,7 @@ describe('init command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'init']);
 
-    expect(print.error).toHaveBeenCalledWith(
-      expect.stringContaining('No sfdx-project.json')
-    );
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('No sfdx-project.json'));
     expect(process.exitCode).toBe(1);
   });
 });

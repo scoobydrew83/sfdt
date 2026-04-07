@@ -57,9 +57,7 @@ describe('review command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'review']);
 
-    expect(print.error).toHaveBeenCalledWith(
-      expect.stringContaining('AI features are disabled')
-    );
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('AI features are disabled'));
     expect(process.exitCode).toBe(1);
   });
 
@@ -69,7 +67,7 @@ describe('review command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'review']);
 
     expect(print.error).toHaveBeenCalledWith(
-      expect.stringContaining('Claude CLI is not installed')
+      expect.stringContaining('Claude CLI is not installed'),
     );
     expect(process.exitCode).toBe(1);
   });
@@ -80,9 +78,7 @@ describe('review command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'review']);
 
-    expect(print.warning).toHaveBeenCalledWith(
-      expect.stringContaining('No changes found')
-    );
+    expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('No changes found'));
   });
 
   it('sends diff to AI for review', async () => {
@@ -93,12 +89,13 @@ describe('review command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'review']);
 
     expect(execa).toHaveBeenCalledWith(
-      'git', ['diff', 'main...HEAD'],
-      expect.objectContaining({ cwd: '/project' })
+      'git',
+      ['diff', 'main...HEAD'],
+      expect.objectContaining({ cwd: '/project' }),
     );
     expect(runAiPrompt).toHaveBeenCalledWith(
       expect.stringContaining('+ added line'),
-      expect.objectContaining({ interactive: true })
+      expect.objectContaining({ interactive: true }),
     );
   });
 
@@ -109,10 +106,7 @@ describe('review command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'review', '--base', 'develop']);
 
-    expect(execa).toHaveBeenCalledWith(
-      'git', ['diff', 'develop...HEAD'],
-      expect.any(Object)
-    );
+    expect(execa).toHaveBeenCalledWith('git', ['diff', 'develop...HEAD'], expect.any(Object));
   });
 
   it('sets exitCode 1 on failure', async () => {
