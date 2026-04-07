@@ -47,6 +47,7 @@ test/           Tests (vitest)
 | `SFDT_API_VERSION` | `config.sourceApiVersion` |
 | `SFDT_COVERAGE_THRESHOLD` | `config.deployment.coverageThreshold` (default: `75`) |
 | `SFDT_LOG_DIR` | `config.logDir` (optional; scripts fall back to `${SFDT_PROJECT_ROOT}/logs`) |
+| `SFDT_BACKUP_BEFORE_ROLLBACK` | `config.deployment.backupBeforeRollback` (default: `true`) |
 | `SFDT_FEATURE_*` | Flattened from `config.features` |
 | `SFDT_DEFAULT_ENV` | `config.environments.default` |
 | `SFDT_ENV_ORGS` | Comma-joined org aliases from `config.environments.orgs` |
