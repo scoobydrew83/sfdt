@@ -17,6 +17,8 @@ export function registerRollbackCommand(program) {
 
         const env = {
           SFDT_TARGET_ORG: orgAlias,
+          SFDT_BACKUP_BEFORE_ROLLBACK: String(config.deployment?.backupBeforeRollback ?? true),
+          SFDT_LOG_DIR: config.logDir || '',
         };
 
         await runScript('new/rollback.sh', config, {
