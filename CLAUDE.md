@@ -17,7 +17,7 @@ This is `@sfdt/cli`, a Node.js ESM CLI package for Salesforce DX deployment, tes
 bin/            CLI entry point
 src/
   commands/     Command modules (one file per command)
-  lib/          Shared libraries (config, output, AI, script-runner, project-detect)
+  lib/          Shared libraries (config, output, AI, script-runner, project-detect, metadata-mapper)
 scripts/        Shell scripts executed by commands (de-parameterized, use SFDT_ env vars)
                 Exception: scripts/postinstall.js is a Node.js ESM file run by npm on install
 test/           Tests (vitest)
@@ -31,6 +31,7 @@ test/           Tests (vitest)
 - **Config system** uses a `.sfdt/` directory created per-project. Config is loaded by `src/lib/config.js`. At load time, config is enriched with values from `sfdx-project.json` (e.g. `sourceApiVersion`, `defaultSourcePath` derived from `packageDirectories`).
 - **AI features** are optional and gated behind `features.ai` in config. They require the Claude CLI to be installed externally.
 - **File matching** uses the `glob` package (v11) for pattern-based file discovery.
+- **Metadata mapping** (`src/lib/metadata-mapper.js`) provides a pure-JS mirror of `scripts/lib/metadata-parser.sh` for use in Node commands. Used by `manifest` and `pr-description`.
 
 ### SFDT_ Environment Variables
 

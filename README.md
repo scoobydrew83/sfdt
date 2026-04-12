@@ -21,6 +21,9 @@ Production-grade CLI for Salesforce DX deployment, testing, quality analysis, an
 - Org metadata drift detection
 - AI-powered changelog generation and management
 - AI-powered code review, test failure analysis, and release notes (optional, uses Claude)
+- Smart package.xml generator from git diffs with AI dependency cleanup
+- AI deployment error log interpreter with heuristic fallback
+- AI-generated PR descriptions and Slack deployment messages
 - Slack notifications for deployment events
 - Works with **any** Salesforce DX project
 
@@ -48,6 +51,9 @@ sfdt deploy
 | `sfdt drift`     | Detect org metadata drift from source              | `--target-org`, `--types <list>`                       |
 | `sfdt changelog` | Manage project CHANGELOG.md                        | `generate`, `release`, `check`                         |
 | `sfdt review`    | AI-powered code review                             | `--from <ref>`, `--to <ref>`                           |
+| `sfdt manifest`  | Smart package.xml from git diffs with AI cleanup   | `--base <ref>`, `--print`, `--ai-cleanup`              |
+| `sfdt explain`   | AI analysis of deployment error logs               | `<file>`, `--from-stdin`, `--latest`                   |
+| `sfdt pr-description` | Generate PR description or Slack message      | `--format github\|slack`, `--output <file>`            |
 | `sfdt pull`      | Pull metadata from org using configured groups     | `--group <name>`, `--target-org`                       |
 | `sfdt notify`    | Send Slack deployment notifications                | `--channel`, `--status <success\|failure>`             |
 
