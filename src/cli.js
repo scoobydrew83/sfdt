@@ -16,6 +16,9 @@ import { registerReviewCommand } from './commands/review.js';
 import { registerNotifyCommand } from './commands/notify.js';
 import { registerDriftCommand } from './commands/drift.js';
 import { registerChangelogCommand } from './commands/changelog.js';
+import { registerManifestCommand } from './commands/manifest.js';
+import { registerExplainCommand } from './commands/explain.js';
+import { registerPrDescriptionCommand } from './commands/prDescription.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
@@ -44,6 +47,9 @@ export function createCli() {
   registerNotifyCommand(program);
   registerDriftCommand(program);
   registerChangelogCommand(program);
+  registerManifestCommand(program);
+  registerExplainCommand(program);
+  registerPrDescriptionCommand(program);
 
   return program;
 }

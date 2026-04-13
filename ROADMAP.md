@@ -17,11 +17,11 @@ This roadmap outlines the planned features and improvements for the @sfdt/cli to
 - [x] **Test Gaps Analysis**: `sfdt quality --generate-stubs` identifies Apex classes without tests and scaffolds `@IsTest` stub classes; `--dry-run` for preview. Quality scripts fixed to use current `SFDT_` env var model.
 - [x] **Integration Tests**: Real-filesystem integration tests for `loadConfig()` and `buildScriptEnv()` with test fixtures in `test/fixtures/`.
 
-## Phase 3: AI & Intelligence 🧠
+## Phase 3: AI & Intelligence 🧠 ✅
 
-- [ ] **Smart package.xml Generator**: Automatically build manifests from git diffs with AI cleanup of dependencies.
-- [ ] **Error Log Interpreter**: AI-powered analysis of cryptic Salesforce deployment errors with suggested fixes.
-- [ ] **PR Description Automator**: Automatically generate a Slack/GitHub message based on deployment changes.
+- [x] **Smart package.xml Generator**: `sfdt manifest` — builds package.xml from git diffs with AI dependency cleanup (`--ai-cleanup`). Supports `--print`, `--destructive`, and custom `--base`/`--head` refs.
+- [x] **Error Log Interpreter**: `sfdt explain` — AI-powered analysis of deployment error logs with heuristic fallback for offline use. Reads from file, stdin, or auto-discovers the latest log.
+- [x] **PR Description Automator**: `sfdt pr-description` — generates GitHub PR descriptions or Slack messages from deployment changes using AI. Supports `--format github|slack|markdown` and `--output`.
 
 ## Phase 4: Platform & Ecosystem 🌐
 
