@@ -84,23 +84,15 @@ describe('changelog release command', () => {
     expect(print.success).toHaveBeenCalled();
   });
 
-  it('does not interpolate version into the script body', async () => {
+  it('rejects non-semver version strings before invoking the shell', async () => {
     const maliciousVersion = '1.0"; rm -rf /; echo "';
     execa.mockResolvedValue({ stdout: '', exitCode: 0 });
 
     await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'release', maliciousVersion]);
 
-    const [, args] = execa.mock.calls[0];
-    const scriptBody = args[1];
-    // The script body must NOT contain the raw version string
-    expect(scriptBody).not.toContain(maliciousVersion);
-    // It must reference the env var instead
-    expect(scriptBody).toContain('$SFDT_VERSION');
-    // Path is safely in args, not the script body
-    expect(args[3]).toContain('changelog-utils.sh');
-    // The version is safely in env
-    const options = execa.mock.calls[0][2];
-    expect(options.env.SFDT_VERSION).toBe(maliciousVersion);
+    // Semver validation must reject the malicious input — execa should never be called
+    expect(execa).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
   });
 
   it('sets exitCode 1 on failure', async () => {

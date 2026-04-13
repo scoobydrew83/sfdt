@@ -200,9 +200,13 @@ async function executeLocalTool(toolName, args, cwd) {
 
       case 'write_file': {
         const filePath = await safeResolvePath(cwd, args.path);
+        const content = String(args.content ?? '');
+        if (content.length > 1_000_000) {
+          return `Error: content too large (${content.length} bytes); limit is 1 MB`;
+        }
         await fs.ensureDir(path.dirname(filePath));
-        await fs.writeFile(filePath, args.content);
-        return `Successfully wrote ${args.content.length} bytes to ${args.path}`;
+        await fs.writeFile(filePath, content);
+        return `Successfully wrote ${content.length} bytes to ${args.path}`;
       }
 
       case 'list_directory': {

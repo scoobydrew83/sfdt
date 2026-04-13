@@ -10,7 +10,6 @@ import express from 'express';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { loadConfig } from './config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -145,6 +144,26 @@ async function safeReaddir(dir) {
   }
 }
 
+// ─── Rate limiter ─────────────────────────────────────────────────────────────
+
+/**
+ * Minimal in-process rate limiter — no external deps required.
+ * Limits requests to maxRequests per windowMs across all local clients.
+ */
+function createRateLimiter(maxRequests = 60, windowMs = 60_000) {
+  const timestamps = [];
+  return (_req, res, next) => {
+    const now = Date.now();
+    const cutoff = now - windowMs;
+    while (timestamps.length && timestamps[0] < cutoff) timestamps.shift();
+    if (timestamps.length >= maxRequests) {
+      return res.status(429).json({ error: 'Too many requests' });
+    }
+    timestamps.push(now);
+    next();
+  };
+}
+
 // ─── Server factory ───────────────────────────────────────────────────────────
 
 /**
@@ -161,6 +180,8 @@ export function createGuiApp(config, version) {
   const logDir =
     config.logDir ||
     path.join(config._projectRoot || process.cwd(), 'logs');
+
+  const apiLimiter = createRateLimiter(60, 60_000);
 
   // ── API routes ──────────────────────────────────────────────────────────────
 
@@ -179,7 +200,7 @@ export function createGuiApp(config, version) {
     });
   });
 
-  app.get('/api/test-runs', async (_req, res) => {
+  app.get('/api/test-runs', apiLimiter, async (_req, res) => {
     try {
       const runs = await readTestRuns(logDir);
       res.json({ runs });
@@ -188,7 +209,7 @@ export function createGuiApp(config, version) {
     }
   });
 
-  app.get('/api/preflight', async (_req, res) => {
+  app.get('/api/preflight', apiLimiter, async (_req, res) => {
     try {
       const data = await readPreflight(logDir);
       res.json(data ?? {});
@@ -197,7 +218,7 @@ export function createGuiApp(config, version) {
     }
   });
 
-  app.get('/api/drift', async (_req, res) => {
+  app.get('/api/drift', apiLimiter, async (_req, res) => {
     try {
       const data = await readDrift(logDir);
       res.json(data ?? {});
@@ -212,7 +233,7 @@ export function createGuiApp(config, version) {
     app.use(express.static(GUI_DIST));
 
     // SPA fallback — all non-API routes return index.html
-    app.get('*', (_req, res) => {
+    app.get('*', apiLimiter, (_req, res) => {
       res.sendFile(path.join(GUI_DIST, 'index.html'));
     });
   } else {

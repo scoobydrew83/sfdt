@@ -107,6 +107,11 @@ export function registerChangelogCommand(program) {
     .command('release <version>')
     .description('Move [Unreleased] changes to a new version section')
     .action(async (version) => {
+      if (!/^\d+\.\d+\.\d+(-[\w.]+)?(\+[\w.]+)?$/.test(version)) {
+        print.error(`Invalid version: ${version} (expected semver e.g. 1.2.3)`);
+        process.exitCode = 1;
+        return;
+      }
       try {
         const config = await loadConfig();
         print.info(`Releasing version ${version} in CHANGELOG.md...`);
