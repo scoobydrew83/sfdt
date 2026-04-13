@@ -32,6 +32,16 @@ This roadmap outlines the planned features and improvements for the @sfdt/cli to
 
 ---
 
+## Phase 5: Developer Experience & Ecosystem 🔭 (Planned)
+
+- [ ] **`sfdt config` command**: `sfdt config set <key> <value>` to update `.sfdt/config.json` without hand-editing — especially useful for CI pipelines toggling `deployment.preflight.enforce*` flags.
+- [ ] **Pre-built GUI in the published package**: automate `npm run build:gui` in CI so end users never need to build the dashboard from source.
+- [ ] **Plugin registry & scaffolding**: `sfdt plugin create` scaffold to bootstrap a new `sfdt-plugin-*` package with example `register(program)` wiring.
+- [ ] **AI context window improvements**: pass structured project metadata (org shape, test history, recent diffs) to AI commands for higher-quality output with fewer prompts.
+- [ ] **Structured log format**: standardized JSON schema for test-run, preflight, and drift log files consumed by `sfdt ui` and external observability tools.
+
+---
+
 ## Feedback & Suggestions
 
 We value community feedback! If you have ideas for features, please open an issue in the repository.
