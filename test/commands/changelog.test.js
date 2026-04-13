@@ -23,7 +23,7 @@ vi.mock('inquirer', () => ({
 }));
 
 vi.mock('../../src/lib/ai.js', () => ({
-  isClaudeAvailable: vi.fn(),
+  isAiAvailable: vi.fn(), aiUnavailableMessage: vi.fn().mockReturnValue("AI provider not available"),
   runAiPrompt: vi.fn(),
 }));
 
@@ -42,7 +42,7 @@ import { loadConfig } from '../../src/lib/config.js';
 import { execa } from 'execa';
 import fs from 'fs-extra';
 import inquirer from 'inquirer';
-import { isClaudeAvailable, runAiPrompt } from '../../src/lib/ai.js';
+import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../../src/lib/ai.js';
 import { print } from '../../src/lib/output.js';
 import { registerChangelogCommand } from '../../src/commands/changelog.js';
 
@@ -84,23 +84,15 @@ describe('changelog release command', () => {
     expect(print.success).toHaveBeenCalled();
   });
 
-  it('does not interpolate version into the script body', async () => {
+  it('rejects non-semver version strings before invoking the shell', async () => {
     const maliciousVersion = '1.0"; rm -rf /; echo "';
     execa.mockResolvedValue({ stdout: '', exitCode: 0 });
 
     await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'release', maliciousVersion]);
 
-    const [, args] = execa.mock.calls[0];
-    const scriptBody = args[1];
-    // The script body must NOT contain the raw version string
-    expect(scriptBody).not.toContain(maliciousVersion);
-    // It must reference the env var instead
-    expect(scriptBody).toContain('$SFDT_VERSION');
-    // Path is safely in args, not the script body
-    expect(args[3]).toContain('changelog-utils.sh');
-    // The version is safely in env
-    const options = execa.mock.calls[0][2];
-    expect(options.env.SFDT_VERSION).toBe(maliciousVersion);
+    // Semver validation must reject the malicious input — execa should never be called
+    expect(execa).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
   });
 
   it('sets exitCode 1 on failure', async () => {
@@ -164,7 +156,7 @@ describe('changelog generate command', () => {
       features: { ai: false },
     });
     fs.pathExists.mockResolvedValue(true);
-    isClaudeAvailable.mockResolvedValue(false);
+    isAiAvailable.mockResolvedValue(false);
 
     await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'generate']);
 
@@ -187,7 +179,7 @@ describe('changelog generate command', () => {
 
   it('appends AI response to [Unreleased] section when user approves', async () => {
     fs.pathExists.mockResolvedValue(true);
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     runAiPrompt.mockResolvedValue('### Added\n- New feature');
     inquirer.prompt.mockResolvedValueOnce({ apply: true });
     fs.readFile.mockResolvedValue('# Changelog\n\n## [Unreleased]\n\n## [1.0.0]\n');

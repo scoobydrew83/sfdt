@@ -10,7 +10,8 @@ vi.mock('../../src/lib/config.js', () => ({
 }));
 
 vi.mock('../../src/lib/ai.js', () => ({
-  isClaudeAvailable: vi.fn(),
+  isAiAvailable: vi.fn(),
+  aiUnavailableMessage: vi.fn().mockReturnValue('AI provider not available'),
   runAiPrompt: vi.fn(),
 }));
 
@@ -27,7 +28,7 @@ vi.mock('../../src/lib/output.js', () => ({
 
 import { execa } from 'execa';
 import { loadConfig } from '../../src/lib/config.js';
-import { isClaudeAvailable, runAiPrompt } from '../../src/lib/ai.js';
+import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../../src/lib/ai.js';
 import { print } from '../../src/lib/output.js';
 import { registerReviewCommand } from '../../src/commands/review.js';
 
@@ -41,6 +42,7 @@ function createProgram() {
 beforeEach(() => {
   vi.resetAllMocks();
   process.exitCode = undefined;
+  aiUnavailableMessage.mockReturnValue('AI provider not available');
   loadConfig.mockResolvedValue({
     _projectRoot: '/project',
     defaultOrg: 'dev',
@@ -62,18 +64,16 @@ describe('review command', () => {
   });
 
   it('errors when Claude CLI not available', async () => {
-    isClaudeAvailable.mockResolvedValue(false);
+    isAiAvailable.mockResolvedValue(false);
 
     await createProgram().parseAsync(['node', 'sfdt', 'review']);
 
-    expect(print.error).toHaveBeenCalledWith(
-      expect.stringContaining('Claude CLI is not installed'),
-    );
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('not available'));
     expect(process.exitCode).toBe(1);
   });
 
   it('warns when no diff found', async () => {
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     execa.mockResolvedValue({ stdout: '', stderr: '' });
 
     await createProgram().parseAsync(['node', 'sfdt', 'review']);
@@ -82,7 +82,7 @@ describe('review command', () => {
   });
 
   it('sends diff to AI for review', async () => {
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     execa.mockResolvedValue({ stdout: '+ added line\n- removed line', stderr: '' });
     runAiPrompt.mockResolvedValue({ stdout: 'review', exitCode: 0 });
 
@@ -100,7 +100,7 @@ describe('review command', () => {
   });
 
   it('uses custom base branch with --base', async () => {
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     execa.mockResolvedValue({ stdout: 'diff content', stderr: '' });
     runAiPrompt.mockResolvedValue({ stdout: '', exitCode: 0 });
 
@@ -110,7 +110,7 @@ describe('review command', () => {
   });
 
   it('sets exitCode 1 on failure', async () => {
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     execa.mockRejectedValue(new Error('git error'));
 
     await createProgram().parseAsync(['node', 'sfdt', 'review']);

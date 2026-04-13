@@ -10,7 +10,7 @@ vi.mock('../../src/lib/script-runner.js', () => ({
 }));
 
 vi.mock('../../src/lib/ai.js', () => ({
-  isClaudeAvailable: vi.fn(),
+  isAiAvailable: vi.fn(),
   runAiPrompt: vi.fn(),
 }));
 
@@ -31,7 +31,7 @@ vi.mock('../../src/lib/output.js', () => ({
 
 import { loadConfig } from '../../src/lib/config.js';
 import { runScript } from '../../src/lib/script-runner.js';
-import { isClaudeAvailable, runAiPrompt } from '../../src/lib/ai.js';
+import { isAiAvailable, runAiPrompt } from '../../src/lib/ai.js';
 import inquirer from 'inquirer';
 import { print } from '../../src/lib/output.js';
 import { registerTestCommand } from '../../src/commands/test.js';
@@ -94,7 +94,7 @@ describe('test command', () => {
 
   it('offers AI analysis on test failure when AI enabled', async () => {
     runScript.mockRejectedValueOnce(new Error('tests failed'));
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     inquirer.prompt.mockResolvedValue({ analyzeFailure: true });
     runAiPrompt.mockResolvedValue({ stdout: 'analysis', exitCode: 0 });
 
@@ -110,7 +110,7 @@ describe('test command', () => {
 
   it('skips AI analysis when user declines', async () => {
     runScript.mockRejectedValueOnce(new Error('tests failed'));
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     inquirer.prompt.mockResolvedValue({ analyzeFailure: false });
 
     await createProgram().parseAsync(['node', 'sfdt', 'test']);

@@ -23,12 +23,22 @@ This roadmap outlines the planned features and improvements for the @sfdt/cli to
 - [x] **Error Log Interpreter**: `sfdt explain` — AI-powered analysis of deployment error logs with heuristic fallback for offline use. Reads from file, stdin, or auto-discovers the latest log.
 - [x] **PR Description Automator**: `sfdt pr-description` — generates GitHub PR descriptions or Slack messages from deployment changes using AI. Supports `--format github|slack|markdown` and `--output`.
 
-## Phase 4: Platform & Ecosystem 🌐
+## Phase 4: Platform & Ecosystem 🌐 ✅
 
-- [ ] **Other AI Platforms**: Add Gemini, others
-- [ ] **Plugin Architecture**: Allow external developers to add custom subcommands and scripts.
-- [ ] **Web UI**: A lightweight local web dashboard for monitoring test results and drift detection.
-- [ ] **Docker Support**: Official Docker image for use in CI/CD pipelines.
+- [x] **Other AI Platforms**: Multi-provider AI support — `ai.provider` in `.sfdt/config.json` selects `claude` (Claude Code CLI, default), `gemini` (Google Gemini REST, uses `GEMINI_API_KEY`), or `openai` (OpenAI REST, uses `OPENAI_API_KEY`). `sfdt init` now prompts for provider and optional API key. All AI commands route through the selected provider transparently.
+- [x] **Plugin Architecture**: `src/lib/plugin-loader.js` discovers and loads plugins before CLI parsing. Sources (in order): (1) packages listed in `config.plugins[]`, (2) any `sfdt-plugin-*` or `@scope/sfdt-plugin-*` package in the project's `node_modules/`, (3) `.sfdt/plugins/*.js` local scripts. Each plugin exports `register(program)`.
+- [x] **Web UI**: `sfdt ui` — launches a local Salesforce Lightning Design System dashboard (built with `@salesforce/design-system-react` + React + Vite) showing test run history, preflight check results, and drift detection status. Build the GUI with `npm run build:gui` from the package root.
+- [x] **Docker Support**: `Dockerfile` + `.dockerignore` — mounts a Salesforce DX project at `/project`; ships Node 20, Salesforce CLI, git, jq, and sfdt. Use with `docker run --rm -v "$(pwd):/project" sfdt deploy`.
+
+---
+
+## Phase 5: Developer Experience & Ecosystem 🔭 (Planned)
+
+- [ ] **`sfdt config` command**: `sfdt config set <key> <value>` to update `.sfdt/config.json` without hand-editing — especially useful for CI pipelines toggling `deployment.preflight.enforce*` flags.
+- [ ] **Pre-built GUI in the published package**: automate `npm run build:gui` in CI so end users never need to build the dashboard from source.
+- [ ] **Plugin registry & scaffolding**: `sfdt plugin create` scaffold to bootstrap a new `sfdt-plugin-*` package with example `register(program)` wiring.
+- [ ] **AI context window improvements**: pass structured project metadata (org shape, test history, recent diffs) to AI commands for higher-quality output with fewer prompts.
+- [ ] **Structured log format**: standardized JSON schema for test-run, preflight, and drift log files consumed by `sfdt ui` and external observability tools.
 
 ---
 

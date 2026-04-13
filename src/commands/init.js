@@ -5,12 +5,13 @@ import { glob } from 'glob';
 import inquirer from 'inquirer';
 import { detectProject, getProjectRoot } from '../lib/project-detect.js';
 import { print } from '../lib/output.js';
+import { storeCredential } from '../lib/ai.js';
 
 const CONFIG_DIR = '.sfdt';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = path.join(__dirname, '../templates/sfdt.config.json');
 
-async function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir, coverageThreshold }) {
+async function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir, coverageThreshold, ai }) {
   const template = await fs.readJson(TEMPLATE_PATH);
   return {
     ...template,
@@ -24,6 +25,11 @@ async function buildConfigTemplate({ projectName, defaultOrg, features, releaseN
     features: {
       ...template.features,
       ai: features.ai,
+    },
+    ai: {
+      provider: ai.provider,
+      model: ai.model || '',
+      // API keys are stored in ~/.sfdt/credentials.json, not here
     },
   };
 }
@@ -129,8 +135,31 @@ export function registerInitCommand(program) {
           {
             type: 'confirm',
             name: 'aiEnabled',
-            message: 'Enable AI-powered features (requires Claude CLI)?',
+            message: 'Enable AI-powered features?',
             default: true,
+          },
+          {
+            type: 'list',
+            name: 'aiProvider',
+            message: 'AI provider:',
+            choices: [
+              { name: 'Claude (requires Claude Code CLI)', value: 'claude' },
+              { name: 'Gemini (requires GEMINI_API_KEY)', value: 'gemini' },
+              { name: 'OpenAI (requires OPENAI_API_KEY)', value: 'openai' },
+            ],
+            default: 'claude',
+            when: (ans) => ans.aiEnabled,
+          },
+          {
+            type: 'password',
+            name: 'aiApiKey',
+            message: (ans) =>
+              ans.aiProvider === 'gemini'
+                ? 'Gemini API key (stored in ~/.sfdt/credentials.json, or leave blank to use GEMINI_API_KEY env var):'
+                : 'OpenAI API key (stored in ~/.sfdt/credentials.json, or leave blank to use OPENAI_API_KEY env var):',
+            default: '',
+            when: (ans) => ans.aiEnabled && ans.aiProvider !== 'claude',
+            mask: '*',
           },
           {
             type: 'input',
@@ -172,6 +201,12 @@ export function registerInitCommand(program) {
         // Create .sfdt/ directory
         await fs.ensureDir(configDir);
 
+        // Persist the API key to ~/.sfdt/credentials.json (never into the project config)
+        if (answers.aiEnabled && answers.aiProvider !== 'claude' && answers.aiApiKey) {
+          await storeCredential(answers.aiProvider, answers.aiApiKey);
+          print.success(`API key stored in ~/.sfdt/credentials.json (mode 0600)`);
+        }
+
         const config = await buildConfigTemplate({
           projectName: answers.projectName,
           defaultOrg: answers.defaultOrg,
@@ -181,6 +216,10 @@ export function registerInitCommand(program) {
             ai: answers.aiEnabled,
             notifications: false,
             releaseManagement: true,
+          },
+          ai: {
+            provider: answers.aiProvider || 'claude',
+            model: '',
           },
         });
 
@@ -216,7 +255,7 @@ export function registerInitCommand(program) {
         print.step(`  Project: ${answers.projectName}`);
         print.step(`  Default org: ${answers.defaultOrg}`);
         print.step(`  Coverage threshold: ${answers.coverageThreshold}%`);
-        print.step(`  AI features: ${answers.aiEnabled ? 'enabled' : 'disabled'}`);
+        print.step(`  AI features: ${answers.aiEnabled ? `enabled (${answers.aiProvider || 'claude'})` : 'disabled'}`);
         print.step(`  Test classes: ${testClasses.length}`);
         print.step(`  Apex classes: ${apexClasses.length}`);
 

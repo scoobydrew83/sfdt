@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-13
+
+### Added
+- **Multi-provider AI support**: `ai.provider` in `.sfdt/config.json` selects `claude` (Claude Code CLI, default), `gemini` (Google Gemini REST), or `openai` (OpenAI REST). Both API providers use native `fetch` with SSE streaming — no new npm dependencies. API keys stored in `ai.apiKey` or the corresponding env var (`GEMINI_API_KEY` / `OPENAI_API_KEY`).
+- **AI credential auto-discovery**: `sfdt init` now prompts for AI provider and optional API key; stored credentials are resolved at runtime with environment variable fallback.
+- **Plugin architecture** (`src/lib/plugin-loader.js`): plugins are discovered and loaded before CLI argument parsing from three sources — (1) `config.plugins[]` package names, (2) `sfdt-plugin-*` / `@scope/sfdt-plugin-*` packages auto-discovered in the project's `node_modules/`, (3) `.sfdt/plugins/*.js` local scripts. Each plugin exports `register(program)`; load errors are warnings, not crashes.
+- **Web dashboard** (`sfdt ui`): `src/commands/ui.js` + `src/lib/gui-server.js` — launches a local Express server on port 7654 serving a React 18 + Salesforce Lightning Design System dashboard. Pages: Dashboard (stat cards, recent runs), Test Runs (coverage-coloured DataTable), Preflight (per-check pass/fail), Drift Detection (filterable component table). Built with `npm run build:gui`; `gui/dist/` ships in the published package.
+- **Docker support**: `Dockerfile` ships Node 20 slim + Salesforce CLI + git/jq/bash, mounting a Salesforce DX project at `/project`. `.dockerignore` excludes `node_modules`, coverage output, and CI artifacts.
+- `src/lib/ai.js` additions: `isAiAvailable(config)`, `aiUnavailableMessage(config)`, `getConfiguredProvider(config)` — replace legacy `isClaudeAvailable()` across all AI-calling commands.
+- `sfdt.config.json` template updated with `ai` and `plugins` sections; `sfdt init` picks them up automatically.
+- New tests: `test/lib/plugin-loader.test.js` (3 tests); expanded `ai.test.js` covering all three providers. Total: 218 tests across 27 test files.
+
+### Changed
+- All 8 AI-calling commands (`review`, `explain`, `manifest`, `pr-description`, `changelog`, `release`, `quality`, `test`) updated to use `isAiAvailable(config)` / `aiUnavailableMessage(config)` and pass `config` to `runAiPrompt` for transparent provider routing.
+
 ## [0.2.2] - 2026-04-12
 
 ### Security

@@ -10,7 +10,7 @@ vi.mock('../../src/lib/script-runner.js', () => ({
 }));
 
 vi.mock('../../src/lib/ai.js', () => ({
-  isClaudeAvailable: vi.fn(),
+  isAiAvailable: vi.fn(), aiUnavailableMessage: vi.fn().mockReturnValue("AI provider not available"),
   runAiPrompt: vi.fn(),
 }));
 
@@ -42,7 +42,7 @@ vi.mock('../../src/lib/output.js', () => ({
 
 import { loadConfig } from '../../src/lib/config.js';
 import { runScript } from '../../src/lib/script-runner.js';
-import { isClaudeAvailable, runAiPrompt } from '../../src/lib/ai.js';
+import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../../src/lib/ai.js';
 import inquirer from 'inquirer';
 import { execa } from 'execa';
 import { print } from '../../src/lib/output.js';
@@ -97,7 +97,7 @@ beforeEach(() => {
 
 describe('release command', () => {
   it('runs generate-release-manifest.sh with captureStdout', async () => {
-    isClaudeAvailable.mockResolvedValue(false);
+    isAiAvailable.mockResolvedValue(false);
     mockPromptFlow();
 
     await createProgram().parseAsync(['node', 'sfdt', 'release']);
@@ -110,7 +110,7 @@ describe('release command', () => {
   });
 
   it('passes version argument to script', async () => {
-    isClaudeAvailable.mockResolvedValue(false);
+    isAiAvailable.mockResolvedValue(false);
     mockPromptFlow();
 
     await createProgram().parseAsync(['node', 'sfdt', 'release', '2.0.0']);
@@ -123,7 +123,7 @@ describe('release command', () => {
   });
 
   it('offers AI release notes when AI available', async () => {
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     runAiPrompt.mockResolvedValue({ stdout: 'notes', exitCode: 0 });
     mockPromptFlow({ generateNotes: true });
 
@@ -136,7 +136,7 @@ describe('release command', () => {
   });
 
   it('skips AI notes when user declines', async () => {
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     mockPromptFlow({ generateNotes: false });
 
     await createProgram().parseAsync(['node', 'sfdt', 'release']);
@@ -156,7 +156,7 @@ describe('release command', () => {
   it('stages release notes and CHANGELOG in git workflow', async () => {
     const fse = (await import('fs-extra')).default;
     fse.pathExists.mockResolvedValue(true); // release notes file exists
-    isClaudeAvailable.mockResolvedValue(false);
+    isAiAvailable.mockResolvedValue(false);
     // CHANGELOG has changes (exitCode 1 = diff detected)
     execa
       .mockResolvedValueOnce({ exitCode: 0, stdout: '' }) // git add manifests
@@ -181,7 +181,7 @@ describe('release command', () => {
   });
 
   it('asks about deployment before push', async () => {
-    isClaudeAvailable.mockResolvedValue(false);
+    isAiAvailable.mockResolvedValue(false);
     // git status shows staged files
     execa.mockImplementation((cmd, args) => {
       if (cmd === 'git' && args[0] === 'status') {

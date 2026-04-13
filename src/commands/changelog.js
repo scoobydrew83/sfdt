@@ -2,7 +2,7 @@ import inquirer from 'inquirer';
 import fs from 'fs-extra';
 import path from 'path';
 import { loadConfig } from '../lib/config.js';
-import { isClaudeAvailable, runAiPrompt } from '../lib/ai.js';
+import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 import { execa } from 'execa';
 
@@ -39,10 +39,10 @@ export function registerChangelogCommand(program) {
           }
         }
 
-        if (!config.features?.ai || !(await isClaudeAvailable())) {
-          print.error('AI features are disabled or Claude CLI is not installed.');
+        if (!config.features?.ai || !(await isAiAvailable(config))) {
+          print.error('AI features are disabled or no AI provider is configured.');
           print.info(
-            'To enable AI, set features.ai: true in .sfdt/config.json and install @anthropic-ai/claude-code',
+            'Set features.ai: true and configure ai.provider in .sfdt/config.json.',
           );
           return;
         }
@@ -63,6 +63,7 @@ export function registerChangelogCommand(program) {
 
         print.header('AI Changelog Generation');
         const response = await runAiPrompt(prompt, {
+          config,
           allowedTools: ['Bash(git log:*)', 'Read'],
           cwd: projectRoot,
           aiEnabled: true,
@@ -106,6 +107,11 @@ export function registerChangelogCommand(program) {
     .command('release <version>')
     .description('Move [Unreleased] changes to a new version section')
     .action(async (version) => {
+      if (!/^\d+\.\d+\.\d+(-[\w.]+)?(\+[\w.]+)?$/.test(version)) {
+        print.error(`Invalid version: ${version} (expected semver e.g. 1.2.3)`);
+        process.exitCode = 1;
+        return;
+      }
       try {
         const config = await loadConfig();
         print.info(`Releasing version ${version} in CHANGELOG.md...`);

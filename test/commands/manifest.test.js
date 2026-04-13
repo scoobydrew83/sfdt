@@ -18,7 +18,7 @@ vi.mock('fs-extra', () => ({
 }));
 
 vi.mock('../../src/lib/ai.js', () => ({
-  isClaudeAvailable: vi.fn(),
+  isAiAvailable: vi.fn(), aiUnavailableMessage: vi.fn().mockReturnValue("AI provider not available"),
   runAiPrompt: vi.fn(),
 }));
 
@@ -36,7 +36,7 @@ vi.mock('../../src/lib/output.js', () => ({
 import { execa } from 'execa';
 import fs from 'fs-extra';
 import { loadConfig } from '../../src/lib/config.js';
-import { isClaudeAvailable, runAiPrompt } from '../../src/lib/ai.js';
+import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../../src/lib/ai.js';
 import { print } from '../../src/lib/output.js';
 import { registerManifestCommand } from '../../src/commands/manifest.js';
 
@@ -153,7 +153,7 @@ describe('manifest command', () => {
   it('runs AI cleanup when AI is enabled and --ai-cleanup is set', async () => {
     const aiConfig = { ...defaultConfig, features: { ai: true } };
     loadConfig.mockResolvedValue(aiConfig);
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
 
     const diffOutput = 'A\tforce-app/main/default/classes/Foo.cls';
     execa

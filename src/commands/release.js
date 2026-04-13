@@ -4,7 +4,7 @@ import { execa } from 'execa';
 import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
-import { isClaudeAvailable, runAiPrompt } from '../lib/ai.js';
+import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 
 export function registerReleaseCommand(program) {
@@ -33,7 +33,7 @@ export function registerReleaseCommand(program) {
 
         // Offer AI release notes if enabled
         const aiEnabled = config.features?.ai;
-        if (aiEnabled && (await isClaudeAvailable())) {
+        if (aiEnabled && (await isAiAvailable(config))) {
           const { generateNotes } = await inquirer.prompt([
             {
               type: 'confirm',
@@ -62,6 +62,7 @@ export function registerReleaseCommand(program) {
             ].join('\n');
 
             await runAiPrompt(prompt, {
+              config,
               allowedTools: ['Bash(git log:*)', 'Read', 'Write'],
               cwd: projectRoot,
               aiEnabled: true,

@@ -2,7 +2,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { execa } from 'execa';
 import { loadConfig } from '../lib/config.js';
-import { isClaudeAvailable, runAiPrompt } from '../lib/ai.js';
+import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 import { parseDiffToMetadata, countMembers } from '../lib/metadata-mapper.js';
 
@@ -82,11 +82,8 @@ export function registerPrDescriptionCommand(program) {
           return;
         }
 
-        if (!(await isClaudeAvailable())) {
-          print.error(
-            'Claude CLI is not installed or not in PATH.\n' +
-              '  Install from: https://docs.anthropic.com/en/docs/claude-cli',
-          );
+        if (!(await isAiAvailable(config))) {
+          print.error(aiUnavailableMessage(config));
           process.exitCode = 1;
           return;
         }
@@ -103,6 +100,7 @@ export function registerPrDescriptionCommand(program) {
         const prompt = buildPrompt(options.format, context);
 
         const response = await runAiPrompt(prompt, {
+          config,
           allowedTools: ['Read', 'Grep'],
           cwd: projectRoot,
           aiEnabled: true,

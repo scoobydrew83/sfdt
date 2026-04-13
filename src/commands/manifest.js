@@ -2,7 +2,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { execa } from 'execa';
 import { loadConfig } from '../lib/config.js';
-import { isClaudeAvailable, runAiPrompt } from '../lib/ai.js';
+import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 import {
   parseDiffToMetadata,
@@ -121,11 +121,12 @@ export function registerManifestCommand(program) {
         const aiEnabled = config.features?.ai;
         const shouldRunAi = options.aiCleanup ?? aiEnabled;
 
-        if (shouldRunAi && aiEnabled && (await isClaudeAvailable())) {
+        if (shouldRunAi && aiEnabled && (await isAiAvailable(config))) {
           print.header('AI Dependency Cleanup');
-          print.info('Asking Claude to check for missing dependencies...');
+          print.info('Asking AI to check for missing dependencies...');
 
           await runAiPrompt(AI_DEPENDENCY_PROMPT + packageXml, {
+            config,
             allowedTools: ['Read', 'Grep', 'Glob'],
             cwd: projectRoot,
             aiEnabled: true,
@@ -134,7 +135,7 @@ export function registerManifestCommand(program) {
         } else if (shouldRunAi && !aiEnabled) {
           print.info('AI features are disabled (features.ai=false) — skipping dependency cleanup.');
         } else if (shouldRunAi) {
-          print.info('Claude CLI not available — skipping AI dependency cleanup.');
+          print.info('AI provider not available — skipping dependency cleanup.');
         }
       } catch (err) {
         print.error(`Manifest generation failed: ${err.message}`);

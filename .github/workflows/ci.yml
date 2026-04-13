@@ -26,6 +26,9 @@ jobs:
         run: npm audit --audit-level=high
       - run: npm run lint
       - run: npm test
+      - name: Build GUI (Node 22 only)
+        if: matrix.node-version == 22
+        run: npm run build:gui
       - name: Publish dry-run (Node 22 only)
         if: matrix.node-version == 22
         run: npm publish --dry-run
@@ -73,6 +76,9 @@ jobs:
           git push origin "v${RELEASE_VERSION}"
       - run: npm ci
         if: steps.version.outputs.changed == 'true'
+      - name: Build GUI
+        if: steps.version.outputs.changed == 'true'
+        run: npm run build:gui
       - name: Publish to npm
         if: steps.version.outputs.changed == 'true'
         run: npx npm@latest publish --provenance --access public

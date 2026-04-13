@@ -17,7 +17,7 @@ vi.mock('fs-extra', () => ({
 }));
 
 vi.mock('../../src/lib/ai.js', () => ({
-  isClaudeAvailable: vi.fn(),
+  isAiAvailable: vi.fn(), aiUnavailableMessage: vi.fn().mockReturnValue("AI provider not available"),
   runAiPrompt: vi.fn(),
 }));
 
@@ -35,7 +35,7 @@ vi.mock('../../src/lib/output.js', () => ({
 import { execa } from 'execa';
 import fs from 'fs-extra';
 import { loadConfig } from '../../src/lib/config.js';
-import { isClaudeAvailable, runAiPrompt } from '../../src/lib/ai.js';
+import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../../src/lib/ai.js';
 import { print } from '../../src/lib/output.js';
 import { registerPrDescriptionCommand } from '../../src/commands/prDescription.js';
 
@@ -56,6 +56,7 @@ const defaultConfig = {
 beforeEach(() => {
   vi.resetAllMocks();
   process.exitCode = undefined;
+  aiUnavailableMessage.mockReturnValue('AI provider not available');
   loadConfig.mockResolvedValue(defaultConfig);
   fs.ensureDir.mockResolvedValue();
   fs.writeFile.mockResolvedValue();
@@ -74,19 +75,17 @@ describe('pr-description command', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('errors when Claude CLI not available', async () => {
-    isClaudeAvailable.mockResolvedValue(false);
+  it('errors when AI provider not available', async () => {
+    isAiAvailable.mockResolvedValue(false);
 
     await createProgram().parseAsync(['node', 'sfdt', 'pr-description']);
 
-    expect(print.error).toHaveBeenCalledWith(
-      expect.stringContaining('Claude CLI is not installed'),
-    );
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('not available'));
     expect(process.exitCode).toBe(1);
   });
 
   it('generates github-format description and prints to stdout', async () => {
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     execa
       .mockResolvedValueOnce({ stdout: 'abc1234 Add AccountHelper' }) // git log
       .mockResolvedValueOnce({
@@ -112,7 +111,7 @@ describe('pr-description command', () => {
   });
 
   it('writes output to file with --output', async () => {
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     execa
       .mockResolvedValueOnce({ stdout: 'abc1234 Commit msg' })
       .mockResolvedValueOnce({ stdout: 'A\tforce-app/main/default/classes/Foo.cls' });
@@ -135,7 +134,7 @@ describe('pr-description command', () => {
   });
 
   it('supports slack format', async () => {
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     execa
       .mockResolvedValueOnce({ stdout: 'abc1234 Commit' })
       .mockResolvedValueOnce({ stdout: 'A\tforce-app/main/default/classes/Foo.cls' });
@@ -178,7 +177,7 @@ describe('pr-description command', () => {
   });
 
   it('warns when no changes between refs', async () => {
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     execa
       .mockResolvedValueOnce({ stdout: '' }) // no commits
       .mockResolvedValueOnce({ stdout: '' }); // no diff
@@ -189,7 +188,7 @@ describe('pr-description command', () => {
   });
 
   it('handles AI returning empty output', async () => {
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     execa
       .mockResolvedValueOnce({ stdout: 'abc1234 Commit' })
       .mockResolvedValueOnce({ stdout: 'A\tforce-app/main/default/classes/Foo.cls' });
