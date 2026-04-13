@@ -10,7 +10,7 @@ vi.mock('../../src/lib/script-runner.js', () => ({
 }));
 
 vi.mock('../../src/lib/ai.js', () => ({
-  isClaudeAvailable: vi.fn(),
+  isAiAvailable: vi.fn(),
   runAiPrompt: vi.fn(),
 }));
 
@@ -27,7 +27,7 @@ vi.mock('../../src/lib/output.js', () => ({
 
 import { loadConfig } from '../../src/lib/config.js';
 import { runScript } from '../../src/lib/script-runner.js';
-import { isClaudeAvailable, runAiPrompt } from '../../src/lib/ai.js';
+import { isAiAvailable, runAiPrompt } from '../../src/lib/ai.js';
 import { print } from '../../src/lib/output.js';
 import { registerQualityCommand } from '../../src/commands/quality.js';
 
@@ -95,7 +95,7 @@ describe('quality command', () => {
 
   it('generates AI fix plan with --fix-plan', async () => {
     runScript.mockResolvedValue({ exitCode: 0, stdout: 'issues found' });
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     runAiPrompt.mockResolvedValue({ stdout: 'fix plan', exitCode: 0 });
 
     await createProgram().parseAsync(['node', 'sfdt', 'quality', '--fix-plan']);
@@ -108,7 +108,7 @@ describe('quality command', () => {
 
   it('warns when AI unavailable for --fix-plan', async () => {
     runScript.mockResolvedValue({ exitCode: 0, stdout: '' });
-    isClaudeAvailable.mockResolvedValue(false);
+    isAiAvailable.mockResolvedValue(false);
 
     await createProgram().parseAsync(['node', 'sfdt', 'quality', '--fix-plan']);
 
