@@ -2,7 +2,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { glob } from 'glob';
 import { loadConfig } from '../lib/config.js';
-import { isClaudeAvailable, runAiPrompt } from '../lib/ai.js';
+import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 
 const MAX_LOG_SIZE_BYTES = 512 * 1024; // 512 KB cap sent to the model
@@ -104,15 +104,14 @@ export function registerExplainCommand(program) {
           return;
         }
 
-        if (!(await isClaudeAvailable())) {
-          print.info(
-            'Claude CLI is not installed — heuristic analysis only. Install from https://docs.anthropic.com/en/docs/claude-cli for AI insights.',
-          );
+        if (!(await isAiAvailable(config))) {
+          print.info(`${aiUnavailableMessage(config)} — heuristic analysis only.`);
           return;
         }
 
         print.header('AI Error Analysis');
         await runAiPrompt(EXPLAIN_PROMPT + trimmed.content, {
+          config,
           allowedTools: ['Read', 'Grep', 'Glob'],
           cwd: projectRoot,
           aiEnabled: true,

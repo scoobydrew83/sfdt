@@ -18,7 +18,7 @@ vi.mock('glob', () => ({
 }));
 
 vi.mock('../../src/lib/ai.js', () => ({
-  isClaudeAvailable: vi.fn(),
+  isAiAvailable: vi.fn(), aiUnavailableMessage: vi.fn().mockReturnValue("AI provider not available"),
   runAiPrompt: vi.fn(),
 }));
 
@@ -36,7 +36,7 @@ vi.mock('../../src/lib/output.js', () => ({
 import fs from 'fs-extra';
 import { glob } from 'glob';
 import { loadConfig } from '../../src/lib/config.js';
-import { isClaudeAvailable, runAiPrompt } from '../../src/lib/ai.js';
+import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../../src/lib/ai.js';
 import { print } from '../../src/lib/output.js';
 import { registerExplainCommand } from '../../src/commands/explain.js';
 
@@ -56,6 +56,7 @@ const defaultConfig = {
 beforeEach(() => {
   vi.resetAllMocks();
   process.exitCode = undefined;
+  aiUnavailableMessage.mockReturnValue('AI provider not available');
   loadConfig.mockResolvedValue(defaultConfig);
 });
 
@@ -65,7 +66,7 @@ describe('explain command', () => {
     fs.readFile.mockResolvedValue(
       "Error: No such column 'MissingField__c' on entity 'Account'\nDEPLOYMENT FAILED",
     );
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     runAiPrompt.mockResolvedValue({ stdout: 'analysis', exitCode: 0 });
 
     await createProgram().parseAsync(['node', 'sfdt', 'explain', 'logs/deploy.log']);
@@ -90,14 +91,14 @@ describe('explain command', () => {
     expect(runAiPrompt).not.toHaveBeenCalled();
   });
 
-  it('reports info when Claude CLI is not available', async () => {
+  it('reports info when AI provider is not available', async () => {
     fs.pathExists.mockResolvedValue(true);
     fs.readFile.mockResolvedValue('Some error log content');
-    isClaudeAvailable.mockResolvedValue(false);
+    isAiAvailable.mockResolvedValue(false);
 
     await createProgram().parseAsync(['node', 'sfdt', 'explain', 'logs/deploy.log']);
 
-    expect(print.info).toHaveBeenCalledWith(expect.stringContaining('Claude CLI is not installed'));
+    expect(print.info).toHaveBeenCalledWith(expect.stringContaining('not available'));
     expect(runAiPrompt).not.toHaveBeenCalled();
   });
 
@@ -119,7 +120,7 @@ describe('explain command', () => {
       .mockResolvedValueOnce({ mtimeMs: 1000 }) // old.log
       .mockResolvedValueOnce({ mtimeMs: 2000 }); // new.log
     fs.readFile.mockResolvedValue('Latest log content');
-    isClaudeAvailable.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
     runAiPrompt.mockResolvedValue({ stdout: 'result', exitCode: 0 });
 
     await createProgram().parseAsync(['node', 'sfdt', 'explain', '--latest']);

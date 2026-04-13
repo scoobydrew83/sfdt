@@ -1,0 +1,25 @@
+# Dependencies — installed fresh inside the image
+node_modules/
+gui/node_modules/
+
+# Dev / test artefacts
+coverage/
+.nyc_output/
+*.log
+
+# Git worktrees and local overrides
+.worktrees/
+.env
+.env.*
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# CI workflows (not needed in the image)
+.github/
+
+# Skills / eval directories
+skills/

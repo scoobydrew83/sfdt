@@ -1,6 +1,6 @@
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
-import { isClaudeAvailable, runAiPrompt } from '../lib/ai.js';
+import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 
 export function registerQualityCommand(program) {
@@ -52,7 +52,7 @@ export function registerQualityCommand(program) {
         // AI fix plan
         if (options.fixPlan) {
           const aiEnabled = config.features?.ai;
-          if (aiEnabled && (await isClaudeAvailable())) {
+          if (aiEnabled && (await isAiAvailable(config))) {
             print.info('Generating AI fix plan...');
 
             const prompt = [
@@ -66,6 +66,7 @@ export function registerQualityCommand(program) {
             ].join('\n');
 
             await runAiPrompt(prompt, {
+              config,
               allowedTools: ['Read', 'Grep'],
               cwd: projectRoot,
               aiEnabled: true,

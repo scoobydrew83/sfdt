@@ -1,7 +1,7 @@
 import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
-import { isClaudeAvailable, runAiPrompt } from '../lib/ai.js';
+import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 
 export function registerTestCommand(program) {
@@ -45,7 +45,7 @@ export function registerTestCommand(program) {
         // Offer AI analysis on failure
         if (testFailed) {
           const aiEnabled = config.features?.ai;
-          if (aiEnabled && (await isClaudeAvailable())) {
+          if (aiEnabled && (await isAiAvailable(config))) {
             const { analyzeFailure } = await inquirer.prompt([
               {
                 type: 'confirm',
@@ -66,6 +66,7 @@ export function registerTestCommand(program) {
               ].join('\n');
 
               await runAiPrompt(prompt, {
+                config,
                 allowedTools: ['Read', 'Grep', 'Bash(sf apex test:*)'],
                 cwd: projectRoot,
                 aiEnabled: true,

@@ -14,14 +14,17 @@ This is `@sfdt/cli`, a Node.js ESM CLI package for Salesforce DX deployment, tes
 ### Directory Structure
 
 ```
-bin/            CLI entry point
+bin/            CLI entry point (loads plugins, then parses args)
 src/
   commands/     Command modules (one file per command)
-  lib/          Shared libraries (config, output, AI, script-runner, project-detect, metadata-mapper)
+  lib/          Shared libraries (config, output, AI, script-runner, project-detect, metadata-mapper, plugin-loader, gui-server)
 scripts/        Shell scripts executed by commands (de-parameterized, use SFDT_ env vars)
                 Exception: scripts/postinstall.js is a Node.js ESM file run by npm on install
 test/           Tests (vitest)
+gui/            React + Vite web dashboard (sfdt ui); built output lives in gui/dist/
+Dockerfile      Official Docker image definition
 .sfdt/          Per-project config directory (created by `sfdt init` in target projects)
+  plugins/      Optional local JS plugins loaded automatically at startup
 ```
 
 ### Key Patterns
@@ -29,7 +32,9 @@ test/           Tests (vitest)
 - **Commands** in `src/commands/` export a function that receives the Commander program and registers a subcommand.
 - **Shell scripts** in `scripts/` are de-parameterized — they read configuration from `SFDT_` prefixed environment variables, not from positional arguments. The `script-runner.js` lib handles setting these vars and invoking scripts. `scripts/postinstall.js` is an exception — it is a Node.js ESM script invoked by npm's `postinstall` lifecycle hook, not by `script-runner.js`.
 - **Config system** uses a `.sfdt/` directory created per-project. Config is loaded by `src/lib/config.js`. At load time, config is enriched with values from `sfdx-project.json` (e.g. `sourceApiVersion`, `defaultSourcePath` derived from `packageDirectories`).
-- **AI features** are optional and gated behind `features.ai` in config. They require the Claude CLI to be installed externally.
+- **AI features** are optional and gated behind `features.ai` in config. The provider is selected by `ai.provider` (`claude` | `gemini` | `openai`). Claude requires the Claude Code CLI; Gemini and OpenAI use native `fetch` with an API key from `ai.apiKey` or the corresponding env var. Use `isAiAvailable(config)` / `aiUnavailableMessage(config)` from `src/lib/ai.js` instead of the legacy `isClaudeAvailable()`.
+- **Plugin system** (`src/lib/plugin-loader.js`) runs before argument parsing. Plugins are loaded from: (1) `config.plugins[]` package names, (2) `sfdt-plugin-*` packages auto-discovered in the project's `node_modules/`, (3) `.sfdt/plugins/*.js` local files. Each plugin exports `register(program)`.
+- **Web UI** (`src/commands/ui.js` + `src/lib/gui-server.js`) starts a local Express server on port 7654 serving a pre-built React/SLDS dashboard from `gui/dist/`. Build with `npm run build:gui`.
 - **File matching** uses the `glob` package (v11) for pattern-based file discovery.
 - **Metadata mapping** (`src/lib/metadata-mapper.js`) provides a pure-JS mirror of `scripts/lib/metadata-parser.sh` for use in Node commands. Used by `manifest` and `pr-description`.
 
@@ -72,6 +77,7 @@ When adding a new env var, update both `buildScriptEnv()` in `script-runner.js` 
 ### Known Gaps
 
 - **No `sfdt config` command**: `.sfdt/config.json` must be hand-edited to change settings after `init`. A future `sfdt config set <key> <value>` command would let users and scripts update config without opening a JSON file, and would be especially useful for CI pipelines setting `deployment.preflight.enforce*` flags.
+- **GUI not pre-built in dev**: `gui/dist/` must be compiled with `npm run build:gui` before `sfdt ui` shows the full dashboard. The server falls back to a build-instructions page when `dist/` is absent.
 
 ### Error Handling
 

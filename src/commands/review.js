@@ -1,6 +1,6 @@
 import { execa } from 'execa';
 import { loadConfig } from '../lib/config.js';
-import { isClaudeAvailable, runAiPrompt } from '../lib/ai.js';
+import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 
 const REVIEW_PROMPT = `You are a senior Salesforce developer reviewing a code diff. Analyze the following changes and report issues in these categories:
@@ -57,11 +57,8 @@ export function registerReviewCommand(program) {
           return;
         }
 
-        if (!(await isClaudeAvailable())) {
-          print.error(
-            'Claude CLI is not installed or not in PATH.\n' +
-              '  Install from: https://docs.anthropic.com/en/docs/claude-cli',
-          );
+        if (!(await isAiAvailable(config))) {
+          print.error(aiUnavailableMessage(config));
           process.exitCode = 1;
           return;
         }
@@ -87,6 +84,7 @@ export function registerReviewCommand(program) {
         const prompt = REVIEW_PROMPT + diff;
 
         await runAiPrompt(prompt, {
+          config,
           allowedTools: ['Read', 'Grep'],
           cwd: projectRoot,
           aiEnabled: true,

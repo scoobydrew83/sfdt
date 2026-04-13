@@ -10,7 +10,7 @@ const CONFIG_DIR = '.sfdt';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = path.join(__dirname, '../templates/sfdt.config.json');
 
-async function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir, coverageThreshold }) {
+async function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir, coverageThreshold, ai }) {
   const template = await fs.readJson(TEMPLATE_PATH);
   return {
     ...template,
@@ -24,6 +24,11 @@ async function buildConfigTemplate({ projectName, defaultOrg, features, releaseN
     features: {
       ...template.features,
       ai: features.ai,
+    },
+    ai: {
+      provider: ai.provider,
+      model: ai.model || '',
+      apiKey: ai.apiKey || '',
     },
   };
 }
@@ -129,8 +134,30 @@ export function registerInitCommand(program) {
           {
             type: 'confirm',
             name: 'aiEnabled',
-            message: 'Enable AI-powered features (requires Claude CLI)?',
+            message: 'Enable AI-powered features?',
             default: true,
+          },
+          {
+            type: 'list',
+            name: 'aiProvider',
+            message: 'AI provider:',
+            choices: [
+              { name: 'Claude (requires Claude Code CLI)', value: 'claude' },
+              { name: 'Gemini (requires GEMINI_API_KEY)', value: 'gemini' },
+              { name: 'OpenAI (requires OPENAI_API_KEY)', value: 'openai' },
+            ],
+            default: 'claude',
+            when: (ans) => ans.aiEnabled,
+          },
+          {
+            type: 'input',
+            name: 'aiApiKey',
+            message: (ans) =>
+              ans.aiProvider === 'gemini'
+                ? 'Gemini API key (or leave blank to use GEMINI_API_KEY env var):'
+                : 'OpenAI API key (or leave blank to use OPENAI_API_KEY env var):',
+            default: '',
+            when: (ans) => ans.aiEnabled && ans.aiProvider !== 'claude',
           },
           {
             type: 'input',
@@ -182,6 +209,11 @@ export function registerInitCommand(program) {
             notifications: false,
             releaseManagement: true,
           },
+          ai: {
+            provider: answers.aiProvider || 'claude',
+            model: '',
+            apiKey: answers.aiApiKey || '',
+          },
         });
 
         const environments = buildEnvironmentsTemplate(answers.defaultOrg);
@@ -216,7 +248,7 @@ export function registerInitCommand(program) {
         print.step(`  Project: ${answers.projectName}`);
         print.step(`  Default org: ${answers.defaultOrg}`);
         print.step(`  Coverage threshold: ${answers.coverageThreshold}%`);
-        print.step(`  AI features: ${answers.aiEnabled ? 'enabled' : 'disabled'}`);
+        print.step(`  AI features: ${answers.aiEnabled ? `enabled (${answers.aiProvider || 'claude'})` : 'disabled'}`);
         print.step(`  Test classes: ${testClasses.length}`);
         print.step(`  Apex classes: ${apexClasses.length}`);
 

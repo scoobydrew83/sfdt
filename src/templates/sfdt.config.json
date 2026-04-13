@@ -15,5 +15,11 @@
     "ai": true,
     "notifications": false,
     "releaseManagement": true
-  }
+  },
+  "ai": {
+    "provider": "claude",
+    "model": "",
+    "apiKey": ""
+  },
+  "plugins": []
 }
