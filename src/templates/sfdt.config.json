@@ -18,8 +18,10 @@
   },
   "ai": {
     "provider": "claude",
-    "model": "",
-    "apiKey": ""
+    "model": ""
   },
-  "plugins": []
+  "plugins": [],
+  "pluginOptions": {
+    "autoDiscover": false
+  }
 }

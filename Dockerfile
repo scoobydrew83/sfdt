@@ -17,6 +17,18 @@
 #   SF_*                             — Salesforce CLI auth env vars
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Stage 1: Build the GUI ────────────────────────────────────────────────────
+FROM node:20-slim AS gui-builder
+
+WORKDIR /sfdt-gui
+
+COPY gui/package.json gui/package-lock.json* ./
+RUN npm ci
+
+COPY gui/ ./
+RUN npm run build
+
+# ── Stage 2: Runtime image ────────────────────────────────────────────────────
 FROM node:20-slim AS base
 
 # ── System packages ───────────────────────────────────────────────────────────
@@ -44,7 +56,9 @@ RUN npm ci --omit=dev
 COPY bin/     bin/
 COPY src/     src/
 COPY scripts/ scripts/
-COPY gui/dist/ gui/dist/
+
+# Copy pre-built GUI from the builder stage
+COPY --from=gui-builder /sfdt-gui/dist/ gui/dist/
 
 # Make sfdt available globally inside the container
 RUN npm link --legacy-peer-deps

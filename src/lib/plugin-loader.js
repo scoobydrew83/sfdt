@@ -50,62 +50,66 @@ export async function loadPlugins(program) {
     }
   }
 
-  // ── 2. Auto-discover sfdt-plugin-* in project node_modules ───────────────
-  const nodeModulesDir = path.join(projectRoot, 'node_modules');
-  if (await fs.pathExists(nodeModulesDir)) {
-    let entries;
-    try {
-      entries = await fs.readdir(nodeModulesDir);
-    } catch {
-      entries = [];
-    }
-
-    const explicitNames = new Set((config.plugins ?? []).map((n) => String(n)));
-
-    for (const entry of entries) {
-      if (entry.startsWith('sfdt-plugin-') && !explicitNames.has(entry)) {
-        sources.push({ name: entry, type: 'package', explicit: false });
+  // ── 2 & 3. Auto-discovery (opt-in only) ──────────────────────────────────
+  // Auto-discovery executes arbitrary project-local code before CLI parsing.
+  // It is disabled by default. Enable via pluginOptions.autoDiscover in config.
+  if (config.pluginOptions?.autoDiscover === true) {
+    const nodeModulesDir = path.join(projectRoot, 'node_modules');
+    if (await fs.pathExists(nodeModulesDir)) {
+      let entries;
+      try {
+        entries = await fs.readdir(nodeModulesDir);
+      } catch {
+        entries = [];
       }
-    }
 
-    // Also scan scoped packages (@org/sfdt-plugin-*)
-    for (const entry of entries) {
-      if (entry.startsWith('@')) {
-        const scopeDir = path.join(nodeModulesDir, entry);
-        let scopedEntries;
-        try {
-          scopedEntries = await fs.readdir(scopeDir);
-        } catch {
-          continue;
+      const explicitNames = new Set((config.plugins ?? []).map((n) => String(n)));
+
+      for (const entry of entries) {
+        if (entry.startsWith('sfdt-plugin-') && !explicitNames.has(entry)) {
+          sources.push({ name: entry, type: 'package', explicit: false });
         }
-        for (const scoped of scopedEntries) {
-          if (scoped.startsWith('sfdt-plugin-')) {
-            const fullName = `${entry}/${scoped}`;
-            if (!explicitNames.has(fullName)) {
-              sources.push({ name: fullName, type: 'package', explicit: false });
+      }
+
+      // Also scan scoped packages (@org/sfdt-plugin-*)
+      for (const entry of entries) {
+        if (entry.startsWith('@')) {
+          const scopeDir = path.join(nodeModulesDir, entry);
+          let scopedEntries;
+          try {
+            scopedEntries = await fs.readdir(scopeDir);
+          } catch {
+            continue;
+          }
+          for (const scoped of scopedEntries) {
+            if (scoped.startsWith('sfdt-plugin-')) {
+              const fullName = `${entry}/${scoped}`;
+              if (!explicitNames.has(fullName)) {
+                sources.push({ name: fullName, type: 'package', explicit: false });
+              }
             }
           }
         }
       }
     }
-  }
 
-  // ── 3. Local plugins in .sfdt/plugins/ ───────────────────────────────────
-  const localPluginsDir = path.join(configDir, 'plugins');
-  if (await fs.pathExists(localPluginsDir)) {
-    let files;
-    try {
-      files = await fs.readdir(localPluginsDir);
-    } catch {
-      files = [];
-    }
+    // Local plugins in .sfdt/plugins/
+    const localPluginsDir = path.join(configDir, 'plugins');
+    if (await fs.pathExists(localPluginsDir)) {
+      let files;
+      try {
+        files = await fs.readdir(localPluginsDir);
+      } catch {
+        files = [];
+      }
 
-    for (const file of files.filter((f) => f.endsWith('.js') || f.endsWith('.mjs'))) {
-      sources.push({
-        name: path.join(localPluginsDir, file),
-        type: 'local',
-        explicit: false,
-      });
+      for (const file of files.filter((f) => f.endsWith('.js') || f.endsWith('.mjs'))) {
+        sources.push({
+          name: path.join(localPluginsDir, file),
+          type: 'local',
+          explicit: false,
+        });
+      }
     }
   }
 

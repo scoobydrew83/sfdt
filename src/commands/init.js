@@ -5,6 +5,7 @@ import { glob } from 'glob';
 import inquirer from 'inquirer';
 import { detectProject, getProjectRoot } from '../lib/project-detect.js';
 import { print } from '../lib/output.js';
+import { storeCredential } from '../lib/ai.js';
 
 const CONFIG_DIR = '.sfdt';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -28,7 +29,7 @@ async function buildConfigTemplate({ projectName, defaultOrg, features, releaseN
     ai: {
       provider: ai.provider,
       model: ai.model || '',
-      apiKey: ai.apiKey || '',
+      // API keys are stored in ~/.sfdt/credentials.json, not here
     },
   };
 }
@@ -150,14 +151,15 @@ export function registerInitCommand(program) {
             when: (ans) => ans.aiEnabled,
           },
           {
-            type: 'input',
+            type: 'password',
             name: 'aiApiKey',
             message: (ans) =>
               ans.aiProvider === 'gemini'
-                ? 'Gemini API key (or leave blank to use GEMINI_API_KEY env var):'
-                : 'OpenAI API key (or leave blank to use OPENAI_API_KEY env var):',
+                ? 'Gemini API key (stored in ~/.sfdt/credentials.json, or leave blank to use GEMINI_API_KEY env var):'
+                : 'OpenAI API key (stored in ~/.sfdt/credentials.json, or leave blank to use OPENAI_API_KEY env var):',
             default: '',
             when: (ans) => ans.aiEnabled && ans.aiProvider !== 'claude',
+            mask: '*',
           },
           {
             type: 'input',
@@ -199,6 +201,12 @@ export function registerInitCommand(program) {
         // Create .sfdt/ directory
         await fs.ensureDir(configDir);
 
+        // Persist the API key to ~/.sfdt/credentials.json (never into the project config)
+        if (answers.aiEnabled && answers.aiProvider !== 'claude' && answers.aiApiKey) {
+          await storeCredential(answers.aiProvider, answers.aiApiKey);
+          print.success(`API key stored in ~/.sfdt/credentials.json (mode 0600)`);
+        }
+
         const config = await buildConfigTemplate({
           projectName: answers.projectName,
           defaultOrg: answers.defaultOrg,
@@ -212,7 +220,6 @@ export function registerInitCommand(program) {
           ai: {
             provider: answers.aiProvider || 'claude',
             model: '',
-            apiKey: answers.aiApiKey || '',
           },
         });
 
