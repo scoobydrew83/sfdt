@@ -27,7 +27,7 @@ This roadmap outlines the planned features and improvements for the @sfdt/cli to
 
 - [ ] **Other AI Platforms**: Add Gemini, others
 - [ ] **Plugin Architecture**: Allow external developers to add custom subcommands and scripts.
-- [ ] **Web UI**: A lightweight local web dashboard for monitoring test results and drift detection.
+- [x] **Web UI**: `sfdt ui` — launches a local Salesforce Lightning Design System dashboard (built with `@salesforce/design-system-react` + React + Vite) showing test run history, preflight check results, and drift detection status. Build the GUI with `npm run build:gui` from the package root.
 - [ ] **Docker Support**: Official Docker image for use in CI/CD pipelines.
 
 ---

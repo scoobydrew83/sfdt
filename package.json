@@ -14,6 +14,11 @@
     "bin/",
     "src/",
     "scripts/",
+    "gui/dist/",
+    "gui/package.json",
+    "gui/vite.config.js",
+    "gui/index.html",
+    "gui/src/",
     "README.md",
     "LICENSE",
     "SECURITY.md"
@@ -26,6 +31,7 @@
     "lint:fix": "eslint src/ bin/ --fix",
     "format": "prettier --write \"src/**/*.js\" \"bin/*.js\" \"test/**/*.js\" \"README.md\" \"package.json\"",
     "dev": "npm link",
+    "build:gui": "cd gui && npm install && npm run build",
     "postinstall": "node scripts/postinstall.js",
     "prepublishOnly": "npm test && npm run lint"
   },
@@ -52,9 +58,11 @@
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "execa": "^9.5.2",
+    "express": "^4.21.2",
     "fs-extra": "^11.3.0",
     "glob": "^13.0.6",
     "inquirer": "^13.3.2",
+    "open": "^10.1.0",
     "ora": "^9.3.0"
   },
   "devDependencies": {

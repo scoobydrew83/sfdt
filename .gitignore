@@ -1,8 +1,10 @@
 # Dependencies
 node_modules/
+gui/node_modules/
 
 # Build output
 dist/
+# gui/dist/ is intentionally NOT ignored — pre-built assets ship with the package
 
 # Coverage
 coverage/
