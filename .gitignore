@@ -35,3 +35,4 @@ skills/*/evals/
 
 # Git worktrees
 .worktrees/
+codex.js
