@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-04-12
+
+### Security
+- Fixed shell command injection risk (CodeQL CWE-78) in `changelog release` and `changelog check` commands — script path is now passed as a bash positional argument (`$1`) instead of being interpolated into the `-c` script string, preventing exploitation via specially crafted project root paths (closes CodeQL alerts #1 and #2: `js/shell-command-injection-from-environment`)
+
+### Added
+- `sfdt manifest`: Smart `package.xml` generator from git diffs with optional AI dependency cleanup (`--ai-cleanup`). Supports `--print`, `--destructive`, and custom `--base`/`--head` refs
+- `sfdt explain`: AI-powered deployment error log interpreter with heuristic pattern-matching fallback for offline use. Reads from a file, stdin (`--from-stdin`), or auto-discovers the latest log in the log directory
+- `sfdt pr-description`: Generates GitHub PR descriptions or Slack messages from deployment changes. Supports `--format github|slack|markdown` and `--output`
+- `src/lib/metadata-mapper.js`: Pure-JS metadata type/member parser that mirrors `scripts/lib/metadata-parser.sh` — used by `manifest` and `pr-description` commands, fully unit-tested
+- `src/lib/child-process-exit.js`: Signal forwarding and child process exit-code mirroring — ensures sfdt properly propagates `SIGINT`/`SIGTERM` and exits with the child's exit code
+
 ## [0.2.1] - 2026-04-07
 
 ### Fixed
