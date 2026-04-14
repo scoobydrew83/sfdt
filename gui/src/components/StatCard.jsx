@@ -1,45 +1,27 @@
 import React from 'react';
+import Card from '@salesforce/design-system-react/components/card';
+import Icon from '@salesforce/design-system-react/components/icon';
 
-export default function StatCard({ label, value, sub, accent }) {
+export default function StatCard({ label, value, sub, accent = '#0176d3', iconName = 'info' }) {
   return (
-    <div
-      className="slds-box slds-box_small"
-      style={{
-        background: '#fff',
-        borderRadius: '8px',
-        padding: '20px 24px',
-        flex: 1,
-        minWidth: '150px',
-        borderTop: `4px solid ${accent ?? '#0176d3'}`,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-      }}
+    <Card
+      style={{ borderTop: `4px solid ${accent}`, flex: '1 1 150px' }}
+      heading={label}
+      icon={
+        <Icon
+          assistiveText={{ label }}
+          category="utility"
+          name={iconName}
+          size="small"
+        />
+      }
     >
-      <div
-        style={{
-          fontSize: '12px',
-          fontWeight: 600,
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          color: '#706e6b',
-          marginBottom: '8px',
-        }}
-      >
-        {label}
+      <div className="slds-card__body_inner">
+        <p className="slds-text-heading_large slds-m-bottom_xx-small">{value ?? '—'}</p>
+        {sub && (
+          <p className="slds-text-body_small slds-text-color_weak">{sub}</p>
+        )}
       </div>
-      <div
-        style={{
-          fontSize: '36px',
-          fontWeight: 700,
-          color: '#181818',
-          lineHeight: 1,
-          marginBottom: '4px',
-        }}
-      >
-        {value ?? '—'}
-      </div>
-      {sub && (
-        <div style={{ fontSize: '12px', color: '#706e6b', marginTop: '4px' }}>{sub}</div>
-      )}
-    </div>
+    </Card>
   );
 }

@@ -24,6 +24,7 @@ export default defineConfig({
       '@salesforce/design-system-react/components/utilities/utility-icon/svg',
       '@salesforce/design-system-react/components/icon',
       '@salesforce/design-system-react/components/button',
+      '@salesforce/design-system-react/components/button-group',
       '@salesforce/design-system-react/components/badge',
       '@salesforce/design-system-react/components/card',
       '@salesforce/design-system-react/components/data-table',
