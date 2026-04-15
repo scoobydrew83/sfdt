@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import IconSettings from '@salesforce/design-system-react/components/icon-settings';
+import Icon from '@salesforce/design-system-react/components/icon';
 import { api } from './api.js';
 import Dashboard from './pages/Dashboard.jsx';
 import TestRuns from './pages/TestRuns.jsx';
@@ -7,10 +8,10 @@ import PreflightPage from './pages/Preflight.jsx';
 import DriftPage from './pages/Drift.jsx';
 
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: '⚡' },
-  { id: 'tests', label: 'Test Runs', icon: '✓' },
-  { id: 'preflight', label: 'Preflight', icon: '🔍' },
-  { id: 'drift', label: 'Drift Detection', icon: '⚖' },
+  { id: 'dashboard', label: 'Dashboard',       icon: 'home' },
+  { id: 'tests',     label: 'Test Runs',        icon: 'list' },
+  { id: 'preflight', label: 'Preflight',        icon: 'check' },
+  { id: 'drift',     label: 'Drift Detection',  icon: 'refresh' },
 ];
 
 export default function App() {
@@ -23,122 +24,111 @@ export default function App() {
 
   const renderPage = () => {
     switch (page) {
-      case 'dashboard':
-        return <Dashboard project={project} />;
-      case 'tests':
-        return <TestRuns />;
-      case 'preflight':
-        return <PreflightPage />;
-      case 'drift':
-        return <DriftPage />;
-      default:
-        return <Dashboard project={project} />;
+      case 'dashboard': return <Dashboard project={project} />;
+      case 'tests':     return <TestRuns />;
+      case 'preflight': return <PreflightPage />;
+      case 'drift':     return <DriftPage />;
+      default:          return <Dashboard project={project} />;
     }
   };
 
   return (
     <IconSettings iconPath="/assets/icons">
       <div className="slds-grid slds-nowrap" style={{ height: '100vh' }}>
-        {/* Sidebar */}
+
+        {/* ── Left navigation panel ─────────────────────────────────────── */}
         <aside
           className="slds-col slds-no-flex"
-          style={{
-            width: '220px',
-            background: '#032d60',
-            color: '#fff',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
+          style={{ width: '240px', background: '#032d60', display: 'flex', flexDirection: 'column' }}
         >
-          {/* Logo / App Name */}
+          {/* Project / app header */}
           <div
-            style={{
-              padding: '20px 16px 16px',
-              borderBottom: '1px solid rgba(255,255,255,0.15)',
-            }}
+            className="slds-media slds-media_center slds-p-around_medium"
+            style={{ borderBottom: '1px solid rgba(255,255,255,0.15)', flexShrink: 0 }}
           >
-            <div
-              style={{
-                fontSize: '11px',
-                fontWeight: 700,
-                letterSpacing: '1px',
-                textTransform: 'uppercase',
-                color: 'rgba(255,255,255,0.6)',
-                marginBottom: '4px',
-              }}
-            >
-              Salesforce DevTools
-            </div>
-            <div style={{ fontSize: '16px', fontWeight: 700, color: '#fff' }}>
-              {project?.name ?? 'SFDT'}
-            </div>
-            {project?.org && (
-              <div
-                style={{
-                  fontSize: '12px',
-                  color: 'rgba(255,255,255,0.55)',
-                  marginTop: '2px',
-                }}
+            <div className="slds-media__body">
+              <p
+                className="slds-text-body_small slds-m-bottom_xx-small"
+                style={{ color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700 }}
               >
-                {project.org}
-              </div>
-            )}
+                Salesforce DevTools
+              </p>
+              <p
+                className="slds-text-heading_small slds-truncate"
+                style={{ color: '#fff' }}
+                title={project?.name ?? 'SFDT'}
+              >
+                {project?.name ?? 'SFDT'}
+              </p>
+              {project?.org && (
+                <p
+                  className="slds-text-body_small slds-truncate"
+                  style={{ color: 'rgba(255,255,255,0.55)' }}
+                  title={project.org}
+                >
+                  {project.org}
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* Nav */}
-          <nav style={{ flex: 1, padding: '8px 0' }}>
-            {NAV_ITEMS.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setPage(item.id)}
-                style={{
-                  width: '100%',
-                  textAlign: 'left',
-                  background: page === item.id ? 'rgba(255,255,255,0.12)' : 'transparent',
-                  border: 'none',
-                  borderLeft: page === item.id ? '3px solid #1b96ff' : '3px solid transparent',
-                  color: page === item.id ? '#fff' : 'rgba(255,255,255,0.72)',
-                  padding: '10px 16px 10px 13px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={(e) => {
-                  if (page !== item.id)
-                    e.currentTarget.style.background = 'rgba(255,255,255,0.07)';
-                }}
-                onMouseLeave={(e) => {
-                  if (page !== item.id) e.currentTarget.style.background = 'transparent';
-                }}
-              >
-                <span style={{ fontSize: '16px', width: '20px', textAlign: 'center' }}>
-                  {item.icon}
-                </span>
-                {item.label}
-              </button>
-            ))}
+          {/* Vertical navigation */}
+          <nav className="slds-nav-vertical" style={{ flex: 1, paddingTop: '8px' }}>
+            <div className="slds-nav-vertical__section">
+              <ul>
+                {NAV_ITEMS.map((item) => {
+                  const active = page === item.id;
+                  return (
+                    <li
+                      key={item.id}
+                      className={`slds-nav-vertical__item${active ? ' slds-is-active' : ''}`}
+                    >
+                      <a
+                        href="#"
+                        className="slds-nav-vertical__action"
+                        aria-current={active ? 'page' : undefined}
+                        onClick={(e) => { e.preventDefault(); setPage(item.id); }}
+                        style={{
+                          color: active ? '#fff' : 'rgba(255,255,255,0.72)',
+                          background: active ? 'rgba(255,255,255,0.12)' : 'transparent',
+                          borderLeft: active ? '3px solid #1b96ff' : '3px solid transparent',
+                          paddingLeft: '13px',
+                        }}
+                      >
+                        <span className="slds-media slds-media_center slds-media_small">
+                          <span className="slds-media__figure">
+                            <Icon
+                              assistiveText={{ label: item.label }}
+                              category="utility"
+                              name={item.icon}
+                              size="x-small"
+                              colorVariant="light"
+                            />
+                          </span>
+                          <span className="slds-media__body">{item.label}</span>
+                        </span>
+                      </a>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </nav>
 
           {/* Footer */}
           <div
-            style={{
-              padding: '12px 16px',
-              borderTop: '1px solid rgba(255,255,255,0.12)',
-              fontSize: '11px',
-              color: 'rgba(255,255,255,0.4)',
-            }}
+            className="slds-p-around_small slds-text-body_small"
+            style={{ borderTop: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}
           >
             sfdt v{project?.version ?? '…'}
           </div>
         </aside>
 
-        {/* Main */}
+        {/* ── Main content ──────────────────────────────────────────────── */}
         <main className="slds-col" style={{ flex: 1, overflow: 'auto', background: '#f3f3f3' }}>
           {renderPage()}
         </main>
+
       </div>
     </IconSettings>
   );
