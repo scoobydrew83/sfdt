@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-04-14
+
+### Changed
+- **GUI rebuilt with SLDS React components**: Web dashboard (`sfdt ui`) now uses Salesforce Lightning Design System (SLDS) React components throughout, replacing the prior implementation for improved consistency and maintainability
+
 ## [0.3.0] - 2026-04-13
 
 ### Added
