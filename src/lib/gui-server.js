@@ -452,7 +452,7 @@ export function createGuiApp(config, version) {
     app.use(express.static(GUI_DIST));
 
     // SPA fallback — all non-API routes return index.html
-    app.get('*', apiLimiter, (_req, res) => {
+    app.use(apiLimiter, (_req, res) => {
       res.sendFile(path.join(GUI_DIST, 'index.html'));
     });
   } else {
