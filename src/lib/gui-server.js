@@ -10,6 +10,7 @@ import express from 'express';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createInterface } from 'readline';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -201,6 +202,23 @@ async function readLocalComponentXml(config, type, member) {
   return fsExtra.readFile(xmlFile, 'utf8');
 }
 
+// ─── Command runner config ────────────────────────────────────────────────────
+
+const COMMANDS = {
+  preflight: {
+    script: 'scripts/new/preflight.sh',
+    logFile: 'logs/preflight-latest.json',
+  },
+  drift: {
+    script: 'scripts/new/drift.sh',
+    logFile: 'logs/drift-latest.json',
+  },
+  test: {
+    script: 'scripts/new/smoke.sh',
+    logFile: 'logs/test-results/latest.json',
+  },
+};
+
 // ─── Rate limiter ─────────────────────────────────────────────────────────────
 
 /**
@@ -284,6 +302,89 @@ export function createGuiApp(config, version) {
     }
   });
 
+  // ── Generic command runner (SSE) ───────────────────────────────────────────
+
+  app.get('/api/command/run', async (req, res) => {
+    const { command } = req.query;
+    const cmd = COMMANDS[command];
+    if (!cmd) {
+      return res.status(400).json({ error: 'Unknown command' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    let child;
+    let clientClosed = false;
+
+    req.on('close', () => {
+      clientClosed = true;
+      if (child && !child.killed) child.kill();
+    });
+
+    try {
+      const { execa } = await import('execa');
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const scriptPath = path.join(projectRoot, cmd.script);
+
+      const scriptEnv = {
+        SFDT_PROJECT_ROOT: projectRoot,
+        SFDT_CONFIG_DIR: config._configDir ?? path.join(projectRoot, '.sfdt'),
+        SFDT_DEFAULT_ORG: config.defaultOrg ?? '',
+        SFDT_SOURCE_PATH: config.defaultSourcePath ?? 'force-app/main/default',
+        SFDT_API_VERSION: config.sourceApiVersion ?? '',
+        SFDT_NON_INTERACTIVE: 'true',
+      };
+
+      child = execa(scriptPath, [], {
+        env: { ...process.env, ...scriptEnv },
+        cwd: projectRoot,
+        stdout: 'pipe',
+        stderr: 'pipe',
+        shell: true,
+      });
+
+      const lines = [];
+
+      const streamLines = (readable) => {
+        const rl = createInterface({ input: readable, crlfDelay: Infinity });
+        rl.on('line', (line) => {
+          lines.push(line);
+          if (!res.writableEnded) {
+            res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
+          }
+        });
+      };
+
+      streamLines(child.stdout);
+      streamLines(child.stderr);
+
+      let exitCode = 0;
+      try {
+        await child;
+      } catch (execErr) {
+        exitCode = execErr.exitCode ?? 1;
+      }
+
+      const logPayload = { date: new Date().toISOString(), command, exitCode, lines };
+      const logFilePath = path.join(projectRoot, cmd.logFile);
+      await fs.outputJson(logFilePath, logPayload, { spaces: 2 });
+
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'result', exitCode }) + '\n\n');
+        res.end();
+      }
+    } catch (err) {
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'error', message: err.message }) + '\n\n');
+        res.end();
+      }
+    }
+  });
+
   // ── Compare routes ─────────────────────────────────────────────────────────
 
   app.get('/api/orgs', apiLimiter, async (_req, res) => {
@@ -364,39 +465,55 @@ export function createGuiApp(config, version) {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    const os = await import('os');
-    const tmpDir = path.join(os.tmpdir(), `sfdt-compare-${Date.now()}`);
-    const bothItems = data.items.filter((i) => i.status === 'both');
-    let completed = 0;
+    let clientClosed = false;
+    req.on('close', () => {
+      clientClosed = true;
+    });
 
-    const sendEvent = (payload) => {
-      res.write(`data: ${JSON.stringify(payload)}\n\n`);
-    };
+    try {
+      const os = await import('os');
+      const tmpDir = path.join(os.tmpdir(), `sfdt-compare-${Date.now()}`);
+      const bothItems = data.items.filter((i) => i.status === 'both');
+      let completed = 0;
 
-    sendEvent({ type: 'progress', total: bothItems.length, completed: 0 });
+      const sendEvent = (payload) => {
+        if (!res.writableEnded) {
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        }
+      };
 
-    for (const item of bothItems) {
-      const [sourceXml, targetXml] = await Promise.all([
-        data.source === 'local'
-          ? readLocalComponentXml(config, item.type, item.member)
-          : retrieveComponentXml(data.source, item.type, item.member, tmpDir),
-        retrieveComponentXml(data.target, item.type, item.member, tmpDir),
-      ]);
+      sendEvent({ type: 'progress', total: bothItems.length, completed: 0 });
 
-      const status =
-        sourceXml && targetXml && sourceXml.trim() === targetXml.trim()
-          ? 'identical'
-          : 'modified';
+      for (const item of bothItems) {
+        if (clientClosed || res.destroyed) break;
 
-      sendEvent({ type: 'diff', itemType: item.type, member: item.member, status });
-      completed++;
-      sendEvent({ type: 'progress', total: bothItems.length, completed });
+        const [sourceXml, targetXml] = await Promise.all([
+          data.source === 'local'
+            ? readLocalComponentXml(config, item.type, item.member)
+            : retrieveComponentXml(data.source, item.type, item.member, tmpDir),
+          retrieveComponentXml(data.target, item.type, item.member, tmpDir),
+        ]);
 
-      if (res.destroyed) break;
+        const status =
+          sourceXml && targetXml && sourceXml.trim() === targetXml.trim()
+            ? 'identical'
+            : 'modified';
+
+        sendEvent({ type: 'diff', itemType: item.type, member: item.member, status });
+        completed++;
+        sendEvent({ type: 'progress', total: bothItems.length, completed });
+      }
+
+      sendEvent({ type: 'done' });
+    } catch (err) {
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
+      }
+    } finally {
+      if (!res.writableEnded) {
+        res.end();
+      }
     }
-
-    sendEvent({ type: 'done' });
-    res.end();
   });
 
   app.post('/api/compare/manifest', apiLimiter, async (req, res) => {
