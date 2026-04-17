@@ -3,12 +3,14 @@ import Button from '@salesforce/design-system-react/components/button';
 import Spinner from '@salesforce/design-system-react/components/spinner';
 import Badge from '@salesforce/design-system-react/components/badge';
 
-export default function CommandRunner({ command, label, onComplete }) {
+export default function CommandRunner({ command, label, onComplete = () => {} }) {
   const [status, setStatus] = useState('idle');
   const [lines, setLines] = useState([]);
   const [exitCode, setExitCode] = useState(null);
   const esRef = useRef(null);
   const logRef = useRef(null);
+  const lineCounterRef = useRef(0);
+  const unmountedRef = useRef(false);
 
   // Scroll log pane to bottom whenever lines change
   useEffect(() => {
@@ -20,6 +22,7 @@ export default function CommandRunner({ command, label, onComplete }) {
   // Cleanup EventSource on unmount
   useEffect(() => {
     return () => {
+      unmountedRef.current = true;
       if (esRef.current) {
         esRef.current.close();
         esRef.current = null;
@@ -32,6 +35,7 @@ export default function CommandRunner({ command, label, onComplete }) {
       esRef.current.close();
       esRef.current = null;
     }
+    lineCounterRef.current = 0;
     setStatus('idle');
     setLines([]);
     setExitCode(null);
@@ -41,14 +45,19 @@ export default function CommandRunner({ command, label, onComplete }) {
     setStatus('running');
     setLines([]);
     setExitCode(null);
+    lineCounterRef.current = 0;
 
     const es = new EventSource(`/api/command/run?command=${encodeURIComponent(command)}`);
     esRef.current = es;
 
     es.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
+      if (unmountedRef.current) return;
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+
       if (msg.type === 'log') {
-        setLines((prev) => [...prev, msg.line]);
+        const id = lineCounterRef.current++;
+        setLines((prev) => [...prev, { id, text: msg.line }]);
       }
       if (msg.type === 'result') {
         const succeeded = msg.exitCode === 0;
@@ -56,9 +65,7 @@ export default function CommandRunner({ command, label, onComplete }) {
         setExitCode(msg.exitCode);
         es.close();
         esRef.current = null;
-        if (succeeded) {
-          onComplete();
-        }
+        if (succeeded) onComplete();
       }
       if (msg.type === 'error') {
         setStatus('error');
@@ -68,6 +75,7 @@ export default function CommandRunner({ command, label, onComplete }) {
     };
 
     es.onerror = () => {
+      if (unmountedRef.current) return;
       setStatus('error');
       es.close();
       esRef.current = null;
@@ -89,8 +97,8 @@ export default function CommandRunner({ command, label, onComplete }) {
         marginTop: '8px',
       }}
     >
-      {lines.map((line, i) => (
-        <div key={i}>{line}</div>
+      {lines.map(({ id, text }) => (
+        <div key={id}>{text}</div>
       ))}
     </div>
   );
@@ -133,7 +141,7 @@ export default function CommandRunner({ command, label, onComplete }) {
         <div>
           <div className="slds-grid slds-grid_vertical-align-center slds-gutters_small">
             <div className="slds-col slds-grow-none">
-              <Badge content="Run failed" color="error" />
+              <Badge content={exitCode != null ? `Run failed (exit ${exitCode})` : 'Run failed'} color="error" />
             </div>
             <div className="slds-col slds-grow-none">
               <Button variant="neutral" label="Run Again" onClick={reset} />
