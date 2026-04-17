@@ -20,6 +20,7 @@ import { registerManifestCommand } from './commands/manifest.js';
 import { registerExplainCommand } from './commands/explain.js';
 import { registerPrDescriptionCommand } from './commands/prDescription.js';
 import { registerUiCommand } from './commands/ui.js';
+import { registerCompareCommand } from './commands/compare.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
@@ -52,6 +53,7 @@ export function createCli() {
   registerExplainCommand(program);
   registerPrDescriptionCommand(program);
   registerUiCommand(program);
+  registerCompareCommand(program);
 
   return program;
 }
