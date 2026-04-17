@@ -69,7 +69,7 @@ export default function DriftPage() {
       <div className="slds-p-around_large">
         <CommandRunner command="drift" label="Drift Check" onComplete={() => setRefreshKey((k) => k + 1)} />
 
-        {components.length > 0 && (
+        {!loading && components.length > 0 && (
           <div className="slds-m-bottom_medium">
             <ButtonGroup id="drift-filter">
               <Button
