@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import PageHeader from '@salesforce/design-system-react/components/page-header';
 import Icon from '@salesforce/design-system-react/components/icon';
 import Card from '@salesforce/design-system-react/components/card';
@@ -10,6 +10,7 @@ import Alert from '@salesforce/design-system-react/components/alert';
 import { api } from '../api.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import CommandRunner from '../components/CommandRunner.jsx';
 
 const StatusCell = ({ item }) => <StatusBadge status={item.status} />;
 StatusCell.displayName = DataTableCell.displayName;
@@ -28,13 +29,15 @@ export default function TestRuns() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    setLoading(true);
     api.testRuns()
       .then(setData)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshKey]);
 
   const rows = (data?.runs ?? []).map((r, i) => ({
     id:       String(i),
@@ -65,6 +68,8 @@ export default function TestRuns() {
       />
 
       <div className="slds-p-around_large">
+        <CommandRunner command="test" label="Test Run" onComplete={() => setRefreshKey((k) => k + 1)} />
+
         {loading && (
           <div style={{ position: 'relative', height: '200px' }}>
             <Spinner size="large" variant="brand" />
@@ -116,7 +121,7 @@ export default function TestRuns() {
 
         {data?.summary && (
           <Card className="slds-m-top_medium" heading="Summary">
-            <div className="slds-card__body_inner slds-text-body_regular slds-text-color_weak">
+            <div className="slds-p-horizontal_medium slds-p-bottom_small slds-text-body_regular slds-text-color_weak">
               {data.summary}
             </div>
           </Card>

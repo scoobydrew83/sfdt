@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import PageHeader from '@salesforce/design-system-react/components/page-header';
 import Icon from '@salesforce/design-system-react/components/icon';
 import Card from '@salesforce/design-system-react/components/card';
@@ -11,6 +11,7 @@ import Button from '@salesforce/design-system-react/components/button';
 import { api } from '../api.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import CommandRunner from '../components/CommandRunner.jsx';
 
 const DriftStatusCell = ({ item }) => <StatusBadge status={item.drift} />;
 DriftStatusCell.displayName = DataTableCell.displayName;
@@ -19,13 +20,15 @@ export default function DriftPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    setLoading(true);
     api.drift()
       .then(setData)
       .catch(() => null)
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshKey]);
 
   const components = data?.components ?? [];
   const filtered   = filter === 'all'
@@ -64,6 +67,8 @@ export default function DriftPage() {
       />
 
       <div className="slds-p-around_large">
+        <CommandRunner command="drift" label="Drift Check" onComplete={() => setRefreshKey((k) => k + 1)} />
+
         {components.length > 0 && (
           <div className="slds-m-bottom_medium">
             <ButtonGroup id="drift-filter">
@@ -112,7 +117,7 @@ export default function DriftPage() {
             }
           >
             {rows.length === 0 ? (
-              <div className="slds-card__body_inner slds-text-align_center slds-text-color_weak slds-p-vertical_large">
+              <div className="slds-p-horizontal_medium slds-p-bottom_small slds-text-align_center slds-text-color_weak slds-p-vertical_large">
                 No components match the selected filter.
               </div>
             ) : (

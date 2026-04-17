@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import PageHeader from '@salesforce/design-system-react/components/page-header';
 import Icon from '@salesforce/design-system-react/components/icon';
 import Card from '@salesforce/design-system-react/components/card';
@@ -10,6 +10,7 @@ import Spinner from '@salesforce/design-system-react/components/spinner';
 import { api } from '../api.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import CommandRunner from '../components/CommandRunner.jsx';
 
 const STATUS_ICON = {
   pass:    { name: 'check',   color: '#2e844a' },
@@ -52,13 +53,15 @@ StatusBadgeCell.displayName = DataTableCell.displayName;
 export default function PreflightPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    setLoading(true);
     api.preflight()
       .then(setData)
       .catch(() => null)
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshKey]);
 
   const checks       = data?.checks ?? [];
   const passedCount  = checks.filter((c) => c.status === 'pass' || c.status === 'success').length;
@@ -101,6 +104,8 @@ export default function PreflightPage() {
       />
 
       <div className="slds-p-around_large">
+        <CommandRunner command="preflight" label="Preflight" onComplete={() => setRefreshKey((k) => k + 1)} />
+
         {loading && (
           <div style={{ position: 'relative', height: '200px' }}>
             <Spinner size="large" variant="brand" />
