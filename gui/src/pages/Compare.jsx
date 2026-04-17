@@ -7,6 +7,7 @@ import Combobox from '@salesforce/design-system-react/components/combobox';
 import ProgressBar from '@salesforce/design-system-react/components/progress-bar';
 import Spinner from '@salesforce/design-system-react/components/spinner';
 import Modal from '@salesforce/design-system-react/components/modal';
+import Alert from '@salesforce/design-system-react/components/alert';
 import { api } from '../api.js';
 import CompareTable from '../components/CompareTable.jsx';
 import DiffPanel from '../components/DiffPanel.jsx';
@@ -88,12 +89,12 @@ export default function ComparePage() {
   };
 
   const handleRunCompare = async () => {
+    setStreamError(null);
     if (!target) return;
     setRunning(true);
     setItems([]);
     setHasResult(false);
     setPhase2Active(false);
-    setStreamError(null);
     try {
       const result = await api.runCompare(source.id, target.id);
       setItems(result.items ?? []);
@@ -235,10 +236,12 @@ export default function ComparePage() {
         )}
 
         {streamError && (
-          <div className="slds-notify slds-notify_alert slds-alert_error slds-m-bottom_medium" role="alert">
-            <span className="slds-assistive-text">error</span>
-            <h2>{streamError}</h2>
-          </div>
+          <Alert
+            labels={{ heading: streamError }}
+            variant="error"
+            className="slds-m-bottom_medium"
+            onRequestClose={() => setStreamError(null)}
+          />
         )}
 
         {/* Loading spinner during Phase 1 */}
