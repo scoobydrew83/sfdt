@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import PageHeader from '@salesforce/design-system-react/components/page-header';
 import Icon from '@salesforce/design-system-react/components/icon';
 import Card from '@salesforce/design-system-react/components/card';
@@ -17,13 +17,16 @@ const LOCAL_OPTION = { id: 'local', label: 'Local Source' };
 export default function ComparePage() {
   const [orgs, setOrgs]               = useState([]);
   const [source, setSource]           = useState(LOCAL_OPTION);
+  const [sourceInput, setSourceInput] = useState('Local Source');
   const [target, setTarget]           = useState(null);
+  const [targetInput, setTargetInput] = useState('');
   const [running, setRunning]         = useState(false);
   const [items, setItems]             = useState([]);
   const [hasResult, setHasResult]     = useState(false);
   const [phase2Total, setPhase2Total] = useState(0);
   const [phase2Done, setPhase2Done]   = useState(0);
   const [phase2Active, setPhase2Active] = useState(false);
+  const [streamError, setStreamError] = useState(null);
   const [diffItem, setDiffItem]       = useState(null);
   const [manifest, setManifest]       = useState(null);
   const [manifestOpen, setManifestOpen] = useState(false);
@@ -35,7 +38,21 @@ export default function ComparePage() {
       .catch(() => {});
   }, []);
 
-  const orgOptions = [LOCAL_OPTION, ...orgs.map((o) => ({ id: o.alias, label: o.alias }))];
+  // Filtered source options based on typed text
+  const sourceOptions = useMemo(() => {
+    const all = [LOCAL_OPTION, ...orgs.map((o) => ({ id: o.alias, label: o.alias }))];
+    if (!sourceInput) return all;
+    const q = sourceInput.toLowerCase();
+    return all.filter((o) => o.label.toLowerCase().includes(q));
+  }, [orgs, sourceInput]);
+
+  // Filtered target options based on typed text
+  const targetOptions = useMemo(() => {
+    const all = orgs.map((o) => ({ id: o.alias, label: o.alias }));
+    if (!targetInput) return all;
+    const q = targetInput.toLowerCase();
+    return all.filter((o) => o.label.toLowerCase().includes(q));
+  }, [orgs, targetInput]);
 
   const startPhase2 = () => {
     if (esRef.current) esRef.current.close();
@@ -64,6 +81,7 @@ export default function ComparePage() {
       }
     };
     es.onerror = () => {
+      setStreamError('Streaming failed. The comparison inventory was saved — click Run Comparison again to retry.');
       setPhase2Active(false);
       es.close();
     };
@@ -75,6 +93,7 @@ export default function ComparePage() {
     setItems([]);
     setHasResult(false);
     setPhase2Active(false);
+    setStreamError(null);
     try {
       const result = await api.runCompare(source.id, target.id);
       setItems(result.items ?? []);
@@ -126,33 +145,71 @@ export default function ComparePage() {
           heading="Select Sources"
           icon={<Icon assistiveText={{ label: 'Settings' }} category="utility" name="settings" size="small" />}
           className="slds-m-bottom_medium"
+          bodyClassName="slds-p-horizontal_medium slds-p-bottom_small"
         >
-          <div className="slds-card__body_inner">
-            <div className="slds-grid slds-gutters slds-grid_vertical-align-end">
-              <div className="slds-col slds-size_1-of-3">
+            <div className="slds-grid slds-grid_vertical-align-end" style={{ gap: '1rem' }}>
+
+              {/* Source */}
+              <div className="slds-col">
                 <Combobox
                   id="source-select"
-                  labels={{ label: 'Source', placeholder: 'Select source…' }}
-                  options={orgOptions}
-                  selection={source ? [source] : []}
-                  onSelect={(e, { selection: sel }) => setSource(sel[0] ?? null)}
-                  variant="readonly"
+                  labels={{ label: 'Source', placeholder: 'Type "local" or an org alias…' }}
+                  options={sourceOptions}
+                  selection={[]}
+                  value={sourceInput}
+                  variant="base"
+                  events={{
+                    onChange: (_e, { value }) => {
+                      setSourceInput(value);
+                      setSource(value ? { id: value, label: value } : null);
+                    },
+                    onSelect: (_e, { selection: sel }) => {
+                      if (sel[0]) {
+                        setSource(sel[0]);
+                        setSourceInput(sel[0].label);
+                      }
+                    },
+                  }}
                 />
               </div>
-              <div className="slds-col slds-no-flex slds-p-bottom_x-small slds-text-heading_medium slds-text-color_weak">
-                →
+
+              {/* Arrow */}
+              <div className="slds-col slds-no-flex" style={{ paddingBottom: '8px' }}>
+                <Icon
+                  assistiveText={{ label: 'to' }}
+                  category="utility"
+                  name="forward"
+                  size="x-small"
+                  style={{ fill: '#706e6b' }}
+                />
               </div>
-              <div className="slds-col slds-size_1-of-3">
+
+              {/* Target */}
+              <div className="slds-col">
                 <Combobox
                   id="target-select"
-                  labels={{ label: 'Target', placeholder: 'Select target org…' }}
-                  options={orgs.map((o) => ({ id: o.alias, label: o.alias }))}
-                  selection={target ? [target] : []}
-                  onSelect={(e, { selection: sel }) => setTarget(sel[0] ?? null)}
-                  variant="readonly"
+                  labels={{ label: 'Target Org', placeholder: 'Type target org alias…' }}
+                  options={targetOptions}
+                  selection={[]}
+                  value={targetInput}
+                  variant="base"
+                  events={{
+                    onChange: (_e, { value }) => {
+                      setTargetInput(value);
+                      setTarget(value ? { id: value, label: value } : null);
+                    },
+                    onSelect: (_e, { selection: sel }) => {
+                      if (sel[0]) {
+                        setTarget(sel[0]);
+                        setTargetInput(sel[0].label);
+                      }
+                    },
+                  }}
                 />
               </div>
-              <div className="slds-col slds-no-flex">
+
+              {/* Run button */}
+              <div className="slds-col slds-no-flex slds-shrink-none" style={{ paddingBottom: '2px' }}>
                 <Button
                   label={running ? 'Running…' : 'Run Comparison'}
                   variant="brand"
@@ -160,8 +217,11 @@ export default function ComparePage() {
                   onClick={handleRunCompare}
                 />
               </div>
+
             </div>
-          </div>
+            <p className="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+              Use <code>local</code> for local source files, or type any Salesforce org alias (e.g. <code>sandbox</code>, <code>production</code>).
+            </p>
         </Card>
 
         {/* Phase 2 progress bar */}
@@ -170,7 +230,14 @@ export default function ComparePage() {
             <p className="slds-text-body_small slds-m-bottom_xx-small slds-text-color_weak">
               {`Comparing content for shared components… ${phase2Done}/${phase2Total}`}
             </p>
-            <ProgressBar value={phase2Pct} variant="circular" />
+            <ProgressBar value={phase2Pct} />
+          </div>
+        )}
+
+        {streamError && (
+          <div className="slds-notify slds-notify_alert slds-alert_error slds-m-bottom_medium" role="alert">
+            <span className="slds-assistive-text">error</span>
+            <h2>{streamError}</h2>
           </div>
         )}
 
@@ -194,14 +261,13 @@ export default function ComparePage() {
           <Card
             heading="Comparison Results"
             icon={<Icon assistiveText={{ label: 'Results' }} category="utility" name="table" size="small" />}
+            bodyClassName="slds-p-horizontal_medium slds-p-bottom_small"
           >
-            <div className="slds-card__body_inner">
-              <CompareTable
-                items={items}
-                onSelect={setDiffItem}
-                onBuildManifest={handleBuildManifest}
-              />
-            </div>
+            <CompareTable
+              items={items}
+              onSelect={setDiffItem}
+              onBuildManifest={handleBuildManifest}
+            />
           </Card>
         )}
       </div>
