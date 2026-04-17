@@ -191,12 +191,17 @@ async function readLocalComponentXml(config, type, member) {
   const fsExtra = (await import('fs-extra')).default;
   const sourcePath = config.defaultSourcePath ?? 'force-app/main/default';
   const root = config._projectRoot ?? process.cwd();
+  const absSource = path.join(root, sourcePath);
   const files = await glob(`**/${member}*`, {
-    cwd: path.join(root, sourcePath),
+    cwd: absSource,
     absolute: true,
     nodir: true,
   });
-  const xmlFile = files.find((f) => f.endsWith('.xml') || f.endsWith('.cls') || f.endsWith('.trigger'));
+  const xmlFile = files.find(
+    (f) =>
+      !path.relative(absSource, f).startsWith('..') &&
+      (f.endsWith('.xml') || f.endsWith('.cls') || f.endsWith('.trigger'))
+  );
   if (!xmlFile) return null;
   return fsExtra.readFile(xmlFile, 'utf8');
 }
@@ -545,6 +550,11 @@ export function createGuiApp(config, version) {
     try {
       const { type, member } = req.query;
       if (!type || !member) return res.status(400).json({ error: 'type and member are required' });
+      // Block path traversal: null bytes, parent-directory sequences, absolute paths.
+      // Dots and slashes are valid in Salesforce member names (e.g. CustomMetadata__mdt.Record, reports/Folder/Name).
+      if (/[\x00]|\.\./.test(member) || /^[/\\]/.test(member)) {
+        return res.status(400).json({ error: 'Invalid member name' });
+      }
 
       const data = await readCompare(logDir);
       if (!data) return res.status(404).json({ error: 'No comparison result found.' });

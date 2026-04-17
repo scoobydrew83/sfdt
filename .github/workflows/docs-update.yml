@@ -1,0 +1,78 @@
+name: Documentation Update
+
+# Runs after every merge to develop. Analyzes what changed and opens a PR
+# with documentation updates if any are needed.
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'package.json'
+
+concurrency:
+  group: docs-update-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Update documentation
+        uses: anthropics/claude-code-action@v1
+        env:
+          CURRENT_SHA: ${{ github.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          RUN_ID: ${{ github.run_id }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are maintaining documentation for the sfdt CLI project. A merge just landed on the develop branch. Your job is to update the project documentation to reflect what changed.
+
+            Context for this run (available as environment variables):
+            - CURRENT_SHA: the commit that just landed
+            - BEFORE_SHA: the commit before this push
+            - RUN_ID: unique ID for this workflow run (use in branch name)
+
+            Execute these steps:
+            1. Run `git log "$BEFORE_SHA..$CURRENT_SHA" --oneline` to see what landed.
+            2. Run `git diff "$BEFORE_SHA..$CURRENT_SHA" --name-only` to see changed files.
+            3. Map changed files to the documentation they affect:
+               - Changes in `src/commands/` → README.md command table and docs/USAGE.md
+               - Changes in `src/lib/` → docs/ARCHITECTURE.md lib section and CLAUDE.md
+               - New SFDT_ env vars in `src/lib/script-runner.js` → CLAUDE.md SFDT_ variable table
+               - New config keys in `src/templates/sfdt.config.json` → CLAUDE.md config template section
+            4. Read the relevant source files to understand the actual changes.
+            5. Update only the documentation sections that are directly affected.
+            6. If documentation changes are needed:
+               a. Create a new branch: `git checkout -b "docs/update-$RUN_ID"`
+               b. Stage only the modified documentation files
+               c. Commit: `git commit -m "docs: update documentation for recent changes"`
+               d. Push: `git push -u origin "docs/update-$RUN_ID"`
+               e. Create a PR targeting `develop` using `gh pr create` with:
+                  - Title: `docs: update documentation for recent changes`
+                  - Body listing which files were updated and why
+            7. If no documentation changes are needed, output "Documentation is already up to date." and exit cleanly.
+
+            Rules:
+            - Never push directly to develop or main
+            - Never rewrite sections unrelated to the changes
+            - Always read source files before updating docs
+            - Never use placeholder values or TODOs
