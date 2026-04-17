@@ -10,7 +10,6 @@ import express from 'express';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createInterface } from 'readline';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -317,15 +316,14 @@ export function createGuiApp(config, version) {
     res.flushHeaders();
 
     let child;
-    let clientClosed = false;
 
     req.on('close', () => {
-      clientClosed = true;
       if (child && !child.killed) child.kill();
     });
 
     try {
       const { execa } = await import('execa');
+      const { createInterface } = await import('readline');
 
       const projectRoot = config._projectRoot ?? process.cwd();
       const scriptPath = path.join(projectRoot, cmd.script);
@@ -357,16 +355,20 @@ export function createGuiApp(config, version) {
             res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
           }
         });
+        return rl;
       };
 
-      streamLines(child.stdout);
-      streamLines(child.stderr);
+      const rlStdout = streamLines(child.stdout);
+      const rlStderr = streamLines(child.stderr);
 
       let exitCode = 0;
       try {
         await child;
       } catch (execErr) {
         exitCode = execErr.exitCode ?? 1;
+      } finally {
+        rlStdout.close();
+        rlStderr.close();
       }
 
       const logPayload = { date: new Date().toISOString(), command, exitCode, lines };
@@ -470,9 +472,10 @@ export function createGuiApp(config, version) {
       clientClosed = true;
     });
 
+    const os = await import('os');
+    let tmpDir = path.join(os.tmpdir(), `sfdt-compare-${Date.now()}`);
+
     try {
-      const os = await import('os');
-      const tmpDir = path.join(os.tmpdir(), `sfdt-compare-${Date.now()}`);
       const bothItems = data.items.filter((i) => i.status === 'both');
       let completed = 0;
 
@@ -510,9 +513,8 @@ export function createGuiApp(config, version) {
         res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
       }
     } finally {
-      if (!res.writableEnded) {
-        res.end();
-      }
+      if (!res.writableEnded) res.end();
+      await fs.remove(tmpDir).catch(() => {});
     }
   });
 
