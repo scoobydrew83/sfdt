@@ -6,12 +6,14 @@ import Dashboard from './pages/Dashboard.jsx';
 import TestRuns from './pages/TestRuns.jsx';
 import PreflightPage from './pages/Preflight.jsx';
 import DriftPage from './pages/Drift.jsx';
+import ComparePage from './pages/Compare.jsx';
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard',       icon: 'home' },
   { id: 'tests',     label: 'Test Runs',        icon: 'list' },
   { id: 'preflight', label: 'Preflight',        icon: 'check' },
   { id: 'drift',     label: 'Drift Detection',  icon: 'refresh' },
+  { id: 'compare',  label: 'Compare',          icon: 'connected_apps' },
 ];
 
 export default function App() {
@@ -28,6 +30,7 @@ export default function App() {
       case 'tests':     return <TestRuns />;
       case 'preflight': return <PreflightPage />;
       case 'drift':     return <DriftPage />;
+      case 'compare':   return <ComparePage />;
       default:          return <Dashboard project={project} />;
     }
   };
