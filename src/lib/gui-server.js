@@ -186,13 +186,15 @@ async function retrieveComponentXml(orgAlias, type, member, tmpDir) {
 /**
  * Read a metadata component's XML from the local source directory.
  */
-async function readLocalComponentXml(config, type, member) {
+async function readLocalComponentXml(config, _type, member) {
   const { glob } = await import('glob');
   const fsExtra = (await import('fs-extra')).default;
   const sourcePath = config.defaultSourcePath ?? 'force-app/main/default';
   const root = config._projectRoot ?? process.cwd();
   const absSource = path.join(root, sourcePath);
-  const files = await glob(`**/${member}*`, {
+  // Escape glob metacharacters in member name before interpolating into pattern.
+  const safeMember = member.replace(/[[\]{}()*+?\\^$|]/g, '\\$&');
+  const files = await glob(`**/${safeMember}*`, {
     cwd: absSource,
     absolute: true,
     nodir: true,
@@ -218,7 +220,7 @@ const COMMANDS = {
     logFile: 'logs/drift-latest.json',
   },
   test: {
-    script: 'scripts/new/smoke.sh',
+    script: 'scripts/core/enhanced-test-runner.sh',
     logFile: 'logs/test-results/latest.json',
   },
 };
@@ -308,7 +310,7 @@ export function createGuiApp(config, version) {
 
   // ── Generic command runner (SSE) ───────────────────────────────────────────
 
-  app.get('/api/command/run', async (req, res) => {
+  app.get('/api/command/run', apiLimiter, async (req, res) => {
     const { command } = req.query;
     const cmd = COMMANDS[command];
     if (!cmd) {
