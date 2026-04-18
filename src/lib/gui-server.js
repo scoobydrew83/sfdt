@@ -144,6 +144,87 @@ async function safeReaddir(dir) {
   }
 }
 
+/**
+ * Read the most recent compare result.
+ * Returns { date, source, target, items: [{type, member, status}] } or null.
+ */
+async function readCompare(logDir) {
+  return tryReadJson(path.join(logDir, 'compare-latest.json'));
+}
+
+/**
+ * Run sf project retrieve for a single metadata component into a temp dir.
+ * Returns the XML file contents or null on failure.
+ */
+async function retrieveComponentXml(orgAlias, type, member, tmpDir) {
+  if (!orgAlias) return null;
+  const { execa } = await import('execa');
+  const outputDir = path.join(tmpDir, orgAlias.replace(/[^a-z0-9]/gi, '_'));
+  try {
+    await execa('sf', [
+      'project',
+      'retrieve',
+      'start',
+      '--metadata',
+      `${type}:${member}`,
+      '--target-org',
+      orgAlias,
+      '--output-dir',
+      outputDir,
+      '--json',
+    ]);
+    const { glob } = await import('glob');
+    const files = await glob('**/*.xml', { cwd: outputDir, absolute: true });
+    if (!files.length) return null;
+    const fsExtra = (await import('fs-extra')).default;
+    return fsExtra.readFile(files[0], 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read a metadata component's XML from the local source directory.
+ */
+async function readLocalComponentXml(config, _type, member) {
+  const { glob } = await import('glob');
+  const fsExtra = (await import('fs-extra')).default;
+  const sourcePath = config.defaultSourcePath ?? 'force-app/main/default';
+  const root = config._projectRoot ?? process.cwd();
+  const absSource = path.join(root, sourcePath);
+  // Escape glob metacharacters in member name before interpolating into pattern.
+  const safeMember = member.replace(/[[\]{}()*+?\\^$|]/g, '\\$&');
+  const files = await glob(`**/${safeMember}*`, {
+    cwd: absSource,
+    absolute: true,
+    nodir: true,
+  });
+  const xmlFile = files.find(
+    (f) =>
+      !path.relative(absSource, f).startsWith('..') &&
+      (f.endsWith('.xml') || f.endsWith('.cls') || f.endsWith('.trigger'))
+  );
+  if (!xmlFile) return null;
+  return fsExtra.readFile(xmlFile, 'utf8');
+}
+
+// ─── Command runner config ────────────────────────────────────────────────────
+
+const COMMANDS = {
+  preflight: {
+    script: 'scripts/new/preflight.sh',
+    logFile: 'logs/preflight-latest.json',
+  },
+  drift: {
+    script: 'scripts/new/drift.sh',
+    logFile: 'logs/drift-latest.json',
+  },
+  test: {
+    script: 'scripts/core/enhanced-test-runner.sh',
+    logFile: 'logs/test-results/latest.json',
+  },
+};
+
 // ─── Rate limiter ─────────────────────────────────────────────────────────────
 
 /**
@@ -227,13 +308,282 @@ export function createGuiApp(config, version) {
     }
   });
 
+  // ── Generic command runner (SSE) ───────────────────────────────────────────
+
+  app.get('/api/command/run', apiLimiter, async (req, res) => {
+    const { command } = req.query;
+    const cmd = COMMANDS[command];
+    if (!cmd) {
+      return res.status(400).json({ error: 'Unknown command' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    let child;
+
+    req.on('close', () => {
+      if (child && !child.killed) child.kill();
+    });
+
+    try {
+      const { execa } = await import('execa');
+      const { createInterface } = await import('readline');
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const scriptPath = path.join(projectRoot, cmd.script);
+
+      const scriptEnv = {
+        SFDT_PROJECT_ROOT: projectRoot,
+        SFDT_CONFIG_DIR: config._configDir ?? path.join(projectRoot, '.sfdt'),
+        SFDT_DEFAULT_ORG: config.defaultOrg ?? '',
+        SFDT_SOURCE_PATH: config.defaultSourcePath ?? 'force-app/main/default',
+        SFDT_API_VERSION: config.sourceApiVersion ?? '',
+        SFDT_NON_INTERACTIVE: 'true',
+      };
+
+      child = execa(scriptPath, [], {
+        env: { ...process.env, ...scriptEnv },
+        cwd: projectRoot,
+        stdout: 'pipe',
+        stderr: 'pipe',
+        shell: true,
+      });
+
+      const lines = [];
+
+      const streamLines = (readable) => {
+        const rl = createInterface({ input: readable, crlfDelay: Infinity });
+        rl.on('line', (line) => {
+          lines.push(line);
+          if (!res.writableEnded) {
+            res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
+          }
+        });
+        return rl;
+      };
+
+      const rlStdout = streamLines(child.stdout);
+      const rlStderr = streamLines(child.stderr);
+
+      let exitCode = 0;
+      try {
+        await child;
+      } catch (execErr) {
+        exitCode = execErr.exitCode ?? 1;
+      } finally {
+        rlStdout.close();
+        rlStderr.close();
+      }
+
+      const logPayload = { date: new Date().toISOString(), command, exitCode, lines };
+      const logFilePath = path.join(projectRoot, cmd.logFile);
+      await fs.outputJson(logFilePath, logPayload, { spaces: 2 });
+
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'result', exitCode }) + '\n\n');
+        res.end();
+      }
+    } catch (err) {
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'error', message: err.message }) + '\n\n');
+        res.end();
+      }
+    }
+  });
+
+  // ── Compare routes ─────────────────────────────────────────────────────────
+
+  app.get('/api/orgs', apiLimiter, async (_req, res) => {
+    try {
+      const { execa } = await import('execa');
+      let sfOrgs = [];
+      try {
+        const result = await execa('sf', ['org', 'list', '--json']);
+        const parsed = JSON.parse(result.stdout);
+        const allOrgs = [
+          ...(parsed.result?.nonScratchOrgs ?? []),
+          ...(parsed.result?.scratchOrgs ?? []),
+        ];
+        sfOrgs = allOrgs
+          .filter((o) => o.alias)
+          .map((o) => ({ alias: o.alias, username: o.username }));
+      } catch {
+        // sf not available or no orgs authorized
+      }
+
+      const configOrgs = Object.keys(config.environments?.orgs ?? {}).map((alias) => ({
+        alias,
+        username: config.environments.orgs[alias],
+      }));
+
+      // Merge, deduplicate by alias
+      const byAlias = new Map();
+      for (const org of [...sfOrgs, ...configOrgs]) {
+        if (!byAlias.has(org.alias)) byAlias.set(org.alias, org);
+      }
+
+      res.json({ orgs: [...byAlias.values()] });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/compare', apiLimiter, async (_req, res) => {
+    try {
+      const data = await readCompare(logDir);
+      res.json(data ?? {});
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/compare', apiLimiter, async (req, res) => {
+    try {
+      const { source = 'local', target } = req.body ?? {};
+      if (!target) return res.status(400).json({ error: 'target is required' });
+
+      const { fetchInventory } = await import('./org-inventory.js');
+      const { diffInventories } = await import('./org-diff.js');
+
+      const [sourceMap, targetMap] = await Promise.all([
+        fetchInventory(source, config),
+        fetchInventory(target, config),
+      ]);
+
+      const items = diffInventories(sourceMap, targetMap);
+      const payload = { date: new Date().toISOString(), source, target, items };
+
+      const fsExtra = (await import('fs-extra')).default;
+      await fsExtra.outputJson(path.join(logDir, 'compare-latest.json'), payload, { spaces: 2 });
+
+      res.json(payload);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/compare/stream', async (req, res) => {
+    const data = await readCompare(logDir);
+    if (!data) return res.status(404).json({ error: 'No comparison result found. Run compare first.' });
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    let clientClosed = false;
+    req.on('close', () => {
+      clientClosed = true;
+    });
+
+    const os = await import('os');
+    let tmpDir = path.join(os.tmpdir(), `sfdt-compare-${Date.now()}`);
+
+    try {
+      const bothItems = data.items.filter((i) => i.status === 'both');
+      let completed = 0;
+
+      const sendEvent = (payload) => {
+        if (!res.writableEnded) {
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        }
+      };
+
+      sendEvent({ type: 'progress', total: bothItems.length, completed: 0 });
+
+      for (const item of bothItems) {
+        if (clientClosed || res.destroyed) break;
+
+        const [sourceXml, targetXml] = await Promise.all([
+          data.source === 'local'
+            ? readLocalComponentXml(config, item.type, item.member)
+            : retrieveComponentXml(data.source, item.type, item.member, tmpDir),
+          retrieveComponentXml(data.target, item.type, item.member, tmpDir),
+        ]);
+
+        const status =
+          sourceXml && targetXml && sourceXml.trim() === targetXml.trim()
+            ? 'identical'
+            : 'modified';
+
+        sendEvent({ type: 'diff', itemType: item.type, member: item.member, status });
+        completed++;
+        sendEvent({ type: 'progress', total: bothItems.length, completed });
+      }
+
+      sendEvent({ type: 'done' });
+    } catch (err) {
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
+      }
+    } finally {
+      if (!res.writableEnded) res.end();
+      await fs.remove(tmpDir).catch(() => {});
+    }
+  });
+
+  app.post('/api/compare/manifest', apiLimiter, async (req, res) => {
+    try {
+      const { items = [], apiVersion } = req.body ?? {};
+      const { renderPackageXml } = await import('./metadata-mapper.js');
+
+      const metaMap = {};
+      for (const { type, member } of items) {
+        if (!metaMap[type]) metaMap[type] = [];
+        metaMap[type].push(member);
+      }
+
+      const resolvedVersion = apiVersion ?? config.sourceApiVersion ?? '63.0';
+      const xml = renderPackageXml(metaMap, resolvedVersion);
+
+      const fsExtra = (await import('fs-extra')).default;
+      await fsExtra.outputFile(path.join(logDir, 'compare-manifest.xml'), xml);
+
+      res.json({ xml });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/compare/diff', apiLimiter, async (req, res) => {
+    try {
+      const { type, member } = req.query;
+      if (!type || !member) return res.status(400).json({ error: 'type and member are required' });
+      // Block path traversal: null bytes, parent-directory sequences, absolute paths.
+      // Dots and slashes are valid in Salesforce member names (e.g. CustomMetadata__mdt.Record, reports/Folder/Name).
+      if (/[\x00]|\.\./.test(member) || /^[/\\]/.test(member)) {
+        return res.status(400).json({ error: 'Invalid member name' });
+      }
+
+      const data = await readCompare(logDir);
+      if (!data) return res.status(404).json({ error: 'No comparison result found.' });
+
+      const os = await import('os');
+      const tmpDir = path.join(os.tmpdir(), `sfdt-diff-${Date.now()}`);
+
+      const [sourceXml, targetXml] = await Promise.all([
+        data.source === 'local'
+          ? readLocalComponentXml(config, type, member)
+          : retrieveComponentXml(data.source, type, member, tmpDir),
+        retrieveComponentXml(data.target, type, member, tmpDir),
+      ]);
+
+      res.json({ sourceXml: sourceXml ?? '', targetXml: targetXml ?? '' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ── Static: serve pre-built React app ──────────────────────────────────────
 
   if (fs.existsSync(GUI_DIST)) {
     app.use(express.static(GUI_DIST));
 
     // SPA fallback — all non-API routes return index.html
-    app.get('*', apiLimiter, (_req, res) => {
+    app.use(apiLimiter, (_req, res) => {
       res.sendFile(path.join(GUI_DIST, 'index.html'));
     });
   } else {

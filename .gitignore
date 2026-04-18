@@ -38,3 +38,7 @@ skills/*/evals/
 # Git worktrees
 .worktrees/
 codex.js
+.superpowers/
+.playwright-mcp/
+logs/
+.claude/skills/*

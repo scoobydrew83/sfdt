@@ -1,159 +1,108 @@
-import React, { useState, useEffect } from 'react';
-import PageHeader from '@salesforce/design-system-react/components/page-header';
-import Icon from '@salesforce/design-system-react/components/icon';
-import Card from '@salesforce/design-system-react/components/card';
-import DataTable from '@salesforce/design-system-react/components/data-table';
-import DataTableColumn from '@salesforce/design-system-react/components/data-table/column';
-import DataTableCell from '@salesforce/design-system-react/components/data-table/cell';
-import Badge from '@salesforce/design-system-react/components/badge';
-import Spinner from '@salesforce/design-system-react/components/spinner';
+import { useState, useEffect } from 'react';
 import { api } from '../api.js';
+import StatCard from '../components/StatCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import CommandRunner from '../components/CommandRunner.jsx';
+import { IconCheckCircle, IconXCircle, IconAlertTri, IconInfo } from '../Icons.jsx';
 
-const STATUS_ICON = {
-  pass:    { name: 'check',   color: '#2e844a' },
-  passed:  { name: 'check',   color: '#2e844a' },
-  success: { name: 'check',   color: '#2e844a' },
-  fail:    { name: 'error',   color: '#ba0517' },
-  failed:  { name: 'error',   color: '#ba0517' },
-  error:   { name: 'error',   color: '#ba0517' },
-  warn:    { name: 'warning', color: '#dd7a01' },
-  warning: { name: 'warning', color: '#dd7a01' },
-};
-
-const CheckNameCell = ({ item }) => {
-  const cfg = STATUS_ICON[item.status?.toLowerCase()] ?? { name: 'info', color: '#706e6b' };
-  return (
-    <span className="slds-media slds-media_center slds-media_small">
-      <span className="slds-media__figure">
-        <Icon
-          assistiveText={{ label: item.status }}
-          category="utility"
-          name={cfg.name}
-          size="x-small"
-          style={{ fill: cfg.color }}
-        />
-      </span>
-      <span className="slds-media__body slds-text-body_regular">{item.name}</span>
-    </span>
-  );
-};
-CheckNameCell.displayName = DataTableCell.displayName;
-
-const MessageCell = ({ item }) => (
-  <span className="slds-text-body_small slds-text-color_weak">{item.message || '—'}</span>
-);
-MessageCell.displayName = DataTableCell.displayName;
-
-const StatusBadgeCell = ({ item }) => <StatusBadge status={item.status} />;
-StatusBadgeCell.displayName = DataTableCell.displayName;
+function CheckIcon({ status }) {
+  const s = (status ?? '').toLowerCase();
+  if (s === 'pass' || s === 'passed' || s === 'success')
+    return <IconCheckCircle size={14} style={{ color: 'var(--status-identical-fg)', flexShrink: 0 }} />;
+  if (s === 'fail' || s === 'failed' || s === 'error')
+    return <IconXCircle size={14} style={{ color: 'var(--status-conflict-fg)', flexShrink: 0 }} />;
+  if (s === 'warn' || s === 'warning')
+    return <IconAlertTri size={14} style={{ color: 'var(--status-modified-fg)', flexShrink: 0 }} />;
+  return <IconInfo size={14} style={{ color: 'var(--fg-muted)', flexShrink: 0 }} />;
+}
 
 export default function PreflightPage() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData]             = useState(null);
+  const [loading, setLoading]       = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    setLoading(true);
     api.preflight()
       .then(setData)
       .catch(() => null)
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshKey]);
 
-  const checks       = data?.checks ?? [];
-  const passedCount  = checks.filter((c) => c.status === 'pass' || c.status === 'success').length;
-  const failedCount  = checks.filter((c) => c.status === 'fail' || c.status === 'error').length;
+  const checks      = data?.checks ?? [];
+  const passCount   = checks.filter((c) => ['pass','passed','success'].includes(c.status?.toLowerCase())).length;
+  const failCount   = checks.filter((c) => ['fail','failed','error'].includes(c.status?.toLowerCase())).length;
+  const warnCount   = checks.filter((c) => ['warn','warning'].includes(c.status?.toLowerCase())).length;
   const overallStatus = data?.status;
-
-  const rows = checks.map((c, i) => ({
-    id:      String(i),
-    name:    c.name,
-    message: c.message ?? '',
-    status:  c.status,
-  }));
-
-  const infoText = data?.date
-    ? `Last run: ${new Date(data.date).toLocaleString()}`
-    : 'Results of the last sfdt preflight run';
 
   return (
     <div>
-      <PageHeader
-        title="Preflight Check"
-        label="SFDT"
-        info={infoText}
-        variant="object-home"
-        icon={
-          <Icon
-            assistiveText={{ label: 'Preflight' }}
-            category="utility"
-            name="check"
-            size="large"
-          />
-        }
-        onRenderActions={() =>
-          overallStatus ? (
-            <div className="slds-page-header__control">
-              <StatusBadge status={overallStatus} />
-            </div>
-          ) : null
-        }
-      />
-
-      <div className="slds-p-around_large">
-        {loading && (
-          <div style={{ position: 'relative', height: '200px' }}>
-            <Spinner size="large" variant="brand" />
+      <div className="page-header">
+        <div className="page-header-text">
+          <h1>Preflight</h1>
+          <p className="page-subtitle">
+            {data?.date ? `Last run ${new Date(data.date).toLocaleString()}` : 'Pre-deployment readiness checks'}
+          </p>
+        </div>
+        {overallStatus && (
+          <div className="page-header-actions">
+            <StatusBadge status={overallStatus} />
           </div>
         )}
-
-        {!loading && checks.length === 0 && (
-          <EmptyState
-            title="No preflight data"
-            message="Run sfdt preflight to generate a report that will appear here."
-          />
-        )}
-
-        {!loading && checks.length > 0 && (
-          <Card
-            heading={`${checks.length} Check${checks.length !== 1 ? 's' : ''}`}
-            icon={
-              <Icon
-                assistiveText={{ label: 'Checks' }}
-                category="utility"
-                name="checklist"
-                size="small"
-              />
-            }
-            headerActions={
-              <div className="slds-grid slds-grid_vertical-align-center">
-                {passedCount > 0 && (
-                  <Badge
-                    content={`${passedCount} passed`}
-                    color="success"
-                    className="slds-m-right_xx-small"
-                  />
-                )}
-                {failedCount > 0 && (
-                  <Badge content={`${failedCount} failed`} color="error" />
-                )}
-              </div>
-            }
-          >
-            <DataTable items={rows} id="preflight-checks-table">
-              <DataTableColumn label="Check" property="name">
-                <CheckNameCell />
-              </DataTableColumn>
-              <DataTableColumn label="Message" property="message">
-                <MessageCell />
-              </DataTableColumn>
-              <DataTableColumn label="Status" property="status">
-                <StatusBadgeCell />
-              </DataTableColumn>
-            </DataTable>
-          </Card>
-        )}
       </div>
+
+      <CommandRunner command="preflight" label="Preflight Check" onComplete={() => setRefreshKey((k) => k + 1)} />
+
+      {checks.length > 0 && (
+        <div className="stats-grid mb-6" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+          <StatCard label="Passed" value={passCount} accent="green" />
+          <StatCard label="Failed" value={failCount} accent={failCount > 0 ? 'red' : 'green'} />
+          <StatCard label="Warnings" value={warnCount} accent={warnCount > 0 ? 'amber' : 'brand'} />
+        </div>
+      )}
+
+      {loading && <div className="spinner-center"><div className="spinner spinner-lg" /></div>}
+
+      {!loading && checks.length === 0 && (
+        <EmptyState
+          title="No preflight data"
+          message="Run sfdt preflight to generate a report."
+        />
+      )}
+
+      {!loading && checks.length > 0 && (
+        <div className="card">
+          <div className="card-head">
+            <div className="card-title">{checks.length} Check{checks.length !== 1 ? 's' : ''}</div>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Check</th>
+                <th>Message</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {checks.map((c, i) => (
+                <tr key={i}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <CheckIcon status={c.status} />
+                      <span style={{ fontWeight: 500 }}>{c.name}</span>
+                    </div>
+                  </td>
+                  <td style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)' }}>
+                    {c.message || '—'}
+                  </td>
+                  <td><StatusBadge status={c.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
