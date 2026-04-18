@@ -1,21 +1,16 @@
 import { useState, useEffect } from 'react';
-import Tabs from '@salesforce/design-system-react/components/tabs';
-import TabsPanel from '@salesforce/design-system-react/components/tabs/panel';
-import Spinner from '@salesforce/design-system-react/components/spinner';
-import Button from '@salesforce/design-system-react/components/button';
 import { api } from '../api.js';
+import { IconX } from '../Icons.jsx';
 
-/**
- * Side-by-side XML diff panel for a single component.
- * @param {{ item: {type, member} | null, onClose: () => void }} props
- */
 export default function DiffPanel({ item, onClose }) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
+  const [tab, setTab]         = useState('diff');
 
   useEffect(() => {
     if (!item) { setData(null); return; }
     setLoading(true);
+    setTab('diff');
     api.compareDiff(item.type, item.member)
       .then(setData)
       .catch(() => setData({ sourceXml: '', targetXml: '' }))
@@ -25,132 +20,83 @@ export default function DiffPanel({ item, onClose }) {
   if (!item) return null;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        right: 0,
-        top: 0,
-        bottom: 0,
-        width: '55vw',
-        background: '#fff',
-        boxShadow: '-4px 0 16px rgba(0,0,0,0.15)',
-        zIndex: 9000,
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      {/* Header */}
-      <div
-        className="slds-p-around_medium slds-grid slds-grid_align-spread"
-        style={{ borderBottom: '1px solid #e0e0e0', flexShrink: 0 }}
-      >
-        <div>
-          <p className="slds-text-heading_small">{item.member}</p>
-          <p className="slds-text-body_small slds-text-color_weak">{item.type}</p>
-        </div>
-        <Button
-          assistiveText={{ icon: 'Close' }}
-          iconCategory="utility"
-          iconName="close"
-          iconVariant="bare"
-          variant="icon"
-          onClick={onClose}
-        />
-      </div>
-
-      {/* Body */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
-        {loading && (
-          <div style={{ position: 'relative', height: '200px' }}>
-            <Spinner size="medium" variant="brand" />
+    <>
+      <div className="diff-panel-backdrop" onClick={onClose} />
+      <aside className="diff-panel">
+        <div className="diff-panel-head">
+          <div style={{ minWidth: 0 }}>
+            <div className="diff-panel-title">{item.member}</div>
+            <div className="diff-panel-sub">{item.type}</div>
           </div>
-        )}
+          <button className="btn btn-icon" onClick={onClose} aria-label="Close">
+            <IconX size={15} />
+          </button>
+        </div>
 
-        {!loading && data && (
-          <Tabs id="diff-tabs">
-            <TabsPanel label="Source">
-              <pre
-                style={{
-                  fontSize: '12px',
-                  fontFamily: 'monospace',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
-                  background: '#f8f8f8',
-                  padding: '12px',
-                  borderRadius: '4px',
-                }}
-              >
-                {data.sourceXml || '(empty)'}
-              </pre>
-            </TabsPanel>
-            <TabsPanel label="Target">
-              <pre
-                style={{
-                  fontSize: '12px',
-                  fontFamily: 'monospace',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
-                  background: '#f8f8f8',
-                  padding: '12px',
-                  borderRadius: '4px',
-                }}
-              >
-                {data.targetXml || '(empty)'}
-              </pre>
-            </TabsPanel>
-            <TabsPanel label="Diff">
-              {renderLineDiff(data.sourceXml ?? '', data.targetXml ?? '')}
-            </TabsPanel>
-          </Tabs>
-        )}
-      </div>
-    </div>
+        <div className="diff-tabs">
+          {['diff', 'source', 'target'].map((t) => (
+            <button
+              key={t}
+              className={`diff-tab${tab === t ? ' active' : ''}`}
+              onClick={() => setTab(t)}
+            >
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        <div className="diff-tab-body">
+          {loading && (
+            <div className="spinner-center"><div className="spinner" /></div>
+          )}
+
+          {!loading && data && tab === 'diff' && (
+            <LineDiff source={data.sourceXml ?? ''} target={data.targetXml ?? ''} />
+          )}
+          {!loading && data && tab === 'source' && (
+            <pre className="xml-view">{data.sourceXml || '(empty)'}</pre>
+          )}
+          {!loading && data && tab === 'target' && (
+            <pre className="xml-view">{data.targetXml || '(empty)'}</pre>
+          )}
+        </div>
+      </aside>
+    </>
   );
 }
 
-function renderLineDiff(sourceXml, targetXml) {
-  const sourceLines = sourceXml.split('\n');
-  const targetLines = targetXml.split('\n');
-  const maxLen = Math.max(sourceLines.length, targetLines.length);
+function LineDiff({ source, target }) {
+  const srcLines = source.split('\n');
+  const tgtLines = target.split('\n');
+  const len = Math.max(srcLines.length, tgtLines.length);
+  const rows = [];
 
-  const lines = [];
-  for (let i = 0; i < maxLen; i++) {
-    const s = sourceLines[i] ?? '';
-    const t = targetLines[i] ?? '';
-    const changed = s !== t;
-    lines.push(
-      <div
-        key={i}
-        style={{
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          whiteSpace: 'pre',
-          background: changed ? '#fff3cd' : 'transparent',
-          padding: '1px 8px',
-        }}
-      >
-        <span style={{ color: '#aaa', marginRight: '12px', userSelect: 'none' }}>
-          {String(i + 1).padStart(4)}
-        </span>
-        <span style={{ color: '#c00' }}>{s !== t ? `- ${s}` : `  ${s}`}</span>
-        {s !== t && (
-          <div style={{ color: '#060' }}>{`+ ${t}`}</div>
-        )}
-      </div>,
-    );
+  for (let i = 0; i < len; i++) {
+    const s = srcLines[i] ?? '';
+    const t = tgtLines[i] ?? '';
+    const n = String(i + 1);
+    if (s !== t) {
+      if (s) rows.push({ type: 'removed', left: n, right: '', sign: '-', code: s });
+      if (t) rows.push({ type: 'added',   left: '',  right: n, sign: '+', code: t });
+    } else {
+      rows.push({ type: 'context', left: n, right: n, sign: ' ', code: s });
+    }
+  }
+
+  if (rows.length === 0) {
+    return <p style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)' }}>Files are identical.</p>;
   }
 
   return (
-    <div
-      style={{
-        background: '#f8f8f8',
-        padding: '12px',
-        borderRadius: '4px',
-        overflow: 'auto',
-        maxHeight: '60vh',
-      }}
-    >
-      {lines.length === 0 ? <span style={{ color: '#aaa' }}>No diff</span> : lines}
+    <div className="diff-view">
+      {rows.map((row, i) => (
+        <div key={i} className={`diff-row${row.type !== 'context' ? ` ${row.type}` : ''}`}>
+          <span className="diff-gutter">{row.left}</span>
+          <span className="diff-gutter">{row.right}</span>
+          <span className="diff-sign">{row.sign}</span>
+          <span className="diff-code">{row.code || '\u00A0'}</span>
+        </div>
+      ))}
     </div>
   );
 }

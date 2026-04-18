@@ -1,42 +1,22 @@
 import { useState, useMemo } from 'react';
-import DataTable from '@salesforce/design-system-react/components/data-table';
-import DataTableColumn from '@salesforce/design-system-react/components/data-table/column';
-import DataTableCell from '@salesforce/design-system-react/components/data-table/cell';
-import Input from '@salesforce/design-system-react/components/input';
-import Combobox from '@salesforce/design-system-react/components/combobox';
-import Button from '@salesforce/design-system-react/components/button';
 import StatusBadge from './StatusBadge.jsx';
+import { IconSearch, IconFilter, IconPackage } from '../Icons.jsx';
 
 const STATUS_OPTIONS = [
-  { id: 'all',         label: 'All Statuses' },
-  { id: 'source-only', label: 'Only in Source' },
-  { id: 'target-only', label: 'Only in Target' },
+  { id: 'all',         label: 'All statuses' },
+  { id: 'source-only', label: 'Source only' },
+  { id: 'target-only', label: 'Target only' },
   { id: 'modified',    label: 'Modified' },
   { id: 'identical',   label: 'Identical' },
   { id: 'both',        label: 'Checking…' },
 ];
 
-const StatusCell = ({ item }) => <StatusBadge status={item.status} />;
-StatusCell.displayName = DataTableCell.displayName;
-
-// Factory function used to pass onSelect into the cell renderer via closure
-function makeMemberCell(onSelect) {
-  const MemberCell = ({ item }) => (
-    <a
-      href="#"
-      onClick={(e) => { e.preventDefault(); onSelect?.(item._item); }}
-      style={{ color: '#0176d3', textDecoration: 'none' }}
-    >
-      {item.member}
-    </a>
-  );
-  MemberCell.displayName = DataTableCell.displayName;
-  return MemberCell;
+function countsByStatus(items) {
+  const c = {};
+  for (const i of items) c[i.status] = (c[i.status] ?? 0) + 1;
+  return c;
 }
 
-/**
- * @param {{ items: Array<{type,member,status}>, onSelect: (item) => void, onBuildManifest: (selected) => void }} props
- */
 export default function CompareTable({ items = [], onSelect, onBuildManifest }) {
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -45,115 +25,169 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
 
   const types = useMemo(() => {
     const t = [...new Set(items.map((i) => i.type))].sort();
-    return [{ id: 'all', label: 'All Types' }, ...t.map((x) => ({ id: x, label: x }))];
+    return ['all', ...t];
   }, [items]);
 
-  const filtered = useMemo(() => {
-    return items.filter((i) => {
-      if (statusFilter !== 'all' && i.status !== statusFilter) return false;
-      if (typeFilter !== 'all' && i.type !== typeFilter) return false;
-      if (search && !`${i.type}.${i.member}`.toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
+  const filtered = useMemo(() => items.filter((i) => {
+    if (statusFilter !== 'all' && i.status !== statusFilter) return false;
+    if (typeFilter !== 'all' && i.type !== typeFilter) return false;
+    if (search && !`${i.type}.${i.member}`.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  }), [items, statusFilter, typeFilter, search]);
+
+  const autoSelected = useMemo(() => new Set(
+    items
+      .filter((i) => i.status === 'source-only' || i.status === 'modified')
+      .map((i) => `${i.type}.${i.member}`),
+  ), [items]);
+
+  const effectiveSel = selection.size === 0 ? autoSelected : selection;
+
+  const toggleRow = (key) => {
+    setSelection((prev) => {
+      const base = prev.size === 0 ? new Set(autoSelected) : new Set(prev);
+      if (base.has(key)) base.delete(key); else base.add(key);
+      return base;
     });
-  }, [items, statusFilter, typeFilter, search]);
-
-  const rows = filtered.map((item, idx) => ({
-    id:     String(idx),
-    type:   item.type,
-    member: item.member,
-    status: item.status,
-    _item:  item,
-  }));
-
-  // Pre-select source-only and modified when items first load
-  const autoSelectedKeys = useMemo(() => {
-    return new Set(
-      items
-        .filter((i) => i.status === 'source-only' || i.status === 'modified')
-        .map((i) => `${i.type}.${i.member}`),
-    );
-  }, [items]);
-
-  const effectiveSelection = selection.size === 0 ? autoSelectedKeys : selection;
-
-  const MemberCell = useMemo(() => makeMemberCell(onSelect), [onSelect]);
+  };
 
   const handleBuildManifest = () => {
-    const selected = items.filter((i) => effectiveSelection.has(`${i.type}.${i.member}`));
-    onBuildManifest(selected);
+    const selected = items.filter((i) => effectiveSel.has(`${i.type}.${i.member}`));
+    onBuildManifest?.(selected);
   };
+
+  const counts = useMemo(() => countsByStatus(items), [items]);
 
   return (
     <div>
-      {/* Toolbar */}
-      <div className="slds-grid slds-m-bottom_small slds-wrap" style={{ gap: '1rem' }}>
-        <div className="slds-col slds-size_1-of-3">
-          <Input
-            label=""
+      {/* Filters */}
+      <div className="filter-bar">
+        <div className="input-wrap has-icon search-wrap" style={{ flex: 1, maxWidth: 340 }}>
+          <span className="input-icon"><IconSearch size={13} /></span>
+          <input
+            className="input"
             placeholder="Search components…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            iconLeft={{ name: 'search', category: 'utility' }}
           />
         </div>
-        <div className="slds-col slds-size_1-of-4">
-          <Combobox
-            id="status-filter"
-            labels={{ label: '', placeholder: 'Status' }}
-            options={STATUS_OPTIONS}
-            selection={[STATUS_OPTIONS.find((o) => o.id === statusFilter)]}
-            onSelect={(_e, { selection: sel }) => setStatusFilter(sel[0]?.id ?? 'all')}
-            variant="readonly"
-          />
-        </div>
-        <div className="slds-col slds-size_1-of-4">
-          <Combobox
-            id="type-filter"
-            labels={{ label: '', placeholder: 'Type' }}
-            options={types}
-            selection={[types.find((t) => t.id === typeFilter)]}
-            onSelect={(_e, { selection: sel }) => setTypeFilter(sel[0]?.id ?? 'all')}
-            variant="readonly"
-          />
-        </div>
-        <div className="slds-col slds-no-flex">
-          <Button
-            label={`Build Manifest (${effectiveSelection.size})`}
-            variant="brand"
-            disabled={effectiveSelection.size === 0}
-            onClick={handleBuildManifest}
-          />
-        </div>
+
+        {STATUS_OPTIONS.filter((o) => o.id !== 'all').map((o) => {
+          const n = counts[o.id] ?? 0;
+          if (!n) return null;
+          return (
+            <button
+              key={o.id}
+              className={`filter-chip${statusFilter === o.id ? ' active' : ''}`}
+              onClick={() => setStatusFilter(statusFilter === o.id ? 'all' : o.id)}
+            >
+              {o.label}
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, opacity: .7 }}>{n}</span>
+            </button>
+          );
+        })}
+
+        {types.length > 2 && (
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <IconFilter size={12} style={{ color: 'var(--fg-subtle)' }} />
+            <select
+              className="input"
+              style={{ width: 'auto', paddingRight: 28, fontSize: 'var(--fs-xs)' }}
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+            >
+              <option value="all">All types</option>
+              {types.filter((t) => t !== 'all').map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
+
+      {/* Bulk bar */}
+      {effectiveSel.size > 0 && (
+        <div className="bulk-bar">
+          <span className="bulk-label">{effectiveSel.size} selected</span>
+          <span className="bulk-spacer" />
+          <button className="btn btn-primary btn-sm" onClick={handleBuildManifest}>
+            Build manifest
+          </button>
+        </div>
+      )}
 
       {/* Table */}
-      <DataTable
-        items={rows}
-        id="compare-table"
-        striped
-        onRowChange={(_e, { selection: sel }) => {
-          const keys = sel.map((r) => `${r.type}.${r.member}`);
-          setSelection(new Set(keys));
-        }}
-        selectRows="checkbox"
-      >
-        <DataTableColumn label="Component" property="member" sortable>
-          <MemberCell />
-        </DataTableColumn>
-        <DataTableColumn label="Type" property="type" sortable />
-        <DataTableColumn label="Status" property="status">
-          <StatusCell />
-        </DataTableColumn>
-      </DataTable>
-
-      {/* Summary footer */}
-      <div className="slds-text-body_small slds-text-color_weak slds-m-top_small">
-        {(() => {
-          const counts = { 'source-only': 0, 'target-only': 0, modified: 0, identical: 0, both: 0 };
-          for (const i of items) counts[i.status] = (counts[i.status] ?? 0) + 1;
-          return `${items.length} total · ${counts['source-only']} only in source · ${counts['target-only']} only in target · ${counts.modified} modified · ${counts.identical} identical · ${counts.both} checking…`;
-        })()}
+      <div className="table-wrap">
+        {filtered.length === 0 ? (
+          <div className="empty-state" style={{ padding: 'var(--s-8)' }}>
+            <div className="empty-icon"><IconPackage size={16} /></div>
+            <p className="empty-title" style={{ fontSize: 'var(--fs-sm)' }}>No results</p>
+            <p className="empty-desc">Try adjusting your filters.</p>
+          </div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th style={{ width: 32 }}>
+                  <input
+                    type="checkbox"
+                    className="cbx"
+                    checked={filtered.every((i) => effectiveSel.has(`${i.type}.${i.member}`))}
+                    onChange={(e) => {
+                      const keys = filtered.map((i) => `${i.type}.${i.member}`);
+                      setSelection(e.target.checked ? new Set([...effectiveSel, ...keys]) : new Set());
+                    }}
+                  />
+                </th>
+                <th>Component</th>
+                <th>Type</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((item) => {
+                const key = `${item.type}.${item.member}`;
+                const checked = effectiveSel.has(key);
+                return (
+                  <tr key={key}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        className="cbx"
+                        checked={checked}
+                        onChange={() => toggleRow(key)}
+                      />
+                    </td>
+                    <td>
+                      <button
+                        className="td-name"
+                        style={{ background: 'none', border: 'none', color: 'var(--fg-brand)', cursor: 'pointer', padding: 0, fontSize: 'inherit', fontWeight: 500 }}
+                        onClick={() => onSelect?.(item)}
+                      >
+                        {item.member}
+                      </button>
+                    </td>
+                    <td>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)' }}>
+                        {item.type}
+                      </span>
+                    </td>
+                    <td><StatusBadge status={item.status} /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
+
+      {/* Footer summary */}
+      {items.length > 0 && (
+        <div className="mt-2" style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)', fontFamily: 'var(--font-mono)' }}>
+          {filtered.length} of {items.length} · {counts['source-only'] ?? 0} source-only · {counts['target-only'] ?? 0} target-only · {counts.modified ?? 0} modified · {counts.identical ?? 0} identical
+          {counts.both ? ` · ${counts.both} checking…` : ''}
+        </div>
+      )}
     </div>
   );
 }

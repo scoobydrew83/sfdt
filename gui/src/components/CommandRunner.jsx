@@ -1,73 +1,60 @@
 import { useState, useRef, useEffect } from 'react';
-import Button from '@salesforce/design-system-react/components/button';
-import Spinner from '@salesforce/design-system-react/components/spinner';
-import Badge from '@salesforce/design-system-react/components/badge';
+import { IconPlay, IconX, IconRefresh, IconTerminal } from '../Icons.jsx';
 
 export default function CommandRunner({ command, label, onComplete = () => {} }) {
-  const [status, setStatus] = useState('idle');
-  const [lines, setLines] = useState([]);
+  const [status, setStatus]     = useState('idle');
+  const [lines, setLines]       = useState([]);
   const [exitCode, setExitCode] = useState(null);
-  const esRef = useRef(null);
-  const logRef = useRef(null);
-  const lineCounterRef = useRef(0);
-  const unmountedRef = useRef(false);
+  const esRef      = useRef(null);
+  const logRef     = useRef(null);
+  const counterRef = useRef(0);
+  const deadRef    = useRef(false);
 
-  // Scroll log pane to bottom whenever lines change
   useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-    }
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [lines]);
 
-  // Cleanup EventSource on unmount
   useEffect(() => {
     return () => {
-      unmountedRef.current = true;
-      if (esRef.current) {
-        esRef.current.close();
-        esRef.current = null;
-      }
+      deadRef.current = true;
+      esRef.current?.close();
     };
   }, []);
 
   const reset = () => {
-    if (esRef.current) {
-      esRef.current.close();
-      esRef.current = null;
-    }
-    lineCounterRef.current = 0;
+    esRef.current?.close();
+    esRef.current = null;
+    counterRef.current = 0;
     setStatus('idle');
     setLines([]);
     setExitCode(null);
   };
 
-  const startCommand = () => {
+  const run = () => {
     setStatus('running');
     setLines([]);
     setExitCode(null);
-    lineCounterRef.current = 0;
+    counterRef.current = 0;
 
     const es = new EventSource(`/api/command/run?command=${encodeURIComponent(command)}`);
     esRef.current = es;
 
     es.onmessage = (e) => {
-      if (unmountedRef.current) return;
+      if (deadRef.current) return;
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
 
       if (msg.type === 'log') {
-        const id = lineCounterRef.current++;
+        const id = counterRef.current++;
         setLines((prev) => [...prev, { id, text: msg.line }]);
-      }
-      if (msg.type === 'result') {
-        const succeeded = msg.exitCode === 0;
-        setStatus(succeeded ? 'done' : 'error');
+      } else if (msg.type === 'result') {
+        const ok = msg.exitCode === 0;
+        setStatus(ok ? 'done' : 'error');
         setExitCode(msg.exitCode);
         es.close();
         esRef.current = null;
-        if (succeeded) onComplete();
-      }
-      if (msg.type === 'error') {
+        if (ok) onComplete();
+      } else if (msg.type === 'error') {
         setStatus('error');
         es.close();
         esRef.current = null;
@@ -75,81 +62,64 @@ export default function CommandRunner({ command, label, onComplete = () => {} })
     };
 
     es.onerror = () => {
-      if (unmountedRef.current) return;
+      if (deadRef.current) return;
       setStatus('error');
       es.close();
       esRef.current = null;
     };
   };
 
-  const logPane = (
-    <div
-      ref={logRef}
-      style={{
-        fontFamily: 'monospace',
-        fontSize: '12px',
-        maxHeight: '200px',
-        overflowY: 'auto',
-        background: '#032d60',
-        color: '#fff',
-        padding: '12px',
-        borderRadius: '4px',
-        marginTop: '8px',
-      }}
-    >
+  const terminal = lines.length > 0 && (
+    <div className="cmd-terminal" ref={logRef}>
       {lines.map(({ id, text }) => (
-        <div key={id}>{text}</div>
+        <div key={id} className="cmd-line">{text || '\u00A0'}</div>
       ))}
     </div>
   );
 
   return (
-    <div className="slds-m-bottom_medium">
-      {status === 'idle' && (
-        <Button variant="brand" label={`Run ${label}`} onClick={startCommand} />
-      )}
+    <div className="cmd-runner">
+      <div className="cmd-runner-head">
+        <IconTerminal size={14} style={{ color: 'var(--fg-muted)' }} />
+        <span className="cmd-runner-title">{label}</span>
 
-      {status === 'running' && (
-        <div>
-          <div className="slds-grid slds-grid_vertical-align-center slds-gutters_small">
-            <div className="slds-col slds-grow-none" style={{ position: 'relative', width: '32px', height: '32px' }}>
-              <Spinner size="small" variant="brand" />
-            </div>
-            <div className="slds-col slds-grow-none">
-              <span className="slds-text-body_regular">{label} running…</span>
-            </div>
-            <div className="slds-col slds-grow-none">
-              <Button variant="neutral" label="Cancel" onClick={reset} />
-            </div>
-          </div>
-          {logPane}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {status === 'idle' && (
+            <button className="btn btn-primary btn-sm" onClick={run}>
+              <IconPlay size={11} /> Run
+            </button>
+          )}
+          {status === 'running' && (
+            <>
+              <div className="live-dot">running</div>
+              <button className="btn btn-ghost btn-sm" onClick={reset}>
+                <IconX size={11} /> Cancel
+              </button>
+            </>
+          )}
+          {status === 'done' && (
+            <>
+              <span className="badge badge-success"><span className="badge-dot" />Complete</span>
+              <button className="btn btn-ghost btn-sm" onClick={reset}>
+                <IconRefresh size={11} /> Run again
+              </button>
+            </>
+          )}
+          {status === 'error' && (
+            <>
+              <span className="badge badge-error">
+                <span className="badge-dot" />
+                {exitCode != null ? `Exit ${exitCode}` : 'Failed'}
+              </span>
+              <button className="btn btn-ghost btn-sm" onClick={reset}>
+                <IconRefresh size={11} /> Run again
+              </button>
+            </>
+          )}
         </div>
-      )}
+      </div>
 
-      {status === 'done' && (
-        <div className="slds-grid slds-grid_vertical-align-center slds-gutters_small">
-          <div className="slds-col slds-grow-none">
-            <Badge content="Run complete" color="success" />
-          </div>
-          <div className="slds-col slds-grow-none">
-            <Button variant="neutral" label="Run Again" onClick={reset} />
-          </div>
-        </div>
-      )}
-
-      {status === 'error' && (
-        <div>
-          <div className="slds-grid slds-grid_vertical-align-center slds-gutters_small">
-            <div className="slds-col slds-grow-none">
-              <Badge content={exitCode != null ? `Run failed (exit ${exitCode})` : 'Run failed'} color="error" />
-            </div>
-            <div className="slds-col slds-grow-none">
-              <Button variant="neutral" label="Run Again" onClick={reset} />
-            </div>
-          </div>
-          {logPane}
-        </div>
-      )}
+      {terminal}
     </div>
   );
 }
