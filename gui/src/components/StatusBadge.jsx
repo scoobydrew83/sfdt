@@ -1,4 +1,3 @@
-import React from 'react';
 import Badge from '@salesforce/design-system-react/components/badge';
 
 const CONFIG = {

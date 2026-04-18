@@ -1,0 +1,85 @@
+name: Documentation Verification
+
+# Runs after every merge to main. Audits documentation accuracy against the
+# current codebase and opens a GitHub issue if anything is stale or wrong.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: docs-verify
+  cancel-in-progress: true
+
+jobs:
+  verify-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Verify documentation accuracy
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are auditing the sfdt CLI project documentation for accuracy. A merge just landed on the main branch. Your job is to verify that all documentation matches the actual codebase and report any discrepancies.
+
+            Execute these audit checks:
+
+            1. **README.md command table audit**
+               - List all files in `src/commands/` and extract each command name and description
+               - Read `README.md` and find the command reference table
+               - Verify every command in `src/commands/` has a correct entry in the table
+               - Verify no removed commands still appear in the table
+               - Flag: missing commands, wrong descriptions, stale options
+
+            2. **CLAUDE.md SFDT_* variable table audit**
+               - Read `src/lib/script-runner.js` and extract every `SFDT_` variable set in `buildScriptEnv()`
+               - Read the SFDT_* table in `CLAUDE.md`
+               - Verify every variable in the code has an entry in the table
+               - Verify no deleted variables still appear in the table
+               - Flag: missing variables, wrong source paths, stale entries
+
+            3. **docs/ARCHITECTURE.md lib section audit**
+               - List all files in `src/lib/` and `scripts/lib/`
+               - Read `docs/ARCHITECTURE.md`
+               - Verify each lib module is mentioned with an accurate description
+               - Flag: undocumented lib files, stale descriptions for renamed/removed files
+
+            4. **CLAUDE.md Known Gaps audit**
+               - Read the Known Gaps section of `CLAUDE.md`
+               - For each gap, check if the described missing feature still does not exist in `src/commands/`
+               - Flag: gaps that have since been implemented and should be removed
+
+            5. **CLAUDE.md directory structure audit**
+               - Read the Directory Structure section of `CLAUDE.md`
+               - Compare against the actual top-level directory layout
+               - Flag: directories listed that do not exist, directories missing from the listing
+
+            After completing all checks:
+            - If everything is accurate: output "Documentation verified: all checks passed." and exit cleanly
+            - If discrepancies are found: create a GitHub issue using `gh issue create` with:
+                - Title: `docs: documentation accuracy issues found on main`
+                - Body: a markdown checklist of every discrepancy found, organized by file, with specific section references
+                - Skip the label flag if the documentation label does not exist in this repo
+
+            Rules:
+            - Never modify any files — this is a read-only audit
+            - Be specific: name the exact file and section that is wrong
+            - Do not flag stylistic preferences, only factual inaccuracies
+            - If a source file is ambiguous, note the ambiguity rather than guessing

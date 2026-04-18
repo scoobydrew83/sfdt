@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import DataTable from '@salesforce/design-system-react/components/data-table';
 import DataTableColumn from '@salesforce/design-system-react/components/data-table/column';
 import DataTableCell from '@salesforce/design-system-react/components/data-table/cell';
@@ -86,7 +86,7 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
   return (
     <div>
       {/* Toolbar */}
-      <div className="slds-grid slds-gutters slds-m-bottom_small slds-wrap">
+      <div className="slds-grid slds-m-bottom_small slds-wrap" style={{ gap: '1rem' }}>
         <div className="slds-col slds-size_1-of-3">
           <Input
             label=""
@@ -102,7 +102,7 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
             labels={{ label: '', placeholder: 'Status' }}
             options={STATUS_OPTIONS}
             selection={[STATUS_OPTIONS.find((o) => o.id === statusFilter)]}
-            onSelect={(e, { selection: sel }) => setStatusFilter(sel[0]?.id ?? 'all')}
+            onSelect={(_e, { selection: sel }) => setStatusFilter(sel[0]?.id ?? 'all')}
             variant="readonly"
           />
         </div>
@@ -112,7 +112,7 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
             labels={{ label: '', placeholder: 'Type' }}
             options={types}
             selection={[types.find((t) => t.id === typeFilter)]}
-            onSelect={(e, { selection: sel }) => setTypeFilter(sel[0]?.id ?? 'all')}
+            onSelect={(_e, { selection: sel }) => setTypeFilter(sel[0]?.id ?? 'all')}
             variant="readonly"
           />
         </div>
@@ -131,7 +131,7 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
         items={rows}
         id="compare-table"
         striped
-        onRowChange={(e, { selection: sel }) => {
+        onRowChange={(_e, { selection: sel }) => {
           const keys = sel.map((r) => `${r.type}.${r.member}`);
           setSelection(new Set(keys));
         }}

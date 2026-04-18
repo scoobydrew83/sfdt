@@ -1,4 +1,3 @@
-import React from 'react';
 import Icon from '@salesforce/design-system-react/components/icon';
 
 export default function EmptyState({ title, message }) {

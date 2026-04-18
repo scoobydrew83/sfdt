@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import IconSettings from '@salesforce/design-system-react/components/icon-settings';
 import Icon from '@salesforce/design-system-react/components/icon';
 import { api } from './api.js';
@@ -37,12 +37,12 @@ export default function App() {
 
   return (
     <IconSettings iconPath="/assets/icons">
-      <div className="slds-grid slds-nowrap" style={{ height: '100vh' }}>
+      <div className="slds-grid slds-nowrap" style={{ height: '100vh', overflow: 'hidden' }}>
 
         {/* ── Left navigation panel ─────────────────────────────────────── */}
         <aside
           className="slds-col slds-no-flex"
-          style={{ width: '240px', background: '#032d60', display: 'flex', flexDirection: 'column' }}
+          style={{ width: '240px', flexShrink: 0, background: '#032d60', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
         >
           {/* Project / app header */}
           <div
@@ -128,7 +128,7 @@ export default function App() {
         </aside>
 
         {/* ── Main content ──────────────────────────────────────────────── */}
-        <main className="slds-col" style={{ flex: 1, overflow: 'auto', background: '#f3f3f3' }}>
+        <main style={{ flex: '1 1 0', minWidth: 0, overflow: 'auto', background: '#f3f3f3' }}>
           {renderPage()}
         </main>
 

@@ -36,6 +36,12 @@ export default defineConfig({
       '@salesforce/design-system-react/components/alert',
       '@salesforce/design-system-react/components/alert/container',
       '@salesforce/design-system-react/components/utilities/utility-icon',
+      '@salesforce/design-system-react/components/combobox',
+      '@salesforce/design-system-react/components/input',
+      '@salesforce/design-system-react/components/modal',
+      '@salesforce/design-system-react/components/progress-bar',
+      '@salesforce/design-system-react/components/tabs',
+      '@salesforce/design-system-react/components/tabs/panel',
     ],
     esbuildOptions: {
       target: 'es2020',

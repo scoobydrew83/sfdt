@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import PageHeader from '@salesforce/design-system-react/components/page-header';
 import Card from '@salesforce/design-system-react/components/card';
 import Icon from '@salesforce/design-system-react/components/icon';
@@ -108,7 +108,7 @@ export default function Dashboard({ project }) {
                 }
               >
                 {!tests?.runs?.length ? (
-                  <div className="slds-card__body_inner slds-text-body_regular slds-text-color_weak">
+                  <div className="slds-p-horizontal_medium slds-p-bottom_small slds-text-body_regular slds-text-color_weak">
                     No test runs found. Run <code>sfdt test</code> to generate results.
                   </div>
                 ) : (
@@ -162,12 +162,12 @@ export default function Dashboard({ project }) {
                     }
                   >
                     {!preflight?.checks?.length ? (
-                      <div className="slds-card__body_inner slds-text-body_regular slds-text-color_weak">
+                      <div className="slds-p-horizontal_medium slds-p-bottom_small slds-text-body_regular slds-text-color_weak">
                         No preflight data. Run <code>sfdt preflight</code>.
                       </div>
                     ) : (
                       <>
-                        <div className="slds-card__body_inner slds-text-body_small slds-text-color_weak slds-m-bottom_xx-small">
+                        <div className="slds-p-horizontal_medium slds-p-bottom_small slds-text-body_small slds-text-color_weak slds-m-bottom_xx-small">
                           {preflight.date ? new Date(preflight.date).toLocaleString() : ''}
                         </div>
                         {preflight.checks.slice(0, 4).map((c, i) => (
@@ -197,11 +197,11 @@ export default function Dashboard({ project }) {
                     }
                   >
                     {!drift?.result ? (
-                      <div className="slds-card__body_inner slds-text-body_regular slds-text-color_weak">
+                      <div className="slds-p-horizontal_medium slds-p-bottom_small slds-text-body_regular slds-text-color_weak">
                         No drift data. Run <code>sfdt drift</code>.
                       </div>
                     ) : (
-                      <div className="slds-card__body_inner slds-grid slds-grid_vertical-align-center slds-wrap slds-gutters_direct">
+                      <div className="slds-p-horizontal_medium slds-p-bottom_small slds-grid slds-grid_vertical-align-center slds-wrap slds-gutters_direct">
                         <StatusBadge status={drift.result} />
                         {drift.date && (
                           <span className="slds-text-body_small slds-text-color_weak slds-m-left_small">

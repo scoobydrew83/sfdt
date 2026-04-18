@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import Tabs from '@salesforce/design-system-react/components/tabs';
 import TabsPanel from '@salesforce/design-system-react/components/tabs/panel';
 import Spinner from '@salesforce/design-system-react/components/spinner';
