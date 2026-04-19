@@ -1,15 +1,17 @@
 name: Documentation Update
 
-# Runs after every merge to develop. Analyzes what changed and opens a PR
-# with documentation updates if any are needed.
+# Triggered by docs-update-dispatch.yml after every qualifying push to develop.
+# claude-code-action does not support the push event, so dispatch is used instead.
 
 on:
-  push:
-    branches: [develop]
-    paths:
-      - 'src/**'
-      - 'scripts/**'
-      - 'package.json'
+  workflow_dispatch:
+    inputs:
+      current_sha:
+        description: 'SHA that just landed'
+        required: true
+      before_sha:
+        description: 'SHA before the push'
+        required: true
 
 concurrency:
   group: docs-update-${{ github.ref }}
@@ -26,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 10
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -38,9 +40,10 @@ jobs:
       - name: Update documentation
         uses: anthropics/claude-code-action@v1
         env:
-          CURRENT_SHA: ${{ github.sha }}
-          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ inputs.current_sha }}
+          BEFORE_SHA: ${{ inputs.before_sha }}
           RUN_ID: ${{ github.run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
