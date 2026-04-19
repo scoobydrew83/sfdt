@@ -37,9 +37,6 @@ export default defineConfig({
       '@salesforce/design-system-react/components/alert/container',
       '@salesforce/design-system-react/components/utilities/utility-icon',
     ],
-    esbuildOptions: {
-      target: 'es2020',
-    },
   },
   build: {
     outDir: 'dist',
