@@ -20,7 +20,7 @@ export async function fetchInventory(source, config) {
  * Fetch inventory from a Salesforce org via sf CLI.
  * Batches metadata type queries in groups of BATCH_SIZE.
  */
-export async function fetchOrgInventory(orgAlias, config) {
+export async function fetchOrgInventory(orgAlias, _config) {
   const types = await listMetadataTypes(orgAlias);
   const inventory = new Map();
 

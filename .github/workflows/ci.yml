@@ -15,9 +15,9 @@ jobs:
       matrix:
         node-version: [20, 22]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -33,19 +33,22 @@ jobs:
         if: matrix.node-version == 22
         run: npm publish --dry-run
 
-  publish-beta:
+  # ── Beta release (develop → npm@beta) ────────────────────────────────────────
+
+  version-check-beta:
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
-    environment: beta
     permissions:
       contents: write
-      id-token: write
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Check for pre-release version bump
@@ -73,34 +76,33 @@ jobs:
           git push origin ":refs/tags/v${RELEASE_VERSION}" 2>/dev/null || true
           git tag -a "v${RELEASE_VERSION}" -m "Pre-release v${RELEASE_VERSION}"
           git push origin "v${RELEASE_VERSION}"
-      - run: npm ci
-        if: steps.version.outputs.changed == 'true'
-      - name: Build GUI
-        if: steps.version.outputs.changed == 'true'
-        run: npm run build:gui
-      - name: Publish beta to npm
-        if: steps.version.outputs.changed == 'true'
-        run: npx npm@latest publish --provenance --access public --tag beta
-      - name: Create GitHub Pre-Release
-        if: steps.version.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: gh release create "v${VERSION}" --generate-notes --prerelease
 
-  publish:
+  publish-beta:
+    needs: version-check-beta
+    if: needs.version-check-beta.outputs.changed == 'true'
+    uses: ./.github/workflows/npm-publish.yml
+    with:
+      version: ${{ needs.version-check-beta.outputs.version }}
+      tag: beta
+      prerelease: true
+    secrets: inherit
+
+  # ── Production release (main → npm@latest) ────────────────────────────────────
+
+  version-check:
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: production
     permissions:
       contents: write
-      id-token: write
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Check for version bump
@@ -134,17 +136,13 @@ jobs:
           git push origin ":refs/tags/v${RELEASE_VERSION}" 2>/dev/null || true
           git tag -a "v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
           git push origin "v${RELEASE_VERSION}"
-      - run: npm ci
-        if: steps.version.outputs.changed == 'true'
-      - name: Build GUI
-        if: steps.version.outputs.changed == 'true'
-        run: npm run build:gui
-      - name: Publish to npm
-        if: steps.version.outputs.changed == 'true'
-        run: npx npm@latest publish --provenance --access public
-      - name: Create GitHub Release
-        if: steps.version.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: gh release create "v${VERSION}" --generate-notes
+
+  publish:
+    needs: version-check
+    if: needs.version-check.outputs.changed == 'true'
+    uses: ./.github/workflows/npm-publish.yml
+    with:
+      version: ${{ needs.version-check.outputs.version }}
+      tag: latest
+      prerelease: false
+    secrets: inherit

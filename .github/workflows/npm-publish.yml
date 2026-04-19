@@ -1,0 +1,51 @@
+name: npm Publish
+
+# Reusable workflow — called by ci.yml for both production and beta releases.
+# Configure the npm Trusted Publisher to point to THIS file (no environment
+# restriction needed), so both callers share a single OIDC trust entry.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Package version being published (e.g. 1.2.3 or 0.4.0-beta.1)'
+        type: string
+        required: true
+      tag:
+        description: 'npm dist-tag: "latest" for production, "beta" for pre-releases'
+        type: string
+        required: true
+      prerelease:
+        description: 'Mark the GitHub Release as a pre-release'
+        type: boolean
+        default: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Build GUI
+        run: npm run build:gui
+      - name: Publish to npm
+        env:
+          NPM_TAG: ${{ inputs.tag }}
+        run: npx npm@latest publish --provenance --access public --tag "${NPM_TAG}"
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          if [ "${PRERELEASE}" = "true" ]; then
+            gh release create "v${VERSION}" --generate-notes --prerelease
+          else
+            gh release create "v${VERSION}" --generate-notes
+          fi
