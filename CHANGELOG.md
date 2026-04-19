@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-04-19
+
+### Changed
+- **GUI build toolchain updated to Vite 8**: `@vitejs/plugin-react` upgraded to v5, `esbuildOptions` removed (no longer supported), dedicated `gui-build` CI job added for Node 20 and 22
+- Bumped `esbuild` and `vite` in GUI dependencies
+- Bumped `inquirer` production dependency
+- Bumped `prettier` development dependency
+- CI: upgraded `actions/stale` from v9 to v10
+- CI: upgraded `github/codeql-action` from v3 to v4
+
 ## [0.3.1] - 2026-04-14
 
 ### Changed
