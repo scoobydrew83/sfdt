@@ -80,6 +80,9 @@ jobs:
   publish-beta:
     needs: version-check-beta
     if: needs.version-check-beta.outputs.changed == 'true'
+    permissions:
+      contents: write
+      id-token: write
     uses: ./.github/workflows/npm-publish.yml
     with:
       version: ${{ needs.version-check-beta.outputs.version }}
@@ -140,6 +143,9 @@ jobs:
   publish:
     needs: version-check
     if: needs.version-check.outputs.changed == 'true'
+    permissions:
+      contents: write
+      id-token: write
     uses: ./.github/workflows/npm-publish.yml
     with:
       version: ${{ needs.version-check.outputs.version }}
