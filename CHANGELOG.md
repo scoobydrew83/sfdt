@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0-beta.5] - 2026-04-19
+
+### Changed
+- Synced dependency bumps from `main` (inquirer, prettier, esbuild, vite, plugin-react v5) into `develop`
+- CI: dedicated `gui-build` job now runs on Node 20 and 22
+
+### Fixed
+- Token handling fix
+
 ## [0.4.0-beta.1] - 2026-04-17
 
 ### Added
