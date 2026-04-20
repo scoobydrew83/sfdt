@@ -22,6 +22,7 @@ import { registerPrDescriptionCommand } from './commands/prDescription.js';
 import { registerUiCommand } from './commands/ui.js';
 import { registerCompareCommand } from './commands/compare.js';
 import { registerCompletionCommand } from './commands/completion.js';
+import { registerUpdateCommand } from './commands/update.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
@@ -57,6 +58,7 @@ export function createCli() {
   registerUiCommand(program);
   registerCompareCommand(program);
   registerCompletionCommand(program);
+  registerUpdateCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program
