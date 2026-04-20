@@ -10,6 +10,9 @@ import express from 'express';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execa } from 'execa';
+import { createInterface } from 'readline';
+import { fetchLatestVersion } from './update-checker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -276,6 +279,8 @@ function createOriginGuard(port) {
  * @param {string} version - CLI version string
  * @returns {import('express').Application}
  */
+let updateInProgress = false;
+
 export function createGuiApp(config, version, port = 7654) {
   const app = express();
   app.use(express.json());
@@ -336,17 +341,7 @@ export function createGuiApp(config, version, port = 7654) {
 
   app.get('/api/check-updates', apiLimiter, async (_req, res) => {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10_000);
-      let latest;
-      try {
-        const r = await fetch('https://registry.npmjs.org/@sfdt/cli/latest', { signal: controller.signal });
-        if (!r.ok) throw new Error(`registry ${r.status}`);
-        const data = await r.json();
-        latest = data.version;
-      } finally {
-        clearTimeout(timeout);
-      }
+      const latest = await fetchLatestVersion();
       res.json({ current: version, latest, updateAvailable: latest !== version });
     } catch (err) {
       res.status(502).json({ error: err.message });
@@ -356,18 +351,20 @@ export function createGuiApp(config, version, port = 7654) {
   // ── Update via npm (SSE) ────────────────────────────────────────────────────
 
   app.get('/api/update/stream', apiLimiter, async (req, res) => {
+    if (updateInProgress) {
+      return res.status(409).json({ error: 'An update is already in progress' });
+    }
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
+    updateInProgress = true;
     let child;
     req.on('close', () => { if (child && !child.killed) child.kill(); });
 
     try {
-      const { execa } = await import('execa');
-      const { createInterface } = await import('readline');
-
       child = execa('npm', ['install', '--global', '@sfdt/cli@latest'], {
         stdout: 'pipe',
         stderr: 'pipe',
@@ -390,6 +387,7 @@ export function createGuiApp(config, version, port = 7654) {
       try {
         await child;
       } catch (execErr) {
+        // exitCode 1 covers both real errors and SIGKILL on client disconnect
         exitCode = execErr.exitCode ?? 1;
       } finally {
         rlOut.close();
@@ -405,6 +403,8 @@ export function createGuiApp(config, version, port = 7654) {
         res.write('data: ' + JSON.stringify({ type: 'error', message: err.message }) + '\n\n');
         res.end();
       }
+    } finally {
+      updateInProgress = false;
     }
   });
 

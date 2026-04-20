@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Command } from 'commander';
 
 vi.mock('../../src/lib/output.js', () => ({
@@ -26,9 +26,14 @@ vi.mock('inquirer', () => ({
   default: { prompt: vi.fn() },
 }));
 
-import { print, createSpinner } from '../../src/lib/output.js';
+vi.mock('../../src/lib/update-checker.js', () => ({
+  fetchLatestVersion: vi.fn(),
+}));
+
+import { print } from '../../src/lib/output.js';
 import { execa } from 'execa';
 import inquirer from 'inquirer';
+import { fetchLatestVersion } from '../../src/lib/update-checker.js';
 import { registerUpdateCommand } from '../../src/commands/update.js';
 
 const CURRENT_VERSION = '0.4.2';
@@ -44,17 +49,7 @@ function createProgram() {
 beforeEach(() => {
   vi.resetAllMocks();
   process.exitCode = undefined;
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ version: LATEST_VERSION }),
-    }),
-  );
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
+  fetchLatestVersion.mockResolvedValue(LATEST_VERSION);
 });
 
 describe('update command', () => {
@@ -63,10 +58,7 @@ describe('update command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'update']);
 
-    expect(fetch).toHaveBeenCalledWith(
-      'https://registry.npmjs.org/@sfdt/cli/latest',
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+    expect(fetchLatestVersion).toHaveBeenCalledOnce();
   });
 
   it('shows current and latest version then prompts for confirmation', async () => {
@@ -110,13 +102,7 @@ describe('update command', () => {
   });
 
   it('prints up-to-date message and skips install when already on latest', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ version: CURRENT_VERSION }),
-      }),
-    );
+    fetchLatestVersion.mockResolvedValue(CURRENT_VERSION);
 
     await createProgram().parseAsync(['node', 'sfdt', 'update']);
 
@@ -135,7 +121,7 @@ describe('update command', () => {
   });
 
   it('handles npm registry fetch failure gracefully', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ENOTFOUND')));
+    fetchLatestVersion.mockRejectedValue(new Error('ENOTFOUND'));
 
     await createProgram().parseAsync(['node', 'sfdt', 'update']);
 

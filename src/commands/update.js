@@ -4,24 +4,10 @@ import path from 'path';
 import { execa } from 'execa';
 import inquirer from 'inquirer';
 import { print, createSpinner } from '../lib/output.js';
+import { fetchLatestVersion } from '../lib/update-checker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', '..', 'package.json'), 'utf-8'));
-
-const NPM_REGISTRY_URL = 'https://registry.npmjs.org/@sfdt/cli/latest';
-
-async function fetchLatestVersion() {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(NPM_REGISTRY_URL, { signal: controller.signal });
-    if (!res.ok) throw new Error(`npm registry responded with ${res.status}`);
-    const data = await res.json();
-    return data.version;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
 
 export function registerUpdateCommand(program) {
   program
@@ -61,8 +47,8 @@ export function registerUpdateCommand(program) {
         }
 
         const installSpinner = createSpinner('Installing…').start();
+        installSpinner.stop();
         await execa('npm', ['install', '--global', '@sfdt/cli@latest'], { stdio: 'inherit' });
-        installSpinner.succeed('Update complete.');
 
         print.success(`sfdt updated to v${latestVersion}`);
       } catch (err) {
