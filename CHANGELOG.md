@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-04-20
+
+### Added
+- **Shell completions** (`sfdt completion <bash|zsh|fish>`): generates ready-to-source completion scripts covering all commands and their flags — pipe to a file or `source` directly in your shell profile.
+- **Version subcommand** (`sfdt version`): prints `sfdt vX.Y.Z`; complements the existing `-v` / `--version` flag and works as a proper subcommand in shell scripts.
+- **`--dry-run` flag** on `deploy`, `rollback`, `preflight`, `smoke`, `pull`, and `test`: prints the script path, working directory, and all `SFDT_` env vars that would be set — no changes are made to the org.
+- **Structured exit codes** (`src/lib/exit-codes.js`): `EXIT_SUCCESS` (0), `ERROR` (1), `CONFIG_ERROR` (2), `CONNECT_ERROR` (3). All 18 commands now map to the correct code instead of hardcoded `1`, making it easier to handle errors in CI scripts.
+
+### Changed
+- Config validation is now stricter with richer error messages: `defaultOrg` must be a non-empty string, `coverageThreshold` must be 0–100, `environments.orgs` must be an array, and `logDir` must be a string. Validation errors exit with code `2` (`CONFIG_ERROR`).
+- Updated `express` from 4.x to 5.x.
+- Updated `open` from 10.x to 11.x.
+
 ## [0.4.0] - 2026-04-19
 
 ### Added

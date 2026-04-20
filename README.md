@@ -47,16 +47,18 @@ sfdt deploy
 | Command | Description | Key Options |
 |---|---|---|
 | `sfdt init` | Initialize `.sfdt/` config (interactive) | — |
-| `sfdt deploy` | Deploy to a Salesforce org | `--managed`, `--skip-preflight` |
+| `sfdt deploy` | Deploy to a Salesforce org | `--managed`, `--skip-preflight`, `--dry-run` |
 | `sfdt release` | Generate release manifest + optional AI release notes | — |
-| `sfdt test` | Run Apex tests with the enhanced test runner | `--legacy`, `--analyze` |
-| `sfdt pull` | Pull metadata from the configured org | — |
-| `sfdt preflight` | Run pre-deployment validation checks | `--strict` |
-| `sfdt rollback` | Roll back a deployment to a target org | `--org <alias>` |
-| `sfdt smoke` | Post-deploy smoke tests | `--org <alias>` |
+| `sfdt test` | Run Apex tests with the enhanced test runner | `--legacy`, `--analyze`, `--dry-run` |
+| `sfdt pull` | Pull metadata from the configured org | `--dry-run` |
+| `sfdt preflight` | Run pre-deployment validation checks | `--strict`, `--dry-run` |
+| `sfdt rollback` | Roll back a deployment to a target org | `--org <alias>`, `--dry-run` |
+| `sfdt smoke` | Post-deploy smoke tests | `--org <alias>`, `--dry-run` |
 | `sfdt drift` | Detect metadata drift between local source and an org | `--org <alias>` |
 | `sfdt compare` | Compare metadata between two orgs or local source vs an org | `--source <alias\|local>`, `--target <alias>`, `--output <file>` |
 | `sfdt notify` | Send Slack deployment notifications | `--org <alias>`, `--version <ver>`, `--message <msg>` |
+| `sfdt completion <shell>` | Print shell completion script (`bash`, `zsh`, `fish`) | — |
+| `sfdt version` | Print the current sfdt version | — |
 
 ### AI & Intelligence (Phase 3)
 
