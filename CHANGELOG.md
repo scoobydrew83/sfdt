@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-19
+
+### Added
+- **Org Compare command** (`sfdt compare`): Side-by-side metadata inventory comparison between two Salesforce orgs. Streams live progress via SSE, showing added, removed, and changed components across all metadata types. Supports `--source` and `--target` org aliases with `--format json|table` output.
+- **Compare page** (GUI): New Compare dashboard page with live streaming progress, filterable DataTable of component diffs (`CompareTable`), and collapsible side-by-side diff viewer (`DiffPanel`). Status badges and empty states follow SLDS conventions.
+- **CommandRunner component**: Reusable GUI component for live CLI command execution with SSE streaming, used on Preflight, Drift, Test Runs, and Compare pages.
+- `src/lib/org-inventory.js` / `src/lib/org-diff.js`: Org inventory retrieval and pure diff engine backing `sfdt compare`.
+
+### Fixed
+- Compare diff panel now works for all Salesforce metadata types (`CustomMetadata` records, foldered metadata) — validation now targets path traversal patterns instead of banning `.` and `/` in member names.
+- Beta releases can no longer accidentally publish as `latest` — CI `publish` job on `main` now fails immediately if the version contains a pre-release suffix.
+
+### Security
+- Docs automation no longer executes repo-controlled instructions under write credentials — workflow instructions are now fully inline in the protected workflow YAML; unnecessary `id-token: write` permission removed.
+
 ## [0.4.0-beta.5] - 2026-04-19
 
 ### Changed
