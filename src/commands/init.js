@@ -6,6 +6,7 @@ import inquirer from 'inquirer';
 import { detectProject, getProjectRoot } from '../lib/project-detect.js';
 import { print } from '../lib/output.js';
 import { storeCredential } from '../lib/ai.js';
+import { resolveExitCode } from '../lib/exit-codes.js';
 
 const CONFIG_DIR = '.sfdt';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -265,7 +266,7 @@ export function registerInitCommand(program) {
         console.log('');
       } catch (err) {
         print.error(`Init failed: ${err.message}`);
-        process.exitCode = 1;
+        process.exitCode = resolveExitCode(err);
       }
     });
 }

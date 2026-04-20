@@ -6,6 +6,7 @@ import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
+import { resolveExitCode } from '../lib/exit-codes.js';
 
 export function registerReleaseCommand(program) {
   program
@@ -79,7 +80,7 @@ export function registerReleaseCommand(program) {
         await gitWorkflow(projectRoot, config, resolvedVersion);
       } catch (err) {
         print.error(`Release failed: ${err.message}`);
-        process.exitCode = 1;
+        process.exitCode = resolveExitCode(err);
       }
     });
 }

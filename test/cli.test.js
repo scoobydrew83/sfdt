@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createCli } from '../src/cli.js';
 
 describe('createCli', () => {
@@ -30,6 +30,8 @@ describe('createCli', () => {
       'review',
       'notify',
       'drift',
+      'completion',
+      'version',
     ];
 
     for (const name of expected) {
@@ -42,5 +44,18 @@ describe('createCli', () => {
     const commandNames = program.commands.map((cmd) => cmd.name());
     const unique = new Set(commandNames);
     expect(unique.size).toBe(commandNames.length);
+  });
+
+  it('version command prints sfdt vX.Y.Z', async () => {
+    const program = createCli();
+    program.exitOverride();
+
+    const lines = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...args) => lines.push(args.join(' ')));
+
+    await program.parseAsync(['node', 'sfdt', 'version']);
+
+    spy.mockRestore();
+    expect(lines.some((l) => /sfdt v\d+\.\d+\.\d+/.test(l))).toBe(true);
   });
 });

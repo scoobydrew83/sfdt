@@ -1,5 +1,6 @@
 import { loadConfig } from '../lib/config.js';
 import { print } from '../lib/output.js';
+import { resolveExitCode } from '../lib/exit-codes.js';
 
 const VALID_EVENTS = ['deploy-success', 'deploy-failure', 'test-failure', 'release-created'];
 
@@ -154,7 +155,7 @@ export function registerNotifyCommand(program) {
         print.success(`Notification sent: ${event}`);
       } catch (err) {
         print.error(`Notification failed: ${err.message}`);
-        process.exitCode = 1;
+        process.exitCode = resolveExitCode(err);
       }
     });
 }

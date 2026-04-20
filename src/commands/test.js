@@ -3,6 +3,7 @@ import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
+import { ExitCode, resolveExitCode } from '../lib/exit-codes.js';
 
 export function registerTestCommand(program) {
   program
@@ -10,6 +11,7 @@ export function registerTestCommand(program) {
     .description('Run Apex tests with the enhanced test runner')
     .option('--legacy', 'Use run-tests.sh instead of enhanced-test-runner.sh')
     .option('--analyze', 'Run test-analyzer after tests complete')
+    .option('--dry-run', 'Show what would be executed without running')
     .action(async (options) => {
       try {
         const config = await loadConfig();
@@ -17,14 +19,15 @@ export function registerTestCommand(program) {
 
         const scriptPath = options.legacy ? 'core/run-tests.sh' : 'core/enhanced-test-runner.sh';
 
-        print.header(`Running Tests${options.legacy ? ' (legacy)' : ''}`);
+        print.header(`Running Tests${options.legacy ? ' (legacy)' : ''}${options.dryRun ? ' [dry-run]' : ''}`);
 
         let testFailed = false;
         try {
           await runScript(scriptPath, config, {
             cwd: projectRoot,
+            dryRun: options.dryRun,
           });
-          print.success('All tests passed.');
+          print.success(options.dryRun ? 'Dry-run complete — no changes made.' : 'All tests passed.');
         } catch (testErr) {
           testFailed = true;
           print.error(`Tests failed: ${testErr.message}`);
@@ -36,14 +39,15 @@ export function registerTestCommand(program) {
           try {
             await runScript('quality/test-analyzer.sh', config, {
               cwd: projectRoot,
+              dryRun: options.dryRun,
             });
           } catch (analyzeErr) {
             print.warning(`Test analyzer encountered issues: ${analyzeErr.message}`);
           }
         }
 
-        // Offer AI analysis on failure
-        if (testFailed) {
+        // Offer AI analysis on failure (skip in dry-run)
+        if (testFailed && !options.dryRun) {
           const aiEnabled = config.features?.ai;
           if (aiEnabled && (await isAiAvailable(config))) {
             const { analyzeFailure } = await inquirer.prompt([
@@ -75,11 +79,11 @@ export function registerTestCommand(program) {
             }
           }
 
-          process.exitCode = 1;
+          process.exitCode = ExitCode.ERROR;
         }
       } catch (err) {
         print.error(`Test command failed: ${err.message}`);
-        process.exitCode = 1;
+        process.exitCode = resolveExitCode(err);
       }
     });
 }

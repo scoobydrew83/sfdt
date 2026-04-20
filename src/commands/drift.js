@@ -1,6 +1,7 @@
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { print } from '../lib/output.js';
+import { resolveExitCode } from '../lib/exit-codes.js';
 
 export function registerDriftCommand(program) {
   program
@@ -27,7 +28,7 @@ export function registerDriftCommand(program) {
         print.success(`Drift detection for ${orgAlias} completed.`);
       } catch (err) {
         print.error(`Drift detection failed: ${err.message}`);
-        process.exitCode = 1;
+        process.exitCode = resolveExitCode(err);
       }
     });
 }

@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import { loadConfig } from '../lib/config.js';
 import { print } from '../lib/output.js';
+import { resolveExitCode } from '../lib/exit-codes.js';
 import { fetchInventory } from '../lib/org-inventory.js';
 import { diffInventories } from '../lib/org-diff.js';
 import { renderPackageXml } from '../lib/metadata-mapper.js';
@@ -60,7 +61,7 @@ export function registerCompareCommand(program) {
         }
       } catch (err) {
         print.error(`Comparison failed: ${err.message}`);
-        process.exitCode = 1;
+        process.exitCode = resolveExitCode(err);
       }
     });
 }
