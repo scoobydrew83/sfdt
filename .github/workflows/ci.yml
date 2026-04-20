@@ -46,7 +46,7 @@ jobs:
           cache: npm
           cache-dependency-path: gui/package-lock.json
       - name: Install GUI dependencies
-        run: cd gui && npm ci
+        run: cd gui && npm install
       - name: Build GUI
         run: cd gui && npm run build
 
