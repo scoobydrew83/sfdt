@@ -21,6 +21,7 @@ import { registerExplainCommand } from './commands/explain.js';
 import { registerPrDescriptionCommand } from './commands/prDescription.js';
 import { registerUiCommand } from './commands/ui.js';
 import { registerCompareCommand } from './commands/compare.js';
+import { registerCompletionCommand } from './commands/completion.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
@@ -33,7 +34,8 @@ export function createCli() {
     .description(
       'Salesforce DevTools — deployment, testing, quality, and release management for any Salesforce DX project',
     )
-    .version(pkg.version, '-v, --version');
+    .version(pkg.version, '-v, --version', 'Print the sfdt version and exit')
+    .addHelpCommand('help [command]', 'Display help for a command');
 
   // Register all commands
   registerInitCommand(program);
@@ -54,6 +56,15 @@ export function createCli() {
   registerPrDescriptionCommand(program);
   registerUiCommand(program);
   registerCompareCommand(program);
+  registerCompletionCommand(program);
+
+  // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
+  program
+    .command('version')
+    .description('Print the sfdt version')
+    .action(() => {
+      console.log(`sfdt v${pkg.version}`);
+    });
 
   return program;
 }

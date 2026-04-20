@@ -5,6 +5,7 @@ import { loadConfig } from '../lib/config.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 import { execa } from 'execa';
+import { resolveExitCode } from '../lib/exit-codes.js';
 
 export function registerChangelogCommand(program) {
   const changelog = program.command('changelog').description('Manage project CHANGELOG.md');
@@ -99,7 +100,7 @@ export function registerChangelogCommand(program) {
         }
       } catch (err) {
         print.error(`Changelog generation failed: ${err.message}`);
-        process.exitCode = 1;
+        process.exitCode = resolveExitCode(err);
       }
     });
 

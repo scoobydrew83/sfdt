@@ -2,6 +2,7 @@ import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
+import { resolveExitCode } from '../lib/exit-codes.js';
 
 export function registerQualityCommand(program) {
   program
@@ -92,7 +93,7 @@ export function registerQualityCommand(program) {
         }
       } catch (err) {
         print.error(`Quality analysis failed: ${err.message}`);
-        process.exitCode = 1;
+        process.exitCode = resolveExitCode(err);
       }
     });
 }

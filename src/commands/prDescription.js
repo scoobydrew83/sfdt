@@ -4,6 +4,7 @@ import { execa } from 'execa';
 import { loadConfig } from '../lib/config.js';
 import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
+import { resolveExitCode } from '../lib/exit-codes.js';
 import { parseDiffToMetadata, countMembers } from '../lib/metadata-mapper.js';
 
 const VALID_FORMATS = ['github', 'slack', 'markdown'];
@@ -134,7 +135,7 @@ export function registerPrDescriptionCommand(program) {
         }
       } catch (err) {
         print.error(`PR description generation failed: ${err.message}`);
-        process.exitCode = 1;
+        process.exitCode = resolveExitCode(err);
       }
     });
 }

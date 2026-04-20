@@ -14,6 +14,18 @@ const CONFIG_FILES = {
 const REQUIRED_CONFIG_KEYS = ['defaultOrg', 'features'];
 
 /**
+ * Error subclass for configuration problems.
+ * Carries exitCode 2 so the CLI entry point can set the correct exit status.
+ */
+export class ConfigError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ConfigError';
+    this.exitCode = 2;
+  }
+}
+
+/**
  * Walk up from startDir to find the directory containing both
  * sfdx-project.json and .sfdt/
  */
@@ -26,16 +38,29 @@ export function getConfigDir(startDir) {
  * Load and merge all .sfdt/ configuration files into a single object.
  */
 export async function loadConfig(startDir) {
-  const configDir = getConfigDir(startDir);
+  let configDir;
+  try {
+    configDir = getConfigDir(startDir);
+  } catch (err) {
+    throw new ConfigError(err.message);
+  }
 
   const configPath = path.join(configDir, CONFIG_FILES.config);
   if (!(await fs.pathExists(configPath))) {
-    throw new Error(
+    throw new ConfigError(
       `Configuration file not found: ${configPath}\nRun 'sfdt init' first to create the .sfdt/ configuration directory.`,
     );
   }
 
-  const config = await fs.readJson(configPath);
+  let config;
+  try {
+    config = await fs.readJson(configPath);
+  } catch (err) {
+    throw new ConfigError(
+      `Failed to parse ${configPath}: ${err.message}\nEnsure the file contains valid JSON.`,
+    );
+  }
+
   validateConfig(config);
 
   const merged = { ...config };
@@ -44,7 +69,11 @@ export async function loadConfig(startDir) {
     if (key === 'config') continue;
     const filePath = path.join(configDir, filename);
     if (await fs.pathExists(filePath)) {
-      merged[key] = await fs.readJson(filePath);
+      try {
+        merged[key] = await fs.readJson(filePath);
+      } catch (err) {
+        throw new ConfigError(`Failed to parse ${filePath}: ${err.message}`);
+      }
     }
   }
 
@@ -70,23 +99,53 @@ export async function loadConfig(startDir) {
 
 /**
  * Validate that a config object has the required structure.
- * Throws with a descriptive message on failure.
+ * Throws ConfigError with a descriptive message on failure.
  */
 export function validateConfig(config) {
   if (!config || typeof config !== 'object') {
-    throw new Error('Invalid configuration: config must be a non-null object.');
+    throw new ConfigError('Invalid configuration: config must be a non-null object.');
   }
 
   const missing = REQUIRED_CONFIG_KEYS.filter((key) => !(key in config));
   if (missing.length > 0) {
-    throw new Error(
+    throw new ConfigError(
       `Invalid configuration: missing required keys: ${missing.join(', ')}.\n` +
         `Run 'sfdt init' to regenerate the configuration.`,
     );
   }
 
   if (typeof config.features !== 'object' || config.features === null) {
-    throw new Error('Invalid configuration: "features" must be an object.');
+    throw new ConfigError(
+      'Invalid configuration: "features" must be an object (e.g. { "ai": false }).',
+    );
+  }
+
+  if (typeof config.defaultOrg !== 'string' || config.defaultOrg.trim() === '') {
+    throw new ConfigError(
+      'Invalid configuration: "defaultOrg" must be a non-empty string (e.g. "my-org-alias").\n' +
+        `Got: ${JSON.stringify(config.defaultOrg)}`,
+    );
+  }
+
+  const threshold = config.deployment?.coverageThreshold;
+  if (threshold !== undefined) {
+    const n = Number(threshold);
+    if (!Number.isFinite(n) || n < 0 || n > 100) {
+      throw new ConfigError(
+        `Invalid configuration: "deployment.coverageThreshold" must be a number between 0 and 100.\n` +
+          `Got: ${JSON.stringify(threshold)}`,
+      );
+    }
+  }
+
+  if (config.environments?.orgs !== undefined && !Array.isArray(config.environments.orgs)) {
+    throw new ConfigError(
+      'Invalid configuration: "environments.orgs" must be an array of org objects.',
+    );
+  }
+
+  if (config.logDir !== undefined && typeof config.logDir !== 'string') {
+    throw new ConfigError('Invalid configuration: "logDir" must be a string path when provided.');
   }
 }
 
@@ -107,7 +166,7 @@ function findProjectWithConfig(startDir) {
     }
 
     if (hasSfdxProject && !hasSfdtDir) {
-      throw new Error(
+      throw new ConfigError(
         `Found Salesforce DX project at ${current} but no .sfdt/ directory.\n` +
           `Run 'sfdt init' first to initialize configuration.`,
       );
@@ -116,7 +175,7 @@ function findProjectWithConfig(startDir) {
     current = path.dirname(current);
   }
 
-  throw new Error(
+  throw new ConfigError(
     `Could not find a Salesforce DX project with .sfdt/ configuration.\n` +
       `Run 'sfdt init' in your project root to get started.`,
   );

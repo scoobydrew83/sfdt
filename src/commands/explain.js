@@ -4,6 +4,7 @@ import { glob } from 'glob';
 import { loadConfig } from '../lib/config.js';
 import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
+import { resolveExitCode } from '../lib/exit-codes.js';
 
 const MAX_LOG_SIZE_BYTES = 512 * 1024; // 512 KB cap sent to the model
 const MAX_HEURISTIC_ERRORS = 20;
@@ -119,7 +120,7 @@ export function registerExplainCommand(program) {
         });
       } catch (err) {
         print.error(`Explain failed: ${err.message}`);
-        process.exitCode = 1;
+        process.exitCode = resolveExitCode(err);
       }
     });
 }

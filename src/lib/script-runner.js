@@ -2,6 +2,7 @@ import { execa } from 'execa';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { print } from './output.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -92,14 +93,43 @@ export function buildScriptEnv(config) {
  * @param {string} [options.cwd] - Working directory (defaults to project root)
  * @param {object} [options.env] - Additional environment variables
  * @param {boolean} [options.interactive] - Use stdio inherit for TTY passthrough (default: true)
+ * @param {boolean} [options.dryRun] - Print what would be executed without running (default: false)
  */
 export async function runScript(scriptPath, config, options = {}) {
-  const { args = [], cwd, env: extraEnv = {}, interactive = true, captureStdout = false } = options;
+  const {
+    args = [],
+    cwd,
+    env: extraEnv = {},
+    interactive = true,
+    captureStdout = false,
+    dryRun = false,
+  } = options;
 
   const fullPath = path.resolve(SCRIPTS_DIR, scriptPath);
 
-  if (!(await fs.pathExists(fullPath))) {
+  if (!dryRun && !(await fs.pathExists(fullPath))) {
     throw new Error(`Script not found: ${fullPath}`);
+  }
+
+  if (dryRun) {
+    const workDir = cwd || config._projectRoot || process.cwd();
+    const scriptEnv = buildScriptEnv(config);
+    const mergedEnv = { ...scriptEnv, ...extraEnv };
+    const sfdtVars = Object.entries(mergedEnv)
+      .filter(([k, v]) => k.startsWith('SFDT_') && v)
+      .sort(([a], [b]) => a.localeCompare(b));
+
+    print.info(`[dry-run] Script : ${scriptPath}`);
+    print.info(`[dry-run] Full path: ${fullPath}`);
+    print.info(`[dry-run] Working dir: ${workDir}`);
+    if (args.length) print.info(`[dry-run] Args: ${args.join(' ')}`);
+    if (sfdtVars.length) {
+      print.info('[dry-run] SFDT_ environment:');
+      for (const [k, v] of sfdtVars) {
+        print.step(`           ${k}=${v}`);
+      }
+    }
+    return { exitCode: 0, stdout: '', stderr: '' };
   }
 
   // Ensure the script is executable
