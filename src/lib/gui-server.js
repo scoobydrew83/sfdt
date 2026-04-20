@@ -148,6 +148,21 @@ async function safeReaddir(dir) {
 }
 
 /**
+ * Remove a single <members>MEMBER</members> entry from the matching <types> block in a package.xml string.
+ * Two-pass: first find blocks containing <name>TYPE</name>, then remove the member line.
+ */
+function removeComponentFromXml(xml, type, member) {
+  // Split into type blocks, process each, reassemble
+  const blockPattern = /(<types>[\s\S]*?<\/types>)/g;
+  return xml.replace(blockPattern, (block) => {
+    const nameMatch = block.match(/<name>([^<]+)<\/name>/);
+    if (!nameMatch || nameMatch[1].trim() !== type) return block;
+    // Remove the members line for this member
+    return block.replace(new RegExp(`\\s*<members>${member.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/members>`, 'g'), '');
+  });
+}
+
+/**
  * Read the most recent compare result.
  * Returns { date, source, target, items: [{type, member, status}] } or null.
  */
@@ -284,6 +299,14 @@ const COMMANDS = {
   pull: {
     script: 'scripts/core/pull-org-updates.sh',
     logFile: 'logs/pull-latest.json',
+  },
+  deploy: {
+    script: 'scripts/core/deployment-assistant.sh',
+    logFile: 'logs/deploy-latest.log',
+  },
+  rollback: {
+    script: 'scripts/new/rollback.sh',
+    logFile: 'logs/rollback-latest.log',
   },
 };
 
@@ -834,6 +857,399 @@ export function createGuiApp(config, version, port = 7654) {
       res.json({ xml, addCount, delCount, filename });
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Release Hub: deploy with options (SSE) ────────────────────────────────
+
+  app.post('/api/release/deploy', apiLimiter, async (req, res) => {
+    const { dryRun = false, skipPreflight = false, notifySlack = false, org, manifest } = req.body ?? {};
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    let child;
+    req.on('close', () => { if (child && !child.killed) child.kill(); });
+
+    try {
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const scriptPath = path.join(projectRoot, 'scripts/core/deployment-assistant.sh');
+
+      const scriptEnv = {
+        SFDT_PROJECT_ROOT: projectRoot,
+        SFDT_CONFIG_DIR: config._configDir ?? path.join(projectRoot, '.sfdt'),
+        SFDT_DEFAULT_ORG: org ?? config.defaultOrg ?? '',
+        SFDT_SOURCE_PATH: config.defaultSourcePath ?? 'force-app/main/default',
+        SFDT_API_VERSION: config.sourceApiVersion ?? '',
+        SFDT_NON_INTERACTIVE: 'true',
+        SFDT_DRY_RUN: dryRun ? 'true' : 'false',
+        SFDT_SKIP_PREFLIGHT: skipPreflight ? 'true' : 'false',
+        SFDT_NOTIFY_SLACK: notifySlack ? 'true' : 'false',
+        ...(manifest ? { SFDT_MANIFEST_PATH: path.join(projectRoot, manifest) } : {}),
+      };
+
+      child = execa('bash', [scriptPath], {
+        env: { ...process.env, ...scriptEnv },
+        cwd: projectRoot,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const lines = [];
+      const streamLines = (readable) => {
+        const rl = createInterface({ input: readable, crlfDelay: Infinity });
+        rl.on('line', (line) => {
+          lines.push(line);
+          if (!res.writableEnded) res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
+        });
+        return rl;
+      };
+
+      const rlOut = streamLines(child.stdout);
+      const rlErr = streamLines(child.stderr);
+
+      let exitCode = 0;
+      try {
+        await child;
+      } catch (execErr) {
+        exitCode = execErr.exitCode ?? 1;
+      } finally {
+        rlOut.close();
+        rlErr.close();
+      }
+
+      // Append to deploy history
+      const historyPath = path.join(logDir, 'deploy-history.json');
+      const history = await fs.readJson(historyPath).catch(() => []);
+      history.unshift({
+        date: new Date().toISOString(),
+        manifest: manifest ?? null,
+        org: org ?? config.defaultOrg ?? null,
+        dryRun,
+        skipPreflight,
+        exitCode,
+      });
+      await fs.outputJson(historyPath, history.slice(0, 100), { spaces: 2 });
+
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'result', exitCode }) + '\n\n');
+        res.end();
+      }
+    } catch (err) {
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'error', message: err.message }) + '\n\n');
+        res.end();
+      }
+    }
+  });
+
+  // ── Release Hub: deployment history ───────────────────────────────────────
+
+  app.get('/api/deploy/history', apiLimiter, async (_req, res) => {
+    try {
+      const historyPath = path.join(logDir, 'deploy-history.json');
+      const history = await fs.readJson(historyPath).catch(() => []);
+      res.json({ history });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Release Hub: changelog content ────────────────────────────────────────
+
+  app.get('/api/changelog/content', apiLimiter, async (_req, res) => {
+    try {
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const changelogPath = path.join(projectRoot, 'CHANGELOG.md');
+
+      if (!(await fs.pathExists(changelogPath))) {
+        return res.json({ content: '', exists: false });
+      }
+
+      const raw = await fs.readFile(changelogPath, 'utf8');
+      // Extract the ## [Unreleased] section
+      const match = raw.match(/## \[Unreleased\]([\s\S]*?)(?=\n## \[|$)/);
+      const content = match ? match[1].trim() : '';
+      res.json({ content, exists: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Release Hub: AI changelog generation (SSE) ────────────────────────────
+
+  app.post('/api/changelog/generate', apiLimiter, async (_req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const send = (payload) => {
+      if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n');
+    };
+
+    try {
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const available = await checkAi(config);
+      if (!available) {
+        send({ type: 'error', message: 'AI is not available or not configured.' });
+        res.end();
+        return;
+      }
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const limit = 20;
+      const prompt = [
+        `Analyze the recent git commits in this Salesforce project and generate professional CHANGELOG.md entries.`,
+        `Focus on: new features (Added), bug fixes (Fixed), breaking changes (Changed/Removed).`,
+        `Categorize entries into: Added, Changed, Fixed, Deprecated, Removed, Security.`,
+        `Format as a list of bullet points for each category.`,
+        `ONLY provide the bullet points for the [Unreleased] section. Do not include headers like '## [Unreleased]'.`,
+        `Run 'git log --oneline -n ${limit}' to see recent commits.`,
+        `Output format example:`,
+        `### Added\n- New Account trigger handler for automated validation\n- Support for Slack notifications`,
+        `### Fixed\n- Issue with deployment manifest generation for PermissionSets`,
+      ].join('\n');
+
+      send({ type: 'log', line: 'Analyzing recent commits with AI...', ts: new Date().toISOString() });
+
+      const result = await runAi(prompt, {
+        config,
+        allowedTools: ['Bash(git log:*)', 'Read'],
+        cwd: projectRoot,
+        aiEnabled: true,
+      });
+
+      if (result?.stdout) {
+        for (const line of result.stdout.split('\n')) {
+          send({ type: 'log', line, ts: new Date().toISOString() });
+        }
+      }
+      send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
+    } catch (err) {
+      send({ type: 'error', message: err.message });
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
+  });
+
+  // ── Release Hub: AI release notes generation (SSE) ────────────────────────
+
+  app.post('/api/release-notes/generate', apiLimiter, async (_req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const send = (payload) => {
+      if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n');
+    };
+
+    try {
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const available = await checkAi(config);
+      if (!available) {
+        send({ type: 'error', message: 'AI is not available or not configured.' });
+        res.end();
+        return;
+      }
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const prompt = [
+        `You are a technical writer for a Salesforce development team. Generate concise release notes for the changes in the current branch.`,
+        `Use the git log and diff to understand what changed. Focus on user-facing impact, not implementation details.`,
+        `Format the output as Markdown with sections: ## Overview, ## What's New, ## Bug Fixes, ## Breaking Changes (if any).`,
+        `Keep each bullet point to one sentence. Avoid jargon. Target audience: Salesforce admins and business stakeholders.`,
+        `Run git log and git diff to understand the changes.`,
+      ].join('\n');
+
+      send({ type: 'log', line: 'Generating release notes with AI...', ts: new Date().toISOString() });
+
+      const result = await runAi(prompt, {
+        config,
+        allowedTools: ['Bash(git log:*)', 'Bash(git diff:*)', 'Read'],
+        cwd: projectRoot,
+        aiEnabled: true,
+      });
+
+      if (result?.stdout) {
+        for (const line of result.stdout.split('\n')) {
+          send({ type: 'log', line, ts: new Date().toISOString() });
+        }
+      }
+      send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
+    } catch (err) {
+      send({ type: 'error', message: err.message });
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
+  });
+
+  // ── Release Hub: remove component from manifest ────────────────────────────
+
+  app.post('/api/manifest/remove-component', apiLimiter, async (req, res) => {
+    try {
+      const { relPath, type, member } = req.body ?? {};
+      if (!relPath || !type || !member) {
+        return res.status(400).json({ error: 'relPath, type, and member are required' });
+      }
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const absPath = path.resolve(projectRoot, relPath);
+      if (!absPath.startsWith(projectRoot + path.sep) && absPath !== projectRoot) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      const xml = await fs.readFile(absPath, 'utf8');
+      // Remove the <members> entry for this type/member combination
+      const typeEscaped = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const memberEscaped = member.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      // Remove the <members>MEMBER</members> line inside the matching <types> block
+      // Strategy: split into type blocks, remove the member from the right block, reassemble
+      const updatedXml = removeComponentFromXml(xml, type, member);
+      await fs.writeFile(absPath, updatedXml);
+
+      void typeEscaped; void memberEscaped;
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Release Hub: AI code review (SSE) ─────────────────────────────────────
+
+  app.post('/api/review', apiLimiter, async (req, res) => {
+    const { base = 'main' } = req.body ?? {};
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const send = (payload) => {
+      if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n');
+    };
+
+    try {
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const available = await checkAi(config);
+      if (!available) {
+        send({ type: 'error', message: 'AI is not available or not configured.' });
+        res.end();
+        return;
+      }
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const diffResult = await execa('git', ['diff', `${base}...HEAD`], { cwd: projectRoot, reject: false });
+      const diff = diffResult.stdout || '';
+
+      if (!diff.trim()) {
+        send({ type: 'log', line: `No changes found between ${base} and HEAD.`, ts: new Date().toISOString() });
+        send({ type: 'result', exitCode: 0, content: '' });
+        res.end();
+        return;
+      }
+
+      const REVIEW_PROMPT = `You are a senior Salesforce developer reviewing a code diff. Analyze the following changes and report issues in these categories:\n\n## Governor Limits & Performance\n- SOQL or DML inside loops\n- Unbulkified operations (not handling 200+ records)\n- Missing LIMIT clauses on SOQL queries\n\n## Security\n- Missing CRUD/FLS checks\n- SOQL injection risks\n- Sensitive data exposure in debug logs\n\n## Null Safety & Error Handling\n- Missing null checks before property access\n- Unhandled exceptions in AuraEnabled methods\n\n## Test Coverage\n- Changed Apex classes that lack corresponding test class changes\n- Missing assertions in test methods\n\nProvide specific line references from the diff. Rate each finding as CRITICAL, HIGH, MEDIUM, or LOW.\n\n--- DIFF ---\n`;
+
+      send({ type: 'log', line: `Reviewing ${diff.split('\n').length} lines of diff vs ${base}...`, ts: new Date().toISOString() });
+
+      const result = await runAi(REVIEW_PROMPT + diff, {
+        config,
+        allowedTools: ['Read', 'Grep'],
+        cwd: projectRoot,
+        aiEnabled: true,
+      });
+
+      if (result?.stdout) {
+        for (const line of result.stdout.split('\n')) {
+          send({ type: 'log', line, ts: new Date().toISOString() });
+        }
+      }
+      send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
+    } catch (err) {
+      send({ type: 'error', message: err.message });
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
+  });
+
+  // ── Release Hub: AI explain (SSE) ─────────────────────────────────────────
+
+  app.post('/api/explain', apiLimiter, async (req, res) => {
+    const { logPath } = req.body ?? {};
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const send = (payload) => {
+      if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n');
+    };
+
+    try {
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const projectRoot = config._projectRoot ?? process.cwd();
+
+      // Resolve log file
+      let resolvedLogPath;
+      if (logPath) {
+        const abs = path.resolve(projectRoot, logPath);
+        if (!abs.startsWith(projectRoot + path.sep) && abs !== projectRoot) {
+          send({ type: 'error', message: 'Forbidden path' });
+          res.end();
+          return;
+        }
+        resolvedLogPath = abs;
+      } else {
+        // Find most recent .log file
+        const { glob } = await import('glob');
+        const candidates = await glob('**/*.log', { cwd: logDir, absolute: true });
+        if (candidates.length === 0) {
+          send({ type: 'error', message: 'No log files found in logs directory.' });
+          res.end();
+          return;
+        }
+        const statted = await Promise.all(candidates.map(async (p) => ({ path: p, mtime: (await fs.stat(p)).mtimeMs })));
+        statted.sort((a, b) => b.mtime - a.mtime);
+        resolvedLogPath = statted[0].path;
+        send({ type: 'log', line: `Analyzing log: ${path.relative(projectRoot, resolvedLogPath)}`, ts: new Date().toISOString() });
+      }
+
+      const MAX_LOG_BYTES = 512 * 1024;
+      let logContent = await fs.readFile(resolvedLogPath, 'utf8');
+      if (logContent.length > MAX_LOG_BYTES) logContent = logContent.slice(-MAX_LOG_BYTES);
+
+      const available = await checkAi(config);
+      if (!available) {
+        send({ type: 'error', message: 'AI is not available or not configured.' });
+        res.end();
+        return;
+      }
+
+      const EXPLAIN_PROMPT = `You are a Salesforce deployment engineer helping a developer interpret a failing deployment log. Analyze the log and produce a concise report with these sections:\n\n## Root Cause\nOne or two sentences identifying the single most likely cause of the failure.\n\n## Failing Components\nBulleted list of component names + the specific error.\n\n## Suggested Fixes\nOrdered list of concrete steps the developer can take.\n\n## References\nRelevant Salesforce docs or metadata types.\n\n--- DEPLOYMENT LOG ---\n`;
+
+      const result = await runAi(EXPLAIN_PROMPT + logContent, {
+        config,
+        allowedTools: ['Read', 'Grep'],
+        cwd: projectRoot,
+        aiEnabled: true,
+      });
+
+      if (result?.stdout) {
+        for (const line of result.stdout.split('\n')) {
+          send({ type: 'log', line, ts: new Date().toISOString() });
+        }
+      }
+      send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
+    } catch (err) {
+      send({ type: 'error', message: err.message });
+    } finally {
+      if (!res.writableEnded) res.end();
     }
   });
 
