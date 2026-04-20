@@ -5,18 +5,24 @@ import TestRuns from './pages/TestRuns.jsx';
 import PreflightPage from './pages/Preflight.jsx';
 import DriftPage from './pages/Drift.jsx';
 import ComparePage from './pages/Compare.jsx';
+import ManifestsPage from './pages/Manifests.jsx';
+import QualityPage from './pages/Quality.jsx';
+import PullPage from './pages/Pull.jsx';
 import {
   IconHome, IconList, IconCheck, IconRefresh, IconCompare,
-  IconSun, IconMoon,
+  IconSun, IconMoon, IconFileText, IconActivity, IconCloudDown,
 } from './Icons.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard',       Icon: IconHome },
-  { id: 'tests',     label: 'Test Runs',        Icon: IconList },
-  { id: 'preflight', label: 'Preflight',        Icon: IconCheck },
-  { id: 'drift',     label: 'Drift',            Icon: IconRefresh },
-  { id: 'compare',   label: 'Compare',          Icon: IconCompare },
+  { id: 'dashboard', label: 'Dashboard',  Icon: IconHome },
+  { id: 'tests',     label: 'Test Runs',  Icon: IconList },
+  { id: 'preflight', label: 'Preflight',  Icon: IconCheck },
+  { id: 'drift',     label: 'Drift',      Icon: IconRefresh },
+  { id: 'compare',   label: 'Compare',    Icon: IconCompare },
+  { id: 'manifests', label: 'Manifests',  Icon: IconFileText },
+  { id: 'quality',   label: 'Quality',    Icon: IconActivity },
+  { id: 'pull',      label: 'Pull',       Icon: IconCloudDown },
 ];
 
 const PAGE_LABELS = {
@@ -25,6 +31,9 @@ const PAGE_LABELS = {
   preflight: 'Preflight',
   drift:     'Drift',
   compare:   'Compare',
+  manifests: 'Manifests',
+  quality:   'Quality',
+  pull:      'Pull',
 };
 
 export default function App() {
@@ -56,6 +65,9 @@ export default function App() {
       case 'preflight': return <PreflightPage />;
       case 'drift':     return <DriftPage />;
       case 'compare':   return <ComparePage />;
+      case 'manifests': return <ManifestsPage />;
+      case 'quality':   return <QualityPage />;
+      case 'pull':      return <PullPage />;
       default:          return <Dashboard project={project} />;
     }
   };

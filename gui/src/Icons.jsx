@@ -46,3 +46,6 @@ export const IconCopy        = ico(['M20 9H11a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 
 export const IconDownload    = ico(['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4','M7 10l5 5 5-5','M12 15V3']);
 export const IconFilter      = ico('M22 3H2l8 9.46V19l4 2v-8.54L22 3z');
 export const IconMoreHoriz   = ico(['M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z','M19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z','M5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z'], { sw: 2 });
+export const IconFileText    = ico(['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z','M14 2v6h6','M16 13H8','M16 17H8','M10 9H8']);
+export const IconActivity    = ico('M22 12h-4l-3 9L9 3l-3 9H2');
+export const IconCloudDown   = ico(['M8 17l4 4 4-4','M12 12v9','M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29']);

@@ -187,6 +187,57 @@ async function retrieveComponentXml(orgAlias, type, member, tmpDir) {
 }
 
 /**
+ * Find the retrieved file in a list that best matches a Salesforce member name.
+ * Handles simple names (MyClass) and compound names (Account.BillingCity__c).
+ */
+function findFileForMember(files, member) {
+  const parts = member.split('.');
+  const lastName = parts[parts.length - 1];
+  return files.find((f) => {
+    const base = path.basename(f);
+    if (base.startsWith(member + '.') || base.startsWith(member + '-')) return true;
+    if (parts.length > 1) {
+      const dir = path.dirname(f);
+      return (base.startsWith(lastName + '.') || base.startsWith(lastName + '-')) &&
+        dir.includes(parts[0]);
+    }
+    return false;
+  });
+}
+
+/**
+ * Retrieve all members of a single metadata type from an org in one SF CLI call.
+ * Returns a Map<member, xml> for all successfully retrieved members.
+ */
+async function batchRetrieveTypeMembers(orgAlias, type, members, tmpDir) {
+  if (!orgAlias || !members.length) return new Map();
+  const outputDir = path.join(
+    tmpDir,
+    `${orgAlias.replace(/[^a-z0-9]/gi, '_')}_${type.replace(/[^a-z0-9]/gi, '_')}`
+  );
+  const metadataArgs = members.flatMap((m) => ['--metadata', `${type}:${m}`]);
+  try {
+    await execa('sf', [
+      'project', 'retrieve', 'start',
+      ...metadataArgs,
+      '--target-org', orgAlias,
+      '--output-dir', outputDir,
+      '--json',
+    ]);
+    const { glob } = await import('glob');
+    const files = await glob('**/*.xml', { cwd: outputDir, absolute: true });
+    const result = new Map();
+    for (const member of members) {
+      const file = findFileForMember(files, member);
+      if (file) result.set(member, await fs.readFile(file, 'utf8'));
+    }
+    return result;
+  } catch {
+    return new Map();
+  }
+}
+
+/**
  * Read a metadata component's XML from the local source directory.
  */
 async function readLocalComponentXml(config, _type, member) {
@@ -225,6 +276,14 @@ const COMMANDS = {
   test: {
     script: 'scripts/core/enhanced-test-runner.sh',
     logFile: 'logs/test-results/latest.json',
+  },
+  quality: {
+    script: 'scripts/quality/code-analyzer.sh',
+    logFile: 'logs/quality-latest.json',
+  },
+  pull: {
+    script: 'scripts/core/pull-org-updates.sh',
+    logFile: 'logs/pull-latest.json',
   },
 };
 
@@ -593,24 +652,42 @@ export function createGuiApp(config, version, port = 7654) {
 
       sendEvent({ type: 'progress', total: bothItems.length, completed: 0 });
 
+      // Group by type so we can batch-retrieve all members of each type in one SF CLI call
+      const byType = new Map();
       for (const item of bothItems) {
+        if (!byType.has(item.type)) byType.set(item.type, []);
+        byType.get(item.type).push(item.member);
+      }
+
+      for (const [type, members] of byType) {
         if (clientClosed || res.destroyed) break;
 
-        const [sourceXml, targetXml] = await Promise.all([
-          data.source === 'local'
-            ? readLocalComponentXml(config, item.type, item.member)
-            : retrieveComponentXml(data.source, item.type, item.member, tmpDir),
-          retrieveComponentXml(data.target, item.type, item.member, tmpDir),
+        // Batch-retrieve all members of this type from both sides in parallel
+        const [targetXmlMap, sourceXmlMap] = await Promise.all([
+          batchRetrieveTypeMembers(data.target, type, members, tmpDir),
+          data.source !== 'local'
+            ? batchRetrieveTypeMembers(data.source, type, members, tmpDir)
+            : Promise.resolve(new Map()),
         ]);
 
-        const status =
-          sourceXml && targetXml && sourceXml.trim() === targetXml.trim()
-            ? 'identical'
-            : 'modified';
+        for (const member of members) {
+          if (clientClosed || res.destroyed) break;
 
-        sendEvent({ type: 'diff', itemType: item.type, member: item.member, status });
-        completed++;
-        sendEvent({ type: 'progress', total: bothItems.length, completed });
+          const targetXml = targetXmlMap.get(member) ?? null;
+          const sourceXml =
+            data.source === 'local'
+              ? await readLocalComponentXml(config, type, member)
+              : sourceXmlMap.get(member) ?? null;
+
+          const status =
+            sourceXml && targetXml && sourceXml.trim() === targetXml.trim()
+              ? 'identical'
+              : 'modified';
+
+          sendEvent({ type: 'diff', itemType: type, member, status });
+          completed++;
+          sendEvent({ type: 'progress', total: bothItems.length, completed });
+        }
       }
 
       sendEvent({ type: 'done' });
@@ -639,7 +716,9 @@ export function createGuiApp(config, version, port = 7654) {
       const xml = renderPackageXml(metaMap, resolvedVersion);
 
       const fsExtra = (await import('fs-extra')).default;
-      await fsExtra.outputFile(path.join(logDir, 'compare-manifest.xml'), xml);
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      await fsExtra.outputFile(path.join(logDir, `compare-manifest-${ts}.xml`), xml);
+      await fsExtra.outputFile(path.join(logDir, 'compare-manifest-latest.xml'), xml);
 
       res.json({ xml });
     } catch (err) {
@@ -673,6 +752,100 @@ export function createGuiApp(config, version, port = 7654) {
       res.json({ sourceXml: sourceXml ?? '', targetXml: targetXml ?? '' });
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Manifest routes ────────────────────────────────────────────────────────
+
+  app.get('/api/manifests', apiLimiter, async (_req, res) => {
+    try {
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const manifestReleaseDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release');
+      const manifests = [];
+
+      const logFiles = await safeReaddir(logDir);
+      for (const file of logFiles.filter((f) => f.match(/^compare-manifest-\d/)).sort().reverse()) {
+        const filePath = path.join(logDir, file);
+        const stat = await fs.stat(filePath).catch(() => null);
+        if (stat) manifests.push({ name: file, source: 'compare', date: stat.mtime.toISOString(), size: stat.size, relPath: `logs/${file}` });
+      }
+
+      const releaseFiles = await safeReaddir(manifestReleaseDir);
+      for (const file of releaseFiles.filter((f) => f.endsWith('.xml')).sort().reverse()) {
+        const filePath = path.join(manifestReleaseDir, file);
+        const stat = await fs.stat(filePath).catch(() => null);
+        const relDir = config.manifestDir ?? 'manifest/release';
+        if (stat) manifests.push({ name: file, source: 'release', date: stat.mtime.toISOString(), size: stat.size, relPath: `${relDir}/${file}` });
+      }
+
+      res.json({ manifests });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/manifests/content', apiLimiter, async (req, res) => {
+    try {
+      const { path: relPath } = req.query;
+      if (!relPath) return res.status(400).json({ error: 'path is required' });
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const absPath = path.resolve(projectRoot, relPath);
+      if (!absPath.startsWith(projectRoot + path.sep) && absPath !== projectRoot) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      const xml = await fs.readFile(absPath, 'utf8');
+      res.json({ xml });
+    } catch {
+      res.status(404).json({ error: 'Not found' });
+    }
+  });
+
+  app.post('/api/manifest/build', apiLimiter, async (req, res) => {
+    try {
+      const { base = 'main', head = 'HEAD' } = req.body ?? {};
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const sourcePath = config.defaultSourcePath ?? 'force-app/main/default';
+      const apiVersion = config.sourceApiVersion ?? '63.0';
+
+      const { parseDiffToMetadata, renderPackageXml: renderXml, countMembers } = await import('./metadata-mapper.js');
+
+      const mergeBase = await execa('git', ['merge-base', base, head], { cwd: projectRoot, reject: false });
+      const baseRef = (mergeBase.exitCode === 0 && mergeBase.stdout.trim()) ? mergeBase.stdout.trim() : base;
+
+      const diffResult = await execa(
+        'git',
+        ['diff', '--name-status', baseRef, head, '--', `${sourcePath.split('/')[0]}/`],
+        { cwd: projectRoot, reject: false }
+      );
+
+      if (diffResult.exitCode !== 0) {
+        return res.status(500).json({ error: `git diff failed: ${diffResult.stderr || 'unknown error'}` });
+      }
+
+      const { additive, destructive } = parseDiffToMetadata(diffResult.stdout, { sourcePath });
+      const addCount = countMembers(additive);
+      const delCount = countMembers(destructive);
+      const xml = renderXml(additive, apiVersion);
+
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `manifest-${ts}.xml`;
+      await fs.outputFile(path.join(logDir, filename), xml);
+
+      res.json({ xml, addCount, delCount, filename });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── AI availability ────────────────────────────────────────────────────────
+
+  app.get('/api/ai/available', apiLimiter, async (_req, res) => {
+    try {
+      const { isAiAvailable } = await import('./ai.js');
+      const available = await isAiAvailable(config);
+      res.json({ available, enabled: !!config.features?.ai, provider: config.ai?.provider ?? null });
+    } catch {
+      res.json({ available: false, enabled: false, provider: null });
     }
   });
 
