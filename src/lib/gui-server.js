@@ -245,6 +245,28 @@ function createRateLimiter(maxRequests = 60, windowMs = 60_000) {
   };
 }
 
+// ─── Origin guard ─────────────────────────────────────────────────────────────
+
+/**
+ * Rejects requests whose Origin header doesn't match the local server address.
+ * Browsers set Origin on cross-origin requests (including EventSource), so this
+ * blocks CSRF attacks from malicious pages while allowing same-origin requests
+ * from the served React app (which omit Origin on same-origin GETs).
+ */
+function createOriginGuard(port) {
+  const allowed = new Set([
+    `http://localhost:${port}`,
+    `http://127.0.0.1:${port}`,
+  ]);
+  return (req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && !allowed.has(origin)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    next();
+  };
+}
+
 // ─── Server factory ───────────────────────────────────────────────────────────
 
 /**
@@ -254,7 +276,7 @@ function createRateLimiter(maxRequests = 60, windowMs = 60_000) {
  * @param {string} version - CLI version string
  * @returns {import('express').Application}
  */
-export function createGuiApp(config, version) {
+export function createGuiApp(config, version, port = 7654) {
   const app = express();
   app.use(express.json());
 
@@ -263,6 +285,8 @@ export function createGuiApp(config, version) {
     path.join(config._projectRoot || process.cwd(), 'logs');
 
   const apiLimiter = createRateLimiter(60, 60_000);
+  const originGuard = createOriginGuard(port);
+  app.use('/api/', originGuard);
 
   // ── API routes ──────────────────────────────────────────────────────────────
 
@@ -680,7 +704,7 @@ export function createGuiApp(config, version) {
  * @returns {Promise<import('http').Server>}
  */
 export async function startGuiServer(port, config, version) {
-  const app = createGuiApp(config, version);
+  const app = createGuiApp(config, version, port);
 
   return new Promise((resolve, reject) => {
     const server = app.listen(port, '127.0.0.1', () => resolve(server));
