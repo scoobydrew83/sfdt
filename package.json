@@ -58,7 +58,7 @@
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "execa": "^9.5.2",
-    "express": "^4.21.2",
+    "express": "^5.2.1",
     "fs-extra": "^11.3.0",
     "glob": "^13.0.6",
     "inquirer": "^13.3.2",
