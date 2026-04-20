@@ -31,7 +31,7 @@ import { execa } from 'execa';
 import inquirer from 'inquirer';
 import { registerUpdateCommand } from '../../src/commands/update.js';
 
-const CURRENT_VERSION = '0.4.1';
+const CURRENT_VERSION = '0.4.2';
 const LATEST_VERSION = '0.5.0';
 
 function createProgram() {
