@@ -344,12 +344,11 @@ export function createGuiApp(config, version) {
         SFDT_NON_INTERACTIVE: 'true',
       };
 
-      child = execa(scriptPath, [], {
+      child = execa('bash', [scriptPath], {
         env: { ...process.env, ...scriptEnv },
         cwd: projectRoot,
         stdout: 'pipe',
         stderr: 'pipe',
-        shell: true,
       });
 
       const lines = [];
@@ -465,7 +464,7 @@ export function createGuiApp(config, version) {
     }
   });
 
-  app.get('/api/compare/stream', async (req, res) => {
+  app.get('/api/compare/stream', apiLimiter, async (req, res) => {
     const data = await readCompare(logDir);
     if (!data) return res.status(404).json({ error: 'No comparison result found. Run compare first.' });
 
@@ -530,7 +529,7 @@ export function createGuiApp(config, version) {
       const { items = [], apiVersion } = req.body ?? {};
       const { renderPackageXml } = await import('./metadata-mapper.js');
 
-      const metaMap = {};
+      const metaMap = Object.create(null);
       for (const { type, member } of items) {
         if (!metaMap[type]) metaMap[type] = [];
         metaMap[type].push(member);
