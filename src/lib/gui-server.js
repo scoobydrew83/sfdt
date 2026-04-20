@@ -579,7 +579,7 @@ export function createGuiApp(config, version) {
   // ── Static: serve pre-built React app ──────────────────────────────────────
 
   if (fs.existsSync(GUI_DIST)) {
-    app.use(express.static(GUI_DIST));
+    app.use(express.static(GUI_DIST)); // codeql[js/missing-rate-limiting] - localhost-only dev server; static asset delivery does not require rate limiting
 
     // SPA fallback — all non-API routes return index.html
     app.use(apiLimiter, (_req, res) => {
