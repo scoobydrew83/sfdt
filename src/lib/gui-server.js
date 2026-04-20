@@ -308,6 +308,82 @@ export function createGuiApp(config, version) {
     }
   });
 
+  // ── Check for updates ──────────────────────────────────────────────────────
+
+  app.get('/api/check-updates', apiLimiter, async (_req, res) => {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10_000);
+      let latest;
+      try {
+        const r = await fetch('https://registry.npmjs.org/@sfdt/cli/latest', { signal: controller.signal });
+        if (!r.ok) throw new Error(`registry ${r.status}`);
+        const data = await r.json();
+        latest = data.version;
+      } finally {
+        clearTimeout(timeout);
+      }
+      res.json({ current: version, latest, updateAvailable: latest !== version });
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
+  });
+
+  // ── Update via npm (SSE) ────────────────────────────────────────────────────
+
+  app.get('/api/update/stream', apiLimiter, async (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    let child;
+    req.on('close', () => { if (child && !child.killed) child.kill(); });
+
+    try {
+      const { execa } = await import('execa');
+      const { createInterface } = await import('readline');
+
+      child = execa('npm', ['install', '--global', '@sfdt/cli@latest'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const streamLines = (readable) => {
+        const rl = createInterface({ input: readable, crlfDelay: Infinity });
+        rl.on('line', (line) => {
+          if (!res.writableEnded) {
+            res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
+          }
+        });
+        return rl;
+      };
+
+      const rlOut = streamLines(child.stdout);
+      const rlErr = streamLines(child.stderr);
+
+      let exitCode = 0;
+      try {
+        await child;
+      } catch (execErr) {
+        exitCode = execErr.exitCode ?? 1;
+      } finally {
+        rlOut.close();
+        rlErr.close();
+      }
+
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'result', exitCode }) + '\n\n');
+        res.end();
+      }
+    } catch (err) {
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'error', message: err.message }) + '\n\n');
+        res.end();
+      }
+    }
+  });
+
   // ── Generic command runner (SSE) ───────────────────────────────────────────
 
   app.get('/api/command/run', apiLimiter, async (req, res) => {

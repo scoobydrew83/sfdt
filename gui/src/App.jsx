@@ -9,6 +9,7 @@ import {
   IconHome, IconList, IconCheck, IconRefresh, IconCompare,
   IconSun, IconMoon,
 } from './Icons.jsx';
+import UpdateModal from './components/UpdateModal.jsx';
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard',       Icon: IconHome },
@@ -27,12 +28,15 @@ const PAGE_LABELS = {
 };
 
 export default function App() {
-  const [page, setPage]       = useState('dashboard');
-  const [project, setProject] = useState(null);
-  const [dark, setDark]       = useState(false);
+  const [page, setPage]           = useState('dashboard');
+  const [project, setProject]     = useState(null);
+  const [dark, setDark]           = useState(false);
+  const [updateInfo, setUpdateInfo] = useState(null);  // { current, latest }
+  const [showUpdate, setShowUpdate] = useState(false);
 
   useEffect(() => {
     api.project().then(setProject).catch(() => null);
+    api.checkUpdates().then((info) => { if (info.updateAvailable) setUpdateInfo(info); }).catch(() => null);
     const saved = localStorage.getItem('sfdt-theme');
     if (saved === 'dark') setDark(true);
   }, []);
@@ -61,6 +65,14 @@ export default function App() {
     : 'SF';
 
   return (
+    <>
+    {showUpdate && updateInfo && (
+      <UpdateModal
+        current={updateInfo.current}
+        latest={updateInfo.latest}
+        onClose={() => setShowUpdate(false)}
+      />
+    )}
     <div className="app-shell">
 
       {/* ── Sidebar ──────────────────────────────────────────────── */}
@@ -95,7 +107,14 @@ export default function App() {
             <div className="user-avatar">{initials}</div>
             <div className="user-info">
               <div className="user-name">{project?.org ?? 'No org connected'}</div>
-              <div className="user-version">v{project?.version ?? '…'}</div>
+              <div className="user-version">
+                v{project?.version ?? '…'}
+                {updateInfo && (
+                  <button className="update-pill" onClick={() => setShowUpdate(true)} title={`v${updateInfo.latest} available`}>
+                    ↑ update
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -127,5 +146,6 @@ export default function App() {
 
       </div>
     </div>
+    </>
   );
 }

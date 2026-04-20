@@ -18,6 +18,7 @@ async function postJson(path, body) {
 
 export const api = {
   project:       () => fetchJson('/project'),
+  checkUpdates:  () => fetchJson('/check-updates'),
   testRuns:      () => fetchJson('/test-runs'),
   preflight:     () => fetchJson('/preflight'),
   drift:         () => fetchJson('/drift'),
