@@ -72,7 +72,7 @@ jobs:
           PREV_VERSION=$(git show HEAD~1:package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" 2>/dev/null || echo "0.0.0")
           echo "Current: v${CURR_VERSION}, Previous: v${PREV_VERSION}"
           if [ "${CURR_VERSION}" != "${PREV_VERSION}" ] && [[ "${CURR_VERSION}" == *"-"* ]]; then
-            echo "Pre-release bump: v${PREV_VERSION} → v${CURR_VERSION}"
+            echo "Pre-release bump: v${PREV_VERSION} -> v${CURR_VERSION}"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "No pre-release bump detected"
@@ -104,6 +104,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: gh release create "v${VERSION}" --generate-notes --prerelease
+
 
   publish:
     needs: [test, gui-build]
