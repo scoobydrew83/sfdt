@@ -377,11 +377,11 @@ export function createGuiApp(config, version, port = 7654) {
 
   // ── API routes ──────────────────────────────────────────────────────────────
 
-  app.get('/api/health', (_req, res) => {
+  app.get('/api/health', apiLimiter, (_req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
 
-  app.get('/api/project', (_req, res) => {
+  app.get('/api/project', apiLimiter, (_req, res) => {
     res.json({
       name: config.projectName || 'Salesforce Project',
       org: config.defaultOrg || null,
