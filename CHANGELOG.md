@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-19
+
+### Added
+- **Org Compare command** (`sfdt compare`): Side-by-side metadata inventory comparison between two Salesforce orgs. Streams live progress via SSE, showing added, removed, and changed components across all metadata types. Supports `--source` and `--target` org aliases with `--format json|table` output.
+- **Compare page** (GUI): New Compare dashboard page with live streaming progress, filterable DataTable of component diffs (`CompareTable`), and collapsible side-by-side diff viewer (`DiffPanel`). Status badges and empty states follow SLDS conventions.
+- **CommandRunner component**: Reusable GUI component for live CLI command execution with SSE streaming, used on Preflight, Drift, Test Runs, and Compare pages.
+- `src/lib/org-inventory.js` / `src/lib/org-diff.js`: Org inventory retrieval and pure diff engine backing `sfdt compare`.
+
+### Fixed
+- Compare diff panel now works for all Salesforce metadata types (`CustomMetadata` records, foldered metadata) — validation now targets path traversal patterns instead of banning `.` and `/` in member names.
+- Beta releases can no longer accidentally publish as `latest` — CI `publish` job on `main` now fails immediately if the version contains a pre-release suffix.
+
+### Security
+- Docs automation no longer executes repo-controlled instructions under write credentials — workflow instructions are now fully inline in the protected workflow YAML; unnecessary `id-token: write` permission removed.
+
 ## [0.3.2] - 2026-04-19
 
 ### Changed
@@ -16,6 +31,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped `prettier` development dependency
 - CI: upgraded `actions/stale` from v9 to v10
 - CI: upgraded `github/codeql-action` from v3 to v4
+
+## [0.4.0-beta.5] - 2026-04-19
+
+### Changed
+- Synced dependency bumps from `main` (inquirer, prettier, esbuild, vite, plugin-react v5) into `develop`
+- CI: dedicated `gui-build` job now runs on Node 20 and 22
+
+### Fixed
+- Token handling fix
+
+## [0.4.0-beta.1] - 2026-04-17
+
+### Added
+- **Org Compare command** (`sfdt compare`): Side-by-side metadata inventory comparison between two Salesforce orgs. Streams live progress via SSE, showing added, removed, and changed components across all metadata types. Supports `--source` and `--target` org aliases with `--format json|table` output.
+- **Compare page** (GUI): New Compare dashboard page with live streaming progress, filterable DataTable of component diffs (`CompareTable`), and collapsible side-by-side diff viewer (`DiffPanel`) for inspecting metadata differences. Status badges and empty states follow SLDS conventions.
+- **CommandRunner component**: Reusable GUI component for live CLI command execution with SSE streaming, used on Preflight, Drift, Test Runs, and Compare pages.
+- `src/lib/org-inventory.js`: Retrieves full metadata inventory from a Salesforce org using `sf org list metadata` — used by `sfdt compare` as the data source for both orgs.
+- `src/lib/org-diff.js`: Pure diff engine that compares two org inventories and returns `added`, `removed`, and `changed` component lists.
+
+### Fixed
+- **Compare diff panel now works for all Salesforce metadata types**: The `/api/compare/diff` endpoint previously rejected member names containing `.` or `/`, blocking `CustomMetadata` records (e.g. `MyType.MyRecord`) and foldered metadata (e.g. `reports/Folder/Report`). Validation now correctly targets path traversal patterns (`..`, absolute paths, null bytes) instead of banning valid Salesforce naming characters.
+- **Beta releases can no longer accidentally publish as `latest`**: The CI `publish` job on `main` now fails immediately if the package version contains a pre-release suffix (e.g. `-beta.1`), preventing a forgotten version bump from silently pushing a beta to all users.
+
+### Security
+- **Docs automation no longer executes repo-controlled instructions under write credentials**: The `docs-update` GitHub Actions workflow previously instructed Claude to read and follow `.claude/skills/document/SKILL.md` from the just-merged branch while holding `contents: write` and `id-token: write` permissions — a path for a malicious PR to run arbitrary commands with elevated access. Workflow instructions are now fully inline in the protected workflow YAML, and the unnecessary `id-token: write` permission has been removed.
 
 ## [0.3.1] - 2026-04-14
 

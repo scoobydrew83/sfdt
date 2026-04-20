@@ -1,17 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import PageHeader from '@salesforce/design-system-react/components/page-header';
-import Card from '@salesforce/design-system-react/components/card';
-import Icon from '@salesforce/design-system-react/components/icon';
-import Spinner from '@salesforce/design-system-react/components/spinner';
+import { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import StatCard from '../components/StatCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
+import { IconCheckCircle, IconXCircle, IconAlertTri, IconRefresh } from '../Icons.jsx';
+
+function ActivityIcon({ type }) {
+  if (type === 'success') return <div className="activity-ico success"><IconCheckCircle size={13} /></div>;
+  if (type === 'warn')    return <div className="activity-ico warn"><IconAlertTri size={13} /></div>;
+  if (type === 'error')   return <div className="activity-ico error"><IconXCircle size={13} /></div>;
+  return <div className="activity-ico info"><IconRefresh size={13} /></div>;
+}
 
 export default function Dashboard({ project }) {
-  const [tests, setTests] = useState(null);
+  const [tests, setTests]       = useState(null);
   const [preflight, setPreflight] = useState(null);
-  const [drift, setDrift] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [drift, setDrift]       = useState(null);
+  const [loading, setLoading]   = useState(true);
 
   useEffect(() => {
     Promise.all([api.testRuns(), api.preflight(), api.drift()])
@@ -20,210 +24,181 @@ export default function Dashboard({ project }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const lastTest     = tests?.runs?.[0];
-  const totalPassed  = tests?.runs?.reduce((s, r) => s + (r.passed ?? 0), 0) ?? 0;
-  const totalFailed  = tests?.runs?.reduce((s, r) => s + (r.failed ?? 0), 0) ?? 0;
+  const totalPassed = tests?.runs?.reduce((s, r) => s + (r.passed ?? 0), 0) ?? 0;
+  const totalFailed = tests?.runs?.reduce((s, r) => s + (r.failed ?? 0), 0) ?? 0;
+  const lastTest    = tests?.runs?.[0];
+  const lastTestDate = lastTest ? new Date(lastTest.date).toLocaleDateString() : '—';
+  const threshold   = project?.coverageThreshold ?? 75;
+
+  if (loading) {
+    return (
+      <div>
+        <div className="page-header">
+          <div className="page-header-text">
+            <h1>Dashboard</h1>
+            {project?.org && <p className="page-subtitle">{project.org}</p>}
+          </div>
+        </div>
+        <div className="stats-grid">
+          {[0,1,2,3].map((i) => (
+            <div key={i} className="stat-card">
+              <div className="skeleton" style={{ height: 12, width: '60%', marginBottom: 8 }} />
+              <div className="skeleton" style={{ height: 28, width: '40%' }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Build a lightweight activity list from available data
+  const activity = [];
+  if (lastTest) {
+    const ok = !lastTest.failed && !lastTest.errors;
+    activity.push({
+      type: ok ? 'success' : 'error',
+      title: `Test run — ${lastTest.passed ?? 0} passed, ${lastTest.failed ?? 0} failed`,
+      meta: new Date(lastTest.date).toLocaleString(),
+      status: ok ? 'pass' : 'fail',
+    });
+  }
+  if (preflight?.checks?.length) {
+    const fail = preflight.checks.filter((c) => c.status === 'fail' || c.status === 'error').length;
+    activity.push({
+      type: fail ? 'warn' : 'success',
+      title: `Preflight — ${preflight.checks.length} checks, ${fail} failed`,
+      meta: preflight.date ? new Date(preflight.date).toLocaleString() : '',
+      status: preflight.status,
+    });
+  }
+  if (drift?.result) {
+    activity.push({
+      type: drift.result === 'clean' ? 'success' : 'warn',
+      title: `Drift check — ${drift.count ?? 0} component${(drift.count ?? 0) !== 1 ? 's' : ''} differ`,
+      meta: drift.date ? new Date(drift.date).toLocaleString() : '',
+      status: drift.result,
+    });
+  }
 
   return (
     <div>
-      <PageHeader
-        title="Dashboard"
-        label="SFDT"
-        info={project?.org ? `Connected org: ${project.org}` : undefined}
-        variant="object-home"
-        icon={
-          <Icon
-            assistiveText={{ label: 'Dashboard' }}
-            category="utility"
-            name="home"
-            size="large"
-          />
-        }
-      />
-
-      {loading ? (
-        <div style={{ position: 'relative', height: '300px' }}>
-          <Spinner size="large" variant="brand" />
+      <div className="page-header">
+        <div className="page-header-text">
+          <h1>Dashboard</h1>
+          {project?.org && <p className="page-subtitle">{project.org}</p>}
         </div>
-      ) : (
-        <div className="slds-p-around_large">
+      </div>
 
-          {/* ── Summary stats ──────────────────────────────────────────── */}
-          <p className="slds-text-title_caps slds-text-color_weak slds-m-bottom_small">
-            Summary
-          </p>
-          <div className="slds-grid slds-wrap slds-gutters slds-m-bottom_large">
-            <div className="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
-              <StatCard
-                label="Tests Passed"
-                value={totalPassed}
-                accent="#2e844a"
-                iconName="check"
-              />
-            </div>
-            <div className="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
-              <StatCard
-                label="Tests Failed"
-                value={totalFailed}
-                accent={totalFailed > 0 ? '#ba0517' : '#2e844a'}
-                iconName={totalFailed > 0 ? 'close' : 'check'}
-              />
-            </div>
-            <div className="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
-              <StatCard
-                label="Coverage Threshold"
-                value={project?.coverageThreshold ? `${project.coverageThreshold}%` : '75%'}
-                accent="#0176d3"
-                iconName="chart"
-              />
-            </div>
-            <div className="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
-              <StatCard
-                label="Last Test Run"
-                value={lastTest ? new Date(lastTest.date).toLocaleDateString() : '—'}
-                sub={lastTest ? new Date(lastTest.date).toLocaleTimeString() : undefined}
-                accent="#9050e9"
-                iconName="clock"
-              />
+      {/* Stats */}
+      <div className="stats-grid">
+        <StatCard label="Tests Passed"  value={totalPassed}  accent={totalPassed > 0 ? 'green' : 'brand'} />
+        <StatCard label="Tests Failed"  value={totalFailed}  accent={totalFailed > 0 ? 'red' : 'green'} />
+        <StatCard label="Coverage"      value={`${threshold}%`} sub="configured threshold" accent="brand" />
+        <StatCard label="Last Test"     value={lastTestDate}  sub={lastTest ? new Date(lastTest.date).toLocaleTimeString() : undefined} accent="violet" />
+      </div>
+
+      <div className="two-col">
+
+        {/* Recent tests */}
+        <div className="card">
+          <div className="card-head">
+            <div>
+              <div className="card-title">Recent Test Runs</div>
+              <div className="card-subtitle">Last 5 executions</div>
             </div>
           </div>
-
-          {/* ── Recent activity ────────────────────────────────────────── */}
-          <p className="slds-text-title_caps slds-text-color_weak slds-m-bottom_small">
-            Recent Activity
-          </p>
-          <div className="slds-grid slds-wrap slds-gutters">
-
-            {/* Recent test runs */}
-            <div className="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
-              <Card
-                heading="Recent Test Runs"
-                icon={
-                  <Icon
-                    assistiveText={{ label: 'Test Runs' }}
-                    category="utility"
-                    name="list"
-                    size="small"
-                  />
-                }
-              >
-                {!tests?.runs?.length ? (
-                  <div className="slds-card__body_inner slds-text-body_regular slds-text-color_weak">
-                    No test runs found. Run <code>sfdt test</code> to generate results.
-                  </div>
-                ) : (
-                  <table
-                    className="slds-table slds-table_cell-buffer slds-table_bordered slds-table_striped slds-no-row-hover"
-                    style={{ width: '100%' }}
-                  >
-                    <thead>
-                      <tr className="slds-line-height_reset">
-                        <th scope="col"><div className="slds-truncate">Date</div></th>
-                        <th scope="col" className="slds-text-align_right"><div className="slds-truncate">Passed</div></th>
-                        <th scope="col" className="slds-text-align_right"><div className="slds-truncate">Failed</div></th>
-                        <th scope="col" className="slds-text-align_right"><div className="slds-truncate">Status</div></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tests.runs.slice(0, 5).map((run, i) => (
-                        <tr key={i} className="slds-hint-parent">
-                          <td className="slds-text-body_small">{new Date(run.date).toLocaleDateString()}</td>
-                          <td className="slds-text-align_right slds-text-body_small" style={{ color: '#2e844a', fontWeight: 600 }}>
-                            {run.passed ?? 0}
-                          </td>
-                          <td className="slds-text-align_right slds-text-body_small" style={{ color: run.failed ? '#ba0517' : undefined, fontWeight: run.failed ? 700 : undefined }}>
-                            {run.failed ?? 0}
-                          </td>
-                          <td className="slds-text-align_right">
-                            <StatusBadge status={run.failed ? 'fail' : 'pass'} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </Card>
+          {!tests?.runs?.length ? (
+            <div style={{ padding: 'var(--s-5)', color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)' }}>
+              No test runs yet. Run <code style={{ fontFamily: 'var(--font-mono)', background: 'var(--bg-muted)', padding: '1px 5px', borderRadius: 3 }}>sfdt test</code>.
             </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th style={{ textAlign: 'right' }}>Passed</th>
+                  <th style={{ textAlign: 'right' }}>Failed</th>
+                  <th style={{ textAlign: 'right' }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tests.runs.slice(0, 5).map((run, i) => (
+                  <tr key={i}>
+                    <td className="td-mono">{new Date(run.date).toLocaleDateString()}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <span style={{ color: 'var(--status-identical-fg)', fontWeight: 600 }}>{run.passed ?? 0}</span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <span style={{ color: run.failed ? 'var(--status-conflict-fg)' : 'var(--fg-muted)', fontWeight: run.failed ? 600 : 400 }}>
+                        {run.failed ?? 0}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <StatusBadge status={run.failed ? 'fail' : 'pass'} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
 
-            {/* Preflight + Drift stacked */}
-            <div className="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
-              <div className="slds-grid slds-wrap slds-gutters_direct">
+        {/* Activity + preflight */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-4)' }}>
 
-                <div className="slds-col slds-size_1-of-1 slds-m-bottom_small">
-                  <Card
-                    heading="Last Preflight Check"
-                    icon={
-                      <Icon
-                        assistiveText={{ label: 'Preflight' }}
-                        category="utility"
-                        name="check"
-                        size="small"
-                      />
-                    }
+          <div className="card">
+            <div className="card-head">
+              <div className="card-title">Recent Activity</div>
+            </div>
+            {activity.length === 0 ? (
+              <div style={{ padding: 'var(--s-5)', color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)' }}>
+                No activity yet.
+              </div>
+            ) : (
+              <div className="activity-list">
+                {activity.map((item, i) => (
+                  <div key={i} className="activity-item">
+                    <ActivityIcon type={item.type} />
+                    <div>
+                      <div className="activity-title">{item.title}</div>
+                      <div className="activity-meta">{item.meta}</div>
+                    </div>
+                    {item.status && <StatusBadge status={item.status} />}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {preflight?.checks?.length > 0 && (
+            <div className="card">
+              <div className="card-head">
+                <div className="card-title">Preflight Checks</div>
+                {preflight.date && (
+                  <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)', fontFamily: 'var(--font-mono)' }}>
+                    {new Date(preflight.date).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
+              <div>
+                {preflight.checks.slice(0, 4).map((c, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px var(--s-4)',
+                      borderBottom: i < Math.min(preflight.checks.length, 4) - 1 ? '1px solid var(--border-subtle)' : 'none',
+                    }}
                   >
-                    {!preflight?.checks?.length ? (
-                      <div className="slds-card__body_inner slds-text-body_regular slds-text-color_weak">
-                        No preflight data. Run <code>sfdt preflight</code>.
-                      </div>
-                    ) : (
-                      <>
-                        <div className="slds-card__body_inner slds-text-body_small slds-text-color_weak slds-m-bottom_xx-small">
-                          {preflight.date ? new Date(preflight.date).toLocaleString() : ''}
-                        </div>
-                        {preflight.checks.slice(0, 4).map((c, i) => (
-                          <div
-                            key={i}
-                            className="slds-grid slds-grid_align-spread slds-grid_vertical-align-center slds-p-horizontal_medium slds-p-vertical_x-small slds-border_bottom"
-                          >
-                            <span className="slds-text-body_small">{c.name}</span>
-                            <StatusBadge status={c.status} />
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </Card>
-                </div>
-
-                <div className="slds-col slds-size_1-of-1">
-                  <Card
-                    heading="Drift Status"
-                    icon={
-                      <Icon
-                        assistiveText={{ label: 'Drift' }}
-                        category="utility"
-                        name="refresh"
-                        size="small"
-                      />
-                    }
-                  >
-                    {!drift?.result ? (
-                      <div className="slds-card__body_inner slds-text-body_regular slds-text-color_weak">
-                        No drift data. Run <code>sfdt drift</code>.
-                      </div>
-                    ) : (
-                      <div className="slds-card__body_inner slds-grid slds-grid_vertical-align-center slds-wrap slds-gutters_direct">
-                        <StatusBadge status={drift.result} />
-                        {drift.date && (
-                          <span className="slds-text-body_small slds-text-color_weak slds-m-left_small">
-                            {new Date(drift.date).toLocaleString()}
-                          </span>
-                        )}
-                        {drift.count !== undefined && (
-                          <span className="slds-text-body_small slds-text-color_weak slds-m-left_small">
-                            {drift.count} component{drift.count !== 1 ? 's' : ''} differ
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </Card>
-                </div>
-
+                    <span style={{ fontSize: 'var(--fs-sm)' }}>{c.name}</span>
+                    <StatusBadge status={c.status} />
+                  </div>
+                ))}
               </div>
             </div>
-
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

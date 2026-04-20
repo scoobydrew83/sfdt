@@ -23,10 +23,13 @@ Production-grade CLI for Salesforce DX deployment, testing, quality analysis, an
 - **AI deployment error log interpreter** with heuristic fallback for offline use (`sfdt explain`)
 - **AI-generated PR descriptions and Slack messages** from deployment changes (`sfdt pr-description`)
 - **AI-powered code review, test failure analysis, changelog generation, and release notes** — optional, works with Claude, Gemini, or OpenAI
-- **Local web dashboard** for test results, preflight, and drift monitoring (`sfdt ui`)
+- **Org metadata comparison** — diff two orgs or local source vs org with optional package.xml export (`sfdt compare`)
+- **Local web dashboard** for test results, preflight, drift monitoring, and org comparison (`sfdt ui`)
 - **Plugin architecture** — extend sfdt with `sfdt-plugin-*` npm packages or local `.sfdt/plugins/` scripts
 - Slack notifications for deployment events
 - Works with **any** Salesforce DX project — no project-specific values hardcoded
+
+For in-depth command walkthroughs and workflow examples, see [docs/USAGE.md](docs/USAGE.md).
 
 ## Quick Start
 
@@ -52,6 +55,7 @@ sfdt deploy
 | `sfdt rollback` | Roll back a deployment to a target org | `--org <alias>` |
 | `sfdt smoke` | Post-deploy smoke tests | `--org <alias>` |
 | `sfdt drift` | Detect metadata drift between local source and an org | `--org <alias>` |
+| `sfdt compare` | Compare metadata between two orgs or local source vs an org | `--source <alias\|local>`, `--target <alias>`, `--output <file>` |
 | `sfdt notify` | Send Slack deployment notifications | `--org <alias>`, `--version <ver>`, `--message <msg>` |
 
 ### AI & Intelligence (Phase 3)
@@ -175,9 +179,10 @@ sfdt ui --no-open         # start server without opening browser
 
 Dashboard pages:
 - **Dashboard** — summary stat cards, recent test runs, preflight and drift status
-- **Test Runs** — Apex test history with coverage colouring
-- **Preflight** — per-check pass/fail list
-- **Drift Detection** — filterable component table (All / Clean / Drift)
+- **Test Runs** — Apex test history with coverage colouring; run tests directly from the UI
+- **Preflight** — per-check pass/fail list; run preflight directly from the UI
+- **Drift Detection** — filterable component table (All / Clean / Drift); run drift check from the UI
+- **Compare** — diff two orgs or local source vs an org, export source-only items as `package.xml`
 
 The dashboard reads log files from the project's configured `logDir` (defaults to `<project>/logs`). Data appears automatically after running `sfdt test`, `sfdt preflight`, or `sfdt drift` when those commands write JSON result files.
 
