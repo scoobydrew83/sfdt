@@ -7,6 +7,7 @@
  */
 
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -317,17 +318,7 @@ const COMMANDS = {
  * Limits requests to maxRequests per windowMs across all local clients.
  */
 function createRateLimiter(maxRequests = 60, windowMs = 60_000) {
-  const timestamps = [];
-  return (_req, res, next) => {
-    const now = Date.now();
-    const cutoff = now - windowMs;
-    while (timestamps.length && timestamps[0] < cutoff) timestamps.shift();
-    if (timestamps.length >= maxRequests) {
-      return res.status(429).json({ error: 'Too many requests' });
-    }
-    timestamps.push(now);
-    next();
-  };
+  return rateLimit({ windowMs, limit: maxRequests, standardHeaders: true, legacyHeaders: false });
 }
 
 // ─── Origin guard ─────────────────────────────────────────────────────────────
@@ -810,7 +801,9 @@ export function createGuiApp(config, version, port = 7654) {
   app.get('/api/manifests/content', apiLimiter, async (req, res) => {
     try {
       const { path: relPath } = req.query;
-      if (!relPath) return res.status(400).json({ error: 'path is required' });
+      if (!relPath || path.isAbsolute(relPath) || relPath.includes('..')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
       const projectRoot = config._projectRoot ?? process.cwd();
       const absPath = path.resolve(projectRoot, relPath);
       if (!absPath.startsWith(projectRoot + path.sep) && absPath !== projectRoot) {
@@ -1095,6 +1088,9 @@ export function createGuiApp(config, version, port = 7654) {
       if (!relPath || !type || !member) {
         return res.status(400).json({ error: 'relPath, type, and member are required' });
       }
+      if (path.isAbsolute(relPath) || relPath.includes('..')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
 
       const projectRoot = config._projectRoot ?? process.cwd();
       const absPath = path.resolve(projectRoot, relPath);
@@ -1198,6 +1194,11 @@ export function createGuiApp(config, version, port = 7654) {
       // Resolve log file
       let resolvedLogPath;
       if (logPath) {
+        if (path.isAbsolute(logPath) || logPath.includes('..')) {
+          send({ type: 'error', message: 'Invalid path' });
+          res.end();
+          return;
+        }
         const abs = path.resolve(projectRoot, logPath);
         if (!abs.startsWith(projectRoot + path.sep) && abs !== projectRoot) {
           send({ type: 'error', message: 'Forbidden path' });
