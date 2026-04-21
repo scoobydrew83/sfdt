@@ -1279,6 +1279,68 @@ select.input { cursor: pointer; }
 }
 
 /* ==========================================================
+   UPDATE PILL + MODAL CONTENT
+   ========================================================== */
+.update-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--s-1);
+  padding: 1px 6px;
+  border-radius: var(--r-full);
+  background: var(--status-modified-bg);
+  color: var(--status-modified-fg);
+  border: 1px solid var(--status-modified-border);
+  font-size: 9px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  line-height: 1.6;
+  vertical-align: middle;
+  transition: opacity var(--dur-fast);
+}
+.update-pill:hover { opacity: 0.8; }
+
+.update-version-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+}
+.update-version-item { display: flex; flex-direction: column; gap: 2px; }
+.update-version-label { font-size: var(--fs-xs); color: var(--fg-muted); font-weight: var(--fw-medium); text-transform: uppercase; letter-spacing: 0.05em; }
+.update-version-value { font-family: var(--font-mono); font-size: var(--fs-base); color: var(--fg-default); }
+.update-version-new { color: var(--brand-600); font-weight: var(--fw-semibold); }
+.update-version-arrow { font-size: var(--fs-xl); color: var(--fg-muted); }
+
+.update-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-lg);
+  background: var(--status-modified-bg);
+  color: var(--status-modified-fg);
+  border: 1px solid var(--status-modified-border);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.update-notice code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: 1px 4px;
+  border-radius: var(--r-sm);
+  background: rgba(0,0,0,.08);
+}
+.update-notice-error {
+  background: var(--status-conflict-bg);
+  color: var(--status-conflict-fg);
+  border-color: var(--status-conflict-border);
+}
+
+/* ==========================================================
    SSE / LIVE INDICATOR
    ========================================================== */
 .live-dot {

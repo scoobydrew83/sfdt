@@ -59,6 +59,7 @@ sfdt deploy
 | `sfdt notify` | Send Slack deployment notifications | `--org <alias>`, `--version <ver>`, `--message <msg>` |
 | `sfdt completion <shell>` | Print shell completion script (`bash`, `zsh`, `fish`) | — |
 | `sfdt version` | Print the current sfdt version | — |
+| `sfdt update` | Update sfdt to the latest version from npm | `--force` |
 
 ### AI & Intelligence (Phase 3)
 

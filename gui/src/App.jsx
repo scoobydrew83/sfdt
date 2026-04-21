@@ -5,17 +5,47 @@ import TestRuns from './pages/TestRuns.jsx';
 import PreflightPage from './pages/Preflight.jsx';
 import DriftPage from './pages/Drift.jsx';
 import ComparePage from './pages/Compare.jsx';
+import ManifestsPage from './pages/Manifests.jsx';
+import QualityPage from './pages/Quality.jsx';
+import PullPage from './pages/Pull.jsx';
+import ReleaseHubPage from './pages/ReleaseHub.jsx';
+import ReviewPage from './pages/Review.jsx';
+import ExplainPage from './pages/Explain.jsx';
 import {
   IconHome, IconList, IconCheck, IconRefresh, IconCompare,
-  IconSun, IconMoon,
+  IconSun, IconMoon, IconFileText, IconActivity, IconCloudDown,
+  IconRocket, IconCode, IconSearch,
 } from './Icons.jsx';
+import UpdateModal from './components/UpdateModal.jsx';
 
-const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard',       Icon: IconHome },
-  { id: 'tests',     label: 'Test Runs',        Icon: IconList },
-  { id: 'preflight', label: 'Preflight',        Icon: IconCheck },
-  { id: 'drift',     label: 'Drift',            Icon: IconRefresh },
-  { id: 'compare',   label: 'Compare',          Icon: IconCompare },
+// Grouped nav structure: each group has a label and items
+const NAV_GROUPS = [
+  {
+    label: 'Observe',
+    items: [
+      { id: 'dashboard', label: 'Dashboard', Icon: IconHome },
+      { id: 'drift',     label: 'Drift',     Icon: IconRefresh },
+      { id: 'tests',     label: 'Test Runs', Icon: IconList },
+    ],
+  },
+  {
+    label: 'Release',
+    items: [
+      { id: 'release',   label: 'Release Hub', Icon: IconRocket },
+    ],
+  },
+  {
+    label: 'Analyze',
+    items: [
+      { id: 'compare',   label: 'Compare',   Icon: IconCompare },
+      { id: 'preflight', label: 'Preflight', Icon: IconCheck },
+      { id: 'manifests', label: 'Manifests', Icon: IconFileText },
+      { id: 'quality',   label: 'Quality',   Icon: IconActivity },
+      { id: 'pull',      label: 'Pull',      Icon: IconCloudDown },
+      { id: 'review',    label: 'Review',    Icon: IconCode },
+      { id: 'explain',   label: 'Explain',   Icon: IconSearch },
+    ],
+  },
 ];
 
 const PAGE_LABELS = {
@@ -24,15 +54,24 @@ const PAGE_LABELS = {
   preflight: 'Preflight',
   drift:     'Drift',
   compare:   'Compare',
+  manifests: 'Manifests',
+  quality:   'Quality',
+  pull:      'Pull',
+  release:   'Release Hub',
+  review:    'Review',
+  explain:   'Explain',
 };
 
 export default function App() {
-  const [page, setPage]       = useState('dashboard');
-  const [project, setProject] = useState(null);
-  const [dark, setDark]       = useState(false);
+  const [page, setPage]           = useState('dashboard');
+  const [project, setProject]     = useState(null);
+  const [dark, setDark]           = useState(false);
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [showUpdate, setShowUpdate] = useState(false);
 
   useEffect(() => {
     api.project().then(setProject).catch(() => null);
+    api.checkUpdates().then((info) => { if (info.updateAvailable) setUpdateInfo(info); }).catch(() => null);
     const saved = localStorage.getItem('sfdt-theme');
     if (saved === 'dark') setDark(true);
   }, []);
@@ -52,6 +91,12 @@ export default function App() {
       case 'preflight': return <PreflightPage />;
       case 'drift':     return <DriftPage />;
       case 'compare':   return <ComparePage />;
+      case 'manifests': return <ManifestsPage />;
+      case 'quality':   return <QualityPage />;
+      case 'pull':      return <PullPage />;
+      case 'release':   return <ReleaseHubPage />;
+      case 'review':    return <ReviewPage />;
+      case 'explain':   return <ExplainPage />;
       default:          return <Dashboard project={project} />;
     }
   };
@@ -61,6 +106,14 @@ export default function App() {
     : 'SF';
 
   return (
+    <>
+    {showUpdate && updateInfo && (
+      <UpdateModal
+        current={updateInfo.current}
+        latest={updateInfo.latest}
+        onClose={() => setShowUpdate(false)}
+      />
+    )}
     <div className="app-shell">
 
       {/* ── Sidebar ──────────────────────────────────────────────── */}
@@ -76,17 +129,21 @@ export default function App() {
         </div>
 
         <nav className="sidebar-nav">
-          <div className="nav-group-title">Navigation</div>
-          {NAV_ITEMS.map(({ id, label, Icon }) => (
-            <button
-              key={id}
-              className={`nav-item${page === id ? ' active' : ''}`}
-              onClick={() => setPage(id)}
-              aria-current={page === id ? 'page' : undefined}
-            >
-              <Icon size={15} />
-              {label}
-            </button>
+          {NAV_GROUPS.map((group) => (
+            <div key={group.label}>
+              <div className="nav-group-title">{group.label}</div>
+              {group.items.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  className={`nav-item${page === id ? ' active' : ''}`}
+                  onClick={() => setPage(id)}
+                  aria-current={page === id ? 'page' : undefined}
+                >
+                  <Icon size={15} />
+                  {label}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
 
@@ -95,7 +152,14 @@ export default function App() {
             <div className="user-avatar">{initials}</div>
             <div className="user-info">
               <div className="user-name">{project?.org ?? 'No org connected'}</div>
-              <div className="user-version">v{project?.version ?? '…'}</div>
+              <div className="user-version">
+                v{project?.version ?? '…'}
+                {updateInfo && (
+                  <button className="update-pill" onClick={() => setShowUpdate(true)} title={`v${updateInfo.latest} available`}>
+                    ↑ update
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -127,5 +191,6 @@ export default function App() {
 
       </div>
     </div>
+    </>
   );
 }

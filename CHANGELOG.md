@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-04-20
+
+### Added
+- **`sfdt update` command**: checks npm for the latest published version and self-updates via `npm install -g @sfdt/cli@latest`. Prompts for confirmation before installing; use `--force` to skip the prompt.
+- **GUI update check and streaming install**: the dashboard exposes `/api/check-updates` (compares current vs latest npm version) and `/api/update/stream` (SSE endpoint that streams live `npm install` output so updates can be triggered and monitored from the web UI).
+
 ## [0.4.1] - 2026-04-20
 
 ### Added

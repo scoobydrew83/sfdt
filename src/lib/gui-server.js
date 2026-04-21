@@ -7,9 +7,13 @@
  */
 
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execa } from 'execa';
+import { createInterface } from 'readline';
+import { fetchLatestVersion } from './update-checker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -145,6 +149,21 @@ async function safeReaddir(dir) {
 }
 
 /**
+ * Remove a single <members>MEMBER</members> entry from the matching <types> block in a package.xml string.
+ * Two-pass: first find blocks containing <name>TYPE</name>, then remove the member line.
+ */
+function removeComponentFromXml(xml, type, member) {
+  // Split into type blocks, process each, reassemble
+  const blockPattern = /(<types>[\s\S]*?<\/types>)/g;
+  return xml.replace(blockPattern, (block) => {
+    const nameMatch = block.match(/<name>([^<]+)<\/name>/);
+    if (!nameMatch || nameMatch[1].trim() !== type) return block;
+    // Remove the members line for this member
+    return block.replace(new RegExp(`\\s*<members>${member.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/members>`, 'g'), '');
+  });
+}
+
+/**
  * Read the most recent compare result.
  * Returns { date, source, target, items: [{type, member, status}] } or null.
  */
@@ -180,6 +199,57 @@ async function retrieveComponentXml(orgAlias, type, member, tmpDir) {
     return fsExtra.readFile(files[0], 'utf8');
   } catch {
     return null;
+  }
+}
+
+/**
+ * Find the retrieved file in a list that best matches a Salesforce member name.
+ * Handles simple names (MyClass) and compound names (Account.BillingCity__c).
+ */
+function findFileForMember(files, member) {
+  const parts = member.split('.');
+  const lastName = parts[parts.length - 1];
+  return files.find((f) => {
+    const base = path.basename(f);
+    if (base.startsWith(member + '.') || base.startsWith(member + '-')) return true;
+    if (parts.length > 1) {
+      const dir = path.dirname(f);
+      return (base.startsWith(lastName + '.') || base.startsWith(lastName + '-')) &&
+        dir.includes(parts[0]);
+    }
+    return false;
+  });
+}
+
+/**
+ * Retrieve all members of a single metadata type from an org in one SF CLI call.
+ * Returns a Map<member, xml> for all successfully retrieved members.
+ */
+async function batchRetrieveTypeMembers(orgAlias, type, members, tmpDir) {
+  if (!orgAlias || !members.length) return new Map();
+  const outputDir = path.join(
+    tmpDir,
+    `${orgAlias.replace(/[^a-z0-9]/gi, '_')}_${type.replace(/[^a-z0-9]/gi, '_')}`
+  );
+  const metadataArgs = members.flatMap((m) => ['--metadata', `${type}:${m}`]);
+  try {
+    await execa('sf', [
+      'project', 'retrieve', 'start',
+      ...metadataArgs,
+      '--target-org', orgAlias,
+      '--output-dir', outputDir,
+      '--json',
+    ]);
+    const { glob } = await import('glob');
+    const files = await glob('**/*.xml', { cwd: outputDir, absolute: true });
+    const result = new Map();
+    for (const member of members) {
+      const file = findFileForMember(files, member);
+      if (file) result.set(member, await fs.readFile(file, 'utf8'));
+    }
+    return result;
+  } catch {
+    return new Map();
   }
 }
 
@@ -223,6 +293,22 @@ const COMMANDS = {
     script: 'scripts/core/enhanced-test-runner.sh',
     logFile: 'logs/test-results/latest.json',
   },
+  quality: {
+    script: 'scripts/quality/code-analyzer.sh',
+    logFile: 'logs/quality-latest.json',
+  },
+  pull: {
+    script: 'scripts/core/pull-org-updates.sh',
+    logFile: 'logs/pull-latest.json',
+  },
+  deploy: {
+    script: 'scripts/core/deployment-assistant.sh',
+    logFile: 'logs/deploy-latest.log',
+  },
+  rollback: {
+    script: 'scripts/new/rollback.sh',
+    logFile: 'logs/rollback-latest.log',
+  },
 };
 
 // ─── Rate limiter ─────────────────────────────────────────────────────────────
@@ -232,15 +318,27 @@ const COMMANDS = {
  * Limits requests to maxRequests per windowMs across all local clients.
  */
 function createRateLimiter(maxRequests = 60, windowMs = 60_000) {
-  const timestamps = [];
-  return (_req, res, next) => {
-    const now = Date.now();
-    const cutoff = now - windowMs;
-    while (timestamps.length && timestamps[0] < cutoff) timestamps.shift();
-    if (timestamps.length >= maxRequests) {
-      return res.status(429).json({ error: 'Too many requests' });
+  return rateLimit({ windowMs, limit: maxRequests, standardHeaders: true, legacyHeaders: false });
+}
+
+// ─── Origin guard ─────────────────────────────────────────────────────────────
+
+/**
+ * Rejects requests whose Origin header doesn't match the local server address.
+ * Browsers set Origin on cross-origin requests (including EventSource), so this
+ * blocks CSRF attacks from malicious pages while allowing same-origin requests
+ * from the served React app (which omit Origin on same-origin GETs).
+ */
+function createOriginGuard(port) {
+  const allowed = new Set([
+    `http://localhost:${port}`,
+    `http://127.0.0.1:${port}`,
+  ]);
+  return (req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && !allowed.has(origin)) {
+      return res.status(403).json({ error: 'Forbidden' });
     }
-    timestamps.push(now);
     next();
   };
 }
@@ -254,7 +352,9 @@ function createRateLimiter(maxRequests = 60, windowMs = 60_000) {
  * @param {string} version - CLI version string
  * @returns {import('express').Application}
  */
-export function createGuiApp(config, version) {
+let updateInProgress = false;
+
+export function createGuiApp(config, version, port = 7654) {
   const app = express();
   app.use(express.json());
 
@@ -263,14 +363,16 @@ export function createGuiApp(config, version) {
     path.join(config._projectRoot || process.cwd(), 'logs');
 
   const apiLimiter = createRateLimiter(60, 60_000);
+  const originGuard = createOriginGuard(port);
+  app.use('/api/', originGuard);
 
   // ── API routes ──────────────────────────────────────────────────────────────
 
-  app.get('/api/health', (_req, res) => {
+  app.get('/api/health', apiLimiter, (_req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
 
-  app.get('/api/project', (_req, res) => {
+  app.get('/api/project', apiLimiter, (_req, res) => {
     res.json({
       name: config.projectName || 'Salesforce Project',
       org: config.defaultOrg || null,
@@ -305,6 +407,77 @@ export function createGuiApp(config, version) {
       res.json(data ?? {});
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Check for updates ──────────────────────────────────────────────────────
+
+  app.get('/api/check-updates', apiLimiter, async (_req, res) => {
+    try {
+      const latest = await fetchLatestVersion();
+      res.json({ current: version, latest, updateAvailable: latest !== version });
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
+  });
+
+  // ── Update via npm (SSE) ────────────────────────────────────────────────────
+
+  app.get('/api/update/stream', apiLimiter, async (req, res) => {
+    if (updateInProgress) {
+      return res.status(409).json({ error: 'An update is already in progress' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    updateInProgress = true;
+    let child;
+    req.on('close', () => { if (child && !child.killed) child.kill(); });
+
+    try {
+      child = execa('npm', ['install', '--global', '@sfdt/cli@latest'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const streamLines = (readable) => {
+        const rl = createInterface({ input: readable, crlfDelay: Infinity });
+        rl.on('line', (line) => {
+          if (!res.writableEnded) {
+            res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
+          }
+        });
+        return rl;
+      };
+
+      const rlOut = streamLines(child.stdout);
+      const rlErr = streamLines(child.stderr);
+
+      let exitCode = 0;
+      try {
+        await child;
+      } catch (execErr) {
+        // exitCode 1 covers both real errors and SIGKILL on client disconnect
+        exitCode = execErr.exitCode ?? 1;
+      } finally {
+        rlOut.close();
+        rlErr.close();
+      }
+
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'result', exitCode }) + '\n\n');
+        res.end();
+      }
+    } catch (err) {
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'error', message: err.message }) + '\n\n');
+        res.end();
+      }
+    } finally {
+      updateInProgress = false;
     }
   });
 
@@ -493,24 +666,42 @@ export function createGuiApp(config, version) {
 
       sendEvent({ type: 'progress', total: bothItems.length, completed: 0 });
 
+      // Group by type so we can batch-retrieve all members of each type in one SF CLI call
+      const byType = new Map();
       for (const item of bothItems) {
+        if (!byType.has(item.type)) byType.set(item.type, []);
+        byType.get(item.type).push(item.member);
+      }
+
+      for (const [type, members] of byType) {
         if (clientClosed || res.destroyed) break;
 
-        const [sourceXml, targetXml] = await Promise.all([
-          data.source === 'local'
-            ? readLocalComponentXml(config, item.type, item.member)
-            : retrieveComponentXml(data.source, item.type, item.member, tmpDir),
-          retrieveComponentXml(data.target, item.type, item.member, tmpDir),
+        // Batch-retrieve all members of this type from both sides in parallel
+        const [targetXmlMap, sourceXmlMap] = await Promise.all([
+          batchRetrieveTypeMembers(data.target, type, members, tmpDir),
+          data.source !== 'local'
+            ? batchRetrieveTypeMembers(data.source, type, members, tmpDir)
+            : Promise.resolve(new Map()),
         ]);
 
-        const status =
-          sourceXml && targetXml && sourceXml.trim() === targetXml.trim()
-            ? 'identical'
-            : 'modified';
+        for (const member of members) {
+          if (clientClosed || res.destroyed) break;
 
-        sendEvent({ type: 'diff', itemType: item.type, member: item.member, status });
-        completed++;
-        sendEvent({ type: 'progress', total: bothItems.length, completed });
+          const targetXml = targetXmlMap.get(member) ?? null;
+          const sourceXml =
+            data.source === 'local'
+              ? await readLocalComponentXml(config, type, member)
+              : sourceXmlMap.get(member) ?? null;
+
+          const status =
+            sourceXml && targetXml && sourceXml.trim() === targetXml.trim()
+              ? 'identical'
+              : 'modified';
+
+          sendEvent({ type: 'diff', itemType: type, member, status });
+          completed++;
+          sendEvent({ type: 'progress', total: bothItems.length, completed });
+        }
       }
 
       sendEvent({ type: 'done' });
@@ -539,7 +730,9 @@ export function createGuiApp(config, version) {
       const xml = renderPackageXml(metaMap, resolvedVersion);
 
       const fsExtra = (await import('fs-extra')).default;
-      await fsExtra.outputFile(path.join(logDir, 'compare-manifest.xml'), xml);
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      await fsExtra.outputFile(path.join(logDir, `compare-manifest-${ts}.xml`), xml);
+      await fsExtra.outputFile(path.join(logDir, 'compare-manifest-latest.xml'), xml);
 
       res.json({ xml });
     } catch (err) {
@@ -576,6 +769,504 @@ export function createGuiApp(config, version) {
     }
   });
 
+  // ── Manifest routes ────────────────────────────────────────────────────────
+
+  app.get('/api/manifests', apiLimiter, async (_req, res) => {
+    try {
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const manifestReleaseDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release');
+      const manifests = [];
+
+      const logFiles = await safeReaddir(logDir);
+      for (const file of logFiles.filter((f) => f.match(/^compare-manifest-\d/)).sort().reverse()) {
+        const filePath = path.join(logDir, file);
+        const stat = await fs.stat(filePath).catch(() => null);
+        if (stat) manifests.push({ name: file, source: 'compare', date: stat.mtime.toISOString(), size: stat.size, relPath: `logs/${file}` });
+      }
+
+      const releaseFiles = await safeReaddir(manifestReleaseDir);
+      for (const file of releaseFiles.filter((f) => f.endsWith('.xml')).sort().reverse()) {
+        const filePath = path.join(manifestReleaseDir, file);
+        const stat = await fs.stat(filePath).catch(() => null);
+        const relDir = config.manifestDir ?? 'manifest/release';
+        if (stat) manifests.push({ name: file, source: 'release', date: stat.mtime.toISOString(), size: stat.size, relPath: `${relDir}/${file}` });
+      }
+
+      res.json({ manifests });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/manifests/content', apiLimiter, async (req, res) => {
+    try {
+      const rawPath = req.query.path;
+      const relPath = Array.isArray(rawPath) ? rawPath[0] : rawPath;
+      if (!relPath || path.isAbsolute(relPath) || relPath.includes('..')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const absPath = path.resolve(projectRoot, relPath);
+      if (!absPath.startsWith(projectRoot + path.sep) && absPath !== projectRoot) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      const xml = await fs.readFile(absPath, 'utf8');
+      res.json({ xml });
+    } catch {
+      res.status(404).json({ error: 'Not found' });
+    }
+  });
+
+  app.post('/api/manifest/build', apiLimiter, async (req, res) => {
+    try {
+      const { base = 'main', head = 'HEAD' } = req.body ?? {};
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const sourcePath = config.defaultSourcePath ?? 'force-app/main/default';
+      const apiVersion = config.sourceApiVersion ?? '63.0';
+
+      const { parseDiffToMetadata, renderPackageXml: renderXml, countMembers } = await import('./metadata-mapper.js');
+
+      const mergeBase = await execa('git', ['merge-base', base, head], { cwd: projectRoot, reject: false });
+      const baseRef = (mergeBase.exitCode === 0 && mergeBase.stdout.trim()) ? mergeBase.stdout.trim() : base;
+
+      const diffResult = await execa(
+        'git',
+        ['diff', '--name-status', baseRef, head, '--', `${sourcePath.split('/')[0]}/`],
+        { cwd: projectRoot, reject: false }
+      );
+
+      if (diffResult.exitCode !== 0) {
+        return res.status(500).json({ error: `git diff failed: ${diffResult.stderr || 'unknown error'}` });
+      }
+
+      const { additive, destructive } = parseDiffToMetadata(diffResult.stdout, { sourcePath });
+      const addCount = countMembers(additive);
+      const delCount = countMembers(destructive);
+      const xml = renderXml(additive, apiVersion);
+
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `manifest-${ts}.xml`;
+      await fs.outputFile(path.join(logDir, filename), xml);
+
+      res.json({ xml, addCount, delCount, filename });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Release Hub: deploy with options (SSE) ────────────────────────────────
+
+  app.post('/api/release/deploy', apiLimiter, async (req, res) => {
+    const { dryRun = false, skipPreflight = false, notifySlack = false, org, manifest } = req.body ?? {};
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    let child;
+    req.on('close', () => { if (child && !child.killed) child.kill(); });
+
+    try {
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const scriptPath = path.join(projectRoot, 'scripts/core/deployment-assistant.sh');
+
+      const scriptEnv = {
+        SFDT_PROJECT_ROOT: projectRoot,
+        SFDT_CONFIG_DIR: config._configDir ?? path.join(projectRoot, '.sfdt'),
+        SFDT_DEFAULT_ORG: org ?? config.defaultOrg ?? '',
+        SFDT_SOURCE_PATH: config.defaultSourcePath ?? 'force-app/main/default',
+        SFDT_API_VERSION: config.sourceApiVersion ?? '',
+        SFDT_NON_INTERACTIVE: 'true',
+        SFDT_DRY_RUN: dryRun ? 'true' : 'false',
+        SFDT_SKIP_PREFLIGHT: skipPreflight ? 'true' : 'false',
+        SFDT_NOTIFY_SLACK: notifySlack ? 'true' : 'false',
+        ...(manifest ? { SFDT_MANIFEST_PATH: path.join(projectRoot, manifest) } : {}),
+      };
+
+      child = execa('bash', [scriptPath], {
+        env: { ...process.env, ...scriptEnv },
+        cwd: projectRoot,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const lines = [];
+      const streamLines = (readable) => {
+        const rl = createInterface({ input: readable, crlfDelay: Infinity });
+        rl.on('line', (line) => {
+          lines.push(line);
+          if (!res.writableEnded) res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
+        });
+        return rl;
+      };
+
+      const rlOut = streamLines(child.stdout);
+      const rlErr = streamLines(child.stderr);
+
+      let exitCode = 0;
+      try {
+        await child;
+      } catch (execErr) {
+        exitCode = execErr.exitCode ?? 1;
+      } finally {
+        rlOut.close();
+        rlErr.close();
+      }
+
+      // Append to deploy history
+      const historyPath = path.join(logDir, 'deploy-history.json');
+      const history = await fs.readJson(historyPath).catch(() => []);
+      history.unshift({
+        date: new Date().toISOString(),
+        manifest: manifest ?? null,
+        org: org ?? config.defaultOrg ?? null,
+        dryRun,
+        skipPreflight,
+        exitCode,
+      });
+      await fs.outputJson(historyPath, history.slice(0, 100), { spaces: 2 });
+
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'result', exitCode }) + '\n\n');
+        res.end();
+      }
+    } catch (err) {
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'error', message: err.message }) + '\n\n');
+        res.end();
+      }
+    }
+  });
+
+  // ── Release Hub: deployment history ───────────────────────────────────────
+
+  app.get('/api/deploy/history', apiLimiter, async (_req, res) => {
+    try {
+      const historyPath = path.join(logDir, 'deploy-history.json');
+      const history = await fs.readJson(historyPath).catch(() => []);
+      res.json({ history });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Release Hub: changelog content ────────────────────────────────────────
+
+  app.get('/api/changelog/content', apiLimiter, async (_req, res) => {
+    try {
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const changelogPath = path.join(projectRoot, 'CHANGELOG.md');
+
+      if (!(await fs.pathExists(changelogPath))) {
+        return res.json({ content: '', exists: false });
+      }
+
+      const raw = await fs.readFile(changelogPath, 'utf8');
+      // Extract the ## [Unreleased] section
+      const match = raw.match(/## \[Unreleased\]([\s\S]*?)(?=\n## \[|$)/);
+      const content = match ? match[1].trim() : '';
+      res.json({ content, exists: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Release Hub: AI changelog generation (SSE) ────────────────────────────
+
+  app.post('/api/changelog/generate', apiLimiter, async (_req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const send = (payload) => {
+      if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n');
+    };
+
+    try {
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const available = await checkAi(config);
+      if (!available) {
+        send({ type: 'error', message: 'AI is not available or not configured.' });
+        res.end();
+        return;
+      }
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const limit = 20;
+      const prompt = [
+        `Analyze the recent git commits in this Salesforce project and generate professional CHANGELOG.md entries.`,
+        `Focus on: new features (Added), bug fixes (Fixed), breaking changes (Changed/Removed).`,
+        `Categorize entries into: Added, Changed, Fixed, Deprecated, Removed, Security.`,
+        `Format as a list of bullet points for each category.`,
+        `ONLY provide the bullet points for the [Unreleased] section. Do not include headers like '## [Unreleased]'.`,
+        `Run 'git log --oneline -n ${limit}' to see recent commits.`,
+        `Output format example:`,
+        `### Added\n- New Account trigger handler for automated validation\n- Support for Slack notifications`,
+        `### Fixed\n- Issue with deployment manifest generation for PermissionSets`,
+      ].join('\n');
+
+      send({ type: 'log', line: 'Analyzing recent commits with AI...', ts: new Date().toISOString() });
+
+      const result = await runAi(prompt, {
+        config,
+        allowedTools: ['Bash(git log:*)', 'Read'],
+        cwd: projectRoot,
+        aiEnabled: true,
+      });
+
+      if (result?.stdout) {
+        for (const line of result.stdout.split('\n')) {
+          send({ type: 'log', line, ts: new Date().toISOString() });
+        }
+      }
+      send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
+    } catch (err) {
+      send({ type: 'error', message: err.message });
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
+  });
+
+  // ── Release Hub: AI release notes generation (SSE) ────────────────────────
+
+  app.post('/api/release-notes/generate', apiLimiter, async (_req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const send = (payload) => {
+      if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n');
+    };
+
+    try {
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const available = await checkAi(config);
+      if (!available) {
+        send({ type: 'error', message: 'AI is not available or not configured.' });
+        res.end();
+        return;
+      }
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const prompt = [
+        `You are a technical writer for a Salesforce development team. Generate concise release notes for the changes in the current branch.`,
+        `Use the git log and diff to understand what changed. Focus on user-facing impact, not implementation details.`,
+        `Format the output as Markdown with sections: ## Overview, ## What's New, ## Bug Fixes, ## Breaking Changes (if any).`,
+        `Keep each bullet point to one sentence. Avoid jargon. Target audience: Salesforce admins and business stakeholders.`,
+        `Run git log and git diff to understand the changes.`,
+      ].join('\n');
+
+      send({ type: 'log', line: 'Generating release notes with AI...', ts: new Date().toISOString() });
+
+      const result = await runAi(prompt, {
+        config,
+        allowedTools: ['Bash(git log:*)', 'Bash(git diff:*)', 'Read'],
+        cwd: projectRoot,
+        aiEnabled: true,
+      });
+
+      if (result?.stdout) {
+        for (const line of result.stdout.split('\n')) {
+          send({ type: 'log', line, ts: new Date().toISOString() });
+        }
+      }
+      send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
+    } catch (err) {
+      send({ type: 'error', message: err.message });
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
+  });
+
+  // ── Release Hub: remove component from manifest ────────────────────────────
+
+  app.post('/api/manifest/remove-component', apiLimiter, async (req, res) => {
+    try {
+      const { relPath, type, member } = req.body ?? {};
+      if (!relPath || !type || !member) {
+        return res.status(400).json({ error: 'relPath, type, and member are required' });
+      }
+      if (path.isAbsolute(relPath) || relPath.includes('..')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const absPath = path.resolve(projectRoot, relPath);
+      if (!absPath.startsWith(projectRoot + path.sep) && absPath !== projectRoot) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      const xml = await fs.readFile(absPath, 'utf8');
+      // Remove the <members> entry for this type/member combination
+      const typeEscaped = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const memberEscaped = member.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      // Remove the <members>MEMBER</members> line inside the matching <types> block
+      // Strategy: split into type blocks, remove the member from the right block, reassemble
+      const updatedXml = removeComponentFromXml(xml, type, member);
+      await fs.writeFile(absPath, updatedXml);
+
+      void typeEscaped; void memberEscaped;
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Release Hub: AI code review (SSE) ─────────────────────────────────────
+
+  app.post('/api/review', apiLimiter, async (req, res) => {
+    const { base = 'main' } = req.body ?? {};
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const send = (payload) => {
+      if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n');
+    };
+
+    try {
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const available = await checkAi(config);
+      if (!available) {
+        send({ type: 'error', message: 'AI is not available or not configured.' });
+        res.end();
+        return;
+      }
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const diffResult = await execa('git', ['diff', `${base}...HEAD`], { cwd: projectRoot, reject: false });
+      const diff = diffResult.stdout || '';
+
+      if (!diff.trim()) {
+        send({ type: 'log', line: `No changes found between ${base} and HEAD.`, ts: new Date().toISOString() });
+        send({ type: 'result', exitCode: 0, content: '' });
+        res.end();
+        return;
+      }
+
+      const REVIEW_PROMPT = `You are a senior Salesforce developer reviewing a code diff. Analyze the following changes and report issues in these categories:\n\n## Governor Limits & Performance\n- SOQL or DML inside loops\n- Unbulkified operations (not handling 200+ records)\n- Missing LIMIT clauses on SOQL queries\n\n## Security\n- Missing CRUD/FLS checks\n- SOQL injection risks\n- Sensitive data exposure in debug logs\n\n## Null Safety & Error Handling\n- Missing null checks before property access\n- Unhandled exceptions in AuraEnabled methods\n\n## Test Coverage\n- Changed Apex classes that lack corresponding test class changes\n- Missing assertions in test methods\n\nProvide specific line references from the diff. Rate each finding as CRITICAL, HIGH, MEDIUM, or LOW.\n\n--- DIFF ---\n`;
+
+      send({ type: 'log', line: `Reviewing ${diff.split('\n').length} lines of diff vs ${base}...`, ts: new Date().toISOString() });
+
+      const result = await runAi(REVIEW_PROMPT + diff, {
+        config,
+        allowedTools: ['Read', 'Grep'],
+        cwd: projectRoot,
+        aiEnabled: true,
+      });
+
+      if (result?.stdout) {
+        for (const line of result.stdout.split('\n')) {
+          send({ type: 'log', line, ts: new Date().toISOString() });
+        }
+      }
+      send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
+    } catch (err) {
+      send({ type: 'error', message: err.message });
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
+  });
+
+  // ── Release Hub: AI explain (SSE) ─────────────────────────────────────────
+
+  app.post('/api/explain', apiLimiter, async (req, res) => {
+    const { logPath } = req.body ?? {};
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const send = (payload) => {
+      if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n');
+    };
+
+    try {
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const projectRoot = config._projectRoot ?? process.cwd();
+
+      // Resolve log file
+      let resolvedLogPath;
+      if (logPath) {
+        if (path.isAbsolute(logPath) || logPath.includes('..')) {
+          send({ type: 'error', message: 'Invalid path' });
+          res.end();
+          return;
+        }
+        const abs = path.resolve(projectRoot, logPath);
+        if (!abs.startsWith(projectRoot + path.sep) && abs !== projectRoot) {
+          send({ type: 'error', message: 'Forbidden path' });
+          res.end();
+          return;
+        }
+        resolvedLogPath = abs;
+      } else {
+        // Find most recent .log file
+        const { glob } = await import('glob');
+        const candidates = await glob('**/*.log', { cwd: logDir, absolute: true });
+        if (candidates.length === 0) {
+          send({ type: 'error', message: 'No log files found in logs directory.' });
+          res.end();
+          return;
+        }
+        const statted = await Promise.all(candidates.map(async (p) => ({ path: p, mtime: (await fs.stat(p)).mtimeMs })));
+        statted.sort((a, b) => b.mtime - a.mtime);
+        resolvedLogPath = statted[0].path;
+        send({ type: 'log', line: `Analyzing log: ${path.relative(projectRoot, resolvedLogPath)}`, ts: new Date().toISOString() });
+      }
+
+      const MAX_LOG_BYTES = 512 * 1024;
+      let logContent = await fs.readFile(resolvedLogPath, 'utf8');
+      if (logContent.length > MAX_LOG_BYTES) logContent = logContent.slice(-MAX_LOG_BYTES);
+
+      const available = await checkAi(config);
+      if (!available) {
+        send({ type: 'error', message: 'AI is not available or not configured.' });
+        res.end();
+        return;
+      }
+
+      const EXPLAIN_PROMPT = `You are a Salesforce deployment engineer helping a developer interpret a failing deployment log. Analyze the log and produce a concise report with these sections:\n\n## Root Cause\nOne or two sentences identifying the single most likely cause of the failure.\n\n## Failing Components\nBulleted list of component names + the specific error.\n\n## Suggested Fixes\nOrdered list of concrete steps the developer can take.\n\n## References\nRelevant Salesforce docs or metadata types.\n\n--- DEPLOYMENT LOG ---\n`;
+
+      const result = await runAi(EXPLAIN_PROMPT + logContent, {
+        config,
+        allowedTools: ['Read', 'Grep'],
+        cwd: projectRoot,
+        aiEnabled: true,
+      });
+
+      if (result?.stdout) {
+        for (const line of result.stdout.split('\n')) {
+          send({ type: 'log', line, ts: new Date().toISOString() });
+        }
+      }
+      send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
+    } catch (err) {
+      send({ type: 'error', message: err.message });
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
+  });
+
+  // ── AI availability ────────────────────────────────────────────────────────
+
+  app.get('/api/ai/available', apiLimiter, async (_req, res) => {
+    try {
+      const { isAiAvailable } = await import('./ai.js');
+      const available = await isAiAvailable(config);
+      res.json({ available, enabled: !!config.features?.ai, provider: config.ai?.provider ?? null });
+    } catch {
+      res.json({ available: false, enabled: false, provider: null });
+    }
+  });
+
   // ── Static: serve pre-built React app ──────────────────────────────────────
 
   if (fs.existsSync(GUI_DIST)) {
@@ -604,7 +1295,7 @@ export function createGuiApp(config, version) {
  * @returns {Promise<import('http').Server>}
  */
 export async function startGuiServer(port, config, version) {
-  const app = createGuiApp(config, version);
+  const app = createGuiApp(config, version, port);
 
   return new Promise((resolve, reject) => {
     const server = app.listen(port, '127.0.0.1', () => resolve(server));
