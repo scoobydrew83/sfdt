@@ -800,7 +800,8 @@ export function createGuiApp(config, version, port = 7654) {
 
   app.get('/api/manifests/content', apiLimiter, async (req, res) => {
     try {
-      const { path: relPath } = req.query;
+      const rawPath = req.query.path;
+      const relPath = Array.isArray(rawPath) ? rawPath[0] : rawPath;
       if (!relPath || path.isAbsolute(relPath) || relPath.includes('..')) {
         return res.status(400).json({ error: 'Invalid path' });
       }
