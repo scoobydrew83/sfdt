@@ -118,3 +118,31 @@ describe('fetchInventory', () => {
     );
   });
 });
+
+describe('fetchOrgInventory withDates mode', () => {
+  it('returns Map<type, Map<name, lastModifiedDate>> when withDates is true', async () => {
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify({ status: 0, result: { metadataObjects: [{ xmlName: 'ApexClass' }] } }),
+    });
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify({ status: 0, result: [{ fullName: 'MyClass', lastModifiedDate: '2026-04-01T00:00:00.000Z' }] }),
+    });
+
+    const map = await fetchOrgInventory('dev', null, { withDates: true });
+    expect(map.get('ApexClass')).toBeInstanceOf(Map);
+    expect(map.get('ApexClass').get('MyClass')).toBe('2026-04-01T00:00:00.000Z');
+  });
+
+  it('still returns Map<type, Set<name>> by default (no regression)', async () => {
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify({ status: 0, result: { metadataObjects: [{ xmlName: 'ApexClass' }] } }),
+    });
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify({ status: 0, result: [{ fullName: 'MyClass', lastModifiedDate: '2026-04-01T00:00:00.000Z' }] }),
+    });
+
+    const map = await fetchOrgInventory('dev', BASE_CONFIG);
+    expect(map.get('ApexClass')).toBeInstanceOf(Set);
+    expect(map.get('ApexClass').has('MyClass')).toBe(true);
+  });
+});
