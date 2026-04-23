@@ -15,6 +15,11 @@ const SCHEMA = `
   );
 `;
 
+// Convert ISO 8601 date string to milliseconds for reliable numeric comparison
+function toMs(dateStr) {
+  return new Date(dateStr).getTime();
+}
+
 export function initCache(cacheDir, orgAlias) {
   fs.ensureDirSync(cacheDir);
   const db = new Database(path.join(cacheDir, `${orgAlias}.db`));
@@ -33,7 +38,7 @@ export function getDelta(db, freshInventory) {
   for (const [type, members] of freshInventory) {
     for (const [name, lastModified] of members) {
       const cached = query.get(type, name);
-      if (!cached || cached.last_modified < lastModified) {
+      if (!cached || toMs(cached.last_modified) < toMs(lastModified)) {
         if (!delta.has(type)) delta.set(type, new Set());
         delta.get(type).add(name);
       }

@@ -50,6 +50,13 @@ describe('getDelta', () => {
     updateCache(db, inv);
     expect(getDelta(db, inv).size).toBe(0);
   });
+
+  it('handles dates with and without milliseconds correctly', () => {
+    updateCache(db, new Map([['ApexClass', new Map([['A', '2026-04-01T00:00:00.000Z']])]]));
+    // Same instant, no milliseconds — should NOT appear in delta
+    const fresh = new Map([['ApexClass', new Map([['A', '2026-04-01T00:00:00Z']])]]);
+    expect(getDelta(db, fresh).size).toBe(0);
+  });
 });
 
 describe('updateCache', () => {
