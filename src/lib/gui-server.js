@@ -297,10 +297,6 @@ const COMMANDS = {
     script: 'scripts/quality/code-analyzer.sh',
     logFile: 'logs/quality-latest.json',
   },
-  pull: {
-    script: 'scripts/core/pull-org-updates.sh',
-    logFile: 'logs/pull-latest.json',
-  },
   deploy: {
     script: 'scripts/core/deployment-assistant.sh',
     logFile: 'logs/deploy-latest.log',
