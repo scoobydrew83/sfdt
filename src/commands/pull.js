@@ -87,7 +87,7 @@ async function runPull(options) {
       await execa('sf', ['project', 'reset', 'tracking', '--no-prompt', '--target-org', orgAlias], { stdio: 'inherit', cwd: projectRoot });
       break;
     case 'profiles':
-      await pullProfiles(config, projectRoot, orgAlias);
+      await pullProfiles(projectRoot, orgAlias);
       break;
     default:
       if (action.startsWith('group:')) {
@@ -154,7 +154,7 @@ function inventoryToDelta(inventory) {
   return delta;
 }
 
-async function pullProfiles(config, projectRoot, orgAlias) {
+async function pullProfiles(projectRoot, orgAlias) {
   await execa('sf', ['project', 'retrieve', 'start', '--metadata', 'Profile', '--target-org', orgAlias], { stdio: 'inherit', cwd: projectRoot });
 }
 
