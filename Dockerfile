@@ -32,14 +32,19 @@ RUN npm run build
 FROM node:20-slim AS base
 
 # ── System packages ───────────────────────────────────────────────────────────
-# git: required by manifest, changelog, review, pr-description commands
-# bash: required by shell scripts in scripts/
-# jq:  required by several shell scripts for JSON parsing
+# git:    required by manifest, changelog, review, pr-description commands
+# bash:   required by shell scripts in scripts/
+# jq:     required by several shell scripts for JSON parsing
+# python3, make, g++: required to compile better-sqlite3 (native addon) if no
+#          pre-built binary is available for the target Node/arch combination
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git \
       bash \
       jq \
       curl \
+      python3 \
+      make \
+      g++ \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Salesforce CLI ────────────────────────────────────────────────────────────

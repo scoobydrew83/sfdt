@@ -11,16 +11,16 @@ const BATCH_SIZE = 5;
  * @param {object} config - Loaded sfdt config
  * @returns {Promise<Map<string, Set<string>>>} Map of type → Set of member names
  */
-export async function fetchInventory(source, config) {
+export async function fetchInventory(source, config, options = {}) {
   if (source === 'local') return fetchLocalInventory(config);
-  return fetchOrgInventory(source, config);
+  return fetchOrgInventory(source, config, options);
 }
 
 /**
  * Fetch inventory from a Salesforce org via sf CLI.
  * Batches metadata type queries in groups of BATCH_SIZE.
  */
-export async function fetchOrgInventory(orgAlias, _config) {
+export async function fetchOrgInventory(orgAlias, _config, { withDates = false } = {}) {
   const types = await listMetadataTypes(orgAlias);
   const inventory = new Map();
 
@@ -30,7 +30,11 @@ export async function fetchOrgInventory(orgAlias, _config) {
       batch.map(async (type) => {
         const members = await listMetadataMembers(orgAlias, type);
         if (members.length > 0) {
-          inventory.set(type, new Set(members));
+          if (withDates) {
+            inventory.set(type, new Map(members.map((m) => [m.name, m.lastModifiedDate])));
+          } else {
+            inventory.set(type, new Set(members.map((m) => m.name)));
+          }
         }
       }),
     );
@@ -92,7 +96,10 @@ async function listMetadataMembers(orgAlias, metadataType) {
       orgAlias,
     ]);
     const parsed = JSON.parse(result.stdout);
-    return (parsed.result ?? []).map((item) => item.fullName);
+    return (parsed.result ?? []).map((item) => ({
+      name: item.fullName,
+      lastModifiedDate: item.lastModifiedDate ?? '',
+    }));
   } catch {
     // Some metadata types are not retrievable; skip silently
     return [];

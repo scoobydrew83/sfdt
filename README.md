@@ -305,12 +305,35 @@ Pull groups let you define named sets of metadata types in `.sfdt/pull-config.js
 
 Use `sfdt pull` to retrieve all configured metadata types from the default org.
 
+### Pull Cache
+
+`sfdt pull` uses a SQLite cache (stored in `.sfdt/cache/`) to track retrieved components and their modification dates. On subsequent runs, only components that have changed in the org are re-fetched, significantly reducing retrieval time for large orgs.
+
+Cache behavior is controlled via `pullCache` in `.sfdt/config.json`:
+
+```json
+{
+  "pullCache": {
+    "enabled": true,
+    "parallelism": 5,
+    "batchSize": 100
+  }
+}
+```
+
+| Flag | Description |
+|------|-------------|
+| `sfdt pull` | Incremental pull — only retrieves changed components |
+| `sfdt pull --full` | Force full retrieve and rebuild the cache |
+| `sfdt pull --status` | Show cache status (last pull time, component counts) |
+
 ## Requirements
 
 - **Node.js** >= 20.0.0
 - **Salesforce CLI** (`sf`) installed and authenticated to target orgs
 - **bash** 4.0+ (macOS users: `brew install bash`)
 - **jq** 1.6+ (required by several shell scripts)
+- **Native build tools** (`python3`, `make`, `g++`) — required only if `better-sqlite3` cannot find a pre-built binary for your Node version or architecture (e.g. ARM64, Alpine Linux, or custom Node builds). Most standard installs use a pre-built binary and do not need these. On Debian/Ubuntu: `apt-get install python3 make g++`; on macOS Xcode Command Line Tools suffice (`xcode-select --install`).
 - **Optional:** [Claude Code CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code) for AI features with the `claude` provider
 - **Optional:** Gemini or OpenAI API key for `gemini`/`openai` provider
 - **Optional:** [GitHub CLI](https://cli.github.com/) (`gh`) for PR creation during deployments

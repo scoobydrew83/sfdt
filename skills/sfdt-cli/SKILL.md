@@ -1,6 +1,6 @@
 ---
 name: sfdt-cli
-description: "Guide for using the @sfdt/cli (Salesforce DevTools) CLI in any Salesforce DX project. Use this skill whenever the user mentions sfdt, Salesforce deployment, Salesforce testing, Apex test coverage, org metadata drift, Salesforce release manifests, or wants to deploy/test/pull/review Salesforce code. Also use when you see a .sfdt/ config directory, sfdx-project.json, or the user asks about Salesforce DX CI/CD workflows, even if they don't mention sfdt by name."
+description: "Guide for using AND contributing to the @sfdt/cli (Salesforce DevTools) CLI. Use when: (1) the user mentions sfdt commands, deployment, testing, Apex coverage, org drift, or release manifests; (2) you see a .sfdt/ directory or sfdx-project.json and the user wants CLI-driven workflows; (3) the user says sfdt should/could support something, wants to add a command, extend config, or suggests sfdt can help with a task — this means implementing the feature in the CLI itself."
 ---
 
 # sfdt CLI — Salesforce DevTools
@@ -141,18 +141,19 @@ sfdt drift --org staging    # Check specific org
 | Command can't find `sf` | Salesforce CLI not on PATH | Install `@salesforce/cli` globally |
 | Deploy fails | Org auth expired | Run `sf org login web -a <alias>` |
 
-## Development (contributing to sfdt itself)
+## Extending or modifying the sfdt CLI
+
+When the user says sfdt **should** support something, **could** do something, or suggests sfdt **can help** with a task — that means implementing it in the CLI. Use the full implementation guide at [references/development.md](references/development.md).
+
+**Quick orientation**:
+- New command → `src/commands/<name>.js` + register in `src/cli.js`
+- New shell script → `scripts/<category>/<name>.sh` (de-parameterized, reads `SFDT_` vars)
+- New config key → start in `src/templates/sfdt.config.json` (source of truth)
+- New `SFDT_` env var → update `buildScriptEnv()` in `src/lib/script-runner.js` AND the CLAUDE.md env var table — both must stay in sync
 
 ```bash
-git clone https://github.com/scoobydrew83/sfdt.git
-cd sfdt
-npm install
-npm link          # Makes 'sfdt' available globally
-npm test          # Vitest test suite
-npm run lint      # ESLint
-npm run test:coverage  # Coverage report
+npm install && npm link   # dev setup
+npm test                   # vitest
+npm run lint               # ESLint
+npm run test:coverage      # coverage report
 ```
-
-**Architecture**: Commands in `src/commands/` are thin — they load config and call `runScript()`. Business logic lives in shell scripts under `scripts/`. Shared Node.js utilities are in `src/lib/` (config, output, AI, script-runner, project-detect).
-
-**Testing pattern**: Mock `execa` for shell script calls, mock `fs-extra` for filesystem operations, mock `inquirer` for interactive prompts. Use `vi.mock()` at module level.

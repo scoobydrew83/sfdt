@@ -70,16 +70,6 @@ export function buildScriptEnv(config) {
     }
   }
 
-  // Pull config
-  if (config.pullConfig && typeof config.pullConfig === 'object') {
-    if (Array.isArray(config.pullConfig.metadataTypes)) {
-      env.SFDT_PULL_METADATA_TYPES = config.pullConfig.metadataTypes.join(',');
-    }
-    if (config.pullConfig.targetDir) {
-      env.SFDT_PULL_TARGET_DIR = config.pullConfig.targetDir;
-    }
-  }
-
   return env;
 }
 

@@ -118,20 +118,6 @@ describe('buildScriptEnv', () => {
     expect(env.SFDT_APEX_CLASSES).toBe('Foo,Bar');
   });
 
-  it('flattens pullConfig', () => {
-    const config = {
-      features: {},
-      pullConfig: {
-        metadataTypes: ['ApexClass', 'ApexTrigger'],
-        targetDir: 'force-app/main/default',
-      },
-    };
-
-    const env = buildScriptEnv(config);
-
-    expect(env.SFDT_PULL_METADATA_TYPES).toBe('ApexClass,ApexTrigger');
-    expect(env.SFDT_PULL_TARGET_DIR).toBe('force-app/main/default');
-  });
 
   it('sets preflight enforce vars to "true" when config flags are set', () => {
     const config = {
