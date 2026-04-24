@@ -140,7 +140,7 @@ SFDT uses **GitHub Actions** for CI and **npm Trusted Publishers** for automated
 | `sfdt init` | (built-in) | Initialize `.sfdt/` configuration for a Salesforce DX project | |
 | `sfdt deploy` | `core/deployment-assistant.sh`, `core/deploy-manager.sh` | Deploy metadata to a Salesforce org | `--managed` |
 | `sfdt test` | `core/enhanced-test-runner.sh`, `core/run-tests.sh` | Run Apex tests with optional AI failure analysis | `--legacy`, `--analyze` |
-| `sfdt pull` | `core/pull-org-updates.sh` | Pull metadata changes from the default org | |
+| `sfdt pull` | (built-in, Node.js) | Pull metadata changes from the default org with SQLite delta cache and parallel retrieval | `--full`, `--dry-run`, `--status` |
 | `sfdt release` | `core/generate-release-manifest.sh` | Generate a release manifest and optional AI release notes | `[version]` |
 | `sfdt changelog` | (built-in) | Manage CHANGELOG.md with AI generation and release automation | `generate`, `release`, `check` |
 | `sfdt quality` | `quality/code-analyzer.sh`, `quality/test-analyzer.sh` | Run code quality analysis with optional AI fix plan | `--tests`, `--all`, `--fix-plan` |

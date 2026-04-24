@@ -118,4 +118,12 @@ describe('error handling', () => {
     expect(MOCK_DB.close).toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });
+
+  it('does not update cache when parallelRetrieve returns errors', async () => {
+    inquirer.prompt.mockResolvedValue({ action: 'smart' });
+    parallelRetrieve.mockResolvedValue({ retrieved: 1, total: 2, errors: [{ batch: ['Flow:X'], error: 'failed' }] });
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(updateCache).not.toHaveBeenCalled();
+    expect(MOCK_DB.close).toHaveBeenCalled();
+  });
 });

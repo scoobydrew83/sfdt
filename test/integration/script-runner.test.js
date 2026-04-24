@@ -24,10 +24,6 @@ const config = {
     testClasses: ['AccountServiceTest', 'OpportunityHandlerTest'],
     apexClasses: ['AccountService', 'OpportunityHandler'],
   },
-  pullConfig: {
-    metadataTypes: ['ApexClass', 'LightningComponentBundle'],
-    targetDir: 'retrieved',
-  },
 };
 
 describe('buildScriptEnv integration', () => {
@@ -110,15 +106,7 @@ describe('buildScriptEnv integration', () => {
     expect(env.SFDT_APEX_CLASSES).toBe('AccountService,OpportunityHandler');
   });
 
-  it('maps SFDT_PULL_METADATA_TYPES as comma-joined array', () => {
-    expect(env.SFDT_PULL_METADATA_TYPES).toBe('ApexClass,LightningComponentBundle');
-  });
-
-  it('maps SFDT_PULL_TARGET_DIR', () => {
-    expect(env.SFDT_PULL_TARGET_DIR).toBe('retrieved');
-  });
-
-  it('does NOT set SFDT_NON_INTERACTIVE (that is set by runScript at call time)', () => {
+it('does NOT set SFDT_NON_INTERACTIVE (that is set by runScript at call time)', () => {
     expect(env.SFDT_NON_INTERACTIVE).toBeUndefined();
   });
 });

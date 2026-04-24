@@ -66,7 +66,7 @@ Dockerfile      Official Docker image definition
 | `SFDT_APEX_CLASSES` | Comma-joined Apex class names from `config.testConfig.apexClasses` |
 | `SFDT_NON_INTERACTIVE` | `"true"` when stdin is not a TTY or `options.interactive === false` |
 | `SFDT_PARALLEL_DELAY` | Seconds between parallel batch launches (default: `1`, set in shell scripts) |
-| `SFDT_PULL_*` | Flattened from `config.pullConfig` |
+| (removed) | `pullConfig` is consumed directly by `pull.js`; no longer flattened to env vars |
 
 When adding a new env var, update both `buildScriptEnv()` in `script-runner.js` and this table.
 

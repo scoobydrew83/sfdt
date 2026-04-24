@@ -135,12 +135,12 @@ async function smartPull(config, { projectRoot, cacheDir, orgAlias, full = false
     progressSpinner.succeed(`Retrieved ${result.retrieved}/${result.total} component(s)`);
 
     if (result.errors.length > 0) {
-      console.error(chalk.yellow(`${result.errors.length} batch(es) had errors:`));
+      console.error(chalk.yellow(`${result.errors.length} batch(es) had errors — cache not updated:`));
       result.errors.forEach((e) => console.error(chalk.red(`  ${e.error}`)));
+    } else {
+      updateCache(db, freshInventory);
+      print.success('Cache updated');
     }
-
-    updateCache(db, freshInventory);
-    print.success('Cache updated');
   } finally {
     db.close();
   }
