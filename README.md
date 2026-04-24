@@ -305,6 +305,28 @@ Pull groups let you define named sets of metadata types in `.sfdt/pull-config.js
 
 Use `sfdt pull` to retrieve all configured metadata types from the default org.
 
+### Pull Cache
+
+`sfdt pull` uses a SQLite cache (stored in `.sfdt/cache/`) to track retrieved components and their modification dates. On subsequent runs, only components that have changed in the org are re-fetched, significantly reducing retrieval time for large orgs.
+
+Cache behavior is controlled via `pullCache` in `.sfdt/config.json`:
+
+```json
+{
+  "pullCache": {
+    "enabled": true,
+    "parallelism": 5,
+    "batchSize": 100
+  }
+}
+```
+
+| Flag | Description |
+|------|-------------|
+| `sfdt pull` | Incremental pull — only retrieves changed components |
+| `sfdt pull --full` | Force full retrieve and rebuild the cache |
+| `sfdt pull --status` | Show cache status (last pull time, component counts) |
+
 ## Requirements
 
 - **Node.js** >= 20.0.0

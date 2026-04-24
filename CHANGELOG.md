@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-23
+
+### Added
+- **`sfdt pull` rewritten as Node.js orchestrator**: The pull command is now fully implemented in Node.js with a SQLite-backed cache. Tracks retrieved components, modification dates, and delta detection — replaces the previous shell script approach for improved reliability and extensibility.
+- **Parallel retrieve engine**: Components are fetched in parallel batches during pull, significantly reducing retrieval time for large orgs.
+- **SQLite pull cache** (`src/lib/pull-cache.js`): Persistent local cache of retrieved metadata with `withDates` mode for delta-based incremental retrieves — only changed components are re-fetched on subsequent pulls.
+- **`pullCache` config key**: New `pullCache` section in `sfdt.config.json` template controls cache path and enabled state; `sfdt init` picks it up automatically.
+- **GUI: Release Hub, Review, and Explain pages**: Three new dashboard pages — Release Hub for managing release artifacts, Review for AI-powered code review results, and Explain for deployment log analysis. Navigation is now grouped by workflow area for easier discovery.
+- **GUI: Compare batching, Manifests page, Quality/Pull parity**: Compare page now streams diffs in batches to handle large orgs; new Manifests page surfaces generated `package.xml` artifacts; Quality and Pull pages reach feature parity with their CLI counterparts.
+
+### Fixed
+- Pull cache now handles partial retrieve errors gracefully without corrupting cached state.
+- ISO date normalization in delta detection prevents false positives when comparing org metadata timestamps in mixed formats.
+- Removed stale `SFDT_PULL_*` environment variables from the script runner — pull config is now consumed directly in Node.js.
+- Removed unused `pullProfiles` config parameter; database connection is now closed in a `finally` block to prevent leaks.
+- Express API rate limiter and request path handling corrected in the GUI server.
+
 ## [0.4.2] - 2026-04-20
 
 ### Added

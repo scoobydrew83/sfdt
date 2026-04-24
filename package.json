@@ -1,6 +1,6 @@
 {
   "name": "@sfdt/cli",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Salesforce DevTools — Production-grade CLI for Salesforce DX deployment, testing, quality analysis, and release management",
   "type": "module",
   "bin": {

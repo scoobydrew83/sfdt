@@ -391,10 +391,13 @@ sfdt manifest --no-ai-cleanup            # skip AI check even when AI is enabled
 
 ### sfdt pull
 
-Pulls metadata from the configured default org into your local source directory. Metadata types and target directory are controlled by `.sfdt/pull-config.json`.
+Pulls metadata from the configured default org into your local source directory using a SQLite-backed cache for incremental retrieves. Only components that have changed in the org since the last pull are re-fetched, making subsequent pulls significantly faster.
 
 ```bash
-sfdt pull
+sfdt pull             # incremental — only changed components
+sfdt pull --full      # force full retrieve and rebuild cache
+sfdt pull --status    # show cache status (last pull time, component counts)
+sfdt pull --dry-run   # preview what would be retrieved without making changes
 ```
 
 **Configuration (`pull-config.json`):**
@@ -416,7 +419,19 @@ sfdt pull
 }
 ```
 
-Add or remove metadata types to control what gets pulled. Run `sfdt pull` after changes are made directly in the org (e.g. by an admin) to bring your source directory in sync.
+Cache behavior is controlled via `pullCache` in `.sfdt/config.json` (set during `sfdt init`):
+
+```json
+{
+  "pullCache": {
+    "enabled": true,
+    "parallelism": 5,
+    "batchSize": 100
+  }
+}
+```
+
+Add or remove metadata types to control what gets pulled. Run `sfdt pull` after changes are made directly in the org (e.g. by an admin) to bring your source directory in sync. Use `--full` to reset the cache and force a complete re-retrieve.
 
 ---
 
