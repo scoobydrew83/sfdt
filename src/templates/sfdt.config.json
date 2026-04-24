@@ -27,6 +27,7 @@
   "pullCache": {
     "enabled": true,
     "parallelism": 5,
-    "batchSize": 100
+    "batchSize": 100,
+    "retrieveTimeoutSeconds": 360
   }
 }

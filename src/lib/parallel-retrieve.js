@@ -27,7 +27,8 @@ export async function parallelRetrieve(delta, config, { cwd, onProgress } = {}) 
       window.map(async (batch) => {
         try {
           const metadataArgs = batch.flatMap((m) => ['--metadata', m]);
-          await execa('sf', ['project', 'retrieve', 'start', ...metadataArgs], { cwd, timeout: 120_000 });
+          const timeout = (config.pullCache?.retrieveTimeoutSeconds ?? 360) * 1000;
+          await execa('sf', ['project', 'retrieve', 'start', ...metadataArgs], { cwd, timeout });
           return { batch, ok: true };
         } catch (err) {
           errors.push({ batch, error: err.message });
