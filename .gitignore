@@ -42,3 +42,4 @@ codex.js
 .playwright-mcp/
 logs/
 .claude/skills/*
+TODO.md
