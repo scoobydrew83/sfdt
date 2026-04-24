@@ -62,7 +62,7 @@ async function runPull(options) {
     { name: 'Pull changes (smart delta)', value: 'smart' },
     { name: 'Pull all changes (full retrieve)', value: 'full' },
     { name: 'Preview changes only', value: 'preview' },
-    { name: 'Pull with conflict detection', value: 'conflict' },
+    { name: 'Pull with verbose output', value: 'conflict' },
     { name: 'Reset local source tracking', value: 'reset' },
     { name: 'Pull standard profiles only', value: 'profiles' },
     ...groupChoices,
@@ -109,40 +109,41 @@ async function smartPull(config, { projectRoot, cacheDir, orgAlias, full = false
   }
 
   const db = initCache(cacheDir, orgAlias);
-  const delta = full ? inventoryToDelta(freshInventory) : getDelta(db, freshInventory);
-  const deltaCount = [...delta.values()].reduce((n, s) => n + s.size, 0);
+  try {
+    const delta = full ? inventoryToDelta(freshInventory) : getDelta(db, freshInventory);
+    const deltaCount = [...delta.values()].reduce((n, s) => n + s.size, 0);
 
-  if (deltaCount === 0 && !full) {
-    db.close();
-    console.log(chalk.green('Nothing to pull — org is up to date'));
-    return;
-  }
-
-  console.log(chalk.cyan(`${deltaCount} component(s) to retrieve`));
-
-  if (dryRun) {
-    for (const [type, names] of delta) {
-      for (const name of names) console.log(`  ${type}:${name}`);
+    if (deltaCount === 0 && !full) {
+      console.log(chalk.green('Nothing to pull — org is up to date'));
+      return;
     }
+
+    console.log(chalk.cyan(`${deltaCount} component(s) to retrieve`));
+
+    if (dryRun) {
+      for (const [type, names] of delta) {
+        for (const name of names) console.log(`  ${type}:${name}`);
+      }
+      return;
+    }
+
+    const progressSpinner = ora('Retrieving changes...').start();
+    const result = await parallelRetrieve(delta, config, {
+      cwd: projectRoot,
+      onProgress: ({ retrieved, total }) => { progressSpinner.text = `Retrieving... ${retrieved}/${total}`; },
+    });
+    progressSpinner.succeed(`Retrieved ${result.retrieved}/${result.total} component(s)`);
+
+    if (result.errors.length > 0) {
+      console.error(chalk.yellow(`${result.errors.length} batch(es) had errors:`));
+      result.errors.forEach((e) => console.error(chalk.red(`  ${e.error}`)));
+    }
+
+    updateCache(db, freshInventory);
+    print.success('Cache updated');
+  } finally {
     db.close();
-    return;
   }
-
-  const spinner2 = ora('Retrieving changes...').start();
-  const result = await parallelRetrieve(delta, config, {
-    cwd: projectRoot,
-    onProgress: ({ retrieved, total }) => { spinner2.text = `Retrieving... ${retrieved}/${total}`; },
-  });
-  spinner2.succeed(`Retrieved ${result.retrieved}/${result.total} component(s)`);
-
-  if (result.errors.length > 0) {
-    console.error(chalk.yellow(`${result.errors.length} batch(es) had errors:`));
-    result.errors.forEach((e) => console.error(chalk.red(`  ${e.error}`)));
-  }
-
-  updateCache(db, freshInventory);
-  db.close();
-  print.success('Cache updated');
 }
 
 function inventoryToDelta(inventory) {
@@ -154,10 +155,7 @@ function inventoryToDelta(inventory) {
 }
 
 async function pullProfiles(config, projectRoot, orgAlias) {
-  const excluded = config.pullConfig?.excludedProfiles ?? [];
-  const args = ['project', 'retrieve', 'start', '--metadata', 'Profile', '--target-org', orgAlias];
-  if (excluded.length > 0) args.push('--ignore-conflicts');
-  await execa('sf', args, { stdio: 'inherit', cwd: projectRoot });
+  await execa('sf', ['project', 'retrieve', 'start', '--metadata', 'Profile', '--target-org', orgAlias], { stdio: 'inherit', cwd: projectRoot });
 }
 
 async function pullGroup(config, projectRoot, orgAlias, groupKey) {

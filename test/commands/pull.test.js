@@ -110,4 +110,12 @@ describe('error handling', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'pull', '--status']);
     expect(process.exitCode).toBe(1);
   });
+
+  it('closes db even when parallelRetrieve throws', async () => {
+    inquirer.prompt.mockResolvedValue({ action: 'smart' });
+    parallelRetrieve.mockRejectedValue(new Error('sf retrieve failed'));
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(MOCK_DB.close).toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
 });
