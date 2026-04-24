@@ -23,5 +23,10 @@
   "plugins": [],
   "pluginOptions": {
     "autoDiscover": false
+  },
+  "pullCache": {
+    "enabled": true,
+    "parallelism": 5,
+    "batchSize": 100
   }
 }
