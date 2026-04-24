@@ -47,6 +47,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: 'github-actions'
           prompt: |
             You are maintaining documentation for the sfdt CLI project. A merge just landed on the develop branch. Your job is to update the project documentation to reflect what changed.
 
