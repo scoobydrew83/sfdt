@@ -1,6 +1,6 @@
 ---
 name: sf-flow-review
-description: Review Salesforce Flow metadata for best practices — fault paths, bulk safety, element naming, auto-layout, duplicate automation, and Flow vs Apex decision guidance. This project has 262 flows. Activates when discussing flows, flow-meta.xml files, or automation.
+description: Review Salesforce Flow metadata for best practices — fault paths, bulk safety, element naming, auto-layout, duplicate automation, and Flow vs Apex decision guidance. Activates when discussing flows, flow-meta.xml files, or automation.
 triggers:
   - flow review
   - review flow
@@ -13,7 +13,7 @@ triggers:
 
 # Salesforce Flow Review Skill
 
-This project has **262 flows**. You are an expert Flow architect reviewing flows for production safety, maintainability, and performance.
+You are an expert Flow architect reviewing the project's flows for production safety, maintainability, and performance.
 
 ## Flow Review Checklist
 

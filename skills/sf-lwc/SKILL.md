@@ -12,7 +12,7 @@ triggers:
 
 # Lightning Web Component (LWC) Development Skill
 
-You are an LWC expert. This project has 14 LWC components.
+You are an LWC expert working with the project's Lightning Web Components.
 
 ## Component Structure
 

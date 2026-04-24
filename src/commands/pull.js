@@ -47,6 +47,18 @@ async function runPull(options) {
     return;
   }
 
+  if (config.pullCache?.enabled === false) {
+    const spinner = ora('Retrieving all metadata...').start();
+    try {
+      await execa('sf', ['project', 'retrieve', 'start', '--target-org', orgAlias], { stdio: 'inherit', cwd: projectRoot });
+      spinner.succeed('Retrieve complete (cache disabled)');
+    } catch (err) {
+      spinner.fail('Retrieve failed');
+      throw err;
+    }
+    return;
+  }
+
   if (options.full) {
     await smartPull(config, { projectRoot, cacheDir, orgAlias, full: true, dryRun: options.dryRun });
     return;
@@ -135,11 +147,28 @@ async function smartPull(config, { projectRoot, cacheDir, orgAlias, full = false
     progressSpinner.succeed(`Retrieved ${result.retrieved}/${result.total} component(s)`);
 
     if (result.errors.length > 0) {
-      console.error(chalk.yellow(`${result.errors.length} batch(es) had errors — cache not updated:`));
+      console.error(chalk.yellow(`${result.errors.length} batch(es) had errors:`));
       result.errors.forEach((e) => console.error(chalk.red(`  ${e.error}`)));
-    } else {
-      updateCache(db, freshInventory);
-      print.success('Cache updated');
+    }
+
+    if (result.retrieved > 0) {
+      // Build an inventory containing only the components that were successfully retrieved
+      // so that a partial failure does not prevent caching the successful batches.
+      const successSet = new Set(result.successfulMembers); // "Type:Name" strings
+      const successInventory = new Map();
+      for (const [type, members] of freshInventory) {
+        const filtered = new Map();
+        for (const [name, meta] of members) {
+          if (successSet.has(`${type}:${name}`)) filtered.set(name, meta);
+        }
+        if (filtered.size > 0) successInventory.set(type, filtered);
+      }
+      updateCache(db, successInventory);
+      if (result.errors.length === 0) {
+        print.success('Cache updated');
+      } else {
+        print.success(`Cache updated for ${result.retrieved} successfully retrieved component(s)`);
+      }
     }
   } finally {
     db.close();

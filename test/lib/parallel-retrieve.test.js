@@ -46,10 +46,11 @@ describe('parallelRetrieve', () => {
     expect(result.retrieved).toBe(1);
   });
 
-  it('calls onProgress callback after each successful batch', async () => {
+  it('calls onProgress callback after each window of batches', async () => {
     const onProgress = vi.fn();
     const delta = new Map([['ApexClass', new Set(['A', 'B', 'C'])]]);
-    await parallelRetrieve(delta, CONFIG, { cwd: '/project', onProgress });
+    // parallelism: 1 → each batch is its own window → 2 batches → 2 onProgress calls
+    await parallelRetrieve(delta, { pullCache: { batchSize: 2, parallelism: 1 } }, { cwd: '/project', onProgress });
     expect(onProgress).toHaveBeenCalledTimes(2);
   });
 });

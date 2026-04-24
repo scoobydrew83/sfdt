@@ -18,23 +18,28 @@ export async function parallelRetrieve(delta, config, { cwd, onProgress } = {}) 
   const parallelism = config.pullCache?.parallelism ?? 5;
   const batches = chunk(members, batchSize);
   const errors = [];
+  const successfulMembers = [];
   let retrieved = 0;
 
   for (let i = 0; i < batches.length; i += parallelism) {
     const window = batches.slice(i, i + parallelism);
-    await Promise.all(
+    const windowResults = await Promise.all(
       window.map(async (batch) => {
         try {
           const metadataArgs = batch.flatMap((m) => ['--metadata', m]);
-          await execa('sf', ['project', 'retrieve', 'start', ...metadataArgs], { cwd });
-          retrieved += batch.length;
-          onProgress?.({ retrieved, total: members.length });
+          await execa('sf', ['project', 'retrieve', 'start', ...metadataArgs], { cwd, timeout: 120_000 });
+          return { batch, ok: true };
         } catch (err) {
           errors.push({ batch, error: err.message });
+          return { batch, ok: false };
         }
       }),
     );
+    const windowSucceeded = windowResults.filter((r) => r.ok).flatMap((r) => r.batch);
+    successfulMembers.push(...windowSucceeded);
+    retrieved = successfulMembers.length;
+    onProgress?.({ retrieved, total: members.length });
   }
 
-  return { retrieved, total: members.length, errors };
+  return { retrieved, total: members.length, errors, successfulMembers };
 }

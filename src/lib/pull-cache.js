@@ -15,14 +15,22 @@ const SCHEMA = `
   );
 `;
 
-// Convert ISO 8601 date string to milliseconds for reliable numeric comparison
+// Convert ISO 8601 date string to milliseconds for reliable numeric comparison.
+// Returns 0 for null/undefined/invalid dates so they are treated as "oldest possible"
+// rather than NaN (which makes every comparison false, silently skipping changed detection).
 function toMs(dateStr) {
-  return new Date(dateStr).getTime();
+  if (!dateStr) return 0;
+  const ms = new Date(dateStr).getTime();
+  return isNaN(ms) ? 0 : ms;
 }
 
 export function initCache(cacheDir, orgAlias) {
   fs.ensureDirSync(cacheDir);
-  const db = new Database(path.join(cacheDir, `${orgAlias}.db`));
+  // Sanitize orgAlias before using it as a filename component to prevent
+  // path traversal attacks (e.g. aliases containing "../" or other unsafe chars).
+  const safeAlias = orgAlias.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+  const dbPath = path.join(cacheDir, `${safeAlias}.db`);
+  const db = new Database(dbPath);
   db.exec(SCHEMA);
   return db;
 }
@@ -51,12 +59,19 @@ export function updateCache(db, freshInventory) {
   const upsert = db.prepare(
     'INSERT OR REPLACE INTO components (type, name, last_modified) VALUES (?, ?, ?)',
   );
+  const deleteStale = db.prepare(
+    'DELETE FROM components WHERE type = ? AND name NOT IN (SELECT value FROM json_each(?))',
+  );
   const setSync = db.prepare('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)');
   db.transaction(() => {
     for (const [type, members] of freshInventory) {
+      // Upsert every component present in the fresh inventory.
       for (const [name, lastModified] of members) {
         upsert.run(type, name, lastModified);
       }
+      // Prune any cached rows for this type whose names are no longer in the org.
+      const freshNames = JSON.stringify([...members.keys()]);
+      deleteStale.run(type, freshNames);
     }
     setSync.run('last_sync', new Date().toISOString());
   })();

@@ -1,0 +1,30 @@
+# Dev / internal files — not shipped in the published npm package
+# Note: package.json already has a "files" allowlist; this file provides
+# a belt-and-suspenders exclusion for any future additions.
+
+TODO.md
+ROADMAP.md
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+CONTRIBUTING.md
+Dockerfile
+eslint.config.js
+codex.js
+
+# Test and coverage output
+test/
+coverage/
+*.lcov
+
+# Local dev artifacts
+logs/
+sfdt-cli-workspace/
+skills/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
