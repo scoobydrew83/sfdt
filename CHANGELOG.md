@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-04-24
+
+### Fixed
+- Parallel retrieve timeout increased to 6 minutes (was 2 minutes) to prevent timeouts on large orgs; now configurable via `pullCache.retrieveTimeoutSeconds` in `sfdt.config.json`.
+- Org alias is now sanitized before use as a SQLite filename, preventing path traversal in the pull cache.
+- `toMs()` in delta detection now guards against `null`/`undefined` dates to prevent `NaN` comparisons.
+- Components deleted from the org are now pruned from the pull cache on each successful update.
+- Partial retrieve successes are now cached correctly; cache update is only skipped when zero components were retrieved.
+- `smartPull` is now gated behind the `pullCache.enabled` flag.
+- Moved retrieved-component counter accumulation outside the concurrent `Promise.all` window to prevent race conditions.
+- GitHub Actions docs-update workflow now triggers correctly when commits are made by the `github-actions` bot.
+
 ## [0.5.0] - 2026-04-23
 
 ### Added

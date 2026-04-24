@@ -1,7 +1,7 @@
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { print } from '../lib/output.js';
-import { ExitCode, resolveExitCode } from '../lib/exit-codes.js';
+import { resolveExitCode } from '../lib/exit-codes.js';
 
 export function registerDeployCommand(program) {
   program

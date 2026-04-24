@@ -29,6 +29,23 @@ export default function ComparePage() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    return () => { esRef.current?.close(); };
+  }, []);
+
+  // Bug 3: load cached compare results on mount
+  useEffect(() => {
+    api.compareResult()
+      .then((data) => {
+        if (data?.items?.length) {
+          setItems(data.items);
+          setHasResult(true);
+          if (data.target) setTarget({ id: data.target, label: data.target });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const allOrgs = useMemo(() => [LOCAL_OPT, ...orgs.map((o) => ({ id: o.alias, label: o.alias, alias: o.alias }))], [orgs]);
 
   const startPhase2 = () => {
