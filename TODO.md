@@ -1,6 +1,0 @@
-- Compare needs to pull faster. Add common items together versus full pull initially.
-- Have filter dropdown on compare.
-- Show previous manifests
-- Build manifests
-- Use AI Features
-- No parity between cli and GUI
