@@ -1255,7 +1255,7 @@ export function createGuiApp(config, version, port = 7654) {
 
   // ── AI chat (SSE) ─────────────────────────────────────────────────────────
 
-  app.post('/api/ai/chat', apiLimiter, originGuard, async (req, res) => {
+  app.post('/api/ai/chat', apiLimiter, async (req, res) => {
     const { messages, pageContext } = req.body ?? {};
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -1274,15 +1274,28 @@ export function createGuiApp(config, version, port = 7654) {
         return;
       }
 
+      const messagesValid = messages.every(
+        (m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string'
+      );
+      if (!messagesValid) {
+        send({ type: 'error', message: 'Each message must have role (user|assistant) and string content' });
+        res.end();
+        return;
+      }
+
+      const rawContext = pageContext?.data ? JSON.stringify(pageContext.data, null, 2) : 'No context provided';
+      const contextStr = rawContext.length > 32768 ? rawContext.slice(0, 32768) + '\n...(truncated)' : rawContext;
+      const safePage = String(pageContext?.page || 'Dashboard').slice(0, 64);
+
       const systemPrompt = `You are an expert Salesforce DevOps assistant embedded in the SFDT dashboard.
 Help developers understand deployment results, diagnose issues, and plan remediation steps.
 Be concise, specific, and actionable. Reference exact component names, error messages, and line numbers from the provided context.
 
 Project: ${config.projectName || 'Salesforce Project'} | Org: ${config.defaultOrg || 'not set'} | API Version: ${config.sourceApiVersion || 'not set'}
-Current page: ${pageContext?.page || 'Dashboard'}
+Current page: ${safePage}
 
 --- CURRENT PAGE CONTEXT ---
-${pageContext?.data ? JSON.stringify(pageContext.data, null, 2) : 'No context provided'}`;
+${contextStr}`;
 
       const { isAiAvailable, streamAiResponse } = await import('./ai.js');
       if (!(await isAiAvailable(config))) {
