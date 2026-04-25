@@ -1253,6 +1253,53 @@ export function createGuiApp(config, version, port = 7654) {
     }
   });
 
+  // ── AI chat (SSE) ─────────────────────────────────────────────────────────
+
+  app.post('/api/ai/chat', apiLimiter, originGuard, async (req, res) => {
+    const { messages, pageContext } = req.body ?? {};
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const send = (payload) => {
+      if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n');
+    };
+
+    try {
+      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        send({ type: 'error', message: 'messages array is required' });
+        res.end();
+        return;
+      }
+
+      const systemPrompt = `You are an expert Salesforce DevOps assistant embedded in the SFDT dashboard.
+Help developers understand deployment results, diagnose issues, and plan remediation steps.
+Be concise, specific, and actionable. Reference exact component names, error messages, and line numbers from the provided context.
+
+Project: ${config.projectName || 'Salesforce Project'} | Org: ${config.defaultOrg || 'not set'} | API Version: ${config.sourceApiVersion || 'not set'}
+Current page: ${pageContext?.page || 'Dashboard'}
+
+--- CURRENT PAGE CONTEXT ---
+${pageContext?.data ? JSON.stringify(pageContext.data, null, 2) : 'No context provided'}`;
+
+      const { isAiAvailable, streamAiResponse } = await import('./ai.js');
+      if (!(await isAiAvailable(config))) {
+        send({ type: 'error', message: 'AI is not available or not configured.' });
+        res.end();
+        return;
+      }
+
+      await streamAiResponse(messages, systemPrompt, { config }, (text) => send({ type: 'chunk', text }));
+      send({ type: 'done' });
+    } catch (err) {
+      send({ type: 'error', message: err.message });
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
+  });
+
   // ── AI availability ────────────────────────────────────────────────────────
 
   app.get('/api/ai/available', apiLimiter, async (_req, res) => {
