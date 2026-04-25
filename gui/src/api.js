@@ -94,3 +94,59 @@ export const stream = {
   review:           (base) => ssePost('/review', { base }),
   explain:          (logPath) => ssePost('/explain', logPath ? { logPath } : {}),
 };
+
+export function streamChatMessage(messages, pageContext, onChunk, onDone, onError) {
+  const controller = new AbortController();
+
+  (async () => {
+    try {
+      const res = await fetch(`${BASE}/ai/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages, pageContext }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        onError(`Request failed: ${res.status}`);
+        return;
+      }
+
+      if (!res.body) {
+        onError('No response body');
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let remainder = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        remainder += decoder.decode(value, { stream: true });
+        const lines = remainder.split('\n');
+        remainder = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === 'chunk') onChunk(event.text);
+            else if (event.type === 'done') { onDone(); return; }
+            else if (event.type === 'error') { onError(event.message); return; }
+          } catch {
+            // skip malformed lines
+          }
+        }
+      }
+      // Stream ended without explicit done event
+      onDone();
+    } catch (err) {
+      if (err.name !== 'AbortError') onError(err.message);
+    }
+  })();
+
+  return () => controller.abort();
+}
