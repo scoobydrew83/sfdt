@@ -42,4 +42,5 @@ codex.js
 .playwright-mcp/
 logs/
 .claude/skills/*
+/pr-analysis/
 TODO.md
