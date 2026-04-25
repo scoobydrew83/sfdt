@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, createContext } from 'react';
 import { api } from './api.js';
 import Dashboard from './pages/Dashboard.jsx';
 import TestRuns from './pages/TestRuns.jsx';
@@ -17,6 +17,9 @@ import {
   IconRocket, IconCode, IconSearch,
 } from './Icons.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
+import ChatDrawer from './components/ChatDrawer.jsx';
+
+export const ChatContext = createContext(null);
 
 // Grouped nav structure: each group has a label and items
 const NAV_GROUPS = [
@@ -68,12 +71,35 @@ export default function App() {
   const [dark, setDark]           = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdate, setShowUpdate] = useState(false);
+  const [chatOpen, setChatOpen]   = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatPageContext, setChatPageContext] = useState({ page: '', data: {} });
+  const [chatInitialMessage, setChatInitialMessage] = useState('');
 
   useEffect(() => {
     api.project().then(setProject).catch(() => null);
     api.checkUpdates().then((info) => { if (info.updateAvailable) setUpdateInfo(info); }).catch(() => null);
     const saved = localStorage.getItem('sfdt-theme');
     if (saved === 'dark') setDark(true);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
+        setChatOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  const openChat = useCallback((initialMessage = '') => {
+    setChatInitialMessage(initialMessage);
+    setChatOpen(true);
+  }, []);
+
+  const setPageContext = useCallback((ctx) => {
+    setChatPageContext(ctx);
   }, []);
 
   const toggleDark = () => {
@@ -106,6 +132,7 @@ export default function App() {
     : 'SF';
 
   return (
+    <ChatContext.Provider value={{ openChat, setPageContext }}>
     <>
     {showUpdate && updateInfo && (
       <UpdateModal
@@ -191,6 +218,15 @@ export default function App() {
 
       </div>
     </div>
+    <ChatDrawer
+      isOpen={chatOpen}
+      onClose={() => setChatOpen(false)}
+      pageContext={chatPageContext}
+      messages={chatMessages}
+      onMessagesChange={setChatMessages}
+      initialMessage={chatInitialMessage}
+    />
     </>
+    </ChatContext.Provider>
   );
 }
