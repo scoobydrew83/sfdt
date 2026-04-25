@@ -199,7 +199,7 @@ const styles = {
   },
 };
 
-export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onMessagesChange }) {
+export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onMessagesChange, initialMessage }) {
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const messagesEndRef = useRef(null);
@@ -219,6 +219,13 @@ export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onM
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [isOpen]);
+
+  // Pre-seed input with initialMessage when drawer opens
+  useEffect(() => {
+    if (isOpen && initialMessage) {
+      setInput(initialMessage);
+    }
+  }, [isOpen, initialMessage]);
 
   // Abort in-flight stream when drawer closes or component unmounts
   useEffect(() => {
@@ -241,51 +248,58 @@ export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onM
     const text = input.trim();
     if (!text || isStreaming) return;
 
+    // Abort any in-flight stream before starting a new one
+    if (abortRef.current) {
+      abortRef.current();
+      abortRef.current = null;
+    }
+
     setInput('');
 
-    const userMsg = { role: 'user', content: text };
-    const assistantMsg = { role: 'assistant', content: '', streaming: true };
+    const userMsg = { role: 'user', content: text, id: Date.now() + Math.random() };
+    const assistantMsg = { role: 'assistant', content: '', streaming: true, id: Date.now() + Math.random() };
     const nextMessages = [...messages, userMsg, assistantMsg];
     onMessagesChange(nextMessages);
 
     setIsStreaming(true);
 
-    let localMessages = nextMessages;
-
     const abort = streamChatMessage(
       // Send conversation history (excluding the empty streaming placeholder)
       [...messages, userMsg],
       pageContext,
-      // onChunk
+      // onChunk — append text to the last message
       (chunk) => {
-        localMessages = localMessages.map((m, i) =>
-          i === localMessages.length - 1
-            ? { ...m, content: m.content + chunk }
-            : m
-        );
-        onMessagesChange([...localMessages]);
+        onMessagesChange((prev) => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last && last.streaming) {
+            updated[updated.length - 1] = { ...last, content: last.content + chunk };
+          }
+          return updated;
+        });
       },
       // onDone
       () => {
-        localMessages = localMessages.map((m, i) =>
-          i === localMessages.length - 1 ? { ...m, streaming: false } : m
-        );
-        onMessagesChange([...localMessages]);
+        onMessagesChange((prev) => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last) updated[updated.length - 1] = { ...last, streaming: false };
+          return updated;
+        });
         setIsStreaming(false);
         abortRef.current = null;
       },
       // onError
       (errMsg) => {
-        const errorContent = `Error: ${errMsg}`;
-        localMessages = localMessages.map((m, i) =>
-          i === localMessages.length - 1
-            ? { ...m, content: errorContent, streaming: false }
-            : m
-        );
-        onMessagesChange([...localMessages]);
+        onMessagesChange((prev) => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last) updated[updated.length - 1] = { ...last, streaming: false, content: last.content || `Error: ${errMsg}` };
+          return updated;
+        });
         setIsStreaming(false);
         abortRef.current = null;
-      }
+      },
     );
 
     abortRef.current = abort;
@@ -312,6 +326,7 @@ export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onM
           0%, 100% { opacity: 1; }
           50% { opacity: 0; }
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
         .chat-textarea:focus {
           border-color: var(--brand-500) !important;
           box-shadow: 0 0 0 3px rgba(106,98,245,.25);
@@ -370,7 +385,7 @@ export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onM
             {messages.map((msg, idx) => {
               const isUser = msg.role === 'user';
               return (
-                <div key={idx} style={styles.messageBubble(isUser)}>
+                <div key={msg.id ?? idx} style={styles.messageBubble(isUser)}>
                   <span style={styles.bubbleRole(isUser)}>
                     {isUser ? 'You' : 'AI'}
                   </span>
