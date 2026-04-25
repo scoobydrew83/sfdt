@@ -1,20 +1,36 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { api } from '../api.js';
 import StatCard from '../components/StatCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import CommandRunner from '../components/CommandRunner.jsx';
+import { ChatContext } from '../App.jsx';
 
 export default function DriftPage() {
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
   const [filter, setFilter]         = useState('all');
   const [refreshKey, setRefreshKey] = useState(0);
+  const chat = useContext(ChatContext);
 
   useEffect(() => {
     setLoading(true);
     api.drift()
-      .then(setData)
+      .then((result) => {
+        setData(result);
+        if (result) {
+          const allComponents = result.components ?? [];
+          const drifted = allComponents.filter((c) => c.drift?.toLowerCase() === 'drift');
+          chat?.setPageContext({
+            page: 'Drift',
+            data: {
+              org: result.org ?? null,
+              driftedCount: drifted.length,
+              components: drifted.slice(0, 20).map((c) => c.name ?? ''),
+            },
+          });
+        }
+      })
       .catch(() => null)
       .finally(() => setLoading(false));
   }, [refreshKey]);
@@ -88,6 +104,23 @@ export default function DriftPage() {
             <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)', fontFamily: 'var(--font-mono)' }}>
               {filtered.length} of {components.length}
             </span>
+            {driftCount > 0 && chat && (
+              <button
+                onClick={() => chat?.openChat('My org has drifted metadata. Can you help me decide which components to retrieve and what might have caused the drift?')}
+                style={{
+                  fontSize: '12px',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--brand-300, #a5b4fc)',
+                  background: 'var(--brand-50, #eef2ff)',
+                  color: 'var(--brand-700, #4338ca)',
+                  cursor: 'pointer',
+                  marginLeft: '8px',
+                }}
+              >
+                ✦ Ask AI about this drift
+              </button>
+            )}
           </div>
           <table className="data-table">
             <thead>

@@ -1,10 +1,22 @@
-import { useState } from 'react';
+import { useState, useContext } from 'react';
 import StreamRunner from '../components/StreamRunner.jsx';
 import { stream } from '../api.js';
+import { ChatContext } from '../App.jsx';
 
 export default function ReviewPage() {
   const [base, setBase] = useState('main');
   const [streamKey, setStreamKey] = useState(0);
+  const [result, setResult] = useState(null);
+  const chat = useContext(ChatContext);
+
+  function handleComplete(content) {
+    const findings = (content ?? '').slice(0, 2000);
+    setResult(findings);
+    chat?.setPageContext({ page: 'Review', data: { baseBranch: base, findings } });
+    setStreamKey((k) => k + 1);
+  }
+
+  const starterMessage = `I just ran a code review against ${base}. Can you summarize the most critical issues and suggest what to fix first?`;
 
   return (
     <div>
@@ -20,7 +32,7 @@ export default function ReviewPage() {
         label="AI Code Review"
         startLabel="Start Review"
         streamFn={() => stream.review(base)}
-        onComplete={() => setStreamKey((k) => k + 1)}
+        onComplete={handleComplete}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <label style={{ fontSize: 12, color: 'var(--fg-muted)', whiteSpace: 'nowrap' }}>
@@ -33,6 +45,23 @@ export default function ReviewPage() {
             onChange={(e) => setBase(e.target.value)}
             placeholder="main"
           />
+          {result !== null && chat && (
+            <button
+              onClick={() => chat?.openChat(starterMessage)}
+              style={{
+                fontSize: '12px',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                border: '1px solid var(--brand-300, #a5b4fc)',
+                background: 'var(--brand-50, #eef2ff)',
+                color: 'var(--brand-700, #4338ca)',
+                cursor: 'pointer',
+                marginLeft: '8px',
+              }}
+            >
+              ✦ Ask AI about this review
+            </button>
+          )}
         </div>
       </StreamRunner>
     </div>

@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { api } from '../api.js';
 import StatCard from '../components/StatCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import CommandRunner from '../components/CommandRunner.jsx';
 import { IconCheckCircle, IconXCircle, IconAlertTri, IconInfo } from '../Icons.jsx';
+import { ChatContext } from '../App.jsx';
 
 function CheckIcon({ status }) {
   const s = (status ?? '').toLowerCase();
@@ -21,11 +22,26 @@ export default function PreflightPage() {
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const chat = useContext(ChatContext);
 
   useEffect(() => {
     setLoading(true);
     api.preflight()
-      .then(setData)
+      .then((result) => {
+        setData(result);
+        if (result) {
+          chat?.setPageContext({
+            page: 'Preflight',
+            data: {
+              checks: (result.checks ?? []).map((c) => ({
+                name: c.name,
+                status: c.status,
+                message: c.message,
+              })),
+            },
+          });
+        }
+      })
       .catch(() => null)
       .finally(() => setLoading(false));
   }, [refreshKey]);
@@ -75,6 +91,23 @@ export default function PreflightPage() {
         <div className="card">
           <div className="card-head">
             <div className="card-title">{checks.length} Check{checks.length !== 1 ? 's' : ''}</div>
+            {failCount > 0 && chat && (
+              <button
+                onClick={() => chat?.openChat('My preflight checks have failures. Can you explain what each failing check means and how to resolve it?')}
+                style={{
+                  fontSize: '12px',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--brand-300, #a5b4fc)',
+                  background: 'var(--brand-50, #eef2ff)',
+                  color: 'var(--brand-700, #4338ca)',
+                  cursor: 'pointer',
+                  marginLeft: '8px',
+                }}
+              >
+                ✦ Ask AI about failures
+              </button>
+            )}
           </div>
           <table className="data-table">
             <thead>
