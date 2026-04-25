@@ -94,6 +94,38 @@ npm run test:coverage # Coverage report
 npm link              # Link for local development
 ```
 
+### Package-Internal Path Resolution — CRITICAL RULE
+
+**Any path that references a file INSIDE the sfdt package** (scripts/, templates/, gui/dist/, bin/) MUST be resolved using `import.meta.url`, never from `process.cwd()`, `config._projectRoot`, or any CWD-based reference.
+
+When globally installed, `config._projectRoot` points to the *user's Salesforce project*, not the sfdt package. Using it to find package files causes "No such file or directory" errors on any machine other than the developer's.
+
+**WRONG — breaks on other machines:**
+```js
+path.join(config._projectRoot, 'scripts/new/preflight.sh')
+path.join(projectRoot, 'scripts/lib/changelog-utils.sh')
+path.resolve(process.cwd(), 'scripts/...')
+```
+
+**CORRECT — always resolves from the npm package location:**
+```js
+// At the top of every file that needs package assets:
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', 'scripts');  // from src/commands/ or src/lib/
+
+// Then use it:
+path.join(SCRIPTS_DIR, 'new/preflight.sh')
+path.join(SCRIPTS_DIR, 'lib/changelog-utils.sh')
+```
+
+The depth of `../..` depends on the file's location:
+- From `src/commands/` or `src/lib/` → `'..', '..', 'scripts'` reaches package root
+- From `bin/` → `'..', 'scripts'`
+
+**Run `/validate-npm-paths` before every release** to catch violations.
+
 ## Guidelines
 
 - Do not hardcode org aliases, branch names, or project-specific values

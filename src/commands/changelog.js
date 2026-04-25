@@ -1,11 +1,16 @@
 import inquirer from 'inquirer';
 import fs from 'fs-extra';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { loadConfig } from '../lib/config.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 import { execa } from 'execa';
 import { resolveExitCode } from '../lib/exit-codes.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', 'scripts');
 
 export function registerChangelogCommand(program) {
   const changelog = program.command('changelog').description('Manage project CHANGELOG.md');
@@ -118,7 +123,7 @@ export function registerChangelogCommand(program) {
         print.info(`Releasing version ${version} in CHANGELOG.md...`);
 
         // Pass the script path as a positional arg to avoid shell interpolation
-        const scriptPath = path.resolve(config._projectRoot, 'scripts/lib/changelog-utils.sh');
+        const scriptPath = path.join(SCRIPTS_DIR, 'lib', 'changelog-utils.sh');
         await execa(
           'bash',
           ['-c', 'source "$1" && move_unreleased_to_version "$SFDT_VERSION"', 'bash', scriptPath],
@@ -147,7 +152,7 @@ export function registerChangelogCommand(program) {
         });
 
         // Pass the script path as a positional arg to avoid shell interpolation
-        const scriptPath = path.resolve(projectRoot, 'scripts/lib/changelog-utils.sh');
+        const scriptPath = path.join(SCRIPTS_DIR, 'lib', 'changelog-utils.sh');
         const { stdout: contentStatus } = await execa(
           'bash',
           [

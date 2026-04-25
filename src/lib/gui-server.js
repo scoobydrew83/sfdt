@@ -18,6 +18,8 @@ import { fetchLatestVersion } from './update-checker.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', 'scripts');
+
 // gui/dist lives at <package-root>/gui/dist
 const GUI_DIST = path.resolve(__dirname, '..', '..', 'gui', 'dist');
 
@@ -282,27 +284,27 @@ async function readLocalComponentXml(config, _type, member) {
 
 const COMMANDS = {
   preflight: {
-    script: 'scripts/new/preflight.sh',
+    script: 'new/preflight.sh',
     logFile: 'logs/preflight-latest.json',
   },
   drift: {
-    script: 'scripts/new/drift.sh',
+    script: 'new/drift.sh',
     logFile: 'logs/drift-latest.json',
   },
   test: {
-    script: 'scripts/core/enhanced-test-runner.sh',
+    script: 'core/enhanced-test-runner.sh',
     logFile: 'logs/test-results/latest.json',
   },
   quality: {
-    script: 'scripts/quality/code-analyzer.sh',
+    script: 'quality/code-analyzer.sh',
     logFile: 'logs/quality-latest.json',
   },
   deploy: {
-    script: 'scripts/core/deployment-assistant.sh',
+    script: 'core/deployment-assistant.sh',
     logFile: 'logs/deploy-latest.log',
   },
   rollback: {
-    script: 'scripts/new/rollback.sh',
+    script: 'new/rollback.sh',
     logFile: 'logs/rollback-latest.log',
   },
 };
@@ -502,7 +504,7 @@ export function createGuiApp(config, version, port = 7654) {
       const { createInterface } = await import('readline');
 
       const projectRoot = config._projectRoot ?? process.cwd();
-      const scriptPath = path.join(projectRoot, cmd.script);
+      const scriptPath = path.join(SCRIPTS_DIR, cmd.script);
 
       const scriptEnv = {
         SFDT_PROJECT_ROOT: projectRoot,
@@ -865,7 +867,7 @@ export function createGuiApp(config, version, port = 7654) {
 
     try {
       const projectRoot = config._projectRoot ?? process.cwd();
-      const scriptPath = path.join(projectRoot, 'scripts/core/deployment-assistant.sh');
+      const scriptPath = path.join(SCRIPTS_DIR, 'core', 'deployment-assistant.sh');
 
       const scriptEnv = {
         SFDT_PROJECT_ROOT: projectRoot,
