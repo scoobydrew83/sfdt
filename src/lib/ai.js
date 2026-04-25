@@ -550,6 +550,231 @@ async function runOpenAiPrompt(prompt, options, config) {
   return { stdout: finalText, stderr: '', exitCode: 0 };
 }
 
+// ─── Streaming entry point ────────────────────────────────────────────────────
+
+/**
+ * Stream an AI response token-by-token via a callback.
+ *
+ * @param {Array<{role: 'user'|'assistant', content: string}>} messages - Full conversation history
+ * @param {string} systemPrompt - System context / persona string
+ * @param {object} options - Must include options.config (loaded sfdt config)
+ * @param {function(string): void} onChunk - Called with each text token/chunk as it arrives
+ * @returns {Promise<void>} Resolves when the stream ends
+ */
+export async function streamAiResponse(messages, systemPrompt, options, onChunk) {
+  try {
+    const { config } = options;
+    const provider = getConfiguredProvider(config);
+
+    switch (provider) {
+      case 'gemini':
+        return streamGeminiResponse(messages, systemPrompt, config, onChunk);
+      case 'openai':
+        return streamOpenAiResponse(messages, systemPrompt, config, onChunk);
+      default:
+        // claude (and unknown providers fall back to claude)
+        return streamClaudeResponse(messages, systemPrompt, onChunk);
+    }
+  } catch (err) {
+    throw err;
+  }
+}
+
+async function streamClaudeResponse(messages, systemPrompt, onChunk) {
+  const available = await isClaudeAvailable();
+  if (!available) {
+    throw new Error(
+      'Claude CLI is not installed or not in PATH. ' +
+      'Install it from https://docs.anthropic.com/en/docs/claude-code to enable AI features.',
+    );
+  }
+
+  // Serialize conversation history into a single prompt string for the CLI
+  const historyLines = [];
+  const lastMessage = messages[messages.length - 1];
+  const historyMessages = messages.slice(0, -1);
+
+  for (const msg of historyMessages) {
+    const role = msg.role === 'assistant' ? 'Assistant' : 'User';
+    historyLines.push(`${role}: ${msg.content}`);
+  }
+
+  let serialized = systemPrompt;
+  if (historyLines.length > 0) {
+    serialized += '\n\n--- Conversation History ---\n' + historyLines.join('\n');
+  }
+  serialized += '\n\n--- Current Question ---\n' + (lastMessage?.content ?? '');
+
+  const proc = execa(
+    'claude',
+    ['--output-format', 'stream-json', '--no-color', '-p', serialized],
+    { stdio: ['pipe', 'pipe', 'pipe'], reject: false },
+  );
+
+  let buffer = '';
+
+  proc.stdout.on('data', (chunk) => {
+    buffer += chunk.toString();
+    const lines = buffer.split('\n');
+    // Keep the last (possibly incomplete) line in the buffer
+    buffer = lines.pop() ?? '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const event = JSON.parse(trimmed);
+        if (
+          event.type === 'content_block_delta' &&
+          event.delta?.type === 'text_delta' &&
+          event.delta?.text
+        ) {
+          onChunk(event.delta.text);
+        }
+      } catch {
+        // non-JSON line — skip
+      }
+    }
+  });
+
+  await proc;
+
+  // Process any remaining buffer content
+  if (buffer.trim()) {
+    try {
+      const event = JSON.parse(buffer.trim());
+      if (
+        event.type === 'content_block_delta' &&
+        event.delta?.type === 'text_delta' &&
+        event.delta?.text
+      ) {
+        onChunk(event.delta.text);
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
+
+async function streamOpenAiResponse(messages, systemPrompt, config, onChunk) {
+  const apiKey = await resolveApiKey(config, 'openai');
+  if (!apiKey) {
+    throw new Error(
+      'OpenAI API key not found. ' +
+      'Set OPENAI_API_KEY in your environment or run `sfdt init` to store it in ~/.sfdt/credentials.json.',
+    );
+  }
+
+  const model = config?.ai?.model || OPENAI_DEFAULT_MODEL;
+
+  const body = {
+    model,
+    stream: true,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...messages,
+    ],
+  };
+
+  const res = await fetch(OPENAI_CHAT_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`OpenAI API error ${res.status}: ${errText}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let remainder = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    remainder += decoder.decode(value, { stream: true });
+    const lines = remainder.split('\n');
+    remainder = lines.pop() ?? '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') return;
+      try {
+        const event = JSON.parse(data);
+        const content = event.choices?.[0]?.delta?.content;
+        if (content) onChunk(content);
+      } catch {
+        // skip malformed lines
+      }
+    }
+  }
+}
+
+async function streamGeminiResponse(messages, systemPrompt, config, onChunk) {
+  const apiKey = await resolveApiKey(config, 'gemini');
+  if (!apiKey) {
+    throw new Error(
+      'Gemini API key not found. ' +
+      'Set GEMINI_API_KEY in your environment or run `sfdt init` to store it in ~/.sfdt/credentials.json.',
+    );
+  }
+
+  const model = config?.ai?.model || GEMINI_DEFAULT_MODEL;
+  const url = `${GEMINI_BASE_URL}/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+  const body = {
+    contents: messages.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    })),
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Gemini API error ${res.status}: ${errText}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let remainder = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    remainder += decoder.decode(value, { stream: true });
+    const lines = remainder.split('\n');
+    remainder = lines.pop() ?? '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') return;
+      try {
+        const event = JSON.parse(data);
+        const text = event.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) onChunk(text);
+      } catch {
+        // skip malformed lines
+      }
+    }
+  }
+}
+
 // ─── Unified entry point ──────────────────────────────────────────────────────
 
 /**
