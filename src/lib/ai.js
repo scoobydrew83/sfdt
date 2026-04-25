@@ -562,21 +562,26 @@ async function runOpenAiPrompt(prompt, options, config) {
  * @returns {Promise<void>} Resolves when the stream ends
  */
 export async function streamAiResponse(messages, systemPrompt, options, onChunk) {
-  try {
-    const { config } = options;
-    const provider = getConfiguredProvider(config);
+  if (!messages?.length) throw new Error('messages array must not be empty');
 
+  const { config } = options;
+  const provider = getConfiguredProvider(config);
+
+  try {
     switch (provider) {
       case 'gemini':
-        return streamGeminiResponse(messages, systemPrompt, config, onChunk);
+        await streamGeminiResponse(messages, systemPrompt, config, onChunk);
+        return;
       case 'openai':
-        return streamOpenAiResponse(messages, systemPrompt, config, onChunk);
+        await streamOpenAiResponse(messages, systemPrompt, config, onChunk);
+        return;
       default:
         // claude (and unknown providers fall back to claude)
-        return streamClaudeResponse(messages, systemPrompt, onChunk);
+        await streamClaudeResponse(messages, systemPrompt, onChunk);
+        return;
     }
   } catch (err) {
-    throw err;
+    throw new Error(`AI stream failed [${provider}]: ${err.message}`, { cause: err });
   }
 }
 
@@ -613,7 +618,7 @@ async function streamClaudeResponse(messages, systemPrompt, onChunk) {
 
   let buffer = '';
 
-  proc.stdout.on('data', (chunk) => {
+  for await (const chunk of proc.stdout) {
     buffer += chunk.toString();
     const lines = buffer.split('\n');
     // Keep the last (possibly incomplete) line in the buffer
@@ -635,9 +640,7 @@ async function streamClaudeResponse(messages, systemPrompt, onChunk) {
         // non-JSON line — skip
       }
     }
-  });
-
-  await proc;
+  }
 
   // Process any remaining buffer content
   if (buffer.trim()) {
@@ -653,6 +656,11 @@ async function streamClaudeResponse(messages, systemPrompt, onChunk) {
     } catch {
       // ignore
     }
+  }
+
+  const result = await proc;
+  if (result.exitCode !== 0) {
+    throw new Error(`claude exited with code ${result.exitCode}: ${result.stderr || 'unknown error'}`);
   }
 }
 
@@ -690,6 +698,7 @@ async function streamOpenAiResponse(messages, systemPrompt, config, onChunk) {
     throw new Error(`OpenAI API error ${res.status}: ${errText}`);
   }
 
+  if (!res.body) throw new Error('Response body is null — streaming not supported');
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let remainder = '';
@@ -748,6 +757,7 @@ async function streamGeminiResponse(messages, systemPrompt, config, onChunk) {
     throw new Error(`Gemini API error ${res.status}: ${errText}`);
   }
 
+  if (!res.body) throw new Error('Response body is null — streaming not supported');
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let remainder = '';
