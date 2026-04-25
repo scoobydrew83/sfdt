@@ -193,6 +193,12 @@ async function executeLocalTool(toolName, args, cwd) {
     switch (toolName) {
       case 'read_file': {
         const filePath = await safeResolvePath(cwd, args.path);
+        const BLOCKED_NAMES = ['.env', '.env.local', '.env.production', 'config.json'];
+        const BLOCKED_EXTS = new Set(['.pem', '.key', '.p12', '.pfx', '.cer', '.crt']);
+        const basename = path.basename(filePath);
+        if (BLOCKED_NAMES.includes(basename) || BLOCKED_EXTS.has(path.extname(filePath))) {
+          return `Error: reading ${args.path} is not permitted`;
+        }
         if (!(await fs.pathExists(filePath))) return `Error: file not found: ${args.path}`;
         const content = await fs.readFile(filePath, 'utf8');
         return content.length > 50000 ? content.slice(0, 50000) + '\n...(truncated)' : content;
