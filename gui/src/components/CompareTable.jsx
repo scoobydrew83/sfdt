@@ -54,7 +54,7 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
       .map((i) => `${i.type}.${i.member}`),
   ), [items]);
 
-  // Bug 2: effectiveSel is always selection (no fallback to autoSelected for display)
+  // Selection is always explicit; fallback to autoSelected happens only in handleBuildManifest
   const effectiveSel = selection;
 
   const toggleRow = (key) => {
@@ -74,7 +74,6 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
 
   const counts = useMemo(() => countsByStatus(items), [items]);
 
-  // Bug 5: grouped rendering helpers
   const groupedRows = useMemo(() => {
     if (!grouped) return null;
     const groups = TYPE_GROUPS.map((g) => ({
@@ -110,7 +109,6 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
           >
             {item.member}
           </button>
-          {/* Bug 4: namespace badge */}
           {ns && (
             <span style={{
               display: 'inline-block',
@@ -167,7 +165,6 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
           );
         })}
 
-        {/* Bug 4: Managed toggle */}
         <button
           className={`filter-chip${managedOnly ? ' active' : ''}`}
           onClick={() => setManagedOnly((v) => !v)}
@@ -175,7 +172,6 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
           Managed
         </button>
 
-        {/* Bug 5: Group by type toggle */}
         <button
           className={`filter-chip${grouped ? ' active' : ''}`}
           onClick={() => setGrouped((v) => !v)}
@@ -201,7 +197,6 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
         )}
       </div>
 
-      {/* Bug 2: "Select recommended" button — visible only before user makes a selection */}
       {autoSelected.size > 0 && selection.size === 0 && (
         <div style={{ marginBottom: 'var(--s-2)' }}>
           <button
@@ -218,12 +213,11 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
             className="btn btn-secondary btn-sm"
             onClick={() => setSelection(new Set(filtered.map((i) => `${i.type}.${i.member}`)))}
           >
-            Select all ({filtered.length})
+            Select all visible ({filtered.length})
           </button>
         </div>
       )}
 
-      {/* Bug 2: Bulk bar only renders when user has explicitly selected something */}
       {selection.size > 0 && (
         <div className="bulk-bar">
           <span className="bulk-label">{selection.size} selected</span>
@@ -267,7 +261,6 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
               </tr>
             </thead>
             <tbody>
-              {/* Bug 5: grouped or flat rendering */}
               {grouped
                 ? (groupedRows ?? []).map((group) => (
                     <React.Fragment key={`group-${group.label}`}>
@@ -293,7 +286,7 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
                       {group.items.map(renderRow)}
                     </React.Fragment>
                   ))
-                  : filtered.map(renderRow)
+                : filtered.map(renderRow)
               }
             </tbody>
           </table>
