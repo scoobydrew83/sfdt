@@ -650,6 +650,7 @@ export function createGuiApp(config, version, port = 7654) {
         SFDT_PROJECT_ROOT: projectRoot,
         SFDT_CONFIG_DIR: config._configDir ?? path.join(projectRoot, '.sfdt'),
         SFDT_DEFAULT_ORG: config.defaultOrg ?? '',
+        SFDT_TARGET_ORG: config.defaultOrg ?? '',
         SFDT_SOURCE_PATH: config.defaultSourcePath ?? 'force-app/main/default',
         SFDT_API_VERSION: config.sourceApiVersion ?? '',
         SFDT_NON_INTERACTIVE: 'true',
@@ -1497,7 +1498,7 @@ export function createGuiApp(config, version, port = 7654) {
         buildContextBlock, formatTestRunsSection, formatPreflightSection,
       } = await import('./ai-context.js');
 
-      const qualityLog = await fs.readJson(path.join(logDir, 'quality-latest.json')).catch(() => null);
+      const qualityLog = await readLatestLog(logDir, 'quality');
 
       const [projectCtx, testRuns, preflight] = await Promise.all([
         buildProjectContext(config),
@@ -1512,7 +1513,7 @@ export function createGuiApp(config, version, port = 7654) {
       ]);
 
       const qualitySection = qualityLog
-        ? `## QUALITY ANALYSIS RESULTS\n${JSON.stringify(qualityLog, null, 2)}`
+        ? `## QUALITY ANALYSIS RESULTS\n${JSON.stringify(qualityLog?.data ?? qualityLog, null, 2)}`
         : '';
 
       const FIX_PLAN_PROMPT = `You are a Salesforce code quality expert. Based on the project context and quality analysis results below, create a prioritized fix plan.\n\nFor each issue:\n1. Identify the specific file and class/method\n2. Explain the problem clearly\n3. Provide a concrete fix with example code where helpful\n4. Rate priority as CRITICAL, HIGH, MEDIUM, or LOW\n\nGroup fixes by category: Test Coverage, Code Complexity, Naming Conventions, Security, Performance.\nStart with the highest-impact items that are quickest to fix.\n\n`;
