@@ -119,7 +119,7 @@ async function readTestRuns(logDir) {
   }
 
   const jsonFiles = entries
-    .filter((f) => f.endsWith('.json'))
+    .filter((f) => f.endsWith('.json') && f !== 'latest.json')
     .sort()
     .reverse(); // newest first
 
