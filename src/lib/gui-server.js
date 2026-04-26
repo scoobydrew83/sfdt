@@ -103,8 +103,9 @@ function parseQualityLines(lines) {
 }
 
 /**
- * Scan the test-results directory for sfdt result files.
+ * Scan for test-run structured logs (new format) plus any legacy SF CLI files.
  * Returns an array of run objects: { date, passed, failed, errors, coverage, duration }.
+ * GUI parity: response shape is unchanged.
  */
 async function readTestRuns(logDir) {
   const resultsDir = path.join(logDir, 'test-results');
@@ -128,7 +129,21 @@ async function readTestRuns(logDir) {
     const raw = await tryReadJson(path.join(resultsDir, file));
     if (!raw) continue;
 
-    // Handle sf apex test run JSON output format
+    // New structured envelope format
+    if (raw.schemaVersion === '1' && raw.type === 'test-run') {
+      const d = raw.data ?? {};
+      runs.push({
+        date: raw.timestamp,
+        passed: d.passed ?? 0,
+        failed: d.failed ?? 0,
+        errors: d.errors ?? 0,
+        coverage: d.coverage ?? undefined,
+        duration: raw.durationMs ?? undefined,
+      });
+      continue;
+    }
+
+    // Legacy SF CLI formats
     if (raw.result) {
       const r = raw.result;
       runs.push({
@@ -136,33 +151,22 @@ async function readTestRuns(logDir) {
         passed: r.summary?.passing ?? 0,
         failed: r.summary?.failing ?? 0,
         errors: r.summary?.skipped ?? 0,
-        coverage: r.summary?.testRunCoverage
-          ? parseFloat(r.summary.testRunCoverage)
-          : undefined,
+        coverage: r.summary?.testRunCoverage ? parseFloat(r.summary.testRunCoverage) : undefined,
         duration: r.summary?.testExecutionTimeInMs ?? undefined,
       });
     } else if (raw.summary) {
-      // Direct summary object
       runs.push({
         date: raw.summary.testStartTime ?? raw.timestamp ?? file,
         passed: raw.summary.passing ?? 0,
         failed: raw.summary.failing ?? 0,
         errors: raw.summary.skipped ?? 0,
-        coverage: raw.summary.testRunCoverage
-          ? parseFloat(raw.summary.testRunCoverage)
-          : undefined,
+        coverage: raw.summary.testRunCoverage ? parseFloat(raw.summary.testRunCoverage) : undefined,
         duration: raw.summary.testExecutionTimeInMs ?? undefined,
       });
     } else if (Array.isArray(raw)) {
-      // Array of test results (simple format)
       const passed = raw.filter((t) => t.outcome === 'Pass').length;
       const failed = raw.filter((t) => t.outcome === 'Fail').length;
-      runs.push({
-        date: raw[0]?.testTimestamp ?? file,
-        passed,
-        failed,
-        errors: 0,
-      });
+      runs.push({ date: raw[0]?.testTimestamp ?? file, passed, failed, errors: 0 });
     }
   }
 
@@ -172,40 +176,55 @@ async function readTestRuns(logDir) {
 /**
  * Read the most recent preflight log.
  * Returns { date, status, checks: [{name, status, message}] } or null.
+ * GUI parity: response shape is unchanged.
  */
 async function readPreflight(logDir) {
-  const preflightFile = path.join(logDir, 'preflight-latest.json');
-  const data = await tryReadJson(preflightFile);
-  if (data) return data;
+  const log = await readLatestLog(logDir, 'preflight');
+  if (log) {
+    return {
+      date: log.timestamp,
+      status: log.data.status,
+      checks: (log.data.checks ?? []).map((c) => ({
+        name: c.name,
+        status: c.status,
+        message: c.message || null,
+      })),
+    };
+  }
 
-  // Fallback: look for preflight_*.json
+  // Legacy fallback: old preflight_*.json files
   const files = await safeReaddir(logDir);
-  const preflightFiles = files
+  const legacyFiles = files
     .filter((f) => f.startsWith('preflight_') && f.endsWith('.json'))
     .sort()
     .reverse();
-
-  if (!preflightFiles.length) return null;
-  return tryReadJson(path.join(logDir, preflightFiles[0]));
+  if (!legacyFiles.length) return null;
+  return tryReadJson(path.join(logDir, legacyFiles[0]));
 }
 
 /**
  * Read the most recent drift log.
- * Returns { date, result, count, components: [{name, type, drift}] } or null.
+ * Returns { date, status, components: [{name, type, drift}] } or null.
+ * GUI parity: response shape is unchanged.
  */
 async function readDrift(logDir) {
-  const driftFile = path.join(logDir, 'drift-latest.json');
-  const data = await tryReadJson(driftFile);
-  if (data) return data;
+  const log = await readLatestLog(logDir, 'drift');
+  if (log) {
+    return {
+      date: log.timestamp,
+      status: log.data.status,
+      components: log.data.components ?? [],
+    };
+  }
 
+  // Legacy fallback
   const files = await safeReaddir(logDir);
-  const driftFiles = files
+  const legacyFiles = files
     .filter((f) => f.startsWith('drift_') && f.endsWith('.json'))
     .sort()
     .reverse();
-
-  if (!driftFiles.length) return null;
-  return tryReadJson(path.join(logDir, driftFiles[0]));
+  if (!legacyFiles.length) return null;
+  return tryReadJson(path.join(logDir, legacyFiles[0]));
 }
 
 async function safeReaddir(dir) {
