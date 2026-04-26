@@ -691,6 +691,8 @@ export function createGuiApp(config, version, port = 7654) {
           data = parseTestRunLines(lines);
         } else if (command === 'quality') {
           data = parseQualityLines(lines);
+        } else {
+          data = {};
         }
         await writeLog(logDir, logType, data, {
           org: config.defaultOrg ?? '',

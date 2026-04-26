@@ -74,6 +74,7 @@ export function validateLogSchema(log) {
  */
 export async function writeLog(logDir, type, data, meta = {}) {
   if (!LOG_TYPES.includes(type)) throw new Error(`Unknown log type: ${type}. Must be one of: ${LOG_TYPES.join(', ')}`);
+  if (data === undefined || data === null) throw new Error(`writeLog: data is required for type "${type}"`);
   const { org = '', projectName = '', exitCode = 0, durationMs = 0, retention = 50 } = meta;
 
   const timestamp = new Date().toISOString();
