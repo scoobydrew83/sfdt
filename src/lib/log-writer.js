@@ -73,6 +73,7 @@ export function validateLogSchema(log) {
  * @returns {object} The written envelope
  */
 export async function writeLog(logDir, type, data, meta = {}) {
+  if (!LOG_TYPES.includes(type)) throw new Error(`Unknown log type: ${type}. Must be one of: ${LOG_TYPES.join(', ')}`);
   const { org = '', projectName = '', exitCode = 0, durationMs = 0, retention = 50 } = meta;
 
   const timestamp = new Date().toISOString();
@@ -94,7 +95,8 @@ export async function writeLog(logDir, type, data, meta = {}) {
   // Archive (timestamped filename — colons replaced so it's filesystem-safe)
   const archiveDir = path.join(logDir, ARCHIVE_DIRS[type]);
   await fs.ensureDir(archiveDir);
-  const archiveName = timestamp.replace(/:/g, '-').replace(/\./g, '-') + '.json';
+  const suffix = Math.random().toString(36).slice(2, 7);
+  const archiveName = timestamp.replace(/:/g, '-').replace(/\./g, '-') + `-${suffix}` + '.json';
   await fs.outputJson(path.join(archiveDir, archiveName), envelope, { spaces: 2 });
 
   // Prune oldest archives beyond retention limit
@@ -114,6 +116,7 @@ export async function writeLog(logDir, type, data, meta = {}) {
  * Returns the envelope object or null if missing, corrupt, or schema-invalid.
  */
 export async function readLatestLog(logDir, type) {
+  if (!LOG_TYPES.includes(type)) return null;
   const filePath = path.join(logDir, LATEST_FILES[type]);
   try {
     const log = await fs.readJson(filePath);
