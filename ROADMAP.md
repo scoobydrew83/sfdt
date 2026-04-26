@@ -27,18 +27,24 @@ This roadmap outlines the planned features and improvements for the @sfdt/cli to
 
 - [x] **Other AI Platforms**: Multi-provider AI support — `ai.provider` in `.sfdt/config.json` selects `claude` (Claude Code CLI, default), `gemini` (Google Gemini REST, uses `GEMINI_API_KEY`), or `openai` (OpenAI REST, uses `OPENAI_API_KEY`). `sfdt init` now prompts for provider and optional API key. All AI commands route through the selected provider transparently.
 - [x] **Plugin Architecture**: `src/lib/plugin-loader.js` discovers and loads plugins before CLI parsing. Sources (in order): (1) packages listed in `config.plugins[]`, (2) any `sfdt-plugin-*` or `@scope/sfdt-plugin-*` package in the project's `node_modules/`, (3) `.sfdt/plugins/*.js` local scripts. Each plugin exports `register(program)`.
-- [x] **Web UI**: `sfdt ui` — launches a local Salesforce Lightning Design System dashboard (built with `@salesforce/design-system-react` + React + Vite) showing test run history, preflight check results, and drift detection status. Build the GUI with `npm run build:gui` from the package root.
+- [x] **Web UI**: `sfdt ui` — launches a local Salesforce Lightning Design System dashboard (built with React + Vite) showing test run history, preflight check results, and drift detection status. Build the GUI with `npm run build:gui` from the package root.
 - [x] **Docker Support**: `Dockerfile` + `.dockerignore` — mounts a Salesforce DX project at `/project`; ships Node 20, Salesforce CLI, git, jq, and sfdt. Use with `docker run --rm -v "$(pwd):/project" sfdt deploy`.
 
----
+## Phase 5: AI Intelligence & Developer Experience 🤖 (In Progress)
 
-## Phase 5: Developer Experience & Ecosystem 🔭 (Planned)
+### AI Roadmap
 
-- [ ] **`sfdt config` command**: `sfdt config set <key> <value>` to update `.sfdt/config.json` without hand-editing — especially useful for CI pipelines toggling `deployment.preflight.enforce*` flags.
-- [ ] **Pre-built GUI in the published package**: automate `npm run build:gui` in CI so end users never need to build the dashboard from source.
+- [x] **D — AI Chat Drawer**: Persistent chat drawer in the GUI with real token-by-token streaming (Claude `stream-json`, OpenAI `stream: true`, Gemini `streamGenerateContent?alt=sse`). Page-aware context injection: Review, Explain, Drift, and Preflight pages each inject their current results as system-prompt context. "Ask AI" micro-interaction buttons on each page. `Ctrl+Shift+A` global toggle. Full conversation history preserved per session. Stateless server — client sends full history with each POST to `POST /api/ai/chat`.
+- [x] **A — Smarter AI Commands**: `sfdt review`, `sfdt explain`, and `sfdt quality --fix-plan` now inject structured project context into every AI prompt — org alias, API version, coverage thresholds, affected metadata types (from git diff), last 3–5 test run history with coverage trend, latest preflight check results, and recent deploy history. Context is built from local log files and config; degrades gracefully when logs are absent.
+- [ ] **C — Salesforce DevOps Center MCP Integration**: Connect to Headless360's published MCP tools (GA'd at TDX April 2026) to pull live org state, pipeline status, and work items into sfdt context. Enables the chat drawer to answer questions about deployment pipelines, scratch org pools, and DevOps Center work items.
+- [ ] **B — Expose sfdt as MCP Server**: Surface sfdt commands as MCP tools so AI agents (Claude, Copilot, etc.) can invoke `sfdt deploy`, `sfdt preflight`, `sfdt explain` as part of agentic workflows. Partially addressed by existing CLAUDE.md/AGENTS.md skills.
+
+### Developer Experience
+
+- [x] **`sfdt config` command**: `sfdt config set <key> <value>` and `sfdt config get <key>` to read/write `.sfdt/config.json` without hand-editing — especially useful for CI pipelines toggling `deployment.preflight.enforce*` flags. Dot notation supported; values are type-coerced (booleans, numbers).
+- [x] **Pre-built GUI in the published package**: `npm run build:gui` runs automatically in CI (`.github/workflows/ci.yml`); `gui/dist/` is included in the npm package `files` array so end users receive the pre-built dashboard on install.
 - [ ] **Plugin registry & scaffolding**: `sfdt plugin create` scaffold to bootstrap a new `sfdt-plugin-*` package with example `register(program)` wiring.
-- [ ] **AI context window improvements**: pass structured project metadata (org shape, test history, recent diffs) to AI commands for higher-quality output with fewer prompts.
-- [ ] **Structured log format**: standardized JSON schema for test-run, preflight, and drift log files consumed by `sfdt ui` and external observability tools.
+- [x] **Structured log format**: unified JSON envelope (`schemaVersion`, `type`, `timestamp`, `exitCode`, `org`, `data`) for test-run, preflight, drift, and quality logs. Machine-parseable by any tool. Each run writes a timestamped archive plus `{type}-latest.json`. `sfdt ui` reader functions preserve existing API response shapes (GUI parity).
 
 ---
 
