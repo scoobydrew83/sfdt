@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 import { execa } from 'execa';
 import { createInterface } from 'readline';
 import { fetchLatestVersion } from './update-checker.js';
+import { writeLog, parseSfdtLogLines, readLatestLog } from './log-writer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,6 +35,71 @@ async function tryReadJson(filePath) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Extract test-run data from SF CLI --json output captured in lines[].
+ * Handles sf apex run test JSON format variations.
+ */
+function parseTestRunLines(lines) {
+  const jsonLine = lines.find((l) => {
+    try { const p = JSON.parse(l); return p && (p.result || p.summary || Array.isArray(p)); }
+    catch { return false; }
+  });
+  if (!jsonLine) return { passed: 0, failed: 0, errors: 0, skipped: 0, coverage: null, tests: [] };
+  const raw = JSON.parse(jsonLine);
+  const summary = raw.result?.summary ?? raw.summary ?? {};
+  const tests = (raw.result?.tests ?? raw.tests ?? []).map((t) => ({
+    name: t.methodName ?? t.name ?? 'unknown',
+    status: t.outcome ?? t.status ?? 'unknown',
+    durationMs: t.runTime ?? null,
+    message: t.message ?? null,
+  }));
+  return {
+    passed: summary.passing ?? 0,
+    failed: summary.failing ?? 0,
+    errors: summary.skipped ?? 0,
+    skipped: 0,
+    coverage: summary.testRunCoverage ? parseFloat(summary.testRunCoverage) : null,
+    tests,
+  };
+}
+
+/**
+ * Extract quality data from SF CLI scanner --json output captured in lines[].
+ */
+function parseQualityLines(lines) {
+  const jsonLine = lines.find((l) => {
+    try { const p = JSON.parse(l); return p && (Array.isArray(p.result) || Array.isArray(p)); }
+    catch { return false; }
+  });
+  if (!jsonLine) return { status: 'PASS', summary: { critical: 0, high: 0, medium: 0, low: 0 }, violations: [] };
+  const raw = JSON.parse(jsonLine);
+  const rawViolations = Array.isArray(raw.result) ? raw.result : Array.isArray(raw) ? raw : [];
+  const violations = rawViolations.flatMap((file) =>
+    (file.violations ?? []).map((v) => ({
+      file: file.fileName ?? '',
+      line: v.line ?? 0,
+      rule: v.ruleName ?? v.rule ?? '',
+      severity: v.severity ?? 3,
+      message: v.message ?? '',
+    }))
+  );
+  const summary = violations.reduce(
+    (acc, v) => {
+      if (v.severity === 1) acc.critical++;
+      else if (v.severity === 2) acc.high++;
+      else if (v.severity === 3) acc.medium++;
+      else acc.low++;
+      return acc;
+    },
+    { critical: 0, high: 0, medium: 0, low: 0 }
+  );
+  return {
+    status: violations.length === 0 ? 'PASS' : 'FAIL',
+    summary,
+    violations,
+  };
 }
 
 /**
@@ -282,6 +348,9 @@ async function readLocalComponentXml(config, _type, member) {
 
 // ─── Command runner config ────────────────────────────────────────────────────
 
+// Commands that get written as structured logs via log-writer
+const STRUCTURED_LOG_TYPES = new Set(['preflight', 'drift', 'test', 'quality']);
+
 const COMMANDS = {
   preflight: {
     script: 'new/preflight.sh',
@@ -356,6 +425,8 @@ export function createGuiApp(config, version, port = 7654) {
   const app = express();
   app.use(express.json());
 
+  let mcpClient = null;
+
   const logDir =
     config.logDir ||
     path.join(config._projectRoot || process.cwd(), 'logs');
@@ -368,6 +439,55 @@ export function createGuiApp(config, version, port = 7654) {
 
   app.get('/api/health', apiLimiter, (_req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
+  });
+
+  // ── Config helpers ─────────────────────────────────────────────────────────
+
+  function coerceConfigValue(v) {
+    if (v === 'true') return true;
+    if (v === 'false') return false;
+    if (v !== '' && !isNaN(v)) return Number(v);
+    return v;
+  }
+
+  function setNestedValue(obj, key, value) {
+    const parts = key.split('.');
+    const last = parts.pop();
+    const target = parts.reduce((o, k) => {
+      if (o[k] === undefined || typeof o[k] !== 'object') o[k] = {};
+      return o[k];
+    }, obj);
+    target[last] = value;
+  }
+
+  const rawConfigPath = config._configDir
+    ? path.join(config._configDir, 'config.json')
+    : null;
+
+  app.get('/api/config', apiLimiter, async (_req, res) => {
+    if (!rawConfigPath) return res.status(503).json({ error: 'Config dir unavailable' });
+    try {
+      const raw = await fs.readJson(rawConfigPath);
+      res.json(raw);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/config', apiLimiter, async (req, res) => {
+    if (!rawConfigPath) return res.status(503).json({ error: 'Config dir unavailable' });
+    const { key, value } = req.body ?? {};
+    if (!key || typeof key !== 'string') return res.status(400).json({ error: 'key is required' });
+    if (value === undefined) return res.status(400).json({ error: 'value is required' });
+    try {
+      const raw = await fs.readJson(rawConfigPath);
+      const coerced = coerceConfigValue(String(value));
+      setNestedValue(raw, key, coerced);
+      await fs.writeJson(rawConfigPath, raw, { spaces: 2 });
+      res.json({ ok: true, key, value: coerced });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   app.get('/api/project', apiLimiter, (_req, res) => {
@@ -494,6 +614,7 @@ export function createGuiApp(config, version, port = 7654) {
     res.flushHeaders();
 
     let child;
+    const startTime = Date.now();
 
     req.on('close', () => {
       if (child && !child.killed) child.kill();
@@ -548,9 +669,42 @@ export function createGuiApp(config, version, port = 7654) {
         rlStderr.close();
       }
 
-      const logPayload = { date: new Date().toISOString(), command, exitCode, lines };
-      const logFilePath = path.join(projectRoot, cmd.logFile);
-      await fs.outputJson(logFilePath, logPayload, { spaces: 2 });
+      const runDurationMs = Date.now() - startTime;
+      if (STRUCTURED_LOG_TYPES.has(command)) {
+        const logType = command === 'test' ? 'test-run' : command;
+        let data;
+        if (command === 'preflight') {
+          const { checks } = parseSfdtLogLines(lines);
+          const hasFailure = checks.some((c) => c.status === 'FAIL');
+          const hasWarn = checks.some((c) => c.status === 'WARN');
+          data = {
+            status: hasFailure ? 'FAIL' : hasWarn ? 'WARN' : 'PASS',
+            checks,
+          };
+        } else if (command === 'drift') {
+          const { components } = parseSfdtLogLines(lines);
+          data = {
+            status: components.length > 0 ? 'drift' : 'clean',
+            components,
+          };
+        } else if (command === 'test') {
+          data = parseTestRunLines(lines);
+        } else if (command === 'quality') {
+          data = parseQualityLines(lines);
+        }
+        await writeLog(logDir, logType, data, {
+          org: config.defaultOrg ?? '',
+          projectName: config.projectName ?? '',
+          exitCode,
+          durationMs: runDurationMs,
+          retention: config.logRetention ?? 50,
+        });
+      } else {
+        // Non-structured commands (deploy, rollback) keep raw format
+        const logPayload = { date: new Date().toISOString(), command, exitCode, lines };
+        const logFilePath = path.join(projectRoot, cmd.logFile);
+        await fs.outputJson(logFilePath, logPayload, { spaces: 2 });
+      }
 
       if (!res.writableEnded) {
         res.write('data: ' + JSON.stringify({ type: 'result', exitCode }) + '\n\n');
@@ -1138,7 +1292,17 @@ export function createGuiApp(config, version, port = 7654) {
       }
 
       const projectRoot = config._projectRoot ?? process.cwd();
-      const diffResult = await execa('git', ['diff', `${base}...HEAD`], { cwd: projectRoot, reject: false });
+      const {
+        buildProjectContext, readLatestTestRuns, readLatestPreflight,
+        buildContextBlock, formatTestRunsSection, formatPreflightSection,
+        formatMetadataTypesSection,
+      } = await import('./ai-context.js');
+      const { parseDiffToMetadata } = await import('./metadata-mapper.js');
+
+      const [diffResult, nameStatusResult] = await Promise.all([
+        execa('git', ['diff', `${base}...HEAD`], { cwd: projectRoot, reject: false }),
+        execa('git', ['diff', '--name-status', `${base}...HEAD`], { cwd: projectRoot, reject: false }),
+      ]);
       const diff = diffResult.stdout || '';
 
       if (!diff.trim()) {
@@ -1148,11 +1312,25 @@ export function createGuiApp(config, version, port = 7654) {
         return;
       }
 
+      const [projectCtx, testRuns, preflight] = await Promise.all([
+        buildProjectContext(config),
+        readLatestTestRuns(config, 3),
+        readLatestPreflight(config),
+      ]);
+      const metadataTypes = parseDiffToMetadata(nameStatusResult.stdout || '');
+      const contextBlock = buildContextBlock([
+        projectCtx,
+        formatMetadataTypesSection(metadataTypes),
+        formatTestRunsSection(testRuns),
+        formatPreflightSection(preflight),
+      ]);
+
       const REVIEW_PROMPT = `You are a senior Salesforce developer reviewing a code diff. Analyze the following changes and report issues in these categories:\n\n## Governor Limits & Performance\n- SOQL or DML inside loops\n- Unbulkified operations (not handling 200+ records)\n- Missing LIMIT clauses on SOQL queries\n\n## Security\n- Missing CRUD/FLS checks\n- SOQL injection risks\n- Sensitive data exposure in debug logs\n\n## Null Safety & Error Handling\n- Missing null checks before property access\n- Unhandled exceptions in AuraEnabled methods\n\n## Test Coverage\n- Changed Apex classes that lack corresponding test class changes\n- Missing assertions in test methods\n\nProvide specific line references from the diff. Rate each finding as CRITICAL, HIGH, MEDIUM, or LOW.\n\n--- DIFF ---\n`;
 
       send({ type: 'log', line: `Reviewing ${diff.split('\n').length} lines of diff vs ${base}...`, ts: new Date().toISOString() });
 
-      const result = await runAi(REVIEW_PROMPT + diff, {
+      const prompt = contextBlock ? `${contextBlock}\n\n${REVIEW_PROMPT}${diff}` : REVIEW_PROMPT + diff;
+      const result = await runAi(prompt, {
         config,
         allowedTools: ['Read', 'Grep'],
         cwd: projectRoot,
@@ -1231,9 +1409,99 @@ export function createGuiApp(config, version, port = 7654) {
         return;
       }
 
+      const {
+        buildProjectContext, readLatestTestRuns, readLatestPreflight, readDeployHistory,
+        buildContextBlock, formatTestRunsSection, formatPreflightSection, formatDeployHistorySection,
+      } = await import('./ai-context.js');
+
+      const [projectCtx, testRuns, preflight, deployHistory] = await Promise.all([
+        buildProjectContext(config),
+        readLatestTestRuns(config, 1),
+        readLatestPreflight(config),
+        readDeployHistory(config, 3),
+      ]);
+      const contextBlock = buildContextBlock([
+        projectCtx,
+        formatTestRunsSection(testRuns),
+        formatPreflightSection(preflight),
+        formatDeployHistorySection(deployHistory),
+      ]);
+
       const EXPLAIN_PROMPT = `You are a Salesforce deployment engineer helping a developer interpret a failing deployment log. Analyze the log and produce a concise report with these sections:\n\n## Root Cause\nOne or two sentences identifying the single most likely cause of the failure.\n\n## Failing Components\nBulleted list of component names + the specific error.\n\n## Suggested Fixes\nOrdered list of concrete steps the developer can take.\n\n## References\nRelevant Salesforce docs or metadata types.\n\n--- DEPLOYMENT LOG ---\n`;
 
-      const result = await runAi(EXPLAIN_PROMPT + logContent, {
+      const prompt = contextBlock ? `${contextBlock}\n\n${EXPLAIN_PROMPT}${logContent}` : EXPLAIN_PROMPT + logContent;
+      const result = await runAi(prompt, {
+        config,
+        allowedTools: ['Read', 'Grep'],
+        cwd: projectRoot,
+        aiEnabled: true,
+      });
+
+      if (result?.stdout) {
+        for (const line of result.stdout.split('\n')) {
+          send({ type: 'log', line, ts: new Date().toISOString() });
+        }
+      }
+      send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
+    } catch (err) {
+      send({ type: 'error', message: err.message });
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
+  });
+
+  // ── Quality: AI fix plan (SSE) ────────────────────────────────────────────
+
+  app.post('/api/quality/fix-plan', apiLimiter, async (_req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const send = (payload) => {
+      if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n');
+    };
+
+    try {
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const available = await checkAi(config);
+      if (!available) {
+        send({ type: 'error', message: 'AI is not available or not configured.' });
+        res.end();
+        return;
+      }
+
+      const {
+        buildProjectContext, readLatestTestRuns, readLatestPreflight,
+        buildContextBlock, formatTestRunsSection, formatPreflightSection,
+      } = await import('./ai-context.js');
+
+      const qualityLog = await fs.readJson(path.join(logDir, 'quality-latest.json')).catch(() => null);
+
+      const [projectCtx, testRuns, preflight] = await Promise.all([
+        buildProjectContext(config),
+        readLatestTestRuns(config, 5),
+        readLatestPreflight(config),
+      ]);
+
+      const contextBlock = buildContextBlock([
+        projectCtx,
+        formatTestRunsSection(testRuns),
+        formatPreflightSection(preflight),
+      ]);
+
+      const qualitySection = qualityLog
+        ? `## QUALITY ANALYSIS RESULTS\n${JSON.stringify(qualityLog, null, 2)}`
+        : '';
+
+      const FIX_PLAN_PROMPT = `You are a Salesforce code quality expert. Based on the project context and quality analysis results below, create a prioritized fix plan.\n\nFor each issue:\n1. Identify the specific file and class/method\n2. Explain the problem clearly\n3. Provide a concrete fix with example code where helpful\n4. Rate priority as CRITICAL, HIGH, MEDIUM, or LOW\n\nGroup fixes by category: Test Coverage, Code Complexity, Naming Conventions, Security, Performance.\nStart with the highest-impact items that are quickest to fix.\n\n`;
+
+      const prompt = buildContextBlock([contextBlock, qualitySection, FIX_PLAN_PROMPT]).trimEnd();
+      const projectRoot = config._projectRoot ?? process.cwd();
+
+      send({ type: 'log', line: 'Building AI fix plan...', ts: new Date().toISOString() });
+
+      const result = await runAi(prompt, {
         config,
         allowedTools: ['Read', 'Grep'],
         cwd: projectRoot,
@@ -1287,6 +1555,24 @@ export function createGuiApp(config, version, port = 7654) {
       const contextStr = rawContext.length > 32768 ? rawContext.slice(0, 32768) + '\n...(truncated)' : rawContext;
       const safePage = String(pageContext?.page || 'Dashboard').slice(0, 64);
 
+      let devOpsSection = '';
+      if (config.mcp?.enabled) {
+        try {
+          if (!mcpClient) {
+            const { SalesforceMcpClient } = await import('./mcp-client.js');
+            mcpClient = new SalesforceMcpClient(config);
+          }
+          const devOpsContext = await mcpClient.getDevOpsCenterContext();
+          if (devOpsContext) {
+            const raw = JSON.stringify(devOpsContext, null, 2);
+            const capped = raw.length > 8192 ? raw.slice(0, 8192) + '\n...(truncated)' : raw;
+            devOpsSection = `\n\n--- DEVOPS CENTER LIVE CONTEXT ---\n${capped}`;
+          }
+        } catch {
+          // MCP unavailable — continue without it
+        }
+      }
+
       const systemPrompt = `You are an expert Salesforce DevOps assistant embedded in the SFDT dashboard.
 Help developers understand deployment results, diagnose issues, and plan remediation steps.
 Be concise, specific, and actionable. Reference exact component names, error messages, and line numbers from the provided context.
@@ -1295,7 +1581,7 @@ Project: ${config.projectName || 'Salesforce Project'} | Org: ${config.defaultOr
 Current page: ${safePage}
 
 --- CURRENT PAGE CONTEXT ---
-${contextStr}`;
+${contextStr}${devOpsSection}`;
 
       const { isAiAvailable, streamAiResponse } = await import('./ai.js');
       if (!(await isAiAvailable(config))) {
