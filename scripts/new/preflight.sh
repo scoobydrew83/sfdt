@@ -29,6 +29,9 @@ record_result() {
     local check="$2"
     local detail="${3:-}"
 
+    # Emit machine-readable marker for Node log-writer (stripped before display)
+    echo "SFDT_LOG:check:${check}:${status}:${detail}"
+
     case "$status" in
         PASS) PASS_COUNT=$((PASS_COUNT + 1)); RESULTS+=("$(print_success "[PASS] ${check}${detail:+ - ${detail}}")") ;;
         FAIL) FAIL_COUNT=$((FAIL_COUNT + 1)); RESULTS+=("$(print_error "[FAIL] ${check}${detail:+ - ${detail}}")") ;;
