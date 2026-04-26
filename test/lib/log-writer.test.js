@@ -67,6 +67,11 @@ describe('parseSfdtLogLines', () => {
     expect(result.checks).toEqual([]);
     expect(result.components).toEqual([]);
   });
+
+  it('returns empty arrays for null or undefined input', () => {
+    expect(parseSfdtLogLines(null)).toEqual({ checks: [], components: [] });
+    expect(parseSfdtLogLines(undefined)).toEqual({ checks: [], components: [] });
+  });
 });
 
 // ── validateLogSchema ─────────────────────────────────────────────────────────
@@ -133,6 +138,7 @@ describe('writeLog', () => {
   it('prunes archive to logRetention count', async () => {
     for (let i = 0; i < 5; i++) {
       await writeLog(tmpDir, 'drift', { status: 'clean', components: [] }, { retention: 3 });
+      await new Promise((r) => setTimeout(r, 2)); // ensure distinct ms timestamps in archive filenames
     }
     const archiveDir = path.join(tmpDir, 'drift-results');
     const files = await fs.readdir(archiveDir);
