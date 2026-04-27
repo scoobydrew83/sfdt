@@ -6,7 +6,6 @@ vi.mock('execa', () => ({
 
 import { execa } from 'execa';
 import {
-  isClaudeAvailable,
   isAiAvailable,
   getConfiguredProvider,
   aiUnavailableMessage,
@@ -156,7 +155,7 @@ describe('runAiPrompt', () => {
 // ─── streamAiResponse ─────────────────────────────────────────────────────────
 
 describe('streamAiResponse', () => {
-  const claudeConfig = { ai: { provider: 'claude' } };
+  const claudeConfig = { ai: { provider: 'claude' }, features: { ai: true } };
   const openaiConfig = { ai: { provider: 'openai', apiKey: 'sk-test' } };
   const geminiConfig = { ai: { provider: 'gemini', apiKey: 'gm-test' } };
 

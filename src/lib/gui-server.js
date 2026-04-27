@@ -607,7 +607,7 @@ export function createGuiApp(config, version, port = 7654) {
       const streamLines = (readable) => {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });
         rl.on('line', (line) => {
-          if (!res.writableEnded) {
+          if (!res.writableEnded && !line.startsWith('SFDT_LOG:')) {
             res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
           }
         });
@@ -693,7 +693,7 @@ export function createGuiApp(config, version, port = 7654) {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });
         rl.on('line', (line) => {
           lines.push(line);
-          if (!res.writableEnded) {
+          if (!res.writableEnded && !line.startsWith('SFDT_LOG:')) {
             res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
           }
         });
@@ -1094,7 +1094,8 @@ export function createGuiApp(config, version, port = 7654) {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });
         rl.on('line', (line) => {
           lines.push(line);
-          if (!res.writableEnded) res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
+          if (!res.writableEnded && !line.startsWith('SFDT_LOG:'))
+            res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
         });
         return rl;
       };
@@ -1522,19 +1523,19 @@ export function createGuiApp(config, version, port = 7654) {
         readLatestPreflight(config),
       ]);
 
-      const contextBlock = buildContextBlock([
-        projectCtx,
-        formatTestRunsSection(testRuns),
-        formatPreflightSection(preflight),
-      ]);
-
       const qualitySection = qualityLog
         ? `## QUALITY ANALYSIS RESULTS\n${JSON.stringify(qualityLog?.data ?? qualityLog, null, 2)}`
         : '';
 
       const FIX_PLAN_PROMPT = `You are a Salesforce code quality expert. Based on the project context and quality analysis results below, create a prioritized fix plan.\n\nFor each issue:\n1. Identify the specific file and class/method\n2. Explain the problem clearly\n3. Provide a concrete fix with example code where helpful\n4. Rate priority as CRITICAL, HIGH, MEDIUM, or LOW\n\nGroup fixes by category: Test Coverage, Code Complexity, Naming Conventions, Security, Performance.\nStart with the highest-impact items that are quickest to fix.\n\n`;
 
-      const prompt = buildContextBlock([contextBlock, qualitySection, FIX_PLAN_PROMPT]).trimEnd();
+      const prompt = buildContextBlock([
+        projectCtx,
+        formatTestRunsSection(testRuns),
+        formatPreflightSection(preflight),
+        qualitySection,
+        FIX_PLAN_PROMPT,
+      ]).trimEnd();
       const projectRoot = config._projectRoot ?? process.cwd();
 
       send({ type: 'log', line: 'Building AI fix plan...', ts: new Date().toISOString() });
@@ -1569,8 +1570,11 @@ export function createGuiApp(config, version, port = 7654) {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
+    let aborted = false;
+    req.on('close', () => { aborted = true; });
+
     const send = (payload) => {
-      if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n');
+      if (!res.writableEnded && !aborted) res.write('data: ' + JSON.stringify(payload) + '\n\n');
     };
 
     try {

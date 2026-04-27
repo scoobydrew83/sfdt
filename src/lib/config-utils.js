@@ -43,6 +43,7 @@ export function getNestedValue(obj, key) {
 export function coerceConfigValue(v) {
   if (v === 'true') return true;
   if (v === 'false') return false;
-  if (v !== '' && !isNaN(v)) return Number(v);
+  const trimmed = v.trim();
+  if (trimmed !== '' && !isNaN(trimmed)) return Number(trimmed);
   return v;
 }

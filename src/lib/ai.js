@@ -584,7 +584,7 @@ export async function streamAiResponse(messages, systemPrompt, options, onChunk)
         return;
       default:
         // claude (and unknown providers fall back to claude)
-        await streamClaudeResponse(messages, systemPrompt, onChunk);
+        await streamClaudeResponse(messages, systemPrompt, config, onChunk);
         return;
     }
   } catch (err) {
@@ -592,13 +592,9 @@ export async function streamAiResponse(messages, systemPrompt, options, onChunk)
   }
 }
 
-async function streamClaudeResponse(messages, systemPrompt, onChunk) {
-  const available = await isClaudeAvailable();
-  if (!available) {
-    throw new Error(
-      'Claude CLI is not installed or not in PATH. ' +
-      'Install it from https://docs.anthropic.com/en/docs/claude-code to enable AI features.',
-    );
+async function streamClaudeResponse(messages, systemPrompt, config, onChunk) {
+  if (!(await isAiAvailable(config))) {
+    throw new Error(aiUnavailableMessage(config));
   }
 
   // Serialize conversation history into a single prompt string for the CLI

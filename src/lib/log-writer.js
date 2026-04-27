@@ -42,7 +42,7 @@ export function parseSfdtLogLines(lines) {
     } else if (kind === 'component') {
       const name = parts[2];
       const type = parts[3];
-      const drift = parts[4];
+      const drift = parts.slice(4).join(':');
       components.push({ name, type, drift });
     }
   }

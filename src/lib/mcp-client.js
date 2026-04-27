@@ -27,7 +27,10 @@ export class SalesforceMcpClient {
 
     const transport = new StdioClientTransport({ command, args });
     const client = new Client({ name: 'sfdt', version: '1.0.0' });
-    await client.connect(transport);
+    await Promise.race([
+      client.connect(transport),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('MCP connect timeout')), 5_000)),
+    ]);
     this.#client = client;
   }
 
