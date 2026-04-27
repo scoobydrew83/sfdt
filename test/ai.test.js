@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('execa', () => ({
   execa: vi.fn(),
@@ -6,11 +6,11 @@ vi.mock('execa', () => ({
 
 import { execa } from 'execa';
 import {
-  isClaudeAvailable,
   isAiAvailable,
   getConfiguredProvider,
   aiUnavailableMessage,
   runAiPrompt,
+  streamAiResponse,
 } from '../src/lib/ai.js';
 
 beforeEach(() => {
@@ -129,9 +129,10 @@ describe('runAiPrompt', () => {
 
     const promptCall = execa.mock.calls.find((call) => call[1]?.includes('-p'));
     expect(promptCall).toBeDefined();
-    expect(promptCall[1]).toContain('-p');
-    expect(promptCall[1]).toContain('review this code');
-    expect(promptCall[1]).toContain('--allowedTools');
+    const args = promptCall[1].join(' ');
+    expect(args).toContain('-p');
+    expect(args).toContain('review this code');
+    expect(args).toContain('--allowedTools');
     expect(result.stdout).toBe('review output');
   });
 
@@ -148,5 +149,138 @@ describe('runAiPrompt', () => {
     const promptCall = execa.mock.calls.find((call) => call[1]?.includes('-p'));
     expect(promptCall).toBeDefined();
     expect(result.stdout).toBe('claude out');
+  });
+});
+
+// ─── streamAiResponse ─────────────────────────────────────────────────────────
+
+describe('streamAiResponse', () => {
+  const claudeConfig = { ai: { provider: 'claude' }, features: { ai: true } };
+  const openaiConfig = { ai: { provider: 'openai', apiKey: 'sk-test' } };
+  const geminiConfig = { ai: { provider: 'gemini', apiKey: 'gm-test' } };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Returns a fake execa proc: .stdout is an async iterable of Buffer lines,
+  // the proc itself is a Promise resolving to { exitCode, stderr }.
+  function makeClaudeProc(lines, exitCode = 0, stderr = '') {
+    async function* genLines() {
+      for (const line of lines) {
+        yield Buffer.from(line + '\n');
+      }
+    }
+    const promise = Promise.resolve({ exitCode, stderr });
+    promise.stdout = genLines();
+    return promise;
+  }
+
+  function makeSSEStream(text) {
+    const encoder = new TextEncoder();
+    return new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(text));
+        controller.close();
+      },
+    });
+  }
+
+  it('throws on empty messages array', async () => {
+    await expect(
+      streamAiResponse([], 'system', { config: claudeConfig }, vi.fn()),
+    ).rejects.toThrow('messages array must not be empty');
+  });
+
+  it('Claude: calls onChunk with text from stream-json output', async () => {
+    const jsonLine = JSON.stringify({
+      type: 'content_block_delta',
+      delta: { type: 'text_delta', text: 'hello' },
+    });
+
+    execa.mockImplementation((_cmd, args) => {
+      if (args[0] === '--version') return Promise.resolve({ exitCode: 0 });
+      return makeClaudeProc([jsonLine]);
+    });
+
+    const onChunk = vi.fn();
+    await streamAiResponse(
+      [{ role: 'user', content: 'test question' }],
+      'system prompt',
+      { config: claudeConfig },
+      onChunk,
+    );
+    expect(onChunk).toHaveBeenCalledWith('hello');
+  });
+
+  it('Claude: throws when claude CLI exits non-zero', async () => {
+    execa.mockImplementation((_cmd, args) => {
+      if (args[0] === '--version') return Promise.resolve({ exitCode: 0 });
+      return makeClaudeProc([], 1, 'API error');
+    });
+
+    await expect(
+      streamAiResponse(
+        [{ role: 'user', content: 'test' }],
+        'sys',
+        { config: claudeConfig },
+        vi.fn(),
+      ),
+    ).rejects.toThrow('claude exited with code 1');
+  });
+
+  it('OpenAI: calls onChunk from SSE stream', async () => {
+    const sseData =
+      'data: ' +
+      JSON.stringify({ choices: [{ delta: { content: 'world' } }] }) +
+      '\n\ndata: [DONE]\n\n';
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, body: makeSSEStream(sseData) }),
+    );
+
+    const onChunk = vi.fn();
+    await streamAiResponse(
+      [{ role: 'user', content: 'test' }],
+      'sys',
+      { config: openaiConfig },
+      onChunk,
+    );
+    expect(onChunk).toHaveBeenCalledWith('world');
+  });
+
+  it('Gemini: calls onChunk from SSE stream', async () => {
+    const sseData =
+      'data: ' +
+      JSON.stringify({ candidates: [{ content: { parts: [{ text: 'hi' }] } }] }) +
+      '\n\n';
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, body: makeSSEStream(sseData) }),
+    );
+
+    const onChunk = vi.fn();
+    await streamAiResponse(
+      [{ role: 'user', content: 'test' }],
+      'sys',
+      { config: geminiConfig },
+      onChunk,
+    );
+    expect(onChunk).toHaveBeenCalledWith('hi');
+  });
+
+  it('wraps provider errors with provider name in message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network error')));
+
+    await expect(
+      streamAiResponse(
+        [{ role: 'user', content: 'test' }],
+        'sys',
+        { config: openaiConfig },
+        vi.fn(),
+      ),
+    ).rejects.toThrow('AI stream failed [openai]');
   });
 });

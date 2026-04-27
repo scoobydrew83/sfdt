@@ -54,6 +54,7 @@ Dockerfile      Official Docker image definition
 | `SFDT_API_VERSION` | `config.sourceApiVersion` |
 | `SFDT_COVERAGE_THRESHOLD` | `config.deployment.coverageThreshold` (default: `75`) |
 | `SFDT_LOG_DIR` | `config.logDir` (optional; scripts fall back to `${SFDT_PROJECT_ROOT}/logs`) |
+| `SFDT_TARGET_ORG` | Set by `gui-server.js` when running drift/preflight from the GUI; overrides `SFDT_DEFAULT_ORG` for that run |
 | `SFDT_BACKUP_BEFORE_ROLLBACK` | `config.deployment.backupBeforeRollback` (default: `true`) |
 | `SFDT_PREFLIGHT_ENFORCE_TESTS` | `"true"` when `config.deployment.preflight.enforceTests` is set; gates Apex test check in preflight |
 | `SFDT_PREFLIGHT_ENFORCE_BRANCH` | `"true"` when `config.deployment.preflight.enforceBranchNaming` is set; promotes branch WARN to FAIL |
@@ -76,7 +77,6 @@ When adding a new env var, update both `buildScriptEnv()` in `script-runner.js` 
 
 ### Known Gaps
 
-- **No `sfdt config` command**: `.sfdt/config.json` must be hand-edited to change settings after `init`. A future `sfdt config set <key> <value>` command would let users and scripts update config without opening a JSON file, and would be especially useful for CI pipelines setting `deployment.preflight.enforce*` flags.
 - **GUI not pre-built in dev**: `gui/dist/` must be compiled with `npm run build:gui` before `sfdt ui` shows the full dashboard. The server falls back to a build-instructions page when `dist/` is absent.
 
 ### Error Handling

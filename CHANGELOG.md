@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-26
+
+### Added
+- **AI Chat drawer** (GUI): New sliding ChatDrawer panel with streaming token-by-token responses, accessible from the dashboard toolbar. Contextual "Ask AI" buttons on Review, Explain, Drift, and Preflight pages pre-fill the chat with the relevant output as context.
+- **Streaming AI chat API** (`POST /api/ai/chat`): Server-Sent Events endpoint backing the ChatDrawer, using `streamAiResponse()` for real-time token streaming across all configured AI providers (Claude, Gemini, OpenAI).
+- **Structured logging system** (`src/lib/log-writer.js`): New log-writer module with a typed schema for structured SFDT logs. `drift.sh` emits `SFDT_LOG:component:` markers and `preflight.sh` emits `SFDT_LOG:check:` markers; the GUI server COMMANDS runner writes these as structured log files alongside plain-text logs.
+- **`logRetention` config key**: Controls how many log files to retain per log type (default: 50). Older files are pruned automatically on each write.
+- **`sfdt config get/set`**: Read and write individual `.sfdt/config.json` values using dot notation from the command line (e.g. `sfdt config set deployment.coverageThreshold 80`).
+- **Salesforce MCP client** (`src/lib/mcp-client.js`): Connects to `sf mcp start` via the Model Context Protocol SDK to fetch DevOps Center pipeline status and work items; surfaced in the GUI dashboard when `mcp.enabled` is set in config.
+
+### Fixed
+- AI context readers now normalize the response envelope, ensuring consistent data shape across providers.
+- `SFDT_TARGET_ORG` is now correctly passed to `drift.sh` when run from the GUI.
+- `readLatestLog` is now used in the quality fix-plan flow, replacing a stale direct-path read.
+- `latest.json` is excluded from the test-run file list to prevent it appearing as a selectable run.
+- `writeLog` and the GUI COMMANDS runner now guard against `undefined` data to prevent silent failures on empty payloads.
+- Unknown log types are handled gracefully; archive filename collisions on concurrent writes are prevented.
+- Sensitive file reads (credentials, private keys) are blocked when AI executes file-read tools.
+
 ## [0.5.1] - 2026-04-24
 
 ### Fixed

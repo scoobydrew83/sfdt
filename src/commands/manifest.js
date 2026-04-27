@@ -5,6 +5,7 @@ import { loadConfig } from '../lib/config.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { safeResolvePath } from '../lib/project-detect.js';
 import {
   parseDiffToMetadata,
   renderPackageXml,
@@ -94,9 +95,7 @@ export function registerManifestCommand(program) {
         } else {
           const outputPath =
             options.output || path.join(projectRoot, manifestDir, 'preview-package.xml');
-          const absolute = path.isAbsolute(outputPath)
-            ? outputPath
-            : path.join(projectRoot, outputPath);
+          const absolute = safeResolvePath(projectRoot, outputPath);
           await fs.ensureDir(path.dirname(absolute));
           await fs.writeFile(absolute, packageXml);
           print.success(`Wrote package.xml → ${path.relative(projectRoot, absolute)}`);
@@ -104,9 +103,7 @@ export function registerManifestCommand(program) {
 
         if (delCount > 0 && options.destructive) {
           const destructiveXml = renderPackageXml(destructive, apiVersion);
-          const destPath = path.isAbsolute(options.destructive)
-            ? options.destructive
-            : path.join(projectRoot, options.destructive);
+          const destPath = safeResolvePath(projectRoot, options.destructive);
           await fs.ensureDir(path.dirname(destPath));
           await fs.writeFile(destPath, destructiveXml);
           print.success(

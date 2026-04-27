@@ -76,18 +76,22 @@ while IFS='|' read -r state name; do
         Add|Created|add)
             ADDED+=("$name")
             ADD_COUNT=$((ADD_COUNT + 1))
+            echo "SFDT_LOG:component:${name}:Unknown:Added"
             ;;
         Changed|Modified|modify|Modify)
             MODIFIED+=("$name")
             MODIFY_COUNT=$((MODIFY_COUNT + 1))
+            echo "SFDT_LOG:component:${name}:Unknown:Modified"
             ;;
         Delete|Deleted|delete)
             DELETED+=("$name")
             DELETE_COUNT=$((DELETE_COUNT + 1))
+            echo "SFDT_LOG:component:${name}:Unknown:Deleted"
             ;;
         *)
             MODIFIED+=("${state}: ${name}")
             MODIFY_COUNT=$((MODIFY_COUNT + 1))
+            echo "SFDT_LOG:component:${name}:Unknown:Modified"
             ;;
     esac
 done <<< "$FILE_ENTRIES"

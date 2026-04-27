@@ -678,6 +678,21 @@ Requires `features.ai: true` and a configured provider.
 
 ## Commands: Operations
 
+### sfdt config
+
+Read and write individual `.sfdt/config.json` values from the command line using dot notation.
+
+```bash
+sfdt config get defaultOrg
+sfdt config get deployment.coverageThreshold
+sfdt config set deployment.coverageThreshold 80
+sfdt config set features.ai true
+```
+
+Values are coerced automatically: `"true"` / `"false"` become booleans, numeric strings become numbers, everything else stays a string.
+
+---
+
 ### sfdt notify
 
 Sends a structured notification to Slack for a deployment lifecycle event. Uses the Slack Incoming Webhooks API.
@@ -751,7 +766,7 @@ When `gui/dist/` is missing, the server shows a build-instructions page instead 
 
 ## Web Dashboard
 
-The dashboard has five pages:
+The dashboard has eight pages:
 
 | Page | What it shows | Data source |
 |---|---|---|
@@ -760,8 +775,13 @@ The dashboard has five pages:
 | **Preflight** | Per-check pass/warn/fail list; run preflight from the UI | `logs/preflight-latest.json` |
 | **Drift Detection** | Filterable component table (All / Clean / Drift); run drift check from the UI | `logs/drift-latest.json` |
 | **Compare** | Org comparison results: source-only, target-only, and shared components; XML diff of individual components; export source-only items as `package.xml` | `logs/compare-latest.json` |
+| **Review** | AI-powered code review results for the current branch | `logs/review-latest.json` |
+| **Explain** | AI-powered deployment log analysis | `logs/explain-latest.json` |
+| **Release Hub** | Release manifest artifacts and release notes | `logs/release/` |
 
 **Live command runner:** The Test Runs, Preflight, and Drift pages each have a "Run" button that triggers the corresponding shell script via a Server-Sent Events stream. Output appears line-by-line in the UI in real time, the same as running the CLI command directly.
+
+**AI Chat drawer:** The toolbar includes an "Ask AI" button that opens a sliding chat panel. Pages with relevant output (Review, Explain, Drift, Preflight) pre-fill the chat with that context so you can ask follow-up questions without copy-pasting.
 
 **Compare page workflow:**
 1. Select a source (local or an org alias) and a target org.

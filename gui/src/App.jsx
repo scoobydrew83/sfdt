@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, createContext } from 'react';
 import { api } from './api.js';
 import Dashboard from './pages/Dashboard.jsx';
 import TestRuns from './pages/TestRuns.jsx';
@@ -11,12 +11,17 @@ import PullPage from './pages/Pull.jsx';
 import ReleaseHubPage from './pages/ReleaseHub.jsx';
 import ReviewPage from './pages/Review.jsx';
 import ExplainPage from './pages/Explain.jsx';
+import SettingsPage from './pages/Settings.jsx';
+import LogsPage from './pages/Logs.jsx';
 import {
   IconHome, IconList, IconCheck, IconRefresh, IconCompare,
   IconSun, IconMoon, IconFileText, IconActivity, IconCloudDown,
-  IconRocket, IconCode, IconSearch,
+  IconRocket, IconCode, IconSearch, IconSettings, IconClock,
 } from './Icons.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
+import ChatDrawer from './components/ChatDrawer.jsx';
+
+export const ChatContext = createContext(null);
 
 // Grouped nav structure: each group has a label and items
 const NAV_GROUPS = [
@@ -26,6 +31,7 @@ const NAV_GROUPS = [
       { id: 'dashboard', label: 'Dashboard', Icon: IconHome },
       { id: 'drift',     label: 'Drift',     Icon: IconRefresh },
       { id: 'tests',     label: 'Test Runs', Icon: IconList },
+      { id: 'logs',      label: 'Logs',      Icon: IconClock },
     ],
   },
   {
@@ -46,6 +52,12 @@ const NAV_GROUPS = [
       { id: 'explain',   label: 'Explain',   Icon: IconSearch },
     ],
   },
+  {
+    label: 'Config',
+    items: [
+      { id: 'settings',  label: 'Settings',  Icon: IconSettings },
+    ],
+  },
 ];
 
 const PAGE_LABELS = {
@@ -60,6 +72,8 @@ const PAGE_LABELS = {
   release:   'Release Hub',
   review:    'Review',
   explain:   'Explain',
+  logs:      'Log History',
+  settings:  'Settings',
 };
 
 export default function App() {
@@ -68,12 +82,35 @@ export default function App() {
   const [dark, setDark]           = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdate, setShowUpdate] = useState(false);
+  const [chatOpen, setChatOpen]   = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatPageContext, setChatPageContext] = useState({ page: '', data: {} });
+  const [chatInitialMessage, setChatInitialMessage] = useState('');
 
   useEffect(() => {
     api.project().then(setProject).catch(() => null);
     api.checkUpdates().then((info) => { if (info.updateAvailable) setUpdateInfo(info); }).catch(() => null);
     const saved = localStorage.getItem('sfdt-theme');
     if (saved === 'dark') setDark(true);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
+        setChatOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  const openChat = useCallback((initialMessage = '') => {
+    setChatInitialMessage(initialMessage);
+    setChatOpen(true);
+  }, []);
+
+  const setPageContext = useCallback((ctx) => {
+    setChatPageContext(ctx);
   }, []);
 
   const toggleDark = () => {
@@ -97,6 +134,8 @@ export default function App() {
       case 'release':   return <ReleaseHubPage />;
       case 'review':    return <ReviewPage />;
       case 'explain':   return <ExplainPage />;
+      case 'logs':      return <LogsPage />;
+      case 'settings':  return <SettingsPage />;
       default:          return <Dashboard project={project} />;
     }
   };
@@ -106,6 +145,7 @@ export default function App() {
     : 'SF';
 
   return (
+    <ChatContext.Provider value={{ openChat, setPageContext }}>
     <>
     {showUpdate && updateInfo && (
       <UpdateModal
@@ -191,6 +231,15 @@ export default function App() {
 
       </div>
     </div>
+    <ChatDrawer
+      isOpen={chatOpen}
+      onClose={() => setChatOpen(false)}
+      pageContext={chatPageContext}
+      messages={chatMessages}
+      onMessagesChange={setChatMessages}
+      initialMessage={chatInitialMessage}
+    />
     </>
+    </ChatContext.Provider>
   );
 }

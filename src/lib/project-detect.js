@@ -4,6 +4,18 @@ import path from 'path';
 const SFDX_PROJECT_FILE = 'sfdx-project.json';
 
 /**
+ * Safely resolve a path relative to the project root, preventing traversal attacks.
+ */
+export function safeResolvePath(projectRoot, relativePath) {
+  const absolute = path.resolve(projectRoot, relativePath);
+  const resolvedRoot = path.resolve(projectRoot);
+  if (!absolute.startsWith(resolvedRoot + path.sep) && absolute !== resolvedRoot) {
+    throw new Error(`Path traversal detected: ${relativePath}`);
+  }
+  return absolute;
+}
+
+/**
  * Walk up from startDir to find sfdx-project.json and return the directory
  * containing it (the project root).
  */

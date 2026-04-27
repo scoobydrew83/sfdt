@@ -6,6 +6,7 @@ import { resolveExitCode } from '../lib/exit-codes.js';
 import { fetchInventory } from '../lib/org-inventory.js';
 import { diffInventories } from '../lib/org-diff.js';
 import { renderPackageXml } from '../lib/metadata-mapper.js';
+import { safeResolvePath } from '../lib/project-detect.js';
 
 export function registerCompareCommand(program) {
   program
@@ -56,7 +57,8 @@ export function registerCompareCommand(program) {
             manifestMeta[item.type].push(item.member);
           }
           const xml = renderPackageXml(manifestMeta, config.sourceApiVersion ?? '63.0');
-          await fs.outputFile(options.output, xml);
+          const safeOutput = safeResolvePath(config._projectRoot, options.output);
+          await fs.outputFile(safeOutput, xml);
           print.success(`Package.xml written to ${options.output}`);
         }
       } catch (err) {

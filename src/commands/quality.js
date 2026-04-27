@@ -3,6 +3,14 @@ import { runScript } from '../lib/script-runner.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import {
+  buildProjectContext,
+  readLatestTestRuns,
+  readLatestPreflight,
+  buildContextBlock,
+  formatTestRunsSection,
+  formatPreflightSection,
+} from '../lib/ai-context.js';
 
 export function registerQualityCommand(program) {
   program
@@ -56,7 +64,20 @@ export function registerQualityCommand(program) {
           if (aiEnabled && (await isAiAvailable(config))) {
             print.info('Generating AI fix plan...');
 
+            const [projectCtx, testRuns, preflight] = await Promise.all([
+              buildProjectContext(config),
+              readLatestTestRuns(config, 5),
+              readLatestPreflight(config),
+            ]);
+
+            const contextBlock = buildContextBlock([
+              projectCtx,
+              formatTestRunsSection(testRuns),
+              formatPreflightSection(preflight),
+            ]);
+
             const prompt = [
+              ...(contextBlock ? [contextBlock, ''] : []),
               'Analyze the following Salesforce code quality report and create a prioritized fix plan.',
               'Group issues by severity (critical, high, medium, low).',
               'For each issue, provide: file location, what to fix, and a concrete code suggestion.',

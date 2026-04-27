@@ -55,3 +55,4 @@ export const IconBook        = ico(['M4 19.5A2.5 2.5 0 0 1 6.5 17H20','M6.5 2H20
 export const IconFileEdit    = ico(['M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7','M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z']);
 export const IconShield      = ico(['M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z']);
 export const IconZap         = ico(['M13 2L3 14h9l-1 8 10-12h-9l1-8z']);
+export const IconClock       = ico(['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z','M12 6v6l4 2']);

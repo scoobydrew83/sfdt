@@ -12,7 +12,7 @@ const CONFIG_DIR = '.sfdt';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = path.join(__dirname, '../templates/sfdt.config.json');
 
-async function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir, coverageThreshold, ai }) {
+async function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir, coverageThreshold, ai, mcp }) {
   const template = await fs.readJson(TEMPLATE_PATH);
   return {
     ...template,
@@ -31,6 +31,10 @@ async function buildConfigTemplate({ projectName, defaultOrg, features, releaseN
       provider: ai.provider,
       model: ai.model || '',
       // API keys are stored in ~/.sfdt/credentials.json, not here
+    },
+    mcp: {
+      ...template.mcp,
+      enabled: mcp.enabled,
     },
   };
 }
@@ -168,6 +172,12 @@ export function registerInitCommand(program) {
             message: 'Release notes output directory:',
             default: 'release-notes',
           },
+          {
+            type: 'confirm',
+            name: 'mcpEnabled',
+            message: 'Enable Salesforce DevOps Center MCP integration? (requires `sf mcp`, disabled by default)',
+            default: false,
+          },
         ]);
 
         // Auto-scan for test classes and apex classes
@@ -222,6 +232,9 @@ export function registerInitCommand(program) {
             provider: answers.aiProvider || 'claude',
             model: '',
           },
+          mcp: {
+            enabled: answers.mcpEnabled,
+          },
         });
 
         const environments = buildEnvironmentsTemplate(answers.defaultOrg);
@@ -257,6 +270,7 @@ export function registerInitCommand(program) {
         print.step(`  Default org: ${answers.defaultOrg}`);
         print.step(`  Coverage threshold: ${answers.coverageThreshold}%`);
         print.step(`  AI features: ${answers.aiEnabled ? `enabled (${answers.aiProvider || 'claude'})` : 'disabled'}`);
+        print.step(`  DevOps Center MCP: ${answers.mcpEnabled ? 'enabled' : 'disabled'}`);
         print.step(`  Test classes: ${testClasses.length}`);
         print.step(`  Apex classes: ${apexClasses.length}`);
 

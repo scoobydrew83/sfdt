@@ -62,6 +62,10 @@ Config is enriched at load time with values from `sfdx-project.json` (sourceApiV
 
 For the full config schema and SFDT_ environment variable mapping, read `references/config.md`.
 
+## Using sfdt from AI agents
+
+sfdt is designed to be composable and callable by AI agents, not just humans in a terminal. All commands are non-interactive by default when stdin is not a TTY (`SFDT_NON_INTERACTIVE=true`), making them safe to invoke from agent subprocesses.
+
 ## Key patterns to follow
 
 ### Running sfdt commands

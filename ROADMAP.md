@@ -1,44 +1,53 @@
 # sfdt Project Roadmap
 
-This roadmap outlines the planned features and improvements for the @sfdt/cli tool.
+## Shipped
 
-## Phase 1: Core Robustness (Current) ✅
+### Core & Configuration
+- Standardized `.sfdt/` configuration loader with `sfdt init` and `sfdt config set/get`
+- Non-interactive mode for CI/CD compatibility
+- ESLint + Prettier standardization
 
-- [x] Standardized configuration loader (`.sfdt/`).
-- [x] AI integration (Claude CLI).
-- [x] Enhanced Test Runner (Parallel tests).
-- [x] Non-interactive mode for CI/CD compatibility.
-- [x] Prettier and linting standardization.
+### Deployment & Quality
+- Configurable coverage threshold enforced in preflight and deploy
+- Automatic preflight checks before every `sfdt deploy`
+- Rollback with pre-rollback org state capture
+- `sfdt quality --generate-stubs` — identify untested Apex classes and scaffold `@IsTest` stubs
+- `sfdt compare` — metadata comparison between two orgs or an org vs local source; `--output` generates a package.xml of source-only items
 
-## Phase 2: Deployment & Quality ✅
+### AI & Intelligence
+- `sfdt manifest` — package.xml from git diffs with AI dependency cleanup
+- `sfdt explain` — AI-powered deployment error log analysis with heuristic fallback
+- `sfdt pr-description` — AI-generated GitHub PR descriptions and Slack summaries
+- `sfdt review`, `sfdt explain`, `sfdt quality --fix-plan` — structured project context injected into every AI prompt (org, API version, test history, coverage trend, preflight results, deploy history)
+- Multi-provider AI: `claude` (Claude Code CLI), `gemini` (REST), `openai` (REST)
 
-- [x] **Deployment Quality Gates**: Configurable coverage threshold (`SFDT_COVERAGE_THRESHOLD`) enforced in `deployment-assistant.sh` and `deploy-manager.sh`; preflight checks run automatically before every `sfdt deploy`.
-- [x] **Rollback Improvements**: `rollback.sh` retrieves and saves current org state before rolling back (partial rollbacks descoped).
-- [x] **Test Gaps Analysis**: `sfdt quality --generate-stubs` identifies Apex classes without tests and scaffolds `@IsTest` stub classes; `--dry-run` for preview. Quality scripts fixed to use current `SFDT_` env var model.
-- [x] **Integration Tests**: Real-filesystem integration tests for `loadConfig()` and `buildScriptEnv()` with test fixtures in `test/fixtures/`.
+### Web UI
+- `sfdt ui` — local SLDS dashboard (React + Vite) with test history, preflight, drift, and quality views
+- AI Chat Drawer — token-by-token streaming, page-aware context injection, `Ctrl+Shift+A` toggle
+- "Ask AI" buttons on Review, Explain, Drift, and Preflight pages
+- Log History Viewer — browse all structured logs by type, filter, and expand detail rows
+- Structured log format — JSON envelopes (`schemaVersion`, `type`, `timestamp`, `exitCode`, `org`, `data`) across all log types with timestamped archives and `*-latest.json` pointers
+- Compare page — run org-vs-org or org-vs-local comparisons and browse diff results in the dashboard
+- Settings page — view and edit `.sfdt/config.json` values directly from the browser dashboard
 
-## Phase 3: AI & Intelligence 🧠 ✅
-
-- [x] **Smart package.xml Generator**: `sfdt manifest` — builds package.xml from git diffs with AI dependency cleanup (`--ai-cleanup`). Supports `--print`, `--destructive`, and custom `--base`/`--head` refs.
-- [x] **Error Log Interpreter**: `sfdt explain` — AI-powered analysis of deployment error logs with heuristic fallback for offline use. Reads from file, stdin, or auto-discovers the latest log.
-- [x] **PR Description Automator**: `sfdt pr-description` — generates GitHub PR descriptions or Slack messages from deployment changes using AI. Supports `--format github|slack|markdown` and `--output`.
-
-## Phase 4: Platform & Ecosystem 🌐 ✅
-
-- [x] **Other AI Platforms**: Multi-provider AI support — `ai.provider` in `.sfdt/config.json` selects `claude` (Claude Code CLI, default), `gemini` (Google Gemini REST, uses `GEMINI_API_KEY`), or `openai` (OpenAI REST, uses `OPENAI_API_KEY`). `sfdt init` now prompts for provider and optional API key. All AI commands route through the selected provider transparently.
-- [x] **Plugin Architecture**: `src/lib/plugin-loader.js` discovers and loads plugins before CLI parsing. Sources (in order): (1) packages listed in `config.plugins[]`, (2) any `sfdt-plugin-*` or `@scope/sfdt-plugin-*` package in the project's `node_modules/`, (3) `.sfdt/plugins/*.js` local scripts. Each plugin exports `register(program)`.
-- [x] **Web UI**: `sfdt ui` — launches a local Salesforce Lightning Design System dashboard (built with `@salesforce/design-system-react` + React + Vite) showing test run history, preflight check results, and drift detection status. Build the GUI with `npm run build:gui` from the package root.
-- [x] **Docker Support**: `Dockerfile` + `.dockerignore` — mounts a Salesforce DX project at `/project`; ships Node 20, Salesforce CLI, git, jq, and sfdt. Use with `docker run --rm -v "$(pwd):/project" sfdt deploy`.
+### Platform & Ecosystem
+- Plugin architecture — load from `config.plugins[]`, auto-discover `sfdt-plugin-*` packages, or drop `.sfdt/plugins/*.js` local files
+- Docker support — mounts a Salesforce DX project at `/project`; ships Node 20, Salesforce CLI, git, jq, and sfdt
+- DevOps Center MCP integration — pipeline status and work items injected into chat context when `config.mcp.enabled` is true; targeted Headless360 tool calling via `SalesforceMcpClient` for live pipeline and work-item data in the AI chat drawer
+- sfdt skills library — 10 Salesforce domain skills for use with AI agents (apex-review, data, deploy, flow-review, lwc, org-audit, pmd-scan, scratch-org, test, sfdt-cli)
+- Pre-built GUI included in the published npm package
 
 ---
 
-## Phase 5: Developer Experience & Ecosystem 🔭 (Planned)
+## In Progress
 
-- [ ] **`sfdt config` command**: `sfdt config set <key> <value>` to update `.sfdt/config.json` without hand-editing — especially useful for CI pipelines toggling `deployment.preflight.enforce*` flags.
-- [ ] **Pre-built GUI in the published package**: automate `npm run build:gui` in CI so end users never need to build the dashboard from source.
-- [ ] **Plugin registry & scaffolding**: `sfdt plugin create` scaffold to bootstrap a new `sfdt-plugin-*` package with example `register(program)` wiring.
-- [ ] **AI context window improvements**: pass structured project metadata (org shape, test history, recent diffs) to AI commands for higher-quality output with fewer prompts.
-- [ ] **Structured log format**: standardized JSON schema for test-run, preflight, and drift log files consumed by `sfdt ui` and external observability tools.
+- **Plugin registry & scaffolding** — `sfdt plugin create` scaffold to bootstrap a new `sfdt-plugin-*` package with example `register(program)` wiring
+
+---
+
+## Planned
+
+- **Expose sfdt as MCP Server** — surface sfdt commands as formal MCP tools callable by AI agents (Claude, Copilot, etc.), extending the current skills-library approach to first-class tool invocation
 
 ---
 

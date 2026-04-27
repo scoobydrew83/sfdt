@@ -24,10 +24,19 @@
   "pluginOptions": {
     "autoDiscover": false
   },
+  "mcp": {
+    "enabled": false,
+    "salesforce": {
+      "transport": "stdio",
+      "command": "sf",
+      "args": ["mcp", "start"]
+    }
+  },
   "pullCache": {
     "enabled": true,
     "parallelism": 5,
     "batchSize": 100,
     "retrieveTimeoutSeconds": 360
-  }
+  },
+  "logRetention": 50
 }

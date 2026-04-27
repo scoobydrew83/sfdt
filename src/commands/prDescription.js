@@ -5,6 +5,7 @@ import { loadConfig } from '../lib/config.js';
 import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { safeResolvePath } from '../lib/project-detect.js';
 import { parseDiffToMetadata, countMembers } from '../lib/metadata-mapper.js';
 
 const VALID_FORMATS = ['github', 'slack', 'markdown'];
@@ -122,9 +123,7 @@ export function registerPrDescriptionCommand(program) {
         }
 
         if (options.output) {
-          const absolute = path.isAbsolute(options.output)
-            ? options.output
-            : path.join(projectRoot, options.output);
+          const absolute = safeResolvePath(projectRoot, options.output);
           await fs.ensureDir(path.dirname(absolute));
           await fs.writeFile(absolute, output + '\n');
           print.success(`Wrote ${options.format} description → ${path.relative(projectRoot, absolute)}`);

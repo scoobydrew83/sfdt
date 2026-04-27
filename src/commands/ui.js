@@ -60,12 +60,16 @@ export function registerUiCommand(program) {
       }
 
       // Keep the process alive until Ctrl+C
+      const shutdown = () => {
+        server.close(async () => {
+          await server.cleanup?.();
+          process.exit(0);
+        });
+      };
       process.on('SIGINT', () => {
         print.info('\nStopping dashboard…');
-        server.close(() => process.exit(0));
+        shutdown();
       });
-      process.on('SIGTERM', () => {
-        server.close(() => process.exit(0));
-      });
+      process.on('SIGTERM', shutdown);
     });
 }

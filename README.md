@@ -57,6 +57,8 @@ sfdt deploy
 | `sfdt drift` | Detect metadata drift between local source and an org | `--org <alias>` |
 | `sfdt compare` | Compare metadata between two orgs or local source vs an org | `--source <alias\|local>`, `--target <alias>`, `--output <file>` |
 | `sfdt notify` | Send Slack deployment notifications | `--org <alias>`, `--version <ver>`, `--message <msg>` |
+| `sfdt config get <key>` | Print a config value using dot notation (e.g. `defaultOrg`) | — |
+| `sfdt config set <key> <value>` | Set a config value using dot notation (e.g. `deployment.coverageThreshold`) | — |
 | `sfdt completion <shell>` | Print shell completion script (`bash`, `zsh`, `fish`) | — |
 | `sfdt version` | Print the current sfdt version | — |
 | `sfdt update` | Update sfdt to the latest version from npm | `--force` |
