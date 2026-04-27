@@ -469,17 +469,19 @@ export function createGuiApp(config, version, port = 7654) {
     return v;
   }
 
+  const VALID_KEY_SEGMENT = /^[a-zA-Z][a-zA-Z0-9_]*$/;
+  const DENIED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
   function setNestedValue(obj, key, value) {
     const parts = key.split('.');
     const last = parts.pop();
-    if (['__proto__', 'constructor', 'prototype'].includes(last)) {
-      throw new Error(`Invalid key: ${last}`);
+    for (const part of [...parts, last]) {
+      if (!VALID_KEY_SEGMENT.test(part) || DENIED_KEYS.has(part)) {
+        throw new Error(`Invalid key segment: ${part}`);
+      }
     }
     const target = parts.reduce((o, k) => {
-      if (['__proto__', 'constructor', 'prototype'].includes(k)) {
-        throw new Error(`Invalid key: ${k}`);
-      }
-      if (o[k] === undefined || typeof o[k] !== 'object') o[k] = {};
+      if (!Object.prototype.hasOwnProperty.call(o, k) || typeof o[k] !== 'object') o[k] = {};
       return o[k];
     }, obj);
     target[last] = value;
