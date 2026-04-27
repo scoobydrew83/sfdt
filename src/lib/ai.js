@@ -743,7 +743,7 @@ async function streamGeminiResponse(messages, systemPrompt, config, onChunk) {
   }
 
   const model = config?.ai?.model || GEMINI_DEFAULT_MODEL;
-  const url = `${GEMINI_BASE_URL}/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+  const url = `${GEMINI_BASE_URL}/${model}:streamGenerateContent?alt=sse`;
 
   const body = {
     contents: messages.map((m) => ({
@@ -755,7 +755,10 @@ async function streamGeminiResponse(messages, systemPrompt, config, onChunk) {
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
     body: JSON.stringify(body),
   });
 
@@ -780,7 +783,6 @@ async function streamGeminiResponse(messages, systemPrompt, config, onChunk) {
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue;
       const data = line.slice(6).trim();
-      if (data === '[DONE]') return;
       try {
         const event = JSON.parse(data);
         const text = event.candidates?.[0]?.content?.parts?.[0]?.text;

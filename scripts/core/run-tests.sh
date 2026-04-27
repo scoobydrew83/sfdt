@@ -172,5 +172,3 @@ rm -f "$TEMP_OUTPUT"
 
 # Exit with the actual test command's exit code
 exit $TEST_EXIT_CODE
- test command's exit code
-exit $TEST_EXIT_CODE
