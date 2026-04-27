@@ -89,7 +89,7 @@ else
     log_info "Non-interactive mode: running all tests with coverage."
 fi
 
-TEMP_OUTPUT="/tmp/sfdt_test_output_$TIMESTAMP.txt"
+TEMP_OUTPUT=$(mktemp)
 TEST_EXIT_CODE=0
 
 case $OPTION in
@@ -171,4 +171,6 @@ log_success "Detailed results saved to: $RESULTS_FILE"
 rm -f "$TEMP_OUTPUT"
 
 # Exit with the actual test command's exit code
+exit $TEST_EXIT_CODE
+ test command's exit code
 exit $TEST_EXIT_CODE

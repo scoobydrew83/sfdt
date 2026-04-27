@@ -472,7 +472,13 @@ export function createGuiApp(config, version, port = 7654) {
   function setNestedValue(obj, key, value) {
     const parts = key.split('.');
     const last = parts.pop();
+    if (['__proto__', 'constructor', 'prototype'].includes(last)) {
+      throw new Error(`Invalid key: ${last}`);
+    }
     const target = parts.reduce((o, k) => {
+      if (['__proto__', 'constructor', 'prototype'].includes(k)) {
+        throw new Error(`Invalid key: ${k}`);
+      }
       if (o[k] === undefined || typeof o[k] !== 'object') o[k] = {};
       return o[k];
     }, obj);
@@ -493,11 +499,17 @@ export function createGuiApp(config, version, port = 7654) {
     }
   });
 
+  // Keys whose values are executed as shell commands — must not be API-writable.
+  const BLOCKED_CONFIG_KEY_PREFIXES = ['mcp.salesforce.command', 'mcp.salesforce.args'];
+
   app.patch('/api/config', apiLimiter, async (req, res) => {
     if (!rawConfigPath) return res.status(503).json({ error: 'Config dir unavailable' });
     const { key, value } = req.body ?? {};
     if (!key || typeof key !== 'string') return res.status(400).json({ error: 'key is required' });
     if (value === undefined) return res.status(400).json({ error: 'value is required' });
+    if (BLOCKED_CONFIG_KEY_PREFIXES.some((prefix) => key === prefix || key.startsWith(`${prefix}.`))) {
+      return res.status(403).json({ error: 'This config key cannot be set via the API' });
+    }
     try {
       const raw = await fs.readJson(rawConfigPath);
       const coerced = coerceConfigValue(String(value));
@@ -542,6 +554,43 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const data = await readDrift(logDir);
       res.json(data ?? {});
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/logs', apiLimiter, async (req, res) => {
+    try {
+      const typeFilter = req.query.type ?? 'all';
+      const archiveDirs = [
+        { type: 'preflight', dir: 'preflight-results' },
+        { type: 'drift',     dir: 'drift-results' },
+        { type: 'quality',   dir: 'quality-results' },
+        { type: 'test-run',  dir: 'test-results' },
+      ].filter(({ type }) => typeFilter === 'all' || type === typeFilter);
+
+      const logs = [];
+
+      for (const { dir } of archiveDirs) {
+        const archiveDir = path.join(logDir, dir);
+        if (!(await fs.pathExists(archiveDir))) continue;
+
+        let entries;
+        try { entries = await fs.readdir(archiveDir); } catch { continue; }
+
+        const jsonFiles = entries.filter((f) => f.endsWith('.json') && f !== 'latest.json');
+
+        for (const file of jsonFiles) {
+          const filePath = path.resolve(archiveDir, file);
+          if (!filePath.startsWith(path.resolve(logDir) + path.sep)) continue; // path traversal guard
+          const envelope = await tryReadJson(filePath);
+          if (!envelope || envelope.schemaVersion !== '1') continue;
+          logs.push(envelope);
+        }
+      }
+
+      logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      res.json({ logs });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1586,9 +1635,13 @@ export function createGuiApp(config, version, port = 7654) {
           }
           const devOpsContext = await mcpClient.getDevOpsCenterContext();
           if (devOpsContext) {
-            const raw = JSON.stringify(devOpsContext, null, 2);
-            const capped = raw.length > 8192 ? raw.slice(0, 8192) + '\n...(truncated)' : raw;
-            devOpsSection = `\n\n--- DEVOPS CENTER LIVE CONTEXT ---\n${capped}`;
+            const cap = (str) => (str.length > 4096 ? str.slice(0, 4096) + '\n...(truncated)' : str);
+            if (devOpsContext.pipeline) {
+              devOpsSection += `\n\n--- DEVOPS CENTER: PIPELINE STATUS ---\n${cap(JSON.stringify(devOpsContext.pipeline, null, 2))}`;
+            }
+            if (devOpsContext.workItems) {
+              devOpsSection += `\n\n--- DEVOPS CENTER: WORK ITEMS ---\n${cap(JSON.stringify(devOpsContext.workItems, null, 2))}`;
+            }
           }
         } catch {
           // MCP unavailable — continue without it

@@ -44,6 +44,12 @@ CLASSES_DIR="${SOURCE_PATH}/classes"
 STUB_COUNT=0
 
 for class in "${PROJECT_APEX_CLASSES[@]}"; do
+    # Validate class name (alphanumeric and underscores only)
+    if [[ ! "$class" =~ ^[a-zA-Z0-9_]+$ ]]; then
+        log_warning "Skipping invalid class name: ${class}"
+        continue
+    fi
+
     # Skip classes that are already test classes
     if [[ "$class" =~ Test$ ]] || [[ "$class" =~ _Test$ ]]; then
         continue

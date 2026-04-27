@@ -3,6 +3,16 @@ import { loadConfig } from '../lib/config.js';
 import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { parseDiffToMetadata } from '../lib/metadata-mapper.js';
+import {
+  buildProjectContext,
+  readLatestTestRuns,
+  readLatestPreflight,
+  buildContextBlock,
+  formatTestRunsSection,
+  formatPreflightSection,
+  formatMetadataTypesSection,
+} from '../lib/ai-context.js';
 
 const REVIEW_PROMPT = `You are a senior Salesforce developer reviewing a code diff. Analyze the following changes and report issues in these categories:
 
@@ -82,7 +92,31 @@ export function registerReviewCommand(program) {
 
         print.info(`Reviewing ${diff.split('\n').length} lines of diff...`);
 
-        const prompt = REVIEW_PROMPT + diff;
+        // Build structured context in parallel
+        const [nameStatusResult, projectCtx, testRuns, preflight] = await Promise.all([
+          execa('git', ['diff', '--name-status', `${options.base}...HEAD`], {
+            cwd: projectRoot,
+            reject: false,
+          }),
+          buildProjectContext(config),
+          readLatestTestRuns(config, 3),
+          readLatestPreflight(config),
+        ]);
+
+        const metadataTypes = formatMetadataTypesSection(
+          parseDiffToMetadata(nameStatusResult.stdout || '', {
+            sourcePath: config.defaultSourcePath,
+          }),
+        );
+
+        const contextBlock = buildContextBlock([
+          projectCtx,
+          metadataTypes,
+          formatTestRunsSection(testRuns),
+          formatPreflightSection(preflight),
+        ]);
+
+        const prompt = (contextBlock ? contextBlock + '\n\n' : '') + REVIEW_PROMPT + diff;
 
         await runAiPrompt(prompt, {
           config,

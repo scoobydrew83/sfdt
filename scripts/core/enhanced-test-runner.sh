@@ -50,7 +50,7 @@ if [[ -n "${SFDT_APEX_CLASSES:-}" ]]; then
 else
     TEST_CONFIG_FILE="${SFDT_CONFIG_DIR:-${SFDT_PROJECT_ROOT:-.}/.sfdt}/test-config.json"
     if [[ -f "$TEST_CONFIG_FILE" ]]; then
-        PROJECT_APEX_CLASSES=($(jq -r '.apexClasses[]' "$TEST_CONFIG_FILE" 2>/dev/null || echo ""))
+        mapfile -t PROJECT_APEX_CLASSES < <(jq -r '.apexClasses[]? // empty' "$TEST_CONFIG_FILE" 2>/dev/null || true)
     else
         PROJECT_APEX_CLASSES=()
     fi

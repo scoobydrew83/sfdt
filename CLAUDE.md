@@ -76,7 +76,6 @@ When adding a new env var, update both `buildScriptEnv()` in `script-runner.js` 
 
 ### Known Gaps
 
-- **No `sfdt config` command**: `.sfdt/config.json` must be hand-edited to change settings after `init`. A future `sfdt config set <key> <value>` command would let users and scripts update config without opening a JSON file, and would be especially useful for CI pipelines setting `deployment.preflight.enforce*` flags.
 - **GUI not pre-built in dev**: `gui/dist/` must be compiled with `npm run build:gui` before `sfdt ui` shows the full dashboard. The server falls back to a build-instructions page when `dist/` is absent.
 
 ### Error Handling

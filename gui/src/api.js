@@ -16,6 +16,16 @@ async function postJson(path, body) {
   return res.json();
 }
 
+async function patchJson(path, body) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
 export const api = {
   project:                () => fetchJson('/project'),
   checkUpdates:           () => fetchJson('/check-updates'),
@@ -35,6 +45,9 @@ export const api = {
   deployHistory:          () => fetchJson('/deploy/history'),
   changelogContent:       () => fetchJson('/changelog/content'),
   removeManifestComponent:(relPath, type, member) => postJson('/manifest/remove-component', { relPath, type, member }),
+  getConfig:              () => fetchJson('/config'),
+  setConfig:              (key, value) => patchJson('/config', { key, value: String(value) }),
+  logs:                   (type = 'all') => fetchJson(`/logs${type !== 'all' ? `?type=${encodeURIComponent(type)}` : ''}`),
 };
 
 // SSE helpers — return an EventSource-like object with onmessage/onerror + close()
@@ -93,6 +106,7 @@ export const stream = {
   releaseNotes:     ()     => ssePost('/release-notes/generate', {}),
   review:           (base) => ssePost('/review', { base }),
   explain:          (logPath) => ssePost('/explain', logPath ? { logPath } : {}),
+  qualityFixPlan:   () => ssePost('/quality/fix-plan', {}),
 };
 
 export function streamChatMessage(messages, pageContext, onChunk, onDone, onError) {

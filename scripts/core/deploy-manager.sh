@@ -196,7 +196,8 @@ post_deployment_check() {
         log_info "No smoke test classes configured in project.json - skipping component verification"
     else
         for class in "${key_classes[@]}"; do
-            if sf data query --query "SELECT Id FROM ApexClass WHERE Name = '$class' LIMIT 1" --target-org "$org_alias" >> "$DEPLOYMENT_LOG" 2>&1; then
+            local safe_class="${class//\'/\\\'}"
+            if sf data query --query "SELECT Id FROM ApexClass WHERE Name = '$safe_class' LIMIT 1" --target-org "$org_alias" >> "$DEPLOYMENT_LOG" 2>&1; then
                 log_success "Key component verified: $class"
             else
                 log_warning "Key component missing: $class"

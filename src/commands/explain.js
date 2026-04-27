@@ -5,6 +5,17 @@ import { loadConfig } from '../lib/config.js';
 import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../lib/ai.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { safeResolvePath } from '../lib/project-detect.js';
+import {
+  buildProjectContext,
+  readLatestTestRuns,
+  readLatestPreflight,
+  readDeployHistory,
+  buildContextBlock,
+  formatTestRunsSection,
+  formatPreflightSection,
+  formatDeployHistorySection,
+} from '../lib/ai-context.js';
 
 const MAX_LOG_SIZE_BYTES = 512 * 1024; // 512 KB cap sent to the model
 const MAX_HEURISTIC_ERRORS = 20;
@@ -111,13 +122,31 @@ export function registerExplainCommand(program) {
         }
 
         print.header('AI Error Analysis');
-        await runAiPrompt(EXPLAIN_PROMPT + trimmed.content, {
-          config,
-          allowedTools: ['Read', 'Grep', 'Glob'],
-          cwd: projectRoot,
-          aiEnabled: true,
-          interactive: true,
-        });
+
+        const [projectCtx, testRuns, preflight, deployHistory] = await Promise.all([
+          buildProjectContext(config),
+          readLatestTestRuns(config, 1),
+          readLatestPreflight(config),
+          readDeployHistory(config, 3),
+        ]);
+
+        const contextBlock = buildContextBlock([
+          projectCtx,
+          formatDeployHistorySection(deployHistory),
+          formatPreflightSection(preflight),
+          formatTestRunsSection(testRuns),
+        ]);
+
+        await runAiPrompt(
+          (contextBlock ? contextBlock + '\n\n' : '') + EXPLAIN_PROMPT + trimmed.content,
+          {
+            config,
+            allowedTools: ['Read', 'Grep', 'Glob'],
+            cwd: projectRoot,
+            aiEnabled: true,
+            interactive: true,
+          },
+        );
       } catch (err) {
         print.error(`Explain failed: ${err.message}`);
         process.exitCode = resolveExitCode(err);
@@ -133,7 +162,14 @@ export function registerExplainCommand(program) {
 async function resolveLogContent(file, options, config) {
   if (file) {
     const projectRoot = config._projectRoot;
-    const absolute = path.isAbsolute(file) ? file : path.join(projectRoot, file);
+    let absolute;
+    try {
+      absolute = safeResolvePath(projectRoot, file);
+    } catch (err) {
+      print.error(err.message);
+      process.exitCode = 1;
+      return null;
+    }
     if (!(await fs.pathExists(absolute))) {
       print.error(`Log file not found: ${file}`);
       process.exitCode = 1;

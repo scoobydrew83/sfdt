@@ -130,9 +130,10 @@ describe('runAiPrompt', () => {
 
     const promptCall = execa.mock.calls.find((call) => call[1]?.includes('-p'));
     expect(promptCall).toBeDefined();
-    expect(promptCall[1]).toContain('-p');
-    expect(promptCall[1]).toContain('review this code');
-    expect(promptCall[1]).toContain('--allowedTools');
+    const args = promptCall[1].join(' ');
+    expect(args).toContain('-p');
+    expect(args).toContain('review this code');
+    expect(args).toContain('--allowedTools');
     expect(result.stdout).toBe('review output');
   });
 

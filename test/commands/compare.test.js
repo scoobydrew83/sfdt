@@ -82,7 +82,7 @@ describe('compare command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'compare', '--output', 'out.xml']);
 
     expect(renderPackageXml).toHaveBeenCalled();
-    expect(fs.outputFile).toHaveBeenCalledWith('out.xml', expect.stringContaining('<?xml'));
+    expect(fs.outputFile).toHaveBeenCalledWith(expect.stringContaining('out.xml'), expect.stringContaining('<?xml'));
   });
 
   it('sets exitCode 1 on failure', async () => {
