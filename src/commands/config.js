@@ -15,24 +15,28 @@ function getNestedValue(obj, key) {
   return key.split('.').reduce((o, k) => o?.[k], obj);
 }
 
-const VALID_KEY_SEGMENT = /^[a-zA-Z][a-zA-Z0-9_]*$/;
-const DENIED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
-
-function validateKeySegment(part) {
-  if (!VALID_KEY_SEGMENT.test(part) || DENIED_KEYS.has(part)) {
-    throw new Error(`Invalid key segment: ${part}`);
-  }
-}
+const VALID_CONFIG_KEY = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
 function setNestedValue(obj, key, value) {
   const parts = key.split('.');
   const last = parts.pop();
-  for (const part of [...parts, last]) validateKeySegment(part);
+
   const target = parts.reduce((o, k) => {
-    if (!Object.prototype.hasOwnProperty.call(o, k) || typeof o[k] !== 'object') o[k] = {};
-    return o[k];
+    if (k === '__proto__' || k === 'constructor' || k === 'prototype' || !VALID_CONFIG_KEY.test(k)) {
+      throw new Error(`Invalid key segment: ${k}`);
+    }
+    const child =
+      Object.prototype.hasOwnProperty.call(o, k) && typeof o[k] === 'object' && o[k] !== null
+        ? o[k]
+        : {};
+    Object.defineProperty(o, k, { value: child, writable: true, enumerable: true, configurable: true });
+    return child;
   }, obj);
-  target[last] = value;
+
+  if (last === '__proto__' || last === 'constructor' || last === 'prototype' || !VALID_CONFIG_KEY.test(last)) {
+    throw new Error(`Invalid key segment: ${last}`);
+  }
+  Object.defineProperty(target, last, { value, writable: true, enumerable: true, configurable: true });
 }
 
 export function registerConfigCommand(program) {
