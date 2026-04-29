@@ -1,8 +1,14 @@
 const BASE = '/api';
 
+function httpError(res) {
+  const err = new Error(`${res.status} ${res.statusText}`);
+  err.status = res.status;
+  return err;
+}
+
 async function fetchJson(path) {
   const res = await fetch(`${BASE}${path}`);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw httpError(res);
   return res.json();
 }
 
@@ -12,7 +18,7 @@ async function postJson(path, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw httpError(res);
   return res.json();
 }
 
@@ -22,7 +28,7 @@ async function patchJson(path, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw httpError(res);
   return res.json();
 }
 
@@ -51,6 +57,7 @@ export const api = {
   removeManifestComponent:(relPath, type, member) => postJson('/manifest/remove-component', { relPath, type, member }),
   getConfig:              () => fetchJson('/config'),
   setConfig:              (key, value) => patchJson('/config', { key, value: String(value) }),
+  initProject:            (data) => postJson('/init', data),
   logs:                   (type = 'all') => fetchJson(`/logs${type !== 'all' ? `?type=${encodeURIComponent(type)}` : ''}`),
 };
 
