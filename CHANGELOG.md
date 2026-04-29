@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-04-28
+
+### Security
+- Config key segments are now validated with a strict regex before get/set operations, blocking remote property injection via crafted key names (CodeQL #35, #36).
+- Prototype-pollution vulnerabilities fully resolved using `Object.defineProperty` with inline guards throughout config resolution (CodeQL alerts cleared).
+
+### Fixed
+- Deployed manifests are now read-only in the GUI — the Manifests page and server-side route both enforce this guard, preventing accidental overwrites of released artifacts.
+- `skipPreflight` is now correctly honored in the GUI deploy path; the flag was previously ignored when deploying from the Release Hub.
+- Versioned manifest and release-note saves now return `409 Conflict` if the file already exists, preventing silent overwrites on duplicate runs.
+- `run_full_deployment` no longer hangs waiting for an interactive confirmation prompt when run in non-interactive (CI/GUI) environments.
+
 ## [0.6.0] - 2026-04-26
 
 ### Added

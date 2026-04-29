@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import CompareTable from '../components/CompareTable.jsx';
 import DiffPanel from '../components/DiffPanel.jsx';
 import EmptyState from '../components/EmptyState.jsx';
-import { IconArrowRight, IconX, IconCopy, IconDownload } from '../Icons.jsx';
+import { IconArrowRight, IconX, IconCopy, IconDownload, IconCheck, IconSearch, IconPackage } from '../Icons.jsx';
 
 const LOCAL_OPT = { id: 'local', label: 'Local Source', alias: 'local' };
 
@@ -19,8 +19,13 @@ export default function ComparePage() {
   const [phase2Total, setPhase2Total]   = useState(0);
   const [streamError, setStreamError]   = useState(null);
   const [diffItem, setDiffItem]         = useState(null);
-  const [manifest, setManifest]         = useState(null);
-  const [manifestOpen, setManifestOpen] = useState(false);
+  const [selectedItems, setSelectedItems] = useState([]);
+  const [manifestXml, setManifestXml]     = useState('');
+  const [manifestOpen, setManifestOpen]   = useState(false);
+  const [suggestedVersion, setSuggestedVersion] = useState('');
+  const [version, setVersion]             = useState('');
+  const [saving, setSaving]               = useState(false);
+  const [saveSuccess, setSaveResult]      = useState(null);
   const esRef = useRef(null);
 
   useEffect(() => {
@@ -99,12 +104,47 @@ export default function ComparePage() {
   };
 
   const handleBuildManifest = async (selected) => {
+    setSelectedItems(selected);
+    setSaveResult(null);
     try {
       const { xml } = await api.buildManifest(selected.map(({ type, member }) => ({ type, member })));
-      setManifest(xml);
+      setManifestXml(xml);
       setManifestOpen(true);
+      
+      // Fetch suggested version
+      api.suggestVersion().then(d => {
+        setSuggestedVersion(d.version);
+        setVersion(d.version);
+      }).catch(() => {});
     } catch (err) {
       console.error('Manifest build failed', err);
+    }
+  };
+
+  const handleRemoveFromManifest = async (type, member) => {
+    const next = selectedItems.filter(i => !(i.type === type && i.member === member));
+    setSelectedItems(next);
+    if (next.length === 0) {
+      setManifestXml('');
+      return;
+    }
+    const { xml } = await api.buildManifest(next.map(i => ({ type: i.type, member: i.member })));
+    setManifestXml(xml);
+  };
+
+  const handleSaveManifest = async () => {
+    setSaving(true);
+    setSaveResult(null);
+    try {
+      const res = await api.buildManifest(selectedItems.map(({ type, member }) => ({ type, member })), {
+        save: true,
+        version: version || suggestedVersion
+      });
+      setSaveResult(res);
+    } catch (err) {
+      alert(`Save failed: ${err.message}`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -237,53 +277,94 @@ export default function ComparePage() {
 
       {manifestOpen && (
         <div className="modal-backdrop" onClick={() => setManifestOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" style={{ maxWidth: 900, width: '95vw' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
-              <span className="modal-title">package.xml manifest</span>
+              <span className="modal-title">Build Release Manifest</span>
               <button className="btn btn-icon" onClick={() => setManifestOpen(false)}>
                 <IconX size={15} />
               </button>
             </div>
-            <div className="modal-body">
-              <pre style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 'var(--fs-sm)',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-                background: 'var(--bg-subtle)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--r-md)',
-                padding: 'var(--s-4)',
-                maxHeight: '55vh',
-                overflow: 'auto',
-                color: 'var(--fg-default)',
-                margin: 0,
-              }}>
-                {manifest}
-              </pre>
+            <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxHeight: '65vh' }}>
+              
+              {/* Left Column: Component List */}
+              <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div className="section-label" style={{ marginBottom: 10 }}>Components ({selectedItems.length})</div>
+                <div className="table-wrap" style={{ flex: 1, overflowY: 'auto' }}>
+                  <table className="data-table">
+                    <tbody>
+                      {selectedItems.map((i) => (
+                        <tr key={`${i.type}.${i.member}`}>
+                          <td>
+                            <div style={{ fontSize: 12, fontWeight: 500 }}>{i.member}</div>
+                            <div style={{ fontSize: 9, color: 'var(--fg-subtle)', textTransform: 'uppercase' }}>{i.type}</div>
+                          </td>
+                          <td style={{ width: 40, textAlign: 'right' }}>
+                            <button className="btn btn-ghost btn-xs" style={{ color: 'var(--status-conflict-fg)' }} onClick={() => handleRemoveFromManifest(i.type, i.member)}>
+                              <IconX size={12} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Right Column: XML Preview & Save */}
+              <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div className="section-label" style={{ marginBottom: 10 }}>XML Preview</div>
+                <pre style={{
+                  flex: 1,
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                  background: 'var(--bg-subtle)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--r-md)',
+                  padding: 'var(--s-3)',
+                  overflow: 'auto',
+                  color: 'var(--fg-default)',
+                  margin: 0,
+                }}>
+                  {manifestXml}
+                </pre>
+              </div>
             </div>
-            <div className="modal-foot">
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => navigator.clipboard.writeText(manifest ?? '')}
-              >
-                <IconCopy size={12} /> Copy
-              </button>
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={() => {
-                  const blob = new Blob([manifest ?? ''], { type: 'application/xml' });
-                  const url  = URL.createObjectURL(blob);
-                  const a    = document.createElement('a');
-                  a.href = url; a.download = 'compare-manifest.xml'; a.click();
-                  URL.revokeObjectURL(url);
-                }}
-              >
-                <IconDownload size={12} /> Download
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setManifestOpen(false)}>
-                Close
-              </button>
+
+            <div className="modal-foot" style={{ justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="input-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-muted)', whiteSpace: 'nowrap' }}>RELEASE VERSION</label>
+                  <input
+                    className="input"
+                    style={{ width: 100, fontSize: 12, padding: '4px 8px' }}
+                    value={version}
+                    onChange={(e) => setVersion(e.target.value)}
+                    placeholder={suggestedVersion}
+                  />
+                </div>
+                {saveSuccess && (
+                  <div style={{ fontSize: 11, color: 'var(--status-identical-fg)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <IconCheck size={14} /> Saved as {saveSuccess.filename}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => navigator.clipboard.writeText(manifestXml ?? '')}
+                >
+                  <IconCopy size={12} /> Copy
+                </button>
+                <button className="btn btn-primary btn-sm" onClick={handleSaveManifest} disabled={saving || selectedItems.length === 0}>
+                  {saving ? 'Saving...' : 'Save to Manifest Dir'}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setManifestOpen(false)}>
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

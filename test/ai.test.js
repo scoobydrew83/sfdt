@@ -4,17 +4,39 @@ vi.mock('execa', () => ({
   execa: vi.fn(),
 }));
 
+vi.mock('fs-extra', () => ({
+  default: {
+    pathExists: vi.fn().mockResolvedValue(false),
+    readJson: vi.fn().mockResolvedValue({}),
+    writeJson: vi.fn().mockResolvedValue(undefined),
+    ensureDir: vi.fn().mockResolvedValue(undefined),
+    readFile: vi.fn().mockResolvedValue(''),
+    readdir: vi.fn().mockResolvedValue([]),
+    realpath: vi.fn().mockImplementation((p) => Promise.resolve(p)),
+  },
+}));
+
 import { execa } from 'execa';
+import fs from 'fs-extra';
 import {
   isAiAvailable,
   getConfiguredProvider,
   aiUnavailableMessage,
   runAiPrompt,
   streamAiResponse,
+  storeCredential,
 } from '../src/lib/ai.js';
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // Restore fs-extra defaults after each reset so all tests have a working baseline
+  fs.pathExists.mockResolvedValue(false);
+  fs.readJson.mockResolvedValue({});
+  fs.writeJson.mockResolvedValue(undefined);
+  fs.ensureDir.mockResolvedValue(undefined);
+  fs.readFile.mockResolvedValue('');
+  fs.readdir.mockResolvedValue([]);
+  fs.realpath.mockImplementation((p) => Promise.resolve(p));
 });
 
 // ─── getConfiguredProvider ────────────────────────────────────────────────────
@@ -282,5 +304,218 @@ describe('streamAiResponse', () => {
         vi.fn(),
       ),
     ).rejects.toThrow('AI stream failed [openai]');
+  });
+});
+
+// ─── storeCredential ──────────────────────────────────────────────────────────
+
+describe('storeCredential', () => {
+  it('calls ensureDir and writeJson with the provider key and apiKey', async () => {
+    await storeCredential('openai', 'sk-test-123');
+
+    expect(fs.ensureDir).toHaveBeenCalledTimes(1);
+    expect(fs.writeJson).toHaveBeenCalledTimes(1);
+
+    const [, writtenData, opts] = fs.writeJson.mock.calls[0];
+    expect(writtenData).toEqual({ openai: { apiKey: 'sk-test-123' } });
+    expect(opts).toMatchObject({ spaces: 2, mode: 0o600 });
+  });
+
+  it('merges new credential with existing credentials for other providers', async () => {
+    // Simulate an existing gemini credential already stored
+    fs.pathExists.mockResolvedValue(true);
+    fs.readJson.mockResolvedValue({ gemini: { apiKey: 'gm-existing' } });
+
+    await storeCredential('openai', 'sk-new-key');
+
+    const [, writtenData] = fs.writeJson.mock.calls[0];
+    expect(writtenData).toEqual({
+      gemini: { apiKey: 'gm-existing' },
+      openai: { apiKey: 'sk-new-key' },
+    });
+  });
+
+  it('reads existing credentials via pathExists then readJson before writing', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.readJson.mockResolvedValue({ claude: { apiKey: 'old-claude' } });
+
+    await storeCredential('gemini', 'gm-abc');
+
+    expect(fs.pathExists).toHaveBeenCalledTimes(1);
+    expect(fs.readJson).toHaveBeenCalledTimes(1);
+    expect(fs.writeJson).toHaveBeenCalledTimes(1);
+
+    const [, writtenData] = fs.writeJson.mock.calls[0];
+    expect(writtenData.gemini).toEqual({ apiKey: 'gm-abc' });
+    expect(writtenData.claude).toEqual({ apiKey: 'old-claude' });
+  });
+
+  it('writes empty object as base when no existing credentials file', async () => {
+    fs.pathExists.mockResolvedValue(false);
+
+    await storeCredential('gemini', 'gm-fresh');
+
+    // pathExists returns false so readJson should not be called
+    expect(fs.readJson).not.toHaveBeenCalled();
+    const [, writtenData] = fs.writeJson.mock.calls[0];
+    expect(writtenData).toEqual({ gemini: { apiKey: 'gm-fresh' } });
+  });
+});
+
+// ─── runAiPrompt — additional provider paths ──────────────────────────────────
+
+describe('runAiPrompt (OpenAI provider)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('routes to OpenAI and returns the response content', async () => {
+    const openaiConfig = {
+      ai: { provider: 'openai', apiKey: 'sk-test' },
+      features: { ai: true },
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'openai result' }, finish_reason: 'stop' }],
+        }),
+      }),
+    );
+
+    const result = await runAiPrompt('test prompt', { config: openaiConfig });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('openai.com');
+    expect(result).not.toBeNull();
+    expect(result.stdout).toBe('openai result');
+  });
+
+  it('returns null and logs when OpenAI API key is missing', async () => {
+    const origKey = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    fs.pathExists.mockResolvedValue(false);
+
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const noKeyConfig = {
+      ai: { provider: 'openai', apiKey: '' },
+      features: { ai: true },
+    };
+
+    const result = await runAiPrompt('test prompt', { config: noKeyConfig });
+
+    expect(result).toBeNull();
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('OPENAI_API_KEY'));
+
+    consoleSpy.mockRestore();
+    if (origKey) process.env.OPENAI_API_KEY = origKey;
+  });
+});
+
+describe('runAiPrompt (Gemini provider)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('routes to Gemini and returns the response content', async () => {
+    const geminiConfig = {
+      ai: { provider: 'gemini', apiKey: 'gm-test' },
+      features: { ai: true },
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: 'gemini result' }] } }],
+        }),
+      }),
+    );
+
+    const result = await runAiPrompt('test prompt', { config: geminiConfig });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('googleapis.com');
+    expect(result).not.toBeNull();
+    expect(result.stdout).toBe('gemini result');
+  });
+
+  it('returns null and logs when Gemini API key is missing', async () => {
+    const origKey = process.env.GEMINI_API_KEY;
+    const origKey2 = process.env.GOOGLE_AI_API_KEY;
+    const origKey3 = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_AI_API_KEY;
+    delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    fs.pathExists.mockResolvedValue(false);
+
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const noKeyConfig = {
+      ai: { provider: 'gemini', apiKey: '' },
+      features: { ai: true },
+    };
+
+    const result = await runAiPrompt('test prompt', { config: noKeyConfig });
+
+    expect(result).toBeNull();
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('GEMINI_API_KEY'));
+
+    consoleSpy.mockRestore();
+    if (origKey) process.env.GEMINI_API_KEY = origKey;
+    if (origKey2) process.env.GOOGLE_AI_API_KEY = origKey2;
+    if (origKey3) process.env.GOOGLE_GENERATIVE_AI_API_KEY = origKey3;
+  });
+});
+
+// ─── isAiAvailable — additional edge cases ───────────────────────────────────
+
+describe('isAiAvailable (additional edge cases)', () => {
+  it('returns true for openai when OPENAI_API_KEY env var is set', async () => {
+    const orig = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-env-key';
+    fs.pathExists.mockResolvedValue(false);
+
+    const result = await isAiAvailable({
+      features: { ai: true },
+      ai: { provider: 'openai', apiKey: '' },
+    });
+    expect(result).toBe(true);
+
+    if (orig) process.env.OPENAI_API_KEY = orig;
+    else delete process.env.OPENAI_API_KEY;
+  });
+
+  it('returns true for gemini when GEMINI_API_KEY env var is set', async () => {
+    const origKey = process.env.GEMINI_API_KEY;
+    const origKey2 = process.env.GOOGLE_AI_API_KEY;
+    const origKey3 = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    process.env.GEMINI_API_KEY = 'gm-env-key';
+    fs.pathExists.mockResolvedValue(false);
+
+    const result = await isAiAvailable({
+      features: { ai: true },
+      ai: { provider: 'gemini', apiKey: '' },
+    });
+    expect(result).toBe(true);
+
+    if (origKey) process.env.GEMINI_API_KEY = origKey;
+    else delete process.env.GEMINI_API_KEY;
+    if (origKey2) process.env.GOOGLE_AI_API_KEY = origKey2;
+    if (origKey3) process.env.GOOGLE_GENERATIVE_AI_API_KEY = origKey3;
+  });
+
+  it('returns false for unknown provider', async () => {
+    const result = await isAiAvailable({
+      features: { ai: true },
+      ai: { provider: 'unknown-provider' },
+    });
+    expect(result).toBe(false);
   });
 });

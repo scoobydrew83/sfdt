@@ -1,6 +1,6 @@
 {
   "name": "@sfdt/cli",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Salesforce DevTools — Production-grade CLI for Salesforce DX deployment, testing, quality analysis, and release management",
   "type": "module",
   "bin": {
@@ -72,6 +72,7 @@
     "@vitest/coverage-v8": "^4.1.4",
     "eslint": "^9.22.0",
     "prettier": "^3.5.3",
+    "supertest": "^7.1.0",
     "vitest": "^4.1.4"
   },
   "repository": {

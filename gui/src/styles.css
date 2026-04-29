@@ -48,10 +48,12 @@
   --bg-surface: var(--n-0);
   --bg-subtle:  var(--n-50);
   --bg-muted:   var(--n-100);
+  --bg-input:   var(--n-25);
 
   --border-subtle:  var(--n-200);
   --border-default: var(--n-300);
   --border-strong:  var(--n-400);
+  --border-input:   var(--n-300);
 
   --fg-default:  var(--n-900);
   --fg-muted:    var(--n-600);
@@ -150,10 +152,12 @@
   --bg-surface: #14161f;
   --bg-subtle:  #191c26;
   --bg-muted:   #232636;
+  --bg-input:   #0d0e15;
 
   --border-subtle:  #242735;
   --border-default: #2e3243;
   --border-strong:  #3f445a;
+  --border-input:   #3f445a;
 
   --fg-default:  #e8eaf0;
   --fg-muted:    #a0a6b8;
@@ -443,7 +447,7 @@ input, select, textarea { font-family: inherit; }
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--s-6);
+  padding: var(--s-8) var(--s-10); /* Increased padding */
 }
 
 /* Page header */
@@ -451,7 +455,7 @@ input, select, textarea { font-family: inherit; }
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: var(--s-6);
+  margin-bottom: var(--s-8); /* Increased margin */
   gap: var(--s-4);
   flex-wrap: wrap;
 }
@@ -705,8 +709,8 @@ input, select, textarea { font-family: inherit; }
   font-size: var(--fs-sm);
   padding: 7px 10px;
   border-radius: var(--r-md);
-  border: 1px solid var(--border-default);
-  background: var(--bg-surface);
+  border: 1px solid var(--border-input);
+  background: var(--bg-input);
   color: var(--fg-default);
   outline: none;
 }

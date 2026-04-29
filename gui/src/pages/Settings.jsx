@@ -78,27 +78,28 @@ function FieldRow({ dotKey, label, type, options, rawConfig, onSave }) {
   }
 
   const inputStyle = {
-    padding: '4px 8px',
+    padding: '6px 10px',
     borderRadius: '6px',
-    border: '1px solid var(--border)',
-    background: 'var(--bg-card)',
-    color: 'var(--fg)',
+    border: '1px solid var(--border-input)',
+    background: 'var(--bg-input)',
+    color: 'var(--fg-default)',
     fontSize: '13px',
-    minWidth: 180,
+    minWidth: 200,
+    outline: 'none',
   };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border-faint, var(--border))' }}>
-      <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-muted)' }}>{label}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+      <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-default)', fontWeight: 500 }}>{label}</span>
       {type === 'boolean' ? (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
           <input
             type="checkbox"
+            className="cbx"
             checked={!!value}
             onChange={(e) => setValue(e.target.checked)}
-            style={{ width: 15, height: 15, cursor: 'pointer' }}
           />
-          <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{value ? 'Enabled' : 'Disabled'}</span>
+          <span style={{ fontSize: 12, color: 'var(--fg-muted)', minWidth: 60 }}>{value ? 'Enabled' : 'Disabled'}</span>
         </label>
       ) : type === 'select' ? (
         <select value={value} onChange={(e) => setValue(e.target.value)} style={inputStyle}>
@@ -110,19 +111,18 @@ function FieldRow({ dotKey, label, type, options, rawConfig, onSave }) {
           value={value}
           onChange={(e) => setValue(type === 'number' ? Number(e.target.value) : e.target.value)}
           style={inputStyle}
+          className="input"
         />
       )}
       <button
+        className={`btn btn-sm ${status === 'saved' ? 'btn-success' : 'btn-secondary'}`}
         onClick={handleSave}
         disabled={status === 'saving'}
         style={{
-          padding: '4px 12px',
-          borderRadius: '6px',
-          border: '1px solid var(--border)',
-          background: status === 'saved' ? 'var(--success-bg, #dcfce7)' : status === 'error' ? 'var(--error-bg, #fee2e2)' : 'var(--bg-card)',
-          color: status === 'saved' ? '#16a34a' : status === 'error' ? '#dc2626' : 'var(--fg)',
-          fontSize: 12,
-          cursor: status === 'saving' ? 'default' : 'pointer',
+          minWidth: 80,
+          justifyContent: 'center',
+          ...(status === 'saved' ? { background: 'var(--status-identical-bg)', color: 'var(--status-identical-fg)', borderColor: 'var(--status-identical-border)' } : {}),
+          ...(status === 'error' ? { background: 'var(--status-conflict-bg)', color: 'var(--status-conflict-fg)', borderColor: 'var(--status-conflict-border)' } : {}),
         }}
       >
         {status === 'saving' ? '…' : status === 'saved' ? '✓ Saved' : status === 'error' ? '✗ Error' : 'Save'}
@@ -158,12 +158,12 @@ export default function SettingsPage() {
     });
   }
 
-  if (loading) return <div style={{ padding: 32, color: 'var(--fg-muted)' }}>Loading config…</div>;
-  if (error) return <div style={{ padding: 32, color: '#dc2626' }}>Failed to load config: {error}</div>;
+  if (loading) return <div className="spinner-center"><div className="spinner" /></div>;
+  if (error) return <div style={{ padding: 32 }}><div className="alert alert-error">{error}</div></div>;
   if (!rawConfig) return null;
 
   return (
-    <div>
+    <div className="page-content">
       <div className="page-header">
         <div className="page-header-text">
           <h1>Settings</h1>
@@ -171,26 +171,32 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <p style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 20 }}>
-        Changes are written to <code>.sfdt/config.json</code> immediately. Restart <code>sfdt ui</code> to apply feature or AI provider changes.
-      </p>
-
-      {SECTIONS.map((section) => (
-        <div key={section.title} className="card" style={{ marginBottom: 20 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12, color: 'var(--fg)' }}>{section.title}</div>
-          {section.fields.map((field) => (
-            <FieldRow
-              key={field.key}
-              dotKey={field.key}
-              label={field.label}
-              type={field.type}
-              options={field.options}
-              rawConfig={rawConfig}
-              onSave={handleSave}
-            />
-          ))}
+      <div className="alert alert-info mb-6">
+        <div style={{ fontSize: 12 }}>
+          Changes are written to <code>.sfdt/config.json</code> immediately. Restart <code>sfdt ui</code> to apply feature or AI provider changes.
         </div>
-      ))}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        {SECTIONS.map((section) => (
+          <div key={section.title} className="card card-pad">
+            <div className="section-label" style={{ marginBottom: 16 }}>{section.title}</div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {section.fields.map((field) => (
+                <FieldRow
+                  key={field.key}
+                  dotKey={field.key}
+                  label={field.label}
+                  type={field.type}
+                  options={field.options}
+                  rawConfig={rawConfig}
+                  onSave={handleSave}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -23,12 +23,14 @@ vi.mock('ora', () => ({
 vi.mock('../../src/lib/output.js', () => ({
   print: { header: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
+vi.mock('execa', () => ({ execa: vi.fn() }));
 
 import { loadConfig } from '../../src/lib/config.js';
 import { fetchOrgInventory } from '../../src/lib/org-inventory.js';
 import { initCache, getDelta, updateCache, getCacheStatus } from '../../src/lib/pull-cache.js';
 import { parallelRetrieve } from '../../src/lib/parallel-retrieve.js';
 import inquirer from 'inquirer';
+import { execa } from 'execa';
 import { registerPullCommand } from '../../src/commands/pull.js';
 
 const MOCK_CONFIG = {
@@ -56,6 +58,7 @@ beforeEach(() => {
   fetchOrgInventory.mockResolvedValue(MOCK_INVENTORY);
   getDelta.mockReturnValue(new Map([['ApexClass', new Set(['MyClass'])]]));
   parallelRetrieve.mockResolvedValue({ retrieved: 1, total: 1, errors: [], successfulMembers: ['ApexClass:MyClass'] });
+  execa.mockResolvedValue({ exitCode: 0 });
 });
 
 describe('pull --status', () => {
@@ -125,5 +128,138 @@ describe('error handling', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'pull']);
     expect(updateCache).not.toHaveBeenCalled();
     expect(MOCK_DB.close).toHaveBeenCalled();
+  });
+});
+
+describe('pull with pullCache disabled', () => {
+  it('calls sf project retrieve start directly without using cache', async () => {
+    loadConfig.mockResolvedValue({ ...MOCK_CONFIG, pullCache: { enabled: false } });
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(execa).toHaveBeenCalledWith(
+      'sf',
+      ['project', 'retrieve', 'start', '--target-org', 'dev'],
+      expect.objectContaining({ cwd: '/project' }),
+    );
+    expect(fetchOrgInventory).not.toHaveBeenCalled();
+    expect(parallelRetrieve).not.toHaveBeenCalled();
+  });
+
+  it('sets exitCode 1 when sf retrieve fails with cache disabled', async () => {
+    loadConfig.mockResolvedValue({ ...MOCK_CONFIG, pullCache: { enabled: false } });
+    execa.mockRejectedValue(new Error('sf retrieve error'));
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe('pull --status when no cache exists', () => {
+  it('prints a no-cache message without throwing', async () => {
+    getCacheStatus.mockReturnValue({ orgAlias: 'dev', componentCount: 0, lastSync: null });
+    await createProgram().parseAsync(['node', 'sfdt', 'pull', '--status']);
+    expect(fetchOrgInventory).not.toHaveBeenCalled();
+    expect(parallelRetrieve).not.toHaveBeenCalled();
+  });
+});
+
+describe('pull menu option: preview', () => {
+  it('calls sf project retrieve preview', async () => {
+    inquirer.prompt.mockResolvedValue({ action: 'preview' });
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(execa).toHaveBeenCalledWith(
+      'sf',
+      ['project', 'retrieve', 'preview', '--target-org', 'dev'],
+      expect.objectContaining({ cwd: '/project' }),
+    );
+  });
+});
+
+describe('pull menu option: conflict', () => {
+  it('calls sf project retrieve start --verbose', async () => {
+    inquirer.prompt.mockResolvedValue({ action: 'conflict' });
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(execa).toHaveBeenCalledWith(
+      'sf',
+      ['project', 'retrieve', 'start', '--verbose', '--target-org', 'dev'],
+      expect.objectContaining({ cwd: '/project' }),
+    );
+  });
+});
+
+describe('pull menu option: reset', () => {
+  it('calls sf project reset tracking --no-prompt', async () => {
+    inquirer.prompt.mockResolvedValue({ action: 'reset' });
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(execa).toHaveBeenCalledWith(
+      'sf',
+      ['project', 'reset', 'tracking', '--no-prompt', '--target-org', 'dev'],
+      expect.objectContaining({ cwd: '/project' }),
+    );
+  });
+});
+
+describe('pull menu option: profiles', () => {
+  it('calls sf project retrieve start --metadata Profile', async () => {
+    inquirer.prompt.mockResolvedValue({ action: 'profiles' });
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(execa).toHaveBeenCalledWith(
+      'sf',
+      ['project', 'retrieve', 'start', '--metadata', 'Profile', '--target-org', 'dev'],
+      expect.objectContaining({ cwd: '/project' }),
+    );
+  });
+});
+
+describe('pull menu option: full', () => {
+  it('calls smartPull with full:true, retrieves all components and updates cache', async () => {
+    inquirer.prompt.mockResolvedValue({ action: 'full' });
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(fetchOrgInventory).toHaveBeenCalledWith('dev', null, { withDates: true });
+    expect(parallelRetrieve).toHaveBeenCalled();
+    expect(updateCache).toHaveBeenCalled();
+    expect(MOCK_DB.close).toHaveBeenCalled();
+  });
+});
+
+describe('pull menu option: group', () => {
+  const GROUP_CONFIG = {
+    ...MOCK_CONFIG,
+    pullConfig: {
+      pullGroups: {
+        mygroup: { description: 'My Group', metadata: ['ApexClass', 'CustomObject'] },
+      },
+    },
+  };
+
+  it('calls sf project retrieve start with metadata types from the group', async () => {
+    loadConfig.mockResolvedValue(GROUP_CONFIG);
+    inquirer.prompt.mockResolvedValue({ action: 'group:mygroup' });
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(execa).toHaveBeenCalledWith(
+      'sf',
+      [
+        'project', 'retrieve', 'start',
+        '--metadata', 'ApexClass',
+        '--metadata', 'CustomObject',
+        '--target-org', 'dev',
+      ],
+      expect.objectContaining({ cwd: '/project' }),
+    );
+  });
+
+  it('sets exitCode 1 when the group key does not exist', async () => {
+    loadConfig.mockResolvedValue(GROUP_CONFIG);
+    inquirer.prompt.mockResolvedValue({ action: 'group:nonexistent' });
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe('smartPull when inventory fetch fails', () => {
+  it('sets exitCode 1 and does not retrieve', async () => {
+    inquirer.prompt.mockResolvedValue({ action: 'smart' });
+    fetchOrgInventory.mockRejectedValue(new Error('network error'));
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(parallelRetrieve).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
   });
 });

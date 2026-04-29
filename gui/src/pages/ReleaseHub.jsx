@@ -106,6 +106,7 @@ function ManifestStep({ onSelect, selected, onMarkDone }) {
   const [head, setHead]           = useState('HEAD');
   const [building, setBuilding]   = useState(false);
   const [buildResult, setBuildResult] = useState(null);
+  const [viewingXml, setViewingXml] = useState(null); // { name, xml, components: [] }
 
   useEffect(() => {
     api.listManifests()
@@ -130,6 +131,34 @@ function ManifestStep({ onSelect, selected, onMarkDone }) {
     }
   };
 
+  const viewManifest = async (m) => {
+    try {
+      const { xml } = await api.getManifestContent(m.relPath);
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xml, 'application/xml');
+      const types = Array.from(doc.querySelectorAll('types'));
+      const components = [];
+      types.forEach(t => {
+        const name = t.querySelector('name')?.textContent;
+        const members = Array.from(t.querySelectorAll('members')).map(m => m.textContent);
+        members.forEach(member => { components.push({ type: name, member }); });
+      });
+      setViewingXml({ ...m, xml, components });
+    } catch (err) {
+      alert(`Could not load manifest: ${err.message}`);
+    }
+  };
+
+  const removeComponent = async (type, member) => {
+    if (!viewingXml) return;
+    try {
+      await api.removeManifestComponent(viewingXml.relPath, type, member);
+      viewManifest(viewingXml);
+    } catch (err) {
+      alert(`Remove failed: ${err.message}`);
+    }
+  };
+
   const downloadXml = (xml, name) => {
     const blob = new Blob([xml], { type: 'application/xml' });
     const url  = URL.createObjectURL(blob);
@@ -145,8 +174,11 @@ function ManifestStep({ onSelect, selected, onMarkDone }) {
         Choose a package.xml to use for this release, or generate one from git.
       </p>
 
-      {/* Manifest list */}
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: viewingXml ? '1fr 380px' : '1fr', gap: 24, alignItems: 'start' }}>
+        <div>
+          {/* Manifest list */}
+          <div className="card" style={{ marginBottom: 16 }}>
+
         <div className="card-head" style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600 }}>
           Available Manifests
         </div>
@@ -180,9 +212,14 @@ function ManifestStep({ onSelect, selected, onMarkDone }) {
                 {m.source} · {new Date(m.date).toLocaleDateString()}
               </div>
             </div>
-            {selected?.relPath === m.relPath && (
-              <IconCheck size={12} style={{ color: 'var(--brand-500)', flexShrink: 0 }} />
-            )}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="btn btn-ghost btn-xs" onClick={(e) => { e.stopPropagation(); viewManifest(m); }}>
+                <IconSearch size={10} /> View
+              </button>
+              {selected?.relPath === m.relPath && (
+                <IconCheck size={12} style={{ color: 'var(--brand-500)', flexShrink: 0 }} />
+              )}
+            </div>
           </button>
         ))}
       </div>
@@ -231,6 +268,8 @@ function ManifestStep({ onSelect, selected, onMarkDone }) {
         </button>
       </div>
     </div>
+    </div>
+  </div>
   );
 }
 
@@ -240,6 +279,7 @@ function ChangelogStep({ aiAvailable, onMarkDone }) {
   const [content, setContent]     = useState('');
   const [loading, setLoading]     = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [saving, setSaving]       = useState(false);
   const [genLines, setGenLines]   = useState([]);
   const counterRef = useRef(0);
 
@@ -269,6 +309,18 @@ function ChangelogStep({ aiAvailable, onMarkDone }) {
       }
     };
     s.onerror = () => setGenerating(false);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.saveChangelog(content);
+      onMarkDone();
+    } catch (err) {
+      alert(`Save failed: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -320,9 +372,12 @@ function ChangelogStep({ aiAvailable, onMarkDone }) {
         </div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button className="btn btn-primary" onClick={onMarkDone}>
-          Changelog ready →
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <button className="btn btn-ghost" onClick={onMarkDone}>
+          Skip (Don't Save)
+        </button>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving...' : 'Save & Continue →'}
         </button>
       </div>
     </div>
@@ -334,6 +389,7 @@ function ChangelogStep({ aiAvailable, onMarkDone }) {
 function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
   const [content, setContent]     = useState('');
   const [generating, setGenerating] = useState(false);
+  const [saving, setSaving]       = useState(false);
   const [genLines, setGenLines]   = useState([]);
   const counterRef = useRef(0);
 
@@ -356,6 +412,18 @@ function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
       }
     };
     s.onerror = () => setGenerating(false);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.saveReleaseNotes(content);
+      onMarkDone();
+    } catch (err) {
+      alert(`Save failed: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -403,9 +471,12 @@ function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
         </div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button className="btn btn-primary" onClick={onMarkDone}>
-          Notes ready →
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <button className="btn btn-ghost" onClick={onMarkDone}>
+          Skip (Don't Save)
+        </button>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving...' : 'Save & Continue →'}
         </button>
       </div>
     </div>
@@ -415,6 +486,8 @@ function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
 // ─── Validate Step ───────────────────────────────────────────────────────────
 
 function ValidateStep({ onMarkDone }) {
+  const [isValidated, setIsValidated] = useState(false);
+
   return (
     <div style={{ padding: 20 }}>
       <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Validate</h2>
@@ -424,105 +497,294 @@ function ValidateStep({ onMarkDone }) {
       <CommandRunner
         command="preflight"
         label="Preflight Checks"
-        onComplete={onMarkDone}
+        onComplete={() => setIsValidated(true)}
       />
+
+      {isValidated && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+          <button className="btn btn-primary" onClick={onMarkDone}>
+            Continue to Deploy →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Deploy Step ─────────────────────────────────────────────────────────────
 
-const DEPLOY_OPTIONS = [
-  {
-    id:      'standard',
-    label:   'Deploy',
-    desc:    'Full deployment with preflight',
-    opts:    { dryRun: false, skipPreflight: false, notifySlack: false },
-  },
-  {
-    id:      'dry-run',
-    label:   'Dry Run',
-    desc:    'Validate without deploying',
-    opts:    { dryRun: true,  skipPreflight: false, notifySlack: false },
-  },
-  {
-    id:      'skip-preflight',
-    label:   'Skip Preflight',
-    desc:    'Deploy fast, skip checks',
-    opts:    { dryRun: false, skipPreflight: true,  notifySlack: false },
-  },
-  {
-    id:      'notify',
-    label:   'Deploy + Notify',
-    desc:    'Deploy and send Slack notification',
-    opts:    { dryRun: false, skipPreflight: false, notifySlack: true  },
-  },
-];
-
 function DeployStep({ manifest, onMarkDone }) {
-  const [selected, setSelected] = useState('standard');
-  const [streamKey, setStreamKey] = useState(0);
+  const [orgs, setOrgs]             = useState([]);
+  const [targetOrg, setTargetOrg]   = useState('');
+  const [testLevel, setTestLevel]   = useState('RunLocalTests');
+  const [testClasses, setTestClasses] = useState('');
+  const [detectedTests, setDetectedTests] = useState([]);
+  const [detecting, setDetecting]     = useState(false);
+  const [destructiveTiming, setDestructiveTiming] = useState('post');
+  const [deploymentMode, setDeploymentMode] = useState('deploy'); // 'deploy' or 'validate'
+  const [tagRelease, setTagRelease]       = useState(true);
+  const [createPR, setCreatePR]           = useState(false);
+  const [notifySlack, setNotifySlack]     = useState(true);
+  const [loadingOrgs, setLoadingOrgs] = useState(true);
+  const [isRunning, setIsRunning]   = useState(false);
+  const [streamKey, setStreamKey]   = useState(0);
 
-  const option = DEPLOY_OPTIONS.find((o) => o.id === selected);
+  useEffect(() => {
+    api.orgs()
+      .then((d) => {
+        setOrgs(d.orgs ?? []);
+        // Set default org if available
+        api.project().then(p => {
+          if (p.org) setTargetOrg(p.org);
+        }).catch(() => {});
+      })
+      .catch(() => {})
+      .finally(() => setLoadingOrgs(false));
+  }, []);
+
+  useEffect(() => {
+    if (testLevel === 'RunSpecifiedTests' && manifest?.relPath) {
+      setDetecting(true);
+      api.detectTests(manifest.relPath)
+        .then((d) => {
+          setDetectedTests(d.tests ?? []);
+          if (d.tests?.length > 0 && !testClasses) {
+            setTestClasses(d.tests.join(', '));
+          }
+        })
+        .catch(() => {})
+        .finally(() => setDetecting(false));
+    }
+  }, [testLevel, manifest?.relPath]);
+
+  const toggleTest = (name) => {
+    const list = testClasses.split(',').map(s => s.trim()).filter(Boolean);
+    const newList = list.includes(name) 
+      ? list.filter(t => t !== name)
+      : [...list, name];
+    setTestClasses(newList.join(', '));
+  };
+
+  const runDeployment = () => {
+    setIsRunning(true);
+    setStreamKey(k => k + 1);
+  };
+
   const cliPreview = [
     'sfdt deploy',
-    option?.opts.dryRun        ? '--dry-run'        : '',
-    option?.opts.skipPreflight ? '--skip-preflight' : '',
-    option?.opts.notifySlack   ? '--notify'         : '',
+    deploymentMode === 'validate' ? '--dry-run' : '',
+    `--target-org ${targetOrg}`,
+    `--test-level ${testLevel}`,
+    testLevel === 'RunSpecifiedTests' && testClasses ? `--tests "${testClasses}"` : '',
     manifest ? `--manifest ${manifest.relPath}` : '',
   ].filter(Boolean).join(' ');
 
   return (
     <div style={{ padding: 20 }}>
       <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Deploy</h2>
-      <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: 16 }}>
-        Choose a deployment mode and run it.
+      <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: 20 }}>
+        Configure your deployment settings and execute.
       </p>
 
-      {/* Option cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-        {DEPLOY_OPTIONS.map((opt) => (
-          <button
-            key={opt.id}
-            onClick={() => { setSelected(opt.id); setStreamKey((k) => k + 1); }}
-            style={{
-              padding: '12px 14px',
-              background: selected === opt.id ? 'var(--brand-50)' : 'var(--bg-subtle)',
-              border: `1px solid ${selected === opt.id ? 'var(--brand-300)' : 'var(--border-subtle)'}`,
-              borderRadius: 8,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-          >
-            <div style={{ fontSize: 13, fontWeight: 600, color: selected === opt.id ? 'var(--brand-700)' : 'var(--fg-default)', marginBottom: 3 }}>
-              {opt.label}
+      {!isRunning ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Target Org */}
+          <div className="card" style={{ padding: 16 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Target Organization</label>
+            {loadingOrgs ? (
+              <div style={{ fontSize: 12, color: 'var(--fg-subtle)' }}>Loading orgs...</div>
+            ) : (
+              <select
+                className="input"
+                style={{ width: '100%', fontSize: 13 }}
+                value={targetOrg}
+                onChange={(e) => setTargetOrg(e.target.value)}
+              >
+                <option value="">Select an org...</option>
+                {orgs.map(o => (
+                  <option key={o.alias} value={o.alias}>{o.alias} ({o.username})</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            {/* Mode & Tests */}
+            <div className="card" style={{ padding: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Deployment Mode</label>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                <button
+                  className={`btn btn-sm ${deploymentMode === 'deploy' ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setDeploymentMode('deploy')}
+                  style={{ flex: 1 }}
+                >
+                  Full Deploy
+                </button>
+                <button
+                  className={`btn btn-sm ${deploymentMode === 'validate' ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setDeploymentMode('validate')}
+                  style={{ flex: 1 }}
+                >
+                  Validate Only
+                </button>
+              </div>
+
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Test Level</label>
+              <select
+                className="input"
+                style={{ width: '100%', fontSize: 13, marginBottom: testLevel === 'RunSpecifiedTests' ? 10 : 0 }}
+                value={testLevel}
+                onChange={(e) => setTestLevel(e.target.value)}
+              >
+                <option value="NoTestRun">NoTestRun (Metadata Only)</option>
+                <option value="RunLocalTests">RunLocalTests (All Local)</option>
+                <option value="RunSpecifiedTests">RunSpecifiedTests (Manual List)</option>
+                <option value="RunAllTestsInOrg">RunAllTestsInOrg (Managed + Local)</option>
+              </select>
+
+              {testLevel === 'RunSpecifiedTests' && (
+                <div style={{ marginTop: 10 }}>
+                  <input
+                    className="input"
+                    placeholder="TestClass1, TestClass2..."
+                    style={{ width: '100%', fontSize: 12, marginBottom: 8 }}
+                    value={testClasses}
+                    onChange={(e) => setTestClasses(e.target.value)}
+                  />
+                  
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-subtle)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    DETECTED IN MANIFEST {detecting && <div className="live-dot" />}
+                  </div>
+
+                  {!detecting && detectedTests.length === 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--fg-muted)', fontStyle: 'italic' }}>No test classes found in manifest.</div>
+                  )}
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {detectedTests.map(name => {
+                      const isActive = testClasses.split(',').map(s => s.trim()).includes(name);
+                      return (
+                        <button
+                          key={name}
+                          onClick={() => toggleTest(name)}
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: 12,
+                            fontSize: 10,
+                            cursor: 'pointer',
+                            background: isActive ? 'var(--brand-500)' : 'var(--bg-muted)',
+                            color: isActive ? 'white' : 'var(--fg-muted)',
+                            border: 'none',
+                            transition: 'all 0.1s'
+                          }}
+                        >
+                          {name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{opt.desc}</div>
-          </button>
-        ))}
-      </div>
 
-      {/* CLI preview */}
-      <div style={{
-        fontFamily: 'var(--font-mono)',
-        fontSize: 11,
-        padding: '7px 12px',
-        background: 'var(--bg-subtle)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 6,
-        color: 'var(--fg-muted)',
-        marginBottom: 16,
-      }}>
-        $ {cliPreview}
-      </div>
+            {/* Destructive & Advanced */}
+            <div className="card" style={{ padding: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Destructive Changes</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="destructiveTiming"
+                    checked={destructiveTiming === 'post'}
+                    onChange={() => setDestructiveTiming('post')}
+                  />
+                  Post-Destructive (Deploy then Delete)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="destructiveTiming"
+                    checked={destructiveTiming === 'pre'}
+                    onChange={() => setDestructiveTiming('pre')}
+                  />
+                  Pre-Destructive (Delete then Deploy)
+                </label>
+              </div>
 
-      <StreamRunner
-        key={streamKey}
-        label={`${option?.label ?? 'Deploy'} to org`}
-        startLabel={option?.label ?? 'Deploy'}
-        streamFn={() => stream.deploy({ ...option?.opts, manifest: manifest?.relPath })}
-        onComplete={onMarkDone}
-      />
+              <div style={{ marginTop: 20, borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', marginBottom: 8 }}>
+                  <input type="checkbox" className="cbx" checked={tagRelease} onChange={e => setTagRelease(e.target.checked)} />
+                  Tag Release (Git)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', marginBottom: 8 }}>
+                  <input type="checkbox" className="cbx" checked={createPR} onChange={e => setCreatePR(e.target.checked)} />
+                  Create Pull Request
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                  <input type="checkbox" className="cbx" checked={notifySlack} onChange={e => setNotifySlack(e.target.checked)} />
+                  Notify Slack on completion
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* CLI Preview */}
+          <div style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            padding: '10px 14px',
+            background: 'var(--bg-subtle)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 8,
+            color: 'var(--fg-muted)',
+            position: 'relative'
+          }}>
+            <div style={{ position: 'absolute', top: -8, left: 12, background: 'var(--bg-surface)', padding: '0 4px', fontSize: 10, fontWeight: 600 }}>CLI PREVIEW</div>
+            $ {cliPreview}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+            <button
+              className="btn btn-primary btn-lg"
+              disabled={!targetOrg}
+              onClick={runDeployment}
+              style={{ paddingLeft: 40, paddingRight: 40 }}
+            >
+              <IconRocket size={16} style={{ marginRight: 8 }} />
+              Execute {deploymentMode === 'validate' ? 'Validation' : 'Deployment'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>
+              Deployment in progress to <span style={{ color: 'var(--brand-600)' }}>{targetOrg}</span>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setIsRunning(false)}>
+              <IconRotateCcw size={11} /> Back to Config
+            </button>
+          </div>
+
+          <StreamRunner
+            key={streamKey}
+            label={`${deploymentMode === 'validate' ? 'Validating' : 'Deploying'} to ${targetOrg}`}
+            startLabel="Deploy"
+            streamFn={() => stream.deploy({
+              dryRun: deploymentMode === 'validate',
+              org: targetOrg,
+              manifest: manifest?.relPath,
+              testLevel,
+              testClasses,
+              destructiveTiming,
+              tagRelease,
+              createPR,
+              notifySlack
+            })}
+            onComplete={onMarkDone}
+          />
+        </div>
+      )}
     </div>
   );
 }
