@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-04-29
+
+### Added
+- **GUI: Initialize Project from Settings**: The Settings page now shows a guided "Initialize Project" card when no `.sfdt/` config directory exists, backed by a new `/api/init` endpoint — users can set up a project without touching the command line.
+
+### Fixed
+- `ReferenceError` crash on the Release Hub page caused by a missing `IconSearch` import; the page now loads correctly.
+- Settings page no longer returns a raw 503 error on uninitialized projects; users are guided to initialize from within the GUI instead.
+- After a GUI-triggered update (`sfdt update`), the server now self-restarts automatically and the browser polls `/api/ping` to reload once the server is ready — no manual restart required.
+
+### Changed
+- `express-rate-limit` updated from v7 to v8 (major); no behavior change for end users.
+- `ora` updated to 9.4.0; `vitest` and `@vitest/coverage-v8` updated to 4.1.5.
+
 ## [0.6.1] - 2026-04-28
 
 ### Security
