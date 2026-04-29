@@ -419,3 +419,130 @@ describe('GET /api/logs', () => {
     expect(Array.isArray(res.body.logs)).toBe(true);
   });
 });
+
+// ─── Security route tests ────────────────────────────────────────────────────
+
+describe('PATCH /api/config — key injection guards', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('blocks mcp.salesforce.command (shell-executable key)', async () => {
+    const res = await request(app)
+      .patch('/api/config')
+      .send({ key: 'mcp.salesforce.command', value: 'evil' });
+    expect(res.status).toBe(403);
+  });
+
+  it('blocks mcp.salesforce.args (shell-executable key)', async () => {
+    const res = await request(app)
+      .patch('/api/config')
+      .send({ key: 'mcp.salesforce.args', value: 'evil' });
+    expect(res.status).toBe(403);
+  });
+
+  it('blocks keys nested under mcp.salesforce.command', async () => {
+    const res = await request(app)
+      .patch('/api/config')
+      .send({ key: 'mcp.salesforce.command.sub', value: 'evil' });
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects missing key', async () => {
+    const res = await request(app)
+      .patch('/api/config')
+      .send({ value: 'x' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/manifest/remove-component — deployed-path guard', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns 403 for a path inside the deployed/ subdirectory', async () => {
+    const res = await request(app)
+      .post('/api/manifest/remove-component')
+      .send({ relPath: 'manifest/release/deployed/rl-1.0.0-package.xml', type: 'ApexClass', member: 'MyClass' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/read-only/i);
+  });
+
+  it('returns 400 for path traversal attempt', async () => {
+    const res = await request(app)
+      .post('/api/manifest/remove-component')
+      .send({ relPath: '../../../etc/passwd', type: 'ApexClass', member: 'x' });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for absolute path', async () => {
+    const res = await request(app)
+      .post('/api/manifest/remove-component')
+      .send({ relPath: '/etc/passwd', type: 'ApexClass', member: 'x' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/release/deploy — manifest path guard', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns 400 for path traversal in manifest param', async () => {
+    const res = await request(app)
+      .post('/api/release/deploy')
+      .send({ manifest: '../../etc/passwd' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid manifest/i);
+  });
+
+  it('returns 400 for absolute path in manifest param', async () => {
+    const res = await request(app)
+      .post('/api/release/deploy')
+      .send({ manifest: '/etc/passwd' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid manifest/i);
+  });
+});
+
+describe('POST /api/compare/manifest — version conflict (409)', () => {
+  let app;
+
+  beforeAll(async () => {
+    const { default: fs } = await import('fs-extra');
+    vi.mocked(fs.pathExists).mockImplementation(async (p) => String(p).includes('rl-1.0.0'));
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    const { default: fs } = await import('fs-extra');
+    vi.mocked(fs.pathExists).mockResolvedValue(false);
+    await app.cleanup?.();
+  });
+
+  it('returns 409 when the versioned manifest already exists', async () => {
+    const res = await request(app)
+      .post('/api/compare/manifest')
+      .send({ save: true, version: '1.0.0', xml: '<Package/>' });
+    expect(res.status).toBe(409);
+  });
+});

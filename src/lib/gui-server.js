@@ -920,10 +920,12 @@ export function createGuiApp(config, version, port = 7654) {
       
       let latestVersion = '';
 
-      // Check manifest files
+      // Check manifest files (including deployed/ subdirectory)
       if (await fs.pathExists(manifestDir)) {
         const files = await fs.readdir(manifestDir);
-        const versions = files
+        const deployedDir = path.join(manifestDir, 'deployed');
+        const deployedFiles = await fs.pathExists(deployedDir) ? await fs.readdir(deployedDir) : [];
+        const versions = [...files, ...deployedFiles]
           .filter(f => f.match(/^rl-(\d+\.\d+\.\d+)-package\.xml$/))
           .map(f => f.match(/^rl-(\d+\.\d+\.\d+)-package\.xml$/)[1]);
         
@@ -1190,6 +1192,18 @@ export function createGuiApp(config, version, port = 7654) {
       destructiveTiming,
     } = req.body ?? {};
 
+    const projectRoot = config._projectRoot ?? process.cwd();
+
+    if (manifest !== undefined && manifest !== null) {
+      if (typeof manifest !== 'string' || path.isAbsolute(manifest) || manifest.includes('..')) {
+        return res.status(400).json({ error: 'Invalid manifest path' });
+      }
+      const absManifest = path.resolve(projectRoot, manifest);
+      if (!absManifest.startsWith(projectRoot + path.sep)) {
+        return res.status(400).json({ error: 'Invalid manifest path' });
+      }
+    }
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -1199,7 +1213,6 @@ export function createGuiApp(config, version, port = 7654) {
     req.on('close', () => { if (child && !child.killed) child.kill(); });
 
     try {
-      const projectRoot = config._projectRoot ?? process.cwd();
       const scriptPath = path.join(SCRIPTS_DIR, 'core', 'deployment-assistant.sh');
 
       const scriptEnv = {
@@ -1563,7 +1576,7 @@ export function createGuiApp(config, version, port = 7654) {
           for (const m of members) {
             const name = m.replace(/<\/?members>/g, '');
             // Filter for classes likely to be tests: ends with Test, _Test, Tests, or has Test followed by capital
-            if (name.match(/(Test$|_Test$|Tests$|Test[A-Z])/i)) {
+            if (/(?:Test|_Test|Tests)$/i.test(name) || /Test[A-Z]/.test(name)) {
               apexClasses.push(name);
             }
           }
