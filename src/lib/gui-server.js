@@ -6,6 +6,7 @@
  *  - Exposes REST API endpoints that read sfdt config and log files
  */
 
+import { spawn } from 'child_process';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import fs from 'fs-extra';
@@ -16,6 +17,7 @@ import { createInterface } from 'readline';
 import { fetchLatestVersion } from './update-checker.js';
 import { writeLog, parseSfdtLogLines, readLatestLog } from './log-writer.js';
 import { setNestedValue, coerceConfigValue } from './config-utils.js';
+import { loadConfig } from './config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -460,9 +462,10 @@ export function createGuiApp(config, version, port = 7654) {
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
 
-  const rawConfigPath = config._configDir
+  let rawConfigPath = config._configDir
     ? path.join(config._configDir, 'config.json')
     : null;
+  let initInProgress = false;
 
   app.get('/api/config', apiLimiter, async (_req, res) => {
     if (!rawConfigPath) return res.status(503).json({ error: 'Config dir unavailable' });
@@ -494,6 +497,67 @@ export function createGuiApp(config, version, port = 7654) {
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  const TEMPLATE_PATH = path.resolve(__dirname, '..', 'templates', 'sfdt.config.json');
+
+  app.post('/api/init', apiLimiter, async (req, res) => {
+    try {
+      const projectRoot = config._projectRoot || process.cwd();
+      const configDir = path.join(projectRoot, '.sfdt');
+      if (rawConfigPath || initInProgress) {
+        return res.status(409).json({ error: 'Already initialized' });
+      }
+      initInProgress = true;
+      if (await fs.pathExists(configDir)) {
+        initInProgress = false;
+        return res.status(409).json({ error: 'Already initialized' });
+      }
+
+      const { projectName = 'Salesforce Project', defaultOrg = '' } = req.body ?? {};
+      if (!projectName.trim()) {
+        return res.status(400).json({ error: 'projectName is required' });
+      }
+
+      const template = await fs.readJson(TEMPLATE_PATH);
+      const configData = { ...template, projectName: projectName.trim(), defaultOrg };
+
+      await fs.ensureDir(configDir);
+      await fs.writeJson(path.join(configDir, 'config.json'), configData, { spaces: 2 });
+      await fs.writeJson(path.join(configDir, 'environments.json'), {
+        default: defaultOrg,
+        orgs: defaultOrg ? [{ alias: defaultOrg, type: 'development', description: 'Default development org' }] : [],
+      }, { spaces: 2 });
+      await fs.writeJson(path.join(configDir, 'pull-config.json'), {
+        metadataTypes: [
+          'ApexClass', 'ApexTrigger', 'LightningComponentBundle', 'CustomObject',
+          'CustomField', 'Layout', 'FlexiPage', 'PermissionSet', 'Flow',
+        ],
+        targetDir: 'force-app/main/default',
+      }, { spaces: 2 });
+      await fs.writeJson(path.join(configDir, 'test-config.json'), {
+        coverageThreshold: template.deployment?.coverageThreshold ?? 75,
+        testLevel: 'RunLocalTests',
+        suites: [],
+        testClasses: [],
+        apexClasses: [],
+      }, { spaces: 2 });
+
+      rawConfigPath = path.join(configDir, 'config.json');
+
+      // Reload in-memory config so all endpoints see the new values immediately
+      const fresh = await loadConfig(projectRoot);
+      Object.assign(config, fresh);
+
+      res.json({ ok: true });
+    } catch (err) {
+      initInProgress = false;
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/ping', apiLimiter, (_req, res) => {
+    res.json({ ok: true });
   });
 
   app.get('/api/project', apiLimiter, (_req, res) => {
@@ -630,7 +694,24 @@ export function createGuiApp(config, version, port = 7654) {
 
       if (!res.writableEnded) {
         res.write('data: ' + JSON.stringify({ type: 'result', exitCode }) + '\n\n');
+        if (exitCode === 0) {
+          res.write('data: ' + JSON.stringify({ type: 'restarting' }) + '\n\n');
+        }
         res.end();
+      }
+
+      if (exitCode === 0) {
+        setTimeout(() => {
+          const child = spawn(process.argv[0], [process.argv[1], 'ui'], {
+            detached: true,
+            stdio: 'ignore',
+            env: process.env,
+            cwd: config._projectRoot || process.cwd(),
+          });
+          child.unref();
+          process.exit(0);
+        }, 500);
+        return;
       }
     } catch (err) {
       if (!res.writableEnded) {

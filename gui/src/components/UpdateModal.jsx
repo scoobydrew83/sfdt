@@ -2,13 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import { IconX, IconDownload, IconAlertTri } from '../Icons.jsx';
 
 export default function UpdateModal({ current, latest, onClose }) {
-  const [status, setStatus]   = useState('idle'); // idle | running | done | error
+  const [status, setStatus]   = useState('idle'); // idle | running | restarting | done | error
   const [lines, setLines]     = useState([]);
   const [exitCode, setExitCode] = useState(null);
-  const esRef     = useRef(null);
-  const logRef    = useRef(null);
+  const esRef      = useRef(null);
+  const logRef     = useRef(null);
   const counterRef = useRef(0);
-  const deadRef   = useRef(false);
+  const deadRef    = useRef(false);
+  const pollRef    = useRef(null);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -18,8 +19,32 @@ export default function UpdateModal({ current, latest, onClose }) {
     return () => {
       deadRef.current = true;
       esRef.current?.close();
+      if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (status !== 'restarting') return;
+    const deadline = Date.now() + 30_000;
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch('/api/ping');
+        if (res.ok) {
+          clearInterval(pollRef.current);
+          window.location.reload();
+        } else if (Date.now() >= deadline) {
+          clearInterval(pollRef.current);
+          setStatus('done');
+        }
+      } catch {
+        if (Date.now() >= deadline) {
+          clearInterval(pollRef.current);
+          setStatus('done');
+        }
+      }
+    }, 500);
+    return () => clearInterval(pollRef.current);
+  }, [status]);
 
   const startUpdate = () => {
     setStatus('running');
@@ -38,9 +63,17 @@ export default function UpdateModal({ current, latest, onClose }) {
       if (msg.type === 'log') {
         const id = counterRef.current++;
         setLines((prev) => [...prev, { id, text: msg.line }]);
+      } else if (msg.type === 'restarting') {
+        setStatus('restarting');
+        es.close();
+        esRef.current = null;
       } else if (msg.type === 'result') {
-        setStatus(msg.exitCode === 0 ? 'done' : 'error');
-        setExitCode(msg.exitCode);
+        if (msg.exitCode === 0) {
+          setStatus('restarting');
+        } else {
+          setStatus('error');
+          setExitCode(msg.exitCode);
+        }
         es.close();
         esRef.current = null;
       } else if (msg.type === 'error') {
@@ -66,12 +99,12 @@ export default function UpdateModal({ current, latest, onClose }) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget && status !== 'running') onClose(); }}>
+    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget && status !== 'running' && status !== 'restarting') onClose(); }}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="update-modal-title">
 
         <div className="modal-head">
           <span className="modal-title" id="update-modal-title">Update sfdt</span>
-          {status !== 'running' && (
+          {status !== 'running' && status !== 'restarting' && (
             <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
               <IconX size={14} />
             </button>
@@ -95,8 +128,15 @@ export default function UpdateModal({ current, latest, onClose }) {
           {lines.length > 0 && (
             <div className="cmd-terminal" ref={logRef} style={{ maxHeight: 260 }}>
               {lines.map(({ id, text }) => (
-                <div key={id} className="cmd-line">{text || '\u00A0'}</div>
+                <div key={id} className="cmd-line">{text || ' '}</div>
               ))}
+            </div>
+          )}
+
+          {status === 'restarting' && (
+            <div className="update-notice">
+              <div className="spinner" style={{ width: 14, height: 14, flexShrink: 0 }} />
+              <span>Restarting sfdt... the page will reload automatically.</span>
             </div>
           )}
 
@@ -136,6 +176,9 @@ export default function UpdateModal({ current, latest, onClose }) {
               <div className="live-dot">installing</div>
               <button className="btn btn-ghost btn-sm" onClick={cancel}>Cancel</button>
             </>
+          )}
+          {status === 'restarting' && (
+            <div className="live-dot">restarting</div>
           )}
           {(status === 'done' || status === 'error') && (
             <button className="btn btn-primary btn-sm" onClick={onClose}>Close</button>
