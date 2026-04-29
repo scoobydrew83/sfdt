@@ -465,6 +465,7 @@ export function createGuiApp(config, version, port = 7654) {
   let rawConfigPath = config._configDir
     ? path.join(config._configDir, 'config.json')
     : null;
+  let initInProgress = false;
 
   app.get('/api/config', apiLimiter, async (_req, res) => {
     if (!rawConfigPath) return res.status(503).json({ error: 'Config dir unavailable' });
@@ -504,9 +505,10 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const projectRoot = config._projectRoot || process.cwd();
       const configDir = path.join(projectRoot, '.sfdt');
-      if (rawConfigPath || await fs.pathExists(configDir)) {
+      if (rawConfigPath || initInProgress || await fs.pathExists(configDir)) {
         return res.status(409).json({ error: 'Already initialized' });
       }
+      initInProgress = true;
 
       const { projectName = 'Salesforce Project', defaultOrg = '' } = req.body ?? {};
       if (!projectName.trim()) {
@@ -545,6 +547,7 @@ export function createGuiApp(config, version, port = 7654) {
 
       res.json({ ok: true });
     } catch (err) {
+      initInProgress = false;
       res.status(500).json({ error: err.message });
     }
   });
