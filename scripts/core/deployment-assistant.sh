@@ -1064,12 +1064,13 @@ run_full_deployment() {
         echo -e "${RED}${BOLD}⚠️  THIS IS A PRODUCTION ORG!${NC}"
     fi
 
-    read -p "$(echo -e ${YELLOW}Are you sure? \(y/n\)${NC} )" -n 1 -r
-    echo
-
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_warning "Deployment cancelled"
-        exit 1
+    if [[ "${SFDT_NON_INTERACTIVE:-}" != "true" ]]; then
+        read -p "$(echo -e ${YELLOW}Are you sure? \(y/n\)${NC} )" -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_warning "Deployment cancelled"
+            exit 1
+        fi
     fi
 
     local cmd=(sf project deploy start --manifest "$MANIFEST_PATH" --target-org "$TARGET_ORG")
@@ -1199,6 +1200,63 @@ post_deployment_tasks() {
 }
 
 # --- Main Workflow ---
+
+if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
+    print_header "NON-INTERACTIVE DEPLOYMENT (GUI)"
+    
+    TARGET_ORG="${SFDT_TARGET_ORG:-${SFDT_DEFAULT_ORG:-}}"
+    MANIFEST_PATH="${SFDT_MANIFEST_PATH:-}"
+    TEST_LEVEL="${SFDT_TEST_LEVEL:-RunLocalTests}"
+    SPECIFIED_TESTS="${SFDT_SPECIFIED_TESTS:-}"
+    DESTRUCTIVE_TIMING="${SFDT_DESTRUCTIVE_TIMING:-post}"
+    DRY_RUN="${SFDT_DRY_RUN:-false}"
+    TAG_RELEASE="${SFDT_TAG_RELEASE:-false}"
+    CREATE_PR="${SFDT_CREATE_PR:-false}"
+    
+    if [[ -z "$TARGET_ORG" ]]; then print_error "TARGET_ORG not set"; exit 1; fi
+    if [[ -z "$MANIFEST_PATH" ]]; then print_error "MANIFEST_PATH not set"; exit 1; fi
+    
+    RELEASE_VERSION=$(extract_version "$(basename "$MANIFEST_PATH")")
+
+    if detect_production "$TARGET_ORG"; then
+        IS_PRODUCTION=true
+        print_warning "Production environment detected"
+    fi
+    
+    # Check for destructive changes
+    manifest_base=$(basename "$MANIFEST_PATH" "-package.xml")
+    manifest_dir=$(dirname "$MANIFEST_PATH")
+    destructive_path="${manifest_dir}/${manifest_base}-destructiveChanges.xml"
+    if [[ -f "$destructive_path" ]]; then
+        DESTRUCTIVE_PATH="$destructive_path"
+        print_success "Including destructive changes (${DESTRUCTIVE_TIMING})"
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        run_validation
+    else
+        run_full_deployment
+        # Only archive and tag if it was a successful real deployment
+        archive_deployed_manifest
+        
+        if [[ "$TAG_RELEASE" == "true" && -n "$RELEASE_VERSION" ]]; then
+            print_step "Auto-tagging release v${RELEASE_VERSION}..."
+            git tag -a "v${RELEASE_VERSION}" -m "Release ${RELEASE_VERSION}"
+            git push origin "v${RELEASE_VERSION}" || print_warning "Could not push tag to remote"
+        fi
+
+        if [[ "$CREATE_PR" == "true" ]]; then
+            print_step "Auto-creating pull request..."
+            local current_branch=$(get_current_branch)
+            if [[ "$current_branch" != "main" && "$current_branch" != "master" ]]; then
+                gh pr create --base main --head "$current_branch" --title "release: ${RELEASE_VERSION}" --body "Automated release PR for v${RELEASE_VERSION}" || print_warning "Could not create PR via GH CLI"
+            fi
+        fi
+    fi
+    
+    print_success "Non-interactive flow complete"
+    exit 0
+fi
 
 main_validate_and_deploy() {
     print_header "SALESFORCE DEPLOYMENT ASSISTANT"

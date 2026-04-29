@@ -12,32 +12,109 @@ function fmtDate(iso) {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
 }
 
-function ManifestViewer({ xml, onClose }) {
-  if (!xml) return null;
+function ManifestViewer({ manifest, onClose }) {
+  const [data, setData] = useState(null); // { xml, components: [] }
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { xml } = await api.getManifestContent(manifest.relPath);
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xml, 'application/xml');
+      const types = Array.from(doc.querySelectorAll('types'));
+      const components = [];
+      types.forEach(t => {
+        const name = t.querySelector('name')?.textContent;
+        const members = Array.from(t.querySelectorAll('members')).map(m => m.textContent);
+        members.forEach(member => { components.push({ type: name, member }); });
+      });
+      setData({ xml, components });
+    } catch (err) {
+      alert(`Load failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [manifest]);
+
+  const removeComponent = async (type, member) => {
+    try {
+      await api.removeManifestComponent(manifest.relPath, type, member);
+      load();
+    } catch (err) {
+      alert(`Remove failed: ${err.message}`);
+    }
+  };
+
+  if (!manifest) return null;
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 700, width: '90vw' }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 900, width: '95vw' }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <span className="modal-title">package.xml</span>
+          <div style={{ minWidth: 0 }}>
+            <span className="modal-title" style={{ display: 'block' }}>{manifest.name}</span>
+            <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{manifest.relPath}</span>
+          </div>
           <button className="btn btn-icon" onClick={onClose}><IconX size={15} /></button>
         </div>
-        <div className="modal-body">
-          <pre style={{
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-sm)', whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all', background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--r-md)', padding: 'var(--s-4)', maxHeight: '55vh', overflow: 'auto',
-            color: 'var(--fg-default)', margin: 0,
-          }}>{xml}</pre>
+        <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxHeight: '65vh' }}>
+          
+          {loading ? (
+            <div style={{ gridColumn: 'span 2', padding: 40, textAlign: 'center' }}><div className="spinner" /></div>
+          ) : (
+            <>
+              {/* Left Column: Component List */}
+              <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div className="section-label" style={{ marginBottom: 10 }}>Components ({data?.components.length})</div>
+                <div className="table-wrap" style={{ flex: 1, overflowY: 'auto' }}>
+                  <table className="data-table">
+                    <tbody>
+                      {data?.components.map((c, i) => (
+                        <tr key={`${c.type}.${c.member}-${i}`}>
+                          <td>
+                            <div style={{ fontSize: 12, fontWeight: 500 }}>{c.member}</div>
+                            <div style={{ fontSize: 9, color: 'var(--fg-subtle)', textTransform: 'uppercase' }}>{c.type}</div>
+                          </td>
+                          <td style={{ width: 40, textAlign: 'right' }}>
+                            {manifest.source !== 'deployed' && (
+                              <button className="btn btn-ghost btn-xs" style={{ color: 'var(--status-conflict-fg)' }} onClick={() => removeComponent(c.type, c.member)}>
+                                <IconX size={12} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Right Column: XML Preview */}
+              <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div className="section-label" style={{ marginBottom: 10 }}>XML Preview</div>
+                <pre style={{
+                  flex: 1,
+                  fontFamily: 'var(--font-mono)', fontSize: 11, whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all', background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--r-md)', padding: 'var(--s-3)', overflow: 'auto',
+                  color: 'var(--fg-default)', margin: 0,
+                }}>{data?.xml}</pre>
+              </div>
+            </>
+          )}
         </div>
         <div className="modal-foot">
-          <button className="btn btn-secondary btn-sm" onClick={() => navigator.clipboard.writeText(xml)}>
+          <button className="btn btn-secondary btn-sm" onClick={() => navigator.clipboard.writeText(data?.xml ?? '')}>
             <IconCopy size={12} /> Copy
           </button>
           <button className="btn btn-primary btn-sm" onClick={() => {
-            const blob = new Blob([xml], { type: 'application/xml' });
+            const blob = new Blob([data?.xml ?? ''], { type: 'application/xml' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = 'manifest.xml'; a.click();
+            a.href = url; a.download = manifest.name; a.click();
             URL.revokeObjectURL(url);
           }}>
             <IconDownload size={12} /> Download
@@ -52,17 +129,29 @@ function ManifestViewer({ xml, onClose }) {
 function BuilderSection({ aiInfo, onBuilt }) {
   const [base, setBase] = useState('main');
   const [head, setHead] = useState('HEAD');
+  const [version, setVersion] = useState('');
+  const [suggestedVersion, setSuggestedVersion] = useState('');
   const [building, setBuilding] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [viewerOpen, setViewerOpen] = useState(false);
+
+  useEffect(() => {
+    api.suggestVersion().then(d => {
+      setSuggestedVersion(d.version);
+      setVersion(d.version);
+    }).catch(() => {});
+  }, []);
 
   const handleBuild = async () => {
     setBuilding(true);
     setError(null);
     setResult(null);
     try {
-      const r = await api.buildManifestFromGit(base, head);
+      const r = await api.buildManifestFromGit(base, head, {
+        save: true,
+        version: version || suggestedVersion
+      });
       setResult(r);
       onBuilt?.();
     } catch (err) {
@@ -83,17 +172,21 @@ function BuilderSection({ aiInfo, onBuilt }) {
         )}
       </div>
       <div className="card-body">
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'var(--s-4)', flexWrap: 'wrap' }}>
-          <div className="input-field" style={{ flex: 1, minWidth: 140 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'var(--s-4)', flexWrap: 'wrap', marginBottom: 12 }}>
+          <div className="input-field" style={{ flex: 1, minWidth: 120 }}>
             <label className="input-label">Base ref</label>
             <input className="input" value={base} onChange={(e) => setBase(e.target.value)} placeholder="main" />
           </div>
-          <div className="input-field" style={{ flex: 1, minWidth: 140 }}>
+          <div className="input-field" style={{ flex: 1, minWidth: 120 }}>
             <label className="input-label">Head ref</label>
             <input className="input" value={head} onChange={(e) => setHead(e.target.value)} placeholder="HEAD" />
           </div>
+          <div className="input-field" style={{ flex: 1, minWidth: 100 }}>
+            <label className="input-label">Release Version</label>
+            <input className="input" value={version} onChange={(e) => setVersion(e.target.value)} placeholder={suggestedVersion} />
+          </div>
           <button className="btn btn-primary" disabled={building || !base || !head} onClick={handleBuild} style={{ flexShrink: 0 }}>
-            {building ? 'Generating…' : 'Generate manifest'}
+            {building ? 'Generating…' : 'Generate & Save'}
           </button>
         </div>
         <p style={{ marginTop: 'var(--s-2)', fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>
@@ -137,7 +230,7 @@ export default function ManifestsPage() {
   const [manifests, setManifests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [aiInfo, setAiInfo] = useState(null);
-  const [viewerXml, setViewerXml] = useState(null);
+  const [selectedManifest, setSelectedManifest] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -151,15 +244,6 @@ export default function ManifestsPage() {
       .catch(() => setManifests([]))
       .finally(() => setLoading(false));
   }, [refreshKey]);
-
-  const handleView = async (m) => {
-    try {
-      const { xml } = await api.getManifestContent(m.relPath);
-      setViewerXml(xml);
-    } catch (err) {
-      console.error('Failed to load manifest', err);
-    }
-  };
 
   return (
     <div>
@@ -210,15 +294,15 @@ export default function ManifestsPage() {
                     </div>
                   </td>
                   <td>
-                    <span className={`badge ${m.source === 'compare' ? 'badge-info' : 'badge-neutral'}`} style={{ fontSize: 10 }}>
-                      {m.source}
+                    <span className={`badge ${m.source === 'compare' ? 'badge-info' : m.source === 'deployed' ? 'badge-success' : 'badge-neutral'}`} style={{ fontSize: 10 }}>
+                      {m.source === 'deployed' ? 'released' : m.source}
                     </span>
                   </td>
                   <td style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-xs)' }}>{fmtDate(m.date)}</td>
                   <td style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-mono)' }}>{fmtSize(m.size)}</td>
                   <td>
-                    <button className="btn btn-ghost btn-sm" onClick={() => handleView(m)}>
-                      View
+                    <button className="btn btn-ghost btn-sm" onClick={() => setSelectedManifest(m)}>
+                      {m.source === 'deployed' ? 'View' : 'Edit'}
                     </button>
                   </td>
                 </tr>
@@ -228,7 +312,7 @@ export default function ManifestsPage() {
         )}
       </div>
 
-      {viewerXml && <ManifestViewer xml={viewerXml} onClose={() => setViewerXml(null)} />}
+      {selectedManifest && <ManifestViewer manifest={selectedManifest} onClose={() => { setSelectedManifest(null); setRefreshKey(k => k + 1); }} />}
     </div>
   );
 }

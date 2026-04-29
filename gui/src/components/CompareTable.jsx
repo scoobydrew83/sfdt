@@ -32,7 +32,7 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter]     = useState('all');
   const [selection, setSelection]       = useState(new Set());
-  const [managedOnly, setManagedOnly]   = useState(false);
+  const [hideManaged, setHideManaged]   = useState(true);
   const [grouped, setGrouped]           = useState(false);
 
   const types = useMemo(() => {
@@ -43,10 +43,10 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
   const filtered = useMemo(() => items.filter((i) => {
     if (statusFilter !== 'all' && i.status !== statusFilter) return false;
     if (typeFilter !== 'all' && i.type !== typeFilter) return false;
-    if (managedOnly && !getNamespace(i.member)) return false;
+    if (hideManaged && getNamespace(i.member)) return false;
     if (search && !`${i.type}.${i.member}`.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }), [items, statusFilter, typeFilter, managedOnly, search]);
+  }), [items, statusFilter, typeFilter, hideManaged, search]);
 
   const autoSelected = useMemo(() => new Set(
     items
@@ -166,10 +166,10 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
         })}
 
         <button
-          className={`filter-chip${managedOnly ? ' active' : ''}`}
-          onClick={() => setManagedOnly((v) => !v)}
+          className={`filter-chip${hideManaged ? ' active' : ''}`}
+          onClick={() => setHideManaged((v) => !v)}
         >
-          Managed
+          Hide Managed
         </button>
 
         <button

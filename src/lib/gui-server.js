@@ -913,24 +913,85 @@ export function createGuiApp(config, version, port = 7654) {
     }
   });
 
-  app.post('/api/compare/manifest', apiLimiter, async (req, res) => {
+  app.get('/api/release/suggest-version', apiLimiter, async (_req, res) => {
     try {
-      const { items = [], apiVersion } = req.body ?? {};
-      const { renderPackageXml } = await import('./metadata-mapper.js');
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const manifestDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release');
+      
+      let latestVersion = '';
 
-      const metaMap = Object.create(null);
-      for (const { type, member } of items) {
-        if (!metaMap[type]) metaMap[type] = [];
-        metaMap[type].push(member);
+      // Check manifest files
+      if (await fs.pathExists(manifestDir)) {
+        const files = await fs.readdir(manifestDir);
+        const versions = files
+          .filter(f => f.match(/^rl-(\d+\.\d+\.\d+)-package\.xml$/))
+          .map(f => f.match(/^rl-(\d+\.\d+\.\d+)-package\.xml$/)[1]);
+        
+        if (versions.length > 0) {
+          versions.sort((a, b) => {
+            const pa = a.split('.').map(Number);
+            const pb = b.split('.').map(Number);
+            for (let i = 0; i < 3; i++) {
+              if (pa[i] !== pb[i]) return pa[i] - pb[i];
+            }
+            return 0;
+          });
+          latestVersion = versions[versions.length - 1];
+        }
       }
 
-      const resolvedVersion = apiVersion ?? config.sourceApiVersion ?? '63.0';
-      const xml = renderPackageXml(metaMap, resolvedVersion);
+      // Fallback to git tags
+      if (!latestVersion) {
+        try {
+          const { stdout } = await execa('git', ['tag', '--list', 'v*', '--sort=-version:refname'], { cwd: projectRoot });
+          const topTag = stdout.split('\n')[0];
+          if (topTag) latestVersion = topTag.replace(/^v/, '');
+        } catch { /* ignore git errors */ }
+      }
 
-      const fsExtra = (await import('fs-extra')).default;
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      await fsExtra.outputFile(path.join(logDir, `compare-manifest-${ts}.xml`), xml);
-      await fsExtra.outputFile(path.join(logDir, 'compare-manifest-latest.xml'), xml);
+      if (!latestVersion) return res.json({ version: '0.1.0' });
+
+      const parts = latestVersion.split('.').map(Number);
+      if (parts.length === 3) {
+        parts[2]++;
+        return res.json({ version: parts.join('.') });
+      }
+
+      res.json({ version: '0.1.0' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/compare/manifest', apiLimiter, async (req, res) => {
+    try {
+      const { items = [], apiVersion, save = false, version, xml: rawXml } = req.body ?? {};
+      const { renderPackageXml } = await import('./metadata-mapper.js');
+
+      let xml = rawXml;
+      if (!xml) {
+        const metaMap = Object.create(null);
+        for (const { type, member } of items) {
+          if (!metaMap[type]) metaMap[type] = [];
+          metaMap[type].push(member);
+        }
+        const resolvedVersion = apiVersion ?? config.sourceApiVersion ?? '63.0';
+        xml = renderPackageXml(metaMap, resolvedVersion);
+      }
+
+      if (save) {
+        const projectRoot = config._projectRoot ?? process.cwd();
+        const manifestDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release');
+        await fs.ensureDir(manifestDir);
+
+        const filename = version ? `rl-${version}-package.xml` : `manifest-${Date.now()}.xml`;
+        const filePath = path.join(manifestDir, filename);
+        if (version && await fs.pathExists(filePath)) {
+          return res.status(409).json({ error: `${filename} already exists. Delete it or use a different version.` });
+        }
+        await fs.writeFile(filePath, xml);
+        return res.json({ xml, filename, path: path.relative(projectRoot, filePath), ok: true });
+      }
 
       res.json({ xml });
     } catch (err) {
@@ -972,7 +1033,9 @@ export function createGuiApp(config, version, port = 7654) {
   app.get('/api/manifests', apiLimiter, async (_req, res) => {
     try {
       const projectRoot = config._projectRoot ?? process.cwd();
-      const manifestReleaseDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release');
+      const relManifestDir = config.manifestDir ?? 'manifest/release';
+      const manifestReleaseDir = path.join(projectRoot, relManifestDir);
+      const deployedDir = path.join(manifestReleaseDir, 'deployed');
       const manifests = [];
 
       const logFiles = await safeReaddir(logDir);
@@ -982,12 +1045,20 @@ export function createGuiApp(config, version, port = 7654) {
         if (stat) manifests.push({ name: file, source: 'compare', date: stat.mtime.toISOString(), size: stat.size, relPath: `logs/${file}` });
       }
 
+      // Scan current release manifests
       const releaseFiles = await safeReaddir(manifestReleaseDir);
       for (const file of releaseFiles.filter((f) => f.endsWith('.xml')).sort().reverse()) {
         const filePath = path.join(manifestReleaseDir, file);
         const stat = await fs.stat(filePath).catch(() => null);
-        const relDir = config.manifestDir ?? 'manifest/release';
-        if (stat) manifests.push({ name: file, source: 'release', date: stat.mtime.toISOString(), size: stat.size, relPath: `${relDir}/${file}` });
+        if (stat) manifests.push({ name: file, source: 'release', date: stat.mtime.toISOString(), size: stat.size, relPath: `${relManifestDir}/${file}` });
+      }
+
+      // Scan deployed manifests
+      const deployedFiles = await safeReaddir(deployedDir);
+      for (const file of deployedFiles.filter((f) => f.endsWith('.xml')).sort().reverse()) {
+        const filePath = path.join(deployedDir, file);
+        const stat = await fs.stat(filePath).catch(() => null);
+        if (stat) manifests.push({ name: file, source: 'deployed', date: stat.mtime.toISOString(), size: stat.size, relPath: `${relManifestDir}/deployed/${file}` });
       }
 
       res.json({ manifests });
@@ -1042,11 +1113,36 @@ export function createGuiApp(config, version, port = 7654) {
       const delCount = countMembers(destructive);
       const xml = renderXml(additive, apiVersion);
 
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `manifest-${ts}.xml`;
-      await fs.outputFile(path.join(logDir, filename), xml);
+      const { version, save = false } = req.body ?? {};
+      let filename = `manifest-${Date.now()}.xml`;
+      let savedPath = '';
 
-      res.json({ xml, addCount, delCount, filename });
+      if (save || version) {
+        const projectRoot = config._projectRoot ?? process.cwd();
+        const manifestDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release');
+        await fs.ensureDir(manifestDir);
+        
+        filename = version ? `rl-${version}-package.xml` : filename;
+        const filePath = path.join(manifestDir, filename);
+        if (version && await fs.pathExists(filePath)) {
+          return res.status(409).json({ error: `${filename} already exists. Delete it or use a different version.` });
+        }
+        await fs.writeFile(filePath, xml);
+        savedPath = path.relative(projectRoot, filePath);
+
+        // Also handle destructive changes if any
+        if (delCount > 0) {
+          const destXml = renderXml(destructive, apiVersion);
+          const destFilename = version ? `rl-${version}-destructiveChanges.xml` : `destructive-${Date.now()}.xml`;
+          const destFilePath = path.join(manifestDir, destFilename);
+          if (version && await fs.pathExists(destFilePath)) {
+            return res.status(409).json({ error: `${destFilename} already exists. Delete it or use a different version.` });
+          }
+          await fs.writeFile(destFilePath, destXml);
+        }
+      }
+
+      res.json({ xml, addCount, delCount, filename, path: savedPath, ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1055,7 +1151,18 @@ export function createGuiApp(config, version, port = 7654) {
   // ── Release Hub: deploy with options (SSE) ────────────────────────────────
 
   app.post('/api/release/deploy', apiLimiter, async (req, res) => {
-    const { dryRun = false, skipPreflight = false, notifySlack = false, org, manifest } = req.body ?? {};
+    const {
+      dryRun = false,
+      skipPreflight = false,
+      notifySlack = false,
+      tagRelease = false,
+      createPR = false,
+      org,
+      manifest,
+      testLevel,
+      testClasses,
+      destructiveTiming,
+    } = req.body ?? {};
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -1073,21 +1180,20 @@ export function createGuiApp(config, version, port = 7654) {
         SFDT_PROJECT_ROOT: projectRoot,
         SFDT_CONFIG_DIR: config._configDir ?? path.join(projectRoot, '.sfdt'),
         SFDT_DEFAULT_ORG: org ?? config.defaultOrg ?? '',
+        SFDT_TARGET_ORG: org ?? config.defaultOrg ?? '',
         SFDT_SOURCE_PATH: config.defaultSourcePath ?? 'force-app/main/default',
         SFDT_API_VERSION: config.sourceApiVersion ?? '',
         SFDT_NON_INTERACTIVE: 'true',
         SFDT_DRY_RUN: dryRun ? 'true' : 'false',
         SFDT_SKIP_PREFLIGHT: skipPreflight ? 'true' : 'false',
         SFDT_NOTIFY_SLACK: notifySlack ? 'true' : 'false',
+        SFDT_TAG_RELEASE: tagRelease ? 'true' : 'false',
+        SFDT_CREATE_PR: createPR ? 'true' : 'false',
+        SFDT_TEST_LEVEL: testLevel ?? '',
+        SFDT_SPECIFIED_TESTS: testClasses ?? '',
+        SFDT_DESTRUCTIVE_TIMING: destructiveTiming ?? 'post',
         ...(manifest ? { SFDT_MANIFEST_PATH: path.join(projectRoot, manifest) } : {}),
       };
-
-      child = execa('bash', [scriptPath], {
-        env: { ...process.env, ...scriptEnv },
-        cwd: projectRoot,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
 
       const lines = [];
       const streamLines = (readable) => {
@@ -1099,6 +1205,34 @@ export function createGuiApp(config, version, port = 7654) {
         });
         return rl;
       };
+
+      if (!skipPreflight) {
+        const preflightPath = path.join(SCRIPTS_DIR, 'new', 'preflight.sh');
+        const pfChild = execa('bash', [preflightPath], {
+          env: { ...process.env, ...scriptEnv },
+          cwd: projectRoot,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        const rlPOut = streamLines(pfChild.stdout);
+        const rlPErr = streamLines(pfChild.stderr);
+        let pfExitCode = 0;
+        try { await pfChild; } catch (e) { pfExitCode = e.exitCode ?? 1; } finally { rlPOut.close(); rlPErr.close(); }
+        if (pfExitCode !== 0) {
+          if (!res.writableEnded) {
+            res.write('data: ' + JSON.stringify({ type: 'result', exitCode: pfExitCode }) + '\n\n');
+            res.end();
+          }
+          return;
+        }
+      }
+
+      child = execa('bash', [scriptPath], {
+        env: { ...process.env, ...scriptEnv },
+        cwd: projectRoot,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
 
       const rlOut = streamLines(child.stdout);
       const rlErr = streamLines(child.stderr);
@@ -1166,6 +1300,71 @@ export function createGuiApp(config, version, port = 7654) {
       const match = raw.match(/## \[Unreleased\]([\s\S]*?)(?=\n## \[|$)/);
       const content = match ? match[1].trim() : '';
       res.json({ content, exists: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/changelog/save', apiLimiter, async (req, res) => {
+    try {
+      const { content } = req.body ?? {};
+      if (content === undefined) return res.status(400).json({ error: 'content is required' });
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const changelogPath = path.join(projectRoot, 'CHANGELOG.md');
+
+      let fullContent = '';
+      if (await fs.pathExists(changelogPath)) {
+        fullContent = await fs.readFile(changelogPath, 'utf8');
+      } else {
+        fullContent = '# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n';
+      }
+
+      // Replace or insert the [Unreleased] section
+      const unreleasedHeader = '## [Unreleased]';
+      const hasUnreleased = fullContent.includes(unreleasedHeader);
+
+      let updated;
+      if (hasUnreleased) {
+        // Replace everything between [Unreleased] and the next ## [X.Y.Z] or end of file
+        updated = fullContent.replace(
+          /## \[Unreleased\]([\s\S]*?)(?=\n## \[|$)/,
+          `## [Unreleased]\n\n${content.trim()}\n`
+        );
+      } else {
+        // Append it after the first header or at the top
+        const firstHeaderMatch = fullContent.match(/^# .*\n/);
+        if (firstHeaderMatch) {
+          updated = fullContent.replace(firstHeaderMatch[0], `${firstHeaderMatch[0]}\n## [Unreleased]\n\n${content.trim()}\n`);
+        } else {
+          updated = `## [Unreleased]\n\n${content.trim()}\n\n${fullContent}`;
+        }
+      }
+
+      await fs.writeFile(changelogPath, updated);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/release-notes/save', apiLimiter, async (req, res) => {
+    try {
+      const { content } = req.body ?? {};
+      if (content === undefined) return res.status(400).json({ error: 'content is required' });
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const notesDir = path.join(projectRoot, config.releaseNotesDir ?? 'release-notes');
+      await fs.ensureDir(notesDir);
+
+      const ts = new Date().toISOString().split('T')[0];
+      const notesPath = path.join(notesDir, `release-notes-${ts}.md`);
+
+      if (await fs.pathExists(notesPath)) {
+        return res.status(409).json({ error: `release-notes-${ts}.md already exists. Delete it to overwrite.` });
+      }
+      await fs.writeFile(notesPath, content);
+      res.json({ ok: true, path: path.relative(projectRoot, notesPath) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1298,10 +1497,52 @@ export function createGuiApp(config, version, port = 7654) {
         return res.status(403).json({ error: 'Forbidden' });
       }
 
+      const deployedDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release', 'deployed');
+      if (absPath.startsWith(deployedDir + path.sep) || absPath === deployedDir) {
+        return res.status(403).json({ error: 'Deployed manifests are read-only' });
+      }
+
       const xml = await fs.readFile(absPath, 'utf8');
       const updatedXml = removeComponentFromXml(xml, type, member);
       await fs.writeFile(absPath, updatedXml);
       res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/manifest/detect-tests', apiLimiter, async (req, res) => {
+    try {
+      const { path: relPath } = req.query;
+      if (!relPath) return res.status(400).json({ error: 'path is required' });
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const absPath = path.resolve(projectRoot, String(relPath));
+      if (!absPath.startsWith(projectRoot + path.sep)) return res.status(403).json({ error: 'Forbidden' });
+
+      if (!(await fs.pathExists(absPath))) return res.status(404).json({ error: 'Manifest not found' });
+
+      const xml = await fs.readFile(absPath, 'utf8');
+
+      // Ported logic from deployment-assistant.sh:
+      // Extract <types> block where <name>ApexClass</name> exists
+      const typeBlocks = xml.split(/<\/types>/);
+      const apexClasses = [];
+
+      for (const block of typeBlocks) {
+        if (block.includes('<name>ApexClass</name>')) {
+          const members = block.match(/<members>([^<]+)<\/members>/g) || [];
+          for (const m of members) {
+            const name = m.replace(/<\/?members>/g, '');
+            // Filter for classes likely to be tests: ends with Test, _Test, Tests, or has Test followed by capital
+            if (name.match(/(Test$|_Test$|Tests$|Test[A-Z])/i)) {
+              apexClasses.push(name);
+            }
+          }
+        }
+      }
+
+      res.json({ tests: apexClasses });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

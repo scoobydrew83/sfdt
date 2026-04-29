@@ -81,11 +81,11 @@ export default function Dashboard({ project }) {
   }
 
   return (
-    <div>
+    <div className="page-content" style={{ padding: 0 }}>
       <div className="page-header">
         <div className="page-header-text">
           <h1>Dashboard</h1>
-          {project?.org && <p className="page-subtitle">{project.org}</p>}
+          {project?.org && <p className="page-subtitle">Target Org: <span className="mono" style={{ color: 'var(--brand-600)', fontWeight: 600 }}>{project.org}</span></p>}
         </div>
       </div>
 
@@ -93,11 +93,11 @@ export default function Dashboard({ project }) {
       <div className="stats-grid">
         <StatCard label="Tests Passed"  value={totalPassed}  accent={totalPassed > 0 ? 'green' : 'brand'} />
         <StatCard label="Tests Failed"  value={totalFailed}  accent={totalFailed > 0 ? 'red' : 'green'} />
-        <StatCard label="Coverage"      value={`${threshold}%`} sub="configured threshold" accent="brand" />
+        <StatCard label="Coverage"      value={`${threshold}%`} sub="target threshold" accent="brand" />
         <StatCard label="Last Test"     value={lastTestDate}  sub={lastTest ? new Date(lastTest.date).toLocaleTimeString() : undefined} accent="violet" />
       </div>
 
-      <div className="two-col">
+      <div className="two-col" style={{ gap: 24 }}>
 
         {/* Recent tests */}
         <div className="card">
