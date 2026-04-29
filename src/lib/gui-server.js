@@ -992,6 +992,10 @@ export function createGuiApp(config, version, port = 7654) {
 
         const filename = version ? `rl-${version}-package.xml` : `manifest-${Date.now()}.xml`;
         const filePath = path.join(manifestDir, filename);
+        const resolvedManifestDir = path.resolve(manifestDir);
+        if (!path.resolve(filePath).startsWith(resolvedManifestDir + path.sep)) {
+          return res.status(400).json({ error: 'Invalid manifest path' });
+        }
         if (version && await fs.pathExists(filePath)) {
           return res.status(409).json({ error: `${filename} already exists. Delete it or use a different version.` });
         }
@@ -1134,6 +1138,15 @@ export function createGuiApp(config, version, port = 7654) {
         const filePath = path.join(manifestDir, filename);
         const destFilename = (delCount > 0 && version) ? `rl-${version}-destructiveChanges.xml` : null;
         const destFilePath = destFilename ? path.join(manifestDir, destFilename) : null;
+
+        // Path-containment guard: ensure constructed paths stay within manifestDir
+        const resolvedManifestDir = path.resolve(manifestDir);
+        if (!path.resolve(filePath).startsWith(resolvedManifestDir + path.sep)) {
+          return res.status(400).json({ error: 'Invalid manifest path' });
+        }
+        if (destFilePath && !path.resolve(destFilePath).startsWith(resolvedManifestDir + path.sep)) {
+          return res.status(400).json({ error: 'Invalid destructive changes path' });
+        }
 
         // Conflict check both files before writing either (avoid orphaned primary on 409)
         if (version && await fs.pathExists(filePath)) {
