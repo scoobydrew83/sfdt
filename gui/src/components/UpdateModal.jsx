@@ -32,6 +32,9 @@ export default function UpdateModal({ current, latest, onClose }) {
         if (res.ok) {
           clearInterval(pollRef.current);
           window.location.reload();
+        } else if (Date.now() >= deadline) {
+          clearInterval(pollRef.current);
+          setStatus('done');
         }
       } catch {
         if (Date.now() >= deadline) {

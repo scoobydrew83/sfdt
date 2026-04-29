@@ -505,10 +505,14 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const projectRoot = config._projectRoot || process.cwd();
       const configDir = path.join(projectRoot, '.sfdt');
-      if (rawConfigPath || initInProgress || await fs.pathExists(configDir)) {
+      if (rawConfigPath || initInProgress) {
         return res.status(409).json({ error: 'Already initialized' });
       }
       initInProgress = true;
+      if (await fs.pathExists(configDir)) {
+        initInProgress = false;
+        return res.status(409).json({ error: 'Already initialized' });
+      }
 
       const { projectName = 'Salesforce Project', defaultOrg = '' } = req.body ?? {};
       if (!projectName.trim()) {
@@ -522,7 +526,7 @@ export function createGuiApp(config, version, port = 7654) {
       await fs.writeJson(path.join(configDir, 'config.json'), configData, { spaces: 2 });
       await fs.writeJson(path.join(configDir, 'environments.json'), {
         default: defaultOrg,
-        orgs: defaultOrg ? [{ alias: defaultOrg, type: 'development', description: 'Default org' }] : [],
+        orgs: defaultOrg ? [{ alias: defaultOrg, type: 'development', description: 'Default development org' }] : [],
       }, { spaces: 2 });
       await fs.writeJson(path.join(configDir, 'pull-config.json'), {
         metadataTypes: [
