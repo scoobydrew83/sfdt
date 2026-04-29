@@ -972,6 +972,7 @@ export function createGuiApp(config, version, port = 7654) {
       if (!xml) {
         const metaMap = Object.create(null);
         for (const { type, member } of items) {
+          if (typeof type !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(type)) continue;
           if (!metaMap[type]) metaMap[type] = [];
           metaMap[type].push(member);
         }
@@ -980,6 +981,9 @@ export function createGuiApp(config, version, port = 7654) {
       }
 
       if (save) {
+        if (version && !/^\d+\.\d+\.\d+$/.test(version)) {
+          return res.status(400).json({ error: 'Invalid version format. Expected X.Y.Z (e.g. 1.2.3).' });
+        }
         const projectRoot = config._projectRoot ?? process.cwd();
         const manifestDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release');
         await fs.ensureDir(manifestDir);
@@ -1114,6 +1118,9 @@ export function createGuiApp(config, version, port = 7654) {
       const xml = renderXml(additive, apiVersion);
 
       const { version, save = false } = req.body ?? {};
+      if (version && !/^\d+\.\d+\.\d+$/.test(version)) {
+        return res.status(400).json({ error: 'Invalid version format. Expected X.Y.Z (e.g. 1.2.3).' });
+      }
       let filename = `manifest-${Date.now()}.xml`;
       let savedPath = '';
 
