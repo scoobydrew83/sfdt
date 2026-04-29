@@ -971,15 +971,15 @@ export function createGuiApp(config, version, port = 7654) {
 
       let xml = rawXml;
       if (!xml) {
-        const metaMap = Object.create(null);
+        const metaMap = new Map();
         for (const { type, member } of items) {
           if (typeof type !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(type)) continue;
           if (typeof member !== 'string') continue;
-          if (!metaMap[type]) metaMap[type] = [];
-          metaMap[type].push(member);
+          if (!metaMap.has(type)) metaMap.set(type, []);
+          metaMap.get(type).push(member);
         }
         const resolvedVersion = apiVersion ?? config.sourceApiVersion ?? '63.0';
-        xml = renderPackageXml(metaMap, resolvedVersion);
+        xml = renderPackageXml(Object.fromEntries(metaMap), resolvedVersion);
       }
 
       if (save) {
@@ -990,7 +990,7 @@ export function createGuiApp(config, version, port = 7654) {
         const manifestDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release');
         await fs.ensureDir(manifestDir);
 
-        const filename = version ? `rl-${version}-package.xml` : `manifest-${Date.now()}.xml`;
+        const filename = path.basename(version ? `rl-${version}-package.xml` : `manifest-${Date.now()}.xml`);
         const filePath = path.join(manifestDir, filename);
         const resolvedManifestDir = path.resolve(manifestDir);
         if (!path.resolve(filePath).startsWith(resolvedManifestDir + path.sep)) {
@@ -1134,9 +1134,10 @@ export function createGuiApp(config, version, port = 7654) {
         const manifestDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release');
         await fs.ensureDir(manifestDir);
 
-        filename = version ? `rl-${version}-package.xml` : filename;
+        filename = path.basename(version ? `rl-${version}-package.xml` : filename);
         const filePath = path.join(manifestDir, filename);
-        const destFilename = (delCount > 0 && version) ? `rl-${version}-destructiveChanges.xml` : null;
+        const rawDestFilename = (delCount > 0 && version) ? `rl-${version}-destructiveChanges.xml` : null;
+        const destFilename = rawDestFilename ? path.basename(rawDestFilename) : null;
         const destFilePath = destFilename ? path.join(manifestDir, destFilename) : null;
 
         // Path-containment guard: ensure constructed paths stay within manifestDir
