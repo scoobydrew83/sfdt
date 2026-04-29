@@ -4,7 +4,7 @@ import CommandRunner from '../components/CommandRunner.jsx';
 import StreamRunner from '../components/StreamRunner.jsx';
 import {
   IconPackage, IconBook, IconFileEdit, IconShield, IconRocket, IconRotateCcw,
-  IconCheck, IconDownload, IconZap,
+  IconCheck, IconDownload, IconZap, IconSearch,
 } from '../Icons.jsx';
 
 // ─── Step definitions ────────────────────────────────────────────────────────
