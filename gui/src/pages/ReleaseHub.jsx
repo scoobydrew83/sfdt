@@ -268,6 +268,8 @@ function ManifestStep({ onSelect, selected, onMarkDone }) {
         </button>
       </div>
     </div>
+    </div>
+  </div>
   );
 }
 
