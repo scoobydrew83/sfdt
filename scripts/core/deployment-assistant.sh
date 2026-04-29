@@ -1248,8 +1248,9 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
         if [[ "$CREATE_PR" == "true" ]]; then
             print_step "Auto-creating pull request..."
             current_branch=$(get_current_branch)
-            if [[ "$current_branch" != "main" && "$current_branch" != "master" ]]; then
-                gh pr create --base main --head "$current_branch" --title "release: ${RELEASE_VERSION}" --body "Automated release PR for v${RELEASE_VERSION}" || print_warning "Could not create PR via GH CLI"
+            default_branch="${SFDT_DEFAULT_BRANCH:-main}"
+            if [[ "$current_branch" != "$default_branch" ]]; then
+                gh pr create --base "$default_branch" --head "$current_branch" --title "release: ${RELEASE_VERSION}" --body "Automated release PR for v${RELEASE_VERSION}" || print_warning "Could not create PR via GH CLI"
             fi
         fi
     fi

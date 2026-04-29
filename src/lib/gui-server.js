@@ -966,6 +966,7 @@ export function createGuiApp(config, version, port = 7654) {
   app.post('/api/compare/manifest', apiLimiter, async (req, res) => {
     try {
       const { items = [], apiVersion, save = false, version, xml: rawXml } = req.body ?? {};
+      if (rawXml && rawXml.length > 10_000_000) return res.status(413).json({ error: 'XML content too large (max 10 MB)' });
       const { renderPackageXml } = await import('./metadata-mapper.js');
 
       let xml = rawXml;
@@ -973,6 +974,7 @@ export function createGuiApp(config, version, port = 7654) {
         const metaMap = Object.create(null);
         for (const { type, member } of items) {
           if (typeof type !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(type)) continue;
+          if (typeof member !== 'string') continue;
           if (!metaMap[type]) metaMap[type] = [];
           metaMap[type].push(member);
         }
@@ -1125,27 +1127,30 @@ export function createGuiApp(config, version, port = 7654) {
       let savedPath = '';
 
       if (save || version) {
-        const projectRoot = config._projectRoot ?? process.cwd();
         const manifestDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release');
         await fs.ensureDir(manifestDir);
-        
+
         filename = version ? `rl-${version}-package.xml` : filename;
         const filePath = path.join(manifestDir, filename);
+        const destFilename = (delCount > 0 && version) ? `rl-${version}-destructiveChanges.xml` : null;
+        const destFilePath = destFilename ? path.join(manifestDir, destFilename) : null;
+
+        // Conflict check both files before writing either (avoid orphaned primary on 409)
         if (version && await fs.pathExists(filePath)) {
           return res.status(409).json({ error: `${filename} already exists. Delete it or use a different version.` });
         }
+        if (destFilePath && version && await fs.pathExists(destFilePath)) {
+          return res.status(409).json({ error: `${destFilename} already exists. Delete it or use a different version.` });
+        }
+
         await fs.writeFile(filePath, xml);
         savedPath = path.relative(projectRoot, filePath);
 
-        // Also handle destructive changes if any
         if (delCount > 0) {
           const destXml = renderXml(destructive, apiVersion);
-          const destFilename = version ? `rl-${version}-destructiveChanges.xml` : `destructive-${Date.now()}.xml`;
-          const destFilePath = path.join(manifestDir, destFilename);
-          if (version && await fs.pathExists(destFilePath)) {
-            return res.status(409).json({ error: `${destFilename} already exists. Delete it or use a different version.` });
-          }
-          await fs.writeFile(destFilePath, destXml);
+          const resolvedDestFilename = destFilename ?? `destructive-${Date.now()}.xml`;
+          const resolvedDestFilePath = destFilePath ?? path.join(manifestDir, resolvedDestFilename);
+          await fs.writeFile(resolvedDestFilePath, destXml);
         }
       }
 
