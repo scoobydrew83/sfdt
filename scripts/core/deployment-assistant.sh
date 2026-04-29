@@ -1241,13 +1241,13 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
         
         if [[ "$TAG_RELEASE" == "true" && -n "$RELEASE_VERSION" ]]; then
             print_step "Auto-tagging release v${RELEASE_VERSION}..."
-            git tag -a "v${RELEASE_VERSION}" -m "Release ${RELEASE_VERSION}"
+            git tag -a "v${RELEASE_VERSION}" -m "Release ${RELEASE_VERSION}" || print_warning "Tag v${RELEASE_VERSION} already exists, skipping"
             git push origin "v${RELEASE_VERSION}" || print_warning "Could not push tag to remote"
         fi
 
         if [[ "$CREATE_PR" == "true" ]]; then
             print_step "Auto-creating pull request..."
-            local current_branch=$(get_current_branch)
+            current_branch=$(get_current_branch)
             if [[ "$current_branch" != "main" && "$current_branch" != "master" ]]; then
                 gh pr create --base main --head "$current_branch" --title "release: ${RELEASE_VERSION}" --body "Automated release PR for v${RELEASE_VERSION}" || print_warning "Could not create PR via GH CLI"
             fi

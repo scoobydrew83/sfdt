@@ -1316,6 +1316,7 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const { content } = req.body ?? {};
       if (content === undefined) return res.status(400).json({ error: 'content is required' });
+      if (content.length > 1_000_000) return res.status(413).json({ error: 'Content too large (max 1 MB)' });
 
       const projectRoot = config._projectRoot ?? process.cwd();
       const changelogPath = path.join(projectRoot, 'CHANGELOG.md');
@@ -1359,6 +1360,7 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const { content } = req.body ?? {};
       if (content === undefined) return res.status(400).json({ error: 'content is required' });
+      if (content.length > 1_000_000) return res.status(413).json({ error: 'Content too large (max 1 MB)' });
 
       const projectRoot = config._projectRoot ?? process.cwd();
       const notesDir = path.join(projectRoot, config.releaseNotesDir ?? 'release-notes');
