@@ -92,6 +92,8 @@ export default function ComparePage() {
       if (!mountedRef.current) return;
       setStreamError('Streaming failed. The inventory was saved — click Run again to retry.');
       setPhase2Active(false);
+      setPhase2Done(0);
+      setPhase2Total(0);
       es.close();
     };
   };
