@@ -9,7 +9,8 @@ export default function ExplainPage() {
   const chat = useContext(ChatContext);
 
   function handleComplete(content) {
-    const analysis = (content ?? '').slice(0, 2000);
+    const raw = content ?? '';
+    const analysis = raw.length > 2000 ? raw.slice(0, 2000) + `\n\n(truncated — ${raw.length} chars total)` : raw;
     setResult(analysis);
     chat?.setPageContext({
       page: 'Explain',

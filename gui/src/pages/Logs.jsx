@@ -126,7 +126,23 @@ function LogDetail({ log }) {
     );
   }
 
-  return null;
+  return (
+    <pre style={{
+      margin: 0,
+      fontFamily: 'var(--font-mono)',
+      fontSize: 'var(--fs-xs)',
+      color: 'var(--fg-muted)',
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'break-all',
+      background: 'var(--bg-subtle)',
+      padding: 'var(--s-3)',
+      borderRadius: 'var(--r-md)',
+      maxHeight: 300,
+      overflow: 'auto',
+    }}>
+      {JSON.stringify(data ?? {}, null, 2)}
+    </pre>
+  );
 }
 
 export default function LogsPage() {
@@ -203,7 +219,7 @@ export default function LogsPage() {
                   const status = getStatus(log);
                   const isOpen = expandedIdx === i;
                   return (
-                    <Fragment key={i}>
+                    <Fragment key={`${log.timestamp}-${log.type}`}>
                       <tr
                         style={{ cursor: 'pointer' }}
                         onClick={() => setExpandedIdx(isOpen ? null : i)}

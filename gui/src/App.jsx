@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, createContext } from 'react';
 import { api } from './api.js';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import TestRuns from './pages/TestRuns.jsx';
 import PreflightPage from './pages/Preflight.jsx';
@@ -226,7 +227,9 @@ export default function App() {
 
         {/* Page content */}
         <div className="page-content">
-          {renderPage()}
+          <ErrorBoundary key={page}>
+            {renderPage()}
+          </ErrorBoundary>
         </div>
 
       </div>

@@ -11,8 +11,9 @@ export default function QualityPage() {
   const chat = useContext(ChatContext);
 
   function handleFixPlanComplete(content) {
-    const summary = (content ?? '').slice(0, 2000);
-    setResult(summary);
+    const raw = content ?? '';
+    const summary = raw.slice(0, 2000);
+    setResult(raw.length > 2000 ? summary + `\n\n(truncated — ${raw.length} chars total)` : summary);
     chat?.setPageContext({ page: 'Quality', data: { fixPlan: summary } });
     setStreamKey((k) => k + 1);
   }

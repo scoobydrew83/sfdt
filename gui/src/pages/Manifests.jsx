@@ -12,14 +12,14 @@ function fmtDate(iso) {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
 }
 
-function ManifestViewer({ manifest, onClose }) {
+function ManifestViewer({ manifest, preloadedXml, onClose }) {
   const [data, setData] = useState(null); // { xml, components: [] }
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     setLoading(true);
     try {
-      const { xml } = await api.getManifestContent(manifest.relPath);
+      const xml = preloadedXml ?? (await api.getManifestContent(manifest.relPath)).xml;
       const parser = new DOMParser();
       const doc = parser.parseFromString(xml, 'application/xml');
       const types = Array.from(doc.querySelectorAll('types'));
@@ -37,7 +37,7 @@ function ManifestViewer({ manifest, onClose }) {
     }
   };
 
-  useEffect(() => { load(); }, [manifest]);
+  useEffect(() => { load(); }, [manifest, preloadedXml]);
 
   const removeComponent = async (type, member) => {
     try {
@@ -48,7 +48,7 @@ function ManifestViewer({ manifest, onClose }) {
     }
   };
 
-  if (!manifest) return null;
+  if (!manifest && !preloadedXml) return null;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -68,18 +68,18 @@ function ManifestViewer({ manifest, onClose }) {
             <>
               {/* Left Column: Component List */}
               <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <div className="section-label" style={{ marginBottom: 10 }}>Components ({data?.components.length})</div>
+                <div className="section-label" style={{ marginBottom: 10 }}>Components ({data?.components?.length ?? 0})</div>
                 <div className="table-wrap" style={{ flex: 1, overflowY: 'auto' }}>
                   <table className="data-table">
                     <tbody>
-                      {data?.components.map((c, i) => (
+                      {data?.components?.map((c, i) => (
                         <tr key={`${c.type}.${c.member}-${i}`}>
                           <td>
                             <div style={{ fontSize: 12, fontWeight: 500 }}>{c.member}</div>
                             <div style={{ fontSize: 9, color: 'var(--fg-subtle)', textTransform: 'uppercase' }}>{c.type}</div>
                           </td>
                           <td style={{ width: 40, textAlign: 'right' }}>
-                            {manifest.source !== 'deployed' && (
+                            {manifest?.relPath && manifest.source !== 'deployed' && (
                               <button className="btn btn-ghost btn-xs" style={{ color: 'var(--status-conflict-fg)' }} onClick={() => removeComponent(c.type, c.member)}>
                                 <IconX size={12} />
                               </button>
@@ -114,7 +114,7 @@ function ManifestViewer({ manifest, onClose }) {
             const blob = new Blob([data?.xml ?? ''], { type: 'application/xml' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = manifest.name; a.click();
+            a.href = url; a.download = manifest?.name ?? 'manifest.xml'; a.click();
             URL.revokeObjectURL(url);
           }}>
             <IconDownload size={12} /> Download
@@ -221,7 +221,13 @@ function BuilderSection({ aiInfo, onBuilt }) {
           </div>
         )}
       </div>
-      {viewerOpen && result && <ManifestViewer xml={result.xml} onClose={() => setViewerOpen(false)} />}
+      {viewerOpen && result && (
+        <ManifestViewer
+          manifest={{ relPath: null, name: result.filename ?? 'manifest.xml', source: 'preview' }}
+          preloadedXml={result.xml}
+          onClose={() => setViewerOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -27,6 +27,7 @@ export default function ComparePage() {
   const [saving, setSaving]               = useState(false);
   const [saveSuccess, setSaveResult]      = useState(null);
   const esRef = useRef(null);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     api.orgs()
@@ -35,7 +36,10 @@ export default function ComparePage() {
   }, []);
 
   useEffect(() => {
-    return () => { esRef.current?.close(); };
+    return () => {
+      mountedRef.current = false;
+      esRef.current?.close();
+    };
   }, []);
 
   // Bug 3: load cached compare results on mount
@@ -62,7 +66,9 @@ export default function ComparePage() {
     esRef.current = es;
 
     es.onmessage = (e) => {
-      const event = JSON.parse(e.data);
+      if (!mountedRef.current) return;
+      let event;
+      try { event = JSON.parse(e.data); } catch { return; }
       if (event.type === 'progress') {
         setPhase2Total(event.total);
         setPhase2Done(event.completed);
@@ -75,9 +81,14 @@ export default function ComparePage() {
       } else if (event.type === 'done') {
         setPhase2Active(false);
         es.close();
+      } else if (event.type === 'error') {
+        setStreamError(event.message ?? 'Content comparison failed.');
+        setPhase2Active(false);
+        es.close();
       }
     };
     es.onerror = () => {
+      if (!mountedRef.current) return;
       setStreamError('Streaming failed. The inventory was saved — click Run again to retry.');
       setPhase2Active(false);
       es.close();
@@ -231,6 +242,12 @@ export default function ComparePage() {
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)', flexShrink: 0 }}>
               {phase2Done} / {phase2Total}
             </span>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => { esRef.current?.close(); setPhase2Active(false); }}
+            >
+              <IconX size={11} /> Cancel
+            </button>
           </div>
         </div>
       )}

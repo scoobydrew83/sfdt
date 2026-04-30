@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs-extra';
 
@@ -30,7 +30,7 @@ export function initCache(cacheDir, orgAlias) {
   // path traversal attacks (e.g. aliases containing "../" or other unsafe chars).
   const safeAlias = orgAlias.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
   const dbPath = path.join(cacheDir, `${safeAlias}.db`);
-  const db = new Database(dbPath);
+  const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA);
   return db;
 }
@@ -63,7 +63,8 @@ export function updateCache(db, freshInventory) {
     'DELETE FROM components WHERE type = ? AND name NOT IN (SELECT value FROM json_each(?))',
   );
   const setSync = db.prepare('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)');
-  db.transaction(() => {
+  db.exec('BEGIN');
+  try {
     for (const [type, members] of freshInventory) {
       // Upsert every component present in the fresh inventory.
       for (const [name, lastModified] of members) {
@@ -74,7 +75,11 @@ export function updateCache(db, freshInventory) {
       deleteStale.run(type, freshNames);
     }
     setSync.run('last_sync', new Date().toISOString());
-  })();
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
 }
 
 export function getCacheStatus(db, orgAlias) {

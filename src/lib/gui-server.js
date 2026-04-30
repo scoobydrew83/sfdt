@@ -22,6 +22,9 @@ import { loadConfig } from './config.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const ANSI_RE = /\x1B\[[0-9;]*[A-Za-z]|\x1B\][^\x07]*\x07|\x1B[()][AB012]/g;
+function stripAnsi(str) { return typeof str === 'string' ? str.replace(ANSI_RE, '') : str; }
+
 const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', 'scripts');
 
 // gui/dist lives at <package-root>/gui/dist
@@ -549,6 +552,7 @@ export function createGuiApp(config, version, port = 7654) {
       const fresh = await loadConfig(projectRoot);
       Object.assign(config, fresh);
 
+      initInProgress = false;
       res.json({ ok: true });
     } catch (err) {
       initInProgress = false;
@@ -583,7 +587,7 @@ export function createGuiApp(config, version, port = 7654) {
   app.get('/api/preflight', apiLimiter, async (_req, res) => {
     try {
       const data = await readPreflight(logDir);
-      res.json(data ?? {});
+      res.json(data ?? { date: null, status: null, checks: [] });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -592,7 +596,7 @@ export function createGuiApp(config, version, port = 7654) {
   app.get('/api/drift', apiLimiter, async (_req, res) => {
     try {
       const data = await readDrift(logDir);
-      res.json(data ?? {});
+      res.json(data ?? { date: null, status: null, components: [] });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -671,8 +675,9 @@ export function createGuiApp(config, version, port = 7654) {
       const streamLines = (readable) => {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });
         rl.on('line', (line) => {
-          if (!res.writableEnded && !line.startsWith('SFDT_LOG:')) {
-            res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
+          const stripped = stripAnsi(line);
+          if (!res.writableEnded && !stripped.startsWith('SFDT_LOG:')) {
+            res.write('data: ' + JSON.stringify({ type: 'log', line: stripped, ts: new Date().toISOString() }) + '\n\n');
           }
         });
         return rl;
@@ -774,8 +779,9 @@ export function createGuiApp(config, version, port = 7654) {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });
         rl.on('line', (line) => {
           lines.push(line);
+          const stripped = stripAnsi(line);
           if (!res.writableEnded && !line.startsWith('SFDT_LOG:')) {
-            res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ type: 'log', line: stripped, ts: new Date().toISOString() }) + '\n\n');
           }
         });
         return rl;
@@ -865,9 +871,9 @@ export function createGuiApp(config, version, port = 7654) {
         // sf not available or no orgs authorized
       }
 
-      const configOrgs = Object.keys(config.environments?.orgs ?? {}).map((alias) => ({
-        alias,
-        username: config.environments.orgs[alias],
+      const configOrgs = (config.environments?.orgs ?? []).map((o) => ({
+        alias: o.alias,
+        username: o.username ?? '',
       }));
 
       // Merge, deduplicate by alias
@@ -885,7 +891,7 @@ export function createGuiApp(config, version, port = 7654) {
   app.get('/api/compare', apiLimiter, async (_req, res) => {
     try {
       const data = await readCompare(logDir);
-      res.json(data ?? {});
+      res.json(data ?? { date: null, source: null, target: null, items: [] });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1320,8 +1326,9 @@ export function createGuiApp(config, version, port = 7654) {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });
         rl.on('line', (line) => {
           lines.push(line);
+          const stripped = stripAnsi(line);
           if (!res.writableEnded && !line.startsWith('SFDT_LOG:'))
-            res.write('data: ' + JSON.stringify({ type: 'log', line, ts: new Date().toISOString() }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ type: 'log', line: stripped, ts: new Date().toISOString() }) + '\n\n');
         });
         return rl;
       };
@@ -1538,7 +1545,7 @@ export function createGuiApp(config, version, port = 7654) {
 
       if (result?.stdout) {
         for (const line of result.stdout.split('\n')) {
-          send({ type: 'log', line, ts: new Date().toISOString() });
+          send({ type: 'log', line: stripAnsi(line), ts: new Date().toISOString() });
         }
       }
       send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
@@ -1590,7 +1597,7 @@ export function createGuiApp(config, version, port = 7654) {
 
       if (result?.stdout) {
         for (const line of result.stdout.split('\n')) {
-          send({ type: 'log', line, ts: new Date().toISOString() });
+          send({ type: 'log', line: stripAnsi(line), ts: new Date().toISOString() });
         }
       }
       send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
@@ -1741,7 +1748,7 @@ export function createGuiApp(config, version, port = 7654) {
 
       if (result?.stdout) {
         for (const line of result.stdout.split('\n')) {
-          send({ type: 'log', line, ts: new Date().toISOString() });
+          send({ type: 'log', line: stripAnsi(line), ts: new Date().toISOString() });
         }
       }
       send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
@@ -1841,7 +1848,7 @@ export function createGuiApp(config, version, port = 7654) {
 
       if (result?.stdout) {
         for (const line of result.stdout.split('\n')) {
-          send({ type: 'log', line, ts: new Date().toISOString() });
+          send({ type: 'log', line: stripAnsi(line), ts: new Date().toISOString() });
         }
       }
       send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
@@ -1912,7 +1919,7 @@ export function createGuiApp(config, version, port = 7654) {
 
       if (result?.stdout) {
         for (const line of result.stdout.split('\n')) {
-          send({ type: 'log', line, ts: new Date().toISOString() });
+          send({ type: 'log', line: stripAnsi(line), ts: new Date().toISOString() });
         }
       }
       send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });

@@ -44,7 +44,7 @@ export default function PreflightPage() {
       })
       .catch(() => null)
       .finally(() => setLoading(false));
-  }, [refreshKey]);
+  }, [refreshKey, chat]);
 
   const checks      = data?.checks ?? [];
   const passCount   = checks.filter((c) => ['pass','passed','success'].includes(c.status?.toLowerCase())).length;

@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-04-29
+
+### Added
+- **GUI: ErrorBoundary** — all pages are now wrapped in a React error boundary; a render crash on one page no longer takes down the entire dashboard.
+- **GUI: Dashboard retry** — when dashboard data fails to load, an inline error message with a Retry button appears instead of a silent blank state.
+- **GUI: Compare cancel** — a Cancel button appears during long-running inventory streams so users can abort without navigating away.
+- **GUI test suite** — Vitest + Testing Library added to the GUI package; tests run in CI on every push (`cd gui && npm test`).
+- **JSDoc type annotations** added to all `api.js` functions for improved IDE autocompletion.
+
+### Changed
+- **ANSI escape codes stripped** from all SSE log output and terminal streams in the GUI — no more garbled color codes appearing in command output panels.
+- **Node.js 22+ required** — engine floor raised from 20 to 22; CI now tests on Node 22 only.
+- **`better-sqlite3` replaced with Node built-in `node:sqlite`** (`DatabaseSync`) — removes the native compiled dependency; pull cache now uses the standard library SQLite module.
+- **Pull page** replaced with a "Coming Soon" placeholder pointing users to the Compare page and the CLI; the interactive pull UI is not yet complete.
+- **`/api/preflight`, `/api/drift`, `/api/compare`** now return structured empty shapes (`{ date: null, status: null, checks: [] }` etc.) instead of `{}` when no data exists, preventing client-side null-check errors.
+- **Org config format** (`environments.orgs`) is now correctly read as an array of `{ alias, username }` objects, matching what `sfdt init` writes.
+
+### Fixed
+- Dashboard drift activity card no longer crashes — uses `drift.status` / `drift.components` instead of the removed `drift.result` / `drift.count` fields.
+- `initInProgress` flag is now correctly reset to `false` after a successful `/api/init` call (was only reset on error, causing false "Already initialized" rejections after first use).
+- Release Hub: streaming sessions for changelog and release-note generation are now closed on component unmount, preventing memory leaks after navigating away.
+- Release Hub: deployment now validates that a target org is selected before starting, showing an inline error instead of silently proceeding with no org.
+- Release Hub: test detection effect no longer re-runs on `testClasses` change (was causing duplicate API calls).
+- Logs page: unknown log types now render their raw JSON payload in a scrollable `<pre>` block instead of returning `null`.
+- Manifests viewer: defensive null checks on `data.components` prevent crashes when a manifest has no components; download filename falls back to `manifest.xml`.
+- Review, Explain, Quality pages: when AI output exceeds 2000 characters, the content is truncated and a notice shows the full character count.
+- Settings: `coverageThreshold` field now validates that the entered value is a number between 0 and 100 before saving.
+- React key props in Logs, ReleaseHub, and Dashboard tables now use stable identifiers instead of array indices, preventing incorrect reconciliation on re-render.
+- CodeQL suppression comments added to intentional file-to-HTTP patterns in `ai.js` to silence false-positive alerts.
+
 ## [0.6.2] - 2026-04-29
 
 ### Added
