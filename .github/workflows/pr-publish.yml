@@ -1,0 +1,198 @@
+name: PR Beta Publish
+
+on:
+  pull_request:
+    types: [labeled, closed]
+    branches: [main, develop]
+
+concurrency:
+  group: pr-publish-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  publish-pr-beta:
+    if: github.event.action == 'labeled' && github.event.label.name == 'publish-beta'
+    runs-on: ubuntu-latest
+    environment: beta
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - name: Check actor permission
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor,
+            });
+            const allowed = ['write', 'maintain', 'admin'];
+            if (!allowed.includes(perm.permission)) {
+              core.setFailed(`Actor ${context.actor} has permission '${perm.permission}' — write or higher required to publish a beta.`);
+            }
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm ci
+
+      - name: Build GUI
+        run: npm run build:gui
+
+      - name: Compute PR beta version
+        id: version
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          BASE=$(node -p "require('./package.json').version")
+          PREFIX="${BASE}-pr.${PR_NUMBER}."
+          EXISTING=$(npm view @sfdt/cli versions --json 2>/dev/null || echo '[]')
+          N=$(node -e "
+            const versions = JSON.parse(process.env.EXISTING);
+            const prefix = process.env.PREFIX;
+            const nums = versions
+              .filter(v => v.startsWith(prefix))
+              .map(v => parseInt(v.slice(prefix.length), 10))
+              .filter(n => !isNaN(n));
+            console.log(nums.length ? Math.max(...nums) + 1 : 1);
+          ")
+          NEW_VERSION="${PREFIX}${N}"
+          echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "pr_tag=pr-${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "Computing version: ${NEW_VERSION} (tag: pr-${PR_NUMBER})"
+
+      - name: Stamp version in package.json
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new_version }}
+        run: npm version "$NEW_VERSION" --no-git-tag-version
+
+      - name: Publish beta to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PR_TAG: ${{ steps.version.outputs.pr_tag }}
+        run: npx npm@latest publish --provenance --access public --tag "$PR_TAG"
+
+      - name: Comment on PR
+        if: success()
+        uses: actions/github-script@v7
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new_version }}
+          PR_TAG: ${{ steps.version.outputs.pr_tag }}
+        with:
+          script: |
+            const version = process.env.NEW_VERSION;
+            const tag = process.env.PR_TAG;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: [
+                '## Beta Published',
+                '',
+                `Version \`${version}\` is available on npm under the \`${tag}\` dist-tag.`,
+                '',
+                '**Install to test:**',
+                '```sh',
+                `npm install @sfdt/cli@${tag}`,
+                '```',
+                `Or pin the exact version: \`npm install @sfdt/cli@${version}\``,
+                '',
+                '> This dist-tag will be removed automatically when the PR is closed.',
+              ].join('\n'),
+            });
+
+      - name: Remove publish-beta label
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                name: 'publish-beta',
+              });
+            } catch {
+              // Label already removed — ignore
+            }
+
+  cleanup-pr-beta:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    environment: beta
+    permissions:
+      pull-requests: write
+
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check if dist-tag exists
+        id: check
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          TAG="pr-${PR_NUMBER}"
+          TAGS=$(npm view @sfdt/cli dist-tags --json 2>/dev/null || echo '{}')
+          EXISTS=$(node -e "
+            const t = JSON.parse(process.env.TAGS);
+            const tag = process.env.TAG;
+            console.log(t[tag] ? 'true' : 'false');
+          ")
+          echo "exists=${EXISTS}" >> "$GITHUB_OUTPUT"
+          echo "pr_tag=${TAG}" >> "$GITHUB_OUTPUT"
+          if [ "$EXISTS" = "true" ]; then
+            BASE_VERSION=$(node -e "
+              const t = JSON.parse(process.env.TAGS);
+              const tag = process.env.TAG;
+              const v = t[tag];
+              console.log(v.split('-pr.')[0]);
+            ")
+            echo "base_version=${BASE_VERSION}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Remove dist-tag and deprecate PR versions
+        if: steps.check.outputs.exists == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PR_TAG: ${{ steps.check.outputs.pr_tag }}
+          BASE_VERSION: ${{ steps.check.outputs.base_version }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          npm dist-tag rm @sfdt/cli "$PR_TAG"
+          PREFIX="${BASE_VERSION}-pr.${PR_NUMBER}."
+          VERSIONS=$(npm view @sfdt/cli versions --json 2>/dev/null || echo '[]')
+          node -e "
+            const versions = JSON.parse(process.env.VERSIONS);
+            const prefix = process.env.PREFIX;
+            versions.filter(v => v.startsWith(prefix)).forEach(v => console.log(v));
+          " | while read -r v; do
+            npm deprecate "@sfdt/cli@${v}" "PR beta — this version has been archived. Install the stable release: npm install @sfdt/cli@latest"
+          done
+
+      - name: Comment on PR
+        if: steps.check.outputs.exists == 'true'
+        uses: actions/github-script@v7
+        env:
+          PR_TAG: ${{ steps.check.outputs.pr_tag }}
+        with:
+          script: |
+            const tag = process.env.PR_TAG;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: `**Beta Cleaned Up** — The \`${tag}\` dist-tag has been removed. Install the stable release: \`npm install @sfdt/cli@latest\``,
+            });
