@@ -36,6 +36,7 @@ export default function ComparePage() {
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       esRef.current?.close();
@@ -244,7 +245,7 @@ export default function ComparePage() {
             </span>
             <button
               className="btn btn-ghost btn-sm"
-              onClick={() => { esRef.current?.close(); setPhase2Active(false); }}
+              onClick={() => { esRef.current?.close(); setPhase2Active(false); setPhase2Done(0); setPhase2Total(0); }}
             >
               <IconX size={11} /> Cancel
             </button>

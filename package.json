@@ -52,7 +52,7 @@
   "author": "",
   "license": "MIT",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.15.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

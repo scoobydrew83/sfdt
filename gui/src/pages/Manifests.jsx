@@ -55,8 +55,8 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
       <div className="modal" style={{ maxWidth: 900, width: '95vw' }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div style={{ minWidth: 0 }}>
-            <span className="modal-title" style={{ display: 'block' }}>{manifest.name}</span>
-            <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{manifest.relPath}</span>
+            <span className="modal-title" style={{ display: 'block' }}>{manifest?.name}</span>
+            <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{manifest?.relPath}</span>
           </div>
           <button className="btn btn-icon" onClick={onClose}><IconX size={15} /></button>
         </div>

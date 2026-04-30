@@ -573,7 +573,7 @@ function DeployStep({ manifest, onMarkDone }) {
         .catch(() => {})
         .finally(() => setDetecting(false));
     }
-  }, [testLevel, manifest?.relPath, testClasses]);
+  }, [testLevel, manifest?.relPath]);
 
   const toggleTest = (name) => {
     const list = testClasses.split(',').map(s => s.trim()).filter(Boolean);

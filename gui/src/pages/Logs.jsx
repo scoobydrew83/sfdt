@@ -219,7 +219,7 @@ export default function LogsPage() {
                   const status = getStatus(log);
                   const isOpen = expandedIdx === i;
                   return (
-                    <Fragment key={`${log.timestamp}-${log.type}`}>
+                    <Fragment key={`${log.timestamp}-${log.type}-${i}`}>
                       <tr
                         style={{ cursor: 'pointer' }}
                         onClick={() => setExpandedIdx(isOpen ? null : i)}

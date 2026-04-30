@@ -147,8 +147,8 @@ export default function Dashboard({ project }) {
                 </tr>
               </thead>
               <tbody>
-                {tests.runs.slice(0, 5).map((run) => (
-                  <tr key={run.date}>
+                {tests.runs.slice(0, 5).map((run, i) => (
+                  <tr key={`${run.date}-${i}`}>
                     <td className="td-mono">{new Date(run.date).toLocaleDateString()}</td>
                     <td style={{ textAlign: 'right' }}>
                       <span style={{ color: 'var(--status-identical-fg)', fontWeight: 600 }}>{run.passed ?? 0}</span>

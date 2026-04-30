@@ -331,7 +331,7 @@ Cache behavior is controlled via `pullCache` in `.sfdt/config.json`:
 
 ## Requirements
 
-- **Node.js** >= 22.0.0 (uses the built-in `node:sqlite` module introduced in Node 22)
+- **Node.js** >= 22.15.0 (uses the built-in `node:sqlite` module, unflagged in Node 22.15)
 - **Salesforce CLI** (`sf`) installed and authenticated to target orgs
 - **bash** 4.0+ (macOS users: `brew install bash`)
 - **jq** 1.6+ (required by several shell scripts)

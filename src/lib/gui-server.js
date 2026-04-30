@@ -26,6 +26,7 @@ const ANSI_RE = /\x1B\[[0-9;]*[A-Za-z]|\x1B\][^\x07]*\x07|\x1B[()][AB012]/g;
 function stripAnsi(str) { return typeof str === 'string' ? str.replace(ANSI_RE, '') : str; }
 
 const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', 'scripts');
+const TEMPLATE_PATH = path.resolve(__dirname, '..', 'templates', 'sfdt.config.json');
 
 // gui/dist lives at <package-root>/gui/dist
 const GUI_DIST = path.resolve(__dirname, '..', '..', 'gui', 'dist');
@@ -502,8 +503,6 @@ export function createGuiApp(config, version, port = 7654) {
     }
   });
 
-  const TEMPLATE_PATH = path.resolve(__dirname, '..', 'templates', 'sfdt.config.json');
-
   app.post('/api/init', apiLimiter, async (req, res) => {
     try {
       const projectRoot = config._projectRoot || process.cwd();
@@ -780,7 +779,7 @@ export function createGuiApp(config, version, port = 7654) {
         rl.on('line', (line) => {
           lines.push(line);
           const stripped = stripAnsi(line);
-          if (!res.writableEnded && !line.startsWith('SFDT_LOG:')) {
+          if (!res.writableEnded && !stripped.startsWith('SFDT_LOG:')) {
             res.write('data: ' + JSON.stringify({ type: 'log', line: stripped, ts: new Date().toISOString() }) + '\n\n');
           }
         });
@@ -1327,7 +1326,7 @@ export function createGuiApp(config, version, port = 7654) {
         rl.on('line', (line) => {
           lines.push(line);
           const stripped = stripAnsi(line);
-          if (!res.writableEnded && !line.startsWith('SFDT_LOG:'))
+          if (!res.writableEnded && !stripped.startsWith('SFDT_LOG:'))
             res.write('data: ' + JSON.stringify({ type: 'log', line: stripped, ts: new Date().toISOString() }) + '\n\n');
         });
         return rl;

@@ -427,15 +427,15 @@ async function runGeminiPrompt(prompt, options, config) {
     }
 
     const url = `${GEMINI_BASE_URL}/${model}:generateContent`;
+    // codeql[js/file-access-to-http] - Intentional: agentic loop sends local file content to the AI provider.
+    // Mitigations: safeResolvePath() constrains reads to cwd; sensitive-file blocklist blocks .env/.key/etc.;
+    // endpoint is hardcoded to GEMINI_BASE_URL (not user-controlled).
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-goog-api-key': apiKey,
       },
-      // codeql[js/file-access-to-http] - Intentional: agentic loop sends local file content to the AI provider.
-      // Mitigations: safeResolvePath() constrains reads to cwd; sensitive-file blocklist blocks .env/.key/etc.;
-      // endpoint is hardcoded to GEMINI_BASE_URL (not user-controlled).
       body: JSON.stringify(body),
     });
 
@@ -511,12 +511,12 @@ async function runOpenAiPrompt(prompt, options, config) {
       body.tools = toolDefs;
     }
 
+    // codeql[js/file-access-to-http] - Intentional: agentic loop sends local file content to the AI provider.
+    // Mitigations: safeResolvePath() constrains reads to cwd; sensitive-file blocklist blocks .env/.key/etc.;
+    // endpoint is hardcoded to OPENAI_CHAT_URL (not user-controlled).
     const res = await fetch(OPENAI_CHAT_URL, {
       method: 'POST',
       headers,
-      // codeql[js/file-access-to-http] - Intentional: agentic loop sends local file content to the AI provider.
-      // Mitigations: safeResolvePath() constrains reads to cwd; sensitive-file blocklist blocks .env/.key/etc.;
-      // endpoint is hardcoded to OPENAI_CHAT_URL (not user-controlled).
       body: JSON.stringify(body),
     });
 
