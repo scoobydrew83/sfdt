@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api.js';
 import StatCard from '../components/StatCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
@@ -16,13 +16,18 @@ export default function Dashboard({ project }) {
   const [preflight, setPreflight] = useState(null);
   const [drift, setDrift]       = useState(null);
   const [loading, setLoading]   = useState(true);
+  const [fetchError, setFetchError] = useState(null);
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
+    setLoading(true);
+    setFetchError(null);
     Promise.all([api.testRuns(), api.preflight(), api.drift()])
       .then(([t, p, d]) => { setTests(t); setPreflight(p); setDrift(d); })
-      .catch(() => {})
+      .catch((err) => setFetchError(err.message ?? 'Failed to load dashboard data.'))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   const totalPassed = tests?.runs?.reduce((s, r) => s + (r.passed ?? 0), 0) ?? 0;
   const totalFailed = tests?.runs?.reduce((s, r) => s + (r.failed ?? 0), 0) ?? 0;
@@ -51,6 +56,25 @@ export default function Dashboard({ project }) {
     );
   }
 
+  if (fetchError) {
+    return (
+      <div>
+        <div className="page-header">
+          <div className="page-header-text">
+            <h1>Dashboard</h1>
+            {project?.org && <p className="page-subtitle">{project.org}</p>}
+          </div>
+        </div>
+        <div className="alert alert-error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>Failed to load dashboard data: {fetchError}</span>
+          <button className="btn btn-ghost btn-sm" onClick={loadData}>
+            <IconRefresh size={12} /> Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Build a lightweight activity list from available data
   const activity = [];
   if (lastTest) {
@@ -71,12 +95,13 @@ export default function Dashboard({ project }) {
       status: preflight.status,
     });
   }
-  if (drift?.result) {
+  if (drift?.status) {
+    const driftCount = (drift.components ?? []).filter((c) => c.drift?.toLowerCase() === 'drift').length;
     activity.push({
-      type: drift.result === 'clean' ? 'success' : 'warn',
-      title: `Drift check — ${drift.count ?? 0} component${(drift.count ?? 0) !== 1 ? 's' : ''} differ`,
+      type: drift.status === 'clean' ? 'success' : 'warn',
+      title: `Drift check — ${driftCount} component${driftCount !== 1 ? 's' : ''} differ`,
       meta: drift.date ? new Date(drift.date).toLocaleString() : '',
-      status: drift.result,
+      status: drift.status,
     });
   }
 
@@ -123,7 +148,7 @@ export default function Dashboard({ project }) {
               </thead>
               <tbody>
                 {tests.runs.slice(0, 5).map((run, i) => (
-                  <tr key={i}>
+                  <tr key={`${run.date}-${i}`}>
                     <td className="td-mono">{new Date(run.date).toLocaleDateString()}</td>
                     <td style={{ textAlign: 'right' }}>
                       <span style={{ color: 'var(--status-identical-fg)', fontWeight: 600 }}>{run.passed ?? 0}</span>

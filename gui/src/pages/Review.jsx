@@ -10,7 +10,8 @@ export default function ReviewPage() {
   const chat = useContext(ChatContext);
 
   function handleComplete(content) {
-    const findings = (content ?? '').slice(0, 2000);
+    const raw = content ?? '';
+    const findings = raw.length > 2000 ? raw.slice(0, 2000) + `\n\n(truncated — ${raw.length} chars total)` : raw;
     setResult(findings);
     chat?.setPageContext({ page: 'Review', data: { baseBranch: base, findings } });
     setStreamKey((k) => k + 1);

@@ -331,11 +331,10 @@ Cache behavior is controlled via `pullCache` in `.sfdt/config.json`:
 
 ## Requirements
 
-- **Node.js** >= 20.0.0
+- **Node.js** >= 22.15.0 (uses the built-in `node:sqlite` module, unflagged in Node 22.15)
 - **Salesforce CLI** (`sf`) installed and authenticated to target orgs
 - **bash** 4.0+ (macOS users: `brew install bash`)
 - **jq** 1.6+ (required by several shell scripts)
-- **Native build tools** (`python3`, `make`, `g++`) — required only if `better-sqlite3` cannot find a pre-built binary for your Node version or architecture (e.g. ARM64, Alpine Linux, or custom Node builds). Most standard installs use a pre-built binary and do not need these. On Debian/Ubuntu: `apt-get install python3 make g++`; on macOS Xcode Command Line Tools suffice (`xcode-select --install`).
 - **Optional:** [Claude Code CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code) for AI features with the `claude` provider
 - **Optional:** Gemini or OpenAI API key for `gemini`/`openai` provider
 - **Optional:** [GitHub CLI](https://cli.github.com/) (`gh`) for PR creation during deployments

@@ -281,20 +281,28 @@ function ChangelogStep({ aiAvailable, onMarkDone }) {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving]       = useState(false);
   const [genLines, setGenLines]   = useState([]);
-  const counterRef = useRef(0);
+  const counterRef  = useRef(0);
+  const streamRef   = useRef(null);
+  const genLogRef   = useRef(null);
 
   useEffect(() => {
     api.changelogContent()
       .then((d) => setContent(d.content ?? ''))
       .catch(() => {})
       .finally(() => setLoading(false));
+    return () => streamRef.current?.close();
   }, []);
+
+  useEffect(() => {
+    if (genLogRef.current) genLogRef.current.scrollTop = genLogRef.current.scrollHeight;
+  }, [genLines]);
 
   const generate = () => {
     setGenerating(true);
     setGenLines([]);
     counterRef.current = 0;
     const s = stream.changelogGenerate();
+    streamRef.current = s;
     s.onmessage = ({ data: msg }) => {
       if (msg.type === 'log') {
         const id = counterRef.current++;
@@ -365,7 +373,7 @@ function ChangelogStep({ aiAvailable, onMarkDone }) {
       )}
 
       {genLines.length > 0 && (
-        <div className="cmd-terminal" style={{ maxHeight: 120, marginBottom: 10 }}>
+        <div className="cmd-terminal" ref={genLogRef} style={{ maxHeight: 120, marginBottom: 10 }}>
           {genLines.map(({ id, text }) => (
             <div key={id} className="cmd-line">{text || '\u00A0'}</div>
           ))}
@@ -391,13 +399,22 @@ function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving]       = useState(false);
   const [genLines, setGenLines]   = useState([]);
-  const counterRef = useRef(0);
+  const counterRef  = useRef(0);
+  const streamRef   = useRef(null);
+  const genLogRef   = useRef(null);
+
+  useEffect(() => () => streamRef.current?.close(), []);
+
+  useEffect(() => {
+    if (genLogRef.current) genLogRef.current.scrollTop = genLogRef.current.scrollHeight;
+  }, [genLines]);
 
   const generate = () => {
     setGenerating(true);
     setGenLines([]);
     counterRef.current = 0;
     const s = stream.releaseNotes();
+    streamRef.current = s;
     s.onmessage = ({ data: msg }) => {
       if (msg.type === 'log') {
         const id = counterRef.current++;
@@ -464,7 +481,7 @@ function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
       />
 
       {genLines.length > 0 && (
-        <div className="cmd-terminal" style={{ maxHeight: 120, marginBottom: 10 }}>
+        <div className="cmd-terminal" ref={genLogRef} style={{ maxHeight: 120, marginBottom: 10 }}>
           {genLines.map(({ id, text }) => (
             <div key={id} className="cmd-line">{text || '\u00A0'}</div>
           ))}
@@ -528,6 +545,7 @@ function DeployStep({ manifest, onMarkDone }) {
   const [loadingOrgs, setLoadingOrgs] = useState(true);
   const [isRunning, setIsRunning]   = useState(false);
   const [streamKey, setStreamKey]   = useState(0);
+  const [orgError, setOrgError]     = useState(false);
 
   useEffect(() => {
     api.orgs()
@@ -566,6 +584,8 @@ function DeployStep({ manifest, onMarkDone }) {
   };
 
   const runDeployment = () => {
+    if (!targetOrg) { setOrgError(true); return; }
+    setOrgError(false);
     setIsRunning(true);
     setStreamKey(k => k + 1);
   };
@@ -596,15 +616,20 @@ function DeployStep({ manifest, onMarkDone }) {
             ) : (
               <select
                 className="input"
-                style={{ width: '100%', fontSize: 13 }}
+                style={{ width: '100%', fontSize: 13, borderColor: orgError ? 'var(--status-conflict-fg)' : undefined }}
                 value={targetOrg}
-                onChange={(e) => setTargetOrg(e.target.value)}
+                onChange={(e) => { setTargetOrg(e.target.value); if (e.target.value) setOrgError(false); }}
               >
                 <option value="">Select an org...</option>
                 {orgs.map(o => (
-                  <option key={o.alias} value={o.alias}>{o.alias} ({o.username})</option>
+                  <option key={o.alias} value={o.alias}>{o.alias}{o.username ? ` (${o.username})` : ''}</option>
                 ))}
               </select>
+            )}
+            {orgError && (
+              <div style={{ marginTop: 6, fontSize: 12, color: 'var(--status-conflict-fg)' }}>
+                A target org is required to execute the deployment.
+              </div>
             )}
           </div>
 
@@ -821,9 +846,9 @@ function RollbackStep() {
             No deployment history found. Deployments made via the GUI will appear here.
           </div>
         )}
-        {history.map((entry, i) => (
+        {history.map((entry) => (
           <button
-            key={i}
+            key={`${entry.date}-${entry.manifest}`}
             onClick={() => { setSelectedEntry(entry); setStreamKey((k) => k + 1); }}
             style={{
               display: 'flex', alignItems: 'center', gap: 12,

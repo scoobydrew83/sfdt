@@ -65,6 +65,14 @@ function FieldRow({ dotKey, label, type, options, rawConfig, onSave }) {
   }, [rawConfig, dotKey]);
 
   async function handleSave() {
+    if (dotKey === 'deployment.coverageThreshold') {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        setStatus('error');
+        setTimeout(() => setStatus(null), 3000);
+        return;
+      }
+    }
     setStatus('saving');
     try {
       await api.setConfig(dotKey, value);
@@ -112,6 +120,7 @@ function FieldRow({ dotKey, label, type, options, rawConfig, onSave }) {
           onChange={(e) => setValue(type === 'number' ? Number(e.target.value) : e.target.value)}
           style={inputStyle}
           className="input"
+          {...(dotKey === 'deployment.coverageThreshold' ? { min: 0, max: 100 } : {})}
         />
       )}
       <button

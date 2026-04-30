@@ -13,7 +13,7 @@ jobs:
       contents: read
     strategy:
       matrix:
-        node-version: [20, 22]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v6
       - name: Use Node.js ${{ matrix.node-version }}
@@ -26,8 +26,7 @@ jobs:
         run: npm audit --audit-level=high
       - run: npm run lint
       - run: npm test
-      - name: Publish dry-run (Node 22 only)
-        if: matrix.node-version == 22
+      - name: Publish dry-run
         run: npm publish --dry-run
 
   gui-build:
@@ -36,7 +35,7 @@ jobs:
       contents: read
     strategy:
       matrix:
-        node-version: [20, 22]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v6
       - name: Use Node.js ${{ matrix.node-version }}
@@ -47,6 +46,8 @@ jobs:
           cache-dependency-path: gui/package-lock.json
       - name: Install GUI dependencies
         run: cd gui && npm install
+      - name: Test GUI
+        run: cd gui && npm test
       - name: Build GUI
         run: cd gui && npm run build
 

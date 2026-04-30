@@ -1,4 +1,4 @@
-import CommandRunner from '../components/CommandRunner.jsx';
+import EmptyState from '../components/EmptyState.jsx';
 
 export default function PullPage() {
   return (
@@ -10,7 +10,10 @@ export default function PullPage() {
         </div>
       </div>
 
-      <CommandRunner command="pull" label="Pull Org Updates" />
+      <EmptyState
+        title="Coming Soon"
+        message="The Pull page will provide an interactive way to retrieve metadata from a connected org and merge it into your local source. For now, use the Compare page to preview changes, or run sfdt pull from the terminal."
+      />
     </div>
   );
 }

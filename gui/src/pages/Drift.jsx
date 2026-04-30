@@ -33,7 +33,7 @@ export default function DriftPage() {
       })
       .catch(() => null)
       .finally(() => setLoading(false));
-  }, [refreshKey]);
+  }, [refreshKey, chat]);
 
   const components = data?.components ?? [];
   const driftCount = components.filter((c) => c.drift?.toLowerCase() === 'drift').length;
