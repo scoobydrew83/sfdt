@@ -1,3 +1,4 @@
+// node:sqlite (DatabaseSync) is experimental/stability-1 in Node 22.x — watch Node release notes for API changes.
 import { DatabaseSync } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs-extra';

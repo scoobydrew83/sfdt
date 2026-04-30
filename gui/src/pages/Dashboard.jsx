@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api.js';
 import StatCard from '../components/StatCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
@@ -18,16 +18,16 @@ export default function Dashboard({ project }) {
   const [loading, setLoading]   = useState(true);
   const [fetchError, setFetchError] = useState(null);
 
-  const loadData = () => {
+  const loadData = useCallback(() => {
     setLoading(true);
     setFetchError(null);
     Promise.all([api.testRuns(), api.preflight(), api.drift()])
       .then(([t, p, d]) => { setTests(t); setPreflight(p); setDrift(d); })
       .catch((err) => setFetchError(err.message ?? 'Failed to load dashboard data.'))
       .finally(() => setLoading(false));
-  };
+  }, []);
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); }, [loadData]);
 
   const totalPassed = tests?.runs?.reduce((s, r) => s + (r.passed ?? 0), 0) ?? 0;
   const totalFailed = tests?.runs?.reduce((s, r) => s + (r.failed ?? 0), 0) ?? 0;

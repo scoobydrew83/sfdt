@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, createContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, createContext } from 'react';
 import { api } from './api.js';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -141,12 +141,14 @@ export default function App() {
     }
   };
 
+  const chatContextValue = useMemo(() => ({ openChat, setPageContext }), [openChat, setPageContext]);
+
   const initials = project?.name
     ? project.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
     : 'SF';
 
   return (
-    <ChatContext.Provider value={{ openChat, setPageContext }}>
+    <ChatContext.Provider value={chatContextValue}>
     <>
     {showUpdate && updateInfo && (
       <UpdateModal
