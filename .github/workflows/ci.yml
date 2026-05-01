@@ -5,6 +5,8 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  schedule:
+    - cron: '0 2 * * *'    # 2am UTC nightly
 
 jobs:
   test:
@@ -51,8 +53,51 @@ jobs:
       - name: Build GUI
         run: cd gui && npm run build
 
-  publish-beta:
+  integration:
     needs: [test, gui-build]
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        node-version: [22]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm pack
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli
+      - name: Checkout synthetic-spark fixture
+        uses: actions/checkout@v6
+        with:
+          repository: scoobydrew83/synthetic-spark
+          path: synthetic-spark
+      - name: Install sfdt from packed tarball
+        run: cd synthetic-spark && npm install $(ls ../sfdt-*.tgz)
+      - name: Authenticate DevHub
+        env:
+          SF_JWT_KEY: ${{ secrets.SF_DEVHUB_JWT_KEY }}
+          SF_CLIENT_ID: ${{ secrets.SF_DEVHUB_CLIENT_ID }}
+          SF_USERNAME: ${{ secrets.SF_DEVHUB_USERNAME }}
+        run: |
+          echo "$SF_JWT_KEY" > devhub.key
+          sf org login jwt \
+            --client-id "$SF_CLIENT_ID" \
+            --jwt-key-file devhub.key \
+            --username "$SF_USERNAME" \
+            --set-default-dev-hub
+          rm devhub.key
+      - name: Run integration tests
+        run: ./scripts/integration/run-integration-tests.sh ./synthetic-spark
+
+  publish-beta:
+    needs: [test, gui-build, integration]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
     environment: beta
@@ -108,7 +153,7 @@ jobs:
 
 
   publish:
-    needs: [test, gui-build]
+    needs: [test, gui-build, integration]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: production
