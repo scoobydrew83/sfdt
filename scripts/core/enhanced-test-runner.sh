@@ -167,6 +167,20 @@ run_parallel_tests() {
     echo -e "${BLUE}==================================${NC}"
     echo ""
 
+    # Emit combined JSON to stdout for GUI result parsing (single compact line)
+    if compgen -G "$RESULTS_DIR/batch_*_${TIMESTAMP}.json" > /dev/null 2>&1; then
+        jq -c -s '
+          reduce .[] as $b (
+            {"result":{"summary":{"passing":0,"failing":0,"skipped":0},"tests":[]}};
+            .result.summary.passing += ($b.result.summary.passing // 0) |
+            .result.summary.failing += ($b.result.summary.failing // 0) |
+            .result.summary.skipped += ($b.result.summary.skipped // 0) |
+            .result.tests += ($b.result.tests // [])
+          )
+        ' "$RESULTS_DIR"/batch_*_"${TIMESTAMP}".json 2>/dev/null || \
+            echo '{"result":{"summary":{"passing":0,"failing":0,"skipped":0},"tests":[]}}'
+    fi
+
     if (( total_failing > 0 || any_failed == 1 )); then
         log_error "Test run failed: $total_failing failing test(s)."
         return 1

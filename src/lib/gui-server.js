@@ -56,11 +56,12 @@ function parseTestRunLines(lines) {
   if (!jsonLine) return { passed: 0, failed: 0, errors: 0, skipped: 0, coverage: null, tests: [] };
   const raw = JSON.parse(jsonLine);
   const summary = raw.result?.summary ?? raw.summary ?? {};
+  // SF CLI uses PascalCase (FullName, Outcome, RunTime, Message); normalise both forms.
   const tests = (raw.result?.tests ?? raw.tests ?? []).map((t) => ({
-    name: t.methodName ?? t.name ?? 'unknown',
-    status: t.outcome ?? t.status ?? 'unknown',
-    durationMs: t.runTime ?? null,
-    message: t.message ?? null,
+    name: t.FullName ?? t.methodName ?? t.name ?? 'unknown',
+    status: (t.Outcome ?? t.outcome ?? t.status ?? 'unknown').toLowerCase(),
+    durationMs: t.RunTime ?? t.runTime ?? null,
+    message: t.Message ?? t.message ?? null,
   }));
   return {
     passed: summary.passing ?? 0,
@@ -102,11 +103,13 @@ function parseQualityLines(lines) {
     },
     { critical: 0, high: 0, medium: 0, low: 0 }
   );
-  return {
+  const result = {
     status: violations.length === 0 ? 'PASS' : 'FAIL',
     summary,
     violations,
   };
+  if (raw._sfdt_unavailable) result.unavailableMessage = raw._sfdt_unavailable;
+  return result;
 }
 
 /**
@@ -207,6 +210,24 @@ async function readPreflight(logDir) {
     .reverse();
   if (!legacyFiles.length) return null;
   return tryReadJson(path.join(logDir, legacyFiles[0]));
+}
+
+/**
+ * Read the most recent quality log.
+ * Returns { date, status, summary, violations, unavailableMessage } or null.
+ */
+async function readQuality(logDir) {
+  const log = await readLatestLog(logDir, 'quality');
+  if (log) {
+    return {
+      date: log.timestamp,
+      status: log.data.status,
+      summary: log.data.summary ?? { critical: 0, high: 0, medium: 0, low: 0 },
+      violations: log.data.violations ?? [],
+      unavailableMessage: log.data.unavailableMessage ?? null,
+    };
+  }
+  return null;
 }
 
 /**
@@ -596,6 +617,15 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const data = await readDrift(logDir);
       res.json(data ?? { date: null, status: null, components: [] });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/quality', apiLimiter, async (_req, res) => {
+    try {
+      const data = await readQuality(logDir);
+      res.json(data ?? { date: null, status: null, summary: { critical: 0, high: 0, medium: 0, low: 0 }, violations: [], unavailableMessage: null });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1315,7 +1345,10 @@ export function createGuiApp(config, version, port = 7654) {
         SFDT_TAG_RELEASE: tagRelease ? 'true' : 'false',
         SFDT_CREATE_PR: createPR ? 'true' : 'false',
         SFDT_TEST_LEVEL: testLevel ?? '',
-        SFDT_SPECIFIED_TESTS: testClasses ?? '',
+        // Shell script expects space-separated class names; GUI sends comma-separated.
+        SFDT_SPECIFIED_TESTS: typeof testClasses === 'string' && testClasses
+          ? testClasses.split(',').map((s) => s.trim()).filter(Boolean).join(' ')
+          : '',
         SFDT_DESTRUCTIVE_TIMING: destructiveTiming ?? 'post',
         ...(manifest ? { SFDT_MANIFEST_PATH: path.join(projectRoot, manifest) } : {}),
       };

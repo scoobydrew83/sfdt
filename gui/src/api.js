@@ -60,6 +60,8 @@ export const api = {
   preflight:              () => fetchJson('/preflight'),
   /** @returns {Promise<DriftResult>} */
   drift:                  () => fetchJson('/drift'),
+  /** @returns {Promise<{date:string|null, status:string|null, summary:{critical:number,high:number,medium:number,low:number}, violations:Array, unavailableMessage:string|null}>} */
+  quality:                () => fetchJson('/quality'),
   /** @returns {Promise<{ ok: boolean }>} */
   health:                 () => fetchJson('/health'),
   /** @returns {Promise<{ orgs: OrgEntry[] }>} */

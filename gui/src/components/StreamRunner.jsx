@@ -10,7 +10,7 @@ import { IconPlay, IconX, IconRefresh, IconTerminal } from '../Icons.jsx';
  *   onComplete   — called when exitCode === 0
  *   children     — optional content rendered above the terminal (form inputs, etc.)
  */
-export default function StreamRunner({ label, startLabel = 'Run', streamFn, onComplete = () => {}, children }) {
+export default function StreamRunner({ label, startLabel = 'Run', streamFn, onComplete = () => {}, onError, children }) {
   const [status, setStatus]     = useState('idle');
   const [lines, setLines]       = useState([]);
   const [exitCode, setExitCode] = useState(null);
@@ -64,6 +64,7 @@ export default function StreamRunner({ label, startLabel = 'Run', streamFn, onCo
         setStatus('error');
         const id = counterRef.current++;
         setLines((prev) => [...prev, { id, text: `Error: ${msg.message}` }]);
+        if (onError) onError(msg.message ?? 'Unknown error');
         streamRef.current = null;
       }
     };
@@ -72,7 +73,9 @@ export default function StreamRunner({ label, startLabel = 'Run', streamFn, onCo
       if (deadRef.current) return;
       setStatus('error');
       const id = counterRef.current++;
-      setLines((prev) => [...prev, { id, text: `Connection error: ${err.message || 'unknown'}` }]);
+      const errMsg = err.message || 'unknown';
+      setLines((prev) => [...prev, { id, text: `Connection error: ${errMsg}` }]);
+      if (onError) onError(`Connection error: ${errMsg}`);
       streamRef.current = null;
     };
   };

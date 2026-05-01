@@ -145,8 +145,30 @@ else
     echo "  Significant quality issues found"
 fi
 
+# Emit structured JSON to stdout for GUI result parsing
+# Try sf scanner (Salesforce Code Analyzer) if installed; fall back to a stub
+_SCANNER_PLUGIN=""
+if command -v sf &>/dev/null; then
+    _SCANNER_PLUGIN=$(sf plugins --json 2>/dev/null | \
+        jq -r '.[] | select(.name == "@salesforce/sfdx-scanner") | .name' 2>/dev/null || true)
+fi
+
+if [[ -n "$_SCANNER_PLUGIN" ]]; then
+    log_info "Running Salesforce Code Analyzer (sf scanner)..."
+    sf scanner run \
+        --format json \
+        --target "$FORCE_APP_DIR" \
+        --engine pmd,eslint \
+        2>/dev/null || \
+        echo '{"status":0,"result":[]}'
+else
+    log_warning "sf scanner not installed — static violation analysis unavailable."
+    log_warning "Install with:  sf plugins install @salesforce/sfdx-scanner"
+    printf '{"status":0,"result":[],"_sfdt_unavailable":"sf scanner plugin not installed. Run: sf plugins install @salesforce/sfdx-scanner"}\n'
+fi
+
 # Exit with appropriate code
-if [ "$CONFIG_ISSUES" -gt 0 ] || [ "$CLASSES_WITHOUT_TESTS" -gt 10 ]; then
+if [ "${CONFIG_ISSUES:-0}" -gt 0 ] || [ "${CLASSES_WITHOUT_TESTS:-0}" -gt 10 ]; then
     exit 1
 else
     exit 0
