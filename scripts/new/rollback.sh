@@ -12,7 +12,13 @@ source "${SCRIPT_DIR}/../lib/git-utils.sh"
 MANIFEST_DIR="${SFDT_MANIFEST_DIR:-manifest/release}"
 TARGET_ORG="${SFDT_TARGET_ORG:-}"
 PROJECT_NAME="${SFDT_PROJECT_NAME:-sfdt}"
+NON_INTERACTIVE="${SFDT_NON_INTERACTIVE:-false}"
 DEPLOYED_DIR="${MANIFEST_DIR}/deployed"
+
+# Fall back to SFDT_DEFAULT_ORG when SFDT_TARGET_ORG was not set
+if [[ -z "$TARGET_ORG" ]]; then
+    TARGET_ORG="${SFDT_DEFAULT_ORG:-}"
+fi
 BACKUP_BEFORE_ROLLBACK="${SFDT_BACKUP_BEFORE_ROLLBACK:-true}"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BACKUP_DIR="${SFDT_LOG_DIR:-${SFDT_PROJECT_ROOT:-.}/logs}/rollback-backups"
@@ -42,13 +48,18 @@ echo ""
 print_info "Available manifests for rollback (last ${#MANIFESTS[@]}):"
 echo ""
 
-PS3=$'\nSelect manifest to rollback to (number): '
-select SELECTED_MANIFEST in "${MANIFESTS[@]}"; do
-    if [[ -n "$SELECTED_MANIFEST" ]]; then
-        break
-    fi
-    print_warning "Invalid selection. Please choose a number from the list."
-done
+if [[ "$NON_INTERACTIVE" == "true" ]]; then
+    SELECTED_MANIFEST="${MANIFESTS[-1]}"
+    print_info "Non-interactive mode: auto-selected most recent manifest: ${SELECTED_MANIFEST}"
+else
+    PS3=$'\nSelect manifest to rollback to (number): '
+    select SELECTED_MANIFEST in "${MANIFESTS[@]}"; do
+        if [[ -n "$SELECTED_MANIFEST" ]]; then
+            break
+        fi
+        print_warning "Invalid selection. Please choose a number from the list."
+    done
+fi
 
 print_info "Selected: ${SELECTED_MANIFEST}"
 
@@ -93,10 +104,14 @@ fi
 # ── Step 5: Confirm before proceeding ────────────────────────────────────────
 echo ""
 print_warning "This will deploy ${SELECTED_MANIFEST} to org: ${TARGET_ORG}"
-read -rp "Proceed with rollback? (y/N): " confirm
-if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-    print_info "Rollback cancelled."
-    exit 0
+if [[ "$NON_INTERACTIVE" == "true" ]]; then
+    print_info "Non-interactive mode: auto-confirming rollback."
+else
+    read -rp "Proceed with rollback? (y/N): " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        print_info "Rollback cancelled."
+        exit 0
+    fi
 fi
 
 # ── Step 5b: Backup current org state ────────────────────────────────────────
