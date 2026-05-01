@@ -78,8 +78,8 @@ jobs:
         with:
           repository: scoobydrew83/synthetic-spark
           path: synthetic-spark
-      - name: Install sfdt from packed tarball
-        run: cd synthetic-spark && npm install $(ls ../sfdt-*.tgz)
+      - name: Install sfdt globally from packed tarball
+        run: npm install -g sfdt-*.tgz
       - name: Authenticate DevHub
         env:
           SF_JWT_KEY: ${{ secrets.SF_DEVHUB_JWT_KEY }}
@@ -87,12 +87,13 @@ jobs:
           SF_USERNAME: ${{ secrets.SF_DEVHUB_USERNAME }}
         run: |
           echo "$SF_JWT_KEY" > devhub.key
+          chmod 600 devhub.key
+          trap 'rm -f devhub.key' EXIT
           sf org login jwt \
             --client-id "$SF_CLIENT_ID" \
             --jwt-key-file devhub.key \
             --username "$SF_USERNAME" \
             --set-default-dev-hub
-          rm devhub.key
       - name: Run integration tests
         run: ./scripts/integration/run-integration-tests.sh ./synthetic-spark
 
