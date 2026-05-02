@@ -1442,3 +1442,158 @@ select.input { cursor: pointer; }
 }
 @media (max-width: 1100px) { .three-col { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 640px)  { .three-col { grid-template-columns: 1fr; } }
+
+/* ==========================================================
+   STAT CARD EXTENSIONS — sparkline, trend, valueColor
+   ========================================================== */
+.stat-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--s-2);
+  gap: var(--s-2);
+}
+.stat-trend {
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.stat-trend-success { color: var(--status-identical-fg); }
+.stat-trend-danger  { color: var(--status-conflict-fg); }
+.stat-trend-muted   { color: var(--fg-muted); }
+
+.stat-sparkline {
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.stat-value-success { color: var(--status-identical-fg); }
+.stat-value-warning { color: var(--status-modified-fg); }
+.stat-value-danger  { color: var(--status-conflict-fg); }
+
+/* ==========================================================
+   FILTER TABS
+   ========================================================== */
+.filter-tabs {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--s-1);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-3);
+}
+.filter-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 5px 10px;
+  border-radius: var(--r-full);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--fg-muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: all var(--dur-fast);
+}
+.filter-tab:hover {
+  border-color: var(--border-strong);
+  color: var(--fg-default);
+}
+.filter-tab.active {
+  background: rgba(106,98,245,.15);
+  border-color: rgba(106,98,245,.4);
+  color: var(--brand-300);
+}
+.content-light .filter-tab.active {
+  background: var(--brand-50);
+  border-color: var(--brand-300);
+  color: var(--brand-700);
+}
+
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  min-width: 16px;
+  padding: 1px 4px;
+  border-radius: var(--r-full);
+  background: var(--bg-muted);
+  color: var(--fg-subtle);
+  line-height: 1.4;
+}
+.filter-tab.active .tab-count {
+  background: rgba(106,98,245,.25);
+  color: var(--brand-300);
+}
+
+/* Variant badge colors */
+.filter-tab-mod .tab-count {
+  background: var(--status-modified-bg);
+  color: var(--status-modified-fg);
+}
+.filter-tab-add .tab-count {
+  background: var(--status-identical-bg);
+  color: var(--status-identical-fg);
+}
+.filter-tab-rm .tab-count {
+  background: var(--status-conflict-bg);
+  color: var(--status-conflict-fg);
+}
+.filter-tab-conflict .tab-count {
+  background: var(--status-conflict-bg);
+  color: var(--status-conflict-fg);
+  border: 1px solid var(--status-conflict-border);
+}
+
+/* ==========================================================
+   ORG BAR
+   ========================================================== */
+.org-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--s-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  padding: var(--s-2) var(--s-4);
+  margin-bottom: var(--s-4);
+}
+.org-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+.org-alias {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-default);
+}
+.org-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-identical-solid);
+  flex-shrink: 0;
+}
+.org-dot.stg {
+  background: var(--status-modified-solid);
+}
+.org-arrow {
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+  flex-shrink: 0;
+}
+.org-meta {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
