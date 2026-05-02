@@ -1504,8 +1504,8 @@ select.input { cursor: pointer; }
   color: var(--fg-default);
 }
 .filter-tab.active {
-  background: rgba(106,98,245,.15);
-  border-color: rgba(106,98,245,.4);
+  background: color-mix(in srgb, var(--brand-500) 15%, transparent);
+  border-color: color-mix(in srgb, var(--brand-500) 40%, transparent);
   color: var(--brand-300);
 }
 .content-light .filter-tab.active {
@@ -1528,7 +1528,7 @@ select.input { cursor: pointer; }
   line-height: 1.4;
 }
 .filter-tab.active .tab-count {
-  background: rgba(106,98,245,.25);
+  background: color-mix(in srgb, var(--brand-500) 25%, transparent);
   color: var(--brand-300);
 }
 
@@ -1583,7 +1583,8 @@ select.input { cursor: pointer; }
   flex-shrink: 0;
 }
 .org-dot.stg {
-  background: var(--status-modified-solid);
+  background: transparent;
+  border: 1.5px solid var(--status-modified-solid);
 }
 .org-arrow {
   color: var(--fg-subtle);
