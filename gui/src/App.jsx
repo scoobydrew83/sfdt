@@ -80,7 +80,7 @@ const PAGE_LABELS = {
 export default function App() {
   const [page, setPage]           = useState('dashboard');
   const [project, setProject]     = useState(null);
-  const [dark, setDark]           = useState(false);
+  const [dark, setDark]           = useState(true);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdate, setShowUpdate] = useState(false);
   const [chatOpen, setChatOpen]   = useState(false);
@@ -92,7 +92,8 @@ export default function App() {
     api.project().then(setProject).catch(() => null);
     api.checkUpdates().then((info) => { if (info.updateAvailable) setUpdateInfo(info); }).catch(() => null);
     const saved = localStorage.getItem('sfdt-theme');
-    if (saved === 'dark') setDark(true);
+    if (saved === 'light') setDark(false);
+    else if (saved === 'dark') setDark(true);
   }, []);
 
   useEffect(() => {
@@ -209,7 +210,7 @@ export default function App() {
       </aside>
 
       {/* ── Main area ─────────────────────────────────────────────── */}
-      <div className={`main-area${dark ? ' content-dark' : ''}`}>
+      <div className={`main-area${dark ? '' : ' content-light'}`}>
 
         {/* Top bar */}
         <header className="topbar">
