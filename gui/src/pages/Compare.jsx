@@ -6,7 +6,7 @@ import EmptyState from '../components/EmptyState.jsx';
 import OrgBar from '../components/OrgBar.jsx';
 import StatCard from '../components/StatCard.jsx';
 import FilterTabs from '../components/FilterTabs.jsx';
-import { IconArrowRight, IconX, IconCopy, IconDownload, IconCheck, IconSearch, IconPackage } from '../Icons.jsx';
+import { IconArrowRight, IconX, IconCopy, IconCheck } from '../Icons.jsx';
 
 const LOCAL_OPT = { id: 'local', label: 'Local Source', alias: 'local' };
 

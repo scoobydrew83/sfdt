@@ -86,7 +86,6 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest, st
   const [typeFilter, setTypeFilter]     = useState('all');
   // If caller controls status filter externally, use that; otherwise use internal state
   const statusFilter = externalStatusFilter !== undefined ? externalStatusFilter : internalStatusFilter;
-  const setStatusFilter = externalStatusFilter !== undefined ? () => {} : setInternalStatusFilter;
   const [selection, setSelection]       = useState(new Set());
   const [hideManaged, setHideManaged]   = useState(true);
   const [grouped, setGrouped]           = useState(false);
