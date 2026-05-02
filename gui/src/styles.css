@@ -1598,3 +1598,43 @@ select.input { cursor: pointer; }
   font-size: var(--fs-xs);
   white-space: nowrap;
 }
+
+/* ==========================================================
+   STATUS PILLS (Compare page)
+   ========================================================== */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.pill-match    { background: color-mix(in srgb, var(--fg-muted) 10%, transparent); color: var(--fg-muted); }
+.pill-mod      { background: color-mix(in srgb, var(--status-modified-fg) 15%, transparent); color: var(--status-modified-fg); }
+.pill-add      { background: color-mix(in srgb, var(--status-identical-fg) 15%, transparent); color: var(--status-identical-fg); }
+.pill-rm       { background: color-mix(in srgb, var(--status-conflict-fg) 15%, transparent); color: var(--status-conflict-fg); }
+.pill-conflict { background: color-mix(in srgb, var(--status-conflict-fg) 18%, transparent); color: var(--status-conflict-fg); border: 1px solid color-mix(in srgb, var(--status-conflict-fg) 30%, transparent); }
+
+/* ==========================================================
+   COMPARE PAGE LAYOUT
+   ========================================================== */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--s-3);
+  margin-bottom: var(--s-4);
+}
+@media (max-width: 720px) {
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .stats-row { grid-template-columns: 1fr; }
+}
+
+.compare-row:hover td {
+  background: color-mix(in srgb, var(--fg-default) 3%, transparent);
+}

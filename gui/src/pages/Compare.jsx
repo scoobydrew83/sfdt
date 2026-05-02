@@ -3,9 +3,27 @@ import { api } from '../api.js';
 import CompareTable from '../components/CompareTable.jsx';
 import DiffPanel from '../components/DiffPanel.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import OrgBar from '../components/OrgBar.jsx';
+import StatCard from '../components/StatCard.jsx';
+import FilterTabs from '../components/FilterTabs.jsx';
 import { IconArrowRight, IconX, IconCopy, IconDownload, IconCheck, IconSearch, IconPackage } from '../Icons.jsx';
 
 const LOCAL_OPT = { id: 'local', label: 'Local Source', alias: 'local' };
+
+function formatRelativeTime(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d)) return null;
+  const diffMs = Date.now() - d.getTime();
+  const diffSec = Math.round(diffMs / 1000);
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hr ago`;
+  const diffDay = Math.round(diffHr / 24);
+  return `${diffDay}d ago`;
+}
 
 export default function ComparePage() {
   const [orgs, setOrgs]                 = useState([]);
@@ -26,6 +44,8 @@ export default function ComparePage() {
   const [version, setVersion]             = useState('');
   const [saving, setSaving]               = useState(false);
   const [saveSuccess, setSaveResult]      = useState(null);
+  const [lastScannedDate, setLastScannedDate] = useState(null);
+  const [activeTab, setActiveTab]         = useState('All');
   const esRef = useRef(null);
   const mountedRef = useRef(true);
 
@@ -51,6 +71,7 @@ export default function ComparePage() {
           setItems(data.items);
           setHasResult(true);
           if (data.target) setTarget({ id: data.target, label: data.target });
+          if (data.date) setLastScannedDate(data.date);
         }
       })
       .catch(() => {});
@@ -105,10 +126,12 @@ export default function ComparePage() {
     setItems([]);
     setHasResult(false);
     setPhase2Active(false);
+    setActiveTab('All');
     try {
       const result = await api.runCompare(source.id, target.id);
       setItems(result.items ?? []);
       setHasResult(true);
+      setLastScannedDate(result.date ?? new Date().toISOString());
       if ((result.items ?? []).some((i) => i.status === 'both')) startPhase2();
     } catch (err) {
       console.error('Compare failed', err);
@@ -124,7 +147,7 @@ export default function ComparePage() {
       const { xml } = await api.buildManifest(selected.map(({ type, member }) => ({ type, member })));
       setManifestXml(xml);
       setManifestOpen(true);
-      
+
       // Fetch suggested version
       api.suggestVersion().then(d => {
         setSuggestedVersion(d.version);
@@ -161,6 +184,24 @@ export default function ComparePage() {
       setSaving(false);
     }
   };
+
+  // Derived counts for stats row and FilterTabs
+  const totalCount    = items.length;
+  const matchedCount  = items.filter((i) => i.status === 'identical' || i.status === 'match').length;
+  const modifiedCount = items.filter((i) => i.status === 'modified' || i.status === 'both').length;
+  const addedCount    = items.filter((i) => i.status === 'source-only').length;
+  const removedCount  = items.filter((i) => i.status === 'target-only').length;
+  const conflictCount = items.filter((i) => i.status === 'conflict').length;
+  const diffCount     = totalCount - matchedCount;
+  const matchRate     = totalCount > 0 ? (matchedCount / totalCount * 100).toFixed(1) + '%' : '—';
+
+  const filterTabs = [
+    { label: 'All',       count: totalCount },
+    { label: 'Modified',  count: modifiedCount, variant: 'mod' },
+    { label: 'Added',     count: addedCount,    variant: 'add' },
+    { label: 'Removed',   count: removedCount,  variant: 'rm' },
+    { label: 'Conflicts', count: conflictCount, variant: 'conflict' },
+  ];
 
   const phase2Pct = phase2Total > 0 ? Math.round((phase2Done / phase2Total) * 100) : 0;
 
@@ -276,21 +317,58 @@ export default function ComparePage() {
       )}
 
       {!running && hasResult && (
-        <div className="card">
-          <div className="card-head">
-            <div className="card-title">Comparison results</div>
-            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)', fontFamily: 'var(--font-mono)' }}>
-              {source.label} → {target?.label}
-            </div>
-          </div>
-          <div className="card-body">
-            <CompareTable
-              items={items}
-              onSelect={setDiffItem}
-              onBuildManifest={handleBuildManifest}
+        <>
+          {/* OrgBar */}
+          <OrgBar
+            source={source.label}
+            target={target?.label ?? '—'}
+            lastScanned={formatRelativeTime(lastScannedDate)}
+          />
+
+          {/* 4-up stats row */}
+          <div className="stats-row">
+            <StatCard
+              label="Total Components"
+              value={totalCount || 0}
+              accent="brand"
+            />
+            <StatCard
+              label="Differences"
+              value={diffCount || 0}
+              accent={diffCount > 0 ? 'amber' : 'green'}
+            />
+            <StatCard
+              label="Conflicts"
+              value={conflictCount || 0}
+              accent={conflictCount > 0 ? 'red' : 'green'}
+            />
+            <StatCard
+              label="Match Rate"
+              value={matchRate}
+              accent="green"
+              valueColor="success"
             />
           </div>
-        </div>
+
+          {/* FilterTabs */}
+          <FilterTabs
+            tabs={filterTabs}
+            active={activeTab}
+            onChange={setActiveTab}
+          />
+
+          {/* Results table */}
+          <div className="card">
+            <div className="card-body">
+              <CompareTable
+                items={items}
+                onSelect={setDiffItem}
+                onBuildManifest={handleBuildManifest}
+                statusFilter={activeTab}
+              />
+            </div>
+          </div>
+        </>
       )}
 
       <DiffPanel item={diffItem} onClose={() => setDiffItem(null)} />
@@ -305,7 +383,7 @@ export default function ComparePage() {
               </button>
             </div>
             <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxHeight: '65vh' }}>
-              
+
               {/* Left Column: Component List */}
               <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div className="section-label" style={{ marginBottom: 10 }}>Components ({selectedItems.length})</div>
