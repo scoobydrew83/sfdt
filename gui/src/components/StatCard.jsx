@@ -18,7 +18,7 @@ function Sparkline({ values }) {
       className="stat-sparkline"
       width={w}
       height={h}
-      viewBox={`0 0 ${w} ${h}`}
+      viewBox="-1 -2 62 27"
       aria-hidden="true"
     >
       <polyline
