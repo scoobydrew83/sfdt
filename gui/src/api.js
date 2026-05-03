@@ -104,6 +104,10 @@ export const api = {
   initProject:            (data) => postJson('/init', data),
   /** @returns {Promise<{ logs: object[] }>} */
   logs:                   (type = 'all') => fetchJson(`/logs${type !== 'all' ? `?type=${encodeURIComponent(type)}` : ''}`),
+  /** @returns {Promise<{ nodes: Array<{id:string, name:string, type:string}>, edges: Array<{source:string, target:string}>, cachedAt: string, nodeCount: number, edgeCount: number }>} */
+  dependencies:           (org, types) => fetchJson(`/dependencies?org=${encodeURIComponent(org)}${types ? `&types=${encodeURIComponent(types)}` : ''}`),
+  /** @returns {Promise<{ status: 'pass'|'warn'|'fail', missing: Array<{name:string, type:string, referencedBy:string[]}>, warnings: string[] }>} */
+  dependenciesPreflight:  (manifest, org) => fetchJson(`/dependencies/preflight?manifest=${encodeURIComponent(manifest)}&org=${encodeURIComponent(org)}`),
 };
 
 // ─── SSE helpers ──────────────────────────────────────────────────────────────

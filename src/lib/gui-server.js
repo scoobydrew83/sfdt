@@ -2060,6 +2060,225 @@ ${contextStr}${devOpsSection}`;
     }
   });
 
+  // ── Dependencies: Tooling API graph ───────────────────────────────────────
+
+  /** 5-minute in-memory cache keyed by `org|types` */
+  const depCache = new Map();
+  const DEP_CACHE_TTL_MS = 5 * 60 * 1000;
+
+  /**
+   * Parse a package.xml string and return a Set of component names.
+   * Includes all <members> values regardless of metadata type.
+   */
+  function parseManifestComponents(xml) {
+    const members = new Set();
+    const matches = xml.matchAll(/<members>([^<]+)<\/members>/g);
+    for (const m of matches) {
+      const name = m[1].trim();
+      if (name && name !== '*') members.add(name);
+    }
+    return members;
+  }
+
+  /** Standard Salesforce types that are always present in an org — skip missing checks for these. */
+  const STANDARD_REF_TYPES = new Set([
+    'CustomObject', 'StandardEntity', 'CustomField', 'FlowDefinition',
+    'StandardField', 'AuraDefinitionBundle', 'LightningComponentBundle',
+  ]);
+
+  app.get('/api/dependencies', apiLimiter, async (req, res) => {
+    try {
+      const { org, types = 'ApexClass,ApexTrigger,ApexComponent,Flow' } = req.query;
+      if (!org || typeof org !== 'string' || !org.trim()) {
+        return res.status(400).json({ error: 'org is required' });
+      }
+      // Sanitize: org aliases are alphanumeric + hyphens/underscores/dots only
+      const safeOrg = String(org).trim();
+      if (!/^[A-Za-z0-9_.\-@]+$/.test(safeOrg)) {
+        return res.status(400).json({ error: 'Invalid org alias' });
+      }
+
+      const typeList = String(types)
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .filter((t) => /^[A-Za-z][A-Za-z0-9]*$/.test(t)); // only valid SF type names
+      if (!typeList.length) {
+        return res.status(400).json({ error: 'types must contain at least one valid metadata type' });
+      }
+
+      const cacheKey = `${safeOrg}|${typeList.sort().join(',')}`;
+      const cached = depCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < DEP_CACHE_TTL_MS) {
+        return res.json(cached.data);
+      }
+
+      const inClause = typeList.map((t) => `'${t}'`).join(',');
+      const soql = [
+        'SELECT MetadataComponentId, MetadataComponentName, MetadataComponentType,',
+        'RefMetadataComponentId, RefMetadataComponentName, RefMetadataComponentType',
+        'FROM MetadataComponentDependency',
+        `WHERE MetadataComponentType IN (${inClause})`,
+      ].join(' ');
+
+      let records = [];
+      try {
+        const result = await execa('sf', [
+          'data', 'query',
+          '--use-tooling-api',
+          '--query', soql,
+          '--json',
+          '--target-org', safeOrg,
+        ]);
+        const parsed = JSON.parse(result.stdout);
+        records = parsed?.result?.records ?? [];
+      } catch (execErr) {
+        // Extract error message from sf CLI JSON output when possible
+        let errMsg = execErr.message ?? 'sf command failed';
+        try {
+          const errParsed = JSON.parse(execErr.stdout ?? execErr.stderr ?? '{}');
+          errMsg = errParsed?.message ?? errParsed?.result?.message ?? errMsg;
+        } catch { /* ignore */ }
+        return res.status(500).json({ error: errMsg });
+      }
+
+      // Build graph — deduplicate nodes by id
+      const nodesById = new Map();
+      const edges = [];
+
+      for (const rec of records) {
+        const srcId = rec.MetadataComponentId;
+        const srcName = rec.MetadataComponentName;
+        const srcType = rec.MetadataComponentType;
+        const refId = rec.RefMetadataComponentId;
+        const refName = rec.RefMetadataComponentName;
+        const refType = rec.RefMetadataComponentType;
+
+        if (srcId && !nodesById.has(srcId)) {
+          nodesById.set(srcId, { id: srcId, name: srcName, type: srcType });
+        }
+        if (refId && !nodesById.has(refId)) {
+          nodesById.set(refId, { id: refId, name: refName, type: refType });
+        }
+        if (srcId && refId) {
+          edges.push({ source: srcId, target: refId });
+        }
+      }
+
+      const nodes = [...nodesById.values()];
+      const payload = {
+        nodes,
+        edges,
+        cachedAt: new Date().toISOString(),
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+      };
+
+      depCache.set(cacheKey, { ts: Date.now(), data: payload });
+      res.json(payload);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/dependencies/preflight', apiLimiter, async (req, res) => {
+    try {
+      const { manifest: manifestParam, org } = req.query;
+      if (!manifestParam || typeof manifestParam !== 'string' || !manifestParam.trim()) {
+        return res.status(400).json({ error: 'manifest is required' });
+      }
+      if (!org || typeof org !== 'string' || !org.trim()) {
+        return res.status(400).json({ error: 'org is required' });
+      }
+
+      // Validate org alias
+      const safeOrg = String(org).trim();
+      if (!/^[A-Za-z0-9_.\-@]+$/.test(safeOrg)) {
+        return res.status(400).json({ error: 'Invalid org alias' });
+      }
+
+      // manifest must be an absolute path (passed by the GUI which knows full paths)
+      if (!path.isAbsolute(manifestParam)) {
+        return res.status(400).json({ error: 'manifest must be an absolute path' });
+      }
+      // Containment guard: must reside within the project root
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const absManifest = path.resolve(manifestParam);
+      if (!absManifest.startsWith(projectRoot + path.sep) && absManifest !== projectRoot) {
+        return res.status(403).json({ error: 'Forbidden: manifest path outside project root' });
+      }
+      if (!(await fs.pathExists(absManifest))) {
+        return res.status(404).json({ error: 'Manifest file not found' });
+      }
+
+      const xml = await fs.readFile(absManifest, 'utf8');
+      const manifestComponents = parseManifestComponents(xml);
+
+      if (!manifestComponents.size) {
+        return res.json({ status: 'pass', missing: [], warnings: [] });
+      }
+
+      // Build SOQL scoped to the manifest's component names
+      const nameList = [...manifestComponents].map((n) => `'${n.replace(/'/g, "\\'")}'`).join(',');
+      const soql = [
+        'SELECT MetadataComponentName, MetadataComponentType,',
+        'RefMetadataComponentName, RefMetadataComponentType',
+        'FROM MetadataComponentDependency',
+        `WHERE MetadataComponentName IN (${nameList})`,
+      ].join(' ');
+
+      let records = [];
+      try {
+        const result = await execa('sf', [
+          'data', 'query',
+          '--use-tooling-api',
+          '--query', soql,
+          '--json',
+          '--target-org', safeOrg,
+        ]);
+        const parsed = JSON.parse(result.stdout);
+        records = parsed?.result?.records ?? [];
+      } catch (execErr) {
+        let errMsg = execErr.message ?? 'sf command failed';
+        try {
+          const errParsed = JSON.parse(execErr.stdout ?? execErr.stderr ?? '{}');
+          errMsg = errParsed?.message ?? errParsed?.result?.message ?? errMsg;
+        } catch { /* ignore */ }
+        return res.status(500).json({ error: errMsg });
+      }
+
+      // For each dependency: if RefMetadataComponentName is not in the manifest
+      // and its type is not a standard type, flag it as missing.
+      const missingMap = new Map(); // key: `type:name`, value: { name, type, referencedBy: [] }
+
+      for (const rec of records) {
+        const refName = rec.RefMetadataComponentName;
+        const refType = rec.RefMetadataComponentType;
+        const srcName = rec.MetadataComponentName;
+
+        if (!refName) continue;
+        if (manifestComponents.has(refName)) continue; // deployed together — OK
+        if (STANDARD_REF_TYPES.has(refType)) continue;  // assumed present in org
+
+        const key = `${refType}:${refName}`;
+        if (!missingMap.has(key)) {
+          missingMap.set(key, { name: refName, type: refType, referencedBy: [] });
+        }
+        const entry = missingMap.get(key);
+        if (srcName && !entry.referencedBy.includes(srcName)) {
+          entry.referencedBy.push(srcName);
+        }
+      }
+
+      const missing = [...missingMap.values()];
+      const status = missing.length === 0 ? 'pass' : 'fail';
+
+      res.json({ status, missing, warnings: [] });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ── AI availability ────────────────────────────────────────────────────────
 
   app.get('/api/ai/available', apiLimiter, async (_req, res) => {
