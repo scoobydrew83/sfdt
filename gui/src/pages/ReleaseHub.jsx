@@ -18,57 +18,26 @@ const STEPS = [
   { id: 'rollback',  label: 'Rollback',       Icon: IconRotateCcw},
 ];
 
-// ─── Step Rail ───────────────────────────────────────────────────────────────
+// ─── Horizontal Stepper ──────────────────────────────────────────────────────
 
-function StepRail({ active, done, onSelect }) {
+function HorizontalStepper({ active, done, onSelect }) {
   return (
-    <div style={{
-      width: 192,
-      flexShrink: 0,
-      borderRight: '1px solid var(--border-subtle)',
-      padding: '20px 0',
-      background: 'var(--bg-subtle)',
-    }}>
+    <div className="stepper">
       {STEPS.map((step, i) => {
         const isActive = active === step.id;
         const isDone   = done.has(step.id);
+        const cls      = isDone ? 'step done' : isActive ? 'step active' : 'step pending';
         return (
           <button
             key={step.id}
+            className={cls}
             onClick={() => onSelect(step.id)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              width: '100%',
-              padding: '9px 16px',
-              background: isActive ? 'var(--bg-surface)' : 'transparent',
-              borderLeft: isActive ? '3px solid var(--brand-500)' : '3px solid transparent',
-              border: 'none',
-              borderRadius: 0,
-              cursor: 'pointer',
-              textAlign: 'left',
-              color: isActive ? 'var(--fg-default)' : 'var(--fg-muted)',
-              fontSize: 13,
-              fontWeight: isActive ? 600 : 400,
-            }}
+            style={{ background: 'none', border: 'none', padding: 0 }}
           >
-            <span style={{
-              width: 20, height: 20,
-              borderRadius: '50%',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: isDone ? '#22c55e1a' : isActive ? 'var(--brand-50)' : 'var(--bg-muted)',
-              color: isDone ? '#16a34a' : isActive ? 'var(--brand-500)' : 'var(--fg-subtle)',
-              flexShrink: 0,
-            }}>
-              {isDone ? <IconCheck size={11} /> : <step.Icon size={11} />}
+            <span className="step-ring">
+              {isDone ? '✓' : i + 1}
             </span>
-            <span style={{ fontSize: 12, lineHeight: '1.3' }}>
-              <span style={{ display: 'block', fontWeight: isActive ? 600 : 500 }}>{step.label}</span>
-              <span style={{ fontSize: 10, color: isDone ? '#16a34a' : 'var(--fg-subtle)' }}>
-                {isDone ? 'Done' : isActive ? 'Active' : `Step ${i + 1}`}
-              </span>
-            </span>
+            <span className="step-lbl">{step.label}</span>
           </button>
         );
       })}
@@ -546,6 +515,7 @@ function DeployStep({ manifest, onMarkDone }) {
   const [isRunning, setIsRunning]   = useState(false);
   const [streamKey, setStreamKey]   = useState(0);
   const [orgError, setOrgError]     = useState(false);
+  const [lastDeployStats, setLastDeployStats] = useState(null);
 
   useEffect(() => {
     api.orgs()
@@ -558,6 +528,13 @@ function DeployStep({ manifest, onMarkDone }) {
       })
       .catch(() => {})
       .finally(() => setLoadingOrgs(false));
+    // Load last deploy stats for metrics panel
+    api.deployHistory()
+      .then((d) => {
+        const last = d.history?.[0];
+        if (last) setLastDeployStats(last);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -607,177 +584,241 @@ function DeployStep({ manifest, onMarkDone }) {
       </p>
 
       {!isRunning ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Target Org */}
-          <div className="card" style={{ padding: 16 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Target Organization</label>
-            {loadingOrgs ? (
-              <div style={{ fontSize: 12, color: 'var(--fg-subtle)' }}>Loading orgs...</div>
-            ) : (
-              <select
-                className="input"
-                style={{ width: '100%', fontSize: 13, borderColor: orgError ? 'var(--status-conflict-fg)' : undefined }}
-                value={targetOrg}
-                onChange={(e) => { setTargetOrg(e.target.value); if (e.target.value) setOrgError(false); }}
-              >
-                <option value="">Select an org...</option>
-                {orgs.map(o => (
-                  <option key={o.alias} value={o.alias}>{o.alias}{o.username ? ` (${o.username})` : ''}</option>
-                ))}
-              </select>
-            )}
-            {orgError && (
-              <div style={{ marginTop: 6, fontSize: 12, color: 'var(--status-conflict-fg)' }}>
-                A target org is required to execute the deployment.
-              </div>
-            )}
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            {/* Mode & Tests */}
+        <div className="deploy-grid">
+          {/* ── Left: main controls ── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Target Org */}
             <div className="card" style={{ padding: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Deployment Mode</label>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                <button
-                  className={`btn btn-sm ${deploymentMode === 'deploy' ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setDeploymentMode('deploy')}
-                  style={{ flex: 1 }}
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Target Organization</label>
+              {loadingOrgs ? (
+                <div style={{ fontSize: 12, color: 'var(--fg-subtle)' }}>Loading orgs...</div>
+              ) : (
+                <select
+                  className="input"
+                  style={{ width: '100%', fontSize: 13, borderColor: orgError ? 'var(--status-conflict-fg)' : undefined }}
+                  value={targetOrg}
+                  onChange={(e) => { setTargetOrg(e.target.value); if (e.target.value) setOrgError(false); }}
                 >
-                  Full Deploy
-                </button>
-                <button
-                  className={`btn btn-sm ${deploymentMode === 'validate' ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setDeploymentMode('validate')}
-                  style={{ flex: 1 }}
-                >
-                  Validate Only
-                </button>
-              </div>
-
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Test Level</label>
-              <select
-                className="input"
-                style={{ width: '100%', fontSize: 13, marginBottom: testLevel === 'RunSpecifiedTests' ? 10 : 0 }}
-                value={testLevel}
-                onChange={(e) => setTestLevel(e.target.value)}
-              >
-                <option value="NoTestRun">NoTestRun (Metadata Only)</option>
-                <option value="RunLocalTests">RunLocalTests (All Local)</option>
-                <option value="RunSpecifiedTests">RunSpecifiedTests (Manual List)</option>
-                <option value="RunAllTestsInOrg">RunAllTestsInOrg (Managed + Local)</option>
-              </select>
-
-              {testLevel === 'RunSpecifiedTests' && (
-                <div style={{ marginTop: 10 }}>
-                  <input
-                    className="input"
-                    placeholder="TestClass1, TestClass2..."
-                    style={{ width: '100%', fontSize: 12, marginBottom: 8 }}
-                    value={testClasses}
-                    onChange={(e) => setTestClasses(e.target.value)}
-                  />
-                  
-                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-subtle)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    DETECTED IN MANIFEST {detecting && <div className="live-dot" />}
-                  </div>
-
-                  {!detecting && detectedTests.length === 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--fg-muted)', fontStyle: 'italic' }}>No test classes found in manifest.</div>
-                  )}
-
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                    {detectedTests.map(name => {
-                      const isActive = testClasses.split(',').map(s => s.trim()).includes(name);
-                      return (
-                        <button
-                          key={name}
-                          onClick={() => toggleTest(name)}
-                          style={{
-                            padding: '2px 8px',
-                            borderRadius: 12,
-                            fontSize: 10,
-                            cursor: 'pointer',
-                            background: isActive ? 'var(--brand-500)' : 'var(--bg-muted)',
-                            color: isActive ? 'white' : 'var(--fg-muted)',
-                            border: 'none',
-                            transition: 'all 0.1s'
-                          }}
-                        >
-                          {name}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <option value="">Select an org...</option>
+                  {orgs.map(o => (
+                    <option key={o.alias} value={o.alias}>{o.alias}{o.username ? ` (${o.username})` : ''}</option>
+                  ))}
+                </select>
+              )}
+              {orgError && (
+                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--status-conflict-fg)' }}>
+                  A target org is required to execute the deployment.
                 </div>
               )}
             </div>
 
-            {/* Destructive & Advanced */}
-            <div className="card" style={{ padding: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Destructive Changes</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
-                  <input
-                    type="radio"
-                    name="destructiveTiming"
-                    checked={destructiveTiming === 'post'}
-                    onChange={() => setDestructiveTiming('post')}
-                  />
-                  Post-Destructive (Deploy then Delete)
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
-                  <input
-                    type="radio"
-                    name="destructiveTiming"
-                    checked={destructiveTiming === 'pre'}
-                    onChange={() => setDestructiveTiming('pre')}
-                  />
-                  Pre-Destructive (Delete then Deploy)
-                </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              {/* Mode & Tests */}
+              <div className="card" style={{ padding: 16 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Deployment Mode</label>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                  <button
+                    className={`btn btn-sm ${deploymentMode === 'deploy' ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() => setDeploymentMode('deploy')}
+                    style={{ flex: 1 }}
+                  >
+                    Full Deploy
+                  </button>
+                  <button
+                    className={`btn btn-sm ${deploymentMode === 'validate' ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() => setDeploymentMode('validate')}
+                    style={{ flex: 1 }}
+                  >
+                    Validate Only
+                  </button>
+                </div>
+
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Test Level</label>
+                <select
+                  className="input"
+                  style={{ width: '100%', fontSize: 13, marginBottom: testLevel === 'RunSpecifiedTests' ? 10 : 0 }}
+                  value={testLevel}
+                  onChange={(e) => setTestLevel(e.target.value)}
+                >
+                  <option value="NoTestRun">NoTestRun (Metadata Only)</option>
+                  <option value="RunLocalTests">RunLocalTests (All Local)</option>
+                  <option value="RunSpecifiedTests">RunSpecifiedTests (Manual List)</option>
+                  <option value="RunAllTestsInOrg">RunAllTestsInOrg (Managed + Local)</option>
+                </select>
+
+                {testLevel === 'RunSpecifiedTests' && (
+                  <div style={{ marginTop: 10 }}>
+                    <input
+                      className="input"
+                      placeholder="TestClass1, TestClass2..."
+                      style={{ width: '100%', fontSize: 12, marginBottom: 8 }}
+                      value={testClasses}
+                      onChange={(e) => setTestClasses(e.target.value)}
+                    />
+
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-subtle)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      DETECTED IN MANIFEST {detecting && <div className="live-dot" />}
+                    </div>
+
+                    {!detecting && detectedTests.length === 0 && (
+                      <div style={{ fontSize: 11, color: 'var(--fg-muted)', fontStyle: 'italic' }}>No test classes found in manifest.</div>
+                    )}
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {detectedTests.map(name => {
+                        const isActive = testClasses.split(',').map(s => s.trim()).includes(name);
+                        return (
+                          <button
+                            key={name}
+                            onClick={() => toggleTest(name)}
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: 12,
+                              fontSize: 10,
+                              cursor: 'pointer',
+                              background: isActive ? 'var(--brand-500)' : 'var(--bg-muted)',
+                              color: isActive ? 'white' : 'var(--fg-muted)',
+                              border: 'none',
+                              transition: 'all 0.1s'
+                            }}
+                          >
+                            {name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div style={{ marginTop: 20, borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', marginBottom: 8 }}>
-                  <input type="checkbox" className="cbx" checked={tagRelease} onChange={e => setTagRelease(e.target.checked)} />
-                  Tag Release (Git)
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', marginBottom: 8 }}>
-                  <input type="checkbox" className="cbx" checked={createPR} onChange={e => setCreatePR(e.target.checked)} />
-                  Create Pull Request
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
-                  <input type="checkbox" className="cbx" checked={notifySlack} onChange={e => setNotifySlack(e.target.checked)} />
-                  Notify Slack on completion
-                </label>
+              {/* Destructive & Advanced */}
+              <div className="card" style={{ padding: 16 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Destructive Changes</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="destructiveTiming"
+                      checked={destructiveTiming === 'post'}
+                      onChange={() => setDestructiveTiming('post')}
+                    />
+                    Post-Destructive (Deploy then Delete)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="destructiveTiming"
+                      checked={destructiveTiming === 'pre'}
+                      onChange={() => setDestructiveTiming('pre')}
+                    />
+                    Pre-Destructive (Delete then Deploy)
+                  </label>
+                </div>
+
+                <div style={{ marginTop: 20, borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', marginBottom: 8 }}>
+                    <input type="checkbox" className="cbx" checked={tagRelease} onChange={e => setTagRelease(e.target.checked)} />
+                    Tag Release (Git)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', marginBottom: 8 }}>
+                    <input type="checkbox" className="cbx" checked={createPR} onChange={e => setCreatePR(e.target.checked)} />
+                    Create Pull Request
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                    <input type="checkbox" className="cbx" checked={notifySlack} onChange={e => setNotifySlack(e.target.checked)} />
+                    Notify Slack on completion
+                  </label>
+                </div>
               </div>
+            </div>
+
+            {/* CLI Preview */}
+            <div style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              padding: '10px 14px',
+              background: 'var(--bg-subtle)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 8,
+              color: 'var(--fg-muted)',
+              position: 'relative'
+            }}>
+              <div style={{ position: 'absolute', top: -8, left: 12, background: 'var(--bg-surface)', padding: '0 4px', fontSize: 10, fontWeight: 600 }}>CLI PREVIEW</div>
+              $ {cliPreview}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-primary btn-lg"
+                disabled={!targetOrg}
+                onClick={runDeployment}
+                style={{ paddingLeft: 40, paddingRight: 40 }}
+              >
+                <IconRocket size={16} style={{ marginRight: 8 }} />
+                Execute {deploymentMode === 'validate' ? 'Validation' : 'Deployment'}
+              </button>
             </div>
           </div>
 
-          {/* CLI Preview */}
-          <div style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 11,
-            padding: '10px 14px',
-            background: 'var(--bg-subtle)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 8,
-            color: 'var(--fg-muted)',
-            position: 'relative'
-          }}>
-            <div style={{ position: 'absolute', top: -8, left: 12, background: 'var(--bg-surface)', padding: '0 4px', fontSize: 10, fontWeight: 600 }}>CLI PREVIEW</div>
-            $ {cliPreview}
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-            <button
-              className="btn btn-primary btn-lg"
-              disabled={!targetOrg}
-              onClick={runDeployment}
-              style={{ paddingLeft: 40, paddingRight: 40 }}
-            >
-              <IconRocket size={16} style={{ marginRight: 8 }} />
-              Execute {deploymentMode === 'validate' ? 'Validation' : 'Deployment'}
-            </button>
+          {/* ── Right: metrics sidebar ── */}
+          <div className="metrics-panel" style={{ alignSelf: 'start' }}>
+            <div className="panel-hdr">Last Deploy Metrics</div>
+            {!lastDeployStats ? (
+              <div className="metric-row" style={{ color: 'var(--fg-subtle)', fontStyle: 'italic' }}>
+                No deploy history
+              </div>
+            ) : (
+              <>
+                <div className="metric-row">
+                  <span className="metric-key">Org</span>
+                  <span className="metric-val">{lastDeployStats.org ?? '—'}</span>
+                </div>
+                <div className="metric-row">
+                  <span className="metric-key">Status</span>
+                  <span className={`metric-val ${lastDeployStats.exitCode === 0 ? 'ok' : 'warn'}`}>
+                    {lastDeployStats.exitCode === 0 ? 'Success' : 'Failed'}
+                  </span>
+                </div>
+                <div className="metric-row">
+                  <span className="metric-key">Manifest</span>
+                  <span className="metric-val" style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {lastDeployStats.manifest ?? '—'}
+                  </span>
+                </div>
+                <div className="metric-row">
+                  <span className="metric-key">Date</span>
+                  <span className="metric-val">
+                    {lastDeployStats.date ? new Date(lastDeployStats.date).toLocaleDateString() : '—'}
+                  </span>
+                </div>
+                {lastDeployStats.coverage != null && (
+                  <div className="metric-row">
+                    <span className="metric-key">Coverage</span>
+                    <span className={`metric-val ${lastDeployStats.coverage >= 75 ? 'ok' : 'warn'}`}>
+                      {lastDeployStats.coverage}%
+                    </span>
+                  </div>
+                )}
+                {lastDeployStats.testsPassed != null && (
+                  <div className="metric-row">
+                    <span className="metric-key">Tests Passed</span>
+                    <span className="metric-val ok">{lastDeployStats.testsPassed}</span>
+                  </div>
+                )}
+                {lastDeployStats.componentCount != null && (
+                  <div className="metric-row">
+                    <span className="metric-key">Components</span>
+                    <span className="metric-val">{lastDeployStats.componentCount}</span>
+                  </div>
+                )}
+                {lastDeployStats.dryRun && (
+                  <div className="metric-row">
+                    <span className="metric-key">Mode</span>
+                    <span className="metric-val warn">Validate Only</span>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       ) : (
@@ -956,21 +997,18 @@ export default function ReleaseHubPage() {
         </div>
       </div>
 
+      <HorizontalStepper active={activeStep} done={done} onSelect={setActiveStep} />
+
       <div style={{
-        display: 'flex',
         background: 'var(--bg-surface)',
         border: '1px solid var(--border-subtle)',
         borderRadius: 8,
         overflow: 'hidden',
         minHeight: 520,
       }}>
-        <StepRail active={activeStep} done={done} onSelect={setActiveStep} />
-
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          {activeStep !== 'manifest' && <ContextBar manifest={selectedManifest} />}
-          <div style={{ flex: 1, overflow: 'auto' }}>
-            {renderStep()}
-          </div>
+        {activeStep !== 'manifest' && <ContextBar manifest={selectedManifest} />}
+        <div style={{ overflow: 'auto' }}>
+          {renderStep()}
         </div>
       </div>
     </div>

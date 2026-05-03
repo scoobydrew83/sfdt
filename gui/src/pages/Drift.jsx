@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { api } from '../api.js';
 import StatCard from '../components/StatCard.jsx';
+import FilterTabs from '../components/FilterTabs.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import CommandRunner from '../components/CommandRunner.jsx';
@@ -9,7 +10,7 @@ import { ChatContext } from '../App.jsx';
 export default function DriftPage() {
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
-  const [filter, setFilter]         = useState('all');
+  const [activeTab, setActiveTab]   = useState('All');
   const [refreshKey, setRefreshKey] = useState(0);
   const chat = useContext(ChatContext);
 
@@ -39,9 +40,17 @@ export default function DriftPage() {
   const driftCount = components.filter((c) => c.drift?.toLowerCase() === 'drift').length;
   const cleanCount = components.filter((c) => c.drift?.toLowerCase() === 'clean').length;
 
-  const filtered = filter === 'all'
+  const filtered = activeTab === 'All'
     ? components
-    : components.filter((c) => c.drift?.toLowerCase() === filter);
+    : activeTab === 'Drifted'
+      ? components.filter((c) => c.drift?.toLowerCase() === 'drift')
+      : components.filter((c) => c.drift?.toLowerCase() === 'clean');
+
+  const filterTabs = [
+    { label: 'All',     count: components.length },
+    { label: 'Drifted', count: driftCount, variant: 'mod' },
+    { label: 'Clean',   count: cleanCount },
+  ];
 
   return (
     <div>
@@ -58,30 +67,33 @@ export default function DriftPage() {
 
       <CommandRunner command="drift" label="Drift Check" onComplete={() => setRefreshKey((k) => k + 1)} />
 
-      {components.length > 0 && (
-        <div className="stats-grid mb-6" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-          <StatCard label="Total Components" value={components.length} accent="brand" />
-          <StatCard label="Clean"  value={cleanCount}  accent="green" />
-          <StatCard label="Drifted" value={driftCount} accent={driftCount > 0 ? 'amber' : 'green'} />
-        </div>
-      )}
+      <div className="stats-grid mb-6" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+        <StatCard
+          label="Components Checked"
+          value={data ? components.length : '—'}
+          accent="brand"
+        />
+        <StatCard
+          label="Drifted"
+          value={data ? driftCount : '—'}
+          accent={!data ? 'brand' : driftCount > 0 ? 'red' : 'green'}
+          trend={data && driftCount > 0 ? `▲ ${driftCount} drifted` : data ? 'Clean' : undefined}
+          trendColor={driftCount > 0 ? 'danger' : 'success'}
+        />
+        <StatCard
+          label="Last Scan"
+          value={data?.date ? new Date(data.date).toLocaleDateString() : '—'}
+          sub={data?.date ? new Date(data.date).toLocaleTimeString() : 'No scan yet'}
+          accent="violet"
+        />
+      </div>
 
       {components.length > 0 && (
-        <div className="filter-bar mb-4">
-          {[
-            { id: 'all',   label: `All (${components.length})` },
-            { id: 'clean', label: `Clean (${cleanCount})` },
-            { id: 'drift', label: `Drift (${driftCount})` },
-          ].map((opt) => (
-            <button
-              key={opt.id}
-              className={`filter-chip${filter === opt.id ? ' active' : ''}`}
-              onClick={() => setFilter(opt.id)}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        <FilterTabs
+          tabs={filterTabs}
+          active={activeTab}
+          onChange={setActiveTab}
+        />
       )}
 
       {loading && <div className="spinner-center"><div className="spinner spinner-lg" /></div>}
