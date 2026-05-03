@@ -20,8 +20,8 @@ function formatRelativeTime(dateStr) {
   const diffMin = Math.round(diffSec / 60);
   if (diffMin < 60) return `${diffMin} min ago`;
   const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 24) return `${diffHr} hr ago`;
-  const diffDay = Math.round(diffHr / 24);
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 1) return `${diffHr}h ago`;
   return `${diffDay}d ago`;
 }
 
@@ -326,29 +326,38 @@ export default function ComparePage() {
           />
 
           {/* 4-up stats row */}
-          <div className="stats-row">
-            <StatCard
-              label="Total Components"
-              value={totalCount || 0}
-              accent="brand"
-            />
-            <StatCard
-              label="Differences"
-              value={diffCount || 0}
-              accent={diffCount > 0 ? 'amber' : 'green'}
-            />
-            <StatCard
-              label="Conflicts"
-              value={conflictCount || 0}
-              accent={conflictCount > 0 ? 'red' : 'green'}
-            />
-            <StatCard
-              label="Match Rate"
-              value={matchRate}
-              accent="green"
-              valueColor="success"
-            />
-          </div>
+          {phase2Active ? (
+            <div className="stats-row">
+              <StatCard label="Total Components" value={totalCount || 0} accent="brand" />
+              <StatCard label="Differences" value="…" accent="amber" />
+              <StatCard label="Conflicts" value="…" accent="amber" />
+              <StatCard label="Match Rate" value="Comparing…" accent="amber" />
+            </div>
+          ) : (
+            <div className="stats-row">
+              <StatCard
+                label="Total Components"
+                value={totalCount || 0}
+                accent="brand"
+              />
+              <StatCard
+                label="Differences"
+                value={diffCount || 0}
+                accent={diffCount > 0 ? 'amber' : 'green'}
+              />
+              <StatCard
+                label="Conflicts"
+                value={conflictCount || 0}
+                accent={conflictCount > 0 ? 'red' : 'green'}
+              />
+              <StatCard
+                label="Match Rate"
+                value={matchRate}
+                accent={matchRate === '—' || parseFloat(matchRate) >= 80 ? 'green' : parseFloat(matchRate) >= 50 ? 'amber' : 'red'}
+                valueColor={matchRate === '—' || parseFloat(matchRate) >= 80 ? 'success' : parseFloat(matchRate) >= 50 ? 'warning' : 'danger'}
+              />
+            </div>
+          )}
 
           {/* FilterTabs */}
           <FilterTabs

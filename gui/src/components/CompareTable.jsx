@@ -341,6 +341,7 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest, st
       {items.length > 0 && (
         <div className="mt-2" style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)', fontFamily: 'var(--font-mono)' }}>
           {filtered.length} of {items.length} · {counts['source-only'] ?? 0} source-only · {counts['target-only'] ?? 0} target-only · {counts.modified ?? 0} modified · {counts.identical ?? 0} identical
+          {counts.conflict ? ` · ${counts.conflict} conflict` : ''}
           {counts.both ? ` · ${counts.both} checking…` : ''}
         </div>
       )}
