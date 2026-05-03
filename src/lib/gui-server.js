@@ -2247,9 +2247,10 @@ ${contextStr}${devOpsSection}`;
         return res.status(500).json({ error: errMsg });
       }
 
-      // For each dependency: if RefMetadataComponentName is not in the manifest
-      // and its type is not a standard type, flag it as missing.
+      // For each dependency: if RefMetadataComponentName is not in the manifest,
+      // categorize as either warning (standard type) or missing (custom/unknown type).
       const missingMap = new Map(); // key: `type:name`, value: { name, type, referencedBy: [] }
+      const warningsMap = new Map(); // key: `type:name`, value: { name, type, referencedBy: [] }
 
       for (const rec of records) {
         const refName = rec.RefMetadataComponentName;
@@ -2258,22 +2259,29 @@ ${contextStr}${devOpsSection}`;
 
         if (!refName) continue;
         if (manifestComponents.has(refName)) continue; // deployed together — OK
-        if (STANDARD_REF_TYPES.has(refType)) continue;  // assumed present in org
 
         const key = `${refType}:${refName}`;
-        if (!missingMap.has(key)) {
-          missingMap.set(key, { name: refName, type: refType, referencedBy: [] });
+        const targetMap = STANDARD_REF_TYPES.has(refType) ? warningsMap : missingMap;
+
+        if (!targetMap.has(key)) {
+          targetMap.set(key, { name: refName, type: refType, referencedBy: [] });
         }
-        const entry = missingMap.get(key);
+        const entry = targetMap.get(key);
         if (srcName && !entry.referencedBy.includes(srcName)) {
           entry.referencedBy.push(srcName);
         }
       }
 
       const missing = [...missingMap.values()];
-      const status = missing.length === 0 ? 'pass' : 'fail';
+      const warnings = [...warningsMap.values()];
+      let status = 'pass';
+      if (missing.length > 0) {
+        status = 'fail';
+      } else if (warnings.length > 0) {
+        status = 'warn';
+      }
 
-      res.json({ status, missing, warnings: [] });
+      res.json({ status, missing, warnings });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
