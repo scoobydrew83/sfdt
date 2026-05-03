@@ -282,7 +282,7 @@ export default function Dependency() {
         d.fx = event.x;
         d.fy = event.y;
       })
-      .on('end', (event, d) => {
+      .on('end', (event) => {
         if (!event.active) simRef.current?.alphaTarget(0);
         // Keep pinned — user double-clicks to unpin
       });
@@ -359,7 +359,7 @@ export default function Dependency() {
   }, [graphData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Highlight helper ────────────────────────────────────────────────────────
-  function applyHighlight(nodeGroup, linkSel, nodes, edges, focusId) {
+  function applyHighlight(nodeGroup, linkSel, _nodes, edges, focusId) {
     if (!focusId) {
       nodeGroup.attr('opacity', 1);
       linkSel.attr('stroke-opacity', 0.2);
