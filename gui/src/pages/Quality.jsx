@@ -23,7 +23,10 @@ export default function QualityPage() {
   const chat = useContext(ChatContext);
 
   useEffect(() => {
-    api.quality().then((d) => setQualityData(d)).catch(() => {});
+    api.quality().then((d) => {
+      setQualityData(d);
+      setActiveTab('All');
+    }).catch(() => {});
   }, [refreshKey]);
 
   function handleFixPlanComplete(content) {
@@ -49,10 +52,13 @@ export default function QualityPage() {
   const violations = qualityData?.violations ?? [];
   const summary = qualityData?.summary ?? { critical: 0, high: 0, medium: 0, low: 0 };
 
+  // Use clamped severity consistently
+  const clampSev = (v) => Math.min(Math.max(v.severity ?? 3, 1), 4);
+
   // Severity buckets: Error = sev 1, Warning = sev 2+3, Info = sev 4
-  const errorCount   = violations.filter((v) => v.severity === 1).length;
-  const warningCount = violations.filter((v) => v.severity === 2 || v.severity === 3).length;
-  const infoCount    = violations.filter((v) => v.severity === 4).length;
+  const errorCount   = violations.filter((v) => clampSev(v) === 1).length;
+  const warningCount = violations.filter((v) => clampSev(v) === 2 || clampSev(v) === 3).length;
+  const infoCount    = violations.filter((v) => clampSev(v) === 4).length;
 
   const filterTabsDef = [
     { label: 'All',     count: violations.length },
@@ -62,10 +68,11 @@ export default function QualityPage() {
   ];
 
   const filteredViolations = violations.filter((v) => {
+    const sev = clampSev(v);
     if (activeTab === 'All')     return true;
-    if (activeTab === 'Error')   return v.severity === 1;
-    if (activeTab === 'Warning') return v.severity === 2 || v.severity === 3;
-    if (activeTab === 'Info')    return v.severity === 4;
+    if (activeTab === 'Error')   return sev === 1;
+    if (activeTab === 'Warning') return sev === 2 || sev === 3;
+    if (activeTab === 'Info')    return sev === 4;
     return true;
   });
 

@@ -1753,4 +1753,5 @@ select.input { cursor: pointer; }
 .subtask.fail .s-name { color: var(--status-error-fg); font-weight: 500; }
 .subtask.fail .s-icon { color: var(--status-error-fg); }
 .subtask.active .s-icon { color: var(--status-modified-fg); }
+.subtask.active .s-name { color: var(--status-modified-fg); }
 .subtask.pending .s-name { color: var(--fg-muted); opacity: 0.55; }
