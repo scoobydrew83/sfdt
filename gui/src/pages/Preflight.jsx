@@ -4,7 +4,7 @@ import StatCard from '../components/StatCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import CommandRunner from '../components/CommandRunner.jsx';
-import { IconCheckCircle, IconXCircle, IconAlertTri, IconInfo } from '../Icons.jsx';
+import { IconCheckCircle, IconXCircle, IconAlertTri } from '../Icons.jsx';
 import { ChatContext } from '../App.jsx';
 
 function subtaskState(status) {
