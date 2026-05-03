@@ -20,20 +20,26 @@ export default function Dashboard({ project }) {
   const [fetchError, setFetchError] = useState(null);
 
   const loadData = useCallback(() => {
+    let cancelled = false;
     setLoading(true);
     setFetchError(null);
     Promise.all([api.testRuns(), api.preflight(), api.drift(), api.deployHistory()])
       .then(([t, p, d, dh]) => {
+        if (cancelled) return;
         setTests(t);
         setPreflight(p);
         setDrift(d);
         setDeploys(dh);
       })
-      .catch((err) => setFetchError(err.message ?? 'Failed to load dashboard data.'))
-      .finally(() => setLoading(false));
+      .catch((err) => { if (!cancelled) setFetchError(err.message ?? 'Failed to load dashboard data.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    const cancel = loadData();
+    return cancel;
+  }, [loadData]);
 
   // ─── Derived stat values ──────────────────────────────────────────────────
 
@@ -46,8 +52,7 @@ export default function Dashboard({ project }) {
     return total > 0 ? Math.round(((r.passed ?? 0) / total) * 100) : 0;
   });
   const thisWeek = testRuns.filter((r) => {
-    const d = new Date(r.date);
-    return (Date.now() - d.getTime()) < 7 * 24 * 60 * 60 * 1000;
+    return r.date ? (Date.now() - new Date(r.date).getTime()) < 7 * 24 * 60 * 60 * 1000 : false;
   }).length;
   const testTrend = thisWeek > 0 ? `+${thisWeek} this week` : undefined;
 
@@ -57,7 +62,7 @@ export default function Dashboard({ project }) {
   const preflightFailed = preflightChecks.filter((c) => c.status === 'fail' || c.status === 'error').length;
   const preflightTotal  = preflightChecks.length;
   const preflightSparkline = preflightTotal > 0
-    ? Array(7).fill(0).map((_, i) => i < preflightPassed ? preflightPassed : 0)
+    ? Array(7).fill(preflightPassed)
     : undefined;
   const preflightTrend = preflightFailed > 0
     ? `${preflightFailed} failed`
@@ -80,8 +85,7 @@ export default function Dashboard({ project }) {
   const deployHistory   = deploys?.history ?? [];
   const deployCount     = deployHistory.length;
   const recentDeploys   = deployHistory.filter((d) => {
-    const dt = new Date(d.date);
-    return (Date.now() - dt.getTime()) < 7 * 24 * 60 * 60 * 1000;
+    return d.date ? (Date.now() - new Date(d.date).getTime()) < 7 * 24 * 60 * 60 * 1000 : false;
   }).length;
   const deploySparkline = deployHistory.slice(-7).map((d) => (d.exitCode === 0 ? 1 : 0));
   const deployTrend     = recentDeploys > 0 ? `+${recentDeploys} this week` : undefined;

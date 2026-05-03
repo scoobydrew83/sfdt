@@ -518,23 +518,27 @@ function DeployStep({ manifest, onMarkDone }) {
   const [lastDeployStats, setLastDeployStats] = useState(null);
 
   useEffect(() => {
+    let cancelled = false;
     api.orgs()
       .then((d) => {
+        if (cancelled) return;
         setOrgs(d.orgs ?? []);
         // Set default org if available
         api.project().then(p => {
-          if (p.org) setTargetOrg(p.org);
+          if (!cancelled && p.org) setTargetOrg(p.org);
         }).catch(() => {});
       })
       .catch(() => {})
-      .finally(() => setLoadingOrgs(false));
+      .finally(() => { if (!cancelled) setLoadingOrgs(false); });
     // Load last deploy stats for metrics panel
     api.deployHistory()
       .then((d) => {
+        if (cancelled) return;
         const last = d.history?.[0];
         if (last) setLastDeployStats(last);
       })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -550,7 +554,7 @@ function DeployStep({ manifest, onMarkDone }) {
         .catch(() => {})
         .finally(() => setDetecting(false));
     }
-  }, [testLevel, manifest?.relPath]);
+  }, [testLevel, manifest?.relPath, testClasses]);
 
   const toggleTest = (name) => {
     const list = testClasses.split(',').map(s => s.trim()).filter(Boolean);
