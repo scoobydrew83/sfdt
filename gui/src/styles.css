@@ -90,6 +90,7 @@
   --status-conflict-border: rgba(220,38,38,.5);
   --status-conflict-fg:     #ffa3a3;
   --status-conflict-solid:  #dc2626;
+  --status-error-fg:        var(--status-conflict-fg);
 
   /* Diff */
   --diff-added-bg:      rgba(16,162,61,.14);
@@ -1740,3 +1741,16 @@ select.input { cursor: pointer; }
 }
 .metric-val.ok   { color: var(--status-identical-fg); }
 .metric-val.warn { color: var(--status-modified-fg); }
+
+/* ── Subtask check-item rows (Preflight page) ─────────────────────── */
+.subtask { display: flex; align-items: center; gap: 10px; padding: 7px 14px; font-size: 12.5px; border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 50%, transparent); }
+.subtask:last-child { border-bottom: none; }
+.subtask .s-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.subtask .s-name { flex: 1; }
+.subtask .s-time { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); }
+.subtask.done .s-name { color: var(--fg-muted); }
+.subtask.done .s-icon { color: var(--status-identical-fg); }
+.subtask.fail .s-name { color: var(--status-error-fg); font-weight: 500; }
+.subtask.fail .s-icon { color: var(--status-error-fg); }
+.subtask.active .s-icon { color: var(--status-modified-fg); }
+.subtask.pending .s-name { color: var(--fg-muted); opacity: 0.55; }

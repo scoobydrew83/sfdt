@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import CommandRunner from '../components/CommandRunner.jsx';
 import StreamRunner from '../components/StreamRunner.jsx';
+import FilterTabs from '../components/FilterTabs.jsx';
 import { api, stream } from '../api.js';
 import { ChatContext } from '../App.jsx';
 
@@ -18,6 +19,7 @@ export default function QualityPage() {
   const [streamKey, setStreamKey] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const [qualityData, setQualityData] = useState(null);
+  const [activeTab, setActiveTab] = useState('All');
   const chat = useContext(ChatContext);
 
   useEffect(() => {
@@ -46,6 +48,26 @@ export default function QualityPage() {
   const hasResults = qualityData && qualityData.date;
   const violations = qualityData?.violations ?? [];
   const summary = qualityData?.summary ?? { critical: 0, high: 0, medium: 0, low: 0 };
+
+  // Severity buckets: Error = sev 1, Warning = sev 2+3, Info = sev 4
+  const errorCount   = violations.filter((v) => v.severity === 1).length;
+  const warningCount = violations.filter((v) => v.severity === 2 || v.severity === 3).length;
+  const infoCount    = violations.filter((v) => v.severity === 4).length;
+
+  const filterTabsDef = [
+    { label: 'All',     count: violations.length },
+    { label: 'Error',   count: errorCount,   variant: 'rm' },
+    { label: 'Warning', count: warningCount, variant: 'mod' },
+    { label: 'Info',    count: infoCount },
+  ];
+
+  const filteredViolations = violations.filter((v) => {
+    if (activeTab === 'All')     return true;
+    if (activeTab === 'Error')   return v.severity === 1;
+    if (activeTab === 'Warning') return v.severity === 2 || v.severity === 3;
+    if (activeTab === 'Info')    return v.severity === 4;
+    return true;
+  });
 
   return (
     <div>
@@ -141,49 +163,64 @@ export default function QualityPage() {
               </div>
 
               {violations.length > 0 ? (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
-                        <th style={{ padding: '8px 10px', color: 'var(--fg-muted)', fontWeight: 500 }}>Severity</th>
-                        <th style={{ padding: '8px 10px', color: 'var(--fg-muted)', fontWeight: 500 }}>File</th>
-                        <th style={{ padding: '8px 10px', color: 'var(--fg-muted)', fontWeight: 500 }}>Line</th>
-                        <th style={{ padding: '8px 10px', color: 'var(--fg-muted)', fontWeight: 500 }}>Rule</th>
-                        <th style={{ padding: '8px 10px', color: 'var(--fg-muted)', fontWeight: 500 }}>Message</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {violations.map((v, i) => {
-                        const sev = Math.min(Math.max(v.severity, 1), 4);
-                        const c = SEVERITY_COLORS[sev];
-                        return (
-                          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                            <td style={{ padding: '7px 10px' }}>
-                              <span style={{
-                                display: 'inline-block',
-                                padding: '2px 7px',
-                                borderRadius: 4,
-                                background: c.bg,
-                                color: c.text,
-                                border: `1px solid ${c.border}`,
-                                fontSize: 11,
-                                fontWeight: 600,
-                              }}>
-                                {SEVERITY_LABELS[sev] ?? `Sev ${sev}`}
-                              </span>
+                <>
+                  <FilterTabs
+                    tabs={filterTabsDef}
+                    active={activeTab}
+                    onChange={setActiveTab}
+                  />
+
+                  <div style={{ overflowX: 'auto', marginTop: 12 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
+                          <th style={{ padding: '8px 10px', color: 'var(--fg-muted)', fontWeight: 500 }}>Severity</th>
+                          <th style={{ padding: '8px 10px', color: 'var(--fg-muted)', fontWeight: 500 }}>File</th>
+                          <th style={{ padding: '8px 10px', color: 'var(--fg-muted)', fontWeight: 500 }}>Line</th>
+                          <th style={{ padding: '8px 10px', color: 'var(--fg-muted)', fontWeight: 500 }}>Rule</th>
+                          <th style={{ padding: '8px 10px', color: 'var(--fg-muted)', fontWeight: 500 }}>Message</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredViolations.map((v, i) => {
+                          const sev = Math.min(Math.max(v.severity, 1), 4);
+                          const c = SEVERITY_COLORS[sev];
+                          return (
+                            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td style={{ padding: '7px 10px' }}>
+                                <span style={{
+                                  display: 'inline-block',
+                                  padding: '2px 7px',
+                                  borderRadius: 4,
+                                  background: c.bg,
+                                  color: c.text,
+                                  border: `1px solid ${c.border}`,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                }}>
+                                  {SEVERITY_LABELS[sev] ?? `Sev ${sev}`}
+                                </span>
+                              </td>
+                              <td style={{ padding: '7px 10px', color: 'var(--fg)', fontFamily: 'monospace', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {v.file ? v.file.split('/').pop() : '—'}
+                              </td>
+                              <td style={{ padding: '7px 10px', color: 'var(--fg-muted)' }}>{v.line || '—'}</td>
+                              <td style={{ padding: '7px 10px', color: 'var(--fg)', fontFamily: 'monospace' }}>{v.rule || '—'}</td>
+                              <td style={{ padding: '7px 10px', color: 'var(--fg-muted)', maxWidth: 320 }}>{v.message || '—'}</td>
+                            </tr>
+                          );
+                        })}
+                        {filteredViolations.length === 0 && (
+                          <tr>
+                            <td colSpan={5} style={{ padding: '20px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>
+                              No violations in this category.
                             </td>
-                            <td style={{ padding: '7px 10px', color: 'var(--fg)', fontFamily: 'monospace', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {v.file ? v.file.split('/').pop() : '—'}
-                            </td>
-                            <td style={{ padding: '7px 10px', color: 'var(--fg-muted)' }}>{v.line || '—'}</td>
-                            <td style={{ padding: '7px 10px', color: 'var(--fg)', fontFamily: 'monospace' }}>{v.rule || '—'}</td>
-                            <td style={{ padding: '7px 10px', color: 'var(--fg-muted)', maxWidth: 320 }}>{v.message || '—'}</td>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               ) : (
                 <div style={{ padding: '20px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>
                   No violations found. Code looks clean.

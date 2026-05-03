@@ -7,15 +7,23 @@ import CommandRunner from '../components/CommandRunner.jsx';
 import { IconCheckCircle, IconXCircle, IconAlertTri, IconInfo } from '../Icons.jsx';
 import { ChatContext } from '../App.jsx';
 
-function CheckIcon({ status }) {
+function subtaskState(status) {
+  const s = (status ?? '').toLowerCase();
+  if (s === 'pass' || s === 'passed' || s === 'success') return 'done';
+  if (s === 'fail' || s === 'failed' || s === 'error') return 'fail';
+  if (s === 'warn' || s === 'warning') return 'active';
+  return 'pending';
+}
+
+function SubtaskIcon({ status }) {
   const s = (status ?? '').toLowerCase();
   if (s === 'pass' || s === 'passed' || s === 'success')
-    return <IconCheckCircle size={14} style={{ color: 'var(--status-identical-fg)', flexShrink: 0 }} />;
+    return <IconCheckCircle size={14} />;
   if (s === 'fail' || s === 'failed' || s === 'error')
-    return <IconXCircle size={14} style={{ color: 'var(--status-conflict-fg)', flexShrink: 0 }} />;
+    return <IconXCircle size={14} />;
   if (s === 'warn' || s === 'warning')
-    return <IconAlertTri size={14} style={{ color: 'var(--status-modified-fg)', flexShrink: 0 }} />;
-  return <IconInfo size={14} style={{ color: 'var(--fg-muted)', flexShrink: 0 }} />;
+    return <IconAlertTri size={14} />;
+  return <span style={{ fontSize: 12, lineHeight: 1 }}>—</span>;
 }
 
 export default function PreflightPage() {
@@ -109,31 +117,22 @@ export default function PreflightPage() {
               </button>
             )}
           </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Check</th>
-                <th>Message</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {checks.map((c, i) => (
-                <tr key={i}>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <CheckIcon status={c.status} />
-                      <span style={{ fontWeight: 500 }}>{c.name}</span>
-                    </div>
-                  </td>
-                  <td style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)' }}>
-                    {c.message || '—'}
-                  </td>
-                  <td><StatusBadge status={c.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div>
+            {checks.map((c, i) => {
+              const state = subtaskState(c.status);
+              return (
+                <div key={i} className={`subtask ${state}`}>
+                  <span className="s-icon">
+                    <SubtaskIcon status={c.status} />
+                  </span>
+                  <span className="s-name">{c.name}</span>
+                  {c.message && (
+                    <span className="s-time">{c.message}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
