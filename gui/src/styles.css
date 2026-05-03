@@ -1755,3 +1755,202 @@ select.input { cursor: pointer; }
 .subtask.active .s-icon { color: var(--status-modified-fg); }
 .subtask.active .s-name { color: var(--status-modified-fg); }
 .subtask.pending .s-name { color: var(--fg-muted); opacity: 0.55; }
+
+/* ==========================================================
+   DEPENDENCY GRAPH PAGE
+   ========================================================== */
+/* graph-layout must break out of .page-content padding to fill available height */
+.page-content:has(.graph-layout) {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.graph-layout {
+  display: grid;
+  grid-template-columns: 1fr 272px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.graph-canvas-wrap {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.graph-select {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  color: var(--fg-default);
+  cursor: pointer;
+  outline: none;
+}
+.graph-select:focus { border-color: var(--brand-500); }
+
+.graph-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+}
+.graph-chip.active {
+  border-color: var(--brand-500);
+  color: var(--fg-default);
+  background: color-mix(in srgb, var(--brand-500) 12%, transparent);
+}
+.graph-chip:hover { color: var(--fg-default); }
+
+.graph-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.graph-badge {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+  padding: 2px 6px;
+  background: color-mix(in srgb, var(--fg-muted) 10%, transparent);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.graph-svg {
+  flex: 1;
+  width: 100%;
+  display: block;
+  min-height: 0;
+  background: var(--bg-app);
+}
+
+.graph-empty-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--fg-muted);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.graph-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-app) 70%, transparent);
+  z-index: 10;
+}
+
+/* ── Detail Rail ─────────────────────────────────────────────────────── */
+.graph-rail {
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-subtle);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.rail-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 32px 20px;
+}
+
+.rail-node-hdr {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.rail-node-name {
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  word-break: break-all;
+  color: var(--fg-default);
+}
+
+.rail-section {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.rail-section-lbl {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+  margin-bottom: 7px;
+}
+
+.rail-dep-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  color: var(--fg-muted);
+  transition: color 0.1s;
+}
+.rail-dep-item:hover { color: var(--brand-500); }
+
+.rail-dep-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.rail-actions {
+  padding: 12px 16px;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+}
+.btn-link:hover { color: var(--brand-500) !important; }

@@ -12,12 +12,13 @@ import PullPage from './pages/Pull.jsx';
 import ReleaseHubPage from './pages/ReleaseHub.jsx';
 import ReviewPage from './pages/Review.jsx';
 import ExplainPage from './pages/Explain.jsx';
+import DependencyPage from './pages/Dependency.jsx';
 import SettingsPage from './pages/Settings.jsx';
 import LogsPage from './pages/Logs.jsx';
 import {
   IconHome, IconList, IconCheck, IconRefresh, IconCompare,
   IconSun, IconMoon, IconFileText, IconActivity, IconCloudDown,
-  IconRocket, IconCode, IconSearch, IconSettings, IconClock,
+  IconRocket, IconCode, IconSearch, IconSettings, IconClock, IconGraph,
 } from './Icons.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 import ChatDrawer from './components/ChatDrawer.jsx';
@@ -49,8 +50,9 @@ const NAV_GROUPS = [
       { id: 'manifests', label: 'Manifests', Icon: IconFileText },
       { id: 'quality',   label: 'Quality',   Icon: IconActivity },
       { id: 'pull',      label: 'Pull',      Icon: IconCloudDown },
-      { id: 'review',    label: 'Review',    Icon: IconCode },
-      { id: 'explain',   label: 'Explain',   Icon: IconSearch },
+      { id: 'review',     label: 'Review',           Icon: IconCode },
+      { id: 'explain',    label: 'Explain',           Icon: IconSearch },
+      { id: 'dependency', label: 'Dependency Graph',  Icon: IconGraph },
     ],
   },
   {
@@ -73,8 +75,9 @@ const PAGE_LABELS = {
   release:   'Release Hub',
   review:    'Review',
   explain:   'Explain',
-  logs:      'Log History',
-  settings:  'Settings',
+  logs:       'Log History',
+  dependency: 'Dependency Graph',
+  settings:   'Settings',
 };
 
 export default function App() {
@@ -136,8 +139,9 @@ export default function App() {
       case 'release':   return <ReleaseHubPage />;
       case 'review':    return <ReviewPage />;
       case 'explain':   return <ExplainPage />;
-      case 'logs':      return <LogsPage />;
-      case 'settings':  return <SettingsPage />;
+      case 'logs':       return <LogsPage />;
+      case 'dependency': return <DependencyPage />;
+      case 'settings':   return <SettingsPage />;
       default:          return <Dashboard project={project} />;
     }
   };
