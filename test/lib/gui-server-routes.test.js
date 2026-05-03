@@ -546,3 +546,203 @@ describe('POST /api/compare/manifest — version conflict (409)', () => {
     expect(res.status).toBe(409);
   });
 });
+
+// ─── Dependency graph routes ─────────────────────────────────────────────────
+
+describe('GET /api/dependencies', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns 400 when org param is missing', async () => {
+    const res = await request(app).get('/api/dependencies');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/org is required/i);
+  });
+
+  it('returns 400 when org param contains invalid characters', async () => {
+    const res = await request(app).get('/api/dependencies?org=; rm -rf');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid org alias/i);
+  });
+
+  it('returns 400 when all types are invalid', async () => {
+    const res = await request(app).get('/api/dependencies?org=dev&types=123bad,__nope__');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/types/i);
+  });
+
+  it('returns nodes, edges, nodeCount, edgeCount, and cachedAt on success', async () => {
+    const { execa: execaMock } = await import('execa');
+    const sfResponse = JSON.stringify({
+      result: {
+        records: [
+          {
+            MetadataComponentId: 'aaa',
+            MetadataComponentName: 'MyClass',
+            MetadataComponentType: 'ApexClass',
+            RefMetadataComponentId: 'bbb',
+            RefMetadataComponentName: 'HelperClass',
+            RefMetadataComponentType: 'ApexClass',
+          },
+          {
+            MetadataComponentId: 'aaa',
+            MetadataComponentName: 'MyClass',
+            MetadataComponentType: 'ApexClass',
+            RefMetadataComponentId: 'ccc',
+            RefMetadataComponentName: 'AnotherClass',
+            RefMetadataComponentType: 'ApexClass',
+          },
+        ],
+      },
+    });
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: sfResponse, stderr: '' });
+
+    const res = await request(app).get('/api/dependencies?org=dev');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.nodes)).toBe(true);
+    expect(Array.isArray(res.body.edges)).toBe(true);
+    expect(typeof res.body.nodeCount).toBe('number');
+    expect(typeof res.body.edgeCount).toBe('number');
+    expect(typeof res.body.cachedAt).toBe('string');
+    expect(res.body.nodeCount).toBe(3); // aaa, bbb, ccc
+    expect(res.body.edgeCount).toBe(2);
+  });
+
+  it('deduplicates edges when the same srcId|refId pair appears twice', async () => {
+    const { execa: execaMock } = await import('execa');
+    const dupResponse = JSON.stringify({
+      result: {
+        records: [
+          {
+            MetadataComponentId: 'aaa',
+            MetadataComponentName: 'MyClass',
+            MetadataComponentType: 'ApexClass',
+            RefMetadataComponentId: 'bbb',
+            RefMetadataComponentName: 'HelperClass',
+            RefMetadataComponentType: 'ApexClass',
+          },
+          // exact duplicate
+          {
+            MetadataComponentId: 'aaa',
+            MetadataComponentName: 'MyClass',
+            MetadataComponentType: 'ApexClass',
+            RefMetadataComponentId: 'bbb',
+            RefMetadataComponentName: 'HelperClass',
+            RefMetadataComponentType: 'ApexClass',
+          },
+        ],
+      },
+    });
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: dupResponse, stderr: '' });
+
+    // Use a different org so it doesn't hit the cache from the previous test
+    const res = await request(app).get('/api/dependencies?org=dev2');
+    expect(res.status).toBe(200);
+    expect(res.body.edgeCount).toBe(1); // deduplicated
+  });
+});
+
+describe('GET /api/dependencies/preflight', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns 400 when manifest param is missing', async () => {
+    const res = await request(app).get('/api/dependencies/preflight?org=dev');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/manifest is required/i);
+  });
+
+  it('returns 400 when manifest is a relative path', async () => {
+    const res = await request(app).get('/api/dependencies/preflight?manifest=relative/path.xml&org=dev');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/absolute path/i);
+  });
+
+  it('returns pass with empty missing/warnings when manifest has no component members', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    // pathExists returns true so the file is found; readFile returns XML with no <members>
+    fsMock.pathExists.mockResolvedValueOnce(true);
+    fsMock.readFile.mockResolvedValueOnce('<Package xmlns="http://soap.sforce.com/2006/04/metadata"><version>59.0</version></Package>');
+
+    const res = await request(app).get(`/api/dependencies/preflight?manifest=/project/manifest/release/pkg.xml&org=dev`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('pass');
+    expect(res.body.missing).toHaveLength(0);
+    expect(res.body.warnings).toHaveLength(0);
+  });
+
+  it('returns fail with missing entries when a custom-type dep is absent from manifest', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    const { execa: execaMock } = await import('execa');
+
+    fsMock.pathExists.mockResolvedValueOnce(true);
+    fsMock.readFile.mockResolvedValueOnce(
+      '<Package><types><members>MyClass</members><name>ApexClass</name></types></Package>',
+    );
+
+    const sfResponse = JSON.stringify({
+      result: {
+        records: [
+          {
+            MetadataComponentName: 'MyClass',
+            MetadataComponentType: 'ApexClass',
+            RefMetadataComponentName: 'MissingCustomClass',
+            RefMetadataComponentType: 'ApexClass',
+          },
+        ],
+      },
+    });
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: sfResponse, stderr: '' });
+
+    const res = await request(app).get(`/api/dependencies/preflight?manifest=/project/manifest/release/pkg.xml&org=dev`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('fail');
+    expect(res.body.missing.length).toBeGreaterThan(0);
+    expect(res.body.missing[0].name).toBe('MissingCustomClass');
+    expect(Array.isArray(res.body.missing[0].referencedBy)).toBe(true);
+  });
+
+  it('returns warn when only standard-type deps are missing from manifest', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    const { execa: execaMock } = await import('execa');
+
+    fsMock.pathExists.mockResolvedValueOnce(true);
+    fsMock.readFile.mockResolvedValueOnce(
+      '<Package><types><members>MyClass</members><name>ApexClass</name></types></Package>',
+    );
+
+    const sfResponse = JSON.stringify({
+      result: {
+        records: [
+          {
+            MetadataComponentName: 'MyClass',
+            MetadataComponentType: 'ApexClass',
+            RefMetadataComponentName: 'Account',
+            RefMetadataComponentType: 'StandardEntity',
+          },
+        ],
+      },
+    });
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: sfResponse, stderr: '' });
+
+    const res = await request(app).get(`/api/dependencies/preflight?manifest=/project/manifest/release/pkg.xml&org=dev`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('warn');
+    expect(res.body.missing).toHaveLength(0);
+    expect(res.body.warnings.length).toBeGreaterThan(0);
+  });
+});

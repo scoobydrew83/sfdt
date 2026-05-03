@@ -2145,6 +2145,7 @@ ${contextStr}${devOpsSection}`;
       // Build graph — deduplicate nodes by id
       const nodesById = new Map();
       const edges = [];
+      const edgeSet = new Set();
 
       for (const rec of records) {
         const srcId = rec.MetadataComponentId;
@@ -2161,7 +2162,11 @@ ${contextStr}${devOpsSection}`;
           nodesById.set(refId, { id: refId, name: refName, type: refType });
         }
         if (srcId && refId) {
-          edges.push({ source: srcId, target: refId });
+          const edgeKey = `${srcId}|${refId}`;
+          if (!edgeSet.has(edgeKey)) {
+            edgeSet.add(edgeKey);
+            edges.push({ source: srcId, target: refId });
+          }
         }
       }
 
@@ -2219,7 +2224,17 @@ ${contextStr}${devOpsSection}`;
       }
 
       // Build SOQL scoped to the manifest's component names
-      const nameList = [...manifestComponents].map((n) => `'${n.replace(/'/g, "\\'")}'`).join(',');
+      const nameList = [...manifestComponents].map((n) => `'${n.replace(/'/g, "''")}'`).join(',');
+
+      // Guard against MALFORMED_QUERY: SOQL IN clause has a character limit
+      if (nameList.length > 15000) {
+        return res.status(200).json({
+          status: 'warn',
+          missing: [],
+          warnings: [{ name: 'MANIFEST_TOO_LARGE', type: 'system', referencedBy: [`Manifest has ${manifestComponents.size} components; dependency check limited to first batch`] }],
+        });
+      }
+
       const soql = [
         'SELECT MetadataComponentName, MetadataComponentType,',
         'RefMetadataComponentName, RefMetadataComponentType',
