@@ -80,6 +80,8 @@ function DependencyCheckSection() {
     return () => { cancelled = true; };
   }, []);
 
+  if (depState === 'idle') return null;
+
   const rows = [];
 
   if (depState === 'loading') {
@@ -265,7 +267,7 @@ export default function PreflightPage() {
         </div>
       )}
 
-      {!loading && checks.length > 0 && <DependencyCheckSection />}
+      {!loading && checks.length > 0 && <DependencyCheckSection key={refreshKey} />}
     </div>
   );
 }
