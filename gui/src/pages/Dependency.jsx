@@ -8,7 +8,7 @@ import {
   forceCollide,
 } from 'd3-force';
 import { select } from 'd3-selection';
-import { zoom as d3Zoom } from 'd3-zoom';
+import { zoom as d3Zoom, zoomIdentity as d3ZoomIdentity } from 'd3-zoom';
 import { drag as d3Drag } from 'd3-drag';
 
 // ─── Color map by metadata type ──────────────────────────────────────────────
@@ -116,6 +116,14 @@ function DetailRail({ selected, nodes, onSelectNode, onClear }) {
 
       <div className="rail-actions">
         <button
+          className="btn btn-ghost"
+          style={{ fontSize: 11, width: '100%' }}
+          type="button"
+          onClick={() => navigator.clipboard?.writeText(`${selected.type}:${selected.name}`)}
+        >
+          Copy component name
+        </button>
+        <button
           className="btn-link"
           style={{ fontSize: 11, color: 'var(--fg-muted)' }}
           onClick={onClear}
@@ -139,11 +147,13 @@ export default function Dependency() {
   const [selectedId, setSelectedId]   = useState(null);
   const [enrichedNodes, setEnrichedNodes] = useState([]);
 
-  const svgRef      = useRef(null);
-  const simRef      = useRef(null);
-  const gRef        = useRef(null);   // <g> wrapper inside SVG
+  const svgRef       = useRef(null);
+  const simRef       = useRef(null);
+  const gRef         = useRef(null);   // <g> wrapper inside SVG
   const nodesDataRef = useRef([]);
   const edgesDataRef = useRef([]);
+  const selectedIdRef = useRef(null);
+  const zoomRef       = useRef(null);
 
   // Load orgs on mount
   useEffect(() => {
@@ -181,6 +191,21 @@ export default function Dependency() {
     });
     setEnrichedNodes(nodes.map((n) => ({ ...n, deps: deps[n.id] ?? [], refs: refs[n.id] ?? [] })));
   }, [graphData]);
+
+  // Re-filter visible nodes/edges when activeTypes changes (without re-running simulation)
+  useEffect(() => {
+    if (!nodesDataRef.current.length) return;
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+    const g = select(svgEl).select('g.zoom-group');
+    g.selectAll('circle').attr('opacity', (d) => activeTypes.has(d.type) ? 1 : 0);
+    g.selectAll('text').attr('opacity', (d) => activeTypes.has(d.type) ? 1 : 0);
+    g.selectAll('line').attr('opacity', (d) => {
+      const srcNode = nodesDataRef.current.find((n) => n.id === (d.source?.id ?? d.source));
+      const tgtNode = nodesDataRef.current.find((n) => n.id === (d.target?.id ?? d.target));
+      return (srcNode && activeTypes.has(srcNode.type) && tgtNode && activeTypes.has(tgtNode.type)) ? 0.25 : 0;
+    });
+  }, [activeTypes]);
 
   // Load graph data from API
   const loadGraph = useCallback(async () => {
@@ -259,6 +284,7 @@ export default function Dependency() {
       .on('zoom', (event) => {
         g.attr('transform', event.transform);
       });
+    zoomRef.current = zoomBehavior;
     svg.call(zoomBehavior);
 
     // Link layer
@@ -314,11 +340,10 @@ export default function Dependency() {
     // Click to select / deselect
     nodeGroup.on('click', (event, d) => {
       event.stopPropagation();
-      setSelectedId((prev) => {
-        const next = prev === d.id ? null : d.id;
-        applyHighlight(nodeGroup, linkSel, nodes, edges, next);
-        return next;
-      });
+      const next = selectedIdRef.current === d.id ? null : d.id;
+      selectedIdRef.current = next;
+      setSelectedId(next);
+      applyHighlight(nodeGroup, linkSel, nodes, edges, next);
     });
 
     // Double-click to unpin
@@ -330,6 +355,7 @@ export default function Dependency() {
 
     // Click on SVG background to deselect
     svg.on('click', () => {
+      selectedIdRef.current = null;
       setSelectedId(null);
       applyHighlight(nodeGroup, linkSel, nodes, edges, null);
     });
@@ -382,20 +408,29 @@ export default function Dependency() {
     });
   }
 
-  // Re-apply highlight when selectedId changes from rail clicks
-  useEffect(() => {
-    const svgEl = svgRef.current;
-    if (!svgEl) return;
-    const svg = select(svgEl);
-    const nodeGroup = svg.selectAll('g.node-g');
-    const linkSel   = svg.selectAll('g.links line');
-    applyHighlight(nodeGroup, linkSel, nodesDataRef.current, edgesDataRef.current, selectedId);
-  }, [selectedId]);
-
   const selectedNode = enrichedNodes.find((n) => n.id === selectedId) ?? null;
 
   const handleRailSelect = useCallback((id) => {
     setSelectedId(id);
+    selectedIdRef.current = id;
+    const node = nodesDataRef.current.find((n) => n.id === id);
+    const svgEl = svgRef.current;
+    // Re-apply highlight for rail-driven selection
+    if (svgEl) {
+      const svg = select(svgEl);
+      const nodeGroup = svg.selectAll('g.node-g');
+      const linkSel   = svg.selectAll('g.links line');
+      applyHighlight(nodeGroup, linkSel, nodesDataRef.current, edgesDataRef.current, id);
+    }
+    // Pan/zoom to center the selected node
+    if (node && node.x != null && zoomRef.current && svgEl) {
+      const w = svgEl.clientWidth;
+      const h = svgEl.clientHeight;
+      select(svgEl).transition().duration(400).call(
+        zoomRef.current.transform,
+        d3ZoomIdentity.translate(w / 2 - node.x, h / 2 - node.y)
+      );
+    }
   }, []);
 
   const handleClear = useCallback(() => {
