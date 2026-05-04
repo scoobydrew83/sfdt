@@ -34,7 +34,7 @@ jobs:
               core.setFailed(`Actor ${context.actor} has permission '${perm.permission}' — write or higher required to publish a beta.`);
             }
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
