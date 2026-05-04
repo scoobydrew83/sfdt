@@ -26,6 +26,135 @@ function SubtaskIcon({ status }) {
   return <span style={{ fontSize: 12, lineHeight: 1 }}>—</span>;
 }
 
+const MAX_MISSING_SHOWN = 5;
+
+function DependencyCheckSection() {
+  const [depState, setDepState] = useState('idle'); // idle | loading | done | error
+  const [depResult, setDepResult] = useState(null);
+  const [depError, setDepError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      setDepState('loading');
+      try {
+        // Resolve org from project info
+        const projectInfo = await api.project();
+        const org = projectInfo?.org;
+        if (!org) {
+          if (!cancelled) {
+            setDepError('No default org configured');
+            setDepState('error');
+          }
+          return;
+        }
+
+        // Resolve manifest: use the first available manifest
+        const manifestsData = await api.listManifests();
+        const manifests = manifestsData?.manifests ?? [];
+        if (manifests.length === 0) {
+          if (!cancelled) {
+            setDepError('No manifests found');
+            setDepState('error');
+          }
+          return;
+        }
+
+        const manifestRelPath = manifests[0].relPath;
+        const result = await api.dependenciesPreflight(manifestRelPath, org);
+
+        if (!cancelled) {
+          setDepResult(result);
+          setDepState('done');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setDepError(err.message ?? 'Unknown error');
+          setDepState('error');
+        }
+      }
+    }
+
+    run();
+    return () => { cancelled = true; };
+  }, []);
+
+  const rows = [];
+
+  if (depState === 'loading') {
+    rows.push(
+      <div key="loading" className="subtask pending">
+        <span className="s-icon"><span style={{ fontSize: 12, lineHeight: 1 }}>—</span></span>
+        <span className="s-name">Checking dependencies…</span>
+      </div>
+    );
+  } else if (depState === 'error') {
+    rows.push(
+      <div key="error" className="subtask fail">
+        <span className="s-icon"><IconXCircle size={14} /></span>
+        <span className="s-name">Dependency check failed: {depError}</span>
+      </div>
+    );
+  } else if (depState === 'done' && depResult) {
+    const { status, missing = [], warnings = [] } = depResult;
+
+    if (status === 'pass') {
+      rows.push(
+        <div key="pass" className="subtask done">
+          <span className="s-icon"><IconCheckCircle size={14} /></span>
+          <span className="s-name">All dependencies satisfied</span>
+        </div>
+      );
+    } else if (status === 'warn') {
+      rows.push(
+        <div key="warn" className="subtask active">
+          <span className="s-icon"><IconAlertTri size={14} /></span>
+          <span className="s-name">
+            Standard type dependencies detected ({warnings.length} warning{warnings.length !== 1 ? 's' : ''})
+          </span>
+        </div>
+      );
+    } else if (status === 'fail') {
+      const shown = missing.slice(0, MAX_MISSING_SHOWN);
+      const overflow = missing.length - shown.length;
+      shown.forEach((item, i) => {
+        const referencedBy = item.referencedBy?.[0];
+        rows.push(
+          <div key={i} className="subtask fail">
+            <span className="s-icon"><IconXCircle size={14} /></span>
+            <span className="s-name">
+              {item.name} ({item.type}){referencedBy ? ` — referenced by ${referencedBy}` : ''}
+            </span>
+          </div>
+        );
+      });
+      if (overflow > 0) {
+        rows.push(
+          <div key="overflow" className="subtask fail">
+            <span className="s-icon"><span style={{ fontSize: 12, lineHeight: 1 }}>—</span></span>
+            <span className="s-name" style={{ fontStyle: 'italic' }}>… and {overflow} more</span>
+          </div>
+        );
+      }
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginTop: '16px' }}>
+      <div className="card-head">
+        <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: 'var(--fg-muted)' }}>
+            <path d="M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+          </svg>
+          Dependency Check
+        </div>
+      </div>
+      <div>{rows}</div>
+    </div>
+  );
+}
+
 export default function PreflightPage() {
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
@@ -135,6 +264,8 @@ export default function PreflightPage() {
           </div>
         </div>
       )}
+
+      {!loading && checks.length > 0 && <DependencyCheckSection />}
     </div>
   );
 }

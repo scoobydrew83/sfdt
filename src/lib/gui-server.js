@@ -2202,13 +2202,18 @@ ${contextStr}${devOpsSection}`;
         return res.status(400).json({ error: 'Invalid org alias' });
       }
 
-      // manifest must be an absolute path (passed by the GUI which knows full paths)
-      if (!path.isAbsolute(manifestParam)) {
-        return res.status(400).json({ error: 'manifest must be an absolute path' });
-      }
-      // Containment guard: must reside within the project root
+      // Accept either an absolute path or a relative path (resolved against projectRoot)
       const projectRoot = config._projectRoot ?? process.cwd();
-      const absManifest = path.resolve(manifestParam);
+      let absManifest;
+      if (path.isAbsolute(manifestParam)) {
+        absManifest = path.resolve(manifestParam);
+      } else {
+        // Guard against path traversal on relative paths
+        if (manifestParam.includes('..')) {
+          return res.status(400).json({ error: 'Invalid manifest path' });
+        }
+        absManifest = path.resolve(projectRoot, manifestParam);
+      }
       if (!absManifest.startsWith(projectRoot + path.sep) && absManifest !== projectRoot) {
         return res.status(403).json({ error: 'Forbidden: manifest path outside project root' });
       }

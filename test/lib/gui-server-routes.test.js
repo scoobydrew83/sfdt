@@ -666,10 +666,17 @@ describe('GET /api/dependencies/preflight', () => {
     expect(res.body.error).toMatch(/manifest is required/i);
   });
 
-  it('returns 400 when manifest is a relative path', async () => {
-    const res = await request(app).get('/api/dependencies/preflight?manifest=relative/path.xml&org=dev');
+  it('returns 400 when manifest relative path contains path traversal', async () => {
+    const res = await request(app).get('/api/dependencies/preflight?manifest=../../etc/passwd&org=dev');
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/absolute path/i);
+    expect(res.body.error).toMatch(/invalid manifest path/i);
+  });
+
+  it('returns 404 when manifest is a valid relative path but file does not exist', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.pathExists.mockResolvedValueOnce(false);
+    const res = await request(app).get('/api/dependencies/preflight?manifest=relative/path.xml&org=dev');
+    expect(res.status).toBe(404);
   });
 
   it('returns pass with empty missing/warnings when manifest has no component members', async () => {
