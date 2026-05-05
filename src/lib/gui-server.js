@@ -1072,6 +1072,7 @@ export function createGuiApp(config, version, port = 7654) {
       if (!res.writableEnded) res.end();
     } catch (err) {
       const elapsed = Math.round((Date.now() - startTime) / 1000);
+      emit({ type: 'log', line: `Pull failed: ${err.message}` });
       emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed });
       if (!res.writableEnded) res.end();
     }
