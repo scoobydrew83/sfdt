@@ -964,21 +964,31 @@ export function createGuiApp(config, version, port = 7654) {
     };
 
     const startTime = Date.now();
-    const org = req.query.targetOrg || config.defaultOrg;
+    const rawOrg = req.query.targetOrg || config.defaultOrg;
     const mode = req.query.mode ?? 'delta';
     const projectRoot = config._projectRoot ?? process.cwd();
     const cacheDir = path.join(config._configDir ?? path.join(projectRoot, '.sfdt'), 'cache');
 
-    if (!org) {
+    if (!rawOrg) {
       emit({ type: 'log', line: 'No target org configured. Set defaultOrg in .sfdt/config.json.' });
       emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed: 0 });
       res.end();
       return;
     }
 
+    if (!/^[A-Za-z0-9_.\-@]+$/.test(String(rawOrg))) {
+      emit({ type: 'log', line: 'Invalid org alias.' });
+      emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed: 0 });
+      res.end();
+      return;
+    }
+
+    const org = rawOrg;
+    const ac = new AbortController();
     let child;
 
     req.on('close', () => {
+      ac.abort();
       if (child && !child.killed) child.kill();
     });
 
@@ -1016,6 +1026,7 @@ export function createGuiApp(config, version, port = 7654) {
             emit({ type: 'log', line: `${deltaCount} component(s) to retrieve` });
             const result = await parallelRetrieve(delta, config, {
               cwd: projectRoot,
+              signal: ac.signal,
               onProgress: ({ retrieved, total: t }) => emit({ type: 'progress', retrieved, total: t }),
             });
 

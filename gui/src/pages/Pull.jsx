@@ -243,7 +243,7 @@ export default function PullPage() {
         }}>
           <span style={{ fontSize: 13 }}>
             {status === 'done'
-              ? `✔ ${modeLabel} complete · ${result?.retrieved ?? 0} components retrieved · ${result?.elapsed ?? 0}s`
+              ? `✔ ${modeLabel} complete${result?.retrieved ? ` · ${result.retrieved} components retrieved` : ''} · ${result?.elapsed ?? 0}s`
               : `✗ Pull failed · ${result?.elapsed ?? 0}s elapsed`}
           </span>
           <button className="btn btn-ghost btn-sm" onClick={cancel}>
