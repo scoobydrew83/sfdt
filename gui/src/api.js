@@ -49,6 +49,13 @@ async function patchJson(path, body) {
   return res.json();
 }
 
+/** @returns {Promise<any>} */
+async function deleteRequest(path) {
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' });
+  if (!res.ok) throw httpError(res);
+  return res.json();
+}
+
 export const api = {
   /** @returns {Promise<ProjectInfo>} */
   project:                () => fetchJson('/project'),
@@ -56,6 +63,8 @@ export const api = {
   checkUpdates:           () => fetchJson('/check-updates'),
   /** @returns {Promise<{ runs: TestRun[] }>} */
   testRuns:               () => fetchJson('/test-runs'),
+  /** @returns {Promise<{ configured: string[], discovered: string[] }>} */
+  testClasses:            () => fetchJson('/test/classes'),
   /** @returns {Promise<PreflightResult>} */
   preflight:              () => fetchJson('/preflight'),
   /** @returns {Promise<DriftResult>} */
@@ -96,6 +105,14 @@ export const api = {
   detectTests:            (relPath) => fetchJson(`/manifest/detect-tests?path=${encodeURIComponent(relPath)}`),
   /** @returns {Promise<{ ok: boolean }>} */
   removeManifestComponent:(relPath, type, member) => postJson('/manifest/remove-component', { relPath, type, member }),
+  addManifestComponent:   (relPath, type, member) => postJson('/manifest/add-component',    { relPath, type, member }),
+  discoverComponents:     (type, exclude = []) => fetchJson(`/manifest/discover?type=${encodeURIComponent(type)}${exclude.length ? `&exclude=${encodeURIComponent(exclude.join(','))}` : ''}`),
+  /** @returns {Promise<{ prompts: Array<{key:string, label:string, description:string, feature:string, default:string, current:string, overridden:boolean}> }>} */
+  listPrompts:            () => fetchJson('/prompts'),
+  /** @returns {Promise<{ ok: boolean, key: string }>} */
+  setPrompt:              (key, value) => patchJson(`/prompts/${encodeURIComponent(key)}`, { value }),
+  /** @returns {Promise<{ ok: boolean, key: string }>} */
+  resetPrompt:            (key) => deleteRequest(`/prompts/${encodeURIComponent(key)}`),
   /** @returns {Promise<object>} */
   getConfig:              () => fetchJson('/config'),
   /** @returns {Promise<{ ok: boolean, key: string, value: any }>} */
@@ -108,6 +125,8 @@ export const api = {
   dependencies:           (org, types) => fetchJson(`/dependencies?org=${encodeURIComponent(org)}${types ? `&types=${encodeURIComponent(types)}` : ''}`),
   /** @returns {Promise<{ status: 'pass'|'warn'|'fail', missing: Array<{name:string, type:string, referencedBy:string[]}>, warnings: Array<{name:string, type:string, referencedBy:string[]}> }>} */
   dependenciesPreflight:  (manifest, org) => fetchJson(`/dependencies/preflight?manifest=${encodeURIComponent(manifest)}&org=${encodeURIComponent(org)}`),
+  /** @returns {Promise<Array<{key: string, description: string}>>} */
+  pullGroups:             () => fetchJson('/pull/groups'),
 };
 
 // ─── SSE helpers ──────────────────────────────────────────────────────────────
