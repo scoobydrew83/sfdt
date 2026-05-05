@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { IconX } from '../Icons.jsx';
-import api from '../api.js';
+import { api } from '../api.js';
 
 const MODE_CARDS = [
   { mode: 'delta',   icon: '⚡', label: 'Smart Delta',    desc: 'Only changed components' },
@@ -9,9 +9,6 @@ const MODE_CARDS = [
 ];
 
 function getModeLabel(mode, groups, selectedGroup) {
-  if (mode === 'delta')   return 'Smart Delta';
-  if (mode === 'preview') return 'Preview';
-  if (mode === 'full')    return 'Full Retrieve';
   if (mode === 'group') {
     if (selectedGroup) {
       const g = groups.find((g) => g.key === selectedGroup);
@@ -19,42 +16,44 @@ function getModeLabel(mode, groups, selectedGroup) {
     }
     return 'Group';
   }
-  return mode;
+  return MODE_CARDS.find((c) => c.mode === mode)?.label ?? mode;
 }
 
 export default function PullPage() {
-  const [mode, setMode]               = useState('delta');
-  const [status, setStatus]           = useState('idle');
-  const [lines, setLines]             = useState([]);
-  const [progress, setProgress]       = useState(null);
-  const [result, setResult]           = useState(null);
-  const [groups, setGroups]           = useState([]);
+  const [mode, setMode]                    = useState('delta');
+  const [status, setStatus]               = useState('idle');
+  const [lines, setLines]                 = useState([]);
+  const [progress, setProgress]           = useState(null);
+  const [result, setResult]               = useState(null);
+  const [groups, setGroups]               = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
 
   const esRef      = useRef(null);
   const logRef     = useRef(null);
   const counterRef = useRef(0);
+  const deadRef    = useRef(false);
 
-  // Load groups on mount
   useEffect(() => {
     api.pullGroups()
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setGroups(data);
-          setSelectedGroup(data[0].key);
+        const list = Array.isArray(data?.groups) ? data.groups : [];
+        if (list.length > 0) {
+          setGroups(list);
+          setSelectedGroup(list[0].key);
         }
       })
-      .catch(() => {/* silently ignore */});
+      .catch(() => {});
   }, []);
 
-  // Auto-scroll log
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [lines]);
 
-  // Cleanup on unmount
   useEffect(() => {
-    return () => { esRef.current?.close(); };
+    return () => {
+      deadRef.current = true;
+      esRef.current?.close();
+    };
   }, []);
 
   const run = () => {
@@ -65,14 +64,13 @@ export default function PullPage() {
     counterRef.current = 0;
 
     const qs = new URLSearchParams({ mode });
-    if (mode === 'group' && selectedGroup) {
-      qs.set('groupKey', selectedGroup);
-    }
+    if (mode === 'group' && selectedGroup) qs.set('groupKey', selectedGroup);
 
     const es = new EventSource('/api/pull?' + qs.toString());
     esRef.current = es;
 
     es.onmessage = (e) => {
+      if (deadRef.current) return;
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
 
@@ -89,6 +87,7 @@ export default function PullPage() {
     };
 
     es.onerror = () => {
+      if (deadRef.current) return;
       setStatus('error');
       es.close();
       esRef.current = null;
@@ -99,15 +98,13 @@ export default function PullPage() {
     esRef.current?.close();
     esRef.current = null;
     setStatus('idle');
-    setLines([]);
     setProgress(null);
     setResult(null);
   };
 
-  const modeLabel = getModeLabel(mode, groups, selectedGroup);
-  const isIdle    = status === 'idle';
+  const modeLabel  = getModeLabel(mode, groups, selectedGroup);
+  const isIdle     = status === 'idle';
 
-  // All cards: base 3 + optional group card if groups present
   const visibleCards = groups.length > 0
     ? [...MODE_CARDS, { mode: 'group', icon: '📦', label: 'Groups', desc: 'Custom metadata groups' }]
     : MODE_CARDS;
@@ -134,15 +131,19 @@ export default function PullPage() {
           return (
             <div
               key={card.mode}
+              role="button"
+              tabIndex={isIdle ? 0 : -1}
               data-mode={card.mode}
               onClick={() => isIdle && setMode(card.mode)}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && isIdle && setMode(card.mode)}
+              aria-pressed={selected}
+              aria-disabled={!isIdle}
               className="card"
               style={{
                 cursor: 'pointer',
                 padding: '16px',
                 borderColor: selected ? 'var(--brand-500)' : 'var(--border-subtle)',
-                background: selected ? 'var(--bg-brand-subtle)' : 'var(--bg-card)',
-                color: selected ? 'var(--fg-brand)' : 'var(--fg-muted)',
+                background: selected ? 'color-mix(in srgb, var(--brand-500) 12%, var(--bg-surface))' : 'var(--bg-surface)',
                 userSelect: 'none',
               }}
             >
@@ -150,7 +151,7 @@ export default function PullPage() {
               <div style={{
                 fontSize: 13,
                 fontWeight: 600,
-                color: selected ? 'var(--fg-brand)' : 'var(--fg)',
+                color: selected ? 'var(--fg-brand)' : 'var(--fg-default)',
                 marginBottom: 2,
               }}>
                 {card.label}
@@ -165,7 +166,7 @@ export default function PullPage() {
       {mode === 'group' && groups.length > 0 && (
         <div style={{ marginTop: 8 }}>
           <select
-            className="select"
+            className="input"
             value={selectedGroup ?? ''}
             onChange={(e) => setSelectedGroup(e.target.value)}
             disabled={!isIdle}
@@ -207,26 +208,16 @@ export default function PullPage() {
           </div>
           {progress && (
             <div>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: 12,
-                marginBottom: 4,
-              }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
                 <span style={{ color: 'var(--fg-muted)' }}>Components retrieved</span>
                 <span style={{ color: 'var(--fg-brand)', fontWeight: 600 }}>
                   {progress.retrieved} / {progress.total}
                 </span>
               </div>
-              <div style={{
-                background: 'var(--bg-subtle)',
-                borderRadius: 4,
-                height: 5,
-                overflow: 'hidden',
-              }}>
+              <div style={{ background: 'var(--bg-subtle)', borderRadius: 4, height: 5, overflow: 'hidden' }}>
                 <div style={{
                   background: 'linear-gradient(90deg, var(--brand-500), var(--accent-500))',
-                  width: `${Math.round((progress.retrieved / progress.total) * 100)}%`,
+                  width: `${progress.total > 0 ? Math.round((progress.retrieved / progress.total) * 100) : 0}%`,
                   height: '100%',
                   borderRadius: 4,
                   transition: 'width 0.3s ease',
@@ -242,14 +233,8 @@ export default function PullPage() {
         <div style={{
           marginTop: 16,
           ...(status === 'done'
-            ? {
-                background: 'var(--status-identical-bg)',
-                border: '1px solid var(--status-identical-border)',
-              }
-            : {
-                background: 'var(--status-conflict-bg)',
-                border: '1px solid var(--status-conflict-border)',
-              }),
+            ? { background: 'var(--status-identical-bg)', border: '1px solid var(--status-identical-border)' }
+            : { background: 'var(--status-conflict-bg)',  border: '1px solid var(--status-conflict-border)' }),
           borderRadius: 8,
           padding: '12px 16px',
           display: 'flex',
