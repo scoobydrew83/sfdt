@@ -969,14 +969,22 @@ export function createGuiApp(config, version, port = 7654) {
     const projectRoot = config._projectRoot ?? process.cwd();
     const cacheDir = path.join(config._configDir ?? path.join(projectRoot, '.sfdt'), 'cache');
 
+    if (!org) {
+      emit({ type: 'log', line: 'No target org configured. Set defaultOrg in .sfdt/config.json.' });
+      emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed: 0 });
+      res.end();
+      return;
+    }
+
     let child;
 
     req.on('close', () => {
       if (child && !child.killed) child.kill();
     });
 
-    const streamChild = (spawnedChild) => new Promise((resolve) => {
+    const streamChild = (spawnedChild) => new Promise((resolve, reject) => {
       child = spawnedChild;
+      child.on('error', reject);
       const rlStdout = createInterface({ input: child.stdout, crlfDelay: Infinity });
       const rlStderr = createInterface({ input: child.stderr, crlfDelay: Infinity });
       rlStdout.on('line', (line) => emit({ type: 'log', line: stripAnsi(line) }));
@@ -1031,19 +1039,17 @@ export function createGuiApp(config, version, port = 7654) {
           db.close();
         }
       } else if (mode === 'full') {
-        child = spawn('sf', ['project', 'retrieve', 'start', '--target-org', org], {
+        const exitCode = await streamChild(spawn('sf', ['project', 'retrieve', 'start', '--target-org', org], {
           cwd: projectRoot,
           stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        const exitCode = await streamChild(child);
+        }));
         const elapsed = Math.round((Date.now() - startTime) / 1000);
         emit({ type: 'result', exitCode, retrieved: 0, elapsed });
       } else if (mode === 'preview') {
-        child = spawn('sf', ['project', 'retrieve', 'preview', '--target-org', org], {
+        const exitCode = await streamChild(spawn('sf', ['project', 'retrieve', 'preview', '--target-org', org], {
           cwd: projectRoot,
           stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        const exitCode = await streamChild(child);
+        }));
         const elapsed = Math.round((Date.now() - startTime) / 1000);
         emit({ type: 'result', exitCode, retrieved: 0, elapsed });
       } else if (mode === 'group') {
@@ -1053,13 +1059,16 @@ export function createGuiApp(config, version, port = 7654) {
           emit({ type: 'log', line: `Unknown pull group: ${groupKey}` });
           const elapsed = Math.round((Date.now() - startTime) / 1000);
           emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed });
+        } else if (!group.metadata?.length) {
+          const elapsed = Math.round((Date.now() - startTime) / 1000);
+          emit({ type: 'log', line: `Pull group "${groupKey}" has no metadata entries` });
+          emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed });
         } else {
-          const typeArgs = (group.metadata ?? []).flatMap((t) => ['--metadata', t]);
-          child = spawn('sf', ['project', 'retrieve', 'start', ...typeArgs, '--target-org', org], {
+          const typeArgs = group.metadata.flatMap((t) => ['--metadata', t]);
+          const exitCode = await streamChild(spawn('sf', ['project', 'retrieve', 'start', ...typeArgs, '--target-org', org], {
             cwd: projectRoot,
             stdio: ['ignore', 'pipe', 'pipe'],
-          });
-          const exitCode = await streamChild(child);
+          }));
           const elapsed = Math.round((Date.now() - startTime) / 1000);
           emit({ type: 'result', exitCode, retrieved: 0, elapsed });
         }
