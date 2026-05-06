@@ -1212,11 +1212,17 @@ if [[ -n "${SFDT_DEPLOY_SOURCE_DIR:-}" ]]; then
         print_error "TARGET_ORG not set (set SFDT_TARGET_ORG or SFDT_DEFAULT_ORG)"
         exit 1
     fi
+    SOURCE_DIR_TEST_LEVEL="${SFDT_TEST_LEVEL:-RunLocalTests}"
     print_step "Deploying source directory: ${SFDT_DEPLOY_SOURCE_DIR}"
     print_step "Target org: ${TARGET_ORG}"
-    sf project deploy start \
-        --source-dir "${SFDT_DEPLOY_SOURCE_DIR}" \
-        --target-org "${TARGET_ORG}"
+    print_step "Test level: ${SOURCE_DIR_TEST_LEVEL}"
+    sf_cmd=(sf project deploy start
+        --source-dir "${SFDT_DEPLOY_SOURCE_DIR}"
+        --target-org "${TARGET_ORG}")
+    if [[ "${SOURCE_DIR_TEST_LEVEL}" != "Skip Tests (No Apex deployments)" ]]; then
+        sf_cmd+=(--test-level "${SOURCE_DIR_TEST_LEVEL}")
+    fi
+    "${sf_cmd[@]}"
     print_success "Source directory deploy complete"
     exit 0
 fi

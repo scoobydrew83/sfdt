@@ -42,7 +42,7 @@ vi.mock('../../src/lib/output.js', () => ({
 
 import { loadConfig } from '../../src/lib/config.js';
 import { runScript } from '../../src/lib/script-runner.js';
-import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../../src/lib/ai.js';
+import { isAiAvailable, runAiPrompt } from '../../src/lib/ai.js';
 import inquirer from 'inquirer';
 import { execa } from 'execa';
 import { print } from '../../src/lib/output.js';
@@ -159,7 +159,8 @@ describe('release command', () => {
     isAiAvailable.mockResolvedValue(false);
     // CHANGELOG has changes (exitCode 1 = diff detected)
     execa
-      .mockResolvedValueOnce({ exitCode: 0, stdout: '' }) // git add manifests
+      .mockResolvedValueOnce({ exitCode: 0, stdout: '' }) // git add manifests (flat)
+      .mockResolvedValueOnce({ exitCode: 0, stdout: '' }) // git add manifests (subpath)
       .mockResolvedValueOnce({ exitCode: 1, stdout: '' }) // git diff CHANGELOG (modified)
       .mockResolvedValueOnce({ exitCode: 0, stdout: '' }) // git add CHANGELOG
       .mockResolvedValueOnce({ exitCode: 0, stdout: '' }) // git add release notes

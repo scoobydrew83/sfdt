@@ -104,8 +104,9 @@ async function gitWorkflow(projectRoot, config, version) {
 
   print.header('Git Workflow');
 
-  // Stage manifest files
+  // Stage manifest files — flat layout and subpath layout (one dir deeper)
   await execa('git', ['add', '-f', `${manifestDir}/rl-${version}-*`], execOpts);
+  await execa('git', ['add', '-f', `${manifestDir}/*/rl-${version}-*`], execOpts);
 
   // Stage CHANGELOG.md if modified
   const changelogDiff = await execa('git', ['diff', '--quiet', 'CHANGELOG.md'], execOpts);
