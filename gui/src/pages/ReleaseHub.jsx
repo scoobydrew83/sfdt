@@ -10,7 +10,7 @@ import {
 // ─── Step definitions ────────────────────────────────────────────────────────
 
 const STEPS = [
-  { id: 'manifest',  label: 'Manifest',      Icon: IconPackage  },
+  { id: 'manifest',  label: 'Target',        Icon: IconPackage  },
   { id: 'changelog', label: 'Changelog',      Icon: IconBook     },
   { id: 'notes',     label: 'Release Notes',  Icon: IconFileEdit },
   { id: 'validate',  label: 'Validate',       Icon: IconShield   },
@@ -68,7 +68,7 @@ function ContextBar({ manifest }) {
 
 // ─── Manifest Step ───────────────────────────────────────────────────────────
 
-function ManifestStep({ onSelect, selected, onMarkDone }) {
+function ManifestStep({ onSelect, selected, onMarkDone, deployMode, setDeployMode, selectedSourceDir, setSelectedSourceDir }) {
   const [manifests, setManifests] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [base, setBase]           = useState('main');
@@ -76,12 +76,16 @@ function ManifestStep({ onSelect, selected, onMarkDone }) {
   const [building, setBuilding]   = useState(false);
   const [buildResult, setBuildResult] = useState(null);
   const [viewingXml, setViewingXml] = useState(null); // { name, xml, components: [] }
+  const [packages, setPackages]   = useState([]);
 
   useEffect(() => {
     api.listManifests()
       .then((d) => setManifests(d.manifests ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
+    api.getPackages()
+      .then((d) => setPackages(d.packages ?? []))
+      .catch(() => {});
   }, []);
 
   const buildFromGit = async () => {
@@ -138,107 +142,157 @@ function ManifestStep({ onSelect, selected, onMarkDone }) {
 
   return (
     <div style={{ padding: 20 }}>
-      <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Select Manifest</h2>
-      <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: 16 }}>
-        Choose a package.xml to use for this release, or generate one from git.
+      <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Target</h2>
+      <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: 12 }}>
+        Choose a package.xml to use for this release, or deploy a source directory directly.
       </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: viewingXml ? '1fr 380px' : '1fr', gap: 24, alignItems: 'start' }}>
-        <div>
-          {/* Manifest list */}
-          <div className="card" style={{ marginBottom: 16 }}>
-
-        <div className="card-head" style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600 }}>
-          Available Manifests
-        </div>
-        {loading && <div style={{ padding: 14, color: 'var(--fg-muted)', fontSize: 12 }}>Loading…</div>}
-        {!loading && manifests.length === 0 && (
-          <div style={{ padding: 14, color: 'var(--fg-muted)', fontSize: 12 }}>
-            No manifests found. Generate one from git or run a Compare first.
-          </div>
-        )}
-        {manifests.map((m) => (
-          <button
-            key={m.relPath}
-            onClick={() => onSelect(m)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              width: '100%', padding: '9px 14px',
-              background: selected?.relPath === m.relPath ? 'var(--brand-50)' : 'transparent',
-              border: 'none',
-              borderBottom: '1px solid var(--border-subtle)',
-              cursor: 'pointer',
-              textAlign: 'left',
-              borderLeft: selected?.relPath === m.relPath ? '3px solid var(--brand-500)' : '3px solid transparent',
-            }}
-          >
-            <IconPackage size={13} style={{ color: selected?.relPath === m.relPath ? 'var(--brand-500)' : 'var(--fg-muted)', flexShrink: 0 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--fg-default)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {m.name}
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--fg-subtle)' }}>
-                {m.source} · {new Date(m.date).toLocaleDateString()}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button className="btn btn-ghost btn-xs" onClick={(e) => { e.stopPropagation(); viewManifest(m); }}>
-                <IconSearch size={10} /> View
-              </button>
-              {selected?.relPath === m.relPath && (
-                <IconCheck size={12} style={{ color: 'var(--brand-500)', flexShrink: 0 }} />
-              )}
-            </div>
-          </button>
-        ))}
-      </div>
-
-      {/* Generate from git */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-head" style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600 }}>
-          Generate from Git Diff
-        </div>
-        <div style={{ padding: '12px 14px' }}>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: 11, color: 'var(--fg-muted)', marginBottom: 4 }}>Base</label>
-              <input className="input" style={{ fontSize: 12 }} value={base} onChange={(e) => setBase(e.target.value)} placeholder="main" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: 11, color: 'var(--fg-muted)', marginBottom: 4 }}>Head</label>
-              <input className="input" style={{ fontSize: 12 }} value={head} onChange={(e) => setHead(e.target.value)} placeholder="HEAD" />
-            </div>
-          </div>
-          <button className="btn btn-primary btn-sm" onClick={buildFromGit} disabled={building}>
-            {building ? <><div className="live-dot" style={{ marginRight: 4 }} />Generating…</> : <><IconZap size={11} /> Generate</>}
-          </button>
-          {buildResult?.error && (
-            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--status-conflict-fg)' }}>Error: {buildResult.error}</div>
-          )}
-          {buildResult && !buildResult.error && (
-            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--fg-muted)' }}>
-              Generated <strong style={{ color: 'var(--fg-default)' }}>{buildResult.filename}</strong>
-              {' '}({buildResult.addCount} components)
-              <button className="btn btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={() => downloadXml(buildResult.xml, buildResult.filename)}>
-                <IconDownload size={11} /> Download
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
         <button
-          className="btn btn-primary"
-          onClick={onMarkDone}
-          disabled={!selected}
-        >
-          Continue with {selected ? selected.name : '…'} →
-        </button>
+          className={`btn btn-sm ${deployMode === 'manifest' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setDeployMode('manifest')}
+        >📄 Manifest</button>
+        <button
+          className={`btn btn-sm ${deployMode === 'folder' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setDeployMode('folder')}
+        >📁 Source folder</button>
       </div>
+
+      {deployMode === 'manifest' && (
+        <div style={{ display: 'grid', gridTemplateColumns: viewingXml ? '1fr 380px' : '1fr', gap: 24, alignItems: 'start' }}>
+          <div>
+            {/* Manifest list */}
+            <div className="card" style={{ marginBottom: 16 }}>
+
+          <div className="card-head" style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600 }}>
+            Available Manifests
+          </div>
+          {loading && <div style={{ padding: 14, color: 'var(--fg-muted)', fontSize: 12 }}>Loading…</div>}
+          {!loading && manifests.length === 0 && (
+            <div style={{ padding: 14, color: 'var(--fg-muted)', fontSize: 12 }}>
+              No manifests found. Generate one from git or run a Compare first.
+            </div>
+          )}
+          {manifests.map((m) => (
+            <button
+              key={m.relPath}
+              onClick={() => onSelect(m)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                width: '100%', padding: '9px 14px',
+                background: selected?.relPath === m.relPath ? 'var(--brand-50)' : 'transparent',
+                border: 'none',
+                borderBottom: '1px solid var(--border-subtle)',
+                cursor: 'pointer',
+                textAlign: 'left',
+                borderLeft: selected?.relPath === m.relPath ? '3px solid var(--brand-500)' : '3px solid transparent',
+              }}
+            >
+              <IconPackage size={13} style={{ color: selected?.relPath === m.relPath ? 'var(--brand-500)' : 'var(--fg-muted)', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--fg-default)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {m.name}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--fg-subtle)' }}>
+                  {m.source} · {new Date(m.date).toLocaleDateString()}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button className="btn btn-ghost btn-xs" onClick={(e) => { e.stopPropagation(); viewManifest(m); }}>
+                  <IconSearch size={10} /> View
+                </button>
+                {selected?.relPath === m.relPath && (
+                  <IconCheck size={12} style={{ color: 'var(--brand-500)', flexShrink: 0 }} />
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Generate from git */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head" style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600 }}>
+            Generate from Git Diff
+          </div>
+          <div style={{ padding: '12px 14px' }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: 11, color: 'var(--fg-muted)', marginBottom: 4 }}>Base</label>
+                <input className="input" style={{ fontSize: 12 }} value={base} onChange={(e) => setBase(e.target.value)} placeholder="main" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: 11, color: 'var(--fg-muted)', marginBottom: 4 }}>Head</label>
+                <input className="input" style={{ fontSize: 12 }} value={head} onChange={(e) => setHead(e.target.value)} placeholder="HEAD" />
+              </div>
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={buildFromGit} disabled={building}>
+              {building ? <><div className="live-dot" style={{ marginRight: 4 }} />Generating…</> : <><IconZap size={11} /> Generate</>}
+            </button>
+            {buildResult?.error && (
+              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--status-conflict-fg)' }}>Error: {buildResult.error}</div>
+            )}
+            {buildResult && !buildResult.error && (
+              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--fg-muted)' }}>
+                Generated <strong style={{ color: 'var(--fg-default)' }}>{buildResult.filename}</strong>
+                {' '}({buildResult.addCount} components)
+                <button className="btn btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={() => downloadXml(buildResult.xml, buildResult.filename)}>
+                  <IconDownload size={11} /> Download
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            className="btn btn-primary"
+            onClick={onMarkDone}
+            disabled={deployMode === 'folder' ? !selectedSourceDir : !selected}
+          >
+            Continue with {selected ? selected.name : '…'} →
+          </button>
+        </div>
+      </div>
+      </div>
+      )}
+
+      {deployMode === 'folder' && (
+        <div>
+          <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: 12 }}>
+            Deploy a source directory directly. Select a package directory to deploy.
+          </p>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+            {packages.length === 0 ? (
+              <span style={{ fontSize: 13, color: 'var(--fg-subtle)' }}>Loading packages…</span>
+            ) : (
+              packages.map((p) => (
+                <button
+                  key={p.name}
+                  className={`btn btn-sm ${selectedSourceDir === p.path ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setSelectedSourceDir(p.path)}
+                >
+                  <IconPackage size={11} /> {p.name}
+                </button>
+              ))
+            )}
+          </div>
+          {selectedSourceDir && (
+            <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--fg-muted)', marginBottom: 12 }}>
+              Will deploy: {selectedSourceDir}
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              className="btn btn-primary"
+              onClick={onMarkDone}
+              disabled={deployMode === 'folder' ? !selectedSourceDir : !selected}
+            >
+              Continue with {selectedSourceDir || '…'} →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
-    </div>
-  </div>
   );
 }
 
@@ -499,7 +553,7 @@ function ValidateStep({ onMarkDone }) {
 
 // ─── Deploy Step ─────────────────────────────────────────────────────────────
 
-function DeployStep({ manifest, onMarkDone }) {
+function DeployStep({ manifest, sourceDir, onMarkDone }) {
   const [orgs, setOrgs]             = useState([]);
   const [targetOrg, setTargetOrg]   = useState('');
   const [testLevel, setTestLevel]   = useState('RunLocalTests');
@@ -829,7 +883,10 @@ function DeployStep({ manifest, onMarkDone }) {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>
-              Deployment in progress to <span style={{ color: 'var(--brand-600)' }}>{targetOrg}</span>
+              {sourceDir
+                ? <>Deploying folder <span style={{ color: 'var(--brand-600)' }}>{sourceDir}</span> to <span style={{ color: 'var(--brand-600)' }}>{targetOrg}</span></>
+                : <>Deployment in progress to <span style={{ color: 'var(--brand-600)' }}>{targetOrg}</span></>
+              }
             </div>
             <button className="btn btn-ghost btn-sm" onClick={() => setIsRunning(false)}>
               <IconRotateCcw size={11} /> Back to Config
@@ -844,6 +901,7 @@ function DeployStep({ manifest, onMarkDone }) {
               dryRun: deploymentMode === 'validate',
               org: targetOrg,
               manifest: manifest?.relPath,
+              sourceDir,
               testLevel,
               testClasses,
               destructiveTiming,
@@ -953,6 +1011,8 @@ export default function ReleaseHubPage() {
   const [done, setDone]                   = useState(new Set());
   const [selectedManifest, setSelectedManifest] = useState(null);
   const [aiAvailable, setAiAvailable]     = useState(false);
+  const [deployMode, setDeployMode]       = useState('manifest'); // 'manifest' | 'folder'
+  const [selectedSourceDir, setSelectedSourceDir] = useState('');
 
   useEffect(() => {
     api.aiAvailable().then((d) => setAiAvailable(d.available)).catch(() => {});
@@ -972,8 +1032,12 @@ export default function ReleaseHubPage() {
           <ManifestStep
             selected={selectedManifest}
             onSelect={setSelectedManifest}
+            deployMode={deployMode}
+            setDeployMode={setDeployMode}
+            selectedSourceDir={selectedSourceDir}
+            setSelectedSourceDir={setSelectedSourceDir}
             onMarkDone={() => {
-              if (selectedManifest) markDone('manifest');
+              if (deployMode === 'folder' ? selectedSourceDir : selectedManifest) markDone('manifest');
             }}
           />
         );
@@ -984,7 +1048,11 @@ export default function ReleaseHubPage() {
       case 'validate':
         return <ValidateStep onMarkDone={() => markDone('validate')} />;
       case 'deploy':
-        return <DeployStep manifest={selectedManifest} onMarkDone={() => markDone('deploy')} />;
+        return <DeployStep
+          manifest={deployMode === 'folder' ? null : selectedManifest}
+          sourceDir={deployMode === 'folder' ? selectedSourceDir : undefined}
+          onMarkDone={() => markDone('deploy')}
+        />;
       case 'rollback':
         return <RollbackStep />;
       default:
