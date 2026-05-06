@@ -9,6 +9,7 @@ const SECTIONS = [
       { key: 'defaultOrg',      label: 'Default Org Alias',   type: 'text' },
       { key: 'releaseNotesDir', label: 'Release Notes Dir',   type: 'text' },
       { key: 'manifestDir',     label: 'Manifest Dir',        type: 'text' },
+      { key: 'manifestLayout', label: 'Manifest Layout', type: 'select', options: ['flat', 'subpath'] },
     ],
   },
   {
@@ -275,6 +276,34 @@ export default function SettingsPage() {
             </div>
           </div>
         ))}
+        {rawConfig.packageDirectories?.length > 0 && (
+          <div className="card card-pad">
+            <div className="section-label" style={{ marginBottom: 16 }}>Package Directories</div>
+            <p style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 12 }}>
+              Detected from <code>sfdx-project.json</code>. To change, edit that file directly.
+            </p>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--fg-muted)', fontWeight: 500 }}>Name</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--fg-muted)', fontWeight: 500 }}>Path</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--fg-muted)', fontWeight: 500 }}>Default</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rawConfig.packageDirectories.map((pkg) => (
+                  <tr key={pkg.path} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                    <td style={{ padding: '8px 8px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{pkg.name}</td>
+                    <td style={{ padding: '8px 8px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{pkg.path}</td>
+                    <td style={{ padding: '8px 8px' }}>
+                      {pkg.default && <span className="badge badge-info" style={{ fontSize: 10 }}>default</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
