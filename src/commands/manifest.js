@@ -58,7 +58,12 @@ export function registerManifestCommand(program) {
 
         let diffPaths; // array of path prefixes for git diff
         let diffSourcePath = sourcePath; // used for parseDiffToMetadata filtering
-        if (pkgTarget !== 'all' && packages.length > 0) {
+        if (pkgTarget !== 'all') {
+          if (packages.length === 0) {
+            print.error(`--package requires packageDirectories to be configured in .sfdt/config.json`);
+            process.exitCode = 1;
+            return;
+          }
           const matched = packages.find((p) => p.name === pkgTarget);
           if (!matched) {
             print.error(`Unknown package "${pkgTarget}". Available: ${packages.map((p) => p.name).join(', ')}`);

@@ -37,7 +37,7 @@ vi.mock('../../src/lib/output.js', () => ({
 import { execa } from 'execa';
 import fs from 'fs-extra';
 import { loadConfig } from '../../src/lib/config.js';
-import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../../src/lib/ai.js';
+import { isAiAvailable, runAiPrompt } from '../../src/lib/ai.js';
 import { print } from '../../src/lib/output.js';
 import { registerManifestCommand } from '../../src/commands/manifest.js';
 
