@@ -12,11 +12,19 @@ export function registerReleaseCommand(program) {
   program
     .command('release [version]')
     .description('Generate a release manifest and optionally AI-powered release notes')
-    .action(async (version) => {
+    .option('--package <name|all>', 'Package directory to generate manifest for: a short name or "all"', 'all')
+    .option('--name <label>', 'Release label (semver, free-form, or "today")')
+    .action(async (version, options) => {
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
         const args = version ? [version] : [];
+
+        let releaseName = options.name || version || null;
+        if (releaseName === 'today') {
+          releaseName = new Date().toISOString().slice(0, 10);
+        }
+        const pkgTarget = options.package || 'all';
 
         print.header('Generating Release Manifest');
 
@@ -26,6 +34,10 @@ export function registerReleaseCommand(program) {
           args,
           cwd: projectRoot,
           captureStdout: true,
+          env: {
+            SFDT_PACKAGE_TARGET: pkgTarget,
+            ...(releaseName ? { SFDT_RELEASE_NAME: releaseName } : {}),
+          },
         });
 
         const resolvedVersion = (result.stdout || '').trim() || version || 'latest';
@@ -77,7 +89,7 @@ export function registerReleaseCommand(program) {
         }
 
         // Git workflow: stage, commit, tag, deploy prompt, push
-        await gitWorkflow(projectRoot, config, resolvedVersion);
+        await gitWorkflow(projectRoot, config, releaseName || resolvedVersion);
       } catch (err) {
         print.error(`Release failed: ${err.message}`);
         process.exitCode = resolveExitCode(err);
