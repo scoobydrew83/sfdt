@@ -180,7 +180,9 @@ select_manifest() {
     print_step "Finding release manifests in ${MANIFEST_BASE_DIR}/..."
 
     # Find manifests in main release folder
-    local manifests=( $(find "${MANIFEST_BASE_DIR}/" -maxdepth 1 -name "rl-*-package.xml" 2>/dev/null | sort -V) )
+    local max_depth=1
+    if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then max_depth=2; fi
+    local manifests=( $(find "${MANIFEST_BASE_DIR}/" -maxdepth "$max_depth" -name "rl-*-package.xml" 2>/dev/null | sort -V) )
 
     # Also include deployed manifests when called from post-deployment flow (last 3 only)
     if [ "$include_deployed" == "true" ] && [ ${#manifests[@]} -eq 0 ]; then
@@ -1200,6 +1202,24 @@ post_deployment_tasks() {
 }
 
 # --- Main Workflow ---
+
+# --- Source-dir Deploy (folder-mode) ---
+# When SFDT_DEPLOY_SOURCE_DIR is set, skip manifest selection and deploy the folder directly
+if [[ -n "${SFDT_DEPLOY_SOURCE_DIR:-}" ]]; then
+    print_header "SOURCE DIRECTORY DEPLOY"
+    TARGET_ORG="${SFDT_TARGET_ORG:-${SFDT_DEFAULT_ORG:-}}"
+    if [[ -z "$TARGET_ORG" ]]; then
+        print_error "TARGET_ORG not set (set SFDT_TARGET_ORG or SFDT_DEFAULT_ORG)"
+        exit 1
+    fi
+    print_step "Deploying source directory: ${SFDT_DEPLOY_SOURCE_DIR}"
+    print_step "Target org: ${TARGET_ORG}"
+    sf project deploy start \
+        --source-dir "${SFDT_DEPLOY_SOURCE_DIR}" \
+        --target-org "${TARGET_ORG}"
+    print_success "Source directory deploy complete"
+    exit 0
+fi
 
 if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
     print_header "NON-INTERACTIVE DEPLOYMENT (GUI)"
