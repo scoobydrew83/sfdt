@@ -71,6 +71,11 @@ Dockerfile      Official Docker image definition
 | `SFDT_APEX_CLASSES` | Comma-joined Apex class names from `config.testConfig.apexClasses` |
 | `SFDT_NON_INTERACTIVE` | `"true"` when stdin is not a TTY or `options.interactive === false` |
 | `SFDT_PARALLEL_DELAY` | Seconds between parallel batch launches (default: `1`, set in shell scripts) |
+| `SFDT_PACKAGE_DIRS` | JSON array of all package paths from `config.packageDirectories`, e.g. `["force-app/main/default","force-app/feature-a"]` |
+| `SFDT_MANIFEST_LAYOUT` | `config.manifestLayout` (`"flat"` or `"subpath"`); default `"flat"` |
+| `SFDT_PACKAGE_TARGET` | Per-invocation: `"all"` or a specific package name; passed via `env:` option in `runScript()` calls |
+| `SFDT_RELEASE_NAME` | Per-invocation: full release label (semver, free-form, or date); passed via `env:` option |
+| `SFDT_DEPLOY_SOURCE_DIR` | Per-invocation: source directory path for folder-mode deploys; empty string for manifest-mode; passed via `env:` option |
 | (removed) | `pullConfig` is consumed directly by `pull.js`; no longer flattened to env vars |
 
 When adding a new env var, update both `buildScriptEnv()` in `script-runner.js` and this table.
