@@ -20,7 +20,7 @@ export function registerDriftCommand(program) {
           SFDT_TARGET_ORG: orgAlias,
         };
 
-        await runScript('new/drift.sh', config, {
+        await runScript('ops/drift.sh', config, {
           cwd: projectRoot,
           env,
         });

@@ -83,7 +83,7 @@ describe('deploy command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'deploy']);
 
     expect(runScript).toHaveBeenCalledTimes(2);
-    expect(runScript.mock.calls[0][0]).toBe('new/preflight.sh');
+    expect(runScript.mock.calls[0][0]).toBe('ops/preflight.sh');
     expect(runScript.mock.calls[1][0]).toBe('core/deployment-assistant.sh');
   });
 
@@ -102,7 +102,7 @@ describe('deploy command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'deploy']);
 
     expect(runScript).toHaveBeenCalledTimes(1);
-    expect(runScript.mock.calls[0][0]).toBe('new/preflight.sh');
+    expect(runScript.mock.calls[0][0]).toBe('ops/preflight.sh');
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Preflight failed'));
     expect(process.exitCode).toBe(1);
   });

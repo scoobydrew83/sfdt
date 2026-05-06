@@ -5,7 +5,6 @@ import { glob } from 'glob';
 import inquirer from 'inquirer';
 import { detectProject, getProjectRoot } from '../lib/project-detect.js';
 import { print } from '../lib/output.js';
-import { storeCredential } from '../lib/ai.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 
 const CONFIG_DIR = '.sfdt';
@@ -149,22 +148,11 @@ export function registerInitCommand(program) {
             message: 'AI provider:',
             choices: [
               { name: 'Claude (requires Claude Code CLI)', value: 'claude' },
-              { name: 'Gemini (requires GEMINI_API_KEY)', value: 'gemini' },
-              { name: 'OpenAI (requires OPENAI_API_KEY)', value: 'openai' },
+              { name: 'Gemini (requires Gemini CLI)', value: 'gemini' },
+              { name: 'OpenAI/Codex (requires Codex CLI)', value: 'openai' },
             ],
             default: 'claude',
             when: (ans) => ans.aiEnabled,
-          },
-          {
-            type: 'password',
-            name: 'aiApiKey',
-            message: (ans) =>
-              ans.aiProvider === 'gemini'
-                ? 'Gemini API key (stored in ~/.sfdt/credentials.json, or leave blank to use GEMINI_API_KEY env var):'
-                : 'OpenAI API key (stored in ~/.sfdt/credentials.json, or leave blank to use OPENAI_API_KEY env var):',
-            default: '',
-            when: (ans) => ans.aiEnabled && ans.aiProvider !== 'claude',
-            mask: '*',
           },
           {
             type: 'input',
@@ -211,12 +199,6 @@ export function registerInitCommand(program) {
 
         // Create .sfdt/ directory
         await fs.ensureDir(configDir);
-
-        // Persist the API key to ~/.sfdt/credentials.json (never into the project config)
-        if (answers.aiEnabled && answers.aiProvider !== 'claude' && answers.aiApiKey) {
-          await storeCredential(answers.aiProvider, answers.aiApiKey);
-          print.success(`API key stored in ~/.sfdt/credentials.json (mode 0600)`);
-        }
 
         const config = await buildConfigTemplate({
           projectName: answers.projectName,

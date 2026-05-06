@@ -3,6 +3,7 @@ import path from 'path';
 import { execa } from 'execa';
 import { loadConfig } from '../lib/config.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
+import { getPrompt } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { safeResolvePath } from '../lib/project-detect.js';
@@ -12,17 +13,6 @@ import {
   countMembers,
 } from '../lib/metadata-mapper.js';
 
-const AI_DEPENDENCY_PROMPT = `You are a Salesforce release engineer reviewing a draft deployment manifest generated from a git diff. Your job is to flag likely missing dependencies that will cause deployment failures, without hallucinating.
-
-Rules:
-- Only suggest metadata that is COMMONLY required alongside what was changed (e.g., a new CustomField usually needs the enclosing CustomObject file, a new ApexClass referenced in a Flow needs the Flow, a new field on a PermissionSet needs the PermissionSet entry).
-- Be conservative — do NOT suggest broad sweeps ("all profiles", "all layouts").
-- Group output under headings: MISSING (must add), RISKY (verify before deploy), OK.
-- Use the filesystem tools to inspect the actual metadata files before recommending.
-- End with a one-line VERDICT: "Manifest looks complete" or "Manifest is missing N dependencies".
-
---- DRAFT MANIFEST ---
-`;
 
 export function registerManifestCommand(program) {
   program
@@ -123,7 +113,8 @@ export function registerManifestCommand(program) {
           print.header('AI Dependency Cleanup');
           print.info('Asking AI to check for missing dependencies...');
 
-          await runAiPrompt(AI_DEPENDENCY_PROMPT + packageXml, {
+          const manifestPrompt = await getPrompt('manifest-dependency', config._configDir);
+          await runAiPrompt(manifestPrompt + packageXml, {
             config,
             allowedTools: ['Read', 'Grep', 'Glob'],
             cwd: projectRoot,

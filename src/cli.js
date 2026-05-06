@@ -24,6 +24,7 @@ import { registerCompareCommand } from './commands/compare.js';
 import { registerCompletionCommand } from './commands/completion.js';
 import { registerUpdateCommand } from './commands/update.js';
 import { registerConfigCommand } from './commands/config.js';
+import { registerAiCommand } from './commands/ai.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
@@ -61,6 +62,7 @@ export function createCli() {
   registerCompletionCommand(program);
   registerUpdateCommand(program);
   registerConfigCommand(program);
+  registerAiCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program

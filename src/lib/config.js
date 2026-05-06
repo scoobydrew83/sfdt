@@ -120,9 +120,9 @@ export function validateConfig(config) {
     );
   }
 
-  if (typeof config.defaultOrg !== 'string' || config.defaultOrg.trim() === '') {
+  if (typeof config.defaultOrg !== 'string') {
     throw new ConfigError(
-      'Invalid configuration: "defaultOrg" must be a non-empty string (e.g. "my-org-alias").\n' +
+      'Invalid configuration: "defaultOrg" must be a string (e.g. "my-org-alias").\n' +
         `Got: ${JSON.stringify(config.defaultOrg)}`,
     );
   }

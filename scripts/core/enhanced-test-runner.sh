@@ -181,8 +181,18 @@ run_parallel_tests() {
             echo '{"result":{"summary":{"passing":0,"failing":0,"skipped":0},"tests":[]}}'
     fi
 
-    if (( total_failing > 0 || any_failed == 1 )); then
+    if (( total_ran == 0 )); then
+        if (( any_failed == 1 )); then
+            log_error "No tests ran. Verify your org is authenticated and the class names in testConfig.testClasses exist in the org."
+        else
+            log_warning "No tests ran. Verify testConfig.testClasses in .sfdt/config.json."
+        fi
+        return 1
+    elif (( total_failing > 0 )); then
         log_error "Test run failed: $total_failing failing test(s)."
+        return 1
+    elif (( any_failed == 1 )); then
+        log_error "Test run completed with errors (sf apex command returned non-zero)."
         return 1
     fi
 

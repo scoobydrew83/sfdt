@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { loadConfig } from '../lib/config.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
+import { getPrompt, interpolate } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { execa } from 'execa';
 import { resolveExitCode } from '../lib/exit-codes.js';
@@ -55,17 +56,8 @@ export function registerChangelogCommand(program) {
 
         print.info(`Analyzing the last ${options.limit} commits...`);
 
-        const prompt = [
-          `Analyze the recent git commits in this Salesforce project and generate professional CHANGELOG.md entries.`,
-          `Focus on: new features (Added), bug fixes (Fixed), breaking changes (Changed/Removed).`,
-          `Categorize entries into: Added, Changed, Fixed, Deprecated, Removed, Security.`,
-          `Format as a list of bullet points for each category.`,
-          `ONLY provide the bullet points for the [Unreleased] section. Do not include headers like '## [Unreleased]'.`,
-          `Run 'git log --oneline -n ${options.limit}' to see recent commits.`,
-          `Output format example:`,
-          `### Added\n- New Account trigger handler for automated validation\n- Support for Slack notifications`,
-          `### Fixed\n- Issue with deployment manifest generation for PermissionSets`,
-        ].join('\n');
+        const changelogTemplate = await getPrompt('changelog', config._configDir);
+        const prompt = interpolate(changelogTemplate, { limit: options.limit });
 
         print.header('AI Changelog Generation');
         const response = await runAiPrompt(prompt, {

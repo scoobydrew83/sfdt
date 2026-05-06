@@ -4,7 +4,7 @@ import CommandRunner from '../components/CommandRunner.jsx';
 import StreamRunner from '../components/StreamRunner.jsx';
 import {
   IconPackage, IconBook, IconFileEdit, IconShield, IconRocket, IconRotateCcw,
-  IconCheck, IconDownload, IconZap, IconSearch,
+  IconCheck, IconDownload, IconZap, IconSearch, IconX,
 } from '../Icons.jsx';
 
 // ─── Step definitions ────────────────────────────────────────────────────────
@@ -53,8 +53,8 @@ function ContextBar({ manifest }) {
     <div style={{
       display: 'flex', alignItems: 'center', gap: 8,
       padding: '7px 16px',
-      background: 'var(--brand-50)',
-      borderBottom: '1px solid var(--brand-100)',
+      background: 'var(--bg-subtle)',
+      borderBottom: '1px solid var(--border-subtle)',
       fontSize: 12,
       color: 'var(--fg-muted)',
     }}>
@@ -237,6 +237,45 @@ function ManifestStep({ onSelect, selected, onMarkDone }) {
         </button>
       </div>
     </div>
+
+    {/* XML viewer side panel */}
+    {viewingXml && (
+      <div className="card" style={{ position: 'sticky', top: 20, overflow: 'hidden' }}>
+        <div className="card-head" style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 12, fontWeight: 600 }}>{viewingXml.name}</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn btn-ghost btn-xs" onClick={() => downloadXml(viewingXml.xml, viewingXml.name)}>
+              <IconDownload size={10} /> Download
+            </button>
+            <button className="btn btn-icon btn-xs" onClick={() => setViewingXml(null)}>
+              <IconX size={12} />
+            </button>
+          </div>
+        </div>
+        <div style={{ padding: '10px 14px', maxHeight: 400, overflowY: 'auto' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: 8 }}>
+            Components ({viewingXml.components.length})
+          </div>
+          {viewingXml.components.map((c, i) => (
+            <div key={`${c.type}.${c.member}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 500 }}>{c.member}</div>
+                <div style={{ fontSize: 10, color: 'var(--fg-subtle)', textTransform: 'uppercase' }}>{c.type}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: '0 14px 14px' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-muted)', margin: '8px 0' }}>XML</div>
+          <pre style={{
+            fontFamily: 'var(--font-mono)', fontSize: 10, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+            background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--r-md)', padding: 10, maxHeight: 200, overflowY: 'auto',
+            color: 'var(--fg-default)', margin: 0,
+          }}>{viewingXml.xml}</pre>
+        </div>
+      </div>
+    )}
     </div>
   </div>
   );
@@ -576,7 +615,9 @@ function DeployStep({ manifest, onMarkDone }) {
     deploymentMode === 'validate' ? '--dry-run' : '',
     `--target-org ${targetOrg}`,
     `--test-level ${testLevel}`,
-    testLevel === 'RunSpecifiedTests' && testClasses ? `--tests "${testClasses}"` : '',
+    testLevel === 'RunSpecifiedTests' && testClasses
+      ? testClasses.split(',').map(s => s.trim()).filter(Boolean).map(t => `--tests ${t}`).join(' ')
+      : '',
     manifest ? `--manifest ${manifest.relPath}` : '',
   ].filter(Boolean).join(' ');
 

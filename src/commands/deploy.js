@@ -22,7 +22,7 @@ export function registerDeployCommand(program) {
             preflightEnv.SFDT_PREFLIGHT_STRICT = 'true';
           }
           try {
-            await runScript('new/preflight.sh', config, {
+            await runScript('ops/preflight.sh', config, {
               cwd: projectRoot,
               env: preflightEnv,
               dryRun: options.dryRun,

@@ -32,6 +32,7 @@
     "format": "prettier --write \"src/**/*.js\" \"bin/*.js\" \"test/**/*.js\" \"README.md\" \"package.json\"",
     "dev": "npm link",
     "build:gui": "cd gui && npm install && npm run build",
+    "dev:ui": "npm run build:gui && npm link && echo '\\n✓ GUI built and linked. cd into your SF project and run: sfdt ui'",
     "postinstall": "node scripts/postinstall.js",
     "prepublishOnly": "npm test && npm run lint"
   },

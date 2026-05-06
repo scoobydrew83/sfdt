@@ -647,21 +647,11 @@ generate_manifests() {
     generate_readme
 }
 
-# Run Claude CLI to update CHANGELOG.md
-# Falls back to manual instructions if claude is not available
+# Run AI to update CHANGELOG.md using the configured provider
 run_claude_changelog_update() {
     local prompt="Document and update CHANGELOG.md for release ${RELEASE_VERSION}. Review git log for changes since ${PREVIOUS_TAG:-initial commit}."
-
-    if command -v claude &> /dev/null; then
-        print_step "Running Claude to update CHANGELOG..."
-        claude -p "$prompt" --allowedTools Read,Write,Edit,Bash 2>&1
-    else
-        print_warning "Claude CLI not found - manual update required"
-        echo -e "${CYAN}Run this command to update CHANGELOG with Claude:${NC}" >&2
-        echo -e "${BOLD}claude '${prompt}'${NC}" >&2
-        echo "" >&2
-        read -p "Press Enter when CHANGELOG has been updated, or Ctrl+C to abort..." >&2
-    fi
+    print_step "Running AI to update CHANGELOG..."
+    sfdt ai prompt "$prompt"
 }
 
 # Check if CHANGELOG.md has entry for this version

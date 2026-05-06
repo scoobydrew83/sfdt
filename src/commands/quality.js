@@ -1,6 +1,7 @@
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
+import { getPrompt } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import {
@@ -76,12 +77,10 @@ export function registerQualityCommand(program) {
               formatPreflightSection(preflight),
             ]);
 
+            const fixPlanPrompt = await getPrompt('quality-fix-plan', config._configDir);
             const prompt = [
               ...(contextBlock ? [contextBlock, ''] : []),
-              'Analyze the following Salesforce code quality report and create a prioritized fix plan.',
-              'Group issues by severity (critical, high, medium, low).',
-              'For each issue, provide: file location, what to fix, and a concrete code suggestion.',
-              'Focus on Salesforce-specific concerns: governor limits, CRUD/FLS, bulk patterns, and test coverage.',
+              fixPlanPrompt,
               '',
               '--- Quality Report ---',
               qualityOutput,

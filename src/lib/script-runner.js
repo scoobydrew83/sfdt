@@ -32,6 +32,10 @@ export function buildScriptEnv(config) {
   env.SFDT_PREFLIGHT_ENFORCE_TESTS = config.deployment?.preflight?.enforceTests ? 'true' : '';
   env.SFDT_PREFLIGHT_ENFORCE_BRANCH = config.deployment?.preflight?.enforceBranchNaming ? 'true' : '';
   env.SFDT_PREFLIGHT_ENFORCE_CHANGELOG = config.deployment?.preflight?.enforceChangelog ? 'true' : '';
+  env.SFDT_PREFLIGHT_ENFORCE_GIT_CLEAN = config.deployment?.preflight?.enforceGitClean !== false ? 'true' : 'false';
+  env.SFDT_PREFLIGHT_ENFORCE_SFDX_PROJECT = config.deployment?.preflight?.enforceSfdxProject !== false ? 'true' : 'false';
+  env.SFDT_PREFLIGHT_ENFORCE_UNTRACKED = config.deployment?.preflight?.enforceUntrackedFiles ? 'true' : '';
+  env.SFDT_PREFLIGHT_STRICT = config.deployment?.preflight?.strict ? 'true' : '';
 
   // Flatten features
   if (config.features && typeof config.features === 'object') {

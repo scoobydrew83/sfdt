@@ -1,42 +1,20 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('execa', () => ({
   execa: vi.fn(),
 }));
 
-vi.mock('fs-extra', () => ({
-  default: {
-    pathExists: vi.fn().mockResolvedValue(false),
-    readJson: vi.fn().mockResolvedValue({}),
-    writeJson: vi.fn().mockResolvedValue(undefined),
-    ensureDir: vi.fn().mockResolvedValue(undefined),
-    readFile: vi.fn().mockResolvedValue(''),
-    readdir: vi.fn().mockResolvedValue([]),
-    realpath: vi.fn().mockImplementation((p) => Promise.resolve(p)),
-  },
-}));
-
 import { execa } from 'execa';
-import fs from 'fs-extra';
 import {
   isAiAvailable,
   getConfiguredProvider,
   aiUnavailableMessage,
   runAiPrompt,
   streamAiResponse,
-  storeCredential,
 } from '../src/lib/ai.js';
 
 beforeEach(() => {
   vi.resetAllMocks();
-  // Restore fs-extra defaults after each reset so all tests have a working baseline
-  fs.pathExists.mockResolvedValue(false);
-  fs.readJson.mockResolvedValue({});
-  fs.writeJson.mockResolvedValue(undefined);
-  fs.ensureDir.mockResolvedValue(undefined);
-  fs.readFile.mockResolvedValue('');
-  fs.readdir.mockResolvedValue([]);
-  fs.realpath.mockImplementation((p) => Promise.resolve(p));
 });
 
 // ─── getConfiguredProvider ────────────────────────────────────────────────────
@@ -58,19 +36,25 @@ describe('getConfiguredProvider', () => {
 // ─── aiUnavailableMessage ─────────────────────────────────────────────────────
 
 describe('aiUnavailableMessage', () => {
-  it('returns Claude install instructions for claude provider', () => {
+  it('returns Claude CLI install instructions for claude provider', () => {
     const msg = aiUnavailableMessage({ ai: { provider: 'claude' } });
     expect(msg).toMatch(/Claude/i);
+    expect(msg).toMatch(/CLI/);
   });
 
-  it('returns Gemini key instructions for gemini provider', () => {
+  it('returns Gemini CLI install instructions for gemini provider', () => {
     const msg = aiUnavailableMessage({ ai: { provider: 'gemini' } });
-    expect(msg).toMatch(/GEMINI_API_KEY/);
+    expect(msg).toMatch(/Gemini CLI/);
   });
 
-  it('returns OpenAI key instructions for openai provider', () => {
+  it('returns Codex CLI install instructions for openai provider', () => {
     const msg = aiUnavailableMessage({ ai: { provider: 'openai' } });
-    expect(msg).toMatch(/OPENAI_API_KEY/);
+    expect(msg).toMatch(/Codex CLI/);
+  });
+
+  it('returns unknown provider message for unrecognized provider', () => {
+    const msg = aiUnavailableMessage({ ai: { provider: 'unknown' } });
+    expect(msg).toMatch(/Unknown AI provider/);
   });
 });
 
@@ -80,48 +64,15 @@ describe('isAiAvailable', () => {
   it('returns false when features.ai is false', async () => {
     const result = await isAiAvailable({ features: { ai: false } });
     expect(result).toBe(false);
+    expect(execa).not.toHaveBeenCalled();
   });
 
-  it('checks Claude CLI for claude provider', async () => {
-    execa.mockResolvedValue({ exitCode: 0 });
-    const result = await isAiAvailable({ features: { ai: true }, ai: { provider: 'claude' } });
-    expect(result).toBe(true);
-    expect(execa).toHaveBeenCalledWith('claude', ['--version'], expect.any(Object));
-  });
-
-  it('returns true for gemini when API key is in config', async () => {
+  it('returns false for unknown provider', async () => {
     const result = await isAiAvailable({
       features: { ai: true },
-      ai: { provider: 'gemini', apiKey: 'test-key' },
-    });
-    expect(result).toBe(true);
-  });
-
-  it('returns false for gemini when no API key available', async () => {
-    const origKey = process.env.GEMINI_API_KEY;
-    const origKey2 = process.env.GOOGLE_AI_API_KEY;
-    const origKey3 = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    delete process.env.GEMINI_API_KEY;
-    delete process.env.GOOGLE_AI_API_KEY;
-    delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-
-    const result = await isAiAvailable({
-      features: { ai: true },
-      ai: { provider: 'gemini', apiKey: '' },
+      ai: { provider: 'unknown-provider' },
     });
     expect(result).toBe(false);
-
-    if (origKey) process.env.GEMINI_API_KEY = origKey;
-    if (origKey2) process.env.GOOGLE_AI_API_KEY = origKey2;
-    if (origKey3) process.env.GOOGLE_GENERATIVE_AI_API_KEY = origKey3;
-  });
-
-  it('returns true for openai when API key is in config', async () => {
-    const result = await isAiAvailable({
-      features: { ai: true },
-      ai: { provider: 'openai', apiKey: 'sk-test-key' },
-    });
-    expect(result).toBe(true);
   });
 });
 
@@ -130,9 +81,7 @@ describe('isAiAvailable', () => {
 describe('runAiPrompt', () => {
   it('returns null when aiEnabled is false', async () => {
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
     const result = await runAiPrompt('test prompt', { aiEnabled: false });
-
     expect(result).toBeNull();
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('AI features are disabled'));
     consoleSpy.mockRestore();
@@ -172,40 +121,52 @@ describe('runAiPrompt', () => {
     expect(promptCall).toBeDefined();
     expect(result.stdout).toBe('claude out');
   });
+
+  it('routes to gemini CLI when provider is gemini', async () => {
+    execa.mockResolvedValue({ exitCode: 0, stdout: 'gemini result', stderr: '' });
+
+    const result = await runAiPrompt('test prompt', {
+      config: { ai: { provider: 'gemini' } },
+    });
+
+    const promptCall = execa.mock.calls.find((call) => call[0] === 'gemini');
+    expect(promptCall).toBeDefined();
+    expect(promptCall[1][0]).toBe('-p');
+    expect(promptCall[1][1]).toContain('test prompt');
+    expect(result.stdout).toBe('gemini result');
+  });
+
+  it('routes to codex CLI when provider is openai', async () => {
+    execa.mockResolvedValue({ exitCode: 0, stdout: 'codex result', stderr: '' });
+
+    const result = await runAiPrompt('test prompt', {
+      config: { ai: { provider: 'openai' } },
+    });
+
+    const promptCall = execa.mock.calls.find((call) => call[0] === 'codex');
+    expect(promptCall).toBeDefined();
+    expect(promptCall[1][0]).toContain('test prompt');
+    expect(result.stdout).toBe('codex result');
+  });
 });
 
 // ─── streamAiResponse ─────────────────────────────────────────────────────────
 
 describe('streamAiResponse', () => {
   const claudeConfig = { ai: { provider: 'claude' }, features: { ai: true } };
-  const openaiConfig = { ai: { provider: 'openai', apiKey: 'sk-test' } };
-  const geminiConfig = { ai: { provider: 'gemini', apiKey: 'gm-test' } };
+  const openaiConfig = { ai: { provider: 'openai' } };
+  const geminiConfig = { ai: { provider: 'gemini' } };
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  // Returns a fake execa proc: .stdout is an async iterable of Buffer lines,
-  // the proc itself is a Promise resolving to { exitCode, stderr }.
-  function makeClaudeProc(lines, exitCode = 0, stderr = '') {
-    async function* genLines() {
-      for (const line of lines) {
-        yield Buffer.from(line + '\n');
+  // Returns a fake execa proc whose .stdout is an async iterable of Buffer chunks.
+  function makeCLIProc(chunks, exitCode = 0, stderr = '') {
+    async function* genChunks() {
+      for (const chunk of chunks) {
+        yield Buffer.from(chunk);
       }
     }
     const promise = Promise.resolve({ exitCode, stderr });
-    promise.stdout = genLines();
+    promise.stdout = genChunks();
     return promise;
-  }
-
-  function makeSSEStream(text) {
-    const encoder = new TextEncoder();
-    return new ReadableStream({
-      start(controller) {
-        controller.enqueue(encoder.encode(text));
-        controller.close();
-      },
-    });
   }
 
   it('throws on empty messages array', async () => {
@@ -222,7 +183,7 @@ describe('streamAiResponse', () => {
 
     execa.mockImplementation((_cmd, args) => {
       if (args[0] === '--version') return Promise.resolve({ exitCode: 0 });
-      return makeClaudeProc([jsonLine]);
+      return makeCLIProc([jsonLine + '\n']);
     });
 
     const onChunk = vi.fn();
@@ -238,7 +199,7 @@ describe('streamAiResponse', () => {
   it('Claude: throws when claude CLI exits non-zero', async () => {
     execa.mockImplementation((_cmd, args) => {
       if (args[0] === '--version') return Promise.resolve({ exitCode: 0 });
-      return makeClaudeProc([], 1, 'API error');
+      return makeCLIProc([], 1, 'API error');
     });
 
     await expect(
@@ -251,16 +212,11 @@ describe('streamAiResponse', () => {
     ).rejects.toThrow('claude exited with code 1');
   });
 
-  it('OpenAI: calls onChunk from SSE stream', async () => {
-    const sseData =
-      'data: ' +
-      JSON.stringify({ choices: [{ delta: { content: 'world' } }] }) +
-      '\n\ndata: [DONE]\n\n';
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({ ok: true, body: makeSSEStream(sseData) }),
-    );
+  it('OpenAI: streams stdout chunks from codex CLI to onChunk', async () => {
+    execa.mockImplementation((cmd) => {
+      if (cmd === 'codex') return makeCLIProc(['hello ', 'world']);
+      return Promise.resolve({ exitCode: 0 });
+    });
 
     const onChunk = vi.fn();
     await streamAiResponse(
@@ -269,19 +225,17 @@ describe('streamAiResponse', () => {
       { config: openaiConfig },
       onChunk,
     );
+    expect(onChunk).toHaveBeenCalledWith('hello ');
     expect(onChunk).toHaveBeenCalledWith('world');
+    const codexCall = execa.mock.calls.find((c) => c[0] === 'codex');
+    expect(codexCall).toBeDefined();
   });
 
-  it('Gemini: calls onChunk from SSE stream', async () => {
-    const sseData =
-      'data: ' +
-      JSON.stringify({ candidates: [{ content: { parts: [{ text: 'hi' }] } }] }) +
-      '\n\n';
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({ ok: true, body: makeSSEStream(sseData) }),
-    );
+  it('Gemini: streams stdout chunks from gemini CLI to onChunk', async () => {
+    execa.mockImplementation((cmd) => {
+      if (cmd === 'gemini') return makeCLIProc(['hi ', 'there']);
+      return Promise.resolve({ exitCode: 0 });
+    });
 
     const onChunk = vi.fn();
     await streamAiResponse(
@@ -290,11 +244,18 @@ describe('streamAiResponse', () => {
       { config: geminiConfig },
       onChunk,
     );
-    expect(onChunk).toHaveBeenCalledWith('hi');
+    expect(onChunk).toHaveBeenCalledWith('hi ');
+    expect(onChunk).toHaveBeenCalledWith('there');
+    const geminiCall = execa.mock.calls.find((c) => c[0] === 'gemini');
+    expect(geminiCall).toBeDefined();
+    expect(geminiCall[1][0]).toBe('-p');
   });
 
-  it('wraps provider errors with provider name in message', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network error')));
+  it('OpenAI: throws when codex CLI exits non-zero', async () => {
+    execa.mockImplementation((cmd) => {
+      if (cmd === 'codex') return makeCLIProc([], 1, 'codex error');
+      return Promise.resolve({ exitCode: 0 });
+    });
 
     await expect(
       streamAiResponse(
@@ -305,217 +266,36 @@ describe('streamAiResponse', () => {
       ),
     ).rejects.toThrow('AI stream failed [openai]');
   });
-});
 
-// ─── storeCredential ──────────────────────────────────────────────────────────
-
-describe('storeCredential', () => {
-  it('calls ensureDir and writeJson with the provider key and apiKey', async () => {
-    await storeCredential('openai', 'sk-test-123');
-
-    expect(fs.ensureDir).toHaveBeenCalledTimes(1);
-    expect(fs.writeJson).toHaveBeenCalledTimes(1);
-
-    const [, writtenData, opts] = fs.writeJson.mock.calls[0];
-    expect(writtenData).toEqual({ openai: { apiKey: 'sk-test-123' } });
-    expect(opts).toMatchObject({ spaces: 2, mode: 0o600 });
-  });
-
-  it('merges new credential with existing credentials for other providers', async () => {
-    // Simulate an existing gemini credential already stored
-    fs.pathExists.mockResolvedValue(true);
-    fs.readJson.mockResolvedValue({ gemini: { apiKey: 'gm-existing' } });
-
-    await storeCredential('openai', 'sk-new-key');
-
-    const [, writtenData] = fs.writeJson.mock.calls[0];
-    expect(writtenData).toEqual({
-      gemini: { apiKey: 'gm-existing' },
-      openai: { apiKey: 'sk-new-key' },
+  it('Gemini: throws when gemini CLI exits non-zero', async () => {
+    execa.mockImplementation((cmd) => {
+      if (cmd === 'gemini') return makeCLIProc([], 1, 'gemini error');
+      return Promise.resolve({ exitCode: 0 });
     });
+
+    await expect(
+      streamAiResponse(
+        [{ role: 'user', content: 'test' }],
+        'sys',
+        { config: geminiConfig },
+        vi.fn(),
+      ),
+    ).rejects.toThrow('AI stream failed [gemini]');
   });
 
-  it('reads existing credentials via pathExists then readJson before writing', async () => {
-    fs.pathExists.mockResolvedValue(true);
-    fs.readJson.mockResolvedValue({ claude: { apiKey: 'old-claude' } });
-
-    await storeCredential('gemini', 'gm-abc');
-
-    expect(fs.pathExists).toHaveBeenCalledTimes(1);
-    expect(fs.readJson).toHaveBeenCalledTimes(1);
-    expect(fs.writeJson).toHaveBeenCalledTimes(1);
-
-    const [, writtenData] = fs.writeJson.mock.calls[0];
-    expect(writtenData.gemini).toEqual({ apiKey: 'gm-abc' });
-    expect(writtenData.claude).toEqual({ apiKey: 'old-claude' });
-  });
-
-  it('writes empty object as base when no existing credentials file', async () => {
-    fs.pathExists.mockResolvedValue(false);
-
-    await storeCredential('gemini', 'gm-fresh');
-
-    // pathExists returns false so readJson should not be called
-    expect(fs.readJson).not.toHaveBeenCalled();
-    const [, writtenData] = fs.writeJson.mock.calls[0];
-    expect(writtenData).toEqual({ gemini: { apiKey: 'gm-fresh' } });
-  });
-});
-
-// ─── runAiPrompt — additional provider paths ──────────────────────────────────
-
-describe('runAiPrompt (OpenAI provider)', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('routes to OpenAI and returns the response content', async () => {
-    const openaiConfig = {
-      ai: { provider: 'openai', apiKey: 'sk-test' },
-      features: { ai: true },
-    };
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          choices: [{ message: { content: 'openai result' }, finish_reason: 'stop' }],
-        }),
-      }),
-    );
-
-    const result = await runAiPrompt('test prompt', { config: openaiConfig });
-
-    expect(fetch).toHaveBeenCalledTimes(1);
-    const [url] = fetch.mock.calls[0];
-    expect(url).toContain('openai.com');
-    expect(result).not.toBeNull();
-    expect(result.stdout).toBe('openai result');
-  });
-
-  it('returns null and logs when OpenAI API key is missing', async () => {
-    const origKey = process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
-    fs.pathExists.mockResolvedValue(false);
-
-    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
-    const noKeyConfig = {
-      ai: { provider: 'openai', apiKey: '' },
-      features: { ai: true },
-    };
-
-    const result = await runAiPrompt('test prompt', { config: noKeyConfig });
-
-    expect(result).toBeNull();
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('OPENAI_API_KEY'));
-
-    consoleSpy.mockRestore();
-    if (origKey) process.env.OPENAI_API_KEY = origKey;
-  });
-});
-
-describe('runAiPrompt (Gemini provider)', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('routes to Gemini and returns the response content', async () => {
-    const geminiConfig = {
-      ai: { provider: 'gemini', apiKey: 'gm-test' },
-      features: { ai: true },
-    };
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          candidates: [{ content: { parts: [{ text: 'gemini result' }] } }],
-        }),
-      }),
-    );
-
-    const result = await runAiPrompt('test prompt', { config: geminiConfig });
-
-    expect(fetch).toHaveBeenCalledTimes(1);
-    const [url] = fetch.mock.calls[0];
-    expect(url).toContain('googleapis.com');
-    expect(result).not.toBeNull();
-    expect(result.stdout).toBe('gemini result');
-  });
-
-  it('returns null and logs when Gemini API key is missing', async () => {
-    const origKey = process.env.GEMINI_API_KEY;
-    const origKey2 = process.env.GOOGLE_AI_API_KEY;
-    const origKey3 = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    delete process.env.GEMINI_API_KEY;
-    delete process.env.GOOGLE_AI_API_KEY;
-    delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    fs.pathExists.mockResolvedValue(false);
-
-    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
-    const noKeyConfig = {
-      ai: { provider: 'gemini', apiKey: '' },
-      features: { ai: true },
-    };
-
-    const result = await runAiPrompt('test prompt', { config: noKeyConfig });
-
-    expect(result).toBeNull();
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('GEMINI_API_KEY'));
-
-    consoleSpy.mockRestore();
-    if (origKey) process.env.GEMINI_API_KEY = origKey;
-    if (origKey2) process.env.GOOGLE_AI_API_KEY = origKey2;
-    if (origKey3) process.env.GOOGLE_GENERATIVE_AI_API_KEY = origKey3;
-  });
-});
-
-// ─── isAiAvailable — additional edge cases ───────────────────────────────────
-
-describe('isAiAvailable (additional edge cases)', () => {
-  it('returns true for openai when OPENAI_API_KEY env var is set', async () => {
-    const orig = process.env.OPENAI_API_KEY;
-    process.env.OPENAI_API_KEY = 'sk-env-key';
-    fs.pathExists.mockResolvedValue(false);
-
-    const result = await isAiAvailable({
-      features: { ai: true },
-      ai: { provider: 'openai', apiKey: '' },
+  it('wraps provider errors with provider name in message', async () => {
+    execa.mockImplementation((cmd) => {
+      if (cmd === 'codex') throw new Error('spawn error');
+      return Promise.resolve({ exitCode: 0 });
     });
-    expect(result).toBe(true);
 
-    if (orig) process.env.OPENAI_API_KEY = orig;
-    else delete process.env.OPENAI_API_KEY;
-  });
-
-  it('returns true for gemini when GEMINI_API_KEY env var is set', async () => {
-    const origKey = process.env.GEMINI_API_KEY;
-    const origKey2 = process.env.GOOGLE_AI_API_KEY;
-    const origKey3 = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    process.env.GEMINI_API_KEY = 'gm-env-key';
-    fs.pathExists.mockResolvedValue(false);
-
-    const result = await isAiAvailable({
-      features: { ai: true },
-      ai: { provider: 'gemini', apiKey: '' },
-    });
-    expect(result).toBe(true);
-
-    if (origKey) process.env.GEMINI_API_KEY = origKey;
-    else delete process.env.GEMINI_API_KEY;
-    if (origKey2) process.env.GOOGLE_AI_API_KEY = origKey2;
-    if (origKey3) process.env.GOOGLE_GENERATIVE_AI_API_KEY = origKey3;
-  });
-
-  it('returns false for unknown provider', async () => {
-    const result = await isAiAvailable({
-      features: { ai: true },
-      ai: { provider: 'unknown-provider' },
-    });
-    expect(result).toBe(false);
+    await expect(
+      streamAiResponse(
+        [{ role: 'user', content: 'test' }],
+        'sys',
+        { config: openaiConfig },
+        vi.fn(),
+      ),
+    ).rejects.toThrow('AI stream failed [openai]');
   });
 });

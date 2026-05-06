@@ -156,7 +156,7 @@ describe('pr-description command', () => {
 
     // Prompt should use Slack-specific template
     expect(runAiPrompt).toHaveBeenCalledWith(
-      expect.stringContaining('Slack announcement'),
+      expect.stringContaining('Slack deployment announcement'),
       expect.any(Object),
     );
 

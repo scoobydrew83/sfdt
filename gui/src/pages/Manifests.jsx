@@ -1,7 +1,22 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import EmptyState from '../components/EmptyState.jsx';
-import { IconX, IconCopy, IconDownload, IconFileText, IconPackage } from '../Icons.jsx';
+import { IconX, IconCopy, IconDownload, IconFileText, IconPackage, IconPlus } from '../Icons.jsx';
+
+const METADATA_TYPES = [
+  'ApexClass', 'ApexTrigger', 'ApexComponent', 'ApexPage',
+  'AuraDefinitionBundle', 'LightningComponentBundle',
+  'CustomObject', 'CustomField', 'CustomMetadata', 'CustomLabel', 'CustomLabels',
+  'CustomPermission', 'CustomSite', 'CustomTab',
+  'Flow', 'FlowDefinition',
+  'Layout', 'FlexiPage', 'CompactLayout',
+  'PermissionSet', 'PermissionSetGroup', 'Profile',
+  'StaticResource', 'ContentAsset',
+  'EmailTemplate', 'Report', 'Dashboard',
+  'ValidationRule', 'WorkflowRule', 'WorkflowAlert', 'WorkflowFieldUpdate',
+  'AssignmentRule', 'EscalationRule', 'AutoResponseRule',
+  'SharingRule', 'Territory2', 'Queue',
+];
 
 function fmtSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -10,6 +25,116 @@ function fmtSize(bytes) {
 
 function fmtDate(iso) {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
+}
+
+function AddComponentForm({ existingComponents, onAdd }) {
+  const [type, setType]         = useState('ApexClass');
+  const [members, setMembers]   = useState([]);   // discovered from source
+  const [filter, setFilter]     = useState('');
+  const [selected, setSelected] = useState(new Set());
+  const [loading, setLoading]   = useState(false);
+  const [busy, setBusy]         = useState(false);
+
+  const existingForType = existingComponents
+    .filter((c) => c.type === type)
+    .map((c) => c.member);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMembers([]);
+    setSelected(new Set());
+    setFilter('');
+    setLoading(true);
+    api.discoverComponents(type, existingForType)
+      .then(({ members: m = [] }) => { if (!cancelled) setMembers(m); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [type]);
+
+  const visible = filter
+    ? members.filter((m) => m.toLowerCase().includes(filter.toLowerCase()))
+    : members;
+
+  const toggleOne = (m) => setSelected((prev) => {
+    const next = new Set(prev);
+    next.has(m) ? next.delete(m) : next.add(m);
+    return next;
+  });
+
+  const allVisibleSelected = visible.length > 0 && visible.every((m) => selected.has(m));
+  const toggleVisible = () => setSelected((prev) => {
+    const next = new Set(prev);
+    allVisibleSelected ? visible.forEach((m) => next.delete(m)) : visible.forEach((m) => next.add(m));
+    return next;
+  });
+
+  const handleAdd = async () => {
+    if (!selected.size) return;
+    setBusy(true);
+    for (const m of selected) await onAdd(type, m);
+    setSelected(new Set());
+    // Refresh discovered list
+    const { members: fresh = [] } = await api.discoverComponents(type, existingForType).catch(() => ({ members: [] }));
+    setMembers(fresh);
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 10, paddingTop: 10 }}>
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)', marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        Add components
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          className="input"
+          style={{ flex: '0 0 auto', minWidth: 180, fontSize: 'var(--fs-xs)' }}
+        >
+          {METADATA_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <input
+          className="input"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter…"
+          style={{ flex: 1, fontSize: 'var(--fs-xs)' }}
+        />
+      </div>
+
+      {loading && <div style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-xs)', padding: '6px 0' }}>Discovering…</div>}
+
+      {!loading && members.length === 0 && (
+        <div style={{ color: 'var(--fg-subtle)', fontSize: 'var(--fs-xs)', padding: '6px 0' }}>
+          No {type} components found in source path (or all already in manifest).
+        </div>
+      )}
+
+      {!loading && visible.length > 0 && (
+        <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 'var(--r-sm)', marginBottom: 8 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', background: 'var(--bg-subtle)' }}>
+            <input type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} />
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)' }}>Select all ({visible.length})</span>
+          </label>
+          {visible.map((m) => (
+            <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={selected.has(m)} onChange={() => toggleOne(m)} />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--fg-default)' }}>{m}</span>
+            </label>
+          ))}
+        </div>
+      )}
+
+      <button
+        className="btn btn-primary btn-sm"
+        disabled={busy || selected.size === 0}
+        onClick={handleAdd}
+      >
+        <IconPlus size={11} /> Add {selected.size > 0 ? `${selected.size} ` : ''}component{selected.size !== 1 ? 's' : ''}
+      </button>
+    </div>
+  );
 }
 
 function ManifestViewer({ manifest, preloadedXml, onClose }) {
@@ -45,6 +170,15 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
       load();
     } catch (err) {
       alert(`Remove failed: ${err.message}`);
+    }
+  };
+
+  const addComponent = async (type, member) => {
+    try {
+      await api.addManifestComponent(manifest.relPath, type, member);
+      load();
+    } catch (err) {
+      alert(`Add failed: ${err.message}`);
     }
   };
 
@@ -90,6 +224,9 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
                     </tbody>
                   </table>
                 </div>
+                {manifest?.relPath && manifest.source !== 'deployed' && (
+                  <AddComponentForm existingComponents={data?.components ?? []} onAdd={addComponent} />
+                )}
               </div>
 
               {/* Right Column: XML Preview */}

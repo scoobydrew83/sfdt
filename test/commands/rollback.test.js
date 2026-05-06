@@ -49,7 +49,7 @@ describe('rollback command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'rollback']);
 
     expect(runScript).toHaveBeenCalledWith(
-      'new/rollback.sh',
+      'ops/rollback.sh',
       expect.any(Object),
       expect.objectContaining({ env: expect.objectContaining({ SFDT_TARGET_ORG: 'dev' }) }),
     );
@@ -61,7 +61,7 @@ describe('rollback command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'rollback', '--org', 'staging']);
 
     expect(runScript).toHaveBeenCalledWith(
-      'new/rollback.sh',
+      'ops/rollback.sh',
       expect.any(Object),
       expect.objectContaining({ env: expect.objectContaining({ SFDT_TARGET_ORG: 'staging' }) }),
     );
@@ -73,7 +73,7 @@ describe('rollback command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'rollback']);
 
     expect(runScript).toHaveBeenCalledWith(
-      'new/rollback.sh',
+      'ops/rollback.sh',
       expect.any(Object),
       expect.objectContaining({
         env: expect.objectContaining({ SFDT_BACKUP_BEFORE_ROLLBACK: 'true' }),
@@ -93,7 +93,7 @@ describe('rollback command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'rollback']);
 
     expect(runScript).toHaveBeenCalledWith(
-      'new/rollback.sh',
+      'ops/rollback.sh',
       expect.any(Object),
       expect.objectContaining({
         env: expect.objectContaining({ SFDT_BACKUP_BEFORE_ROLLBACK: 'false' }),

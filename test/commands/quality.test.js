@@ -101,7 +101,7 @@ describe('quality command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'quality', '--fix-plan']);
 
     expect(runAiPrompt).toHaveBeenCalledWith(
-      expect.stringContaining('quality report'),
+      expect.stringContaining('Quality Report'),
       expect.objectContaining({ aiEnabled: true }),
     );
   });

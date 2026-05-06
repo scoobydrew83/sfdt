@@ -49,7 +49,7 @@ describe('smoke command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'smoke']);
 
     expect(runScript).toHaveBeenCalledWith(
-      'new/smoke.sh',
+      'ops/smoke.sh',
       expect.any(Object),
       expect.objectContaining({ env: { SFDT_TARGET_ORG: 'dev' } }),
     );
@@ -61,7 +61,7 @@ describe('smoke command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'smoke', '--org', 'uat']);
 
     expect(runScript).toHaveBeenCalledWith(
-      'new/smoke.sh',
+      'ops/smoke.sh',
       expect.any(Object),
       expect.objectContaining({ env: { SFDT_TARGET_ORG: 'uat' } }),
     );

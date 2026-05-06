@@ -5,6 +5,7 @@ import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
+import { getPrompt, interpolate } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 
@@ -53,14 +54,11 @@ export function registerReleaseCommand(program) {
 
             print.info(`Generating release notes for ${resolvedVersion}...`);
 
-            const prompt = [
-              `Analyze the recent git log for this Salesforce project and generate concise, professional release notes.`,
-              `Version: ${resolvedVersion}`,
-              `Focus on: new features, bug fixes, breaking changes, and deployment notes.`,
-              `Format as markdown with sections: ## What's New, ## Bug Fixes, ## Breaking Changes (if any), ## Deployment Notes.`,
-              `Run 'git log --oneline -30' to see recent commits.`,
-              `Write the release notes to: ${notesFilePath}`,
-            ].join('\n');
+            const releaseNotesTemplate = await getPrompt('release-notes', config._configDir);
+            const prompt = interpolate(releaseNotesTemplate, {
+              version: resolvedVersion,
+              outputPath: notesFilePath,
+            });
 
             await runAiPrompt(prompt, {
               config,

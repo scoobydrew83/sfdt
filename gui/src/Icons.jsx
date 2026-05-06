@@ -27,6 +27,7 @@ export const IconRefresh     = ico(['M23 4v6h-6','M1 20v-6h6','M3.51 9a9 9 0 0 1
 export const IconCompare     = ico(['M18 20V10','M12 20V4','M6 20v-6']);
 export const IconSearch      = ico(['M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z','M21 21l-4.35-4.35']);
 export const IconX           = ico(['M18 6L6 18','M6 6l12 12']);
+export const IconPlus        = ico(['M12 5v14','M5 12h14']);
 export const IconChevronDown = ico('M6 9l6 6 6-6');
 export const IconChevronRight= ico('M9 18l6-6-6-6');
 export const IconArrowRight  = ico(['M5 12h14','M12 5l7 7-7 7']);
