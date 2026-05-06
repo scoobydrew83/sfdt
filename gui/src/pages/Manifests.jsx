@@ -126,21 +126,27 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
   );
 }
 
+function computeFilename(name, pkg, packages) {
+  if (!name) return '';
+  const hasPkg = packages.length > 0 && pkg !== 'all';
+  const suffix = hasPkg ? `-${pkg}` : '';
+  return `manifest/release/rl-${name}${suffix}-package.xml`;
+}
+
 function BuilderSection({ aiInfo, onBuilt }) {
   const [base, setBase] = useState('main');
   const [head, setHead] = useState('HEAD');
-  const [version, setVersion] = useState('');
-  const [suggestedVersion, setSuggestedVersion] = useState('');
+  const [packages, setPackages] = useState([]);
+  const [selectedPkg, setSelectedPkg] = useState('all');
+  const [releaseName, setReleaseName] = useState('');
   const [building, setBuilding] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [viewerOpen, setViewerOpen] = useState(false);
 
   useEffect(() => {
-    api.suggestVersion().then(d => {
-      setSuggestedVersion(d.version);
-      setVersion(d.version);
-    }).catch(() => {});
+    api.getPackages().then((d) => setPackages(d.packages ?? [])).catch(() => {});
+    api.suggestVersion().then((d) => setReleaseName(d.version ?? '')).catch(() => {});
   }, []);
 
   const handleBuild = async () => {
@@ -150,7 +156,8 @@ function BuilderSection({ aiInfo, onBuilt }) {
     try {
       const r = await api.buildManifestFromGit(base, head, {
         save: true,
-        version: version || suggestedVersion
+        name: releaseName || undefined,
+        package: selectedPkg,
       });
       setResult(r);
       onBuilt?.();
@@ -181,14 +188,50 @@ function BuilderSection({ aiInfo, onBuilt }) {
             <label className="input-label">Head ref</label>
             <input className="input" value={head} onChange={(e) => setHead(e.target.value)} placeholder="HEAD" />
           </div>
-          <div className="input-field" style={{ flex: 1, minWidth: 100 }}>
-            <label className="input-label">Release Version</label>
-            <input className="input" value={version} onChange={(e) => setVersion(e.target.value)} placeholder={suggestedVersion} />
+          <div className="input-field" style={{ flex: 1, minWidth: 120 }}>
+            <label className="input-label">Release Name</label>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <input
+                className="input"
+                value={releaseName}
+                onChange={(e) => setReleaseName(e.target.value)}
+                placeholder="e.g. 1.2.0 or sprint-q2"
+                style={{ flex: 1 }}
+              />
+              <button
+                className="btn btn-ghost btn-sm"
+                title="Use today's date"
+                onClick={() => setReleaseName(new Date().toISOString().slice(0, 10))}
+                style={{ flexShrink: 0, fontSize: 13 }}
+              >📅</button>
+            </div>
           </div>
           <button className="btn btn-primary" disabled={building || !base || !head} onClick={handleBuild} style={{ flexShrink: 0 }}>
             {building ? 'Generating…' : 'Generate & Save'}
           </button>
         </div>
+
+        {packages.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+            {['all', ...packages.map((p) => p.name)].map((name) => (
+              <button
+                key={name}
+                className={`btn btn-sm ${selectedPkg === name ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setSelectedPkg(name)}
+                style={{ fontSize: 'var(--fs-xs)' }}
+              >
+                <IconPackage size={11} /> {name === 'all' ? 'All packages' : name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {releaseName && (
+          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', marginBottom: 6 }}>
+            → {computeFilename(releaseName, selectedPkg, packages)}
+          </div>
+        )}
+
         <p style={{ marginTop: 'var(--s-2)', fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>
           Generates a package.xml from changed metadata files between the two git refs.
           {aiInfo?.enabled && ' For AI dependency cleanup, run <code>sfdt manifest --ai-cleanup</code> in your terminal.'}
