@@ -492,6 +492,7 @@ function createOriginGuard(port) {
  */
 export function createGuiApp(config, version, port = 7654) {
   let updateInProgress = false;
+  let sessionOrg = null;
   const app = express();
   app.use(express.json());
 
@@ -620,6 +621,19 @@ export function createGuiApp(config, version, port = 7654) {
       features: config.features || {},
       version,
     });
+  });
+
+  app.get('/api/session/org', apiLimiter, (_req, res) => {
+    res.json({ org: sessionOrg ?? config.defaultOrg ?? null });
+  });
+
+  app.post('/api/session/org', apiLimiter, (req, res) => {
+    const { org } = req.body ?? {};
+    if (!org || typeof org !== 'string') return res.status(400).json({ error: 'org is required' });
+    const safe = org.trim().slice(0, 100);
+    if (!safe) return res.status(400).json({ error: 'org is required' });
+    sessionOrg = safe;
+    res.json({ org: sessionOrg });
   });
 
   app.get('/api/test/classes', apiLimiter, async (_req, res) => {
@@ -849,7 +863,7 @@ export function createGuiApp(config, version, port = 7654) {
         SFDT_PROJECT_ROOT: projectRoot,
         SFDT_CONFIG_DIR: config._configDir ?? path.join(projectRoot, '.sfdt'),
         SFDT_DEFAULT_ORG: config.defaultOrg ?? '',
-        SFDT_TARGET_ORG: config.defaultOrg ?? '',
+        SFDT_TARGET_ORG: sessionOrg ?? config.defaultOrg ?? '',
         SFDT_SOURCE_PATH: config.defaultSourcePath ?? 'force-app/main/default',
         SFDT_API_VERSION: config.sourceApiVersion ?? '',
         SFDT_NON_INTERACTIVE: 'true',

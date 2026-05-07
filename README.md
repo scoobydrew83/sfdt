@@ -74,6 +74,7 @@ sfdt deploy
 | `sfdt review` | AI code review of current branch changes | `--base <branch>` |
 | `sfdt changelog` | Manage `CHANGELOG.md` | subcommands: `generate`, `release <version>`, `check` |
 | `sfdt quality` | Code & test quality analysis | `--tests`, `--all`, `--fix-plan`, `--generate-stubs`, `--dry-run` |
+| `sfdt ai prompt <text>` | Run a prompt through the configured AI provider and print the result | — |
 
 ### Platform (Phase 4)
 

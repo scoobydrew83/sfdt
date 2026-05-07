@@ -753,3 +753,290 @@ describe('GET /api/dependencies/preflight', () => {
     expect(res.body.warnings.length).toBeGreaterThan(0);
   });
 });
+
+// ─── Mock config.js for PATCH /api/config success tests ─────────────────────
+// vi.mock is hoisted — safe to add here even at the bottom of the file.
+vi.mock('../../src/lib/config.js', () => ({
+  loadConfig: vi.fn().mockResolvedValue({
+    _projectRoot: '/project',
+    _configDir: '/project/.sfdt',
+    projectName: 'Test Project',
+    defaultOrg: 'dev',
+    sourceApiVersion: '59.0',
+    features: { ai: false },
+  }),
+  getConfigDir: vi.fn().mockReturnValue('/project/.sfdt'),
+}));
+
+// ─── GET /api/prompts ────────────────────────────────────────────────────────
+
+describe('GET /api/prompts', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns 200 with an array of prompt objects', async () => {
+    const res = await request(app).get('/api/prompts');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.prompts)).toBe(true);
+    expect(res.body.prompts.length).toBeGreaterThan(0);
+  });
+
+  it('each prompt object has key, label, description, default, current, overridden fields', async () => {
+    const res = await request(app).get('/api/prompts');
+    expect(res.status).toBe(200);
+    for (const p of res.body.prompts) {
+      expect(p).toHaveProperty('key');
+      expect(p).toHaveProperty('label');
+      expect(p).toHaveProperty('description');
+      expect(p).toHaveProperty('default');
+      expect(p).toHaveProperty('current');
+      expect(p).toHaveProperty('overridden');
+    }
+  });
+});
+
+// ─── PATCH /api/prompts/:key ─────────────────────────────────────────────────
+
+describe('PATCH /api/prompts/:key', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns 200 with ok and key for a valid key', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readJson.mockResolvedValueOnce({});
+
+    const res = await request(app)
+      .patch('/api/prompts/review')
+      .send({ value: 'my custom prompt' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.key).toBe('review');
+  });
+
+  it('returns 400 when value is not a string', async () => {
+    const res = await request(app)
+      .patch('/api/prompts/review')
+      .send({ value: 42 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeTruthy();
+  });
+
+  it('returns 400 when value is missing', async () => {
+    const res = await request(app)
+      .patch('/api/prompts/review')
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 503 when configDir is absent', async () => {
+    const noConfigDirConfig = { ...MOCK_CONFIG, _configDir: undefined };
+    const a = createGuiApp(noConfigDirConfig, VERSION, PORT);
+    const res = await request(a)
+      .patch('/api/prompts/review')
+      .send({ value: 'text' });
+    expect(res.status).toBe(503);
+    await a.cleanup?.();
+  });
+
+  it('returns 404 for an unknown prompt key', async () => {
+    const res = await request(app)
+      .patch('/api/prompts/totally-unknown-key-xyz')
+      .send({ value: 'text' });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/Unknown/i);
+  });
+});
+
+// ─── DELETE /api/prompts/:key ─────────────────────────────────────────────────
+
+describe('DELETE /api/prompts/:key', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns 200 with ok and key for a valid key', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readJson.mockResolvedValueOnce({ review: 'overridden' });
+
+    const res = await request(app).delete('/api/prompts/review');
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.key).toBe('review');
+  });
+
+  it('returns 503 when configDir is absent', async () => {
+    const noConfigDirConfig = { ...MOCK_CONFIG, _configDir: undefined };
+    const a = createGuiApp(noConfigDirConfig, VERSION, PORT);
+    const res = await request(a).delete('/api/prompts/review');
+    expect(res.status).toBe(503);
+    await a.cleanup?.();
+  });
+
+  it('returns 404 for an unknown prompt key', async () => {
+    const res = await request(app).delete('/api/prompts/totally-unknown-key-xyz');
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/Unknown/i);
+  });
+});
+
+// ─── PATCH /api/config (success path) ────────────────────────────────────────
+
+describe('PATCH /api/config — success path', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns 200 with ok, key, and value when key and value are valid', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readJson.mockResolvedValueOnce({ defaultOrg: 'dev' });
+
+    const res = await request(app)
+      .patch('/api/config')
+      .send({ key: 'defaultOrg', value: 'staging' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.key).toBe('defaultOrg');
+  });
+
+  it('returns 400 when value is missing', async () => {
+    const res = await request(app)
+      .patch('/api/config')
+      .send({ key: 'defaultOrg' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeTruthy();
+  });
+});
+
+// ─── POST /api/release-notes/save ────────────────────────────────────────────
+
+describe('POST /api/release-notes/save', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns 200 with ok and path when content is valid and file does not yet exist', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.pathExists.mockResolvedValueOnce(false);
+
+    const res = await request(app)
+      .post('/api/release-notes/save')
+      .send({ content: '## Release Notes\n\nSome notes here.' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(typeof res.body.path).toBe('string');
+  });
+
+  it('returns 400 when content is missing', async () => {
+    const res = await request(app)
+      .post('/api/release-notes/save')
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/content is required/i);
+  });
+
+  it('returns 409 when release notes file already exists', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.pathExists.mockResolvedValueOnce(true);
+
+    const res = await request(app)
+      .post('/api/release-notes/save')
+      .send({ content: 'some notes' });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/already exists/i);
+  });
+
+  it('returns 413 when content exceeds 1 MB', async () => {
+    const bigContent = 'x'.repeat(1_000_001);
+    const res = await request(app)
+      .post('/api/release-notes/save')
+      .send({ content: bigContent });
+    expect(res.status).toBe(413);
+  });
+});
+
+// ─── POST /api/changelog/save ─────────────────────────────────────────────────
+
+describe('POST /api/changelog/save', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns 200 with ok when content is valid and CHANGELOG.md exists', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.pathExists.mockResolvedValueOnce(true);
+    fsMock.readFile.mockResolvedValueOnce(
+      '# Changelog\n\n## [Unreleased]\n\nOld content.\n\n## [1.0.0]\n'
+    );
+
+    const res = await request(app)
+      .post('/api/changelog/save')
+      .send({ content: '### Added\n- New feature' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
+  it('returns 200 when CHANGELOG.md does not exist (creates it)', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.pathExists.mockResolvedValueOnce(false);
+
+    const res = await request(app)
+      .post('/api/changelog/save')
+      .send({ content: '### Added\n- New feature' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
+  it('returns 400 when content is missing', async () => {
+    const res = await request(app)
+      .post('/api/changelog/save')
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/content is required/i);
+  });
+
+  it('returns 413 when content exceeds 1 MB', async () => {
+    const bigContent = 'x'.repeat(1_000_001);
+    const res = await request(app)
+      .post('/api/changelog/save')
+      .send({ content: bigContent });
+    expect(res.status).toBe(413);
+  });
+});

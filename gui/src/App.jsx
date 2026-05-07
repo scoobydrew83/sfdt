@@ -90,10 +90,15 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatPageContext, setChatPageContext] = useState({ page: '', data: {} });
   const [chatInitialMessage, setChatInitialMessage] = useState('');
+  const [sessionOrg, setSessionOrg]   = useState(null);
+  const [availableOrgs, setAvailableOrgs] = useState([]);
+  const [orgPickerOpen, setOrgPickerOpen] = useState(false);
 
   useEffect(() => {
     api.project().then(setProject).catch(() => null);
     api.checkUpdates().then((info) => { if (info.updateAvailable) setUpdateInfo(info); }).catch(() => null);
+    api.sessionOrg().then((r) => setSessionOrg(r.org)).catch(() => null);
+    api.orgs().then((r) => setAvailableOrgs(r.orgs ?? [])).catch(() => null);
     const saved = localStorage.getItem('sfdt-theme');
     if (saved === 'light') setDark(false);
     else if (saved === 'dark') setDark(true);
@@ -196,14 +201,40 @@ export default function App() {
         </nav>
 
         <div className="sidebar-footer">
-          <div className="user-row">
+          <div className="org-picker-wrap">
+            {orgPickerOpen && (
+              <div className="org-picker-dropdown">
+                {availableOrgs.length === 0 && (
+                  <div className="org-picker-empty">No orgs found</div>
+                )}
+                {availableOrgs.map((o) => (
+                  <button
+                    key={o.alias}
+                    className={`org-picker-item${o.alias === (sessionOrg ?? project?.org) ? ' active' : ''}`}
+                    onClick={() => {
+                      api.setSessionOrg(o.alias)
+                        .then(() => setSessionOrg(o.alias))
+                        .catch(() => null);
+                      setOrgPickerOpen(false);
+                    }}
+                  >
+                    {o.alias}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="user-row" onClick={() => setOrgPickerOpen((v) => !v)} title="Click to change org">
             <div className="user-avatar">{initials}</div>
             <div className="user-info">
-              <div className="user-name">{project?.org ?? 'No org connected'}</div>
+              <div className="user-name">
+                {sessionOrg ?? project?.org ?? 'No org connected'}
+                {availableOrgs.length > 0 && <span className="org-picker-caret">▾</span>}
+              </div>
               <div className="user-version">
                 v{project?.version ?? '…'}
                 {updateInfo && (
-                  <button className="update-pill" onClick={() => setShowUpdate(true)} title={`v${updateInfo.latest} available`}>
+                  <button className="update-pill" onClick={(e) => { e.stopPropagation(); setShowUpdate(true); }} title={`v${updateInfo.latest} available`}>
                     ↑ update
                   </button>
                 )}

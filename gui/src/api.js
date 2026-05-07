@@ -75,6 +75,10 @@ export const api = {
   health:                 () => fetchJson('/health'),
   /** @returns {Promise<{ orgs: OrgEntry[] }>} */
   orgs:                   () => fetchJson('/orgs'),
+  /** @returns {Promise<{ org: string|null }>} */
+  sessionOrg:             () => fetchJson('/session/org'),
+  /** @returns {Promise<{ org: string }>} */
+  setSessionOrg:          (org) => postJson('/session/org', { org }),
   /** @returns {Promise<CompareResult>} */
   compareResult:          () => fetchJson('/compare'),
   /** @returns {Promise<{ version: string }>} */

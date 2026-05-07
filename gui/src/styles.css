@@ -381,6 +381,41 @@ input, select, textarea { font-family: inherit; }
   color: rgba(255,255,255,.28);
   font-family: var(--font-mono);
 }
+.org-picker-caret {
+  margin-left: 4px;
+  font-size: 9px;
+  opacity: .5;
+}
+.org-picker-wrap { position: relative; }
+.org-picker-dropdown {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0; right: 0;
+  background: var(--bg-card, #1e1e2e);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+}
+.org-picker-empty {
+  padding: 8px 12px;
+  font-size: var(--fs-xs);
+  color: rgba(255,255,255,.3);
+}
+.org-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 12px;
+  font-size: var(--fs-sm);
+  color: rgba(255,255,255,.7);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.org-picker-item:hover { background: rgba(255,255,255,.06); }
+.org-picker-item.active { color: var(--brand-400, #818cf8); }
 
 /* ==========================================================
    MAIN AREA

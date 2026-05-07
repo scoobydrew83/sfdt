@@ -30,6 +30,7 @@ This guide covers every sfdt command in depth: what it does, when to use it, all
    - [sfdt explain](#sfdt-explain)
    - [sfdt review](#sfdt-review)
    - [sfdt pr-description](#sfdt-pr-description)
+   - [sfdt ai](#sfdt-ai)
 10. [Commands: Operations](#commands-operations)
     - [sfdt notify](#sfdt-notify)
     - [sfdt ui](#sfdt-ui)
@@ -696,6 +697,19 @@ Can also be called as `sfdt pr-desc`.
 **GitHub format** produces: Summary, Metadata Changes (grouped by type), Test Plan checklist, Rollback instructions.
 
 **Slack format** produces: a Slack mrkdwn-formatted announcement with bold/emoji formatting, a 1–2 sentence summary, and 3–5 bullet points of key changes.
+
+Requires `features.ai: true` and a configured provider.
+
+---
+
+### sfdt ai
+
+Run a prompt directly through the configured AI provider and print the result to stdout. Useful for ad-hoc AI queries from scripts or the terminal without opening a chat interface.
+
+```bash
+sfdt ai prompt "Summarize the latest deployment log"
+sfdt ai prompt "What does the error 'FIELD_CUSTOM_VALIDATION_EXCEPTION' mean in Salesforce?"
+```
 
 Requires `features.ai: true` and a configured provider.
 
