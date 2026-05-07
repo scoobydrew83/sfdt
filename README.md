@@ -19,6 +19,7 @@ Production-grade CLI for Salesforce DX deployment, testing, quality analysis, an
 - Deployment rollback with pre-rollback org state backup
 - Post-deploy smoke testing
 - Org metadata drift detection
+- **Multi-package project support** — scope manifests and deploys to individual `packageDirectories` with `--package` and `--name`; deploy source folders directly with `--source-dir`
 - **Smart package.xml generator** from git diffs with AI dependency cleanup (`sfdt manifest`)
 - **AI deployment error log interpreter** with heuristic fallback for offline use (`sfdt explain`)
 - **AI-generated PR descriptions and Slack messages** from deployment changes (`sfdt pr-description`)
@@ -47,8 +48,8 @@ sfdt deploy
 | Command | Description | Key Options |
 |---|---|---|
 | `sfdt init` | Initialize `.sfdt/` config (interactive) | — |
-| `sfdt deploy` | Deploy to a Salesforce org | `--managed`, `--skip-preflight`, `--dry-run` |
-| `sfdt release` | Generate release manifest + optional AI release notes | — |
+| `sfdt deploy` | Deploy to a Salesforce org | `--managed`, `--skip-preflight`, `--dry-run`, `--source-dir <path>` |
+| `sfdt release` | Generate release manifest + optional AI release notes | `--package <name\|all>`, `--name <label>` |
 | `sfdt test` | Run Apex tests with the enhanced test runner | `--legacy`, `--analyze`, `--dry-run` |
 | `sfdt pull` | Pull metadata from the configured org | `--dry-run` |
 | `sfdt preflight` | Run pre-deployment validation checks | `--strict`, `--dry-run` |
@@ -67,7 +68,7 @@ sfdt deploy
 
 | Command | Description | Key Options |
 |---|---|---|
-| `sfdt manifest` | Build `package.xml` from git diffs | `--base <ref>`, `--head <ref>`, `--output <path>`, `--destructive <path>`, `--ai-cleanup`, `--print` |
+| `sfdt manifest` | Build `package.xml` from git diffs | `--base <ref>`, `--head <ref>`, `--package <name\|all>`, `--name <label>`, `--output <path>`, `--destructive <path>`, `--ai-cleanup`, `--print` |
 | `sfdt explain [file]` | Analyze a deployment error log with AI + heuristics | `--from-stdin`, `--latest` |
 | `sfdt pr-description` | Generate a PR description or Slack message | `--base <ref>`, `--head <ref>`, `--format github\|slack\|markdown`, `--output <path>`, `--commit-limit <n>` |
 | `sfdt review` | AI code review of current branch changes | `--base <branch>` |

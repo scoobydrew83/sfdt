@@ -30,10 +30,11 @@ User runs command → Load .sfdt/ config → Set SFDT_* env vars → Execute she
 | Command | What it does |
 |---------|-------------|
 | `sfdt init` | Initialize `.sfdt/` config (interactive prompts) |
-| `sfdt deploy [--managed]` | Deploy to default org |
+| `sfdt deploy [--managed] [--source-dir <path>]` | Deploy to default org; `--source-dir` deploys a folder directly without a manifest |
 | `sfdt test [--legacy] [--analyze]` | Run Apex tests with coverage |
 | `sfdt quality [--tests] [--all] [--fix-plan]` | Code/test quality analysis |
-| `sfdt release [version]` | Generate release manifest + optional AI release notes |
+| `sfdt manifest [--package <name\|all>] [--name <label>]` | Generate scoped `package.xml` from git diff; `--name today` uses date stamp |
+| `sfdt release [--package <name\|all>] [--name <label>]` | Generate release manifest + optional AI release notes |
 | `sfdt pull` | Pull metadata from default org |
 | `sfdt preflight [--strict]` | Pre-deployment validation |
 | `sfdt rollback [--org <alias>]` | Rollback a deployment |
@@ -124,10 +125,24 @@ sfdt quality --all --fix-plan  # Full quality scan + AI fix plan
 
 ### "Cut a release"
 ```bash
-sfdt changelog generate     # AI-generate changelog from commits
-sfdt changelog release 1.2.0  # Move unreleased to version
-sfdt release 1.2.0         # Generate manifest + release notes
+sfdt changelog generate           # AI-generate changelog from commits
+sfdt changelog release 1.2.0      # Move unreleased to version
+sfdt release 1.2.0                # Generate manifest + release notes
 ```
+
+### "Multi-package project — scope a manifest to one package"
+```bash
+# Generates manifest/release/rl-1.2.0-feature-a-package.xml
+sfdt manifest --package feature-a --name 1.2.0
+
+# Deploy that folder directly without a manifest
+sfdt deploy --source-dir force-app/feature-a
+
+# All packages in one manifest
+sfdt manifest --package all --name 1.2.0
+```
+
+`--package` matches the last segment of the `packageDirectories` path (e.g. `force-app/feature-a` → `feature-a`). Set `manifestLayout: subpath` in `.sfdt/config.json` to organize outputs into per-package subdirectories (`manifest/release/feature-a/rl-1.2.0-package.xml`).
 
 ### "Check for org drift"
 ```bash

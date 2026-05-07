@@ -196,6 +196,7 @@ Deploys metadata to a Salesforce org using the configured deployment script. By 
 sfdt deploy
 sfdt deploy --managed
 sfdt deploy --skip-preflight
+sfdt deploy --source-dir force-app/feature-a   # deploy a folder directly (no manifest)
 ```
 
 **Options:**
@@ -204,6 +205,8 @@ sfdt deploy --skip-preflight
 |---|---|
 | `--managed` | Use `deploy-manager.sh` instead of `deployment-assistant.sh` for managed package deployments |
 | `--skip-preflight` | Skip the preflight validation step and go straight to deployment |
+| `--dry-run` | Show what would be executed without making changes |
+| `--source-dir <path>` | Deploy a source directory directly instead of a manifest (relative to project root). Bypasses manifest selection and deploys the folder with `sf project deploy start --source-dir`. |
 
 **What happens:**
 
@@ -212,6 +215,8 @@ sfdt deploy --skip-preflight
 3. Output is streamed directly to your terminal with full TTY passthrough (spinner, colors, interactive prompts from the script).
 
 Use `--managed` when deploying a second-generation managed package where the deploy-manager script handles namespace and version locking.
+
+Use `--source-dir` for targeted deploys of a single package directory without generating a manifest first — useful during development or when you want to deploy exactly what's in a folder.
 
 ---
 
@@ -359,14 +364,20 @@ sfdt quality --generate-stubs --dry-run  # preview stubs without writing files
 Generates a `package.xml` from a git diff. Understands Salesforce metadata file naming conventions to map changed files to their metadata types and member names. Optionally invokes AI to check the manifest for likely missing dependencies before you deploy.
 
 ```bash
-sfdt manifest                             # diff main...HEAD, write to manifest/release/preview-package.xml
-sfdt manifest --base develop              # diff from develop
-sfdt manifest --base abc1234              # diff from a specific commit SHA
-sfdt manifest --output deploy/pkg.xml    # custom output path
-sfdt manifest --destructive dist/del.xml # also write destructiveChanges.xml
-sfdt manifest --print                    # print to stdout instead of writing a file
-sfdt manifest --ai-cleanup               # run AI dependency check on the manifest
-sfdt manifest --no-ai-cleanup            # skip AI check even when AI is enabled
+sfdt manifest                                    # diff main...HEAD → manifest/release/preview-package.xml
+sfdt manifest --base develop                     # diff from develop
+sfdt manifest --base abc1234                     # diff from a specific commit SHA
+sfdt manifest --name 1.2.0                       # named release → rl-1.2.0-package.xml
+sfdt manifest --name sprint-q2                   # free-form name → rl-sprint-q2-package.xml
+sfdt manifest --name today                       # date stamp → rl-2026-05-06-package.xml
+sfdt manifest --package feature-a               # scope diff to one package directory
+sfdt manifest --package feature-a --name 1.2.0  # scoped + named → rl-1.2.0-feature-a-package.xml
+sfdt manifest --package all --name 1.2.0        # all packages → rl-1.2.0-package.xml
+sfdt manifest --output deploy/pkg.xml            # custom output path
+sfdt manifest --destructive dist/del.xml         # also write destructiveChanges.xml
+sfdt manifest --print                            # print to stdout instead of writing a file
+sfdt manifest --ai-cleanup                       # run AI dependency check on the manifest
+sfdt manifest --no-ai-cleanup                    # skip AI check even when AI is enabled
 ```
 
 **Options:**
@@ -375,13 +386,27 @@ sfdt manifest --no-ai-cleanup            # skip AI check even when AI is enabled
 |---|---|
 | `--base <ref>` | Base git ref to diff from (default: `main`). Accepts branch names or commit SHAs. |
 | `--head <ref>` | Head git ref to diff to (default: `HEAD`) |
-| `--output <path>` | Output path for `package.xml`. Defaults to `<manifestDir>/preview-package.xml` |
+| `--name <label>` | Release label for the output filename: semver (`1.2.0`), free-form (`sprint-q2`), or `today` (resolves to `YYYY-MM-DD`). Omit for a preview manifest. |
+| `--version <label>` | Alias for `--name` (backward compatibility) |
+| `--package <name\|all>` | Scope the git diff to a specific package directory (matched by the last path segment, e.g. `feature-a` for `force-app/feature-a`). Use `all` (the default) to span all package directories. |
+| `--output <path>` | Output path for `package.xml`. Overrides the computed path. |
 | `--destructive <path>` | Also write a `destructiveChanges.xml` for deleted components to this path |
 | `--ai-cleanup` | Run AI dependency analysis on the generated manifest |
 | `--no-ai-cleanup` | Skip AI dependency analysis even when `features.ai` is enabled |
 | `--print` | Print `package.xml` to stdout instead of writing a file |
 
+**Output filename convention:**
+
+| Scenario | Output path |
+|---|---|
+| No `--name` | `manifest/release/preview-package.xml` |
+| `--name 1.2.0` (all packages) | `manifest/release/rl-1.2.0-package.xml` |
+| `--name 1.2.0 --package feature-a` | `manifest/release/rl-1.2.0-feature-a-package.xml` |
+| With `manifestLayout: subpath` | `manifest/release/feature-a/rl-1.2.0-package.xml` |
+
 **Merge-base resolution:** When `--base` is a branch name, sfdt automatically computes the merge-base between the base branch and HEAD. This prevents including commits already on the base branch in your manifest. To bypass this and diff from the branch tip directly, pass an explicit commit SHA.
+
+**Multi-package projects:** If your `sfdx-project.json` has multiple `packageDirectories`, use `--package <name>` to scope the diff to one directory. The package name is the last segment of the directory path (e.g. `force-app/feature-a` → `feature-a`). Set `manifestLayout: subpath` in `.sfdt/config.json` to organize outputs into per-package subdirectories.
 
 **AI dependency cleanup:** The AI reviews the manifest against the actual source files and flags likely missing dependencies (e.g. a new `CustomField` that's missing its parent `CustomObject`, or an `ApexClass` referenced in a `Flow` that's not included). It groups findings into MISSING, RISKY, and OK and concludes with a one-line verdict.
 
