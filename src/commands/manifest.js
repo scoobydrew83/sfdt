@@ -25,6 +25,9 @@ export function registerManifestCommand(program) {
     .option('--ai-cleanup', 'Run AI dependency analysis on the generated manifest')
     .option('--no-ai-cleanup', 'Skip AI dependency analysis even when AI is enabled')
     .option('--print', 'Print the generated package.xml to stdout instead of writing a file')
+    .option('--package <name|all>', 'Package directory to diff: a short name matching packageDirectories or "all"', 'all')
+    .option('--name <label>', 'Release label for output filename (semver, free-form, or "today")')
+    .option('--version <label>', 'Alias for --name (backward compat)')
     .action(async (options) => {
       try {
         const config = await loadConfig();
@@ -33,7 +36,40 @@ export function registerManifestCommand(program) {
         const apiVersion = config.sourceApiVersion || '63.0';
         const manifestDir = config.manifestDir || 'manifest/release';
 
-        print.header(`Smart Manifest (${options.base}...${options.head})`);
+        // Resolve release name
+        let releaseName = options.name || options.version || null;
+        if (releaseName === 'today') {
+          releaseName = new Date().toISOString().slice(0, 10);
+        }
+
+        // Resolve package target and git diff paths
+        const pkgTarget = options.package || 'all';
+        const packages = config.packageDirectories || [];
+
+        let diffPaths; // array of path prefixes for git diff
+        let diffSourcePath = sourcePath; // used for parseDiffToMetadata filtering
+        if (pkgTarget !== 'all') {
+          if (packages.length === 0) {
+            print.error(`--package requires packageDirectories to be configured in .sfdt/config.json`);
+            process.exitCode = 1;
+            return;
+          }
+          const matched = packages.find((p) => p.name === pkgTarget);
+          if (!matched) {
+            print.error(`Unknown package "${pkgTarget}". Available: ${packages.map((p) => p.name).join(', ')}`);
+            process.exitCode = 1;
+            return;
+          }
+          diffPaths = [matched.path + '/'];
+          diffSourcePath = matched.path;
+        } else {
+          // all packages — use top-level roots (deduplicated)
+          diffPaths = packages.length > 0
+            ? [...new Set(packages.map((p) => p.path.split('/')[0] + '/'))]
+            : [sourcePath.split('/')[0] + '/'];
+        }
+
+        print.header(`Smart Manifest (${options.base}...${options.head})${pkgTarget !== 'all' ? ` [${pkgTarget}]` : ''}`);
 
         // Resolve base ref — if it's a branch name that's not reachable, fall back to merge-base
         const baseRef = await resolveBaseRef(options.base, options.head, projectRoot);
@@ -43,7 +79,7 @@ export function registerManifestCommand(program) {
 
         const diffResult = await execa(
           'git',
-          ['diff', '--name-status', `${baseRef}`, options.head, '--', `${sourcePath.split('/')[0]}/`],
+          ['diff', '--name-status', baseRef, options.head, '--', ...diffPaths],
           { cwd: projectRoot, reject: false },
         );
 
@@ -54,7 +90,7 @@ export function registerManifestCommand(program) {
         }
 
         const { additive, destructive, unknown } = parseDiffToMetadata(diffResult.stdout, {
-          sourcePath,
+          sourcePath: diffSourcePath,
         });
 
         const addCount = countMembers(additive);
@@ -83,12 +119,26 @@ export function registerManifestCommand(program) {
         if (options.print) {
           console.log(packageXml);
         } else {
-          const outputPath =
-            options.output || path.join(projectRoot, manifestDir, 'preview-package.xml');
-          const absolute = safeResolvePath(projectRoot, outputPath);
-          await fs.ensureDir(path.dirname(absolute));
-          await fs.writeFile(absolute, packageXml);
-          print.success(`Wrote package.xml → ${path.relative(projectRoot, absolute)}`);
+          // Compute output path
+          let outputPath;
+          if (options.output) {
+            outputPath = safeResolvePath(projectRoot, options.output);
+          } else if (releaseName) {
+            const layout = config.manifestLayout || 'flat';
+            let fileName;
+            if (pkgTarget !== 'all') {
+              fileName = `rl-${releaseName}-${pkgTarget}-package.xml`;
+            } else {
+              fileName = `rl-${releaseName}-package.xml`;
+            }
+            const subdir = layout === 'subpath' ? pkgTarget : '';
+            outputPath = path.join(projectRoot, manifestDir, subdir, fileName);
+          } else {
+            outputPath = path.join(projectRoot, manifestDir, 'preview-package.xml');
+          }
+          await fs.ensureDir(path.dirname(outputPath));
+          await fs.writeFile(outputPath, packageXml);
+          print.success(`Wrote package.xml → ${path.relative(projectRoot, outputPath)}`);
         }
 
         if (delCount > 0 && options.destructive) {

@@ -42,5 +42,6 @@
     "batchSize": 100,
     "retrieveTimeoutSeconds": 360
   },
+  "manifestLayout": "flat",
   "logRetention": 50
 }

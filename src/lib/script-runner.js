@@ -74,6 +74,12 @@ export function buildScriptEnv(config) {
     }
   }
 
+  // Multi-package support
+  if (Array.isArray(config.packageDirectories)) {
+    env.SFDT_PACKAGE_DIRS = JSON.stringify(config.packageDirectories.map((d) => d.path));
+  }
+  env.SFDT_MANIFEST_LAYOUT = config.manifestLayout || 'flat';
+
   return env;
 }
 

@@ -11,13 +11,14 @@ const CONFIG_DIR = '.sfdt';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = path.join(__dirname, '../templates/sfdt.config.json');
 
-async function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir, coverageThreshold, ai, mcp }) {
+async function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir, coverageThreshold, ai, mcp, manifestLayout }) {
   const template = await fs.readJson(TEMPLATE_PATH);
   return {
     ...template,
     projectName,
     defaultOrg,
     releaseNotesDir,
+    manifestLayout: manifestLayout || 'flat',
     deployment: {
       ...template.deployment,
       coverageThreshold,
@@ -197,6 +198,20 @@ export function registerInitCommand(program) {
           `Found ${testClasses.length} test classes and ${apexClasses.length} Apex classes`,
         );
 
+        // Prompt for manifest layout when multiple packages detected
+        let manifestLayout = 'flat';
+        if (project.packageDirectories.length > 1) {
+          const { useSubpath } = await inquirer.prompt([
+            {
+              type: 'confirm',
+              name: 'useSubpath',
+              message: `Your project has ${project.packageDirectories.length} package directories. Use subpath manifest layout? (recommended for multi-package projects)`,
+              default: true,
+            },
+          ]);
+          if (useSubpath) manifestLayout = 'subpath';
+        }
+
         // Create .sfdt/ directory
         await fs.ensureDir(configDir);
 
@@ -217,6 +232,7 @@ export function registerInitCommand(program) {
           mcp: {
             enabled: answers.mcpEnabled,
           },
+          manifestLayout,
         });
 
         const environments = buildEnvironmentsTemplate(answers.defaultOrg);

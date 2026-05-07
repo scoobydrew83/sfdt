@@ -32,6 +32,39 @@ source "${SCRIPT_DIR}/../lib/changelog-utils.sh"
 SOURCE_PATH="${SFDT_SOURCE_PATH:-force-app}"
 MANIFEST_DIR="${SFDT_MANIFEST_DIR:-manifest/release}"
 
+# Multi-package support: resolve source paths and output dir from env vars
+# SOURCE_PATHS is a bash array of paths to scan for git diff
+declare -a SOURCE_PATHS
+if [ "${SFDT_PACKAGE_TARGET:-all}" != "all" ] && [ -n "${SFDT_PACKAGE_DIRS:-}" ] && command -v jq &>/dev/null; then
+    # Specific package: find matching dir in JSON array
+    matched=$(echo "${SFDT_PACKAGE_DIRS}" | jq -r --arg t "${SFDT_PACKAGE_TARGET}" '.[] | select(endswith("/" + $t) or . == $t)' | head -1)
+    if [ -z "$matched" ]; then
+        echo "Error: Package '${SFDT_PACKAGE_TARGET}' not found in SFDT_PACKAGE_DIRS" >&2
+        exit 1
+    fi
+    SOURCE_PATHS=("$matched")
+elif [ -n "${SFDT_PACKAGE_DIRS:-}" ] && command -v jq &>/dev/null; then
+    # All packages: parse JSON array
+    readarray -t SOURCE_PATHS < <(echo "${SFDT_PACKAGE_DIRS}" | jq -r '.[]')
+else
+    SOURCE_PATHS=("${SOURCE_PATH}")
+fi
+
+# Compute output directory based on manifest layout
+MANIFEST_LAYOUT="${SFDT_MANIFEST_LAYOUT:-flat}"
+PKG_SUBDIR=""
+PKG_SUFFIX=""
+if [ "$MANIFEST_LAYOUT" = "subpath" ]; then
+    PKG_SUBDIR="${SFDT_PACKAGE_TARGET:-all}"
+    MANIFEST_OUTPUT_DIR="${MANIFEST_DIR}/${PKG_SUBDIR}"
+else
+    # Flat: if targeting a specific package, add it as filename suffix
+    if [ "${SFDT_PACKAGE_TARGET:-all}" != "all" ] && [ -n "${SFDT_PACKAGE_TARGET:-}" ]; then
+        PKG_SUFFIX="-${SFDT_PACKAGE_TARGET}"
+    fi
+    MANIFEST_OUTPUT_DIR="${MANIFEST_DIR}"
+fi
+
 # Global variables
 RELEASE_VERSION=""
 PREVIOUS_TAG=""
@@ -104,7 +137,9 @@ detect_next_version() {
 }
 
 get_release_version() {
-    if [ $# -gt 0 ]; then
+    if [ -n "${SFDT_RELEASE_NAME:-}" ]; then
+        RELEASE_VERSION="${SFDT_RELEASE_NAME}"
+    elif [ $# -gt 0 ]; then
         RELEASE_VERSION="$1"
     else
         local suggested_version=$(detect_next_version)
@@ -124,9 +159,9 @@ get_release_version() {
         exit 1
     fi
 
-    # Validate version format (X.Y.Z)
-    if ! [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        print_error "Invalid version format. Expected: X.Y.Z (e.g., 0.1.7)"
+    # Validate release label format (alphanumeric start, allows dots/dashes/underscores)
+    if ! [[ "$RELEASE_VERSION" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+        print_error "Invalid release label. Must start with alphanumeric and contain only letters, digits, dots, dashes, underscores."
         exit 1
     fi
 
@@ -260,13 +295,19 @@ detect_changed_files() {
     local temp_file=$(mktemp)
 
     if [ -z "$PREVIOUS_TAG" ]; then
-        # First release - include all files
-        cd "${SOURCE_PATH}/main/default"
-        find . -type f \( -name "*.cls" -o -name "*.trigger" -o -name "*-meta.xml" \) | sed 's|^\./||' | awk '{print "A\t" $0}' > "$temp_file"
-        cd - > /dev/null
+        # First release - include all files from all source paths
+        for src_path in "${SOURCE_PATHS[@]}"; do
+            local scan_dir="${src_path}/main/default"
+            if [ -d "$scan_dir" ]; then
+                find "$scan_dir" -type f \( -name "*.cls" -o -name "*.trigger" -o -name "*-meta.xml" \) \
+                    | sed 's|^\./||' | awk '{print "A\t" $0}' >> "$temp_file"
+            fi
+        done
     else
-        # Get changes from git
-        get_changed_files "$PREVIOUS_TAG" "HEAD" "${SOURCE_PATH}/" > "$temp_file"
+        # Get changes from git across all source paths
+        for src_path in "${SOURCE_PATHS[@]}"; do
+            get_changed_files "$PREVIOUS_TAG" "HEAD" "${src_path}/" >> "$temp_file"
+        done
     fi
 
     # Count changes
@@ -611,7 +652,7 @@ generate_manifests() {
     print_step "Generating manifest files..."
 
     # Ensure directory exists
-    mkdir -p "$MANIFEST_DIR"
+    mkdir -p "${MANIFEST_OUTPUT_DIR}"
 
     # Generate package.xml (additive)
     # Check if array has elements (safe for set -u)
@@ -622,7 +663,7 @@ generate_manifests() {
     done
 
     if [ "$has_additive" = true ]; then
-        local package_file="${MANIFEST_DIR}/rl-${RELEASE_VERSION}-package.xml"
+        local package_file="${MANIFEST_OUTPUT_DIR}/rl-${RELEASE_VERSION}${PKG_SUFFIX}-package.xml"
         generate_package_xml "$package_file" ADDITIVE_METADATA
     else
         print_warning "No additive components - skipping package.xml"
@@ -637,7 +678,7 @@ generate_manifests() {
     done
 
     if [ "$has_destructive" = true ]; then
-        local destructive_file="${MANIFEST_DIR}/rl-${RELEASE_VERSION}-destructiveChanges.xml"
+        local destructive_file="${MANIFEST_OUTPUT_DIR}/rl-${RELEASE_VERSION}${PKG_SUFFIX}-destructiveChanges.xml"
         generate_package_xml "$destructive_file" DESTRUCTIVE_METADATA
     else
         print_success "No destructive components"
@@ -790,7 +831,7 @@ commit_and_tag() {
     print_step "Git workflow..."
 
     # Stage manifest files and CHANGELOG if modified
-    git add -f "${MANIFEST_DIR}/rl-${RELEASE_VERSION}-"*
+    git add -f "${MANIFEST_OUTPUT_DIR}/rl-${RELEASE_VERSION}"*
     if ! git diff --quiet CHANGELOG.md 2>/dev/null; then
         git add CHANGELOG.md
     fi
@@ -880,7 +921,7 @@ main() {
     # Summary
     print_header "RELEASE ${RELEASE_VERSION} MANIFESTS GENERATED"
     echo -e "${GREEN}Manifests generated:${NC}" >&2
-    echo -e "  - ${MANIFEST_DIR}/rl-${RELEASE_VERSION}-package.xml" >&2
+    echo -e "  - ${MANIFEST_OUTPUT_DIR}/rl-${RELEASE_VERSION}${PKG_SUFFIX}-package.xml" >&2
 
     # Check if array has elements for summary (safe for set -u)
     local has_destructive=false
@@ -890,7 +931,7 @@ main() {
     done
 
     if [ "$has_destructive" = true ]; then
-        echo -e "  - ${MANIFEST_DIR}/rl-${RELEASE_VERSION}-destructiveChanges.xml" >&2
+        echo -e "  - ${MANIFEST_OUTPUT_DIR}/rl-${RELEASE_VERSION}${PKG_SUFFIX}-destructiveChanges.xml" >&2
     fi
     echo -e "  - ${MANIFEST_DIR}/rl-${RELEASE_VERSION}-README.md" >&2
     echo "" >&2

@@ -143,6 +143,21 @@ describe('loadConfig', () => {
 
     expect(result.sourceApiVersion).toBe('61.0');
     expect(result.defaultSourcePath).toBe('force-app/main/default');
+    expect(result.packageDirectories).toEqual([
+      {
+        path: 'force-app',
+        default: true,
+        absolutePath: path.join(projectRoot, 'force-app'),
+        name: 'force-app',
+      },
+      {
+        path: 'unpackaged',
+        default: false,
+        absolutePath: path.join(projectRoot, 'unpackaged'),
+        name: 'unpackaged',
+      },
+    ]);
+    expect(result.manifestLayout).toBe('flat');
   });
 
   it('does not overwrite existing config values with sfdx-project.json', async () => {
@@ -174,6 +189,16 @@ describe('loadConfig', () => {
 
     expect(result.sourceApiVersion).toBe('59.0');
     expect(result.defaultSourcePath).toBe('custom/path');
+    // packageDirectories is always set from sfdx-project.json regardless of defaultSourcePath
+    expect(result.packageDirectories).toEqual([
+      {
+        path: 'force-app',
+        default: true,
+        absolutePath: path.join(projectRoot, 'force-app'),
+        name: 'force-app',
+      },
+    ]);
+    expect(result.manifestLayout).toBe('flat');
   });
 
   it('uses first packageDirectory when none marked default', async () => {
@@ -198,5 +223,86 @@ describe('loadConfig', () => {
     const result = await loadConfig(projectRoot);
 
     expect(result.defaultSourcePath).toBe('src/main/default');
+    expect(result.packageDirectories).toEqual([
+      {
+        path: 'src',
+        default: false,
+        absolutePath: path.join(projectRoot, 'src'),
+        name: 'src',
+      },
+      {
+        path: 'lib',
+        default: false,
+        absolutePath: path.join(projectRoot, 'lib'),
+        name: 'lib',
+      },
+    ]);
+  });
+
+  it('derives name from last path segment for nested package paths', async () => {
+    const baseConfig = { defaultOrg: 'dev', features: {} };
+
+    fs.pathExists.mockImplementation(async (p) => {
+      if (p.endsWith('config.json')) return true;
+      if (p.endsWith('sfdx-project.json')) return true;
+      return false;
+    });
+
+    fs.readJson.mockImplementation(async (p) => {
+      if (p.endsWith('config.json')) return baseConfig;
+      if (p.endsWith('sfdx-project.json')) {
+        return {
+          packageDirectories: [{ path: 'force-app/feature-a', default: true }],
+        };
+      }
+      return {};
+    });
+
+    const result = await loadConfig(projectRoot);
+
+    expect(result.packageDirectories[0].name).toBe('feature-a');
+  });
+
+  it('respects manifestLayout when already set in config', async () => {
+    const baseConfig = { defaultOrg: 'dev', features: {}, manifestLayout: 'per-package' };
+
+    fs.pathExists.mockImplementation(async (p) => {
+      if (p.endsWith('config.json')) return true;
+      if (p.endsWith('sfdx-project.json')) return true;
+      return false;
+    });
+
+    fs.readJson.mockImplementation(async (p) => {
+      if (p.endsWith('config.json')) return baseConfig;
+      if (p.endsWith('sfdx-project.json')) {
+        return {
+          packageDirectories: [{ path: 'force-app', default: true }],
+        };
+      }
+      return {};
+    });
+
+    const result = await loadConfig(projectRoot);
+
+    expect(result.manifestLayout).toBe('per-package');
+  });
+
+  it('defaults manifestLayout to flat when no sfdx-project.json', async () => {
+    const baseConfig = { defaultOrg: 'dev', features: {} };
+
+    fs.pathExists.mockImplementation(async (p) => {
+      if (p.endsWith('config.json')) return true;
+      return false;
+    });
+
+    fs.readJson.mockImplementation(async (p) => {
+      if (p.endsWith('config.json')) return baseConfig;
+      return {};
+    });
+
+    const result = await loadConfig(projectRoot);
+
+    expect(result.manifestLayout).toBe('flat');
+    expect(result.packageDirectories).toBeUndefined();
   });
 });

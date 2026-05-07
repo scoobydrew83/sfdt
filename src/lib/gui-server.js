@@ -1376,6 +1376,12 @@ export function createGuiApp(config, version, port = 7654) {
 
   // ── Manifest routes ────────────────────────────────────────────────────────
 
+  app.get('/api/packages', apiLimiter, (_req, res) => {
+    const packages = config.packageDirectories ?? [];
+    // Return empty array for single-package (caller hides the picker)
+    res.json({ packages: packages.length > 1 ? packages.map((p) => ({ name: p.name, path: p.path, default: p.default })) : [] });
+  });
+
   app.get('/api/manifests', apiLimiter, async (_req, res) => {
     try {
       const projectRoot = config._projectRoot ?? process.cwd();
@@ -1397,6 +1403,22 @@ export function createGuiApp(config, version, port = 7654) {
         const filePath = path.join(manifestReleaseDir, file);
         const stat = await fs.stat(filePath).catch(() => null);
         if (stat) manifests.push({ name: file, source: 'release', date: stat.mtime.toISOString(), size: stat.size, relPath: `${relManifestDir}/${file}` });
+      }
+
+      // When using subpath layout, also scan one level of subdirectories
+      if ((config.manifestLayout ?? 'flat') === 'subpath') {
+        const subdirs = await safeReaddir(manifestReleaseDir);
+        for (const subdir of subdirs) {
+          const subdirPath = path.join(manifestReleaseDir, subdir);
+          const subdirStat = await fs.stat(subdirPath).catch(() => null);
+          if (!subdirStat?.isDirectory() || subdir === 'deployed') continue;
+          const subdirFiles = await safeReaddir(subdirPath);
+          for (const file of subdirFiles.filter((f) => f.endsWith('.xml')).sort().reverse()) {
+            const filePath = path.join(subdirPath, file);
+            const stat = await fs.stat(filePath).catch(() => null);
+            if (stat) manifests.push({ name: `${subdir}/${file}`, source: 'release', date: stat.mtime.toISOString(), size: stat.size, relPath: `${relManifestDir}/${subdir}/${file}` });
+          }
+        }
       }
 
       // Scan deployed manifests
@@ -1434,7 +1456,8 @@ export function createGuiApp(config, version, port = 7654) {
 
   app.post('/api/manifest/build', apiLimiter, async (req, res) => {
     try {
-      const { base = 'main', head = 'HEAD' } = req.body ?? {};
+      const { base = 'main', head = 'HEAD', package: pkg = 'all', name: releaseName } = req.body ?? {};
+      const packages = config.packageDirectories ?? [];
       const projectRoot = config._projectRoot ?? process.cwd();
       const sourcePath = config.defaultSourcePath ?? 'force-app/main/default';
       const apiVersion = config.sourceApiVersion ?? '63.0';
@@ -1444,9 +1467,22 @@ export function createGuiApp(config, version, port = 7654) {
       const mergeBase = await execa('git', ['merge-base', base, head], { cwd: projectRoot, reject: false });
       const baseRef = (mergeBase.exitCode === 0 && mergeBase.stdout.trim()) ? mergeBase.stdout.trim() : base;
 
+      let diffPaths;
+      let diffSourcePath = sourcePath;
+      if (pkg !== 'all' && packages.length > 0) {
+        const matched = packages.find((p) => p.name === pkg);
+        if (!matched) return res.status(400).json({ error: `Unknown package "${pkg}"` });
+        diffPaths = [matched.path + '/'];
+        diffSourcePath = matched.path;
+      } else {
+        diffPaths = packages.length > 0
+          ? [...new Set(packages.map((p) => p.path.split('/')[0] + '/'))]
+          : [sourcePath.split('/')[0] + '/'];
+      }
+
       const diffResult = await execa(
         'git',
-        ['diff', '--name-status', baseRef, head, '--', `${sourcePath.split('/')[0]}/`],
+        ['diff', '--name-status', baseRef, head, '--', ...diffPaths],
         { cwd: projectRoot, reject: false }
       );
 
@@ -1454,43 +1490,47 @@ export function createGuiApp(config, version, port = 7654) {
         return res.status(500).json({ error: `git diff failed: ${diffResult.stderr || 'unknown error'}` });
       }
 
-      const { additive, destructive } = parseDiffToMetadata(diffResult.stdout, { sourcePath });
+      const { additive, destructive } = parseDiffToMetadata(diffResult.stdout, { sourcePath: diffSourcePath });
       const addCount = countMembers(additive);
       const delCount = countMembers(destructive);
       const xml = renderXml(additive, apiVersion);
 
       const { version, save = false } = req.body ?? {};
-      if (version && !/^\d+\.\d+\.\d+$/.test(version)) {
-        return res.status(400).json({ error: 'Invalid version format. Expected X.Y.Z (e.g. 1.2.3).' });
+      const effectiveName = releaseName || version || null;
+      if (effectiveName && !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(effectiveName)) {
+        return res.status(400).json({ error: 'Invalid release label. Must start with alphanumeric.' });
       }
       let filename = `manifest-${Date.now()}.xml`;
       let savedPath = '';
 
-      if (save || version) {
-        const manifestDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release');
+      if (save || effectiveName) {
+        const layout = config.manifestLayout ?? 'flat';
+        const pkgSuffix = layout !== 'subpath' && pkg !== 'all' ? `-${pkg}` : '';
+        const subdir = layout === 'subpath' ? pkg : '';
+        const manifestDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release', subdir);
         await fs.ensureDir(manifestDir);
 
-        filename = path.basename(version ? `rl-${version}-package.xml` : filename);
+        filename = effectiveName ? `rl-${effectiveName}${pkgSuffix}-package.xml` : filename;
         const filePath = path.join(manifestDir, filename);
-        const rawDestFilename = (delCount > 0 && version) ? `rl-${version}-destructiveChanges.xml` : null;
+        const rawDestFilename = (delCount > 0 && effectiveName) ? `rl-${effectiveName}${pkgSuffix}-destructiveChanges.xml` : null;
         const destFilename = rawDestFilename ? path.basename(rawDestFilename) : null;
         const destFilePath = destFilename ? path.join(manifestDir, destFilename) : null;
 
-        // Path-containment guard: ensure constructed paths stay within manifestDir
-        const resolvedManifestDir = path.resolve(manifestDir);
-        if (!path.resolve(filePath).startsWith(resolvedManifestDir + path.sep)) {
+        // Path-containment guard: ensure constructed paths stay within manifestDir parent
+        const resolvedManifestBase = path.resolve(projectRoot, config.manifestDir ?? 'manifest/release');
+        if (!path.resolve(filePath).startsWith(resolvedManifestBase + path.sep)) {
           return res.status(400).json({ error: 'Invalid manifest path' });
         }
-        if (destFilePath && !path.resolve(destFilePath).startsWith(resolvedManifestDir + path.sep)) {
+        if (destFilePath && !path.resolve(destFilePath).startsWith(resolvedManifestBase + path.sep)) {
           return res.status(400).json({ error: 'Invalid destructive changes path' });
         }
 
         // Conflict check both files before writing either (avoid orphaned primary on 409)
-        if (version && await fs.pathExists(filePath)) {
-          return res.status(409).json({ error: `${filename} already exists. Delete it or use a different version.` });
+        if (effectiveName && await fs.pathExists(filePath)) {
+          return res.status(409).json({ error: `${filename} already exists.` });
         }
-        if (destFilePath && version && await fs.pathExists(destFilePath)) {
-          return res.status(409).json({ error: `${destFilename} already exists. Delete it or use a different version.` });
+        if (destFilePath && effectiveName && await fs.pathExists(destFilePath)) {
+          return res.status(409).json({ error: `${destFilename} already exists.` });
         }
 
         await fs.writeFile(filePath, xml);
@@ -1521,6 +1561,7 @@ export function createGuiApp(config, version, port = 7654) {
       createPR = false,
       org,
       manifest,
+      sourceDir,
       testLevel,
       testClasses,
       destructiveTiming,
@@ -1535,6 +1576,12 @@ export function createGuiApp(config, version, port = 7654) {
       const absManifest = path.resolve(projectRoot, manifest);
       if (!absManifest.startsWith(projectRoot + path.sep)) {
         return res.status(400).json({ error: 'Invalid manifest path' });
+      }
+    }
+
+    if (sourceDir !== undefined && sourceDir !== null) {
+      if (typeof sourceDir !== 'string' || path.isAbsolute(sourceDir) || sourceDir.includes('..')) {
+        return res.status(400).json({ error: 'Invalid sourceDir path' });
       }
     }
 
@@ -1576,6 +1623,7 @@ export function createGuiApp(config, version, port = 7654) {
           : '',
         SFDT_DESTRUCTIVE_TIMING: destructiveTiming ?? 'post',
         ...(manifest ? { SFDT_MANIFEST_PATH: path.join(projectRoot, manifest) } : {}),
+        ...(sourceDir ? { SFDT_DEPLOY_SOURCE_DIR: sourceDir } : {}),
       };
 
       const lines = [];
@@ -1886,11 +1934,16 @@ export function createGuiApp(config, version, port = 7654) {
   // ── Discover local components by metadata type ────────────────────────────
   app.get('/api/manifest/discover', apiLimiter, async (req, res) => {
     try {
-      const { type, exclude } = req.query;
+      const { type, exclude, package: pkg } = req.query;
       if (!type) return res.status(400).json({ error: 'type is required' });
 
       const projectRoot = config._projectRoot ?? process.cwd();
-      const sourcePath  = config.defaultSourcePath ?? 'force-app/main/default';
+      let sourcePath = config.defaultSourcePath ?? 'force-app/main/default';
+      if (pkg && pkg !== 'all') {
+        const packages = config.packageDirectories ?? [];
+        const matched = packages.find((p) => p.name === pkg);
+        if (matched) sourcePath = matched.path;
+      }
       const absSource   = path.join(projectRoot, sourcePath);
       const { glob }    = await import('glob');
 

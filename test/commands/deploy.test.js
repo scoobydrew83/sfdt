@@ -106,4 +106,25 @@ describe('deploy command', () => {
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Preflight failed'));
     expect(process.exitCode).toBe(1);
   });
+
+  it('passes SFDT_DEPLOY_SOURCE_DIR when --source-dir is provided', async () => {
+    runScript.mockResolvedValue({ exitCode: 0 });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'deploy', '--skip-preflight', '--source-dir', 'force-app/feature-a']);
+
+    expect(runScript).toHaveBeenCalledWith(
+      'core/deployment-assistant.sh',
+      expect.any(Object),
+      expect.objectContaining({ env: expect.objectContaining({ SFDT_DEPLOY_SOURCE_DIR: 'force-app/feature-a' }) }),
+    );
+  });
+
+  it('does not set SFDT_DEPLOY_SOURCE_DIR when --source-dir is not provided', async () => {
+    runScript.mockResolvedValue({ exitCode: 0 });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'deploy', '--skip-preflight']);
+
+    const callEnv = runScript.mock.calls[0][2]?.env ?? {};
+    expect(callEnv).not.toHaveProperty('SFDT_DEPLOY_SOURCE_DIR');
+  });
 });

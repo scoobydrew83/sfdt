@@ -10,6 +10,7 @@ export function registerDeployCommand(program) {
     .option('--managed', 'Use deploy-manager.sh instead of deployment-assistant.sh')
     .option('--skip-preflight', 'Skip pre-deployment preflight checks')
     .option('--dry-run', 'Show what would be executed without running')
+    .option('--source-dir <path>', 'Deploy a source directory instead of a manifest (relative to project root)')
     .action(async (options) => {
       try {
         const config = await loadConfig();
@@ -39,11 +40,17 @@ export function registerDeployCommand(program) {
           ? 'core/deploy-manager.sh'
           : 'core/deployment-assistant.sh';
 
-        print.header(`Deploying${options.managed ? ' (managed)' : ''}${options.dryRun ? ' [dry-run]' : ''}`);
+        print.header(`Deploying${options.managed ? ' (managed)' : ''}${options.sourceDir ? ` [${options.sourceDir}]` : ''}${options.dryRun ? ' [dry-run]' : ''}`);
+
+        const extraEnv = {};
+        if (options.sourceDir) {
+          extraEnv.SFDT_DEPLOY_SOURCE_DIR = options.sourceDir;
+        }
 
         await runScript(scriptPath, config, {
           cwd: projectRoot,
           dryRun: options.dryRun,
+          env: extraEnv,
         });
 
         print.success(options.dryRun ? 'Dry-run complete — no changes made.' : 'Deployment completed successfully.');

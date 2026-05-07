@@ -127,6 +127,8 @@ export const api = {
   dependenciesPreflight:  (manifest, org) => fetchJson(`/dependencies/preflight?manifest=${encodeURIComponent(manifest)}&org=${encodeURIComponent(org)}`),
   /** @returns {Promise<Array<{key: string, description: string}>>} */
   pullGroups:             () => fetchJson('/pull/groups'),
+  /** @returns {Promise<{ packages: Array<{name: string, path: string}> }>} */
+  getPackages:            () => fetchJson('/packages'),
 };
 
 // ─── SSE helpers ──────────────────────────────────────────────────────────────
