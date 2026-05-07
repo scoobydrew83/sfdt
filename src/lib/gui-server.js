@@ -1543,7 +1543,7 @@ export function createGuiApp(config, version, port = 7654) {
         if (effectiveName && await fs.pathExists(filePath)) {
           return res.status(409).json({ error: `${filename} already exists.` });
         }
-        if (destFilePath && effectiveName && await fs.pathExists(destFilePath)) {
+        if (destFilePath && effectiveName && await fs.pathExists(destFilePath)) { // codeql[js/path-injection] - destFilePath constructed from path.join(manifestDir, path.basename(...)); containment guard at line above validates against resolvedManifestBase
           return res.status(409).json({ error: `${destFilename} already exists.` });
         }
 
@@ -2032,7 +2032,7 @@ export function createGuiApp(config, version, port = 7654) {
 
       const xml = await fs.readFile(absPath, 'utf8');
       const updatedXml = addComponentToXml(xml, type, member);
-      await fs.writeFile(absPath, updatedXml);
+      await fs.writeFile(absPath, updatedXml); // codeql[js/path-injection] - absPath validated against projectRoot + path.sep containment guard above; path.isAbsolute and '..' checks on relPath
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -2616,11 +2616,11 @@ export function createGuiApp(config, version, port = 7654) {
       if (!absManifest.startsWith(projectRoot + path.sep) && absManifest !== projectRoot) {
         return res.status(403).json({ error: 'Forbidden: manifest path outside project root' });
       }
-      if (!(await fs.pathExists(absManifest))) {
+      if (!(await fs.pathExists(absManifest))) { // codeql[js/path-injection] - absManifest validated against projectRoot + path.sep containment guard above; '..' traversal blocked earlier
         return res.status(404).json({ error: 'Manifest file not found' });
       }
 
-      const xml = await fs.readFile(absManifest, 'utf8');
+      const xml = await fs.readFile(absManifest, 'utf8'); // codeql[js/path-injection] - same guard as pathExists call above
       const manifestComponents = parseManifestComponents(xml);
 
       if (!manifestComponents.size) {
