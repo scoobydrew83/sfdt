@@ -1538,7 +1538,6 @@ export function createGuiApp(config, version, port = 7654) {
         const pkgSuffix = layout !== 'subpath' && pkg !== 'all' ? `-${pkg}` : '';
         const subdir = layout === 'subpath' ? pkg : '';
         const manifestDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release', subdir);
-        await fs.ensureDir(manifestDir);
 
         filename = effectiveName ? `rl-${effectiveName}${pkgSuffix}-package.xml` : filename;
         const filePath = path.join(manifestDir, filename);
@@ -1554,6 +1553,7 @@ export function createGuiApp(config, version, port = 7654) {
         if (destFilePath && !path.resolve(destFilePath).startsWith(resolvedManifestBase + path.sep)) {
           return res.status(400).json({ error: 'Invalid destructive changes path' });
         }
+        await fs.ensureDir(manifestDir);
 
         // Conflict check both files before writing either (avoid orphaned primary on 409)
         if (effectiveName && await fs.pathExists(filePath)) {
@@ -1570,7 +1570,7 @@ export function createGuiApp(config, version, port = 7654) {
           const destXml = renderXml(destructive, apiVersion);
           const resolvedDestFilename = destFilename ?? `destructive-${Date.now()}.xml`;
           const resolvedDestFilePath = destFilePath ?? path.join(manifestDir, resolvedDestFilename);
-          await fs.writeFile(resolvedDestFilePath, destXml);
+          await fs.writeFile(resolvedDestFilePath, destXml); // codeql[js/path-injection] - resolvedDestFilePath is validated destFilePath or path.join(manifestDir, safe-basename); manifestDir validated via filePath containment guard above
         }
       }
 
