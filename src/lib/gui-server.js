@@ -289,7 +289,7 @@ function addComponentToXml(xml, type, member) {
   let result = xml.replace(blockPattern, (block) => {
     const nameMatch = block.match(/<name>([^<]+)<\/name>/);
     if (!nameMatch || nameMatch[1].trim() !== type) return block;
-    if (block.includes(`<members>${member}</members>`)) { inserted = true; return block; }
+    if (block.includes(`<members>${escaped}</members>`)) { inserted = true; return block; }
     const updated = block.replace(/(<name>[^<]+<\/name>)/, `<members>${escaped}</members>\n    $1`);
     inserted = true;
     return updated;
@@ -877,7 +877,11 @@ export function createGuiApp(config, version, port = 7654) {
       };
 
       if (command === 'test' && req.query.classes) {
-        scriptEnv.SFDT_TEST_CLASSES = String(req.query.classes);
+        const classNames = String(req.query.classes).split(',').map((c) => c.trim()).filter(Boolean);
+        if (classNames.some((c) => !/^[A-Za-z][A-Za-z0-9_]*$/.test(c))) {
+          return res.status(400).json({ error: 'Invalid Apex class name in classes parameter' });
+        }
+        scriptEnv.SFDT_TEST_CLASSES = classNames.join(',');
       }
 
       child = execa('bash', [scriptPath], {
@@ -1089,6 +1093,14 @@ export function createGuiApp(config, version, port = 7654) {
           emit({ type: 'log', line: `Pull group "${groupKey}" has no metadata entries` });
           emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed });
         } else {
+          const metadataPattern = /^[A-Za-z][A-Za-z0-9]*:[A-Za-z0-9_*.-]+$/;
+          const invalidEntry = group.metadata.find((t) => !metadataPattern.test(String(t)));
+          if (invalidEntry) {
+            emit({ type: 'log', line: `Invalid metadata entry in pull group: ${invalidEntry}` });
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+            emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed });
+            return;
+          }
           const typeArgs = group.metadata.flatMap((t) => ['--metadata', t]);
           const exitCode = await streamChild(spawn('sf', ['project', 'retrieve', 'start', ...typeArgs, '--target-org', org], {
             cwd: projectRoot,
@@ -1471,6 +1483,10 @@ export function createGuiApp(config, version, port = 7654) {
   app.post('/api/manifest/build', apiLimiter, async (req, res) => {
     try {
       const { base = 'main', head = 'HEAD', package: pkg = 'all', name: releaseName } = req.body ?? {};
+      const safeRefPattern = /^[A-Za-z0-9._/~^@:{}-]+$/;
+      if (!safeRefPattern.test(String(base)) || !safeRefPattern.test(String(head))) {
+        return res.status(400).json({ error: 'Invalid git ref' });
+      }
       const packages = config.packageDirectories ?? [];
       const projectRoot = config._projectRoot ?? process.cwd();
       const sourcePath = config.defaultSourcePath ?? 'force-app/main/default';
@@ -2014,6 +2030,9 @@ export function createGuiApp(config, version, port = 7654) {
       const { relPath, type, member } = req.body ?? {};
       if (!relPath || !type || !member) {
         return res.status(400).json({ error: 'relPath, type, and member are required' });
+      }
+      if (!/^[A-Za-z][A-Za-z0-9]*$/.test(String(type))) {
+        return res.status(400).json({ error: 'Invalid metadata type name' });
       }
       if (path.isAbsolute(relPath) || relPath.includes('..')) {
         return res.status(400).json({ error: 'Invalid path' });

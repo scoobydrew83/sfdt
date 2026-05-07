@@ -97,7 +97,7 @@ export async function loadConfig(startDir) {
         path: d.path,
         default: !!d.default,
         absolutePath: path.join(merged._projectRoot, d.path),
-        name: d.path.split('/').at(-1),
+        name: d.name ?? d.path.split('/').at(-1),
       }));
     }
   }
@@ -129,9 +129,9 @@ export function validateConfig(config) {
     );
   }
 
-  if (typeof config.defaultOrg !== 'string') {
+  if (typeof config.defaultOrg !== 'string' || config.defaultOrg.trim() === '') {
     throw new ConfigError(
-      'Invalid configuration: "defaultOrg" must be a string (e.g. "my-org-alias").\n' +
+      'Invalid configuration: "defaultOrg" must be a non-empty string (e.g. "my-org-alias").\n' +
         `Got: ${JSON.stringify(config.defaultOrg)}`,
     );
   }

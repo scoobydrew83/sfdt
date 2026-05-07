@@ -377,27 +377,26 @@ KNOWLEDGE SCOPE:
 
 // ─── Override management ──────────────────────────────────────────────────────
 
-let _cache = null;
-let _cacheDir = null;
+const _cache = new Map();
 
 function promptsPath(configDir) {
   return path.join(configDir, 'prompts.json');
 }
 
 async function loadOverrides(configDir) {
-  if (_cache !== null && _cacheDir === configDir) return _cache;
+  if (_cache.has(configDir)) return _cache.get(configDir);
+  let overrides;
   try {
-    _cache = await fs.readJson(promptsPath(configDir));
+    overrides = await fs.readJson(promptsPath(configDir));
   } catch {
-    _cache = {};
+    overrides = {};
   }
-  _cacheDir = configDir;
-  return _cache;
+  _cache.set(configDir, overrides);
+  return overrides;
 }
 
 function invalidateCache() {
-  _cache = null;
-  _cacheDir = null;
+  _cache.clear();
 }
 
 /**

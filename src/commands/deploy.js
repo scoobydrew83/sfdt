@@ -1,3 +1,4 @@
+import path from 'path';
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { print } from '../lib/output.js';
@@ -44,6 +45,9 @@ export function registerDeployCommand(program) {
 
         const extraEnv = {};
         if (options.sourceDir) {
+          if (path.isAbsolute(options.sourceDir) || options.sourceDir.includes('..')) {
+            throw new Error('--source-dir must be a relative path within the project');
+          }
           extraEnv.SFDT_DEPLOY_SOURCE_DIR = options.sourceDir;
         }
 

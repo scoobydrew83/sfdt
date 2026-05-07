@@ -164,19 +164,21 @@ else
     fi
 fi
 
-# ── Check 7: Untracked files in force-app/ ──────────────────────────────────
+# ── Check 7: Untracked files in source path ─────────────────────────────────
 if [[ -n "$ENFORCE_UNTRACKED" ]]; then
-    print_step "Checking for untracked files in force-app/..."
-    if [[ -d "force-app" ]]; then
-        untracked=$(git ls-files --others --exclude-standard force-app/ | head -20)
+    local_source_path="${SFDT_SOURCE_PATH:-force-app/main/default}"
+    source_root="${local_source_path%%/*}"
+    print_step "Checking for untracked files in ${source_root}/..."
+    if [[ -d "$source_root" ]]; then
+        untracked=$(git ls-files --others --exclude-standard "${source_root}/" | head -20)
         if [[ -z "$untracked" ]]; then
-            record_result "PASS" "No untracked files in force-app/"
+            record_result "PASS" "No untracked files in ${source_root}/"
         else
-            untracked_count=$(git ls-files --others --exclude-standard force-app/ | wc -l | tr -d ' ')
-            record_result "WARN" "Untracked files in force-app/" "${untracked_count} file(s)"
+            untracked_count=$(git ls-files --others --exclude-standard "${source_root}/" | wc -l | tr -d ' ')
+            record_result "WARN" "Untracked files in ${source_root}/" "${untracked_count} file(s)"
         fi
     else
-        record_result "WARN" "force-app/ directory not found"
+        record_result "WARN" "${source_root}/ directory not found"
     fi
 fi
 

@@ -46,17 +46,21 @@ describe('validateConfig — richer error messages', () => {
     );
   });
 
-  it('allows defaultOrg to be an empty string', () => {
-    expect(() => validateConfig({ defaultOrg: '', features: {} })).not.toThrow();
+  it('throws ConfigError when defaultOrg is an empty string', () => {
+    expect(() => validateConfig({ defaultOrg: '', features: {} })).toThrow(
+      '"defaultOrg" must be a non-empty string',
+    );
   });
 
-  it('allows defaultOrg to be a whitespace string', () => {
-    expect(() => validateConfig({ defaultOrg: '   ', features: {} })).not.toThrow();
+  it('throws ConfigError when defaultOrg is a whitespace string', () => {
+    expect(() => validateConfig({ defaultOrg: '   ', features: {} })).toThrow(
+      '"defaultOrg" must be a non-empty string',
+    );
   });
 
   it('throws ConfigError when defaultOrg is a number', () => {
     expect(() => validateConfig({ defaultOrg: 123, features: {} })).toThrow(
-      '"defaultOrg" must be a string',
+      '"defaultOrg" must be a non-empty string',
     );
   });
 

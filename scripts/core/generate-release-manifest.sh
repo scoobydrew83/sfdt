@@ -297,7 +297,12 @@ detect_changed_files() {
     if [ -z "$PREVIOUS_TAG" ]; then
         # First release - include all files from all source paths
         for src_path in "${SOURCE_PATHS[@]}"; do
-            local scan_dir="${src_path}/main/default"
+            # Avoid double-appending /main/default if src_path already ends with it
+            if [[ "$src_path" == */main/default ]]; then
+                local scan_dir="$src_path"
+            else
+                local scan_dir="${src_path}/main/default"
+            fi
             if [ -d "$scan_dir" ]; then
                 find "$scan_dir" -type f \( -name "*.cls" -o -name "*.trigger" -o -name "*-meta.xml" \) \
                     | sed 's|^\./||' | awk '{print "A\t" $0}' >> "$temp_file"
