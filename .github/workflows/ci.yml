@@ -86,7 +86,7 @@ jobs:
           SF_CLIENT_ID: ${{ secrets.SF_DEVHUB_CLIENT_ID }}
           SF_USERNAME: ${{ secrets.SF_DEVHUB_USERNAME }}
         run: |
-          echo "$SF_JWT_KEY" > devhub.key
+          printf '%s' "$SF_JWT_KEY" | sed 's/\\n/\n/g' > devhub.key
           chmod 600 devhub.key
           trap 'rm -f devhub.key' EXIT
           sf org login jwt \
