@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Check actor permission
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
@@ -83,7 +83,7 @@ jobs:
 
       - name: Comment on PR
         if: success()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           NEW_VERSION: ${{ steps.version.outputs.new_version }}
           PR_TAG: ${{ steps.version.outputs.pr_tag }}
@@ -112,7 +112,7 @@ jobs:
 
       - name: Remove publish-beta label
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             try {
@@ -184,7 +184,7 @@ jobs:
 
       - name: Comment on PR
         if: steps.check.outputs.exists == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           PR_TAG: ${{ steps.check.outputs.pr_tag }}
         with:
