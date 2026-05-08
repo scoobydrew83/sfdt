@@ -66,6 +66,7 @@ cd "$SYNTHETIC_SPARK_DIR"
 sf org create scratch \
   --definition-file config/project-scratch-def.json \
   --alias "$SCRATCH_ORG_ALIAS" \
+  --target-dev-hub "$SF_USERNAME" \
   --set-default \
   --duration-days 1 \
   --wait 15

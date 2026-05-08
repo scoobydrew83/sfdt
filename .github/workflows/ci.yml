@@ -59,6 +59,11 @@ jobs:
     if: github.event_name != 'pull_request'
     permissions:
       contents: read
+    env:
+      SF_JWT_KEY: ${{ secrets.SF_DEVHUB_JWT_KEY }}
+      SF_CLIENT_ID: ${{ secrets.SF_DEVHUB_CLIENT_ID }}
+      SF_USERNAME: ${{ secrets.SF_DEVHUB_USERNAME }}
+      SF_CONTAINER_MODE: true
     strategy:
       matrix:
         node-version: [22]
@@ -81,10 +86,6 @@ jobs:
       - name: Install sfdt globally from packed tarball
         run: npm install -g sfdt-*.tgz
       - name: Authenticate DevHub
-        env:
-          SF_JWT_KEY: ${{ secrets.SF_DEVHUB_JWT_KEY }}
-          SF_CLIENT_ID: ${{ secrets.SF_DEVHUB_CLIENT_ID }}
-          SF_USERNAME: ${{ secrets.SF_DEVHUB_USERNAME }}
         run: |
           printf '%s' "$SF_JWT_KEY" | sed 's/\\n/\n/g' > devhub.key
           chmod 600 devhub.key
