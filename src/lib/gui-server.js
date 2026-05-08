@@ -1530,7 +1530,7 @@ export function createGuiApp(config, version, port = 7654) {
       if (save || effectiveName) {
         const layout = config.manifestLayout ?? 'flat';
         const pkgSuffix = layout !== 'subpath' && pkg !== 'all' ? `-${pkg}` : '';
-        const subdir = layout === 'subpath' ? pkg : '';
+        const subdir = layout === 'subpath' ? path.basename(String(pkg)) : '';
         const manifestDir = path.join(projectRoot, config.manifestDir ?? 'manifest/release', subdir);
 
         filename = effectiveName ? `rl-${effectiveName}${pkgSuffix}-package.xml` : filename;
@@ -1553,7 +1553,7 @@ export function createGuiApp(config, version, port = 7654) {
         if (effectiveName && await fs.pathExists(filePath)) {
           return res.status(409).json({ error: `${filename} already exists.` });
         }
-        if (destFilePath && effectiveName && await fs.pathExists(destFilePath)) { // codeql[js/path-injection] - destFilePath constructed from path.join(manifestDir, path.basename(...)); containment guard at line above validates against resolvedManifestBase
+        if (destFilePath && effectiveName && await fs.pathExists(destFilePath)) {
           return res.status(409).json({ error: `${destFilename} already exists.` });
         }
 
@@ -1564,7 +1564,7 @@ export function createGuiApp(config, version, port = 7654) {
           const destXml = renderXml(destructive, apiVersion);
           const resolvedDestFilename = destFilename ?? `destructive-${Date.now()}.xml`;
           const resolvedDestFilePath = destFilePath ?? path.join(manifestDir, resolvedDestFilename);
-          await fs.writeFile(resolvedDestFilePath, destXml); // codeql[js/path-injection] - resolvedDestFilePath is validated destFilePath or path.join(manifestDir, safe-basename); manifestDir validated via filePath containment guard above
+          await fs.writeFile(resolvedDestFilePath, destXml);
         }
       }
 
@@ -2039,7 +2039,7 @@ export function createGuiApp(config, version, port = 7654) {
       if (!/^[A-Za-z][A-Za-z0-9]*$/.test(String(type))) {
         return res.status(400).json({ error: 'Invalid metadata type name' });
       }
-      if (path.isAbsolute(relPath) || relPath.includes('..')) {
+      if (path.isAbsolute(relPath) || !/^[A-Za-z0-9_.\-/]+$/.test(relPath) || relPath.includes('..')) {
         return res.status(400).json({ error: 'Invalid path' });
       }
 
@@ -2056,7 +2056,7 @@ export function createGuiApp(config, version, port = 7654) {
 
       const xml = await fs.readFile(absPath, 'utf8');
       const updatedXml = addComponentToXml(xml, type, member);
-      await fs.writeFile(absPath, updatedXml); // codeql[js/path-injection] - absPath validated against projectRoot + path.sep containment guard above; path.isAbsolute and '..' checks on relPath
+      await fs.writeFile(absPath, updatedXml);
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -2625,26 +2625,20 @@ export function createGuiApp(config, version, port = 7654) {
         return res.status(400).json({ error: 'Invalid org alias' });
       }
 
-      // Accept either an absolute path or a relative path (resolved against projectRoot)
+      // Only accept relative paths; validate character set before resolving
       const projectRoot = config._projectRoot ?? process.cwd();
-      let absManifest;
-      if (path.isAbsolute(manifestParam)) {
-        absManifest = path.resolve(manifestParam);
-      } else {
-        // Guard against path traversal on relative paths
-        if (manifestParam.includes('..')) {
-          return res.status(400).json({ error: 'Invalid manifest path' });
-        }
-        absManifest = path.resolve(projectRoot, manifestParam);
+      if (path.isAbsolute(manifestParam) || !/^[A-Za-z0-9_.\-/]+$/.test(manifestParam) || manifestParam.includes('..')) {
+        return res.status(400).json({ error: 'Invalid manifest path' });
       }
-      if (!absManifest.startsWith(projectRoot + path.sep) && absManifest !== projectRoot) {
+      const absManifest = path.resolve(projectRoot, manifestParam);
+      if (!absManifest.startsWith(projectRoot + path.sep)) {
         return res.status(403).json({ error: 'Forbidden: manifest path outside project root' });
       }
-      if (!(await fs.pathExists(absManifest))) { // codeql[js/path-injection] - absManifest validated against projectRoot + path.sep containment guard above; '..' traversal blocked earlier
+      if (!(await fs.pathExists(absManifest))) {
         return res.status(404).json({ error: 'Manifest file not found' });
       }
 
-      const xml = await fs.readFile(absManifest, 'utf8'); // codeql[js/path-injection] - same guard as pathExists call above
+      const xml = await fs.readFile(absManifest, 'utf8');
       const manifestComponents = parseManifestComponents(xml);
 
       if (!manifestComponents.size) {

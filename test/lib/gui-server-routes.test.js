@@ -685,7 +685,7 @@ describe('GET /api/dependencies/preflight', () => {
     fsMock.pathExists.mockResolvedValueOnce(true);
     fsMock.readFile.mockResolvedValueOnce('<Package xmlns="http://soap.sforce.com/2006/04/metadata"><version>59.0</version></Package>');
 
-    const res = await request(app).get(`/api/dependencies/preflight?manifest=/project/manifest/release/pkg.xml&org=dev`);
+    const res = await request(app).get(`/api/dependencies/preflight?manifest=manifest/release/pkg.xml&org=dev`);
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('pass');
     expect(res.body.missing).toHaveLength(0);
@@ -715,7 +715,7 @@ describe('GET /api/dependencies/preflight', () => {
     });
     vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: sfResponse, stderr: '' });
 
-    const res = await request(app).get(`/api/dependencies/preflight?manifest=/project/manifest/release/pkg.xml&org=dev`);
+    const res = await request(app).get(`/api/dependencies/preflight?manifest=manifest/release/pkg.xml&org=dev`);
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('fail');
     expect(res.body.missing.length).toBeGreaterThan(0);
@@ -746,7 +746,7 @@ describe('GET /api/dependencies/preflight', () => {
     });
     vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: sfResponse, stderr: '' });
 
-    const res = await request(app).get(`/api/dependencies/preflight?manifest=/project/manifest/release/pkg.xml&org=dev`);
+    const res = await request(app).get(`/api/dependencies/preflight?manifest=manifest/release/pkg.xml&org=dev`);
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('warn');
     expect(res.body.missing).toHaveLength(0);
