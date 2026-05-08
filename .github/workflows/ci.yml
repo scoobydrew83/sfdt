@@ -87,14 +87,9 @@ jobs:
         run: npm install -g sfdt-*.tgz
       - name: Authenticate DevHub
         run: |
-          printf '%s' "$SF_JWT_KEY" | sed 's/\\n/\n/g' > devhub.key
-          chmod 600 devhub.key
-          trap 'rm -f devhub.key' EXIT
-          sf org login jwt \
-            --client-id "$SF_CLIENT_ID" \
-            --jwt-key-file devhub.key \
-            --username "$SF_USERNAME" \
-            --set-default-dev-hub
+          echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
+          sf org login sfdx-url --sfdx-url-file auth_url.txt --set-default-dev-hub
+          rm auth_url.txt
       - name: Run integration tests
         run: ./scripts/integration/run-integration-tests.sh ./synthetic-spark
 
