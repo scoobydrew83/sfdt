@@ -40,9 +40,15 @@ export function registerReleaseCommand(program) {
           }
         }
 
+        // Resolve changelog file: per-package file or global CHANGELOG.md
+        const changelogDir = config.changelogDir || 'changelogs';
+        const changelogFile = pkgTarget !== 'all'
+          ? path.join(changelogDir, `${pkgTarget}.md`)
+          : 'CHANGELOG.md';
+
         print.header('Generating Release Manifest');
 
-        // Generate manifests + update CHANGELOG (no commit/tag/push)
+        // Generate manifests + update changelog (no commit/tag/push)
         // Script outputs the resolved version to stdout
         const result = await runScript('core/generate-release-manifest.sh', config, {
           args,
@@ -50,6 +56,7 @@ export function registerReleaseCommand(program) {
           captureStdout: true,
           env: {
             SFDT_PACKAGE_TARGET: pkgTarget,
+            SFDT_CHANGELOG_FILE: changelogFile,
             ...(releaseName ? { SFDT_RELEASE_NAME: releaseName } : {}),
           },
         });
@@ -71,18 +78,20 @@ export function registerReleaseCommand(program) {
           ]);
 
           if (generateNotes) {
-            const releaseNotesDir = config.releaseNotesDir || 'release-notes';
-            const notesFileName = `rl-${resolvedVersion}-RELEASE-NOTES.md`;
-            const notesFilePath = path.join(projectRoot, releaseNotesDir, notesFileName);
+            const { notesRelPath, notesFilePath } = resolveNotesPath(
+              config, projectRoot, pkgTarget, resolvedVersion,
+            );
 
-            await fs.ensureDir(path.join(projectRoot, releaseNotesDir));
+            await fs.ensureDir(path.dirname(notesFilePath));
 
-            print.info(`Generating release notes for ${resolvedVersion}...`);
+            const pkgDesc = pkgTarget !== 'all' ? ` for package "${pkgTarget}"` : '';
+            print.info(`Generating release notes for ${resolvedVersion}${pkgDesc}...`);
 
             const releaseNotesTemplate = await getPrompt('release-notes', config._configDir);
             const prompt = interpolate(releaseNotesTemplate, {
               version: resolvedVersion,
               outputPath: notesFilePath,
+              ...(pkgTarget !== 'all' ? { packageName: pkgTarget } : {}),
             });
 
             await runAiPrompt(prompt, {
@@ -94,13 +103,13 @@ export function registerReleaseCommand(program) {
             });
 
             if (await fs.pathExists(notesFilePath)) {
-              print.success(`Release notes saved to ${releaseNotesDir}/${notesFileName}`);
+              print.success(`Release notes saved to ${notesRelPath}`);
             }
           }
         }
 
         // Git workflow: stage, commit, tag, deploy prompt, push
-        await gitWorkflow(projectRoot, config, releaseName || resolvedVersion);
+        await gitWorkflow(projectRoot, config, releaseName || resolvedVersion, pkgTarget, changelogFile);
       } catch (err) {
         print.error(`Release failed: ${err.message}`);
         process.exitCode = resolveExitCode(err);
@@ -108,9 +117,33 @@ export function registerReleaseCommand(program) {
     });
 }
 
-async function gitWorkflow(projectRoot, config, version) {
-  const manifestDir = config.manifestDir || 'manifest/release';
+function resolveNotesPath(config, projectRoot, pkgTarget, version) {
   const releaseNotesDir = config.releaseNotesDir || 'release-notes';
+  const layout = config.manifestLayout || 'flat';
+
+  let notesFileName, notesSubdir;
+  if (pkgTarget !== 'all') {
+    if (layout === 'subpath') {
+      notesFileName = `rl-${version}-RELEASE-NOTES.md`;
+      notesSubdir = pkgTarget;
+    } else {
+      notesFileName = `rl-${version}-${pkgTarget}-RELEASE-NOTES.md`;
+      notesSubdir = '';
+    }
+  } else {
+    notesFileName = `rl-${version}-RELEASE-NOTES.md`;
+    notesSubdir = '';
+  }
+
+  const notesRelPath = notesSubdir
+    ? path.join(releaseNotesDir, notesSubdir, notesFileName)
+    : path.join(releaseNotesDir, notesFileName);
+  const notesFilePath = path.join(projectRoot, notesRelPath);
+  return { notesRelPath, notesFilePath };
+}
+
+async function gitWorkflow(projectRoot, config, version, pkgTarget, changelogFile) {
+  const manifestDir = config.manifestDir || 'manifest/release';
   const execOpts = { cwd: projectRoot, reject: false };
 
   print.header('Git Workflow');
@@ -119,16 +152,16 @@ async function gitWorkflow(projectRoot, config, version) {
   await execa('git', ['add', '-f', `${manifestDir}/rl-${version}-*`], execOpts);
   await execa('git', ['add', '-f', `${manifestDir}/*/rl-${version}-*`], execOpts);
 
-  // Stage CHANGELOG.md if modified
-  const changelogDiff = await execa('git', ['diff', '--quiet', 'CHANGELOG.md'], execOpts);
+  // Stage changelog if modified
+  const changelogDiff = await execa('git', ['diff', '--quiet', changelogFile], execOpts);
   if (changelogDiff.exitCode !== 0) {
-    await execa('git', ['add', 'CHANGELOG.md'], execOpts);
+    await execa('git', ['add', changelogFile], execOpts);
   }
 
   // Stage release notes if they exist
-  const notesFile = path.join(releaseNotesDir, `rl-${version}-RELEASE-NOTES.md`);
-  if (await fs.pathExists(path.join(projectRoot, notesFile))) {
-    await execa('git', ['add', notesFile], execOpts);
+  const { notesRelPath, notesFilePath } = resolveNotesPath(config, projectRoot, pkgTarget, version);
+  if (await fs.pathExists(notesFilePath)) {
+    await execa('git', ['add', notesRelPath], execOpts);
   }
 
   // Show staged files
@@ -155,7 +188,8 @@ async function gitWorkflow(projectRoot, config, version) {
     return;
   }
 
-  await execa('git', ['commit', '-m', `release: Generate manifests for ${version}`], execOpts);
+  const pkgLabel = pkgTarget !== 'all' ? `${pkgTarget} ` : '';
+  await execa('git', ['commit', '-m', `release: Generate manifests for ${pkgLabel}${version}`], execOpts);
   print.success('Changes committed');
 
   // Tag

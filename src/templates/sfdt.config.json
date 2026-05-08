@@ -43,5 +43,6 @@
     "retrieveTimeoutSeconds": 360
   },
   "manifestLayout": "flat",
+  "changelogDir": "changelogs",
   "logRetention": 50
 }

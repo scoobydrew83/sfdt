@@ -1765,22 +1765,46 @@ export function createGuiApp(config, version, port = 7654) {
     }
   });
 
+  // ── Release Hub: path helpers ─────────────────────────────────────────────
+
+  function resolveChangelogFilePath(projectRoot, pkgName) {
+    if (!pkgName) return path.join(projectRoot, 'CHANGELOG.md');
+    const changelogDir = config.changelogDir ?? 'changelogs';
+    return path.join(projectRoot, changelogDir, `${pkgName}.md`);
+  }
+
+  function resolveNotesFilePath(projectRoot, pkgTarget, version) {
+    const releaseNotesDir = config.releaseNotesDir ?? 'release-notes';
+    const layout = config.manifestLayout ?? 'flat';
+    const ts = new Date().toISOString().split('T')[0];
+    if (!pkgTarget || pkgTarget === 'all') {
+      const name = version ? `rl-${version}-RELEASE-NOTES.md` : `release-notes-${ts}.md`;
+      return path.join(projectRoot, releaseNotesDir, name);
+    }
+    if (layout === 'subpath') {
+      const name = version ? `rl-${version}-RELEASE-NOTES.md` : `release-notes-${ts}.md`;
+      return path.join(projectRoot, releaseNotesDir, pkgTarget, name);
+    }
+    const name = version ? `rl-${version}-${pkgTarget}-RELEASE-NOTES.md` : `release-notes-${pkgTarget}-${ts}.md`;
+    return path.join(projectRoot, releaseNotesDir, name);
+  }
+
   // ── Release Hub: changelog content ────────────────────────────────────────
 
-  app.get('/api/changelog/content', apiLimiter, async (_req, res) => {
+  app.get('/api/changelog/content', apiLimiter, async (req, res) => {
     try {
       const projectRoot = config._projectRoot ?? process.cwd();
-      const changelogPath = path.join(projectRoot, 'CHANGELOG.md');
+      const pkgName = String(req.query.package ?? '').trim();
+      const changelogPath = resolveChangelogFilePath(projectRoot, pkgName);
 
       if (!(await fs.pathExists(changelogPath))) {
-        return res.json({ content: '', exists: false });
+        return res.json({ content: '', exists: false, file: path.relative(projectRoot, changelogPath) });
       }
 
       const raw = await fs.readFile(changelogPath, 'utf8');
-      // Extract the ## [Unreleased] section
       const match = raw.match(/## \[Unreleased\]([\s\S]*?)(?=\n## \[|$)/);
       const content = match ? match[1].trim() : '';
-      res.json({ content, exists: true });
+      res.json({ content, exists: true, file: path.relative(projectRoot, changelogPath) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1788,12 +1812,14 @@ export function createGuiApp(config, version, port = 7654) {
 
   app.post('/api/changelog/save', apiLimiter, async (req, res) => {
     try {
-      const { content } = req.body ?? {};
+      const { content, package: pkgName } = req.body ?? {};
       if (content === undefined) return res.status(400).json({ error: 'content is required' });
       if (content.length > 1_000_000) return res.status(413).json({ error: 'Content too large (max 1 MB)' });
 
       const projectRoot = config._projectRoot ?? process.cwd();
-      const changelogPath = path.join(projectRoot, 'CHANGELOG.md');
+      const changelogPath = resolveChangelogFilePath(projectRoot, pkgName || '');
+
+      await fs.ensureDir(path.dirname(changelogPath));
 
       let fullContent = '';
       if (await fs.pathExists(changelogPath)) {
@@ -1802,19 +1828,16 @@ export function createGuiApp(config, version, port = 7654) {
         fullContent = '# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n';
       }
 
-      // Replace or insert the [Unreleased] section
       const unreleasedHeader = '## [Unreleased]';
       const hasUnreleased = fullContent.includes(unreleasedHeader);
 
       let updated;
       if (hasUnreleased) {
-        // Replace everything between [Unreleased] and the next ## [X.Y.Z] or end of file
         updated = fullContent.replace(
           /## \[Unreleased\]([\s\S]*?)(?=\n## \[|$)/,
           `## [Unreleased]\n\n${content.trim()}\n`
         );
       } else {
-        // Append it after the first header or at the top
         const firstHeaderMatch = fullContent.match(/^# .*\n/);
         if (firstHeaderMatch) {
           updated = fullContent.replace(firstHeaderMatch[0], `${firstHeaderMatch[0]}\n## [Unreleased]\n\n${content.trim()}\n`);
@@ -1824,7 +1847,7 @@ export function createGuiApp(config, version, port = 7654) {
       }
 
       await fs.writeFile(changelogPath, updated);
-      res.json({ ok: true });
+      res.json({ ok: true, file: path.relative(projectRoot, changelogPath) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1832,19 +1855,17 @@ export function createGuiApp(config, version, port = 7654) {
 
   app.post('/api/release-notes/save', apiLimiter, async (req, res) => {
     try {
-      const { content } = req.body ?? {};
+      const { content, package: pkgTarget, version } = req.body ?? {};
       if (content === undefined) return res.status(400).json({ error: 'content is required' });
       if (content.length > 1_000_000) return res.status(413).json({ error: 'Content too large (max 1 MB)' });
 
       const projectRoot = config._projectRoot ?? process.cwd();
-      const notesDir = path.join(projectRoot, config.releaseNotesDir ?? 'release-notes');
-      await fs.ensureDir(notesDir);
+      const notesPath = resolveNotesFilePath(projectRoot, pkgTarget || '', version || '');
 
-      const ts = new Date().toISOString().split('T')[0];
-      const notesPath = path.join(notesDir, `release-notes-${ts}.md`);
+      await fs.ensureDir(path.dirname(notesPath));
 
       if (await fs.pathExists(notesPath)) {
-        return res.status(409).json({ error: `release-notes-${ts}.md already exists. Delete it to overwrite.` });
+        return res.status(409).json({ error: `${path.basename(notesPath)} already exists. Delete it to overwrite.` });
       }
       await fs.writeFile(notesPath, content);
       res.json({ ok: true, path: path.relative(projectRoot, notesPath) });
@@ -1855,7 +1876,7 @@ export function createGuiApp(config, version, port = 7654) {
 
   // ── Release Hub: AI changelog generation (SSE) ────────────────────────────
 
-  app.post('/api/changelog/generate', apiLimiter, async (_req, res) => {
+  app.post('/api/changelog/generate', apiLimiter, async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -1875,11 +1896,17 @@ export function createGuiApp(config, version, port = 7654) {
       }
 
       const projectRoot = config._projectRoot ?? process.cwd();
+      const pkgName = String(req.body?.package ?? '').trim();
+      const pkg = pkgName ? (config.packageDirectories ?? []).find((p) => p.name === pkgName) : null;
       const limit = 20;
       const changelogTemplate = await getPrompt('changelog', config._configDir);
-      const prompt = interpolate(changelogTemplate, { limit });
+      const prompt = interpolate(changelogTemplate, {
+        limit,
+        ...(pkg ? { packagePath: pkg.path, packageName: pkg.name } : {}),
+      });
 
-      send({ type: 'log', line: 'Analyzing recent commits with AI...', ts: new Date().toISOString() });
+      const scopeDesc = pkg ? ` for package "${pkg.name}"` : '';
+      send({ type: 'log', line: `Analyzing recent commits${scopeDesc} with AI...`, ts: new Date().toISOString() });
 
       const result = await runAi(prompt, {
         config,
@@ -1903,7 +1930,7 @@ export function createGuiApp(config, version, port = 7654) {
 
   // ── Release Hub: AI release notes generation (SSE) ────────────────────────
 
-  app.post('/api/release-notes/generate', apiLimiter, async (_req, res) => {
+  app.post('/api/release-notes/generate', apiLimiter, async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -1923,8 +1950,14 @@ export function createGuiApp(config, version, port = 7654) {
       }
 
       const projectRoot = config._projectRoot ?? process.cwd();
+      const { package: pkgName, version } = req.body ?? {};
+      const pkg = pkgName ? (config.packageDirectories ?? []).find((p) => p.name === pkgName) : null;
       const releaseNotesTemplate = await getPrompt('release-notes', config._configDir);
-      const prompt = interpolate(releaseNotesTemplate, { version: 'unreleased', outputPath: '(streaming output — do not write to file)' });
+      const prompt = interpolate(releaseNotesTemplate, {
+        version: version || 'unreleased',
+        outputPath: '(streaming output — do not write to file)',
+        ...(pkg ? { packageName: pkg.name } : {}),
+      });
 
       send({ type: 'log', line: 'Generating release notes with AI...', ts: new Date().toISOString() });
 

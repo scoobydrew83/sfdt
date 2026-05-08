@@ -15,6 +15,7 @@ vi.mock('fs-extra', () => ({
     readFile: vi.fn(),
     writeFile: vi.fn(),
     appendFile: vi.fn(),
+    ensureDir: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -73,12 +74,15 @@ describe('changelog release command', () => {
       'bash',
       [
         '-c',
-        'source "$1" && move_unreleased_to_version "$SFDT_VERSION"',
+        'source "$1" && move_unreleased_to_version "$SFDT_VERSION" "${SFDT_CHANGELOG_FILE:-CHANGELOG.md}"',
         'bash',
         expect.stringContaining('changelog-utils.sh'),
       ],
       expect.objectContaining({
-        env: expect.objectContaining({ SFDT_VERSION: '1.2.3' }),
+        env: expect.objectContaining({
+          SFDT_VERSION: '1.2.3',
+          SFDT_CHANGELOG_FILE: expect.stringContaining('CHANGELOG.md'),
+        }),
       }),
     );
     expect(print.success).toHaveBeenCalled();

@@ -13,25 +13,59 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', 'scripts');
 
+function resolveChangelogPath(config, pkgName) {
+  if (!pkgName) return 'CHANGELOG.md';
+  const changelogDir = config.changelogDir || 'changelogs';
+  return path.join(changelogDir, `${pkgName}.md`);
+}
+
+function resolvePackage(config, pkgName) {
+  if (!pkgName) return null;
+  const dirs = config.packageDirectories ?? [];
+  const pkg = dirs.find((d) => d.name === pkgName);
+  if (!pkg) {
+    const valid = dirs.map((d) => d.name).filter(Boolean);
+    throw new Error(
+      `Unknown package "${pkgName}". Valid options: ${valid.length ? valid.join(', ') : '(none configured)'}`,
+    );
+  }
+  return pkg;
+}
+
 export function registerChangelogCommand(program) {
-  const changelog = program.command('changelog').description('Manage project CHANGELOG.md');
+  const changelog = program.command('changelog').description('Manage project CHANGELOG');
 
   changelog
     .command('generate')
     .description('Use AI to generate [Unreleased] entries from git history')
     .option('--limit <number>', 'Number of commits to analyze', '20')
+    .option('--package <name>', 'Scope changelog to a specific package directory')
     .action(async (options) => {
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
-        const changelogPath = path.join(projectRoot, 'CHANGELOG.md');
+
+        let pkg = null;
+        try {
+          pkg = resolvePackage(config, options.package);
+        } catch (err) {
+          print.error(err.message);
+          process.exitCode = 1;
+          return;
+        }
+
+        const changelogRelPath = resolveChangelogPath(config, options.package);
+        const changelogPath = path.join(projectRoot, changelogRelPath);
+
+        await fs.ensureDir(path.dirname(changelogPath));
 
         if (!(await fs.pathExists(changelogPath))) {
+          const label = options.package ? `${changelogRelPath}` : 'CHANGELOG.md';
           const { create } = await inquirer.prompt([
             {
               type: 'confirm',
               name: 'create',
-              message: 'CHANGELOG.md not found. Create it with standard template?',
+              message: `${label} not found. Create it with standard template?`,
               default: true,
             },
           ]);
@@ -40,7 +74,7 @@ export function registerChangelogCommand(program) {
             const template =
               '# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n\n### Added\n\n### Fixed\n\n### Changed\n';
             await fs.writeFile(changelogPath, template);
-            print.success('Created CHANGELOG.md');
+            print.success(`Created ${label}`);
           } else {
             return;
           }
@@ -54,10 +88,14 @@ export function registerChangelogCommand(program) {
           return;
         }
 
-        print.info(`Analyzing the last ${options.limit} commits...`);
+        const scopeDesc = pkg ? ` for package "${pkg.name}" (${pkg.path})` : '';
+        print.info(`Analyzing the last ${options.limit} commits${scopeDesc}...`);
 
         const changelogTemplate = await getPrompt('changelog', config._configDir);
-        const prompt = interpolate(changelogTemplate, { limit: options.limit });
+        const prompt = interpolate(changelogTemplate, {
+          limit: options.limit,
+          ...(pkg ? { packagePath: pkg.path, packageName: pkg.name } : {}),
+        });
 
         print.header('AI Changelog Generation');
         const response = await runAiPrompt(prompt, {
@@ -73,14 +111,12 @@ export function registerChangelogCommand(program) {
             {
               type: 'confirm',
               name: 'apply',
-              message:
-                'Would you like to append these entries to your CHANGELOG.md [Unreleased] section?',
+              message: `Would you like to append these entries to your ${changelogRelPath} [Unreleased] section?`,
               default: true,
             },
           ]);
 
           if (apply) {
-            // Simple append logic for now - in a real tool we'd parse and merge
             const currentContent = await fs.readFile(changelogPath, 'utf8');
             const unreleasedTag = '## [Unreleased]';
 
@@ -88,11 +124,10 @@ export function registerChangelogCommand(program) {
               const parts = currentContent.split(unreleasedTag);
               const newContent = `${parts[0]}${unreleasedTag}\n\n${response}${parts[1]}`;
               await fs.writeFile(changelogPath, newContent);
-              print.success('Updated CHANGELOG.md');
             } else {
               await fs.appendFile(changelogPath, `\n\n${response}`);
-              print.success('Appended to CHANGELOG.md');
             }
+            print.success(`Updated ${changelogRelPath}`);
           }
         }
       } catch (err) {
@@ -104,7 +139,8 @@ export function registerChangelogCommand(program) {
   changelog
     .command('release <version>')
     .description('Move [Unreleased] changes to a new version section')
-    .action(async (version) => {
+    .option('--package <name>', 'Target a specific package changelog')
+    .action(async (version, options) => {
       if (!/^\d+\.\d+\.\d+(-[\w.]+)?(\+[\w.]+)?$/.test(version)) {
         print.error(`Invalid version: ${version} (expected semver e.g. 1.2.3)`);
         process.exitCode = 1;
@@ -112,16 +148,35 @@ export function registerChangelogCommand(program) {
       }
       try {
         const config = await loadConfig();
-        print.info(`Releasing version ${version} in CHANGELOG.md...`);
 
-        // Pass the script path as a positional arg to avoid shell interpolation
+        try {
+          resolvePackage(config, options.package);
+        } catch (err) {
+          print.error(err.message);
+          process.exitCode = 1;
+          return;
+        }
+
+        const changelogRelPath = resolveChangelogPath(config, options.package);
+        const changelogPath = path.join(config._projectRoot, changelogRelPath);
+
+        print.info(`Releasing version ${version} in ${changelogRelPath}...`);
+
         const scriptPath = path.join(SCRIPTS_DIR, 'lib', 'changelog-utils.sh');
         await execa(
           'bash',
-          ['-c', 'source "$1" && move_unreleased_to_version "$SFDT_VERSION"', 'bash', scriptPath],
-          { cwd: config._projectRoot, env: { ...process.env, SFDT_VERSION: version } },
+          [
+            '-c',
+            'source "$1" && move_unreleased_to_version "$SFDT_VERSION" "${SFDT_CHANGELOG_FILE:-CHANGELOG.md}"',
+            'bash',
+            scriptPath,
+          ],
+          {
+            cwd: config._projectRoot,
+            env: { ...process.env, SFDT_VERSION: version, SFDT_CHANGELOG_FILE: changelogPath },
+          },
         );
-        print.success(`CHANGELOG.md updated: [Unreleased] -> [${version}]`);
+        print.success(`${changelogRelPath} updated: [Unreleased] -> [${version}]`);
       } catch (err) {
         print.error(`Changelog release failed: ${err.message}`);
         process.exitCode = 1;
@@ -131,43 +186,58 @@ export function registerChangelogCommand(program) {
   changelog
     .command('check')
     .description('Verify [Unreleased] content against git changes')
-    .action(async () => {
+    .option('--package <name>', 'Check a specific package changelog')
+    .action(async (options) => {
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
 
-        print.info('Checking CHANGELOG.md against git changes...');
+        let pkg = null;
+        try {
+          pkg = resolvePackage(config, options.package);
+        } catch (err) {
+          print.error(err.message);
+          process.exitCode = 1;
+          return;
+        }
 
-        // Check if there are uncommitted changes
-        const { stdout: gitStatus } = await execa('git', ['status', '--porcelain'], {
-          cwd: projectRoot,
-        });
+        const changelogRelPath = resolveChangelogPath(config, options.package);
+        const changelogPath = path.join(projectRoot, changelogRelPath);
 
-        // Pass the script path as a positional arg to avoid shell interpolation
+        print.info(`Checking ${changelogRelPath} against git changes...`);
+
+        const gitStatusArgs = pkg
+          ? ['status', '--porcelain', '--', pkg.path]
+          : ['status', '--porcelain'];
+        const { stdout: gitStatus } = await execa('git', gitStatusArgs, { cwd: projectRoot });
+
         const scriptPath = path.join(SCRIPTS_DIR, 'lib', 'changelog-utils.sh');
         const { stdout: contentStatus } = await execa(
           'bash',
           [
             '-c',
-            'source "$1"; if has_unreleased_content; then echo "HAS_CONTENT"; else echo "EMPTY"; fi',
+            'source "$1"; if has_unreleased_content "${SFDT_CHANGELOG_FILE:-CHANGELOG.md}"; then echo "HAS_CONTENT"; else echo "EMPTY"; fi',
             'bash',
             scriptPath,
           ],
-          { cwd: projectRoot },
+          { cwd: projectRoot, env: { ...process.env, SFDT_CHANGELOG_FILE: changelogPath } },
         );
 
         if (gitStatus && contentStatus.trim() === 'EMPTY') {
           print.warning(
-            'You have git changes but the [Unreleased] section in CHANGELOG.md is empty.',
+            `You have git changes but the [Unreleased] section in ${changelogRelPath} is empty.`,
           );
-          print.info('Run "sfdt changelog generate" to update it with AI.');
+          const hint = options.package
+            ? `sfdt changelog generate --package ${options.package}`
+            : 'sfdt changelog generate';
+          print.info(`Run "${hint}" to update it with AI.`);
           process.exitCode = 1;
         } else if (!gitStatus && contentStatus.trim() === 'HAS_CONTENT') {
-          print.info('CHANGELOG.md has unreleased changes, but git is clean.');
+          print.info(`${changelogRelPath} has unreleased changes, but git is clean.`);
         } else if (gitStatus && contentStatus.trim() === 'HAS_CONTENT') {
-          print.success('CHANGELOG.md is synced with your changes.');
+          print.success(`${changelogRelPath} is synced with your changes.`);
         } else {
-          print.info('No changes in git or CHANGELOG.md.');
+          print.info(`No changes in git or ${changelogRelPath}.`);
         }
       } catch (err) {
         print.error(`Changelog check failed: ${err.message}`);
