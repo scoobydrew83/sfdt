@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, createContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, createContext, useRef } from 'react';
 import { api } from './api.js';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -93,6 +93,7 @@ export default function App() {
   const [sessionOrg, setSessionOrg]   = useState(null);
   const [availableOrgs, setAvailableOrgs] = useState([]);
   const [orgPickerOpen, setOrgPickerOpen] = useState(false);
+  const orgPickerRef = useRef(null);
 
   useEffect(() => {
     api.project().then(setProject).catch(() => null);
@@ -113,6 +114,17 @@ export default function App() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+
+  useEffect(() => {
+    if (!orgPickerOpen) return;
+    const handler = (e) => {
+      if (orgPickerRef.current && !orgPickerRef.current.contains(e.target)) {
+        setOrgPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [orgPickerOpen]);
 
   const openChat = useCallback((initialMessage = '') => {
     setChatInitialMessage(initialMessage);
@@ -201,7 +213,7 @@ export default function App() {
         </nav>
 
         <div className="sidebar-footer">
-          <div className="org-picker-wrap">
+          <div className="org-picker-wrap" ref={orgPickerRef}>
             {orgPickerOpen && (
               <div className="org-picker-dropdown">
                 {availableOrgs.length === 0 && (

@@ -41,6 +41,11 @@ export function registerManifestCommand(program) {
         if (releaseName === 'today') {
           releaseName = new Date().toISOString().slice(0, 10);
         }
+        if (releaseName && !/^[A-Za-z0-9._-]+$/.test(releaseName)) {
+          print.error('--name must contain only alphanumeric characters, dots, underscores, or hyphens');
+          process.exitCode = 1;
+          return;
+        }
 
         // Resolve package target and git diff paths
         const pkgTarget = options.package || 'all';

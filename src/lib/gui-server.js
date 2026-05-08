@@ -867,9 +867,6 @@ export function createGuiApp(config, version, port = 7654) {
 
       const scriptEnv = {
         ...buildScriptEnv(config),
-        SFDT_PROJECT_ROOT: projectRoot,
-        SFDT_CONFIG_DIR: config._configDir ?? path.join(projectRoot, '.sfdt'),
-        SFDT_DEFAULT_ORG: config.defaultOrg ?? '',
         SFDT_TARGET_ORG: sessionOrg ?? config.defaultOrg ?? '',
         SFDT_NON_INTERACTIVE: 'true',
       };
@@ -1081,6 +1078,11 @@ export function createGuiApp(config, version, port = 7654) {
         emit({ type: 'result', exitCode, retrieved: 0, elapsed });
       } else if (mode === 'group') {
         const groupKey = req.query.groupKey;
+        if (!groupKey || !/^[A-Za-z0-9_-]+$/.test(groupKey)) {
+          emit({ type: 'log', line: 'Invalid groupKey' });
+          emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed: 0 });
+          return;
+        }
         const group = config.pullConfig?.pullGroups?.[groupKey];
         if (!group) {
           emit({ type: 'log', line: `Unknown pull group: ${groupKey}` });
@@ -1652,8 +1654,6 @@ export function createGuiApp(config, version, port = 7654) {
 
       const scriptEnv = {
         ...buildScriptEnv(config),
-        SFDT_PROJECT_ROOT: projectRoot,
-        SFDT_CONFIG_DIR: config._configDir ?? path.join(projectRoot, '.sfdt'),
         SFDT_DEFAULT_ORG: org ?? config.defaultOrg ?? '',
         SFDT_TARGET_ORG: org ?? config.defaultOrg ?? '',
         SFDT_NON_INTERACTIVE: 'true',
