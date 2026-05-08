@@ -57,11 +57,14 @@ trap cleanup EXIT
 
 # ---------------------------------------------------------------------------
 # 1. Create scratch org
+#    Must run from within the Salesforce project so the CLI finds sfdx-project.json
 # ---------------------------------------------------------------------------
 step "Creating scratch org: $SCRATCH_ORG_ALIAS"
 
+cd "$SYNTHETIC_SPARK_DIR"
+
 sf org create scratch \
-  --definition-file "$SYNTHETIC_SPARK_DIR/config/project-scratch-def.json" \
+  --definition-file config/project-scratch-def.json \
   --alias "$SCRATCH_ORG_ALIAS" \
   --set-default \
   --duration-days 1 \
@@ -98,7 +101,6 @@ SFDT_DIR="$SYNTHETIC_SPARK_DIR" SFDT_ALIAS="$SCRATCH_ORG_ALIAS" node -e "
 # 3. Run sfdt commands from within the fixture project directory
 # ---------------------------------------------------------------------------
 export SFDT_NON_INTERACTIVE=true
-cd "$SYNTHETIC_SPARK_DIR"
 
 # -- sfdt pull ---------------------------------------------------------------
 step "sfdt pull"
