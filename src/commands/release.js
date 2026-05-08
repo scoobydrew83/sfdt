@@ -26,6 +26,14 @@ export function registerReleaseCommand(program) {
           releaseName = new Date().toISOString().slice(0, 10);
         }
         const pkgTarget = options.package || 'all';
+        if (pkgTarget !== 'all') {
+          const validPackages = (config.packageDirectories ?? []).map((p) => p.name).filter(Boolean);
+          if (!validPackages.includes(pkgTarget)) {
+            print.error(`Unknown package "${pkgTarget}". Valid options: all${validPackages.length ? ', ' + validPackages.join(', ') : ''}`);
+            process.exitCode = 1;
+            return;
+          }
+        }
 
         print.header('Generating Release Manifest');
 

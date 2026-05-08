@@ -571,6 +571,10 @@ export function createGuiApp(config, version, port = 7654) {
         initInProgress = false;
         return res.status(400).json({ error: 'projectName is required' });
       }
+      if (!defaultOrg.trim()) {
+        initInProgress = false;
+        return res.status(400).json({ error: 'defaultOrg is required' });
+      }
 
       const template = await fs.readJson(TEMPLATE_PATH);
       const configData = { ...template, projectName: projectName.trim(), defaultOrg };
@@ -1607,6 +1611,10 @@ export function createGuiApp(config, version, port = 7654) {
       if (typeof sourceDir !== 'string' || path.isAbsolute(sourceDir) || sourceDir.includes('..')) {
         return res.status(400).json({ error: 'Invalid sourceDir path' });
       }
+      const absSourceDir = path.resolve(projectRoot, sourceDir);
+      if (!absSourceDir.startsWith(projectRoot + path.sep)) {
+        return res.status(400).json({ error: 'Invalid sourceDir path' });
+      }
     }
 
     if (org !== undefined && org !== null) {
@@ -1944,6 +1952,12 @@ export function createGuiApp(config, version, port = 7654) {
       }
       if (path.isAbsolute(relPath) || relPath.includes('..')) {
         return res.status(400).json({ error: 'Invalid path' });
+      }
+      if (typeof type !== 'string' || !/^[A-Za-z][A-Za-z0-9]*$/.test(type)) {
+        return res.status(400).json({ error: 'Invalid type' });
+      }
+      if (typeof member !== 'string' || !member.trim()) {
+        return res.status(400).json({ error: 'Invalid member' });
       }
 
       const projectRoot = config._projectRoot ?? process.cwd();
