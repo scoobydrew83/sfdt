@@ -48,6 +48,8 @@ describe('detectProject', () => {
     expect(result.namespace).toBe('myns');
     expect(result.packageDirectories).toHaveLength(2);
     expect(result.packageDirectories[0].default).toBe(true);
+    expect(result.packageDirectories[0].name).toBe('force-app');
+    expect(result.packageDirectories[1].name).toBe('unpackaged');
     expect(result.defaultSourcePath).toBe(path.join('/project', 'force-app', 'main', 'default'));
   });
 
@@ -87,5 +89,20 @@ describe('detectProject', () => {
 
     const result = await detectProject('/project');
     expect(result.defaultSourcePath).toBe(path.join('/project', 'src', 'main', 'default'));
+  });
+
+  it('extracts name from nested package paths', async () => {
+    fs.pathExistsSync.mockImplementation((p) => p === path.join('/project', 'sfdx-project.json'));
+
+    fs.readJson.mockResolvedValue({
+      packageDirectories: [
+        { path: 'force-app/main/default', default: true },
+        { path: 'force-app/feature-a' },
+      ],
+    });
+
+    const result = await detectProject('/project');
+    expect(result.packageDirectories[0].name).toBe('default');
+    expect(result.packageDirectories[1].name).toBe('feature-a');
   });
 });

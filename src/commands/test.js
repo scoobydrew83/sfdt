@@ -2,6 +2,7 @@ import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
+import { getPrompt } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { ExitCode, resolveExitCode } from '../lib/exit-codes.js';
 
@@ -62,12 +63,7 @@ export function registerTestCommand(program) {
             if (analyzeFailure) {
               print.info('Analyzing test failures...');
 
-              const prompt = [
-                'Analyze the most recent Apex test failures in this Salesforce DX project.',
-                'Look at test result output, identify the root cause of failures, and suggest fixes.',
-                'Check for common issues: missing test data, SOQL governor limits, null pointer exceptions, and assertion failures.',
-                'Provide specific code-level recommendations.',
-              ].join('\n');
+              const prompt = await getPrompt('test-failure', config._configDir);
 
               await runAiPrompt(prompt, {
                 config,

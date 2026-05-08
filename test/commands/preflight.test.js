@@ -49,7 +49,7 @@ describe('preflight command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'preflight']);
 
     expect(runScript).toHaveBeenCalledWith(
-      'new/preflight.sh',
+      'ops/preflight.sh',
       expect.any(Object),
       expect.objectContaining({ cwd: '/project', env: {} }),
     );
@@ -62,7 +62,7 @@ describe('preflight command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'preflight', '--strict']);
 
     expect(runScript).toHaveBeenCalledWith(
-      'new/preflight.sh',
+      'ops/preflight.sh',
       expect.any(Object),
       expect.objectContaining({ env: { SFDT_PREFLIGHT_STRICT: 'true' } }),
     );

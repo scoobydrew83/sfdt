@@ -8,6 +8,7 @@ vi.mock('../api.js', () => ({
     testRuns: vi.fn(),
     preflight: vi.fn(),
     drift: vi.fn(),
+    deployHistory: vi.fn(),
   },
 }));
 
@@ -15,6 +16,7 @@ beforeEach(() => {
   api.testRuns.mockResolvedValue({ runs: [] });
   api.preflight.mockResolvedValue({ date: null, status: null, checks: [] });
   api.drift.mockResolvedValue({ date: null, status: null, components: [] });
+  api.deployHistory.mockResolvedValue({ history: [] });
 });
 
 describe('Dashboard — drift activity card', () => {

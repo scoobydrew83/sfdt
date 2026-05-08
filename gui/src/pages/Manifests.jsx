@@ -1,7 +1,22 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import EmptyState from '../components/EmptyState.jsx';
-import { IconX, IconCopy, IconDownload, IconFileText, IconPackage } from '../Icons.jsx';
+import { IconX, IconCopy, IconDownload, IconFileText, IconPackage, IconPlus } from '../Icons.jsx';
+
+const METADATA_TYPES = [
+  'ApexClass', 'ApexTrigger', 'ApexComponent', 'ApexPage',
+  'AuraDefinitionBundle', 'LightningComponentBundle',
+  'CustomObject', 'CustomField', 'CustomMetadata', 'CustomLabel', 'CustomLabels',
+  'CustomPermission', 'CustomSite', 'CustomTab',
+  'Flow', 'FlowDefinition',
+  'Layout', 'FlexiPage', 'CompactLayout',
+  'PermissionSet', 'PermissionSetGroup', 'Profile',
+  'StaticResource', 'ContentAsset',
+  'EmailTemplate', 'Report', 'Dashboard',
+  'ValidationRule', 'WorkflowRule', 'WorkflowAlert', 'WorkflowFieldUpdate',
+  'AssignmentRule', 'EscalationRule', 'AutoResponseRule',
+  'SharingRule', 'Territory2', 'Queue',
+];
 
 function fmtSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -10,6 +25,116 @@ function fmtSize(bytes) {
 
 function fmtDate(iso) {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
+}
+
+function AddComponentForm({ existingComponents, onAdd }) {
+  const [type, setType]         = useState('ApexClass');
+  const [members, setMembers]   = useState([]);   // discovered from source
+  const [filter, setFilter]     = useState('');
+  const [selected, setSelected] = useState(new Set());
+  const [loading, setLoading]   = useState(false);
+  const [busy, setBusy]         = useState(false);
+
+  const existingForType = existingComponents
+    .filter((c) => c.type === type)
+    .map((c) => c.member);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMembers([]);
+    setSelected(new Set());
+    setFilter('');
+    setLoading(true);
+    api.discoverComponents(type, existingForType)
+      .then(({ members: m = [] }) => { if (!cancelled) setMembers(m); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [type]);
+
+  const visible = filter
+    ? members.filter((m) => m.toLowerCase().includes(filter.toLowerCase()))
+    : members;
+
+  const toggleOne = (m) => setSelected((prev) => {
+    const next = new Set(prev);
+    next.has(m) ? next.delete(m) : next.add(m);
+    return next;
+  });
+
+  const allVisibleSelected = visible.length > 0 && visible.every((m) => selected.has(m));
+  const toggleVisible = () => setSelected((prev) => {
+    const next = new Set(prev);
+    allVisibleSelected ? visible.forEach((m) => next.delete(m)) : visible.forEach((m) => next.add(m));
+    return next;
+  });
+
+  const handleAdd = async () => {
+    if (!selected.size) return;
+    setBusy(true);
+    for (const m of selected) await onAdd(type, m);
+    setSelected(new Set());
+    // Refresh discovered list
+    const { members: fresh = [] } = await api.discoverComponents(type, existingForType).catch(() => ({ members: [] }));
+    setMembers(fresh);
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 10, paddingTop: 10 }}>
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)', marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        Add components
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          className="input"
+          style={{ flex: '0 0 auto', minWidth: 180, fontSize: 'var(--fs-xs)' }}
+        >
+          {METADATA_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <input
+          className="input"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter…"
+          style={{ flex: 1, fontSize: 'var(--fs-xs)' }}
+        />
+      </div>
+
+      {loading && <div style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-xs)', padding: '6px 0' }}>Discovering…</div>}
+
+      {!loading && members.length === 0 && (
+        <div style={{ color: 'var(--fg-subtle)', fontSize: 'var(--fs-xs)', padding: '6px 0' }}>
+          No {type} components found in source path (or all already in manifest).
+        </div>
+      )}
+
+      {!loading && visible.length > 0 && (
+        <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 'var(--r-sm)', marginBottom: 8 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', background: 'var(--bg-subtle)' }}>
+            <input type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} />
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)' }}>Select all ({visible.length})</span>
+          </label>
+          {visible.map((m) => (
+            <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={selected.has(m)} onChange={() => toggleOne(m)} />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--fg-default)' }}>{m}</span>
+            </label>
+          ))}
+        </div>
+      )}
+
+      <button
+        className="btn btn-primary btn-sm"
+        disabled={busy || selected.size === 0}
+        onClick={handleAdd}
+      >
+        <IconPlus size={11} /> Add {selected.size > 0 ? `${selected.size} ` : ''}component{selected.size !== 1 ? 's' : ''}
+      </button>
+    </div>
+  );
 }
 
 function ManifestViewer({ manifest, preloadedXml, onClose }) {
@@ -45,6 +170,15 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
       load();
     } catch (err) {
       alert(`Remove failed: ${err.message}`);
+    }
+  };
+
+  const addComponent = async (type, member) => {
+    try {
+      await api.addManifestComponent(manifest.relPath, type, member);
+      load();
+    } catch (err) {
+      alert(`Add failed: ${err.message}`);
     }
   };
 
@@ -90,6 +224,9 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
                     </tbody>
                   </table>
                 </div>
+                {manifest?.relPath && manifest.source !== 'deployed' && (
+                  <AddComponentForm existingComponents={data?.components ?? []} onAdd={addComponent} />
+                )}
               </div>
 
               {/* Right Column: XML Preview */}
@@ -126,21 +263,27 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
   );
 }
 
+function computeFilename(name, pkg, packages) {
+  if (!name) return '';
+  const hasPkg = packages.length > 0 && pkg !== 'all';
+  const suffix = hasPkg ? `-${pkg}` : '';
+  return `manifest/release/rl-${name}${suffix}-package.xml`;
+}
+
 function BuilderSection({ aiInfo, onBuilt }) {
   const [base, setBase] = useState('main');
   const [head, setHead] = useState('HEAD');
-  const [version, setVersion] = useState('');
-  const [suggestedVersion, setSuggestedVersion] = useState('');
+  const [packages, setPackages] = useState([]);
+  const [selectedPkg, setSelectedPkg] = useState('all');
+  const [releaseName, setReleaseName] = useState('');
   const [building, setBuilding] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [viewerOpen, setViewerOpen] = useState(false);
 
   useEffect(() => {
-    api.suggestVersion().then(d => {
-      setSuggestedVersion(d.version);
-      setVersion(d.version);
-    }).catch(() => {});
+    api.getPackages().then((d) => setPackages(d.packages ?? [])).catch(() => {});
+    api.suggestVersion().then((d) => setReleaseName(d.version ?? '')).catch(() => {});
   }, []);
 
   const handleBuild = async () => {
@@ -150,7 +293,8 @@ function BuilderSection({ aiInfo, onBuilt }) {
     try {
       const r = await api.buildManifestFromGit(base, head, {
         save: true,
-        version: version || suggestedVersion
+        name: releaseName || undefined,
+        package: selectedPkg,
       });
       setResult(r);
       onBuilt?.();
@@ -181,14 +325,50 @@ function BuilderSection({ aiInfo, onBuilt }) {
             <label className="input-label">Head ref</label>
             <input className="input" value={head} onChange={(e) => setHead(e.target.value)} placeholder="HEAD" />
           </div>
-          <div className="input-field" style={{ flex: 1, minWidth: 100 }}>
-            <label className="input-label">Release Version</label>
-            <input className="input" value={version} onChange={(e) => setVersion(e.target.value)} placeholder={suggestedVersion} />
+          <div className="input-field" style={{ flex: 1, minWidth: 120 }}>
+            <label className="input-label">Release Name</label>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <input
+                className="input"
+                value={releaseName}
+                onChange={(e) => setReleaseName(e.target.value)}
+                placeholder="e.g. 1.2.0 or sprint-q2"
+                style={{ flex: 1 }}
+              />
+              <button
+                className="btn btn-ghost btn-sm"
+                title="Use today's date"
+                onClick={() => setReleaseName(new Date().toISOString().slice(0, 10))}
+                style={{ flexShrink: 0, fontSize: 13 }}
+              >📅</button>
+            </div>
           </div>
           <button className="btn btn-primary" disabled={building || !base || !head} onClick={handleBuild} style={{ flexShrink: 0 }}>
             {building ? 'Generating…' : 'Generate & Save'}
           </button>
         </div>
+
+        {packages.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+            {['all', ...packages.map((p) => p.name)].map((name) => (
+              <button
+                key={name}
+                className={`btn btn-sm ${selectedPkg === name ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setSelectedPkg(name)}
+                style={{ fontSize: 'var(--fs-xs)' }}
+              >
+                <IconPackage size={11} /> {name === 'all' ? 'All packages' : name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {releaseName && (
+          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', marginBottom: 6 }}>
+            → {computeFilename(releaseName, selectedPkg, packages)}
+          </div>
+        )}
+
         <p style={{ marginTop: 'var(--s-2)', fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>
           Generates a package.xml from changed metadata files between the two git refs.
           {aiInfo?.enabled && ' For AI dependency cleanup, run <code>sfdt manifest --ai-cleanup</code> in your terminal.'}

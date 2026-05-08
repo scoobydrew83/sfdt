@@ -5,6 +5,7 @@ import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
+import { getPrompt, interpolate } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 
@@ -12,11 +13,32 @@ export function registerReleaseCommand(program) {
   program
     .command('release [version]')
     .description('Generate a release manifest and optionally AI-powered release notes')
-    .action(async (version) => {
+    .option('--package <name|all>', 'Package directory to generate manifest for: a short name or "all"', 'all')
+    .option('--name <label>', 'Release label (semver, free-form, or "today")')
+    .action(async (version, options) => {
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
         const args = version ? [version] : [];
+
+        let releaseName = options.name || version || null;
+        if (releaseName === 'today') {
+          releaseName = new Date().toISOString().slice(0, 10);
+        }
+        if (releaseName && !/^[A-Za-z0-9._-]+$/.test(releaseName)) {
+          print.error('Release name may only contain letters, numbers, dots, underscores, and hyphens.');
+          process.exitCode = 1;
+          return;
+        }
+        const pkgTarget = options.package || 'all';
+        if (pkgTarget !== 'all') {
+          const validPackages = (config.packageDirectories ?? []).map((p) => p.name).filter(Boolean);
+          if (!validPackages.includes(pkgTarget)) {
+            print.error(`Unknown package "${pkgTarget}". Valid options: all${validPackages.length ? ', ' + validPackages.join(', ') : ''}`);
+            process.exitCode = 1;
+            return;
+          }
+        }
 
         print.header('Generating Release Manifest');
 
@@ -26,6 +48,10 @@ export function registerReleaseCommand(program) {
           args,
           cwd: projectRoot,
           captureStdout: true,
+          env: {
+            SFDT_PACKAGE_TARGET: pkgTarget,
+            ...(releaseName ? { SFDT_RELEASE_NAME: releaseName } : {}),
+          },
         });
 
         const resolvedVersion = (result.stdout || '').trim() || version || 'latest';
@@ -53,14 +79,11 @@ export function registerReleaseCommand(program) {
 
             print.info(`Generating release notes for ${resolvedVersion}...`);
 
-            const prompt = [
-              `Analyze the recent git log for this Salesforce project and generate concise, professional release notes.`,
-              `Version: ${resolvedVersion}`,
-              `Focus on: new features, bug fixes, breaking changes, and deployment notes.`,
-              `Format as markdown with sections: ## What's New, ## Bug Fixes, ## Breaking Changes (if any), ## Deployment Notes.`,
-              `Run 'git log --oneline -30' to see recent commits.`,
-              `Write the release notes to: ${notesFilePath}`,
-            ].join('\n');
+            const releaseNotesTemplate = await getPrompt('release-notes', config._configDir);
+            const prompt = interpolate(releaseNotesTemplate, {
+              version: resolvedVersion,
+              outputPath: notesFilePath,
+            });
 
             await runAiPrompt(prompt, {
               config,
@@ -77,7 +100,7 @@ export function registerReleaseCommand(program) {
         }
 
         // Git workflow: stage, commit, tag, deploy prompt, push
-        await gitWorkflow(projectRoot, config, resolvedVersion);
+        await gitWorkflow(projectRoot, config, releaseName || resolvedVersion);
       } catch (err) {
         print.error(`Release failed: ${err.message}`);
         process.exitCode = resolveExitCode(err);
@@ -92,8 +115,9 @@ async function gitWorkflow(projectRoot, config, version) {
 
   print.header('Git Workflow');
 
-  // Stage manifest files
+  // Stage manifest files — flat layout and subpath layout (one dir deeper)
   await execa('git', ['add', '-f', `${manifestDir}/rl-${version}-*`], execOpts);
+  await execa('git', ['add', '-f', `${manifestDir}/*/rl-${version}-*`], execOpts);
 
   // Stage CHANGELOG.md if modified
   const changelogDiff = await execa('git', ['diff', '--quiet', 'CHANGELOG.md'], execOpts);

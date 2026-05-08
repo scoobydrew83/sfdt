@@ -220,7 +220,10 @@ validate_version_entry() {
         return 1
     fi
 
-    grep -q "^## \[${version}\]" "$changelog_file"
+    local safe_version normalized_pattern
+    safe_version=$(printf '%s\n' "$version" | sed 's/[][\\.^$*]/\\&/g')
+    normalized_pattern=$(printf '%s\n' "$safe_version" | sed 's/\\-/[- ]/g')
+    grep -qi "^## \[${normalized_pattern}\]" "$changelog_file"
 }
 
 # Get the last released version from CHANGELOG

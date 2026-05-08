@@ -1,6 +1,6 @@
 {
   "name": "@sfdt/cli",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "description": "Salesforce DevTools — Production-grade CLI for Salesforce DX deployment, testing, quality analysis, and release management",
   "type": "module",
   "bin": {
@@ -32,6 +32,7 @@
     "format": "prettier --write \"src/**/*.js\" \"bin/*.js\" \"test/**/*.js\" \"README.md\" \"package.json\"",
     "dev": "npm link",
     "build:gui": "cd gui && npm install && npm run build",
+    "dev:ui": "npm run build:gui && npm link && echo '\\n✓ GUI built and linked. cd into your SF project and run: sfdt ui'",
     "postinstall": "node scripts/postinstall.js",
     "prepublishOnly": "npm test && npm run lint"
   },
@@ -60,7 +61,7 @@
     "commander": "^13.1.0",
     "execa": "^9.5.2",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.4.1",
+    "express-rate-limit": "^8.5.1",
     "fs-extra": "^11.3.0",
     "glob": "^13.0.6",
     "inquirer": "^13.3.2",

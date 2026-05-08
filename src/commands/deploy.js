@@ -1,3 +1,4 @@
+import path from 'path';
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { print } from '../lib/output.js';
@@ -10,6 +11,7 @@ export function registerDeployCommand(program) {
     .option('--managed', 'Use deploy-manager.sh instead of deployment-assistant.sh')
     .option('--skip-preflight', 'Skip pre-deployment preflight checks')
     .option('--dry-run', 'Show what would be executed without running')
+    .option('--source-dir <path>', 'Deploy a source directory instead of a manifest (relative to project root)')
     .action(async (options) => {
       try {
         const config = await loadConfig();
@@ -22,7 +24,7 @@ export function registerDeployCommand(program) {
             preflightEnv.SFDT_PREFLIGHT_STRICT = 'true';
           }
           try {
-            await runScript('new/preflight.sh', config, {
+            await runScript('ops/preflight.sh', config, {
               cwd: projectRoot,
               env: preflightEnv,
               dryRun: options.dryRun,
@@ -39,11 +41,20 @@ export function registerDeployCommand(program) {
           ? 'core/deploy-manager.sh'
           : 'core/deployment-assistant.sh';
 
-        print.header(`Deploying${options.managed ? ' (managed)' : ''}${options.dryRun ? ' [dry-run]' : ''}`);
+        print.header(`Deploying${options.managed ? ' (managed)' : ''}${options.sourceDir ? ` [${options.sourceDir}]` : ''}${options.dryRun ? ' [dry-run]' : ''}`);
+
+        const extraEnv = {};
+        if (options.sourceDir) {
+          if (path.isAbsolute(options.sourceDir) || options.sourceDir.includes('..')) {
+            throw new Error('--source-dir must be a relative path within the project');
+          }
+          extraEnv.SFDT_DEPLOY_SOURCE_DIR = options.sourceDir;
+        }
 
         await runScript(scriptPath, config, {
           cwd: projectRoot,
           dryRun: options.dryRun,
+          env: extraEnv,
         });
 
         print.success(options.dryRun ? 'Dry-run complete — no changes made.' : 'Deployment completed successfully.');

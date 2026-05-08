@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { IconPlay, IconX, IconRefresh, IconTerminal } from '../Icons.jsx';
 
-export default function CommandRunner({ command, label, onComplete = () => {} }) {
+export default function CommandRunner({ command, label, extraParams = {}, onComplete = () => {} }) {
   const [status, setStatus]     = useState('idle');
   const [lines, setLines]       = useState([]);
   const [exitCode, setExitCode] = useState(null);
@@ -36,7 +36,8 @@ export default function CommandRunner({ command, label, onComplete = () => {} })
     setExitCode(null);
     counterRef.current = 0;
 
-    const es = new EventSource(`/api/command/run?command=${encodeURIComponent(command)}`);
+    const qs = new URLSearchParams({ command, ...extraParams });
+    const es = new EventSource(`/api/command/run?${qs}`);
     esRef.current = es;
 
     es.onmessage = (e) => {

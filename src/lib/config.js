@@ -87,12 +87,21 @@ export async function loadConfig(startDir) {
     if (!merged.sourceApiVersion && sfdxProject.sourceApiVersion) {
       merged.sourceApiVersion = sfdxProject.sourceApiVersion;
     }
-    if (!merged.defaultSourcePath && sfdxProject.packageDirectories?.length) {
-      const defaultPkg =
-        sfdxProject.packageDirectories.find((d) => d.default) || sfdxProject.packageDirectories[0];
-      merged.defaultSourcePath = defaultPkg.path + '/main/default';
+    if (sfdxProject.packageDirectories?.length) {
+      const dirs = sfdxProject.packageDirectories;
+      if (!merged.defaultSourcePath) {
+        const defaultPkg = dirs.find((d) => d.default) || dirs[0];
+        merged.defaultSourcePath = defaultPkg.path + '/main/default';
+      }
+      merged.packageDirectories = dirs.map((d) => ({
+        path: d.path,
+        default: !!d.default,
+        absolutePath: path.join(merged._projectRoot, d.path),
+        name: d.name ?? d.path.split('/').at(-1),
+      }));
     }
   }
+  merged.manifestLayout = merged.manifestLayout || 'flat';
 
   return merged;
 }

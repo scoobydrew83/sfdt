@@ -52,6 +52,7 @@ function createProgram() {
 beforeEach(() => {
   vi.resetAllMocks();
   process.exitCode = undefined;
+  process.stdin.isTTY = true;
   loadConfig.mockResolvedValue(MOCK_CONFIG);
   initCache.mockReturnValue(MOCK_DB);
   getCacheStatus.mockReturnValue({ orgAlias: 'dev', componentCount: 10, lastSync: '2026-04-01T00:00:00.000Z' });

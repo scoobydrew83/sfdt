@@ -21,7 +21,7 @@ export function registerSmokeCommand(program) {
           SFDT_TARGET_ORG: orgAlias,
         };
 
-        await runScript('new/smoke.sh', config, {
+        await runScript('ops/smoke.sh', config, {
           cwd: projectRoot,
           env,
           dryRun: options.dryRun,

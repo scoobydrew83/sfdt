@@ -21,7 +21,7 @@ export function registerPreflightCommand(program) {
           env.SFDT_PREFLIGHT_STRICT = 'true';
         }
 
-        await runScript('new/preflight.sh', config, {
+        await runScript('ops/preflight.sh', config, {
           cwd: projectRoot,
           env,
           dryRun: options.dryRun,

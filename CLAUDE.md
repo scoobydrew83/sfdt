@@ -59,6 +59,10 @@ Dockerfile      Official Docker image definition
 | `SFDT_PREFLIGHT_ENFORCE_TESTS` | `"true"` when `config.deployment.preflight.enforceTests` is set; gates Apex test check in preflight |
 | `SFDT_PREFLIGHT_ENFORCE_BRANCH` | `"true"` when `config.deployment.preflight.enforceBranchNaming` is set; promotes branch WARN to FAIL |
 | `SFDT_PREFLIGHT_ENFORCE_CHANGELOG` | `"true"` when `config.deployment.preflight.enforceChangelog` is set; promotes CHANGELOG WARN to FAIL |
+| `SFDT_PREFLIGHT_ENFORCE_GIT_CLEAN` | `"true"` (default) unless `config.deployment.preflight.enforceGitClean` is `false`; gates git-clean check |
+| `SFDT_PREFLIGHT_ENFORCE_SFDX_PROJECT` | `"true"` (default) unless `config.deployment.preflight.enforceSfdxProject` is `false`; gates sfdx-project.json check |
+| `SFDT_PREFLIGHT_ENFORCE_UNTRACKED` | `"true"` when `config.deployment.preflight.enforceUntrackedFiles` is set; gates untracked-files check in force-app/ |
+| `SFDT_PREFLIGHT_STRICT` | `"true"` when `config.deployment.preflight.strict` is set; promotes all WARNs to FAILs |
 | `SFDT_FEATURE_*` | Flattened from `config.features` |
 | `SFDT_DEFAULT_ENV` | `config.environments.default` |
 | `SFDT_ENV_ORGS` | Comma-joined org aliases from `config.environments.orgs` |
@@ -67,6 +71,11 @@ Dockerfile      Official Docker image definition
 | `SFDT_APEX_CLASSES` | Comma-joined Apex class names from `config.testConfig.apexClasses` |
 | `SFDT_NON_INTERACTIVE` | `"true"` when stdin is not a TTY or `options.interactive === false` |
 | `SFDT_PARALLEL_DELAY` | Seconds between parallel batch launches (default: `1`, set in shell scripts) |
+| `SFDT_PACKAGE_DIRS` | JSON array of all package paths from `config.packageDirectories`, e.g. `["force-app/main/default","force-app/feature-a"]` |
+| `SFDT_MANIFEST_LAYOUT` | `config.manifestLayout` (`"flat"` or `"subpath"`); default `"flat"` |
+| `SFDT_PACKAGE_TARGET` | Per-invocation: `"all"` or a specific package name; passed via `env:` option in `runScript()` calls |
+| `SFDT_RELEASE_NAME` | Per-invocation: full release label (semver, free-form, or date); passed via `env:` option |
+| `SFDT_DEPLOY_SOURCE_DIR` | Per-invocation: source directory path for folder-mode deploys; empty string for manifest-mode; passed via `env:` option |
 | (removed) | `pullConfig` is consumed directly by `pull.js`; no longer flattened to env vars |
 
 When adding a new env var, update both `buildScriptEnv()` in `script-runner.js` and this table.
@@ -94,6 +103,51 @@ npm run test:coverage # Coverage report
 npm link              # Link for local development
 ```
 
+### GUI Development & Testing
+
+The GUI (`gui/src/`) must be compiled before the server serves it. `gui/dist/` is NOT auto-rebuilt on source changes.
+
+#### Step 1 — Build and link (run from sfdt package root)
+
+```bash
+npm run dev:ui
+# Equivalent to: npm run build:gui && npm link
+```
+
+This ensures the `sfdt` binary on PATH resolves to THIS package, not a globally published version.
+
+#### Step 2 — Verify the link
+
+```bash
+ls -la $(which sfdt)
+# Must show a symlink into <sfdt-package-root>/bin/sfdt.js
+# If it points elsewhere, re-run: npm link
+```
+
+#### Step 3 — Start against the Salesforce project
+
+```bash
+cd /path/to/your-sf-project   # or any project with .sfdt/config.json
+sfdt ui                                   # starts server at http://localhost:7654
+```
+
+#### After any GUI source change
+
+```bash
+# From sfdt package root:
+npm run build:gui
+# Kill and restart `sfdt ui` in the SF project directory
+pkill -f "sfdt ui"
+cd /path/to/your-sf-project && sfdt ui
+```
+
+#### CRITICAL: Always verify before testing
+
+Before testing or reporting on GUI behaviour in any session:
+1. `ls -la $(which sfdt)` — confirm it links into the sfdt dev directory
+2. `npm run build:gui` — confirm `gui/dist/` reflects the latest source changes
+3. Start `sfdt ui` from the SF project, not from the sfdt package root
+
 ### Package-Internal Path Resolution — CRITICAL RULE
 
 **Any path that references a file INSIDE the sfdt package** (scripts/, templates/, gui/dist/, bin/) MUST be resolved using `import.meta.url`, never from `process.cwd()`, `config._projectRoot`, or any CWD-based reference.
@@ -102,7 +156,7 @@ When globally installed, `config._projectRoot` points to the *user's Salesforce 
 
 **WRONG — breaks on other machines:**
 ```js
-path.join(config._projectRoot, 'scripts/new/preflight.sh')
+path.join(config._projectRoot, 'scripts/ops/preflight.sh')
 path.join(projectRoot, 'scripts/lib/changelog-utils.sh')
 path.resolve(process.cwd(), 'scripts/...')
 ```
@@ -116,7 +170,7 @@ const __dirname = path.dirname(__filename);
 const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', 'scripts');  // from src/commands/ or src/lib/
 
 // Then use it:
-path.join(SCRIPTS_DIR, 'new/preflight.sh')
+path.join(SCRIPTS_DIR, 'ops/preflight.sh')
 path.join(SCRIPTS_DIR, 'lib/changelog-utils.sh')
 ```
 

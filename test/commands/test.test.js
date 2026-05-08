@@ -102,7 +102,7 @@ describe('test command', () => {
 
     expect(inquirer.prompt).toHaveBeenCalled();
     expect(runAiPrompt).toHaveBeenCalledWith(
-      expect.stringContaining('Analyze the most recent Apex test failures'),
+      expect.stringContaining('Apex test failures'),
       expect.any(Object),
     );
     expect(process.exitCode).toBe(1);

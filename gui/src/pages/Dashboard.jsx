@@ -12,28 +12,85 @@ function ActivityIcon({ type }) {
 }
 
 export default function Dashboard({ project }) {
-  const [tests, setTests]       = useState(null);
-  const [preflight, setPreflight] = useState(null);
-  const [drift, setDrift]       = useState(null);
-  const [loading, setLoading]   = useState(true);
+  const [tests, setTests]           = useState(null);
+  const [preflight, setPreflight]   = useState(null);
+  const [drift, setDrift]           = useState(null);
+  const [deploys, setDeploys]       = useState(null);
+  const [loading, setLoading]       = useState(true);
   const [fetchError, setFetchError] = useState(null);
 
   const loadData = useCallback(() => {
+    let cancelled = false;
     setLoading(true);
     setFetchError(null);
-    Promise.all([api.testRuns(), api.preflight(), api.drift()])
-      .then(([t, p, d]) => { setTests(t); setPreflight(p); setDrift(d); })
-      .catch((err) => setFetchError(err.message ?? 'Failed to load dashboard data.'))
-      .finally(() => setLoading(false));
+    Promise.all([api.testRuns(), api.preflight(), api.drift(), api.deployHistory()])
+      .then(([t, p, d, dh]) => {
+        if (cancelled) return;
+        setTests(t);
+        setPreflight(p);
+        setDrift(d);
+        setDeploys(dh);
+      })
+      .catch((err) => { if (!cancelled) setFetchError(err.message ?? 'Failed to load dashboard data.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    const cancel = loadData();
+    return cancel;
+  }, [loadData]);
 
-  const totalPassed = tests?.runs?.reduce((s, r) => s + (r.passed ?? 0), 0) ?? 0;
-  const totalFailed = tests?.runs?.reduce((s, r) => s + (r.failed ?? 0), 0) ?? 0;
-  const lastTest    = tests?.runs?.[0];
-  const lastTestDate = lastTest ? new Date(lastTest.date).toLocaleDateString() : '—';
-  const threshold   = project?.coverageThreshold ?? 75;
+  // ─── Derived stat values ──────────────────────────────────────────────────
+
+  // Test Runs card
+  const testRuns    = tests?.runs ?? [];
+  const testRunCount = testRuns.length;
+  // Sparkline: last 7 pass-rates (0–100)
+  const testSparkline = testRuns.slice(-7).map((r) => {
+    const total = (r.passed ?? 0) + (r.failed ?? 0);
+    return total > 0 ? Math.round(((r.passed ?? 0) / total) * 100) : 0;
+  });
+  const thisWeek = testRuns.filter((r) => {
+    return r.date ? (Date.now() - new Date(r.date).getTime()) < 7 * 24 * 60 * 60 * 1000 : false;
+  }).length;
+  const testTrend = thisWeek > 0 ? `+${thisWeek} this week` : undefined;
+
+  // Preflight card
+  const preflightChecks = preflight?.checks ?? [];
+  const preflightPassed = preflightChecks.filter((c) => c.status === 'pass').length;
+  const preflightFailed = preflightChecks.filter((c) => c.status === 'fail' || c.status === 'error').length;
+  const preflightTotal  = preflightChecks.length;
+  const preflightSparkline = preflightTotal > 0
+    ? Array(7).fill(preflightPassed)
+    : undefined;
+  const preflightTrend = preflightFailed > 0
+    ? `${preflightFailed} failed`
+    : preflightTotal > 0 ? 'All passed' : undefined;
+  const preflightTrendColor = preflightFailed > 0 ? 'danger' : 'success';
+
+  // Drift card
+  const driftComponents = drift?.components ?? [];
+  const driftedCount    = driftComponents.filter((c) => c.drift?.toLowerCase() === 'drift').length;
+  const driftValue      = drift ? (driftedCount === 0 ? 'Clean' : driftedCount) : '—';
+  const driftTrend      = drift
+    ? (driftedCount > 0 ? `▲ ${driftedCount} drifted` : 'No drift')
+    : undefined;
+  const driftTrendColor = driftedCount > 0 ? 'danger' : 'success';
+  const driftAccent     = !drift ? 'brand' : driftedCount > 0 ? 'red' : 'green';
+  // Flat sparkline from single value
+  const driftSparkline  = drift ? Array(7).fill(driftedCount) : undefined;
+
+  // Deployments card
+  const deployHistory   = deploys?.history ?? [];
+  const deployCount     = deployHistory.length;
+  const recentDeploys   = deployHistory.filter((d) => {
+    return d.date ? (Date.now() - new Date(d.date).getTime()) < 7 * 24 * 60 * 60 * 1000 : false;
+  }).length;
+  const deploySparkline = deployHistory.slice(-7).map((d) => (d.exitCode === 0 ? 1 : 0));
+  const deployTrend     = recentDeploys > 0 ? `+${recentDeploys} this week` : undefined;
+
+  // ─── Loading skeleton ─────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -75,7 +132,8 @@ export default function Dashboard({ project }) {
     );
   }
 
-  // Build a lightweight activity list from available data
+  // ─── Activity feed ────────────────────────────────────────────────────────
+  const lastTest = testRuns[0];
   const activity = [];
   if (lastTest) {
     const ok = !lastTest.failed && !lastTest.errors;
@@ -96,12 +154,20 @@ export default function Dashboard({ project }) {
     });
   }
   if (drift?.status) {
-    const driftCount = (drift.components ?? []).filter((c) => c.drift?.toLowerCase() === 'drift').length;
     activity.push({
       type: drift.status === 'clean' ? 'success' : 'warn',
-      title: `Drift check — ${driftCount} component${driftCount !== 1 ? 's' : ''} differ`,
+      title: `Drift check — ${driftedCount} component${driftedCount !== 1 ? 's' : ''} differ`,
       meta: drift.date ? new Date(drift.date).toLocaleString() : '',
       status: drift.status,
+    });
+  }
+  if (deployHistory.length > 0) {
+    const last = deployHistory[0];
+    activity.push({
+      type: last.exitCode === 0 ? 'success' : 'error',
+      title: `Deploy — ${last.manifest ?? 'unknown manifest'} → ${last.org ?? 'default org'}`,
+      meta: last.date ? new Date(last.date).toLocaleString() : '',
+      status: last.exitCode === 0 ? 'pass' : 'fail',
     });
   }
 
@@ -114,12 +180,44 @@ export default function Dashboard({ project }) {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* 4-up stat cards */}
       <div className="stats-grid">
-        <StatCard label="Tests Passed"  value={totalPassed}  accent={totalPassed > 0 ? 'green' : 'brand'} />
-        <StatCard label="Tests Failed"  value={totalFailed}  accent={totalFailed > 0 ? 'red' : 'green'} />
-        <StatCard label="Coverage"      value={`${threshold}%`} sub="target threshold" accent="brand" />
-        <StatCard label="Last Test"     value={lastTestDate}  sub={lastTest ? new Date(lastTest.date).toLocaleTimeString() : undefined} accent="violet" />
+        <StatCard
+          label="Test Runs"
+          value={testRunCount}
+          sub={lastTest ? `Last: ${new Date(lastTest.date).toLocaleDateString()}` : 'No runs yet'}
+          accent="brand"
+          sparkline={testSparkline.length >= 2 ? testSparkline : undefined}
+          trend={testTrend}
+          trendColor="success"
+        />
+        <StatCard
+          label="Preflight Checks"
+          value={preflightTotal > 0 ? `${preflightPassed}/${preflightTotal}` : '—'}
+          sub={preflightTotal > 0 ? 'passed' : 'No runs yet'}
+          accent={preflightFailed > 0 ? 'red' : preflightTotal > 0 ? 'green' : 'brand'}
+          sparkline={preflightSparkline}
+          trend={preflightTrend}
+          trendColor={preflightTrendColor}
+        />
+        <StatCard
+          label="Drift Status"
+          value={driftValue}
+          sub={drift ? `${driftComponents.length} components checked` : 'No scan yet'}
+          accent={driftAccent}
+          sparkline={driftSparkline?.length >= 2 ? driftSparkline : undefined}
+          trend={driftTrend}
+          trendColor={driftTrendColor}
+        />
+        <StatCard
+          label="Deployments"
+          value={deployCount}
+          sub={recentDeploys > 0 ? `${recentDeploys} this week` : 'No recent deploys'}
+          accent="violet"
+          sparkline={deploySparkline.length >= 2 ? deploySparkline : undefined}
+          trend={deployTrend}
+          trendColor="success"
+        />
       </div>
 
       <div className="two-col" style={{ gap: 24 }}>
@@ -132,7 +230,7 @@ export default function Dashboard({ project }) {
               <div className="card-subtitle">Last 5 executions</div>
             </div>
           </div>
-          {!tests?.runs?.length ? (
+          {!testRuns.length ? (
             <div style={{ padding: 'var(--s-5)', color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)' }}>
               No test runs yet. Run <code style={{ fontFamily: 'var(--font-mono)', background: 'var(--bg-muted)', padding: '1px 5px', borderRadius: 3 }}>sfdt test</code>.
             </div>
@@ -147,7 +245,7 @@ export default function Dashboard({ project }) {
                 </tr>
               </thead>
               <tbody>
-                {tests.runs.slice(0, 5).map((run, i) => (
+                {testRuns.slice(0, 5).map((run, i) => (
                   <tr key={`${run.date}-${i}`}>
                     <td className="td-mono">{new Date(run.date).toLocaleDateString()}</td>
                     <td style={{ textAlign: 'right' }}>

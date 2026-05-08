@@ -6,7 +6,7 @@ function chunk(arr, size) {
   return out;
 }
 
-export async function parallelRetrieve(delta, config, { cwd, onProgress } = {}) {
+export async function parallelRetrieve(delta, config, { cwd, onProgress, signal } = {}) {
   const members = [];
   for (const [type, names] of delta) {
     for (const name of names) members.push(`${type}:${name}`);
@@ -28,7 +28,7 @@ export async function parallelRetrieve(delta, config, { cwd, onProgress } = {}) 
         try {
           const metadataArgs = batch.flatMap((m) => ['--metadata', m]);
           const timeout = (config.pullCache?.retrieveTimeoutSeconds ?? 360) * 1000;
-          await execa('sf', ['project', 'retrieve', 'start', ...metadataArgs], { cwd, timeout });
+          await execa('sf', ['project', 'retrieve', 'start', ...metadataArgs], { cwd, timeout, ...(signal ? { cancelSignal: signal } : {}) });
           return { batch, ok: true };
         } catch (err) {
           errors.push({ batch, error: err.message });

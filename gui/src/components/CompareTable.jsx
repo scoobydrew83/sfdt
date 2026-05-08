@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import StatusBadge from './StatusBadge.jsx';
 import { IconSearch, IconFilter, IconPackage } from '../Icons.jsx';
 
 const STATUS_OPTIONS = [
@@ -27,10 +26,66 @@ function countsByStatus(items) {
 
 const getNamespace = (name) => name.match(/^([A-Za-z0-9]+)__/)?.[1] ?? null;
 
-export default function CompareTable({ items = [], onSelect, onBuildManifest }) {
+const PILL_MAP = {
+  'identical':    'pill-match',
+  'match':        'pill-match',
+  'modified':     'pill-mod',
+  'both':         'pill-mod',
+  'source-only':  'pill-add',
+  'target-only':  'pill-rm',
+  'conflict':     'pill-conflict',
+};
+
+const PILL_LABEL = {
+  'identical':    'Match',
+  'match':        'Match',
+  'modified':     'Modified',
+  'both':         'Checking…',
+  'source-only':  'Added',
+  'target-only':  'Removed',
+  'conflict':     'Conflict',
+};
+
+function StatusPill({ status }) {
+  const key = (status ?? '').toLowerCase();
+  const cls  = PILL_MAP[key]  ?? 'pill-match';
+  const label = PILL_LABEL[key] ?? status ?? '—';
+  return <span className={`status-pill ${cls}`}>{label}</span>;
+}
+
+function NamespacedName({ name, onClick }) {
+  const ns = getNamespace(name);
+  if (!ns) {
+    return (
+      <button
+        className="td-name"
+        style={{ background: 'none', border: 'none', color: 'var(--fg-brand)', cursor: 'pointer', padding: 0, fontSize: 'inherit', fontWeight: 500 }}
+        onClick={onClick}
+      >
+        {name}
+      </button>
+    );
+  }
+  const prefix = `${ns}__`;
+  const rest = name.slice(prefix.length);
+  return (
+    <button
+      className="td-name"
+      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', fontWeight: 500 }}
+      onClick={onClick}
+    >
+      <span style={{ color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)' }}>{prefix}</span>
+      <span style={{ color: 'var(--fg-brand)' }}>{rest}</span>
+    </button>
+  );
+}
+
+export default function CompareTable({ items = [], onSelect, onBuildManifest, statusFilter: externalStatusFilter }) {
   const [search, setSearch]             = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [internalStatusFilter, setInternalStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter]     = useState('all');
+  // If caller controls status filter externally, use that; otherwise use internal state
+  const statusFilter = externalStatusFilter !== undefined ? externalStatusFilter : internalStatusFilter;
   const [selection, setSelection]       = useState(new Set());
   const [hideManaged, setHideManaged]   = useState(true);
   const [grouped, setGrouped]           = useState(false);
@@ -40,13 +95,25 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
     return ['all', ...t];
   }, [items]);
 
+  // Map FilterTab labels to status matching predicates
+  const statusMatchFn = useMemo(() => {
+    const f = statusFilter;
+    if (!f || f === 'all' || f === 'All') return null;  // no filter
+    if (f === 'Modified')  return (s) => s === 'modified' || s === 'both';
+    if (f === 'Added')     return (s) => s === 'source-only';
+    if (f === 'Removed')   return (s) => s === 'target-only';
+    if (f === 'Conflicts') return (s) => s === 'conflict';
+    // raw status value (internal chip filter fallback)
+    return (s) => s === f;
+  }, [statusFilter]);
+
   const filtered = useMemo(() => items.filter((i) => {
-    if (statusFilter !== 'all' && i.status !== statusFilter) return false;
+    if (statusMatchFn && !statusMatchFn(i.status)) return false;
     if (typeFilter !== 'all' && i.type !== typeFilter) return false;
     if (hideManaged && getNamespace(i.member)) return false;
     if (search && !`${i.type}.${i.member}`.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }), [items, statusFilter, typeFilter, hideManaged, search]);
+  }), [items, statusMatchFn, typeFilter, hideManaged, search]);
 
   const autoSelected = useMemo(() => new Set(
     items
@@ -90,9 +157,8 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
   const renderRow = (item) => {
     const key = `${item.type}.${item.member}`;
     const checked = effectiveSel.has(key);
-    const ns = getNamespace(item.member);
     return (
-      <tr key={key}>
+      <tr key={key} className="compare-row">
         <td>
           <input
             type="checkbox"
@@ -102,36 +168,14 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
           />
         </td>
         <td>
-          <button
-            className="td-name"
-            style={{ background: 'none', border: 'none', color: 'var(--fg-brand)', cursor: 'pointer', padding: 0, fontSize: 'inherit', fontWeight: 500 }}
-            onClick={() => onSelect?.(item)}
-          >
-            {item.member}
-          </button>
-          {ns && (
-            <span style={{
-              display: 'inline-block',
-              marginLeft: 6,
-              padding: '1px 6px',
-              borderRadius: 4,
-              fontSize: 10,
-              fontFamily: 'var(--font-mono)',
-              background: 'var(--bg-muted)',
-              color: 'var(--fg-subtle)',
-              border: '1px solid var(--border-subtle)',
-              verticalAlign: 'middle',
-            }}>
-              {ns}
-            </span>
-          )}
+          <NamespacedName name={item.member} onClick={() => onSelect?.(item)} />
         </td>
         <td>
           <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)' }}>
             {item.type}
           </span>
         </td>
-        <td><StatusBadge status={item.status} /></td>
+        <td><StatusPill status={item.status} /></td>
       </tr>
     );
   };
@@ -150,14 +194,14 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
           />
         </div>
 
-        {STATUS_OPTIONS.filter((o) => o.id !== 'all').map((o) => {
+        {externalStatusFilter === undefined && STATUS_OPTIONS.filter((o) => o.id !== 'all').map((o) => {
           const n = counts[o.id] ?? 0;
           if (!n) return null;
           return (
             <button
               key={o.id}
-              className={`filter-chip${statusFilter === o.id ? ' active' : ''}`}
-              onClick={() => setStatusFilter(statusFilter === o.id ? 'all' : o.id)}
+              className={`filter-chip${internalStatusFilter === o.id ? ' active' : ''}`}
+              onClick={() => setInternalStatusFilter(internalStatusFilter === o.id ? 'all' : o.id)}
             >
               {o.label}
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, opacity: .7 }}>{n}</span>
@@ -297,6 +341,7 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest }) 
       {items.length > 0 && (
         <div className="mt-2" style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)', fontFamily: 'var(--font-mono)' }}>
           {filtered.length} of {items.length} · {counts['source-only'] ?? 0} source-only · {counts['target-only'] ?? 0} target-only · {counts.modified ?? 0} modified · {counts.identical ?? 0} identical
+          {counts.conflict ? ` · ${counts.conflict} conflict` : ''}
           {counts.both ? ` · ${counts.both} checking…` : ''}
         </div>
       )}

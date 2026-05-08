@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-07
+
+### Added
+- **Multi-package deploy support**: `sfdt manifest`, `sfdt deploy`, and `sfdt release` now accept `--package <name>` to target a specific package directory and `--name <label>` to set a custom release label. The shell scripts read the package list from `SFDT_PACKAGE_DIRS` and the layout from `SFDT_MANIFEST_LAYOUT`.
+- **`manifestLayout` config field**: Controls whether generated manifests are placed in a flat layout (`flat`, default) or per-package subdirectories (`subpath`). `sfdt init` now prompts for this setting when multiple `packageDirectories` are detected in `sfdx-project.json`.
+- **GUI: functional Pull page**: Replaces the Coming Soon stub with a fully interactive Pull page — mode selector (Smart Delta, Preview, Full Retrieve), run/cancel controls, and live streaming output backed by new `/api/pull/groups` and `/api/pull` SSE endpoints.
+- **GUI: Dependency Graph page**: New D3 force-directed visualization showing component relationships across the Salesforce org. Nodes are filterable by type; edges highlight dependency chains on hover. Backed by new `/api/dependencies` endpoint.
+- **GUI: Dependency Check section on Preflight**: The Preflight page now includes a component dependency check panel sourced from `/api/dependencies/preflight`, surfacing missing or broken references as warnings alongside the existing checklist.
+- **`/api/packages` endpoint**: Returns the list of configured package directories for the current project; used by the GUI Manifests and Release Hub pages to populate package selectors.
+- **CI: integration test job and nightly schedule**: New `integration-test` workflow job installs sfdt from a tarball and runs key commands (`preflight`, `test`, `quality`) against a scratch org. Runs on every PR and nightly via cron.
+- **`sfdt deploy --source-dir`**: New flag for folder-mode deploys — deploys directly from a source directory path instead of generating a manifest.
+
+### Breaking Changes
+- **Preflight: `enforceGitClean` and `enforceSfdxProject` now default to `true`**: Projects upgrading from v0.6.x that do not have a `deployment.preflight` section in `.sfdt/config.json` will now have git-clean and sfdx-project checks enabled automatically. To preserve the previous opt-in behaviour, explicitly set `"enforceGitClean": false` and `"enforceSfdxProject": false` in your config, or run `sfdt init` to regenerate the config with current defaults.
+
+### Changed
+- **GUI: dark mode is now the default**: The dashboard root defaults to dark mode; light mode is opt-in via the `.content-light` class. No user preference is required.
+- **GUI design system (Relay)**: Dashboard, ReleaseHub, Drift, and Compare pages updated to use the Relay design components (custom CSS design system). Hardcoded brand colors replaced with CSS custom properties throughout.
+- **GUI: new shared components**: `FilterTabs` and `OrgBar` added to the component library; `StatCard` extended with sparkline, trend indicator, and `valueColor` prop.
+- **GUI Settings**: `manifestLayout` setting and `packageDirectories` package list now displayed and editable in the Settings page.
+- **Preflight**: Enhanced check coverage and updated default config values in `sfdt.config.json` template.
+- **`packageDirectories`**: The array of package entries (with `name` field) is now preserved from `sfdx-project.json` and exposed to the GUI and shell scripts via `SFDT_PACKAGE_DIRS`.
+
+### Fixed
+- Pull: delta retrieve now aborts cleanly on client disconnect; org alias is validated before starting; UX corrected for non-delta modes.
+- GUI Pull page: fixed import path, API response shape, stale ref guard, accessibility attributes, and CSS variable references.
+- GUI Compare: stat counts (Modified, Added, Removed, Conflicts) now reflect actual diff results accurately.
+- GUI Quality page: UI layout and data consistency issues resolved.
+- `/api/dependencies`: SOQL input is escaped, duplicate edges are deduplicated, and a response-length guard prevents oversized payloads.
+- Rollback made fully non-interactive so it runs cleanly in CI and GUI-triggered flows.
+- GUI: Tests, Quality analysis, and AI feature panels now surface real backend results instead of placeholder data.
+- Compare SSE: phase 2 progress counters are reset correctly when a stream error occurs, preventing stale progress display on retry.
+
 ## [0.6.3] - 2026-04-29
 
 ### Added

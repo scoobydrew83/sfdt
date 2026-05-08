@@ -63,6 +63,13 @@ fi
 
 log_info "Identified ${#PROJECT_TEST_CLASSES[@]} test classes."
 
+# Resolve target org (same precedence as deployment-assistant.sh)
+TARGET_ORG="${SFDT_TARGET_ORG:-${SFDT_DEFAULT_ORG:-}}"
+if [[ -z "$TARGET_ORG" ]]; then
+    log_error "No target org set. Set SFDT_DEFAULT_ORG or SFDT_TARGET_ORG."
+    exit 1
+fi
+
 # Handle Non-Interactive Mode
 NON_INTERACTIVE="${SFDT_NON_INTERACTIVE:-false}"
 OPTION="1" # Default: Parallel with coverage
@@ -100,7 +107,7 @@ run_parallel_tests() {
 
         log_info "Launching batch ${batch_num} (${#batch[@]} classes)"
         (
-            local args=("--class-names" "$batch_list" "--json" "--wait" "20")
+            local args=("--target-org" "$TARGET_ORG" "--class-names" "$batch_list" "--json" "--wait" "20")
             [[ "$with_coverage" == "true" ]] && args+=("--code-coverage")
             sf apex run test "${args[@]}" > "$RESULTS_DIR/batch_${batch_num}_$TIMESTAMP.json" 2>&1
         ) &
@@ -167,8 +174,32 @@ run_parallel_tests() {
     echo -e "${BLUE}==================================${NC}"
     echo ""
 
-    if (( total_failing > 0 || any_failed == 1 )); then
+    # Emit combined JSON to stdout for GUI result parsing (single compact line)
+    if compgen -G "$RESULTS_DIR/batch_*_${TIMESTAMP}.json" > /dev/null 2>&1; then
+        jq -c -s '
+          reduce .[] as $b (
+            {"result":{"summary":{"passing":0,"failing":0,"skipped":0},"tests":[]}};
+            .result.summary.passing += ($b.result.summary.passing // 0) |
+            .result.summary.failing += ($b.result.summary.failing // 0) |
+            .result.summary.skipped += ($b.result.summary.skipped // 0) |
+            .result.tests += ($b.result.tests // [])
+          )
+        ' "$RESULTS_DIR"/batch_*_"${TIMESTAMP}".json 2>/dev/null || \
+            echo '{"result":{"summary":{"passing":0,"failing":0,"skipped":0},"tests":[]}}'
+    fi
+
+    if (( total_ran == 0 )); then
+        if (( any_failed == 1 )); then
+            log_error "No tests ran. Verify your org is authenticated and the class names in testConfig.testClasses exist in the org."
+        else
+            log_warning "No tests ran. Verify testConfig.testClasses in .sfdt/config.json."
+        fi
+        return 1
+    elif (( total_failing > 0 )); then
         log_error "Test run failed: $total_failing failing test(s)."
+        return 1
+    elif (( any_failed == 1 )); then
+        log_error "Test run completed with errors (sf apex command returned non-zero)."
         return 1
     fi
 

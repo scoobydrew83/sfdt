@@ -5,6 +5,9 @@
 
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../lib/changelog-utils.sh"
+
 # Color codes for better readability
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -69,30 +72,23 @@ print_error() {
 
 # Extract version from manifest filename (e.g., rl-0.1.6-package.xml -> 0.1.6)
 extract_version() {
-    local manifest=$1
-    # Extract version using regex: rl-X.Y.Z-package.xml or rl-X.Y.Z-suffix-package.xml
+    local manifest
+    manifest=$(basename "$1")
+    # Primary: semver pattern rl-X.Y.Z[-suffix]-package.xml
     if [[ $manifest =~ rl-([0-9]+\.[0-9]+\.[0-9]+)(-[a-zA-Z0-9-]+)?-package\.xml ]]; then
         echo "${BASH_REMATCH[1]}"
+    # Fallback: capture slug between rl- and -package.xml
+    elif [[ $manifest =~ rl-(.+)-package\.xml ]]; then
+        echo "${BASH_REMATCH[1]}"
+    # Fallback: capture slug between rl- and .xml
+    elif [[ $manifest =~ rl-(.+)\.xml ]]; then
+        echo "${BASH_REMATCH[1]}"
+    # Fallback: any-prefix - capture slug before -package.xml
+    elif [[ $manifest =~ ^(.+)-package\.xml$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+    # Final fallback: use filename stem as version label
     else
-        echo ""
-    fi
-}
-
-# Check if version exists in CHANGELOG.md
-check_changelog() {
-    local version=$1
-    local changelog="CHANGELOG.md"
-
-    if [ ! -f "$changelog" ]; then
-        print_warning "CHANGELOG.md not found!"
-        return 1
-    fi
-
-    # Look for version in format: ## [0.1.6] or ## [X.Y.Z]
-    if grep -q "## \[$version\]" "$changelog"; then
-        return 0
-    else
-        return 1
+        echo "${manifest%.xml}"
     fi
 }
 
@@ -180,12 +176,14 @@ select_manifest() {
     print_step "Finding release manifests in ${MANIFEST_BASE_DIR}/..."
 
     # Find manifests in main release folder
-    local manifests=( $(find "${MANIFEST_BASE_DIR}/" -maxdepth 1 -name "rl-*-package.xml" 2>/dev/null | sort -V) )
+    local max_depth=1
+    if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then max_depth=2; fi
+    local manifests=( $(find "${MANIFEST_BASE_DIR}/" -maxdepth "$max_depth" -name "rl-*-package.xml" 2>/dev/null | sort -V) )
 
     # Also include deployed manifests when called from post-deployment flow (last 3 only)
     if [ "$include_deployed" == "true" ] && [ ${#manifests[@]} -eq 0 ]; then
         print_warning "No undeployed manifests found. Showing recent deployed manifests..."
-        manifests=( $(find "${MANIFEST_BASE_DIR}/deployed/" -maxdepth 1 -name "rl-*-package.xml" 2>/dev/null | sort -V | tail -3) )
+        manifests=( $(find "${MANIFEST_BASE_DIR}/deployed/" -maxdepth 1 -name "*.xml" 2>/dev/null | sort -V | tail -3) )
     fi
 
     if [ ${#manifests[@]} -eq 0 ]; then
@@ -218,7 +216,9 @@ select_manifest() {
 
 # Check for destructive changes file
 check_destructive_changes() {
-    local manifest_base=$(basename "$MANIFEST_PATH" "-package.xml")
+    local raw_base
+    raw_base=$(basename "$MANIFEST_PATH" .xml)
+    local manifest_base="${raw_base%-package}"
     local destructive_path="${MANIFEST_BASE_DIR}/${manifest_base}-destructiveChanges.xml"
 
     DESTRUCTIVE_PATH=""
@@ -286,7 +286,7 @@ check_destructive_changes() {
 check_changelog_updated() {
     print_step "Checking if CHANGELOG.md has been updated for version $RELEASE_VERSION..."
 
-    if check_changelog "$RELEASE_VERSION"; then
+    if validate_version_entry "$RELEASE_VERSION"; then
         print_success "CHANGELOG.md contains entry for version $RELEASE_VERSION"
         return 0
     else
@@ -296,13 +296,13 @@ check_changelog_updated() {
         echo
 
         if [[ $REPLY =~ ^[Yy]$ ]]; then
-            echo -e "${CYAN}Run this command to update CHANGELOG with Claude:${NC}"
-            echo -e "${BOLD}claude 'Document and update CHANGELOG.md for release ${RELEASE_VERSION}'${NC}"
+            print_step "Running AI to update CHANGELOG..."
+            sfdt ai prompt "Document and update CHANGELOG.md for release ${RELEASE_VERSION}"
             echo ""
-            read -p "Press Enter when CHANGELOG has been updated, or Ctrl+C to abort..."
+            read -p "Press Enter to continue after AI has finished, or Ctrl+C to abort..."
 
             # Re-check after user confirms
-            if check_changelog "$RELEASE_VERSION"; then
+            if validate_version_entry "$RELEASE_VERSION"; then
                 print_success "CHANGELOG.md now contains version $RELEASE_VERSION"
             else
                 print_error "Version $RELEASE_VERSION still not found in CHANGELOG.md"
@@ -886,7 +886,10 @@ run_validation() {
         cmd+=(--test-level "$TEST_LEVEL")
 
         if [ "$TEST_LEVEL" == "RunSpecifiedTests" ] && [ -n "$SPECIFIED_TESTS" ]; then
-            cmd+=(--tests "$SPECIFIED_TESTS")
+            IFS=' ' read -ra test_arr <<< "$SPECIFIED_TESTS"
+            for t in "${test_arr[@]}"; do
+                cmd+=(--tests "$t")
+            done
         fi
     else
         print_warning "Skipping test execution (metadata-only deployment)"
@@ -905,10 +908,14 @@ run_validation() {
     echo -e "${BLUE}Command:${NC} ${cmd[*]}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 
-    # Run validation and capture output while streaming to terminal
+    # Run validation: stream to stdout (GUI pipe) and capture for job ID extraction
     local validation_output
-    validation_output=$("${cmd[@]}" 2>&1 | tee /dev/tty)
+    local _vtmp
+    _vtmp=$(mktemp)
+    "${cmd[@]}" 2>&1 | tee "$_vtmp"
     local exit_code=${PIPESTATUS[0]}
+    validation_output=$(cat "$_vtmp")
+    rm -f "$_vtmp"
 
     echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 
@@ -1080,7 +1087,10 @@ run_full_deployment() {
         cmd+=(--test-level "$TEST_LEVEL")
 
         if [ "$TEST_LEVEL" == "RunSpecifiedTests" ] && [ -n "$SPECIFIED_TESTS" ]; then
-            cmd+=(--tests "$SPECIFIED_TESTS")
+            IFS=' ' read -ra test_arr <<< "$SPECIFIED_TESTS"
+            for t in "${test_arr[@]}"; do
+                cmd+=(--tests "$t")
+            done
         fi
     else
         print_warning "Skipping test execution (metadata-only deployment)"
@@ -1129,12 +1139,14 @@ archive_deployed_manifest() {
     local deployed_dir="${MANIFEST_BASE_DIR}/deployed"
     mkdir -p "$deployed_dir"
 
-    # Get base name of manifest (e.g., rl-0.1.2)
-    local manifest_base=$(basename "$MANIFEST_PATH" "-package.xml")
+    # Get base name of manifest (e.g., rl-0.1.2 or rl-phase-0c)
+    local raw_base
+    raw_base=$(basename "$MANIFEST_PATH" .xml)
+    local manifest_base="${raw_base%-package}"
 
     # Find all files for this release
     local files_to_move=(
-        "${MANIFEST_BASE_DIR}/${manifest_base}-package.xml"
+        "$MANIFEST_PATH"
         "${MANIFEST_BASE_DIR}/${manifest_base}-README.md"
         "${MANIFEST_BASE_DIR}/${manifest_base}-destructiveChanges.xml"
     )
@@ -1201,6 +1213,30 @@ post_deployment_tasks() {
 
 # --- Main Workflow ---
 
+# --- Source-dir Deploy (folder-mode) ---
+# When SFDT_DEPLOY_SOURCE_DIR is set, skip manifest selection and deploy the folder directly
+if [[ -n "${SFDT_DEPLOY_SOURCE_DIR:-}" ]]; then
+    print_header "SOURCE DIRECTORY DEPLOY"
+    TARGET_ORG="${SFDT_TARGET_ORG:-${SFDT_DEFAULT_ORG:-}}"
+    if [[ -z "$TARGET_ORG" ]]; then
+        print_error "TARGET_ORG not set (set SFDT_TARGET_ORG or SFDT_DEFAULT_ORG)"
+        exit 1
+    fi
+    SOURCE_DIR_TEST_LEVEL="${SFDT_TEST_LEVEL:-RunLocalTests}"
+    print_step "Deploying source directory: ${SFDT_DEPLOY_SOURCE_DIR}"
+    print_step "Target org: ${TARGET_ORG}"
+    print_step "Test level: ${SOURCE_DIR_TEST_LEVEL}"
+    sf_cmd=(sf project deploy start
+        --source-dir "${SFDT_DEPLOY_SOURCE_DIR}"
+        --target-org "${TARGET_ORG}")
+    if [[ "${SOURCE_DIR_TEST_LEVEL}" != "Skip Tests (No Apex deployments)" ]]; then
+        sf_cmd+=(--test-level "${SOURCE_DIR_TEST_LEVEL}")
+    fi
+    "${sf_cmd[@]}"
+    print_success "Source directory deploy complete"
+    exit 0
+fi
+
 if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
     print_header "NON-INTERACTIVE DEPLOYMENT (GUI)"
     
@@ -1217,6 +1253,10 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
     if [[ -z "$MANIFEST_PATH" ]]; then print_error "MANIFEST_PATH not set"; exit 1; fi
     
     RELEASE_VERSION=$(extract_version "$(basename "$MANIFEST_PATH")")
+    if [[ -z "$RELEASE_VERSION" ]]; then
+        print_error "Could not extract version from manifest: $(basename "$MANIFEST_PATH")"
+        exit 1
+    fi
 
     if detect_production "$TARGET_ORG"; then
         IS_PRODUCTION=true
@@ -1224,7 +1264,8 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
     fi
     
     # Check for destructive changes
-    manifest_base=$(basename "$MANIFEST_PATH" "-package.xml")
+    raw_base=$(basename "$MANIFEST_PATH" .xml)
+    manifest_base="${raw_base%-package}"
     manifest_dir=$(dirname "$MANIFEST_PATH")
     destructive_path="${manifest_dir}/${manifest_base}-destructiveChanges.xml"
     if [[ -f "$destructive_path" ]]; then

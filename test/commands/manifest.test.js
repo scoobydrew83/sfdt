@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Command } from 'commander';
+import path from 'path';
 
 vi.mock('../../src/lib/config.js', () => ({
   loadConfig: vi.fn(),
@@ -36,7 +37,7 @@ vi.mock('../../src/lib/output.js', () => ({
 import { execa } from 'execa';
 import fs from 'fs-extra';
 import { loadConfig } from '../../src/lib/config.js';
-import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../../src/lib/ai.js';
+import { isAiAvailable, runAiPrompt } from '../../src/lib/ai.js';
 import { print } from '../../src/lib/output.js';
 import { registerManifestCommand } from '../../src/commands/manifest.js';
 
@@ -54,6 +55,14 @@ const defaultConfig = {
   sourceApiVersion: '63.0',
   manifestDir: 'manifest/release',
   features: { ai: false },
+};
+
+const multiPkgConfig = {
+  ...defaultConfig,
+  packageDirectories: [
+    { name: 'core', path: 'force-app/main/default' },
+    { name: 'marketing', path: 'force-app/marketing' },
+  ],
 };
 
 beforeEach(() => {
@@ -175,5 +184,132 @@ describe('manifest command', () => {
 
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('no config'));
     expect(process.exitCode).toBe(1);
+  });
+
+  it('uses release name in filename when --name is given', async () => {
+    const diffOutput = 'A\tforce-app/main/default/classes/AccountHelper.cls';
+
+    execa
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: diffOutput });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest', '--name', '1.2.3']);
+
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining('rl-1.2.3-package.xml'),
+      expect.any(String),
+    );
+  });
+
+  it('uses release name from --version alias', async () => {
+    const diffOutput = 'A\tforce-app/main/default/classes/AccountHelper.cls';
+
+    execa
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: diffOutput });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest', '--version', 'sprint-42']);
+
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining('rl-sprint-42-package.xml'),
+      expect.any(String),
+    );
+  });
+
+  it('resolves "today" to current ISO date in --name', async () => {
+    const diffOutput = 'A\tforce-app/main/default/classes/AccountHelper.cls';
+
+    execa
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: diffOutput });
+
+    const today = new Date().toISOString().slice(0, 10);
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest', '--name', 'today']);
+
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining(`rl-${today}-package.xml`),
+      expect.any(String),
+    );
+  });
+
+  it('diffs only the specified package when --package is given', async () => {
+    loadConfig.mockResolvedValue(multiPkgConfig);
+    const diffOutput = 'A\tforce-app/marketing/classes/LeadHelper.cls';
+
+    execa
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: diffOutput });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest', '--package', 'marketing']);
+
+    // git diff should have been called with the package-specific path
+    const diffCall = execa.mock.calls.find((c) => c[1]?.includes('--name-status'));
+    expect(diffCall[1]).toContain('force-app/marketing/');
+
+    // output filename should include the package name
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining('preview-package.xml'),
+      expect.any(String),
+    );
+  });
+
+  it('includes package name in filename when --package and --name are both given', async () => {
+    loadConfig.mockResolvedValue(multiPkgConfig);
+    const diffOutput = 'A\tforce-app/marketing/classes/LeadHelper.cls';
+
+    execa
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: diffOutput });
+
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'manifest', '--package', 'marketing', '--name', '2.0.0',
+    ]);
+
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining('rl-2.0.0-marketing-package.xml'),
+      expect.any(String),
+    );
+  });
+
+  it('errors when --package names an unknown package', async () => {
+    loadConfig.mockResolvedValue(multiPkgConfig);
+
+    execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest', '--package', 'unknown-pkg']);
+
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Unknown package "unknown-pkg"'));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('uses subpath layout when manifestLayout is "subpath" and --name is given', async () => {
+    const subpathConfig = { ...defaultConfig, manifestLayout: 'subpath' };
+    loadConfig.mockResolvedValue(subpathConfig);
+    const diffOutput = 'A\tforce-app/main/default/classes/AccountHelper.cls';
+
+    execa
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: diffOutput });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest', '--name', '3.0.0']);
+
+    // With subpath layout and pkgTarget=all, subdir should be 'all'
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining(path.join('all', 'rl-3.0.0-package.xml')),
+      expect.any(String),
+    );
+  });
+
+  it('includes [pkgTarget] in print.header when --package is given', async () => {
+    loadConfig.mockResolvedValue(multiPkgConfig);
+    const diffOutput = 'A\tforce-app/main/default/classes/AccountHelper.cls';
+
+    execa
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: diffOutput });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest', '--package', 'core']);
+
+    expect(print.header).toHaveBeenCalledWith(expect.stringContaining('[core]'));
   });
 });

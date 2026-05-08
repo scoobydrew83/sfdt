@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, createContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, createContext, useRef } from 'react';
 import { api } from './api.js';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -12,12 +12,13 @@ import PullPage from './pages/Pull.jsx';
 import ReleaseHubPage from './pages/ReleaseHub.jsx';
 import ReviewPage from './pages/Review.jsx';
 import ExplainPage from './pages/Explain.jsx';
+import DependencyPage from './pages/Dependency.jsx';
 import SettingsPage from './pages/Settings.jsx';
 import LogsPage from './pages/Logs.jsx';
 import {
   IconHome, IconList, IconCheck, IconRefresh, IconCompare,
   IconSun, IconMoon, IconFileText, IconActivity, IconCloudDown,
-  IconRocket, IconCode, IconSearch, IconSettings, IconClock,
+  IconRocket, IconCode, IconSearch, IconSettings, IconClock, IconGraph,
 } from './Icons.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 import ChatDrawer from './components/ChatDrawer.jsx';
@@ -49,8 +50,9 @@ const NAV_GROUPS = [
       { id: 'manifests', label: 'Manifests', Icon: IconFileText },
       { id: 'quality',   label: 'Quality',   Icon: IconActivity },
       { id: 'pull',      label: 'Pull',      Icon: IconCloudDown },
-      { id: 'review',    label: 'Review',    Icon: IconCode },
-      { id: 'explain',   label: 'Explain',   Icon: IconSearch },
+      { id: 'review',     label: 'Review',           Icon: IconCode },
+      { id: 'explain',    label: 'Explain',           Icon: IconSearch },
+      { id: 'dependency', label: 'Dependency Graph',  Icon: IconGraph },
     ],
   },
   {
@@ -73,26 +75,34 @@ const PAGE_LABELS = {
   release:   'Release Hub',
   review:    'Review',
   explain:   'Explain',
-  logs:      'Log History',
-  settings:  'Settings',
+  logs:       'Log History',
+  dependency: 'Dependency Graph',
+  settings:   'Settings',
 };
 
 export default function App() {
   const [page, setPage]           = useState('dashboard');
   const [project, setProject]     = useState(null);
-  const [dark, setDark]           = useState(false);
+  const [dark, setDark]           = useState(true);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdate, setShowUpdate] = useState(false);
   const [chatOpen, setChatOpen]   = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatPageContext, setChatPageContext] = useState({ page: '', data: {} });
   const [chatInitialMessage, setChatInitialMessage] = useState('');
+  const [sessionOrg, setSessionOrg]   = useState(null);
+  const [availableOrgs, setAvailableOrgs] = useState([]);
+  const [orgPickerOpen, setOrgPickerOpen] = useState(false);
+  const orgPickerRef = useRef(null);
 
   useEffect(() => {
     api.project().then(setProject).catch(() => null);
     api.checkUpdates().then((info) => { if (info.updateAvailable) setUpdateInfo(info); }).catch(() => null);
+    api.sessionOrg().then((r) => setSessionOrg(r.org)).catch(() => null);
+    api.orgs().then((r) => setAvailableOrgs(r.orgs ?? [])).catch(() => null);
     const saved = localStorage.getItem('sfdt-theme');
-    if (saved === 'dark') setDark(true);
+    if (saved === 'light') setDark(false);
+    else if (saved === 'dark') setDark(true);
   }, []);
 
   useEffect(() => {
@@ -104,6 +114,17 @@ export default function App() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+
+  useEffect(() => {
+    if (!orgPickerOpen) return;
+    const handler = (e) => {
+      if (orgPickerRef.current && !orgPickerRef.current.contains(e.target)) {
+        setOrgPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [orgPickerOpen]);
 
   const openChat = useCallback((initialMessage = '') => {
     setChatInitialMessage(initialMessage);
@@ -135,8 +156,9 @@ export default function App() {
       case 'release':   return <ReleaseHubPage />;
       case 'review':    return <ReviewPage />;
       case 'explain':   return <ExplainPage />;
-      case 'logs':      return <LogsPage />;
-      case 'settings':  return <SettingsPage />;
+      case 'logs':       return <LogsPage />;
+      case 'dependency': return <DependencyPage />;
+      case 'settings':   return <SettingsPage />;
       default:          return <Dashboard project={project} />;
     }
   };
@@ -191,14 +213,40 @@ export default function App() {
         </nav>
 
         <div className="sidebar-footer">
-          <div className="user-row">
+          <div className="org-picker-wrap" ref={orgPickerRef}>
+            {orgPickerOpen && (
+              <div className="org-picker-dropdown">
+                {availableOrgs.length === 0 && (
+                  <div className="org-picker-empty">No orgs found</div>
+                )}
+                {availableOrgs.map((o) => (
+                  <button
+                    key={o.alias}
+                    className={`org-picker-item${o.alias === (sessionOrg ?? project?.org) ? ' active' : ''}`}
+                    onClick={() => {
+                      api.setSessionOrg(o.alias)
+                        .then(() => setSessionOrg(o.alias))
+                        .catch(() => null);
+                      setOrgPickerOpen(false);
+                    }}
+                  >
+                    {o.alias}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="user-row" onClick={() => setOrgPickerOpen((v) => !v)} title="Click to change org">
             <div className="user-avatar">{initials}</div>
             <div className="user-info">
-              <div className="user-name">{project?.org ?? 'No org connected'}</div>
+              <div className="user-name">
+                {sessionOrg ?? project?.org ?? 'No org connected'}
+                {availableOrgs.length > 0 && <span className="org-picker-caret">▾</span>}
+              </div>
               <div className="user-version">
                 v{project?.version ?? '…'}
                 {updateInfo && (
-                  <button className="update-pill" onClick={() => setShowUpdate(true)} title={`v${updateInfo.latest} available`}>
+                  <button className="update-pill" onClick={(e) => { e.stopPropagation(); setShowUpdate(true); }} title={`v${updateInfo.latest} available`}>
                     ↑ update
                   </button>
                 )}
@@ -209,7 +257,7 @@ export default function App() {
       </aside>
 
       {/* ── Main area ─────────────────────────────────────────────── */}
-      <div className={`main-area${dark ? ' content-dark' : ''}`}>
+      <div className={`main-area${dark ? '' : ' content-light'}`}>
 
         {/* Top bar */}
         <header className="topbar">

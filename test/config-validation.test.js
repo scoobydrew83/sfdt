@@ -46,13 +46,13 @@ describe('validateConfig — richer error messages', () => {
     );
   });
 
-  it('throws ConfigError when defaultOrg is empty string', () => {
+  it('throws ConfigError when defaultOrg is an empty string', () => {
     expect(() => validateConfig({ defaultOrg: '', features: {} })).toThrow(
       '"defaultOrg" must be a non-empty string',
     );
   });
 
-  it('throws ConfigError when defaultOrg is whitespace', () => {
+  it('throws ConfigError when defaultOrg is a whitespace string', () => {
     expect(() => validateConfig({ defaultOrg: '   ', features: {} })).toThrow(
       '"defaultOrg" must be a non-empty string',
     );

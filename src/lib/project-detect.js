@@ -72,6 +72,7 @@ export async function detectProject(startDir) {
       path: dir.path,
       default: !!dir.default,
       absolutePath: path.join(projectRoot, dir.path),
+      name: dir.path.split('/').at(-1),
     })),
     defaultSourcePath,
     raw: projectJson,

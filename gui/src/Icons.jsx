@@ -27,6 +27,7 @@ export const IconRefresh     = ico(['M23 4v6h-6','M1 20v-6h6','M3.51 9a9 9 0 0 1
 export const IconCompare     = ico(['M18 20V10','M12 20V4','M6 20v-6']);
 export const IconSearch      = ico(['M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z','M21 21l-4.35-4.35']);
 export const IconX           = ico(['M18 6L6 18','M6 6l12 12']);
+export const IconPlus        = ico(['M12 5v14','M5 12h14']);
 export const IconChevronDown = ico('M6 9l6 6 6-6');
 export const IconChevronRight= ico('M9 18l6-6-6-6');
 export const IconArrowRight  = ico(['M5 12h14','M12 5l7 7-7 7']);
@@ -56,3 +57,25 @@ export const IconFileEdit    = ico(['M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2
 export const IconShield      = ico(['M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z']);
 export const IconZap         = ico(['M13 2L3 14h9l-1 8 10-12h-9l1-8z']);
 export const IconClock       = ico(['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z','M12 6v6l4 2']);
+
+// Graph/network icon — uses circles and lines, cannot use ico() factory
+export const IconGraph = ({ size = 16, className, style } = {}) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 13 13"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    className={className}
+    style={style}
+    aria-hidden="true"
+  >
+    <circle cx="6.5" cy="6.5" r="2"/>
+    <line x1="6.5" y1="1" x2="6.5" y2="4"/>
+    <line x1="6.5" y1="9" x2="6.5" y2="12"/>
+    <line x1="1" y1="6.5" x2="4" y2="6.5"/>
+    <line x1="9" y1="6.5" x2="12" y2="6.5"/>
+  </svg>
+);

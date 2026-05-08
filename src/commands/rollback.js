@@ -23,7 +23,7 @@ export function registerRollbackCommand(program) {
           SFDT_LOG_DIR: config.logDir || '',
         };
 
-        await runScript('new/rollback.sh', config, {
+        await runScript('ops/rollback.sh', config, {
           cwd: projectRoot,
           env,
           dryRun: options.dryRun,

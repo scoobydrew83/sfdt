@@ -5,20 +5,20 @@ import { glob } from 'glob';
 import inquirer from 'inquirer';
 import { detectProject, getProjectRoot } from '../lib/project-detect.js';
 import { print } from '../lib/output.js';
-import { storeCredential } from '../lib/ai.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 
 const CONFIG_DIR = '.sfdt';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = path.join(__dirname, '../templates/sfdt.config.json');
 
-async function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir, coverageThreshold, ai, mcp }) {
+async function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir, coverageThreshold, ai, mcp, manifestLayout }) {
   const template = await fs.readJson(TEMPLATE_PATH);
   return {
     ...template,
     projectName,
     defaultOrg,
     releaseNotesDir,
+    manifestLayout: manifestLayout || 'flat',
     deployment: {
       ...template.deployment,
       coverageThreshold,
@@ -149,22 +149,11 @@ export function registerInitCommand(program) {
             message: 'AI provider:',
             choices: [
               { name: 'Claude (requires Claude Code CLI)', value: 'claude' },
-              { name: 'Gemini (requires GEMINI_API_KEY)', value: 'gemini' },
-              { name: 'OpenAI (requires OPENAI_API_KEY)', value: 'openai' },
+              { name: 'Gemini (requires Gemini CLI)', value: 'gemini' },
+              { name: 'OpenAI/Codex (requires Codex CLI)', value: 'openai' },
             ],
             default: 'claude',
             when: (ans) => ans.aiEnabled,
-          },
-          {
-            type: 'password',
-            name: 'aiApiKey',
-            message: (ans) =>
-              ans.aiProvider === 'gemini'
-                ? 'Gemini API key (stored in ~/.sfdt/credentials.json, or leave blank to use GEMINI_API_KEY env var):'
-                : 'OpenAI API key (stored in ~/.sfdt/credentials.json, or leave blank to use OPENAI_API_KEY env var):',
-            default: '',
-            when: (ans) => ans.aiEnabled && ans.aiProvider !== 'claude',
-            mask: '*',
           },
           {
             type: 'input',
@@ -209,14 +198,22 @@ export function registerInitCommand(program) {
           `Found ${testClasses.length} test classes and ${apexClasses.length} Apex classes`,
         );
 
+        // Prompt for manifest layout when multiple packages detected
+        let manifestLayout = 'flat';
+        if (project.packageDirectories.length > 1) {
+          const { useSubpath } = await inquirer.prompt([
+            {
+              type: 'confirm',
+              name: 'useSubpath',
+              message: `Your project has ${project.packageDirectories.length} package directories. Use subpath manifest layout? (recommended for multi-package projects)`,
+              default: true,
+            },
+          ]);
+          if (useSubpath) manifestLayout = 'subpath';
+        }
+
         // Create .sfdt/ directory
         await fs.ensureDir(configDir);
-
-        // Persist the API key to ~/.sfdt/credentials.json (never into the project config)
-        if (answers.aiEnabled && answers.aiProvider !== 'claude' && answers.aiApiKey) {
-          await storeCredential(answers.aiProvider, answers.aiApiKey);
-          print.success(`API key stored in ~/.sfdt/credentials.json (mode 0600)`);
-        }
 
         const config = await buildConfigTemplate({
           projectName: answers.projectName,
@@ -235,6 +232,7 @@ export function registerInitCommand(program) {
           mcp: {
             enabled: answers.mcpEnabled,
           },
+          manifestLayout,
         });
 
         const environments = buildEnvironmentsTemplate(answers.defaultOrg);

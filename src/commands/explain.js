@@ -3,6 +3,7 @@ import path from 'path';
 import { glob } from 'glob';
 import { loadConfig } from '../lib/config.js';
 import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../lib/ai.js';
+import { getPrompt } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { safeResolvePath } from '../lib/project-detect.js';
@@ -20,27 +21,6 @@ import {
 const MAX_LOG_SIZE_BYTES = 512 * 1024; // 512 KB cap sent to the model
 const MAX_HEURISTIC_ERRORS = 20;
 
-const EXPLAIN_PROMPT = `You are a Salesforce deployment engineer helping a developer interpret a failing deployment log. Analyze the log and produce a concise report with these sections:
-
-## Root Cause
-One or two sentences identifying the single most likely cause of the failure.
-
-## Failing Components
-Bulleted list of component names + the specific error. Keep each bullet to one line.
-
-## Suggested Fixes
-Ordered list of concrete steps the developer can take. Prefer specific commands, file paths, or config changes over generic advice. Call out anything that requires an admin (e.g., permission set edits) separately.
-
-## References
-Link or reference (name only, no fabricated URLs) any Salesforce docs or metadata types that are relevant.
-
-Rules:
-- Do not invent error codes or component names that are not in the log.
-- If the log is truncated or ambiguous, say so in Root Cause.
-- Use the allowed tools to inspect the repo when a fix requires looking at actual metadata.
-
---- DEPLOYMENT LOG ---
-`;
 
 /**
  * Pattern-based fallback when AI is unavailable. Picks up the most common
@@ -137,8 +117,9 @@ export function registerExplainCommand(program) {
           formatTestRunsSection(testRuns),
         ]);
 
+        const explainPrompt = await getPrompt('explain', config._configDir);
         await runAiPrompt(
-          (contextBlock ? contextBlock + '\n\n' : '') + EXPLAIN_PROMPT + trimmed.content,
+          (contextBlock ? contextBlock + '\n\n' : '') + explainPrompt + trimmed.content,
           {
             config,
             allowedTools: ['Read', 'Grep', 'Glob'],

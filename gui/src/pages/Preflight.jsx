@@ -4,18 +4,157 @@ import StatCard from '../components/StatCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import CommandRunner from '../components/CommandRunner.jsx';
-import { IconCheckCircle, IconXCircle, IconAlertTri, IconInfo } from '../Icons.jsx';
+import { IconCheckCircle, IconXCircle, IconAlertTri } from '../Icons.jsx';
 import { ChatContext } from '../App.jsx';
 
-function CheckIcon({ status }) {
+function subtaskState(status) {
+  const s = (status ?? '').toLowerCase();
+  if (s === 'pass' || s === 'passed' || s === 'success') return 'done';
+  if (s === 'fail' || s === 'failed' || s === 'error') return 'fail';
+  if (s === 'warn' || s === 'warning') return 'active';
+  return 'pending';
+}
+
+function SubtaskIcon({ status }) {
   const s = (status ?? '').toLowerCase();
   if (s === 'pass' || s === 'passed' || s === 'success')
-    return <IconCheckCircle size={14} style={{ color: 'var(--status-identical-fg)', flexShrink: 0 }} />;
+    return <IconCheckCircle size={14} />;
   if (s === 'fail' || s === 'failed' || s === 'error')
-    return <IconXCircle size={14} style={{ color: 'var(--status-conflict-fg)', flexShrink: 0 }} />;
+    return <IconXCircle size={14} />;
   if (s === 'warn' || s === 'warning')
-    return <IconAlertTri size={14} style={{ color: 'var(--status-modified-fg)', flexShrink: 0 }} />;
-  return <IconInfo size={14} style={{ color: 'var(--fg-muted)', flexShrink: 0 }} />;
+    return <IconAlertTri size={14} />;
+  return <span style={{ fontSize: 12, lineHeight: 1 }}>—</span>;
+}
+
+const MAX_MISSING_SHOWN = 5;
+
+function DependencyCheckSection() {
+  const [depState, setDepState] = useState('idle'); // idle | loading | done | error
+  const [depResult, setDepResult] = useState(null);
+  const [depError, setDepError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      setDepState('loading');
+      try {
+        // Resolve org from project info
+        const projectInfo = await api.project();
+        const org = projectInfo?.org;
+        if (!org) {
+          if (!cancelled) {
+            setDepError('No default org configured');
+            setDepState('error');
+          }
+          return;
+        }
+
+        // Resolve manifest: use the first available manifest
+        const manifestsData = await api.listManifests();
+        const manifests = manifestsData?.manifests ?? [];
+        if (manifests.length === 0) {
+          if (!cancelled) {
+            setDepError('No manifests found');
+            setDepState('error');
+          }
+          return;
+        }
+
+        const manifestRelPath = manifests[0].relPath;
+        const result = await api.dependenciesPreflight(manifestRelPath, org);
+
+        if (!cancelled) {
+          setDepResult(result);
+          setDepState('done');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setDepError(err.message ?? 'Unknown error');
+          setDepState('error');
+        }
+      }
+    }
+
+    run();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (depState === 'idle') return null;
+
+  const rows = [];
+
+  if (depState === 'loading') {
+    rows.push(
+      <div key="loading" className="subtask pending">
+        <span className="s-icon"><span style={{ fontSize: 12, lineHeight: 1 }}>—</span></span>
+        <span className="s-name">Checking dependencies…</span>
+      </div>
+    );
+  } else if (depState === 'error') {
+    rows.push(
+      <div key="error" className="subtask fail">
+        <span className="s-icon"><IconXCircle size={14} /></span>
+        <span className="s-name">Dependency check failed: {depError}</span>
+      </div>
+    );
+  } else if (depState === 'done' && depResult) {
+    const { status, missing = [], warnings = [] } = depResult;
+
+    if (status === 'pass') {
+      rows.push(
+        <div key="pass" className="subtask done">
+          <span className="s-icon"><IconCheckCircle size={14} /></span>
+          <span className="s-name">All dependencies satisfied</span>
+        </div>
+      );
+    } else if (status === 'warn') {
+      rows.push(
+        <div key="warn" className="subtask active">
+          <span className="s-icon"><IconAlertTri size={14} /></span>
+          <span className="s-name">
+            Standard type dependencies detected ({warnings.length} warning{warnings.length !== 1 ? 's' : ''})
+          </span>
+        </div>
+      );
+    } else if (status === 'fail') {
+      const shown = missing.slice(0, MAX_MISSING_SHOWN);
+      const overflow = missing.length - shown.length;
+      shown.forEach((item, i) => {
+        const referencedBy = item.referencedBy?.[0];
+        rows.push(
+          <div key={i} className="subtask fail">
+            <span className="s-icon"><IconXCircle size={14} /></span>
+            <span className="s-name">
+              {item.name} ({item.type}){referencedBy ? ` — referenced by ${referencedBy}` : ''}
+            </span>
+          </div>
+        );
+      });
+      if (overflow > 0) {
+        rows.push(
+          <div key="overflow" className="subtask fail">
+            <span className="s-icon"><span style={{ fontSize: 12, lineHeight: 1 }}>—</span></span>
+            <span className="s-name" style={{ fontStyle: 'italic' }}>… and {overflow} more</span>
+          </div>
+        );
+      }
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginTop: '16px' }}>
+      <div className="card-head">
+        <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: 'var(--fg-muted)' }}>
+            <path d="M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+          </svg>
+          Dependency Check
+        </div>
+      </div>
+      <div>{rows}</div>
+    </div>
+  );
 }
 
 export default function PreflightPage() {
@@ -109,33 +248,26 @@ export default function PreflightPage() {
               </button>
             )}
           </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Check</th>
-                <th>Message</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {checks.map((c, i) => (
-                <tr key={i}>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <CheckIcon status={c.status} />
-                      <span style={{ fontWeight: 500 }}>{c.name}</span>
-                    </div>
-                  </td>
-                  <td style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)' }}>
-                    {c.message || '—'}
-                  </td>
-                  <td><StatusBadge status={c.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div>
+            {checks.map((c, i) => {
+              const state = subtaskState(c.status);
+              return (
+                <div key={i} className={`subtask ${state}`}>
+                  <span className="s-icon">
+                    <SubtaskIcon status={c.status} />
+                  </span>
+                  <span className="s-name">{c.name}</span>
+                  {c.message && (
+                    <span className="s-time">{c.message}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
+
+      {!loading && checks.length > 0 && <DependencyCheckSection key={refreshKey} />}
     </div>
   );
 }

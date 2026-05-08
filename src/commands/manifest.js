@@ -3,6 +3,7 @@ import path from 'path';
 import { execa } from 'execa';
 import { loadConfig } from '../lib/config.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
+import { getPrompt } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { safeResolvePath } from '../lib/project-detect.js';
@@ -12,17 +13,6 @@ import {
   countMembers,
 } from '../lib/metadata-mapper.js';
 
-const AI_DEPENDENCY_PROMPT = `You are a Salesforce release engineer reviewing a draft deployment manifest generated from a git diff. Your job is to flag likely missing dependencies that will cause deployment failures, without hallucinating.
-
-Rules:
-- Only suggest metadata that is COMMONLY required alongside what was changed (e.g., a new CustomField usually needs the enclosing CustomObject file, a new ApexClass referenced in a Flow needs the Flow, a new field on a PermissionSet needs the PermissionSet entry).
-- Be conservative — do NOT suggest broad sweeps ("all profiles", "all layouts").
-- Group output under headings: MISSING (must add), RISKY (verify before deploy), OK.
-- Use the filesystem tools to inspect the actual metadata files before recommending.
-- End with a one-line VERDICT: "Manifest looks complete" or "Manifest is missing N dependencies".
-
---- DRAFT MANIFEST ---
-`;
 
 export function registerManifestCommand(program) {
   program
@@ -35,6 +25,9 @@ export function registerManifestCommand(program) {
     .option('--ai-cleanup', 'Run AI dependency analysis on the generated manifest')
     .option('--no-ai-cleanup', 'Skip AI dependency analysis even when AI is enabled')
     .option('--print', 'Print the generated package.xml to stdout instead of writing a file')
+    .option('--package <name|all>', 'Package directory to diff: a short name matching packageDirectories or "all"', 'all')
+    .option('--name <label>', 'Release label for output filename (semver, free-form, or "today")')
+    .option('--version <label>', 'Alias for --name (backward compat)')
     .action(async (options) => {
       try {
         const config = await loadConfig();
@@ -43,7 +36,45 @@ export function registerManifestCommand(program) {
         const apiVersion = config.sourceApiVersion || '63.0';
         const manifestDir = config.manifestDir || 'manifest/release';
 
-        print.header(`Smart Manifest (${options.base}...${options.head})`);
+        // Resolve release name
+        let releaseName = options.name || options.version || null;
+        if (releaseName === 'today') {
+          releaseName = new Date().toISOString().slice(0, 10);
+        }
+        if (releaseName && !/^[A-Za-z0-9._-]+$/.test(releaseName)) {
+          print.error('--name must contain only alphanumeric characters, dots, underscores, or hyphens');
+          process.exitCode = 1;
+          return;
+        }
+
+        // Resolve package target and git diff paths
+        const pkgTarget = options.package || 'all';
+        const packages = config.packageDirectories || [];
+
+        let diffPaths; // array of path prefixes for git diff
+        let diffSourcePath = sourcePath; // used for parseDiffToMetadata filtering
+        if (pkgTarget !== 'all') {
+          if (packages.length === 0) {
+            print.error(`--package requires packageDirectories to be configured in .sfdt/config.json`);
+            process.exitCode = 1;
+            return;
+          }
+          const matched = packages.find((p) => p.name === pkgTarget);
+          if (!matched) {
+            print.error(`Unknown package "${pkgTarget}". Available: ${packages.map((p) => p.name).join(', ')}`);
+            process.exitCode = 1;
+            return;
+          }
+          diffPaths = [matched.path + '/'];
+          diffSourcePath = matched.path;
+        } else {
+          // all packages — use top-level roots (deduplicated)
+          diffPaths = packages.length > 0
+            ? [...new Set(packages.map((p) => p.path.split('/')[0] + '/'))]
+            : [sourcePath.split('/')[0] + '/'];
+        }
+
+        print.header(`Smart Manifest (${options.base}...${options.head})${pkgTarget !== 'all' ? ` [${pkgTarget}]` : ''}`);
 
         // Resolve base ref — if it's a branch name that's not reachable, fall back to merge-base
         const baseRef = await resolveBaseRef(options.base, options.head, projectRoot);
@@ -53,7 +84,7 @@ export function registerManifestCommand(program) {
 
         const diffResult = await execa(
           'git',
-          ['diff', '--name-status', `${baseRef}`, options.head, '--', `${sourcePath.split('/')[0]}/`],
+          ['diff', '--name-status', baseRef, options.head, '--', ...diffPaths],
           { cwd: projectRoot, reject: false },
         );
 
@@ -64,7 +95,7 @@ export function registerManifestCommand(program) {
         }
 
         const { additive, destructive, unknown } = parseDiffToMetadata(diffResult.stdout, {
-          sourcePath,
+          sourcePath: diffSourcePath,
         });
 
         const addCount = countMembers(additive);
@@ -93,12 +124,26 @@ export function registerManifestCommand(program) {
         if (options.print) {
           console.log(packageXml);
         } else {
-          const outputPath =
-            options.output || path.join(projectRoot, manifestDir, 'preview-package.xml');
-          const absolute = safeResolvePath(projectRoot, outputPath);
-          await fs.ensureDir(path.dirname(absolute));
-          await fs.writeFile(absolute, packageXml);
-          print.success(`Wrote package.xml → ${path.relative(projectRoot, absolute)}`);
+          // Compute output path
+          let outputPath;
+          if (options.output) {
+            outputPath = safeResolvePath(projectRoot, options.output);
+          } else if (releaseName) {
+            const layout = config.manifestLayout || 'flat';
+            let fileName;
+            if (pkgTarget !== 'all') {
+              fileName = `rl-${releaseName}-${pkgTarget}-package.xml`;
+            } else {
+              fileName = `rl-${releaseName}-package.xml`;
+            }
+            const subdir = layout === 'subpath' ? pkgTarget : '';
+            outputPath = path.join(projectRoot, manifestDir, subdir, fileName);
+          } else {
+            outputPath = path.join(projectRoot, manifestDir, 'preview-package.xml');
+          }
+          await fs.ensureDir(path.dirname(outputPath));
+          await fs.writeFile(outputPath, packageXml);
+          print.success(`Wrote package.xml → ${path.relative(projectRoot, outputPath)}`);
         }
 
         if (delCount > 0 && options.destructive) {
@@ -123,7 +168,8 @@ export function registerManifestCommand(program) {
           print.header('AI Dependency Cleanup');
           print.info('Asking AI to check for missing dependencies...');
 
-          await runAiPrompt(AI_DEPENDENCY_PROMPT + packageXml, {
+          const manifestPrompt = await getPrompt('manifest-dependency', config._configDir);
+          await runAiPrompt(manifestPrompt + packageXml, {
             config,
             allowedTools: ['Read', 'Grep', 'Glob'],
             cwd: projectRoot,

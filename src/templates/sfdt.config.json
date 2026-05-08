@@ -8,7 +8,11 @@
     "preflight": {
       "enforceTests": false,
       "enforceBranchNaming": false,
-      "enforceChangelog": false
+      "enforceChangelog": false,
+      "enforceGitClean": true,
+      "enforceSfdxProject": true,
+      "enforceUntrackedFiles": false,
+      "strict": false
     }
   },
   "features": {
@@ -38,5 +42,6 @@
     "batchSize": 100,
     "retrieveTimeoutSeconds": 360
   },
+  "manifestLayout": "flat",
   "logRetention": 50
 }

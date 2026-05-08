@@ -1,6 +1,7 @@
 import { execa } from 'execa';
 import { loadConfig } from '../lib/config.js';
 import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../lib/ai.js';
+import { getPrompt } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { parseDiffToMetadata } from '../lib/metadata-mapper.js';
@@ -13,41 +14,6 @@ import {
   formatPreflightSection,
   formatMetadataTypesSection,
 } from '../lib/ai-context.js';
-
-const REVIEW_PROMPT = `You are a senior Salesforce developer reviewing a code diff. Analyze the following changes and report issues in these categories:
-
-## Governor Limits & Performance
-- SOQL or DML inside loops
-- Unbulkified operations (not handling 200+ records)
-- Missing LIMIT clauses on SOQL queries
-- Inefficient collection usage
-
-## Security
-- Missing CRUD/FLS checks (Security.stripInaccessible or WITH SECURITY_ENFORCED)
-- SOQL injection risks (string concatenation in queries instead of bind variables)
-- Sensitive data exposure in debug logs
-
-## Null Safety & Error Handling
-- Missing null checks before property access
-- Unhandled exceptions in AuraEnabled methods
-- Missing try/catch around DML operations
-
-## Test Coverage
-- Changed Apex classes that lack corresponding test class changes
-- Missing assertions in test methods
-- Missing bulk test scenarios (200+ records)
-
-## LWC Best Practices
-- Wire vs imperative Apex usage (prefer wire for cacheable reads)
-- Missing error handling in imperative calls
-- Inline boolean expressions in HTML templates (should use getters)
-- Missing disconnectedCallback cleanup
-
-Provide specific line references from the diff. Rate each finding as CRITICAL, HIGH, MEDIUM, or LOW.
-Use the allowed tools to explore the full source files for additional context when needed.
-
---- DIFF ---
-`;
 
 export function registerReviewCommand(program) {
   program
@@ -116,7 +82,8 @@ export function registerReviewCommand(program) {
           formatPreflightSection(preflight),
         ]);
 
-        const prompt = (contextBlock ? contextBlock + '\n\n' : '') + REVIEW_PROMPT + diff;
+        const reviewPrompt = await getPrompt('review', config._configDir);
+        const prompt = (contextBlock ? contextBlock + '\n\n' : '') + reviewPrompt + diff;
 
         await runAiPrompt(prompt, {
           config,

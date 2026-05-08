@@ -49,7 +49,7 @@ describe('drift command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'drift']);
 
     expect(runScript).toHaveBeenCalledWith(
-      'new/drift.sh',
+      'ops/drift.sh',
       expect.any(Object),
       expect.objectContaining({ env: { SFDT_TARGET_ORG: 'dev' } }),
     );
@@ -61,7 +61,7 @@ describe('drift command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'drift', '--org', 'prod']);
 
     expect(runScript).toHaveBeenCalledWith(
-      'new/drift.sh',
+      'ops/drift.sh',
       expect.any(Object),
       expect.objectContaining({ env: { SFDT_TARGET_ORG: 'prod' } }),
     );
