@@ -171,10 +171,6 @@ export SFDT_NON_INTERACTIVE=true
 step "sfdt pull"
 sfdt pull
 
-# -- sfdt test ---------------------------------------------------------------
-step "sfdt test"
-sfdt test
-
 # -- sfdt preflight ----------------------------------------------------------
 step "sfdt preflight"
 sfdt preflight
@@ -182,6 +178,11 @@ sfdt preflight
 # -- sfdt deploy -------------------------------------------------------------
 step "sfdt deploy"
 sfdt deploy
+
+# -- sfdt test ---------------------------------------------------------------
+# Must run after deploy so Apex classes exist in the org
+step "sfdt test"
+sfdt test
 
 # -- sfdt smoke --------------------------------------------------------------
 step "sfdt smoke"
