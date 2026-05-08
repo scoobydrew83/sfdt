@@ -37,10 +37,12 @@ skills/*/evals/
 
 # Git worktrees
 .worktrees/
+.gemini_security/
 codex.js
 .superpowers/
 .playwright-mcp/
 logs/
 .claude/skills/*
 /pr-analysis/
+admin/
 TODO.md

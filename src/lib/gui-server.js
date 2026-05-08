@@ -19,6 +19,7 @@ import { writeLog, parseSfdtLogLines, readLatestLog } from './log-writer.js';
 import { setNestedValue, coerceConfigValue } from './config-utils.js';
 import { loadConfig } from './config.js';
 import { getPrompt, getAllPrompts, setPromptOverride, resetPromptOverride, interpolate } from './prompts.js';
+import { buildScriptEnv } from './script-runner.js';
 import { fetchOrgInventory } from './org-inventory.js';
 import { initCache, getDelta, updateCache } from './pull-cache.js';
 import { parallelRetrieve } from './parallel-retrieve.js';
@@ -567,6 +568,7 @@ export function createGuiApp(config, version, port = 7654) {
 
       const { projectName = 'Salesforce Project', defaultOrg = '' } = req.body ?? {};
       if (!projectName.trim()) {
+        initInProgress = false;
         return res.status(400).json({ error: 'projectName is required' });
       }
 
@@ -860,20 +862,12 @@ export function createGuiApp(config, version, port = 7654) {
       const scriptPath = path.join(SCRIPTS_DIR, cmd.script);
 
       const scriptEnv = {
+        ...buildScriptEnv(config),
         SFDT_PROJECT_ROOT: projectRoot,
         SFDT_CONFIG_DIR: config._configDir ?? path.join(projectRoot, '.sfdt'),
         SFDT_DEFAULT_ORG: config.defaultOrg ?? '',
         SFDT_TARGET_ORG: sessionOrg ?? config.defaultOrg ?? '',
-        SFDT_SOURCE_PATH: config.defaultSourcePath ?? 'force-app/main/default',
-        SFDT_API_VERSION: config.sourceApiVersion ?? '',
         SFDT_NON_INTERACTIVE: 'true',
-        SFDT_PREFLIGHT_ENFORCE_GIT_CLEAN:    config.deployment?.preflight?.enforceGitClean    !== false ? 'true' : 'false',
-        SFDT_PREFLIGHT_ENFORCE_SFDX_PROJECT: config.deployment?.preflight?.enforceSfdxProject !== false ? 'true' : 'false',
-        SFDT_PREFLIGHT_ENFORCE_TESTS:        config.deployment?.preflight?.enforceTests        ? 'true' : '',
-        SFDT_PREFLIGHT_ENFORCE_BRANCH:       config.deployment?.preflight?.enforceBranchNaming ? 'true' : '',
-        SFDT_PREFLIGHT_ENFORCE_CHANGELOG:    config.deployment?.preflight?.enforceChangelog    ? 'true' : '',
-        SFDT_PREFLIGHT_ENFORCE_UNTRACKED:    config.deployment?.preflight?.enforceUntrackedFiles ? 'true' : '',
-        SFDT_PREFLIGHT_STRICT:               config.deployment?.preflight?.strict               ? 'true' : '',
       };
 
       if (command === 'test' && req.query.classes) {
@@ -1615,6 +1609,28 @@ export function createGuiApp(config, version, port = 7654) {
       }
     }
 
+    if (org !== undefined && org !== null) {
+      if (typeof org !== 'string' || !/^[A-Za-z0-9_.\-@]+$/.test(org)) {
+        return res.status(400).json({ error: 'Invalid org alias' });
+      }
+    }
+
+    const VALID_TEST_LEVELS = ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg'];
+    if (testLevel !== undefined && testLevel !== null && !VALID_TEST_LEVELS.includes(testLevel)) {
+      return res.status(400).json({ error: 'Invalid testLevel' });
+    }
+
+    if (destructiveTiming !== undefined && destructiveTiming !== null && !['pre', 'post'].includes(destructiveTiming)) {
+      return res.status(400).json({ error: 'Invalid destructiveTiming' });
+    }
+
+    const classList = Array.isArray(testClasses)
+      ? testClasses
+      : typeof testClasses === 'string' && testClasses
+        ? testClasses.split(',')
+        : [];
+    const normalizedTestClasses = classList.map((s) => String(s).trim()).filter(Boolean).join(' ');
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -1627,30 +1643,19 @@ export function createGuiApp(config, version, port = 7654) {
       const scriptPath = path.join(SCRIPTS_DIR, 'core', 'deployment-assistant.sh');
 
       const scriptEnv = {
+        ...buildScriptEnv(config),
         SFDT_PROJECT_ROOT: projectRoot,
         SFDT_CONFIG_DIR: config._configDir ?? path.join(projectRoot, '.sfdt'),
         SFDT_DEFAULT_ORG: org ?? config.defaultOrg ?? '',
         SFDT_TARGET_ORG: org ?? config.defaultOrg ?? '',
-        SFDT_SOURCE_PATH: config.defaultSourcePath ?? 'force-app/main/default',
-        SFDT_API_VERSION: config.sourceApiVersion ?? '',
         SFDT_NON_INTERACTIVE: 'true',
-        SFDT_PREFLIGHT_ENFORCE_GIT_CLEAN:    config.deployment?.preflight?.enforceGitClean    !== false ? 'true' : 'false',
-        SFDT_PREFLIGHT_ENFORCE_SFDX_PROJECT: config.deployment?.preflight?.enforceSfdxProject !== false ? 'true' : 'false',
-        SFDT_PREFLIGHT_ENFORCE_TESTS:        config.deployment?.preflight?.enforceTests        ? 'true' : '',
-        SFDT_PREFLIGHT_ENFORCE_BRANCH:       config.deployment?.preflight?.enforceBranchNaming ? 'true' : '',
-        SFDT_PREFLIGHT_ENFORCE_CHANGELOG:    config.deployment?.preflight?.enforceChangelog    ? 'true' : '',
-        SFDT_PREFLIGHT_ENFORCE_UNTRACKED:    config.deployment?.preflight?.enforceUntrackedFiles ? 'true' : '',
-        SFDT_PREFLIGHT_STRICT:               config.deployment?.preflight?.strict               ? 'true' : '',
         SFDT_DRY_RUN: dryRun ? 'true' : 'false',
         SFDT_SKIP_PREFLIGHT: skipPreflight ? 'true' : 'false',
         SFDT_NOTIFY_SLACK: notifySlack ? 'true' : 'false',
         SFDT_TAG_RELEASE: tagRelease ? 'true' : 'false',
         SFDT_CREATE_PR: createPR ? 'true' : 'false',
         SFDT_TEST_LEVEL: testLevel ?? '',
-        // Shell script expects space-separated class names; GUI sends comma-separated.
-        SFDT_SPECIFIED_TESTS: typeof testClasses === 'string' && testClasses
-          ? testClasses.split(',').map((s) => s.trim()).filter(Boolean).join(' ')
-          : '',
+        SFDT_SPECIFIED_TESTS: normalizedTestClasses,
         SFDT_DESTRUCTIVE_TIMING: destructiveTiming ?? 'post',
         ...(manifest ? { SFDT_MANIFEST_PATH: path.join(projectRoot, manifest) } : {}),
         ...(sourceDir ? { SFDT_DEPLOY_SOURCE_DIR: sourceDir } : {}),
