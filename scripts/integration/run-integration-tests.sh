@@ -72,8 +72,72 @@ sf org create scratch \
   --wait 15
 
 # ---------------------------------------------------------------------------
-# 2. Write alias into .sfdt config files (CRITICAL — must happen before any
-#    sfdt command runs, otherwise config.js throws ConfigError and exits 2)
+# 2a. Bootstrap .sfdt config if the fixture doesn't have one committed
+# ---------------------------------------------------------------------------
+if [[ ! -f "$SYNTHETIC_SPARK_DIR/.sfdt/config.json" ]]; then
+  step "Bootstrapping .sfdt config (fixture has no committed config)"
+  mkdir -p "$SYNTHETIC_SPARK_DIR/.sfdt"
+
+  SFDT_DIR="$SYNTHETIC_SPARK_DIR" node -e "
+    const fs = require('fs');
+    const dir = process.env.SFDT_DIR;
+
+    const config = {
+      projectName: 'synthetic-spark',
+      defaultOrg: '',
+      releaseNotesDir: 'release-notes',
+      manifestDir: 'manifest/release',
+      deployment: {
+        coverageThreshold: 75,
+        preflight: {
+          enforceTests: false,
+          enforceBranchNaming: false,
+          enforceChangelog: false,
+          enforceGitClean: true,
+          enforceSfdxProject: true,
+          enforceUntrackedFiles: false,
+          strict: false
+        }
+      },
+      features: { ai: false, notifications: false, releaseManagement: true },
+      ai: { provider: 'claude', model: '' },
+      plugins: [],
+      pluginOptions: { autoDiscover: false },
+      mcp: { enabled: false },
+      pullCache: { enabled: true, parallelism: 5, batchSize: 100, retrieveTimeoutSeconds: 360 },
+      manifestLayout: 'flat',
+      logRetention: 50
+    };
+
+    const environments = {
+      default: '',
+      orgs: [{ alias: '', type: 'development', description: 'Integration test org' }]
+    };
+
+    const pullConfig = {
+      metadataTypes: ['ApexClass','ApexTrigger','LightningComponentBundle','CustomObject','CustomField','Layout','FlexiPage','PermissionSet','Flow'],
+      targetDir: 'force-app/main/default'
+    };
+
+    const testConfig = {
+      coverageThreshold: 75,
+      testLevel: 'RunLocalTests',
+      suites: [],
+      testClasses: [],
+      apexClasses: []
+    };
+
+    fs.writeFileSync(dir + '/.sfdt/config.json', JSON.stringify(config, null, 2));
+    fs.writeFileSync(dir + '/.sfdt/environments.json', JSON.stringify(environments, null, 2));
+    fs.writeFileSync(dir + '/.sfdt/pull-config.json', JSON.stringify(pullConfig, null, 2));
+    fs.writeFileSync(dir + '/.sfdt/test-config.json', JSON.stringify(testConfig, null, 2));
+    console.log('Bootstrapped .sfdt/ config files');
+  "
+fi
+
+# ---------------------------------------------------------------------------
+# 2b. Write alias into .sfdt config files (CRITICAL — must happen before any
+#     sfdt command runs, otherwise config.js throws ConfigError and exits 2)
 # ---------------------------------------------------------------------------
 step "Patching .sfdt config with scratch org alias: $SCRATCH_ORG_ALIAS"
 

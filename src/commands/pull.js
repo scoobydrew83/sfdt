@@ -64,6 +64,12 @@ async function runPull(options) {
     return;
   }
 
+  const nonInteractive = process.env.SFDT_NON_INTERACTIVE === 'true' || !process.stdin.isTTY;
+  if (nonInteractive) {
+    await smartPull(config, { projectRoot, cacheDir, orgAlias, dryRun: options.dryRun });
+    return;
+  }
+
   const pullGroups = config.pullConfig?.pullGroups ?? {};
   const groupChoices = Object.entries(pullGroups).map(([key, g]) => ({
     name: g.description ?? key,
