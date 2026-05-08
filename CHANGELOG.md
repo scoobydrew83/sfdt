@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-07
+
+### Changed
+- CI: bumped `actions/checkout` to v6, `actions/setup-node` to v6, and `actions/github-script` to v9 to stay current with GitHub Actions runner requirements.
+
 ## [0.7.0] - 2026-05-07
 
 ### Added
