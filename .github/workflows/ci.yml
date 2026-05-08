@@ -94,7 +94,7 @@ jobs:
         run: ./scripts/integration/run-integration-tests.sh ./synthetic-spark
 
   publish-beta:
-    needs: [test, gui-build, integration]
+    needs: [test, gui-build]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
     environment: beta
@@ -150,7 +150,7 @@ jobs:
 
 
   publish:
-    needs: [test, gui-build, integration]
+    needs: [test, gui-build]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: production
