@@ -147,8 +147,12 @@ SFDT_DIR="$SYNTHETIC_SPARK_DIR" SFDT_ALIAS="$SCRATCH_ORG_ALIAS" node -e "
   const alias = process.env.SFDT_ALIAS;
   const cfg = JSON.parse(fs.readFileSync(dir + '/.sfdt/config.json', 'utf8'));
   cfg.defaultOrg = alias;
+  // sfdt pull always leaves uncommitted files; disable the git-clean preflight gate
+  if (!cfg.deployment) cfg.deployment = {};
+  if (!cfg.deployment.preflight) cfg.deployment.preflight = {};
+  cfg.deployment.preflight.enforceGitClean = false;
   fs.writeFileSync(dir + '/.sfdt/config.json', JSON.stringify(cfg, null, 2));
-  console.log('Wrote defaultOrg to .sfdt/config.json');
+  console.log('Wrote defaultOrg and disabled enforceGitClean in .sfdt/config.json');
 "
 
 SFDT_DIR="$SYNTHETIC_SPARK_DIR" SFDT_ALIAS="$SCRATCH_ORG_ALIAS" node -e "

@@ -179,7 +179,7 @@ function buildSerializedPrompt(messages, systemPrompt) {
  * @param {function(string): void} onChunk - Called with each text token/chunk as it arrives
  * @returns {Promise<void>} Resolves when the stream ends
  */
-export async function streamAiResponse(messages, systemPrompt, options, onChunk) {
+export async function streamAiResponse(messages, systemPrompt, options, onChunk, onProcess) {
   if (!messages?.length) throw new Error('messages array must not be empty');
 
   const { config } = options;
@@ -188,14 +188,14 @@ export async function streamAiResponse(messages, systemPrompt, options, onChunk)
   try {
     switch (provider) {
       case 'gemini':
-        await streamGeminiResponse(messages, systemPrompt, config, onChunk);
+        await streamGeminiResponse(messages, systemPrompt, config, onChunk, onProcess);
         return;
       case 'openai':
-        await streamOpenAiResponse(messages, systemPrompt, config, onChunk);
+        await streamOpenAiResponse(messages, systemPrompt, config, onChunk, onProcess);
         return;
       default:
         // claude (and unknown providers fall back to claude)
-        await streamClaudeResponse(messages, systemPrompt, config, onChunk);
+        await streamClaudeResponse(messages, systemPrompt, config, onChunk, onProcess);
         return;
     }
   } catch (err) {
@@ -203,7 +203,7 @@ export async function streamAiResponse(messages, systemPrompt, options, onChunk)
   }
 }
 
-async function streamClaudeResponse(messages, systemPrompt, config, onChunk) {
+async function streamClaudeResponse(messages, systemPrompt, config, onChunk, onProcess) {
   if (!(await isAiAvailable(config))) {
     throw new Error(aiUnavailableMessage(config));
   }
@@ -211,8 +211,9 @@ async function streamClaudeResponse(messages, systemPrompt, config, onChunk) {
   const serialized = buildSerializedPrompt(messages, systemPrompt);
 
   const proc = execa('claude', ['--output-format', 'stream-json', '--no-color', '-p', serialized],
-    { stdio: ['pipe', 'pipe', 'pipe'], reject: false },
+    { stdio: ['pipe', 'pipe', 'pipe'], reject: false, timeout: 300_000 },
   );
+  if (onProcess) onProcess(proc);
 
   let buffer = '';
 
@@ -262,9 +263,10 @@ async function streamClaudeResponse(messages, systemPrompt, config, onChunk) {
   }
 }
 
-async function streamOpenAiResponse(messages, systemPrompt, _config, onChunk) {
+async function streamOpenAiResponse(messages, systemPrompt, _config, onChunk, onProcess) {
   const serialized = buildSerializedPrompt(messages, systemPrompt);
-  const proc = execa('codex', [serialized], { stdio: ['pipe', 'pipe', 'pipe'], reject: false });
+  const proc = execa('codex', [serialized], { stdio: ['pipe', 'pipe', 'pipe'], reject: false, timeout: 300_000 });
+  if (onProcess) onProcess(proc);
   for await (const chunk of proc.stdout) {
     onChunk(chunk.toString());
   }
@@ -274,9 +276,10 @@ async function streamOpenAiResponse(messages, systemPrompt, _config, onChunk) {
   }
 }
 
-async function streamGeminiResponse(messages, systemPrompt, _config, onChunk) {
+async function streamGeminiResponse(messages, systemPrompt, _config, onChunk, onProcess) {
   const serialized = buildSerializedPrompt(messages, systemPrompt);
-  const proc = execa('gemini', ['-p', serialized], { stdio: ['pipe', 'pipe', 'pipe'], reject: false });
+  const proc = execa('gemini', ['-p', serialized], { stdio: ['pipe', 'pipe', 'pipe'], reject: false, timeout: 300_000 });
+  if (onProcess) onProcess(proc);
   for await (const chunk of proc.stdout) {
     onChunk(chunk.toString());
   }

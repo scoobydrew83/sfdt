@@ -1635,12 +1635,17 @@ export function createGuiApp(config, version, port = 7654) {
       return res.status(400).json({ error: 'Invalid destructiveTiming' });
     }
 
+    const VALID_CLASS = /^[A-Za-z][A-Za-z0-9_]*$/;
     const classList = Array.isArray(testClasses)
       ? testClasses
       : typeof testClasses === 'string' && testClasses
         ? testClasses.split(',')
         : [];
-    const normalizedTestClasses = classList.map((s) => String(s).trim()).filter(Boolean).join(' ');
+    const normalizedList = classList.map((s) => String(s).trim()).filter(Boolean);
+    if (normalizedList.some((c) => !VALID_CLASS.test(c))) {
+      return res.status(400).json({ error: 'Invalid test class name' });
+    }
+    const normalizedTestClasses = normalizedList.join(' ');
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -1683,7 +1688,7 @@ export function createGuiApp(config, version, port = 7654) {
       };
 
       if (!skipPreflight) {
-        const preflightPath = path.join(SCRIPTS_DIR, 'new', 'preflight.sh');
+        const preflightPath = path.join(SCRIPTS_DIR, 'ops', 'preflight.sh');
         const pfChild = execa('bash', [preflightPath], {
           env: { ...process.env, ...scriptEnv },
           cwd: projectRoot,
@@ -2379,7 +2384,8 @@ export function createGuiApp(config, version, port = 7654) {
     res.flushHeaders();
 
     let aborted = false;
-    req.on('close', () => { aborted = true; });
+    let aiProc = null;
+    req.on('close', () => { aborted = true; if (aiProc && !aiProc.killed) aiProc.kill(); });
 
     const send = (payload) => {
       if (!res.writableEnded && !aborted) res.write('data: ' + JSON.stringify(payload) + '\n\n');
@@ -2454,7 +2460,7 @@ export function createGuiApp(config, version, port = 7654) {
         return;
       }
 
-      await streamAiResponse(messages, systemPrompt, { config }, (text) => send({ type: 'chunk', text }));
+      await streamAiResponse(messages, systemPrompt, { config }, (text) => send({ type: 'chunk', text }), (proc) => { aiProc = proc; });
       send({ type: 'done' });
     } catch (err) {
       send({ type: 'error', message: err.message });
