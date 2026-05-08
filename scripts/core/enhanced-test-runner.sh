@@ -63,6 +63,13 @@ fi
 
 log_info "Identified ${#PROJECT_TEST_CLASSES[@]} test classes."
 
+# Resolve target org (same precedence as deployment-assistant.sh)
+TARGET_ORG="${SFDT_TARGET_ORG:-${SFDT_DEFAULT_ORG:-}}"
+if [[ -z "$TARGET_ORG" ]]; then
+    log_error "No target org set. Set SFDT_DEFAULT_ORG or SFDT_TARGET_ORG."
+    exit 1
+fi
+
 # Handle Non-Interactive Mode
 NON_INTERACTIVE="${SFDT_NON_INTERACTIVE:-false}"
 OPTION="1" # Default: Parallel with coverage
@@ -100,7 +107,7 @@ run_parallel_tests() {
 
         log_info "Launching batch ${batch_num} (${#batch[@]} classes)"
         (
-            local args=("--class-names" "$batch_list" "--json" "--wait" "20")
+            local args=("--target-org" "$TARGET_ORG" "--class-names" "$batch_list" "--json" "--wait" "20")
             [[ "$with_coverage" == "true" ]] && args+=("--code-coverage")
             sf apex run test "${args[@]}" > "$RESULTS_DIR/batch_${batch_num}_$TIMESTAMP.json" 2>&1
         ) &
