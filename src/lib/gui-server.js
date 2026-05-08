@@ -284,6 +284,7 @@ function removeComponentFromXml(xml, type, member) {
 }
 
 function addComponentToXml(xml, type, member) {
+  const escapedType = type.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const escaped = member.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const blockPattern = /(<types>[\s\S]*?<\/types>)/g;
   let inserted = false;
@@ -297,7 +298,7 @@ function addComponentToXml(xml, type, member) {
   });
   if (!inserted) {
     // Type block doesn't exist yet — add a new <types> block before </Package>
-    const newBlock = `    <types>\n        <members>${escaped}</members>\n        <name>${type}</name>\n    </types>\n`;
+    const newBlock = `    <types>\n        <members>${escaped}</members>\n        <name>${escapedType}</name>\n    </types>\n`;
     result = result.replace(/<\/Package>/, `${newBlock}</Package>`);
   }
   return result;
@@ -1918,7 +1919,7 @@ export function createGuiApp(config, version, port = 7654) {
 
       const projectRoot = config._projectRoot ?? process.cwd();
       const releaseNotesTemplate = await getPrompt('release-notes', config._configDir);
-      const prompt = interpolate(releaseNotesTemplate, { version: '', outputPath: '' });
+      const prompt = interpolate(releaseNotesTemplate, { version: 'unreleased', outputPath: '(streaming output — do not write to file)' });
 
       send({ type: 'log', line: 'Generating release notes with AI...', ts: new Date().toISOString() });
 

@@ -298,10 +298,11 @@ detect_changed_files() {
         # First release - include all files from all source paths
         for src_path in "${SOURCE_PATHS[@]}"; do
             # Avoid double-appending /main/default if src_path already ends with it
+            local scan_dir
             if [[ "$src_path" == */main/default ]]; then
-                local scan_dir="$src_path"
+                scan_dir="$src_path"
             else
-                local scan_dir="${src_path}/main/default"
+                scan_dir="${src_path}/main/default"
             fi
             if [ -d "$scan_dir" ]; then
                 find "$scan_dir" -type f \( -name "*.cls" -o -name "*.trigger" -o -name "*-meta.xml" \) \

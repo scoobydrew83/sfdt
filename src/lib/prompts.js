@@ -395,7 +395,7 @@ async function loadOverrides(configDir) {
   return overrides;
 }
 
-function invalidateCache() {
+export function invalidateCache() {
   _cache.clear();
 }
 

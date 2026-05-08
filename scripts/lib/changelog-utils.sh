@@ -222,7 +222,7 @@ validate_version_entry() {
 
     local safe_version normalized_pattern
     safe_version=$(printf '%s\n' "$version" | sed 's/[][\\.^$*]/\\&/g')
-    normalized_pattern=$(printf '%s\n' "$safe_version" | sed 's/\\-/[ -]/g')
+    normalized_pattern=$(printf '%s\n' "$safe_version" | sed 's/\\-/[- ]/g')
     grep -qi "^## \[${normalized_pattern}\]" "$changelog_file"
 }
 

@@ -25,6 +25,11 @@ export function registerReleaseCommand(program) {
         if (releaseName === 'today') {
           releaseName = new Date().toISOString().slice(0, 10);
         }
+        if (releaseName && !/^[A-Za-z0-9._-]+$/.test(releaseName)) {
+          print.error('Release name may only contain letters, numbers, dots, underscores, and hyphens.');
+          process.exitCode = 1;
+          return;
+        }
         const pkgTarget = options.package || 'all';
         if (pkgTarget !== 'all') {
           const validPackages = (config.packageDirectories ?? []).map((p) => p.name).filter(Boolean);
