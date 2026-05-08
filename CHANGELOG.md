@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI: integration test job and nightly schedule**: New `integration-test` workflow job installs sfdt from a tarball and runs key commands (`preflight`, `test`, `quality`) against a scratch org. Runs on every PR and nightly via cron.
 - **`sfdt deploy --source-dir`**: New flag for folder-mode deploys — deploys directly from a source directory path instead of generating a manifest.
 
+### Breaking Changes
+- **Preflight: `enforceGitClean` and `enforceSfdxProject` now default to `true`**: Projects upgrading from v0.6.x that do not have a `deployment.preflight` section in `.sfdt/config.json` will now have git-clean and sfdx-project checks enabled automatically. To preserve the previous opt-in behaviour, explicitly set `"enforceGitClean": false` and `"enforceSfdxProject": false` in your config, or run `sfdt init` to regenerate the config with current defaults.
+
 ### Changed
 - **GUI: dark mode is now the default**: The dashboard root defaults to dark mode; light mode is opt-in via the `.content-light` class. No user preference is required.
 - **GUI design system (Relay)**: Dashboard, ReleaseHub, Drift, and Compare pages updated to use the Relay design components (custom CSS design system). Hardcoded brand colors replaced with CSS custom properties throughout.
