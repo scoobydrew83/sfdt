@@ -99,12 +99,12 @@ export const api = {
   aiAvailable:            () => fetchJson('/ai/available'),
   /** @returns {Promise<{ history: DeployHistoryEntry[] }>} */
   deployHistory:          () => fetchJson('/deploy/history'),
-  /** @returns {Promise<{ content: string, exists: boolean }>} */
-  changelogContent:       () => fetchJson('/changelog/content'),
-  /** @returns {Promise<{ ok: boolean }>} */
-  saveChangelog:          (content) => postJson('/changelog/save', { content }),
+  /** @returns {Promise<{ content: string, exists: boolean, file: string }>} */
+  changelogContent:       (pkg) => fetchJson(`/changelog/content${pkg ? `?package=${encodeURIComponent(pkg)}` : ''}`),
+  /** @returns {Promise<{ ok: boolean, file: string }>} */
+  saveChangelog:          (content, pkg) => postJson('/changelog/save', { content, ...(pkg ? { package: pkg } : {}) }),
   /** @returns {Promise<{ ok: boolean, path: string }>} */
-  saveReleaseNotes:       (content) => postJson('/release-notes/save', { content }),
+  saveReleaseNotes:       (content, opts = {}) => postJson('/release-notes/save', { content, ...opts }),
   /** @returns {Promise<{ tests: string[] }>} */
   detectTests:            (relPath) => fetchJson(`/manifest/detect-tests?path=${encodeURIComponent(relPath)}`),
   /** @returns {Promise<{ ok: boolean }>} */
@@ -189,8 +189,8 @@ function ssePost(path, body) {
 
 export const stream = {
   deploy:           (opts) => ssePost('/release/deploy', opts),
-  changelogGenerate:()     => ssePost('/changelog/generate', {}),
-  releaseNotes:     ()     => ssePost('/release-notes/generate', {}),
+  changelogGenerate:(pkg)  => ssePost('/changelog/generate', pkg ? { package: pkg } : {}),
+  releaseNotes:     (opts = {}) => ssePost('/release-notes/generate', opts),
   review:           (base) => ssePost('/review', { base }),
   explain:          (logPath) => ssePost('/explain', logPath ? { logPath } : {}),
   qualityFixPlan:   () => ssePost('/quality/fix-plan', {}),

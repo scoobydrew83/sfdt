@@ -79,6 +79,7 @@ export function buildScriptEnv(config) {
     env.SFDT_PACKAGE_DIRS = JSON.stringify(config.packageDirectories.map((d) => d.path));
   }
   env.SFDT_MANIFEST_LAYOUT = config.manifestLayout || 'flat';
+  env.SFDT_CHANGELOG_DIR = config.changelogDir || 'changelogs';
 
   return env;
 }

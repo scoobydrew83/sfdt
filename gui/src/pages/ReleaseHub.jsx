@@ -338,22 +338,31 @@ function ManifestStep({ onSelect, selected, onMarkDone, deployMode, setDeployMod
 // ─── Changelog Step ──────────────────────────────────────────────────────────
 
 function ChangelogStep({ aiAvailable, onMarkDone }) {
-  const [content, setContent]     = useState('');
-  const [loading, setLoading]     = useState(true);
-  const [generating, setGenerating] = useState(false);
-  const [saving, setSaving]       = useState(false);
-  const [genLines, setGenLines]   = useState([]);
-  const counterRef  = useRef(0);
-  const streamRef   = useRef(null);
-  const genLogRef   = useRef(null);
+  const [content, setContent]         = useState('');
+  const [loading, setLoading]         = useState(true);
+  const [generating, setGenerating]   = useState(false);
+  const [saving, setSaving]           = useState(false);
+  const [genLines, setGenLines]       = useState([]);
+  const [packages, setPackages]       = useState([]);
+  const [selectedPkg, setSelectedPkg] = useState('');
+  const [changelogFile, setChangelogFile] = useState('CHANGELOG.md');
+  const counterRef = useRef(0);
+  const streamRef  = useRef(null);
+  const genLogRef  = useRef(null);
 
   useEffect(() => {
-    api.changelogContent()
-      .then((d) => setContent(d.content ?? ''))
+    api.getPackages().then((d) => setPackages(d.packages ?? [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    streamRef.current?.close();
+    api.changelogContent(selectedPkg || undefined)
+      .then((d) => { setContent(d.content ?? ''); setChangelogFile(d.file ?? 'CHANGELOG.md'); })
       .catch(() => {})
       .finally(() => setLoading(false));
     return () => streamRef.current?.close();
-  }, []);
+  }, [selectedPkg]);
 
   useEffect(() => {
     if (genLogRef.current) genLogRef.current.scrollTop = genLogRef.current.scrollHeight;
@@ -363,7 +372,7 @@ function ChangelogStep({ aiAvailable, onMarkDone }) {
     setGenerating(true);
     setGenLines([]);
     counterRef.current = 0;
-    const s = stream.changelogGenerate();
+    const s = stream.changelogGenerate(selectedPkg || undefined);
     streamRef.current = s;
     s.onmessage = ({ data: msg }) => {
       if (msg.type === 'log') {
@@ -384,7 +393,7 @@ function ChangelogStep({ aiAvailable, onMarkDone }) {
   const save = async () => {
     setSaving(true);
     try {
-      await api.saveChangelog(content);
+      await api.saveChangelog(content, selectedPkg || undefined);
       onMarkDone();
     } catch (err) {
       alert(`Save failed: ${err.message}`);
@@ -399,7 +408,7 @@ function ChangelogStep({ aiAvailable, onMarkDone }) {
         <div>
           <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Changelog</h2>
           <p style={{ fontSize: 13, color: 'var(--fg-muted)' }}>
-            Review and edit the [Unreleased] section of CHANGELOG.md
+            Review and edit the [Unreleased] section of <code style={{ fontSize: 12 }}>{changelogFile}</code>
           </p>
         </div>
         {aiAvailable && (
@@ -409,7 +418,23 @@ function ChangelogStep({ aiAvailable, onMarkDone }) {
         )}
       </div>
 
-      {loading && <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Loading CHANGELOG.md…</div>}
+      {packages.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+          <button
+            className={`btn btn-sm ${!selectedPkg ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setSelectedPkg('')}
+          >All packages</button>
+          {packages.map((p) => (
+            <button
+              key={p.name}
+              className={`btn btn-sm ${selectedPkg === p.name ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setSelectedPkg(p.name)}
+            >{p.name}</button>
+          ))}
+        </div>
+      )}
+
+      {loading && <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Loading {changelogFile}…</div>}
 
       {!loading && (
         <textarea
@@ -437,7 +462,7 @@ function ChangelogStep({ aiAvailable, onMarkDone }) {
       {genLines.length > 0 && (
         <div className="cmd-terminal" ref={genLogRef} style={{ maxHeight: 120, marginBottom: 10 }}>
           {genLines.map(({ id, text }) => (
-            <div key={id} className="cmd-line">{text || '\u00A0'}</div>
+            <div key={id} className="cmd-line">{text || ' '}</div>
           ))}
         </div>
       )}
@@ -454,18 +479,25 @@ function ChangelogStep({ aiAvailable, onMarkDone }) {
   );
 }
 
-// ─── Release Notes Step ──────────────────────────────────────────────────────
+// ─── Release Notes Step ───────────────────────────────────────────────────────────
 
 function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
-  const [content, setContent]     = useState('');
-  const [generating, setGenerating] = useState(false);
-  const [saving, setSaving]       = useState(false);
-  const [genLines, setGenLines]   = useState([]);
-  const counterRef  = useRef(0);
-  const streamRef   = useRef(null);
-  const genLogRef   = useRef(null);
+  const [content, setContent]         = useState('');
+  const [generating, setGenerating]   = useState(false);
+  const [saving, setSaving]           = useState(false);
+  const [genLines, setGenLines]       = useState([]);
+  const [packages, setPackages]       = useState([]);
+  const [selectedPkg, setSelectedPkg] = useState('');
+  const [version, setVersion]         = useState('');
+  const counterRef = useRef(0);
+  const streamRef  = useRef(null);
+  const genLogRef  = useRef(null);
 
-  useEffect(() => () => streamRef.current?.close(), []);
+  useEffect(() => {
+    api.getPackages().then((d) => setPackages(d.packages ?? [])).catch(() => {});
+    api.suggestVersion().then((d) => setVersion(d.version ?? '')).catch(() => {});
+    return () => streamRef.current?.close();
+  }, []);
 
   useEffect(() => {
     if (genLogRef.current) genLogRef.current.scrollTop = genLogRef.current.scrollHeight;
@@ -475,7 +507,10 @@ function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
     setGenerating(true);
     setGenLines([]);
     counterRef.current = 0;
-    const s = stream.releaseNotes();
+    const opts = {};
+    if (selectedPkg) opts.package = selectedPkg;
+    if (version) opts.version = version;
+    const s = stream.releaseNotes(opts);
     streamRef.current = s;
     s.onmessage = ({ data: msg }) => {
       if (msg.type === 'log') {
@@ -496,7 +531,10 @@ function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
   const save = async () => {
     setSaving(true);
     try {
-      await api.saveReleaseNotes(content);
+      const opts = {};
+      if (selectedPkg) opts.package = selectedPkg;
+      if (version) opts.version = version;
+      await api.saveReleaseNotes(content, opts);
       onMarkDone();
     } catch (err) {
       alert(`Save failed: ${err.message}`);
@@ -521,12 +559,49 @@ function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
         )}
       </div>
 
+      {packages.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+          <button
+            className={`btn btn-sm ${!selectedPkg ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setSelectedPkg('')}
+          >All packages</button>
+          {packages.map((p) => (
+            <button
+              key={p.name}
+              className={`btn btn-sm ${selectedPkg === p.name ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setSelectedPkg(p.name)}
+            >{p.name}</button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ display: 'block', fontSize: 12, color: 'var(--fg-muted)', marginBottom: 4 }}>Version</label>
+        <input
+          type="text"
+          value={version}
+          onChange={(e) => setVersion(e.target.value)}
+          placeholder="e.g. 1.2.3"
+          style={{
+            width: 200,
+            padding: '6px 10px',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 13,
+            background: 'var(--bg-subtle)',
+            border: '1px solid var(--border-default)',
+            borderRadius: 6,
+            color: 'var(--fg-default)',
+            outline: 'none',
+          }}
+        />
+      </div>
+
       <textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
         style={{
           width: '100%',
-          height: 300,
+          height: 260,
           fontFamily: 'var(--font-mono)',
           fontSize: 12,
           padding: '10px 12px',
@@ -545,7 +620,7 @@ function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
       {genLines.length > 0 && (
         <div className="cmd-terminal" ref={genLogRef} style={{ maxHeight: 120, marginBottom: 10 }}>
           {genLines.map(({ id, text }) => (
-            <div key={id} className="cmd-line">{text || '\u00A0'}</div>
+            <div key={id} className="cmd-line">{text || ' '}</div>
           ))}
         </div>
       )}

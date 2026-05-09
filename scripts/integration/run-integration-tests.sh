@@ -181,7 +181,7 @@ sfdt preflight
 
 # -- sfdt deploy -------------------------------------------------------------
 step "sfdt deploy"
-sfdt deploy
+sfdt deploy --source-dir force-app/main/default
 
 # -- sfdt test ---------------------------------------------------------------
 # Must run after deploy so Apex classes exist in the org
@@ -207,7 +207,7 @@ sfdt compare
 #    rollback  → should revert to v1
 # ---------------------------------------------------------------------------
 step "Rollback sequence — deploy v1 baseline"
-sfdt deploy
+sfdt deploy --source-dir force-app/main/default
 
 step "Rollback sequence — add RollbackTest__c field (v2 change)"
 TEMP_FIELD_FILE="$SYNTHETIC_SPARK_DIR/force-app/main/default/objects/Synthetic_Widget__c/fields/RollbackTest__c.field-meta.xml"
@@ -224,7 +224,7 @@ cat > "$TEMP_FIELD_FILE" << 'EOF'
 EOF
 
 step "Rollback sequence — deploy v2"
-sfdt deploy
+sfdt deploy --source-dir force-app/main/default
 
 step "Rollback sequence — rollback to v1"
 sfdt rollback

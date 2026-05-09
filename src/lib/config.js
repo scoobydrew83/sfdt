@@ -102,6 +102,7 @@ export async function loadConfig(startDir) {
     }
   }
   merged.manifestLayout = merged.manifestLayout || 'flat';
+  merged.changelogDir = merged.changelogDir || 'changelogs';
 
   return merged;
 }

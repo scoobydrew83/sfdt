@@ -72,7 +72,7 @@ sfdt deploy
 | `sfdt explain [file]` | Analyze a deployment error log with AI + heuristics | `--from-stdin`, `--latest` |
 | `sfdt pr-description` | Generate a PR description or Slack message | `--base <ref>`, `--head <ref>`, `--format github\|slack\|markdown`, `--output <path>`, `--commit-limit <n>` |
 | `sfdt review` | AI code review of current branch changes | `--base <branch>` |
-| `sfdt changelog` | Manage `CHANGELOG.md` | subcommands: `generate`, `release <version>`, `check` |
+| `sfdt changelog` | Manage changelog files (global or per-package) | subcommands: `generate`, `release <version>`, `check`; `--package <name>` scopes to a specific package |
 | `sfdt quality` | Code & test quality analysis | `--tests`, `--all`, `--fix-plan`, `--generate-stubs`, `--dry-run` |
 | `sfdt ai prompt <text>` | Run a prompt through the configured AI provider and print the result | — |
 

@@ -183,7 +183,9 @@ select_manifest() {
     # Also include deployed manifests when called from post-deployment flow (last 3 only)
     if [ "$include_deployed" == "true" ] && [ ${#manifests[@]} -eq 0 ]; then
         print_warning "No undeployed manifests found. Showing recent deployed manifests..."
-        manifests=( $(find "${MANIFEST_BASE_DIR}/deployed/" -maxdepth 1 -name "*.xml" 2>/dev/null | sort -V | tail -3) )
+        local fallback_depth=1
+        if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then fallback_depth=2; fi
+        manifests=( $(find "${MANIFEST_BASE_DIR}/deployed/" -maxdepth $fallback_depth -name "*.xml" 2>/dev/null | sort -V | tail -3) )
     fi
 
     if [ ${#manifests[@]} -eq 0 ]; then
@@ -967,17 +969,18 @@ check_code_coverage() {
         local json_output
         json_output=$(sf project deploy report --job-id "$job_id" --target-org "$TARGET_ORG" --json 2>&1)
 
-        # Calculate coverage from codeCoverage array
-        # Sum: (totalLocations - notCoveredLocations) / totalLocations * 100
+        # Calculate coverage from per-class codeCoverage array; fall back to summary fields
         coverage=$(echo "$json_output" | jq -r '
-            .result.details.runTestResult.codeCoverage // [] |
-            if length > 0 then
-                (map(.numLocations) | add) as $total |
-                (map(.numLocationsNotCovered) | add) as $notCovered |
-                if $total > 0 then
-                    (($total - $notCovered) * 100 / $total | floor)
-                else 0 end
-            else 0 end
+            (.result.details.runTestResult.codeCoverage // []) as $cc |
+            if ($cc | length) > 0 then
+                (($cc | map(.numLocations // 0) | add) // 0) as $total |
+                (($cc | map(.numLocationsNotCovered // 0) | add) // 0) as $notCovered |
+                if $total > 0 then (($total - $notCovered) * 100 / $total | floor) else 0 end
+            else
+                (.result.details.runTestResult.numLocations // 0) as $total |
+                (.result.details.runTestResult.numLocationsNotCovered // 0) as $notCovered |
+                if $total > 0 then (($total - $notCovered) * 100 / $total | floor) else 0 end
+            end
         ' 2>/dev/null || echo "0")
     fi
 
@@ -1136,7 +1139,15 @@ archive_deployed_manifest() {
     print_step "Archiving deployed manifest files..."
 
     # Create deployed directory if it doesn't exist
+    # In subpath layout, mirror the package subfolder under deployed/
     local deployed_dir="${MANIFEST_BASE_DIR}/deployed"
+    if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then
+        local rel_path
+        rel_path=$(dirname "${MANIFEST_PATH#${MANIFEST_BASE_DIR}/}")
+        if [[ -n "$rel_path" && "$rel_path" != "." ]]; then
+            deployed_dir="${MANIFEST_BASE_DIR}/deployed/${rel_path}"
+        fi
+    fi
     mkdir -p "$deployed_dir"
 
     # Get base name of manifest (e.g., rl-0.1.2 or rl-phase-0c)
@@ -1145,10 +1156,13 @@ archive_deployed_manifest() {
     local manifest_base="${raw_base%-package}"
 
     # Find all files for this release
+    # In subpath layout the companion files (README, destructiveChanges) live in the same package subfolder
+    local manifest_dir
+    manifest_dir=$(dirname "$MANIFEST_PATH")
     local files_to_move=(
         "$MANIFEST_PATH"
-        "${MANIFEST_BASE_DIR}/${manifest_base}-README.md"
-        "${MANIFEST_BASE_DIR}/${manifest_base}-destructiveChanges.xml"
+        "${manifest_dir}/${manifest_base}-README.md"
+        "${manifest_dir}/${manifest_base}-destructiveChanges.xml"
     )
 
     local moved_count=0
@@ -1238,7 +1252,7 @@ if [[ -n "${SFDT_DEPLOY_SOURCE_DIR:-}" ]]; then
 fi
 
 if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
-    print_header "NON-INTERACTIVE DEPLOYMENT (GUI)"
+    print_header "NON-INTERACTIVE DEPLOYMENT"
     
     TARGET_ORG="${SFDT_TARGET_ORG:-${SFDT_DEFAULT_ORG:-}}"
     MANIFEST_PATH="${SFDT_MANIFEST_PATH:-}"
@@ -1250,7 +1264,18 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
     CREATE_PR="${SFDT_CREATE_PR:-false}"
     
     if [[ -z "$TARGET_ORG" ]]; then print_error "TARGET_ORG not set"; exit 1; fi
-    if [[ -z "$MANIFEST_PATH" ]]; then print_error "MANIFEST_PATH not set"; exit 1; fi
+
+    # If no manifest was passed explicitly, auto-select the newest one from MANIFEST_BASE_DIR
+    if [[ -z "$MANIFEST_PATH" ]]; then
+        _auto_max_depth=1
+        if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then _auto_max_depth=2; fi
+        MANIFEST_PATH=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$_auto_max_depth" -name "rl-*-package.xml" 2>/dev/null | sort -V | tail -1)
+        if [[ -z "$MANIFEST_PATH" ]]; then
+            print_error "No manifests found in ${MANIFEST_BASE_DIR}/ and SFDT_MANIFEST_PATH not set"
+            exit 1
+        fi
+        print_step "Auto-selected manifest: $(basename "$MANIFEST_PATH")"
+    fi
     
     RELEASE_VERSION=$(extract_version "$(basename "$MANIFEST_PATH")")
     if [[ -z "$RELEASE_VERSION" ]]; then

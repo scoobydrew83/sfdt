@@ -52,6 +52,7 @@ fi
 
 # Compute output directory based on manifest layout
 MANIFEST_LAYOUT="${SFDT_MANIFEST_LAYOUT:-flat}"
+CHANGELOG_FILE="${SFDT_CHANGELOG_FILE:-CHANGELOG.md}"
 PKG_SUBDIR=""
 PKG_SUFFIX=""
 if [ "$MANIFEST_LAYOUT" = "subpath" ]; then
@@ -518,7 +519,7 @@ EOF
 
 # Generate README documentation
 generate_readme() {
-    local readme_file="${MANIFEST_DIR}/rl-${RELEASE_VERSION}-README.md"
+    local readme_file="${MANIFEST_OUTPUT_DIR}/rl-${RELEASE_VERSION}-README.md"
 
     print_step "Generating README..."
 
@@ -694,52 +695,52 @@ generate_manifests() {
     generate_readme
 }
 
-# Run AI to update CHANGELOG.md using the configured provider
+# Run AI to update the changelog file using the configured provider
 run_claude_changelog_update() {
-    local prompt="Document and update CHANGELOG.md for release ${RELEASE_VERSION}. Review git log for changes since ${PREVIOUS_TAG:-initial commit}."
-    print_step "Running AI to update CHANGELOG..."
+    local prompt="Document and update ${CHANGELOG_FILE} for release ${RELEASE_VERSION}. Review git log for changes since ${PREVIOUS_TAG:-initial commit}."
+    print_step "Running AI to update changelog..."
     sfdt ai prompt "$prompt"
 }
 
-# Check if CHANGELOG.md has entry for this version
+# Check if the changelog file has entry for this version
 check_changelog() {
-    local changelog="CHANGELOG.md"
+    local changelog="$CHANGELOG_FILE"
 
-    print_step "Checking CHANGELOG.md..."
+    print_step "Checking ${changelog}..."
 
     if [ ! -f "$changelog" ]; then
-        print_warning "CHANGELOG.md not found"
+        print_warning "${changelog} not found"
         return 1
     fi
 
     if grep -q "## \[${RELEASE_VERSION}\]" "$changelog"; then
-        print_success "CHANGELOG.md contains entry for ${RELEASE_VERSION}"
+        print_success "${changelog} contains entry for ${RELEASE_VERSION}"
         return 0
     else
-        print_warning "CHANGELOG.md missing entry for ${RELEASE_VERSION}"
+        print_warning "${changelog} missing entry for ${RELEASE_VERSION}"
         return 1
     fi
 }
 
-# Display and compare CHANGELOG [Unreleased] section
+# Display and compare changelog [Unreleased] section
 display_and_compare_changelog() {
     print_header "CHANGELOG REVIEW"
 
-    if [ ! -f "CHANGELOG.md" ]; then
-        print_warning "CHANGELOG.md not found"
+    if [ ! -f "$CHANGELOG_FILE" ]; then
+        print_warning "${CHANGELOG_FILE} not found"
         return 1
     fi
 
     # Check if [Unreleased] has content
-    if has_unreleased_content "CHANGELOG.md"; then
+    if has_unreleased_content "$CHANGELOG_FILE"; then
         echo -e "${CYAN}${BOLD}[Unreleased] Section Content:${NC}" >&2
         echo "" >&2
-        display_unreleased_changes "CHANGELOG.md" >&2
+        display_unreleased_changes "$CHANGELOG_FILE" >&2
         echo "" >&2
 
         # Compare with git changes
         if [ -n "${CHANGES_FILE:-}" ]; then
-            compare_changelog_vs_git "CHANGELOG.md" "$CHANGES_FILE" || true
+            compare_changelog_vs_git "$CHANGELOG_FILE" "$CHANGES_FILE" || true
         fi
 
         echo "" >&2
@@ -754,30 +755,30 @@ display_and_compare_changelog() {
 prompt_move_unreleased_to_version() {
     print_step "Processing CHANGELOG..."
 
-    # Check if version already exists in CHANGELOG
-    if validate_version_entry "$RELEASE_VERSION" "CHANGELOG.md"; then
-        print_success "CHANGELOG already contains [$RELEASE_VERSION]"
+    # Check if version already exists in changelog
+    if validate_version_entry "$RELEASE_VERSION" "$CHANGELOG_FILE"; then
+        print_success "${CHANGELOG_FILE} already contains [$RELEASE_VERSION]"
         return 0
     fi
 
     # Check if [Unreleased] has content
-    if ! has_unreleased_content "CHANGELOG.md"; then
+    if ! has_unreleased_content "$CHANGELOG_FILE"; then
         print_warning "[Unreleased] section is empty"
 
-        read -p "$(echo -e ${YELLOW}Would you like to update CHANGELOG.md now? \(y/n\)${NC} )" -n 1 -r
+        read -p "$(echo -e ${YELLOW}Would you like to update ${CHANGELOG_FILE} now? \(y/n\)${NC} )" -n 1 -r
         echo
 
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             run_claude_changelog_update
 
-            if has_unreleased_content "CHANGELOG.md"; then
-                print_success "CHANGELOG updated with content"
+            if has_unreleased_content "$CHANGELOG_FILE"; then
+                print_success "Changelog updated with content"
             else
-                print_warning "CHANGELOG still empty"
+                print_warning "Changelog still empty"
                 return 1
             fi
         else
-            print_warning "CHANGELOG not updated - remember to do this manually"
+            print_warning "Changelog not updated - remember to do this manually"
             return 1
         fi
     fi
@@ -788,8 +789,8 @@ prompt_move_unreleased_to_version() {
     select opt in "${options[@]}"; do
         case $opt in
             "Yes - auto-generate version section")
-                move_unreleased_to_version "$RELEASE_VERSION" "CHANGELOG.md"
-                print_success "CHANGELOG updated: [Unreleased] -> [$RELEASE_VERSION]"
+                move_unreleased_to_version "$RELEASE_VERSION" "$CHANGELOG_FILE"
+                print_success "${CHANGELOG_FILE} updated: [Unreleased] -> [$RELEASE_VERSION]"
                 return 0
                 ;;
             "No - I'll update manually")
@@ -836,10 +837,10 @@ prompt_changelog_update() {
 commit_and_tag() {
     print_step "Git workflow..."
 
-    # Stage manifest files and CHANGELOG if modified
+    # Stage manifest files and changelog if modified
     git add -f "${MANIFEST_OUTPUT_DIR}/rl-${RELEASE_VERSION}"*
-    if ! git diff --quiet CHANGELOG.md 2>/dev/null; then
-        git add CHANGELOG.md
+    if ! git diff --quiet "$CHANGELOG_FILE" 2>/dev/null; then
+        git add "$CHANGELOG_FILE"
     fi
 
     # Show what's staged
@@ -912,7 +913,7 @@ main() {
     display_parsed_components
 
     # Display and compare CHANGELOG
-    if [ -f "CHANGELOG.md" ]; then
+    if [ -f "$CHANGELOG_FILE" ]; then
         display_and_compare_changelog || true
     fi
 
@@ -920,7 +921,7 @@ main() {
     generate_manifests
 
     # CHANGELOG workflow - try new workflow, fall back to legacy
-    if [ -f "CHANGELOG.md" ]; then
+    if [ -f "$CHANGELOG_FILE" ]; then
         prompt_move_unreleased_to_version || prompt_changelog_update
     fi
 
@@ -939,7 +940,7 @@ main() {
     if [ "$has_destructive" = true ]; then
         echo -e "  - ${MANIFEST_OUTPUT_DIR}/rl-${RELEASE_VERSION}${PKG_SUFFIX}-destructiveChanges.xml" >&2
     fi
-    echo -e "  - ${MANIFEST_DIR}/rl-${RELEASE_VERSION}-README.md" >&2
+    echo -e "  - ${MANIFEST_OUTPUT_DIR}/rl-${RELEASE_VERSION}-README.md" >&2
     echo "" >&2
 
     # Output version to stdout for the CLI to capture
