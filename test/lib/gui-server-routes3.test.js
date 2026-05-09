@@ -386,7 +386,7 @@ describe('GET /api/logs with filter types', () => {
     fsMock.readdir.mockResolvedValue(['2026-05-09T10-00-00Z-abc12.json']);
     fsMock.readJson.mockResolvedValue(fakeEnvelope);
 
-    const app = await createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    const app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
     const res = await request(app).get('/api/logs?type=deploy');
 
     expect(res.status).toBe(200);

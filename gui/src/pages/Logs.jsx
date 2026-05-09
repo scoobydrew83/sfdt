@@ -315,7 +315,7 @@ export default function LogsPage() {
               <button
                 className="badge"
                 disabled={page === 1}
-                onClick={() => setPage((p) => p - 1)}
+                onClick={() => { setPage((p) => p - 1); setExpandedIdx(null); }}
                 style={{ cursor: page === 1 ? 'default' : 'pointer', opacity: page === 1 ? 0.4 : 1 }}
               >
                 ← Prev
@@ -326,7 +326,7 @@ export default function LogsPage() {
               <button
                 className="badge"
                 disabled={page === totalPages}
-                onClick={() => setPage((p) => p + 1)}
+                onClick={() => { setPage((p) => p + 1); setExpandedIdx(null); }}
                 style={{ cursor: page === totalPages ? 'default' : 'pointer', opacity: page === totalPages ? 0.4 : 1 }}
               >
                 Next →

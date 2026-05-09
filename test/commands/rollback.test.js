@@ -20,9 +20,14 @@ vi.mock('../../src/lib/output.js', () => ({
   },
 }));
 
+vi.mock('../../src/lib/log-writer.js', () => ({
+  writeRawLog: vi.fn().mockResolvedValue({}),
+}));
+
 import { loadConfig } from '../../src/lib/config.js';
 import { runScript } from '../../src/lib/script-runner.js';
 import { print } from '../../src/lib/output.js';
+import { writeRawLog } from '../../src/lib/log-writer.js';
 import { registerRollbackCommand } from '../../src/commands/rollback.js';
 
 function createProgram() {
@@ -40,6 +45,7 @@ beforeEach(() => {
     defaultOrg: 'dev',
     features: {},
   });
+  writeRawLog.mockResolvedValue({});
 });
 
 describe('rollback command', () => {
