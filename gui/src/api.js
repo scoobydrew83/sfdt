@@ -81,6 +81,10 @@ export const api = {
   setSessionOrg:          (org) => postJson('/session/org', { org }),
   /** @returns {Promise<CompareResult>} */
   compareResult:          () => fetchJson('/compare'),
+  /** @returns {Promise<{timestamp:string, org:string, inventory:Object<string,string[]>, summary:{totalTypes:number,totalMembers:number}}|null>} */
+  scan:                   () => fetchJson('/scan'),
+  /** @returns {Promise<{timestamp:string, org:string, inventory:Object<string,string[]>, summary:{totalTypes:number,totalMembers:number}}>} */
+  runScan:                (org) => postJson('/scan', { org }),
   /** @returns {Promise<{ version: string }>} */
   suggestVersion:         () => fetchJson('/release/suggest-version'),
   /** @returns {Promise<CompareResult>} */
