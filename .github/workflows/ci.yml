@@ -68,9 +68,9 @@ jobs:
       matrix:
         node-version: [22]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -79,7 +79,7 @@ jobs:
       - name: Install Salesforce CLI
         run: npm install -g @salesforce/cli
       - name: Checkout synthetic-spark fixture
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           repository: scoobydrew83/synthetic-spark
           path: synthetic-spark
