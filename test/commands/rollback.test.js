@@ -126,6 +126,11 @@ describe('rollback command', () => {
 
       await createProgram().parseAsync(['node', 'sfdt', 'rollback', '--org', 'prod', '--json']);
 
+      expect(runScript).toHaveBeenCalledWith(
+        'ops/rollback.sh',
+        expect.any(Object),
+        expect.objectContaining({ captureStdout: true }),
+      );
       const written = writeSpy.mock.calls.map((c) => c[0]).join('');
       const parsed = JSON.parse(written);
       expect(parsed).toMatchObject({

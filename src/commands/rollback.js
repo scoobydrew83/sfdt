@@ -2,7 +2,6 @@ import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
-import path from 'path';
 
 export function registerRollbackCommand(program) {
   program
@@ -12,11 +11,11 @@ export function registerRollbackCommand(program) {
     .option('--dry-run', 'Show what would be executed without running')
     .option('--json', 'Emit structured JSON to stdout (CI mode)')
     .action(async (options) => {
+      const jsonMode = !!options.json;
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
         const orgAlias = options.org || config.defaultOrg;
-        const jsonMode = !!options.json;
 
         if (!jsonMode) {
           print.header(`Rolling Back (${orgAlias})${options.dryRun ? ' [dry-run]' : ''}`);
@@ -32,6 +31,7 @@ export function registerRollbackCommand(program) {
           cwd: projectRoot,
           env,
           dryRun: options.dryRun,
+          captureStdout: true,
         });
 
         if (jsonMode) {
@@ -50,7 +50,7 @@ export function registerRollbackCommand(program) {
           );
         }
       } catch (err) {
-        if (options.json) {
+        if (jsonMode) {
           process.stdout.write(
             JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n',
           );

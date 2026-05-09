@@ -12,11 +12,11 @@ export function registerDriftCommand(program) {
     .option('--org <alias>', 'Target org alias to check for drift')
     .option('--json', 'Emit structured JSON to stdout (CI mode)')
     .action(async (options) => {
+      const jsonMode = !!options.json;
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
         const orgAlias = options.org || config.defaultOrg;
-        const jsonMode = !!options.json;
 
         if (!jsonMode) print.header(`Drift Detection (${orgAlias})`);
 
@@ -32,7 +32,7 @@ export function registerDriftCommand(program) {
           print.success(`Drift detection for ${orgAlias} completed.`);
         }
       } catch (err) {
-        if (options.json) {
+        if (jsonMode) {
           process.stdout.write(
             JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n',
           );
