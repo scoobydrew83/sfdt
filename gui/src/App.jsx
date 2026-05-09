@@ -6,6 +6,7 @@ import TestRuns from './pages/TestRuns.jsx';
 import PreflightPage from './pages/Preflight.jsx';
 import DriftPage from './pages/Drift.jsx';
 import ComparePage from './pages/Compare.jsx';
+import ScanPage from './pages/Scan.jsx';
 import ManifestsPage from './pages/Manifests.jsx';
 import QualityPage from './pages/Quality.jsx';
 import PullPage from './pages/Pull.jsx';
@@ -46,6 +47,7 @@ const NAV_GROUPS = [
     label: 'Analyze',
     items: [
       { id: 'compare',   label: 'Compare',   Icon: IconCompare },
+      { id: 'scan',      label: 'Scan',       Icon: IconSearch },
       { id: 'preflight', label: 'Preflight', Icon: IconCheck },
       { id: 'manifests', label: 'Manifests', Icon: IconFileText },
       { id: 'quality',   label: 'Quality',   Icon: IconActivity },
@@ -69,6 +71,7 @@ const PAGE_LABELS = {
   preflight: 'Preflight',
   drift:     'Drift',
   compare:   'Compare',
+  scan:      'Scan',
   manifests: 'Manifests',
   quality:   'Quality',
   pull:      'Pull',
@@ -150,6 +153,7 @@ export default function App() {
       case 'preflight': return <PreflightPage />;
       case 'drift':     return <DriftPage />;
       case 'compare':   return <ComparePage />;
+      case 'scan':      return <ScanPage />;
       case 'manifests': return <ManifestsPage />;
       case 'quality':   return <QualityPage />;
       case 'pull':      return <PullPage />;
