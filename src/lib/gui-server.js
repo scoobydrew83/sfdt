@@ -20,7 +20,7 @@ import { setNestedValue, coerceConfigValue } from './config-utils.js';
 import { loadConfig } from './config.js';
 import { getPrompt, getAllPrompts, setPromptOverride, resetPromptOverride, interpolate } from './prompts.js';
 import { buildScriptEnv } from './script-runner.js';
-import { fetchOrgInventory } from './org-inventory.js';
+import { fetchOrgInventory, fetchInventory } from './org-inventory.js';
 import { initCache, getDelta, updateCache } from './pull-cache.js';
 import { parallelRetrieve } from './parallel-retrieve.js';
 
@@ -310,6 +310,14 @@ function addComponentToXml(xml, type, member) {
  */
 async function readCompare(logDir) {
   return tryReadJson(path.join(logDir, 'compare-latest.json'));
+}
+
+/**
+ * Read the most recent scan result.
+ * Returns { timestamp, org, inventory, summary } or null.
+ */
+async function readScan(logDir) {
+  return tryReadJson(path.join(logDir, 'scan-latest.json'));
 }
 
 /**
@@ -1190,6 +1198,39 @@ export function createGuiApp(config, version, port = 7654) {
       const fsExtra = (await import('fs-extra')).default;
       await fsExtra.outputJson(path.join(logDir, 'compare-latest.json'), payload, { spaces: 2 });
 
+      res.json(payload);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/scan', apiLimiter, async (_req, res) => {
+    try {
+      const data = await readScan(logDir);
+      res.json(data ?? null);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/scan', apiLimiter, async (req, res) => {
+    try {
+      const { org } = req.body ?? {};
+      if (!org || !org.trim()) return res.status(400).json({ error: 'org is required' });
+
+      const inventory = await fetchInventory(org, config);
+      const summary = {
+        totalTypes: inventory.size,
+        totalMembers: [...inventory.values()].reduce((n, s) => n + s.size, 0),
+      };
+      const payload = {
+        timestamp: new Date().toISOString(),
+        org,
+        inventory: Object.fromEntries([...inventory.entries()].map(([k, v]) => [k, [...v]])),
+        summary,
+      };
+
+      await fs.outputJson(path.join(logDir, 'scan-latest.json'), payload, { spaces: 2 });
       res.json(payload);
     } catch (err) {
       res.status(500).json({ error: err.message });
