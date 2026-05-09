@@ -138,3 +138,111 @@ describe('validateConfig — richer error messages', () => {
     ).not.toThrow();
   });
 });
+
+describe('validateConfig — AJV schema fields', () => {
+  it('throws when ai.provider is not a valid enum value', () => {
+    expect(() =>
+      validateConfig({ defaultOrg: 'dev', features: {}, ai: { provider: 'gpt4' } }),
+    ).toThrow('ai.provider');
+  });
+
+  it('accepts ai.provider as "claude"', () => {
+    expect(() =>
+      validateConfig({ defaultOrg: 'dev', features: {}, ai: { provider: 'claude' } }),
+    ).not.toThrow();
+  });
+
+  it('accepts ai.provider as "gemini"', () => {
+    expect(() =>
+      validateConfig({ defaultOrg: 'dev', features: {}, ai: { provider: 'gemini' } }),
+    ).not.toThrow();
+  });
+
+  it('accepts ai.provider as "openai"', () => {
+    expect(() =>
+      validateConfig({ defaultOrg: 'dev', features: {}, ai: { provider: 'openai' } }),
+    ).not.toThrow();
+  });
+
+  it('throws when manifestLayout is invalid', () => {
+    expect(() =>
+      validateConfig({ defaultOrg: 'dev', features: {}, manifestLayout: 'nested' }),
+    ).toThrow('manifestLayout');
+  });
+
+  it('accepts manifestLayout "flat"', () => {
+    expect(() =>
+      validateConfig({ defaultOrg: 'dev', features: {}, manifestLayout: 'flat' }),
+    ).not.toThrow();
+  });
+
+  it('accepts manifestLayout "subpath"', () => {
+    expect(() =>
+      validateConfig({ defaultOrg: 'dev', features: {}, manifestLayout: 'subpath' }),
+    ).not.toThrow();
+  });
+
+  it('throws when logRetention is 0', () => {
+    expect(() =>
+      validateConfig({ defaultOrg: 'dev', features: {}, logRetention: 0 }),
+    ).toThrow('logRetention');
+  });
+
+  it('throws when logRetention is negative', () => {
+    expect(() =>
+      validateConfig({ defaultOrg: 'dev', features: {}, logRetention: -5 }),
+    ).toThrow('logRetention');
+  });
+
+  it('accepts logRetention as 1', () => {
+    expect(() =>
+      validateConfig({ defaultOrg: 'dev', features: {}, logRetention: 1 }),
+    ).not.toThrow();
+  });
+
+  it('throws when pullCache.parallelism is 0', () => {
+    expect(() =>
+      validateConfig({ defaultOrg: 'dev', features: {}, pullCache: { parallelism: 0 } }),
+    ).toThrow('parallelism');
+  });
+
+  it('throws when deployment.preflight has an unknown key', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        deployment: { preflight: { typoKey: true } },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts valid full config from template', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'prod',
+        projectName: 'My SF Project',
+        features: { ai: true, notifications: false, releaseManagement: true },
+        ai: { provider: 'claude', model: '' },
+        deployment: {
+          coverageThreshold: 75,
+          backupBeforeRollback: true,
+          preflight: {
+            enforceTests: false,
+            enforceBranchNaming: false,
+            enforceChangelog: false,
+            enforceGitClean: true,
+            enforceSfdxProject: true,
+            enforceUntrackedFiles: false,
+            strict: false,
+          },
+        },
+        manifestLayout: 'flat',
+        changelogDir: 'changelogs',
+        logRetention: 50,
+        plugins: [],
+        pluginOptions: { autoDiscover: false },
+        pullCache: { enabled: true, parallelism: 5, batchSize: 100, retrieveTimeoutSeconds: 360 },
+      }),
+    ).not.toThrow();
+  });
+});
