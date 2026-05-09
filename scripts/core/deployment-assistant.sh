@@ -1252,7 +1252,7 @@ if [[ -n "${SFDT_DEPLOY_SOURCE_DIR:-}" ]]; then
 fi
 
 if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
-    print_header "NON-INTERACTIVE DEPLOYMENT (GUI)"
+    print_header "NON-INTERACTIVE DEPLOYMENT"
     
     TARGET_ORG="${SFDT_TARGET_ORG:-${SFDT_DEFAULT_ORG:-}}"
     MANIFEST_PATH="${SFDT_MANIFEST_PATH:-}"
@@ -1264,7 +1264,18 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
     CREATE_PR="${SFDT_CREATE_PR:-false}"
     
     if [[ -z "$TARGET_ORG" ]]; then print_error "TARGET_ORG not set"; exit 1; fi
-    if [[ -z "$MANIFEST_PATH" ]]; then print_error "MANIFEST_PATH not set"; exit 1; fi
+
+    # If no manifest was passed explicitly, auto-select the newest one from MANIFEST_BASE_DIR
+    if [[ -z "$MANIFEST_PATH" ]]; then
+        _auto_max_depth=1
+        if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then _auto_max_depth=2; fi
+        MANIFEST_PATH=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$_auto_max_depth" -name "rl-*-package.xml" 2>/dev/null | sort -V | tail -1)
+        if [[ -z "$MANIFEST_PATH" ]]; then
+            print_error "No manifests found in ${MANIFEST_BASE_DIR}/ and SFDT_MANIFEST_PATH not set"
+            exit 1
+        fi
+        print_step "Auto-selected manifest: $(basename "$MANIFEST_PATH")"
+    fi
     
     RELEASE_VERSION=$(extract_version "$(basename "$MANIFEST_PATH")")
     if [[ -z "$RELEASE_VERSION" ]]; then

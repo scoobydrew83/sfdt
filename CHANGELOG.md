@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-05-08
+
+### Added
+- **Package-scoped changelog support**: `sfdt changelog generate`, `sfdt changelog release`, and `sfdt changelog check` now accept `--package <name>` to scope operations to a specific package directory. Per-package changelogs are stored in `changelogs/<name>.md` (directory configurable via `changelogDir` in `.sfdt/config.json`, default: `changelogs`).
+- **`changelogDir` config field**: New config key controlling the directory used for per-package changelog files. Added to the `sfdt.config.json` template so `sfdt init` sets it automatically.
+- **GUI Release Hub: package-scoped changelog and release notes**: The Changelog and Release Notes steps in Release Hub now show a package pill selector when multiple package directories are configured. Selecting a package scopes the AI generation, preview, and save operations to that package's changelog file.
+
+### Fixed
+- **Security: path traversal in GUI changelog endpoints** — The `/api/changelog/content`, `/api/changelog/save`, and `/api/release-notes/save` endpoints now validate that the resolved file path stays within the project root, preventing a path traversal attack via the `package` parameter.
+- **Security: git ref validation in `/api/review`** — The `base` parameter is now validated against an allowlist pattern (`/^[A-Za-z0-9._/~^@:{}-]+$/`) before being passed to `git diff`, preventing git flag injection.
+- **Manifest README generation**: Fixed output path for the README artifact in subpath manifest layout — it now correctly writes to `MANIFEST_OUTPUT_DIR` instead of `MANIFEST_DIR`.
+- **`sfdt deploy` in CI/non-interactive mode**: `deployment-assistant.sh` now auto-selects the newest `rl-*-package.xml` from `MANIFEST_BASE_DIR` when no `SFDT_MANIFEST_PATH` is provided in non-TTY environments (e.g. CI). Previously it hard-failed with "MANIFEST_PATH not set" whenever `sfdt deploy` ran without a terminal.
+
+### Security
+- **`hono` 4.12.15 → 4.12.18** (transitive, via `@hono/node-server` / `@modelcontextprotocol/sdk`): fixes JWT NumericDate validation bypass (GHSA-hm8q-7f3q-5f36), cross-user cache leakage via `Vary: Authorization/Cookie` (GHSA-p77w-8qqv-26rm), CSS injection in JSX SSR (GHSA-qp7p-654g-cw7p), unvalidated JSX tag names (GHSA-69xw-7hcm-h432), and body-limit bypass for chunked requests (GHSA-9vqf-7f2p-gf9v). Incorporates Dependabot PR #72.
+- **`fast-uri`** (transitive): fixes path traversal via percent-encoded dot segments (GHSA-q3j6-qgpj-74h6) and host confusion via percent-encoded authority delimiters (GHSA-v39h-62p7-jpjc).
+
+### Changed
+- **CI**: Reverted `actions/checkout` and `actions/setup-node` to v4 (v6 was incompatible with the current runner environment). The integration test job is no longer a required gate for beta and stable publish jobs.
+
 ## [0.7.1] - 2026-05-07
 
 ### Changed

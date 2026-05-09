@@ -547,15 +547,16 @@ Every step in the git workflow is optional — you can bail out at any confirm p
 
 ### sfdt changelog
 
-Manages `CHANGELOG.md`. Three subcommands: `generate`, `release`, and `check`.
+Manages changelog files. Three subcommands: `generate`, `release`, and `check`. All subcommands support an optional `--package <name>` flag to scope operations to a specific package directory's changelog (stored in `changelogs/<name>.md` by default). Without `--package`, all commands operate on the global `CHANGELOG.md`.
 
 #### sfdt changelog generate
 
-Uses AI to analyze recent git commits and generate `[Unreleased]` entries in `CHANGELOG.md`. Creates the file from a standard template if it does not exist.
+Uses AI to analyze recent git commits and generate `[Unreleased]` entries. Creates the file from a standard template if it does not exist.
 
 ```bash
 sfdt changelog generate
 sfdt changelog generate --limit 30
+sfdt changelog generate --package marketing
 ```
 
 **Options:**
@@ -563,8 +564,9 @@ sfdt changelog generate --limit 30
 | Option | Description |
 |---|---|
 | `--limit <n>` | Number of commits to analyze (default: 20) |
+| `--package <name>` | Scope to a specific package directory; writes to `changelogs/<name>.md` |
 
-The AI categorizes changes into Added, Changed, Fixed, Deprecated, Removed, and Security sections. After the AI produces the entries, sfdt asks whether to append them to the `[Unreleased]` section of `CHANGELOG.md`.
+The AI categorizes changes into Added, Changed, Fixed, Deprecated, Removed, and Security sections. After the AI produces the entries, sfdt asks whether to append them to the `[Unreleased]` section.
 
 Requires `features.ai: true` and a configured provider.
 
@@ -572,10 +574,11 @@ Requires `features.ai: true` and a configured provider.
 
 #### sfdt changelog release
 
-Moves the `[Unreleased]` section of `CHANGELOG.md` to a new versioned section with the current date.
+Moves the `[Unreleased]` section to a new versioned section with the current date.
 
 ```bash
 sfdt changelog release 1.5.0
+sfdt changelog release 1.5.0 --package marketing
 ```
 
 **Arguments:**
@@ -584,17 +587,30 @@ sfdt changelog release 1.5.0
 |---|---|
 | `<version>` | Semver version string. Must match `X.Y.Z` format. |
 
-This command edits `CHANGELOG.md` in place. Run it just before tagging a release. It does not commit — stage and commit the file yourself (or run `sfdt release` which does this as part of its git workflow).
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--package <name>` | Target a specific package changelog (`changelogs/<name>.md`) |
+
+This command edits the changelog file in place. Run it just before tagging a release. It does not commit — stage and commit the file yourself (or run `sfdt release` which does this as part of its git workflow).
 
 ---
 
 #### sfdt changelog check
 
-Validates that `CHANGELOG.md` is in sync with the current git state. Warns if you have uncommitted code changes but the `[Unreleased]` section is empty.
+Validates that the changelog is in sync with the current git state. Warns if you have uncommitted code changes but the `[Unreleased]` section is empty.
 
 ```bash
 sfdt changelog check
+sfdt changelog check --package marketing
 ```
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--package <name>` | Check a specific package changelog; scopes the git status check to that package's path |
 
 Use this as a pre-commit or CI check to enforce that changes are documented before merging. Exits with code `1` if the changelog needs updating.
 

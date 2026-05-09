@@ -1796,6 +1796,9 @@ export function createGuiApp(config, version, port = 7654) {
       const projectRoot = config._projectRoot ?? process.cwd();
       const pkgName = String(req.query.package ?? '').trim();
       const changelogPath = resolveChangelogFilePath(projectRoot, pkgName);
+      if (!path.resolve(changelogPath).startsWith(path.resolve(projectRoot) + path.sep)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
 
       if (!(await fs.pathExists(changelogPath))) {
         return res.json({ content: '', exists: false, file: path.relative(projectRoot, changelogPath) });
@@ -1818,6 +1821,9 @@ export function createGuiApp(config, version, port = 7654) {
 
       const projectRoot = config._projectRoot ?? process.cwd();
       const changelogPath = resolveChangelogFilePath(projectRoot, pkgName || '');
+      if (!path.resolve(changelogPath).startsWith(path.resolve(projectRoot) + path.sep)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
 
       await fs.ensureDir(path.dirname(changelogPath));
 
@@ -1861,6 +1867,9 @@ export function createGuiApp(config, version, port = 7654) {
 
       const projectRoot = config._projectRoot ?? process.cwd();
       const notesPath = resolveNotesFilePath(projectRoot, pkgTarget || '', version || '');
+      if (!path.resolve(notesPath).startsWith(path.resolve(projectRoot) + path.sep)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
 
       await fs.ensureDir(path.dirname(notesPath));
 
@@ -2157,6 +2166,9 @@ export function createGuiApp(config, version, port = 7654) {
 
   app.post('/api/review', apiLimiter, async (req, res) => {
     const { base = 'main' } = req.body ?? {};
+    if (!/^[A-Za-z0-9._/~^@:{}-]+$/.test(base)) {
+      return res.status(400).json({ error: 'Invalid base ref' });
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
