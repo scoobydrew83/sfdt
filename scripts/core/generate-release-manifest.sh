@@ -913,7 +913,7 @@ main() {
     display_parsed_components
 
     # Display and compare CHANGELOG
-    if [ -f "CHANGELOG.md" ]; then
+    if [ -f "$CHANGELOG_FILE" ]; then
         display_and_compare_changelog || true
     fi
 
@@ -921,7 +921,7 @@ main() {
     generate_manifests
 
     # CHANGELOG workflow - try new workflow, fall back to legacy
-    if [ -f "CHANGELOG.md" ]; then
+    if [ -f "$CHANGELOG_FILE" ]; then
         prompt_move_unreleased_to_version || prompt_changelog_update
     fi
 
@@ -940,7 +940,7 @@ main() {
     if [ "$has_destructive" = true ]; then
         echo -e "  - ${MANIFEST_OUTPUT_DIR}/rl-${RELEASE_VERSION}${PKG_SUFFIX}-destructiveChanges.xml" >&2
     fi
-    echo -e "  - ${MANIFEST_DIR}/rl-${RELEASE_VERSION}-README.md" >&2
+    echo -e "  - ${MANIFEST_OUTPUT_DIR}/rl-${RELEASE_VERSION}-README.md" >&2
     echo "" >&2
 
     # Output version to stdout for the CLI to capture
