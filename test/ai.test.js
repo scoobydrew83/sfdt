@@ -74,6 +74,12 @@ describe('isAiAvailable', () => {
     });
     expect(result).toBe(false);
   });
+
+  it('checks codex availability for openai provider', async () => {
+    execa.mockResolvedValueOnce({ exitCode: 0 });
+    const result = await isAiAvailable({ features: { ai: true }, ai: { provider: 'openai' } });
+    expect(typeof result).toBe('boolean');
+  });
 });
 
 // ─── runAiPrompt ─────────────────────────────────────────────────────────────
@@ -281,6 +287,74 @@ describe('streamAiResponse', () => {
         vi.fn(),
       ),
     ).rejects.toThrow('AI stream failed [gemini]');
+  });
+
+  it('Claude: throws when claude is not available', async () => {
+    execa.mockImplementation((_cmd, args) => {
+      if (args[0] === '--version') return Promise.reject(new Error('not found'));
+      return Promise.resolve({ exitCode: 0 });
+    });
+
+    await expect(
+      streamAiResponse(
+        [{ role: 'user', content: 'test' }],
+        'sys',
+        { config: claudeConfig },
+        vi.fn(),
+      ),
+    ).rejects.toThrow('AI stream failed [claude]');
+  });
+
+  it('Claude: processes remaining buffer content without trailing newline', async () => {
+    const jsonLine = JSON.stringify({
+      type: 'content_block_delta',
+      delta: { type: 'text_delta', text: 'buffered' },
+    });
+
+    execa.mockImplementation((_cmd, args) => {
+      if (args[0] === '--version') return Promise.resolve({ exitCode: 0 });
+      // No trailing newline — forces the remaining buffer path
+      return makeCLIProc([jsonLine]);
+    });
+
+    const onChunk = vi.fn();
+    await streamAiResponse(
+      [{ role: 'user', content: 'test' }],
+      'sys',
+      { config: claudeConfig },
+      onChunk,
+    );
+    expect(onChunk).toHaveBeenCalledWith('buffered');
+  });
+
+  it('includes conversation history when multiple messages are passed', async () => {
+    const jsonLine = JSON.stringify({
+      type: 'content_block_delta',
+      delta: { type: 'text_delta', text: 'ok' },
+    });
+
+    let capturedArgs;
+    execa.mockImplementation((_cmd, args) => {
+      if (args[0] === '--version') return Promise.resolve({ exitCode: 0 });
+      capturedArgs = args;
+      return makeCLIProc([jsonLine + '\n']);
+    });
+
+    await streamAiResponse(
+      [
+        { role: 'user', content: 'first question' },
+        { role: 'assistant', content: 'first answer' },
+        { role: 'user', content: 'follow-up' },
+      ],
+      'sys',
+      { config: claudeConfig },
+      vi.fn(),
+    );
+
+    const serialized = capturedArgs?.find((a) => typeof a === 'string' && a.includes('Conversation History'));
+    expect(serialized).toContain('User: first question');
+    expect(serialized).toContain('Assistant: first answer');
+    expect(serialized).toContain('follow-up');
   });
 
   it('wraps provider errors with provider name in message', async () => {

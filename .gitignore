@@ -43,6 +43,8 @@ codex.js
 .playwright-mcp/
 logs/
 .claude/skills/*
+.agents/
 /pr-analysis/
+/docs/superpowers/
 admin/
 TODO.md

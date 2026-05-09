@@ -320,6 +320,25 @@ describe('loadPlugins', () => {
     expect(fs.pathExists).not.toHaveBeenCalledWith('/project/.sfdt/plugins');
   });
 
+  it('handles local plugins dir readdir failure gracefully', async () => {
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/project',
+      _configDir: '/project/.sfdt',
+      plugins: [],
+      pluginOptions: { autoDiscover: true },
+    });
+
+    fs.pathExists.mockImplementation((p) => {
+      if (p === '/project/node_modules') return Promise.resolve(false);
+      if (p === '/project/.sfdt/plugins') return Promise.resolve(true);
+      return Promise.resolve(false);
+    });
+    fs.readdir.mockRejectedValue(new Error('EACCES: permission denied'));
+
+    const { loadPlugins } = await import('../../src/lib/plugin-loader.js');
+    await expect(loadPlugins(program)).resolves.toBeUndefined();
+  });
+
   it('handles node_modules readdir failure gracefully', async () => {
     loadConfig.mockResolvedValue({
       _projectRoot: '/project',

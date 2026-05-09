@@ -159,6 +159,49 @@ describe('manifest command', () => {
     );
   });
 
+  it('warns about destructive components when deletions found but --destructive not given', async () => {
+    const diffOutput = 'D\tforce-app/main/default/classes/OldClass.cls\nD\tforce-app/main/default/classes/OldClass.cls-meta.xml';
+    execa
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: diffOutput });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest']);
+
+    expect(print.warning).toHaveBeenCalledWith(
+      expect.stringContaining('destructive components detected'),
+    );
+  });
+
+  it('reports AI disabled when --ai-cleanup is set but features.ai is false', async () => {
+    const diffOutput = 'A\tforce-app/main/default/classes/Foo.cls';
+    execa
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: diffOutput });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest', '--ai-cleanup']);
+
+    expect(print.info).toHaveBeenCalledWith(
+      expect.stringContaining('AI features are disabled'),
+    );
+  });
+
+  it('reports AI unavailable when features.ai is true but provider not available', async () => {
+    const aiConfig = { ...defaultConfig, features: { ai: true } };
+    loadConfig.mockResolvedValue(aiConfig);
+    isAiAvailable.mockResolvedValue(false);
+
+    const diffOutput = 'A\tforce-app/main/default/classes/Foo.cls';
+    execa
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: diffOutput });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest', '--ai-cleanup']);
+
+    expect(print.info).toHaveBeenCalledWith(
+      expect.stringContaining('AI provider not available'),
+    );
+  });
+
   it('runs AI cleanup when AI is enabled and --ai-cleanup is set', async () => {
     const aiConfig = { ...defaultConfig, features: { ai: true } };
     loadConfig.mockResolvedValue(aiConfig);

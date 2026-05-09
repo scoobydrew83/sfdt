@@ -101,6 +101,28 @@ rm -f "$PREVIEW_OUTPUT"
 # ── Display categorized results ──────────────────────────────────────────────
 TOTAL=$((ADD_COUNT + MODIFY_COUNT + DELETE_COUNT))
 
+# ── Persist structured log ───────────────────────────────────────────────────
+_SFDT_LOG_DIR="${SFDT_LOG_DIR:-${SFDT_PROJECT_ROOT}/logs}"
+mkdir -p "$_SFDT_LOG_DIR"
+_COMPONENTS_JSON=$(
+  {
+    for item in ${ADDED[@]+"${ADDED[@]}"}; do printf '%s\tAdded\n' "$item"; done
+    for item in ${MODIFIED[@]+"${MODIFIED[@]}"}; do printf '%s\tModified\n' "$item"; done
+    for item in ${DELETED[@]+"${DELETED[@]}"}; do printf '%s\tDeleted\n' "$item"; done
+  } | jq -Rn '[inputs | split("\t") | {name: .[0], type: "Unknown", drift: .[1]}]'
+) || _COMPONENTS_JSON="[]"
+_DRIFT_STATUS=$( [[ "$TOTAL" -gt 0 ]] && echo "drift" || echo "clean" )
+jq -n \
+  --arg schemaVersion "1" \
+  --arg type "drift" \
+  --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg org "${TARGET_ORG}" \
+  --arg projectName "${PROJECT_NAME}" \
+  --arg status "$_DRIFT_STATUS" \
+  --argjson components "$_COMPONENTS_JSON" \
+  '{schemaVersion:$schemaVersion,type:$type,timestamp:$timestamp,durationMs:0,exitCode:0,org:$org,projectName:$projectName,data:{status:$status,components:$components}}' \
+  > "${_SFDT_LOG_DIR}/drift-latest.json" || true
+
 if (( TOTAL == 0 )); then
     print_success "No drift detected. Org and local source are in sync."
     exit 0

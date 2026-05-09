@@ -1,8 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Command } from 'commander';
 
 vi.mock('../../src/lib/config.js', () => ({
   loadConfig: vi.fn(),
+}));
+
+vi.mock('open', () => ({
+  default: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../src/lib/gui-server.js', () => ({
@@ -99,5 +103,85 @@ describe('ui command', () => {
 
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Failed to start server'));
     expect(process.exitCode).toBe(1);
+  });
+
+  it('opens the browser by default when --no-open is not passed', async () => {
+    const { default: open } = await import('open');
+
+    await createProgram().parseAsync(['node', 'sfdt', 'ui']);
+
+    expect(open).toHaveBeenCalledWith('http://localhost:7654');
+  });
+
+  it('does not open browser when --no-open is passed', async () => {
+    const { default: open } = await import('open');
+
+    await createProgram().parseAsync(['node', 'sfdt', 'ui', '--no-open']);
+
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('prints fallback message when open module throws', async () => {
+    const { default: open } = await import('open');
+    open.mockRejectedValueOnce(new Error('not found'));
+
+    await createProgram().parseAsync(['node', 'sfdt', 'ui']);
+
+    expect(print.info).toHaveBeenCalledWith(expect.stringContaining('http://localhost:7654'));
+  });
+
+  describe('signal handlers', () => {
+    let registeredHandlers;
+    let exitSpy;
+
+    beforeEach(() => {
+      registeredHandlers = {};
+      vi.spyOn(process, 'on').mockImplementation((sig, fn) => {
+        registeredHandlers[sig] = fn;
+        return process;
+      });
+      exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('registers SIGINT and SIGTERM handlers', async () => {
+      await createProgram().parseAsync(['node', 'sfdt', 'ui', '--no-open']);
+
+      expect(registeredHandlers).toHaveProperty('SIGINT');
+      expect(registeredHandlers).toHaveProperty('SIGTERM');
+    });
+
+    it('closes the server and exits on SIGINT', async () => {
+      mockServer.close = vi.fn((cb) => cb && cb());
+
+      await createProgram().parseAsync(['node', 'sfdt', 'ui', '--no-open']);
+      await registeredHandlers['SIGINT']();
+
+      expect(mockServer.close).toHaveBeenCalled();
+      expect(exitSpy).toHaveBeenCalledWith(0);
+    });
+
+    it('closes the server and exits on SIGTERM', async () => {
+      mockServer.close = vi.fn((cb) => cb && cb());
+
+      await createProgram().parseAsync(['node', 'sfdt', 'ui', '--no-open']);
+      await registeredHandlers['SIGTERM']();
+
+      expect(mockServer.close).toHaveBeenCalled();
+      expect(exitSpy).toHaveBeenCalledWith(0);
+    });
+
+    it('calls server.cleanup if present during shutdown', async () => {
+      const cleanup = vi.fn().mockResolvedValue(undefined);
+      startGuiServer.mockResolvedValue({ ...mockServer, close: vi.fn((cb) => cb && cb()), cleanup });
+
+      await createProgram().parseAsync(['node', 'sfdt', 'ui', '--no-open']);
+      await registeredHandlers['SIGTERM']();
+
+      expect(cleanup).toHaveBeenCalled();
+    });
   });
 });
