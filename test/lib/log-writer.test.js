@@ -7,6 +7,7 @@ import {
   readLatestLog,
   validateLogSchema,
   parseSfdtLogLines,
+  writeRawLog,
 } from '../../src/lib/log-writer.js';
 
 let tmpDir;
@@ -186,5 +187,54 @@ describe('readLatestLog', () => {
     const envelope = await writeLog(tmpDir, 'preflight', data, { org: 'x', projectName: 'y', exitCode: 0, durationMs: 1 });
     const result = await readLatestLog(tmpDir, 'preflight');
     expect(result).toEqual(envelope);
+  });
+});
+
+// ── writeRawLog ───────────────────────────────────────────────────────────────
+
+describe('writeRawLog', () => {
+  it('writes a JSON envelope to the archive dir', async () => {
+    await writeRawLog(tmpDir, 'deploy', 'Deployment output\nDone.', {
+      org: 'staging',
+      exitCode: 0,
+      durationMs: 5000,
+    });
+
+    const archiveDir = path.join(tmpDir, 'deploy-results');
+    const files = await fs.readdir(archiveDir);
+    expect(files).toHaveLength(1);
+    const written = await fs.readJson(path.join(archiveDir, files[0]));
+    expect(written).toMatchObject({
+      schemaVersion: 'raw-1',
+      type: 'deploy',
+      org: 'staging',
+      exitCode: 0,
+      durationMs: 5000,
+      rawOutput: 'Deployment output\nDone.',
+    });
+    expect(written.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('writes to rollback-results for type "rollback"', async () => {
+    await writeRawLog(tmpDir, 'rollback', 'Rollback done.', { org: 'prod', exitCode: 0 });
+
+    const archiveDir = path.join(tmpDir, 'rollback-results');
+    const files = await fs.readdir(archiveDir);
+    expect(files).toHaveLength(1);
+  });
+
+  it('prunes oldest files beyond retention limit', async () => {
+    for (let i = 0; i < 3; i++) {
+      await writeRawLog(tmpDir, 'deploy', `run ${i}`, { org: 'dev', exitCode: 0, retention: 2 });
+    }
+
+    const archiveDir = path.join(tmpDir, 'deploy-results');
+    const files = await fs.readdir(archiveDir);
+    expect(files).toHaveLength(2);
+  });
+
+  it('returns the written envelope', async () => {
+    const result = await writeRawLog(tmpDir, 'deploy', 'stdout text', { org: 'dev', exitCode: 0 });
+    expect(result).toMatchObject({ schemaVersion: 'raw-1', type: 'deploy', rawOutput: 'stdout text' });
   });
 });

@@ -5,18 +5,24 @@ import StatusBadge from '../components/StatusBadge.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 
 const TYPE_LABELS = {
-  'preflight': 'Preflight',
-  'test-run':  'Test Run',
-  'drift':     'Drift',
-  'quality':   'Quality',
+  preflight:  'Preflight',
+  'test-run': 'Test Run',
+  drift:      'Drift',
+  quality:    'Quality',
+  deploy:     'Deploy',
+  rollback:   'Rollback',
 };
 
-const TYPES = ['all', 'preflight', 'test-run', 'drift', 'quality'];
+const TYPES = ['all', 'preflight', 'test-run', 'drift', 'quality', 'deploy', 'rollback'];
+const PAGE_SIZE = 20;
 
 function getStatus(log) {
   if (log.type === 'test-run') {
     const d = log.data ?? {};
     return (d.failed > 0 || log.exitCode !== 0) ? 'FAIL' : 'PASS';
+  }
+  if (log.type === 'deploy' || log.type === 'rollback') {
+    return log.exitCode === 0 ? 'PASS' : 'FAIL';
   }
   return log.data?.status ?? (log.exitCode === 0 ? 'PASS' : 'FAIL');
 }
@@ -26,8 +32,32 @@ function formatDuration(ms) {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
+function RawOutput({ text }) {
+  return (
+    <pre style={{
+      margin: 0,
+      fontFamily: 'var(--font-mono)',
+      fontSize: 'var(--fs-xs)',
+      color: 'var(--fg-muted)',
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'break-all',
+      background: 'var(--bg-subtle)',
+      padding: 'var(--s-3)',
+      borderRadius: 'var(--r-md)',
+      maxHeight: 400,
+      overflow: 'auto',
+    }}>
+      {text || '(no output captured)'}
+    </pre>
+  );
+}
+
 function LogDetail({ log }) {
   const { type, data } = log;
+
+  if (type === 'deploy' || type === 'rollback') {
+    return <RawOutput text={log.rawOutput} />;
+  }
 
   if (type === 'preflight') {
     const checks = data?.checks ?? [];
@@ -126,31 +156,23 @@ function LogDetail({ log }) {
     );
   }
 
-  return (
-    <pre style={{
-      margin: 0,
-      fontFamily: 'var(--font-mono)',
-      fontSize: 'var(--fs-xs)',
-      color: 'var(--fg-muted)',
-      whiteSpace: 'pre-wrap',
-      wordBreak: 'break-all',
-      background: 'var(--bg-subtle)',
-      padding: 'var(--s-3)',
-      borderRadius: 'var(--r-md)',
-      maxHeight: 300,
-      overflow: 'auto',
-    }}>
-      {JSON.stringify(data ?? {}, null, 2)}
-    </pre>
-  );
+  return <RawOutput text={JSON.stringify(data ?? {}, null, 2)} />;
 }
 
 export default function LogsPage() {
-  const [logs, setLogs]           = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState(null);
-  const [typeFilter, setTypeFilter] = useState('all');
+  const [logs, setLogs]               = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState(null);
+  const [typeFilter, setTypeFilter]   = useState('all');
+  const [search, setSearch]           = useState('');
+  const [page, setPage]               = useState(1);
   const [expandedIdx, setExpandedIdx] = useState(null);
+
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 200);
+    return () => clearTimeout(t);
+  }, [search]);
 
   useEffect(() => {
     setLoading(true);
@@ -161,7 +183,22 @@ export default function LogsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = typeFilter === 'all' ? logs : logs.filter((l) => l.type === typeFilter);
+  useEffect(() => { setPage(1); setExpandedIdx(null); }, [typeFilter, debouncedSearch]);
+
+  const filtered = logs.filter((l) => {
+    if (typeFilter !== 'all' && l.type !== typeFilter) return false;
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      const label = (TYPE_LABELS[l.type] ?? l.type).toLowerCase();
+      const org = (l.org ?? '').toLowerCase();
+      const ts = (l.timestamp ?? '').toLowerCase();
+      if (!label.includes(q) && !org.includes(q) && !ts.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageSlice = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div>
@@ -172,13 +209,32 @@ export default function LogsPage() {
         </div>
       </div>
 
+      <div style={{ marginBottom: '0.75rem' }}>
+        <input
+          type="search"
+          placeholder="Search by type, org, or date…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            width: '100%',
+            maxWidth: 360,
+            padding: '0.4rem 0.75rem',
+            borderRadius: 'var(--r-md)',
+            border: '1px solid var(--border)',
+            background: 'var(--bg-subtle)',
+            color: 'var(--fg)',
+            fontSize: 'var(--fs-sm)',
+          }}
+        />
+      </div>
+
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
         {TYPES.map((t) => (
           <button
             key={t}
             className={`badge${typeFilter === t ? ' badge-active' : ''}`}
             style={{ cursor: 'pointer', border: 'none', background: 'none', padding: 0 }}
-            onClick={() => { setTypeFilter(t); setExpandedIdx(null); }}
+            onClick={() => setTypeFilter(t)}
           >
             {t === 'all' ? 'All' : TYPE_LABELS[t]}
           </button>
@@ -191,64 +247,93 @@ export default function LogsPage() {
       {!loading && !error && filtered.length === 0 && (
         <EmptyState
           title="No logs found"
-          message={typeFilter === 'all' ? 'Run a command to generate logs.' : `No ${TYPE_LABELS[typeFilter]} logs found.`}
+          message={typeFilter === 'all' && !debouncedSearch
+            ? 'Run a command to generate logs.'
+            : 'No logs match the current filter.'}
         />
       )}
 
       {!loading && !error && filtered.length > 0 && (
-        <div className="card">
-          <div className="card-head">
-            <div className="card-title">Run History</div>
-            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)', fontFamily: 'var(--font-mono)' }}>
-              {filtered.length} log{filtered.length !== 1 ? 's' : ''}
+        <>
+          <div className="card">
+            <div className="card-head">
+              <div className="card-title">Run History</div>
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)', fontFamily: 'var(--font-mono)' }}>
+                {filtered.length} log{filtered.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+            <div className="table-wrap" style={{ border: 'none', borderRadius: 0 }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Date</th>
+                    <th>Org</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageSlice.map((log, i) => {
+                    const globalIdx = (page - 1) * PAGE_SIZE + i;
+                    const status = getStatus(log);
+                    const isOpen = expandedIdx === globalIdx;
+                    return (
+                      <Fragment key={`${log.timestamp}-${log.type}-${globalIdx}`}>
+                        <tr
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => setExpandedIdx(isOpen ? null : globalIdx)}
+                          title={isOpen ? 'Collapse' : 'Expand details'}
+                        >
+                          <td>
+                            <span className="badge badge-neutral" style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)' }}>
+                              {TYPE_LABELS[log.type] ?? log.type}
+                            </span>
+                          </td>
+                          <td className="td-mono">{log.timestamp ? new Date(log.timestamp).toLocaleString() : '—'}</td>
+                          <td style={{ color: 'var(--fg-muted)' }}>{log.org ?? '—'}</td>
+                          <td><StatusBadge status={status} /></td>
+                          <td className="td-mono">{formatDuration(log.durationMs)}</td>
+                        </tr>
+                        {isOpen && (
+                          <tr>
+                            <td colSpan={5} style={{ padding: '1rem 1.25rem', background: 'var(--surface-2, var(--bg-subtle))' }}>
+                              <LogDetail log={log} />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
-          <div className="table-wrap" style={{ border: 'none', borderRadius: 0 }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Date</th>
-                  <th>Org</th>
-                  <th>Status</th>
-                  <th>Duration</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((log, i) => {
-                  const status = getStatus(log);
-                  const isOpen = expandedIdx === i;
-                  return (
-                    <Fragment key={`${log.timestamp}-${log.type}-${i}`}>
-                      <tr
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => setExpandedIdx(isOpen ? null : i)}
-                        title={isOpen ? 'Collapse' : 'Expand details'}
-                      >
-                        <td>
-                          <span className="badge badge-neutral" style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)' }}>
-                            {TYPE_LABELS[log.type] ?? log.type}
-                          </span>
-                        </td>
-                        <td className="td-mono">{log.timestamp ? new Date(log.timestamp).toLocaleString() : '—'}</td>
-                        <td style={{ color: 'var(--fg-muted)' }}>{log.org ?? '—'}</td>
-                        <td><StatusBadge status={status} /></td>
-                        <td className="td-mono">{formatDuration(log.durationMs)}</td>
-                      </tr>
-                      {isOpen && (
-                        <tr>
-                          <td colSpan={5} style={{ padding: '1rem 1.25rem', background: 'var(--surface-2, var(--bg-subtle))' }}>
-                            <LogDetail log={log} />
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginTop: '1rem' }}>
+              <button
+                className="badge"
+                disabled={page === 1}
+                onClick={() => setPage((p) => p - 1)}
+                style={{ cursor: page === 1 ? 'default' : 'pointer', opacity: page === 1 ? 0.4 : 1 }}
+              >
+                ← Prev
+              </button>
+              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--fg-muted)' }}>
+                Page {page} of {totalPages}
+              </span>
+              <button
+                className="badge"
+                disabled={page === totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                style={{ cursor: page === totalPages ? 'default' : 'pointer', opacity: page === totalPages ? 0.4 : 1 }}
+              >
+                Next →
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -362,6 +362,43 @@ describe('GET /api/logs with filter types', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.logs)).toBe(true);
   });
+
+  it('returns deploy raw logs from deploy-results/ archive', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    const { loadConfig } = await import('../../src/lib/config.js');
+    vi.mocked(loadConfig).mockResolvedValue({
+      ...MOCK_CONFIG,
+      logDir: '/project/logs',
+      logRetention: 50,
+    });
+
+    const fakeEnvelope = {
+      schemaVersion: 'raw-1',
+      type: 'deploy',
+      timestamp: '2026-05-09T10:00:00Z',
+      org: 'staging',
+      exitCode: 0,
+      durationMs: 5000,
+      rawOutput: 'Deployment complete.',
+    };
+
+    fsMock.pathExists.mockResolvedValue(true);
+    fsMock.readdir.mockResolvedValue(['2026-05-09T10-00-00Z-abc12.json']);
+    fsMock.readJson.mockResolvedValue(fakeEnvelope);
+
+    const app = await createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    const res = await request(app).get('/api/logs?type=deploy');
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.logs)).toBe(true);
+    const deployLogs = res.body.logs.filter((l) => l.type === 'deploy');
+    expect(deployLogs).toHaveLength(1);
+    expect(deployLogs[0]).toMatchObject({
+      schemaVersion: 'raw-1',
+      type: 'deploy',
+      rawOutput: 'Deployment complete.',
+    });
+  });
 });
 
 // ─── GET /api/release/suggest-version with manifests ─────────────────────────

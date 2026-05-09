@@ -3,6 +3,7 @@ import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { writeRawLog } from '../lib/log-writer.js';
 
 export function registerDeployCommand(program) {
   program
@@ -51,11 +52,22 @@ export function registerDeployCommand(program) {
           extraEnv.SFDT_DEPLOY_SOURCE_DIR = options.sourceDir;
         }
 
-        await runScript(scriptPath, config, {
+        const deployStart = Date.now();
+        const deployResult = await runScript(scriptPath, config, {
           cwd: projectRoot,
           dryRun: options.dryRun,
           env: extraEnv,
         });
+
+        if (!options.dryRun) {
+          const logDir = config.logDir ?? path.join(projectRoot, 'logs');
+          await writeRawLog(logDir, 'deploy', deployResult.stdout ?? '', {
+            org: config.defaultOrg,
+            exitCode: 0,
+            durationMs: Date.now() - deployStart,
+            retention: config.logRetention ?? 50,
+          }).catch(() => {});
+        }
 
         print.success(options.dryRun ? 'Dry-run complete — no changes made.' : 'Deployment completed successfully.');
       } catch (err) {

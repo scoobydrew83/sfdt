@@ -1,7 +1,9 @@
+import path from 'path';
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { writeRawLog } from '../lib/log-writer.js';
 
 export function registerRollbackCommand(program) {
   program
@@ -27,12 +29,24 @@ export function registerRollbackCommand(program) {
           SFDT_LOG_DIR: config.logDir || '',
         };
 
+        const rollbackStart = Date.now();
         const result = await runScript('ops/rollback.sh', config, {
           cwd: projectRoot,
           env,
           dryRun: options.dryRun,
           captureStdout: true,
         });
+        const durationMs = Date.now() - rollbackStart;
+
+        if (!options.dryRun) {
+          const logDir = config.logDir ?? path.join(projectRoot, 'logs');
+          await writeRawLog(logDir, 'rollback', result.stdout ?? '', {
+            org: orgAlias,
+            exitCode: 0,
+            durationMs,
+            retention: config.logRetention ?? 50,
+          }).catch(() => {});
+        }
 
         if (jsonMode) {
           process.stdout.write(

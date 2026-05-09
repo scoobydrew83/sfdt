@@ -750,6 +750,29 @@ export function createGuiApp(config, version, port = 7654) {
         }
       }
 
+      const rawArchiveDirs = [
+        { type: 'deploy',   dir: 'deploy-results' },
+        { type: 'rollback', dir: 'rollback-results' },
+      ].filter(({ type }) => typeFilter === 'all' || type === typeFilter);
+
+      for (const { dir } of rawArchiveDirs) {
+        const archiveDir = path.join(logDir, dir);
+        if (!(await fs.pathExists(archiveDir))) continue;
+
+        let entries;
+        try { entries = await fs.readdir(archiveDir); } catch { continue; }
+
+        const jsonFiles = entries.filter((f) => f.endsWith('.json'));
+
+        for (const file of jsonFiles) {
+          const filePath = path.resolve(archiveDir, file);
+          if (!filePath.startsWith(path.resolve(logDir) + path.sep)) continue;
+          const envelope = await tryReadJson(filePath);
+          if (!envelope || envelope.schemaVersion !== 'raw-1') continue;
+          logs.push(envelope);
+        }
+      }
+
       logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       res.json({ logs });
     } catch (err) {
