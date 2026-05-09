@@ -47,7 +47,7 @@ const NAV_GROUPS = [
     label: 'Analyze',
     items: [
       { id: 'compare',   label: 'Compare',   Icon: IconCompare },
-      { id: 'scan',      label: 'Scan',       Icon: IconSearch },
+      { id: 'scan',      label: 'Scan',       Icon: IconList },
       { id: 'preflight', label: 'Preflight', Icon: IconCheck },
       { id: 'manifests', label: 'Manifests', Icon: IconFileText },
       { id: 'quality',   label: 'Quality',   Icon: IconActivity },
