@@ -165,7 +165,6 @@ export default function ScanPage() {
                   {sortedTypes.map(([type, members]) => (
                     <button
                       key={type}
-                      className={`nav-item${selectedType === type ? ' active' : ''}`}
                       style={{
                         width: '100%',
                         textAlign: 'left',
@@ -174,7 +173,11 @@ export default function ScanPage() {
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        color: 'var(--fg-default)',
+                        background: selectedType === type ? 'var(--brand-500)' : 'transparent',
+                        color: selectedType === type ? '#fff' : 'var(--fg-default)',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
                       }}
                       onClick={() => { setSelectedType(type); setMemberSearch(''); }}
                     >
