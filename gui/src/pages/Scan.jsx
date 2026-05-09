@@ -144,7 +144,7 @@ export default function ScanPage() {
       {!running && scanData && (
         <>
           {/* Stats row — 3 cards */}
-          <div className="stats-row">
+          <div className="stats-grid mb-6" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
             <StatCard label="Types"   value={scanData.summary.totalTypes}   accent="brand" />
             <StatCard label="Members" value={scanData.summary.totalMembers} accent="brand" />
             <StatCard
@@ -174,6 +174,7 @@ export default function ScanPage() {
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
+                        color: 'var(--fg-default)',
                       }}
                       onClick={() => { setSelectedType(type); setMemberSearch(''); }}
                     >
