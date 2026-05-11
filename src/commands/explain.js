@@ -17,49 +17,9 @@ import {
   formatPreflightSection,
   formatDeployHistorySection,
 } from '../lib/ai-context.js';
+import { runHeuristicAnalysis } from '../lib/explain-heuristics.js';
 
 const MAX_LOG_SIZE_BYTES = 512 * 1024; // 512 KB cap sent to the model
-const MAX_HEURISTIC_ERRORS = 20;
-
-
-/**
- * Pattern-based fallback when AI is unavailable. Picks up the most common
- * Salesforce deployment error prefixes and prints a short summary.
- */
-const HEURISTIC_PATTERNS = [
-  {
-    pattern: /No such column '([^']+)' on entity '([^']+)'/g,
-    hint: (m) => `Missing field ${m[1]} on ${m[2]} — add the field to your manifest or create it.`,
-  },
-  {
-    pattern: /Variable does not exist: (\w+)/g,
-    hint: (m) => `Apex is referencing an unknown symbol "${m[1]}" — check imports and name.`,
-  },
-  {
-    pattern: /Invalid type: (\w+)/g,
-    hint: (m) => `Apex type "${m[1]}" is not defined in the target org.`,
-  },
-  {
-    pattern: /Average test coverage across all Apex Classes and Triggers is (\d+)%/g,
-    hint: (m) => `Overall coverage is ${m[1]}% — below the 75% org requirement.`,
-  },
-  {
-    pattern: /Your organization must have at least \d+ percent code coverage/g,
-    hint: () => 'Add tests or exclude low-coverage classes from this deployment.',
-  },
-  {
-    pattern: /insufficient access rights on cross-reference id/gi,
-    hint: () => 'A referenced record or metadata row is not visible to the deploying user.',
-  },
-  {
-    pattern: /duplicate value found/gi,
-    hint: () => 'A unique constraint (DeveloperName or external ID) collided — rename the component.',
-  },
-  {
-    pattern: /Entity is not org-accessible/gi,
-    hint: () => 'A referenced object/permission is not enabled in the target org.',
-  },
-];
 
 export function registerExplainCommand(program) {
   program
@@ -86,7 +46,14 @@ export function registerExplainCommand(program) {
         print.info(`Analyzing ${trimmed.content.split('\n').length} lines of log output...`);
 
         // Always print the heuristic summary first — it is fast and works offline.
-        printHeuristicSummary(trimmed.content);
+        const { found, findings } = runHeuristicAnalysis(trimmed.content);
+        if (found) {
+          print.header('Heuristic Summary');
+          for (const h of findings) print.step(`• ${h}`);
+          console.log('');
+        } else {
+          print.info('No known error patterns matched heuristically — AI analysis recommended.');
+        }
 
         const aiEnabled = config.features?.ai;
         if (!aiEnabled) {
@@ -212,27 +179,3 @@ function truncateLog(content) {
   return { content: content.slice(-MAX_LOG_SIZE_BYTES), truncated: true };
 }
 
-function printHeuristicSummary(content) {
-  const findings = [];
-  for (const { pattern, hint } of HEURISTIC_PATTERNS) {
-    pattern.lastIndex = 0;
-    let match;
-    while ((match = pattern.exec(content)) !== null) {
-      findings.push(hint(match));
-      if (findings.length >= MAX_HEURISTIC_ERRORS) break;
-    }
-    if (findings.length >= MAX_HEURISTIC_ERRORS) break;
-  }
-
-  if (findings.length === 0) {
-    print.info('No known error patterns matched heuristically — AI analysis recommended.');
-    return;
-  }
-
-  print.header('Heuristic Summary');
-  const deduped = [...new Set(findings)];
-  for (const hint of deduped) {
-    print.step(`• ${hint}`);
-  }
-  console.log('');
-}
