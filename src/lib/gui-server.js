@@ -2301,7 +2301,10 @@ export function createGuiApp(config, version, port = 7654) {
 
       const available = await checkAi(config);
       if (!available) {
-        send({ type: 'error', message: 'AI is not available or not configured.' });
+        const { runHeuristicAnalysis } = await import('./explain-heuristics.js');
+        const { markdown } = runHeuristicAnalysis(logContent);
+        send({ type: 'log', line: 'AI not configured — running heuristic pattern scan.', ts: new Date().toISOString() });
+        send({ type: 'result', exitCode: 0, content: markdown, source: 'heuristic' });
         res.end();
         return;
       }
@@ -2339,11 +2342,33 @@ export function createGuiApp(config, version, port = 7654) {
           send({ type: 'log', line: stripAnsi(line), ts: new Date().toISOString() });
         }
       }
-      send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
+      send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '', source: 'ai' });
     } catch (err) {
       send({ type: 'error', message: err.message });
     } finally {
       if (!res.writableEnded) res.end();
+    }
+  });
+
+  // ── Explain: list available log files ─────────────────────────────────────
+
+  app.get('/api/logs/list', apiLimiter, async (_req, res) => {
+    try {
+      if (!(await fs.pathExists(logDir))) {
+        return res.json({ files: [] });
+      }
+      const entries = await fs.readdir(logDir);
+      const logFiles = entries.filter((f) => f.endsWith('.log'));
+      const statted = await Promise.all(
+        logFiles.map(async (name) => ({
+          name,
+          mtime: (await fs.stat(path.join(logDir, name))).mtimeMs,
+        }))
+      );
+      statted.sort((a, b) => b.mtime - a.mtime);
+      res.json({ files: statted.slice(0, 50).map((f) => f.name) });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
   });
 
