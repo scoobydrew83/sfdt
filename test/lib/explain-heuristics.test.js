@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { runHeuristicAnalysis } from '../../src/lib/explain-heuristics.js';
+import { runHeuristicAnalysis, NO_MATCH_MESSAGE } from '../../src/lib/explain-heuristics.js';
 
 describe('runHeuristicAnalysis', () => {
   it('returns found=false and a no-matches markdown when log has no known patterns', () => {
-    const { found, markdown } = runHeuristicAnalysis('Everything deployed successfully.');
+    const { found, findings, markdown } = runHeuristicAnalysis('Everything deployed successfully.');
     expect(found).toBe(false);
-    expect(markdown).toContain('No known error patterns');
+    expect(findings.length).toBe(0);
+    expect(markdown).toContain(NO_MATCH_MESSAGE);
     expect(markdown).toContain('Enable AI');
   });
 
@@ -29,8 +30,9 @@ describe('runHeuristicAnalysis', () => {
       "No such column 'Amount' on entity 'Opportunity'",
       "No such column 'Amount' on entity 'Opportunity'",
     ].join('\n');
-    const { found, markdown } = runHeuristicAnalysis(log);
+    const { found, findings, markdown } = runHeuristicAnalysis(log);
     expect(found).toBe(true);
+    expect(findings.length).toBe(1);
     const count = (markdown.match(/Amount/g) ?? []).length;
     expect(count).toBe(1);
   });

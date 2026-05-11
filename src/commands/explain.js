@@ -17,7 +17,7 @@ import {
   formatPreflightSection,
   formatDeployHistorySection,
 } from '../lib/ai-context.js';
-import { runHeuristicAnalysis } from '../lib/explain-heuristics.js';
+import { runHeuristicAnalysis, NO_MATCH_MESSAGE } from '../lib/explain-heuristics.js';
 
 const MAX_LOG_SIZE_BYTES = 512 * 1024; // 512 KB cap sent to the model
 
@@ -52,7 +52,7 @@ export function registerExplainCommand(program) {
           for (const h of findings) print.step(`• ${h}`);
           console.log('');
         } else {
-          print.info('No known error patterns matched heuristically — AI analysis recommended.');
+          print.info(NO_MATCH_MESSAGE);
         }
 
         const aiEnabled = config.features?.ai;

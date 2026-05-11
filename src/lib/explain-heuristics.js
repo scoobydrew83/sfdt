@@ -1,5 +1,8 @@
 const MAX_HEURISTIC_ERRORS = 20;
 
+export const NO_MATCH_MESSAGE =
+  'No known error patterns matched heuristically — AI analysis recommended.';
+
 const HEURISTIC_PATTERNS = [
   {
     pattern: /No such column '([^']+)' on entity '([^']+)'/g,
@@ -60,7 +63,7 @@ export function runHeuristicAnalysis(logContent) {
       markdown: [
         '## Heuristic Scan Results',
         '',
-        'No known error patterns matched in this log.',
+        NO_MATCH_MESSAGE,
         '',
         '> Enable AI analysis in `.sfdt/config.json` (`features.ai: true`) for deeper root cause analysis.',
       ].join('\n'),
