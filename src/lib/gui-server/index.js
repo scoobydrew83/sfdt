@@ -2054,7 +2054,7 @@ export function createGuiApp(config, version, port = 7654) {
 
       const available = await checkAi(config);
       if (!available) {
-        const { runHeuristicAnalysis } = await import('./explain-heuristics.js');
+        const { runHeuristicAnalysis } = await import('../explain-heuristics.js');
         const { markdown } = runHeuristicAnalysis(logContent);
         send({ type: 'log', line: 'AI not configured — running heuristic pattern scan.', ts: new Date().toISOString() });
         send({ type: 'result', exitCode: 0, content: markdown, source: 'heuristic' });
