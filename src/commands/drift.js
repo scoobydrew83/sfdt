@@ -26,8 +26,16 @@ export function registerDriftCommand(program) {
 
         if (jsonMode) {
           const logDir = config.logDir ?? path.join(projectRoot, 'logs');
-          const driftData = await fs.readJson(path.join(logDir, 'drift-latest.json'));
-          process.stdout.write(JSON.stringify(driftData, null, 2) + '\n');
+          const logFile = await fs.readJson(path.join(logDir, 'drift-latest.json'));
+          const payload = logFile.data ?? logFile;
+          process.stdout.write(JSON.stringify({
+            status: 'success',
+            org: orgAlias,
+            timestamp: logFile.timestamp ?? new Date().toISOString(),
+            exitCode: 0,
+            driftStatus: payload.status ?? null,
+            components: payload.components ?? [],
+          }, null, 2) + '\n');
         } else {
           print.success(`Drift detection for ${orgAlias} completed.`);
         }

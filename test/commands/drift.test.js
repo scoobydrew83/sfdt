@@ -95,17 +95,48 @@ describe('drift command', () => {
       expect(print.success).not.toHaveBeenCalled();
     });
 
-    it('writes drift-latest.json contents to stdout when --json succeeds', async () => {
-      const driftData = { status: 'PASS', org: 'dev', components: [] };
+    it('writes standardized JSON to stdout when --json succeeds', async () => {
+      const logFile = { timestamp: '2026-05-12T00:00:00.000Z', data: { status: 'drift', components: ['Foo__c'] } };
       runScript.mockResolvedValue({ exitCode: 0, stdout: '' });
-      fs.readJson.mockResolvedValue(driftData);
+      fs.readJson.mockResolvedValue(logFile);
       const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
       await createProgram().parseAsync(['node', 'sfdt', 'drift', '--json']);
 
-      expect(writeSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"status": "PASS"'),
-      );
+      const written = JSON.parse(writeSpy.mock.calls.map((c) => c[0]).join(''));
+      expect(written).toMatchObject({
+        status: 'success',
+        org: 'dev',
+        exitCode: 0,
+        driftStatus: 'drift',
+        components: ['Foo__c'],
+      });
+      writeSpy.mockRestore();
+    });
+
+    it('falls back to top-level fields when log file has no data envelope', async () => {
+      const logFile = { status: 'clean', components: [] };
+      runScript.mockResolvedValue({ exitCode: 0, stdout: '' });
+      fs.readJson.mockResolvedValue(logFile);
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+      await createProgram().parseAsync(['node', 'sfdt', 'drift', '--json']);
+
+      const written = JSON.parse(writeSpy.mock.calls.map((c) => c[0]).join(''));
+      expect(written).toMatchObject({ status: 'success', driftStatus: 'clean', components: [] });
+      writeSpy.mockRestore();
+    });
+
+    it('emits error JSON when drift log cannot be read after script success', async () => {
+      runScript.mockResolvedValue({ exitCode: 0 });
+      fs.readJson.mockRejectedValue(new Error('ENOENT: drift-latest.json not found'));
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+      await createProgram().parseAsync(['node', 'sfdt', 'drift', '--json']);
+
+      expect(process.exitCode).toBe(1);
+      const written = JSON.parse(writeSpy.mock.calls.map((c) => c[0]).join(''));
+      expect(written).toMatchObject({ status: 'error', message: expect.stringContaining('ENOENT') });
       writeSpy.mockRestore();
     });
 

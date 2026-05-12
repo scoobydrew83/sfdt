@@ -164,4 +164,48 @@ describe('scan command', () => {
     const spinnerInstance = ora.mock.results[0].value;
     expect(spinnerInstance.fail).toHaveBeenCalled();
   });
+
+  describe('--json mode', () => {
+    it('writes JSON shape to stdout instead of a file', async () => {
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+      await createProgram().parseAsync(['node', 'sfdt', 'scan', '--json']);
+
+      expect(fs.writeJson).not.toHaveBeenCalled();
+      const written = writeSpy.mock.calls.map((c) => c[0]).join('');
+      const parsed = JSON.parse(written);
+      expect(parsed).toMatchObject({
+        org: 'dev-org',
+        summary: { totalTypes: 2, totalMembers: 3 },
+        inventory: {
+          ApexClass: expect.arrayContaining(['MyClass', 'OtherClass']),
+          CustomObject: expect.arrayContaining(['Account__c']),
+        },
+      });
+      expect(parsed.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      writeSpy.mockRestore();
+    });
+
+    it('does not create a spinner when --json is active', async () => {
+      vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+      await createProgram().parseAsync(['node', 'sfdt', 'scan', '--json']);
+
+      expect(ora).not.toHaveBeenCalled();
+    });
+
+    it('emits error JSON to stdout when fetchInventory throws', async () => {
+      const err = new Error('sf CLI not found');
+      fetchInventory.mockRejectedValue(err);
+      resolveExitCode.mockReturnValue(3);
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+      await createProgram().parseAsync(['node', 'sfdt', 'scan', '--json']);
+
+      expect(process.exitCode).toBe(3);
+      const written = writeSpy.mock.calls.map((c) => c[0]).join('');
+      expect(JSON.parse(written)).toMatchObject({ status: 'error', message: 'sf CLI not found', exitCode: 3 });
+      writeSpy.mockRestore();
+    });
+  });
 });
