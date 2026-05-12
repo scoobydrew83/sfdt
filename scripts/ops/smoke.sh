@@ -30,6 +30,7 @@ record_result() {
 }
 
 print_header "Post-Deployment Smoke Tests: ${PROJECT_NAME}"
+require_jq || exit 1
 
 # ── Resolve target org ───────────────────────────────────────────────────────
 if [[ -z "$TARGET_ORG" ]]; then

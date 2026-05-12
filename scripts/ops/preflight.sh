@@ -101,6 +101,7 @@ print_step "Checking Apex tests..."
 if [[ -z "$ENFORCE_TESTS" ]]; then
     record_result "WARN" "Apex tests skipped" "Set deployment.preflight.enforceTests in config to require"
 else
+    require_jq || exit 1
     if [[ -z "$DEFAULT_ORG" ]]; then
         record_result "WARN" "Apex tests skipped — no default org configured" "Set defaultOrg in .sfdt/config.json"
     else

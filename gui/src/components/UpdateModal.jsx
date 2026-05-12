@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { IconX, IconDownload, IconAlertTri } from '../Icons.jsx';
+import { stream } from '../api.js';
 
 export default function UpdateModal({ current, latest, onClose }) {
   const [status, setStatus]   = useState('idle'); // idle | running | restarting | done | error
@@ -52,13 +53,12 @@ export default function UpdateModal({ current, latest, onClose }) {
     setExitCode(null);
     counterRef.current = 0;
 
-    const es = new EventSource('/api/update/stream');
+    const es = stream.update();
     esRef.current = es;
 
     es.onmessage = (e) => {
       if (deadRef.current) return;
-      let msg;
-      try { msg = JSON.parse(e.data); } catch { return; }
+      const msg = e.data;
 
       if (msg.type === 'log') {
         const id = counterRef.current++;

@@ -50,7 +50,7 @@ vi.mock('execa', () => ({
 // ─── Imports ────────────────────────────────────────────────────────────────
 
 import request from 'supertest';
-import { createGuiApp } from '../../src/lib/gui-server.js';
+import { createGuiApp } from '../../src/lib/gui-server/index.js';
 
 // ─── Shared config ──────────────────────────────────────────────────────────
 
@@ -498,9 +498,11 @@ describe('POST /api/manifest/remove-component — deployed-path guard', () => {
 
 describe('POST /api/release/deploy — manifest path guard', () => {
   let app;
+  let csrf;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    csrf = (await request(app).get('/api/csrf-token')).body.token;
   });
 
   afterAll(async () => {
@@ -510,6 +512,7 @@ describe('POST /api/release/deploy — manifest path guard', () => {
   it('returns 400 for path traversal in manifest param', async () => {
     const res = await request(app)
       .post('/api/release/deploy')
+      .set('X-SFDT-CSRF', csrf)
       .send({ manifest: '../../etc/passwd' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/invalid manifest/i);
@@ -518,6 +521,7 @@ describe('POST /api/release/deploy — manifest path guard', () => {
   it('returns 400 for absolute path in manifest param', async () => {
     const res = await request(app)
       .post('/api/release/deploy')
+      .set('X-SFDT-CSRF', csrf)
       .send({ manifest: '/etc/passwd' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/invalid manifest/i);

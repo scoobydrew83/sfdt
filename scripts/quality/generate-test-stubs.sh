@@ -19,6 +19,7 @@ TEST_CONFIG_FILE="${SFDT_CONFIG_DIR:-${SFDT_PROJECT_ROOT:-.}/.sfdt}/test-config.
 
 echo -e "${BLUE}${PROJECT_NAME} - Generate Test Stubs${NC}"
 echo -e "${YELLOW}======================================================${NC}"
+require_jq || exit 1
 
 # Load test class list
 if [[ -n "${SFDT_TEST_CLASSES:-}" ]]; then

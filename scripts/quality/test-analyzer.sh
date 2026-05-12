@@ -18,6 +18,7 @@ TEST_CONFIG_FILE="${SFDT_CONFIG_DIR:-${SFDT_PROJECT_ROOT:-.}/.sfdt}/test-config.
 
 echo -e "${BLUE}${PROJECT_NAME} - Test Quality Analyzer${NC}"
 echo -e "${YELLOW}======================================================${NC}"
+require_jq || exit 1
 
 # Configuration - resolve force-app directory
 FORCE_APP_DIR="$SOURCE_PATH"

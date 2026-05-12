@@ -15,6 +15,9 @@ Detailed reference for every sfdt command, including options, arguments, and int
 - [sfdt smoke](#sfdt-smoke)
 - [sfdt review](#sfdt-review)
 - [sfdt drift](#sfdt-drift)
+- [sfdt compare](#sfdt-compare)
+- [sfdt scan](#sfdt-scan)
+- [sfdt config](#sfdt-config)
 - [sfdt notify](#sfdt-notify)
 - [sfdt changelog](#sfdt-changelog)
 
@@ -146,7 +149,7 @@ Run pre-deployment validation checks.
 |------|-------------|
 | `--strict` | Fail on any warning (sets `SFDT_PREFLIGHT_STRICT=true`) |
 
-**Script invoked**: `scripts/new/preflight.sh`
+**Script invoked**: `scripts/ops/preflight.sh`
 
 ---
 
@@ -154,16 +157,17 @@ Run pre-deployment validation checks.
 
 Roll back a deployment to a target org.
 
-**Usage**: `sfdt rollback [--org <alias>]`
+**Usage**: `sfdt rollback [--org <alias>] [--json]`
 
 **Options**:
 | Flag | Description |
 |------|-------------|
 | `--org <alias>` | Target org alias (default: config.defaultOrg) |
+| `--json` | Emit structured JSON to stdout (CI mode) |
 
 **Environment**: Sets `SFDT_TARGET_ORG` to specified or default org.
 
-**Script invoked**: `scripts/new/rollback.sh`
+**Script invoked**: `scripts/ops/rollback.sh`
 
 ---
 
@@ -180,7 +184,7 @@ Run post-deployment smoke tests against a target org.
 
 **Environment**: Sets `SFDT_TARGET_ORG` to specified or default org.
 
-**Script invoked**: `scripts/new/smoke.sh`
+**Script invoked**: `scripts/ops/smoke.sh`
 
 ---
 
@@ -209,16 +213,19 @@ AI-powered Salesforce code review of current branch changes.
 
 Detect metadata drift between local source and a target org.
 
-**Usage**: `sfdt drift [--org <alias>]`
+**Usage**: `sfdt drift [--org <alias>] [--json]`
 
 **Options**:
 | Flag | Description |
 |------|-------------|
 | `--org <alias>` | Target org alias (default: config.defaultOrg) |
+| `--json` | Emit structured JSON to stdout (CI mode) |
 
 **Environment**: Sets `SFDT_TARGET_ORG` to specified or default org.
 
-**Script invoked**: `scripts/new/drift.sh`
+**Script invoked**: `scripts/ops/drift.sh`
+
+**Log file**: Writes `logs/drift-latest.json` after each run; the GUI Drift page reads this on load.
 
 ---
 
@@ -283,3 +290,87 @@ Verify [Unreleased] content against git changes.
 **Usage**: `sfdt changelog check`
 
 **Behavior**: Checks `git status --porcelain` for uncommitted changes, verifies [Unreleased] has content, and reports sync status. Offers to generate entries if section is empty.
+
+---
+
+## sfdt compare
+
+Compare metadata between two orgs, or between local source and an org.
+
+**Usage**: `sfdt compare [--source <alias|local>] [--target <alias>] [--output <file>]`
+
+**Options**:
+| Flag | Description |
+|------|-------------|
+| `--source <alias\|local>` | Source side of the comparison (default: `local`) |
+| `--target <alias>` | Target org alias (default: `config.defaultOrg`) |
+| `--output <file>` | Write a `package.xml` of source-only + modified components to this path |
+
+**Behavior**:
+1. Fetches metadata member inventory from both sides (Phase 1)
+2. Diffs inventories to produce statuses: `source-only`, `target-only`, `both`
+3. Writes `logs/compare-latest.json`
+4. If `--output` is provided, generates a `package.xml` of source-only + modified items
+
+**Implementation**: Pure Node.js using `org-inventory.js` and `org-diff.js`. No shell script.
+
+**GUI routes**: `POST /api/compare` (Phase 1), `GET /api/compare/stream` (Phase 2 SSE content diffs), `POST /api/compare/manifest`, `GET /api/compare/diff`.
+
+---
+
+## sfdt scan
+
+Fetch a complete metadata member inventory from an org and write it as structured JSON.
+
+**Usage**: `sfdt scan [--org <alias>] [--output <file>] [--format json|table]`
+
+**Options**:
+| Flag | Description |
+|------|-------------|
+| `--org <alias>` | Org alias to scan (default: `config.defaultOrg`) |
+| `--output <file>` | Output file path (default: `logs/scan-latest.json`) |
+| `--format <fmt>` | `json` (default, machine-readable) or `table` (grouped count summary printed to stdout) |
+
+**Behavior**:
+1. Calls `fetchOrgInventory()` from `org-inventory.js`, batching `sf org list metadata` calls in groups of 5
+2. Structures result as `{ timestamp, org, inventory: { TypeName: [members] }, summary: { totalTypes, totalMembers } }`
+3. Always writes JSON to the output path (regardless of `--format`)
+4. If `--format table`: also prints a grouped type/count summary to stdout
+
+**Writes**: `logs/scan-latest.json` (default); the GUI Scan page reads this on load.
+
+---
+
+## sfdt config
+
+Read and write `.sfdt/config.json` values without hand-editing the file.
+
+### sfdt config set
+
+**Usage**: `sfdt config set <key> <value>`
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `key` | Yes | Dot-notation path to the config field (e.g. `deployment.coverageThreshold`) |
+| `value` | Yes | Value to set |
+
+**Value coercion**:
+| Input string | Stored as |
+|-------------|-----------|
+| `"true"` / `"false"` | boolean |
+| Numeric strings (`"75"`) | number |
+| Anything else | string |
+
+**Behavior**: Deep-sets the key in the loaded config object, then writes back to `.sfdt/config.json`. Unknown keys are allowed (written with a warning).
+
+### sfdt config get
+
+**Usage**: `sfdt config get <key>`
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `key` | Yes | Dot-notation path to the config field (e.g. `defaultOrg`) |
+
+**Behavior**: Loads config (including sfdx-project.json enrichment) and prints the resolved value to stdout. Exits with code 1 if the key is not found.

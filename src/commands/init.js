@@ -30,7 +30,6 @@ async function buildConfigTemplate({ projectName, defaultOrg, features, releaseN
     ai: {
       provider: ai.provider,
       model: ai.model || '',
-      // API keys are stored in ~/.sfdt/credentials.json, not here
     },
     mcp: {
       ...template.mcp,

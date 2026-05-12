@@ -67,7 +67,6 @@ sfdt init
 | Code coverage threshold | Minimum Apex test coverage percentage (default: 75) |
 | Enable AI features | Whether to enable AI-powered commands |
 | AI provider | `claude`, `gemini`, or `openai` (if AI is enabled) |
-| API key | Stored securely in `~/.sfdt/credentials.json` (Gemini/OpenAI only) |
 | Release notes directory | Where AI-generated release notes are written (default: `release-notes/`) |
 
 **What it creates:**
@@ -117,47 +116,37 @@ No API key is needed in sfdt config. Claude Code handles its own authentication.
 
 ### Provider: Gemini
 
-Requires a Google AI API key:
+Requires the Gemini CLI:
 
 ```bash
-export GEMINI_API_KEY=your-key
-# or store it permanently via:
-sfdt init  # and choose Gemini
+npm install -g @google/gemini-cli
 ```
 
 Configure:
 
 ```json
 {
-  "ai": { "provider": "gemini", "model": "gemini-2.0-flash" }
+  "ai": { "provider": "gemini", "model": "" }
 }
 ```
 
-Default model: `gemini-2.0-flash`. Override with `ai.model`. Gemini runs a multi-turn tool loop with local tool implementations (file read, grep, git log) — it cannot access the filesystem directly the way Claude Code can, but it uses the same prompts and produces equivalent output.
+Authentication and model selection are handled by the Gemini CLI.
 
 ### Provider: OpenAI
 
-Requires an OpenAI API key:
+Requires the Codex CLI:
 
 ```bash
-export OPENAI_API_KEY=sk-...
+npm install -g @openai/codex
 ```
 
 ```json
 {
-  "ai": { "provider": "openai", "model": "gpt-4o-mini" }
+  "ai": { "provider": "openai", "model": "" }
 }
 ```
 
-Default model: `gpt-4o-mini`. Override with `ai.model`. Same local tool loop as Gemini.
-
-### API key storage
-
-API keys for Gemini and OpenAI are stored in `~/.sfdt/credentials.json` (mode `0600`) — never in the project config file. The lookup order is:
-
-1. `~/.sfdt/credentials.json`
-2. Environment variables (`GEMINI_API_KEY`, `GOOGLE_AI_API_KEY`, `OPENAI_API_KEY`)
-3. Legacy `config.ai.apiKey` (backwards compatibility only — do not use for new projects)
+Authentication and model selection are handled by the Codex CLI.
 
 ### Disabling AI
 
@@ -949,14 +938,12 @@ sfdt commands are non-interactive when stdin is not a TTY — confirmations are 
 
 ### Using the AI commands in CI
 
-For Gemini or OpenAI in CI, set the API key as a secret environment variable:
+For Gemini or OpenAI in CI, install and authenticate the matching CLI before running sfdt:
 
 ```yaml
 - name: Explain failure
   if: failure()
   run: sfdt explain --latest
-  env:
-    GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 ```
 
 Claude is not suitable for CI use (it requires an interactive session). Use Gemini or OpenAI for CI-based AI commands.

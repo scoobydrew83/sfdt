@@ -99,36 +99,53 @@ These are injected by `loadConfig()` and available to commands:
 
 ## SFDT_ environment variable mapping
 
-`script-runner.js` flattens config into these env vars before executing shell scripts:
+`script-runner.js` flattens config into these env vars before executing shell scripts. This is the complete list — when adding a new var, update `buildScriptEnv()` in `src/lib/script-runner.js` AND this table AND the CLAUDE.md table.
 
-| Variable | Config source | Default |
-|----------|--------------|---------|
-| `SFDT_PROJECT_ROOT` | `_projectRoot` | `''` |
-| `SFDT_CONFIG_DIR` | `_configDir` | `''` |
-| `SFDT_PROJECT_NAME` | `projectName` | `'Salesforce Project'` |
-| `SFDT_DEFAULT_ORG` | `defaultOrg` | `''` |
-| `SFDT_SOURCE_PATH` | `defaultSourcePath` | `'force-app/main/default'` |
-| `SFDT_MANIFEST_DIR` | `manifestDir` | `'manifest/release'` |
-| `SFDT_API_VERSION` | `sourceApiVersion` | `''` |
-| `SFDT_COVERAGE_THRESHOLD` | `deployment.coverageThreshold` | `'75'` |
-| `SFDT_FEATURE_{KEY}` | `features.*` | (camelCase → UPPER_SNAKE) |
-| `SFDT_DEFAULT_ENV` | `environments.default` | (from config) |
-| `SFDT_ENV_ORGS` | `environments.orgs[].alias` | (comma-separated) |
-| `SFDT_TEST_COVERAGE_THRESHOLD` | `testConfig.coverageThreshold` | (if defined) |
-| `SFDT_TEST_LEVEL` | `testConfig.testLevel` | (if defined) |
-| `SFDT_TEST_SUITES` | `testConfig.suites` | (comma-separated) |
-| `SFDT_PULL_METADATA_TYPES` | `pullConfig.metadataTypes` | (comma-separated) |
-| `SFDT_PULL_TARGET_DIR` | `pullConfig.targetDir` | (if defined) |
+### Standard config mapping
 
-### Command-specific env vars
+| Variable | Source | Default |
+|----------|--------|---------|
+| `SFDT_PROJECT_ROOT` | `config._projectRoot` | `''` |
+| `SFDT_CONFIG_DIR` | `config._configDir` | `''` |
+| `SFDT_PROJECT_NAME` | `config.projectName` | `'Salesforce Project'` |
+| `SFDT_DEFAULT_ORG` | `config.defaultOrg` | `''` |
+| `SFDT_SOURCE_PATH` | `config.defaultSourcePath` | `'force-app/main/default'` |
+| `SFDT_MANIFEST_DIR` | `config.manifestDir` | `'manifest/release'` |
+| `SFDT_RELEASE_NOTES_DIR` | `config.releaseNotesDir` | `'release-notes'` |
+| `SFDT_API_VERSION` | `config.sourceApiVersion` | `''` |
+| `SFDT_COVERAGE_THRESHOLD` | `config.deployment.coverageThreshold` | `'75'` |
+| `SFDT_LOG_DIR` | `config.logDir` | (optional; scripts fall back to `${SFDT_PROJECT_ROOT}/logs`) |
+| `SFDT_BACKUP_BEFORE_ROLLBACK` | `config.deployment.backupBeforeRollback` | `'true'` |
+| `SFDT_PREFLIGHT_ENFORCE_TESTS` | `config.deployment.preflight.enforceTests` | `''` (unset = off) |
+| `SFDT_PREFLIGHT_ENFORCE_BRANCH` | `config.deployment.preflight.enforceBranchNaming` | `''` |
+| `SFDT_PREFLIGHT_ENFORCE_CHANGELOG` | `config.deployment.preflight.enforceChangelog` | `''` |
+| `SFDT_PREFLIGHT_ENFORCE_GIT_CLEAN` | `config.deployment.preflight.enforceGitClean` | `'true'` (default on) |
+| `SFDT_PREFLIGHT_ENFORCE_SFDX_PROJECT` | `config.deployment.preflight.enforceSfdxProject` | `'true'` (default on) |
+| `SFDT_PREFLIGHT_ENFORCE_UNTRACKED` | `config.deployment.preflight.enforceUntrackedFiles` | `''` |
+| `SFDT_PREFLIGHT_STRICT` | `config.deployment.preflight.strict` | `''` |
+| `SFDT_FEATURE_*` | `config.features.*` | (camelCase → UPPER_SNAKE) |
+| `SFDT_DEFAULT_ENV` | `config.environments.default` | `''` |
+| `SFDT_ENV_ORGS` | `config.environments.orgs[].alias` | (comma-separated) |
+| `SFDT_TEST_*` | `config.testConfig.*` | (flattened) |
+| `SFDT_TEST_CLASSES` | `config.testConfig.testClasses` | (comma-separated) |
+| `SFDT_APEX_CLASSES` | `config.testConfig.apexClasses` | (comma-separated) |
+| `SFDT_NON_INTERACTIVE` | detected from `stdin` TTY or `options.interactive` | `'true'` when non-interactive |
+| `SFDT_PACKAGE_DIRS` | `config.packageDirectories` | JSON array of all package paths |
+| `SFDT_MANIFEST_LAYOUT` | `config.manifestLayout` | `'flat'` (`'flat'` or `'subpath'`) |
+| `SFDT_CHANGELOG_DIR` | `config.changelogDir` | `'changelogs'` |
 
-Some commands set additional env vars beyond the standard mapping:
+### Per-invocation env vars
+
+Set by individual commands via `env:` option in `runScript()` calls — not part of the standard config flattening:
 
 | Variable | Set by | Value |
 |----------|--------|-------|
-| `SFDT_TARGET_ORG` | rollback, smoke, drift | `--org` option or `config.defaultOrg` |
+| `SFDT_TARGET_ORG` | rollback, smoke, drift, gui-server | `--org` option or `config.defaultOrg` |
 | `SFDT_PREFLIGHT_STRICT` | preflight | `'true'` when `--strict` is passed |
-| `SFDT_VERSION` | changelog release | The `<version>` argument |
+| `SFDT_PACKAGE_TARGET` | manifest, release, changelog | `'all'` or a specific package name |
+| `SFDT_RELEASE_NAME` | release, manifest | Full release label (semver, free-form, or date) |
+| `SFDT_CHANGELOG_FILE` | release, changelog | Resolved changelog file path |
+| `SFDT_DEPLOY_SOURCE_DIR` | deploy | Source directory path for folder-mode deploys; empty string for manifest-mode |
 
 ## Adding new config fields
 

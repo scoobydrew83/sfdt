@@ -11,7 +11,7 @@
     "changelogDir": { "type": "string" },
     "logDir": { "type": "string" },
     "logRetention": { "type": "integer", "minimum": 1 },
-    "manifestLayout": { "type": "string", "enum": ["flat", "subpath", "per-package"] },
+    "manifestLayout": { "type": "string", "enum": ["flat", "subpath"] },
     "plugins": { "type": "array", "items": { "type": "string" } },
     "features": {
       "type": "object",
@@ -22,8 +22,7 @@
       "additionalProperties": false,
       "properties": {
         "provider": { "type": "string", "enum": ["claude", "gemini", "openai"] },
-        "model": { "type": "string" },
-        "apiKey": { "type": "string" }
+        "model": { "type": "string" }
       }
     },
     "deployment": {

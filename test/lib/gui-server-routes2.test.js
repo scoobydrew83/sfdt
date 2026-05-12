@@ -60,7 +60,7 @@ vi.mock('execa', () => ({
 // ─── Imports ────────────────────────────────────────────────────────────────
 
 import request from 'supertest';
-import { createGuiApp } from '../../src/lib/gui-server.js';
+import { createGuiApp } from '../../src/lib/gui-server/index.js';
 
 // ─── Shared config ──────────────────────────────────────────────────────────
 
@@ -843,13 +843,15 @@ describe('POST /api/manifest/build', () => {
   });
 });
 
-// ─── GET /api/command/run ─────────────────────────────────────────────────────
+// ─── POST /api/command/run ────────────────────────────────────────────────────
 
-describe('GET /api/command/run', () => {
+describe('POST /api/command/run', () => {
   let app;
+  let csrf;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    csrf = (await request(app).get('/api/csrf-token')).body.token;
   });
 
   afterAll(async () => {
@@ -857,13 +859,19 @@ describe('GET /api/command/run', () => {
   });
 
   it('returns 400 when command param is missing', async () => {
-    const res = await request(app).get('/api/command/run');
+    const res = await request(app)
+      .post('/api/command/run')
+      .set('X-SFDT-CSRF', csrf)
+      .send({});
     expect(res.status).toBe(400);
     expect(res.body.error).toBeTruthy();
   });
 
   it('returns 400 for disallowed command', async () => {
-    const res = await request(app).get('/api/command/run?command=rm+-rf');
+    const res = await request(app)
+      .post('/api/command/run')
+      .set('X-SFDT-CSRF', csrf)
+      .send({ command: 'rm -rf' });
     expect(res.status).toBe(400);
   });
 });

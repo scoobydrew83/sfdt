@@ -20,9 +20,16 @@ log_info() { echo -e "${BLUE}ℹ️  INFO${NC} - $1"; }
 log_success() { echo -e "${GREEN}✅ SUCCESS${NC} - $1"; }
 log_warning() { echo -e "${YELLOW}⚠️  WARN${NC} - $1"; }
 log_error() { echo -e "${RED}❌ ERROR${NC} - $1"; }
+require_jq() {
+    if ! command -v jq &> /dev/null; then
+        log_error "Required command 'jq' is not installed. sfdt shell scripts use jq to parse Salesforce CLI JSON output."
+        exit 1
+    fi
+}
 
 echo -e "${BLUE}${PROJECT_NAME} - Test Suite${NC}"
 echo "========================================="
+require_jq
 
 # Initialize variables
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

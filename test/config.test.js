@@ -264,7 +264,7 @@ describe('loadConfig', () => {
   });
 
   it('respects manifestLayout when already set in config', async () => {
-    const baseConfig = { defaultOrg: 'dev', features: {}, manifestLayout: 'per-package' };
+    const baseConfig = { defaultOrg: 'dev', features: {}, manifestLayout: 'subpath' };
 
     fs.pathExists.mockImplementation(async (p) => {
       if (p.endsWith('config.json')) return true;
@@ -284,7 +284,7 @@ describe('loadConfig', () => {
 
     const result = await loadConfig(projectRoot);
 
-    expect(result.manifestLayout).toBe('per-package');
+    expect(result.manifestLayout).toBe('subpath');
   });
 
   it('defaults manifestLayout to flat when no sfdx-project.json', async () => {

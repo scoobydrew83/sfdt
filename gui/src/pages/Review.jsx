@@ -21,7 +21,6 @@ function isAiError(msg) {
 
 export default function ReviewPage() {
   const [base, setBase] = useState('main');
-  const [streamKey, setStreamKey] = useState(0);
   const [result, setResult] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const chat = useContext(ChatContext);
@@ -32,7 +31,6 @@ export default function ReviewPage() {
     setResult(findings);
     setErrorMsg(null);
     chat?.setPageContext({ page: 'Review', data: { baseBranch: base, findings } });
-    setStreamKey((k) => k + 1);
   }
 
   const starterMessage = `I just ran a code review against ${base}. Can you summarize the most critical issues and suggest what to fix first?`;
@@ -47,7 +45,6 @@ export default function ReviewPage() {
       </div>
 
       <StreamRunner
-        key={streamKey}
         label="AI Code Review"
         startLabel="Start Review"
         streamFn={() => stream.review(base)}
@@ -65,23 +62,6 @@ export default function ReviewPage() {
             onChange={(e) => setBase(e.target.value)}
             placeholder="main"
           />
-          {result !== null && chat && (
-            <button
-              onClick={() => chat?.openChat(starterMessage)}
-              style={{
-                fontSize: '12px',
-                padding: '4px 10px',
-                borderRadius: '6px',
-                border: '1px solid var(--brand-300, #a5b4fc)',
-                background: 'var(--brand-50, #eef2ff)',
-                color: 'var(--brand-700, #4338ca)',
-                cursor: 'pointer',
-                marginLeft: '8px',
-              }}
-            >
-              ✦ Ask AI about this review
-            </button>
-          )}
         </div>
       </StreamRunner>
 
@@ -96,6 +76,59 @@ export default function ReviewPage() {
         }}>
           <strong>Error:</strong> {errorMsg}
           {isAiError(errorMsg) && AI_CONFIG_HINT}
+        </div>
+      )}
+
+      {result !== null && result.length > 0 && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 12,
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg-default)' }}>Review Findings</span>
+            {chat && (
+              <button
+                onClick={() => chat.openChat(starterMessage)}
+                style={{
+                  fontSize: '12px',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--brand-300, #a5b4fc)',
+                  background: 'var(--brand-50, #eef2ff)',
+                  color: 'var(--brand-700, #4338ca)',
+                  cursor: 'pointer',
+                }}
+              >
+                ✦ Ask AI about this review
+              </button>
+            )}
+          </div>
+          <pre style={{
+            margin: 0,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            fontSize: 12,
+            lineHeight: 1.6,
+            color: 'var(--fg-default)',
+            fontFamily: 'var(--font-mono, monospace)',
+          }}>
+            {result}
+          </pre>
+        </div>
+      )}
+
+      {result !== null && result.length === 0 && (
+        <div style={{
+          marginTop: 12,
+          padding: '12px 16px',
+          background: 'var(--status-identical-bg)',
+          border: '1px solid var(--status-identical-border)',
+          borderRadius: 8,
+          fontSize: 13,
+        }}>
+          No changes found between <code>{base}</code> and HEAD.
         </div>
       )}
     </div>

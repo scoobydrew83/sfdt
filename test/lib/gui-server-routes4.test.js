@@ -59,7 +59,7 @@ vi.mock('execa', () => ({
 // ─── Imports ────────────────────────────────────────────────────────────────
 
 import request from 'supertest';
-import { createGuiApp } from '../../src/lib/gui-server.js';
+import { createGuiApp } from '../../src/lib/gui-server/index.js';
 import { fetchLatestVersion } from '../../src/lib/update-checker.js';
 
 // ─── Shared config ───────────────────────────────────────────────────────────

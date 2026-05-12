@@ -57,7 +57,7 @@ vi.mock('execa', () => ({
 // ─── Imports ────────────────────────────────────────────────────────────────
 
 import request from 'supertest';
-import { createGuiApp } from '../../src/lib/gui-server.js';
+import { createGuiApp } from '../../src/lib/gui-server/index.js';
 
 // ─── Reset mocks between tests ───────────────────────────────────────────────
 // vi.resetAllMocks() clears the Once queue AND implementations. Re-setup defaults here.
@@ -98,15 +98,17 @@ const MOCK_CONFIG = {
 const VERSION = '0.0.0';
 const PORT = 7654;
 
-// ─── GET /api/pull (SSE — validation paths) ──────────────────────────────────
+// ─── POST /api/pull (SSE — validation paths) ─────────────────────────────────
 
-describe('GET /api/pull — SSE validation', () => {
+describe('POST /api/pull — SSE validation', () => {
   let app;
+  let csrf;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     // Config without defaultOrg to trigger the "no org" path
     const noOrgConfig = { ...MOCK_CONFIG, defaultOrg: '' };
     app = createGuiApp(noOrgConfig, VERSION, PORT);
+    csrf = (await request(app).get('/api/csrf-token')).body.token;
   });
 
   afterAll(async () => {
@@ -114,18 +116,23 @@ describe('GET /api/pull — SSE validation', () => {
   });
 
   it('sends error SSE event when no org is configured and no targetOrg param', async () => {
-    const res = await request(app).get('/api/pull');
+    const res = await request(app)
+      .post('/api/pull')
+      .set('X-SFDT-CSRF', csrf)
+      .send({});
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/event-stream/);
     expect(res.text).toContain('No target org configured');
   });
 });
 
-describe('GET /api/pull — invalid org alias', () => {
+describe('POST /api/pull — invalid org alias', () => {
   let app;
+  let csrf;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    csrf = (await request(app).get('/api/csrf-token')).body.token;
   });
 
   afterAll(async () => {
@@ -133,7 +140,10 @@ describe('GET /api/pull — invalid org alias', () => {
   });
 
   it('sends error SSE event when org alias contains invalid characters', async () => {
-    const res = await request(app).get('/api/pull?targetOrg=; rm -rf');
+    const res = await request(app)
+      .post('/api/pull')
+      .set('X-SFDT-CSRF', csrf)
+      .send({ targetOrg: '; rm -rf' });
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/event-stream/);
     expect(res.text).toContain('Invalid org alias');

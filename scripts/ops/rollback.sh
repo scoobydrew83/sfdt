@@ -24,6 +24,9 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BACKUP_DIR="${SFDT_LOG_DIR:-${SFDT_PROJECT_ROOT:-.}/logs}/rollback-backups"
 
 print_header "Rollback Deployment: ${PROJECT_NAME}"
+if [[ -z "$TARGET_ORG" ]]; then
+    require_jq || exit 1
+fi
 
 # ── Step 1: Validate manifest directory ──────────────────────────────────────
 if [[ ! -d "$DEPLOYED_DIR" ]]; then

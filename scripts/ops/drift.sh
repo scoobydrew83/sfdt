@@ -13,6 +13,7 @@ TARGET_ORG="${SFDT_TARGET_ORG:-}"
 PROJECT_NAME="${SFDT_PROJECT_NAME:-sfdt}"
 
 print_header "Org Drift Detection: ${PROJECT_NAME}"
+require_jq || exit 1
 
 # ── Resolve target org ───────────────────────────────────────────────────────
 if [[ -z "$TARGET_ORG" ]]; then

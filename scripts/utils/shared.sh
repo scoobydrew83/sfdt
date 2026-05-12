@@ -37,6 +37,20 @@ log_debug() {
     fi
 }
 
+require_command() {
+    local cmd="$1"
+    local install_hint="${2:-Install it and retry.}"
+    if ! command -v "$cmd" &> /dev/null; then
+        log_error "Required command '$cmd' is not installed. ${install_hint}"
+        return 1
+    fi
+    return 0
+}
+
+require_jq() {
+    require_command "jq" "sfdt shell scripts use jq to parse Salesforce CLI JSON output."
+}
+
 # Print functions for simple output (without prefixes)
 print_header() {
     echo -e "\n${BLUE}=== $1 ===${NC}"

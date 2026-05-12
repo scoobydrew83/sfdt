@@ -156,6 +156,146 @@ describe('buildScriptEnv', () => {
     expect(env.SFDT_PREFLIGHT_ENFORCE_BRANCH).toBe('');
     expect(env.SFDT_PREFLIGHT_ENFORCE_CHANGELOG).toBe('');
   });
+
+  it('sets SFDT_PREFLIGHT_ENFORCE_GIT_CLEAN to "false" when enforceGitClean is explicitly false', () => {
+    const config = {
+      features: {},
+      deployment: {
+        preflight: {
+          enforceGitClean: false,
+        },
+      },
+    };
+
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_PREFLIGHT_ENFORCE_GIT_CLEAN).toBe('false');
+  });
+
+  it('sets SFDT_PREFLIGHT_ENFORCE_GIT_CLEAN to "true" by default when not specified', () => {
+    const config = { features: {} };
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_PREFLIGHT_ENFORCE_GIT_CLEAN).toBe('true');
+  });
+
+  it('sets SFDT_PREFLIGHT_ENFORCE_SFDX_PROJECT to "false" when enforceSfdxProject is explicitly false', () => {
+    const config = {
+      features: {},
+      deployment: {
+        preflight: {
+          enforceSfdxProject: false,
+        },
+      },
+    };
+
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_PREFLIGHT_ENFORCE_SFDX_PROJECT).toBe('false');
+  });
+
+  it('sets SFDT_PREFLIGHT_ENFORCE_SFDX_PROJECT to "true" by default', () => {
+    const config = { features: {} };
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_PREFLIGHT_ENFORCE_SFDX_PROJECT).toBe('true');
+  });
+
+  it('sets SFDT_PREFLIGHT_ENFORCE_UNTRACKED to "true" when enforceUntrackedFiles is set', () => {
+    const config = {
+      features: {},
+      deployment: {
+        preflight: {
+          enforceUntrackedFiles: true,
+        },
+      },
+    };
+
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_PREFLIGHT_ENFORCE_UNTRACKED).toBe('true');
+  });
+
+  it('sets SFDT_PREFLIGHT_STRICT to "true" when strict is set', () => {
+    const config = {
+      features: {},
+      deployment: {
+        preflight: {
+          strict: true,
+        },
+      },
+    };
+
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_PREFLIGHT_STRICT).toBe('true');
+  });
+
+  it('maps packageDirectories to SFDT_PACKAGE_DIRS as JSON array of paths', () => {
+    const config = {
+      features: {},
+      packageDirectories: [
+        { path: 'force-app/main/default' },
+        { path: 'force-app/feature-a' },
+      ],
+    };
+
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_PACKAGE_DIRS).toBe(JSON.stringify(['force-app/main/default', 'force-app/feature-a']));
+  });
+
+  it('does not set SFDT_PACKAGE_DIRS when packageDirectories is absent', () => {
+    const config = { features: {} };
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_PACKAGE_DIRS).toBeUndefined();
+  });
+
+  it('maps manifestLayout to SFDT_MANIFEST_LAYOUT with default "flat"', () => {
+    const configNoLayout = { features: {} };
+    expect(buildScriptEnv(configNoLayout).SFDT_MANIFEST_LAYOUT).toBe('flat');
+
+    const configSubpath = { features: {}, manifestLayout: 'subpath' };
+    expect(buildScriptEnv(configSubpath).SFDT_MANIFEST_LAYOUT).toBe('subpath');
+  });
+
+  it('maps changelogDir to SFDT_CHANGELOG_DIR with default "changelogs"', () => {
+    const configNoDir = { features: {} };
+    expect(buildScriptEnv(configNoDir).SFDT_CHANGELOG_DIR).toBe('changelogs');
+
+    const configCustomDir = { features: {}, changelogDir: 'my-changelogs' };
+    expect(buildScriptEnv(configCustomDir).SFDT_CHANGELOG_DIR).toBe('my-changelogs');
+  });
+
+  it('maps logDir to SFDT_LOG_DIR', () => {
+    const config = { features: {}, logDir: '/var/log/sfdt' };
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_LOG_DIR).toBe('/var/log/sfdt');
+  });
+
+  it('sets SFDT_LOG_DIR to empty string when logDir is absent', () => {
+    const config = { features: {} };
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_LOG_DIR).toBe('');
+  });
+
+  it('skips SFDT_DEFAULT_ENV when environments.default is absent', () => {
+    const config = { features: {}, environments: { orgs: [] } };
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_DEFAULT_ENV).toBeUndefined();
+  });
+
+  it('skips SFDT_ENV_ORGS when environments.orgs is not an array', () => {
+    const config = { features: {}, environments: { default: 'prod' } };
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_ENV_ORGS).toBeUndefined();
+  });
+
+  it('ignores non-object features value', () => {
+    const config = { features: null };
+    // should not throw, features block is skipped
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_PROJECT_NAME).toBe('Salesforce Project');
+  });
+
+  it('ignores non-object testConfig value', () => {
+    const config = { features: {}, testConfig: null };
+    const env = buildScriptEnv(config);
+    expect(env.SFDT_TEST_LEVEL).toBeUndefined();
+  });
 });
 
 describe('runScript', () => {
@@ -240,5 +380,85 @@ describe('runScript', () => {
 
     const execOptions = execa.mock.calls[0][2];
     expect(execOptions.cwd).toBe('/project');
+  });
+
+  it('uses custom cwd when provided', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.chmod.mockResolvedValue();
+    execa.mockResolvedValue({ exitCode: 0 });
+
+    await runScript('test.sh', config, { cwd: '/custom/dir' });
+
+    const execOptions = execa.mock.calls[0][2];
+    expect(execOptions.cwd).toBe('/custom/dir');
+  });
+
+  it('sets stdio to pipe+inherit when captureStdout is true', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.chmod.mockResolvedValue();
+    execa.mockResolvedValue({ exitCode: 0, stdout: 'output', stderr: '' });
+
+    await runScript('test.sh', config, { captureStdout: true });
+
+    const execOptions = execa.mock.calls[0][2];
+    expect(execOptions.stdio).toEqual(['inherit', 'pipe', 'inherit']);
+  });
+
+  it('attaches exitCode property to the thrown error on non-zero exit', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.chmod.mockResolvedValue();
+    execa.mockResolvedValue({ exitCode: 2, stdout: 'partial', stderr: 'boom' });
+
+    let caught;
+    try {
+      await runScript('deploy/push.sh', config);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeDefined();
+    expect(caught.exitCode).toBe(2);
+    expect(caught.stdout).toBe('partial');
+    expect(caught.stderr).toBe('boom');
+  });
+
+  it('includes stderr in thrown error message when present', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.chmod.mockResolvedValue();
+    execa.mockResolvedValue({ exitCode: 1, stdout: '', stderr: 'something went wrong' });
+
+    await expect(runScript('deploy/push.sh', config)).rejects.toThrow('something went wrong');
+  });
+
+  it('returns stdout from successful captureStdout run', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.chmod.mockResolvedValue();
+    execa.mockResolvedValue({ exitCode: 0, stdout: 'captured output', stderr: '' });
+
+    const result = await runScript('test.sh', config, { captureStdout: true });
+
+    expect(result.stdout).toBe('captured output');
+  });
+
+  it('sets reject: false on execa options', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.chmod.mockResolvedValue();
+    execa.mockResolvedValue({ exitCode: 0 });
+
+    await runScript('test.sh', config);
+
+    const execOptions = execa.mock.calls[0][2];
+    expect(execOptions.reject).toBe(false);
+  });
+
+  it('passes extra env vars merged into the environment', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.chmod.mockResolvedValue();
+    execa.mockResolvedValue({ exitCode: 0 });
+
+    await runScript('test.sh', config, { env: { MY_CUSTOM_VAR: 'hello' } });
+
+    const passedEnv = execa.mock.calls[0][2].env;
+    expect(passedEnv.MY_CUSTOM_VAR).toBe('hello');
   });
 });

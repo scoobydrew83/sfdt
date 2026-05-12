@@ -9,7 +9,7 @@ vi.mock('open', () => ({
   default: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../src/lib/gui-server.js', () => ({
+vi.mock('../../src/lib/gui-server/index.js', () => ({
   startGuiServer: vi.fn(),
 }));
 
@@ -25,7 +25,7 @@ vi.mock('../../src/lib/output.js', () => ({
 }));
 
 import { loadConfig } from '../../src/lib/config.js';
-import { startGuiServer } from '../../src/lib/gui-server.js';
+import { startGuiServer } from '../../src/lib/gui-server/index.js';
 import { print } from '../../src/lib/output.js';
 import { registerUiCommand } from '../../src/commands/ui.js';
 

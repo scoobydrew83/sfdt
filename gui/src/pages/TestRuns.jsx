@@ -15,6 +15,44 @@ function CoverageCell({ pct }) {
   return <span style={{ fontWeight: 600, color, fontFamily: 'var(--font-mono)' }}>{pct}%</span>;
 }
 
+function ClassCoverageTable({ rows, threshold = 75 }) {
+  if (!rows || rows.length === 0) return null;
+  return (
+    <div style={{ padding: '0 0 12px 0', background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border-subtle)' }}>
+      <div style={{ padding: '8px 16px 4px', fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        Per-Class Coverage ({rows.length} classes)
+      </div>
+      <table className="data-table" style={{ fontSize: 12 }}>
+        <thead>
+          <tr>
+            <th>Class</th>
+            <th style={{ textAlign: 'right' }}>Covered</th>
+            <th style={{ textAlign: 'right' }}>Total</th>
+            <th style={{ textAlign: 'right' }}>Coverage</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((c) => {
+            const color = c.percent >= threshold
+              ? 'var(--status-identical-fg)'
+              : c.percent >= 60
+              ? 'var(--status-modified-fg)'
+              : 'var(--status-conflict-fg)';
+            return (
+              <tr key={c.name}>
+                <td className="td-mono" style={{ color: c.percent < threshold ? 'var(--status-conflict-fg)' : 'inherit' }}>{c.name}</td>
+                <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{c.coveredLines}</td>
+                <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--fg-muted)' }}>{c.totalLines}</td>
+                <td style={{ textAlign: 'right', fontWeight: 600, color, fontFamily: 'var(--font-mono)' }}>{c.percent}%</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ClassPicker({ onRun }) {
   const [configured, setConfigured] = useState([]);
   const [discovered, setDiscovered] = useState([]);
@@ -244,6 +282,7 @@ export default function TestRuns() {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [expandedRun, setExpandedRun] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -323,16 +362,36 @@ export default function TestRuns() {
               <tbody>
                 {runs.map((r, i) => {
                   const ok = !r.failed && !r.errors;
+                  const hasClassData = r.classCoverage && r.classCoverage.length > 0;
+                  const isExpanded = expandedRun === i;
                   return (
-                    <tr key={i}>
-                      <td className="td-mono">{r.date ? new Date(r.date).toLocaleString() : '—'}</td>
-                      <td style={{ textAlign: 'right', color: 'var(--status-identical-fg)', fontWeight: 600 }}>{r.passed ?? 0}</td>
-                      <td style={{ textAlign: 'right', color: r.failed ? 'var(--status-conflict-fg)' : 'var(--fg-muted)', fontWeight: r.failed ? 600 : 400 }}>{r.failed ?? 0}</td>
-                      <td style={{ textAlign: 'right', color: r.errors ? 'var(--status-conflict-fg)' : 'var(--fg-muted)' }}>{r.errors ?? 0}</td>
-                      <td><CoverageCell pct={r.coverage} /></td>
-                      <td className="td-mono">{r.duration ? `${(r.duration / 1000).toFixed(1)}s` : '—'}</td>
-                      <td><StatusBadge status={ok ? 'pass' : 'fail'} /></td>
-                    </tr>
+                    <>
+                      <tr
+                        key={i}
+                        onClick={() => hasClassData && setExpandedRun(isExpanded ? null : i)}
+                        style={{ cursor: hasClassData ? 'pointer' : 'default', background: isExpanded ? 'var(--bg-subtle)' : undefined }}
+                      >
+                        <td className="td-mono">
+                          {hasClassData && (
+                            <span style={{ marginRight: 6, fontSize: 10, color: 'var(--fg-muted)', display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+                          )}
+                          {r.date ? new Date(r.date).toLocaleString() : '—'}
+                        </td>
+                        <td style={{ textAlign: 'right', color: 'var(--status-identical-fg)', fontWeight: 600 }}>{r.passed ?? 0}</td>
+                        <td style={{ textAlign: 'right', color: r.failed ? 'var(--status-conflict-fg)' : 'var(--fg-muted)', fontWeight: r.failed ? 600 : 400 }}>{r.failed ?? 0}</td>
+                        <td style={{ textAlign: 'right', color: r.errors ? 'var(--status-conflict-fg)' : 'var(--fg-muted)' }}>{r.errors ?? 0}</td>
+                        <td><CoverageCell pct={r.coverage} /></td>
+                        <td className="td-mono">{r.duration ? `${(r.duration / 1000).toFixed(1)}s` : '—'}</td>
+                        <td><StatusBadge status={ok ? 'pass' : 'fail'} /></td>
+                      </tr>
+                      {isExpanded && hasClassData && (
+                        <tr key={`${i}-detail`}>
+                          <td colSpan={7} style={{ padding: 0 }}>
+                            <ClassCoverageTable rows={r.classCoverage} />
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   );
                 })}
               </tbody>

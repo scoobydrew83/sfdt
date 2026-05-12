@@ -22,6 +22,7 @@ TEST_CONFIG_FILE="${PROJECT_CONFIG_DIR}/test-config.json"
 
 echo -e "${BLUE}${PROJECT_NAME} - Code Quality Analyzer${NC}"
 echo -e "${YELLOW}====================================================${NC}"
+require_jq || exit 1
 
 # Check project structure
 log_info "Checking project structure..."
