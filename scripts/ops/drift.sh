@@ -166,18 +166,22 @@ echo "  Total:    ${TOTAL}"
 echo ""
 
 # ── Offer to pull changes ────────────────────────────────────────────────────
-read -rp "Pull changes from org to resolve drift? (y/N): " pull_changes
-if [[ "$pull_changes" =~ ^[Yy]$ ]]; then
-    print_step "Retrieving metadata from ${TARGET_ORG}..."
-    if sf project retrieve start --target-org "$TARGET_ORG"; then
-        echo ""
-        print_success "Metadata retrieved successfully."
-        print_info "Review the changes with 'git diff' before committing."
-    else
-        echo ""
-        print_error "Metadata retrieval failed."
-        exit 1
-    fi
+if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
+    print_info "Non-interactive mode: skipping pull prompt. Use 'sfdt pull' to retrieve changes."
 else
-    print_info "No changes pulled. Review the drift report and address manually."
+    read -rp "Pull changes from org to resolve drift? (y/N): " pull_changes
+    if [[ "$pull_changes" =~ ^[Yy]$ ]]; then
+        print_step "Retrieving metadata from ${TARGET_ORG}..."
+        if sf project retrieve start --target-org "$TARGET_ORG"; then
+            echo ""
+            print_success "Metadata retrieved successfully."
+            print_info "Review the changes with 'git diff' before committing."
+        else
+            echo ""
+            print_error "Metadata retrieval failed."
+            exit 1
+        fi
+    else
+        print_info "No changes pulled. Review the drift report and address manually."
+    fi
 fi
