@@ -72,6 +72,8 @@
     "ora": "^9.3.0"
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "^5.2.0",
+    "vite": "^8.0.8",
     "@vitest/coverage-v8": "^4.1.4",
     "eslint": "^9.22.0",
     "prettier": "^3.5.3",
