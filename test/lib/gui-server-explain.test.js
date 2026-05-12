@@ -187,6 +187,31 @@ describe('POST /api/explain — source field and heuristic fallback', () => {
     expect(resultEvent.source).toBe('ai');
     expect(resultEvent.exitCode).toBe(0);
   });
+
+  it('resolves a project-relative logPath from /api/logs/list and returns a result event', async () => {
+    // Simulate the path returned by the fixed /api/logs/list: "logs/deploy-20260510.log"
+    // path.resolve('/project', 'logs/deploy-20260510.log') => '/project/logs/deploy-20260510.log'
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.pathExists.mockResolvedValue(true);
+    fsMock.readFile.mockResolvedValue("No such column 'CreatedDate' on entity 'Lead'");
+    fsMock.stat.mockResolvedValue({ mtime: new Date(), mtimeMs: Date.now(), size: 200, isDirectory: () => false });
+    vi.mocked(isAiAvailable).mockResolvedValue(false);
+
+    const res = await request(app)
+      .post('/api/explain')
+      .send({ logPath: 'logs/deploy-20260510.log' });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/event-stream/);
+
+    const events = collectSseEvents(res.text);
+    const resultEvent = events.find((e) => e.type === 'result');
+    expect(resultEvent).toBeDefined();
+    expect(resultEvent.source).toBe('heuristic');
+    expect(resultEvent.exitCode).toBe(0);
+    // The resolved file content should be reflected in the explanation
+    expect(resultEvent.content).toContain('CreatedDate');
+  });
 });
 
 // ─── GET /api/logs/list ───────────────────────────────────────────────────────
@@ -211,7 +236,7 @@ describe('GET /api/logs/list', () => {
     expect(res.body).toEqual({ files: [] });
   });
 
-  it('returns .log filenames sorted newest-first, excludes non-.log files', async () => {
+  it('returns .log filenames sorted newest-first as project-relative paths, excludes non-.log files', async () => {
     const { default: fsMock } = await import('fs-extra');
     fsMock.pathExists.mockResolvedValue(true);
     fsMock.readdir.mockResolvedValue(['old.log', 'new.log', 'skip.txt']);
@@ -224,9 +249,12 @@ describe('GET /api/logs/list', () => {
 
     const res = await request(app).get('/api/logs/list');
     expect(res.status).toBe(200);
-    expect(res.body.files[0]).toBe('new.log');
+    // Paths should be relative to projectRoot (e.g. "logs/new.log") so the
+    // explain route can resolve them correctly with path.resolve(projectRoot, logPath).
+    expect(res.body.files[0]).toBe('logs/new.log');
     expect(res.body.files).not.toContain('skip.txt');
-    expect(res.body.files).toContain('old.log');
+    expect(res.body.files).not.toContain('logs/skip.txt');
+    expect(res.body.files).toContain('logs/old.log');
   });
 
   it('caps at 50 files', async () => {

@@ -2366,7 +2366,9 @@ export function createGuiApp(config, version, port = 7654) {
         }))
       );
       statted.sort((a, b) => b.mtime - a.mtime);
-      res.json({ files: statted.slice(0, 50).map((f) => f.name) });
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const logRelDir = path.relative(projectRoot, logDir);
+      res.json({ files: statted.slice(0, 50).map((f) => path.join(logRelDir, f.name)) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
