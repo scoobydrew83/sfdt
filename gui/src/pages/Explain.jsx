@@ -30,7 +30,6 @@ export default function ExplainPage() {
   const deadRef    = useRef(false);
   const termRef    = useRef(null);
 
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [logFiles, setLogFiles]         = useState(null);  // null = not fetched yet
   const [logsLoading, setLogsLoading]   = useState(false);
   const [selectedLog, setSelectedLog]   = useState('');    // '' = latest
@@ -50,7 +49,6 @@ export default function ExplainPage() {
 
   function handleAdvancedToggle(e) {
     const open = e.target.open;
-    setAdvancedOpen(open);
     if (open && logFiles === null && !logsLoading) {
       setLogsLoading(true);
       api.logsList()
