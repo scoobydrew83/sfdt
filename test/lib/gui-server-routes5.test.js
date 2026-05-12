@@ -131,9 +131,11 @@ describe('GET /api/scan', () => {
 
 describe('POST /api/scan', () => {
   let app;
+  let csrf;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    csrf = (await request(app).get('/api/csrf-token')).body.token;
   });
 
   afterAll(async () => {
@@ -141,15 +143,21 @@ describe('POST /api/scan', () => {
   });
 
   it('returns 400 when org is missing from request body', async () => {
-    const res = await request(app).post('/api/scan').send({});
+    const res = await request(app).post('/api/scan').set('X-SFDT-CSRF', csrf).send({});
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/org is required/i);
   });
 
   it('returns 400 when org is an empty string', async () => {
-    const res = await request(app).post('/api/scan').send({ org: '  ' });
+    const res = await request(app).post('/api/scan').set('X-SFDT-CSRF', csrf).send({ org: '  ' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/org is required/i);
+  });
+
+  it('returns 400 when org contains invalid characters', async () => {
+    const res = await request(app).post('/api/scan').set('X-SFDT-CSRF', csrf).send({ org: '--dry-run' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid org alias/i);
   });
 
   it('returns 200 with correct scan shape when fetchInventory succeeds', async () => {
@@ -160,7 +168,7 @@ describe('POST /api/scan', () => {
       ])
     );
 
-    const res = await request(app).post('/api/scan').send({ org: 'my-sandbox' });
+    const res = await request(app).post('/api/scan').set('X-SFDT-CSRF', csrf).send({ org: 'my-sandbox' });
     expect(res.status).toBe(200);
     expect(res.body.org).toBe('my-sandbox');
     expect(typeof res.body.timestamp).toBe('string');
@@ -176,7 +184,7 @@ describe('POST /api/scan', () => {
     );
     const { default: fsMock } = await import('fs-extra');
 
-    await request(app).post('/api/scan').send({ org: 'dev' });
+    await request(app).post('/api/scan').set('X-SFDT-CSRF', csrf).send({ org: 'dev' });
 
     expect(fsMock.outputJson).toHaveBeenCalledWith(
       expect.stringContaining('scan-latest.json'),
@@ -188,7 +196,7 @@ describe('POST /api/scan', () => {
   it('returns 500 when fetchInventory throws', async () => {
     vi.mocked(fetchInventory).mockRejectedValue(new Error('sf CLI not found'));
 
-    const res = await request(app).post('/api/scan').send({ org: 'dev' });
+    const res = await request(app).post('/api/scan').set('X-SFDT-CSRF', csrf).send({ org: 'dev' });
     expect(res.status).toBe(500);
     expect(res.body.error).toMatch(/sf CLI not found/);
   });
