@@ -87,7 +87,7 @@ describe('explain command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'explain', 'logs/deploy.log']);
 
-    expect(print.step).toHaveBeenCalledWith(expect.stringContaining('Missing field Custom__c'));
+    expect(print.step).toHaveBeenCalledWith(expect.stringContaining('Missing field `Custom__c`'));
     expect(runAiPrompt).not.toHaveBeenCalled();
   });
 
