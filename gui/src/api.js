@@ -133,6 +133,8 @@ export const api = {
   pullGroups:             () => fetchJson('/pull/groups'),
   /** @returns {Promise<{ packages: Array<{name: string, path: string}> }>} */
   getPackages:            () => fetchJson('/packages'),
+  /** @returns {Promise<{ files: string[] }>} */
+  logsList:               () => fetchJson('/logs/list'),
 };
 
 // ─── SSE helpers ──────────────────────────────────────────────────────────────
