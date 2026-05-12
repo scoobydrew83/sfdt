@@ -92,6 +92,8 @@ export default function ExplainPage() {
             page: 'Explain',
             data: { logFile: selectedLog || 'latest', analysis: msg.content },
           });
+        } else {
+          setErrorMsg(msg.content || `Process exited with code ${msg.exitCode}`);
         }
       } else if (msg.type === 'error') {
         setStatus('error');
@@ -198,6 +200,7 @@ export default function ExplainPage() {
       {lines.length > 0 && (
         <details open={terminalOpen} style={{ marginTop: 8 }}>
           <summary
+            onClick={(e) => { if (terminalOpen) e.preventDefault(); }}
             style={{
               fontSize: 12,
               color: 'var(--fg-muted)',
