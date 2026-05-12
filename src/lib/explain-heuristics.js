@@ -38,10 +38,6 @@ const HEURISTIC_PATTERNS = [
   },
 ];
 
-/**
- * Run pattern-based heuristic analysis on a deployment log.
- * Returns { found: boolean, findings: string[], markdown: string }.
- */
 export function runHeuristicAnalysis(logContent) {
   const findings = [];
   for (const { pattern, hint } of HEURISTIC_PATTERNS) {

@@ -45,7 +45,7 @@ export function registerRollbackCommand(program) {
             exitCode: 0,
             durationMs,
             retention: config.logRetention ?? 50,
-          }).catch(() => {});
+          }).catch((e) => console.debug('Log write failed:', e.message));
         }
 
         if (jsonMode) {
@@ -55,6 +55,7 @@ export function registerRollbackCommand(program) {
               org: orgAlias,
               timestamp: new Date().toISOString(),
               exitCode: 0,
+              dryRun: !!options.dryRun,
               log: result.stdout ?? '',
             }, null, 2) + '\n',
           );
@@ -66,7 +67,7 @@ export function registerRollbackCommand(program) {
       } catch (err) {
         if (jsonMode) {
           process.stdout.write(
-            JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n',
+            JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err), dryRun: !!options.dryRun }) + '\n',
           );
         } else {
           print.error(`Rollback failed: ${err.message}`);

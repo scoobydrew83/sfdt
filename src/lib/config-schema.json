@@ -22,7 +22,8 @@
       "additionalProperties": false,
       "properties": {
         "provider": { "type": "string", "enum": ["claude", "gemini", "openai"] },
-        "model": { "type": "string" }
+        "model": { "type": "string" },
+        "apiKey": { "type": "string" }
       }
     },
     "deployment": {

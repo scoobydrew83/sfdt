@@ -13,7 +13,9 @@ export function registerScanCommand(program) {
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
     .option('--output <file>', 'Write JSON to this path (default: logs/scan-latest.json)')
     .option('--format <fmt>', 'Output format: json | table (default: json)', 'json')
+    .option('--json', 'Emit structured JSON to stdout (CI mode) instead of writing a file')
     .action(async (options) => {
+      const jsonMode = !!options.json;
       try {
         const config = await loadConfig();
         const orgAlias = options.org ?? config.defaultOrg;
@@ -22,14 +24,14 @@ export function registerScanCommand(program) {
           ? path.resolve(options.output)
           : path.join(logDir, 'scan-latest.json');
 
-        const spinner = ora(`Fetching inventory from ${orgAlias}…`).start();
+        const spinner = jsonMode ? null : ora(`Fetching inventory from ${orgAlias}…`).start();
 
         let inventory;
         try {
           inventory = await fetchInventory(orgAlias, config);
-          spinner.succeed(`Inventory fetched from ${orgAlias}`);
+          spinner?.succeed(`Inventory fetched from ${orgAlias}`);
         } catch (err) {
-          spinner.fail('Inventory fetch failed');
+          spinner?.fail('Inventory fetch failed');
           throw err;
         }
 
@@ -45,6 +47,11 @@ export function registerScanCommand(program) {
           summary,
         };
 
+        if (jsonMode) {
+          process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+          return;
+        }
+
         await fs.ensureDir(path.dirname(outPath));
         await fs.writeJson(outPath, output, { spaces: 2 });
 
@@ -59,7 +66,11 @@ export function registerScanCommand(program) {
 
         console.log(chalk.green(`\nJSON written to ${outPath}`));
       } catch (err) {
-        console.error(chalk.red(`Scan failed: ${err.message}`));
+        if (jsonMode) {
+          process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');
+        } else {
+          console.error(chalk.red(`Scan failed: ${err.message}`));
+        }
         process.exitCode = resolveExitCode(err);
       }
     });

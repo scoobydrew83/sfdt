@@ -128,14 +128,25 @@ export function createGuiApp(config, version, port = 7654) {
 
   // Keys whose values are executed as shell commands — must not be API-writable.
   const BLOCKED_CONFIG_KEY_PREFIXES = ['mcp.salesforce.command', 'mcp.salesforce.args'];
+  // Path keys must resolve within projectRoot to prevent logDir/manifestDir redirection attacks.
+  const PATH_KEYS_WITHIN_ROOT = new Set(['logDir', 'manifestDir', 'releaseNotesDir', 'changelogDir']);
 
   app.patch('/api/config', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     if (!rawConfigPath) return res.status(503).json({ error: 'Config dir unavailable' });
     const { key, value } = req.body ?? {};
     if (!key || typeof key !== 'string') return res.status(400).json({ error: 'key is required' });
     if (value === undefined || value === null) return res.status(400).json({ error: 'value is required' });
     if (BLOCKED_CONFIG_KEY_PREFIXES.some((prefix) => key === prefix || key.startsWith(`${prefix}.`))) {
       return res.status(403).json({ error: 'This config key cannot be set via the API' });
+    }
+    if (PATH_KEYS_WITHIN_ROOT.has(key)) {
+      const projectRoot = config._projectRoot || process.cwd();
+      const resolved = path.resolve(projectRoot, String(value));
+      const resolvedRoot = path.resolve(projectRoot);
+      if (!resolved.startsWith(resolvedRoot + path.sep) && resolved !== resolvedRoot) {
+        return res.status(400).json({ error: `${key} must be within the project root` });
+      }
     }
     try {
       const raw = await fs.readJson(rawConfigPath);
@@ -232,6 +243,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/session/org', apiLimiter, (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     const { org } = req.body ?? {};
     if (!org || typeof org !== 'string') return res.status(400).json({ error: 'org is required' });
     const safe = org.trim().slice(0, 100);
@@ -315,6 +327,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.delete('/api/test-runs/:filename', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { filename } = req.params;
       if (!filename.endsWith('.json') || filename.includes('/') || filename.includes('..')) {
@@ -891,9 +904,13 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/compare', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { source = 'local', target } = req.body ?? {};
       if (!target) return res.status(400).json({ error: 'target is required' });
+      const ORG_ALIAS_RE = /^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/;
+      if (!ORG_ALIAS_RE.test(source)) return res.status(400).json({ error: 'Invalid source org alias' });
+      if (!ORG_ALIAS_RE.test(target)) return res.status(400).json({ error: 'Invalid target org alias' });
 
       const { fetchInventory } = await import('../org-inventory.js');
       const { diffInventories } = await import('../org-diff.js');
@@ -925,9 +942,11 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/scan', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { org } = req.body ?? {};
       if (!org || !org.trim()) return res.status(400).json({ error: 'org is required' });
+      if (!/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(org.trim())) return res.status(400).json({ error: 'Invalid org alias' });
 
       const inventory = await fetchInventory(org, config);
       const summary = {
