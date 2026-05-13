@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-05-13
+
+### Fixed
+- **GUI: result pages didn't refresh after a non-zero exit run**. When `sf apex run test` exited 100 (tests ran but some failed), the server still wrote the full artifact — including `classCoverage` — to disk, but the `CommandRunner` callback only fired on `exitCode === 0`. The Coverage page was the most visible casualty: the per-class table stayed empty and the trend chart never updated, even though all 88% / 106-class data was present. The same bug affected Quality, Preflight, Drift, and Test Runs. `onComplete` now always fires and receives the exit code; Release Hub's preflight gate still correctly requires `exitCode === 0` before enabling "Continue to Deploy".
+
+### Security
+- **CodeQL: type confusion via parameter tampering** — addressed CodeQL alert on GUI API parameter handling.
+
+### Changed
+- Standardized `--json` output shapes across CLI commands and added test coverage for the JSON output mode.
+- Dependency updates.
+
 ## [0.8.0] - 2026-05-12
 
 ### Added
