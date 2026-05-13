@@ -76,7 +76,7 @@ describe('pull smart delta (menu option: smart)', () => {
 
   it('fetches inventory with withDates, computes delta, and retrieves', async () => {
     await createProgram().parseAsync(['node', 'sfdt', 'pull']);
-    expect(fetchOrgInventory).toHaveBeenCalledWith('dev', null, { withDates: true });
+    expect(fetchOrgInventory).toHaveBeenCalledWith('dev', null, { withDates: true, metadataTypes: null });
     expect(getDelta).toHaveBeenCalled();
     expect(parallelRetrieve).toHaveBeenCalled();
     expect(updateCache).toHaveBeenCalled();
@@ -214,7 +214,7 @@ describe('pull menu option: full', () => {
   it('calls smartPull with full:true, retrieves all components and updates cache', async () => {
     inquirer.prompt.mockResolvedValue({ action: 'full' });
     await createProgram().parseAsync(['node', 'sfdt', 'pull']);
-    expect(fetchOrgInventory).toHaveBeenCalledWith('dev', null, { withDates: true });
+    expect(fetchOrgInventory).toHaveBeenCalledWith('dev', null, { withDates: true, metadataTypes: null });
     expect(parallelRetrieve).toHaveBeenCalled();
     expect(updateCache).toHaveBeenCalled();
     expect(MOCK_DB.close).toHaveBeenCalled();
@@ -252,6 +252,34 @@ describe('pull menu option: group', () => {
     inquirer.prompt.mockResolvedValue({ action: 'group:nonexistent' });
     await createProgram().parseAsync(['node', 'sfdt', 'pull']);
     expect(process.exitCode).toBe(1);
+  });
+});
+
+describe('pull smart delta respects pullConfig.metadataTypes', () => {
+  it('passes configured metadataTypes through to fetchOrgInventory', async () => {
+    loadConfig.mockResolvedValue({
+      ...MOCK_CONFIG,
+      pullConfig: { metadataTypes: ['ApexClass', 'CustomObject', 'Flow'] },
+    });
+    inquirer.prompt.mockResolvedValue({ action: 'smart' });
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(fetchOrgInventory).toHaveBeenCalledWith('dev', null, {
+      withDates: true,
+      metadataTypes: ['ApexClass', 'CustomObject', 'Flow'],
+    });
+  });
+
+  it('passes null metadataTypes when pullConfig.metadataTypes is empty', async () => {
+    loadConfig.mockResolvedValue({
+      ...MOCK_CONFIG,
+      pullConfig: { metadataTypes: [] },
+    });
+    inquirer.prompt.mockResolvedValue({ action: 'smart' });
+    await createProgram().parseAsync(['node', 'sfdt', 'pull']);
+    expect(fetchOrgInventory).toHaveBeenCalledWith('dev', null, {
+      withDates: true,
+      metadataTypes: null,
+    });
   });
 });
 

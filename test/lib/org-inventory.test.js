@@ -119,6 +119,46 @@ describe('fetchInventory', () => {
   });
 });
 
+describe('fetchOrgInventory metadataTypes filter', () => {
+  it('skips listMetadataTypes when metadataTypes is provided', async () => {
+    // Only mock the member listing calls — no list-metadata-types call should happen
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify({ status: 0, result: [{ fullName: 'MyClass' }] }),
+    });
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify({ status: 0, result: [{ fullName: 'Widget__c' }] }),
+    });
+
+    const map = await fetchOrgInventory('dev', null, {
+      metadataTypes: ['ApexClass', 'CustomObject'],
+    });
+
+    expect(map.get('ApexClass')).toEqual(new Set(['MyClass']));
+    expect(map.get('CustomObject')).toEqual(new Set(['Widget__c']));
+    // Two member-list calls — no extra call to list-metadata-types
+    expect(execa).toHaveBeenCalledTimes(2);
+    for (const call of execa.mock.calls) {
+      expect(call[1]).not.toContain('metadata-types');
+    }
+  });
+
+  it('falls back to listMetadataTypes when metadataTypes is an empty array', async () => {
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        status: 0,
+        result: { metadataObjects: [{ xmlName: 'ApexClass' }] },
+      }),
+    });
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify({ status: 0, result: [{ fullName: 'MyClass' }] }),
+    });
+
+    const map = await fetchOrgInventory('dev', null, { metadataTypes: [] });
+    expect(map.get('ApexClass')).toEqual(new Set(['MyClass']));
+    expect(execa.mock.calls[0][1]).toContain('metadata-types');
+  });
+});
+
 describe('fetchOrgInventory withDates mode', () => {
   it('returns Map<type, Map<name, lastModifiedDate>> when withDates is true', async () => {
     execa.mockResolvedValueOnce({

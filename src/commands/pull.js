@@ -132,7 +132,10 @@ async function smartPull(config, { projectRoot, cacheDir, orgAlias, full = false
   const spinner = ora('Fetching org inventory...').start();
   let freshInventory;
   try {
-    freshInventory = await fetchOrgInventory(orgAlias, null, { withDates: true });
+    const metadataTypes = Array.isArray(config.pullConfig?.metadataTypes) && config.pullConfig.metadataTypes.length > 0
+      ? config.pullConfig.metadataTypes
+      : null;
+    freshInventory = await fetchOrgInventory(orgAlias, null, { withDates: true, metadataTypes });
     const total = [...freshInventory.values()].reduce((n, m) => n + m.size, 0);
     spinner.succeed(`Fetched ${total} components from org`);
   } catch (err) {

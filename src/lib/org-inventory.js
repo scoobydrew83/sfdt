@@ -19,9 +19,23 @@ export async function fetchInventory(source, config, options = {}) {
 /**
  * Fetch inventory from a Salesforce org via sf CLI.
  * Batches metadata type queries in groups of BATCH_SIZE.
+ *
+ * @param {string} orgAlias
+ * @param {object|null} _config - reserved for future use
+ * @param {object} [options]
+ * @param {boolean} [options.withDates] - emit Map<name, lastModifiedDate> values
+ * @param {string[]|null} [options.metadataTypes] - when a non-empty array,
+ *   restricts the inventory to these xmlNames instead of querying every type
+ *   exposed by the org (`sf org list metadata-types`).
  */
-export async function fetchOrgInventory(orgAlias, _config, { withDates = false } = {}) {
-  const types = await listMetadataTypes(orgAlias);
+export async function fetchOrgInventory(
+  orgAlias,
+  _config,
+  { withDates = false, metadataTypes = null } = {},
+) {
+  const types = Array.isArray(metadataTypes) && metadataTypes.length > 0
+    ? metadataTypes
+    : await listMetadataTypes(orgAlias);
   const inventory = new Map();
 
   for (let i = 0; i < types.length; i += BATCH_SIZE) {
