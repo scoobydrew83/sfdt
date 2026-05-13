@@ -45,13 +45,11 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-          cache-dependency-path: gui/package-lock.json
-      - name: Install GUI dependencies
-        run: cd gui && npm install
+      - run: npm ci
       - name: Test GUI
-        run: cd gui && npm test
+        run: npm test --workspace=gui
       - name: Build GUI
-        run: cd gui && npm run build
+        run: npm run build --workspace=gui
 
   integration:
     needs: [test, gui-build]

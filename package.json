@@ -23,6 +23,9 @@
     "LICENSE",
     "SECURITY.md"
   ],
+  "workspaces": [
+    "gui"
+  ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
@@ -31,7 +34,7 @@
     "lint:fix": "eslint src/ bin/ --fix",
     "format": "prettier --write \"src/**/*.js\" \"bin/*.js\" \"test/**/*.js\" \"README.md\" \"package.json\"",
     "dev": "npm link",
-    "build:gui": "cd gui && npm install && npm run build",
+    "build:gui": "npm run build -w gui",
     "dev:ui": "npm run build:gui && npm link && echo '\\n✓ GUI built and linked. cd into your SF project and run: sfdt ui'",
     "postinstall": "node scripts/postinstall.js",
     "prepack": "npm run build:gui",
@@ -73,12 +76,8 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.4",
-    "d3": "^7.9.0",
     "eslint": "^9.22.0",
     "prettier": "^3.5.3",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "react-markdown": "^10.1.0",
     "supertest": "^7.1.0",
     "vitest": "^4.1.4"
   },
