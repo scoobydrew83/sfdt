@@ -1157,7 +1157,9 @@ export function createGuiApp(config, version, port = 7654) {
   app.get('/api/compare/diff', apiLimiter, async (req, res) => {
     try {
       const { type, member } = req.query;
-      if (!type || !member) return res.status(400).json({ error: 'type and member are required' });
+      if (typeof type !== 'string' || typeof member !== 'string' || !type || !member) {
+        return res.status(400).json({ error: 'type and member are required' });
+      }
       // Block path traversal: null bytes, parent-directory sequences, absolute paths.
       // Dots and slashes are valid in Salesforce member names (e.g. CustomMetadata__mdt.Record, reports/Folder/Name).
       if (/[\x00]|\.\./.test(member) || /^[/\\]/.test(member)) {
