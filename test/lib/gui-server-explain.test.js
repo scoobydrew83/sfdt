@@ -236,32 +236,37 @@ describe('GET /api/logs/list', () => {
     expect(res.body).toEqual({ files: [] });
   });
 
-  it('returns .log filenames sorted newest-first as project-relative paths, excludes non-.log files', async () => {
+  it('returns .log and .json filenames sorted newest-first as project-relative paths, including archives', async () => {
     const { default: fsMock } = await import('fs-extra');
+    const { glob } = await import('glob');
     fsMock.pathExists.mockResolvedValue(true);
-    fsMock.readdir.mockResolvedValue(['old.log', 'new.log', 'skip.txt']);
+    vi.mocked(glob).mockResolvedValue([
+      'new.log',
+      'old.log',
+      'deploy-results/archive.json'
+    ]);
     const now = Date.now();
     fsMock.stat.mockImplementation(async (p) => {
       if (p.endsWith('new.log')) return { mtimeMs: now + 1000 };
       if (p.endsWith('old.log')) return { mtimeMs: now };
+      if (p.endsWith('archive.json')) return { mtimeMs: now + 500 };
       return { mtimeMs: now - 1000 };
     });
 
     const res = await request(app).get('/api/logs/list');
     expect(res.status).toBe(200);
-    // Paths should be relative to projectRoot (e.g. "logs/new.log") so the
-    // explain route can resolve them correctly with path.resolve(projectRoot, logPath).
+    // Paths should be relative to projectRoot (e.g. "logs/new.log")
     expect(res.body.files[0]).toBe('logs/new.log');
-    expect(res.body.files).not.toContain('skip.txt');
-    expect(res.body.files).not.toContain('logs/skip.txt');
-    expect(res.body.files).toContain('logs/old.log');
+    expect(res.body.files[1]).toBe('logs/deploy-results/archive.json');
+    expect(res.body.files[2]).toBe('logs/old.log');
   });
 
   it('caps at 50 files', async () => {
     const { default: fsMock } = await import('fs-extra');
+    const { glob } = await import('glob');
     fsMock.pathExists.mockResolvedValue(true);
     const files = Array.from({ length: 60 }, (_, i) => `file${i}.log`);
-    fsMock.readdir.mockResolvedValue(files);
+    vi.mocked(glob).mockResolvedValue(files);
     const now = Date.now();
     fsMock.stat.mockImplementation(async () => ({ mtimeMs: now }));
 

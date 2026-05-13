@@ -23,6 +23,17 @@ vi.mock('../../src/lib/config-utils.js', () => ({
   coerceConfigValue: vi.fn((v) => v),
 }));
 
+vi.mock('../../src/lib/config.js', () => ({
+  loadConfig: vi.fn().mockResolvedValue({
+    _projectRoot: '/project',
+    _configDir: '/project/.sfdt',
+    projectName: 'Test',
+    defaultOrg: 'dev',
+    logDir: '/project/logs',
+    features: { ai: false },
+  }),
+}));
+
 vi.mock('fs-extra', () => ({
   default: {
     existsSync:  vi.fn().mockReturnValue(false),

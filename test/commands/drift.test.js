@@ -23,6 +23,7 @@ vi.mock('../../src/lib/output.js', () => ({
 vi.mock('fs-extra', () => ({
   default: {
     readJson: vi.fn(),
+    pathExists: vi.fn().mockResolvedValue(true),
   },
 }));
 
@@ -48,6 +49,7 @@ beforeEach(() => {
     features: {},
   });
   fs.readJson.mockResolvedValue({});
+  fs.pathExists.mockResolvedValue(true);
 });
 
 describe('drift command', () => {

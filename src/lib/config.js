@@ -35,54 +35,54 @@ function formatAjvErrors(errors) {
       `Run 'sfdt init' to regenerate the configuration.`
     );
   }
-
   const e = errors[0];
   const rawPath = e.instancePath.replace(/^\//, '').replace(/\//g, '.');
   const fieldPath = rawPath || '(root)';
+  const more = errors.length > 1 ? ` (+ ${errors.length - 1} more errors)` : '';
 
   if (fieldPath === 'defaultOrg') {
     return (
-      `Invalid configuration: "defaultOrg" must be a non-empty string (e.g. "my-org-alias").\n` +
+      `Invalid configuration: "defaultOrg" must be a non-empty string (e.g. "my-org-alias")${more}.\n` +
       `Run 'sfdt init' to regenerate the configuration.`
     );
   }
   if (fieldPath.includes('coverageThreshold')) {
-    return `Invalid configuration: "deployment.coverageThreshold" must be a number between 0 and 100.`;
+    return `Invalid configuration: "deployment.coverageThreshold" must be a number between 0 and 100${more}.`;
   }
   if (fieldPath === 'logDir') {
-    return `Invalid configuration: "logDir" must be a string path when provided.`;
+    return `Invalid configuration: "logDir" must be a string path when provided${more}.`;
   }
   if (fieldPath === 'environments.orgs') {
-    return `Invalid configuration: "environments.orgs" must be an array of org objects.`;
+    return `Invalid configuration: "environments.orgs" must be an array of org objects${more}.`;
   }
   if (e.keyword === 'enum') {
     const allowed = e.params.allowedValues.join(', ');
     return (
-      `Invalid configuration: "${fieldPath}" must be one of: ${allowed}.\n` +
+      `Invalid configuration: "${fieldPath}" must be one of: ${allowed}${more}.\n` +
       `Run 'sfdt init' to regenerate the configuration.`
     );
   }
   if (e.keyword === 'type') {
     const article = ['a', 'e', 'i', 'o', 'u'].includes(e.params.type[0]) ? 'an' : 'a';
-    return `Invalid configuration: "${fieldPath}" must be ${article} ${e.params.type}.`;
+    return `Invalid configuration: "${fieldPath}" must be ${article} ${e.params.type}${more}.`;
   }
   if (e.keyword === 'minimum' || e.keyword === 'exclusiveMinimum') {
-    return `Invalid configuration: "${fieldPath}" must be ≥ ${e.params.limit}.`;
+    return `Invalid configuration: "${fieldPath}" must be ≥ ${e.params.limit}${more}.`;
   }
   if (e.keyword === 'maximum' || e.keyword === 'exclusiveMaximum') {
-    return `Invalid configuration: "${fieldPath}" must be ≤ ${e.params.limit}.`;
+    return `Invalid configuration: "${fieldPath}" must be ≤ ${e.params.limit}${more}.`;
   }
   if (e.keyword === 'minLength') {
     return (
-      `Invalid configuration: "${fieldPath}" must be a non-empty string.\n` +
+      `Invalid configuration: "${fieldPath}" must be a non-empty string${more}.\n` +
       `Run 'sfdt init' to regenerate the configuration.`
     );
   }
   if (e.keyword === 'additionalProperties') {
-    return `Invalid configuration: "${fieldPath}" contains unknown key "${e.params.additionalProperty}".`;
+    return `Invalid configuration: "${fieldPath}" contains unknown key "${e.params.additionalProperty}"${more}.`;
   }
 
-  return `Invalid configuration: "${fieldPath}" ${e.message}.`;
+  return `Invalid configuration: field "${fieldPath}" ${e.message}${more}.`;
 }
 
 /**

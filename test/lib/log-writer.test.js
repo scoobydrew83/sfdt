@@ -226,6 +226,8 @@ describe('writeRawLog', () => {
   it('prunes oldest files beyond retention limit', async () => {
     for (let i = 0; i < 3; i++) {
       await writeRawLog(tmpDir, 'deploy', `run ${i}`, { org: 'dev', exitCode: 0, retention: 2 });
+      // Small delay to ensure unique timestamps for deterministic sorting in prune logic
+      await new Promise((r) => setTimeout(r, 10));
     }
 
     const archiveDir = path.join(tmpDir, 'deploy-results');

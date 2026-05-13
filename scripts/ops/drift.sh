@@ -107,9 +107,9 @@ _SFDT_LOG_DIR="${SFDT_LOG_DIR:-${SFDT_PROJECT_ROOT}/logs}"
 mkdir -p "$_SFDT_LOG_DIR"
 _COMPONENTS_JSON=$(
   {
-    for item in ${ADDED[@]+"${ADDED[@]}"}; do printf '%s\tAdded\n' "$item"; done
-    for item in ${MODIFIED[@]+"${MODIFIED[@]}"}; do printf '%s\tModified\n' "$item"; done
-    for item in ${DELETED[@]+"${DELETED[@]}"}; do printf '%s\tDeleted\n' "$item"; done
+    [[ ${#ADDED[@]} -gt 0 ]] && for item in "${ADDED[@]}"; do printf '%s\tAdded\n' "$item"; done
+    [[ ${#MODIFIED[@]} -gt 0 ]] && for item in "${MODIFIED[@]}"; do printf '%s\tModified\n' "$item"; done
+    [[ ${#DELETED[@]} -gt 0 ]] && for item in "${DELETED[@]}"; do printf '%s\tDeleted\n' "$item"; done
   } | jq -Rn '[inputs | split("\t") | {name: .[0], type: "Unknown", drift: .[1]}]'
 ) || _COMPONENTS_JSON="[]"
 _DRIFT_STATUS=$( [[ "$TOTAL" -gt 0 ]] && echo "drift" || echo "clean" )

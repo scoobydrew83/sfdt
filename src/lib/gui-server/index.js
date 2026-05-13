@@ -98,6 +98,7 @@ export function createGuiApp(config, version, port = 7654) {
     path.join(config._projectRoot || process.cwd(), 'logs');
 
   const apiLimiter = createRateLimiter(60, 60_000);
+  const csrfLimiter = createRateLimiter(10, 60_000);
   const originGuard = createOriginGuard(port);
   app.use('/api/', originGuard);
 
@@ -107,7 +108,7 @@ export function createGuiApp(config, version, port = 7654) {
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
 
-  app.get('/api/csrf-token', apiLimiter, (_req, res) => {
+  app.get('/api/csrf-token', csrfLimiter, (_req, res) => {
     res.json({ token: csrfToken });
   });
 
@@ -141,8 +142,11 @@ export function createGuiApp(config, version, port = 7654) {
       return res.status(403).json({ error: 'This config key cannot be set via the API' });
     }
     if (PATH_KEYS_WITHIN_ROOT.has(key)) {
+      if (typeof value !== 'string') {
+        return res.status(400).json({ error: 'value must be a string for path keys' });
+      }
       const projectRoot = config._projectRoot || process.cwd();
-      const resolved = path.resolve(projectRoot, String(value));
+      const resolved = path.resolve(projectRoot, value);
       const resolvedRoot = path.resolve(projectRoot);
       if (!resolved.startsWith(resolvedRoot + path.sep) && resolved !== resolvedRoot) {
         return res.status(400).json({ error: `${key} must be within the project root` });
@@ -303,13 +307,14 @@ export function createGuiApp(config, version, port = 7654) {
       const added    = discovered.filter((c) => !existing.includes(c)).length;
       const removed  = existing.filter((c) => !discovered.includes(c)).length;
 
-      if (!config.testConfig) config.testConfig = {};
-      config.testConfig.testClasses = discovered;
-
       const raw = await fs.readJson(configPath);
       if (!raw.testConfig) raw.testConfig = {};
       raw.testConfig.testClasses = discovered;
       await fs.writeJson(configPath, raw, { spaces: 2 });
+
+      // Refresh in-memory config so subsequent requests see the change
+      const fresh = await loadConfig(config._projectRoot);
+      Object.assign(config, fresh);
 
       res.json({ added, removed, total: discovered.length });
     } catch (err) {
@@ -935,12 +940,18 @@ export function createGuiApp(config, version, port = 7654) {
   app.get('/api/scan', apiLimiter, async (_req, res) => {
     try {
       const data = await readScan(logDir);
-      res.json(data ?? null);
+      if (!data) return res.status(204).end();
+      res.json(data);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
   });
 
+  /**
+   * Fetch complete metadata inventory from an org.
+   * NOTE: For very large orgs (>10k components), the JSON payload can exceed 10MB.
+   * Node.js/Express handles this in-memory; clients should expect multi-second transfers.
+   */
   app.post('/api/scan', apiLimiter, async (req, res) => {
     if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
@@ -2129,8 +2140,11 @@ export function createGuiApp(config, version, port = 7654) {
       if (!(await fs.pathExists(logDir))) {
         return res.json({ files: [] });
       }
-      const entries = await fs.readdir(logDir);
-      const logFiles = entries.filter((f) => f.endsWith('.log'));
+      const { glob } = await import('glob');
+      // Root .log files + deploy/rollback .json archives
+      const patterns = ['*.log', 'deploy-results/*.json', 'rollback-results/*.json'];
+      const logFiles = await glob(patterns, { cwd: logDir });
+
       const statted = await Promise.all(
         logFiles.map(async (name) => ({
           name,

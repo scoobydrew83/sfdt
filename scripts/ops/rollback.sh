@@ -23,9 +23,13 @@ BACKUP_BEFORE_ROLLBACK="${SFDT_BACKUP_BEFORE_ROLLBACK:-true}"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BACKUP_DIR="${SFDT_LOG_DIR:-${SFDT_PROJECT_ROOT:-.}/logs}/rollback-backups"
 
+# jq is required for manifest parsing in shared.sh / rollback logic
+require_jq || exit 1
+
 print_header "Rollback Deployment: ${PROJECT_NAME}"
 if [[ -z "$TARGET_ORG" ]]; then
-    require_jq || exit 1
+    # already checked above, this if block was redundant for the guard
+    :
 fi
 
 # ── Step 1: Validate manifest directory ──────────────────────────────────────

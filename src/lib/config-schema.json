@@ -82,7 +82,7 @@
     },
     "environments": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "properties": {
         "default": { "type": "string" },
         "orgs": { "type": "array" }

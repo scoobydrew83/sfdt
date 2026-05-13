@@ -11,9 +11,9 @@ export function registerScanCommand(program) {
     .command('scan')
     .description('Fetch complete metadata inventory from an org')
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
-    .option('--output <file>', 'Write JSON to this path (default: logs/scan-latest.json)')
-    .option('--format <fmt>', 'Output format: json | table (default: json)', 'json')
-    .option('--json', 'Emit structured JSON to stdout (CI mode) instead of writing a file')
+    .option('--output <file>', 'Write JSON to this path (ignored if --json is passed) (default: logs/scan-latest.json)')
+    .option('--format <fmt>', 'Output format: json | table (ignored if --json is passed) (default: json)', 'json')
+    .option('--json', 'Emit structured JSON to stdout and exit without writing a file')
     .action(async (options) => {
       const jsonMode = !!options.json;
       try {

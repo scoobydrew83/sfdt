@@ -102,11 +102,10 @@ describe('GET /api/scan', () => {
     await app.cleanup?.();
   });
 
-  it('returns null when scan-latest.json does not exist', async () => {
+  it('returns 204 when scan-latest.json does not exist', async () => {
     // readJson default mock returns null (set in beforeEach)
     const res = await request(app).get('/api/scan');
-    expect(res.status).toBe(200);
-    expect(res.body).toBeNull();
+    expect(res.status).toBe(204);
   });
 
   it('returns scan data when scan-latest.json exists', async () => {

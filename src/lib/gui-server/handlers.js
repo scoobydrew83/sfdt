@@ -33,10 +33,9 @@ export function addComponentToXml(xml, type, member) {
 
 export async function retrieveComponentXml(orgAlias, type, member, tmpDir) {
   if (!orgAlias) return null;
-  const { execa: execaDyn } = await import('execa');
   const outputDir = path.join(tmpDir, orgAlias.replace(/[^a-z0-9]/gi, '_'));
   try {
-    await execaDyn('sf', [
+    await execa('sf', [
       'project',
       'retrieve',
       'start',
@@ -51,8 +50,7 @@ export async function retrieveComponentXml(orgAlias, type, member, tmpDir) {
     const { glob } = await import('glob');
     const files = await glob('**/*.xml', { cwd: outputDir, absolute: true });
     if (!files.length) return null;
-    const fsExtra = (await import('fs-extra')).default;
-    return fsExtra.readFile(files[0], 'utf8');
+    return fs.readFile(files[0], 'utf8');
   } catch {
     return null;
   }

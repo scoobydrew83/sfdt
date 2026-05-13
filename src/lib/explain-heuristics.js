@@ -45,9 +45,11 @@ export function runHeuristicAnalysis(logContent) {
     let match;
     while ((match = pattern.exec(logContent)) !== null) {
       findings.push(hint(match));
-      if (findings.length >= MAX_HEURISTIC_ERRORS) break;
+      const isCapReached = findings.length >= MAX_HEURISTIC_ERRORS;
+      if (isCapReached) break;
     }
-    if (findings.length >= MAX_HEURISTIC_ERRORS) break;
+    const isCapReached = findings.length >= MAX_HEURISTIC_ERRORS;
+    if (isCapReached) break;
   }
 
   const deduped = [...new Set(findings)];
