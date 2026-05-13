@@ -19,6 +19,9 @@ export function registerScanCommand(program) {
       try {
         const config = await loadConfig();
         const orgAlias = options.org ?? config.defaultOrg;
+        if (!orgAlias) {
+          throw new Error('No org specified — pass --org <alias> or set defaultOrg in .sfdt/config.json');
+        }
         const logDir = config.logDir ?? path.join(config._projectRoot, 'logs');
         const outPath = options.output
           ? path.resolve(options.output)

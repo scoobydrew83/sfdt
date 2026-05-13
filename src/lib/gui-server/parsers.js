@@ -4,6 +4,9 @@ import { readLatestLog } from '../log-writer.js';
 import { tryReadJson, safeReaddir } from './shared.js';
 
 export function parseTestRunLines(lines) {
+  // Heuristic: find the first line that looks like an sf test result or summary JSON.
+  // sf --json guarantees a single blob, but if wrapper scripts echo other JSON,
+  // we look for these specific keys to identify the correct output.
   const jsonLine = lines.find((l) => {
     try { const p = JSON.parse(l); return p && (p.result || p.summary || Array.isArray(p)); }
     catch { return false; }
@@ -131,7 +134,8 @@ export async function readTestRuns(logDir) {
         date: r.summary?.testStartTime ?? raw.timestamp ?? file,
         passed: r.summary?.passing ?? 0,
         failed: r.summary?.failing ?? 0,
-        errors: r.summary?.skipped ?? 0,
+        errors: 0,
+        skipped: r.summary?.skipped ?? 0,
         coverage: r.summary?.testRunCoverage ? parseFloat(r.summary.testRunCoverage) : undefined,
         duration: r.summary?.testExecutionTimeInMs ?? undefined,
       });
@@ -141,7 +145,8 @@ export async function readTestRuns(logDir) {
         date: raw.summary.testStartTime ?? raw.timestamp ?? file,
         passed: raw.summary.passing ?? 0,
         failed: raw.summary.failing ?? 0,
-        errors: raw.summary.skipped ?? 0,
+        errors: 0,
+        skipped: raw.summary.skipped ?? 0,
         coverage: raw.summary.testRunCoverage ? parseFloat(raw.summary.testRunCoverage) : undefined,
         duration: raw.summary.testExecutionTimeInMs ?? undefined,
       });

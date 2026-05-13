@@ -100,6 +100,7 @@ export async function batchRetrieveTypeMembers(orgAlias, type, members, tmpDir) 
 }
 
 export async function readLocalComponentXml(config, _type, member) {
+  if (member.includes('..') || member.includes('/')) return null;
   const { glob } = await import('glob');
   const fsExtra = (await import('fs-extra')).default;
   const sourcePath = config.defaultSourcePath ?? 'force-app/main/default';
