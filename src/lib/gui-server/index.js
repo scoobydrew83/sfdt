@@ -8,416 +8,40 @@
 
 import { spawn } from 'child_process';
 import express from 'express';
-import rateLimit from 'express-rate-limit';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execa } from 'execa';
 import { createInterface } from 'readline';
-import { fetchLatestVersion } from './update-checker.js';
-import { writeLog, parseSfdtLogLines, readLatestLog } from './log-writer.js';
-import { setNestedValue, coerceConfigValue } from './config-utils.js';
-import { loadConfig } from './config.js';
-import { getPrompt, getAllPrompts, setPromptOverride, resetPromptOverride, interpolate } from './prompts.js';
-import { buildScriptEnv } from './script-runner.js';
-import { fetchOrgInventory } from './org-inventory.js';
-import { initCache, getDelta, updateCache } from './pull-cache.js';
-import { parallelRetrieve } from './parallel-retrieve.js';
+import { fetchLatestVersion } from '../update-checker.js';
+import { writeLog, parseSfdtLogLines, readLatestLog } from '../log-writer.js';
+import { setNestedValue, coerceConfigValue } from '../config-utils.js';
+import { loadConfig } from '../config.js';
+import { getPrompt, getAllPrompts, setPromptOverride, resetPromptOverride, interpolate } from '../prompts.js';
+import { buildScriptEnv } from '../script-runner.js';
+import { fetchOrgInventory, fetchInventory } from '../org-inventory.js';
+import { initCache, getDelta, updateCache } from '../pull-cache.js';
+import { parallelRetrieve } from '../parallel-retrieve.js';
+import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken } from './security.js';
+import { stripAnsi, tryReadJson, safeReaddir, buildPlaceholderHtml } from './shared.js';
+import {
+  parseTestRunLines, parseQualityLines,
+  readTestRuns, readPreflight, readQuality, readDrift, readCompare, readScan,
+} from './parsers.js';
+import {
+  removeComponentFromXml, addComponentToXml,
+  retrieveComponentXml, batchRetrieveTypeMembers, readLocalComponentXml,
+} from './handlers.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const ANSI_RE = /\x1B\[[0-9;]*[A-Za-z]|\x1B\][^\x07]*\x07|\x1B[()][AB012]/g;
-function stripAnsi(str) { return typeof str === 'string' ? str.replace(ANSI_RE, '') : str; }
-
-const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', 'scripts');
-const TEMPLATE_PATH = path.resolve(__dirname, '..', 'templates', 'sfdt.config.json');
+// index.js lives at src/lib/gui-server/ — three levels up reaches the package root
+const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', '..', 'scripts');
+const TEMPLATE_PATH = path.resolve(__dirname, '..', '..', 'templates', 'sfdt.config.json');
 
 // gui/dist lives at <package-root>/gui/dist
-const GUI_DIST = path.resolve(__dirname, '..', '..', 'gui', 'dist');
-
-// ─── Log parsers ─────────────────────────────────────────────────────────────
-
-/**
- * Attempt to parse a JSON file; return null on any error.
- */
-async function tryReadJson(filePath) {
-  try {
-    return await fs.readJson(filePath);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Extract test-run data from SF CLI --json output captured in lines[].
- * Handles sf apex run test JSON format variations.
- */
-function parseTestRunLines(lines) {
-  const jsonLine = lines.find((l) => {
-    try { const p = JSON.parse(l); return p && (p.result || p.summary || Array.isArray(p)); }
-    catch { return false; }
-  });
-  if (!jsonLine) return { passed: 0, failed: 0, errors: 0, skipped: 0, coverage: null, tests: [] };
-  const raw = JSON.parse(jsonLine);
-  const summary = raw.result?.summary ?? raw.summary ?? {};
-  // SF CLI uses PascalCase (FullName, Outcome, RunTime, Message); normalise both forms.
-  const tests = (raw.result?.tests ?? raw.tests ?? []).map((t) => ({
-    name: t.FullName ?? t.methodName ?? t.name ?? 'unknown',
-    status: (t.Outcome ?? t.outcome ?? t.status ?? 'unknown').toLowerCase(),
-    durationMs: t.RunTime ?? t.runTime ?? null,
-    message: t.Message ?? t.message ?? null,
-  }));
-  return {
-    passed: summary.passing ?? 0,
-    failed: summary.failing ?? 0,
-    errors: 0,
-    skipped: summary.skipped ?? 0,
-    coverage: summary.testRunCoverage ? parseFloat(summary.testRunCoverage) : null,
-    tests,
-  };
-}
-
-/**
- * Extract quality data from SF CLI scanner --json output captured in lines[].
- */
-function parseQualityLines(lines) {
-  const jsonLine = lines.find((l) => {
-    try { const p = JSON.parse(l); return p && (Array.isArray(p.result) || Array.isArray(p)); }
-    catch { return false; }
-  });
-  if (!jsonLine) return { status: 'PASS', summary: { critical: 0, high: 0, medium: 0, low: 0 }, violations: [] };
-  const raw = JSON.parse(jsonLine);
-  const rawViolations = Array.isArray(raw.result) ? raw.result : Array.isArray(raw) ? raw : [];
-  const violations = rawViolations.flatMap((file) =>
-    (file.violations ?? []).map((v) => ({
-      file: file.fileName ?? '',
-      line: v.line ?? 0,
-      rule: v.ruleName ?? v.rule ?? '',
-      severity: v.severity ?? 3,
-      message: v.message ?? '',
-    }))
-  );
-  const summary = violations.reduce(
-    (acc, v) => {
-      if (v.severity === 1) acc.critical++;
-      else if (v.severity === 2) acc.high++;
-      else if (v.severity === 3) acc.medium++;
-      else acc.low++;
-      return acc;
-    },
-    { critical: 0, high: 0, medium: 0, low: 0 }
-  );
-  const result = {
-    status: violations.length === 0 ? 'PASS' : 'FAIL',
-    summary,
-    violations,
-  };
-  if (raw._sfdt_unavailable) result.unavailableMessage = raw._sfdt_unavailable;
-  return result;
-}
-
-/**
- * Scan for test-run structured logs (new format) plus any legacy SF CLI files.
- * Returns an array of run objects: { date, passed, failed, errors, coverage, duration }.
- * GUI parity: response shape is unchanged.
- */
-async function readTestRuns(logDir) {
-  const resultsDir = path.join(logDir, 'test-results');
-  if (!(await fs.pathExists(resultsDir))) return [];
-
-  let entries;
-  try {
-    entries = await fs.readdir(resultsDir);
-  } catch {
-    return [];
-  }
-
-  const jsonFiles = entries
-    .filter((f) => f.endsWith('.json') && f !== 'latest.json')
-    .sort()
-    .reverse(); // newest first
-
-  const runs = [];
-
-  for (const file of jsonFiles) {
-    const raw = await tryReadJson(path.join(resultsDir, file));
-    if (!raw) continue;
-
-    // New structured envelope format
-    if (raw.schemaVersion === '1' && raw.type === 'test-run') {
-      const d = raw.data ?? {};
-      runs.push({
-        date: raw.timestamp,
-        passed: d.passed ?? 0,
-        failed: d.failed ?? 0,
-        errors: d.errors ?? 0,
-        coverage: d.coverage ?? undefined,
-        duration: raw.durationMs ?? undefined,
-      });
-      continue;
-    }
-
-    // Legacy SF CLI formats
-    if (raw.result) {
-      const r = raw.result;
-      runs.push({
-        date: r.summary?.testStartTime ?? raw.timestamp ?? file,
-        passed: r.summary?.passing ?? 0,
-        failed: r.summary?.failing ?? 0,
-        errors: r.summary?.skipped ?? 0,
-        coverage: r.summary?.testRunCoverage ? parseFloat(r.summary.testRunCoverage) : undefined,
-        duration: r.summary?.testExecutionTimeInMs ?? undefined,
-      });
-    } else if (raw.summary) {
-      runs.push({
-        date: raw.summary.testStartTime ?? raw.timestamp ?? file,
-        passed: raw.summary.passing ?? 0,
-        failed: raw.summary.failing ?? 0,
-        errors: raw.summary.skipped ?? 0,
-        coverage: raw.summary.testRunCoverage ? parseFloat(raw.summary.testRunCoverage) : undefined,
-        duration: raw.summary.testExecutionTimeInMs ?? undefined,
-      });
-    } else if (Array.isArray(raw)) {
-      const passed = raw.filter((t) => t.outcome === 'Pass').length;
-      const failed = raw.filter((t) => t.outcome === 'Fail').length;
-      runs.push({ date: raw[0]?.testTimestamp ?? file, passed, failed, errors: 0 });
-    }
-  }
-
-  return runs;
-}
-
-/**
- * Read the most recent preflight log.
- * Returns { date, status, checks: [{name, status, message}] } or null.
- * GUI parity: response shape is unchanged.
- */
-async function readPreflight(logDir) {
-  const log = await readLatestLog(logDir, 'preflight');
-  if (log) {
-    return {
-      date: log.timestamp,
-      status: log.data.status,
-      checks: (log.data.checks ?? []).map((c) => ({
-        name: c.name,
-        status: c.status,
-        message: c.message || null,
-      })),
-    };
-  }
-
-  // Legacy fallback: old preflight_*.json files
-  const files = await safeReaddir(logDir);
-  const legacyFiles = files
-    .filter((f) => f.startsWith('preflight_') && f.endsWith('.json'))
-    .sort()
-    .reverse();
-  if (!legacyFiles.length) return null;
-  return tryReadJson(path.join(logDir, legacyFiles[0]));
-}
-
-/**
- * Read the most recent quality log.
- * Returns { date, status, summary, violations, unavailableMessage } or null.
- */
-async function readQuality(logDir) {
-  const log = await readLatestLog(logDir, 'quality');
-  if (log) {
-    return {
-      date: log.timestamp,
-      status: log.data.status,
-      summary: log.data.summary ?? { critical: 0, high: 0, medium: 0, low: 0 },
-      violations: log.data.violations ?? [],
-      unavailableMessage: log.data.unavailableMessage ?? null,
-    };
-  }
-  return null;
-}
-
-/**
- * Read the most recent drift log.
- * Returns { date, status, components: [{name, type, drift}] } or null.
- * GUI parity: response shape is unchanged.
- */
-async function readDrift(logDir) {
-  const log = await readLatestLog(logDir, 'drift');
-  if (log) {
-    return {
-      date: log.timestamp,
-      status: log.data.status,
-      components: log.data.components ?? [],
-    };
-  }
-
-  // Legacy fallback
-  const files = await safeReaddir(logDir);
-  const legacyFiles = files
-    .filter((f) => f.startsWith('drift_') && f.endsWith('.json'))
-    .sort()
-    .reverse();
-  if (!legacyFiles.length) return null;
-  return tryReadJson(path.join(logDir, legacyFiles[0]));
-}
-
-async function safeReaddir(dir) {
-  try {
-    return await fs.readdir(dir);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Remove a single <members>MEMBER</members> entry from the matching <types> block in a package.xml string.
- * Two-pass: first find blocks containing <name>TYPE</name>, then remove the member line.
- */
-function removeComponentFromXml(xml, type, member) {
-  // Split into type blocks, process each, reassemble
-  const blockPattern = /(<types>[\s\S]*?<\/types>)/g;
-  return xml.replace(blockPattern, (block) => {
-    const nameMatch = block.match(/<name>([^<]+)<\/name>/);
-    if (!nameMatch || nameMatch[1].trim() !== type) return block;
-    // Remove the members line for this member
-    return block.replace(new RegExp(`\\s*<members>${member.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/members>`, 'g'), '');
-  });
-}
-
-function addComponentToXml(xml, type, member) {
-  const escapedType = type.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const escaped = member.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const blockPattern = /(<types>[\s\S]*?<\/types>)/g;
-  let inserted = false;
-  let result = xml.replace(blockPattern, (block) => {
-    const nameMatch = block.match(/<name>([^<]+)<\/name>/);
-    if (!nameMatch || nameMatch[1].trim() !== type) return block;
-    if (block.includes(`<members>${escaped}</members>`)) { inserted = true; return block; }
-    const updated = block.replace(/(<name>[^<]+<\/name>)/, `<members>${escaped}</members>\n    $1`);
-    inserted = true;
-    return updated;
-  });
-  if (!inserted) {
-    // Type block doesn't exist yet — add a new <types> block before </Package>
-    const newBlock = `    <types>\n        <members>${escaped}</members>\n        <name>${escapedType}</name>\n    </types>\n`;
-    result = result.replace(/<\/Package>/, `${newBlock}</Package>`);
-  }
-  return result;
-}
-
-/**
- * Read the most recent compare result.
- * Returns { date, source, target, items: [{type, member, status}] } or null.
- */
-async function readCompare(logDir) {
-  return tryReadJson(path.join(logDir, 'compare-latest.json'));
-}
-
-/**
- * Run sf project retrieve for a single metadata component into a temp dir.
- * Returns the XML file contents or null on failure.
- */
-async function retrieveComponentXml(orgAlias, type, member, tmpDir) {
-  if (!orgAlias) return null;
-  const { execa } = await import('execa');
-  const outputDir = path.join(tmpDir, orgAlias.replace(/[^a-z0-9]/gi, '_'));
-  try {
-    await execa('sf', [
-      'project',
-      'retrieve',
-      'start',
-      '--metadata',
-      `${type}:${member}`,
-      '--target-org',
-      orgAlias,
-      '--output-dir',
-      outputDir,
-      '--json',
-    ]);
-    const { glob } = await import('glob');
-    const files = await glob('**/*.xml', { cwd: outputDir, absolute: true });
-    if (!files.length) return null;
-    const fsExtra = (await import('fs-extra')).default;
-    return fsExtra.readFile(files[0], 'utf8');
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Find the retrieved file in a list that best matches a Salesforce member name.
- * Handles simple names (MyClass) and compound names (Account.BillingCity__c).
- */
-function findFileForMember(files, member) {
-  const parts = member.split('.');
-  const lastName = parts[parts.length - 1];
-  return files.find((f) => {
-    const base = path.basename(f);
-    if (base.startsWith(member + '.') || base.startsWith(member + '-')) return true;
-    if (parts.length > 1) {
-      const dir = path.dirname(f);
-      return (base.startsWith(lastName + '.') || base.startsWith(lastName + '-')) &&
-        dir.includes(parts[0]);
-    }
-    return false;
-  });
-}
-
-/**
- * Retrieve all members of a single metadata type from an org in one SF CLI call.
- * Returns a Map<member, xml> for all successfully retrieved members.
- */
-async function batchRetrieveTypeMembers(orgAlias, type, members, tmpDir) {
-  if (!orgAlias || !members.length) return new Map();
-  const outputDir = path.join(
-    tmpDir,
-    `${orgAlias.replace(/[^a-z0-9]/gi, '_')}_${type.replace(/[^a-z0-9]/gi, '_')}`
-  );
-  const metadataArgs = members.flatMap((m) => ['--metadata', `${type}:${m}`]);
-  try {
-    await execa('sf', [
-      'project', 'retrieve', 'start',
-      ...metadataArgs,
-      '--target-org', orgAlias,
-      '--output-dir', outputDir,
-      '--json',
-    ]);
-    const { glob } = await import('glob');
-    const files = await glob('**/*.xml', { cwd: outputDir, absolute: true });
-    const result = new Map();
-    for (const member of members) {
-      const file = findFileForMember(files, member);
-      if (file) result.set(member, await fs.readFile(file, 'utf8'));
-    }
-    return result;
-  } catch {
-    return new Map();
-  }
-}
-
-/**
- * Read a metadata component's XML from the local source directory.
- */
-async function readLocalComponentXml(config, _type, member) {
-  const { glob } = await import('glob');
-  const fsExtra = (await import('fs-extra')).default;
-  const sourcePath = config.defaultSourcePath ?? 'force-app/main/default';
-  const root = config._projectRoot ?? process.cwd();
-  const absSource = path.join(root, sourcePath);
-  // Escape glob metacharacters in member name before interpolating into pattern.
-  const safeMember = member.replace(/[[\]{}()*+?\\^$|]/g, '\\$&');
-  const files = await glob(`**/${safeMember}*`, {
-    cwd: absSource,
-    absolute: true,
-    nodir: true,
-  });
-  const xmlFile = files.find(
-    (f) =>
-      !path.relative(absSource, f).startsWith('..') &&
-      (f.endsWith('.xml') || f.endsWith('.cls') || f.endsWith('.trigger'))
-  );
-  if (!xmlFile) return null;
-  return fsExtra.readFile(xmlFile, 'utf8');
-}
+const GUI_DIST = path.resolve(__dirname, '..', '..', '..', 'gui', 'dist');
 
 // ─── Command runner config ────────────────────────────────────────────────────
 
@@ -451,38 +75,6 @@ const COMMANDS = {
   },
 };
 
-// ─── Rate limiter ─────────────────────────────────────────────────────────────
-
-/**
- * Minimal in-process rate limiter — no external deps required.
- * Limits requests to maxRequests per windowMs across all local clients.
- */
-function createRateLimiter(maxRequests = 60, windowMs = 60_000) {
-  return rateLimit({ windowMs, limit: maxRequests, standardHeaders: true, legacyHeaders: false });
-}
-
-// ─── Origin guard ─────────────────────────────────────────────────────────────
-
-/**
- * Rejects requests whose Origin header doesn't match the local server address.
- * Browsers set Origin on cross-origin requests (including EventSource), so this
- * blocks CSRF attacks from malicious pages while allowing same-origin requests
- * from the served React app (which omit Origin on same-origin GETs).
- */
-function createOriginGuard(port) {
-  const allowed = new Set([
-    `http://localhost:${port}`,
-    `http://127.0.0.1:${port}`,
-  ]);
-  return (req, res, next) => {
-    const origin = req.headers.origin;
-    if (origin && !allowed.has(origin)) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-    next();
-  };
-}
-
 // ─── Server factory ───────────────────────────────────────────────────────────
 
 /**
@@ -495,6 +87,7 @@ function createOriginGuard(port) {
 export function createGuiApp(config, version, port = 7654) {
   let updateInProgress = false;
   let sessionOrg = null;
+  const csrfToken = createCsrfToken();
   const app = express();
   app.use(express.json());
 
@@ -505,6 +98,7 @@ export function createGuiApp(config, version, port = 7654) {
     path.join(config._projectRoot || process.cwd(), 'logs');
 
   const apiLimiter = createRateLimiter(60, 60_000);
+  const csrfLimiter = createRateLimiter(10, 60_000);
   const originGuard = createOriginGuard(port);
   app.use('/api/', originGuard);
 
@@ -512,6 +106,10 @@ export function createGuiApp(config, version, port = 7654) {
 
   app.get('/api/health', apiLimiter, (_req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
+  });
+
+  app.get('/api/csrf-token', csrfLimiter, (_req, res) => {
+    res.json({ token: csrfToken });
   });
 
   let rawConfigPath = config._configDir
@@ -531,14 +129,28 @@ export function createGuiApp(config, version, port = 7654) {
 
   // Keys whose values are executed as shell commands — must not be API-writable.
   const BLOCKED_CONFIG_KEY_PREFIXES = ['mcp.salesforce.command', 'mcp.salesforce.args'];
+  // Path keys must resolve within projectRoot to prevent logDir/manifestDir redirection attacks.
+  const PATH_KEYS_WITHIN_ROOT = new Set(['logDir', 'manifestDir', 'releaseNotesDir', 'changelogDir']);
 
   app.patch('/api/config', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     if (!rawConfigPath) return res.status(503).json({ error: 'Config dir unavailable' });
     const { key, value } = req.body ?? {};
     if (!key || typeof key !== 'string') return res.status(400).json({ error: 'key is required' });
     if (value === undefined || value === null) return res.status(400).json({ error: 'value is required' });
     if (BLOCKED_CONFIG_KEY_PREFIXES.some((prefix) => key === prefix || key.startsWith(`${prefix}.`))) {
       return res.status(403).json({ error: 'This config key cannot be set via the API' });
+    }
+    if (PATH_KEYS_WITHIN_ROOT.has(key)) {
+      if (typeof value !== 'string') {
+        return res.status(400).json({ error: 'value must be a string for path keys' });
+      }
+      const projectRoot = config._projectRoot || process.cwd();
+      const resolved = path.resolve(projectRoot, value);
+      const resolvedRoot = path.resolve(projectRoot);
+      if (!resolved.startsWith(resolvedRoot + path.sep) && resolved !== resolvedRoot) {
+        return res.status(400).json({ error: `${key} must be within the project root` });
+      }
     }
     try {
       const raw = await fs.readJson(rawConfigPath);
@@ -635,6 +247,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/session/org', apiLimiter, (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     const { org } = req.body ?? {};
     if (!org || typeof org !== 'string') return res.status(400).json({ error: 'org is required' });
     const safe = org.trim().slice(0, 100);
@@ -667,10 +280,68 @@ export function createGuiApp(config, version, port = 7654) {
     }
   });
 
+  app.post('/api/test/classes/sync', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const sourcePath  = config.defaultSourcePath ?? 'force-app/main/default';
+      const absSource   = path.join(projectRoot, sourcePath);
+      const configPath  = path.join(projectRoot, '.sfdt', 'config.json');
+
+      if (!(await fs.pathExists(absSource))) {
+        return res.status(400).json({ error: `Source path not found: ${sourcePath}` });
+      }
+
+      const { glob } = await import('glob');
+      const files = await glob('**/*.cls', { cwd: absSource, nodir: true });
+      const discovered = files
+        .map((f) => path.basename(f, '.cls'))
+        .filter((name) => /(?:Test|Tests)$/i.test(name))
+        .sort();
+
+      if (discovered.length === 0) {
+        return res.status(400).json({ error: 'No test classes found in source path' });
+      }
+
+      const existing = config.testConfig?.testClasses ?? [];
+      const added    = discovered.filter((c) => !existing.includes(c)).length;
+      const removed  = existing.filter((c) => !discovered.includes(c)).length;
+
+      const raw = await fs.readJson(configPath);
+      if (!raw.testConfig) raw.testConfig = {};
+      raw.testConfig.testClasses = discovered;
+      await fs.writeJson(configPath, raw, { spaces: 2 });
+
+      // Refresh in-memory config so subsequent requests see the change
+      const fresh = await loadConfig(config._projectRoot);
+      Object.assign(config, fresh);
+
+      res.json({ added, removed, total: discovered.length });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/test-runs', apiLimiter, async (_req, res) => {
     try {
       const runs = await readTestRuns(logDir);
       res.json({ runs });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/test-runs/:filename', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { filename } = req.params;
+      if (!filename.endsWith('.json') || filename.includes('/') || filename.includes('..')) {
+        return res.status(400).json({ error: 'Invalid filename' });
+      }
+      const filePath = path.join(logDir, 'test-results', filename);
+      if (!(await fs.pathExists(filePath))) return res.status(404).json({ error: 'Not found' });
+      await fs.remove(filePath);
+      res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -742,6 +413,29 @@ export function createGuiApp(config, version, port = 7654) {
         }
       }
 
+      const rawArchiveDirs = [
+        { type: 'deploy',   dir: 'deploy-results' },
+        { type: 'rollback', dir: 'rollback-results' },
+      ].filter(({ type }) => typeFilter === 'all' || type === typeFilter);
+
+      for (const { dir } of rawArchiveDirs) {
+        const archiveDir = path.join(logDir, dir);
+        if (!(await fs.pathExists(archiveDir))) continue;
+
+        let entries;
+        try { entries = await fs.readdir(archiveDir); } catch { continue; }
+
+        const jsonFiles = entries.filter((f) => f.endsWith('.json'));
+
+        for (const file of jsonFiles) {
+          const filePath = path.resolve(archiveDir, file);
+          if (!filePath.startsWith(path.resolve(logDir) + path.sep)) continue;
+          const envelope = await tryReadJson(filePath);
+          if (!envelope || envelope.schemaVersion !== 'raw-1') continue;
+          logs.push(envelope);
+        }
+      }
+
       logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       res.json({ logs });
     } catch (err) {
@@ -762,7 +456,12 @@ export function createGuiApp(config, version, port = 7654) {
 
   // ── Update via npm (SSE) ────────────────────────────────────────────────────
 
-  app.get('/api/update/stream', apiLimiter, async (req, res) => {
+  app.get('/api/update/stream', apiLimiter, (_req, res) => {
+    res.status(405).json({ error: 'Use POST /api/update/stream' });
+  });
+
+  app.post('/api/update/stream', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     if (updateInProgress) {
       return res.status(409).json({ error: 'An update is already in progress' });
     }
@@ -840,11 +539,36 @@ export function createGuiApp(config, version, port = 7654) {
 
   // ── Generic command runner (SSE) ───────────────────────────────────────────
 
-  app.get('/api/command/run', apiLimiter, async (req, res) => {
-    const { command } = req.query;
+  app.get('/api/command/run', apiLimiter, (_req, res) => {
+    res.status(405).json({ error: 'Use POST /api/command/run' });
+  });
+
+  app.post('/api/command/run', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    const { command, classes, testLevel, targetOrg } = req.body ?? {};
+
+    if (targetOrg !== undefined && !/^[A-Za-z0-9_.\-@]+$/.test(String(targetOrg))) {
+      return res.status(400).json({ error: 'Invalid targetOrg' });
+    }
     const cmd = COMMANDS[command];
     if (!cmd) {
       return res.status(400).json({ error: 'Unknown command' });
+    }
+
+    let requestedTestClasses = '';
+    if (command === 'test' && classes) {
+      const classNames = String(classes).split(',').map((c) => c.trim()).filter(Boolean);
+      if (classNames.some((c) => !/^[A-Za-z][A-Za-z0-9_]*$/.test(c))) {
+        return res.status(400).json({ error: 'Invalid Apex class name in classes parameter' });
+      }
+      requestedTestClasses = classNames.join(',');
+    }
+
+    if (command === 'test' && testLevel !== undefined && testLevel !== null) {
+      const VALID_TEST_LEVELS = ['RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg', 'NoTestRun'];
+      if (!VALID_TEST_LEVELS.includes(testLevel)) {
+        return res.status(400).json({ error: 'Invalid testLevel' });
+      }
     }
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -868,16 +592,16 @@ export function createGuiApp(config, version, port = 7654) {
 
       const scriptEnv = {
         ...buildScriptEnv(config),
-        SFDT_TARGET_ORG: sessionOrg ?? config.defaultOrg ?? '',
+        SFDT_TARGET_ORG: targetOrg ?? sessionOrg ?? config.defaultOrg ?? '',
         SFDT_NON_INTERACTIVE: 'true',
       };
 
-      if (command === 'test' && req.query.classes) {
-        const classNames = String(req.query.classes).split(',').map((c) => c.trim()).filter(Boolean);
-        if (classNames.some((c) => !/^[A-Za-z][A-Za-z0-9_]*$/.test(c))) {
-          return res.status(400).json({ error: 'Invalid Apex class name in classes parameter' });
-        }
-        scriptEnv.SFDT_TEST_CLASSES = classNames.join(',');
+      if (requestedTestClasses) {
+        scriptEnv.SFDT_TEST_CLASSES = requestedTestClasses;
+      }
+
+      if (command === 'test' && testLevel) {
+        scriptEnv.SFDT_TEST_LEVEL = testLevel;
       }
 
       child = execa('bash', [scriptPath], {
@@ -967,7 +691,12 @@ export function createGuiApp(config, version, port = 7654) {
 
   // ── Pull endpoint (SSE) ────────────────────────────────────────────────────
 
-  app.get('/api/pull', apiLimiter, async (req, res) => {
+  app.get('/api/pull', apiLimiter, (_req, res) => {
+    res.status(405).json({ error: 'Use POST /api/pull' });
+  });
+
+  app.post('/api/pull', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -978,8 +707,8 @@ export function createGuiApp(config, version, port = 7654) {
     };
 
     const startTime = Date.now();
-    const rawOrg = req.query.targetOrg || config.defaultOrg;
-    const mode = req.query.mode ?? 'delta';
+    const rawOrg = req.body?.targetOrg || config.defaultOrg;
+    const mode = req.body?.mode ?? 'delta';
     const projectRoot = config._projectRoot ?? process.cwd();
     const cacheDir = path.join(config._configDir ?? path.join(projectRoot, '.sfdt'), 'cache');
 
@@ -1064,21 +793,29 @@ export function createGuiApp(config, version, port = 7654) {
           db.close();
         }
       } else if (mode === 'full') {
-        const exitCode = await streamChild(spawn('sf', ['project', 'retrieve', 'start', '--target-org', org], {
+        const sourceDirArgs = (config.packageDirectories?.length
+          ? config.packageDirectories.map((d) => d.path)
+          : [config.defaultSourcePath ?? 'force-app/main/default']
+        ).flatMap((d) => ['--source-dir', d]);
+        const exitCode = await streamChild(spawn('sf', ['project', 'retrieve', 'start', ...sourceDirArgs, '--target-org', org], {
           cwd: projectRoot,
           stdio: ['ignore', 'pipe', 'pipe'],
         }));
         const elapsed = Math.round((Date.now() - startTime) / 1000);
         emit({ type: 'result', exitCode, retrieved: 0, elapsed });
       } else if (mode === 'preview') {
-        const exitCode = await streamChild(spawn('sf', ['project', 'retrieve', 'preview', '--target-org', org], {
+        const sourceDirArgs = (config.packageDirectories?.length
+          ? config.packageDirectories.map((d) => d.path)
+          : [config.defaultSourcePath ?? 'force-app/main/default']
+        ).flatMap((d) => ['--source-dir', d]);
+        const exitCode = await streamChild(spawn('sf', ['project', 'retrieve', 'preview', ...sourceDirArgs, '--target-org', org], {
           cwd: projectRoot,
           stdio: ['ignore', 'pipe', 'pipe'],
         }));
         const elapsed = Math.round((Date.now() - startTime) / 1000);
         emit({ type: 'result', exitCode, retrieved: 0, elapsed });
       } else if (mode === 'group') {
-        const groupKey = req.query.groupKey;
+        const groupKey = req.body?.groupKey;
         if (!groupKey || !/^[A-Za-z0-9_-]+$/.test(groupKey)) {
           emit({ type: 'log', line: 'Invalid groupKey' });
           emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed: 0 });
@@ -1172,12 +909,16 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/compare', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { source = 'local', target } = req.body ?? {};
       if (!target) return res.status(400).json({ error: 'target is required' });
+      const ORG_ALIAS_RE = /^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/;
+      if (!ORG_ALIAS_RE.test(source)) return res.status(400).json({ error: 'Invalid source org alias' });
+      if (!ORG_ALIAS_RE.test(target)) return res.status(400).json({ error: 'Invalid target org alias' });
 
-      const { fetchInventory } = await import('./org-inventory.js');
-      const { diffInventories } = await import('./org-diff.js');
+      const { fetchInventory } = await import('../org-inventory.js');
+      const { diffInventories } = await import('../org-diff.js');
 
       const [sourceMap, targetMap] = await Promise.all([
         fetchInventory(source, config),
@@ -1190,6 +931,47 @@ export function createGuiApp(config, version, port = 7654) {
       const fsExtra = (await import('fs-extra')).default;
       await fsExtra.outputJson(path.join(logDir, 'compare-latest.json'), payload, { spaces: 2 });
 
+      res.json(payload);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/scan', apiLimiter, async (_req, res) => {
+    try {
+      const data = await readScan(logDir);
+      if (!data) return res.status(204).end();
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * Fetch complete metadata inventory from an org.
+   * NOTE: For very large orgs (>10k components), the JSON payload can exceed 10MB.
+   * Node.js/Express handles this in-memory; clients should expect multi-second transfers.
+   */
+  app.post('/api/scan', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { org } = req.body ?? {};
+      if (!org || !org.trim()) return res.status(400).json({ error: 'org is required' });
+      if (!/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(org.trim())) return res.status(400).json({ error: 'Invalid org alias' });
+
+      const inventory = await fetchInventory(org, config);
+      const summary = {
+        totalTypes: inventory.size,
+        totalMembers: [...inventory.values()].reduce((n, s) => n + s.size, 0),
+      };
+      const payload = {
+        timestamp: new Date().toISOString(),
+        org,
+        inventory: Object.fromEntries([...inventory.entries()].map(([k, v]) => [k, [...v]])),
+        summary,
+      };
+
+      await fs.outputJson(path.join(logDir, 'scan-latest.json'), payload, { spaces: 2 });
       res.json(payload);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -1330,7 +1112,7 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const { items = [], apiVersion, save = false, version, xml: rawXml } = req.body ?? {};
       if (rawXml && rawXml.length > 10_000_000) return res.status(413).json({ error: 'XML content too large (max 10 MB)' });
-      const { renderPackageXml } = await import('./metadata-mapper.js');
+      const { renderPackageXml } = await import('../metadata-mapper.js');
 
       let xml = rawXml;
       if (!xml) {
@@ -1375,7 +1157,9 @@ export function createGuiApp(config, version, port = 7654) {
   app.get('/api/compare/diff', apiLimiter, async (req, res) => {
     try {
       const { type, member } = req.query;
-      if (!type || !member) return res.status(400).json({ error: 'type and member are required' });
+      if (typeof type !== 'string' || typeof member !== 'string' || !type || !member) {
+        return res.status(400).json({ error: 'type and member are required' });
+      }
       // Block path traversal: null bytes, parent-directory sequences, absolute paths.
       // Dots and slashes are valid in Salesforce member names (e.g. CustomMetadata__mdt.Record, reports/Folder/Name).
       if (/[\x00]|\.\./.test(member) || /^[/\\]/.test(member)) {
@@ -1493,7 +1277,7 @@ export function createGuiApp(config, version, port = 7654) {
       const sourcePath = config.defaultSourcePath ?? 'force-app/main/default';
       const apiVersion = config.sourceApiVersion ?? '63.0';
 
-      const { parseDiffToMetadata, renderPackageXml: renderXml, countMembers } = await import('./metadata-mapper.js');
+      const { parseDiffToMetadata, renderPackageXml: renderXml, countMembers } = await import('../metadata-mapper.js');
 
       const mergeBase = await execa('git', ['merge-base', base, head], { cwd: projectRoot, reject: false });
       const baseRef = (mergeBase.exitCode === 0 && mergeBase.stdout.trim()) ? mergeBase.stdout.trim() : base;
@@ -1584,6 +1368,7 @@ export function createGuiApp(config, version, port = 7654) {
   // ── Release Hub: deploy with options (SSE) ────────────────────────────────
 
   app.post('/api/release/deploy', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     const {
       dryRun = false,
       skipPreflight = false,
@@ -1896,7 +1681,7 @@ export function createGuiApp(config, version, port = 7654) {
     };
 
     try {
-      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('../ai.js');
       const available = await checkAi(config);
       if (!available) {
         send({ type: 'error', message: 'AI is not available or not configured.' });
@@ -1950,7 +1735,7 @@ export function createGuiApp(config, version, port = 7654) {
     };
 
     try {
-      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('../ai.js');
       const available = await checkAi(config);
       if (!available) {
         send({ type: 'error', message: 'AI is not available or not configured.' });
@@ -2180,7 +1965,7 @@ export function createGuiApp(config, version, port = 7654) {
     };
 
     try {
-      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('../ai.js');
       const available = await checkAi(config);
       if (!available) {
         send({ type: 'error', message: 'AI is not available or not configured.' });
@@ -2193,8 +1978,8 @@ export function createGuiApp(config, version, port = 7654) {
         buildProjectContext, readLatestTestRuns, readLatestPreflight,
         buildContextBlock, formatTestRunsSection, formatPreflightSection,
         formatMetadataTypesSection,
-      } = await import('./ai-context.js');
-      const { parseDiffToMetadata } = await import('./metadata-mapper.js');
+      } = await import('../ai-context.js');
+      const { parseDiffToMetadata } = await import('../metadata-mapper.js');
 
       const [diffResult, nameStatusResult] = await Promise.all([
         execa('git', ['diff', `${base}...HEAD`], { cwd: projectRoot, reject: false }),
@@ -2262,7 +2047,7 @@ export function createGuiApp(config, version, port = 7654) {
     };
 
     try {
-      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('../ai.js');
       const projectRoot = config._projectRoot ?? process.cwd();
 
       // Resolve log file
@@ -2301,7 +2086,10 @@ export function createGuiApp(config, version, port = 7654) {
 
       const available = await checkAi(config);
       if (!available) {
-        send({ type: 'error', message: 'AI is not available or not configured.' });
+        const { runHeuristicAnalysis } = await import('../explain-heuristics.js');
+        const { markdown } = runHeuristicAnalysis(logContent);
+        send({ type: 'log', line: 'AI not configured — running heuristic pattern scan.', ts: new Date().toISOString() });
+        send({ type: 'result', exitCode: 0, content: markdown, source: 'heuristic' });
         res.end();
         return;
       }
@@ -2309,7 +2097,7 @@ export function createGuiApp(config, version, port = 7654) {
       const {
         buildProjectContext, readLatestTestRuns, readLatestPreflight, readDeployHistory,
         buildContextBlock, formatTestRunsSection, formatPreflightSection, formatDeployHistorySection,
-      } = await import('./ai-context.js');
+      } = await import('../ai-context.js');
 
       const [projectCtx, testRuns, preflight, deployHistory] = await Promise.all([
         buildProjectContext(config),
@@ -2339,11 +2127,38 @@ export function createGuiApp(config, version, port = 7654) {
           send({ type: 'log', line: stripAnsi(line), ts: new Date().toISOString() });
         }
       }
-      send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '' });
+      send({ type: 'result', exitCode: result?.exitCode ?? 0, content: result?.stdout ?? '', source: 'ai' });
     } catch (err) {
       send({ type: 'error', message: err.message });
     } finally {
       if (!res.writableEnded) res.end();
+    }
+  });
+
+  // ── Explain: list available log files ─────────────────────────────────────
+
+  app.get('/api/logs/list', apiLimiter, async (_req, res) => {
+    try {
+      if (!(await fs.pathExists(logDir))) {
+        return res.json({ files: [] });
+      }
+      const { glob } = await import('glob');
+      // Root .log files + deploy/rollback .json archives
+      const patterns = ['*.log', 'deploy-results/*.json', 'rollback-results/*.json'];
+      const logFiles = await glob(patterns, { cwd: logDir });
+
+      const statted = await Promise.all(
+        logFiles.map(async (name) => ({
+          name,
+          mtime: (await fs.stat(path.join(logDir, name))).mtimeMs,
+        }))
+      );
+      statted.sort((a, b) => b.mtime - a.mtime);
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const logRelDir = path.relative(projectRoot, logDir);
+      res.json({ files: statted.slice(0, 50).map((f) => path.join(logRelDir, f.name)) });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
   });
 
@@ -2360,7 +2175,7 @@ export function createGuiApp(config, version, port = 7654) {
     };
 
     try {
-      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('./ai.js');
+      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('../ai.js');
       const available = await checkAi(config);
       if (!available) {
         send({ type: 'error', message: 'AI is not available or not configured.' });
@@ -2371,7 +2186,7 @@ export function createGuiApp(config, version, port = 7654) {
       const {
         buildProjectContext, readLatestTestRuns, readLatestPreflight,
         buildContextBlock, formatTestRunsSection, formatPreflightSection,
-      } = await import('./ai-context.js');
+      } = await import('../ai-context.js');
 
       const qualityLog = await readLatestLog(logDir, 'quality');
 
@@ -2471,7 +2286,7 @@ export function createGuiApp(config, version, port = 7654) {
       if (config.mcp?.enabled) {
         try {
           if (!mcpClient) {
-            const { SalesforceMcpClient } = await import('./mcp-client.js');
+            const { SalesforceMcpClient } = await import('../mcp-client.js');
             mcpClient = new SalesforceMcpClient(config);
           }
           const devOpsContext = await mcpClient.getDevOpsCenterContext();
@@ -2498,7 +2313,7 @@ export function createGuiApp(config, version, port = 7654) {
         contextStr,
       }) + devOpsSection;
 
-      const { isAiAvailable, streamAiResponse } = await import('./ai.js');
+      const { isAiAvailable, streamAiResponse } = await import('../ai.js');
       if (!(await isAiAvailable(config))) {
         send({ type: 'error', message: 'AI is not available or not configured.' });
         res.end();
@@ -2794,7 +2609,7 @@ export function createGuiApp(config, version, port = 7654) {
 
   app.get('/api/ai/available', apiLimiter, async (_req, res) => {
     try {
-      const { isAiAvailable } = await import('./ai.js');
+      const { isAiAvailable } = await import('../ai.js');
       const available = await isAiAvailable(config);
       res.json({ available, enabled: !!config.features?.ai, provider: config.ai?.provider ?? null });
     } catch {
@@ -2848,44 +2663,3 @@ export async function startGuiServer(port, config, version) {
   });
 }
 
-// ─── Placeholder HTML (when gui/dist hasn't been built yet) ──────────────────
-
-function buildPlaceholderHtml(version) {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>SFDT Dashboard</title>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-         background:#f3f3f3;display:flex;align-items:center;
-         justify-content:center;min-height:100vh}
-    .card{background:#fff;border-radius:8px;padding:40px 48px;
-          max-width:500px;width:100%;box-shadow:0 2px 8px rgba(0,0,0,.1);
-          border-top:4px solid #0176d3}
-    h1{font-size:22px;color:#032d60;margin-bottom:8px}
-    p{color:#706e6b;font-size:14px;line-height:1.6;margin-bottom:16px}
-    code{background:#f3f3f3;padding:2px 6px;border-radius:4px;
-         font-family:monospace;font-size:13px;color:#032d60}
-    pre{background:#032d60;color:#fff;padding:16px 20px;border-radius:6px;
-        font-size:13px;overflow-x:auto;margin-bottom:16px}
-    .version{color:#919191;font-size:12px;margin-top:24px}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>SFDT Dashboard — Build Required</h1>
-    <p>The GUI hasn't been compiled yet. Run these commands from the
-       <code>sfdt</code> package root to build it:</p>
-    <pre>cd gui
-npm install
-npm run build</pre>
-    <p>Or use the convenience script from the package root:</p>
-    <pre>npm run build:gui</pre>
-    <p>Then restart <code>sfdt ui</code> and refresh this page.</p>
-    <p class="version">sfdt v${version}</p>
-  </div>
-</body>
-</html>`;
-}

@@ -50,7 +50,7 @@ vi.mock('execa', () => ({
 // ─── Imports ────────────────────────────────────────────────────────────────
 
 import request from 'supertest';
-import { createGuiApp } from '../../src/lib/gui-server.js';
+import { createGuiApp } from '../../src/lib/gui-server/index.js';
 
 // ─── Shared config ──────────────────────────────────────────────────────────
 
@@ -424,9 +424,11 @@ describe('GET /api/logs', () => {
 
 describe('PATCH /api/config — key injection guards', () => {
   let app;
+  let csrf;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    csrf = (await request(app).get('/api/csrf-token')).body.token;
   });
 
   afterAll(async () => {
@@ -436,6 +438,7 @@ describe('PATCH /api/config — key injection guards', () => {
   it('blocks mcp.salesforce.command (shell-executable key)', async () => {
     const res = await request(app)
       .patch('/api/config')
+      .set('X-SFDT-CSRF', csrf)
       .send({ key: 'mcp.salesforce.command', value: 'evil' });
     expect(res.status).toBe(403);
   });
@@ -443,6 +446,7 @@ describe('PATCH /api/config — key injection guards', () => {
   it('blocks mcp.salesforce.args (shell-executable key)', async () => {
     const res = await request(app)
       .patch('/api/config')
+      .set('X-SFDT-CSRF', csrf)
       .send({ key: 'mcp.salesforce.args', value: 'evil' });
     expect(res.status).toBe(403);
   });
@@ -450,6 +454,7 @@ describe('PATCH /api/config — key injection guards', () => {
   it('blocks keys nested under mcp.salesforce.command', async () => {
     const res = await request(app)
       .patch('/api/config')
+      .set('X-SFDT-CSRF', csrf)
       .send({ key: 'mcp.salesforce.command.sub', value: 'evil' });
     expect(res.status).toBe(403);
   });
@@ -457,6 +462,7 @@ describe('PATCH /api/config — key injection guards', () => {
   it('rejects missing key', async () => {
     const res = await request(app)
       .patch('/api/config')
+      .set('X-SFDT-CSRF', csrf)
       .send({ value: 'x' });
     expect(res.status).toBe(400);
   });
@@ -498,9 +504,11 @@ describe('POST /api/manifest/remove-component — deployed-path guard', () => {
 
 describe('POST /api/release/deploy — manifest path guard', () => {
   let app;
+  let csrf;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    csrf = (await request(app).get('/api/csrf-token')).body.token;
   });
 
   afterAll(async () => {
@@ -510,6 +518,7 @@ describe('POST /api/release/deploy — manifest path guard', () => {
   it('returns 400 for path traversal in manifest param', async () => {
     const res = await request(app)
       .post('/api/release/deploy')
+      .set('X-SFDT-CSRF', csrf)
       .send({ manifest: '../../etc/passwd' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/invalid manifest/i);
@@ -518,6 +527,7 @@ describe('POST /api/release/deploy — manifest path guard', () => {
   it('returns 400 for absolute path in manifest param', async () => {
     const res = await request(app)
       .post('/api/release/deploy')
+      .set('X-SFDT-CSRF', csrf)
       .send({ manifest: '/etc/passwd' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/invalid manifest/i);
@@ -899,13 +909,58 @@ describe('DELETE /api/prompts/:key', () => {
   });
 });
 
+// ─── PATCH /api/config — path containment guards ─────────────────────────────
+
+describe('PATCH /api/config — path containment guards', () => {
+  let app;
+  let csrf;
+
+  beforeAll(async () => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    csrf = (await request(app).get('/api/csrf-token')).body.token;
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('rejects logDir set to an absolute path outside projectRoot', async () => {
+    const res = await request(app)
+      .patch('/api/config')
+      .set('X-SFDT-CSRF', csrf)
+      .send({ key: 'logDir', value: '/tmp/exfil' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/within the project root/i);
+  });
+
+  it('rejects manifestDir set to an absolute path outside projectRoot', async () => {
+    const res = await request(app)
+      .patch('/api/config')
+      .set('X-SFDT-CSRF', csrf)
+      .send({ key: 'manifestDir', value: '/etc' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/within the project root/i);
+  });
+
+  it('rejects logDir using path traversal to escape projectRoot', async () => {
+    const res = await request(app)
+      .patch('/api/config')
+      .set('X-SFDT-CSRF', csrf)
+      .send({ key: 'logDir', value: '../../tmp' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/within the project root/i);
+  });
+});
+
 // ─── PATCH /api/config (success path) ────────────────────────────────────────
 
 describe('PATCH /api/config — success path', () => {
   let app;
+  let csrf;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    csrf = (await request(app).get('/api/csrf-token')).body.token;
   });
 
   afterAll(async () => {
@@ -918,6 +973,7 @@ describe('PATCH /api/config — success path', () => {
 
     const res = await request(app)
       .patch('/api/config')
+      .set('X-SFDT-CSRF', csrf)
       .send({ key: 'defaultOrg', value: 'staging' });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
@@ -927,6 +983,7 @@ describe('PATCH /api/config — success path', () => {
   it('returns 400 when value is missing', async () => {
     const res = await request(app)
       .patch('/api/config')
+      .set('X-SFDT-CSRF', csrf)
       .send({ key: 'defaultOrg' });
     expect(res.status).toBe(400);
     expect(res.body.error).toBeTruthy();

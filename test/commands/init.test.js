@@ -186,4 +186,51 @@ describe('init command', () => {
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('No sfdx-project.json'));
     expect(process.exitCode).toBe(1);
   });
+
+  it('prompts for manifest layout when multiple package directories are detected', async () => {
+    fs.readJson.mockImplementation((filePath) => {
+      if (filePath.endsWith('sfdt.config.json')) {
+        return Promise.resolve({
+          projectName: '',
+          defaultOrg: '',
+          releaseNotesDir: 'release-notes',
+          manifestDir: 'manifest/release',
+          deployment: { coverageThreshold: 75, preflight: {} },
+          features: { ai: true, notifications: false, releaseManagement: true },
+        });
+      }
+      return Promise.resolve({
+        name: 'multi-pkg-project',
+        sourceApiVersion: '61.0',
+        packageDirectories: [
+          { path: 'force-app', default: true },
+          { path: 'force-app-two', default: false },
+        ],
+      });
+    });
+
+    inquirer.prompt
+      .mockResolvedValueOnce({
+        projectName: 'multi-pkg-project',
+        defaultOrg: 'dev',
+        coverageThreshold: 75,
+        aiEnabled: true,
+        releaseNotesDir: 'release-notes',
+      })
+      .mockResolvedValueOnce({ useSubpath: true });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'init']);
+
+    const configCall = fs.writeJson.mock.calls.find((c) => c[0].endsWith('config.json'));
+    expect(configCall[1].manifestLayout).toBe('subpath');
+  });
+
+  it('sets exitCode 1 when init fails after config dir is created', async () => {
+    fs.writeJson.mockRejectedValue(new Error('disk full'));
+
+    await createProgram().parseAsync(['node', 'sfdt', 'init']);
+
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Init failed'));
+    expect(process.exitCode).toBe(1);
+  });
 });

@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["defaultOrg", "features"],
+  "additionalProperties": true,
+  "properties": {
+    "projectName": { "type": "string" },
+    "defaultOrg": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "releaseNotesDir": { "type": "string" },
+    "manifestDir": { "type": "string" },
+    "changelogDir": { "type": "string" },
+    "logDir": { "type": "string" },
+    "logRetention": { "type": "integer", "minimum": 1 },
+    "manifestLayout": { "type": "string", "enum": ["flat", "subpath"] },
+    "plugins": { "type": "array", "items": { "type": "string" } },
+    "features": {
+      "type": "object",
+      "additionalProperties": { "type": "boolean" }
+    },
+    "ai": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "type": "string", "enum": ["claude", "gemini", "openai"] },
+        "model": { "type": "string" },
+        "apiKey": { "type": "string" }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "coverageThreshold": { "type": "number", "minimum": 0, "maximum": 100 },
+        "backupBeforeRollback": { "type": "boolean" },
+        "preflight": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enforceTests": { "type": "boolean" },
+            "enforceBranchNaming": { "type": "boolean" },
+            "enforceChangelog": { "type": "boolean" },
+            "enforceGitClean": { "type": "boolean" },
+            "enforceSfdxProject": { "type": "boolean" },
+            "enforceUntrackedFiles": { "type": "boolean" },
+            "strict": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "pluginOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "autoDiscover": { "type": "boolean" }
+      }
+    },
+    "pullCache": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "parallelism": { "type": "integer", "minimum": 1 },
+        "batchSize": { "type": "integer", "minimum": 1 },
+        "retrieveTimeoutSeconds": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "salesforce": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "transport": { "type": "string" },
+            "command": { "type": "string" },
+            "args": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "environments": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default": { "type": "string" },
+        "orgs": { "type": "array" }
+      }
+    }
+  }
+}

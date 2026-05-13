@@ -1270,6 +1270,10 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
         _auto_max_depth=1
         if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then _auto_max_depth=2; fi
         MANIFEST_PATH=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$_auto_max_depth" -name "rl-*-package.xml" 2>/dev/null | sort -V | tail -1)
+        # Fall back to any package.xml if no versioned manifest found
+        if [[ -z "$MANIFEST_PATH" ]]; then
+            MANIFEST_PATH=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$_auto_max_depth" -name "package.xml" 2>/dev/null | head -1)
+        fi
         if [[ -z "$MANIFEST_PATH" ]]; then
             print_error "No manifests found in ${MANIFEST_BASE_DIR}/ and SFDT_MANIFEST_PATH not set"
             exit 1

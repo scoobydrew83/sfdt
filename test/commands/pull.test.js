@@ -138,8 +138,8 @@ describe('pull with pullCache disabled', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'pull']);
     expect(execa).toHaveBeenCalledWith(
       'sf',
-      ['project', 'retrieve', 'start', '--target-org', 'dev'],
-      expect.objectContaining({ cwd: '/project' }),
+      ['project', 'retrieve', 'start', '--source-dir', 'force-app/main/default', '--target-org', 'dev'],
+      { cwd: '/project', stdio: 'inherit' },
     );
     expect(fetchOrgInventory).not.toHaveBeenCalled();
     expect(parallelRetrieve).not.toHaveBeenCalled();
@@ -168,8 +168,8 @@ describe('pull menu option: preview', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'pull']);
     expect(execa).toHaveBeenCalledWith(
       'sf',
-      ['project', 'retrieve', 'preview', '--target-org', 'dev'],
-      expect.objectContaining({ cwd: '/project' }),
+      ['project', 'retrieve', 'preview', '--source-dir', 'force-app/main/default', '--target-org', 'dev'],
+      { cwd: '/project', stdio: 'inherit' },
     );
   });
 });
@@ -180,8 +180,8 @@ describe('pull menu option: conflict', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'pull']);
     expect(execa).toHaveBeenCalledWith(
       'sf',
-      ['project', 'retrieve', 'start', '--verbose', '--target-org', 'dev'],
-      expect.objectContaining({ cwd: '/project' }),
+      ['project', 'retrieve', 'start', '--verbose', '--source-dir', 'force-app/main/default', '--target-org', 'dev'],
+      { cwd: '/project', stdio: 'inherit' },
     );
   });
 });

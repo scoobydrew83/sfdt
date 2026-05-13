@@ -20,6 +20,7 @@ NC='\033[0m'
 
 echo -e "${BLUE}${PROJECT_NAME} - Enhanced Test Runner v2.0${NC}"
 echo -e "${YELLOW}================================================================${NC}"
+require_jq || exit 1
 
 # Initialize environment variables from script-runner env if available
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
@@ -31,6 +32,37 @@ PARALLEL_BATCH_DELAY=${SFDT_PARALLEL_DELAY:-1}
 MIN_COVERAGE_THRESHOLD=${SFDT_TEST_COVERAGE_THRESHOLD:-75}
 
 mkdir -p "$RESULTS_DIR"
+
+# ─── TestLevel shortcut path ─────────────────────────────────────────────────
+if [[ "${SFDT_TEST_LEVEL:-}" == "RunLocalTests" || "${SFDT_TEST_LEVEL:-}" == "RunAllTestsInOrg" ]]; then
+    TARGET_ORG="${SFDT_TARGET_ORG:-${SFDT_DEFAULT_ORG:-}}"
+    if [[ -z "$TARGET_ORG" ]]; then
+        log_error "No target org set. Set SFDT_DEFAULT_ORG or SFDT_TARGET_ORG."
+        exit 1
+    fi
+
+    log_info "Running sf apex run test --test-level ${SFDT_TEST_LEVEL} on ${TARGET_ORG}"
+
+    OUTPUT_FILE="${RESULTS_DIR}/local_${TIMESTAMP}.json"
+    STDERR_FILE="${RESULTS_DIR}/local_${TIMESTAMP}_stderr.log"
+
+    EXIT_CODE=0
+    sf apex run test \
+        --test-level "${SFDT_TEST_LEVEL}" \
+        --code-coverage \
+        --json \
+        --wait 20 \
+        --target-org "$TARGET_ORG" \
+        > "$OUTPUT_FILE" 2>"$STDERR_FILE" || EXIT_CODE=$?
+
+    # Emit the raw JSON — parsers.js handles result.coverage.coverage[] and result.codeCoverage
+    if [[ -f "$OUTPUT_FILE" ]]; then
+        jq -c '.' "$OUTPUT_FILE" 2>/dev/null || true
+    fi
+
+    exit ${EXIT_CODE}
+fi
+# ─── End TestLevel shortcut path ─────────────────────────────────────────────
 
 # Load test classes
 if [[ -n "${SFDT_TEST_CLASSES:-}" ]]; then
@@ -178,19 +210,31 @@ run_parallel_tests() {
     if compgen -G "$RESULTS_DIR/batch_*_${TIMESTAMP}.json" > /dev/null 2>&1; then
         jq -c -s '
           reduce .[] as $b (
-            {"result":{"summary":{"passing":0,"failing":0,"skipped":0},"tests":[]}};
+            {"result":{"summary":{"passing":0,"failing":0,"skipped":0,"testRunCoverage":null},"tests":[],"codeCoverage":[]}};
             .result.summary.passing += ($b.result.summary.passing // 0) |
             .result.summary.failing += ($b.result.summary.failing // 0) |
             .result.summary.skipped += ($b.result.summary.skipped // 0) |
-            .result.tests += ($b.result.tests // [])
-          )
+            (if ($b.result.summary.testRunCoverage // null) != null then
+              .result.summary.testRunCoverage = $b.result.summary.testRunCoverage
+            else . end) |
+            .result.tests += ($b.result.tests // []) |
+            .result.codeCoverage += ($b.result.details.runTestResult.codeCoverage // [])
+          ) |
+          .result.codeCoverage = (.result.codeCoverage | unique_by(.name))
         ' "$RESULTS_DIR"/batch_*_"${TIMESTAMP}".json 2>/dev/null || \
-            echo '{"result":{"summary":{"passing":0,"failing":0,"skipped":0},"tests":[]}}'
+            echo '{"result":{"summary":{"passing":0,"failing":0,"skipped":0},"tests":[],"codeCoverage":[]}}'
     fi
 
     if (( total_ran == 0 )); then
         if (( any_failed == 1 )); then
-            log_error "No tests ran. Verify your org is authenticated and the class names in testConfig.testClasses exist in the org."
+            log_error "No tests ran — SF CLI reported errors:"
+            for ((b=1; b<=batch_count; b++)); do
+                local batch_file="$RESULTS_DIR/batch_${b}_$TIMESTAMP.json"
+                local sf_msg
+                sf_msg=$(jq -r '.message // empty' "$batch_file" 2>/dev/null || true)
+                [[ -n "$sf_msg" ]] && echo "  Batch $b: $sf_msg"
+            done
+            log_error "Ensure the class names exist in the org and have @isTest methods."
         else
             log_warning "No tests ran. Verify testConfig.testClasses in .sfdt/config.json."
         fi

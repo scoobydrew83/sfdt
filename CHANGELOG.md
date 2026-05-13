@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-12
+
+### Added
+- **`sfdt scan` command**: Fetches a full metadata inventory from a Salesforce org and writes the results as a structured JSON log file. Supports `--org <alias>`, `--output <file>`, and `--format json|table`.
+- **GUI: Scan page**: New dashboard page for browsing a live metadata inventory — lists all component types and member counts from a connected org, backed by new `GET` and `POST /api/scan` routes.
+- **`--json` CI output mode for `sfdt drift` and `sfdt rollback`**: Both commands now accept `--json` to emit machine-readable structured output for CI pipelines and downstream tooling.
+- **Deploy and rollback log archiving**: Logs from `sfdt deploy` and `sfdt rollback` runs are now automatically archived to `logDir`, making historical deployment activity available in the GUI log viewer.
+- **`GET /api/logs/list` endpoint**: Returns project-relative paths for all available log files; enables the Explain page log picker so any archived deploy or rollback log can be analyzed without knowing the filesystem layout.
+- **Expanded GUI server test suite**: Unit tests added for GUI server route handlers, parsers, and shared utilities.
+
+### Changed
+- **GUI Explain page redesigned**: Rebuilt with a three-zone layout — input zone (manual text or log picker), analysis zone (AI/heuristic result card with source badge), and a scrollable output terminal. The log picker draws from `GET /api/logs/list` so any archived log can be analyzed directly from the UI.
+- **Config validation rewritten with AJV**: `.sfdt/config.json` is now validated against a JSON Schema using `ajv`, replacing hand-written checks. Validation errors include the field path and a human-readable description.
+- **Heuristic analysis extracted to shared module**: The explain heuristics logic now lives in `src/lib/explain-heuristics.js` and is shared between the CLI command and the GUI server endpoint.
+
+### Fixed
+- **`sfdt drift` non-interactive mode**: The org drift script now correctly auto-selects the target org and skips interactive prompts when running in CI or GUI-triggered flows.
+- **Explain page log resolution**: `GET /api/logs/list` returns project-relative paths, fixing an issue where the Explain page could not locate log files when the GUI server was launched from a different working directory.
+- **Explain page error display**: Non-zero exit codes from the explain backend now surface an inline error message instead of silently showing no output; the terminal panel stays open after the run completes.
+- **GUI CSS tokens**: Replaced incorrect `badge-ai` and `--border-default` token references with the correct design system tokens.
+- **Import paths**: Corrected module import paths after the GUI server directory layout consolidation.
+
 ## [0.7.2] - 2026-05-08
 
 ### Added

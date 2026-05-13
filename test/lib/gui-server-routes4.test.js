@@ -59,7 +59,7 @@ vi.mock('execa', () => ({
 // ─── Imports ────────────────────────────────────────────────────────────────
 
 import request from 'supertest';
-import { createGuiApp } from '../../src/lib/gui-server.js';
+import { createGuiApp } from '../../src/lib/gui-server/index.js';
 import { fetchLatestVersion } from '../../src/lib/update-checker.js';
 
 // ─── Shared config ───────────────────────────────────────────────────────────
@@ -235,9 +235,11 @@ describe('POST /api/release-notes/generate — AI unavailable', () => {
 
 describe('GET /api/session/org', () => {
   let app;
+  let csrf;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    csrf = (await request(app).get('/api/csrf-token')).body.token;
   });
 
   afterAll(async () => {
@@ -251,7 +253,7 @@ describe('GET /api/session/org', () => {
   });
 
   it('returns session org after POST sets it', async () => {
-    await request(app).post('/api/session/org').send({ org: 'staging' });
+    await request(app).post('/api/session/org').set('X-SFDT-CSRF', csrf).send({ org: 'staging' });
     const res = await request(app).get('/api/session/org');
     expect(res.status).toBe(200);
     expect(res.body.org).toBe('staging');
@@ -262,9 +264,11 @@ describe('GET /api/session/org', () => {
 
 describe('POST /api/session/org', () => {
   let app;
+  let csrf;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    csrf = (await request(app).get('/api/csrf-token')).body.token;
   });
 
   afterAll(async () => {
@@ -272,18 +276,18 @@ describe('POST /api/session/org', () => {
   });
 
   it('sets and returns the session org', async () => {
-    const res = await request(app).post('/api/session/org').send({ org: 'DevHub' });
+    const res = await request(app).post('/api/session/org').set('X-SFDT-CSRF', csrf).send({ org: 'DevHub' });
     expect(res.status).toBe(200);
     expect(res.body.org).toBe('DevHub');
   });
 
   it('returns 400 when org is missing', async () => {
-    const res = await request(app).post('/api/session/org').send({});
+    const res = await request(app).post('/api/session/org').set('X-SFDT-CSRF', csrf).send({});
     expect(res.status).toBe(400);
   });
 
   it('returns 400 when org is empty string', async () => {
-    const res = await request(app).post('/api/session/org').send({ org: '  ' });
+    const res = await request(app).post('/api/session/org').set('X-SFDT-CSRF', csrf).send({ org: '  ' });
     expect(res.status).toBe(400);
   });
 });

@@ -37,10 +37,14 @@ User runs command → Load .sfdt/ config → Set SFDT_* env vars → Execute she
 | `sfdt release [--package <name\|all>] [--name <label>]` | Generate release manifest + optional AI release notes |
 | `sfdt pull` | Pull metadata from default org |
 | `sfdt preflight [--strict]` | Pre-deployment validation |
-| `sfdt rollback [--org <alias>]` | Rollback a deployment |
+| `sfdt rollback [--org <alias>] [--json]` | Rollback a deployment |
 | `sfdt smoke [--org <alias>]` | Post-deploy smoke tests |
 | `sfdt review [--base <branch>]` | AI-powered Salesforce code review |
-| `sfdt drift [--org <alias>]` | Detect org metadata drift |
+| `sfdt drift [--org <alias>] [--json]` | Detect org metadata drift |
+| `sfdt compare [--source <alias\|local>] [--target <alias>]` | Diff two orgs or local source vs org; optional `--output` writes `package.xml` |
+| `sfdt scan [--org <alias>] [--format json\|table]` | Fetch complete metadata inventory from an org |
+| `sfdt config get <key>` | Print a config value using dot notation |
+| `sfdt config set <key> <value>` | Set a config value using dot notation (with type coercion) |
 | `sfdt notify <event> [--version] [--org] [--message]` | Slack notifications |
 | `sfdt changelog generate [--limit <n>]` | AI-generate changelog entries |
 | `sfdt changelog release <version>` | Move [Unreleased] to version section |

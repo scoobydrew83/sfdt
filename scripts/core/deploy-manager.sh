@@ -23,6 +23,7 @@ TEST_CONFIG_FILE="${PROJECT_CONFIG_DIR}/test-config.json"
 
 echo -e "${BLUE}${PROJECT_NAME} - Smart Deployment Manager${NC}"
 echo -e "${YELLOW}============================================================${NC}"
+require_jq || exit 1
 
 # Deployment configuration
 BACKUP_DIR="$LOG_DIR/deployment-backups"

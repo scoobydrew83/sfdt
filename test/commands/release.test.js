@@ -181,6 +181,47 @@ describe('release command', () => {
     expect(addCalls.length).toBe(1);
   });
 
+  it('runs deployment script when user confirms deploy', async () => {
+    isAiAvailable.mockResolvedValue(false);
+    execa.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && args[0] === 'status') {
+        return Promise.resolve({ exitCode: 0, stdout: 'A  manifest/release/rl-1.0.0-package.xml' });
+      }
+      return Promise.resolve({ exitCode: 0, stdout: '' });
+    });
+
+    mockPromptFlow({ doCommit: true, doTag: false, proceedToDeploy: true });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'release', '1.0.0']);
+
+    expect(runScript).toHaveBeenCalledWith(
+      'core/deployment-assistant.sh',
+      expect.any(Object),
+      expect.any(Object),
+    );
+    expect(print.success).toHaveBeenCalledWith('Deployment completed successfully.');
+  });
+
+  it('pushes tag to remote when user confirms push', async () => {
+    isAiAvailable.mockResolvedValue(false);
+    execa.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && args[0] === 'status') {
+        return Promise.resolve({ exitCode: 0, stdout: 'A  manifest/release/rl-1.0.0-package.xml' });
+      }
+      return Promise.resolve({ exitCode: 0, stdout: '' });
+    });
+
+    mockPromptFlow({ doCommit: true, doTag: true, proceedToDeploy: false, doPush: true });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'release', '1.0.0']);
+
+    const pushCall = execa.mock.calls.find(
+      (c) => c[0] === 'git' && c[1][0] === 'push' && c[1].includes('v1.0.0'),
+    );
+    expect(pushCall).toBeDefined();
+    expect(print.success).toHaveBeenCalledWith('Tag pushed to remote');
+  });
+
   it('asks about deployment before push', async () => {
     isAiAvailable.mockResolvedValue(false);
     // git status shows staged files

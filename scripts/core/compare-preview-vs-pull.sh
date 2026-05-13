@@ -17,6 +17,10 @@ SOURCE_PATH="${SFDT_SOURCE_PATH:-force-app}"
 
 echo -e "${BLUE}Preview vs Pull Comparison Tool${NC}"
 echo -e "${YELLOW}================================${NC}"
+if ! command -v jq &> /dev/null; then
+    echo -e "${RED}Required command 'jq' is not installed. sfdt shell scripts use jq to parse Salesforce CLI JSON output.${NC}"
+    exit 1
+fi
 
 # Step 1: Get current git status before any operations
 echo -e "\n${YELLOW}Step 1: Capturing current state...${NC}"

@@ -53,10 +53,11 @@ sfdt deploy
 | `sfdt test` | Run Apex tests with the enhanced test runner | `--legacy`, `--analyze`, `--dry-run` |
 | `sfdt pull` | Pull metadata from the configured org | `--dry-run` |
 | `sfdt preflight` | Run pre-deployment validation checks | `--strict`, `--dry-run` |
-| `sfdt rollback` | Roll back a deployment to a target org | `--org <alias>`, `--dry-run` |
+| `sfdt rollback` | Roll back a deployment to a target org | `--org <alias>`, `--dry-run`, `--json` |
 | `sfdt smoke` | Post-deploy smoke tests | `--org <alias>`, `--dry-run` |
-| `sfdt drift` | Detect metadata drift between local source and an org | `--org <alias>` |
+| `sfdt drift` | Detect metadata drift between local source and an org | `--org <alias>`, `--json` |
 | `sfdt compare` | Compare metadata between two orgs or local source vs an org | `--source <alias\|local>`, `--target <alias>`, `--output <file>` |
+| `sfdt scan` | Fetch complete metadata inventory from an org | `--org <alias>`, `--output <file>`, `--format json\|table` |
 | `sfdt notify` | Send Slack deployment notifications | `--org <alias>`, `--version <ver>`, `--message <msg>` |
 | `sfdt config get <key>` | Print a config value using dot notation (e.g. `defaultOrg`) | — |
 | `sfdt config set <key> <value>` | Set a config value using dot notation (e.g. `deployment.coverageThreshold`) | — |
@@ -115,8 +116,7 @@ Running `sfdt init` creates a `.sfdt/` directory in your project root:
   },
   "ai": {
     "provider": "claude",
-    "model": "",
-    "apiKey": ""
+    "model": ""
   },
   "plugins": []
 }
@@ -124,7 +124,7 @@ Running `sfdt init` creates a `.sfdt/` directory in your project root:
 
 ## AI Features
 
-AI-powered commands (`review`, `explain`, `manifest --ai-cleanup`, `quality --fix-plan`, `pr-description`, `changelog generate`, `release`) work with **Claude, Gemini, or OpenAI**. The provider is configured during `sfdt init` or by editing `.sfdt/config.json`.
+AI-powered commands (`review`, `explain`, `manifest --ai-cleanup`, `quality --fix-plan`, `pr-description`, `changelog generate`, `release`) work with **Claude, Gemini, or OpenAI/Codex CLI providers**. The provider is configured during `sfdt init` or by editing `.sfdt/config.json`.
 
 ### Claude (default)
 
@@ -142,29 +142,31 @@ Claude's interactive mode lets AI commands read your repository files directly w
 
 ### Gemini
 
-Set your API key in the environment or in config:
+Requires the Gemini CLI:
 
 ```bash
-export GEMINI_API_KEY=your-key
+npm install -g @google/gemini-cli
 ```
 
 ```json
-{ "ai": { "provider": "gemini", "model": "gemini-2.0-flash", "apiKey": "" } }
+{ "ai": { "provider": "gemini", "model": "" } }
 ```
 
-Default model: `gemini-2.0-flash`. Override with `ai.model`.
+Authentication and model selection are handled by the Gemini CLI.
 
 ### OpenAI
 
+Requires the Codex CLI:
+
 ```bash
-export OPENAI_API_KEY=sk-...
+npm install -g @openai/codex
 ```
 
 ```json
-{ "ai": { "provider": "openai", "model": "gpt-4o-mini", "apiKey": "" } }
+{ "ai": { "provider": "openai", "model": "" } }
 ```
 
-Default model: `gpt-4o-mini`. Override with `ai.model`.
+Authentication and model selection are handled by the Codex CLI.
 
 ### Disabling AI
 
@@ -190,6 +192,8 @@ Dashboard pages:
 - **Preflight** — per-check pass/fail list; run preflight directly from the UI
 - **Drift Detection** — filterable component table (All / Clean / Drift); run drift check from the UI
 - **Compare** — diff two orgs or local source vs an org, export source-only items as `package.xml`
+- **Scan** — fetch and browse full metadata inventory from any org; writes `logs/scan-latest.json`
+- **Logs** — searchable log viewer for deploy and rollback history with pagination and raw output
 
 The dashboard reads log files from the project's configured `logDir` (defaults to `<project>/logs`). Data appears automatically after running `sfdt test`, `sfdt preflight`, or `sfdt drift` when those commands write JSON result files.
 
@@ -278,11 +282,10 @@ docker run --rm \
       sfdt deploy --skip-preflight
 ```
 
-Pass AI API keys as environment variables:
+Install the selected AI provider CLI in the container when using AI features:
 
 ```bash
 docker run --rm -v "$(pwd):/project" \
-  -e GEMINI_API_KEY="$GEMINI_API_KEY" \
   sfdt explain --latest
 ```
 
@@ -338,7 +341,7 @@ Cache behavior is controlled via `pullCache` in `.sfdt/config.json`:
 - **bash** 4.0+ (macOS users: `brew install bash`)
 - **jq** 1.6+ (required by several shell scripts)
 - **Optional:** [Claude Code CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code) for AI features with the `claude` provider
-- **Optional:** Gemini or OpenAI API key for `gemini`/`openai` provider
+- **Optional:** Gemini CLI or Codex CLI for AI features with the `gemini` or `openai` provider
 - **Optional:** [GitHub CLI](https://cli.github.com/) (`gh`) for PR creation during deployments
 
 ## Development

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { IconPlay, IconX, IconRefresh, IconTerminal } from '../Icons.jsx';
+import { stream } from '../api.js';
 
 export default function CommandRunner({ command, label, extraParams = {}, onComplete = () => {} }) {
   const [status, setStatus]     = useState('idle');
@@ -36,14 +37,12 @@ export default function CommandRunner({ command, label, extraParams = {}, onComp
     setExitCode(null);
     counterRef.current = 0;
 
-    const qs = new URLSearchParams({ command, ...extraParams });
-    const es = new EventSource(`/api/command/run?${qs}`);
+    const es = stream.commandRun(command, extraParams);
     esRef.current = es;
 
     es.onmessage = (e) => {
       if (deadRef.current) return;
-      let msg;
-      try { msg = JSON.parse(e.data); } catch { return; }
+      const msg = e.data;
 
       if (msg.type === 'log') {
         const id = counterRef.current++;

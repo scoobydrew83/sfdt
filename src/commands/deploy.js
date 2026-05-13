@@ -3,6 +3,7 @@ import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { writeRawLog } from '../lib/log-writer.js';
 
 export function registerDeployCommand(program) {
   program
@@ -11,11 +12,13 @@ export function registerDeployCommand(program) {
     .option('--managed', 'Use deploy-manager.sh instead of deployment-assistant.sh')
     .option('--skip-preflight', 'Skip pre-deployment preflight checks')
     .option('--dry-run', 'Show what would be executed without running')
+    .option('--org <alias>', 'Target org alias for deployment')
     .option('--source-dir <path>', 'Deploy a source directory instead of a manifest (relative to project root)')
     .action(async (options) => {
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
+        const orgAlias = options.org || config.defaultOrg;
 
         if (!options.skipPreflight) {
           print.info('Running preflight checks...');
@@ -51,11 +54,22 @@ export function registerDeployCommand(program) {
           extraEnv.SFDT_DEPLOY_SOURCE_DIR = options.sourceDir;
         }
 
-        await runScript(scriptPath, config, {
+        const deployStart = Date.now();
+        const deployResult = await runScript(scriptPath, config, {
           cwd: projectRoot,
           dryRun: options.dryRun,
           env: extraEnv,
         });
+
+        if (!options.dryRun) {
+          const logDir = config.logDir ?? path.join(projectRoot, 'logs');
+          await writeRawLog(logDir, 'deploy', deployResult.stdout ?? '', {
+            org: orgAlias,
+            exitCode: 0,
+            durationMs: Date.now() - deployStart,
+            retention: config.logRetention ?? 50,
+          }).catch((e) => console.debug('Log write failed:', e.message));
+        }
 
         print.success(options.dryRun ? 'Dry-run complete — no changes made.' : 'Deployment completed successfully.');
       } catch (err) {

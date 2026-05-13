@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { loadConfig } from '../lib/config.js';
 import { print } from '../lib/output.js';
-import { startGuiServer } from '../lib/gui-server.js';
+import { startGuiServer } from '../lib/gui-server/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(

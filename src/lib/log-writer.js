@@ -112,6 +112,44 @@ export async function writeLog(logDir, type, data, meta = {}) {
   return envelope;
 }
 
+const RAW_ARCHIVE_DIRS = {
+  deploy: 'deploy-results',
+  rollback: 'rollback-results',
+};
+
+export async function writeRawLog(logDir, type, rawOutput, meta = {}) {
+  const archiveDirName = RAW_ARCHIVE_DIRS[type];
+  if (!archiveDirName) throw new Error(`writeRawLog: unknown type "${type}". Must be deploy or rollback.`);
+
+  const { org = '', exitCode = 0, durationMs = 0, retention = 50 } = meta;
+  const timestamp = new Date().toISOString();
+  const envelope = {
+    schemaVersion: 'raw-1',
+    type,
+    timestamp,
+    org,
+    exitCode,
+    durationMs,
+    rawOutput,
+  };
+
+  const archiveDir = path.join(logDir, archiveDirName);
+  await fs.ensureDir(archiveDir);
+  const suffix = Math.random().toString(36).slice(2, 7);
+  const archiveName = timestamp.replace(/:/g, '-').replace(/\./g, '-') + `-${suffix}.json`;
+  await fs.outputJson(path.join(archiveDir, archiveName), envelope, { spaces: 2 });
+
+  const entries = (await fs.readdir(archiveDir))
+    .filter((f) => f.endsWith('.json'))
+    .sort();
+  if (entries.length > retention) {
+    const toDelete = entries.slice(0, entries.length - retention);
+    await Promise.all(toDelete.map((f) => fs.remove(path.join(archiveDir, f))));
+  }
+
+  return envelope;
+}
+
 /**
  * Read and validate the latest structured log for the given type.
  * Returns the envelope object or null if missing, corrupt, or schema-invalid.

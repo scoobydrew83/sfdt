@@ -65,6 +65,15 @@ beforeEach(() => {
 });
 
 describe('changelog release command', () => {
+  it('sets exitCode 1 when --package refers to an unknown package', async () => {
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'changelog', 'release', '1.0.0', '--package', 'unknown-pkg',
+    ]);
+
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Unknown package'));
+    expect(process.exitCode).toBe(1);
+  });
+
   it('calls bash with version passed as SFDT_VERSION env var', async () => {
     execa.mockResolvedValue({ stdout: '', exitCode: 0 });
 
@@ -110,6 +119,27 @@ describe('changelog release command', () => {
 });
 
 describe('changelog check command', () => {
+  it('sets exitCode 1 when --package refers to an unknown package', async () => {
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'changelog', 'check', '--package', 'unknown-pkg',
+    ]);
+
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Unknown package'));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('reports unreleased content when git is clean but changelog has content', async () => {
+    execa
+      .mockResolvedValueOnce({ stdout: '' })           // git status (clean)
+      .mockResolvedValueOnce({ stdout: 'HAS_CONTENT' }); // has_unreleased_content
+
+    await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'check']);
+
+    expect(print.info).toHaveBeenCalledWith(
+      expect.stringContaining('has unreleased changes, but git is clean'),
+    );
+  });
+
   it('reports when git has changes but changelog is empty', async () => {
     execa
       .mockResolvedValueOnce({ stdout: 'M src/file.js' }) // git status

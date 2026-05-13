@@ -6,15 +6,17 @@ import TestRuns from './pages/TestRuns.jsx';
 import PreflightPage from './pages/Preflight.jsx';
 import DriftPage from './pages/Drift.jsx';
 import ComparePage from './pages/Compare.jsx';
+import ScanPage from './pages/Scan.jsx';
 import ManifestsPage from './pages/Manifests.jsx';
 import QualityPage from './pages/Quality.jsx';
 import PullPage from './pages/Pull.jsx';
-import ReleaseHubPage from './pages/ReleaseHub.jsx';
+import ReleaseHubPage from './pages/ReleaseHub/index.jsx';
 import ReviewPage from './pages/Review.jsx';
 import ExplainPage from './pages/Explain.jsx';
 import DependencyPage from './pages/Dependency.jsx';
 import SettingsPage from './pages/Settings.jsx';
 import LogsPage from './pages/Logs.jsx';
+import CoveragePage from './pages/Coverage.jsx';
 import {
   IconHome, IconList, IconCheck, IconRefresh, IconCompare,
   IconSun, IconMoon, IconFileText, IconActivity, IconCloudDown,
@@ -33,6 +35,7 @@ const NAV_GROUPS = [
       { id: 'dashboard', label: 'Dashboard', Icon: IconHome },
       { id: 'drift',     label: 'Drift',     Icon: IconRefresh },
       { id: 'tests',     label: 'Test Runs', Icon: IconList },
+      { id: 'coverage',  label: 'Coverage',  Icon: IconActivity },
       { id: 'logs',      label: 'Logs',      Icon: IconClock },
     ],
   },
@@ -46,6 +49,7 @@ const NAV_GROUPS = [
     label: 'Analyze',
     items: [
       { id: 'compare',   label: 'Compare',   Icon: IconCompare },
+      { id: 'scan',      label: 'Scan',       Icon: IconList },
       { id: 'preflight', label: 'Preflight', Icon: IconCheck },
       { id: 'manifests', label: 'Manifests', Icon: IconFileText },
       { id: 'quality',   label: 'Quality',   Icon: IconActivity },
@@ -66,9 +70,11 @@ const NAV_GROUPS = [
 const PAGE_LABELS = {
   dashboard: 'Dashboard',
   tests:     'Test Runs',
+  coverage:  'Coverage',
   preflight: 'Preflight',
   drift:     'Drift',
   compare:   'Compare',
+  scan:      'Scan',
   manifests: 'Manifests',
   quality:   'Quality',
   pull:      'Pull',
@@ -147,9 +153,11 @@ export default function App() {
     switch (page) {
       case 'dashboard': return <Dashboard project={project} />;
       case 'tests':     return <TestRuns />;
+      case 'coverage':  return <CoveragePage />;
       case 'preflight': return <PreflightPage />;
       case 'drift':     return <DriftPage />;
       case 'compare':   return <ComparePage />;
+      case 'scan':      return <ScanPage />;
       case 'manifests': return <ManifestsPage />;
       case 'quality':   return <QualityPage />;
       case 'pull':      return <PullPage />;

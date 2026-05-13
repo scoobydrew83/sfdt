@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { IconX } from '../Icons.jsx';
-import { api } from '../api.js';
+import { api, stream } from '../api.js';
 
 const MODE_CARDS = [
   { mode: 'delta',   icon: '⚡', label: 'Smart Delta',    desc: 'Only changed components' },
@@ -63,16 +63,15 @@ export default function PullPage() {
     setResult(null);
     counterRef.current = 0;
 
-    const qs = new URLSearchParams({ mode });
-    if (mode === 'group' && selectedGroup) qs.set('groupKey', selectedGroup);
+    const opts = { mode };
+    if (mode === 'group' && selectedGroup) opts.groupKey = selectedGroup;
 
-    const es = new EventSource('/api/pull?' + qs.toString());
+    const es = stream.pull(opts);
     esRef.current = es;
 
     es.onmessage = (e) => {
       if (deadRef.current) return;
-      let msg;
-      try { msg = JSON.parse(e.data); } catch { return; }
+      const msg = e.data;
 
       if (msg.type === 'log') {
         setLines((prev) => [...prev, { id: counterRef.current++, text: msg.line }]);

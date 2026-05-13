@@ -1,5 +1,12 @@
+import { fileURLToPath } from 'url';
 import fs from 'fs-extra';
+import { readFileSync } from 'fs';
 import path from 'path';
+import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const CONFIG_DIR_NAME = '.sfdt';
 const SFDX_PROJECT_FILE = 'sfdx-project.json';
@@ -11,7 +18,72 @@ const CONFIG_FILES = {
   testConfig: 'test-config.json',
 };
 
-const REQUIRED_CONFIG_KEYS = ['defaultOrg', 'features'];
+const _ajv = new Ajv({ allErrors: true, strict: false });
+addFormats(_ajv);
+
+const _configSchema = JSON.parse(
+  readFileSync(path.join(__dirname, 'config-schema.json'), 'utf8'),
+);
+const _validate = _ajv.compile(_configSchema);
+
+function formatAjvErrors(errors) {
+  const requiredErrors = errors.filter((e) => e.keyword === 'required');
+  if (requiredErrors.length > 0) {
+    const missing = requiredErrors.map((e) => e.params.missingProperty).join(', ');
+    return (
+      `Invalid configuration: missing required keys: ${missing}.\n` +
+      `Run 'sfdt init' to regenerate the configuration.`
+    );
+  }
+  const e = errors[0];
+  const rawPath = e.instancePath.replace(/^\//, '').replace(/\//g, '.');
+  const fieldPath = rawPath || '(root)';
+  const more = errors.length > 1 ? ` (+ ${errors.length - 1} more errors)` : '';
+
+  if (fieldPath === 'defaultOrg') {
+    return (
+      `Invalid configuration: "defaultOrg" must be a non-empty string (e.g. "my-org-alias")${more}.\n` +
+      `Run 'sfdt init' to regenerate the configuration.`
+    );
+  }
+  if (fieldPath.includes('coverageThreshold')) {
+    return `Invalid configuration: "deployment.coverageThreshold" must be a number between 0 and 100${more}.`;
+  }
+  if (fieldPath === 'logDir') {
+    return `Invalid configuration: "logDir" must be a string path when provided${more}.`;
+  }
+  if (fieldPath === 'environments.orgs') {
+    return `Invalid configuration: "environments.orgs" must be an array of org objects${more}.`;
+  }
+  if (e.keyword === 'enum') {
+    const allowed = e.params.allowedValues.join(', ');
+    return (
+      `Invalid configuration: "${fieldPath}" must be one of: ${allowed}${more}.\n` +
+      `Run 'sfdt init' to regenerate the configuration.`
+    );
+  }
+  if (e.keyword === 'type') {
+    const article = ['a', 'e', 'i', 'o', 'u'].includes(e.params.type[0]) ? 'an' : 'a';
+    return `Invalid configuration: "${fieldPath}" must be ${article} ${e.params.type}${more}.`;
+  }
+  if (e.keyword === 'minimum' || e.keyword === 'exclusiveMinimum') {
+    return `Invalid configuration: "${fieldPath}" must be ≥ ${e.params.limit}${more}.`;
+  }
+  if (e.keyword === 'maximum' || e.keyword === 'exclusiveMaximum') {
+    return `Invalid configuration: "${fieldPath}" must be ≤ ${e.params.limit}${more}.`;
+  }
+  if (e.keyword === 'minLength') {
+    return (
+      `Invalid configuration: "${fieldPath}" must be a non-empty string${more}.\n` +
+      `Run 'sfdt init' to regenerate the configuration.`
+    );
+  }
+  if (e.keyword === 'additionalProperties') {
+    return `Invalid configuration: "${fieldPath}" contains unknown key "${e.params.additionalProperty}"${more}.`;
+  }
+
+  return `Invalid configuration: field "${fieldPath}" ${e.message}${more}.`;
+}
 
 /**
  * Error subclass for configuration problems.
@@ -116,46 +188,9 @@ export function validateConfig(config) {
     throw new ConfigError('Invalid configuration: config must be a non-null object.');
   }
 
-  const missing = REQUIRED_CONFIG_KEYS.filter((key) => !(key in config));
-  if (missing.length > 0) {
-    throw new ConfigError(
-      `Invalid configuration: missing required keys: ${missing.join(', ')}.\n` +
-        `Run 'sfdt init' to regenerate the configuration.`,
-    );
-  }
-
-  if (typeof config.features !== 'object' || config.features === null) {
-    throw new ConfigError(
-      'Invalid configuration: "features" must be an object (e.g. { "ai": false }).',
-    );
-  }
-
-  if (typeof config.defaultOrg !== 'string' || config.defaultOrg.trim() === '') {
-    throw new ConfigError(
-      'Invalid configuration: "defaultOrg" must be a non-empty string (e.g. "my-org-alias").\n' +
-        `Got: ${JSON.stringify(config.defaultOrg)}`,
-    );
-  }
-
-  const threshold = config.deployment?.coverageThreshold;
-  if (threshold !== undefined) {
-    const n = Number(threshold);
-    if (!Number.isFinite(n) || n < 0 || n > 100) {
-      throw new ConfigError(
-        `Invalid configuration: "deployment.coverageThreshold" must be a number between 0 and 100.\n` +
-          `Got: ${JSON.stringify(threshold)}`,
-      );
-    }
-  }
-
-  if (config.environments?.orgs !== undefined && !Array.isArray(config.environments.orgs)) {
-    throw new ConfigError(
-      'Invalid configuration: "environments.orgs" must be an array of org objects.',
-    );
-  }
-
-  if (config.logDir !== undefined && typeof config.logDir !== 'string') {
-    throw new ConfigError('Invalid configuration: "logDir" must be a string path when provided.');
+  const valid = _validate(config);
+  if (!valid) {
+    throw new ConfigError(formatAjvErrors(_validate.errors));
   }
 }
 

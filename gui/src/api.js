@@ -20,6 +20,27 @@ function httpError(res) {
   return err;
 }
 
+let csrfTokenPromise = null;
+
+async function getCsrfToken() {
+  if (!csrfTokenPromise) {
+    csrfTokenPromise = fetch(`${BASE}/csrf-token`)
+      .then((res) => {
+        if (!res.ok) throw httpError(res);
+        return res.json();
+      })
+      .then((data) => data.token);
+  }
+  return csrfTokenPromise;
+}
+
+async function jsonHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    'X-SFDT-CSRF': await getCsrfToken(),
+  };
+}
+
 /** @returns {Promise<any>} */
 async function fetchJson(path) {
   const res = await fetch(`${BASE}${path}`);
@@ -28,10 +49,20 @@ async function fetchJson(path) {
 }
 
 /** @returns {Promise<any>} */
+async function deleteJson(path) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'DELETE',
+    headers: await jsonHeaders(),
+  });
+  if (!res.ok) throw httpError(res);
+  return res.json();
+}
+
+/** @returns {Promise<any>} */
 async function postJson(path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await jsonHeaders(),
     body: JSON.stringify(body),
   });
   if (!res.ok) throw httpError(res);
@@ -42,7 +73,7 @@ async function postJson(path, body) {
 async function patchJson(path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await jsonHeaders(),
     body: JSON.stringify(body),
   });
   if (!res.ok) throw httpError(res);
@@ -51,7 +82,10 @@ async function patchJson(path, body) {
 
 /** @returns {Promise<any>} */
 async function deleteRequest(path) {
-  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' });
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'DELETE',
+    headers: { 'X-SFDT-CSRF': await getCsrfToken() },
+  });
   if (!res.ok) throw httpError(res);
   return res.json();
 }
@@ -63,8 +97,12 @@ export const api = {
   checkUpdates:           () => fetchJson('/check-updates'),
   /** @returns {Promise<{ runs: TestRun[] }>} */
   testRuns:               () => fetchJson('/test-runs'),
+  /** @returns {Promise<{ ok: boolean }>} */
+  deleteTestRun:          (filename) => deleteJson(`/test-runs/${encodeURIComponent(filename)}`),
   /** @returns {Promise<{ configured: string[], discovered: string[] }>} */
   testClasses:            () => fetchJson('/test/classes'),
+  /** @returns {Promise<{ added: number, removed: number, total: number }>} */
+  syncTestClasses:        () => postJson('/test/classes/sync', {}),
   /** @returns {Promise<PreflightResult>} */
   preflight:              () => fetchJson('/preflight'),
   /** @returns {Promise<DriftResult>} */
@@ -81,6 +119,10 @@ export const api = {
   setSessionOrg:          (org) => postJson('/session/org', { org }),
   /** @returns {Promise<CompareResult>} */
   compareResult:          () => fetchJson('/compare'),
+  /** @returns {Promise<{timestamp:string, org:string, inventory:Object<string,string[]>, summary:{totalTypes:number,totalMembers:number}}|null>} */
+  scan:                   () => fetchJson('/scan'),
+  /** @returns {Promise<{timestamp:string, org:string, inventory:Object<string,string[]>, summary:{totalTypes:number,totalMembers:number}}>} */
+  runScan:                (org) => postJson('/scan', { org }),
   /** @returns {Promise<{ version: string }>} */
   suggestVersion:         () => fetchJson('/release/suggest-version'),
   /** @returns {Promise<CompareResult>} */
@@ -133,12 +175,14 @@ export const api = {
   pullGroups:             () => fetchJson('/pull/groups'),
   /** @returns {Promise<{ packages: Array<{name: string, path: string}> }>} */
   getPackages:            () => fetchJson('/packages'),
+  /** @returns {Promise<{ files: string[] }>} */
+  logsList:               () => fetchJson('/logs/list'),
 };
 
 // ─── SSE helpers ──────────────────────────────────────────────────────────────
 // Returns an EventSource-like object with onmessage/onerror setters + close()
 
-function ssePost(path, body) {
+export function ssePost(path, body) {
   const url = `${BASE}${path}`;
   let controller = new AbortController();
   const handlers = { onmessage: null, onerror: null, ondone: null };
@@ -147,7 +191,7 @@ function ssePost(path, body) {
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await jsonHeaders(),
         body: JSON.stringify(body),
         signal: controller.signal,
       });
@@ -189,6 +233,9 @@ function ssePost(path, body) {
 
 export const stream = {
   deploy:           (opts) => ssePost('/release/deploy', opts),
+  commandRun:       (command, extraParams = {}) => ssePost('/command/run', { command, ...extraParams }),
+  pull:             (opts = {}) => ssePost('/pull', opts),
+  update:           () => ssePost('/update/stream', {}),
   changelogGenerate:(pkg)  => ssePost('/changelog/generate', pkg ? { package: pkg } : {}),
   releaseNotes:     (opts = {}) => ssePost('/release-notes/generate', opts),
   review:           (base) => ssePost('/review', { base }),
@@ -203,7 +250,7 @@ export function streamChatMessage(messages, pageContext, onChunk, onDone, onErro
     try {
       const res = await fetch(`${BASE}/ai/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await jsonHeaders(),
         body: JSON.stringify({ messages, pageContext }),
         signal: controller.signal,
       });
