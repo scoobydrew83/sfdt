@@ -53,7 +53,7 @@ export default function CommandRunner({ command, label, extraParams = {}, onComp
         setExitCode(msg.exitCode);
         es.close();
         esRef.current = null;
-        if (ok) onComplete();
+        onComplete(msg.exitCode);
       } else if (msg.type === 'error') {
         setStatus('error');
         es.close();

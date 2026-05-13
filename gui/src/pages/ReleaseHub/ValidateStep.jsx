@@ -15,7 +15,7 @@ export default function ValidateStep({ onMarkDone }) {
       <CommandRunner
         command="preflight"
         label="Preflight Checks"
-        onComplete={() => setIsValidated(true)}
+        onComplete={(code) => { if (code === 0) setIsValidated(true); }}
       />
 
       {isValidated && (
