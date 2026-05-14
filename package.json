@@ -40,6 +40,7 @@
     "build:gui": "npm run build -w gui",
     "build:flow-core": "npm run build -w @sfdt/flow-core",
     "build:ext": "npm run build:flow-core && npm run build -w @sfdt/extension",
+    "package:ext": "npm run build:ext && npm run zip -w @sfdt/extension",
     "test:flow-core": "npm run test -w @sfdt/flow-core",
     "test:extension": "npm run test -w @sfdt/extension",
     "test:host": "npm run test -w @sfdt/host",
