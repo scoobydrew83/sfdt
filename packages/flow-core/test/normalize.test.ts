@@ -170,6 +170,36 @@ describe('flow-core/normalize', () => {
       expect(flow.dependencies).toEqual([{ type: 'LwcComponent', name: 'c:MyComponent', count: 1 }]);
     });
 
+    it('filters out all standard Lightning namespaces from LWC dependencies', () => {
+      const flow = normalize({
+        screens: [
+          {
+            name: 'S',
+            fields: [
+              // User component — should be kept.
+              { fieldType: 'ComponentInstance', extensionName: 'c:CustomCmp' },
+              // Managed-package component — should be kept.
+              { fieldType: 'ComponentInstance', extensionName: 'mypkg:Widget' },
+              // Standard Lightning namespaces — every one of these ships
+              // with Salesforce, so they must not surface as dependencies.
+              { fieldType: 'ComponentInstance', extensionName: 'flowruntime:input' },
+              { fieldType: 'ComponentInstance', extensionName: 'force:outputField' },
+              { fieldType: 'ComponentInstance', extensionName: 'forceContent:fileUpload' },
+              { fieldType: 'ComponentInstance', extensionName: 'lightning:input' },
+              { fieldType: 'ComponentInstance', extensionName: 'lightningCommunity:editor' },
+              { fieldType: 'ComponentInstance', extensionName: 'lightningsnapin:settings' },
+              { fieldType: 'ComponentInstance', extensionName: 'ui:button' },
+              { fieldType: 'ComponentInstance', extensionName: 'aura:component' },
+            ],
+          },
+        ],
+      });
+      expect(flow.dependencies).toEqual([
+        { type: 'LwcComponent', name: 'c:CustomCmp', count: 1 },
+        { type: 'LwcComponent', name: 'mypkg:Widget', count: 1 },
+      ]);
+    });
+
     it('records subflow dependencies', () => {
       const flow = normalize({
         subflows: [{ name: 'CallChild', flowName: 'Child_Flow' }],

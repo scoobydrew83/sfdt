@@ -235,6 +235,21 @@ export interface NormalizedFlow {
 // ---------------------------------------------------------------------------
 // Normalize
 
+const STANDARD_LIGHTNING_NAMESPACES = [
+  'flowruntime:',
+  'force:',
+  'forceContent:',
+  'lightning:',
+  'lightningCommunity:',
+  'lightningsnapin:',
+  'ui:',
+  'aura:',
+];
+
+function isStandardLightningExtension(extensionName: string): boolean {
+  return STANDARD_LIGHTNING_NAMESPACES.some((ns) => extensionName.startsWith(ns));
+}
+
 function detectFlowType(metadata: RawFlowMetadata): FlowType {
   // recordTriggerType wins over processType — a record-triggered flow is
   // almost always saved with processType="AutoLaunchedFlow", so the original
@@ -570,7 +585,7 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
     (item.fields ?? []).forEach((field) => {
       if (field.fieldType === 'ComponentInstance' && field.extensionName) {
         const ext = field.extensionName;
-        if (!ext.startsWith('flowruntime:')) {
+        if (!isStandardLightningExtension(ext)) {
           dependencies.push({ type: 'LwcComponent', name: ext, count: 1 });
         }
       }
