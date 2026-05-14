@@ -50,8 +50,89 @@ describe('extension/features/trigger-conflicts', () => {
     expect(document.body.textContent).toContain('Account · AfterSave · Create');
     expect(document.body.textContent).toContain('Flow A');
     expect(document.body.textContent).toContain('Flow B');
-    // Null entry criteria renders as "no entry criteria".
     expect(document.body.textContent).toContain('no entry criteria');
+  });
+
+  it('buildConflictsModal renders Activate/Deactivate buttons that fire the bridge callbacks', async () => {
+    const { buildConflictsModal } = _triggerConflictsTestApi();
+    const calls: Array<{ kind: string; flowApiName: string; toVersion?: number }> = [];
+    const groups: FlowConflictGroup[] = [
+      {
+        objectApiName: 'Account',
+        triggerTiming: 'AfterSave',
+        triggerEvent: 'Create',
+        flows: [{ flowId: 'My_Flow', label: 'My Flow', entryCriteriaSummary: null }],
+      },
+    ];
+    document.body.appendChild(
+      buildConflictsModal(document, groups, {
+        extras: { My_Flow: { latestVersionNumber: 3, active: true } },
+        onActivate: async (flowApiName, toVersion) => {
+          calls.push({ kind: 'activate', flowApiName, toVersion });
+          return { ok: true };
+        },
+        onDeactivate: async (flowApiName) => {
+          calls.push({ kind: 'deactivate', flowApiName });
+          return { ok: true };
+        },
+      }),
+    );
+
+    // The Activate button is labelled with the latest version number from extras.
+    const buttons = Array.from(document.querySelectorAll('button'));
+    const activateBtn = buttons.find((b) => /Activate v3/.test(b.textContent ?? ''));
+    const deactivateBtn = buttons.find((b) => b.textContent === 'Deactivate');
+    expect(activateBtn).toBeTruthy();
+    expect(deactivateBtn).toBeTruthy();
+
+    // Active flow: Activate is disabled, Deactivate is enabled.
+    expect((activateBtn as HTMLButtonElement).disabled).toBe(true);
+    expect((deactivateBtn as HTMLButtonElement).disabled).toBe(false);
+
+    // Click Deactivate → onDeactivate runs and the row flips to inactive.
+    (deactivateBtn as HTMLButtonElement).click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).toEqual([{ kind: 'deactivate', flowApiName: 'My_Flow' }]);
+    expect(document.body.textContent).toContain('Inactive');
+
+    // After deactivation, Activate becomes enabled and Deactivate disabled.
+    expect((activateBtn as HTMLButtonElement).disabled).toBe(false);
+    expect((deactivateBtn as HTMLButtonElement).disabled).toBe(true);
+
+    // Click Activate → onActivate runs with the latest version number.
+    (activateBtn as HTMLButtonElement).click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).toEqual([
+      { kind: 'deactivate', flowApiName: 'My_Flow' },
+      { kind: 'activate', flowApiName: 'My_Flow', toVersion: 3 },
+    ]);
+  });
+
+  it('buildConflictsModal surfaces bridge errors on the row without crashing', async () => {
+    const { buildConflictsModal } = _triggerConflictsTestApi();
+    const groups: FlowConflictGroup[] = [
+      {
+        objectApiName: 'Account',
+        triggerTiming: 'AfterSave',
+        triggerEvent: 'Create',
+        flows: [{ flowId: 'My_Flow', label: 'My Flow', entryCriteriaSummary: null }],
+      },
+    ];
+    document.body.appendChild(
+      buildConflictsModal(document, groups, {
+        extras: { My_Flow: { latestVersionNumber: 2, active: true } },
+        onDeactivate: async () => ({ ok: false, error: 'sfdt offline' }),
+      }),
+    );
+    const buttons = Array.from(document.querySelectorAll('button'));
+    const deactivateBtn = buttons.find((b) => b.textContent === 'Deactivate') as HTMLButtonElement;
+    deactivateBtn.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Row stays active; the failure indicator appears.
+    expect(document.body.textContent).toContain('Active');
+    // The ✗ status indicator carries the error message in its title.
+    expect(document.querySelector('span[title="sfdt offline"]')).toBeTruthy();
   });
 });
 
@@ -97,8 +178,64 @@ describe('extension/features/subflow-graph', () => {
       { id: 'B', metadata: { processType: 'Flow', subflows: [] } },
     ]);
     document.body.appendChild(buildSubflowGraphModal(document, graph));
+    // List view is reachable behind the toggle — its body content is still
+    // attached to the DOM (just display:none until the user switches).
     expect(document.body.textContent).toContain('depth 1');
     expect(document.body.textContent).toContain('depth 0');
+  });
+
+  it('buildSubflowGraphSvg renders one rect per node and an edge per outgoing call', () => {
+    const { buildSubflowGraphSvg } = _subflowGraphTestApi();
+    const graph = buildSubflowGraph([
+      { id: 'A', metadata: { processType: 'Flow', subflows: [{ name: 'b', flowName: 'B' }] } },
+      { id: 'B', metadata: { processType: 'Flow', subflows: [{ name: 'c', flowName: 'C' }] } },
+      { id: 'C', metadata: { processType: 'Flow', subflows: [] } },
+    ]);
+    const svg = buildSubflowGraphSvg(document, graph);
+    document.body.appendChild(svg);
+    // Three node rectangles (one per flow).
+    expect(svg.querySelectorAll('rect')).toHaveLength(3);
+    // Two cubic-Bezier edges: A→B and B→C. Filter to direct children of
+    // <svg> only so we don't pick up arrowhead paths inside <marker> defs.
+    const directChildPaths = Array.from(svg.children).filter(
+      (n): n is SVGPathElement => n.tagName.toLowerCase() === 'path',
+    );
+    expect(directChildPaths).toHaveLength(2);
+    // And those paths use the cubic-bezier C command.
+    expect(directChildPaths.every((p) => /C/.test(p.getAttribute('d') ?? ''))).toBe(true);
+  });
+
+  it('buildSubflowGraphSvg strokes cycle edges and nodes red', () => {
+    const { buildSubflowGraphSvg } = _subflowGraphTestApi();
+    const graph = buildSubflowGraph([
+      { id: 'A', metadata: { processType: 'Flow', subflows: [{ name: 'b', flowName: 'B' }] } },
+      { id: 'B', metadata: { processType: 'Flow', subflows: [{ name: 'a', flowName: 'A' }] } },
+    ]);
+    const svg = buildSubflowGraphSvg(document, graph);
+    const rects = Array.from(svg.querySelectorAll('rect'));
+    expect(rects.every((r) => r.getAttribute('stroke') === '#c23934')).toBe(true);
+    // Filter to direct-child edge paths so marker arrowhead paths don't
+    // pollute the count.
+    const directChildPaths = Array.from(svg.children).filter(
+      (n): n is SVGPathElement => n.tagName.toLowerCase() === 'path',
+    );
+    const cycleEdges = directChildPaths.filter((p) => p.getAttribute('stroke') === '#c23934');
+    // A→B and B→A — both should be in the cycle and stroked red.
+    expect(cycleEdges).toHaveLength(2);
+  });
+
+  it('buildSubflowGraphSvg dashes the stub for unresolved subflow references', () => {
+    const { buildSubflowGraphSvg } = _subflowGraphTestApi();
+    const graph = buildSubflowGraph([
+      {
+        id: 'A',
+        metadata: { processType: 'Flow', subflows: [{ name: 'ghost', flowName: 'Ghost' }] },
+      },
+    ]);
+    const svg = buildSubflowGraphSvg(document, graph);
+    const stubs = Array.from(svg.querySelectorAll('line'));
+    expect(stubs).toHaveLength(1);
+    expect(stubs[0]!.getAttribute('stroke-dasharray')).toBeTruthy();
   });
 });
 
