@@ -28,4 +28,5 @@ ${green}${bold}  sfdt v${version} installed successfully!${reset}
   ${bold}Report an issue:${reset} ${cyan}https://github.com/scoobydrew83/sfdt/issues${reset}
 
   ${dim}AI features require: npm install -g @anthropic-ai/claude-code${reset}
+  ${dim}Chrome extension bridge: sfdt extension install-host --extension-id <id>${reset}
 `);

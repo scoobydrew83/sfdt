@@ -27,6 +27,7 @@ import { registerConfigCommand } from './commands/config.js';
 import { registerAiCommand } from './commands/ai.js';
 import { registerScanCommand } from './commands/scan.js';
 import { registerFlowCommand } from './commands/flow.js';
+import { registerExtensionCommand } from './commands/extension.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
@@ -67,6 +68,7 @@ export function createCli() {
   registerAiCommand(program);
   registerScanCommand(program);
   registerFlowCommand(program);
+  registerExtensionCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program
