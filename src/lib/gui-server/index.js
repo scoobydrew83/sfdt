@@ -23,6 +23,7 @@ import { fetchOrgInventory, fetchInventory } from '../org-inventory.js';
 import { initCache, getDelta, updateCache } from '../pull-cache.js';
 import { parallelRetrieve } from '../parallel-retrieve.js';
 import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken } from './security.js';
+import { mountBridgeRoutes } from '../bridge/routes.js';
 import { stripAnsi, tryReadJson, safeReaddir, buildPlaceholderHtml } from './shared.js';
 import {
   parseTestRunLines, parseQualityLines,
@@ -99,6 +100,13 @@ export function createGuiApp(config, version, port = 7654) {
 
   const apiLimiter = createRateLimiter(60, 60_000);
   const csrfLimiter = createRateLimiter(10, 60_000);
+
+  // Bridge routes are mounted BEFORE the default origin guard because they
+  // accept cross-origin requests from chrome-extension:// and *.salesforce.com.
+  // Each bridge route applies its own origin allowlist + bearer-token auth
+  // (see src/lib/bridge/middleware.js).
+  mountBridgeRoutes(app, { port, version, rateLimiter: apiLimiter });
+
   const originGuard = createOriginGuard(port);
   app.use('/api/', originGuard);
 
@@ -369,6 +377,28 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const data = await readQuality(logDir);
       res.json(data ?? { date: null, status: null, summary: { critical: 0, high: 0, medium: 0, low: 0 }, violations: [], unavailableMessage: null });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Flow-specific quality endpoint: takes a Tooling-API-shaped Flow.Metadata
+  // payload in the request body and returns the @sfdt/flow-core report.
+  // The Chrome extension hits this via the bridge; the dashboard hits it
+  // directly. Same engine in both paths, so results match the CLI's
+  // `sfdt flow scan` output byte-for-byte.
+  app.post('/api/flow/quality', apiLimiter, async (req, res) => {
+    try {
+      const { runFlowQuality } = await import('../flow-quality.js');
+      const metadata = req.body?.metadata;
+      if (!metadata || typeof metadata !== 'object') {
+        return res.status(400).json({ error: 'metadata (object) is required in the body' });
+      }
+      const report = runFlowQuality(metadata, {
+        flowApiName: req.body?.flowApiName,
+        flowVersionId: req.body?.flowVersionId,
+      });
+      res.json(report);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

@@ -1,0 +1,297 @@
+// Salesforce API client — port of
+// /Users/dkennedy/dev/2.0.2_0 copy/utils/salesforce-api.js.
+//
+// Authentication strategy preserved verbatim from v2.0.2:
+//
+//   - HttpOnly `sid` cookies are unreachable from a content script. The
+//     background service worker has the `cookies` permission, so this client
+//     ASKS the background for the sid via `chrome.runtime.sendMessage`.
+//   - Two candidate hostnames are tried in priority order:
+//       1. <org>.my.salesforce.com   (always honoured for REST/Tooling)
+//       2. The current page origin   (often Lightning, which 401s on REST)
+//     The first one whose sid Salesforce accepts wins.
+//   - A 401 on every candidate clears the session cache and retries once.
+//
+// The hostname conversion logic lives in `./hostname.ts` so the same rules
+// are testable in isolation and reused by Setup Tabs.
+
+import { mySalesforceHostname } from './hostname.js';
+
+const DEFAULT_API_VERSION = 'v62.0';
+const SEND_MESSAGE_TIMEOUT_MS = 5000;
+
+// Minimal interface that lets tests inject a mock without depending on the
+// global chrome.runtime / window.location.
+export interface MessageBus {
+  sendMessage<T = unknown>(message: unknown, timeoutMs?: number): Promise<T | null>;
+}
+
+export interface SfApiOptions {
+  apiVersion?: string;
+  win?: Window;
+  messageBus?: MessageBus;
+  // Custom fetch only used in tests.
+  fetchImpl?: typeof fetch;
+}
+
+interface SessionCandidate {
+  baseUrl: string;
+  sid: string;
+}
+
+interface Session {
+  candidates: SessionCandidate[];
+}
+
+function defaultMessageBus(): MessageBus {
+  return {
+    sendMessage(message, timeoutMs = SEND_MESSAGE_TIMEOUT_MS) {
+      return new Promise((resolve) => {
+        let done = false;
+        const finish = (value: unknown): void => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve(value as never);
+        };
+        const timer = setTimeout(() => finish(null), timeoutMs);
+        try {
+          chrome.runtime.sendMessage(message, (resp) => {
+            if (chrome.runtime.lastError) {
+              finish(null);
+              return;
+            }
+            finish(resp ?? null);
+          });
+        } catch {
+          finish(null);
+        }
+      });
+    },
+  };
+}
+
+function maybeDecodeSid(sid: string): string {
+  try {
+    return sid.includes('%') ? decodeURIComponent(sid) : sid;
+  } catch {
+    return sid;
+  }
+}
+
+export class SalesforceApiClient {
+  private readonly apiVersion: string;
+  private readonly win: Window;
+  private readonly bus: MessageBus;
+  private readonly fetchImpl: typeof fetch;
+  private session: Session | null = null;
+
+  constructor(options: SfApiOptions = {}) {
+    this.apiVersion = options.apiVersion ?? DEFAULT_API_VERSION;
+    this.win = options.win ?? window;
+    this.bus = options.messageBus ?? defaultMessageBus();
+    this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
+  }
+
+  clearSession(): void {
+    this.session = null;
+  }
+
+  /**
+   * Reads the flow id query parameter from the current URL. Returns null if
+   * the page isn't a Flow Builder URL.
+   */
+  getFlowIdFromUrl(): string | null {
+    const params = new URLSearchParams(this.win.location.search);
+    return params.get('flowId');
+  }
+
+  private async getSession(): Promise<Session | null> {
+    if (this.session?.candidates.length) return this.session;
+
+    const hostname = this.win.location.hostname;
+    const currentOrigin = this.win.location.origin;
+    const mySf = mySalesforceHostname(hostname);
+    const mySfOrigin = mySf ? `https://${mySf}` : null;
+
+    // Dedupe while preserving order. `.my.salesforce.com` first because it
+    // reliably accepts REST/Tooling API calls; lightning.force.com often 401s.
+    const baseUrls = Array.from(new Set([mySfOrigin, currentOrigin].filter((v): v is string => !!v)));
+
+    const response = await this.bus.sendMessage<{
+      ok: boolean;
+      sids?: Record<string, string | null>;
+    }>({ action: 'getSidForUrls', urls: baseUrls });
+    if (!response?.ok) return null;
+    const sidMap = response.sids ?? {};
+
+    const candidates: SessionCandidate[] = [];
+    for (const baseUrl of baseUrls) {
+      const sid = sidMap[baseUrl];
+      if (sid) candidates.push({ baseUrl, sid: maybeDecodeSid(sid) });
+    }
+    if (candidates.length === 0) return null;
+
+    this.session = { candidates };
+    return this.session;
+  }
+
+  /**
+   * GET an endpoint. Returns parsed JSON. Throws if every candidate host
+   * returns a non-401 error, or if a 401 retry also fails.
+   */
+  async apiGet<T = unknown>(
+    endpoint: string,
+    params: Record<string, string> = {},
+    options: { retryOn401?: boolean } = {},
+  ): Promise<T> {
+    if (!endpoint.startsWith('/')) {
+      throw new Error(`apiGet: endpoint must start with "/". Got: ${endpoint}`);
+    }
+    const retryOn401 = options.retryOn401 ?? true;
+    const session = await this.getSession();
+    if (!session) throw new Error('No Salesforce session available');
+
+    const queryString =
+      Object.keys(params).length > 0 ? `?${new URLSearchParams(params).toString()}` : '';
+    const errors: Array<{ baseUrl: string; status: number; errorText: string }> = [];
+
+    for (const { baseUrl, sid } of session.candidates) {
+      try {
+        const res = await this.fetchImpl(`${baseUrl}${endpoint}${queryString}`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${sid}`, Accept: 'application/json' },
+        });
+        if (res.ok) return (await res.json()) as T;
+        const errorText = await res.text().catch(() => '');
+        errors.push({ baseUrl, status: res.status, errorText });
+      } catch (err) {
+        errors.push({
+          baseUrl,
+          status: 0,
+          errorText: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const hasNon401 = errors.some((e) => e.status >= 400 && e.status !== 401);
+    if (retryOn401 && errors.some((e) => e.status === 401) && !hasNon401) {
+      this.clearSession();
+      return this.apiGet<T>(endpoint, params, { retryOn401: false });
+    }
+
+    const primary = errors.find((e) => e.status >= 400 && e.status !== 401) ?? errors[0]!;
+    throw new Error(
+      `Salesforce API error: ${primary.baseUrl} -> ${primary.status}. ` +
+        `Details: ${primary.errorText}. All results: ${errors
+          .map((e) => `${e.baseUrl} -> ${e.status}`)
+          .join(', ')}`,
+    );
+  }
+
+  /**
+   * Generic non-GET request (POST / PATCH / PUT / DELETE). Same dual-host +
+   * 401-retry strategy as apiGet.
+   */
+  async apiRequest<T = unknown>(
+    method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+    endpoint: string,
+    body: unknown = null,
+    options: { retryOn401?: boolean } = {},
+  ): Promise<T | null> {
+    if (!endpoint.startsWith('/')) {
+      throw new Error(`apiRequest: endpoint must start with "/". Got: ${endpoint}`);
+    }
+    const retryOn401 = options.retryOn401 ?? true;
+    const session = await this.getSession();
+    if (!session) throw new Error('No Salesforce session available');
+
+    const errors: Array<{ baseUrl: string; status: number; errorText: string }> = [];
+
+    for (const { baseUrl, sid } of session.candidates) {
+      try {
+        const res = await this.fetchImpl(`${baseUrl}${endpoint}`, {
+          method,
+          headers: {
+            Authorization: `Bearer ${sid}`,
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: body !== null ? JSON.stringify(body) : undefined,
+        });
+        if (res.ok) {
+          if (res.status === 204) return null;
+          const text = await res.text();
+          return text ? (JSON.parse(text) as T) : null;
+        }
+        const errorText = await res.text().catch(() => '');
+        errors.push({ baseUrl, status: res.status, errorText });
+      } catch (err) {
+        errors.push({
+          baseUrl,
+          status: 0,
+          errorText: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const hasNon401 = errors.some((e) => e.status >= 400 && e.status !== 401);
+    if (retryOn401 && errors.some((e) => e.status === 401) && !hasNon401) {
+      this.clearSession();
+      return this.apiRequest<T>(method, endpoint, body, { retryOn401: false });
+    }
+
+    const primary = errors.find((e) => e.status >= 400 && e.status !== 401) ?? errors[0]!;
+    throw new Error(
+      `Salesforce API error: ${primary.baseUrl} -> ${primary.status}. ` +
+        `Details: ${primary.errorText}. All results: ${errors
+          .map((e) => `${e.baseUrl} -> ${e.status}`)
+          .join(', ')}`,
+    );
+  }
+
+  apiPatch<T = unknown>(endpoint: string, body: unknown): Promise<T | null> {
+    return this.apiRequest<T>('PATCH', endpoint, body);
+  }
+
+  /**
+   * Run a SOQL query through the Tooling API. Returns the raw envelope so
+   * callers can read `.records`, `.size`, `.done`, etc.
+   */
+  toolingQuery<T = unknown>(soql: string): Promise<{ records: T[]; size: number; done: boolean }> {
+    return this.apiGet(`/services/data/${this.apiVersion}/tooling/query`, { q: soql });
+  }
+
+  /**
+   * Fetch the active version of a Flow's metadata. Tries
+   * `DefinitionId = '<id>'` first (the Flow Builder URL gives us the
+   * DefinitionId, not the version id) and falls back to `Id = '<id>'` for
+   * historical compatibility with code paths that pass a version id directly.
+   */
+  async getFlowMetadata(flowId: string): Promise<Record<string, unknown>> {
+    const COMMON_FIELDS =
+      "Id, Definition.DeveloperName, FullName, Metadata, MasterLabel, Description, ProcessType, Status";
+    const byDefinition = await this.toolingQuery<Record<string, unknown>>(
+      `SELECT ${COMMON_FIELDS} FROM Flow WHERE DefinitionId = '${flowId}' ORDER BY VersionNumber DESC LIMIT 1`,
+    );
+    if (byDefinition.records.length > 0) return byDefinition.records[0]!;
+
+    const byId = await this.toolingQuery<Record<string, unknown>>(
+      `SELECT ${COMMON_FIELDS} FROM Flow WHERE Id = '${flowId}' LIMIT 1`,
+    );
+    if (byId.records.length > 0) return byId.records[0]!;
+
+    throw new Error(`No flow found for ID: ${flowId}`);
+  }
+}
+
+// Convenience singleton accessor for the content-script side.
+let _singleton: SalesforceApiClient | null = null;
+export function getSalesforceApi(): SalesforceApiClient {
+  if (!_singleton) _singleton = new SalesforceApiClient();
+  return _singleton;
+}
+
+export function _resetSalesforceApiSingletonForTests(): void {
+  _singleton = null;
+}

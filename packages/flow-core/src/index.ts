@@ -1,0 +1,161 @@
+// @sfdt/flow-core — public surface
+// Each module is ported from the v2.0.2 extension utilities. See the plan at
+// /Users/dkennedy/.claude/plans/analyze-this-project-its-enchanted-treasure.md
+// for the full mapping table.
+
+export const VERSION = '0.0.1';
+
+export type {
+  AffectedItem,
+  Category,
+  Confidence,
+  Finding,
+  FindingLocation,
+  FindingMetadata,
+  IssueFamily,
+  Rating,
+  ScoreSummary,
+  Severity,
+} from './types.js';
+
+export { buildIssueFamilies, calculateScore, getScoreRating } from './scorer.js';
+
+export {
+  ApiNameLibrary,
+  DEFAULT_PREFIXES,
+  ICON_TO_TYPE,
+} from './api-name.js';
+export type {
+  ApiNameImportResult,
+  NamingPattern,
+  PrefixEntry,
+  PrefixFile,
+  ApiNameLibraryOptions,
+} from './api-name.js';
+
+export { createMemoryStorage } from './storage.js';
+export type { KeyValueStorage } from './storage.js';
+
+export {
+  FREQUENCY,
+  DAYS_LONG,
+  DAYS_SHORT,
+  MONTHS_LONG,
+  MONTHS_SHORT,
+  parseSchedule,
+  parseActivationDate,
+  getScheduleStartDateTime,
+  calculateNextRun,
+  isExpired,
+  getRunsInRange,
+  buildSummarySentence,
+  formatFilters,
+  formatTime,
+  formatDateLong,
+  formatDateTimeLong,
+  formatRelative,
+} from './scheduled-calc.js';
+export type {
+  FlowFilterClause,
+  FlowFilterValue,
+  FlowMetadata,
+  FlowRecord,
+  FlowScheduleBlock,
+  FlowStartBlock,
+  Frequency,
+  ParsedSchedule,
+} from './scheduled-calc.js';
+
+export {
+  DEFAULT_PROMPT_TEMPLATES,
+  assembleDefaultPrompt,
+  getDefaultPromptById,
+  getFallbackDefaultPromptId,
+} from './default-prompts.js';
+export type {
+  DefaultPromptTemplate,
+  PromptCategory,
+  PromptContext,
+} from './default-prompts.js';
+
+export { normalize } from './normalize.js';
+export type {
+  Dependency,
+  FlowType,
+  NodeType,
+  NormalizeOptions,
+  NormalizedEdge,
+  NormalizedFlow,
+  NormalizedMeta,
+  NormalizedNode,
+  NormalizedResource,
+  NormalizedTrigger,
+  RawFlowMetadata,
+  RawStartBlock,
+  TriggerEvent,
+  TriggerTiming,
+} from './normalize.js';
+
+export { evaluate } from './rules.js';
+export type { RulesConfig } from './rules.js';
+
+export { detectTriggerConflicts } from './trigger-conflicts.js';
+export type {
+  FlowConflictCandidate,
+  FlowConflictGroup,
+} from './trigger-conflicts.js';
+
+export { buildSubflowGraph, getCallChains } from './subflow-graph.js';
+export type {
+  SubflowCycle,
+  SubflowGraph,
+  SubflowGraphCandidate,
+  SubflowGraphNode,
+} from './subflow-graph.js';
+
+export {
+  makeErrorResponse,
+  makeSuccessResponse,
+  validateSfdtRequest,
+} from './bridge-contract.js';
+export type {
+  AiRequest,
+  CompareRequest,
+  DeployRequest,
+  DriftRequest,
+  PingRequest,
+  PingResponseData,
+  QualityRequest,
+  QualityResponseData,
+  RequestEnvelope,
+  RollbackRequest,
+  ScanRequest,
+  SfdtErrorResponse,
+  SfdtRequest,
+  SfdtRequestKind,
+  SfdtResponse,
+  SfdtSuccessResponse,
+  ValidationError,
+  VersionRequest,
+  VersionResponseData,
+} from './bridge-contract.js';
+
+export {
+  cleanFlowMetadata,
+  estimateTokens,
+  summariseFlowMetadata,
+} from './metadata-cleaner.js';
+export type { FlowMetadataSummary } from './metadata-cleaner.js';
+
+export { PromptLibrary, PROMPT_CATEGORIES } from './prompts.js';
+export type {
+  ConflictMode,
+  CustomPrompt,
+  ImportEntry,
+  ImportError,
+  ImportOptions,
+  ImportResult,
+  PromptLibraryOptions,
+  ResolvedPrompt,
+  ValidationResult,
+} from './prompts.js';

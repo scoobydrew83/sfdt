@@ -6,6 +6,10 @@ gui/node_modules/
 dist/
 gui/dist/
 
+# WXT (extension) generated files
+.wxt/
+.output/
+
 # Coverage
 coverage/
 

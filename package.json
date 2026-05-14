@@ -24,7 +24,10 @@
     "SECURITY.md"
   ],
   "workspaces": [
-    "gui"
+    "gui",
+    "extension",
+    "host",
+    "packages/*"
   ],
   "scripts": {
     "test": "vitest run",
@@ -35,6 +38,11 @@
     "format": "prettier --write \"src/**/*.js\" \"bin/*.js\" \"test/**/*.js\" \"README.md\" \"package.json\"",
     "dev": "npm link",
     "build:gui": "npm run build -w gui",
+    "build:flow-core": "npm run build -w @sfdt/flow-core",
+    "build:ext": "npm run build:flow-core && npm run build -w @sfdt/extension",
+    "test:flow-core": "npm run test -w @sfdt/flow-core",
+    "test:extension": "npm run test -w @sfdt/extension",
+    "test:all": "npm test && npm run test:flow-core && npm run test:extension",
     "dev:ui": "npm run build:gui && npm link && echo '\\n✓ GUI built and linked. cd into your SF project and run: sfdt ui'",
     "postinstall": "node scripts/postinstall.js",
     "prepack": "npm run build:gui",
@@ -61,6 +69,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@sfdt/flow-core": "*",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "chalk": "^5.4.1",

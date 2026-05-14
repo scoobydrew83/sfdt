@@ -1,0 +1,9 @@
+{
+  "name": "com.sfdt.host",
+  "description": "sfdt CLI native messaging bridge for the SF Flow Utility Toolkit extension",
+  "path": "__SFDT_HOST_PATH__",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://__SFDT_EXTENSION_ID__/"
+  ]
+}
