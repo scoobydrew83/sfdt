@@ -146,7 +146,22 @@ async function dispatch(request, { version, makeSuccessResponse, makeErrorRespon
         ? makeSuccessResponse(request.requestId, result.data)
         : makeErrorResponse(request.requestId, result.error, result.code ?? 'INTERNAL_ERROR');
     }
-    case 'rollback':
+    case 'rollback': {
+      // Salesforce activates / deactivates / rolls back via Tooling-API
+      // PATCH on FlowDefinition.Metadata.activeVersionNumber. toVersion=0
+      // is the documented way to deactivate. Like deploy, the canonical
+      // identifier is flowApiName; flowId stays as a legacy fallback.
+      const { runFlowRollback } = await import('../flow-rollback-runner.js');
+      const flowApiName = request.flowApiName ?? request.flowId;
+      const result = await runFlowRollback({
+        flowApiName,
+        toVersion: request.toVersion,
+        ...(request.targetOrg !== undefined ? { targetOrg: request.targetOrg } : {}),
+      });
+      return result.ok
+        ? makeSuccessResponse(request.requestId, result.data)
+        : makeErrorResponse(request.requestId, result.error, result.code ?? 'INTERNAL_ERROR');
+    }
     case 'ai':
     case 'drift':
     case 'scan':

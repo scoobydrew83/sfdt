@@ -37,31 +37,57 @@ describe('flow-core/bridge-contract', () => {
       expect(validateSfdtRequest({ requestId: 'r1', kind: 'deploy', flowId: '301AB' }).ok).toBe(true);
     });
 
-    it('rollback requires flowId and a positive integer toVersion', () => {
+    it('rollback requires a flow identifier and a non-negative integer toVersion', () => {
+      // No identifier at all
       expect(
-        validateSfdtRequest({ requestId: 'r1', kind: 'rollback', flowId: '301AB' }).ok,
+        validateSfdtRequest({ requestId: 'r1', kind: 'rollback', toVersion: 1 }).ok,
       ).toBe(false);
+      // Identifier present but no toVersion
+      expect(
+        validateSfdtRequest({ requestId: 'r1', kind: 'rollback', flowApiName: 'My_Flow' }).ok,
+      ).toBe(false);
+      // Negative toVersion
       expect(
         validateSfdtRequest({
           requestId: 'r1',
           kind: 'rollback',
-          flowId: '301AB',
-          toVersion: 0,
+          flowApiName: 'My_Flow',
+          toVersion: -1,
         }).ok,
       ).toBe(false);
+      // Non-integer
       expect(
         validateSfdtRequest({
           requestId: 'r1',
           kind: 'rollback',
-          flowId: '301AB',
+          flowApiName: 'My_Flow',
           toVersion: 1.5,
         }).ok,
       ).toBe(false);
+      // toVersion=0 is now the documented way to deactivate
+      expect(
+        validateSfdtRequest({
+          requestId: 'r1',
+          kind: 'rollback',
+          flowApiName: 'My_Flow',
+          toVersion: 0,
+        }).ok,
+      ).toBe(true);
+      // Legacy callers passing flowId still work
       expect(
         validateSfdtRequest({
           requestId: 'r1',
           kind: 'rollback',
           flowId: '301AB',
+          toVersion: 3,
+        }).ok,
+      ).toBe(true);
+      // New canonical shape
+      expect(
+        validateSfdtRequest({
+          requestId: 'r1',
+          kind: 'rollback',
+          flowApiName: 'My_Flow',
           toVersion: 3,
         }).ok,
       ).toBe(true);
@@ -110,7 +136,9 @@ describe('flow-core/bridge-contract', () => {
       if (!result.ok) {
         const fields = result.errors.map((e) => e.field);
         expect(fields).toContain('requestId');
-        expect(fields).toContain('flowId');
+        // Either flowApiName or flowId must be present — validator surfaces
+        // the canonical name in its error message.
+        expect(fields).toContain('flowApiName');
         expect(fields).toContain('toVersion');
       }
     });

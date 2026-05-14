@@ -54,7 +54,16 @@ export interface DeployRequest extends RequestEnvelope {
 
 export interface RollbackRequest extends RequestEnvelope {
   kind: 'rollback';
-  flowId: string;
+  // Preferred. The Flow's developer name — what FlowDefinition.DeveloperName
+  // stores, and what Tooling-API queries resolve against.
+  flowApiName?: string;
+  // Legacy field; the bridge falls back to this when flowApiName isn't
+  // provided so existing callers don't break.
+  flowId?: string;
+  // Target FlowDefinition.Metadata.activeVersionNumber. A positive integer
+  // sets that version active (rollback to an earlier version OR activate the
+  // latest). Zero deactivates the flow entirely — Salesforce maps zero to a
+  // null active version under the hood.
   toVersion: number;
   targetOrg?: string;
 }
@@ -117,6 +126,8 @@ export interface SfdtErrorResponse {
   //   "BRIDGE_FORBIDDEN" — origin not in allowlist
   //   "REQUEST_INVALID" — payload failed the contract validator
   //   "NOT_IMPLEMENTED" — known request kind but stub on this side
+  //   "NOT_FOUND" — handler ran but the resource didn't exist (e.g. no
+  //                 FlowDefinition with the given DeveloperName)
   //   "INTERNAL_ERROR" — unhandled exception
   code?:
     | 'BRIDGE_OFFLINE'
@@ -124,6 +135,7 @@ export interface SfdtErrorResponse {
     | 'BRIDGE_FORBIDDEN'
     | 'REQUEST_INVALID'
     | 'NOT_IMPLEMENTED'
+    | 'NOT_FOUND'
     | 'INTERNAL_ERROR';
 }
 
@@ -231,15 +243,22 @@ export function validateSfdtRequest(input: unknown): {
         errors.push({ field: 'validateOnly', reason: 'must be a boolean if present' });
       }
       break;
-    case 'rollback':
-      if (!isNonEmptyString(input.flowId)) errors.push({ field: 'flowId', reason: 'must be a non-empty string' });
-      if (typeof input.toVersion !== 'number' || !Number.isInteger(input.toVersion) || input.toVersion < 1) {
-        errors.push({ field: 'toVersion', reason: 'must be a positive integer' });
+    case 'rollback': {
+      // One of flowApiName / flowId must be present. flowApiName wins on the
+      // bridge side; flowId stays as a back-compat field for older callers.
+      const hasApiName = isNonEmptyString(input.flowApiName);
+      const hasFlowId = isNonEmptyString(input.flowId);
+      if (!hasApiName && !hasFlowId) {
+        errors.push({ field: 'flowApiName', reason: 'must be a non-empty string (or pass flowId)' });
+      }
+      if (typeof input.toVersion !== 'number' || !Number.isInteger(input.toVersion) || input.toVersion < 0) {
+        errors.push({ field: 'toVersion', reason: 'must be a non-negative integer (0 deactivates)' });
       }
       if (input.targetOrg !== undefined && !isNonEmptyString(input.targetOrg)) {
         errors.push({ field: 'targetOrg', reason: 'must be a non-empty string if present' });
       }
       break;
+    }
     case 'quality':
       if (!isNonEmptyString(input.flowXml)) errors.push({ field: 'flowXml', reason: 'must be a non-empty string' });
       break;
