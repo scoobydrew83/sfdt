@@ -129,7 +129,23 @@ async function dispatch(request, { version, makeSuccessResponse, makeErrorRespon
         issueFamilyCount: report.issueFamilies.length,
       });
     }
-    case 'deploy':
+    case 'deploy': {
+      // Spawns `sf project deploy start --metadata Flow:<name>`. The
+      // extension's flow-deploy feature is expected to send `flowApiName`
+      // (the Flow's developer name) rather than the URL's `flowId`, which
+      // can be a Salesforce Id or a managed-package path neither of which
+      // is the right metadata identifier for deploy.
+      const { runFlowDeploy } = await import('../flow-deploy-runner.js');
+      const flowApiName = request.flowApiName ?? request.flowId;
+      const result = await runFlowDeploy({
+        flowApiName,
+        ...(request.targetOrg !== undefined ? { targetOrg: request.targetOrg } : {}),
+        ...(request.validateOnly !== undefined ? { validateOnly: request.validateOnly } : {}),
+      });
+      return result.ok
+        ? makeSuccessResponse(request.requestId, result.data)
+        : makeErrorResponse(request.requestId, result.error, result.code ?? 'INTERNAL_ERROR');
+    }
     case 'rollback':
     case 'ai':
     case 'drift':

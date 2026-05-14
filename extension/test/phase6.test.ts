@@ -132,7 +132,7 @@ describe('extension/features/flow-deploy', () => {
         error: 'x',
         code: 'NOT_IMPLEMENTED',
       }),
-    ).toMatch(/Phase 7/);
+    ).toMatch(/not implemented/i);
     expect(
       describeBridgeError({
         ok: false,

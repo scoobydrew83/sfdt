@@ -1,20 +1,17 @@
-// One-click Deploy / Rollback from the Flow Builder canvas — Phase 6c.
+// One-click Deploy / Rollback from the Flow Builder canvas — Phase 6c +
+// Phase 7's bridge wiring.
 //
-// Three actions, all dispatched through the sfdt bridge:
-//   - Deploy   — push the currently-open Flow to the configured org
-//   - Rollback — revert the active version to a chosen prior version
-//   - Status   — show last deploy/rollback result for this Flow
-//
-// The bridge handlers for `deploy` and `rollback` are still stubbed
-// server-side (they will land in Phase 7's distribution work alongside the
-// scripted native host installer). For Phase 6 this feature is shipped end-
-// to-end on the client: the button mounts, the bridge call goes through,
-// and the response — currently NOT_IMPLEMENTED — surfaces as a clear
-// "available once sfdt-host is installed" toast rather than a crash.
+// Deploy is now wired end-to-end: the extension fetches the Flow's
+// metadata via Tooling API to resolve the developer name, then dispatches
+// `kind: deploy` through the sfdt bridge. The bridge handler runs `sf
+// project deploy start --metadata Flow:<name>` against the configured
+// target org and returns a structured result. Rollback still routes to
+// NOT_IMPLEMENTED on the server side and is surfaced as a clear toast.
 
 import type { SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
+import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { loadSettings } from '../lib/settings.js';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
 import { showToast } from '../ui/toast.js';
@@ -42,7 +39,7 @@ function describeBridgeError(response: SfdtResponse): string {
     case 'BRIDGE_FORBIDDEN':
       return 'sfdt bridge rejected this origin. Make sure the extension is paired with the right machine.';
     case 'NOT_IMPLEMENTED':
-      return 'Deploy/rollback ships with Phase 7. The extension is wired up; sfdt-side handler still has to land.';
+      return 'That bridge action is not implemented yet (rollback still pending).';
     case 'BRIDGE_OFFLINE':
       return 'sfdt is not running. Start `sfdt ui` or install the native messaging host.';
     default:
@@ -53,11 +50,40 @@ function describeBridgeError(response: SfdtResponse): string {
 export interface FlowDeployFeatureOptions {
   doc?: Document;
   win?: Window;
+  api?: SalesforceApiClient;
+}
+
+/**
+ * Resolve the Flow's developer name from Tooling API. Required because the
+ * Flow Builder URL's `?flowId=` is a Salesforce Id (or a managed-package
+ * path), but `sf project deploy start --metadata Flow:<name>` needs the
+ * developer name. v2.0.2 never integrated with deploy so this round-trip
+ * is new to the port.
+ */
+async function resolveFlowApiName(api: SalesforceApiClient, flowId: string): Promise<string> {
+  const record = (await api.getFlowMetadata(flowId)) as {
+    Definition?: { DeveloperName?: string };
+    FullName?: string;
+    Metadata?: { label?: string };
+  };
+  const candidates = [
+    record.Definition?.DeveloperName,
+    record.FullName,
+    record.Metadata?.label,
+  ];
+  const valid = candidates.find(
+    (v): v is string => typeof v === 'string' && /^[A-Za-z][A-Za-z0-9_]*$/.test(v),
+  );
+  if (!valid) {
+    throw new Error(`Could not resolve a deployable developer name from flowId=${flowId}`);
+  }
+  return valid;
 }
 
 export function createFlowDeployFeature(options: FlowDeployFeatureOptions = {}): Feature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
+  const api = options.api ?? getSalesforceApi();
 
   return {
     id: 'flow-deploy',
@@ -73,15 +99,30 @@ export function createFlowDeployFeature(options: FlowDeployFeatureOptions = {}):
         return;
       }
 
-      // Phase 6 ships the modal that lets the user pick deploy vs rollback.
-      // The actions hand off to the bridge — the server side (`deploy` and
-      // `rollback` kinds) lands in Phase 7.
       showDeployModal(doc, async (action) => {
-        showToast(`${action === 'deploy' ? 'Deploying' : 'Rolling back'}…`, { doc });
-        const response = await dispatchBridge(action, { flowId });
+        if (action === 'rollback') {
+          // Server-side handler still NOT_IMPLEMENTED; surface that early
+          // instead of paying the metadata-fetch round-trip.
+          const response = await dispatchBridge('rollback', { flowId, toVersion: 1 });
+          showToast(describeBridgeError(response), { kind: 'error', doc });
+          return;
+        }
+
+        showToast('Resolving Flow metadata…', { doc });
+        let flowApiName: string;
+        try {
+          flowApiName = await resolveFlowApiName(api, flowId);
+        } catch (err) {
+          showToast(err instanceof Error ? err.message : String(err), { kind: 'error', doc });
+          return;
+        }
+
+        showToast(`Deploying ${flowApiName}…`, { doc });
+        const response = await dispatchBridge('deploy', { flowApiName, flowId });
         if (response.ok) {
-          showToast(`${action === 'deploy' ? 'Deploy' : 'Rollback'} complete.`, {
-            kind: 'success',
+          const data = response.data as { status?: string; summary?: string };
+          showToast(data?.summary ?? `Deploy ${data?.status ?? 'completed'}`, {
+            kind: data?.status === 'Succeeded' ? 'success' : 'warning',
             doc,
           });
         } else {

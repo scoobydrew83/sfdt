@@ -39,7 +39,14 @@ export interface VersionRequest extends RequestEnvelope {
 
 export interface DeployRequest extends RequestEnvelope {
   kind: 'deploy';
-  flowId: string;
+  // The Flow Builder URL's flowId is a Salesforce Id (or a managed-package
+  // path), not the developer name needed by `sf project deploy start
+  // --metadata Flow:<name>`. The extension fetches metadata via Tooling
+  // API to resolve the developer name, then sends `flowApiName`.
+  flowApiName?: string;
+  // Legacy field; the bridge falls back to this when flowApiName isn't
+  // provided so existing callers don't break.
+  flowId?: string;
   targetOrg?: string;
   // When true, the bridge runs a check-only deploy without committing.
   validateOnly?: boolean;
@@ -203,7 +210,20 @@ export function validateSfdtRequest(input: unknown): {
       // No body fields.
       break;
     case 'deploy':
-      if (!isNonEmptyString(input.flowId)) errors.push({ field: 'flowId', reason: 'must be a non-empty string' });
+      // flowApiName is preferred; flowId is the legacy field. At least one
+      // must be a non-empty string.
+      if (!isNonEmptyString(input.flowApiName) && !isNonEmptyString(input.flowId)) {
+        errors.push({
+          field: 'flowApiName',
+          reason: 'must be a non-empty string (or set flowId for legacy compatibility)',
+        });
+      }
+      if (input.flowApiName !== undefined && !isNonEmptyString(input.flowApiName)) {
+        errors.push({ field: 'flowApiName', reason: 'must be a non-empty string if present' });
+      }
+      if (input.flowId !== undefined && !isNonEmptyString(input.flowId)) {
+        errors.push({ field: 'flowId', reason: 'must be a non-empty string if present' });
+      }
       if (input.targetOrg !== undefined && !isNonEmptyString(input.targetOrg)) {
         errors.push({ field: 'targetOrg', reason: 'must be a non-empty string if present' });
       }
