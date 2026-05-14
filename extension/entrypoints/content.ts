@@ -97,22 +97,22 @@ export default defineContentScript({
       'flow-deploy': { icon: '🚀', label: 'Deploy or Rollback…' },
     };
 
-    // Map our settings keys (camelCase) to the feature ids (kebab-case) used
-    // by the registry. Anything not in this map is treated as always-on so
-    // the contextual menu still lists Phase 4 features as they land.
-    const SETTINGS_KEY_FOR_FEATURE: Record<string, keyof typeof settings.features> = {
-      'setup-tabs': 'setupTabs',
-      'missing-descriptions': 'missingDescriptions',
-      'scheduled-flow-explorer': 'scheduledFlowExplorer',
-    };
+    // Menu visibility is by context only — every feature exposed by the
+    // current context shows up, regardless of its enable flag. Each
+    // feature's onActivate decides what to do (some toggle a setting,
+    // some open a modal); the settings.features.X flag governs whether
+    // the feature auto-runs at init() time, not whether the menu shows
+    // it. Smoke test surfaced this: with the old filter, features that
+    // toggle their own state (setup-tabs, missing-descriptions) could
+    // never be enabled because the toggle was hidden until they were
+    // enabled. Mirror of v2.0.2's original side-button.js behaviour.
+    void settings; // referenced only for the load-on-start side effect.
 
     const menuItemsProvider = (): MenuItem[] => {
       const available = getAvailableFeatures();
       const items: MenuItem[] = [];
       for (const featureId of available) {
         if (!registry.has(featureId)) continue;
-        const settingsKey = SETTINGS_KEY_FOR_FEATURE[featureId];
-        if (settingsKey && !settings.features[settingsKey]) continue;
         const entry = ICONS[featureId];
         if (!entry) continue;
         items.push({ featureId, icon: entry.icon, label: entry.label });

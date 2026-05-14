@@ -63,6 +63,15 @@ export function lightningHostname(hostname: string): string {
  * Return the `.my.salesforce.com` host for API calls. Used by the
  * Salesforce REST/Tooling-API client. Mirrors the mapping in
  * /Users/dkennedy/dev/2.0.2_0 copy/utils/salesforce-api.js:70-88.
+ *
+ * For sandbox / scratch / develop / trailblaze orgs the middle segment is
+ * part of the real API host (e.g. <org>.develop.my.salesforce.com), so we
+ * preserve it here — symmetric with lightningHostname. v2.0.2's original
+ * `hostname.replace('.lightning.force.com', '')` did this by accident; my
+ * earlier port broke it by only keeping the first hostname segment, which
+ * produced a non-existent host on dev-edition orgs and caused 401s with
+ * "INVALID_SESSION_ID" because the cookie lookup against the wrong host
+ * returned nothing.
  */
 export function mySalesforceHostname(hostname: string): string | null {
   if (hostname.includes('.my.salesforce.com')) return hostname;
@@ -70,7 +79,10 @@ export function mySalesforceHostname(hostname: string): string | null {
     hostname.includes('.lightning.force.com') ||
     hostname.includes('.salesforce-setup.com')
   ) {
-    return `${orgIdentifier(hostname)}.my.salesforce.com`;
+    const middle = middleSegmentOf(hostname);
+    return middle === null
+      ? `${orgIdentifier(hostname)}.my.salesforce.com`
+      : `${orgIdentifier(hostname)}.${middle}.my.salesforce.com`;
   }
   return null;
 }

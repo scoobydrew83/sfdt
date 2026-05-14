@@ -151,7 +151,9 @@ describe('extension/lib/salesforce-api', () => {
 
   describe('getFlowMetadata', () => {
     it('returns the active version when DefinitionId matches', async () => {
-      const win = fakeWin('https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app?flowId=300abc');
+      // 15-char shape — the function dispatches by length.
+      const FLOW_ID = '300AB000000xyz1';
+      const win = fakeWin(`https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app?flowId=${FLOW_ID}`);
       const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
       const fetchSpy = vi.fn(
         fetchResponder({
@@ -166,12 +168,15 @@ describe('extension/lib/salesforce-api', () => {
         }),
       );
       const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy });
-      const meta = await client.getFlowMetadata('300abc');
+      const meta = await client.getFlowMetadata(FLOW_ID);
       expect(meta).toMatchObject({ Id: '301', MasterLabel: 'Active Flow' });
     });
 
     it('falls back to Id lookup when DefinitionId returns nothing', async () => {
-      const win = fakeWin('https://x.lightning.force.com/anything?flowId=301abc');
+      // 15-char Salesforce Id shape — the Id-vs-DeveloperName branch is
+      // selected on length, so test fixtures need to match.
+      const FLOW_ID = '301AB000000xyz1';
+      const win = fakeWin(`https://x.lightning.force.com/anything?flowId=${FLOW_ID}`);
       const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
       let call = 0;
       const fetchSpy = vi.fn(async () => {
@@ -179,7 +184,7 @@ describe('extension/lib/salesforce-api', () => {
         const body =
           call === 1
             ? { size: 0, done: true, records: [] }
-            : { size: 1, done: true, records: [{ Id: '301abc', MasterLabel: 'Direct' }] };
+            : { size: 1, done: true, records: [{ Id: FLOW_ID, MasterLabel: 'Direct' }] };
         return {
           ok: true,
           status: 200,
@@ -192,8 +197,8 @@ describe('extension/lib/salesforce-api', () => {
         } as Response;
       });
       const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy as typeof fetch });
-      const meta = await client.getFlowMetadata('301abc');
-      expect(meta).toMatchObject({ Id: '301abc', MasterLabel: 'Direct' });
+      const meta = await client.getFlowMetadata(FLOW_ID);
+      expect(meta).toMatchObject({ Id: FLOW_ID, MasterLabel: 'Direct' });
       expect(fetchSpy).toHaveBeenCalledTimes(2);
     });
 

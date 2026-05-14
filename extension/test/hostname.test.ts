@@ -80,5 +80,23 @@ describe('extension/lib/hostname', () => {
     it('returns null for an unrecognised host', () => {
       expect(mySalesforceHostname('example.com')).toBeNull();
     });
+
+    it('preserves the develop/sandbox/scratch/trailblaze middle segment', () => {
+      // Live regression: a real dev-edition org reported
+      // INVALID_SESSION_ID 401s on Flow Health Check because the API host
+      // was being built without the `.develop.` middle segment.
+      expect(mySalesforceHostname('myorg.develop.lightning.force.com')).toBe(
+        'myorg.develop.my.salesforce.com',
+      );
+      expect(mySalesforceHostname('myorg.sandbox.lightning.force.com')).toBe(
+        'myorg.sandbox.my.salesforce.com',
+      );
+      expect(mySalesforceHostname('myorg.scratch.lightning.force.com')).toBe(
+        'myorg.scratch.my.salesforce.com',
+      );
+      expect(mySalesforceHostname('myorg.trailblaze.my.salesforce-setup.com')).toBe(
+        'myorg.trailblaze.my.salesforce.com',
+      );
+    });
   });
 });

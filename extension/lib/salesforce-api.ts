@@ -263,25 +263,76 @@ export class SalesforceApiClient {
   }
 
   /**
-   * Fetch the active version of a Flow's metadata. Tries
-   * `DefinitionId = '<id>'` first (the Flow Builder URL gives us the
-   * DefinitionId, not the version id) and falls back to `Id = '<id>'` for
-   * historical compatibility with code paths that pass a version id directly.
+   * Fetch the active version of a Flow's metadata. Handles two URL shapes
+   * Flow Builder uses in `?flowId=`:
+   *
+   *   1. Real Salesforce Id (15 or 18 alphanumeric chars) — try
+   *      `DefinitionId = '<id>'` first (the Flow Builder URL usually gives
+   *      the DefinitionId), fall back to `Id = '<id>'` for callers that
+   *      pass a version id directly.
+   *
+   *   2. Managed-package developer-name path
+   *      `<namespace>__<devname>-<version>` (e.g.
+   *      `runtime_appointmentbooking__AddAttnd-1`). Look up via
+   *      `Definition.DeveloperName` + `Definition.NamespacePrefix` so the
+   *      query is scoped to the right flow.
+   *
+   * v2.0.2 only handled case 1, so managed-package flows surfaced as a
+   * 400 INVALID_QUERY_FILTER_OPERATOR ("invalid ID field"). Smoke-test
+   * regression — fixed here.
    */
   async getFlowMetadata(flowId: string): Promise<Record<string, unknown>> {
     const COMMON_FIELDS =
       "Id, Definition.DeveloperName, FullName, Metadata, MasterLabel, Description, ProcessType, Status";
-    const byDefinition = await this.toolingQuery<Record<string, unknown>>(
-      `SELECT ${COMMON_FIELDS} FROM Flow WHERE DefinitionId = '${flowId}' ORDER BY VersionNumber DESC LIMIT 1`,
-    );
-    if (byDefinition.records.length > 0) return byDefinition.records[0]!;
 
-    const byId = await this.toolingQuery<Record<string, unknown>>(
-      `SELECT ${COMMON_FIELDS} FROM Flow WHERE Id = '${flowId}' LIMIT 1`,
-    );
-    if (byId.records.length > 0) return byId.records[0]!;
+    if (/^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/.test(flowId)) {
+      const byDefinition = await this.toolingQuery<Record<string, unknown>>(
+        `SELECT ${COMMON_FIELDS} FROM Flow WHERE DefinitionId = '${flowId}' ORDER BY VersionNumber DESC LIMIT 1`,
+      );
+      if (byDefinition.records.length > 0) return byDefinition.records[0]!;
 
-    throw new Error(`No flow found for ID: ${flowId}`);
+      const byId = await this.toolingQuery<Record<string, unknown>>(
+        `SELECT ${COMMON_FIELDS} FROM Flow WHERE Id = '${flowId}' LIMIT 1`,
+      );
+      if (byId.records.length > 0) return byId.records[0]!;
+
+      throw new Error(`No flow found for ID: ${flowId}`);
+    }
+
+    // Case 2: parse as `[namespace__]devname[-version]`. The trailing
+    // `-<digit>` is sometimes a real version but on some URLs it's a draft
+    // / runtime suffix, so we don't filter on it — always grab the latest
+    // version of the matching flow.
+    const stripped = flowId.replace(/-\d+$/, '');
+    const namespaceMatch = stripped.match(/^(.+?)__(.+)$/);
+    const namespace = namespaceMatch ? namespaceMatch[1]! : '';
+    const developerName = namespaceMatch ? namespaceMatch[2]! : stripped;
+
+    const escDev = developerName.replace(/'/g, "\\'");
+    const escNs = namespace.replace(/'/g, "\\'");
+    const nsClause = namespace
+      ? ` AND Definition.NamespacePrefix = '${escNs}'`
+      : ` AND Definition.NamespacePrefix = null`;
+
+    const result = await this.toolingQuery<Record<string, unknown>>(
+      `SELECT ${COMMON_FIELDS} FROM Flow WHERE Definition.DeveloperName = '${escDev}'${nsClause} ORDER BY VersionNumber DESC LIMIT 1`,
+    );
+    if (result.records.length > 0) return result.records[0]!;
+
+    // Last-ditch fallback for unusual managed-package URL shapes: drop the
+    // namespace filter entirely.
+    if (namespace) {
+      const fallback = await this.toolingQuery<Record<string, unknown>>(
+        `SELECT ${COMMON_FIELDS} FROM Flow WHERE Definition.DeveloperName = '${escDev}' ORDER BY VersionNumber DESC LIMIT 1`,
+      );
+      if (fallback.records.length > 0) return fallback.records[0]!;
+    }
+
+    throw new Error(
+      `No flow found for: ${flowId}. ` +
+        `Some managed-package or runtime flows (like the runtime_appointmentbooking_* family) ` +
+        `aren't queryable via the Tooling API — try one of your own flows.`,
+    );
   }
 }
 
