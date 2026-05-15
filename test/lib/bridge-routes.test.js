@@ -79,7 +79,7 @@ describe('GET /api/bridge/ping', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       ok: true,
-      data: { pong: true, serverVersion: VERSION, transport: 'localhost' },
+      data: { pong: true, serverVersion: VERSION, transport: 'localhost', disabledFeatures: [] },
     });
   });
 
@@ -139,7 +139,7 @@ describe('POST /api/bridge/exchange — authentication', () => {
     expect(res.body).toEqual({
       ok: true,
       requestId: 'r1',
-      data: { pong: true, serverVersion: VERSION, transport: 'localhost' },
+      data: { pong: true, serverVersion: VERSION, transport: 'localhost', disabledFeatures: [] },
     });
   });
 });

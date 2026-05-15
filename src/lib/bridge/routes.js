@@ -17,6 +17,7 @@
  */
 
 import { createBridgeAuthMiddleware, createBridgeCorsMiddleware } from './middleware.js';
+import { readDisabledFeatures } from './feature-flags.js';
 
 // Lazy import so flow-core's build is not required to start the server; the
 // import happens the first time /api/bridge/exchange runs, by which point
@@ -51,10 +52,16 @@ export function mountBridgeRoutes(app, { port, version, rateLimiter }) {
 
   // Discovery probe — no auth required so the extension can detect whether
   // localhost is reachable without prompting the user for a token first.
-  app.get('/api/bridge/ping', limiter, (_req, res) => {
+  app.get('/api/bridge/ping', limiter, async (_req, res) => {
+    const disabledFeatures = await readDisabledFeatures(process.cwd());
     res.json({
       ok: true,
-      data: { pong: true, serverVersion: version, transport: 'localhost' },
+      data: {
+        pong: true,
+        serverVersion: version,
+        transport: 'localhost',
+        disabledFeatures,
+      },
     });
   });
 
@@ -95,12 +102,15 @@ export function mountBridgeRoutes(app, { port, version, rateLimiter }) {
  */
 async function dispatch(request, { version, makeSuccessResponse, makeErrorResponse }) {
   switch (request.kind) {
-    case 'ping':
+    case 'ping': {
+      const disabledFeatures = await readDisabledFeatures(process.cwd());
       return makeSuccessResponse(request.requestId, {
         pong: true,
         serverVersion: version,
         transport: 'localhost',
+        disabledFeatures,
       });
+    }
     case 'version':
       return makeSuccessResponse(request.requestId, { version });
     case 'quality': {
