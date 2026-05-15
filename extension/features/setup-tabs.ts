@@ -15,10 +15,18 @@ import {
   lightningHostname as toLightningHost,
   setupHostname as toSetupHost,
 } from '../lib/hostname.js';
-import { isFeatureEnabled, loadSettings, onSettingsChange, patchSettings } from '../lib/settings.js';
+import { isFeatureEnabled, loadSettings, onSettingsChange, patchSettings, registerSettingsShape } from '../lib/settings.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { CONTEXTS } from '../lib/context-detector.js';
 import { showToast } from '../ui/toast.js';
+import { z } from 'zod';
+
+const SETUP_TABS_SETTINGS_SCHEMA = z.object({
+  automationHomeEnabled: z.boolean().default(false),
+  groupingEnabled: z.boolean().default(false),
+});
+
+registerSettingsShape('setup-tabs', SETUP_TABS_SETTINGS_SCHEMA);
 
 const TAB_CLASS = 'sfut-custom-tab';
 const GROUP_LABEL = 'Automation';
@@ -350,11 +358,12 @@ export function createSetupTabsFeature(options: SetupTabsOptions = {}): Feature 
       }
       if (doc.querySelector(`.${TAB_CLASS}`)) return; // Lost a race.
 
+      const setupTabsConfig = settings.featureSettings?.['setup-tabs'] ?? settings.setupTabs;
       const tabsToInject: TabDefinition[] = [...BASE_TABS];
-      if (settings.setupTabs.automationHomeEnabled) tabsToInject.push(AUTOMATION_HOME_TAB);
+      if (setupTabsConfig.automationHomeEnabled) tabsToInject.push(AUTOMATION_HOME_TAB);
 
       const hostname = win.location.hostname;
-      if (settings.setupTabs.groupingEnabled) {
+      if (setupTabsConfig.groupingEnabled) {
         const grouped = buildGroupedTab(doc, win, tabsToInject, hostname, win.location.href);
         if (grouped) tabBar.appendChild(grouped);
       } else {
@@ -369,6 +378,7 @@ export function createSetupTabsFeature(options: SetupTabsOptions = {}): Feature 
     manifest: {
       id: 'setup-tabs',
       contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.FLOW_TRIGGER_EXPLORER, CONTEXTS.SETUP_OTHER],
+      settingsSchema: SETUP_TABS_SETTINGS_SCHEMA,
     },
 
     async init() {

@@ -118,6 +118,14 @@ describe('registerSettingsShape', () => {
     registerSettingsShape('canvas-search', z.object({
       shortcut: z.string().default('Ctrl+Shift+F'),
     }));
+    // When nothing is stored yet, the entry is undefined (allows legacy fallback).
+    const sEmpty = await loadSettings();
+    expect(sEmpty.featureSettings?.['canvas-search']).toBeUndefined();
+    // Once values are explicitly stored, they are returned.
+    chrome.storage.local.set({
+      'sfut.settings': { featureSettings: { 'canvas-search': { shortcut: 'Ctrl+Shift+F' } } },
+    } as any);
+    _clearSettingsCacheForTests();
     const s = await loadSettings();
     expect(s.featureSettings?.['canvas-search']).toEqual({
       shortcut: 'Ctrl+Shift+F',
@@ -141,7 +149,16 @@ describe('registerSettingsShape', () => {
     const s1 = await loadSettings();
     expect(s1.featureSettings?.alpha).toBeUndefined();
     registerSettingsShape('alpha', z.object({ x: z.boolean().default(true) }));
+    // After registration, the cache is invalidated; featureSettings.alpha is
+    // undefined until explicitly stored (optional rather than defaulted).
     const s2 = await loadSettings();
-    expect(s2.featureSettings?.alpha).toEqual({ x: true });
+    expect(s2.featureSettings?.alpha).toBeUndefined();
+    // Verify the shape IS honoured when a value is stored.
+    chrome.storage.local.set({
+      'sfut.settings': { featureSettings: { alpha: { x: false } } },
+    } as any);
+    _clearSettingsCacheForTests();
+    const s3 = await loadSettings();
+    expect(s3.featureSettings?.alpha).toEqual({ x: false });
   });
 });

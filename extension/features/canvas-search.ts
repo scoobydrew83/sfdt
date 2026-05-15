@@ -14,7 +14,15 @@
 
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
-import { loadSettings, onSettingsChange } from '../lib/settings.js';
+import { loadSettings, onSettingsChange, registerSettingsShape } from '../lib/settings.js';
+import { z } from 'zod';
+
+const CANVAS_SEARCH_SETTINGS_SCHEMA = z.object({
+  shortcut: z.string().default('Ctrl+Shift+F'),
+  highlightColour: z.string().default('#FFD700'),
+});
+
+registerSettingsShape('canvas-search', CANVAS_SEARCH_SETTINGS_SCHEMA);
 
 interface ShortcutParts {
   ctrl: boolean;
@@ -417,25 +425,29 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
     manifest: {
       id: 'canvas-search',
       contexts: [CONTEXTS.FLOW_BUILDER],
+      settingsSchema: CANVAS_SEARCH_SETTINGS_SCHEMA,
     },
 
     async init() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.FLOW_BUILDER) {
         return;
       }
+      type CanvasConfig = z.infer<typeof CANVAS_SEARCH_SETTINGS_SCHEMA>;
       const settings = await loadSettings();
-      highlightColour = settings.canvasSearch.highlightColour;
-      shortcutParts = parseShortcut(settings.canvasSearch.shortcut);
+      const canvasConfig = (settings.featureSettings?.['canvas-search'] ?? settings.canvasSearch) as CanvasConfig;
+      highlightColour = canvasConfig.highlightColour;
+      shortcutParts = parseShortcut(canvasConfig.shortcut);
       injectDynamicStyles(doc, highlightColour);
       boundKeydownListener = onKeyDown;
       doc.addEventListener('keydown', boundKeydownListener, true);
 
       unsubscribeSettings = onSettingsChange((next) => {
-        if (next.canvasSearch.highlightColour !== highlightColour) {
-          highlightColour = next.canvasSearch.highlightColour;
+        const nextCanvasConfig = (next.featureSettings?.['canvas-search'] ?? next.canvasSearch) as CanvasConfig;
+        if (nextCanvasConfig.highlightColour !== highlightColour) {
+          highlightColour = nextCanvasConfig.highlightColour;
           injectDynamicStyles(doc, highlightColour);
         }
-        shortcutParts = parseShortcut(next.canvasSearch.shortcut);
+        shortcutParts = parseShortcut(nextCanvasConfig.shortcut);
       });
     },
 

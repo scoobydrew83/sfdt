@@ -19,6 +19,14 @@ import {
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
+import { registerSettingsShape } from '../lib/settings.js';
+import { z } from 'zod';
+
+const SCHEDULED_FLOW_EXPLORER_SETTINGS_SCHEMA = z.object({
+  defaultView: z.enum(['list', 'calendar']).default('list'),
+});
+
+registerSettingsShape('scheduled-flow-explorer', SCHEDULED_FLOW_EXPLORER_SETTINGS_SCHEMA);
 
 const METADATA_FETCH_CONCURRENCY = 5;
 
@@ -205,6 +213,7 @@ export function createScheduledFlowExplorerFeature(
     manifest: {
       id: 'scheduled-flow-explorer',
       contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.SETUP_OTHER],
+      settingsSchema: SCHEDULED_FLOW_EXPLORER_SETTINGS_SCHEMA,
     },
 
     async onActivate() {

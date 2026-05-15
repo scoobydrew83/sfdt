@@ -28,6 +28,8 @@ export interface FeatureManifest {
   permissions?: readonly chrome.runtime.ManifestPermissions[];
   /** Whether the feature is on by default when the user has no explicit `settings.features[id]` entry. Defaults to true. */
   enabledByDefault?: boolean;
+  /** Per-feature Zod settings schema. Composed into the top-level Settings via registerSettingsShape. */
+  settingsSchema?: import('zod').ZodTypeAny;
 }
 
 export interface Feature {

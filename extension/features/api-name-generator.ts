@@ -19,8 +19,15 @@ import {
 } from '@sfdt/flow-core';
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
-import { loadSettings, patchSettings } from '../lib/settings.js';
+import { loadSettings, patchSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
+import { z } from 'zod';
+
+const API_NAME_GENERATOR_SETTINGS_SCHEMA = z.object({
+  namingPattern: z.enum(['Snake_Case', 'PascalCase', 'camelCase']).default('Snake_Case'),
+});
+
+registerSettingsShape('api-name-generator', API_NAME_GENERATOR_SETTINGS_SCHEMA);
 
 const STORAGE_KEY = 'apiNameGenerator.customPrefixes';
 
@@ -68,7 +75,9 @@ export function createApiNameGeneratorFeature(
     close();
     await library.load();
     const settings = await loadSettings();
-    const pattern: NamingPattern = settings.apiNameGenerator.namingPattern;
+    type ApiNameConfig = z.infer<typeof API_NAME_GENERATOR_SETTINGS_SCHEMA>;
+    const apiNameConfig = (settings.featureSettings?.['api-name-generator'] ?? settings.apiNameGenerator) as ApiNameConfig;
+    const pattern: NamingPattern = apiNameConfig.namingPattern;
     const prefixes: readonly PrefixEntry[] = library.isCustom() ? library.getAll() : DEFAULT_PREFIXES;
 
     overlay = doc.createElement('div');
@@ -164,6 +173,7 @@ export function createApiNameGeneratorFeature(
     manifest: {
       id: 'api-name-generator',
       contexts: [CONTEXTS.FLOW_BUILDER],
+      settingsSchema: API_NAME_GENERATOR_SETTINGS_SCHEMA,
     },
 
     async init() {

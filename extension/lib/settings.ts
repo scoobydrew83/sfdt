@@ -119,7 +119,10 @@ function getComposedSchema(): z.ZodTypeAny {
   if (_composedSchema) return _composedSchema;
   const shapeFields: Record<string, z.ZodTypeAny> = {};
   for (const [id, schema] of featureShapes.entries()) {
-    shapeFields[id] = schema instanceof z.ZodObject ? schema.default({}) : schema;
+    // Use .optional() so featureSettings[id] is undefined when the feature has
+    // never written to it, allowing features to fall back to their legacy
+    // top-level block for backward compatibility.
+    shapeFields[id] = schema instanceof z.ZodObject ? schema.optional() : schema;
   }
   _composedSchema = SettingsSchema.extend({
     featureSettings: z.object(shapeFields).default({}),
