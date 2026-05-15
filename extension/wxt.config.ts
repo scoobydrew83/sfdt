@@ -18,6 +18,11 @@ export default defineConfig({
       'https://*.salesforce-setup.com/*',
       'https://*.my.salesforce.com/*',
       'https://*.lightning.force.com/*',
+      // Required for the kill-switch / deploy / quality bridge calls.
+      // Chrome blocks fetches from a https:// content script to http://127.0.0.1
+      // unless the host is explicitly permitted at install time.
+      'http://localhost/*',
+      'http://127.0.0.1/*',
     ],
   },
 });

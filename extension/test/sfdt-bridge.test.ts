@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
 
 function fakeFetch(response: unknown, status = 200): typeof fetch {
@@ -67,5 +67,40 @@ describe('createBridgeClient.getServerInfo', () => {
       }),
     });
     expect(await client.getServerInfo()).toBeNull();
+  });
+
+  it('works with no token (uses the unauthenticated GET ping endpoint)', async () => {
+    const fetchSpy = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            pong: true,
+            serverVersion: '0.9.0',
+            transport: 'localhost',
+            disabledFeatures: ['canvas-search'],
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    ) as unknown as typeof fetch;
+    const client = createBridgeClient({
+      token: '', // explicitly empty — pre-pairing scenario
+      preferredTransport: 'localhost',
+      fetchImpl: fetchSpy,
+    });
+    const info = await client.getServerInfo();
+    expect(info).toEqual({
+      serverVersion: '0.9.0',
+      transport: 'localhost',
+      disabledFeatures: ['canvas-search'],
+    });
+    // Confirm the request hit /api/bridge/ping (not /exchange) and used GET
+    const callArgs = (fetchSpy as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    expect(callArgs.length).toBeGreaterThan(0);
+    const [url, init] = callArgs[0] as [string, RequestInit | undefined];
+    expect(url).toContain('/api/bridge/ping');
+    expect(url).not.toContain('/exchange');
+    expect(init?.method).toBe('GET');
   });
 });

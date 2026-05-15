@@ -241,19 +241,31 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
     transport: 'localhost' | 'native';
     disabledFeatures: readonly string[];
   } | null> {
-    // Use the exchange POST so the response goes through the same validator
-    // path as everything else. The discover() race is overkill for an info
-    // call — just try localhost first; if it fails, try native (when available).
-    const probe = await sendOverLocalhost({ requestId: makeRequestId(), kind: 'ping' } as SfdtRequest);
-    if (probe.ok) {
-      const data = (probe as { data?: PingResponseData }).data;
-      if (data) {
+    // Use the unauthenticated GET /api/bridge/ping endpoint so the
+    // kill-switch works BEFORE the user has paired with a bearer token.
+    // Coupling discovery to auth would mean a broken feature can only be
+    // disabled remotely after the user has connected — defeating the
+    // purpose of the kill-switch.
+    const localhostUrl = `http://127.0.0.1:${port}/api/bridge/ping`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DISCOVERY_TIMEOUT_MS);
+    try {
+      const res = await fetchImpl(localhostUrl, { method: 'GET', signal: controller.signal });
+      const body = (await res.json().catch(() => null)) as
+        | { ok: true; data: PingResponseData }
+        | { ok: false }
+        | null;
+      if (body && body.ok && body.data) {
         return {
-          serverVersion: data.serverVersion,
-          transport: data.transport === 'native' ? 'native' : 'localhost',
-          disabledFeatures: data.disabledFeatures ?? [],
+          serverVersion: body.data.serverVersion,
+          transport: body.data.transport === 'native' ? 'native' : 'localhost',
+          disabledFeatures: body.data.disabledFeatures ?? [],
         };
       }
+    } catch {
+      // fall through to native or null
+    } finally {
+      clearTimeout(timer);
     }
     if (!connectNativeImpl) return null;
     const native = await sendOverNative({ requestId: makeRequestId(), kind: 'ping' } as SfdtRequest);
