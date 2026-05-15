@@ -15,7 +15,7 @@ import {
   type Settings,
 } from '../../lib/settings.js';
 import { createBridgeClient } from '../../lib/sfdt-bridge.js';
-import { createFeatureRegistry, type FeatureManifest } from '../../lib/feature-registry.js';
+import { createFeatureRegistry } from '../../lib/feature-registry.js';
 import { buildField } from '../../lib/zod-to-dom.js';
 import { createTelemetry } from '../../lib/telemetry.js';
 
