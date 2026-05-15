@@ -88,6 +88,7 @@ export function createFlowDeployFeature(options: FlowDeployFeatureOptions = {}):
   return {
     manifest: {
       id: 'flow-deploy',
+      name: 'Deploy or Rollback…',
       contexts: [CONTEXTS.FLOW_BUILDER],
     },
 

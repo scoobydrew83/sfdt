@@ -148,6 +148,7 @@ export function createFlowHealthCheckFeature(options: FlowHealthCheckOptions = {
   return {
     manifest: {
       id: 'flow-health-check',
+      name: 'Run Health Check',
       contexts: [CONTEXTS.FLOW_BUILDER],
       permissions: ['clipboardWrite'],
     },

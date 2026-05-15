@@ -258,6 +258,7 @@ export function createFlowVersionManagerFeature(
   return {
     manifest: {
       id: 'flow-version-manager',
+      name: 'Flow Version Manager',
       contexts: [CONTEXTS.FLOW_DETAILS],
     },
 

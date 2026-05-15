@@ -10,7 +10,7 @@ function makeLogger() {
 
 function makeFeature(id: string, overrides: Partial<Feature> = {}): Feature {
   return {
-    manifest: { id, contexts: [] },
+    manifest: { id, name: id, contexts: [] },
     ...overrides,
   };
 }
@@ -119,12 +119,13 @@ describe('extension/lib/feature-registry', () => {
   it('exposes the feature manifest via list and getManifest', () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
     reg.register({
-      manifest: { id: 'alpha', contexts: ['flow_builder'] as const },
+      manifest: { id: 'alpha', name: 'alpha', contexts: ['flow_builder'] as const },
       init: () => {},
     });
     expect(reg.list()).toEqual(['alpha']);
     expect(reg.getManifest('alpha')).toEqual({
       id: 'alpha',
+      name: 'alpha',
       contexts: ['flow_builder'],
     });
   });
@@ -138,6 +139,7 @@ describe('extension/lib/feature-registry', () => {
     reg.register({
       manifest: {
         id: 'rogue',
+        name: 'rogue',
         contexts: [],
         permissions: ['tabs' as chrome.runtime.ManifestPermissions],
       },
@@ -158,6 +160,7 @@ describe('extension/lib/feature-registry', () => {
     reg.register({
       manifest: {
         id: 'good',
+        name: 'good',
         contexts: [],
         permissions: ['clipboardWrite'],
       },
@@ -170,7 +173,7 @@ describe('extension/lib/feature-registry', () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
     const initSpy = vi.fn();
     reg.register({
-      manifest: { id: 'alpha', contexts: [] },
+      manifest: { id: 'alpha', name: 'alpha', contexts: [] },
       init: initSpy,
     });
     await reg.initForCurrentRoute(['alpha'], {
@@ -184,7 +187,7 @@ describe('extension/lib/feature-registry', () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
     const initSpy = vi.fn();
     reg.register({
-      manifest: { id: 'alpha', contexts: [] },
+      manifest: { id: 'alpha', name: 'alpha', contexts: [] },
       init: initSpy,
     });
     await reg.initForCurrentRoute(['alpha'], {
@@ -199,7 +202,7 @@ describe('extension/lib/feature-registry', () => {
     const init = vi.fn();
     const teardown = vi.fn();
     reg.register({
-      manifest: { id: 'alpha', contexts: [] },
+      manifest: { id: 'alpha', name: 'alpha', contexts: [] },
       init,
       teardown,
     });
@@ -222,7 +225,7 @@ describe('extension/lib/feature-registry', () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
     const teardown = vi.fn();
     reg.register({
-      manifest: { id: 'alpha', contexts: [] },
+      manifest: { id: 'alpha', name: 'alpha', contexts: [] },
       init: () => {},
       teardown,
     });
@@ -247,7 +250,7 @@ describe('extension/lib/feature-registry', () => {
     const logger = makeLogger();
     const reg = createFeatureRegistry({ logger });
     reg.register({
-      manifest: { id: 'alpha', contexts: [] },
+      manifest: { id: 'alpha', name: 'alpha', contexts: [] },
       init: () => {},
       teardown: () => {
         throw new Error('teardown boom');
@@ -272,7 +275,7 @@ describe('extension/lib/feature-registry', () => {
     const track = vi.fn();
     const reg = createFeatureRegistry({ logger: makeLogger(), track });
     reg.register({
-      manifest: { id: 'alpha', contexts: [] },
+      manifest: { id: 'alpha', name: 'alpha', contexts: [] },
       onActivate: () => {},
     });
     await reg.dispatch('alpha', 'activate');
@@ -283,7 +286,7 @@ describe('extension/lib/feature-registry', () => {
     const track = vi.fn();
     const reg = createFeatureRegistry({ logger: makeLogger(), track });
     reg.register({
-      manifest: { id: 'alpha', contexts: [] },
+      manifest: { id: 'alpha', name: 'alpha', contexts: [] },
       onActivate: () => {
         throw new Error('boom');
       },
@@ -296,7 +299,7 @@ describe('extension/lib/feature-registry', () => {
     const track = vi.fn();
     const reg = createFeatureRegistry({ logger: makeLogger(), track });
     reg.register({
-      manifest: { id: 'alpha', contexts: [] },
+      manifest: { id: 'alpha', name: 'alpha', contexts: [] },
       init: () => {},
       teardown: () => {},
     });

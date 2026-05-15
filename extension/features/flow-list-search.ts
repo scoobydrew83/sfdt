@@ -433,6 +433,7 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
   return {
     manifest: {
       id: 'flow-list-search',
+      name: 'Flow List Search',
       contexts: [CONTEXTS.SETUP_FLOWS],
     },
 

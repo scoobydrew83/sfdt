@@ -424,6 +424,7 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
   return {
     manifest: {
       id: 'canvas-search',
+      name: 'Search & Highlight',
       contexts: [CONTEXTS.FLOW_BUILDER],
       settingsSchema: CANVAS_SEARCH_SETTINGS_SCHEMA,
     },

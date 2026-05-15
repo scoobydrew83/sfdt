@@ -376,6 +376,7 @@ export function createTriggerConflictsFeature(
   return {
     manifest: {
       id: 'trigger-conflicts',
+      name: 'Trigger Conflicts',
       contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.FLOW_TRIGGER_EXPLORER, CONTEXTS.SETUP_OTHER],
     },
 

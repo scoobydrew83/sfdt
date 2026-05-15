@@ -377,6 +377,7 @@ export function createSetupTabsFeature(options: SetupTabsOptions = {}): Feature 
   return {
     manifest: {
       id: 'setup-tabs',
+      name: 'Setup Tabs',
       contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.FLOW_TRIGGER_EXPLORER, CONTEXTS.SETUP_OTHER],
       settingsSchema: SETUP_TABS_SETTINGS_SCHEMA,
     },

@@ -308,7 +308,7 @@ async function render(): Promise<void> {
     const checkbox = el('input', { type: 'checkbox' });
     checkbox.checked = isFeatureEnabled(settings, manifest.id);
     const description = `${manifest.contexts.length} context(s): ${manifest.contexts.join(', ') || '—'}`;
-    featuresSection.appendChild(row(manifest.id, description, checkbox));
+    featuresSection.appendChild(row(manifest.name, description, checkbox));
     featureRows.push({ id: manifest.id, checkbox });
   }
   wrap.appendChild(featuresSection);
@@ -323,9 +323,9 @@ async function render(): Promise<void> {
   for (const manifest of registry.listManifests()) {
     if (!manifest.settingsSchema) continue;
     const section = el('section');
-    section.appendChild(el('h2', {}, manifest.id));
+    section.appendChild(el('h2', {}, manifest.name));
     const help = el('p', { class: 'section-help' });
-    help.textContent = `Feature-specific configuration for ${manifest.id}.`;
+    help.textContent = `Feature-specific configuration for ${manifest.name}.`;
     section.appendChild(help);
 
     const schema = manifest.settingsSchema as z.ZodObject<z.ZodRawShape>;

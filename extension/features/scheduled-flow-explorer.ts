@@ -212,6 +212,7 @@ export function createScheduledFlowExplorerFeature(
   return {
     manifest: {
       id: 'scheduled-flow-explorer',
+      name: 'Scheduled Flow Explorer',
       contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.SETUP_OTHER],
       settingsSchema: SCHEDULED_FLOW_EXPLORER_SETTINGS_SCHEMA,
     },

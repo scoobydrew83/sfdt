@@ -172,6 +172,7 @@ export function createApiNameGeneratorFeature(
   return {
     manifest: {
       id: 'api-name-generator',
+      name: 'API Name Generator',
       contexts: [CONTEXTS.FLOW_BUILDER],
       settingsSchema: API_NAME_GENERATOR_SETTINGS_SCHEMA,
     },

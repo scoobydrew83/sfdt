@@ -237,6 +237,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
   return {
     manifest: {
       id: 'ai-assistant',
+      name: 'Flow Metadata & AI Assistant',
       contexts: [CONTEXTS.FLOW_BUILDER],
     },
 

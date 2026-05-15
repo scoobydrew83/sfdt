@@ -22,6 +22,8 @@ export type FeatureId = string;
 export interface FeatureManifest {
   /** Stable kebab-case id, used as the registry key and the side-menu data-feature attribute. */
   id: FeatureId;
+  /** Human-readable label, shown in the options page and as the side-menu item text. */
+  name: string;
   /** Contexts the feature appears in. Empty means the feature is never shown by the side menu. */
   contexts: readonly Context[];
   /** Additional manifest permissions this feature needs beyond the shared baseline (storage, cookies). */

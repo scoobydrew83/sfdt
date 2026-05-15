@@ -78,6 +78,7 @@ export function createComparisonExporterFeature(
   return {
     manifest: {
       id: 'comparison-exporter',
+      name: 'Comparison Exporter',
       contexts: [CONTEXTS.COMPARE_FLOWS],
     },
 

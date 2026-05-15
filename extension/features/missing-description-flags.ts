@@ -235,6 +235,7 @@ export function createMissingDescriptionFlagsFeature(
   return {
     manifest: {
       id: 'missing-descriptions',
+      name: 'Show Missing Description Flags',
       contexts: [CONTEXTS.FLOW_BUILDER],
     },
 

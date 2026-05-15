@@ -435,6 +435,7 @@ export function createSubflowGraphFeature(options: SubflowGraphFeatureOptions = 
   return {
     manifest: {
       id: 'subflow-graph',
+      name: 'Subflow Caller Graph',
       contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.SETUP_OTHER],
     },
 
