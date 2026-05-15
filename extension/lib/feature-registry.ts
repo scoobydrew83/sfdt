@@ -15,10 +15,23 @@
 // The registry tracks which features have been initialised for the current
 // URL so a Salesforce SPA navigation does not double-init.
 
+import type { Context } from './context-detector.js';
+
 export type FeatureId = string;
 
-export interface Feature {
+export interface FeatureManifest {
+  /** Stable kebab-case id, used as the registry key and the side-menu data-feature attribute. */
   id: FeatureId;
+  /** Contexts the feature appears in. Empty means the feature is never shown by the side menu. */
+  contexts: readonly Context[];
+  /** Additional manifest permissions this feature needs beyond the shared baseline (storage, cookies). */
+  permissions?: readonly chrome.runtime.ManifestPermissions[];
+  /** Whether the feature is on by default when the user has no explicit `settings.features[id]` entry. Defaults to true. */
+  enabledByDefault?: boolean;
+}
+
+export interface Feature {
+  manifest: FeatureManifest;
   init?: () => void | Promise<void>;
   onActivate?: () => void | Promise<void>;
   refresh?: () => void | Promise<void>;
@@ -30,6 +43,10 @@ export interface FeatureRegistry {
   register(feature: Feature): void;
   has(id: FeatureId): boolean;
   list(): FeatureId[];
+  /** Returns the full manifest for a registered feature, or undefined. */
+  getManifest(id: FeatureId): FeatureManifest | undefined;
+  /** Returns every registered feature's manifest in registration order. */
+  listManifests(): readonly FeatureManifest[];
   initForCurrentRoute(availableIds: readonly FeatureId[]): Promise<void>;
   dispatch(id: FeatureId, action: FeatureAction): Promise<void>;
   // Resets the per-route initialisation state. Called by the SPA router
@@ -42,12 +59,37 @@ export interface RegistryLogger {
   warn: (msg: string, ...rest: unknown[]) => void;
 }
 
-export function createFeatureRegistry(options: { logger?: RegistryLogger } = {}): FeatureRegistry {
+function readManifestPermissions(): readonly chrome.runtime.ManifestPermissions[] {
+  // Guard for tests + non-extension surfaces where chrome.runtime is undefined.
+  if (typeof chrome === 'undefined' || !chrome.runtime?.getManifest) return [];
+  try {
+    const m = chrome.runtime.getManifest();
+    return (m.permissions ?? []) as readonly chrome.runtime.ManifestPermissions[];
+  } catch {
+    return [];
+  }
+}
+
+export function createFeatureRegistry(options: {
+  logger?: RegistryLogger;
+  /**
+   * The manifest permissions available to the extension. Used to validate
+   * feature.manifest.permissions at registration. Defaults to reading
+   * chrome.runtime.getManifest().permissions when chrome is available, or
+   * an empty array (treats everything as missing) when not.
+   */
+  manifestPermissions?: readonly chrome.runtime.ManifestPermissions[];
+} = {}): FeatureRegistry {
   const logger: RegistryLogger = options.logger ?? {
     log: (msg, ...rest) => console.log(`[SFUT] ${msg}`, ...rest),
     warn: (msg, ...rest) => console.warn(`[SFUT] ${msg}`, ...rest),
   };
   const log = (msg: string, ...rest: unknown[]): void => logger.log(msg, ...rest);
+  const warn = (msg: string, ...rest: unknown[]): void => logger.warn(msg, ...rest);
+
+  const manifestPermissions: ReadonlySet<string> = new Set(
+    options.manifestPermissions ?? readManifestPermissions(),
+  );
 
   const features = new Map<FeatureId, Feature>();
   // Tracks features that have been init()'d for the current route. The key
@@ -58,8 +100,16 @@ export function createFeatureRegistry(options: { logger?: RegistryLogger } = {})
 
   return {
     register(feature) {
-      features.set(feature.id, feature);
-      log(`Feature '${feature.id}' registered.`);
+      const declared = feature.manifest.permissions ?? [];
+      const missing = declared.filter((p) => !manifestPermissions.has(p));
+      if (missing.length > 0) {
+        warn(
+          `Feature '${feature.manifest.id}' declares permission '${missing[0]}' which is not in the extension manifest. Skipping registration.`,
+        );
+        return;
+      }
+      features.set(feature.manifest.id, feature);
+      log(`Feature '${feature.manifest.id}' registered.`);
     },
 
     has(id) {
@@ -68,6 +118,14 @@ export function createFeatureRegistry(options: { logger?: RegistryLogger } = {})
 
     list() {
       return Array.from(features.keys());
+    },
+
+    getManifest(id) {
+      return features.get(id)?.manifest;
+    },
+
+    listManifests() {
+      return Array.from(features.values()).map((f) => f.manifest);
     },
 
     async initForCurrentRoute(availableIds) {

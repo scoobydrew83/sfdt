@@ -9,7 +9,10 @@ function makeLogger() {
 }
 
 function makeFeature(id: string, overrides: Partial<Feature> = {}): Feature {
-  return { id, ...overrides };
+  return {
+    manifest: { id, contexts: [] },
+    ...overrides,
+  };
 }
 
 describe('extension/lib/feature-registry', () => {
@@ -111,5 +114,55 @@ describe('extension/lib/feature-registry', () => {
     expect(logger.log).toHaveBeenCalledWith(
       expect.stringContaining("Feature 'nothing-here' not yet registered, skipping."),
     );
+  });
+
+  it('exposes the feature manifest via list and getManifest', () => {
+    const reg = createFeatureRegistry({ logger: makeLogger() });
+    reg.register({
+      manifest: { id: 'alpha', contexts: ['flow_builder'] as const },
+      init: () => {},
+    });
+    expect(reg.list()).toEqual(['alpha']);
+    expect(reg.getManifest('alpha')).toEqual({
+      id: 'alpha',
+      contexts: ['flow_builder'],
+    });
+  });
+
+  it('skips a feature whose declared permissions are not in the manifest, with a warn', () => {
+    const logger = makeLogger();
+    const reg = createFeatureRegistry({
+      logger,
+      manifestPermissions: ['storage', 'clipboardWrite'],
+    });
+    reg.register({
+      manifest: {
+        id: 'rogue',
+        contexts: [],
+        permissions: ['tabs' as chrome.runtime.ManifestPermissions],
+      },
+    });
+    expect(reg.has('rogue')).toBe(false);
+    expect(reg.list()).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("'rogue' declares permission 'tabs' which is not in the extension manifest"),
+    );
+  });
+
+  it('registers a feature whose declared permissions are a subset of the manifest', () => {
+    const logger = makeLogger();
+    const reg = createFeatureRegistry({
+      logger,
+      manifestPermissions: ['storage', 'clipboardWrite'],
+    });
+    reg.register({
+      manifest: {
+        id: 'good',
+        contexts: [],
+        permissions: ['clipboardWrite'],
+      },
+    });
+    expect(reg.has('good')).toBe(true);
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });
