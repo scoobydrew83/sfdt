@@ -17,6 +17,7 @@ import {
 } from '../lib/hostname.js';
 import { loadSettings, onSettingsChange, patchSettings } from '../lib/settings.js';
 import type { Feature } from '../lib/feature-registry.js';
+import { CONTEXTS } from '../lib/context-detector.js';
 import { showToast } from '../ui/toast.js';
 
 const TAB_CLASS = 'sfut-custom-tab';
@@ -367,7 +368,10 @@ export function createSetupTabsFeature(options: SetupTabsOptions = {}): Feature 
   }
 
   return {
-    id: 'setup-tabs',
+    manifest: {
+      id: 'setup-tabs',
+      contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.FLOW_TRIGGER_EXPLORER, CONTEXTS.SETUP_OTHER],
+    },
 
     async init() {
       await injectIfEnabled();

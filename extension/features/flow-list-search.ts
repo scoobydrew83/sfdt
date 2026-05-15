@@ -431,7 +431,10 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
   }
 
   return {
-    id: 'flow-list-search',
+    manifest: {
+      id: 'flow-list-search',
+      contexts: [CONTEXTS.SETUP_FLOWS],
+    },
 
     async init() {
       const context = detectContext({ location: { href: win.location.href } }, doc);

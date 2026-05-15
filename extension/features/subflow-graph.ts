@@ -22,6 +22,7 @@ import {
   type SubflowGraphNode,
 } from '@sfdt/flow-core';
 import type { Feature } from '../lib/feature-registry.js';
+import { CONTEXTS } from '../lib/context-detector.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
 
@@ -432,7 +433,10 @@ export function createSubflowGraphFeature(options: SubflowGraphFeatureOptions = 
   const api = options.api ?? getSalesforceApi();
 
   return {
-    id: 'subflow-graph',
+    manifest: {
+      id: 'subflow-graph',
+      contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.SETUP_OTHER],
+    },
 
     async onActivate() {
       const loading = doc.createElement('div');

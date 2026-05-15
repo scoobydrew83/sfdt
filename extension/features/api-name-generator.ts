@@ -161,7 +161,10 @@ export function createApiNameGeneratorFeature(
   }
 
   return {
-    id: 'api-name-generator',
+    manifest: {
+      id: 'api-name-generator',
+      contexts: [CONTEXTS.FLOW_BUILDER],
+    },
 
     async init() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.FLOW_BUILDER) {

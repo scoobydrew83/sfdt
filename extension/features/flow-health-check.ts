@@ -146,7 +146,11 @@ export function createFlowHealthCheckFeature(options: FlowHealthCheckOptions = {
   }
 
   return {
-    id: 'flow-health-check',
+    manifest: {
+      id: 'flow-health-check',
+      contexts: [CONTEXTS.FLOW_BUILDER],
+      permissions: ['clipboardWrite'],
+    },
 
     async onActivate() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.FLOW_BUILDER) {

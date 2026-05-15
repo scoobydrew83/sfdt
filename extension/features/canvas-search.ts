@@ -394,7 +394,10 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
   }
 
   return {
-    id: 'canvas-search',
+    manifest: {
+      id: 'canvas-search',
+      contexts: [CONTEXTS.FLOW_BUILDER],
+    },
 
     async init() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.FLOW_BUILDER) {

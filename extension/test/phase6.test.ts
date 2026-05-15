@@ -24,7 +24,7 @@ beforeEach(() => {
 
 describe('extension/features/trigger-conflicts', () => {
   it('feature id is stable', () => {
-    expect(createTriggerConflictsFeature().id).toBe('trigger-conflicts');
+    expect(createTriggerConflictsFeature().manifest.id).toBe('trigger-conflicts');
   });
 
   it('buildConflictsModal renders the empty state when no groups are present', () => {
@@ -138,7 +138,7 @@ describe('extension/features/trigger-conflicts', () => {
 
 describe('extension/features/subflow-graph', () => {
   it('feature id is stable', () => {
-    expect(createSubflowGraphFeature().id).toBe('subflow-graph');
+    expect(createSubflowGraphFeature().manifest.id).toBe('subflow-graph');
   });
 
   it('buildSubflowGraphModal surfaces cycles at the top in a red banner', () => {
@@ -241,7 +241,7 @@ describe('extension/features/subflow-graph', () => {
 
 describe('extension/features/flow-deploy', () => {
   it('feature id is stable', () => {
-    expect(createFlowDeployFeature().id).toBe('flow-deploy');
+    expect(createFlowDeployFeature().manifest.id).toBe('flow-deploy');
   });
 
   it('describeBridgeError maps every code to a user-facing string', () => {

@@ -76,7 +76,10 @@ export function createComparisonExporterFeature(
   const win = options.win ?? window;
 
   return {
-    id: 'comparison-exporter',
+    manifest: {
+      id: 'comparison-exporter',
+      contexts: [CONTEXTS.COMPARE_FLOWS],
+    },
 
     onActivate() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.COMPARE_FLOWS) {

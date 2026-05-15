@@ -8,6 +8,7 @@
 // straight loop with the user-facing modal confirming bulk action.
 
 import type { Feature } from '../lib/feature-registry.js';
+import { CONTEXTS } from '../lib/context-detector.js';
 
 const SELECTORS = {
   versionsTable: 'table.list[id="view:lists:versions"]',
@@ -255,7 +256,10 @@ export function createFlowVersionManagerFeature(
   }
 
   return {
-    id: 'flow-version-manager',
+    manifest: {
+      id: 'flow-version-manager',
+      contexts: [CONTEXTS.FLOW_DETAILS],
+    },
 
     async init() {
       refresh();

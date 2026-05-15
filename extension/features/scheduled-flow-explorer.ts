@@ -202,7 +202,10 @@ export function createScheduledFlowExplorerFeature(
   const now = options.now ?? (() => new Date());
 
   return {
-    id: 'scheduled-flow-explorer',
+    manifest: {
+      id: 'scheduled-flow-explorer',
+      contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.SETUP_OTHER],
+    },
 
     async onActivate() {
       const ctx = detectContext({ location: { href: win.location.href } }, doc);

@@ -17,6 +17,7 @@
 import { detectTriggerConflicts, type FlowConflictGroup } from '@sfdt/flow-core';
 import type { SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 import type { Feature } from '../lib/feature-registry.js';
+import { CONTEXTS } from '../lib/context-detector.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { loadSettings } from '../lib/settings.js';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
@@ -373,7 +374,10 @@ export function createTriggerConflictsFeature(
   const api = options.api ?? getSalesforceApi();
 
   return {
-    id: 'trigger-conflicts',
+    manifest: {
+      id: 'trigger-conflicts',
+      contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.FLOW_TRIGGER_EXPLORER, CONTEXTS.SETUP_OTHER],
+    },
 
     async onActivate() {
       const loading = doc.createElement('div');

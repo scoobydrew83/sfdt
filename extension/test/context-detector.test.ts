@@ -227,7 +227,6 @@ describe('extension/lib/context-detector', () => {
         await import('../features/setup-tabs.js').then((m) => m.createSetupTabsFeature),
         await import('../features/canvas-search.js').then((m) => m.createCanvasSearchFeature),
         await import('../features/flow-list-search.js').then((m) => m.createFlowListSearchFeature),
-        await import('../features/flow-health-check.js').then((m) => m.createFlowHealthCheckFeature),
         await import('../features/missing-description-flags.js').then(
           (m) => m.createMissingDescriptionFlagsFeature,
         ),
@@ -237,6 +236,7 @@ describe('extension/lib/context-detector', () => {
           (m) => m.createScheduledFlowExplorerFeature,
         ),
         await import('../features/api-name-generator.js').then((m) => m.createApiNameGeneratorFeature),
+        await import('../features/flow-health-check.js').then((m) => m.createFlowHealthCheckFeature),
         await import('../features/comparison-exporter.js').then((m) => m.createComparisonExporterFeature),
         await import('../features/flow-trigger-explorer-enhancer.js').then(
           (m) => m.createFlowTriggerExplorerEnhancerFeature,

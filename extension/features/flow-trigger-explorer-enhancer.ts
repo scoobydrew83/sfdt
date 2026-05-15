@@ -67,7 +67,10 @@ export function createFlowTriggerExplorerEnhancerFeature(
   void _api;
 
   return {
-    id: 'flow-trigger-explorer-enhancer',
+    manifest: {
+      id: 'flow-trigger-explorer-enhancer',
+      contexts: [CONTEXTS.FLOW_TRIGGER_EXPLORER],
+    },
 
     async init() {
       if (

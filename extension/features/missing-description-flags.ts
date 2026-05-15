@@ -232,7 +232,10 @@ export function createMissingDescriptionFlagsFeature(
   }
 
   return {
-    id: 'missing-descriptions',
+    manifest: {
+      id: 'missing-descriptions',
+      contexts: [CONTEXTS.FLOW_BUILDER],
+    },
 
     async init() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.FLOW_BUILDER) {

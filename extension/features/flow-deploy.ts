@@ -86,7 +86,10 @@ export function createFlowDeployFeature(options: FlowDeployFeatureOptions = {}):
   const api = options.api ?? getSalesforceApi();
 
   return {
-    id: 'flow-deploy',
+    manifest: {
+      id: 'flow-deploy',
+      contexts: [CONTEXTS.FLOW_BUILDER],
+    },
 
     async onActivate() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.FLOW_BUILDER) {

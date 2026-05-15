@@ -24,7 +24,7 @@ beforeEach(() => {
 
 describe('extension/features — smoke', () => {
   it('flow-version-manager registers with the right id', () => {
-    expect(createFlowVersionManagerFeature().id).toBe('flow-version-manager');
+    expect(createFlowVersionManagerFeature().manifest.id).toBe('flow-version-manager');
   });
 
   it('flow-version-manager extracts row meta from a versions table row', () => {
@@ -72,7 +72,7 @@ describe('extension/features — smoke', () => {
   });
 
   it('comparison-exporter registers and feature id is stable', () => {
-    expect(createComparisonExporterFeature().id).toBe('comparison-exporter');
+    expect(createComparisonExporterFeature().manifest.id).toBe('comparison-exporter');
   });
 
   it('flow-trigger-explorer-enhancer batches FlowDefinition fetches into a single IN-clause query per chunk', async () => {
@@ -108,7 +108,7 @@ describe('extension/features — smoke', () => {
   });
 
   it('flow-trigger-explorer-enhancer feature id is stable', () => {
-    expect(createFlowTriggerExplorerEnhancerFeature().id).toBe('flow-trigger-explorer-enhancer');
+    expect(createFlowTriggerExplorerEnhancerFeature().manifest.id).toBe('flow-trigger-explorer-enhancer');
   });
 
   it('api-name-generator opens a working modal that previews expansions', async () => {
@@ -134,7 +134,7 @@ describe('extension/features — smoke', () => {
   });
 
   it('ai-assistant feature id is stable and registers without crashing', () => {
-    expect(createAiAssistantFeature().id).toBe('ai-assistant');
+    expect(createAiAssistantFeature().manifest.id).toBe('ai-assistant');
   });
 
   it('scheduled-flow-explorer discoverScheduledFlows returns only Schedule-Triggered flows', async () => {
@@ -209,6 +209,6 @@ describe('extension/features — smoke', () => {
   });
 
   it('scheduled-flow-explorer feature id is stable', () => {
-    expect(createScheduledFlowExplorerFeature().id).toBe('scheduled-flow-explorer');
+    expect(createScheduledFlowExplorerFeature().manifest.id).toBe('scheduled-flow-explorer');
   });
 });

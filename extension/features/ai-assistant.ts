@@ -235,7 +235,10 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
   }
 
   return {
-    id: 'ai-assistant',
+    manifest: {
+      id: 'ai-assistant',
+      contexts: [CONTEXTS.FLOW_BUILDER],
+    },
 
     async init() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.FLOW_BUILDER) {
