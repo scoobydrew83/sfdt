@@ -53,7 +53,14 @@ export function mountBridgeRoutes(app, { port, version, rateLimiter }) {
   // Discovery probe — no auth required so the extension can detect whether
   // localhost is reachable without prompting the user for a token first.
   app.get('/api/bridge/ping', limiter, async (_req, res) => {
-    const disabledFeatures = await readDisabledFeatures(process.cwd());
+    let disabledFeatures = [];
+    try {
+      disabledFeatures = await readDisabledFeatures(process.cwd());
+    } catch {
+      // readDisabledFeatures already handles known I/O / parse errors;
+      // the try here is defensive against unforeseen throws so the ping
+      // response always lands.
+    }
     res.json({
       ok: true,
       data: {
@@ -103,7 +110,12 @@ export function mountBridgeRoutes(app, { port, version, rateLimiter }) {
 async function dispatch(request, { version, makeSuccessResponse, makeErrorResponse }) {
   switch (request.kind) {
     case 'ping': {
-      const disabledFeatures = await readDisabledFeatures(process.cwd());
+      let disabledFeatures = [];
+      try {
+        disabledFeatures = await readDisabledFeatures(process.cwd());
+      } catch {
+        // Defensive — readDisabledFeatures already swallows known errors.
+      }
       return makeSuccessResponse(request.requestId, {
         pong: true,
         serverVersion: version,
