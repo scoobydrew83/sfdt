@@ -78,6 +78,11 @@ export interface RegistryLogger {
   warn: (msg: string, ...rest: unknown[]) => void;
 }
 
+export type TrackFn = (
+  event: 'feature.activated' | 'feature.errored' | 'feature.disabled.remote',
+  data: { featureId: string },
+) => void | Promise<void>;
+
 function readManifestPermissions(): readonly chrome.runtime.ManifestPermissions[] {
   // Guard for tests + non-extension surfaces where chrome.runtime is undefined.
   if (typeof chrome === 'undefined' || !chrome.runtime?.getManifest) return [];
@@ -98,6 +103,7 @@ export function createFeatureRegistry(options: {
    * an empty array (treats everything as missing) when not.
    */
   manifestPermissions?: readonly chrome.runtime.ManifestPermissions[];
+  track?: TrackFn;
 } = {}): FeatureRegistry {
   const logger: RegistryLogger = options.logger ?? {
     log: (msg, ...rest) => console.log(`[SFUT] ${msg}`, ...rest),
@@ -105,6 +111,7 @@ export function createFeatureRegistry(options: {
   };
   const log = (msg: string, ...rest: unknown[]): void => logger.log(msg, ...rest);
   const warn = (msg: string, ...rest: unknown[]): void => logger.warn(msg, ...rest);
+  const track: TrackFn = options.track ?? (() => {});
 
   const manifestPermissions: ReadonlySet<string> = new Set(
     options.manifestPermissions ?? readManifestPermissions(),
@@ -174,6 +181,10 @@ export function createFeatureRegistry(options: {
               }
             }
             activeFeatureIds.delete(id);
+            // Only attribute disabled.remote when the kill-switch was the cause.
+            if (gate && gate.disabledRemote.has(id)) {
+              void track('feature.disabled.remote', { featureId: id });
+            }
           }
           continue;
         }
@@ -190,6 +201,7 @@ export function createFeatureRegistry(options: {
           log(`Feature '${id}' initialised successfully.`);
         } catch (err) {
           log(`Error initialising feature '${id}': ${(err as Error).message}`, err);
+          void track('feature.errored', { featureId: id });
         }
       }
     },
@@ -209,6 +221,7 @@ export function createFeatureRegistry(options: {
           await feature.refresh();
         } catch (err) {
           log(`Error refreshing feature '${id}': ${(err as Error).message}`, err);
+          void track('feature.errored', { featureId: id });
         }
         return;
       }
@@ -219,8 +232,10 @@ export function createFeatureRegistry(options: {
       }
       try {
         await feature.onActivate();
+        void track('feature.activated', { featureId: id });
       } catch (err) {
         log(`Error activating feature '${id}': ${(err as Error).message}`, err);
+        void track('feature.errored', { featureId: id });
       }
     },
 

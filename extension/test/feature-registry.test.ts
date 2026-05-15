@@ -267,4 +267,48 @@ describe('extension/lib/feature-registry', () => {
       expect.anything(),
     );
   });
+
+  it('tracks feature.activated when dispatch activate succeeds', async () => {
+    const track = vi.fn();
+    const reg = createFeatureRegistry({ logger: makeLogger(), track });
+    reg.register({
+      manifest: { id: 'alpha', contexts: [] },
+      onActivate: () => {},
+    });
+    await reg.dispatch('alpha', 'activate');
+    expect(track).toHaveBeenCalledWith('feature.activated', { featureId: 'alpha' });
+  });
+
+  it('tracks feature.errored when onActivate throws', async () => {
+    const track = vi.fn();
+    const reg = createFeatureRegistry({ logger: makeLogger(), track });
+    reg.register({
+      manifest: { id: 'alpha', contexts: [] },
+      onActivate: () => {
+        throw new Error('boom');
+      },
+    });
+    await reg.dispatch('alpha', 'activate');
+    expect(track).toHaveBeenCalledWith('feature.errored', { featureId: 'alpha' });
+  });
+
+  it('tracks feature.disabled.remote when a running feature is newly kill-switched', async () => {
+    const track = vi.fn();
+    const reg = createFeatureRegistry({ logger: makeLogger(), track });
+    reg.register({
+      manifest: { id: 'alpha', contexts: [] },
+      init: () => {},
+      teardown: () => {},
+    });
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(),
+      isUserEnabled: () => true,
+    });
+    reg.resetForRouteChange('r2');
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(['alpha']),
+      isUserEnabled: () => true,
+    });
+    expect(track).toHaveBeenCalledWith('feature.disabled.remote', { featureId: 'alpha' });
+  });
 });
