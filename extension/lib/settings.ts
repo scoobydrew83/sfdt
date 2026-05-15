@@ -46,6 +46,12 @@ export const SettingsSchema = z.object({
     })
     .default({}),
 
+  telemetry: z
+    .object({
+      enabled: z.boolean().default(false),
+    })
+    .default({}),
+
   // Bridge configuration. The bearer token is pasted in by the user from the
   // sfdt ui "Connect extension" flow.
   bridge: z
