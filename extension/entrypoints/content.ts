@@ -1,16 +1,14 @@
 // Content script entrypoint.
 //
-// Phase 3 boots the shell:
+// Boot orchestration (Phase B):
 //   - Detect that we're on a Salesforce page (the manifest already filtered
 //     hosts, but the SPA router re-checks on every navigation so we stop
 //     rendering when the user leaves Lightning).
-//   - Mount the side button.
-//   - Hook up the SPA router so the button menu refreshes on route change.
-//   - Initialise the feature registry (empty in Phase 3; populated in
-//     Phase 4 as each feature is ported).
-//
-// No actual features run yet. The exit criterion is "side button visible
-// with an empty menu, no console errors".
+//   - Load settings and the kill-switch list (with a 1.5 s timeout fallback
+//     to the last-known cache).
+//   - Mount the side button whose menuItemsProvider filters by kill-switch,
+//     user toggle, and current page context.
+//   - Re-run the gate on settings changes and SPA route changes.
 
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import {
@@ -20,7 +18,9 @@ import {
 } from '../lib/context-detector.js';
 import { createFeatureRegistry } from '../lib/feature-registry.js';
 import { createSpaRouter } from '../lib/spa-router.js';
-import { loadSettings } from '../lib/settings.js';
+import { isFeatureEnabled, loadSettings, onSettingsChange } from '../lib/settings.js';
+import { createBridgeClient } from '../lib/sfdt-bridge.js';
+import { readKillSwitchCache, writeKillSwitchCache } from '../lib/killswitch-cache.js';
 import { mountSideButton, type MenuItem } from '../ui/side-button.js';
 import { createAiAssistantFeature } from '../features/ai-assistant.js';
 import { createApiNameGeneratorFeature } from '../features/api-name-generator.js';
@@ -62,9 +62,7 @@ export default defineContentScript({
     const registry = createFeatureRegistry();
     const router = createSpaRouter();
 
-    // Register Phase 4 features. Each module decides whether to do anything
-    // on init() based on its own settings flag, so registration is cheap and
-    // always safe — even if the user has disabled the feature.
+    // ── Feature registration (unchanged from Phase A) ──
     registry.register(createSetupTabsFeature());
     registry.register(createCanvasSearchFeature());
     registry.register(createFlowListSearchFeature());
@@ -80,15 +78,48 @@ export default defineContentScript({
     registry.register(createSubflowGraphFeature());
     registry.register(createFlowDeployFeature());
 
-    // Build the context→features index from the registered manifests so
-    // getAvailableFeatures() can answer correctly. Called once because
-    // registry contents don't change after this point.
     setContextSource(buildContextToFeatures(registry.listManifests()));
 
-    // The menu item icons mirror v2.0.2's side-button.js featureMap. A
-    // feature only appears here when (a) it's registered, (b) the current
-    // context advertises it, and (c) settings.features.<id> is true. (c)
-    // closes the CHANGELOG-v2.0.0.md:148 gap.
+    // ── Kill-switch state ──
+    // Boot path awaits one ping with a 1.5s timeout; on miss, fall back to
+    // the last-known cache. Subsequent route changes refresh in the
+    // background; the gate uses whichever list is current.
+    let disabledRemote: ReadonlySet<string> = new Set(await readKillSwitchCache());
+    let currentSettings = settings;
+
+    const bridge = createBridgeClient({
+      token: settings.bridge.token,
+      preferredTransport: settings.bridge.preferredTransport,
+      localhostPort: settings.bridge.localhostPort,
+    });
+
+    async function refreshKillSwitch(): Promise<void> {
+      try {
+        const info = await Promise.race([
+          bridge.getServerInfo(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
+        ]);
+        if (info) {
+          disabledRemote = new Set(info.disabledFeatures);
+          await writeKillSwitchCache(info.disabledFeatures);
+        }
+      } catch (err) {
+        console.warn('[SFUT] kill-switch refresh failed:', err);
+      }
+    }
+
+    function makeGate() {
+      return {
+        disabledRemote,
+        isUserEnabled: (id: string) => isFeatureEnabled(currentSettings, id),
+      };
+    }
+
+    // Wait once at boot so the very first init pass already respects the
+    // remote list. If the bridge times out we proceed with the cached list.
+    await refreshKillSwitch();
+
+    // ── Menu items + side button (ICONS map preserved from Phase A) ──
     const ICONS: Record<string, { icon: string; label: string }> = {
       'setup-tabs': { icon: '📑', label: 'Setup Tabs' },
       'flow-list-search': { icon: '🔍', label: 'Flow List Search' },
@@ -106,22 +137,13 @@ export default defineContentScript({
       'flow-deploy': { icon: '🚀', label: 'Deploy or Rollback…' },
     };
 
-    // Menu visibility is by context only — every feature exposed by the
-    // current context shows up, regardless of its enable flag. Each
-    // feature's onActivate decides what to do (some toggle a setting,
-    // some open a modal); the settings.features.X flag governs whether
-    // the feature auto-runs at init() time, not whether the menu shows
-    // it. Smoke test surfaced this: with the old filter, features that
-    // toggle their own state (setup-tabs, missing-descriptions) could
-    // never be enabled because the toggle was hidden until they were
-    // enabled. Mirror of v2.0.2's original side-button.js behaviour.
-    void settings; // referenced only for the load-on-start side effect.
-
     const menuItemsProvider = (): MenuItem[] => {
       const available = getAvailableFeatures();
       const items: MenuItem[] = [];
       for (const featureId of available) {
         if (!registry.has(featureId)) continue;
+        if (disabledRemote.has(featureId)) continue;
+        if (!isFeatureEnabled(currentSettings, featureId)) continue;
         const entry = ICONS[featureId];
         if (!entry) continue;
         items.push({ featureId, icon: entry.icon, label: entry.label });
@@ -135,26 +157,30 @@ export default defineContentScript({
         onActivate: (item) => registry.dispatch(item.featureId, item.action ?? 'activate'),
         onOpenSettings: () => {
           chrome.runtime.sendMessage({ action: 'openSettings' }, () => {
-            // Swallow lastError. v2.0.2's side-button.js:314 did the same.
             void chrome.runtime.lastError;
           });
         },
       },
     });
 
+    // ── Settings change → re-run the gate ──
+    onSettingsChange((next) => {
+      currentSettings = next;
+      void registry.initForCurrentRoute(getAvailableFeatures(), makeGate());
+      sideButton.refresh();
+    });
+
+    // ── SPA route change → refresh kill-switch (fire-and-forget), then init ──
     router.onChange(({ url }) => {
       registry.resetForRouteChange(url);
+      void refreshKillSwitch();
       sideButton.refresh();
-      // Only init features the current context supports; the menu provider
-      // already filters by both context and settings, but init must run for
-      // anything the user has enabled regardless of menu visibility (so e.g.
-      // setup-tabs can inject its DOM into the tab bar without being clicked).
-      void registry.initForCurrentRoute(getAvailableFeatures());
+      void registry.initForCurrentRoute(getAvailableFeatures(), makeGate());
     });
     router.start();
 
-    await registry.initForCurrentRoute(getAvailableFeatures());
+    await registry.initForCurrentRoute(getAvailableFeatures(), makeGate());
 
-    console.log('[SFUT] Shell mounted.');
+    console.log('[SFUT] Shell mounted with kill-switch enabled.');
   },
 });

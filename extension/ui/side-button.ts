@@ -6,15 +6,14 @@
 // current route. The menu is rebuilt every time it opens so dynamic labels
 // (e.g. "Show / Hide Missing Description Flags") stay accurate.
 //
-// Two improvements over v2.0.2:
 //
-//   1. Per-feature enable state from Settings is honoured here. v2.0.2's
-//      CHANGELOG-v2.0.0.md:148 flagged "Side button respecting per-feature
-//      enable state" as a known issue carried forward; this implementation
-//      filters the menu by `settings.features.<id> === true` before render.
-//   2. The menu items come from a typed registry instead of a string-keyed
-//      switch statement, so adding a feature is "register({ id, icon, label
-//      })" rather than editing the side-button file.
+// Gating is the caller's responsibility — the menuItemsProvider passed into
+// mountSideButton() filters items by kill-switch, user toggle, and current
+// page context. See extension/entrypoints/content.ts.
+//
+// The menu items come from a typed registry instead of a string-keyed
+// switch, so adding a feature is "register({ manifest, ... })" rather than
+// editing this file.
 //
 // Implementation note: the v2.0.2 module built its DOM with innerHTML
 // templates. This rewrite uses createElement + textContent throughout so
