@@ -218,6 +218,31 @@ describe('extension/lib/feature-registry', () => {
     expect(init).toHaveBeenCalledOnce(); // not re-inited
   });
 
+  it('resetForRouteChange does not clear active features (teardown still fires after a route change)', async () => {
+    const reg = createFeatureRegistry({ logger: makeLogger() });
+    const teardown = vi.fn();
+    reg.register({
+      manifest: { id: 'alpha', contexts: [] },
+      init: () => {},
+      teardown,
+    });
+    // Init the feature
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(),
+      isUserEnabled: () => true,
+    });
+    // Three route changes go by without any gate change
+    reg.resetForRouteChange('r2');
+    reg.resetForRouteChange('r3');
+    reg.resetForRouteChange('r4');
+    // Now disable the feature — teardown MUST still fire even after 3 resets
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(['alpha']),
+      isUserEnabled: () => true,
+    });
+    expect(teardown).toHaveBeenCalledOnce();
+  });
+
   it('a thrown error in teardown is logged and does not halt other features', async () => {
     const logger = makeLogger();
     const reg = createFeatureRegistry({ logger });

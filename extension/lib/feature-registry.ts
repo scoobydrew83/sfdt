@@ -114,10 +114,11 @@ export function createFeatureRegistry(options: {
   // reset just those entries.
   let initialisedKeys = new Set<string>();
   let currentRouteKey = '__initial__';
-  // Tracks which feature ids have an active init() that hasn't been torn down.
-  // Separate from initialisedKeys (which is route-scoped) because teardown
-  // is concerned with the lifecycle of the feature itself, not the route.
-  const initialisedFeatureIds = new Set<FeatureId>();
+  // Set of feature ids whose init() has run and whose teardown() has not.
+  // Lives across route changes — teardown only runs when the gate disables
+  // a feature that is currently active, not on every route change.
+  // Separate from initialisedKeys (which is route-scoped).
+  const activeFeatureIds = new Set<FeatureId>();
 
   return {
     register(feature) {
@@ -161,7 +162,7 @@ export function createFeatureRegistry(options: {
         if (!allowed) {
           // If we previously initialised this feature and it's now gated off,
           // run its teardown to unwind any DOM mutations.
-          if (initialisedFeatureIds.has(id)) {
+          if (activeFeatureIds.has(id)) {
             if (typeof feature.teardown === 'function') {
               try {
                 await feature.teardown();
@@ -170,20 +171,20 @@ export function createFeatureRegistry(options: {
                 log(`Error tearing down feature '${id}': ${(err as Error).message}`, err);
               }
             }
-            initialisedFeatureIds.delete(id);
+            activeFeatureIds.delete(id);
           }
           continue;
         }
         if (initialisedKeys.has(key)) continue;
         if (typeof feature.init !== 'function') {
           initialisedKeys.add(key);
-          initialisedFeatureIds.add(id);
+          activeFeatureIds.add(id);
           continue;
         }
         try {
           await feature.init();
           initialisedKeys.add(key);
-          initialisedFeatureIds.add(id);
+          activeFeatureIds.add(id);
           log(`Feature '${id}' initialised successfully.`);
         } catch (err) {
           log(`Error initialising feature '${id}': ${(err as Error).message}`, err);
