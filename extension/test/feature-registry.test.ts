@@ -165,4 +165,81 @@ describe('extension/lib/feature-registry', () => {
     expect(reg.has('good')).toBe(true);
     expect(logger.warn).not.toHaveBeenCalled();
   });
+
+  it('skips init for features whose id is in the kill-switch list', async () => {
+    const reg = createFeatureRegistry({ logger: makeLogger() });
+    const initSpy = vi.fn();
+    reg.register({
+      manifest: { id: 'alpha', contexts: [] },
+      init: initSpy,
+    });
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(['alpha']),
+      isUserEnabled: () => true,
+    });
+    expect(initSpy).not.toHaveBeenCalled();
+  });
+
+  it('skips init for features the user has disabled', async () => {
+    const reg = createFeatureRegistry({ logger: makeLogger() });
+    const initSpy = vi.fn();
+    reg.register({
+      manifest: { id: 'alpha', contexts: [] },
+      init: initSpy,
+    });
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(),
+      isUserEnabled: (id) => id !== 'alpha',
+    });
+    expect(initSpy).not.toHaveBeenCalled();
+  });
+
+  it('calls teardown() when a previously-initialised feature is newly remote-disabled', async () => {
+    const reg = createFeatureRegistry({ logger: makeLogger() });
+    const init = vi.fn();
+    const teardown = vi.fn();
+    reg.register({
+      manifest: { id: 'alpha', contexts: [] },
+      init,
+      teardown,
+    });
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(),
+      isUserEnabled: () => true,
+    });
+    expect(init).toHaveBeenCalledOnce();
+
+    reg.resetForRouteChange('https://x.lightning.force.com/page/2');
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(['alpha']),
+      isUserEnabled: () => true,
+    });
+    expect(teardown).toHaveBeenCalledOnce();
+    expect(init).toHaveBeenCalledOnce(); // not re-inited
+  });
+
+  it('a thrown error in teardown is logged and does not halt other features', async () => {
+    const logger = makeLogger();
+    const reg = createFeatureRegistry({ logger });
+    reg.register({
+      manifest: { id: 'alpha', contexts: [] },
+      init: () => {},
+      teardown: () => {
+        throw new Error('teardown boom');
+      },
+    });
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(),
+      isUserEnabled: () => true,
+    });
+    reg.resetForRouteChange('r2');
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(['alpha']),
+      isUserEnabled: () => true,
+    });
+    expect(logger.log).toHaveBeenCalledWith(
+      expect.stringContaining("Error tearing down feature 'alpha': teardown boom"),
+      expect.anything(),
+    );
+  });
 });

@@ -35,9 +35,21 @@ export interface Feature {
   init?: () => void | Promise<void>;
   onActivate?: () => void | Promise<void>;
   refresh?: () => void | Promise<void>;
+  /**
+   * Called when a feature that previously ran init() becomes disabled
+   * mid-session (either by the remote kill-switch or a user toggle change).
+   * Implementations remove any DOM they injected and unbind any global
+   * listeners. Errors are logged and swallowed — never throw out of teardown.
+   */
+  teardown?: () => void | Promise<void>;
 }
 
 export type FeatureAction = 'activate' | 'refresh';
+
+export interface InitGate {
+  disabledRemote: ReadonlySet<string>;
+  isUserEnabled: (id: FeatureId) => boolean;
+}
 
 export interface FeatureRegistry {
   register(feature: Feature): void;
@@ -47,7 +59,12 @@ export interface FeatureRegistry {
   getManifest(id: FeatureId): FeatureManifest | undefined;
   /** Returns every registered feature's manifest in registration order. */
   listManifests(): readonly FeatureManifest[];
-  initForCurrentRoute(availableIds: readonly FeatureId[]): Promise<void>;
+  /**
+   * Initialise every feature in availableIds that passes the optional gate.
+   * If gate is omitted, all available ids are initialised (back-compat for
+   * tests written before the gate was introduced).
+   */
+  initForCurrentRoute(availableIds: readonly FeatureId[], gate?: InitGate): Promise<void>;
   dispatch(id: FeatureId, action: FeatureAction): Promise<void>;
   // Resets the per-route initialisation state. Called by the SPA router
   // when the URL changes so features get a fresh init() pass.
@@ -97,6 +114,10 @@ export function createFeatureRegistry(options: {
   // reset just those entries.
   let initialisedKeys = new Set<string>();
   let currentRouteKey = '__initial__';
+  // Tracks which feature ids have an active init() that hasn't been torn down.
+  // Separate from initialisedKeys (which is route-scoped) because teardown
+  // is concerned with the lifecycle of the feature itself, not the route.
+  const initialisedFeatureIds = new Set<FeatureId>();
 
   return {
     register(feature) {
@@ -128,22 +149,41 @@ export function createFeatureRegistry(options: {
       return Array.from(features.values()).map((f) => f.manifest);
     },
 
-    async initForCurrentRoute(availableIds) {
+    async initForCurrentRoute(availableIds, gate) {
       for (const id of availableIds) {
         const feature = features.get(id);
         if (!feature) {
           log(`Feature '${id}' not yet registered, skipping.`);
           continue;
         }
+        const allowed = !gate || (!gate.disabledRemote.has(id) && gate.isUserEnabled(id));
         const key = `${currentRouteKey}::${id}`;
+        if (!allowed) {
+          // If we previously initialised this feature and it's now gated off,
+          // run its teardown to unwind any DOM mutations.
+          if (initialisedFeatureIds.has(id)) {
+            if (typeof feature.teardown === 'function') {
+              try {
+                await feature.teardown();
+                log(`Feature '${id}' torn down.`);
+              } catch (err) {
+                log(`Error tearing down feature '${id}': ${(err as Error).message}`, err);
+              }
+            }
+            initialisedFeatureIds.delete(id);
+          }
+          continue;
+        }
         if (initialisedKeys.has(key)) continue;
         if (typeof feature.init !== 'function') {
           initialisedKeys.add(key);
+          initialisedFeatureIds.add(id);
           continue;
         }
         try {
           await feature.init();
           initialisedKeys.add(key);
+          initialisedFeatureIds.add(id);
           log(`Feature '${id}' initialised successfully.`);
         } catch (err) {
           log(`Error initialising feature '${id}': ${(err as Error).message}`, err);
