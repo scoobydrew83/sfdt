@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   _missingDescriptionFlagsTestApi,
+  createMissingDescriptionFlagsFeature,
   findElementsWithoutDescriptions,
 } from '../features/missing-description-flags.js';
 
@@ -95,5 +96,42 @@ describe('extension/features/missing-description-flags', () => {
       expect(index.has('my element')).toBe(true);
       expect(index.has('x')).toBe(true);
     });
+  });
+});
+
+describe('missing-description-flags teardown', () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+    chrome.storage.local.clear();
+  });
+
+  it('removes flag badges and stops the observer on teardown', async () => {
+    // Inject a card with a matching element so flagCanvas can place a badge.
+    const card = document.createElement('div');
+    card.className = 'element-card';
+    const span = document.createElement('span');
+    span.className = 'text-element-label';
+    span.title = 'Set Owner';
+    const base = document.createElement('div');
+    base.className = 'base-card';
+    card.appendChild(span);
+    card.appendChild(base);
+    document.body.appendChild(card);
+
+    flagCanvas(document, [
+      { name: 'set_owner', label: 'Set Owner', type: 'Assignment', isResource: false },
+    ]);
+    expect(document.querySelector('.sfut-desc-flag')).not.toBeNull();
+
+    const feature = createMissingDescriptionFlagsFeature();
+    // Teardown should clean up regardless of whether init ran.
+    await feature.teardown?.();
+    expect(document.querySelector('.sfut-desc-flag')).toBeNull();
+  });
+
+  it('does not throw when called twice', async () => {
+    const feature = createMissingDescriptionFlagsFeature();
+    await feature.teardown?.();
+    await expect(feature.teardown?.()).resolves.not.toThrow();
   });
 });

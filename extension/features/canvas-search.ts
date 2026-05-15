@@ -393,6 +393,26 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
     }
   }
 
+  let boundKeydownListener: ((e: KeyboardEvent) => void) | null = null;
+  let unsubscribeSettings: (() => void) | null = null;
+
+  async function teardown(): Promise<void> {
+    try {
+      closeSearch();
+    } catch {
+      // closeSearch is defensive; ignore failure paths.
+    }
+    doc.getElementById(DYNAMIC_STYLE_ID)?.remove();
+    if (boundKeydownListener) {
+      doc.removeEventListener('keydown', boundKeydownListener, true);
+      boundKeydownListener = null;
+    }
+    if (unsubscribeSettings) {
+      unsubscribeSettings();
+      unsubscribeSettings = null;
+    }
+  }
+
   return {
     manifest: {
       id: 'canvas-search',
@@ -407,9 +427,10 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
       highlightColour = settings.canvasSearch.highlightColour;
       shortcutParts = parseShortcut(settings.canvasSearch.shortcut);
       injectDynamicStyles(doc, highlightColour);
-      doc.addEventListener('keydown', onKeyDown, true);
+      boundKeydownListener = onKeyDown;
+      doc.addEventListener('keydown', boundKeydownListener, true);
 
-      onSettingsChange((next) => {
+      unsubscribeSettings = onSettingsChange((next) => {
         if (next.canvasSearch.highlightColour !== highlightColour) {
           highlightColour = next.canvasSearch.highlightColour;
           injectDynamicStyles(doc, highlightColour);
@@ -421,6 +442,8 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
     onActivate() {
       openSearch();
     },
+
+    teardown,
   };
 }
 

@@ -329,10 +329,8 @@ export function createSetupTabsFeature(options: SetupTabsOptions = {}): Feature 
   const win = options.win ?? window;
   const timeoutMs = options.waitTimeoutMs ?? 10_000;
   let injecting = false;
-  // Captured so the storage-change listener stays subscribed for the page
-  // lifetime; the prefix marks it as intentionally never unsubscribed.
+  // Captured so teardown can unsubscribe the storage-change listener.
   let _unsubscribeSettings: (() => void) | null = null;
-  void _unsubscribeSettings;
 
   async function injectIfEnabled(): Promise<void> {
     const settings = await loadSettings();
@@ -397,6 +395,12 @@ export function createSetupTabsFeature(options: SetupTabsOptions = {}): Feature 
     async refresh() {
       removeInjectedTabs(doc);
       await injectIfEnabled();
+    },
+
+    async teardown(): Promise<void> {
+      _unsubscribeSettings?.();
+      _unsubscribeSettings = null;
+      removeInjectedTabs(doc);
     },
   };
 }

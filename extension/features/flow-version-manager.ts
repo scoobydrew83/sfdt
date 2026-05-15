@@ -270,6 +270,18 @@ export function createFlowVersionManagerFeature(
     refresh() {
       refresh();
     },
+
+    async teardown(): Promise<void> {
+      observer?.disconnect();
+      observer = null;
+      if (toolbarBtn) {
+        toolbarBtn.remove();
+        toolbarBtn = null;
+      }
+      doc.querySelectorAll(`.${TAB_CLASS}`).forEach((el) => el.remove());
+      selected.clear();
+      rowMap.clear();
+    },
   };
 }
 

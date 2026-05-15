@@ -166,3 +166,31 @@ describe('extension/features/canvas-search', () => {
     });
   });
 });
+
+describe('canvas-search teardown', () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+    document.head.replaceChildren();
+    history.replaceState(
+      null,
+      '',
+      '/builder_platform_interaction/flowBuilder.app?flowId=1',
+    );
+    chrome.storage.local.clear();
+  });
+
+  it('removes the dynamic style element', async () => {
+    const feature = createCanvasSearchFeature();
+    await feature.init?.();
+    expect(document.getElementById('sfut-canvas-search-dynamic')).not.toBeNull();
+    await feature.teardown?.();
+    expect(document.getElementById('sfut-canvas-search-dynamic')).toBeNull();
+  });
+
+  it('does not throw when called twice', async () => {
+    const feature = createCanvasSearchFeature();
+    await feature.init?.();
+    await feature.teardown?.();
+    await expect(feature.teardown?.()).resolves.not.toThrow();
+  });
+});

@@ -198,6 +198,7 @@ export function createMissingDescriptionFlagsFeature(
   let missingItems: MissingItem[] = [];
   let observer: MutationObserver | null = null;
   let _settingsHookRegistered = false;
+  let unsubscribeSettings: (() => void) | null = null;
 
   function startObserver(): void {
     if (observer) return;
@@ -246,7 +247,7 @@ export function createMissingDescriptionFlagsFeature(
 
       if (!_settingsHookRegistered) {
         _settingsHookRegistered = true;
-        onSettingsChange(async (next) => {
+        unsubscribeSettings = onSettingsChange(async (next) => {
           if (isFeatureEnabled(next, 'missing-descriptions') && !active) await activate();
           else if (!isFeatureEnabled(next, 'missing-descriptions') && active) deactivate();
         });
@@ -267,6 +268,15 @@ export function createMissingDescriptionFlagsFeature(
       if (!active) return;
       deactivate();
       await activate();
+    },
+
+    async teardown(): Promise<void> {
+      deactivate();
+      if (unsubscribeSettings) {
+        unsubscribeSettings();
+        unsubscribeSettings = null;
+      }
+      _settingsHookRegistered = false;
     },
   };
 }

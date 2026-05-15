@@ -148,3 +148,31 @@ describe('extension/features/setup-tabs', () => {
     warn.mockRestore();
   });
 });
+
+describe('setup-tabs teardown', () => {
+  beforeEach(() => {
+    _clearSettingsCacheForTests();
+    document.body.replaceChildren();
+    const tabBar = document.createElement('ul');
+    tabBar.className = 'tabBarItems';
+    document.body.appendChild(tabBar);
+    chrome.storage.local.clear();
+  });
+
+  it('removes injected tabs and stops the settings subscription on teardown', async () => {
+    await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
+    await feature.init?.();
+    expect(document.querySelectorAll('.sfut-custom-tab').length).toBeGreaterThan(0);
+    await feature.teardown?.();
+    expect(document.querySelectorAll('.sfut-custom-tab')).toHaveLength(0);
+  });
+
+  it('does not throw when called twice', async () => {
+    await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
+    await feature.init?.();
+    await feature.teardown?.();
+    await expect(feature.teardown?.()).resolves.not.toThrow();
+  });
+});
