@@ -36,6 +36,8 @@ export interface BridgeOptions {
   // Test seams.
   fetchImpl?: typeof fetch;
   connectNativeImpl?: typeof chrome.runtime.connectNative;
+  /** Override for chrome.runtime.sendMessage used by getServerInfo() in tests. */
+  sendMessageImpl?: (message: unknown) => Promise<unknown>;
   timeoutMs?: number;
 }
 
@@ -51,6 +53,40 @@ function makeRequestId(): string {
 
 function offlineResponse(requestId: string, message: string): SfdtErrorResponse {
   return { ok: false, requestId, error: message, code: 'BRIDGE_OFFLINE' };
+}
+
+/**
+ * Response shape from the background service worker's `bridgePing` handler.
+ * The handler wraps the raw bridge response in `{ ok, body }` so transport
+ * errors are distinguishable from bridge-level errors.
+ */
+interface BridgePingResponse {
+  ok: boolean;
+  body?: unknown;
+  error?: string;
+}
+
+/**
+ * Send a message to the background service worker and await its response.
+ * Used to route HTTPS-incompatible fetches (Private Network Access) through
+ * a context that isn't subject to that policy. Returns null if chrome.runtime
+ * is unavailable (test environments).
+ */
+async function chromeRuntimeSendMessage<T>(message: unknown): Promise<T | null> {
+  if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return null;
+  return new Promise<T | null>((resolve) => {
+    try {
+      chrome.runtime.sendMessage(message, (response: T) => {
+        if (chrome.runtime.lastError) {
+          resolve(null);
+          return;
+        }
+        resolve(response ?? null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
 }
 
 export interface BridgeClient {
@@ -91,6 +127,8 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const connectNativeImpl = options.connectNativeImpl;
+  const sendMessageImpl =
+    options.sendMessageImpl ?? ((message: unknown) => chromeRuntimeSendMessage<unknown>(message));
 
   async function sendOverLocalhost(request: SfdtRequest): Promise<SfdtResponse> {
     if (!token) {
@@ -241,31 +279,31 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
     transport: 'localhost' | 'native';
     disabledFeatures: readonly string[];
   } | null> {
-    // Use the unauthenticated GET /api/bridge/ping endpoint so the
-    // kill-switch works BEFORE the user has paired with a bearer token.
-    // Coupling discovery to auth would mean a broken feature can only be
-    // disabled remotely after the user has connected — defeating the
-    // purpose of the kill-switch.
-    const localhostUrl = `http://127.0.0.1:${port}/api/bridge/ping`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), DISCOVERY_TIMEOUT_MS);
+    // The kill-switch fetch needs to go through the background service
+    // worker. Chrome's Private Network Access policy blocks an HTTPS page's
+    // content script from making cross-origin requests to private hosts
+    // (127.0.0.1) without preflight handling on the server side. The
+    // service worker isn't subject to PNA, and host_permissions for
+    // http://127.0.0.1/* gives it the permission it needs. This also means
+    // the kill-switch works WITHOUT a bearer token — the GET /api/bridge/
+    // ping endpoint is unauthenticated by design.
     try {
-      const res = await fetchImpl(localhostUrl, { method: 'GET', signal: controller.signal });
-      const body = (await res.json().catch(() => null)) as
-        | { ok: true; data: PingResponseData }
-        | { ok: false }
-        | null;
-      if (body && body.ok && body.data) {
-        return {
-          serverVersion: body.data.serverVersion,
-          transport: body.data.transport === 'native' ? 'native' : 'localhost',
-          disabledFeatures: body.data.disabledFeatures ?? [],
-        };
+      const response = (await sendMessageImpl({
+        action: 'bridgePing',
+        port,
+      })) as BridgePingResponse | null;
+      if (response?.ok && response.body && typeof response.body === 'object') {
+        const envelope = response.body as { ok?: boolean; data?: PingResponseData };
+        if (envelope.ok && envelope.data) {
+          return {
+            serverVersion: envelope.data.serverVersion,
+            transport: envelope.data.transport === 'native' ? 'native' : 'localhost',
+            disabledFeatures: envelope.data.disabledFeatures ?? [],
+          };
+        }
       }
     } catch {
       // fall through to native or null
-    } finally {
-      clearTimeout(timer);
     }
     if (!connectNativeImpl) return null;
     const native = await sendOverNative({ requestId: makeRequestId(), kind: 'ping' } as SfdtRequest);

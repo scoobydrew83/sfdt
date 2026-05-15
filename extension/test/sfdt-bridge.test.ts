@@ -1,12 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
 
-function fakeFetch(response: unknown, status = 200): typeof fetch {
-  return (async () =>
-    new Response(JSON.stringify(response), {
-      status,
-      headers: { 'Content-Type': 'application/json' },
-    })) as typeof fetch;
+/**
+ * Build a sendMessage stub that returns the given bridgePing response shape.
+ * The background service worker wraps the raw bridge response as
+ * `{ ok: true|false, body?, error? }`.
+ */
+function fakeSendMessage(body: unknown, ok = true) {
+  return async () => ({ ok, body });
 }
 
 describe('createBridgeClient.getServerInfo', () => {
@@ -14,9 +15,8 @@ describe('createBridgeClient.getServerInfo', () => {
     const client = createBridgeClient({
       token: 'token-x',
       preferredTransport: 'localhost',
-      fetchImpl: fakeFetch({
+      sendMessageImpl: fakeSendMessage({
         ok: true,
-        requestId: 'discover',
         data: {
           pong: true,
           serverVersion: '0.9.0',
@@ -33,11 +33,11 @@ describe('createBridgeClient.getServerInfo', () => {
     });
   });
 
-  it('returns null when the bridge errors out', async () => {
+  it('returns null when the background worker reports a fetch failure', async () => {
     const client = createBridgeClient({
       token: 'token-x',
       preferredTransport: 'localhost',
-      fetchImpl: fakeFetch({ ok: false, requestId: 'discover', error: 'offline' }, 500),
+      sendMessageImpl: async () => ({ ok: false, error: 'Failed to fetch' }),
     });
     expect(await client.getServerInfo()).toBeNull();
   });
@@ -46,9 +46,8 @@ describe('createBridgeClient.getServerInfo', () => {
     const client = createBridgeClient({
       token: 'token-x',
       preferredTransport: 'localhost',
-      fetchImpl: fakeFetch({
+      sendMessageImpl: fakeSendMessage({
         ok: true,
-        requestId: 'discover',
         data: { pong: true, serverVersion: '0.8.1', transport: 'localhost' },
       }),
     });
@@ -56,38 +55,34 @@ describe('createBridgeClient.getServerInfo', () => {
     expect(info?.disabledFeatures).toEqual([]);
   });
 
-  it('returns null when the bridge returns ok: true but data is missing (defensive)', async () => {
+  it('returns null when the bridge envelope is ok: true but data is missing (defensive)', async () => {
     const client = createBridgeClient({
       token: 'token-x',
       preferredTransport: 'localhost',
-      fetchImpl: fakeFetch({
+      sendMessageImpl: fakeSendMessage({
         ok: true,
-        requestId: 'discover',
         // data field intentionally missing
       }),
     });
     expect(await client.getServerInfo()).toBeNull();
   });
 
-  it('works with no token (uses the unauthenticated GET ping endpoint)', async () => {
-    const fetchSpy = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          ok: true,
-          data: {
-            pong: true,
-            serverVersion: '0.9.0',
-            transport: 'localhost',
-            disabledFeatures: ['canvas-search'],
-          },
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    ) as unknown as typeof fetch;
+  it('works with no token (the kill-switch fetch does NOT require pairing)', async () => {
+    const sendSpy = vi.fn(
+      fakeSendMessage({
+        ok: true,
+        data: {
+          pong: true,
+          serverVersion: '0.9.0',
+          transport: 'localhost',
+          disabledFeatures: ['canvas-search'],
+        },
+      }),
+    );
     const client = createBridgeClient({
       token: '', // explicitly empty — pre-pairing scenario
       preferredTransport: 'localhost',
-      fetchImpl: fetchSpy,
+      sendMessageImpl: sendSpy,
     });
     const info = await client.getServerInfo();
     expect(info).toEqual({
@@ -95,12 +90,8 @@ describe('createBridgeClient.getServerInfo', () => {
       transport: 'localhost',
       disabledFeatures: ['canvas-search'],
     });
-    // Confirm the request hit /api/bridge/ping (not /exchange) and used GET
-    const callArgs = (fetchSpy as unknown as { mock: { calls: unknown[][] } }).mock.calls;
-    expect(callArgs.length).toBeGreaterThan(0);
-    const [url, init] = callArgs[0] as [string, RequestInit | undefined];
-    expect(url).toContain('/api/bridge/ping');
-    expect(url).not.toContain('/exchange');
-    expect(init?.method).toBe('GET');
+    // Confirm the message routed through the bridgePing action (not POST exchange)
+    expect(sendSpy).toHaveBeenCalledOnce();
+    expect(sendSpy).toHaveBeenCalledWith(expect.objectContaining({ action: 'bridgePing' }));
   });
 });

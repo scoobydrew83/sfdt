@@ -40,6 +40,31 @@ export default defineBackground(() => {
             return { ok: true, sids: Object.fromEntries(entries) };
           }
 
+          case 'bridgePing': {
+            // Forwarded by content scripts so the HTTP fetch happens in the
+            // service worker context, bypassing Chrome's Private Network
+            // Access preflight enforcement that blocks HTTPS-page → HTTP-
+            // localhost requests. host_permissions for http://127.0.0.1/*
+            // gives the service worker permission to make this call.
+            const port: number =
+              typeof message.port === 'number' && message.port > 0 ? message.port : 7654;
+            const url = `http://127.0.0.1:${port}/api/bridge/ping`;
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 1500);
+            try {
+              const res = await fetch(url, { method: 'GET', signal: controller.signal });
+              const body = (await res.json().catch(() => null)) as unknown;
+              return { ok: true, body };
+            } catch (err) {
+              return {
+                ok: false,
+                error: err instanceof Error ? err.message : String(err),
+              };
+            } finally {
+              clearTimeout(timer);
+            }
+          }
+
           default:
             return { ok: false, error: `Unknown action: ${message?.action}` };
         }
