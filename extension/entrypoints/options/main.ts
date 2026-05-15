@@ -259,12 +259,12 @@ async function render(): Promise<void> {
     'Features that run at page load are gated by these flags. Other features run on demand from the side menu regardless.';
   featuresSection.appendChild(featuresHelp);
 
-  const featureToggles: Array<[keyof Settings['features'], string, string]> = [
+  const featureToggles: Array<[string, string, string]> = [
     ['setupTabs', 'Setup Tabs', 'Inject Flows / Flow Trigger Explorer / Process Automation Settings into the Setup tab bar.'],
     ['missingDescriptions', 'Missing Description Flags', 'Auto-flag elements + resources without descriptions when Flow Builder loads.'],
     ['scheduledFlowExplorer', 'Scheduled Flow Explorer', 'Make the Scheduled Flow Explorer entry available from the side menu.'],
   ];
-  const featureRows: Array<{ key: keyof Settings['features']; checkbox: HTMLInputElement }> = [];
+  const featureRows: Array<{ key: string; checkbox: HTMLInputElement }> = [];
   for (const [key, label, help] of featureToggles) {
     const cb = el('input', { type: 'checkbox' });
     cb.checked = !!settings.features[key];
@@ -348,7 +348,7 @@ async function render(): Promise<void> {
   const saveStatus = el('span', { class: 'status' });
   saveBtn.addEventListener('click', async () => {
     try {
-      const features: Settings['features'] = { ...settings.features };
+      const features: Record<string, boolean> = { ...settings.features };
       for (const { key, checkbox } of featureRows) features[key] = checkbox.checked;
       const portValue = Number(portInput.value);
       const next: Partial<Settings> = {

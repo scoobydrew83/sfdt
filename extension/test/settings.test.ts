@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   _clearSettingsCacheForTests,
+  isFeatureEnabled,
   loadSettings,
   onSettingsChange,
   patchSettings,
@@ -15,8 +16,9 @@ describe('extension/lib/settings', () => {
 
   it('returns defaults on first load when nothing is stored', async () => {
     const s = await loadSettings();
-    expect(s.features.scheduledFlowExplorer).toBe(true);
-    expect(s.features.setupTabs).toBe(false);
+    // With the open record, unset feature ids return true (enabled by default).
+    expect(isFeatureEnabled(s, 'scheduled-flow-explorer')).toBe(true);
+    expect(isFeatureEnabled(s, 'setup-tabs')).toBe(true);
     expect(s.canvasSearch.shortcut).toBe('Ctrl+Shift+F');
     expect(s.apiNameGenerator.namingPattern).toBe('Snake_Case');
     expect(s.bridge.preferredTransport).toBe('auto');
@@ -25,8 +27,10 @@ describe('extension/lib/settings', () => {
 
   it('SettingsSchema fills in defaults for partial input', () => {
     const parsed = SettingsSchema.parse({ features: { setupTabs: true } });
-    expect(parsed.features.setupTabs).toBe(true);
-    expect(parsed.features.missingDescriptions).toBe(false);
+    // setupTabs is stored as a camelCase legacy key; access via isFeatureEnabled.
+    expect(isFeatureEnabled(parsed, 'setup-tabs')).toBe(true);
+    // missing-descriptions not in the record — defaults to enabled.
+    expect(isFeatureEnabled(parsed, 'missing-descriptions')).toBe(true);
     expect(parsed.bridge.localhostPort).toBe(7654);
   });
 
@@ -35,7 +39,7 @@ describe('extension/lib/settings', () => {
     await saveSettings(next);
     _clearSettingsCacheForTests();
     const reloaded = await loadSettings();
-    expect(reloaded.features.missingDescriptions).toBe(true);
+    expect(isFeatureEnabled(reloaded, 'missing-descriptions')).toBe(true);
   });
 
   it('patchSettings deep-merges section objects', async () => {
@@ -48,7 +52,7 @@ describe('extension/lib/settings', () => {
   it('onSettingsChange fires when another surface writes', async () => {
     let received: unknown = null;
     const unsubscribe = onSettingsChange((s) => {
-      received = s.features.setupTabs;
+      received = isFeatureEnabled(s, 'setup-tabs');
     });
     await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
     // Listeners fire via queueMicrotask in the test shim — wait a tick.
@@ -62,5 +66,40 @@ describe('extension/lib/settings', () => {
     await expect(
       saveSettings({ bridge: { localhostPort: -1 } } as never),
     ).rejects.toThrow();
+  });
+});
+
+describe('settings.features legacy id adapter', () => {
+  beforeEach(() => {
+    _clearSettingsCacheForTests();
+    chrome.storage.local.clear();
+  });
+
+  it('reads kebab-case ids when written kebab-case', async () => {
+    chrome.storage.local.set({
+      'sfut.settings': {
+        features: { 'canvas-search': true, 'flow-deploy': false },
+      },
+    } as any);
+    const s = await loadSettings();
+    expect(isFeatureEnabled(s, 'canvas-search')).toBe(true);
+    expect(isFeatureEnabled(s, 'flow-deploy')).toBe(false);
+  });
+
+  it('treats legacy camelCase keys as the canonical kebab-case ids', async () => {
+    chrome.storage.local.set({
+      'sfut.settings': {
+        features: { setupTabs: true, missingDescriptions: false },
+      },
+    } as any);
+    const s = await loadSettings();
+    expect(isFeatureEnabled(s, 'setup-tabs')).toBe(true);
+    expect(isFeatureEnabled(s, 'missing-descriptions')).toBe(false);
+  });
+
+  it('defaults unknown ids to enabled (enabledByDefault semantics)', async () => {
+    chrome.storage.local.set({ 'sfut.settings': { features: {} } } as any);
+    const s = await loadSettings();
+    expect(isFeatureEnabled(s, 'never-toggled')).toBe(true);
   });
 });

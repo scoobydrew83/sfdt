@@ -14,15 +14,11 @@
 import { z } from 'zod';
 
 export const SettingsSchema = z.object({
-  // Feature enable flags. Default to true for things that were on by default
-  // in v2.0.2, false for things that were off.
-  features: z
-    .object({
-      setupTabs: z.boolean().default(false),
-      missingDescriptions: z.boolean().default(false),
-      scheduledFlowExplorer: z.boolean().default(true),
-    })
-    .default({}),
+  // Feature enable flags. Open-ended record so any feature id can have a
+  // toggle. Undefined entries mean "enabled by default" — features declare
+  // their own enabledByDefault on the manifest. Three legacy camelCase keys
+  // are tolerated via LEGACY_FEATURE_ID_MAP.
+  features: z.record(z.string(), z.boolean()).default({}),
 
   setupTabs: z
     .object({
@@ -62,6 +58,34 @@ export const SettingsSchema = z.object({
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;
+
+/**
+ * Three legacy keys from before the manifest migration. The settings UI
+ * previously stored these in camelCase; the rest of the system now keys on
+ * kebab-case feature ids. We keep the legacy keys readable by mapping them
+ * to their canonical form on access. New writes go to kebab-case only.
+ */
+const LEGACY_FEATURE_ID_MAP: Record<string, string> = {
+  setupTabs: 'setup-tabs',
+  missingDescriptions: 'missing-descriptions',
+  scheduledFlowExplorer: 'scheduled-flow-explorer',
+};
+
+/**
+ * Return true when the user has not explicitly disabled featureId. Honours
+ * the legacy camelCase keys stored before the migration.
+ */
+export function isFeatureEnabled(settings: Settings, featureId: string): boolean {
+  if (Object.prototype.hasOwnProperty.call(settings.features, featureId)) {
+    return settings.features[featureId] !== false;
+  }
+  for (const [legacy, canonical] of Object.entries(LEGACY_FEATURE_ID_MAP)) {
+    if (canonical === featureId && Object.prototype.hasOwnProperty.call(settings.features, legacy)) {
+      return settings.features[legacy] !== false;
+    }
+  }
+  return true;
+}
 
 const STORAGE_KEY = 'sfut.settings';
 

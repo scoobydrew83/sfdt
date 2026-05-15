@@ -15,7 +15,7 @@ import {
   lightningHostname as toLightningHost,
   setupHostname as toSetupHost,
 } from '../lib/hostname.js';
-import { loadSettings, onSettingsChange, patchSettings } from '../lib/settings.js';
+import { isFeatureEnabled, loadSettings, onSettingsChange, patchSettings } from '../lib/settings.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { CONTEXTS } from '../lib/context-detector.js';
 import { showToast } from '../ui/toast.js';
@@ -336,7 +336,7 @@ export function createSetupTabsFeature(options: SetupTabsOptions = {}): Feature 
 
   async function injectIfEnabled(): Promise<void> {
     const settings = await loadSettings();
-    if (!settings.features.setupTabs) {
+    if (!isFeatureEnabled(settings, 'setup-tabs')) {
       removeInjectedTabs(doc);
       return;
     }
@@ -386,8 +386,8 @@ export function createSetupTabsFeature(options: SetupTabsOptions = {}): Feature 
 
     async onActivate() {
       const settings = await loadSettings();
-      const nextEnabled = !settings.features.setupTabs;
-      await patchSettings({ features: { ...settings.features, setupTabs: nextEnabled } });
+      const nextEnabled = !isFeatureEnabled(settings, 'setup-tabs');
+      await patchSettings({ features: { ...settings.features, 'setup-tabs': nextEnabled } });
       showToast(nextEnabled ? 'Setup Tabs enabled' : 'Setup Tabs disabled', {
         kind: nextEnabled ? 'success' : 'info',
         doc,

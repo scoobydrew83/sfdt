@@ -9,7 +9,7 @@
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
-import { loadSettings, onSettingsChange, patchSettings } from '../lib/settings.js';
+import { isFeatureEnabled, loadSettings, onSettingsChange, patchSettings } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 
 const ELEMENT_TYPE_KEYS: ReadonlyArray<readonly [string, string]> = [
@@ -242,21 +242,21 @@ export function createMissingDescriptionFlagsFeature(
         return;
       }
       const settings = await loadSettings();
-      if (settings.features.missingDescriptions) await activate();
+      if (isFeatureEnabled(settings, 'missing-descriptions')) await activate();
 
       if (!_settingsHookRegistered) {
         _settingsHookRegistered = true;
         onSettingsChange(async (next) => {
-          if (next.features.missingDescriptions && !active) await activate();
-          else if (!next.features.missingDescriptions && active) deactivate();
+          if (isFeatureEnabled(next, 'missing-descriptions') && !active) await activate();
+          else if (!isFeatureEnabled(next, 'missing-descriptions') && active) deactivate();
         });
       }
     },
 
     async onActivate() {
       const settings = await loadSettings();
-      const next = !settings.features.missingDescriptions;
-      await patchSettings({ features: { ...settings.features, missingDescriptions: next } } as never);
+      const next = !isFeatureEnabled(settings, 'missing-descriptions');
+      await patchSettings({ features: { ...settings.features, 'missing-descriptions': next } } as never);
       showToast(next ? 'Missing Description Flags enabled' : 'Missing Description Flags disabled', {
         kind: next ? 'success' : 'info',
         doc,
