@@ -1,9 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   CONTEXTS,
   detectContext,
   getAvailableFeatures,
   shouldShowSideButton,
+  buildContextToFeatures,
+  setContextSource,
+  _resetContextSourceForTests,
   type Context,
 } from '../lib/context-detector.js';
 
@@ -88,6 +91,40 @@ describe('extension/lib/context-detector', () => {
   });
 
   describe('getAvailableFeatures', () => {
+    beforeEach(() => {
+      setContextSource(
+        buildContextToFeatures([
+          {
+            id: 'setup-tabs',
+            contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.FLOW_TRIGGER_EXPLORER, CONTEXTS.SETUP_OTHER],
+          },
+          { id: 'flow-list-search', contexts: [CONTEXTS.SETUP_FLOWS] },
+          { id: 'scheduled-flow-explorer', contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.SETUP_OTHER] },
+          {
+            id: 'trigger-conflicts',
+            contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.FLOW_TRIGGER_EXPLORER, CONTEXTS.SETUP_OTHER],
+          },
+          { id: 'subflow-graph', contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.SETUP_OTHER] },
+          { id: 'flow-version-manager', contexts: [CONTEXTS.FLOW_DETAILS] },
+          { id: 'canvas-search', contexts: [CONTEXTS.FLOW_BUILDER] },
+          { id: 'missing-descriptions', contexts: [CONTEXTS.FLOW_BUILDER] },
+          { id: 'ai-assistant', contexts: [CONTEXTS.FLOW_BUILDER] },
+          { id: 'api-name-generator', contexts: [CONTEXTS.FLOW_BUILDER] },
+          { id: 'flow-health-check', contexts: [CONTEXTS.FLOW_BUILDER] },
+          { id: 'flow-deploy', contexts: [CONTEXTS.FLOW_BUILDER] },
+          { id: 'comparison-exporter', contexts: [CONTEXTS.COMPARE_FLOWS] },
+          {
+            id: 'flow-trigger-explorer-enhancer',
+            contexts: [CONTEXTS.FLOW_TRIGGER_EXPLORER],
+          },
+        ]),
+      );
+    });
+
+    afterEach(() => {
+      _resetContextSourceForTests();
+    });
+
     it('lists the Setup Flows feature set on the Flow list page', () => {
       expect(
         getAvailableFeatures(
@@ -121,6 +158,95 @@ describe('extension/lib/context-detector', () => {
 
     it('returns empty array on a non-Salesforce URL', () => {
       expect(getAvailableFeatures(fakeWin('https://example.com/'), emptyDoc())).toEqual([]);
+    });
+  });
+
+  describe('buildContextToFeatures', () => {
+    it('inverts feature manifests into a context-keyed map', () => {
+      const result = buildContextToFeatures([
+        { id: 'setup-tabs', contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.SETUP_OTHER] },
+        { id: 'canvas-search', contexts: [CONTEXTS.FLOW_BUILDER] },
+        { id: 'flow-list-search', contexts: [CONTEXTS.SETUP_FLOWS] },
+      ]);
+      expect(result[CONTEXTS.SETUP_FLOWS]).toEqual(['setup-tabs', 'flow-list-search']);
+      expect(result[CONTEXTS.FLOW_BUILDER]).toEqual(['canvas-search']);
+      expect(result[CONTEXTS.SETUP_OTHER]).toEqual(['setup-tabs']);
+      expect(result[CONTEXTS.NONE]).toEqual([]);
+    });
+
+    it('preserves declaration order across features within one context', () => {
+      const result = buildContextToFeatures([
+        { id: 'first', contexts: [CONTEXTS.SETUP_FLOWS] },
+        { id: 'second', contexts: [CONTEXTS.SETUP_FLOWS] },
+        { id: 'third', contexts: [CONTEXTS.SETUP_FLOWS] },
+      ]);
+      expect(result[CONTEXTS.SETUP_FLOWS]).toEqual(['first', 'second', 'third']);
+    });
+  });
+
+  describe('byte-for-byte parity with v2.0.2 routing', () => {
+    /**
+     * This is the frozen snapshot of CONTEXT_TO_FEATURES as it existed before
+     * the manifest migration. If a feature's contexts get refactored, this
+     * test must be updated deliberately so the side-menu drift is reviewed.
+     */
+    const FROZEN: Readonly<Record<Context, readonly string[]>> = {
+      [CONTEXTS.SETUP_FLOWS]: [
+        'setup-tabs',
+        'flow-list-search',
+        'scheduled-flow-explorer',
+        'trigger-conflicts',
+        'subflow-graph',
+      ],
+      [CONTEXTS.FLOW_DETAILS]: ['flow-version-manager'],
+      [CONTEXTS.FLOW_BUILDER]: [
+        'canvas-search',
+        'missing-descriptions',
+        'ai-assistant',
+        'api-name-generator',
+        'flow-health-check',
+        'flow-deploy',
+      ],
+      [CONTEXTS.COMPARE_FLOWS]: ['comparison-exporter'],
+      [CONTEXTS.FLOW_TRIGGER_EXPLORER]: [
+        'setup-tabs',
+        'flow-trigger-explorer-enhancer',
+        'trigger-conflicts',
+      ],
+      [CONTEXTS.SETUP_OTHER]: [
+        'setup-tabs',
+        'scheduled-flow-explorer',
+        'trigger-conflicts',
+        'subflow-graph',
+      ],
+      [CONTEXTS.NONE]: [],
+    };
+
+    it('reconstructs the frozen map from real feature manifest declarations', async () => {
+      const factories = [
+        await import('../features/setup-tabs.js').then((m) => m.createSetupTabsFeature),
+        await import('../features/canvas-search.js').then((m) => m.createCanvasSearchFeature),
+        await import('../features/flow-list-search.js').then((m) => m.createFlowListSearchFeature),
+        await import('../features/flow-health-check.js').then((m) => m.createFlowHealthCheckFeature),
+        await import('../features/missing-description-flags.js').then(
+          (m) => m.createMissingDescriptionFlagsFeature,
+        ),
+        await import('../features/flow-version-manager.js').then((m) => m.createFlowVersionManagerFeature),
+        await import('../features/ai-assistant.js').then((m) => m.createAiAssistantFeature),
+        await import('../features/scheduled-flow-explorer.js').then(
+          (m) => m.createScheduledFlowExplorerFeature,
+        ),
+        await import('../features/api-name-generator.js').then((m) => m.createApiNameGeneratorFeature),
+        await import('../features/comparison-exporter.js').then((m) => m.createComparisonExporterFeature),
+        await import('../features/flow-trigger-explorer-enhancer.js').then(
+          (m) => m.createFlowTriggerExplorerEnhancerFeature,
+        ),
+        await import('../features/trigger-conflicts.js').then((m) => m.createTriggerConflictsFeature),
+        await import('../features/subflow-graph.js').then((m) => m.createSubflowGraphFeature),
+        await import('../features/flow-deploy.js').then((m) => m.createFlowDeployFeature),
+      ];
+      const manifests = factories.map((f) => f().manifest);
+      expect(buildContextToFeatures(manifests)).toEqual(FROZEN);
     });
   });
 });

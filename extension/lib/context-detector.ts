@@ -85,46 +85,81 @@ export function shouldShowSideButton(
   return detectContext(win, doc) !== CONTEXTS.NONE;
 }
 
-const CONTEXT_TO_FEATURES: Record<Context, readonly string[]> = {
-  [CONTEXTS.SETUP_FLOWS]: [
-    'setup-tabs',
-    'flow-list-search',
-    'scheduled-flow-explorer',
-    'trigger-conflicts',
-    'subflow-graph',
-  ],
-  [CONTEXTS.FLOW_DETAILS]: ['flow-version-manager'],
-  [CONTEXTS.FLOW_BUILDER]: [
-    'canvas-search',
-    'missing-descriptions',
-    'ai-assistant',
-    'api-name-generator',
-    'flow-health-check',
-    'flow-deploy',
-  ],
-  [CONTEXTS.COMPARE_FLOWS]: ['comparison-exporter'],
-  [CONTEXTS.FLOW_TRIGGER_EXPLORER]: [
-    'setup-tabs',
-    'flow-trigger-explorer-enhancer',
-    'trigger-conflicts',
-  ],
-  [CONTEXTS.SETUP_OTHER]: [
-    'setup-tabs',
-    'scheduled-flow-explorer',
-    'trigger-conflicts',
-    'subflow-graph',
-  ],
+// ── Feature-to-context inversion ────────────────────────────────────────────
+//
+// Source of truth for which features show on which page lives on each
+// feature's manifest. The registry composes the manifests at boot and calls
+// setContextSource() with the inverted map below. getAvailableFeatures()
+// reads from that injected map.
+
+interface ContextSource {
+  readonly map: Readonly<Record<Context, readonly string[]>>;
+}
+
+const EMPTY_MAP: Readonly<Record<Context, readonly string[]>> = {
+  [CONTEXTS.SETUP_FLOWS]: [],
+  [CONTEXTS.FLOW_DETAILS]: [],
+  [CONTEXTS.FLOW_BUILDER]: [],
+  [CONTEXTS.COMPARE_FLOWS]: [],
+  [CONTEXTS.FLOW_TRIGGER_EXPLORER]: [],
+  [CONTEXTS.SETUP_OTHER]: [],
   [CONTEXTS.NONE]: [],
 };
 
+let _source: ContextSource = { map: EMPTY_MAP };
+
+export interface FeatureContextDecl {
+  id: string;
+  contexts: readonly Context[];
+}
+
+/**
+ * Build a context-keyed map of feature ids from per-feature context lists.
+ * Pure function — exported so tests can verify without touching module state.
+ */
+export function buildContextToFeatures(
+  manifests: readonly FeatureContextDecl[],
+): Readonly<Record<Context, readonly string[]>> {
+  const out: Record<Context, string[]> = {
+    [CONTEXTS.SETUP_FLOWS]: [],
+    [CONTEXTS.FLOW_DETAILS]: [],
+    [CONTEXTS.FLOW_BUILDER]: [],
+    [CONTEXTS.COMPARE_FLOWS]: [],
+    [CONTEXTS.FLOW_TRIGGER_EXPLORER]: [],
+    [CONTEXTS.SETUP_OTHER]: [],
+    [CONTEXTS.NONE]: [],
+  };
+  for (const m of manifests) {
+    for (const ctx of m.contexts) {
+      out[ctx].push(m.id);
+    }
+  }
+  return out;
+}
+
+/**
+ * Install the context source built from the registry. Called once at boot
+ * after all registry.register() calls in content.ts.
+ */
+export function setContextSource(map: Readonly<Record<Context, readonly string[]>>): void {
+  _source = { map };
+}
+
 /**
  * Return the feature ids available for the current context. Combine with
- * `settings.features.<id>` and `registry.has(<id>)` in the caller to decide
+ * `settings.features.<id>` and the kill-switch list in the caller to decide
  * what to actually show.
  */
 export function getAvailableFeatures(
   win: { location: { href: string } } = window,
   doc: Document = document,
 ): readonly string[] {
-  return CONTEXT_TO_FEATURES[detectContext(win, doc)];
+  return _source.map[detectContext(win, doc)] ?? [];
+}
+
+/**
+ * Test helper — reset the module-level source so tests don't leak into each other.
+ */
+export function _resetContextSourceForTests(): void {
+  _source = { map: EMPTY_MAP };
 }
