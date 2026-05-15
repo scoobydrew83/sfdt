@@ -42,4 +42,16 @@ describe('flow-version-manager teardown', () => {
     await feature.teardown?.();
     await expect(feature.teardown?.()).resolves.not.toThrow();
   });
+
+  it('removes any stranded modal backdrop on teardown', async () => {
+    const feature = createFlowVersionManagerFeature();
+    await feature.init?.();
+    // Simulate an open confirmation modal by manually injecting the backdrop
+    const backdrop = document.createElement('div');
+    backdrop.className = 'sfut-version-manager-backdrop';
+    document.body.appendChild(backdrop);
+    expect(document.querySelector('.sfut-version-manager-backdrop')).not.toBeNull();
+    await feature.teardown?.();
+    expect(document.querySelector('.sfut-version-manager-backdrop')).toBeNull();
+  });
 });

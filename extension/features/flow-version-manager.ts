@@ -279,6 +279,7 @@ export function createFlowVersionManagerFeature(
         toolbarBtn = null;
       }
       doc.querySelectorAll(`.${TAB_CLASS}`).forEach((el) => el.remove());
+      doc.querySelector('.sfut-version-manager-backdrop')?.remove();
       selected.clear();
       rowMap.clear();
     },
