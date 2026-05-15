@@ -13,7 +13,11 @@
 // with an empty menu, no console errors".
 
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { getAvailableFeatures } from '../lib/context-detector.js';
+import {
+  buildContextToFeatures,
+  getAvailableFeatures,
+  setContextSource,
+} from '../lib/context-detector.js';
 import { createFeatureRegistry } from '../lib/feature-registry.js';
 import { createSpaRouter } from '../lib/spa-router.js';
 import { loadSettings } from '../lib/settings.js';
@@ -75,6 +79,11 @@ export default defineContentScript({
     registry.register(createTriggerConflictsFeature());
     registry.register(createSubflowGraphFeature());
     registry.register(createFlowDeployFeature());
+
+    // Build the context→features index from the registered manifests so
+    // getAvailableFeatures() can answer correctly. Called once because
+    // registry contents don't change after this point.
+    setContextSource(buildContextToFeatures(registry.listManifests()));
 
     // The menu item icons mirror v2.0.2's side-button.js featureMap. A
     // feature only appears here when (a) it's registered, (b) the current
