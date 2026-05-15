@@ -20,6 +20,7 @@ import { createFeatureRegistry } from '../lib/feature-registry.js';
 import { createSpaRouter } from '../lib/spa-router.js';
 import { isFeatureEnabled, loadSettings, onSettingsChange } from '../lib/settings.js';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
+import { createTelemetry } from '../lib/telemetry.js';
 import { readKillSwitchCache, writeKillSwitchCache } from '../lib/killswitch-cache.js';
 import { mountSideButton, type MenuItem } from '../ui/side-button.js';
 import { createAiAssistantFeature } from '../features/ai-assistant.js';
@@ -59,7 +60,11 @@ export default defineContentScript({
     if (!SALESFORCE_HOST_PATTERN.test(window.location.href)) return;
 
     const settings = await loadSettings();
-    const registry = createFeatureRegistry();
+    let currentSettings = settings;
+    const telemetry = createTelemetry({
+      isEnabled: () => currentSettings.telemetry?.enabled ?? false,
+    });
+    const registry = createFeatureRegistry({ track: telemetry.track });
     const router = createSpaRouter();
 
     // ── Feature registration (unchanged from Phase A) ──
@@ -85,7 +90,6 @@ export default defineContentScript({
     // the last-known cache. Subsequent route changes refresh in the
     // background; the gate uses whichever list is current.
     let disabledRemote: ReadonlySet<string> = new Set(await readKillSwitchCache());
-    let currentSettings = settings;
 
     let bridge = createBridgeClient({
       token: settings.bridge.token,
