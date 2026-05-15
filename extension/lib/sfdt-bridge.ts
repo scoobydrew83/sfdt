@@ -22,6 +22,7 @@ import type {
   SfdtRequest,
   SfdtResponse,
   SfdtErrorResponse,
+  PingResponseData,
 } from '@sfdt/flow-core/bridge-contract';
 
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -58,6 +59,17 @@ export interface BridgeClient {
    * 'unknown' depending on what answered first.
    */
   discover(): Promise<Transport>;
+
+  /**
+   * Cheap probe used to pick a transport AND surface server-side state
+   * (currently kill-switched feature ids). Returns null when no transport
+   * answered successfully.
+   */
+  getServerInfo(): Promise<{
+    serverVersion: string;
+    transport: 'localhost' | 'native';
+    disabledFeatures: readonly string[];
+  } | null>;
 
   /**
    * Send a typed request and await its response.
@@ -224,5 +236,35 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
     return send({ ...(req as object), requestId: makeRequestId() } as SfdtRequest);
   }
 
-  return { discover, send, call };
+  async function getServerInfo(): Promise<{
+    serverVersion: string;
+    transport: 'localhost' | 'native';
+    disabledFeatures: readonly string[];
+  } | null> {
+    // Use the exchange POST so the response goes through the same validator
+    // path as everything else. The discover() race is overkill for an info
+    // call — just try localhost first; if it fails, try native (when available).
+    const probe = await sendOverLocalhost({ requestId: makeRequestId(), kind: 'ping' } as SfdtRequest);
+    if (probe.ok) {
+      const data = (probe as { data: PingResponseData }).data;
+      return {
+        serverVersion: data.serverVersion,
+        transport: data.transport === 'native' ? 'native' : 'localhost',
+        disabledFeatures: data.disabledFeatures ?? [],
+      };
+    }
+    if (!connectNativeImpl) return null;
+    const native = await sendOverNative({ requestId: makeRequestId(), kind: 'ping' } as SfdtRequest);
+    if (native.ok) {
+      const data = (native as { data: PingResponseData }).data;
+      return {
+        serverVersion: data.serverVersion,
+        transport: 'native',
+        disabledFeatures: data.disabledFeatures ?? [],
+      };
+    }
+    return null;
+  }
+
+  return { discover, getServerInfo, send, call };
 }
