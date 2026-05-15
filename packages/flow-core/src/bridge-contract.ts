@@ -149,6 +149,12 @@ export interface PingResponseData {
   pong: true;
   serverVersion: string;
   transport: 'localhost' | 'native' | 'unknown';
+  /**
+   * Feature ids the user (or CI) has disabled remotely via
+   * .sfdt/feature-flags.json. Optional for back-compat with older bridge
+   * servers that don't return the field — consumers treat undefined as [].
+   */
+  disabledFeatures?: readonly string[];
 }
 
 export interface VersionResponseData {
