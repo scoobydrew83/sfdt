@@ -87,7 +87,7 @@ export default defineContentScript({
     let disabledRemote: ReadonlySet<string> = new Set(await readKillSwitchCache());
     let currentSettings = settings;
 
-    const bridge = createBridgeClient({
+    let bridge = createBridgeClient({
       token: settings.bridge.token,
       preferredTransport: settings.bridge.preferredTransport,
       localhostPort: settings.bridge.localhostPort,
@@ -165,7 +165,21 @@ export default defineContentScript({
 
     // ── Settings change → re-run the gate ──
     onSettingsChange((next) => {
+      const bridgeChanged =
+        next.bridge.token !== currentSettings.bridge.token ||
+        next.bridge.preferredTransport !== currentSettings.bridge.preferredTransport ||
+        next.bridge.localhostPort !== currentSettings.bridge.localhostPort;
       currentSettings = next;
+      if (bridgeChanged) {
+        bridge = createBridgeClient({
+          token: next.bridge.token,
+          preferredTransport: next.bridge.preferredTransport,
+          localhostPort: next.bridge.localhostPort,
+        });
+        // New client → refresh kill-switch immediately so subsequent route
+        // changes use the new server's view of disabled features.
+        void refreshKillSwitch();
+      }
       void registry.initForCurrentRoute(getAvailableFeatures(), makeGate());
       sideButton.refresh();
     });
