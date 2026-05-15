@@ -8,6 +8,7 @@
 // subscription they already have.
 
 import {
+  isFeatureEnabled,
   loadSettings,
   patchSettings,
   type Settings,
@@ -260,14 +261,14 @@ async function render(): Promise<void> {
   featuresSection.appendChild(featuresHelp);
 
   const featureToggles: Array<[string, string, string]> = [
-    ['setupTabs', 'Setup Tabs', 'Inject Flows / Flow Trigger Explorer / Process Automation Settings into the Setup tab bar.'],
-    ['missingDescriptions', 'Missing Description Flags', 'Auto-flag elements + resources without descriptions when Flow Builder loads.'],
-    ['scheduledFlowExplorer', 'Scheduled Flow Explorer', 'Make the Scheduled Flow Explorer entry available from the side menu.'],
+    ['setup-tabs', 'Setup Tabs', 'Inject Flows / Flow Trigger Explorer / Process Automation Settings into the Setup tab bar.'],
+    ['missing-descriptions', 'Missing Description Flags', 'Auto-flag elements + resources without descriptions when Flow Builder loads.'],
+    ['scheduled-flow-explorer', 'Scheduled Flow Explorer', 'Make the Scheduled Flow Explorer entry available from the side menu.'],
   ];
   const featureRows: Array<{ key: string; checkbox: HTMLInputElement }> = [];
   for (const [key, label, help] of featureToggles) {
     const cb = el('input', { type: 'checkbox' });
-    cb.checked = !!settings.features[key];
+    cb.checked = isFeatureEnabled(settings, key);
     featuresSection.appendChild(row(label, help, cb));
     featureRows.push({ key, checkbox: cb });
   }
