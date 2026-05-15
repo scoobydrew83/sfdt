@@ -246,22 +246,26 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
     // call — just try localhost first; if it fails, try native (when available).
     const probe = await sendOverLocalhost({ requestId: makeRequestId(), kind: 'ping' } as SfdtRequest);
     if (probe.ok) {
-      const data = (probe as { data: PingResponseData }).data;
-      return {
-        serverVersion: data.serverVersion,
-        transport: data.transport === 'native' ? 'native' : 'localhost',
-        disabledFeatures: data.disabledFeatures ?? [],
-      };
+      const data = (probe as { data?: PingResponseData }).data;
+      if (data) {
+        return {
+          serverVersion: data.serverVersion,
+          transport: data.transport === 'native' ? 'native' : 'localhost',
+          disabledFeatures: data.disabledFeatures ?? [],
+        };
+      }
     }
     if (!connectNativeImpl) return null;
     const native = await sendOverNative({ requestId: makeRequestId(), kind: 'ping' } as SfdtRequest);
     if (native.ok) {
-      const data = (native as { data: PingResponseData }).data;
-      return {
-        serverVersion: data.serverVersion,
-        transport: 'native',
-        disabledFeatures: data.disabledFeatures ?? [],
-      };
+      const data = (native as { data?: PingResponseData }).data;
+      if (data) {
+        return {
+          serverVersion: data.serverVersion,
+          transport: 'native',
+          disabledFeatures: data.disabledFeatures ?? [],
+        };
+      }
     }
     return null;
   }

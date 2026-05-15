@@ -55,4 +55,17 @@ describe('createBridgeClient.getServerInfo', () => {
     const info = await client.getServerInfo();
     expect(info?.disabledFeatures).toEqual([]);
   });
+
+  it('returns null when the bridge returns ok: true but data is missing (defensive)', async () => {
+    const client = createBridgeClient({
+      token: 'token-x',
+      preferredTransport: 'localhost',
+      fetchImpl: fakeFetch({
+        ok: true,
+        requestId: 'discover',
+        // data field intentionally missing
+      }),
+    });
+    expect(await client.getServerInfo()).toBeNull();
+  });
 });
