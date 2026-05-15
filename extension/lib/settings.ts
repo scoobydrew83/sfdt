@@ -63,7 +63,9 @@ export const SettingsSchema = z.object({
     .default({}),
 });
 
-export type Settings = z.infer<typeof SettingsSchema>;
+export type Settings = z.infer<typeof SettingsSchema> & {
+  featureSettings?: Record<string, Record<string, unknown>>;
+};
 
 /**
  * Three legacy keys from before the manifest migration. The settings UI
@@ -99,8 +101,40 @@ const STORAGE_KEY = 'sfut.settings';
 // read. Invalidated by the storage onChanged listener at the bottom.
 let _cache: Settings | null = null;
 
+// ── Feature-contributed settings shapes ──────────────────────────────────
+//
+// Features register their settings schema at module top so by the time the
+// first loadSettings() runs, the composed schema knows every feature.
+
+const featureShapes = new Map<string, z.ZodTypeAny>();
+let _composedSchema: z.ZodTypeAny | null = null;
+
+export function registerSettingsShape(featureId: string, schema: z.ZodTypeAny): void {
+  featureShapes.set(featureId, schema);
+  _cache = null; // Invalidate so the next load uses the composed shape.
+  _composedSchema = null;
+}
+
+function getComposedSchema(): z.ZodTypeAny {
+  if (_composedSchema) return _composedSchema;
+  const shapeFields: Record<string, z.ZodTypeAny> = {};
+  for (const [id, schema] of featureShapes.entries()) {
+    shapeFields[id] = schema instanceof z.ZodObject ? schema.default({}) : schema;
+  }
+  _composedSchema = SettingsSchema.extend({
+    featureSettings: z.object(shapeFields).default({}),
+  });
+  return _composedSchema;
+}
+
+export function _resetSettingsShapesForTests(): void {
+  featureShapes.clear();
+  _composedSchema = null;
+  _cache = null;
+}
+
 function defaultSettings(): Settings {
-  return SettingsSchema.parse({});
+  return getComposedSchema().parse({}) as Settings;
 }
 
 async function readRaw(): Promise<unknown> {
@@ -122,8 +156,9 @@ async function writeRaw(value: Settings): Promise<void> {
 export async function loadSettings(): Promise<Settings> {
   if (_cache) return _cache;
   const raw = await readRaw();
-  const parsed = SettingsSchema.safeParse(raw ?? {});
-  _cache = parsed.success ? parsed.data : defaultSettings();
+  const schema = getComposedSchema();
+  const parsed = schema.safeParse(raw ?? {});
+  _cache = parsed.success ? (parsed.data as Settings) : defaultSettings();
   return _cache;
 }
 
@@ -132,7 +167,7 @@ export async function loadSettings(): Promise<Settings> {
  * throws if the proposed value is invalid.
  */
 export async function saveSettings(next: Settings): Promise<void> {
-  const validated = SettingsSchema.parse(next);
+  const validated = getComposedSchema().parse(next) as Settings;
   await writeRaw(validated);
   _cache = validated;
 }

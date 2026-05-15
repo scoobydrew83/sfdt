@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { z } from 'zod';
 import {
   _clearSettingsCacheForTests,
+  _resetSettingsShapesForTests,
   isFeatureEnabled,
   loadSettings,
   onSettingsChange,
   patchSettings,
+  registerSettingsShape,
   saveSettings,
   SettingsSchema,
 } from '../lib/settings.js';
@@ -101,5 +104,44 @@ describe('settings.features legacy id adapter', () => {
     chrome.storage.local.set({ 'sfut.settings': { features: {} } } as any);
     const s = await loadSettings();
     expect(isFeatureEnabled(s, 'never-toggled')).toBe(true);
+  });
+});
+
+describe('registerSettingsShape', () => {
+  beforeEach(() => {
+    _clearSettingsCacheForTests();
+    _resetSettingsShapesForTests();
+    chrome.storage.local.clear();
+  });
+
+  it('exposes contributed feature settings under featureSettings.<id>', async () => {
+    registerSettingsShape('canvas-search', z.object({
+      shortcut: z.string().default('Ctrl+Shift+F'),
+    }));
+    const s = await loadSettings();
+    expect(s.featureSettings?.['canvas-search']).toEqual({
+      shortcut: 'Ctrl+Shift+F',
+    });
+  });
+
+  it('honours stored values for contributed shapes', async () => {
+    registerSettingsShape('api-name-generator', z.object({
+      pattern: z.enum(['a', 'b']).default('a'),
+    }));
+    chrome.storage.local.set({
+      'sfut.settings': {
+        featureSettings: { 'api-name-generator': { pattern: 'b' } },
+      },
+    } as any);
+    const s = await loadSettings();
+    expect(s.featureSettings?.['api-name-generator']).toEqual({ pattern: 'b' });
+  });
+
+  it('contributing a new shape after loadSettings() invalidates the cache', async () => {
+    const s1 = await loadSettings();
+    expect(s1.featureSettings?.alpha).toBeUndefined();
+    registerSettingsShape('alpha', z.object({ x: z.boolean().default(true) }));
+    const s2 = await loadSettings();
+    expect(s2.featureSettings?.alpha).toEqual({ x: true });
   });
 });
