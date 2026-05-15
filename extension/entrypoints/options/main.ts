@@ -7,6 +7,7 @@
 // the content scripts pick up changes via the chrome.storage.onChanged
 // subscription they already have.
 
+import { z } from 'zod';
 import {
   isFeatureEnabled,
   loadSettings,
@@ -14,6 +15,27 @@ import {
   type Settings,
 } from '../../lib/settings.js';
 import { createBridgeClient } from '../../lib/sfdt-bridge.js';
+import { createFeatureRegistry, type FeatureManifest } from '../../lib/feature-registry.js';
+import { buildField } from '../../lib/zod-to-dom.js';
+import { createTelemetry } from '../../lib/telemetry.js';
+
+// Pull every feature factory in so each module's top-level
+// registerSettingsShape() call lands before loadSettings() runs.
+import { createSetupTabsFeature } from '../../features/setup-tabs.js';
+import { createCanvasSearchFeature } from '../../features/canvas-search.js';
+import { createFlowListSearchFeature } from '../../features/flow-list-search.js';
+import { createFlowHealthCheckFeature } from '../../features/flow-health-check.js';
+import { createMissingDescriptionFlagsFeature } from '../../features/missing-description-flags.js';
+import { createFlowVersionManagerFeature } from '../../features/flow-version-manager.js';
+import { createAiAssistantFeature } from '../../features/ai-assistant.js';
+import { createScheduledFlowExplorerFeature } from '../../features/scheduled-flow-explorer.js';
+import { createApiNameGeneratorFeature } from '../../features/api-name-generator.js';
+import { createComparisonExporterFeature } from '../../features/comparison-exporter.js';
+import { createFlowTriggerExplorerEnhancerFeature } from '../../features/flow-trigger-explorer-enhancer.js';
+import { createTriggerConflictsFeature } from '../../features/trigger-conflicts.js';
+import { createSubflowGraphFeature } from '../../features/subflow-graph.js';
+import { createFlowDeployFeature } from '../../features/flow-deploy.js';
+
 
 const STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
@@ -176,6 +198,22 @@ async function render(): Promise<void> {
   styleTag.textContent = STYLES;
   document.head.appendChild(styleTag);
 
+  const registry = createFeatureRegistry();
+  registry.register(createSetupTabsFeature());
+  registry.register(createCanvasSearchFeature());
+  registry.register(createFlowListSearchFeature());
+  registry.register(createFlowHealthCheckFeature());
+  registry.register(createMissingDescriptionFlagsFeature());
+  registry.register(createFlowVersionManagerFeature());
+  registry.register(createAiAssistantFeature());
+  registry.register(createScheduledFlowExplorerFeature());
+  registry.register(createApiNameGeneratorFeature());
+  registry.register(createComparisonExporterFeature());
+  registry.register(createFlowTriggerExplorerEnhancerFeature());
+  registry.register(createTriggerConflictsFeature());
+  registry.register(createSubflowGraphFeature());
+  registry.register(createFlowDeployFeature());
+
   const settings = await loadSettings();
   while (root.firstChild) root.removeChild(root.firstChild);
 
@@ -252,95 +290,100 @@ async function render(): Promise<void> {
   bridgeSection.appendChild(actions);
   wrap.appendChild(bridgeSection);
 
-  // ─── Per-feature auto-run ────────────────────────────────────────────
+  // ─── Per-feature toggles (registry-driven) ──────────────────────────
   const featuresSection = el('section');
-  featuresSection.appendChild(el('h2', {}, 'Auto-run features'));
+  featuresSection.appendChild(el('h2', {}, 'Features'));
   const featuresHelp = el('p', { class: 'section-help' });
   featuresHelp.textContent =
-    'Features that run at page load are gated by these flags. Other features run on demand from the side menu regardless.';
+    'Toggle individual features on or off. Disabled features never run, never show in the side menu.';
   featuresSection.appendChild(featuresHelp);
 
-  const featureToggles: Array<[string, string, string]> = [
-    ['setup-tabs', 'Setup Tabs', 'Inject Flows / Flow Trigger Explorer / Process Automation Settings into the Setup tab bar.'],
-    ['missing-descriptions', 'Missing Description Flags', 'Auto-flag elements + resources without descriptions when Flow Builder loads.'],
-    ['scheduled-flow-explorer', 'Scheduled Flow Explorer', 'Make the Scheduled Flow Explorer entry available from the side menu.'],
-  ];
-  const featureRows: Array<{ key: string; checkbox: HTMLInputElement }> = [];
-  for (const [key, label, help] of featureToggles) {
-    const cb = el('input', { type: 'checkbox' });
-    cb.checked = isFeatureEnabled(settings, key);
-    featuresSection.appendChild(row(label, help, cb));
-    featureRows.push({ key, checkbox: cb });
+  interface FeatureRow {
+    id: string;
+    checkbox: HTMLInputElement;
+  }
+  const featureRows: FeatureRow[] = [];
+
+  for (const manifest of registry.listManifests()) {
+    const checkbox = el('input', { type: 'checkbox' });
+    checkbox.checked = isFeatureEnabled(settings, manifest.id);
+    const description = `${manifest.contexts.length} context(s): ${manifest.contexts.join(', ') || '—'}`;
+    featuresSection.appendChild(row(manifest.id, description, checkbox));
+    featureRows.push({ id: manifest.id, checkbox });
   }
   wrap.appendChild(featuresSection);
 
-  // ─── Setup Tabs sub-options ─────────────────────────────────────────
-  const setupTabsSection = el('section');
-  setupTabsSection.appendChild(el('h2', {}, 'Setup Tabs'));
-  const setupHelp = el('p', { class: 'section-help' });
-  setupHelp.textContent = 'Controls injected tabs. Master toggle is in the section above.';
-  setupTabsSection.appendChild(setupHelp);
-  const automationHomeCb = el('input', { type: 'checkbox' });
-  automationHomeCb.checked = settings.setupTabs.automationHomeEnabled;
-  setupTabsSection.appendChild(
-    row(
-      'Automation Home tab',
-      'Adds a tab linking to the Automation Lightning app (standard__FlowsApp).',
-      automationHomeCb,
-    ),
-  );
-  const groupingCb = el('input', { type: 'checkbox' });
-  groupingCb.checked = settings.setupTabs.groupingEnabled;
-  setupTabsSection.appendChild(
-    row(
-      'Group under one dropdown',
-      'Collapses the three tabs into a single Automation menu.',
-      groupingCb,
-    ),
-  );
-  wrap.appendChild(setupTabsSection);
-
-  // ─── Canvas search ─────────────────────────────────────────────────
-  const canvasSection = el('section');
-  canvasSection.appendChild(el('h2', {}, 'Canvas search'));
-  const shortcutInput = el('input', { type: 'text', placeholder: 'Ctrl+Shift+F' });
-  shortcutInput.value = settings.canvasSearch.shortcut;
-  canvasSection.appendChild(
-    row(
-      'Keyboard shortcut',
-      'Modifier+key combo to open the canvas search bar in Flow Builder.',
-      shortcutInput,
-    ),
-  );
-  const colorInput = el('input', { type: 'color' });
-  colorInput.value = settings.canvasSearch.highlightColour;
-  canvasSection.appendChild(
-    row(
-      'Highlight colour',
-      'Colour of the box-shadow ring around matching canvas elements.',
-      colorInput,
-    ),
-  );
-  wrap.appendChild(canvasSection);
-
-  // ─── API name generator ───────────────────────────────────────────
-  const apiNameSection = el('section');
-  apiNameSection.appendChild(el('h2', {}, 'API Name Generator'));
-  const patternSelect = el('select');
-  for (const value of ['Snake_Case', 'PascalCase', 'camelCase'] as const) {
-    const opt = el('option', { value });
-    opt.textContent = value;
-    if (settings.apiNameGenerator.namingPattern === value) opt.selected = true;
-    patternSelect.appendChild(opt);
+  // ─── Per-feature config (registry-driven via zod-to-dom) ──────────
+  interface FeatureFieldGroup {
+    id: string;
+    getValues: () => Record<string, unknown>;
   }
-  apiNameSection.appendChild(
-    row(
-      'Default naming pattern',
-      'Default case used by the API Name Generator modal.',
-      patternSelect,
-    ),
+  const featureFieldGroups: FeatureFieldGroup[] = [];
+
+  for (const manifest of registry.listManifests()) {
+    if (!manifest.settingsSchema) continue;
+    const section = el('section');
+    section.appendChild(el('h2', {}, manifest.id));
+    const help = el('p', { class: 'section-help' });
+    help.textContent = `Feature-specific configuration for ${manifest.id}.`;
+    section.appendChild(help);
+
+    const schema = manifest.settingsSchema as z.ZodObject<z.ZodRawShape>;
+    const initialBlock =
+      (settings.featureSettings?.[manifest.id] as Record<string, unknown> | undefined) ??
+      (schema.parse({}) as Record<string, unknown>);
+    const shape = schema._def.shape();
+    const fieldGetters: Record<string, () => unknown> = {};
+    for (const [key, childSchema] of Object.entries(shape)) {
+      const field = buildField<unknown>(childSchema as z.ZodTypeAny, initialBlock[key]);
+      fieldGetters[key] = field.getValue;
+      section.appendChild(row(key, '', field.node));
+    }
+    featureFieldGroups.push({
+      id: manifest.id,
+      getValues: () => {
+        const out: Record<string, unknown> = {};
+        for (const [k, getValue] of Object.entries(fieldGetters)) out[k] = getValue();
+        return out;
+      },
+    });
+    wrap.appendChild(section);
+  }
+
+  // ─── Telemetry (opt-in) ────────────────────────────────────────────
+  const telemetrySection = el('section');
+  telemetrySection.appendChild(el('h2', {}, 'Telemetry'));
+  const telemetryHelp = el('p', { class: 'section-help' });
+  telemetryHelp.textContent =
+    'When enabled, the extension counts feature activations and errors locally so you can see which features you actually use. No data leaves this browser profile.';
+  telemetrySection.appendChild(telemetryHelp);
+
+  const telemetryCb = el('input', { type: 'checkbox' });
+  telemetryCb.checked = settings.telemetry?.enabled ?? false;
+  telemetrySection.appendChild(
+    row('Enable local telemetry', 'Off by default. Toggle on to start counting.', telemetryCb),
   );
-  wrap.appendChild(apiNameSection);
+
+  const telemetry = createTelemetry({ isEnabled: () => settings.telemetry?.enabled ?? false });
+  const snapshot = await telemetry.snapshot();
+  const ids = Object.keys(snapshot.counters).sort(
+    (a, b) => (snapshot.counters[b]?.activated ?? 0) - (snapshot.counters[a]?.activated ?? 0),
+  );
+  if (ids.length > 0) {
+    const tableLabel = el('p', { class: 'section-help' });
+    tableLabel.textContent = `Counters for ${snapshot.monthKey}:`;
+    telemetrySection.appendChild(tableLabel);
+    for (const id of ids.slice(0, 10)) {
+      const c = snapshot.counters[id];
+      if (!c) continue;
+      const line = el('div');
+      line.style.fontSize = '12px';
+      line.style.padding = '2px 0';
+      line.textContent = `${id} — activated ${c.activated}, errors ${c.errored}, remote-disabled ${c.disabled_remote}`;
+      telemetrySection.appendChild(line);
+    }
+  }
+  wrap.appendChild(telemetrySection);
 
   // ─── Save bar ──────────────────────────────────────────────────────
   const saveBar = el('section');
@@ -350,26 +393,23 @@ async function render(): Promise<void> {
   saveBtn.addEventListener('click', async () => {
     try {
       const features: Record<string, boolean> = { ...settings.features };
-      for (const { key, checkbox } of featureRows) features[key] = checkbox.checked;
+      for (const r of featureRows) features[r.id] = r.checkbox.checked;
+
+      const featureSettings: Record<string, unknown> = { ...(settings.featureSettings ?? {}) };
+      for (const group of featureFieldGroups) {
+        featureSettings[group.id] = group.getValues();
+      }
+
       const portValue = Number(portInput.value);
       const next: Partial<Settings> = {
         features,
+        featureSettings: featureSettings as Settings['featureSettings'],
         bridge: {
           token: tokenInput.value.trim(),
           preferredTransport: transportSelect.value as Settings['bridge']['preferredTransport'],
           localhostPort: Number.isFinite(portValue) && portValue > 0 ? portValue : 7654,
         },
-        setupTabs: {
-          automationHomeEnabled: automationHomeCb.checked,
-          groupingEnabled: groupingCb.checked,
-        },
-        canvasSearch: {
-          shortcut: shortcutInput.value.trim() || 'Ctrl+Shift+F',
-          highlightColour: colorInput.value,
-        },
-        apiNameGenerator: {
-          namingPattern: patternSelect.value as Settings['apiNameGenerator']['namingPattern'],
-        },
+        telemetry: { enabled: telemetryCb.checked },
       };
       await patchSettings(next as Settings);
       saveStatus.className = 'status show ok';
