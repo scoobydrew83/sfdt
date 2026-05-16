@@ -1,60 +1,39 @@
-#!/bin/bash
 set -euo pipefail
-
-# Rollback to a previous release manifest
-# Redeploys a previously archived package.xml to a target org
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../utils/shared.sh"
 source "${SCRIPT_DIR}/../lib/git-utils.sh"
-
-# Configuration
 MANIFEST_DIR="${SFDT_MANIFEST_DIR:-manifest/release}"
 TARGET_ORG="${SFDT_TARGET_ORG:-}"
 PROJECT_NAME="${SFDT_PROJECT_NAME:-sfdt}"
 NON_INTERACTIVE="${SFDT_NON_INTERACTIVE:-false}"
 DEPLOYED_DIR="${MANIFEST_DIR}/deployed"
-
-# Fall back to SFDT_DEFAULT_ORG when SFDT_TARGET_ORG was not set
 if [[ -z "$TARGET_ORG" ]]; then
     TARGET_ORG="${SFDT_DEFAULT_ORG:-}"
 fi
 BACKUP_BEFORE_ROLLBACK="${SFDT_BACKUP_BEFORE_ROLLBACK:-true}"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BACKUP_DIR="${SFDT_LOG_DIR:-${SFDT_PROJECT_ROOT:-.}/logs}/rollback-backups"
-
-# jq is required for manifest parsing in shared.sh / rollback logic
 require_jq || exit 1
-
 print_header "Rollback Deployment: ${PROJECT_NAME}"
 if [[ -z "$TARGET_ORG" ]]; then
-    # already checked above, this if block was redundant for the guard
     :
 fi
-
-# ── Step 1: Validate manifest directory ──────────────────────────────────────
 if [[ ! -d "$DEPLOYED_DIR" ]]; then
     print_error "No deployed manifests found at: ${DEPLOYED_DIR}"
     print_info "Ensure previous releases have been archived to ${DEPLOYED_DIR}/"
     exit 1
 fi
-
-# ── Step 2: List last 5 deployed manifests (sorted by version) ───────────────
 print_step "Scanning deployed manifests..."
-
 mapfile -t MANIFESTS < <(
     find "$DEPLOYED_DIR" -name "package*.xml" -type f | sort -V | tail -5
 )
-
-if [[ ${#MANIFESTS[@]} -eq 0 ]]; then
+if [[ ${
     print_error "No package.xml files found in ${DEPLOYED_DIR}/"
     exit 1
 fi
-
 echo ""
-print_info "Available manifests for rollback (last ${#MANIFESTS[@]}):"
+print_info "Available manifests for rollback (last ${
 echo ""
-
 if [[ "$NON_INTERACTIVE" == "true" ]]; then
     SELECTED_MANIFEST="${MANIFESTS[-1]}"
     print_info "Non-interactive mode: auto-selected most recent manifest: ${SELECTED_MANIFEST}"
@@ -67,10 +46,7 @@ else
         print_warning "Invalid selection. Please choose a number from the list."
     done
 fi
-
 print_info "Selected: ${SELECTED_MANIFEST}"
-
-# ── Step 3: Confirm target org ───────────────────────────────────────────────
 if [[ -z "$TARGET_ORG" ]]; then
     echo ""
     print_info "Available orgs:"
@@ -83,13 +59,9 @@ if [[ -z "$TARGET_ORG" ]]; then
         exit 1
     fi
 fi
-
-# ── Step 4: Show what will be deployed ───────────────────────────────────────
 echo ""
 print_step "Manifest contents (${SELECTED_MANIFEST}):"
 echo ""
-
-# Parse package.xml to show types and member counts
 if command -v xmllint &>/dev/null; then
     xmllint --xpath '//*[local-name()="types"]' "$SELECTED_MANIFEST" 2>/dev/null | \
         sed 's/<\/types>/\n/g' | while IFS= read -r type_block; do
@@ -100,15 +72,12 @@ if command -v xmllint &>/dev/null; then
             fi
         done
 else
-    # Fallback: simple grep-based parsing
     echo "  Types in manifest:"
     grep '<name>' "$SELECTED_MANIFEST" | sed 's/.*<name>\(.*\)<\/name>/    - \1/' | sort -u
     echo ""
     member_count=$(grep -c '<members>' "$SELECTED_MANIFEST" || true)
     echo "  Total members: ${member_count}"
 fi
-
-# ── Step 5: Confirm before proceeding ────────────────────────────────────────
 echo ""
 print_warning "This will deploy ${SELECTED_MANIFEST} to org: ${TARGET_ORG}"
 if [[ "$NON_INTERACTIVE" == "true" ]]; then
@@ -120,8 +89,6 @@ else
         exit 0
     fi
 fi
-
-# ── Step 5b: Backup current org state ────────────────────────────────────────
 if [[ "$BACKUP_BEFORE_ROLLBACK" == "true" ]]; then
     print_step "Creating pre-rollback backup of current org state..."
     BACKUP_PATH="${BACKUP_DIR}/pre_rollback_${TIMESTAMP}"
@@ -135,11 +102,8 @@ if [[ "$BACKUP_BEFORE_ROLLBACK" == "true" ]]; then
         print_warning "Pre-rollback backup failed — continuing with rollback"
     fi
 fi
-
-# ── Step 6: Execute deployment ───────────────────────────────────────────────
 echo ""
 print_step "Deploying manifest to ${TARGET_ORG}..."
-
 if sf project deploy start \
     --manifest "$SELECTED_MANIFEST" \
     --target-org "$TARGET_ORG" \

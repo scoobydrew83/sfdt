@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { detectTriggerConflicts } from '../src/trigger-conflicts.js';
 import type { RawFlowMetadata } from '../src/normalize.js';
-
 function recordTriggered(
   triggerType: string,
   recordTriggerType: string,
@@ -18,7 +17,6 @@ function recordTriggered(
     },
   };
 }
-
 describe('flow-core/trigger-conflicts', () => {
   it('groups two record-triggered flows sharing object + timing + event', () => {
     const groups = detectTriggerConflicts([
@@ -37,7 +35,6 @@ describe('flow-core/trigger-conflicts', () => {
     expect(groups[0]!.objectApiName).toBe('Account');
     expect(groups[0]!.flows).toHaveLength(2);
   });
-
   it('does NOT group flows on different objects', () => {
     const groups = detectTriggerConflicts([
       {
@@ -53,7 +50,6 @@ describe('flow-core/trigger-conflicts', () => {
     ]);
     expect(groups).toEqual([]);
   });
-
   it('does NOT group flows with different timing (before vs after save)', () => {
     const groups = detectTriggerConflicts([
       {
@@ -69,7 +65,6 @@ describe('flow-core/trigger-conflicts', () => {
     ]);
     expect(groups).toEqual([]);
   });
-
   it('does NOT group flows on different events (Create vs Update)', () => {
     const groups = detectTriggerConflicts([
       {
@@ -85,7 +80,6 @@ describe('flow-core/trigger-conflicts', () => {
     ]);
     expect(groups).toEqual([]);
   });
-
   it('skips non-record-triggered flows', () => {
     const groups = detectTriggerConflicts([
       {
@@ -101,7 +95,6 @@ describe('flow-core/trigger-conflicts', () => {
     ]);
     expect(groups).toEqual([]);
   });
-
   it('captures the entry criteria summary for each flow in a group', () => {
     const groups = detectTriggerConflicts([
       {
@@ -120,7 +113,6 @@ describe('flow-core/trigger-conflicts', () => {
       null,
     ]);
   });
-
   it('returns groups sorted by object, then timing, then event', () => {
     const groups = detectTriggerConflicts([
       {

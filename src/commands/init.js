@@ -6,11 +6,9 @@ import inquirer from 'inquirer';
 import { detectProject, getProjectRoot } from '../lib/project-detect.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
-
 const CONFIG_DIR = '.sfdt';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = path.join(__dirname, '../templates/sfdt.config.json');
-
 async function buildConfigTemplate({ projectName, defaultOrg, features, releaseNotesDir, coverageThreshold, ai, mcp, manifestLayout }) {
   const template = await fs.readJson(TEMPLATE_PATH);
   return {
@@ -37,14 +35,12 @@ async function buildConfigTemplate({ projectName, defaultOrg, features, releaseN
     },
   };
 }
-
 function buildEnvironmentsTemplate(defaultOrg) {
   return {
     default: defaultOrg,
     orgs: [{ alias: defaultOrg, type: 'development', description: 'Default development org' }],
   };
 }
-
 function buildPullConfigTemplate() {
   return {
     metadataTypes: [
@@ -61,7 +57,6 @@ function buildPullConfigTemplate() {
     targetDir: 'force-app/main/default',
   };
 }
-
 function buildTestConfigTemplate(coverageThreshold, testClasses, apexClasses) {
   return {
     coverageThreshold,
@@ -71,7 +66,6 @@ function buildTestConfigTemplate(coverageThreshold, testClasses, apexClasses) {
     apexClasses,
   };
 }
-
 export function registerInitCommand(program) {
   program
     .command('init')
@@ -90,9 +84,7 @@ export function registerInitCommand(program) {
           process.exitCode = 1;
           return;
         }
-
         const configDir = path.join(projectRoot, CONFIG_DIR);
-
         if (await fs.pathExists(configDir)) {
           print.warning(`Configuration already exists at ${configDir}`);
           const { overwrite } = await inquirer.prompt([
@@ -108,11 +100,8 @@ export function registerInitCommand(program) {
             return;
           }
         }
-
         print.header('sfdt init');
-
         const project = await detectProject(projectRoot);
-
         const answers = await inquirer.prompt([
           {
             type: 'input',
@@ -167,37 +156,25 @@ export function registerInitCommand(program) {
             default: false,
           },
         ]);
-
-        // Auto-scan for test classes and apex classes
         const spinner = (await import('../lib/output.js')).createSpinner(
           'Scanning for Apex classes...',
         );
         spinner.start();
-
         const packageDirs = project.packageDirectories.map((d) => d.absolutePath);
         let testClasses = [];
         let apexClasses = [];
-
         for (const dir of packageDirs) {
-          const testMatches = await glob('**/classes/*Test.cls', { cwd: dir });
-          testClasses.push(...testMatches.map((f) => path.basename(f, '.cls')));
-
-          const allMatches = await glob('**/classes/*.cls', { cwd: dir });
+          const testMatches = await glob('**/classesclasses/*.cls', { cwd: dir });
           const nonTest = allMatches.filter(
             (f) => !f.endsWith('Test.cls') && !f.endsWith('.cls-meta.xml'),
           );
           apexClasses.push(...nonTest.map((f) => path.basename(f, '.cls')));
         }
-
-        // Deduplicate
         testClasses = [...new Set(testClasses)].sort();
         apexClasses = [...new Set(apexClasses)].sort();
-
         spinner.succeed(
           `Found ${testClasses.length} test classes and ${apexClasses.length} Apex classes`,
         );
-
-        // Prompt for manifest layout when multiple packages detected
         let manifestLayout = 'flat';
         if (project.packageDirectories.length > 1) {
           const { useSubpath } = await inquirer.prompt([
@@ -210,10 +187,7 @@ export function registerInitCommand(program) {
           ]);
           if (useSubpath) manifestLayout = 'subpath';
         }
-
-        // Create .sfdt/ directory
         await fs.ensureDir(configDir);
-
         const config = await buildConfigTemplate({
           projectName: answers.projectName,
           defaultOrg: answers.defaultOrg,
@@ -233,7 +207,6 @@ export function registerInitCommand(program) {
           },
           manifestLayout,
         });
-
         const environments = buildEnvironmentsTemplate(answers.defaultOrg);
         const pullConfig = buildPullConfigTemplate();
         const testConfig = buildTestConfigTemplate(
@@ -241,26 +214,20 @@ export function registerInitCommand(program) {
           testClasses,
           apexClasses,
         );
-
         const files = [
           { name: 'config.json', data: config },
           { name: 'environments.json', data: environments },
           { name: 'pull-config.json', data: pullConfig },
           { name: 'test-config.json', data: testConfig },
         ];
-
         for (const file of files) {
           await fs.writeJson(path.join(configDir, file.name), file.data, { spaces: 2 });
         }
-
-        // Summary
         print.header('Initialization Complete');
-
         print.success(`Created ${configDir}/`);
         for (const file of files) {
           print.step(`  ${file.name}`);
         }
-
         console.log('');
         print.info('Detected project settings:');
         print.step(`  Project: ${answers.projectName}`);
@@ -270,7 +237,6 @@ export function registerInitCommand(program) {
         print.step(`  DevOps Center MCP: ${answers.mcpEnabled ? 'enabled' : 'disabled'}`);
         print.step(`  Test classes: ${testClasses.length}`);
         print.step(`  Apex classes: ${apexClasses.length}`);
-
         console.log('');
         print.warning('Recommended: add the following to your .gitignore:');
         print.step('  .sfdt/*.local.json');

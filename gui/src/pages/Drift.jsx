@@ -6,14 +6,12 @@ import StatusBadge from '../components/StatusBadge.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import CommandRunner from '../components/CommandRunner.jsx';
 import { ChatContext } from '../App.jsx';
-
 export default function DriftPage() {
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
   const [activeTab, setActiveTab]   = useState('All');
   const [refreshKey, setRefreshKey] = useState(0);
   const chat = useContext(ChatContext);
-
   useEffect(() => {
     setLoading(true);
     api.drift()
@@ -35,23 +33,19 @@ export default function DriftPage() {
       .catch(() => null)
       .finally(() => setLoading(false));
   }, [refreshKey, chat]);
-
   const components = data?.components ?? [];
   const driftCount = components.filter((c) => c.drift?.toLowerCase() === 'drift').length;
   const cleanCount = components.filter((c) => c.drift?.toLowerCase() === 'clean').length;
-
   const filtered = activeTab === 'All'
     ? components
     : activeTab === 'Drifted'
       ? components.filter((c) => c.drift?.toLowerCase() === 'drift')
       : components.filter((c) => c.drift?.toLowerCase() === 'clean');
-
   const filterTabs = [
     { label: 'All',     count: components.length },
     { label: 'Drifted', count: driftCount, variant: 'mod' },
     { label: 'Clean',   count: cleanCount },
   ];
-
   return (
     <div>
       <div className="page-header">
@@ -64,9 +58,7 @@ export default function DriftPage() {
           </p>
         </div>
       </div>
-
       <CommandRunner command="drift" label="Drift Check" onComplete={() => setRefreshKey((k) => k + 1)} />
-
       <div className="stats-grid mb-6" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
         <StatCard
           label="Components Checked"
@@ -87,7 +79,6 @@ export default function DriftPage() {
           accent="violet"
         />
       </div>
-
       {components.length > 0 && (
         <FilterTabs
           tabs={filterTabs}
@@ -95,20 +86,16 @@ export default function DriftPage() {
           onChange={setActiveTab}
         />
       )}
-
       {loading && <div className="spinner-center"><div className="spinner spinner-lg" /></div>}
-
       {!loading && components.length === 0 && (
         <EmptyState
           title="No drift data"
           message="Run sfdt drift to compare your local source against the target org."
         />
       )}
-
       {!loading && components.length > 0 && filtered.length === 0 && (
         <EmptyState title="No matches" message="Try a different filter." />
       )}
-
       {!loading && filtered.length > 0 && (
         <div className="card">
           <div className="card-head">

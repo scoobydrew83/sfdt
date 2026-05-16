@@ -1,7 +1,4 @@
 import { IconPackage } from '../../Icons.jsx';
-
-// ─── Context Bar ─────────────────────────────────────────────────────────────
-
 export default function ContextBar({ manifest }) {
   if (!manifest) return null;
   return (

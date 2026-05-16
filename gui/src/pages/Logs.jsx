@@ -3,7 +3,6 @@ import { api } from '../api.js';
 import StatCard from '../components/StatCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import EmptyState from '../components/EmptyState.jsx';
-
 const TYPE_LABELS = {
   preflight:  'Preflight',
   'test-run': 'Test Run',
@@ -12,10 +11,8 @@ const TYPE_LABELS = {
   deploy:     'Deploy',
   rollback:   'Rollback',
 };
-
 const TYPES = ['all', 'preflight', 'test-run', 'drift', 'quality', 'deploy', 'rollback'];
 const PAGE_SIZE = 20;
-
 function getStatus(log) {
   if (log.type === 'test-run') {
     const d = log.data ?? {};
@@ -26,12 +23,10 @@ function getStatus(log) {
   }
   return log.data?.status ?? (log.exitCode === 0 ? 'PASS' : 'FAIL');
 }
-
 function formatDuration(ms) {
   if (ms == null) return '—';
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
-
 function RawOutput({ text }) {
   return (
     <pre style={{
@@ -51,14 +46,11 @@ function RawOutput({ text }) {
     </pre>
   );
 }
-
 function LogDetail({ log }) {
   const { type, data } = log;
-
   if (type === 'deploy' || type === 'rollback') {
     return <RawOutput text={log.rawOutput} />;
   }
-
   if (type === 'preflight') {
     const checks = data?.checks ?? [];
     return (
@@ -76,7 +68,6 @@ function LogDetail({ log }) {
       </table>
     );
   }
-
   if (type === 'drift') {
     const components = data?.components ?? [];
     if (!components.length) {
@@ -97,7 +88,6 @@ function LogDetail({ log }) {
       </table>
     );
   }
-
   if (type === 'test-run') {
     const d = data ?? {};
     const tests = d.tests ?? [];
@@ -125,7 +115,6 @@ function LogDetail({ log }) {
       </div>
     );
   }
-
   if (type === 'quality') {
     const d = data ?? {};
     const summary = d.summary ?? {};
@@ -155,10 +144,8 @@ function LogDetail({ log }) {
       </div>
     );
   }
-
   return <RawOutput text={JSON.stringify(data ?? {}, null, 2)} />;
 }
-
 export default function LogsPage() {
   const [logs, setLogs]               = useState([]);
   const [loading, setLoading]         = useState(true);
@@ -167,13 +154,11 @@ export default function LogsPage() {
   const [search, setSearch]           = useState('');
   const [page, setPage]               = useState(1);
   const [expandedIdx, setExpandedIdx] = useState(null);
-
   const [debouncedSearch, setDebouncedSearch] = useState('');
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 200);
     return () => clearTimeout(t);
   }, [search]);
-
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -182,9 +167,7 @@ export default function LogsPage() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
-
   useEffect(() => { setPage(1); setExpandedIdx(null); }, [typeFilter, debouncedSearch]);
-
   const filtered = logs.filter((l) => {
     if (typeFilter !== 'all' && l.type !== typeFilter) return false;
     if (debouncedSearch) {
@@ -196,10 +179,8 @@ export default function LogsPage() {
     }
     return true;
   });
-
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageSlice = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
   return (
     <div>
       <div className="page-header">
@@ -208,7 +189,6 @@ export default function LogsPage() {
           <p className="page-subtitle">Browse historical run logs across all command types.</p>
         </div>
       </div>
-
       <div style={{ marginBottom: '0.75rem' }}>
         <input
           type="search"
@@ -227,7 +207,6 @@ export default function LogsPage() {
           }}
         />
       </div>
-
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
         {TYPES.map((t) => (
           <button
@@ -240,10 +219,8 @@ export default function LogsPage() {
           </button>
         ))}
       </div>
-
       {error && <div className="alert alert-error mb-4">{error}</div>}
       {loading && <div className="spinner-center"><div className="spinner spinner-lg" /></div>}
-
       {!loading && !error && filtered.length === 0 && (
         <EmptyState
           title="No logs found"
@@ -252,7 +229,6 @@ export default function LogsPage() {
             : 'No logs match the current filter.'}
         />
       )}
-
       {!loading && !error && filtered.length > 0 && (
         <>
           <div className="card">
@@ -309,7 +285,6 @@ export default function LogsPage() {
               </table>
             </div>
           </div>
-
           {totalPages > 1 && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginTop: '1rem' }}>
               <button

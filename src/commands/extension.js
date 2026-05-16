@@ -1,20 +1,3 @@
-/**
- * `sfdt extension` — manage the Chrome native messaging host that bridges
- * the SF Flow Utility Toolkit extension to this CLI when the local
- * `sfdt ui` HTTP server isn't running.
- *
- * Subcommands:
- *   install-host  Register the native host manifest with Chrome (or any
- *                 supported Chromium-based browser) so the extension can
- *                 reach sfdt via chrome.runtime.connectNative.
- *   uninstall-host  Remove the manifest. The HTTP transport is unaffected.
- *   status        Report which browsers have the manifest installed and
- *                 where each one points.
- *
- * The native host itself lives in the @sfdt/host workspace; this command
- * is purely the installer for its registration with Chrome.
- */
-
 import chalk from 'chalk';
 import {
   installNativeHost,
@@ -22,17 +5,14 @@ import {
   nativeHostStatus,
 } from '../../host/installers/install-host.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
-
 const BROWSER_CHOICES = ['chrome', 'edge', 'brave', 'chromium', 'vivaldi', 'all'];
-
 export function registerExtensionCommand(program) {
   const extension = program
     .command('extension')
     .description('Manage the Chrome extension bridge (native messaging host)');
-
   extension
     .command('install-host')
-    .description('Install the Chrome native messaging host manifest for the SF Flow Utility Toolkit extension')
+    .description('Install the Chrome native messaging host manifest for the SFDT SF Helper extension')
     .requiredOption(
       '--extension-id <id>',
       'The Chrome extension ID (32 lowercase letters a–p; find it at chrome://extensions with Developer Mode on)',
@@ -93,7 +73,6 @@ export function registerExtensionCommand(program) {
         process.exitCode = resolveExitCode(err);
       }
     });
-
   extension
     .command('uninstall-host')
     .description('Remove the native messaging host manifest from one or all browsers')
@@ -135,7 +114,6 @@ export function registerExtensionCommand(program) {
         process.exitCode = resolveExitCode(err);
       }
     });
-
   extension
     .command('status')
     .description('Report which browsers have the native host manifest installed')

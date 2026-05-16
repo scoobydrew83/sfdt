@@ -4,7 +4,6 @@ import {
   estimateTokens,
   summariseFlowMetadata,
 } from '../src/metadata-cleaner.js';
-
 describe('flow-core/metadata-cleaner', () => {
   describe('cleanFlowMetadata', () => {
     it('returns undefined for empty input', () => {
@@ -12,7 +11,6 @@ describe('flow-core/metadata-cleaner', () => {
       expect(cleanFlowMetadata(undefined)).toBeUndefined();
       expect(cleanFlowMetadata({})).toBeUndefined();
     });
-
     it('strips top-level processMetadataValues unconditionally', () => {
       const out = cleanFlowMetadata({
         label: 'X',
@@ -20,7 +18,6 @@ describe('flow-core/metadata-cleaner', () => {
       });
       expect(out).toEqual({ label: 'X' });
     });
-
     it('strips locationX / locationY anywhere in the tree', () => {
       const out = cleanFlowMetadata({
         label: 'X',
@@ -28,7 +25,6 @@ describe('flow-core/metadata-cleaner', () => {
       });
       expect(out).toEqual({ label: 'X', assignments: [{ name: 'A', label: 'Set' }] });
     });
-
     it('removes empty arrays and empty objects', () => {
       const out = cleanFlowMetadata({
         label: 'X',
@@ -37,7 +33,6 @@ describe('flow-core/metadata-cleaner', () => {
       });
       expect(out).toEqual({ label: 'X', decisions: [{ name: 'D' }] });
     });
-
     it('preserves non-empty nested arrays + objects', () => {
       const out = cleanFlowMetadata({
         label: 'X',
@@ -46,7 +41,6 @@ describe('flow-core/metadata-cleaner', () => {
       expect(out).toEqual({ label: 'X', assignments: [{ name: 'A', assignmentItems: [{ field: 'Owner' }] }] });
     });
   });
-
   describe('summariseFlowMetadata', () => {
     it('counts elements and resources by category', () => {
       const summary = summariseFlowMetadata({
@@ -63,13 +57,11 @@ describe('flow-core/metadata-cleaner', () => {
       expect(summary.elements).toEqual({ Decisions: 2, 'Get Records': 1 });
       expect(summary.resources).toEqual({ Variables: 2 });
     });
-
     it('returns null for null/undefined input', () => {
       expect(summariseFlowMetadata(null)).toBeNull();
       expect(summariseFlowMetadata(undefined)).toBeNull();
     });
   });
-
   describe('estimateTokens', () => {
     it('uses the 4-chars-per-token heuristic', () => {
       expect(estimateTokens('a'.repeat(40))).toBe(10);

@@ -4,12 +4,10 @@ import { getConfigDir, loadConfig } from '../lib/config.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { setNestedValue, getNestedValue, coerceConfigValue } from '../lib/config-utils.js';
-
 export function registerConfigCommand(program) {
   const configCmd = program
     .command('config')
     .description('Read and write .sfdt config values');
-
   configCmd
     .command('set <key> <value>')
     .description('Set a config value using dot notation (e.g. deployment.coverageThreshold)')
@@ -27,7 +25,6 @@ export function registerConfigCommand(program) {
         process.exitCode = resolveExitCode(err);
       }
     });
-
   configCmd
     .command('get <key>')
     .description('Print a config value using dot notation (e.g. defaultOrg)')

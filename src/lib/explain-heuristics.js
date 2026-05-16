@@ -1,8 +1,6 @@
 const MAX_HEURISTIC_ERRORS = 20;
-
 export const NO_MATCH_MESSAGE =
   'No known error patterns matched heuristically — AI analysis recommended.';
-
 const HEURISTIC_PATTERNS = [
   {
     pattern: /No such column '([^']+)' on entity '([^']+)'/g,
@@ -37,7 +35,6 @@ const HEURISTIC_PATTERNS = [
     hint: () => 'A referenced object/permission is not enabled in the target org.',
   },
 ];
-
 export function runHeuristicAnalysis(logContent) {
   const findings = [];
   for (const { pattern, hint } of HEURISTIC_PATTERNS) {
@@ -51,9 +48,7 @@ export function runHeuristicAnalysis(logContent) {
     const isCapReached = findings.length >= MAX_HEURISTIC_ERRORS;
     if (isCapReached) break;
   }
-
   const deduped = [...new Set(findings)];
-
   if (deduped.length === 0) {
     return {
       found: false,
@@ -67,7 +62,6 @@ export function runHeuristicAnalysis(logContent) {
       ].join('\n'),
     };
   }
-
   const bullets = deduped.map((h) => `- ${h}`).join('\n');
   return {
     found: true,

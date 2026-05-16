@@ -4,7 +4,6 @@ import StreamRunner from '../components/StreamRunner.jsx';
 import FilterTabs from '../components/FilterTabs.jsx';
 import { api, stream } from '../api.js';
 import { ChatContext } from '../App.jsx';
-
 const SEVERITY_LABELS = { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' };
 const SEVERITY_COLORS = {
   1: { bg: 'var(--danger-50, #fef2f2)', text: 'var(--danger-700, #b91c1c)', border: 'var(--danger-200, #fecaca)' },
@@ -12,7 +11,6 @@ const SEVERITY_COLORS = {
   3: { bg: '#fefce8', text: '#a16207', border: '#fde68a' },
   4: { bg: 'var(--bg-card)', text: 'var(--fg-muted)', border: 'var(--border)' },
 };
-
 export default function QualityPage() {
   const [mode, setMode] = useState('analysis');
   const [result, setResult] = useState(null);
@@ -21,14 +19,12 @@ export default function QualityPage() {
   const [qualityData, setQualityData] = useState(null);
   const [activeTab, setActiveTab] = useState('All');
   const chat = useContext(ChatContext);
-
   useEffect(() => {
     api.quality().then((d) => {
       setQualityData(d);
       setActiveTab('All');
     }).catch(() => {});
   }, [refreshKey]);
-
   function handleFixPlanComplete(content) {
     const raw = content ?? '';
     const summary = raw.slice(0, 2000);
@@ -36,7 +32,6 @@ export default function QualityPage() {
     chat?.setPageContext({ page: 'Quality', data: { fixPlan: summary } });
     setStreamKey((k) => k + 1);
   }
-
   const tabStyle = (active) => ({
     padding: '6px 14px',
     borderRadius: '6px',
@@ -47,26 +42,19 @@ export default function QualityPage() {
     cursor: 'pointer',
     fontWeight: active ? 600 : 400,
   });
-
   const hasResults = qualityData && qualityData.date;
   const violations = qualityData?.violations ?? [];
   const summary = qualityData?.summary ?? { critical: 0, high: 0, medium: 0, low: 0 };
-
-  // Use clamped severity consistently
   const clampSev = (v) => Math.min(Math.max(v.severity ?? 3, 1), 4);
-
-  // Severity buckets: Error = sev 1, Warning = sev 2+3, Info = sev 4
   const errorCount   = violations.filter((v) => clampSev(v) === 1).length;
   const warningCount = violations.filter((v) => clampSev(v) === 2 || clampSev(v) === 3).length;
   const infoCount    = violations.filter((v) => clampSev(v) === 4).length;
-
   const filterTabsDef = [
     { label: 'All',     count: violations.length },
     { label: 'Error',   count: errorCount,   variant: 'rm' },
     { label: 'Warning', count: warningCount, variant: 'mod' },
     { label: 'Info',    count: infoCount },
   ];
-
   const filteredViolations = violations.filter((v) => {
     const sev = clampSev(v);
     if (activeTab === 'All')     return true;
@@ -75,7 +63,6 @@ export default function QualityPage() {
     if (activeTab === 'Info')    return sev === 4;
     return true;
   });
-
   return (
     <div>
       <div className="page-header">
@@ -84,7 +71,6 @@ export default function QualityPage() {
           <p className="page-subtitle">Run code quality analysis or get an AI-powered fix plan</p>
         </div>
       </div>
-
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         <button style={tabStyle(mode === 'analysis')} onClick={() => setMode('analysis')}>
           Analysis
@@ -93,7 +79,6 @@ export default function QualityPage() {
           ✦ AI Fix Plan
         </button>
       </div>
-
       {mode === 'analysis' && (
         <>
           <CommandRunner
@@ -101,7 +86,6 @@ export default function QualityPage() {
             label="Code Quality Analysis"
             onComplete={() => setRefreshKey((k) => k + 1)}
           />
-
           {hasResults && qualityData.unavailableMessage && (
             <div style={{
               marginTop: 16,
@@ -127,7 +111,6 @@ export default function QualityPage() {
               </div>
             </div>
           )}
-
           {hasResults && !qualityData.unavailableMessage && (
             <div style={{ marginTop: 16 }}>
               <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -168,7 +151,6 @@ export default function QualityPage() {
                   </div>
                 </div>
               </div>
-
               {violations.length > 0 ? (
                 <>
                   <FilterTabs
@@ -176,7 +158,6 @@ export default function QualityPage() {
                     active={activeTab}
                     onChange={setActiveTab}
                   />
-
                   <div style={{ overflowX: 'auto', marginTop: 12 }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                       <thead>
@@ -233,7 +214,6 @@ export default function QualityPage() {
                   No violations found. Code looks clean.
                 </div>
               )}
-
               {qualityData.date && (
                 <div style={{ marginTop: 8, fontSize: 11, color: 'var(--fg-muted)', textAlign: 'right' }}>
                   Last scanned: {new Date(qualityData.date).toLocaleString()}
@@ -243,7 +223,6 @@ export default function QualityPage() {
           )}
         </>
       )}
-
       {mode === 'fixplan' && (
         <StreamRunner
           key={streamKey}

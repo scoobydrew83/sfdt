@@ -1,48 +1,22 @@
-// Salesforce API client — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/utils/salesforce-api.js.
-//
-// Authentication strategy preserved verbatim from v2.0.2:
-//
-//   - HttpOnly `sid` cookies are unreachable from a content script. The
-//     background service worker has the `cookies` permission, so this client
-//     ASKS the background for the sid via `chrome.runtime.sendMessage`.
-//   - Two candidate hostnames are tried in priority order:
-//       1. <org>.my.salesforce.com   (always honoured for REST/Tooling)
-//       2. The current page origin   (often Lightning, which 401s on REST)
-//     The first one whose sid Salesforce accepts wins.
-//   - A 401 on every candidate clears the session cache and retries once.
-//
-// The hostname conversion logic lives in `./hostname.ts` so the same rules
-// are testable in isolation and reused by Setup Tabs.
-
 import { mySalesforceHostname } from './hostname.js';
-
 const DEFAULT_API_VERSION = 'v62.0';
 const SEND_MESSAGE_TIMEOUT_MS = 5000;
-
-// Minimal interface that lets tests inject a mock without depending on the
-// global chrome.runtime / window.location.
 export interface MessageBus {
   sendMessage<T = unknown>(message: unknown, timeoutMs?: number): Promise<T | null>;
 }
-
 export interface SfApiOptions {
   apiVersion?: string;
   win?: Window;
   messageBus?: MessageBus;
-  // Custom fetch only used in tests.
   fetchImpl?: typeof fetch;
 }
-
 interface SessionCandidate {
   baseUrl: string;
   sid: string;
 }
-
 interface Session {
   candidates: SessionCandidate[];
 }
-
 function defaultMessageBus(): MessageBus {
   return {
     sendMessage(message, timeoutMs = SEND_MESSAGE_TIMEOUT_MS) {
@@ -70,7 +44,6 @@ function defaultMessageBus(): MessageBus {
     },
   };
 }
-
 function maybeDecodeSid(sid: string): string {
   try {
     return sid.includes('%') ? decodeURIComponent(sid) : sid;
@@ -78,68 +51,47 @@ function maybeDecodeSid(sid: string): string {
     return sid;
   }
 }
-
 export class SalesforceApiClient {
   private readonly apiVersion: string;
   private readonly win: Window;
   private readonly bus: MessageBus;
   private readonly fetchImpl: typeof fetch;
   private session: Session | null = null;
-
   constructor(options: SfApiOptions = {}) {
     this.apiVersion = options.apiVersion ?? DEFAULT_API_VERSION;
     this.win = options.win ?? window;
     this.bus = options.messageBus ?? defaultMessageBus();
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
-
   clearSession(): void {
     this.session = null;
   }
-
-  /**
-   * Reads the flow id query parameter from the current URL. Returns null if
-   * the page isn't a Flow Builder URL.
-   */
   getFlowIdFromUrl(): string | null {
     const params = new URLSearchParams(this.win.location.search);
     return params.get('flowId');
   }
-
   private async getSession(): Promise<Session | null> {
     if (this.session?.candidates.length) return this.session;
-
     const hostname = this.win.location.hostname;
     const currentOrigin = this.win.location.origin;
     const mySf = mySalesforceHostname(hostname);
     const mySfOrigin = mySf ? `https://${mySf}` : null;
-
-    // Dedupe while preserving order. `.my.salesforce.com` first because it
-    // reliably accepts REST/Tooling API calls; lightning.force.com often 401s.
     const baseUrls = Array.from(new Set([mySfOrigin, currentOrigin].filter((v): v is string => !!v)));
-
     const response = await this.bus.sendMessage<{
       ok: boolean;
       sids?: Record<string, string | null>;
     }>({ action: 'getSidForUrls', urls: baseUrls });
     if (!response?.ok) return null;
     const sidMap = response.sids ?? {};
-
     const candidates: SessionCandidate[] = [];
     for (const baseUrl of baseUrls) {
       const sid = sidMap[baseUrl];
       if (sid) candidates.push({ baseUrl, sid: maybeDecodeSid(sid) });
     }
     if (candidates.length === 0) return null;
-
     this.session = { candidates };
     return this.session;
   }
-
-  /**
-   * GET an endpoint. Returns parsed JSON. Throws if every candidate host
-   * returns a non-401 error, or if a 401 retry also fails.
-   */
   async apiGet<T = unknown>(
     endpoint: string,
     params: Record<string, string> = {},
@@ -151,11 +103,9 @@ export class SalesforceApiClient {
     const retryOn401 = options.retryOn401 ?? true;
     const session = await this.getSession();
     if (!session) throw new Error('No Salesforce session available');
-
     const queryString =
       Object.keys(params).length > 0 ? `?${new URLSearchParams(params).toString()}` : '';
     const errors: Array<{ baseUrl: string; status: number; errorText: string }> = [];
-
     for (const { baseUrl, sid } of session.candidates) {
       try {
         const res = await this.fetchImpl(`${baseUrl}${endpoint}${queryString}`, {
@@ -173,13 +123,11 @@ export class SalesforceApiClient {
         });
       }
     }
-
     const hasNon401 = errors.some((e) => e.status >= 400 && e.status !== 401);
     if (retryOn401 && errors.some((e) => e.status === 401) && !hasNon401) {
       this.clearSession();
       return this.apiGet<T>(endpoint, params, { retryOn401: false });
     }
-
     const primary = errors.find((e) => e.status >= 400 && e.status !== 401) ?? errors[0]!;
     throw new Error(
       `Salesforce API error: ${primary.baseUrl} -> ${primary.status}. ` +
@@ -188,11 +136,6 @@ export class SalesforceApiClient {
           .join(', ')}`,
     );
   }
-
-  /**
-   * Generic non-GET request (POST / PATCH / PUT / DELETE). Same dual-host +
-   * 401-retry strategy as apiGet.
-   */
   async apiRequest<T = unknown>(
     method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
     endpoint: string,
@@ -205,9 +148,7 @@ export class SalesforceApiClient {
     const retryOn401 = options.retryOn401 ?? true;
     const session = await this.getSession();
     if (!session) throw new Error('No Salesforce session available');
-
     const errors: Array<{ baseUrl: string; status: number; errorText: string }> = [];
-
     for (const { baseUrl, sid } of session.candidates) {
       try {
         const res = await this.fetchImpl(`${baseUrl}${endpoint}`, {
@@ -234,13 +175,11 @@ export class SalesforceApiClient {
         });
       }
     }
-
     const hasNon401 = errors.some((e) => e.status >= 400 && e.status !== 401);
     if (retryOn401 && errors.some((e) => e.status === 401) && !hasNon401) {
       this.clearSession();
       return this.apiRequest<T>(method, endpoint, body, { retryOn401: false });
     }
-
     const primary = errors.find((e) => e.status >= 400 && e.status !== 401) ?? errors[0]!;
     throw new Error(
       `Salesforce API error: ${primary.baseUrl} -> ${primary.status}. ` +
@@ -249,85 +188,45 @@ export class SalesforceApiClient {
           .join(', ')}`,
     );
   }
-
   apiPatch<T = unknown>(endpoint: string, body: unknown): Promise<T | null> {
     return this.apiRequest<T>('PATCH', endpoint, body);
   }
-
-  /**
-   * Run a SOQL query through the Tooling API. Returns the raw envelope so
-   * callers can read `.records`, `.size`, `.done`, etc.
-   */
   toolingQuery<T = unknown>(soql: string): Promise<{ records: T[]; size: number; done: boolean }> {
     return this.apiGet(`/services/data/${this.apiVersion}/tooling/query`, { q: soql });
   }
-
-  /**
-   * Fetch the active version of a Flow's metadata. Handles two URL shapes
-   * Flow Builder uses in `?flowId=`:
-   *
-   *   1. Real Salesforce Id (15 or 18 alphanumeric chars) — try
-   *      `DefinitionId = '<id>'` first (the Flow Builder URL usually gives
-   *      the DefinitionId), fall back to `Id = '<id>'` for callers that
-   *      pass a version id directly.
-   *
-   *   2. Managed-package developer-name path
-   *      `<namespace>__<devname>-<version>` (e.g.
-   *      `runtime_appointmentbooking__AddAttnd-1`). Look up via
-   *      `Definition.DeveloperName` + `Definition.NamespacePrefix` so the
-   *      query is scoped to the right flow.
-   *
-   * v2.0.2 only handled case 1, so managed-package flows surfaced as a
-   * 400 INVALID_QUERY_FILTER_OPERATOR ("invalid ID field"). Smoke-test
-   * regression — fixed here.
-   */
   async getFlowMetadata(flowId: string): Promise<Record<string, unknown>> {
     const COMMON_FIELDS =
       "Id, Definition.DeveloperName, FullName, Metadata, MasterLabel, Description, ProcessType, Status";
-
     if (/^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/.test(flowId)) {
       const byDefinition = await this.toolingQuery<Record<string, unknown>>(
         `SELECT ${COMMON_FIELDS} FROM Flow WHERE DefinitionId = '${flowId}' ORDER BY VersionNumber DESC LIMIT 1`,
       );
       if (byDefinition.records.length > 0) return byDefinition.records[0]!;
-
       const byId = await this.toolingQuery<Record<string, unknown>>(
         `SELECT ${COMMON_FIELDS} FROM Flow WHERE Id = '${flowId}' LIMIT 1`,
       );
       if (byId.records.length > 0) return byId.records[0]!;
-
       throw new Error(`No flow found for ID: ${flowId}`);
     }
-
-    // Case 2: parse as `[namespace__]devname[-version]`. The trailing
-    // `-<digit>` is sometimes a real version but on some URLs it's a draft
-    // / runtime suffix, so we don't filter on it — always grab the latest
-    // version of the matching flow.
     const stripped = flowId.replace(/-\d+$/, '');
     const namespaceMatch = stripped.match(/^(.+?)__(.+)$/);
     const namespace = namespaceMatch ? namespaceMatch[1]! : '';
     const developerName = namespaceMatch ? namespaceMatch[2]! : stripped;
-
     const escDev = developerName.replace(/'/g, "\\'");
     const escNs = namespace.replace(/'/g, "\\'");
     const nsClause = namespace
       ? ` AND Definition.NamespacePrefix = '${escNs}'`
       : ` AND Definition.NamespacePrefix = null`;
-
     const result = await this.toolingQuery<Record<string, unknown>>(
       `SELECT ${COMMON_FIELDS} FROM Flow WHERE Definition.DeveloperName = '${escDev}'${nsClause} ORDER BY VersionNumber DESC LIMIT 1`,
     );
     if (result.records.length > 0) return result.records[0]!;
-
-    // Last-ditch fallback for unusual managed-package URL shapes: drop the
-    // namespace filter entirely.
     if (namespace) {
       const fallback = await this.toolingQuery<Record<string, unknown>>(
         `SELECT ${COMMON_FIELDS} FROM Flow WHERE Definition.DeveloperName = '${escDev}' ORDER BY VersionNumber DESC LIMIT 1`,
       );
       if (fallback.records.length > 0) return fallback.records[0]!;
     }
-
     throw new Error(
       `No flow found for: ${flowId}. ` +
         `Some managed-package or runtime flows (like the runtime_appointmentbooking_* family) ` +
@@ -335,14 +234,11 @@ export class SalesforceApiClient {
     );
   }
 }
-
-// Convenience singleton accessor for the content-script side.
 let _singleton: SalesforceApiClient | null = null;
 export function getSalesforceApi(): SalesforceApiClient {
   if (!_singleton) _singleton = new SalesforceApiClient();
   return _singleton;
 }
-
 export function _resetSalesforceApiSingletonForTests(): void {
   _singleton = null;
 }

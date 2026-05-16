@@ -9,18 +9,13 @@ import {
   _resetContextSourceForTests,
   type Context,
 } from '../lib/context-detector.js';
-
 function fakeWin(url: string): { location: { href: string } } {
   return { location: { href: url } };
 }
-
 function emptyDoc(): Document {
-  // Reuse the real happy-dom document with a cleared body so the Compare
-  // Versions DOM probes return null.
   document.body.replaceChildren();
   return document;
 }
-
 describe('extension/lib/context-detector', () => {
   describe('detectContext — URL-only paths', () => {
     const cases: Array<[string, Context]> = [
@@ -43,7 +38,6 @@ describe('extension/lib/context-detector', () => {
       expect(detectContext(fakeWin(url), emptyDoc())).toBe(expected);
     });
   });
-
   describe('detectContext — DOM-fallback paths', () => {
     it('detects Compare Flows via DOM probe even without compareTargetFlowId in the URL', () => {
       const doc = emptyDoc();
@@ -57,11 +51,7 @@ describe('extension/lib/context-detector', () => {
         ),
       ).toBe(CONTEXTS.COMPARE_FLOWS);
     });
-
     it('detects Flow Details via the legacy table id alone', () => {
-      // The legacy VF inner frame is detected purely by the presence of a
-      // `table.list#view:lists:versions` element — the URL inside the iframe
-      // can be anything. Faithful to v2.0.2's `_isFlowDetails` semantics.
       const doc = emptyDoc();
       const table = doc.createElement('table');
       table.id = 'view:lists:versions';
@@ -75,7 +65,6 @@ describe('extension/lib/context-detector', () => {
       ).toBe(CONTEXTS.FLOW_DETAILS);
     });
   });
-
   describe('shouldShowSideButton', () => {
     it('returns false on a random non-Salesforce URL', () => {
       expect(shouldShowSideButton(fakeWin('https://example.com/'), emptyDoc())).toBe(false);
@@ -89,7 +78,6 @@ describe('extension/lib/context-detector', () => {
       ).toBe(true);
     });
   });
-
   describe('getAvailableFeatures', () => {
     beforeEach(() => {
       setContextSource(
@@ -120,11 +108,9 @@ describe('extension/lib/context-detector', () => {
         ]),
       );
     });
-
     afterEach(() => {
       _resetContextSourceForTests();
     });
-
     it('lists the Setup Flows feature set on the Flow list page', () => {
       expect(
         getAvailableFeatures(
@@ -139,7 +125,6 @@ describe('extension/lib/context-detector', () => {
         'subflow-graph',
       ]);
     });
-
     it('lists the Flow Builder feature set on the canvas', () => {
       expect(
         getAvailableFeatures(
@@ -155,12 +140,10 @@ describe('extension/lib/context-detector', () => {
         'flow-deploy',
       ]);
     });
-
     it('returns empty array on a non-Salesforce URL', () => {
       expect(getAvailableFeatures(fakeWin('https://example.com/'), emptyDoc())).toEqual([]);
     });
   });
-
   describe('buildContextToFeatures', () => {
     it('inverts feature manifests into a context-keyed map', () => {
       const result = buildContextToFeatures([
@@ -173,7 +156,6 @@ describe('extension/lib/context-detector', () => {
       expect(result[CONTEXTS.SETUP_OTHER]).toEqual(['setup-tabs']);
       expect(result[CONTEXTS.NONE]).toEqual([]);
     });
-
     it('preserves declaration order across features within one context', () => {
       const result = buildContextToFeatures([
         { id: 'first', contexts: [CONTEXTS.SETUP_FLOWS] },
@@ -183,13 +165,7 @@ describe('extension/lib/context-detector', () => {
       expect(result[CONTEXTS.SETUP_FLOWS]).toEqual(['first', 'second', 'third']);
     });
   });
-
   describe('byte-for-byte parity with v2.0.2 routing', () => {
-    /**
-     * This is the frozen snapshot of CONTEXT_TO_FEATURES as it existed before
-     * the manifest migration. If a feature's contexts get refactored, this
-     * test must be updated deliberately so the side-menu drift is reviewed.
-     */
     const FROZEN: Readonly<Record<Context, readonly string[]>> = {
       [CONTEXTS.SETUP_FLOWS]: [
         'setup-tabs',
@@ -221,7 +197,6 @@ describe('extension/lib/context-detector', () => {
       ],
       [CONTEXTS.NONE]: [],
     };
-
     it('reconstructs the frozen map from real feature manifest declarations', async () => {
       const factories = [
         await import('../features/setup-tabs.js').then((m) => m.createSetupTabsFeature),

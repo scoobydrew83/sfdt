@@ -1,10 +1,4 @@
-// @sfdt/flow-core — public surface
-// Each module is ported from the v2.0.2 extension utilities. See the plan at
-// /Users/dkennedy/.claude/plans/analyze-this-project-its-enchanted-treasure.md
-// for the full mapping table.
-
 export const VERSION = '0.0.1';
-
 export type {
   AffectedItem,
   Category,
@@ -17,9 +11,7 @@ export type {
   ScoreSummary,
   Severity,
 } from './types.js';
-
 export { buildIssueFamilies, calculateScore, getScoreRating } from './scorer.js';
-
 export {
   ApiNameLibrary,
   DEFAULT_PREFIXES,
@@ -32,10 +24,8 @@ export type {
   PrefixFile,
   ApiNameLibraryOptions,
 } from './api-name.js';
-
 export { createMemoryStorage } from './storage.js';
 export type { KeyValueStorage } from './storage.js';
-
 export {
   FREQUENCY,
   DAYS_LONG,
@@ -65,7 +55,6 @@ export type {
   Frequency,
   ParsedSchedule,
 } from './scheduled-calc.js';
-
 export {
   DEFAULT_PROMPT_TEMPLATES,
   assembleDefaultPrompt,
@@ -77,7 +66,6 @@ export type {
   PromptCategory,
   PromptContext,
 } from './default-prompts.js';
-
 export { normalize } from './normalize.js';
 export type {
   Dependency,
@@ -95,16 +83,13 @@ export type {
   TriggerEvent,
   TriggerTiming,
 } from './normalize.js';
-
 export { evaluate } from './rules.js';
 export type { RulesConfig } from './rules.js';
-
 export { detectTriggerConflicts } from './trigger-conflicts.js';
 export type {
   FlowConflictCandidate,
   FlowConflictGroup,
 } from './trigger-conflicts.js';
-
 export { buildSubflowGraph, getCallChains } from './subflow-graph.js';
 export type {
   SubflowCycle,
@@ -112,7 +97,6 @@ export type {
   SubflowGraphCandidate,
   SubflowGraphNode,
 } from './subflow-graph.js';
-
 export {
   makeErrorResponse,
   makeSuccessResponse,
@@ -139,14 +123,12 @@ export type {
   VersionRequest,
   VersionResponseData,
 } from './bridge-contract.js';
-
 export {
   cleanFlowMetadata,
   estimateTokens,
   summariseFlowMetadata,
 } from './metadata-cleaner.js';
 export type { FlowMetadataSummary } from './metadata-cleaner.js';
-
 export { PromptLibrary, PROMPT_CATEGORIES } from './prompts.js';
 export type {
   ConflictMode,

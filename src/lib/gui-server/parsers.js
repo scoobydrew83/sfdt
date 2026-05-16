@@ -2,11 +2,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { readLatestLog } from '../log-writer.js';
 import { tryReadJson, safeReaddir } from './shared.js';
-
 export function parseTestRunLines(lines) {
-  // Heuristic: find the first line that looks like an sf test result or summary JSON.
-  // sf --json guarantees a single blob, but if wrapper scripts echo other JSON,
-  // we look for these specific keys to identify the correct output.
   const jsonLine = lines.find((l) => {
     try { const p = JSON.parse(l); return p && (p.result || p.summary || Array.isArray(p)); }
     catch { return false; }
@@ -20,14 +16,11 @@ export function parseTestRunLines(lines) {
     durationMs: t.RunTime ?? t.runTime ?? null,
     message: t.Message ?? t.message ?? null,
   }));
-  // sf apex run test --class-names → result.codeCoverage[]  (numLocations / numLocationsNotCovered)
-  // sf apex run test --test-level  → result.coverage.coverage[] (totalLines / lines dict)
   const rawCoverageArr =
     raw.result?.codeCoverage ??
     raw.result?.details?.runTestResult?.codeCoverage ??
     raw.result?.coverage?.coverage ??
     [];
-
   const classCoverage = rawCoverageArr.map((c) => {
     if (c.numLocations != null) {
       const total = c.numLocations;
@@ -35,7 +28,6 @@ export function parseTestRunLines(lines) {
       const covered = total - notCovered;
       return { name: c.name ?? '', coveredLines: covered, totalLines: total, percent: total > 0 ? Math.round((covered / total) * 100) : 0 };
     }
-    // lines dict: { "28": 1, "32": 0, ... } — 1 = covered, 0 = not covered
     const lineEntries = Object.entries(c.lines ?? {});
     const total = lineEntries.length || (c.totalLines ?? 0);
     const covered = lineEntries.filter(([, v]) => v === 1).length;
@@ -52,7 +44,6 @@ export function parseTestRunLines(lines) {
     classCoverage,
   };
 }
-
 export function parseQualityLines(lines) {
   const jsonLine = lines.find((l) => {
     try { const p = JSON.parse(l); return p && (Array.isArray(p.result) || Array.isArray(p)); }
@@ -88,29 +79,23 @@ export function parseQualityLines(lines) {
   if (raw._sfdt_unavailable) result.unavailableMessage = raw._sfdt_unavailable;
   return result;
 }
-
 export async function readTestRuns(logDir) {
   const resultsDir = path.join(logDir, 'test-results');
   if (!(await fs.pathExists(resultsDir))) return [];
-
   let entries;
   try {
     entries = await fs.readdir(resultsDir);
   } catch {
     return [];
   }
-
   const jsonFiles = entries
     .filter((f) => f.endsWith('.json') && f !== 'latest.json' && !f.startsWith('batch_') && !f.startsWith('local_'))
     .sort()
     .reverse();
-
   const runs = [];
-
   for (const file of jsonFiles) {
     const raw = await tryReadJson(path.join(resultsDir, file));
     if (!raw) continue;
-
     if (raw.schemaVersion === '1' && raw.type === 'test-run') {
       const d = raw.data ?? {};
       runs.push({
@@ -126,7 +111,6 @@ export async function readTestRuns(logDir) {
       });
       continue;
     }
-
     if (raw.result) {
       const r = raw.result;
       runs.push({
@@ -156,10 +140,8 @@ export async function readTestRuns(logDir) {
       runs.push({ file, date: raw[0]?.testTimestamp ?? file, passed, failed, errors: 0 });
     }
   }
-
   return runs;
 }
-
 export async function readPreflight(logDir) {
   const log = await readLatestLog(logDir, 'preflight');
   if (log) {
@@ -173,7 +155,6 @@ export async function readPreflight(logDir) {
       })),
     };
   }
-
   const files = await safeReaddir(logDir);
   const legacyFiles = files
     .filter((f) => f.startsWith('preflight_') && f.endsWith('.json'))
@@ -182,7 +163,6 @@ export async function readPreflight(logDir) {
   if (!legacyFiles.length) return null;
   return tryReadJson(path.join(logDir, legacyFiles[0]));
 }
-
 export async function readQuality(logDir) {
   const log = await readLatestLog(logDir, 'quality');
   if (log) {
@@ -196,7 +176,6 @@ export async function readQuality(logDir) {
   }
   return null;
 }
-
 export async function readDrift(logDir) {
   const log = await readLatestLog(logDir, 'drift');
   if (log) {
@@ -206,7 +185,6 @@ export async function readDrift(logDir) {
       components: log.data.components ?? [],
     };
   }
-
   const files = await safeReaddir(logDir);
   const legacyFiles = files
     .filter((f) => f.startsWith('drift_') && f.endsWith('.json'))
@@ -215,11 +193,9 @@ export async function readDrift(logDir) {
   if (!legacyFiles.length) return null;
   return tryReadJson(path.join(logDir, legacyFiles[0]));
 }
-
 export async function readCompare(logDir) {
   return tryReadJson(path.join(logDir, 'compare-latest.json'));
 }
-
 export async function readScan(logDir) {
   return tryReadJson(path.join(logDir, 'scan-latest.json'));
 }

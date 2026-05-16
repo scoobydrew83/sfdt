@@ -1,11 +1,3 @@
-// Flow metadata cleaner — ported from
-// /Users/dkennedy/dev/2.0.2_0 copy/utils/flow-metadata-cleaner.js.
-//
-// Pure transform: strips canvas coordinates, builder internals, nulls, and
-// empty containers from a Tooling API Flow.Metadata blob. Used by the AI
-// Assistant (smaller payload → fewer tokens) and by the CLI's quality
-// command when serialising findings.
-
 export interface FlowMetadataSummary {
   label: string;
   processType: string;
@@ -17,11 +9,9 @@ export interface FlowMetadataSummary {
   elements: Record<string, number>;
   resources: Record<string, number>;
 }
-
 function cleanNode(node: unknown): unknown {
   if (node === null || node === undefined) return undefined;
   if (typeof node !== 'object') return node;
-
   if (Array.isArray(node)) {
     const out: unknown[] = [];
     for (const item of node) {
@@ -30,7 +20,6 @@ function cleanNode(node: unknown): unknown {
     }
     return out.length > 0 ? out : undefined;
   }
-
   const cleaned: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
     if (key === 'locationX' || key === 'locationY') continue;
@@ -45,7 +34,6 @@ function cleanNode(node: unknown): unknown {
   }
   return Object.keys(cleaned).length > 0 ? cleaned : undefined;
 }
-
 export function cleanFlowMetadata(raw: unknown): Record<string, unknown> | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const draft = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>;
@@ -53,7 +41,6 @@ export function cleanFlowMetadata(raw: unknown): Record<string, unknown> | undef
   const cleaned = cleanNode(draft);
   return (cleaned as Record<string, unknown>) ?? undefined;
 }
-
 const ELEMENT_TYPES: ReadonlyArray<readonly [string, string]> = [
   ['actionCalls', 'Actions'],
   ['assignments', 'Assignments'],
@@ -70,7 +57,6 @@ const ELEMENT_TYPES: ReadonlyArray<readonly [string, string]> = [
   ['waits', 'Waits'],
   ['recordRollbacks', 'Rollbacks'],
 ];
-
 const RESOURCE_TYPES: ReadonlyArray<readonly [string, string]> = [
   ['variables', 'Variables'],
   ['formulas', 'Formulas'],
@@ -80,7 +66,6 @@ const RESOURCE_TYPES: ReadonlyArray<readonly [string, string]> = [
   ['dynamicChoiceSets', 'Dynamic Choice Sets'],
   ['stages', 'Stages'],
 ];
-
 export function summariseFlowMetadata(metadata: Record<string, unknown> | null | undefined): FlowMetadataSummary | null {
   if (!metadata) return null;
   const elements: Record<string, number> = {};
@@ -115,11 +100,6 @@ export function summariseFlowMetadata(metadata: Record<string, unknown> | null |
     resources,
   };
 }
-
-/**
- * Rough token estimate for a JSON string. The 4-char-per-token heuristic
- * matches v2.0.2 and is good enough for "raw vs clean savings" UI labels.
- */
 export function estimateTokens(text: string | null | undefined): number {
   if (!text) return 0;
   return Math.ceil(text.length / 4);

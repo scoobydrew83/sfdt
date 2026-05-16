@@ -1,54 +1,6 @@
-// Flow rollback runner — invoked by the bridge `rollback` handler.
-//
-// Salesforce represents the "active" version of a Flow via the
-// FlowDefinition.Metadata.activeVersionNumber field. Changing this field
-// activates / deactivates / rolls back without re-deploying any source:
-//
-//   - activeVersionNumber = N (N >= 1)  → version N is active
-//   - activeVersionNumber = 0           → the Flow is deactivated (no active
-//                                         version). This is what the
-//                                         Tooling API expects when callers
-//                                         pass toVersion=0 from the bridge.
-//
-// The implementation is two `sf` CLI calls:
-//
-//   1. `sf data query --use-tooling-api` to resolve FlowDefinition.Id from
-//      its DeveloperName (the bridge gives us the developer name).
-//   2. `sf data update record --use-tooling-api --sobject FlowDefinition
-//      --record-id <id> --values "Metadata={\"activeVersionNumber\":<n>}"`
-//      to write the new active version.
-//
-// Both are JSON-mode so we can parse exit codes + error payloads
-// deterministically and bubble them back through the bridge contract.
-
 import { execa } from 'execa';
 import { loadConfig } from './config.js';
-
 const DEVELOPER_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
-
-/**
- * Run a Flow rollback / activate / deactivate via sf CLI.
- *
- * @param {object} options
- * @param {string} options.flowApiName     FlowDefinition.DeveloperName.
- * @param {number} options.toVersion       Target activeVersionNumber. >=1 activates that version. 0 deactivates.
- * @param {string} [options.targetOrg]     Org alias. Defaults to config.defaultOrg.
- * @param {number} [options.timeoutMs]     Defaults to 60s — Tooling API round-trip is fast.
- * @returns {Promise<{
- *   ok: true,
- *   data: {
- *     status: string,
- *     flowDefinitionId: string,
- *     previousActiveVersion: number|null,
- *     newActiveVersion: number,
- *     summary: string,
- *   },
- * } | {
- *   ok: false,
- *   error: string,
- *   code?: string,
- * }>}
- */
 export async function runFlowRollback(options) {
   const flowApiName = options?.flowApiName;
   if (!flowApiName || typeof flowApiName !== 'string') {
@@ -61,7 +13,6 @@ export async function runFlowRollback(options) {
       code: 'REQUEST_INVALID',
     };
   }
-
   const toVersion = options.toVersion;
   if (!Number.isInteger(toVersion) || toVersion < 0) {
     return {
@@ -70,7 +21,6 @@ export async function runFlowRollback(options) {
       code: 'REQUEST_INVALID',
     };
   }
-
   let config;
   try {
     config = await loadConfig();
@@ -89,11 +39,8 @@ export async function runFlowRollback(options) {
       code: 'REQUEST_INVALID',
     };
   }
-
   const timeout = options.timeoutMs ?? 60 * 1000;
   const cwd = config._projectRoot;
-
-  // ─── Step 1: resolve FlowDefinition.Id + current active version. ─────────
   const queryArgs = [
     'data',
     'query',
@@ -104,7 +51,6 @@ export async function runFlowRollback(options) {
     targetOrg,
     '--json',
   ];
-
   let queryResult;
   try {
     queryResult = await execa('sf', queryArgs, { cwd, timeout, reject: false });
@@ -115,7 +61,6 @@ export async function runFlowRollback(options) {
       code: 'INTERNAL_ERROR',
     };
   }
-
   let queryParsed;
   try {
     queryParsed = JSON.parse(queryResult.stdout);
@@ -126,7 +71,6 @@ export async function runFlowRollback(options) {
       code: 'INTERNAL_ERROR',
     };
   }
-
   const records = queryParsed?.result?.records ?? [];
   if (records.length === 0) {
     return {
@@ -135,20 +79,11 @@ export async function runFlowRollback(options) {
       code: 'NOT_FOUND',
     };
   }
-
   const definition = records[0];
   const flowDefinitionId = definition.Id;
-  // Pre-rollback active version, surfaced back so the extension can show a
-  // "before → after" message in the toast.
   const previousActiveVersion = definition.ActiveVersionId
     ? definition.LatestVersion?.VersionNumber ?? null
     : null;
-
-  // ─── Step 2: PATCH FlowDefinition.Metadata.activeVersionNumber. ──────────
-  // `sf data update record --values` accepts a single key=value pair. The
-  // Metadata field on FlowDefinition is a complex JSON sObject; passing the
-  // whole JSON literal in the value works because sf parses --values payloads
-  // as `<field>=<json-or-string>`.
   const metadataValue = `Metadata={"activeVersionNumber":${toVersion}}`;
   const updateArgs = [
     'data',
@@ -165,7 +100,6 @@ export async function runFlowRollback(options) {
     targetOrg,
     '--json',
   ];
-
   let updateResult;
   try {
     updateResult = await execa('sf', updateArgs, { cwd, timeout, reject: false });
@@ -176,7 +110,6 @@ export async function runFlowRollback(options) {
       code: 'INTERNAL_ERROR',
     };
   }
-
   let updateParsed;
   try {
     updateParsed = JSON.parse(updateResult.stdout);
@@ -187,10 +120,7 @@ export async function runFlowRollback(options) {
       code: 'INTERNAL_ERROR',
     };
   }
-
   if (updateParsed.status !== 0 && updateParsed.status !== undefined) {
-    // sf CLI sets status=1 on failure; the error message lives in
-    // updateParsed.message or updateParsed.name.
     const errMsg = updateParsed.message ?? updateParsed.name ?? 'unknown sf data update failure';
     return {
       ok: false,
@@ -198,7 +128,6 @@ export async function runFlowRollback(options) {
       code: 'INTERNAL_ERROR',
     };
   }
-
   const action = toVersion === 0 ? 'deactivated' : `set active to v${toVersion}`;
   return {
     ok: true,

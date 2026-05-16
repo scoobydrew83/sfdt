@@ -1,22 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { normalize, type RawFlowMetadata } from '../src/normalize.js';
 import { evaluate, type RulesConfig } from '../src/rules.js';
-
 function run(meta: RawFlowMetadata, config?: RulesConfig) {
   return evaluate(normalize(meta), config);
 }
-
 describe('flow-core/rules', () => {
   it('flags a flow with no description', () => {
     const findings = run({ label: 'X' });
     expect(findings.find((f) => f.ruleId === 'FLOW_DESC_MISSING')).toBeDefined();
   });
-
   it('does NOT flag a flow that has a description', () => {
     const findings = run({ label: 'X', description: 'documented' });
     expect(findings.find((f) => f.ruleId === 'FLOW_DESC_MISSING')).toBeUndefined();
   });
-
   it('flags elements missing descriptions and skips the Start node', () => {
     const findings = run({
       assignments: [{ name: 'A1', label: 'Set things' }],
@@ -29,7 +25,6 @@ describe('flow-core/rules', () => {
     expect(ids).not.toContain('D1');
     expect(ids).not.toContain('__start__');
   });
-
   it('flags resources missing descriptions', () => {
     const findings = run({
       variables: [
@@ -42,7 +37,6 @@ describe('flow-core/rules', () => {
       .map((f) => f.location?.resourceName);
     expect(names).toEqual(['V1']);
   });
-
   it('flags generic element naming like "Assignment 1"', () => {
     const findings = run({
       assignments: [
@@ -55,7 +49,6 @@ describe('flow-core/rules', () => {
       .map((f) => f.location?.elementLabel);
     expect(flagged).toEqual(['Assignment 1']);
   });
-
   it('honours flow naming convention regex when supplied', () => {
     const findings = run(
       { label: 'My Flow', fullName: 'bad_flow_name' },
@@ -63,7 +56,6 @@ describe('flow-core/rules', () => {
     );
     expect(findings.find((f) => f.scoreFamily === 'flow_naming')).toBeDefined();
   });
-
   it('whitelists "recordId" variable from naming-convention checks', () => {
     const findings = run(
       { variables: [{ name: 'recordId', dataType: 'String', description: 'ok' }] },
@@ -71,7 +63,6 @@ describe('flow-core/rules', () => {
     );
     expect(findings.find((f) => f.scoreFamily === 'resource_naming')).toBeUndefined();
   });
-
   it('flags missing fault paths with the right family per element type', () => {
     const findings = run({
       recordLookups: [{ name: 'GetA', object: 'Account' }],
@@ -88,7 +79,6 @@ describe('flow-core/rules', () => {
     expect(byFamily['fault_paths_dml']).toContain('MakeA');
     expect(byFamily['fault_paths_actions']).toContain('CallX');
   });
-
   it('flags DML inside loops', () => {
     const findings = run({
       loops: [
@@ -104,14 +94,12 @@ describe('flow-core/rules', () => {
     });
     expect(findings.find((f) => f.ruleId === 'DML_INSIDE_LOOP')).toBeDefined();
   });
-
   it('does not flag DML outside loops', () => {
     const findings = run({
       recordUpdates: [{ name: 'UpdateOut', object: 'Account' }],
     });
     expect(findings.find((f) => f.ruleId === 'DML_INSIDE_LOOP')).toBeUndefined();
   });
-
   it('flags queries inside loops', () => {
     const findings = run({
       loops: [
@@ -126,7 +114,6 @@ describe('flow-core/rules', () => {
     });
     expect(findings.find((f) => f.ruleId === 'QUERIES_INSIDE_LOOP')).toBeDefined();
   });
-
   it('honours configurable threshold for high data operation count', () => {
     const meta: RawFlowMetadata = {
       recordLookups: [
@@ -138,19 +125,16 @@ describe('flow-core/rules', () => {
     expect(run(meta, { highDataOperationThreshold: 5 }).find((f) => f.ruleId === 'HIGH_DATA_OPERATION_COUNT')).toBeUndefined();
     expect(run(meta, { highDataOperationThreshold: 2 }).find((f) => f.ruleId === 'HIGH_DATA_OPERATION_COUNT')).toBeDefined();
   });
-
   it('flags record-triggered flows with no entry criteria', () => {
     const findings = run({
       start: { recordTriggerType: 'CreateAndUpdate', object: 'Account' },
     });
     expect(findings.find((f) => f.ruleId === 'BROAD_ENTRY_CRITERIA')).toBeDefined();
   });
-
   it('does NOT flag entry criteria for non-record-triggered flows', () => {
     const findings = run({ screens: [{ name: 'S' }] });
     expect(findings.find((f) => f.ruleId === 'BROAD_ENTRY_CRITERIA')).toBeUndefined();
   });
-
   it('flags an outdated API version when gap exceeds threshold', () => {
     const findings = run(
       {
@@ -161,7 +145,6 @@ describe('flow-core/rules', () => {
     );
     expect(findings.find((f) => f.ruleId === 'OUTDATED_API_VERSION')).toBeDefined();
   });
-
   it('does not flag a recent API version', () => {
     const findings = run(
       { apiVersion: 64, start: { recordTriggerType: 'Create', object: 'Account', filters: [{}] } },
@@ -169,11 +152,7 @@ describe('flow-core/rules', () => {
     );
     expect(findings.find((f) => f.ruleId === 'OUTDATED_API_VERSION')).toBeUndefined();
   });
-
   it('detects hard-coded Salesforce IDs inside inspectable literal fields', () => {
-    // Real Salesforce IDs are 15 or 18 chars, mixed-case alphanumeric, with at
-    // least one digit and one uppercase letter. 001AB000000xyz1 is the 15-char
-    // shape.
     const findings = run({
       assignments: [
         {
@@ -190,7 +169,6 @@ describe('flow-core/rules', () => {
     expect(id).toBeDefined();
     expect(id?.metadata?.matchedValue).toBe('001AB000000xyz1');
   });
-
   it('does NOT flag $User.Id or other blocked literals as hard-coded IDs', () => {
     const findings = run({
       assignments: [
@@ -203,7 +181,6 @@ describe('flow-core/rules', () => {
     });
     expect(findings.find((f) => f.ruleId === 'HARD_CODED_ID')).toBeUndefined();
   });
-
   it('detects hard-coded URLs in formula expressions', () => {
     const findings = run({
       formulas: [
@@ -217,7 +194,6 @@ describe('flow-core/rules', () => {
     });
     expect(findings.find((f) => f.ruleId === 'HARD_CODED_URL')).toBeDefined();
   });
-
   it('emits one info finding per dependency in the inventory', () => {
     const findings = run({
       actionCalls: [
@@ -230,7 +206,6 @@ describe('flow-core/rules', () => {
     expect(inv).toHaveLength(3);
     expect(inv.every((f) => f.severity === 'info')).toBe(true);
   });
-
   it('finding IDs are deterministic per evaluate() call', () => {
     const meta: RawFlowMetadata = { variables: [{ name: 'a', dataType: 'String' }] };
     const a = evaluate(normalize(meta));

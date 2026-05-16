@@ -12,7 +12,6 @@ import {
   formatTestRunsSection,
   formatPreflightSection,
 } from '../lib/ai-context.js';
-
 export function registerQualityCommand(program) {
   program
     .command('quality')
@@ -26,11 +25,8 @@ export function registerQualityCommand(program) {
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
-
         print.header('Quality Analysis');
-
         let qualityOutput = '';
-
         const runAnalyzer = async (scriptPath, label) => {
           print.info(`Running ${label}...`);
           try {
@@ -49,7 +45,6 @@ export function registerQualityCommand(program) {
             return output;
           }
         };
-
         if (options.tests) {
           await runAnalyzer('quality/test-analyzer.sh', 'Test Analyzer');
         } else if (options.all) {
@@ -58,25 +53,20 @@ export function registerQualityCommand(program) {
         } else {
           await runAnalyzer('quality/code-analyzer.sh', 'Code Analyzer');
         }
-
-        // AI fix plan
         if (options.fixPlan) {
           const aiEnabled = config.features?.ai;
           if (aiEnabled && (await isAiAvailable(config))) {
             print.info('Generating AI fix plan...');
-
             const [projectCtx, testRuns, preflight] = await Promise.all([
               buildProjectContext(config),
               readLatestTestRuns(config, 5),
               readLatestPreflight(config),
             ]);
-
             const contextBlock = buildContextBlock([
               projectCtx,
               formatTestRunsSection(testRuns),
               formatPreflightSection(preflight),
             ]);
-
             const fixPlanPrompt = await getPrompt('quality-fix-plan', config._configDir);
             const prompt = [
               ...(contextBlock ? [contextBlock, ''] : []),
@@ -85,7 +75,6 @@ export function registerQualityCommand(program) {
               '--- Quality Report ---',
               qualityOutput,
             ].join('\n');
-
             await runAiPrompt(prompt, {
               config,
               allowedTools: ['Read', 'Grep'],

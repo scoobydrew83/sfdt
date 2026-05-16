@@ -1,8 +1,6 @@
 import fs from 'fs-extra';
-
 const ANSI_RE = /\x1B\[[0-9;]*[A-Za-z]|\x1B\][^\x07]*\x07|\x1B[()][AB012]/g;
 export function stripAnsi(str) { return typeof str === 'string' ? str.replace(ANSI_RE, '') : str; }
-
 export async function tryReadJson(filePath) {
   try {
     return await fs.readJson(filePath);
@@ -10,7 +8,6 @@ export async function tryReadJson(filePath) {
     return null;
   }
 }
-
 export async function safeReaddir(dir) {
   try {
     return await fs.readdir(dir);
@@ -18,7 +15,6 @@ export async function safeReaddir(dir) {
     return [];
   }
 }
-
 export function buildPlaceholderHtml(version) {
   return `<!doctype html>
 <html lang="en">

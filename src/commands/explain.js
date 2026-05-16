@@ -18,9 +18,7 @@ import {
   formatDeployHistorySection,
 } from '../lib/ai-context.js';
 import { runHeuristicAnalysis, NO_MATCH_MESSAGE } from '../lib/explain-heuristics.js';
-
-const MAX_LOG_SIZE_BYTES = 512 * 1024; // 512 KB cap sent to the model
-
+const MAX_LOG_SIZE_BYTES = 512 * 1024;
 export function registerExplainCommand(program) {
   program
     .command('explain [file]')
@@ -31,21 +29,15 @@ export function registerExplainCommand(program) {
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
-
         const logContent = await resolveLogContent(file, options, config);
-        if (logContent === null) return; // message already printed
-
+        if (logContent === null) return;
         const trimmed = truncateLog(logContent);
-
         if (trimmed.truncated) {
           print.warning(
             `Log is larger than ${Math.floor(MAX_LOG_SIZE_BYTES / 1024)} KB — only the tail will be analyzed.`,
           );
         }
-
         print.info(`Analyzing ${trimmed.content.split('\n').length} lines of log output...`);
-
-        // Always print the heuristic summary first — it is fast and works offline.
         const { found, findings } = runHeuristicAnalysis(trimmed.content);
         if (found) {
           print.header('Heuristic Summary');
@@ -54,7 +46,6 @@ export function registerExplainCommand(program) {
         } else {
           print.info(NO_MATCH_MESSAGE);
         }
-
         const aiEnabled = config.features?.ai;
         if (!aiEnabled) {
           print.info(
@@ -62,28 +53,23 @@ export function registerExplainCommand(program) {
           );
           return;
         }
-
         if (!(await isAiAvailable(config))) {
           print.info(`${aiUnavailableMessage(config)} — heuristic analysis only.`);
           return;
         }
-
         print.header('AI Error Analysis');
-
         const [projectCtx, testRuns, preflight, deployHistory] = await Promise.all([
           buildProjectContext(config),
           readLatestTestRuns(config, 1),
           readLatestPreflight(config),
           readDeployHistory(config, 3),
         ]);
-
         const contextBlock = buildContextBlock([
           projectCtx,
           formatDeployHistorySection(deployHistory),
           formatPreflightSection(preflight),
           formatTestRunsSection(testRuns),
         ]);
-
         const explainPrompt = await getPrompt('explain', config._configDir);
         await runAiPrompt(
           (contextBlock ? contextBlock + '\n\n' : '') + explainPrompt + trimmed.content,
@@ -101,12 +87,6 @@ export function registerExplainCommand(program) {
       }
     });
 }
-
-/**
- * Resolve log content from one of: explicit file arg, stdin, or the most
- * recent log in the project log directory.
- * Returns null (after printing an appropriate message) if nothing was found.
- */
 async function resolveLogContent(file, options, config) {
   if (file) {
     const projectRoot = config._projectRoot;
@@ -125,33 +105,26 @@ async function resolveLogContent(file, options, config) {
     }
     return fs.readFile(absolute, 'utf8');
   }
-
   if (options.fromStdin) {
     return readStdin();
   }
-
-  // Default: find the latest log
   const logDir = config.logDir
     ? path.isAbsolute(config.logDir)
       ? config.logDir
       : path.join(config._projectRoot, config.logDir)
     : path.join(config._projectRoot, 'logs');
-
   if (!(await fs.pathExists(logDir))) {
     print.warning(`No log directory found at ${path.relative(config._projectRoot, logDir)}.`);
     print.info('Usage: sfdt explain <log-file>  |  sfdt explain --from-stdin  |  sf ... | sfdt explain --from-stdin');
     process.exitCode = 1;
     return null;
   }
-
   const candidates = await glob('**/*.{log,txt}', { cwd: logDir, absolute: true });
   if (candidates.length === 0) {
     print.warning(`No log files found in ${path.relative(config._projectRoot, logDir)}.`);
     process.exitCode = 1;
     return null;
   }
-
-  // Pick most recently modified
   const statted = await Promise.all(
     candidates.map(async (p) => ({ path: p, mtime: (await fs.stat(p)).mtimeMs })),
   );
@@ -160,7 +133,6 @@ async function resolveLogContent(file, options, config) {
   print.info(`Analyzing latest log: ${path.relative(config._projectRoot, latest)}`);
   return fs.readFile(latest, 'utf8');
 }
-
 function readStdin() {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -170,12 +142,9 @@ function readStdin() {
     process.stdin.on('error', reject);
   });
 }
-
 function truncateLog(content) {
   if (content.length <= MAX_LOG_SIZE_BYTES) {
     return { content, truncated: false };
   }
-  // Keep the tail — error details are usually at the bottom
   return { content: content.slice(-MAX_LOG_SIZE_BYTES), truncated: true };
 }
-

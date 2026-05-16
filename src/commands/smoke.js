@@ -2,7 +2,6 @@ import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
-
 export function registerSmokeCommand(program) {
   program
     .command('smoke')
@@ -13,20 +12,16 @@ export function registerSmokeCommand(program) {
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
-
         const orgAlias = options.org || config.defaultOrg;
         print.header(`Smoke Tests (${orgAlias})${options.dryRun ? ' [dry-run]' : ''}`);
-
         const env = {
           SFDT_TARGET_ORG: orgAlias,
         };
-
         await runScript('ops/smoke.sh', config, {
           cwd: projectRoot,
           env,
           dryRun: options.dryRun,
         });
-
         print.success(
           options.dryRun
             ? 'Dry-run complete — no changes made.'

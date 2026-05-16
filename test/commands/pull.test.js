@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Command } from 'commander';
-
 vi.mock('../../src/lib/config.js', () => ({ loadConfig: vi.fn() }));
 vi.mock('../../src/lib/org-inventory.js', () => ({ fetchOrgInventory: vi.fn() }));
 vi.mock('../../src/lib/pull-cache.js', () => ({
@@ -24,7 +23,6 @@ vi.mock('../../src/lib/output.js', () => ({
   print: { header: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 vi.mock('execa', () => ({ execa: vi.fn() }));
-
 import { loadConfig } from '../../src/lib/config.js';
 import { fetchOrgInventory } from '../../src/lib/org-inventory.js';
 import { initCache, getDelta, updateCache, getCacheStatus } from '../../src/lib/pull-cache.js';
@@ -32,7 +30,6 @@ import { parallelRetrieve } from '../../src/lib/parallel-retrieve.js';
 import inquirer from 'inquirer';
 import { execa } from 'execa';
 import { registerPullCommand } from '../../src/commands/pull.js';
-
 const MOCK_CONFIG = {
   _projectRoot: '/project',
   _configDir: '/project/.sfdt',
@@ -41,14 +38,12 @@ const MOCK_CONFIG = {
 };
 const MOCK_DB = { close: vi.fn() };
 const MOCK_INVENTORY = new Map([['ApexClass', new Map([['MyClass', '2026-04-10T00:00:00.000Z']])]]);
-
 function createProgram() {
   const program = new Command();
   program.exitOverride();
   registerPullCommand(program);
   return program;
 }
-
 beforeEach(() => {
   vi.resetAllMocks();
   process.exitCode = undefined;
@@ -61,7 +56,6 @@ beforeEach(() => {
   parallelRetrieve.mockResolvedValue({ retrieved: 1, total: 1, errors: [], successfulMembers: ['ApexClass:MyClass'] });
   execa.mockResolvedValue({ exitCode: 0 });
 });
-
 describe('pull --status', () => {
   it('prints cache status and exits without retrieving', async () => {
     await createProgram().parseAsync(['node', 'sfdt', 'pull', '--status']);
@@ -70,10 +64,8 @@ describe('pull --status', () => {
     expect(getCacheStatus).toHaveBeenCalled();
   });
 });
-
 describe('pull smart delta (menu option: smart)', () => {
   beforeEach(() => { inquirer.prompt.mockResolvedValue({ action: 'smart' }); });
-
   it('fetches inventory with withDates, computes delta, and retrieves', async () => {
     await createProgram().parseAsync(['node', 'sfdt', 'pull']);
     expect(fetchOrgInventory).toHaveBeenCalledWith('dev', null, { withDates: true, metadataTypes: null });
@@ -82,14 +74,12 @@ describe('pull smart delta (menu option: smart)', () => {
     expect(updateCache).toHaveBeenCalled();
     expect(MOCK_DB.close).toHaveBeenCalled();
   });
-
   it('skips retrieve when delta is empty', async () => {
     getDelta.mockReturnValue(new Map());
     await createProgram().parseAsync(['node', 'sfdt', 'pull']);
     expect(parallelRetrieve).not.toHaveBeenCalled();
   });
 });
-
 describe('pull --full', () => {
   it('bypasses menu, retrieves all components, updates cache', async () => {
     await createProgram().parseAsync(['node', 'sfdt', 'pull', '--full']);
@@ -98,7 +88,6 @@ describe('pull --full', () => {
     expect(updateCache).toHaveBeenCalled();
   });
 });
-
 describe('pull --dry-run', () => {
   it('shows delta without retrieving or updating cache', async () => {
     inquirer.prompt.mockResolvedValue({ action: 'smart' });
@@ -107,14 +96,12 @@ describe('pull --dry-run', () => {
     expect(updateCache).not.toHaveBeenCalled();
   });
 });
-
 describe('error handling', () => {
   it('sets exitCode 1 when defaultOrg is not configured', async () => {
     loadConfig.mockResolvedValue({ ...MOCK_CONFIG, defaultOrg: undefined });
     await createProgram().parseAsync(['node', 'sfdt', 'pull', '--status']);
     expect(process.exitCode).toBe(1);
   });
-
   it('closes db even when parallelRetrieve throws', async () => {
     inquirer.prompt.mockResolvedValue({ action: 'smart' });
     parallelRetrieve.mockRejectedValue(new Error('sf retrieve failed'));
@@ -122,7 +109,6 @@ describe('error handling', () => {
     expect(MOCK_DB.close).toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });
-
   it('does not update cache when no components succeed', async () => {
     inquirer.prompt.mockResolvedValue({ action: 'smart' });
     parallelRetrieve.mockResolvedValue({ retrieved: 0, total: 2, errors: [{ batch: ['Flow:X'], error: 'failed' }], successfulMembers: [] });
@@ -131,7 +117,6 @@ describe('error handling', () => {
     expect(MOCK_DB.close).toHaveBeenCalled();
   });
 });
-
 describe('pull with pullCache disabled', () => {
   it('calls sf project retrieve start directly without using cache', async () => {
     loadConfig.mockResolvedValue({ ...MOCK_CONFIG, pullCache: { enabled: false } });
@@ -144,7 +129,6 @@ describe('pull with pullCache disabled', () => {
     expect(fetchOrgInventory).not.toHaveBeenCalled();
     expect(parallelRetrieve).not.toHaveBeenCalled();
   });
-
   it('sets exitCode 1 when sf retrieve fails with cache disabled', async () => {
     loadConfig.mockResolvedValue({ ...MOCK_CONFIG, pullCache: { enabled: false } });
     execa.mockRejectedValue(new Error('sf retrieve error'));
@@ -152,7 +136,6 @@ describe('pull with pullCache disabled', () => {
     expect(process.exitCode).toBe(1);
   });
 });
-
 describe('pull --status when no cache exists', () => {
   it('prints a no-cache message without throwing', async () => {
     getCacheStatus.mockReturnValue({ orgAlias: 'dev', componentCount: 0, lastSync: null });
@@ -161,7 +144,6 @@ describe('pull --status when no cache exists', () => {
     expect(parallelRetrieve).not.toHaveBeenCalled();
   });
 });
-
 describe('pull menu option: preview', () => {
   it('calls sf project retrieve preview', async () => {
     inquirer.prompt.mockResolvedValue({ action: 'preview' });
@@ -173,7 +155,6 @@ describe('pull menu option: preview', () => {
     );
   });
 });
-
 describe('pull menu option: conflict', () => {
   it('calls sf project retrieve start --verbose', async () => {
     inquirer.prompt.mockResolvedValue({ action: 'conflict' });
@@ -185,7 +166,6 @@ describe('pull menu option: conflict', () => {
     );
   });
 });
-
 describe('pull menu option: reset', () => {
   it('calls sf project reset tracking --no-prompt', async () => {
     inquirer.prompt.mockResolvedValue({ action: 'reset' });
@@ -197,7 +177,6 @@ describe('pull menu option: reset', () => {
     );
   });
 });
-
 describe('pull menu option: profiles', () => {
   it('calls sf project retrieve start --metadata Profile', async () => {
     inquirer.prompt.mockResolvedValue({ action: 'profiles' });
@@ -209,7 +188,6 @@ describe('pull menu option: profiles', () => {
     );
   });
 });
-
 describe('pull menu option: full', () => {
   it('calls smartPull with full:true, retrieves all components and updates cache', async () => {
     inquirer.prompt.mockResolvedValue({ action: 'full' });
@@ -220,7 +198,6 @@ describe('pull menu option: full', () => {
     expect(MOCK_DB.close).toHaveBeenCalled();
   });
 });
-
 describe('pull menu option: group', () => {
   const GROUP_CONFIG = {
     ...MOCK_CONFIG,
@@ -230,7 +207,6 @@ describe('pull menu option: group', () => {
       },
     },
   };
-
   it('calls sf project retrieve start with metadata types from the group', async () => {
     loadConfig.mockResolvedValue(GROUP_CONFIG);
     inquirer.prompt.mockResolvedValue({ action: 'group:mygroup' });
@@ -246,7 +222,6 @@ describe('pull menu option: group', () => {
       expect.objectContaining({ cwd: '/project' }),
     );
   });
-
   it('sets exitCode 1 when the group key does not exist', async () => {
     loadConfig.mockResolvedValue(GROUP_CONFIG);
     inquirer.prompt.mockResolvedValue({ action: 'group:nonexistent' });
@@ -254,7 +229,6 @@ describe('pull menu option: group', () => {
     expect(process.exitCode).toBe(1);
   });
 });
-
 describe('pull smart delta respects pullConfig.metadataTypes', () => {
   it('passes configured metadataTypes through to fetchOrgInventory', async () => {
     loadConfig.mockResolvedValue({
@@ -268,7 +242,6 @@ describe('pull smart delta respects pullConfig.metadataTypes', () => {
       metadataTypes: ['ApexClass', 'CustomObject', 'Flow'],
     });
   });
-
   it('passes null metadataTypes when pullConfig.metadataTypes is empty', async () => {
     loadConfig.mockResolvedValue({
       ...MOCK_CONFIG,
@@ -282,7 +255,6 @@ describe('pull smart delta respects pullConfig.metadataTypes', () => {
     });
   });
 });
-
 describe('smartPull when inventory fetch fails', () => {
   it('sets exitCode 1 and does not retrieve', async () => {
     inquirer.prompt.mockResolvedValue({ action: 'smart' });

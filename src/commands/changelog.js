@@ -8,17 +8,14 @@ import { getPrompt, interpolate } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { execa } from 'execa';
 import { resolveExitCode } from '../lib/exit-codes.js';
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', 'scripts');
-
 function resolveChangelogPath(config, pkgName) {
   if (!pkgName) return 'CHANGELOG.md';
   const changelogDir = config.changelogDir || 'changelogs';
   return path.join(changelogDir, `${pkgName}.md`);
 }
-
 function resolvePackage(config, pkgName) {
   if (!pkgName) return null;
   const dirs = config.packageDirectories ?? [];
@@ -31,10 +28,8 @@ function resolvePackage(config, pkgName) {
   }
   return pkg;
 }
-
 export function registerChangelogCommand(program) {
   const changelog = program.command('changelog').description('Manage project CHANGELOG');
-
   changelog
     .command('generate')
     .description('Use AI to generate [Unreleased] entries from git history')
@@ -44,7 +39,6 @@ export function registerChangelogCommand(program) {
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
-
         let pkg = null;
         try {
           pkg = resolvePackage(config, options.package);
@@ -53,12 +47,9 @@ export function registerChangelogCommand(program) {
           process.exitCode = 1;
           return;
         }
-
         const changelogRelPath = resolveChangelogPath(config, options.package);
         const changelogPath = path.join(projectRoot, changelogRelPath);
-
         await fs.ensureDir(path.dirname(changelogPath));
-
         if (!(await fs.pathExists(changelogPath))) {
           const label = options.package ? `${changelogRelPath}` : 'CHANGELOG.md';
           const { create } = await inquirer.prompt([
@@ -69,7 +60,6 @@ export function registerChangelogCommand(program) {
               default: true,
             },
           ]);
-
           if (create) {
             const template =
               '# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n\n### Added\n\n### Fixed\n\n### Changed\n';
@@ -79,7 +69,6 @@ export function registerChangelogCommand(program) {
             return;
           }
         }
-
         if (!config.features?.ai || !(await isAiAvailable(config))) {
           print.error('AI features are disabled or no AI provider is configured.');
           print.info(
@@ -87,16 +76,13 @@ export function registerChangelogCommand(program) {
           );
           return;
         }
-
         const scopeDesc = pkg ? ` for package "${pkg.name}" (${pkg.path})` : '';
         print.info(`Analyzing the last ${options.limit} commits${scopeDesc}...`);
-
         const changelogTemplate = await getPrompt('changelog', config._configDir);
         const prompt = interpolate(changelogTemplate, {
           limit: options.limit,
           ...(pkg ? { packagePath: pkg.path, packageName: pkg.name } : {}),
         });
-
         print.header('AI Changelog Generation');
         const response = await runAiPrompt(prompt, {
           config,
@@ -105,7 +91,6 @@ export function registerChangelogCommand(program) {
           aiEnabled: true,
           interactive: true,
         });
-
         if (response) {
           const { apply } = await inquirer.prompt([
             {
@@ -115,11 +100,9 @@ export function registerChangelogCommand(program) {
               default: true,
             },
           ]);
-
           if (apply) {
             const currentContent = await fs.readFile(changelogPath, 'utf8');
             const unreleasedTag = '## [Unreleased]';
-
             if (currentContent.includes(unreleasedTag)) {
               const parts = currentContent.split(unreleasedTag);
               const newContent = `${parts[0]}${unreleasedTag}\n\n${response}${parts[1]}`;
@@ -135,7 +118,6 @@ export function registerChangelogCommand(program) {
         process.exitCode = resolveExitCode(err);
       }
     });
-
   changelog
     .command('release <version>')
     .description('Move [Unreleased] changes to a new version section')
@@ -148,7 +130,6 @@ export function registerChangelogCommand(program) {
       }
       try {
         const config = await loadConfig();
-
         try {
           resolvePackage(config, options.package);
         } catch (err) {
@@ -156,12 +137,9 @@ export function registerChangelogCommand(program) {
           process.exitCode = 1;
           return;
         }
-
         const changelogRelPath = resolveChangelogPath(config, options.package);
         const changelogPath = path.join(config._projectRoot, changelogRelPath);
-
         print.info(`Releasing version ${version} in ${changelogRelPath}...`);
-
         const scriptPath = path.join(SCRIPTS_DIR, 'lib', 'changelog-utils.sh');
         await execa(
           'bash',
@@ -182,7 +160,6 @@ export function registerChangelogCommand(program) {
         process.exitCode = 1;
       }
     });
-
   changelog
     .command('check')
     .description('Verify [Unreleased] content against git changes')
@@ -191,7 +168,6 @@ export function registerChangelogCommand(program) {
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
-
         let pkg = null;
         try {
           pkg = resolvePackage(config, options.package);
@@ -200,17 +176,13 @@ export function registerChangelogCommand(program) {
           process.exitCode = 1;
           return;
         }
-
         const changelogRelPath = resolveChangelogPath(config, options.package);
         const changelogPath = path.join(projectRoot, changelogRelPath);
-
         print.info(`Checking ${changelogRelPath} against git changes...`);
-
         const gitStatusArgs = pkg
           ? ['status', '--porcelain', '--', pkg.path]
           : ['status', '--porcelain'];
         const { stdout: gitStatus } = await execa('git', gitStatusArgs, { cwd: projectRoot });
-
         const scriptPath = path.join(SCRIPTS_DIR, 'lib', 'changelog-utils.sh');
         const { stdout: contentStatus } = await execa(
           'bash',
@@ -222,7 +194,6 @@ export function registerChangelogCommand(program) {
           ],
           { cwd: projectRoot, env: { ...process.env, SFDT_CHANGELOG_FILE: changelogPath } },
         );
-
         if (gitStatus && contentStatus.trim() === 'EMPTY') {
           print.warning(
             `You have git changes but the [Unreleased] section in ${changelogRelPath} is empty.`,

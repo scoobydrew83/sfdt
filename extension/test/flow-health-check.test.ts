@@ -5,16 +5,13 @@ import {
 } from '../features/flow-health-check.js';
 import { SalesforceApiClient, type MessageBus } from '../lib/salesforce-api.js';
 import type { HealthModalHandle, HealthReport } from '../ui/health-modal.js';
-
 const { resolveFlowApiName, buildReport } = _flowHealthCheckTestApi();
-
 function fakeWin(href: string): Window {
   const u = new URL(href);
   return {
     location: { href, hostname: u.hostname, origin: u.origin, search: u.search },
   } as unknown as Window;
 }
-
 function spyModal() {
   const calls: Array<{ kind: string; payload: unknown }> = [];
   const modal: HealthModalHandle = {
@@ -26,7 +23,6 @@ function spyModal() {
   };
   return { modal, calls };
 }
-
 function busThatReturnsSid(): MessageBus {
   return {
     sendMessage: (async () => ({
@@ -35,7 +31,6 @@ function busThatReturnsSid(): MessageBus {
     })) as unknown as MessageBus['sendMessage'],
   };
 }
-
 function fetchResponderFor(records: unknown[]): typeof fetch {
   return (async () =>
     ({
@@ -49,11 +44,9 @@ function fetchResponderFor(records: unknown[]): typeof fetch {
       },
     }) as Response) as typeof fetch;
 }
-
 beforeEach(() => {
   document.body.replaceChildren();
 });
-
 describe('extension/features/flow-health-check', () => {
   describe('resolveFlowApiName', () => {
     it('prefers DeveloperName over FullName', () => {
@@ -64,22 +57,18 @@ describe('extension/features/flow-health-check', () => {
         ),
       ).toBe('My_Flow');
     });
-
     it('falls back to metadata.fullName then label', () => {
       expect(resolveFlowApiName({} as never, { fullName: 'Some_Flow', label: 'Some Flow' })).toBe(
         'Some_Flow',
       );
       expect(resolveFlowApiName({} as never, { label: 'Just A Label' })).toBe('Just A Label');
     });
-
     it('returns "unknown_flow" when nothing else matches', () => {
       expect(resolveFlowApiName({} as never, {})).toBe('unknown_flow');
     });
   });
-
   describe('buildReport', () => {
     it('produces a report with metrics, issue families, and raw JSON', () => {
-      // Use a minimal in-memory normalized flow shape.
       const normalized = {
         meta: {
           flowVersionId: null,
@@ -131,7 +120,6 @@ describe('extension/features/flow-health-check', () => {
       });
     });
   });
-
   describe('feature lifecycle', () => {
     function makeApi(flow: Record<string, unknown>): SalesforceApiClient {
       return new SalesforceApiClient({
@@ -140,7 +128,6 @@ describe('extension/features/flow-health-check', () => {
         fetchImpl: fetchResponderFor([flow]),
       });
     }
-
     it('errors with a clear message when not on Flow Builder', async () => {
       const { modal, calls } = spyModal();
       const feature = createFlowHealthCheckFeature({
@@ -152,7 +139,6 @@ describe('extension/features/flow-health-check', () => {
       expect(calls.map((c) => c.kind)).toEqual(['error']);
       expect(String(calls[0]!.payload)).toMatch(/Flow Builder/);
     });
-
     it('errors when the URL has no flowId', async () => {
       const { modal, calls } = spyModal();
       const feature = createFlowHealthCheckFeature({
@@ -164,7 +150,6 @@ describe('extension/features/flow-health-check', () => {
       expect(calls.map((c) => c.kind)).toEqual(['error']);
       expect(String(calls[0]!.payload)).toMatch(/Flow ID/);
     });
-
     it('runs the full pipeline end-to-end and renders a report', async () => {
       const flow = {
         Id: '301abc',
@@ -199,7 +184,6 @@ describe('extension/features/flow-health-check', () => {
         api,
       });
       await feature.onActivate?.();
-
       const reportCall = calls.find((c) => c.kind === 'report');
       expect(reportCall).toBeDefined();
       const report = reportCall!.payload as HealthReport;
@@ -207,7 +191,6 @@ describe('extension/features/flow-health-check', () => {
       expect(report.summary.overallScore).toBe(100);
       expect(report.issueFamilies).toHaveLength(0);
     });
-
     it('produces a low score on a flow with DML inside a loop', async () => {
       const flow = {
         Id: '301abc',
@@ -243,11 +226,9 @@ describe('extension/features/flow-health-check', () => {
       });
       await feature.onActivate?.();
       const report = (calls.find((c) => c.kind === 'report')!.payload) as HealthReport;
-      // High severity finding present.
       expect(report.summary.severityCounts.high).toBeGreaterThanOrEqual(1);
       expect(report.summary.overallScore).toBeLessThan(100);
     });
-
     it('surfaces fetch errors as modal error messages', async () => {
       const { modal, calls } = spyModal();
       const failingFetch = vi.fn(

@@ -1,5 +1,4 @@
 import { IconPackage } from '../Icons.jsx';
-
 export default function EmptyState({ title, message, action }) {
   return (
     <div className="empty-state">

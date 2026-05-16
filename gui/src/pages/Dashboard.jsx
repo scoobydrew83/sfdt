@@ -3,14 +3,12 @@ import { api } from '../api.js';
 import StatCard from '../components/StatCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { IconCheckCircle, IconXCircle, IconAlertTri, IconRefresh } from '../Icons.jsx';
-
 function ActivityIcon({ type }) {
   if (type === 'success') return <div className="activity-ico success"><IconCheckCircle size={13} /></div>;
   if (type === 'warn')    return <div className="activity-ico warn"><IconAlertTri size={13} /></div>;
   if (type === 'error')   return <div className="activity-ico error"><IconXCircle size={13} /></div>;
   return <div className="activity-ico info"><IconRefresh size={13} /></div>;
 }
-
 export default function Dashboard({ project }) {
   const [tests, setTests]           = useState(null);
   const [preflight, setPreflight]   = useState(null);
@@ -18,7 +16,6 @@ export default function Dashboard({ project }) {
   const [deploys, setDeploys]       = useState(null);
   const [loading, setLoading]       = useState(true);
   const [fetchError, setFetchError] = useState(null);
-
   const loadData = useCallback(() => {
     let cancelled = false;
     setLoading(true);
@@ -35,18 +32,12 @@ export default function Dashboard({ project }) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
-
   useEffect(() => {
     const cancel = loadData();
     return cancel;
   }, [loadData]);
-
-  // ─── Derived stat values ──────────────────────────────────────────────────
-
-  // Test Runs card
   const testRuns    = tests?.runs ?? [];
   const testRunCount = testRuns.length;
-  // Sparkline: last 7 pass-rates (0–100)
   const testSparkline = testRuns.slice(-7).map((r) => {
     const total = (r.passed ?? 0) + (r.failed ?? 0);
     return total > 0 ? Math.round(((r.passed ?? 0) / total) * 100) : 0;
@@ -55,8 +46,6 @@ export default function Dashboard({ project }) {
     return r.date ? (Date.now() - new Date(r.date).getTime()) < 7 * 24 * 60 * 60 * 1000 : false;
   }).length;
   const testTrend = thisWeek > 0 ? `+${thisWeek} this week` : undefined;
-
-  // Preflight card
   const preflightChecks = preflight?.checks ?? [];
   const preflightPassed = preflightChecks.filter((c) => c.status === 'pass').length;
   const preflightFailed = preflightChecks.filter((c) => c.status === 'fail' || c.status === 'error').length;
@@ -68,8 +57,6 @@ export default function Dashboard({ project }) {
     ? `${preflightFailed} failed`
     : preflightTotal > 0 ? 'All passed' : undefined;
   const preflightTrendColor = preflightFailed > 0 ? 'danger' : 'success';
-
-  // Drift card
   const driftComponents = drift?.components ?? [];
   const driftedCount    = driftComponents.filter((c) => c.drift?.toLowerCase() === 'drift').length;
   const driftValue      = drift ? (driftedCount === 0 ? 'Clean' : driftedCount) : '—';
@@ -78,10 +65,7 @@ export default function Dashboard({ project }) {
     : undefined;
   const driftTrendColor = driftedCount > 0 ? 'danger' : 'success';
   const driftAccent     = !drift ? 'brand' : driftedCount > 0 ? 'red' : 'green';
-  // Flat sparkline from single value
   const driftSparkline  = drift ? Array(7).fill(driftedCount) : undefined;
-
-  // Deployments card
   const deployHistory   = deploys?.history ?? [];
   const deployCount     = deployHistory.length;
   const recentDeploys   = deployHistory.filter((d) => {
@@ -89,9 +73,6 @@ export default function Dashboard({ project }) {
   }).length;
   const deploySparkline = deployHistory.slice(-7).map((d) => (d.exitCode === 0 ? 1 : 0));
   const deployTrend     = recentDeploys > 0 ? `+${recentDeploys} this week` : undefined;
-
-  // ─── Loading skeleton ─────────────────────────────────────────────────────
-
   if (loading) {
     return (
       <div>
@@ -112,7 +93,6 @@ export default function Dashboard({ project }) {
       </div>
     );
   }
-
   if (fetchError) {
     return (
       <div>
@@ -131,8 +111,6 @@ export default function Dashboard({ project }) {
       </div>
     );
   }
-
-  // ─── Activity feed ────────────────────────────────────────────────────────
   const lastTest = testRuns[0];
   const activity = [];
   if (lastTest) {
@@ -170,7 +148,6 @@ export default function Dashboard({ project }) {
       status: last.exitCode === 0 ? 'pass' : 'fail',
     });
   }
-
   return (
     <div className="page-content" style={{ padding: 0 }}>
       <div className="page-header">
@@ -179,8 +156,7 @@ export default function Dashboard({ project }) {
           {project?.org && <p className="page-subtitle">Target Org: <span className="mono" style={{ color: 'var(--brand-600)', fontWeight: 600 }}>{project.org}</span></p>}
         </div>
       </div>
-
-      {/* 4-up stat cards */}
+      {}
       <div className="stats-grid">
         <StatCard
           label="Test Runs"
@@ -219,10 +195,8 @@ export default function Dashboard({ project }) {
           trendColor="success"
         />
       </div>
-
       <div className="two-col" style={{ gap: 24 }}>
-
-        {/* Recent tests */}
+        {}
         <div className="card">
           <div className="card-head">
             <div>
@@ -265,10 +239,8 @@ export default function Dashboard({ project }) {
             </table>
           )}
         </div>
-
-        {/* Activity + preflight */}
+        {}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-4)' }}>
-
           <div className="card">
             <div className="card-head">
               <div className="card-title">Recent Activity</div>
@@ -292,7 +264,6 @@ export default function Dashboard({ project }) {
               </div>
             )}
           </div>
-
           {preflight?.checks?.length > 0 && (
             <div className="card">
               <div className="card-head">

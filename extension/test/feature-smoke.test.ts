@@ -1,11 +1,4 @@
-// Smoke tests for the Phase 4 features that ship mostly as scaffolding
-// (heavy on DOM mutation against Flow Builder selectors, light on pure
-// logic). These confirm each feature registers a stable id and that the
-// pure helpers it exposes work; full integration coverage lives where the
-// feature has substantial pure logic of its own.
-
 import { describe, it, expect, beforeEach } from 'vitest';
-
 import { createFlowVersionManagerFeature, _flowVersionManagerTestApi } from '../features/flow-version-manager.js';
 import { createComparisonExporterFeature, _comparisonExporterTestApi } from '../features/comparison-exporter.js';
 import {
@@ -17,16 +10,13 @@ import { createAiAssistantFeature } from '../features/ai-assistant.js';
 import { createScheduledFlowExplorerFeature, _scheduledFlowExplorerTestApi } from '../features/scheduled-flow-explorer.js';
 import { ApiNameLibrary } from '@sfdt/flow-core';
 import { SalesforceApiClient, type MessageBus } from '../lib/salesforce-api.js';
-
 beforeEach(() => {
   document.body.replaceChildren();
 });
-
 describe('extension/features — smoke', () => {
   it('flow-version-manager registers with the right id', () => {
     expect(createFlowVersionManagerFeature().manifest.id).toBe('flow-version-manager');
   });
-
   it('flow-version-manager extracts row meta from a versions table row', () => {
     const { extractRowMeta } = _flowVersionManagerTestApi();
     const row = document.createElement('tr');
@@ -50,7 +40,6 @@ describe('extension/features — smoke', () => {
     expect(meta!.versionLabel).toBe('Version 3');
     expect(meta!.canDelete).toBe(true);
   });
-
   it('comparison-exporter scrapes diff rows', () => {
     const { scrapeDiffRows, toTsv } = _comparisonExporterTestApi();
     const table = document.createElement('table');
@@ -70,11 +59,9 @@ describe('extension/features — smoke', () => {
     expect(rows[0]).toMatchObject({ element: 'Get_Account', change: 'Modified' });
     expect(toTsv(rows)).toContain('Element\tChange\tField Changed\tOld Value\tNew Value');
   });
-
   it('comparison-exporter registers and feature id is stable', () => {
     expect(createComparisonExporterFeature().manifest.id).toBe('comparison-exporter');
   });
-
   it('flow-trigger-explorer-enhancer batches FlowDefinition fetches into a single IN-clause query per chunk', async () => {
     const { batchFetchFlowDefinitions } = _flowTriggerExplorerEnhancerTestApi();
     const queries: string[] = [];
@@ -102,21 +89,17 @@ describe('extension/features — smoke', () => {
     });
     const ids = Array.from({ length: 110 }, (_, i) => `30100000000${i.toString(16).padStart(4, '0')}`);
     await batchFetchFlowDefinitions(api, ids, 50);
-    // 110 ids @ 50 per chunk = 3 queries.
     expect(queries).toHaveLength(3);
     expect(queries[0]).toMatch(/FROM FlowDefinition WHERE Id IN/);
   });
-
   it('flow-trigger-explorer-enhancer feature id is stable', () => {
     expect(createFlowTriggerExplorerEnhancerFeature().manifest.id).toBe('flow-trigger-explorer-enhancer');
   });
-
   it('api-name-generator opens a working modal that previews expansions', async () => {
     const library = new ApiNameLibrary();
     await library.load();
     const feature = createApiNameGeneratorFeature({ library });
     await feature.onActivate?.();
-
     const labelInput = document.querySelector<HTMLInputElement>('input[type="text"]');
     const typeSelect = document.querySelectorAll<HTMLSelectElement>('select')[0];
     const patternSelect = document.querySelectorAll<HTMLSelectElement>('select')[1];
@@ -126,24 +109,20 @@ describe('extension/features — smoke', () => {
     expect(labelInput).not.toBeNull();
     expect(typeSelect).not.toBeNull();
     expect(patternSelect).not.toBeNull();
-
     labelInput!.value = 'Active Accounts';
     typeSelect!.value = 'Get Records';
     labelInput!.dispatchEvent(new Event('input', { bubbles: true }));
     expect(preview?.textContent).toBe('Get_Active_Accounts');
   });
-
   it('ai-assistant feature id is stable and registers without crashing', () => {
     expect(createAiAssistantFeature().manifest.id).toBe('ai-assistant');
   });
-
   it('scheduled-flow-explorer discoverScheduledFlows returns only Schedule-Triggered flows', async () => {
     const { discoverScheduledFlows } = _scheduledFlowExplorerTestApi();
     let call = 0;
     const fetchImpl = (async () => {
       call += 1;
       if (call === 1) {
-        // FlowDefinition query.
         return {
           ok: true,
           status: 200,
@@ -162,7 +141,6 @@ describe('extension/features — smoke', () => {
           },
         } as Response;
       }
-      // Flow version queries — return Scheduled vs Autolaunched.
       const isScheduled = call === 2;
       return {
         ok: true,
@@ -207,7 +185,6 @@ describe('extension/features — smoke', () => {
     expect(result.flows).toHaveLength(1);
     expect(result.flows[0]!.label).toBe('Scheduled Flow');
   });
-
   it('scheduled-flow-explorer feature id is stable', () => {
     expect(createScheduledFlowExplorerFeature().manifest.id).toBe('scheduled-flow-explorer');
   });

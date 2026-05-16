@@ -1,11 +1,6 @@
 import fs from 'fs-extra';
 import path from 'path';
-
 const SFDX_PROJECT_FILE = 'sfdx-project.json';
-
-/**
- * Resolve the log directory from config, mirroring explain.js logic.
- */
 export function resolveLogDir(config) {
   if (config.logDir) {
     return path.isAbsolute(config.logDir)
@@ -14,68 +9,44 @@ export function resolveLogDir(config) {
   }
   return path.join(config._projectRoot, 'logs');
 }
-
-/**
- * Build a PROJECT CONTEXT section string from config and sfdx-project.json.
- * All fields are optional — missing values are silently omitted.
- */
 export async function buildProjectContext(config) {
   const lines = [];
-
   if (config.projectName) lines.push(`- Project: ${config.projectName}`);
   if (config.defaultOrg) lines.push(`- Org: ${config.defaultOrg}`);
   if (config.sourceApiVersion) lines.push(`- API Version: ${config.sourceApiVersion}`);
   if (config.defaultSourcePath) lines.push(`- Source Path: ${config.defaultSourcePath}`);
-
   const threshold = config.deployment?.coverageThreshold ?? config.testConfig?.coverageThreshold;
   if (threshold != null) lines.push(`- Coverage Threshold: ${threshold}%`);
-
   if (config.testConfig?.testLevel) lines.push(`- Test Level: ${config.testConfig.testLevel}`);
-
   const testClasses = config.testConfig?.testClasses;
   if (Array.isArray(testClasses) && testClasses.length) {
     lines.push(`- Test Classes: ${testClasses.join(', ')}`);
   }
-
   const apexClasses = config.testConfig?.apexClasses;
   if (Array.isArray(apexClasses) && apexClasses.length) {
     lines.push(`- Apex Classes Under Test: ${apexClasses.join(', ')}`);
   }
-
-  // Read namespace from sfdx-project.json if present
   try {
     const sfdxPath = path.join(config._projectRoot, SFDX_PROJECT_FILE);
     const sfdxProject = await fs.readJson(sfdxPath);
     if (sfdxProject.namespace) lines.push(`- Namespace: ${sfdxProject.namespace}`);
   } catch {
-    // sfdx-project.json absent or unreadable — skip
   }
-
   if (!lines.length) return '';
   return '## PROJECT CONTEXT\n' + lines.join('\n');
 }
-
-/**
- * Read the last `limit` test runs from logs/test-results/*.json.
- * Handles all three SF CLI output formats.
- * Returns [] if directory missing or no parseable files.
- */
 export async function readLatestTestRuns(config, limit = 3) {
   const logDir = resolveLogDir(config);
   const resultsDir = path.join(logDir, 'test-results');
-
   if (!(await fs.pathExists(resultsDir))) return [];
-
   let entries;
   try {
     entries = await fs.readdir(resultsDir);
   } catch {
     return [];
   }
-
   const jsonFiles = entries.filter((f) => f.endsWith('.json') && f !== 'latest.json').sort().reverse();
   const runs = [];
-
   for (const file of jsonFiles) {
     if (runs.length >= limit) break;
     let raw;
@@ -84,8 +55,6 @@ export async function readLatestTestRuns(config, limit = 3) {
     } catch {
       continue;
     }
-
-    // New structured envelope format
     if (raw?.schemaVersion === '1' && raw.type === 'test-run') {
       const d = raw.data ?? {};
       runs.push({
@@ -98,7 +67,6 @@ export async function readLatestTestRuns(config, limit = 3) {
       });
       continue;
     }
-
     if (raw?.result?.summary) {
       const s = raw.result.summary;
       runs.push({
@@ -128,26 +96,16 @@ export async function readLatestTestRuns(config, limit = 3) {
       });
     }
   }
-
   return runs;
 }
-
-/**
- * Read the most recent preflight result from logs/preflight-latest.json.
- * Returns { date, status, checks } or null if not found.
- */
 export async function readLatestPreflight(config) {
   const logDir = resolveLogDir(config);
-
   let raw = null;
-
   try {
     const primary = path.join(logDir, 'preflight-latest.json');
     if (await fs.pathExists(primary)) raw = await fs.readJson(primary);
   } catch {
-    // fall through to glob fallback
   }
-
   if (!raw) {
     try {
       const entries = await fs.readdir(logDir);
@@ -157,23 +115,14 @@ export async function readLatestPreflight(config) {
         .reverse();
       if (candidates.length) raw = await fs.readJson(path.join(logDir, candidates[0]));
     } catch {
-      // ignore
     }
   }
-
   if (!raw) return null;
-
-  // Normalize structured envelope to flat shape expected by formatPreflightSection
   if (raw?.schemaVersion === '1') {
     return { date: raw.timestamp, status: raw.data?.status, checks: raw.data?.checks ?? [] };
   }
   return raw;
 }
-
-/**
- * Read the last `limit` deploy history entries from logs/deploy-history.json.
- * Returns [] if file missing or unreadable.
- */
 export async function readDeployHistory(config, limit = 3) {
   const logDir = resolveLogDir(config);
   try {
@@ -184,19 +133,9 @@ export async function readDeployHistory(config, limit = 3) {
     return [];
   }
 }
-
-/**
- * Assemble non-empty section strings into a single context block,
- * separated by blank lines.
- */
 export function buildContextBlock(sections) {
   return sections.filter(Boolean).join('\n\n');
 }
-
-/**
- * Format an array of test runs as a markdown section string.
- * Returns '' if runs is empty.
- */
 export function formatTestRunsSection(runs) {
   if (!runs.length) return '';
   const lines = runs.map((r) => {
@@ -206,11 +145,6 @@ export function formatTestRunsSection(runs) {
   });
   return '## RECENT TEST RUNS\n' + lines.join('\n');
 }
-
-/**
- * Format preflight result as a markdown section string.
- * Returns '' if preflight is null.
- */
 export function formatPreflightSection(preflight) {
   if (!preflight) return '';
   const header = `## LATEST PREFLIGHT (${preflight.date?.split?.('T')?.[0] ?? preflight.date ?? 'unknown'} — ${preflight.status ?? 'unknown'})`;
@@ -218,11 +152,6 @@ export function formatPreflightSection(preflight) {
   const lines = preflight.checks.map((c) => `- ${(c.status ?? '?').padEnd(5)} ${c.name}${c.message ? `: ${c.message}` : ''}`);
   return header + '\n' + lines.join('\n');
 }
-
-/**
- * Format deploy history as a markdown section string.
- * Returns '' if history is empty.
- */
 export function formatDeployHistorySection(history) {
   if (!history.length) return '';
   const lines = history.map((d) => {
@@ -236,11 +165,6 @@ export function formatDeployHistorySection(history) {
   });
   return '## RECENT DEPLOY HISTORY\n' + lines.join('\n');
 }
-
-/**
- * Format metadata type breakdown (from parseDiffToMetadata) as a section string.
- * Returns '' if both additive and destructive are empty.
- */
 export function formatMetadataTypesSection(parsed) {
   const lines = [];
   for (const [type, members] of Object.entries(parsed.additive ?? {})) {

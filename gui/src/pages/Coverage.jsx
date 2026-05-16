@@ -3,9 +3,6 @@ import { api } from '../api.js';
 import { ChatContext } from '../App.jsx';
 import StatCard from '../components/StatCard.jsx';
 import CommandRunner from '../components/CommandRunner.jsx';
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 function formatLineRanges(lines) {
   if (!lines || lines.length === 0) return '';
   const sorted = [...lines].sort((a, b) => a - b);
@@ -18,28 +15,19 @@ function formatLineRanges(lines) {
   ranges.push(start === end ? `${start}` : `${start}–${end}`);
   return ranges.join(', ');
 }
-
-// ─── FailingTestsModal ────────────────────────────────────────────────────────
-
 function FailingTestsModal({ run, classData, onClose }) {
   const { openChat } = useContext(ChatContext);
-
-  // run.tests is an array of { name, status, message, durationMs }
-  // Test class names follow the convention: ProdClassName + 'Test' (e.g. LightningLoginFormControllerTest)
-  // classData is the classCoverage entry with .name, .percent
   const allTests = run?.tests?.filter((t) => {
     const testClass = t.name?.split('.')?.[0] ?? '';
     return testClass.toLowerCase().startsWith(classData.name.toLowerCase());
   }) ?? [];
   const failing  = allTests.filter((t) => t.status === 'fail');
   const passing  = allTests.filter((t) => t.status !== 'fail');
-
   const handleAskAI = () => {
     const lines = failing.map((t) => `- ${t.name}: ${t.message ?? '(no message)'}`).join('\n');
     openChat(`These tests are failing in \`${classData.name}\` (${classData.percent}% coverage):\n${lines}\n\nCan you read the source and suggest fixes?`);
     onClose();
   };
-
   return (
     <div
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -107,21 +95,17 @@ function FailingTestsModal({ run, classData, onClose }) {
     </div>
   );
 }
-
-// ─── CoveragePage ─────────────────────────────────────────────────────────────
-
 const LEVEL_LABELS = {
   RunLocalTests:     'Run Local Tests',
   RunAllTestsInOrg:  'Run All Tests in Org',
   RunSpecifiedTests: 'Run Specified Classes',
 };
-
 export default function CoveragePage() {
   const [testLevel, setTestLevel]         = useState('RunLocalTests');
   const [orgs, setOrgs]                   = useState([]);
   const [selectedOrg, setSelectedOrg]     = useState('');
   const [runs, setRuns]                   = useState([]);
-  const [selectedRun, setSelectedRun]     = useState(null);  // null = latest
+  const [selectedRun, setSelectedRun]     = useState(null);
   const [filter, setFilter]               = useState('');
   const [belowOnly, setBelowOnly]         = useState(false);
   const [sortCol, setSortCol]             = useState('coverage');
@@ -129,8 +113,6 @@ export default function CoveragePage() {
   const [syncing, setSyncing]             = useState(false);
   const [syncMsg, setSyncMsg]             = useState('');
   const [selectedClass, setSelectedClass] = useState(null);
-
-  // Load test runs and orgs on mount
   useEffect(() => {
     api.testRuns().then(({ runs: r }) => setRuns(r ?? [])).catch(() => {});
     api.orgs()
@@ -140,11 +122,9 @@ export default function CoveragePage() {
       })
       .catch(() => {});
   }, []);
-
   const handleRefresh = useCallback(() => {
     api.testRuns().then(({ runs: r }) => setRuns(r ?? [])).catch(() => {});
   }, []);
-
   const handleSync = async () => {
     setSyncing(true);
     setSyncMsg('');
@@ -159,24 +139,17 @@ export default function CoveragePage() {
       setSyncing(false);
     }
   };
-
-  // ── Derived values ──────────────────────────────────────────────────────────
-
-  const threshold     = 75;  // hardcoded; config isn't passed to page components
+  const threshold     = 75;
   const activeRun     = selectedRun ?? runs[0] ?? null;
   const classCoverage = activeRun?.classCoverage ?? [];
-  const last          = activeRun?.coverage ?? null;   // overall coverage %
+  const last          = activeRun?.coverage ?? null;
   const lastDate      = activeRun ? new Date(activeRun.date).toLocaleDateString() : '—';
   const belowCount    = classCoverage.filter((c) => c.percent < threshold).length;
-
   const coverageAccent = (pct) =>
     pct == null ? 'neutral' : pct >= threshold ? 'green' : pct >= 60 ? 'yellow' : 'red';
-
-  // Filtered + sorted class list
   let displayed = classCoverage
     .filter((c) => !belowOnly || c.percent < threshold)
     .filter((c) => c.name.toLowerCase().includes(filter.toLowerCase()));
-
   displayed = [...displayed].sort((a, b) => {
     const mul = sortDir === 'asc' ? 1 : -1;
     if (sortCol === 'coverage') return mul * (a.percent - b.percent);
@@ -184,16 +157,12 @@ export default function CoveragePage() {
     if (sortCol === 'covered')  return mul * (a.coveredLines - b.coveredLines);
     return 0;
   });
-
-  // ── Render ──────────────────────────────────────────────────────────────────
-
   return (
     <div className="page">
       <div className="page-head">
         <h1 className="page-title">Coverage</h1>
       </div>
-
-      {/* ── Zone 1: Run Panel ─────────────────────────────────────────────── */}
+      {}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head"><div className="card-title">Run Coverage</div></div>
         <div style={{ padding: '12px 16px 16px' }}>
@@ -249,16 +218,14 @@ export default function CoveragePage() {
           />
         </div>
       </div>
-
-      {/* ── Zone 2: Stat Cards ────────────────────────────────────────────── */}
+      {}
       <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
         <StatCard label="Last Coverage"   value={last != null ? `${last}%` : '—'} accent={coverageAccent(last)} />
         <StatCard label="Threshold"       value={`${threshold}%`} accent="neutral" />
         <StatCard label="Below Threshold" value={belowCount} accent={belowCount > 0 ? 'red' : 'green'} />
         <StatCard label="Last Run"        value={lastDate} accent="neutral" />
       </div>
-
-      {/* ── Zone 3: Trend ─────────────────────────────────────────────────── */}
+      {}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head"><div className="card-title">Coverage Trend</div></div>
         <div style={{ padding: '8px 16px 16px' }}>
@@ -319,8 +286,7 @@ export default function CoveragePage() {
           )}
         </div>
       </div>
-
-      {/* ── Zone 4: Per-Class Table ───────────────────────────────────────── */}
+      {}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head"><div className="card-title">Per-Class Coverage</div></div>
         <div style={{ padding: '8px 16px 4px', display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -394,8 +360,7 @@ export default function CoveragePage() {
           </table>
         </div>
       </div>
-
-      {/* ── Failing Tests Modal ───────────────────────────────────────────── */}
+      {}
       {selectedClass && (
         <FailingTestsModal
           run={activeRun}

@@ -1,18 +1,8 @@
-// Zod schema → DOM control adapter.
-//
-// Each call returns a node ready to insert into the page and a getValue()
-// closure that reads the current control state in the shape the schema
-// expects. Coverage is intentionally narrow — only the Zod types our
-// feature settings actually use today. Unsupported types throw at build
-// time so we hear about new shapes immediately.
-
 import { z, type ZodTypeAny } from 'zod';
-
 export interface Field<T> {
   node: HTMLElement;
   getValue: () => T;
 }
-
 export function buildField<T>(schema: ZodTypeAny, initial: T): Field<T> {
   if (schema instanceof z.ZodOptional || schema instanceof z.ZodDefault) {
     const inner = (schema._def as { innerType?: ZodTypeAny; schema?: ZodTypeAny }).innerType

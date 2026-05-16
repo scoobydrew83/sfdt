@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import { IconSearch, IconFilter, IconPackage } from '../Icons.jsx';
-
 const STATUS_OPTIONS = [
   { id: 'all',         label: 'All statuses' },
   { id: 'source-only', label: 'Source only' },
@@ -9,7 +8,6 @@ const STATUS_OPTIONS = [
   { id: 'identical',   label: 'Identical' },
   { id: 'both',        label: 'Checking…' },
 ];
-
 const TYPE_GROUPS = [
   { label: 'Code',            types: ['ApexClass', 'ApexTrigger', 'ApexPage', 'ApexComponent'] },
   { label: 'UI & Components', types: ['LightningComponentBundle', 'AuraDefinitionBundle', 'FlexiPage', 'Layout'] },
@@ -17,15 +15,12 @@ const TYPE_GROUPS = [
   { label: 'Data Model',      types: ['CustomObject', 'CustomField', 'CustomMetadata', 'RecordType', 'GlobalValueSet', 'CustomLabels'] },
   { label: 'Security',        types: ['Profile', 'PermissionSet', 'PermissionSetGroup', 'Role', 'Group', 'Queue'] },
 ];
-
 function countsByStatus(items) {
   const c = {};
   for (const i of items) c[i.status] = (c[i.status] ?? 0) + 1;
   return c;
 }
-
 const getNamespace = (name) => name.match(/^([A-Za-z0-9]+)__/)?.[1] ?? null;
-
 const PILL_MAP = {
   'identical':    'pill-match',
   'match':        'pill-match',
@@ -35,7 +30,6 @@ const PILL_MAP = {
   'target-only':  'pill-rm',
   'conflict':     'pill-conflict',
 };
-
 const PILL_LABEL = {
   'identical':    'Match',
   'match':        'Match',
@@ -45,14 +39,12 @@ const PILL_LABEL = {
   'target-only':  'Removed',
   'conflict':     'Conflict',
 };
-
 function StatusPill({ status }) {
   const key = (status ?? '').toLowerCase();
   const cls  = PILL_MAP[key]  ?? 'pill-match';
   const label = PILL_LABEL[key] ?? status ?? '—';
   return <span className={`status-pill ${cls}`}>{label}</span>;
 }
-
 function NamespacedName({ name, onClick }) {
   const ns = getNamespace(name);
   if (!ns) {
@@ -79,34 +71,27 @@ function NamespacedName({ name, onClick }) {
     </button>
   );
 }
-
 export default function CompareTable({ items = [], onSelect, onBuildManifest, statusFilter: externalStatusFilter }) {
   const [search, setSearch]             = useState('');
   const [internalStatusFilter, setInternalStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter]     = useState('all');
-  // If caller controls status filter externally, use that; otherwise use internal state
   const statusFilter = externalStatusFilter !== undefined ? externalStatusFilter : internalStatusFilter;
   const [selection, setSelection]       = useState(new Set());
   const [hideManaged, setHideManaged]   = useState(true);
   const [grouped, setGrouped]           = useState(false);
-
   const types = useMemo(() => {
     const t = [...new Set(items.map((i) => i.type))].sort();
     return ['all', ...t];
   }, [items]);
-
-  // Map FilterTab labels to status matching predicates
   const statusMatchFn = useMemo(() => {
     const f = statusFilter;
-    if (!f || f === 'all' || f === 'All') return null;  // no filter
+    if (!f || f === 'all' || f === 'All') return null;
     if (f === 'Modified')  return (s) => s === 'modified' || s === 'both';
     if (f === 'Added')     return (s) => s === 'source-only';
     if (f === 'Removed')   return (s) => s === 'target-only';
     if (f === 'Conflicts') return (s) => s === 'conflict';
-    // raw status value (internal chip filter fallback)
     return (s) => s === f;
   }, [statusFilter]);
-
   const filtered = useMemo(() => items.filter((i) => {
     if (statusMatchFn && !statusMatchFn(i.status)) return false;
     if (typeFilter !== 'all' && i.type !== typeFilter) return false;
@@ -114,16 +99,12 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest, st
     if (search && !`${i.type}.${i.member}`.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   }), [items, statusMatchFn, typeFilter, hideManaged, search]);
-
   const autoSelected = useMemo(() => new Set(
     items
       .filter((i) => i.status === 'source-only' || i.status === 'modified')
       .map((i) => `${i.type}.${i.member}`),
   ), [items]);
-
-  // Selection is always explicit; fallback to autoSelected happens only in handleBuildManifest
   const effectiveSel = selection;
-
   const toggleRow = (key) => {
     setSelection((prev) => {
       const next = new Set(prev);
@@ -131,29 +112,23 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest, st
       return next;
     });
   };
-
   const handleBuildManifest = () => {
-    // Use explicit selection if any; otherwise fall back to autoSelected
     const source = selection.size > 0 ? selection : autoSelected;
     const selected = items.filter((i) => source.has(`${i.type}.${i.member}`));
     onBuildManifest?.(selected);
   };
-
   const counts = useMemo(() => countsByStatus(items), [items]);
-
   const groupedRows = useMemo(() => {
     if (!grouped) return null;
     const groups = TYPE_GROUPS.map((g) => ({
       label: g.label,
       items: filtered.filter((i) => g.types.includes(i.type)),
     })).filter((g) => g.items.length > 0);
-
     const assignedKeys = new Set(TYPE_GROUPS.flatMap((g) => g.types));
     const other = filtered.filter((i) => !assignedKeys.has(i.type));
     if (other.length > 0) groups.push({ label: 'Other', items: other });
     return groups;
   }, [grouped, filtered]);
-
   const renderRow = (item) => {
     const key = `${item.type}.${item.member}`;
     const checked = effectiveSel.has(key);
@@ -179,10 +154,9 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest, st
       </tr>
     );
   };
-
   return (
     <div>
-      {/* Filters */}
+      {}
       <div className="filter-bar">
         <div className="input-wrap has-icon search-wrap" style={{ flex: 1, maxWidth: 340 }}>
           <span className="input-icon"><IconSearch size={13} /></span>
@@ -193,7 +167,6 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest, st
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-
         {externalStatusFilter === undefined && STATUS_OPTIONS.filter((o) => o.id !== 'all').map((o) => {
           const n = counts[o.id] ?? 0;
           if (!n) return null;
@@ -208,21 +181,18 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest, st
             </button>
           );
         })}
-
         <button
           className={`filter-chip${hideManaged ? ' active' : ''}`}
           onClick={() => setHideManaged((v) => !v)}
         >
           Hide Managed
         </button>
-
         <button
           className={`filter-chip${grouped ? ' active' : ''}`}
           onClick={() => setGrouped((v) => !v)}
         >
           Group by type
         </button>
-
         {types.length > 2 && (
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
             <IconFilter size={12} style={{ color: 'var(--fg-subtle)' }} />
@@ -240,7 +210,6 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest, st
           </div>
         )}
       </div>
-
       {autoSelected.size > 0 && selection.size === 0 && (
         <div style={{ marginBottom: 'var(--s-2)' }}>
           <button
@@ -261,7 +230,6 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest, st
           </button>
         </div>
       )}
-
       {selection.size > 0 && (
         <div className="bulk-bar">
           <span className="bulk-label">{selection.size} selected</span>
@@ -271,8 +239,7 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest, st
           </button>
         </div>
       )}
-
-      {/* Table */}
+      {}
       <div className="table-wrap">
         {filtered.length === 0 ? (
           <div className="empty-state" style={{ padding: 'var(--s-8)' }}>
@@ -336,8 +303,7 @@ export default function CompareTable({ items = [], onSelect, onBuildManifest, st
           </table>
         )}
       </div>
-
-      {/* Footer summary */}
+      {}
       {items.length > 0 && (
         <div className="mt-2" style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)', fontFamily: 'var(--font-mono)' }}>
           {filtered.length} of {items.length} · {counts['source-only'] ?? 0} source-only · {counts['target-only'] ?? 0} target-only · {counts.modified ?? 0} modified · {counts.identical ?? 0} identical

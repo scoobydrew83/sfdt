@@ -1,26 +1,13 @@
-/**
- * Tests for `sfdt flow scan` and `sfdt flow conflicts` — mocks execa so the
- * tests don't shell out to the real `sf` CLI. Each query returns canned
- * Tooling API responses; we then exercise the registered Commander command
- * directly.
- */
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Command } from 'commander';
-
-// ─── Mock fs-extra so writeJson doesn't actually hit disk. ────────────────
 vi.mock('fs-extra', () => ({
   default: {
     ensureDir: vi.fn().mockResolvedValue(undefined),
     writeJson: vi.fn().mockResolvedValue(undefined),
   },
 }));
-
-// ─── Mock execa so each `sf data query` returns a deterministic Tooling
-// API response. We dispatch on the SOQL text in the args. ─────────────────
 const execaCalls = [];
 let executor;
-
 vi.mock('execa', () => ({
   execa: vi.fn(async (cmd, args) => {
     execaCalls.push({ cmd, args });
@@ -28,8 +15,6 @@ vi.mock('execa', () => ({
     return { stdout: JSON.stringify({ result: { records: [] } }) };
   }),
 }));
-
-// ─── Mock loadConfig so the flow command doesn't need a .sfdt/ on disk. ──
 vi.mock('../../src/lib/config.js', () => ({
   loadConfig: vi.fn(async () => ({
     _projectRoot: '/project',
@@ -39,23 +24,19 @@ vi.mock('../../src/lib/config.js', () => ({
   })),
   ConfigError: class extends Error {},
 }));
-
 import { registerFlowCommand } from '../../src/commands/flow.js';
 import fs from 'fs-extra';
-
 function buildProgram() {
   const program = new Command();
   program.exitOverride();
   registerFlowCommand(program);
   return program;
 }
-
 beforeEach(() => {
   execaCalls.length = 0;
   executor = null;
   vi.mocked(fs.writeJson).mockClear();
 });
-
 describe('sfdt flow scan', () => {
   it('queries FlowDefinitions, then fetches each active version and writes a report', async () => {
     executor = (_cmd, args) => {
@@ -95,12 +76,9 @@ describe('sfdt flow scan', () => {
       }
       return { stdout: JSON.stringify({ result: { records: [] } }) };
     };
-
     const program = buildProgram();
     await program.parseAsync(['node', 'sfdt', 'flow', 'scan', '--org', 'dev']);
-
     expect(execaCalls).toHaveLength(2);
-    // The flow command writes the report to logs/flow-scan-latest.json.
     expect(vi.mocked(fs.writeJson)).toHaveBeenCalledOnce();
     const [outPath, body] = vi.mocked(fs.writeJson).mock.calls[0];
     expect(outPath).toContain('flow-scan-latest.json');
@@ -109,12 +87,10 @@ describe('sfdt flow scan', () => {
     expect(body.reports[0].overallScore).toBe(100);
     expect(body.reports[0].label).toBe('My Flow');
   });
-
   it('--json emits the report to stdout without writing a file', async () => {
     executor = () => ({
       stdout: JSON.stringify({ result: { records: [] } }),
     });
-
     const writes = [];
     const origWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = (chunk) => {
@@ -127,14 +103,12 @@ describe('sfdt flow scan', () => {
     } finally {
       process.stdout.write = origWrite;
     }
-
     expect(vi.mocked(fs.writeJson)).not.toHaveBeenCalled();
     const json = JSON.parse(writes.join(''));
     expect(json.org).toBe('dev');
     expect(json.totalFlows).toBe(0);
   });
 });
-
 describe('sfdt flow conflicts', () => {
   it('detects record-triggered flows sharing the same object + timing + event', async () => {
     executor = (_cmd, args) => {
@@ -198,17 +172,14 @@ describe('sfdt flow conflicts', () => {
       }
       return { stdout: JSON.stringify({ result: { records: [] } }) };
     };
-
     const program = buildProgram();
     await program.parseAsync(['node', 'sfdt', 'flow', 'conflicts', '--org', 'dev']);
-
     const [, body] = vi.mocked(fs.writeJson).mock.calls[0];
     expect(body.totalGroups).toBe(1);
     expect(body.groups[0].objectApiName).toBe('Account');
     expect(body.groups[0].flows).toHaveLength(2);
     expect(body.groups[0].flows.map((f) => f.label).sort()).toEqual(['Flow A', 'Flow B']);
   });
-
   it('emits zero groups when no flows share object + timing + event', async () => {
     executor = (_cmd, args) => {
       const soql = args[args.indexOf('-q') + 1] ?? '';

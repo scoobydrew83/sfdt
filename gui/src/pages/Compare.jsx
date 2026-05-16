@@ -7,9 +7,7 @@ import OrgBar from '../components/OrgBar.jsx';
 import StatCard from '../components/StatCard.jsx';
 import FilterTabs from '../components/FilterTabs.jsx';
 import { IconArrowRight, IconX, IconCopy, IconCheck } from '../Icons.jsx';
-
 const LOCAL_OPT = { id: 'local', label: 'Local Source', alias: 'local' };
-
 function formatRelativeTime(dateStr) {
   if (!dateStr) return null;
   const d = new Date(dateStr);
@@ -24,7 +22,6 @@ function formatRelativeTime(dateStr) {
   if (diffDay < 1) return `${diffHr}h ago`;
   return `${diffDay}d ago`;
 }
-
 export default function ComparePage() {
   const [orgs, setOrgs]                 = useState([]);
   const [source, setSource]             = useState(LOCAL_OPT);
@@ -48,13 +45,11 @@ export default function ComparePage() {
   const [activeTab, setActiveTab]         = useState('All');
   const esRef = useRef(null);
   const mountedRef = useRef(true);
-
   useEffect(() => {
     api.orgs()
       .then(({ orgs: list }) => setOrgs(list ?? []))
       .catch(() => {});
   }, []);
-
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -62,8 +57,6 @@ export default function ComparePage() {
       esRef.current?.close();
     };
   }, []);
-
-  // Bug 3: load cached compare results on mount
   useEffect(() => {
     api.compareResult()
       .then((data) => {
@@ -76,17 +69,13 @@ export default function ComparePage() {
       })
       .catch(() => {});
   }, []);
-
   const allOrgs = useMemo(() => [LOCAL_OPT, ...orgs.map((o) => ({ id: o.alias, label: o.alias, alias: o.alias }))], [orgs]);
-
   const startPhase2 = () => {
     esRef.current?.close();
     setPhase2Active(true);
     setPhase2Done(0);
-
     const es = new EventSource('/api/compare/stream');
     esRef.current = es;
-
     es.onmessage = (e) => {
       if (!mountedRef.current) return;
       let event;
@@ -118,7 +107,6 @@ export default function ComparePage() {
       es.close();
     };
   };
-
   const handleRun = async () => {
     if (!target) return;
     setStreamError(null);
@@ -139,7 +127,6 @@ export default function ComparePage() {
       setRunning(false);
     }
   };
-
   const handleBuildManifest = async (selected) => {
     setSelectedItems(selected);
     setSaveResult(null);
@@ -147,8 +134,6 @@ export default function ComparePage() {
       const { xml } = await api.buildManifest(selected.map(({ type, member }) => ({ type, member })));
       setManifestXml(xml);
       setManifestOpen(true);
-
-      // Fetch suggested version
       api.suggestVersion().then(d => {
         setSuggestedVersion(d.version);
         setVersion(d.version);
@@ -157,7 +142,6 @@ export default function ComparePage() {
       console.error('Manifest build failed', err);
     }
   };
-
   const handleRemoveFromManifest = async (type, member) => {
     const next = selectedItems.filter(i => !(i.type === type && i.member === member));
     setSelectedItems(next);
@@ -168,7 +152,6 @@ export default function ComparePage() {
     const { xml } = await api.buildManifest(next.map(i => ({ type: i.type, member: i.member })));
     setManifestXml(xml);
   };
-
   const handleSaveManifest = async () => {
     setSaving(true);
     setSaveResult(null);
@@ -184,8 +167,6 @@ export default function ComparePage() {
       setSaving(false);
     }
   };
-
-  // Derived counts for stats row and FilterTabs
   const totalCount    = items.length;
   const matchedCount  = items.filter((i) => i.status === 'identical' || i.status === 'match').length;
   const modifiedCount = items.filter((i) => i.status === 'modified' || i.status === 'both').length;
@@ -194,7 +175,6 @@ export default function ComparePage() {
   const conflictCount = items.filter((i) => i.status === 'conflict').length;
   const diffCount     = totalCount - matchedCount;
   const matchRate     = totalCount > 0 ? (matchedCount / totalCount * 100).toFixed(1) + '%' : '—';
-
   const filterTabs = [
     { label: 'All',       count: totalCount },
     { label: 'Modified',  count: modifiedCount, variant: 'mod' },
@@ -202,9 +182,7 @@ export default function ComparePage() {
     { label: 'Removed',   count: removedCount,  variant: 'rm' },
     { label: 'Conflicts', count: conflictCount, variant: 'conflict' },
   ];
-
   const phase2Pct = phase2Total > 0 ? Math.round((phase2Done / phase2Total) * 100) : 0;
-
   return (
     <div>
       <div className="page-header">
@@ -213,8 +191,7 @@ export default function ComparePage() {
           <p className="page-subtitle">Compare metadata between orgs or local source</p>
         </div>
       </div>
-
-      {/* Org selector */}
+      {}
       <div className="card mb-4">
         <div className="card-head">
           <div className="card-title">Configure comparison</div>
@@ -236,11 +213,9 @@ export default function ComparePage() {
                 ))}
               </select>
             </div>
-
             <div style={{ paddingBottom: 2, color: 'var(--fg-subtle)', flexShrink: 0 }}>
               <IconArrowRight size={16} />
             </div>
-
             <div className="input-field" style={{ flex: 1, minWidth: 180 }}>
               <label className="input-label">Target org</label>
               <select
@@ -257,7 +232,6 @@ export default function ComparePage() {
                 ))}
               </select>
             </div>
-
             <button
               className="btn btn-primary"
               disabled={!source || !target || running}
@@ -272,8 +246,7 @@ export default function ComparePage() {
           </p>
         </div>
       </div>
-
-      {/* Phase 2 progress */}
+      {}
       {phase2Active && (
         <div className="card mb-4">
           <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 'var(--s-3)' }}>
@@ -295,7 +268,6 @@ export default function ComparePage() {
           </div>
         </div>
       )}
-
       {streamError && (
         <div className="alert alert-error mb-4">
           <span>{streamError}</span>
@@ -304,28 +276,24 @@ export default function ComparePage() {
           </button>
         </div>
       )}
-
       {running && (
         <div className="spinner-center"><div className="spinner spinner-lg" /></div>
       )}
-
       {!running && !hasResult && !streamError && (
         <EmptyState
           title="No comparison yet"
           message="Select a source and target above, then click Run comparison."
         />
       )}
-
       {!running && hasResult && (
         <>
-          {/* OrgBar */}
+          {}
           <OrgBar
             source={source.label}
             target={target?.label ?? '—'}
             lastScanned={formatRelativeTime(lastScannedDate)}
           />
-
-          {/* 4-up stats row */}
+          {}
           {phase2Active ? (
             <div className="stats-row">
               <StatCard label="Total Components" value={totalCount || 0} accent="brand" />
@@ -358,15 +326,13 @@ export default function ComparePage() {
               />
             </div>
           )}
-
-          {/* FilterTabs */}
+          {}
           <FilterTabs
             tabs={filterTabs}
             active={activeTab}
             onChange={setActiveTab}
           />
-
-          {/* Results table */}
+          {}
           <div className="card">
             <div className="card-body">
               <CompareTable
@@ -379,9 +345,7 @@ export default function ComparePage() {
           </div>
         </>
       )}
-
       <DiffPanel item={diffItem} onClose={() => setDiffItem(null)} />
-
       {manifestOpen && (
         <div className="modal-backdrop" onClick={() => setManifestOpen(false)}>
           <div className="modal" style={{ maxWidth: 900, width: '95vw' }} onClick={(e) => e.stopPropagation()}>
@@ -392,8 +356,7 @@ export default function ComparePage() {
               </button>
             </div>
             <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxHeight: '65vh' }}>
-
-              {/* Left Column: Component List */}
+              {}
               <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div className="section-label" style={{ marginBottom: 10 }}>Components ({selectedItems.length})</div>
                 <div className="table-wrap" style={{ flex: 1, overflowY: 'auto' }}>
@@ -416,8 +379,7 @@ export default function ComparePage() {
                   </table>
                 </div>
               </div>
-
-              {/* Right Column: XML Preview & Save */}
+              {}
               <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div className="section-label" style={{ marginBottom: 10 }}>XML Preview</div>
                 <pre style={{
@@ -438,7 +400,6 @@ export default function ComparePage() {
                 </pre>
               </div>
             </div>
-
             <div className="modal-foot" style={{ justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div className="input-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -457,7 +418,6 @@ export default function ComparePage() {
                   </div>
                 )}
               </div>
-
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   className="btn btn-secondary btn-sm"

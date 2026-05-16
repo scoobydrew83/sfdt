@@ -2,32 +2,11 @@ import path from 'path';
 import { execa } from 'execa';
 import { glob } from 'glob';
 import { getMetadataType, getMemberName } from './metadata-mapper.js';
-
 const BATCH_SIZE = 5;
-
-/**
- * Fetch metadata member inventory from an org or local source.
- * @param {string} source - Org alias or 'local'
- * @param {object} config - Loaded sfdt config
- * @returns {Promise<Map<string, Set<string>>>} Map of type → Set of member names
- */
 export async function fetchInventory(source, config, options = {}) {
   if (source === 'local') return fetchLocalInventory(config);
   return fetchOrgInventory(source, config, options);
 }
-
-/**
- * Fetch inventory from a Salesforce org via sf CLI.
- * Batches metadata type queries in groups of BATCH_SIZE.
- *
- * @param {string} orgAlias
- * @param {object|null} _config - reserved for future use
- * @param {object} [options]
- * @param {boolean} [options.withDates] - emit Map<name, lastModifiedDate> values
- * @param {string[]|null} [options.metadataTypes] - when a non-empty array,
- *   restricts the inventory to these xmlNames instead of querying every type
- *   exposed by the org (`sf org list metadata-types`).
- */
 export async function fetchOrgInventory(
   orgAlias,
   _config,
@@ -37,7 +16,6 @@ export async function fetchOrgInventory(
     ? metadataTypes
     : await listMetadataTypes(orgAlias);
   const inventory = new Map();
-
   for (let i = 0; i < types.length; i += BATCH_SIZE) {
     const batch = types.slice(i, i + BATCH_SIZE);
     await Promise.all(
@@ -53,26 +31,18 @@ export async function fetchOrgInventory(
       }),
     );
   }
-
   return inventory;
 }
-
-/**
- * Fetch inventory from local source files via glob.
- */
 export async function fetchLocalInventory(config) {
   const sourcePath = config.defaultSourcePath ?? 'force-app/main/default';
   const root = config._projectRoot ?? process.cwd();
   const absSource = path.join(root, sourcePath);
-
   const files = await glob('**/*', {
     cwd: absSource,
     nodir: true,
     absolute: false,
   });
-
   const inventory = new Map();
-
   for (const file of files) {
     const type = getMetadataType(file);
     if (type === 'SKIP' || type === 'UNKNOWN') continue;
@@ -80,10 +50,8 @@ export async function fetchLocalInventory(config) {
     if (!inventory.has(type)) inventory.set(type, new Set());
     inventory.get(type).add(member);
   }
-
   return inventory;
 }
-
 async function listMetadataTypes(orgAlias) {
   const result = await execa('sf', [
     'org',
@@ -96,7 +64,6 @@ async function listMetadataTypes(orgAlias) {
   const parsed = JSON.parse(result.stdout);
   return (parsed.result?.metadataObjects ?? []).map((obj) => obj.xmlName);
 }
-
 async function listMetadataMembers(orgAlias, metadataType) {
   try {
     const result = await execa('sf', [
@@ -115,7 +82,6 @@ async function listMetadataMembers(orgAlias, metadataType) {
       lastModifiedDate: item.lastModifiedDate ?? '',
     }));
   } catch {
-    // Some metadata types are not retrievable; skip silently
     return [];
   }
 }

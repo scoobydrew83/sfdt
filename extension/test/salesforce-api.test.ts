@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SalesforceApiClient, type MessageBus } from '../lib/salesforce-api.js';
-
 function fakeWin(href: string): Window {
   const u = new URL(href);
   return {
@@ -12,16 +11,11 @@ function fakeWin(href: string): Window {
     },
   } as unknown as Window;
 }
-
 function makeBus(sids: Record<string, string | null>): MessageBus {
   return {
-    // The MessageBus signature is generic; tests return a concrete shape and
-    // rely on the caller asserting it. Cast keeps the test wiring honest
-    // without forcing a generic spy.
     sendMessage: vi.fn(async () => ({ ok: true, sids })) as unknown as MessageBus['sendMessage'],
   };
 }
-
 function fetchResponder(
   routes: Record<string, { status: number; body: unknown }>,
 ): typeof fetch {
@@ -45,7 +39,6 @@ function fetchResponder(
     throw new Error(`No fetch stub for URL: ${key}`);
   }) as typeof fetch;
 }
-
 describe('extension/lib/salesforce-api', () => {
   describe('getFlowIdFromUrl', () => {
     it('returns the flowId param when present', () => {
@@ -54,7 +47,6 @@ describe('extension/lib/salesforce-api', () => {
       });
       expect(client.getFlowIdFromUrl()).toBe('300abc');
     });
-
     it('returns null when flowId is absent', () => {
       const client = new SalesforceApiClient({
         win: fakeWin('https://x.lightning.force.com/lightning/setup/Flows/home'),
@@ -62,7 +54,6 @@ describe('extension/lib/salesforce-api', () => {
       expect(client.getFlowIdFromUrl()).toBeNull();
     });
   });
-
   describe('session candidate ordering', () => {
     it('prefers my.salesforce.com over the current origin', async () => {
       const win = fakeWin('https://x.lightning.force.com/anything');
@@ -81,13 +72,10 @@ describe('extension/lib/salesforce-api', () => {
       const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy });
       const result = await client.toolingQuery('SELECT Id FROM Flow');
       expect(result.records).toEqual([{ Id: '301' }]);
-      // We should have hit my.salesforce.com first — and that succeeded — so
-      // lightning.force.com should never be called.
       const calls = fetchSpy.mock.calls.map(([url]) => String(url));
       expect(calls).toHaveLength(1);
       expect(calls[0]).toContain('my.salesforce.com');
     });
-
     it('falls through to the second candidate on 401', async () => {
       const win = fakeWin('https://x.lightning.force.com/anything');
       const bus = makeBus({
@@ -113,7 +101,6 @@ describe('extension/lib/salesforce-api', () => {
       expect(calls.some((c) => c.includes('my.salesforce.com'))).toBe(true);
       expect(calls.some((c) => c.includes('lightning.force.com'))).toBe(true);
     });
-
     it('throws when the message bus cannot return any sid', async () => {
       const win = fakeWin('https://x.lightning.force.com/anything');
       const bus: MessageBus = {
@@ -122,7 +109,6 @@ describe('extension/lib/salesforce-api', () => {
       const client = new SalesforceApiClient({ win, messageBus: bus });
       await expect(client.toolingQuery('SELECT Id FROM Flow')).rejects.toThrow(/No Salesforce session/);
     });
-
     it('throws on a non-401 error', async () => {
       const win = fakeWin('https://x.lightning.force.com/anything');
       const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
@@ -138,7 +124,6 @@ describe('extension/lib/salesforce-api', () => {
       await expect(client.toolingQuery('SELECT Id FROM Flow')).rejects.toThrow(/500/);
     });
   });
-
   describe('apiGet/apiRequest endpoint validation', () => {
     it('rejects endpoints that do not start with /', async () => {
       const win = fakeWin('https://x.lightning.force.com/anything');
@@ -148,10 +133,8 @@ describe('extension/lib/salesforce-api', () => {
       await expect(client.apiRequest('POST', 'services/data', {})).rejects.toThrow(/must start with/);
     });
   });
-
   describe('getFlowMetadata', () => {
     it('returns the active version when DefinitionId matches', async () => {
-      // 15-char shape — the function dispatches by length.
       const FLOW_ID = '300AB000000xyz1';
       const win = fakeWin(`https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app?flowId=${FLOW_ID}`);
       const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
@@ -171,10 +154,7 @@ describe('extension/lib/salesforce-api', () => {
       const meta = await client.getFlowMetadata(FLOW_ID);
       expect(meta).toMatchObject({ Id: '301', MasterLabel: 'Active Flow' });
     });
-
     it('falls back to Id lookup when DefinitionId returns nothing', async () => {
-      // 15-char Salesforce Id shape — the Id-vs-DeveloperName branch is
-      // selected on length, so test fixtures need to match.
       const FLOW_ID = '301AB000000xyz1';
       const win = fakeWin(`https://x.lightning.force.com/anything?flowId=${FLOW_ID}`);
       const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
@@ -201,7 +181,6 @@ describe('extension/lib/salesforce-api', () => {
       expect(meta).toMatchObject({ Id: FLOW_ID, MasterLabel: 'Direct' });
       expect(fetchSpy).toHaveBeenCalledTimes(2);
     });
-
     it('throws when neither lookup yields a record', async () => {
       const win = fakeWin('https://x.lightning.force.com/anything?flowId=missing');
       const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });

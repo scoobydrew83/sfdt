@@ -2,7 +2,6 @@ import { useState, useContext } from 'react';
 import StreamRunner from '../components/StreamRunner.jsx';
 import { stream } from '../api.js';
 import { ChatContext } from '../App.jsx';
-
 const AI_CONFIG_HINT = (
   <div style={{ marginTop: 8, fontSize: 12, color: 'var(--status-modified-fg)' }}>
     <strong>To enable AI features:</strong> set <code>features.ai: true</code> and <code>ai.provider</code> in{' '}
@@ -10,7 +9,6 @@ const AI_CONFIG_HINT = (
     <code>ai.apiKey</code>.
   </div>
 );
-
 function isAiError(msg) {
   return typeof msg === 'string' && (
     msg.toLowerCase().includes('not available') ||
@@ -18,13 +16,11 @@ function isAiError(msg) {
     msg.toLowerCase().includes('ai is')
   );
 }
-
 export default function ReviewPage() {
   const [base, setBase] = useState('main');
   const [result, setResult] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const chat = useContext(ChatContext);
-
   function handleComplete(content) {
     const raw = content ?? '';
     const findings = raw.length > 2000 ? raw.slice(0, 2000) + `\n\n(truncated — ${raw.length} chars total)` : raw;
@@ -32,9 +28,7 @@ export default function ReviewPage() {
     setErrorMsg(null);
     chat?.setPageContext({ page: 'Review', data: { baseBranch: base, findings } });
   }
-
   const starterMessage = `I just ran a code review against ${base}. Can you summarize the most critical issues and suggest what to fix first?`;
-
   return (
     <div>
       <div className="page-header">
@@ -43,7 +37,6 @@ export default function ReviewPage() {
           <p className="page-subtitle">AI-powered Salesforce code review of branch changes</p>
         </div>
       </div>
-
       <StreamRunner
         label="AI Code Review"
         startLabel="Start Review"
@@ -64,7 +57,6 @@ export default function ReviewPage() {
           />
         </div>
       </StreamRunner>
-
       {errorMsg && (
         <div style={{
           marginTop: 12,
@@ -78,7 +70,6 @@ export default function ReviewPage() {
           {isAiError(errorMsg) && AI_CONFIG_HINT}
         </div>
       )}
-
       {result !== null && result.length > 0 && (
         <div className="card" style={{ marginTop: 16 }}>
           <div style={{
@@ -118,7 +109,6 @@ export default function ReviewPage() {
           </pre>
         </div>
       )}
-
       {result !== null && result.length === 0 && (
         <div style={{
           marginTop: 12,

@@ -1,17 +1,8 @@
-// Missing Description Flags — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/features/missing-description-flags.js.
-//
-// Fetches the active Flow's metadata, walks every element + resource looking
-// for missing descriptions, and decorates the Flow Builder canvas (and the
-// Toolbox palette) with a ⚠ marker on each affected card. Re-runs after the
-// user saves the flow so the markers stay accurate without a reload.
-
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { isFeatureEnabled, loadSettings, onSettingsChange, patchSettings } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
-
 const ELEMENT_TYPE_KEYS: ReadonlyArray<readonly [string, string]> = [
   ['actionCalls', 'Action'],
   ['apexPluginCalls', 'Apex Action'],
@@ -32,7 +23,6 @@ const ELEMENT_TYPE_KEYS: ReadonlyArray<readonly [string, string]> = [
   ['orchestratedStages', 'Stage'],
   ['stages', 'Stage'],
 ];
-
 const RESOURCE_TYPE_KEYS: ReadonlyArray<readonly [string, string]> = [
   ['variables', 'Variable'],
   ['formulas', 'Formula'],
@@ -41,7 +31,6 @@ const RESOURCE_TYPE_KEYS: ReadonlyArray<readonly [string, string]> = [
   ['choices', 'Choice'],
   ['dynamicChoiceSets', 'Dynamic Choice Set'],
 ];
-
 export interface MissingItem {
   name: string;
   label: string;
@@ -49,13 +38,11 @@ export interface MissingItem {
   isResource: boolean;
   isFlow?: boolean;
 }
-
 export function findElementsWithoutDescriptions(
   metadata: Record<string, unknown> | null | undefined,
 ): MissingItem[] {
   if (!metadata) return [];
   const missing: MissingItem[] = [];
-
   for (const [key, type] of ELEMENT_TYPE_KEYS) {
     const items = metadata[key];
     if (!Array.isArray(items)) continue;
@@ -69,7 +56,6 @@ export function findElementsWithoutDescriptions(
           isResource: false,
         });
       }
-      // Orchestrator stage steps — nested under stage elements.
       if ((key === 'orchestratedStages' || key === 'stages') && Array.isArray(item.stageSteps)) {
         for (const step of item.stageSteps as Array<Record<string, unknown>>) {
           const stepDesc = typeof step.description === 'string' ? step.description.trim() : '';
@@ -85,7 +71,6 @@ export function findElementsWithoutDescriptions(
       }
     }
   }
-
   for (const [key, type] of RESOURCE_TYPE_KEYS) {
     const items = metadata[key];
     if (!Array.isArray(items)) continue;
@@ -101,14 +86,12 @@ export function findElementsWithoutDescriptions(
       }
     }
   }
-
   const flowDesc = typeof metadata.description === 'string' ? metadata.description.trim() : '';
   if (!flowDesc) {
     missing.push({ name: '__FLOW__', label: '__FLOW_LEVEL__', type: 'Flow', isResource: false, isFlow: true });
   }
   return missing;
 }
-
 function buildKeyIndex(missing: readonly MissingItem[]): Map<string, MissingItem> {
   const map = new Map<string, MissingItem>();
   for (const item of missing) {
@@ -120,12 +103,10 @@ function buildKeyIndex(missing: readonly MissingItem[]): Map<string, MissingItem
   }
   return map;
 }
-
 function flagCanvas(doc: Document, missing: readonly MissingItem[]): number {
   const index = buildKeyIndex(missing);
   let count = 0;
   const seen = new Set<string>();
-
   const spans = doc.querySelectorAll<HTMLSpanElement>(
     'span.text-element-label:not(.text-element-label-mask)',
   );
@@ -143,7 +124,6 @@ function flagCanvas(doc: Document, missing: readonly MissingItem[]): number {
       text;
     if (seen.has(cardKey)) continue;
     if (card.querySelector('.sfut-desc-flag')) continue;
-
     const flag = doc.createElement('div');
     flag.className = 'sfut-desc-flag';
     flag.title = `"${text}" has no description`;
@@ -156,8 +136,6 @@ function flagCanvas(doc: Document, missing: readonly MissingItem[]): number {
     seen.add(cardKey);
     count += 1;
   }
-
-  // Flow-level flag near the flow name header.
   const flowMissing = missing.find((m) => m.isFlow);
   if (flowMissing) {
     const flowNameEl = doc.querySelector('.test-flow-name');
@@ -175,19 +153,16 @@ function flagCanvas(doc: Document, missing: readonly MissingItem[]): number {
   }
   return count;
 }
-
 function clearAllFlags(doc: Document): void {
   for (const cls of ['sfut-desc-flag', 'sfut-desc-flag-flow', 'sfut-desc-flag-toolbox']) {
     doc.querySelectorAll(`.${cls}`).forEach((el) => el.remove());
   }
 }
-
 export interface MissingDescriptionFlagsOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
 }
-
 export function createMissingDescriptionFlagsFeature(
   options: MissingDescriptionFlagsOptions = {},
 ): Feature {
@@ -199,7 +174,6 @@ export function createMissingDescriptionFlagsFeature(
   let observer: MutationObserver | null = null;
   let _settingsHookRegistered = false;
   let unsubscribeSettings: (() => void) | null = null;
-
   function startObserver(): void {
     if (observer) return;
     observer = new MutationObserver(() => {
@@ -207,7 +181,6 @@ export function createMissingDescriptionFlagsFeature(
     });
     if (doc.body) observer.observe(doc.body, { childList: true, subtree: true });
   }
-
   async function activate(): Promise<void> {
     const flowId = new URL(win.location.href).searchParams.get('flowId');
     if (!flowId) return;
@@ -223,7 +196,6 @@ export function createMissingDescriptionFlagsFeature(
       console.warn('[SFUT missing-descriptions] activate failed:', err);
     }
   }
-
   function deactivate(): void {
     active = false;
     observer?.disconnect();
@@ -231,21 +203,18 @@ export function createMissingDescriptionFlagsFeature(
     missingItems = [];
     clearAllFlags(doc);
   }
-
   return {
     manifest: {
       id: 'missing-descriptions',
       name: 'Show Missing Description Flags',
       contexts: [CONTEXTS.FLOW_BUILDER],
     },
-
     async init() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.FLOW_BUILDER) {
         return;
       }
       const settings = await loadSettings();
       if (isFeatureEnabled(settings, 'missing-descriptions')) await activate();
-
       if (!_settingsHookRegistered) {
         _settingsHookRegistered = true;
         unsubscribeSettings = onSettingsChange(async (next) => {
@@ -254,7 +223,6 @@ export function createMissingDescriptionFlagsFeature(
         });
       }
     },
-
     async onActivate() {
       const settings = await loadSettings();
       const next = !isFeatureEnabled(settings, 'missing-descriptions');
@@ -264,13 +232,11 @@ export function createMissingDescriptionFlagsFeature(
         doc,
       });
     },
-
     async refresh() {
       if (!active) return;
       deactivate();
       await activate();
     },
-
     async teardown(): Promise<void> {
       deactivate();
       if (unsubscribeSettings) {
@@ -281,7 +247,6 @@ export function createMissingDescriptionFlagsFeature(
     },
   };
 }
-
 export function _missingDescriptionFlagsTestApi() {
   return { buildKeyIndex, flagCanvas, clearAllFlags };
 }

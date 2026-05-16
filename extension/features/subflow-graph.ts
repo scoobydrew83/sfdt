@@ -1,20 +1,3 @@
-// Subflow Caller Graph — Phase 6a feature.
-//
-// Renders the @sfdt/flow-core subflow graph in two complementary views:
-//
-//   • Graph view (default): a hand-rolled SVG node-and-edge diagram. Nodes
-//     are laid out in columns by their max acyclic call depth — root flows
-//     on the left, deepest callers on the right. Edges are drawn as smooth
-//     curves; cycles are stroked red; unresolved references are dashed.
-//     No external graph library — keeps the bundle lean and the security
-//     surface tiny.
-//   • List view: the original textual breakdown — depth, fan-out / fan-in,
-//     up to five call chains per node. Better for very large graphs where
-//     the SVG gets cramped.
-//
-// A view toggle lives in the modal header. Cycles always surface at the
-// top regardless of which view is active.
-
 import {
   buildSubflowGraph,
   getCallChains,
@@ -25,9 +8,7 @@ import type { Feature } from '../lib/feature-registry.js';
 import { CONTEXTS } from '../lib/context-detector.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
-
 const SVG_NS = 'http://www.w3.org/2000/svg';
-
 async function fetchAllFlowMetadata(
   api: SalesforceApiClient,
 ): Promise<Array<{ id: string; label: string; metadata: Record<string, unknown> }>> {
@@ -62,16 +43,12 @@ async function fetchAllFlowMetadata(
             });
           }
         } catch {
-          // Skip — surfaces as a missing node downstream.
         }
       }
     }),
   );
   return out;
 }
-
-// ─── SVG graph rendering ─────────────────────────────────────────────────
-
 interface LaidOutNode {
   node: SubflowGraphNode;
   depth: number;
@@ -80,22 +57,12 @@ interface LaidOutNode {
   width: number;
   height: number;
 }
-
 const NODE_WIDTH = 160;
 const NODE_HEIGHT = 32;
 const COLUMN_GAP = 80;
 const ROW_GAP = 16;
 const MARGIN = 24;
 const MAX_LABEL_CHARS = 22;
-
-/**
- * Hierarchical layout: every node gets placed in a column equal to its
- * maxDepth. Within each column, nodes are sorted alphabetically so the
- * layout is stable across runs. The y position is "first available slot"
- * — we don't attempt a barycentric edge-crossing minimisation because the
- * marginal benefit doesn't justify the complexity for the typical subflow
- * graph size (rarely more than 50 nodes per org).
- */
 function layoutGraph(graph: SubflowGraph): { nodes: LaidOutNode[]; width: number; height: number } {
   const columns = new Map<number, SubflowGraphNode[]>();
   for (const node of graph.nodes.values()) {
@@ -106,7 +73,6 @@ function layoutGraph(graph: SubflowGraph): { nodes: LaidOutNode[]; width: number
   for (const list of columns.values()) {
     list.sort((a, b) => a.label.localeCompare(b.label));
   }
-
   const sortedDepths = Array.from(columns.keys()).sort((a, b) => a - b);
   const out: LaidOutNode[] = [];
   let maxColumnHeight = 0;
@@ -125,18 +91,9 @@ function layoutGraph(graph: SubflowGraph): { nodes: LaidOutNode[]; width: number
   const height = Math.max(maxColumnHeight + MARGIN * 2, NODE_HEIGHT + MARGIN * 2);
   return { nodes: out, width, height };
 }
-
-/**
- * Build the SVG element. Public for testing — the modal embeds it under
- * the Graph tab.
- */
 export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVGElement {
   const { nodes: laid, width, height } = layoutGraph(graph);
   const byId = new Map<string, LaidOutNode>(laid.map((n) => [n.node.id, n]));
-
-  // Build a set of (from, to) edges that participate in a cycle so we can
-  // colour them red. We assume an edge (a→b) is in a cycle when both a and
-  // b appear in the same cycle and b directly follows a (or wraps around).
   const cycleEdges = new Set<string>();
   for (const cycle of graph.cycles) {
     const m = cycle.members;
@@ -154,7 +111,6 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
   for (const cycle of graph.cycles) {
     for (const m of cycle.members) cycleNodes.add(m);
   }
-
   const svg = doc.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('xmlns', SVG_NS);
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
@@ -162,8 +118,6 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
   svg.setAttribute('height', String(height));
   svg.style.cssText =
     'display: block; font-family: system-ui, sans-serif; background: #fff;';
-
-  // Arrow head marker, reused by every edge.
   const defs = doc.createElementNS(SVG_NS, 'defs');
   for (const [id, fill] of [
     ['sfut-arrow', '#54698d'],
@@ -185,14 +139,10 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
     defs.appendChild(marker);
   }
   svg.appendChild(defs);
-
-  // Draw edges first so node rectangles sit on top.
   for (const from of laid) {
     for (const edge of from.node.outgoing) {
       const to = byId.get(edge.id);
       const isCycle = cycleEdges.has(`${from.node.id}->${edge.id}`);
-      // Edges to unresolved/missing flows: render as a dashed stub going
-      // out to the right of the source node, since we have no target box.
       if (!to) {
         const line = doc.createElementNS(SVG_NS, 'line');
         const sx = from.x + from.width;
@@ -223,13 +173,10 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
       svg.appendChild(path);
     }
   }
-
-  // Draw nodes.
   for (const lay of laid) {
     const inCycle = cycleNodes.has(lay.node.id);
     const group = doc.createElementNS(SVG_NS, 'g');
     group.setAttribute('transform', `translate(${lay.x}, ${lay.y})`);
-
     const rect = doc.createElementNS(SVG_NS, 'rect');
     rect.setAttribute('width', String(lay.width));
     rect.setAttribute('height', String(lay.height));
@@ -239,7 +186,6 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
     rect.setAttribute('stroke', inCycle ? '#c23934' : '#d8dde6');
     rect.setAttribute('stroke-width', '1.5');
     group.appendChild(rect);
-
     const text = doc.createElementNS(SVG_NS, 'text');
     text.setAttribute('x', String(lay.width / 2));
     text.setAttribute('y', String(lay.height / 2 + 4));
@@ -254,21 +200,15 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
     group.appendChild(title);
     svg.appendChild(group);
   }
-
   return svg;
 }
-
-// ─── Modal assembly ──────────────────────────────────────────────────────
-
 export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTMLDivElement {
   const overlay = doc.createElement('div');
   overlay.style.cssText =
     'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-
   const modal = doc.createElement('div');
   modal.style.cssText =
     'background: #fff; border-radius: 4px; width: 880px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column;';
-
   const header = doc.createElement('div');
   header.style.cssText =
     'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center;';
@@ -278,8 +218,6 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTML
   headerLabel.style.fontWeight = '600';
   headerLabel.textContent = `Subflow Caller Graph — ${graph.nodes.size} flow${graph.nodes.size === 1 ? '' : 's'} · ${graph.cycles.length} cycle${graph.cycles.length === 1 ? '' : 's'}`;
   headerLeft.appendChild(headerLabel);
-
-  // View toggle.
   const toggle = doc.createElement('div');
   toggle.style.cssText = 'display: inline-flex; border: 1px solid #d8dde6; border-radius: 4px; overflow: hidden;';
   const graphBtn = doc.createElement('button');
@@ -294,19 +232,14 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTML
   toggle.appendChild(listBtn);
   headerLeft.appendChild(toggle);
   header.appendChild(headerLeft);
-
   const closeBtn = doc.createElement('button');
   closeBtn.textContent = '×';
   closeBtn.style.cssText = 'background: none; border: 0; font-size: 22px; cursor: pointer;';
   closeBtn.addEventListener('click', () => overlay.remove());
   header.appendChild(closeBtn);
   modal.appendChild(header);
-
   const body = doc.createElement('div');
   body.style.cssText = 'padding: 16px; overflow: auto; flex: 1;';
-
-  // Cycle banner — always shown above whichever view is selected because
-  // recursion is the most actionable finding the modal surfaces.
   if (graph.cycles.length > 0) {
     const cycleBox = doc.createElement('div');
     cycleBox.style.cssText =
@@ -324,11 +257,9 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTML
     }
     body.appendChild(cycleBox);
   }
-
   const graphPane = doc.createElement('div');
   graphPane.style.cssText = 'border: 1px solid #d8dde6; border-radius: 4px; overflow: auto;';
   graphPane.appendChild(buildSubflowGraphSvg(doc, graph));
-
   const listPane = doc.createElement('div');
   listPane.style.display = 'none';
   const flows = Array.from(graph.nodes.values()).sort((a, b) => {
@@ -350,7 +281,6 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTML
     meta.textContent = `depth ${depth} · calls ${node.outgoing.length} · called by ${node.incoming.length}`;
     row.appendChild(title);
     row.appendChild(meta);
-
     if (node.outgoing.length > 0) {
       const chains = getCallChains(graph, node.id, 6);
       if (chains.length > 0) {
@@ -373,10 +303,8 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTML
     }
     listPane.appendChild(row);
   }
-
   body.appendChild(graphPane);
   body.appendChild(listPane);
-
   if (graph.unresolvedReferences.length > 0) {
     const unresolvedBox = doc.createElement('div');
     unresolvedBox.style.cssText =
@@ -391,10 +319,7 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTML
     unresolvedBox.appendChild(list);
     body.appendChild(unresolvedBox);
   }
-
   modal.appendChild(body);
-
-  // View-toggle wiring.
   const setView = (mode: 'graph' | 'list') => {
     if (mode === 'graph') {
       graphPane.style.display = '';
@@ -415,30 +340,25 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTML
   graphBtn.addEventListener('click', () => setView('graph'));
   listBtn.addEventListener('click', () => setView('list'));
   setView('graph');
-
   overlay.appendChild(modal);
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) overlay.remove();
   });
   return overlay;
 }
-
 export interface SubflowGraphFeatureOptions {
   doc?: Document;
   api?: SalesforceApiClient;
 }
-
 export function createSubflowGraphFeature(options: SubflowGraphFeatureOptions = {}): Feature {
   const doc = options.doc ?? document;
   const api = options.api ?? getSalesforceApi();
-
   return {
     manifest: {
       id: 'subflow-graph',
       name: 'Subflow Caller Graph',
       contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.SETUP_OTHER],
     },
-
     async onActivate() {
       const loading = doc.createElement('div');
       loading.style.cssText =
@@ -460,7 +380,6 @@ export function createSubflowGraphFeature(options: SubflowGraphFeatureOptions = 
     },
   };
 }
-
 export function _subflowGraphTestApi() {
   return { fetchAllFlowMetadata, buildSubflowGraphModal, buildSubflowGraphSvg };
 }

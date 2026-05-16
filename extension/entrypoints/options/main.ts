@@ -1,12 +1,3 @@
-// Extension options page — vanilla DOM, no framework. Mounts at
-// chrome-extension://<id>/options.html (WXT auto-generates the
-// options_page manifest entry for any entrypoints/options/index.html).
-//
-// Mirrors the settings model in extension/lib/settings.ts byte-for-byte.
-// Every change writes back through the same patchSettings() path, so
-// the content scripts pick up changes via the chrome.storage.onChanged
-// subscription they already have.
-
 import { z } from 'zod';
 import {
   isFeatureEnabled,
@@ -18,9 +9,6 @@ import { createBridgeClient } from '../../lib/sfdt-bridge.js';
 import { createFeatureRegistry } from '../../lib/feature-registry.js';
 import { buildField } from '../../lib/zod-to-dom.js';
 import { createTelemetry } from '../../lib/telemetry.js';
-
-// Pull every feature factory in so each module's top-level
-// registerSettingsShape() call lands before loadSettings() runs.
 import { createSetupTabsFeature } from '../../features/setup-tabs.js';
 import { createCanvasSearchFeature } from '../../features/canvas-search.js';
 import { createFlowListSearchFeature } from '../../features/flow-list-search.js';
@@ -35,8 +23,6 @@ import { createFlowTriggerExplorerEnhancerFeature } from '../../features/flow-tr
 import { createTriggerConflictsFeature } from '../../features/trigger-conflicts.js';
 import { createSubflowGraphFeature } from '../../features/subflow-graph.js';
 import { createFlowDeployFeature } from '../../features/flow-deploy.js';
-
-
 const STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
   body {
@@ -134,7 +120,6 @@ const STYLES = `
     font-size: 11px;
   }
 `;
-
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   attrs: Partial<Record<string, string | number | boolean>> = {},
@@ -153,7 +138,6 @@ function el<K extends keyof HTMLElementTagNameMap>(
   for (const c of children) node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
   return node;
 }
-
 function row(labelStrong: string, labelHelp: string, control: HTMLElement): HTMLLabelElement {
   const label = el('label', { class: 'row' });
   const text = el('div', { class: 'label-text' });
@@ -167,12 +151,6 @@ function row(labelStrong: string, labelHelp: string, control: HTMLElement): HTML
   label.appendChild(control);
   return label;
 }
-
-/**
- * Build the hint banner ("Find your bridge token at ~/.sfdt/bridge-token…")
- * with createElement so the hook stays happy — we have inline <code>
- * sections, just no innerHTML.
- */
 function buildHintBanner(): HTMLDivElement {
   const hint = el('div', { class: 'hint' });
   const code1 = el('code');
@@ -188,16 +166,12 @@ function buildHintBanner(): HTMLDivElement {
   );
   return hint;
 }
-
 async function render(): Promise<void> {
   const root = document.getElementById('sfut-options-root');
   if (!root) return;
-
-  // Inject styles once.
   const styleTag = document.createElement('style');
   styleTag.textContent = STYLES;
   document.head.appendChild(styleTag);
-
   const registry = createFeatureRegistry();
   registry.register(createSetupTabsFeature());
   registry.register(createCanvasSearchFeature());
@@ -213,22 +187,16 @@ async function render(): Promise<void> {
   registry.register(createTriggerConflictsFeature());
   registry.register(createSubflowGraphFeature());
   registry.register(createFlowDeployFeature());
-
   const settings = await loadSettings();
   while (root.firstChild) root.removeChild(root.firstChild);
-
   const wrap = el('div', { class: 'wrap' });
-
   const title = el('h1');
-  title.textContent = '⚡ SF Flow Utility Toolkit';
+  title.textContent = '⚡ SFDT SF Helper';
   wrap.appendChild(title);
-
   const subtitle = el('p', { class: 'subtitle' });
   subtitle.textContent =
     'Settings sync to chrome.storage.local. Changes apply immediately — no reload needed.';
   wrap.appendChild(subtitle);
-
-  // ─── Bridge section ───────────────────────────────────────────────────
   const bridgeSection = el('section');
   bridgeSection.appendChild(el('h2', {}, 'sfdt bridge'));
   const bridgeHelp = el('p', { class: 'section-help' });
@@ -236,14 +204,12 @@ async function render(): Promise<void> {
     'Connects this extension to the sfdt CLI on your machine. Required for Flow Builder Deploy and the "Run via sfdt" path in the AI Assistant.';
   bridgeSection.appendChild(bridgeHelp);
   bridgeSection.appendChild(buildHintBanner());
-
   const tokenInput = el('input', {
     type: 'password',
     placeholder: 'Paste your bridge token',
   });
   tokenInput.value = settings.bridge.token;
   bridgeSection.appendChild(row('Bearer token', 'From ~/.sfdt/bridge-token on your machine.', tokenInput));
-
   const transportSelect = el('select');
   for (const [value, label] of [
     ['auto', 'Auto (try localhost, fall back to native)'],
@@ -256,13 +222,11 @@ async function render(): Promise<void> {
     transportSelect.appendChild(opt);
   }
   bridgeSection.appendChild(row('Preferred transport', 'How the extension reaches sfdt.', transportSelect));
-
   const portInput = el('input', { type: 'number', min: '1024', max: '65535' });
   portInput.value = String(settings.bridge.localhostPort);
   bridgeSection.appendChild(
     row('Localhost port', 'Default 7654 — match the port sfdt ui is on.', portInput),
   );
-
   const testButton = el('button', { class: 'primary' });
   testButton.textContent = 'Test connection';
   const testStatus = el('span', { class: 'status' });
@@ -289,21 +253,17 @@ async function render(): Promise<void> {
   actions.appendChild(testStatus);
   bridgeSection.appendChild(actions);
   wrap.appendChild(bridgeSection);
-
-  // ─── Per-feature toggles (registry-driven) ──────────────────────────
   const featuresSection = el('section');
   featuresSection.appendChild(el('h2', {}, 'Features'));
   const featuresHelp = el('p', { class: 'section-help' });
   featuresHelp.textContent =
     'Toggle individual features on or off. Disabled features never run, never show in the side menu.';
   featuresSection.appendChild(featuresHelp);
-
   interface FeatureRow {
     id: string;
     checkbox: HTMLInputElement;
   }
   const featureRows: FeatureRow[] = [];
-
   for (const manifest of registry.listManifests()) {
     const checkbox = el('input', { type: 'checkbox' });
     checkbox.checked = isFeatureEnabled(settings, manifest.id);
@@ -312,14 +272,11 @@ async function render(): Promise<void> {
     featureRows.push({ id: manifest.id, checkbox });
   }
   wrap.appendChild(featuresSection);
-
-  // ─── Per-feature config (registry-driven via zod-to-dom) ──────────
   interface FeatureFieldGroup {
     id: string;
     getValues: () => Record<string, unknown>;
   }
   const featureFieldGroups: FeatureFieldGroup[] = [];
-
   for (const manifest of registry.listManifests()) {
     if (!manifest.settingsSchema) continue;
     const section = el('section');
@@ -327,7 +284,6 @@ async function render(): Promise<void> {
     const help = el('p', { class: 'section-help' });
     help.textContent = `Feature-specific configuration for ${manifest.name}.`;
     section.appendChild(help);
-
     const schema = manifest.settingsSchema as z.ZodObject<z.ZodRawShape>;
     const initialBlock =
       (settings.featureSettings?.[manifest.id] as Record<string, unknown> | undefined) ??
@@ -349,21 +305,17 @@ async function render(): Promise<void> {
     });
     wrap.appendChild(section);
   }
-
-  // ─── Telemetry (opt-in) ────────────────────────────────────────────
   const telemetrySection = el('section');
   telemetrySection.appendChild(el('h2', {}, 'Telemetry'));
   const telemetryHelp = el('p', { class: 'section-help' });
   telemetryHelp.textContent =
     'When enabled, the extension counts feature activations and errors locally so you can see which features you actually use. No data leaves this browser profile.';
   telemetrySection.appendChild(telemetryHelp);
-
   const telemetryCb = el('input', { type: 'checkbox' });
   telemetryCb.checked = settings.telemetry?.enabled ?? false;
   telemetrySection.appendChild(
     row('Enable local telemetry', 'Off by default. Toggle on to start counting.', telemetryCb),
   );
-
   const telemetry = createTelemetry({ isEnabled: () => settings.telemetry?.enabled ?? false });
   const snapshot = await telemetry.snapshot();
   const ids = Object.keys(snapshot.counters).sort(
@@ -384,8 +336,6 @@ async function render(): Promise<void> {
     }
   }
   wrap.appendChild(telemetrySection);
-
-  // ─── Save bar ──────────────────────────────────────────────────────
   const saveBar = el('section');
   const saveBtn = el('button', { class: 'primary' });
   saveBtn.textContent = 'Save changes';
@@ -394,12 +344,10 @@ async function render(): Promise<void> {
     try {
       const features: Record<string, boolean> = { ...settings.features };
       for (const r of featureRows) features[r.id] = r.checkbox.checked;
-
       const featureSettings: Record<string, unknown> = { ...(settings.featureSettings ?? {}) };
       for (const group of featureFieldGroups) {
         featureSettings[group.id] = group.getValues();
       }
-
       const portValue = Number(portInput.value);
       const next: Partial<Settings> = {
         features,
@@ -427,8 +375,6 @@ async function render(): Promise<void> {
   saveActions.appendChild(saveStatus);
   saveBar.appendChild(saveActions);
   wrap.appendChild(saveBar);
-
   root.appendChild(wrap);
 }
-
 void render();

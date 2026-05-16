@@ -1,13 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { IconX } from '../Icons.jsx';
 import { api, stream } from '../api.js';
-
 const MODE_CARDS = [
   { mode: 'delta',   icon: '⚡', label: 'Smart Delta',    desc: 'Only changed components' },
   { mode: 'preview', icon: '👁', label: 'Preview',        desc: 'See what would be pulled' },
   { mode: 'full',    icon: '⬇', label: 'Full Retrieve',   desc: 'Everything from org' },
 ];
-
 function getModeLabel(mode, groups, selectedGroup) {
   if (mode === 'group') {
     if (selectedGroup) {
@@ -18,7 +16,6 @@ function getModeLabel(mode, groups, selectedGroup) {
   }
   return MODE_CARDS.find((c) => c.mode === mode)?.label ?? mode;
 }
-
 export default function PullPage() {
   const [mode, setMode]                    = useState('delta');
   const [status, setStatus]               = useState('idle');
@@ -27,12 +24,10 @@ export default function PullPage() {
   const [result, setResult]               = useState(null);
   const [groups, setGroups]               = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
-
   const esRef      = useRef(null);
   const logRef     = useRef(null);
   const counterRef = useRef(0);
   const deadRef    = useRef(false);
-
   useEffect(() => {
     api.pullGroups()
       .then((data) => {
@@ -44,35 +39,28 @@ export default function PullPage() {
       })
       .catch(() => {});
   }, []);
-
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [lines]);
-
   useEffect(() => {
     return () => {
       deadRef.current = true;
       esRef.current?.close();
     };
   }, []);
-
   const run = () => {
     setStatus('running');
     setLines([]);
     setProgress(null);
     setResult(null);
     counterRef.current = 0;
-
     const opts = { mode };
     if (mode === 'group' && selectedGroup) opts.groupKey = selectedGroup;
-
     const es = stream.pull(opts);
     esRef.current = es;
-
     es.onmessage = (e) => {
       if (deadRef.current) return;
       const msg = e.data;
-
       if (msg.type === 'log') {
         setLines((prev) => [...prev, { id: counterRef.current++, text: msg.line }]);
       } else if (msg.type === 'progress') {
@@ -84,7 +72,6 @@ export default function PullPage() {
         esRef.current = null;
       }
     };
-
     es.onerror = () => {
       if (deadRef.current) return;
       setStatus('error');
@@ -92,7 +79,6 @@ export default function PullPage() {
       esRef.current = null;
     };
   };
-
   const cancel = () => {
     esRef.current?.close();
     esRef.current = null;
@@ -100,14 +86,11 @@ export default function PullPage() {
     setProgress(null);
     setResult(null);
   };
-
   const modeLabel  = getModeLabel(mode, groups, selectedGroup);
   const isIdle     = status === 'idle';
-
   const visibleCards = groups.length > 0
     ? [...MODE_CARDS, { mode: 'group', icon: '📦', label: 'Groups', desc: 'Custom metadata groups' }]
     : MODE_CARDS;
-
   return (
     <div>
       <div className="page-header">
@@ -116,8 +99,7 @@ export default function PullPage() {
           <p className="page-subtitle">Pull latest metadata from your org to local source</p>
         </div>
       </div>
-
-      {/* Mode cards */}
+      {}
       <div style={{
         display: 'grid',
         gridTemplateColumns: `repeat(${visibleCards.length}, 1fr)`,
@@ -160,8 +142,7 @@ export default function PullPage() {
           );
         })}
       </div>
-
-      {/* Group select */}
+      {}
       {mode === 'group' && groups.length > 0 && (
         <div style={{ marginTop: 8 }}>
           <select
@@ -176,8 +157,7 @@ export default function PullPage() {
           </select>
         </div>
       )}
-
-      {/* Run button */}
+      {}
       {isIdle && (
         <div style={{ marginTop: 16 }}>
           <button className="btn btn-primary" onClick={run}>
@@ -185,8 +165,7 @@ export default function PullPage() {
           </button>
         </div>
       )}
-
-      {/* Running state — progress card */}
+      {}
       {status === 'running' && (
         <div className="card" style={{ marginTop: 16 }}>
           <div style={{
@@ -226,8 +205,7 @@ export default function PullPage() {
           )}
         </div>
       )}
-
-      {/* Done / error summary banner */}
+      {}
       {(status === 'done' || status === 'error') && (
         <div style={{
           marginTop: 16,
@@ -250,8 +228,7 @@ export default function PullPage() {
           </button>
         </div>
       )}
-
-      {/* Log terminal */}
+      {}
       {lines.length > 0 && (
         <div className="cmd-terminal" ref={logRef} style={{ marginTop: 16 }}>
           {lines.map(({ id, text }) => (

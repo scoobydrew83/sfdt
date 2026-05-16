@@ -1,18 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mountSideButton, type MenuItem } from '../ui/side-button.js';
-
 function resetDom(): void {
-  // Use replaceChildren() rather than the innerHTML setter so the test file
-  // contains no innerHTML usage (the security-review hook flags any source
-  // file that touches that property, even in test setup).
   document.body.replaceChildren();
 }
-
 describe('extension/ui/side-button', () => {
   beforeEach(() => {
     resetDom();
   });
-
   it('mounts the button and menu in document.body', () => {
     const handle = mountSideButton({
       menuItemsProvider: () => [],
@@ -22,7 +16,6 @@ describe('extension/ui/side-button', () => {
     expect(document.getElementById('sfut-menu')).not.toBeNull();
     expect(handle.isMounted()).toBe(true);
   });
-
   it('shows the empty state when no menu items are returned', () => {
     mountSideButton({
       menuItemsProvider: () => [],
@@ -32,7 +25,6 @@ describe('extension/ui/side-button', () => {
       'No tools available',
     );
   });
-
   it('renders one menu item per provided MenuItem', () => {
     const items: MenuItem[] = [
       { featureId: 'flow-health-check', icon: '🩺', label: 'Run Health Check' },
@@ -47,7 +39,6 @@ describe('extension/ui/side-button', () => {
     expect(nodes[0]!.textContent).toContain('Run Health Check');
     expect(nodes[1]!.textContent).toContain('Setup Tabs');
   });
-
   it('opens the menu when the button is clicked', () => {
     mountSideButton({
       menuItemsProvider: () => [],
@@ -59,7 +50,6 @@ describe('extension/ui/side-button', () => {
     button.click();
     expect((menu as HTMLElement).style.display).toBe('block');
   });
-
   it('escapes labels and icons — XSS-safe by construction', () => {
     mountSideButton({
       menuItemsProvider: () => [
@@ -71,16 +61,12 @@ describe('extension/ui/side-button', () => {
       ],
       handlers: { onActivate: vi.fn(), onOpenSettings: vi.fn() },
     });
-    // textContent is the only way labels reach the DOM, so any injected HTML
-    // is rendered as literal text. There should be no <img> or <script>
-    // elements produced from those strings.
     expect(document.querySelector('.sfut-menu-item img')).toBeNull();
     expect(document.querySelector('.sfut-menu-item script')).toBeNull();
     expect(document.querySelector('.sfut-menu-item-label')?.textContent).toBe(
       '<script>alert(2)</script>',
     );
   });
-
   it('clicking a menu item dispatches onActivate with the item info', () => {
     const onActivate = vi.fn();
     mountSideButton({
@@ -93,7 +79,6 @@ describe('extension/ui/side-button', () => {
       expect.objectContaining({ featureId: 'flow-health-check', action: 'activate' }),
     );
   });
-
   it('clicking the settings link dispatches onOpenSettings and closes the menu', () => {
     const onOpenSettings = vi.fn();
     mountSideButton({
@@ -105,7 +90,6 @@ describe('extension/ui/side-button', () => {
     expect(onOpenSettings).toHaveBeenCalledOnce();
     expect((document.getElementById('sfut-menu') as HTMLElement).style.display).toBe('none');
   });
-
   it('destroy() removes the button and menu from the DOM', () => {
     const handle = mountSideButton({
       menuItemsProvider: () => [],
@@ -116,9 +100,7 @@ describe('extension/ui/side-button', () => {
     expect(document.getElementById('sfut-menu')).toBeNull();
     expect(handle.isMounted()).toBe(false);
   });
-
   it('does not render when running in a sub-frame', () => {
-    // Simulate a sub-frame by passing a window where top !== self.
     const fakeWin = { top: {}, self: {} } as unknown as Window;
     const handle = mountSideButton({
       win: fakeWin,

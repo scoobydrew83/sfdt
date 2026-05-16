@@ -1,9 +1,7 @@
 import { loadConfig } from '../lib/config.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
-
 const VALID_EVENTS = ['deploy-success', 'deploy-failure', 'test-failure', 'release-created'];
-
 const EVENT_CONFIGS = {
   'deploy-success': {
     color: '#36a64f',
@@ -26,10 +24,8 @@ const EVENT_CONFIGS = {
     title: 'Release Created',
   },
 };
-
 function buildSlackPayload(event, { version, org, message, projectName }) {
   const eventConfig = EVENT_CONFIGS[event];
-
   const fields = [];
   if (projectName) {
     fields.push({ type: 'mrkdwn', text: `*Project:*\n${projectName}` });
@@ -40,7 +36,6 @@ function buildSlackPayload(event, { version, org, message, projectName }) {
   if (version) {
     fields.push({ type: 'mrkdwn', text: `*Version:*\n${version}` });
   }
-
   const blocks = [
     {
       type: 'header',
@@ -51,14 +46,12 @@ function buildSlackPayload(event, { version, org, message, projectName }) {
       },
     },
   ];
-
   if (fields.length > 0) {
     blocks.push({
       type: 'section',
       fields,
     });
   }
-
   if (message) {
     blocks.push({
       type: 'section',
@@ -68,7 +61,6 @@ function buildSlackPayload(event, { version, org, message, projectName }) {
       },
     });
   }
-
   blocks.push({
     type: 'context',
     elements: [
@@ -78,7 +70,6 @@ function buildSlackPayload(event, { version, org, message, projectName }) {
       },
     ],
   });
-
   return {
     blocks,
     attachments: [
@@ -89,7 +80,6 @@ function buildSlackPayload(event, { version, org, message, projectName }) {
     ],
   };
 }
-
 export function registerNotifyCommand(program) {
   program
     .command('notify <event>')
@@ -104,12 +94,9 @@ export function registerNotifyCommand(program) {
           process.exitCode = 1;
           return;
         }
-
         const config = await loadConfig();
-
         const webhookUrl =
           config.features?.notifications && config.notifications?.slack?.webhookUrl;
-
         if (!webhookUrl) {
           print.warning('Slack notifications are not configured.');
           console.log('');
@@ -131,27 +118,22 @@ export function registerNotifyCommand(program) {
           process.exitCode = 1;
           return;
         }
-
         const payload = buildSlackPayload(event, {
           version: options.version,
           org: options.org || config.defaultOrg,
           message: options.message,
           projectName: config.projectName,
         });
-
         print.info(`Sending ${event} notification to Slack...`);
-
         const response = await fetch(webhookUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-
         if (!response.ok) {
           const body = await response.text();
           throw new Error(`Slack API returned ${response.status}: ${body}`);
         }
-
         print.success(`Notification sent: ${event}`);
       } catch (err) {
         print.error(`Notification failed: ${err.message}`);

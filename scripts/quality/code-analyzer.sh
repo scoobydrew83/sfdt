@@ -1,16 +1,6 @@
-#!/bin/bash
 set -euo pipefail
-
-# =============================================================================
-# SFDT - Code Quality Analyzer
-# Basic static analysis and quality checks
-# =============================================================================
-
-# Source shared utilities
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../utils/shared.sh"
-
-# Configuration from SFDT_ env vars (set by script-runner.js)
 PROJECT_NAME="${SFDT_PROJECT_NAME:-Salesforce Project}"
 SOURCE_PATH="${SFDT_SOURCE_PATH:-force-app/main/default}"
 LOG_DIR="${SFDT_LOG_DIR:-${SFDT_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}/logs}"
@@ -19,15 +9,10 @@ PROJECT_CONFIG_FILE="${PROJECT_CONFIG_DIR}/config.json"
 ENVIRONMENT_CONFIG_FILE="${PROJECT_CONFIG_DIR}/environments.json"
 PULL_CONFIG_FILE="${PROJECT_CONFIG_DIR}/pull-config.json"
 TEST_CONFIG_FILE="${PROJECT_CONFIG_DIR}/test-config.json"
-
 echo -e "${BLUE}${PROJECT_NAME} - Code Quality Analyzer${NC}"
 echo -e "${YELLOW}====================================================${NC}"
 require_jq || exit 1
-
-# Check project structure
 log_info "Checking project structure..."
-
-# Resolve force-app directory - try relative paths from script location
 FORCE_APP_DIR="$SOURCE_PATH"
 if [ ! -d "$FORCE_APP_DIR" ]; then
     FORCE_APP_DIR="../../${SOURCE_PATH}"
@@ -36,22 +21,17 @@ if [ ! -d "$FORCE_APP_DIR" ]; then
     log_error "Source directory not found: $SOURCE_PATH"
     exit 1
 fi
-
-# Count different types of components
 APEX_CLASSES=$(find "$FORCE_APP_DIR/classes" -name "*.cls" 2>/dev/null | wc -l || echo 0)
 APEX_TESTS=$(find "$FORCE_APP_DIR/classes" -name "*Test.cls" 2>/dev/null | wc -l || echo 0)
 LWC_COMPONENTS=$(find "$FORCE_APP_DIR/lwc" -maxdepth 1 -type d 2>/dev/null | tail -n +2 | wc -l || echo 0)
 FLOWS=$(find "$FORCE_APP_DIR/flows" -name "*.flow-meta.xml" 2>/dev/null | wc -l || echo 0)
 OBJECTS=$(find "$FORCE_APP_DIR/objects" -name "*.object-meta.xml" 2>/dev/null | wc -l || echo 0)
-
 log_info "Project Statistics:"
 echo "  Apex Classes: $APEX_CLASSES"
 echo "  Test Classes: $APEX_TESTS"
 echo "  LWC Components: $LWC_COMPONENTS"
 echo "  Flows: $FLOWS"
 echo "  Custom Objects: $OBJECTS"
-
-# Calculate test coverage ratio
 if [ "$APEX_CLASSES" -gt 0 ]; then
     TEST_RATIO=$((APEX_TESTS * 100 / APEX_CLASSES))
     if [ "$TEST_RATIO" -ge 80 ]; then
@@ -64,18 +44,12 @@ if [ "$APEX_CLASSES" -gt 0 ]; then
 else
     log_warning "No Apex classes found for analysis"
 fi
-
-# Check for common quality issues
 log_info "Checking for quality issues..."
-
-# Check for classes without tests
 if [ -d "$FORCE_APP_DIR/classes" ]; then
     CLASSES_WITHOUT_TESTS=0
     while IFS= read -r -d '' class_file; do
         class_name=$(basename "$class_file" .cls)
-        # Skip if it's already a test class
         if [[ ! "$class_name" =~ Test$ ]]; then
-            # Check if corresponding test exists
             if [ ! -f "$FORCE_APP_DIR/classes/${class_name}Test.cls" ] && [ ! -f "$FORCE_APP_DIR/classes/${class_name}_Test.cls" ]; then
                 if [ "$CLASSES_WITHOUT_TESTS" -eq 0 ]; then
                     log_warning "Classes without tests found:"
@@ -85,54 +59,39 @@ if [ -d "$FORCE_APP_DIR/classes" ]; then
             fi
         fi
     done < <(find "$FORCE_APP_DIR/classes" -name "*.cls" -print0)
-
     if [ "$CLASSES_WITHOUT_TESTS" -eq 0 ]; then
         log_success "All non-test classes have corresponding test classes"
     fi
 fi
-
-# Check configuration integrity
 log_info "Validating configuration files..."
-
 CONFIG_ISSUES=0
-
-# Check project.json
 if ! jq empty "$PROJECT_CONFIG_FILE" 2>/dev/null; then
     log_error "Invalid JSON in project.json"
     CONFIG_ISSUES=$((CONFIG_ISSUES + 1))
 else
     log_success "project.json is valid JSON"
 fi
-
-# Check environments.json
 if ! jq empty "$ENVIRONMENT_CONFIG_FILE" 2>/dev/null; then
     log_error "Invalid JSON in environments.json"
     CONFIG_ISSUES=$((CONFIG_ISSUES + 1))
 else
     log_success "environments.json is valid JSON"
 fi
-
-# Check pull-config.json
 if ! jq empty "$PULL_CONFIG_FILE" 2>/dev/null; then
     log_error "Invalid JSON in pull-config.json"
     CONFIG_ISSUES=$((CONFIG_ISSUES + 1))
 else
     log_success "pull-config.json is valid JSON"
 fi
-
-# Check test-config.json
 if ! jq empty "$TEST_CONFIG_FILE" 2>/dev/null; then
     log_error "Invalid JSON in test-config.json"
     CONFIG_ISSUES=$((CONFIG_ISSUES + 1))
 else
     log_success "test-config.json is valid JSON"
 fi
-
-# Summary
 echo ""
 log_info "Quality Analysis Summary:"
 echo "=========================="
-
 if [ "$CONFIG_ISSUES" -eq 0 ] && [ "$CLASSES_WITHOUT_TESTS" -eq 0 ] && [ "${TEST_RATIO:-0}" -ge 70 ]; then
     log_success "Overall quality: GOOD"
     echo "  All configurations are valid"
@@ -145,15 +104,11 @@ else
     log_error "Overall quality: NEEDS IMPROVEMENT"
     echo "  Significant quality issues found"
 fi
-
-# Emit structured JSON to stdout for GUI result parsing
-# Try sf scanner (Salesforce Code Analyzer) if installed; fall back to a stub
 _SCANNER_PLUGIN=""
 if command -v sf &>/dev/null; then
     _SCANNER_PLUGIN=$(sf plugins --json 2>/dev/null | \
         jq -r '.[] | select(.name == "@salesforce/sfdx-scanner") | .name' 2>/dev/null || true)
 fi
-
 if [[ -n "$_SCANNER_PLUGIN" ]]; then
     log_info "Running Salesforce Code Analyzer (sf scanner)..."
     sf scanner run \
@@ -167,8 +122,6 @@ else
     log_warning "Install with:  sf plugins install @salesforce/sfdx-scanner"
     printf '{"status":0,"result":[],"_sfdt_unavailable":"sf scanner plugin not installed. Run: sf plugins install @salesforce/sfdx-scanner"}\n'
 fi
-
-# Exit with appropriate code
 if [ "${CONFIG_ISSUES:-0}" -gt 0 ] || [ "${CLASSES_WITHOUT_TESTS:-0}" -gt 10 ]; then
     exit 1
 else

@@ -1,13 +1,3 @@
-// One-click Deploy / Rollback from the Flow Builder canvas — Phase 6c +
-// Phase 7's bridge wiring.
-//
-// Deploy is now wired end-to-end: the extension fetches the Flow's
-// metadata via Tooling API to resolve the developer name, then dispatches
-// `kind: deploy` through the sfdt bridge. The bridge handler runs `sf
-// project deploy start --metadata Flow:<name>` against the configured
-// target org and returns a structured result. Rollback still routes to
-// NOT_IMPLEMENTED on the server side and is surfaced as a clear toast.
-
 import type { SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
@@ -15,7 +5,6 @@ import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-ap
 import { loadSettings } from '../lib/settings.js';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
 import { showToast } from '../ui/toast.js';
-
 async function dispatchBridge(
   kind: 'deploy' | 'rollback',
   payload: Record<string, unknown>,
@@ -29,7 +18,6 @@ async function dispatchBridge(
   });
   return bridge.call({ kind, ...payload } as never);
 }
-
 function describeBridgeError(response: SfdtResponse): string {
   if (response.ok) return 'OK';
   const code = response.code ?? 'BRIDGE_OFFLINE';
@@ -46,20 +34,11 @@ function describeBridgeError(response: SfdtResponse): string {
       return response.error;
   }
 }
-
 export interface FlowDeployFeatureOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
 }
-
-/**
- * Resolve the Flow's developer name from Tooling API. Required because the
- * Flow Builder URL's `?flowId=` is a Salesforce Id (or a managed-package
- * path), but `sf project deploy start --metadata Flow:<name>` needs the
- * developer name. v2.0.2 never integrated with deploy so this round-trip
- * is new to the port.
- */
 async function resolveFlowApiName(api: SalesforceApiClient, flowId: string): Promise<string> {
   const record = (await api.getFlowMetadata(flowId)) as {
     Definition?: { DeveloperName?: string };
@@ -79,19 +58,16 @@ async function resolveFlowApiName(api: SalesforceApiClient, flowId: string): Pro
   }
   return valid;
 }
-
 export function createFlowDeployFeature(options: FlowDeployFeatureOptions = {}): Feature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
-
   return {
     manifest: {
       id: 'flow-deploy',
       name: 'Deploy or Rollback…',
       contexts: [CONTEXTS.FLOW_BUILDER],
     },
-
     async onActivate() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.FLOW_BUILDER) {
         showToast('Open the Flow Builder canvas to deploy or rollback.', { kind: 'warning', doc });
@@ -102,16 +78,12 @@ export function createFlowDeployFeature(options: FlowDeployFeatureOptions = {}):
         showToast('Could not determine the current Flow ID from the URL.', { kind: 'error', doc });
         return;
       }
-
       showDeployModal(doc, async (action) => {
         if (action === 'rollback') {
-          // Server-side handler still NOT_IMPLEMENTED; surface that early
-          // instead of paying the metadata-fetch round-trip.
           const response = await dispatchBridge('rollback', { flowId, toVersion: 1 });
           showToast(describeBridgeError(response), { kind: 'error', doc });
           return;
         }
-
         showToast('Resolving Flow metadata…', { doc });
         let flowApiName: string;
         try {
@@ -120,7 +92,6 @@ export function createFlowDeployFeature(options: FlowDeployFeatureOptions = {}):
           showToast(err instanceof Error ? err.message : String(err), { kind: 'error', doc });
           return;
         }
-
         showToast(`Deploying ${flowApiName}…`, { doc });
         const response = await dispatchBridge('deploy', { flowApiName, flowId });
         if (response.ok) {
@@ -136,7 +107,6 @@ export function createFlowDeployFeature(options: FlowDeployFeatureOptions = {}):
     },
   };
 }
-
 function showDeployModal(
   doc: Document,
   onChoice: (action: 'deploy' | 'rollback') => void | Promise<void>,
@@ -146,17 +116,14 @@ function showDeployModal(
     'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
   const modal = doc.createElement('div');
   modal.style.cssText = 'background: #fff; border-radius: 4px; width: 380px; padding: 16px;';
-
   const title = doc.createElement('div');
   title.style.cssText = 'font-weight: 600; font-size: 15px; margin-bottom: 8px;';
   title.textContent = 'Deploy / Rollback this Flow';
   modal.appendChild(title);
-
   const intro = doc.createElement('p');
   intro.style.cssText = 'margin: 0 0 12px; font-size: 13px; color: #54698d;';
   intro.textContent = 'sfdt re-validates against the target org before pushing.';
   modal.appendChild(intro);
-
   const buttons = doc.createElement('div');
   buttons.style.cssText = 'display: flex; gap: 8px; justify-content: flex-end;';
   const deployBtn = doc.createElement('button');
@@ -179,19 +146,16 @@ function showDeployModal(
   cancelBtn.textContent = 'Cancel';
   cancelBtn.style.cssText = 'padding: 6px 12px;';
   cancelBtn.addEventListener('click', () => overlay.remove());
-
   buttons.appendChild(cancelBtn);
   buttons.appendChild(rollbackBtn);
   buttons.appendChild(deployBtn);
   modal.appendChild(buttons);
-
   overlay.appendChild(modal);
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) overlay.remove();
   });
   doc.body.appendChild(overlay);
 }
-
 export function _flowDeployTestApi() {
   return { describeBridgeError };
 }

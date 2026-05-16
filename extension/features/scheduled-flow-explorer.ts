@@ -1,12 +1,3 @@
-// Scheduled Flow Explorer — port of the v2.0.2 feature plus its discovery
-// layer in /Users/dkennedy/dev/2.0.2_0 copy/utils/scheduled-flow-discovery.js.
-//
-// Walks FlowDefinition + Flow Metadata via Tooling API to find every active
-// Schedule-Triggered Flow, derives the parsed schedule via
-// @sfdt/flow-core's scheduled-calc, and renders a sortable list in a modal.
-// The calendar view from v2.0.2 is deferred to a follow-up; the list view
-// is the most-used path.
-
 import {
   calculateNextRun,
   formatDateLong,
@@ -21,22 +12,17 @@ import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { registerSettingsShape } from '../lib/settings.js';
 import { z } from 'zod';
-
 const SCHEDULED_FLOW_EXPLORER_SETTINGS_SCHEMA = z.object({
   defaultView: z.enum(['list', 'calendar']).default('list'),
 });
-
 registerSettingsShape('scheduled-flow-explorer', SCHEDULED_FLOW_EXPLORER_SETTINGS_SCHEMA);
-
 const METADATA_FETCH_CONCURRENCY = 5;
-
 interface FlowDefinition {
   Id: string;
   DeveloperName: string;
   ActiveVersionId: string | null;
   LatestVersionId: string | null;
 }
-
 interface FlowVersionRecord {
   Id: string;
   MasterLabel?: string;
@@ -46,7 +32,6 @@ interface FlowVersionRecord {
   LastModifiedDate?: string;
   Metadata?: Record<string, unknown>;
 }
-
 export interface ScheduledFlowEntry {
   flowDefinitionId: string;
   activeVersionId: string;
@@ -58,12 +43,10 @@ export interface ScheduledFlowEntry {
   status: string | undefined;
   description: string | null;
 }
-
 export interface DiscoveryResult {
   flows: ScheduledFlowEntry[];
   errors: Array<{ flowDefinitionId: string; activeVersionId: string | null; message: string }>;
 }
-
 export async function discoverScheduledFlows(
   api: SalesforceApiClient,
 ): Promise<DiscoveryResult> {
@@ -73,10 +56,8 @@ export async function discoverScheduledFlows(
   );
   const definitions = defResult.records;
   if (definitions.length === 0) return { flows: [], errors: [] };
-
   const flows: ScheduledFlowEntry[] = [];
   const errors: DiscoveryResult['errors'] = [];
-
   let cursor = 0;
   async function worker(): Promise<void> {
     while (true) {
@@ -92,7 +73,7 @@ export async function discoverScheduledFlows(
         const record = result.records[0];
         if (!record) continue;
         const parsed = parseSchedule(record as never);
-        if (!parsed) continue; // not Scheduled-Triggered
+        if (!parsed) continue;
         flows.push({
           flowDefinitionId: def.Id,
           activeVersionId: def.ActiveVersionId,
@@ -113,23 +94,19 @@ export async function discoverScheduledFlows(
       }
     }
   }
-
   await Promise.all(
     Array.from({ length: Math.min(METADATA_FETCH_CONCURRENCY, definitions.length) }, () => worker()),
   );
   return { flows, errors };
 }
-
 function buildModal(doc: Document, result: DiscoveryResult, now: Date): HTMLDivElement {
   const overlay = doc.createElement('div');
   overlay.className = 'sfut-scheduled-flow-overlay';
   overlay.style.cssText =
     'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-
   const modal = doc.createElement('div');
   modal.style.cssText =
     'background: #fff; border-radius: 4px; width: 720px; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column;';
-
   const header = doc.createElement('div');
   header.style.cssText =
     'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center; font-weight: 600;';
@@ -142,10 +119,8 @@ function buildModal(doc: Document, result: DiscoveryResult, now: Date): HTMLDivE
   header.appendChild(headerLabel);
   header.appendChild(close);
   modal.appendChild(header);
-
   const body = doc.createElement('div');
   body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1;';
-
   if (result.flows.length === 0) {
     const empty = doc.createElement('div');
     empty.textContent = 'No active Schedule-Triggered Flows in this org.';
@@ -176,7 +151,6 @@ function buildModal(doc: Document, result: DiscoveryResult, now: Date): HTMLDivE
     }
     body.appendChild(list);
   }
-
   if (result.errors.length > 0) {
     const errBox = doc.createElement('div');
     errBox.style.cssText =
@@ -184,7 +158,6 @@ function buildModal(doc: Document, result: DiscoveryResult, now: Date): HTMLDivE
     errBox.textContent = `${result.errors.length} flow${result.errors.length === 1 ? '' : 's'} could not be loaded.`;
     body.appendChild(errBox);
   }
-
   modal.appendChild(body);
   overlay.appendChild(modal);
   overlay.addEventListener('click', (e) => {
@@ -192,15 +165,12 @@ function buildModal(doc: Document, result: DiscoveryResult, now: Date): HTMLDivE
   });
   return overlay;
 }
-
 export interface ScheduledFlowExplorerOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
-  // For tests: lets the modal show "now" relative to a deterministic date.
   now?: () => Date;
 }
-
 export function createScheduledFlowExplorerFeature(
   options: ScheduledFlowExplorerOptions = {},
 ): Feature {
@@ -208,7 +178,6 @@ export function createScheduledFlowExplorerFeature(
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
   const now = options.now ?? (() => new Date());
-
   return {
     manifest: {
       id: 'scheduled-flow-explorer',
@@ -216,11 +185,9 @@ export function createScheduledFlowExplorerFeature(
       contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.SETUP_OTHER],
       settingsSchema: SCHEDULED_FLOW_EXPLORER_SETTINGS_SCHEMA,
     },
-
     async onActivate() {
       const ctx = detectContext({ location: { href: win.location.href } }, doc);
       if (ctx === CONTEXTS.NONE) return;
-
       const loadingOverlay = doc.createElement('div');
       loadingOverlay.style.cssText =
         'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: #fff; font-family: system-ui, sans-serif;';
@@ -237,7 +204,6 @@ export function createScheduledFlowExplorerFeature(
     },
   };
 }
-
 export function _scheduledFlowExplorerTestApi() {
   return { discoverScheduledFlows, buildModal };
 }

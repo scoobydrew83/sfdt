@@ -10,27 +10,21 @@ import {
 import { select } from 'd3-selection';
 import { zoom as d3Zoom, zoomIdentity as d3ZoomIdentity } from 'd3-zoom';
 import { drag as d3Drag } from 'd3-drag';
-
-// ─── Color map by metadata type ──────────────────────────────────────────────
 const TYPE_COLORS = {
   ApexClass:     'var(--brand-500)',
   ApexTrigger:   'var(--status-modified-solid)',
   ApexComponent: 'var(--status-source-solid)',
   Flow:          'var(--status-identical-solid)',
 };
-
 const ALL_TYPES = ['ApexClass', 'ApexTrigger', 'ApexComponent', 'Flow'];
-
 function typeColor(type) {
   return TYPE_COLORS[type] ?? 'var(--fg-muted)';
 }
-
 function shortName(name) {
   if (!name) return '';
   const idx = name.indexOf('__');
   return idx !== -1 ? name.slice(idx + 2) : name;
 }
-
 function pillClass(type) {
   switch (type) {
     case 'ApexClass':     return 'status-pill pill-add';
@@ -40,8 +34,6 @@ function pillClass(type) {
     default:              return 'status-pill pill-match';
   }
 }
-
-// ─── Detail Rail ─────────────────────────────────────────────────────────────
 function DetailRail({ selected, nodes, onSelectNode, onClear }) {
   if (!selected) {
     return (
@@ -59,12 +51,9 @@ function DetailRail({ selected, nodes, onSelectNode, onClear }) {
       </aside>
     );
   }
-
   const nodeMap = Object.fromEntries(nodes.map((n) => [n.id, n]));
-
   const dependsOn = (selected.deps ?? []).map((id) => nodeMap[id]).filter(Boolean);
   const usedBy    = (selected.refs ?? []).map((id) => nodeMap[id]).filter(Boolean);
-
   return (
     <aside className="graph-rail">
       <div className="rail-node-hdr">
@@ -73,7 +62,6 @@ function DetailRail({ selected, nodes, onSelectNode, onClear }) {
           <span className={pillClass(selected.type)}>{selected.type}</span>
         </div>
       </div>
-
       <div className="rail-section">
         <div className="rail-section-lbl">Depends on ({dependsOn.length})</div>
         {dependsOn.length === 0 && (
@@ -93,7 +81,6 @@ function DetailRail({ selected, nodes, onSelectNode, onClear }) {
           </div>
         ))}
       </div>
-
       <div className="rail-section">
         <div className="rail-section-lbl">Used by ({usedBy.length})</div>
         {usedBy.length === 0 && (
@@ -113,7 +100,6 @@ function DetailRail({ selected, nodes, onSelectNode, onClear }) {
           </div>
         ))}
       </div>
-
       <div className="rail-actions">
         <button
           className="btn btn-ghost"
@@ -134,28 +120,23 @@ function DetailRail({ selected, nodes, onSelectNode, onClear }) {
     </aside>
   );
 }
-
-// ─── D3 Graph Canvas ─────────────────────────────────────────────────────────
 export default function Dependency() {
   const [orgs, setOrgs]               = useState([]);
   const [selectedOrg, setSelectedOrg] = useState('');
   const [activeTypes, setActiveTypes] = useState(new Set(ALL_TYPES));
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState(null);
-  const [graphData, setGraphData]     = useState(null); // { nodes, edges }
+  const [graphData, setGraphData]     = useState(null);
   const [nodeCount, setNodeCount]     = useState(0);
   const [selectedId, setSelectedId]   = useState(null);
   const [enrichedNodes, setEnrichedNodes] = useState([]);
-
   const svgRef       = useRef(null);
   const simRef       = useRef(null);
-  const gRef         = useRef(null);   // <g> wrapper inside SVG
+  const gRef         = useRef(null);
   const nodesDataRef = useRef([]);
   const edgesDataRef = useRef([]);
   const selectedIdRef = useRef(null);
   const zoomRef       = useRef(null);
-
-  // Load orgs on mount
   useEffect(() => {
     api.orgs()
       .then(({ orgs: list }) => {
@@ -164,8 +145,6 @@ export default function Dependency() {
       })
       .catch(() => {});
   }, []);
-
-  // Toggle a type filter chip
   const toggleType = useCallback((t) => {
     setActiveTypes((prev) => {
       const next = new Set(prev);
@@ -174,12 +153,9 @@ export default function Dependency() {
       return next;
     });
   }, []);
-
-  // Enrich nodes with adjacency info for the detail rail
   useEffect(() => {
     if (!graphData) { setEnrichedNodes([]); return; }
     const { nodes, edges } = graphData;
-    // Build adjacency: deps = outgoing edges (this → target), refs = incoming edges (source → this)
     const deps = {};
     const refs = {};
     nodes.forEach((n) => { deps[n.id] = []; refs[n.id] = []; });
@@ -191,8 +167,6 @@ export default function Dependency() {
     });
     setEnrichedNodes(nodes.map((n) => ({ ...n, deps: deps[n.id] ?? [], refs: refs[n.id] ?? [] })));
   }, [graphData]);
-
-  // Re-filter visible nodes/edges when activeTypes changes (without re-running simulation)
   useEffect(() => {
     if (!nodesDataRef.current.length) return;
     const svgEl = svgRef.current;
@@ -206,14 +180,11 @@ export default function Dependency() {
       return (srcNode && activeTypes.has(srcNode.type) && tgtNode && activeTypes.has(tgtNode.type)) ? 0.25 : 0;
     });
   }, [activeTypes]);
-
-  // Load graph data from API
   const loadGraph = useCallback(async () => {
     if (!selectedOrg) return;
     setLoading(true);
     setError(null);
     setSelectedId(null);
-
     try {
       const types = Array.from(activeTypes).join(',');
       const data = await api.dependencies(selectedOrg, types);
@@ -229,38 +200,23 @@ export default function Dependency() {
       setLoading(false);
     }
   }, [selectedOrg, activeTypes]);
-
-  // ── Build / rebuild D3 simulation whenever graphData changes ───────────────
   useEffect(() => {
     const svgEl = svgRef.current;
     if (!svgEl) return;
-
-    // Stop any previous simulation
     if (simRef.current) {
       simRef.current.stop();
       simRef.current = null;
     }
-
-    // Clear SVG
     select(svgEl).selectAll('*').remove();
-
     if (!graphData || !graphData.nodes.length) return;
-
     const { nodes: rawNodes, edges: rawEdges } = graphData;
-
-    // Deep-copy so D3 can mutate x/y without corrupting state
     const nodes = rawNodes.map((n) => ({ ...n }));
     const edges = rawEdges.map((e) => ({ ...e }));
-
     nodesDataRef.current = nodes;
     edgesDataRef.current = edges;
-
     const width  = svgEl.clientWidth  || 800;
     const height = svgEl.clientHeight || 600;
-
     const svg = select(svgEl);
-
-    // Arrow marker
     svg.append('defs').append('marker')
       .attr('id', 'dep-arrow')
       .attr('viewBox', '0 -4 8 8')
@@ -273,12 +229,8 @@ export default function Dependency() {
       .attr('d', 'M0,-4L8,0L0,4')
       .attr('fill', 'var(--fg-muted)')
       .attr('opacity', 0.35);
-
-    // Zoom group
     const g = svg.append('g').attr('class', 'zoom-group');
     gRef.current = g;
-
-    // Zoom behaviour
     const zoomBehavior = d3Zoom()
       .scaleExtent([0.1, 8])
       .on('zoom', (event) => {
@@ -286,8 +238,6 @@ export default function Dependency() {
       });
     zoomRef.current = zoomBehavior;
     svg.call(zoomBehavior);
-
-    // Link layer
     const linkSel = g.append('g').attr('class', 'links')
       .selectAll('line')
       .data(edges)
@@ -296,8 +246,6 @@ export default function Dependency() {
       .attr('stroke-opacity', 0.2)
       .attr('stroke-width', 1)
       .attr('marker-end', 'url(#dep-arrow)');
-
-    // Drag behaviour
     const dragBehavior = d3Drag()
       .on('start', (event, d) => {
         if (!event.active) simRef.current?.alphaTarget(0.3).restart();
@@ -310,10 +258,7 @@ export default function Dependency() {
       })
       .on('end', (event) => {
         if (!event.active) simRef.current?.alphaTarget(0);
-        // Keep pinned — user double-clicks to unpin
       });
-
-    // Node group
     const nodeGroup = g.append('g').attr('class', 'nodes')
       .selectAll('g.node-g')
       .data(nodes)
@@ -321,13 +266,11 @@ export default function Dependency() {
       .attr('class', 'node-g')
       .style('cursor', 'pointer')
       .call(dragBehavior);
-
     nodeGroup.append('circle')
       .attr('r', 6)
       .attr('fill', (d) => typeColor(d.type))
       .attr('stroke', 'var(--bg-app)')
       .attr('stroke-width', 1.5);
-
     nodeGroup.append('text')
       .text((d) => shortName(d.name))
       .attr('y', 17)
@@ -336,8 +279,6 @@ export default function Dependency() {
       .attr('fill', 'var(--fg-muted)')
       .attr('pointer-events', 'none')
       .attr('font-family', 'var(--font-mono)');
-
-    // Click to select / deselect
     nodeGroup.on('click', (event, d) => {
       event.stopPropagation();
       const next = selectedIdRef.current === d.id ? null : d.id;
@@ -345,22 +286,16 @@ export default function Dependency() {
       setSelectedId(next);
       applyHighlight(nodeGroup, linkSel, nodes, edges, next);
     });
-
-    // Double-click to unpin
     nodeGroup.on('dblclick', (event, d) => {
       event.stopPropagation();
       d.fx = null;
       d.fy = null;
     });
-
-    // Click on SVG background to deselect
     svg.on('click', () => {
       selectedIdRef.current = null;
       setSelectedId(null);
       applyHighlight(nodeGroup, linkSel, nodes, edges, null);
     });
-
-    // Simulation
     const sim = forceSimulation(nodes)
       .force('link', forceLink(edges).id((d) => d.id).distance(60))
       .force('charge', forceManyBody().strength(-120))
@@ -372,26 +307,20 @@ export default function Dependency() {
           .attr('y1', (d) => d.source.y)
           .attr('x2', (d) => d.target.x)
           .attr('y2', (d) => d.target.y);
-
         nodeGroup.attr('transform', (d) => `translate(${d.x},${d.y})`);
       });
-
     simRef.current = sim;
-
     return () => {
       sim.stop();
       svg.on('click', null);
     };
-  }, [graphData]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Highlight helper ────────────────────────────────────────────────────────
+  }, [graphData]);
   function applyHighlight(nodeGroup, linkSel, _nodes, edges, focusId) {
     if (!focusId) {
       nodeGroup.attr('opacity', 1);
       linkSel.attr('stroke-opacity', 0.2);
       return;
     }
-
     const neighbors = new Set([focusId]);
     edges.forEach(({ source, target }) => {
       const sid = typeof source === 'object' ? source.id : source;
@@ -399,7 +328,6 @@ export default function Dependency() {
       if (sid === focusId) neighbors.add(tid);
       if (tid === focusId) neighbors.add(sid);
     });
-
     nodeGroup.attr('opacity', (d) => (neighbors.has(d.id) ? 1 : 0.15));
     linkSel.attr('stroke-opacity', (d) => {
       const sid = typeof d.source === 'object' ? d.source.id : d.source;
@@ -407,22 +335,18 @@ export default function Dependency() {
       return (sid === focusId || tid === focusId) ? 0.7 : 0.05;
     });
   }
-
   const selectedNode = enrichedNodes.find((n) => n.id === selectedId) ?? null;
-
   const handleRailSelect = useCallback((id) => {
     setSelectedId(id);
     selectedIdRef.current = id;
     const node = nodesDataRef.current.find((n) => n.id === id);
     const svgEl = svgRef.current;
-    // Re-apply highlight for rail-driven selection
     if (svgEl) {
       const svg = select(svgEl);
       const nodeGroup = svg.selectAll('g.node-g');
       const linkSel   = svg.selectAll('g.links line');
       applyHighlight(nodeGroup, linkSel, nodesDataRef.current, edgesDataRef.current, id);
     }
-    // Pan/zoom to center the selected node
     if (node && node.x != null && zoomRef.current && svgEl) {
       const w = svgEl.clientWidth;
       const h = svgEl.clientHeight;
@@ -432,16 +356,14 @@ export default function Dependency() {
       );
     }
   }, []);
-
   const handleClear = useCallback(() => {
     setSelectedId(null);
   }, []);
-
   return (
     <div className="graph-layout">
-      {/* ── Left: canvas + toolbar ─────────────────────────────────────── */}
+      {}
       <div className="graph-canvas-wrap">
-        {/* Toolbar */}
+        {}
         <div className="graph-toolbar">
           <select
             className="graph-select"
@@ -456,7 +378,6 @@ export default function Dependency() {
               ))
             }
           </select>
-
           {ALL_TYPES.map((t) => (
             <button
               key={t}
@@ -468,7 +389,6 @@ export default function Dependency() {
               {t}
             </button>
           ))}
-
           <button
             className="btn btn-primary"
             style={{ marginLeft: 'auto', padding: '4px 12px', fontSize: 12 }}
@@ -478,38 +398,32 @@ export default function Dependency() {
           >
             {loading ? 'Loading…' : 'Load Graph'}
           </button>
-
           {nodeCount > 0 && (
             <span className="graph-badge">{nodeCount} nodes</span>
           )}
         </div>
-
-        {/* SVG area */}
+        {}
         <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
           {loading && (
             <div className="graph-loading-overlay">
               <div className="spinner" style={{ width: 24, height: 24 }} />
             </div>
           )}
-
           {error && !loading && (
             <div className="graph-empty-hint">
               <span style={{ color: 'var(--status-error-fg, #f87171)' }}>{error}</span>
             </div>
           )}
-
           {!graphData && !loading && !error && (
             <div className="graph-empty-hint">
               Select an org and click Load Graph
             </div>
           )}
-
           {graphData && graphData.nodes.length === 0 && !loading && (
             <div className="graph-empty-hint">
               No dependency data found for the selected org and types
             </div>
           )}
-
           <svg
             ref={svgRef}
             className="graph-svg"
@@ -517,8 +431,7 @@ export default function Dependency() {
           />
         </div>
       </div>
-
-      {/* ── Right: detail rail ─────────────────────────────────────────── */}
+      {}
       <DetailRail
         selected={selectedNode}
         nodes={enrichedNodes}

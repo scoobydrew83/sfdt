@@ -1,16 +1,6 @@
-/**
- * Tests for flow-rollback-runner.
- *
- * Mocks execa so the runner doesn't shell out to the real `sf` CLI. The
- * two sf invocations (FlowDefinition lookup → FlowDefinition update) are
- * asserted on argv shape plus structured return value.
- */
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
 const execaCalls = [];
-let nextResponses = []; // FIFO queue of mocked execa responses
-
+let nextResponses = [];
 vi.mock('execa', () => ({
   execa: vi.fn(async (cmd, args, opts) => {
     execaCalls.push({ cmd, args, opts });
@@ -18,7 +8,6 @@ vi.mock('execa', () => ({
     return next ?? { exitCode: 0, stdout: '{}', stderr: '' };
   }),
 }));
-
 vi.mock('../../src/lib/config.js', () => ({
   loadConfig: vi.fn(async () => ({
     _projectRoot: '/project',
@@ -27,24 +16,19 @@ vi.mock('../../src/lib/config.js', () => ({
   })),
   ConfigError: class extends Error {},
 }));
-
 import { runFlowRollback } from '../../src/lib/flow-rollback-runner.js';
-
 beforeEach(() => {
   execaCalls.length = 0;
   nextResponses = [];
 });
-
 function queueResponses(...responses) {
   for (const r of responses) nextResponses.push(r);
 }
-
 function queueDefaultRollbackPair({
   flowDefinitionId = '3000W000000abcXYZ',
   activeVersionId = '3010W000000aaaAAA',
   versionNumber = 5,
 } = {}) {
-  // 1: FlowDefinition lookup
   queueResponses({
     exitCode: 0,
     stdout: JSON.stringify({
@@ -61,7 +45,6 @@ function queueDefaultRollbackPair({
     }),
     stderr: '',
   });
-  // 2: FlowDefinition update
   queueResponses({
     exitCode: 0,
     stdout: JSON.stringify({
@@ -71,32 +54,27 @@ function queueDefaultRollbackPair({
     stderr: '',
   });
 }
-
 describe('runFlowRollback — input validation', () => {
   it('rejects a missing flowApiName', async () => {
     const r = await runFlowRollback({ toVersion: 1 });
     expect(r.ok).toBe(false);
     expect(r.code).toBe('REQUEST_INVALID');
   });
-
   it('rejects a flowApiName that is not a valid Salesforce developer name', async () => {
     const r = await runFlowRollback({ flowApiName: 'Has Space', toVersion: 1 });
     expect(r.ok).toBe(false);
     expect(r.code).toBe('REQUEST_INVALID');
   });
-
   it('rejects a non-integer toVersion', async () => {
     const r = await runFlowRollback({ flowApiName: 'My_Flow', toVersion: 1.5 });
     expect(r.ok).toBe(false);
     expect(r.code).toBe('REQUEST_INVALID');
   });
-
   it('rejects a negative toVersion', async () => {
     const r = await runFlowRollback({ flowApiName: 'My_Flow', toVersion: -1 });
     expect(r.ok).toBe(false);
     expect(r.code).toBe('REQUEST_INVALID');
   });
-
   it('accepts toVersion=0 (deactivate)', async () => {
     queueDefaultRollbackPair();
     const r = await runFlowRollback({ flowApiName: 'My_Flow', toVersion: 0 });
@@ -105,15 +83,11 @@ describe('runFlowRollback — input validation', () => {
     expect(r.data.summary).toMatch(/deactivated/);
   });
 });
-
 describe('runFlowRollback — happy path', () => {
   it('spawns the right two sf invocations in the right order', async () => {
     queueDefaultRollbackPair({ flowDefinitionId: '3000W000000IdABC' });
     await runFlowRollback({ flowApiName: 'My_Flow', toVersion: 3 });
-
     expect(execaCalls).toHaveLength(2);
-
-    // First call: FlowDefinition lookup
     const lookup = execaCalls[0];
     expect(lookup.cmd).toBe('sf');
     expect(lookup.args).toContain('data');
@@ -124,8 +98,6 @@ describe('runFlowRollback — happy path', () => {
     expect(lookup.args).toContain('--target-org');
     expect(lookup.args).toContain('dev');
     expect(lookup.args).toContain('--json');
-
-    // Second call: FlowDefinition update
     const update = execaCalls[1];
     expect(update.cmd).toBe('sf');
     expect(update.args).toContain('data');
@@ -139,7 +111,6 @@ describe('runFlowRollback — happy path', () => {
     expect(update.args).toContain('--values');
     expect(update.args).toContain('Metadata={"activeVersionNumber":3}');
   });
-
   it('returns a structured success report with the previous active version', async () => {
     queueDefaultRollbackPair({ versionNumber: 7 });
     const r = await runFlowRollback({ flowApiName: 'My_Flow', toVersion: 3 });
@@ -149,7 +120,6 @@ describe('runFlowRollback — happy path', () => {
     expect(r.data.newActiveVersion).toBe(3);
     expect(r.data.summary).toMatch(/set active to v3/);
   });
-
   it('honours an explicit targetOrg over the config default', async () => {
     queueDefaultRollbackPair();
     await runFlowRollback({ flowApiName: 'My_Flow', toVersion: 1, targetOrg: 'prod-alias' });
@@ -157,18 +127,12 @@ describe('runFlowRollback — happy path', () => {
     const targetIdx = lookup.args.indexOf('--target-org');
     expect(lookup.args[targetIdx + 1]).toBe('prod-alias');
   });
-
   it('escapes apostrophes in flowApiName when building the SOQL', async () => {
-    // The regex blocks apostrophes outright at validation time, but if a
-    // future caller bypasses that check, the SOQL builder must still escape.
-    // Quick belt-and-braces test of the replace() call.
     queueDefaultRollbackPair();
-    // valid name — just confirm the escape line doesn't crash
     const r = await runFlowRollback({ flowApiName: 'Some_Flow', toVersion: 1 });
     expect(r.ok).toBe(true);
   });
 });
-
 describe('runFlowRollback — failure modes', () => {
   it("returns NOT_FOUND when no FlowDefinition matches the developer name", async () => {
     queueResponses({
@@ -181,10 +145,8 @@ describe('runFlowRollback — failure modes', () => {
     expect(r.code).toBe('NOT_FOUND');
     expect(r.error).toMatch(/Does_Not_Exist/);
   });
-
   it('returns INTERNAL_ERROR when sf data update returns status=1', async () => {
     queueResponses(
-      // FlowDefinition lookup ok
       {
         exitCode: 0,
         stdout: JSON.stringify({
@@ -193,7 +155,6 @@ describe('runFlowRollback — failure modes', () => {
         }),
         stderr: '',
       },
-      // Update fails
       {
         exitCode: 1,
         stdout: JSON.stringify({
@@ -209,7 +170,6 @@ describe('runFlowRollback — failure modes', () => {
     expect(r.code).toBe('INTERNAL_ERROR');
     expect(r.error).toMatch(/No active version 99/);
   });
-
   it('returns INTERNAL_ERROR when sf returns non-JSON stdout on lookup', async () => {
     queueResponses({ exitCode: 0, stdout: 'not-json', stderr: '' });
     const r = await runFlowRollback({ flowApiName: 'My_Flow', toVersion: 1 });

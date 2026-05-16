@@ -1,18 +1,11 @@
-// Vitest setup: install a minimal in-memory shim for chrome.storage and
-// chrome.runtime so settings.ts and feature-registry.ts can run unmodified
-// under happy-dom. Production code uses the real chrome.* APIs.
-
 import { vi } from 'vitest';
-
 type StorageBucket = Record<string, unknown>;
 type ChangeListener = (
   changes: Record<string, { oldValue?: unknown; newValue?: unknown }>,
   area: 'local' | 'sync' | 'managed' | 'session',
 ) => void;
-
 const localBucket: StorageBucket = {};
 const changeListeners = new Set<ChangeListener>();
-
 function makeStorageArea(bucket: StorageBucket, areaName: 'local' | 'sync') {
   return {
     get: (keys: string | string[] | null, cb: (items: StorageBucket) => void) => {
@@ -49,7 +42,6 @@ function makeStorageArea(bucket: StorageBucket, areaName: 'local' | 'sync') {
     },
   };
 }
-
 (globalThis as unknown as { chrome: unknown }).chrome = {
   storage: {
     local: makeStorageArea(localBucket, 'local'),
@@ -71,8 +63,6 @@ function makeStorageArea(bucket: StorageBucket, areaName: 'local' | 'sync') {
     }),
   },
 };
-
-// Reset between test files so storage state doesn't leak.
 import { beforeEach } from 'vitest';
 beforeEach(() => {
   for (const k of Object.keys(localBucket)) delete localBucket[k];

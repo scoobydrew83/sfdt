@@ -1,41 +1,26 @@
-#!/bin/bash
-
-# Enhanced Salesforce Deployment Assistant
-# Includes pre-deployment validation, CHANGELOG checks, git workflow, and coverage enforcement
-
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
-
+set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../lib/changelog-utils.sh"
-
-# Color codes for better readability
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
-NC='\033[0m' # No Color
-
-# Project configuration
+NC='\033[0m'
 PROJECT_NAME="${SFDT_PROJECT_NAME:-Salesforce Project}"
 MANIFEST_BASE_DIR="${SFDT_MANIFEST_DIR:-manifest/release}"
 COVERAGE_THRESHOLD="${SFDT_COVERAGE_THRESHOLD:-75}"
-
-# Global variables
 MANIFEST_PATH=""
 RELEASE_VERSION=""
 TARGET_ORG=""
 TEST_LEVEL=""
 SPECIFIED_TESTS=""
 IS_PRODUCTION=false
-TAG_TIMING=""  # "now", "after", or "skip"
+TAG_TIMING=""
 VALIDATION_JOB_ID=""
 DESTRUCTIVE_PATH=""
-DESTRUCTIVE_TIMING="post"  # "pre" or "post" - when to execute destructive changes
-
-# --- Error Handling ---
-
+DESTRUCTIVE_TIMING="post"
 error_handler() {
     local exit_code=$1
     local line_number=$2
@@ -43,157 +28,106 @@ error_handler() {
     echo -e "${YELLOW}Deployment aborted. Please review the error above.${NC}"
     exit $exit_code
 }
-
 trap 'error_handler $? $LINENO' ERR
-
-# --- Helper Functions ---
-
 print_header() {
     echo -e "\n${BOLD}${BLUE}═══════════════════════════════════════════════════${NC}"
     echo -e "${BOLD}${BLUE}  $1${NC}"
     echo -e "${BOLD}${BLUE}═══════════════════════════════════════════════════${NC}\n"
 }
-
 print_step() {
     echo -e "${CYAN}▶ $1${NC}"
 }
-
 print_success() {
     echo -e "${GREEN}✅ $1${NC}"
 }
-
 print_warning() {
     echo -e "${YELLOW}⚠️  $1${NC}"
 }
-
 print_error() {
     echo -e "${RED}❌ $1${NC}"
 }
-
-# Extract version from manifest filename (e.g., rl-0.1.6-package.xml -> 0.1.6)
 extract_version() {
     local manifest
     manifest=$(basename "$1")
-    # Primary: semver pattern rl-X.Y.Z[-suffix]-package.xml
     if [[ $manifest =~ rl-([0-9]+\.[0-9]+\.[0-9]+)(-[a-zA-Z0-9-]+)?-package\.xml ]]; then
         echo "${BASH_REMATCH[1]}"
-    # Fallback: capture slug between rl- and -package.xml
     elif [[ $manifest =~ rl-(.+)-package\.xml ]]; then
         echo "${BASH_REMATCH[1]}"
-    # Fallback: capture slug between rl- and .xml
     elif [[ $manifest =~ rl-(.+)\.xml ]]; then
         echo "${BASH_REMATCH[1]}"
-    # Fallback: any-prefix - capture slug before -package.xml
     elif [[ $manifest =~ ^(.+)-package\.xml$ ]]; then
         echo "${BASH_REMATCH[1]}"
-    # Final fallback: use filename stem as version label
     else
         echo "${manifest%.xml}"
     fi
 }
-
-# Check git status for uncommitted changes
 check_git_status() {
     if ! git diff-index --quiet HEAD --; then
-        return 1  # Has uncommitted changes
+        return 1
     fi
-    return 0  # Clean
+    return 0
 }
-
-# Get current git branch
 get_current_branch() {
     git branch --show-current
 }
-
-# Detect if target org is production (sandbox = false)
 detect_production() {
     local org=$1
-
-    # Check if jq is installed
     if ! command -v jq &> /dev/null; then
         print_warning "jq not installed - cannot detect production org. Assuming production for safety."
         return 0
     fi
-
     local is_sandbox=$(sf org display --target-org "$org" --json 2>/dev/null | jq -r '.result.isSandbox // true')
-
     if [ "$is_sandbox" == "false" ]; then
-        return 0  # Is production
+        return 0
     else
-        return 1  # Is sandbox
+        return 1
     fi
 }
-
-# Parse code coverage from SF CLI output
 parse_coverage() {
     local output=$1
-
-    # Try multiple patterns used by SF CLI
-    # Pattern 1: "Code Coverage: XX%" or "Apex Code Coverage: XX%"
     if [[ $output =~ [Cc]ode\ [Cc]overage:?\ ([0-9]+)% ]]; then
         echo "${BASH_REMATCH[1]}"
         return
     fi
-
-    # Pattern 2: "Test Run Coverage XX%" (from deploy report)
     if [[ $output =~ [Tt]est\ [Rr]un\ [Cc]overage\ ([0-9]+)% ]]; then
         echo "${BASH_REMATCH[1]}"
         return
     fi
-
-    # Pattern 3: Just "Coverage: XX%"
     if [[ $output =~ [Cc]overage:\ ([0-9]+)% ]]; then
         echo "${BASH_REMATCH[1]}"
         return
     fi
-
-    # Pattern 4: "XX%" on a line with "coverage" (case insensitive)
     if [[ $output =~ coverage.*([0-9]+)% ]] || [[ $output =~ ([0-9]+)%.*coverage ]]; then
         echo "${BASH_REMATCH[1]}"
         return
     fi
-
     echo "0"
 }
-
-# Extract job ID from validation output
 extract_job_id() {
     local output=$1
-
-    # Salesforce Job IDs start with 0Af and are 15 or 18 characters
-    # Format: 0Af[alphanumeric]{12,15}
     if [[ $output =~ (0Af[a-zA-Z0-9]{12,15}) ]]; then
         echo "${BASH_REMATCH[1]}"
     else
         echo ""
     fi
 }
-
-# --- Pre-Deployment Functions ---
-
 select_manifest() {
     local include_deployed=${1:-false}
     print_step "Finding release manifests in ${MANIFEST_BASE_DIR}/..."
-
-    # Find manifests in main release folder
     local max_depth=1
     if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then max_depth=2; fi
     local manifests=( $(find "${MANIFEST_BASE_DIR}/" -maxdepth "$max_depth" -name "rl-*-package.xml" 2>/dev/null | sort -V) )
-
-    # Also include deployed manifests when called from post-deployment flow (last 3 only)
-    if [ "$include_deployed" == "true" ] && [ ${#manifests[@]} -eq 0 ]; then
+    if [ "$include_deployed" == "true" ] && [ ${
         print_warning "No undeployed manifests found. Showing recent deployed manifests..."
         local fallback_depth=1
         if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then fallback_depth=2; fi
         manifests=( $(find "${MANIFEST_BASE_DIR}/deployed/" -maxdepth $fallback_depth -name "*.xml" 2>/dev/null | sort -V | tail -3) )
     fi
-
-    if [ ${#manifests[@]} -eq 0 ]; then
+    if [ ${
         print_error "No release manifests found in ${MANIFEST_BASE_DIR}/"
         print_warning "Already deployed manifests are in ${MANIFEST_BASE_DIR}/deployed/"
         exit 1
     fi
-
     echo -e "${GREEN}Available manifests:${NC}"
     COLUMNS=1
     PS3="$(echo -e ${GREEN}Choice:${NC} )"
@@ -201,12 +135,10 @@ select_manifest() {
         if [[ -n "$manifest_path" ]]; then
             MANIFEST_PATH="$manifest_path"
             RELEASE_VERSION=$(extract_version "$(basename "$manifest_path")")
-
             if [ -z "$RELEASE_VERSION" ]; then
                 print_error "Could not extract version from manifest filename: $manifest_path"
                 exit 1
             fi
-
             print_success "Selected: $manifest_path (Version: $RELEASE_VERSION)"
             check_destructive_changes
             break
@@ -215,34 +147,24 @@ select_manifest() {
         fi
     done
 }
-
-# Check for destructive changes file
 check_destructive_changes() {
     local raw_base
     raw_base=$(basename "$MANIFEST_PATH" .xml)
     local manifest_base="${raw_base%-package}"
     local destructive_path="${MANIFEST_BASE_DIR}/${manifest_base}-destructiveChanges.xml"
-
     DESTRUCTIVE_PATH=""
-
     if [ -f "$destructive_path" ]; then
         print_warning "Destructive changes detected for this release"
         echo ""
         echo -e "${RED}${BOLD}Components to be deleted:${NC}"
-
-        # Parse and display components
         grep "<members>" "$destructive_path" | sed 's/.*<members>\(.*\)<\/members>/\1/' | while read -r member; do
             echo -e "  ${RED}✗${NC} $member"
         done
-
         echo ""
         read -p "$(echo -e ${YELLOW}Include destructive changes in deployment? \(y/n\)${NC} )" -n 1 -r
         echo
-
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             DESTRUCTIVE_PATH="$destructive_path"
-
-            # Ask about timing - CRITICAL decision
             echo ""
             echo -e "${CYAN}${BOLD}When should deletions occur?${NC}"
             echo ""
@@ -256,7 +178,6 @@ check_destructive_changes() {
             echo ""
             echo -e "${YELLOW}Note:${NC} Post-destructive is safer for most refactoring scenarios"
             echo ""
-
             local timing_options=("Post-Destructive (Deploy first, safer)" "Pre-Destructive (Delete first)")
             COLUMNS=1
             PS3="$(echo -e ${GREEN}Choice:${NC} )"
@@ -277,33 +198,26 @@ check_destructive_changes() {
                         ;;
                 esac
             done
-
             print_success "Destructive changes will be included (${DESTRUCTIVE_TIMING}-destructive)"
         else
             print_warning "Destructive changes will NOT be deployed"
         fi
     fi
 }
-
 check_changelog_updated() {
     print_step "Checking if CHANGELOG.md has been updated for version $RELEASE_VERSION..."
-
     if validate_version_entry "$RELEASE_VERSION"; then
         print_success "CHANGELOG.md contains entry for version $RELEASE_VERSION"
         return 0
     else
         print_warning "CHANGELOG.md does not contain entry for version $RELEASE_VERSION"
-
         read -p "$(echo -e ${YELLOW}Would you like to update CHANGELOG.md now? \(y/n\)${NC} )" -n 1 -r
         echo
-
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             print_step "Running AI to update CHANGELOG..."
             sfdt ai prompt "Document and update CHANGELOG.md for release ${RELEASE_VERSION}"
             echo ""
             read -p "Press Enter to continue after AI has finished, or Ctrl+C to abort..."
-
-            # Re-check after user confirms
             if validate_version_entry "$RELEASE_VERSION"; then
                 print_success "CHANGELOG.md now contains version $RELEASE_VERSION"
             else
@@ -317,10 +231,8 @@ check_changelog_updated() {
         fi
     fi
 }
-
 check_git_commit() {
     print_step "Checking git status..."
-
     if check_git_status; then
         print_success "No uncommitted changes"
         return 0
@@ -328,18 +240,14 @@ check_git_commit() {
         print_warning "You have uncommitted changes"
         git status --short
         echo ""
-
         read -p "$(echo -e ${YELLOW}Would you like to commit now? \(y/n\)${NC} )" -n 1 -r
         echo
-
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             read -p "Enter commit message: " commit_message
-
             if [ -z "$commit_message" ]; then
                 print_error "Commit message cannot be empty"
                 exit 1
             fi
-
             git add -A
             git commit -m "$commit_message"
             print_success "Changes committed"
@@ -352,17 +260,13 @@ check_git_commit() {
         fi
     fi
 }
-
 handle_release_tagging() {
     print_step "Release tagging for v${RELEASE_VERSION}..."
-
-    # Check if tag already exists
     if git tag | grep -q "^v${RELEASE_VERSION}$"; then
         print_warning "Tag v${RELEASE_VERSION} already exists"
         TAG_TIMING="skip"
         return 0
     fi
-
     echo -e "${GREEN}When should the release be tagged?${NC}"
     options=("Tag now (before deployment)" "Tag after successful deployment" "Skip tagging")
     COLUMNS=1
@@ -390,26 +294,20 @@ handle_release_tagging() {
         esac
     done
 }
-
 create_git_tag() {
     local tag_name="v${RELEASE_VERSION}"
     local force=${1:-false}
-
     read -p "Enter tag message (or press Enter for default): " tag_message
-
     if [ -z "$tag_message" ]; then
         tag_message="Release ${RELEASE_VERSION}"
     fi
-
     if [ "$force" == "true" ]; then
         git tag -d "$tag_name" 2>/dev/null
         git push origin --delete "$tag_name" 2>/dev/null || true
         print_warning "Removed old tag: $tag_name"
     fi
-
     git tag -a "$tag_name" -m "$tag_message"
     print_success "Created tag: $tag_name"
-
     read -p "Push tag to remote? (y/n) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -417,21 +315,16 @@ create_git_tag() {
         print_success "Tag pushed to remote"
     fi
 }
-
 check_pr_status() {
     print_step "Checking branch and PR status..."
-
     local current_branch=$(get_current_branch)
     print_success "Current branch: $current_branch"
-
     if [ "$current_branch" == "main" ] || [ "$current_branch" == "master" ]; then
         print_success "Already on main branch"
         return 0
     fi
-
     echo -e "${YELLOW}You are not on the main branch.${NC}"
     echo -e "${GREEN}What would you like to do?${NC}"
-
     options=("PR already merged - continue" "Will merge PR later" "Skip (deploy from branch)")
     COLUMNS=1
     PS3="$(echo -e ${GREEN}Choice:${NC} )"
@@ -455,35 +348,25 @@ check_pr_status() {
         esac
     done
 }
-
-# Helper to select base branch and create or suggest PR
 create_new_pr() {
     local current_branch=$1
     local selected_base=""
-
-    # Fetch latest remote branches
     git fetch --prune --quiet 2>/dev/null || true
-
-    # Build branch list: main first, then release/*, develop/*, others — exclude current branch
     local remote_branches=()
     while IFS= read -r branch; do
-        # Strip "origin/" prefix
-        branch="${branch#origin/}"
-        # Skip HEAD pointer and current branch
+        branch="${branch
         [[ "$branch" == "HEAD" ]] && continue
         [[ "$branch" == *"HEAD"* ]] && continue
         [[ "$branch" == "$current_branch" ]] && continue
         remote_branches+=("$branch")
     done < <(git branch -r --format='%(refname:short)' 2>/dev/null | sort)
-
-    if [ ${#remote_branches[@]} -eq 0 ]; then
+    if [ ${
         print_warning "No remote branches found"
         read -p "$(echo -e ${GREEN}Enter base branch manually:${NC} )" selected_base
         if [ -z "$selected_base" ]; then
             return 0
         fi
     else
-        # Sort: main/master first, then release/*, then rest
         local sorted_branches=()
         for b in "${remote_branches[@]}"; do
             [[ "$b" == "main" || "$b" == "master" ]] && sorted_branches+=("$b")
@@ -494,7 +377,6 @@ create_new_pr() {
         for b in "${remote_branches[@]}"; do
             [[ "$b" != "main" && "$b" != "master" && "$b" != release/* ]] && sorted_branches+=("$b")
         done
-
         echo -e "${CYAN}Select target branch for PR:${NC}"
         sorted_branches+=("Cancel")
         COLUMNS=1
@@ -510,7 +392,6 @@ create_new_pr() {
             fi
         done
     fi
-
     echo ""
     echo -e "${CYAN}How would you like to create the PR?${NC}"
     options=("Create PR now (gh cli)" "Create PR with Claude (AI-generated summary)" "Show gh command to run manually" "Cancel")
@@ -527,7 +408,6 @@ create_new_pr() {
                 gh pr create --base "$selected_base" --head "$current_branch" \
                     --title "$pr_title" \
                     --body "$(cat <<EOF
-## Summary
 - Release ${RELEASE_VERSION} post-deployment merge
 - Merging \`${current_branch}\` → \`${selected_base}\`
 EOF
@@ -540,26 +420,18 @@ EOF
                 print_step "Invoking Claude Code to create PR..."
                 claude -p "$(cat <<PROMPT
 Create a PR merging '${current_branch}' into '${selected_base}' for release ${RELEASE_VERSION}.
-
 Steps:
 1. Run: git log v${RELEASE_VERSION}~..HEAD --oneline  (to get changes since last release)
 2. Push the branch if needed: git push origin ${current_branch}
 3. Create the PR using gh pr create with a HEREDOC for the body to preserve newlines. Example format:
-
 gh pr create --base "${selected_base}" --head "${current_branch}" --title "release: ${RELEASE_VERSION} — merge ${current_branch} → ${selected_base}" --body "\$(cat <<'EOF'
-## Summary
 - Release ${RELEASE_VERSION}
 - Merging \`${current_branch}\` → \`${selected_base}\`
-
-### Changes
 (categorized list of changes from git log)
-
-## Test plan
 - [ ] Verify all Apex tests pass
 - [ ] Validate key features
 EOF
 )"
-
 IMPORTANT: You MUST use a HEREDOC (cat <<'EOF' ... EOF) to pass the --body content to gh pr create. Do NOT pass the body as a single-line string — that causes encoding issues.
 PROMPT
 )" \
@@ -583,24 +455,17 @@ PROMPT
         esac
     done
 }
-
-# Offer to create a PR for post-deployment flow
 offer_pr_creation() {
     local current_branch=$1
-
     print_warning "You are on branch '$current_branch'"
-
-    # Check if an open PR already exists for this branch
     local existing_pr=""
     if command -v gh &> /dev/null; then
         existing_pr=$(gh pr view "$current_branch" --json url,state 2>/dev/null || echo "")
     fi
-
     if [ -n "$existing_pr" ]; then
         local pr_url=$(echo "$existing_pr" | jq -r '.url' 2>/dev/null)
         local pr_state=$(echo "$existing_pr" | jq -r '.state' 2>/dev/null)
         print_success "Existing PR found: $pr_url (${pr_state})"
-
         if [ "$pr_state" == "OPEN" ]; then
             echo -e "${GREEN}What would you like to do?${NC}"
             options=("Merge existing PR now" "Will merge PR later" "Create new PR to different branch" "Skip")
@@ -630,7 +495,6 @@ offer_pr_creation() {
                 esac
             done
         else
-            # PR is MERGED or CLOSED — offer to create a new one
             echo -e "${GREEN}What would you like to do?${NC}"
             options=("Create new PR to another branch" "Will handle PR later" "Skip")
             COLUMNS=1
@@ -679,46 +543,29 @@ offer_pr_creation() {
         done
     fi
 }
-
-# --- Deployment Functions ---
-
 select_target_org() {
     print_step "Retrieving authorized orgs..."
-
-    # Check if jq is installed
     if ! command -v jq &> /dev/null; then
         print_warning "jq not installed - falling back to manual entry"
         read -p "$(echo -e ${GREEN}Enter target org alias:${NC} )" TARGET_ORG
     else
-        # Get list of authorized orgs
         local orgs_json=$(sf org list --json 2>/dev/null)
-
         if [ $? -ne 0 ]; then
             print_warning "Could not retrieve org list - falling back to manual entry"
             read -p "$(echo -e ${GREEN}Enter target org alias:${NC} )" TARGET_ORG
         else
-            # Extract non-scratch orgs (more stable for deployments)
             local org_aliases=$(echo "$orgs_json" | jq -r '.result.nonScratchOrgs[]? | select(.alias != null) | .alias' 2>/dev/null | sort)
-
-            # Add scratch orgs as well
             local scratch_aliases=$(echo "$orgs_json" | jq -r '.result.scratchOrgs[]? | select(.alias != null) | .alias' 2>/dev/null | sort)
-
-            # Combine both lists
             local all_orgs=$(echo -e "${org_aliases}\n${scratch_aliases}" | grep -v "^$" | sort -u)
-
             if [ -z "$all_orgs" ]; then
                 print_warning "No authorized orgs found"
                 read -p "$(echo -e ${GREEN}Enter target org alias:${NC} )" TARGET_ORG
             else
-                # Convert to array for select menu
                 local org_array=()
                 while IFS= read -r org; do
                     org_array+=("$org")
                 done <<< "$all_orgs"
-
-                # Add manual entry option
                 org_array+=("Enter manually")
-
                 echo -e "${GREEN}Select target org:${NC}"
                 COLUMNS=1
                 PS3="$(echo -e ${GREEN}Choice:${NC} )"
@@ -736,22 +583,16 @@ select_target_org() {
             fi
         fi
     fi
-
     if [ -z "$TARGET_ORG" ]; then
         print_error "Target org cannot be empty"
         exit 1
     fi
-
-    # Verify org exists and is authenticated
     if ! sf org display --target-org "$TARGET_ORG" &> /dev/null; then
         print_error "Cannot connect to org: $TARGET_ORG"
         print_warning "Please authenticate with: sf org login web --alias $TARGET_ORG"
         exit 1
     fi
-
     print_success "Connected to org: $TARGET_ORG"
-
-    # Detect if production
     if detect_production "$TARGET_ORG"; then
         IS_PRODUCTION=true
         echo -e "${RED}${BOLD}⚠️  WARNING: This is a PRODUCTION org!${NC}"
@@ -760,20 +601,12 @@ select_target_org() {
         print_success "This is a sandbox org"
     fi
 }
-
-# Extract ApexClass test classes from manifest
 extract_test_classes_from_manifest() {
     local manifest=$1
-
     if [ ! -f "$manifest" ]; then
         echo ""
         return 1
     fi
-
-    # Extract ApexClass members that likely are test classes
-    # Pattern: ends with "Test", "_Test", "Tests", or contains "Test" in name
-    # Note: In package.xml, <members> come BEFORE <name>ApexClass</name>
-    # Strategy: Extract the <types> section containing <name>ApexClass</name>
     local test_classes=$(awk '
         BEGIN { in_apex_types=0 }
         /<types>/ { buffer=""; in_types=1 }
@@ -790,48 +623,36 @@ extract_test_classes_from_manifest() {
     grep "<members>" | \
     sed 's/.*<members>\(.*\)<\/members>/\1/' | \
     grep -iE "(Test$|_Test$|Tests$|Test[A-Z])" || echo "")
-
     if [ -z "$test_classes" ]; then
         return 1
     fi
-
-    # Convert to space-separated list
     echo "$test_classes" | tr '\n' ' ' | sed 's/ $//'
 }
-
 select_test_level() {
     print_step "Selecting test level..."
-
     local options=("RunSpecifiedTests" "RunLocalTests" "RunAllTestsInOrg")
-
-    # Add "Skip Tests" option only for sandboxes (omits --test-level flag)
     if [ "$IS_PRODUCTION" == false ]; then
         options+=("Skip Tests (No Apex deployments)")
     else
         print_warning "Production deployments require test execution"
         echo -e "${CYAN}For metadata-only deployments, use RunLocalTests${NC}"
     fi
-
     echo -e "${GREEN}Please select a test level:${NC}"
-    COLUMNS=1  # Force vertical list display
+    COLUMNS=1
     PS3="$(echo -e ${GREEN}Choice:${NC} )"
     select TEST_LEVEL in "${options[@]}"; do
         if [[ -n "$TEST_LEVEL" ]]; then
             print_success "Selected test level: $TEST_LEVEL"
-
             if [ "$TEST_LEVEL" == "RunSpecifiedTests" ]; then
-                # Try to auto-detect test classes from manifest
                 local auto_detected=$(extract_test_classes_from_manifest "$MANIFEST_PATH")
-
                 if [ -n "$auto_detected" ]; then
                     echo ""
                     echo -e "${CYAN}Detected test classes in manifest:${NC}"
                     echo "$auto_detected" | tr ' ' '\n' | sed 's/^/  - /'
                     echo ""
-
                     echo -e "${GREEN}How would you like to specify test classes?${NC}"
                     local test_options=("Use detected classes" "Enter manually" "Combine both")
-                    COLUMNS=1  # Force vertical list for submenu too
+                    COLUMNS=1
                     PS3="$(echo -e ${GREEN}Choice:${NC} )"
                     select test_choice in "${test_options[@]}"; do
                         case $test_choice in
@@ -861,13 +682,10 @@ select_test_level() {
                     echo ""
                     read -p "Enter test classes (space-separated): " SPECIFIED_TESTS
                 fi
-
                 if [ -z "$SPECIFIED_TESTS" ]; then
                     print_error "Test classes cannot be empty for RunSpecifiedTests"
                     exit 1
                 fi
-
-                # Show final list
                 echo -e "${BLUE}Test classes to run:${NC}"
                 echo "$SPECIFIED_TESTS" | tr ' ' '\n' | sed 's/^/  - /'
             fi
@@ -877,16 +695,11 @@ select_test_level() {
         fi
     done
 }
-
 run_validation() {
     print_header "RUNNING DEPLOYMENT VALIDATION"
-
     local cmd=(sf project deploy validate --manifest "$MANIFEST_PATH" --target-org "$TARGET_ORG")
-
-    # Only add --test-level if not skipping tests
     if [ "$TEST_LEVEL" != "Skip Tests (No Apex deployments)" ]; then
         cmd+=(--test-level "$TEST_LEVEL")
-
         if [ "$TEST_LEVEL" == "RunSpecifiedTests" ] && [ -n "$SPECIFIED_TESTS" ]; then
             IFS=' ' read -ra test_arr <<< "$SPECIFIED_TESTS"
             for t in "${test_arr[@]}"; do
@@ -896,7 +709,6 @@ run_validation() {
     else
         print_warning "Skipping test execution (metadata-only deployment)"
     fi
-
     if [ -n "$DESTRUCTIVE_PATH" ]; then
         if [ "$DESTRUCTIVE_TIMING" == "pre" ]; then
             cmd+=(--pre-destructive-changes "$DESTRUCTIVE_PATH")
@@ -906,11 +718,8 @@ run_validation() {
             print_warning "Validation includes POST-destructive changes (deploy first)"
         fi
     fi
-
     echo -e "${BLUE}Command:${NC} ${cmd[*]}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-
-    # Run validation: stream to stdout (GUI pipe) and capture for job ID extraction
     local validation_output
     local _vtmp
     _vtmp=$(mktemp)
@@ -918,38 +727,27 @@ run_validation() {
     local exit_code=${PIPESTATUS[0]}
     validation_output=$(cat "$_vtmp")
     rm -f "$_vtmp"
-
     echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-
     if [ $exit_code -ne 0 ]; then
         print_error "Validation failed"
         exit $exit_code
     fi
-
     print_success "Validation succeeded"
-
-    # Extract job ID
     VALIDATION_JOB_ID=$(extract_job_id "$validation_output")
-
     if [ -n "$VALIDATION_JOB_ID" ]; then
         print_success "Validation Job ID: $VALIDATION_JOB_ID"
     else
         print_warning "Could not extract job ID from validation output"
     fi
-
-    # Check code coverage using job ID (only if tests were run)
     if [ "$TEST_LEVEL" != "Skip Tests (No Apex deployments)" ]; then
         check_code_coverage "$VALIDATION_JOB_ID"
     else
         print_warning "Skipping code coverage check (no tests were run)"
     fi
 }
-
 check_code_coverage() {
     local job_id=$1
-
     print_step "Checking code coverage..."
-
     if [ -z "$job_id" ]; then
         print_warning "No job ID available - cannot check coverage"
         read -p "Continue anyway? (y/n) " -n 1 -r
@@ -959,17 +757,11 @@ check_code_coverage() {
         fi
         return 0
     fi
-
-    # Fetch detailed deployment report to get coverage
     print_step "Fetching deployment report for coverage details..."
-
-    # Try JSON output first (most reliable)
     local coverage=0
     if command -v jq &> /dev/null; then
         local json_output
         json_output=$(sf project deploy report --job-id "$job_id" --target-org "$TARGET_ORG" --json 2>&1)
-
-        # Calculate coverage from per-class codeCoverage array; fall back to summary fields
         coverage=$(echo "$json_output" | jq -r '
             (.result.details.runTestResult.codeCoverage // []) as $cc |
             if ($cc | length) > 0 then
@@ -983,14 +775,11 @@ check_code_coverage() {
             end
         ' 2>/dev/null || echo "0")
     fi
-
-    # Fallback to text parsing if JSON didn't work
     if [ "$coverage" -eq 0 ]; then
         local report_output
         report_output=$(sf project deploy report --job-id "$job_id" --target-org "$TARGET_ORG" 2>&1)
         coverage=$(parse_coverage "$report_output")
     fi
-
     if [ "$coverage" -eq 0 ]; then
         print_warning "Could not parse code coverage from deployment report"
         echo -e "${YELLOW}Validation succeeded, but coverage percentage not found.${NC}"
@@ -1004,9 +793,7 @@ check_code_coverage() {
         fi
         return 0
     fi
-
     echo -e "${CYAN}Code Coverage: ${BOLD}${coverage}%${NC}"
-
     if [ "$coverage" -lt "$COVERAGE_THRESHOLD" ]; then
         print_error "Code coverage ${coverage}% is below required ${COVERAGE_THRESHOLD}%"
         echo -e "${RED}${BOLD}Deployment will fail in production!${NC}"
@@ -1016,46 +803,33 @@ check_code_coverage() {
         print_success "Code coverage ${coverage}% meets requirement (>=${COVERAGE_THRESHOLD}%)"
     fi
 }
-
 run_quick_deploy() {
     if [ -z "$VALIDATION_JOB_ID" ]; then
         print_warning "No validation job ID available"
         read -p "Enter job ID manually for quick deploy: " manual_job_id
-
         if [ -z "$manual_job_id" ]; then
             print_warning "Skipping quick deploy"
             return 0
         fi
-
         VALIDATION_JOB_ID="$manual_job_id"
     fi
-
     print_header "RUNNING QUICK DEPLOY"
-
     echo -e "${RED}${BOLD}⚠️  You are about to deploy to: ${TARGET_ORG}${NC}"
-
     if [ "$IS_PRODUCTION" == true ]; then
         echo -e "${RED}${BOLD}⚠️  THIS IS A PRODUCTION ORG!${NC}"
     fi
-
     read -p "$(echo -e ${YELLOW}Are you sure? \(y/n\)${NC} )" -n 1 -r
     echo
-
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         print_warning "Quick deploy cancelled"
         return 0
     fi
-
     local cmd=(sf project deploy quick --job-id "$VALIDATION_JOB_ID" --target-org "$TARGET_ORG")
-
     echo -e "${BLUE}Command:${NC} ${cmd[*]}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-
     "${cmd[@]}"
     local exit_code=$?
-
     echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-
     if [ $exit_code -eq 0 ]; then
         print_success "Deployment succeeded!"
         return 0
@@ -1064,16 +838,12 @@ run_quick_deploy() {
         exit $exit_code
     fi
 }
-
 run_full_deployment() {
     print_header "RUNNING FULL DEPLOYMENT"
-
     echo -e "${RED}${BOLD}⚠️  You are about to deploy to: ${TARGET_ORG}${NC}"
-
     if [ "$IS_PRODUCTION" == true ]; then
         echo -e "${RED}${BOLD}⚠️  THIS IS A PRODUCTION ORG!${NC}"
     fi
-
     if [[ "${SFDT_NON_INTERACTIVE:-}" != "true" ]]; then
         read -p "$(echo -e ${YELLOW}Are you sure? \(y/n\)${NC} )" -n 1 -r
         echo
@@ -1082,13 +852,9 @@ run_full_deployment() {
             exit 1
         fi
     fi
-
     local cmd=(sf project deploy start --manifest "$MANIFEST_PATH" --target-org "$TARGET_ORG")
-
-    # Only add --test-level if not skipping tests
     if [ "$TEST_LEVEL" != "Skip Tests (No Apex deployments)" ]; then
         cmd+=(--test-level "$TEST_LEVEL")
-
         if [ "$TEST_LEVEL" == "RunSpecifiedTests" ] && [ -n "$SPECIFIED_TESTS" ]; then
             IFS=' ' read -ra test_arr <<< "$SPECIFIED_TESTS"
             for t in "${test_arr[@]}"; do
@@ -1098,7 +864,6 @@ run_full_deployment() {
     else
         print_warning "Skipping test execution (metadata-only deployment)"
     fi
-
     if [ -n "$DESTRUCTIVE_PATH" ]; then
         if [ "$DESTRUCTIVE_TIMING" == "pre" ]; then
             cmd+=(--pre-destructive-changes "$DESTRUCTIVE_PATH")
@@ -1108,15 +873,11 @@ run_full_deployment() {
             print_warning "Deployment includes POST-destructive changes (deploy first)"
         fi
     fi
-
     echo -e "${BLUE}Command:${NC} ${cmd[*]}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-
     "${cmd[@]}"
     local exit_code=$?
-
     echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-
     if [ $exit_code -eq 0 ]; then
         print_success "Deployment succeeded!"
         return 0
@@ -1125,21 +886,12 @@ run_full_deployment() {
         exit $exit_code
     fi
 }
-
-# --- Post-Deployment Functions ---
-
-# Archive deployed manifest files
 archive_deployed_manifest() {
-    # Skip if manifest path not set (e.g., quick deploy only workflow)
     if [ -z "$MANIFEST_PATH" ]; then
         print_warning "Skipping manifest archiving (manifest path not set)"
         return 0
     fi
-
     print_step "Archiving deployed manifest files..."
-
-    # Create deployed directory if it doesn't exist
-    # In subpath layout, mirror the package subfolder under deployed/
     local deployed_dir="${MANIFEST_BASE_DIR}/deployed"
     if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then
         local rel_path
@@ -1149,14 +901,9 @@ archive_deployed_manifest() {
         fi
     fi
     mkdir -p "$deployed_dir"
-
-    # Get base name of manifest (e.g., rl-0.1.2 or rl-phase-0c)
     local raw_base
     raw_base=$(basename "$MANIFEST_PATH" .xml)
     local manifest_base="${raw_base%-package}"
-
-    # Find all files for this release
-    # In subpath layout the companion files (README, destructiveChanges) live in the same package subfolder
     local manifest_dir
     manifest_dir=$(dirname "$MANIFEST_PATH")
     local files_to_move=(
@@ -1164,7 +911,6 @@ archive_deployed_manifest() {
         "${manifest_dir}/${manifest_base}-README.md"
         "${manifest_dir}/${manifest_base}-destructiveChanges.xml"
     )
-
     local moved_count=0
     for file in "${files_to_move[@]}"; do
         if [ -f "$file" ]; then
@@ -1173,43 +919,30 @@ archive_deployed_manifest() {
             print_success "Moved: $(basename "$file")"
         fi
     done
-
     if [ $moved_count -gt 0 ]; then
         print_success "Archived $moved_count file(s) to $deployed_dir/"
-
-        # Commit the move
         git add "$deployed_dir" "${MANIFEST_BASE_DIR}/"
         git commit -m "chore: Archive deployed release ${RELEASE_VERSION} manifests
-
 Moved to $deployed_dir/ after successful deployment to ${TARGET_ORG}"
         print_success "Committed manifest archiving"
     else
         print_warning "No files to archive"
     fi
 }
-
 post_deployment_tasks() {
     print_header "POST-DEPLOYMENT TASKS"
-
-    # Archive manifest files
     archive_deployed_manifest
-
-    # Tag after deploy if requested (skip if release version not set)
     if [ "$TAG_TIMING" == "after" ] && [ -n "$RELEASE_VERSION" ]; then
         print_step "Creating release tag..."
         create_git_tag
     elif [ "$TAG_TIMING" == "after" ] && [ -z "$RELEASE_VERSION" ]; then
         print_warning "Skipping git tagging (release version not set)"
     fi
-
-    # Remind about PR if not on main
     local current_branch=$(get_current_branch)
     if [ "$current_branch" != "main" ] && [ "$current_branch" != "master" ]; then
         print_warning "Remember: You are still on branch '$current_branch'"
         print_warning "Don't forget to merge your PR if not already done"
     fi
-
-    # Summary
     echo ""
     print_success "═══════════════════════════════════════════════════"
     if [ -n "$RELEASE_VERSION" ]; then
@@ -1224,11 +957,6 @@ post_deployment_tasks() {
     print_success "═══════════════════════════════════════════════════"
     echo ""
 }
-
-# --- Main Workflow ---
-
-# --- Source-dir Deploy (folder-mode) ---
-# When SFDT_DEPLOY_SOURCE_DIR is set, skip manifest selection and deploy the folder directly
 if [[ -n "${SFDT_DEPLOY_SOURCE_DIR:-}" ]]; then
     print_header "SOURCE DIRECTORY DEPLOY"
     TARGET_ORG="${SFDT_TARGET_ORG:-${SFDT_DEFAULT_ORG:-}}"
@@ -1250,10 +978,8 @@ if [[ -n "${SFDT_DEPLOY_SOURCE_DIR:-}" ]]; then
     print_success "Source directory deploy complete"
     exit 0
 fi
-
 if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
     print_header "NON-INTERACTIVE DEPLOYMENT"
-    
     TARGET_ORG="${SFDT_TARGET_ORG:-${SFDT_DEFAULT_ORG:-}}"
     MANIFEST_PATH="${SFDT_MANIFEST_PATH:-}"
     TEST_LEVEL="${SFDT_TEST_LEVEL:-RunLocalTests}"
@@ -1262,15 +988,11 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
     DRY_RUN="${SFDT_DRY_RUN:-false}"
     TAG_RELEASE="${SFDT_TAG_RELEASE:-false}"
     CREATE_PR="${SFDT_CREATE_PR:-false}"
-    
     if [[ -z "$TARGET_ORG" ]]; then print_error "TARGET_ORG not set"; exit 1; fi
-
-    # If no manifest was passed explicitly, auto-select the newest one from MANIFEST_BASE_DIR
     if [[ -z "$MANIFEST_PATH" ]]; then
         _auto_max_depth=1
         if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then _auto_max_depth=2; fi
         MANIFEST_PATH=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$_auto_max_depth" -name "rl-*-package.xml" 2>/dev/null | sort -V | tail -1)
-        # Fall back to any package.xml if no versioned manifest found
         if [[ -z "$MANIFEST_PATH" ]]; then
             MANIFEST_PATH=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$_auto_max_depth" -name "package.xml" 2>/dev/null | head -1)
         fi
@@ -1280,19 +1002,15 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
         fi
         print_step "Auto-selected manifest: $(basename "$MANIFEST_PATH")"
     fi
-    
     RELEASE_VERSION=$(extract_version "$(basename "$MANIFEST_PATH")")
     if [[ -z "$RELEASE_VERSION" ]]; then
         print_error "Could not extract version from manifest: $(basename "$MANIFEST_PATH")"
         exit 1
     fi
-
     if detect_production "$TARGET_ORG"; then
         IS_PRODUCTION=true
         print_warning "Production environment detected"
     fi
-    
-    # Check for destructive changes
     raw_base=$(basename "$MANIFEST_PATH" .xml)
     manifest_base="${raw_base%-package}"
     manifest_dir=$(dirname "$MANIFEST_PATH")
@@ -1301,20 +1019,16 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
         DESTRUCTIVE_PATH="$destructive_path"
         print_success "Including destructive changes (${DESTRUCTIVE_TIMING})"
     fi
-
     if [[ "$DRY_RUN" == "true" ]]; then
         run_validation
     else
         run_full_deployment
-        # Only archive and tag if it was a successful real deployment
         archive_deployed_manifest
-        
         if [[ "$TAG_RELEASE" == "true" && -n "$RELEASE_VERSION" ]]; then
             print_step "Auto-tagging release v${RELEASE_VERSION}..."
             git tag -a "v${RELEASE_VERSION}" -m "Release ${RELEASE_VERSION}" || print_warning "Tag v${RELEASE_VERSION} already exists, skipping"
             git push origin "v${RELEASE_VERSION}" || print_warning "Could not push tag to remote"
         fi
-
         if [[ "$CREATE_PR" == "true" ]]; then
             print_step "Auto-creating pull request..."
             current_branch=$(get_current_branch)
@@ -1324,31 +1038,20 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
             fi
         fi
     fi
-    
     print_success "Non-interactive flow complete"
     exit 0
 fi
-
 main_validate_and_deploy() {
     print_header "SALESFORCE DEPLOYMENT ASSISTANT"
     echo -e "${CYAN}Release Validation & Deployment Workflow${NC}\n"
-
-    # Pre-deployment checks
     select_manifest
     check_changelog_updated
     check_git_commit
     handle_release_tagging
     check_pr_status
-
-    # Deployment configuration
     select_target_org
     select_test_level
-
-    # Run validation
     run_validation
-
-    # Quick deploy requires a job ID and tests to have been run during validation.
-    # When unavailable (no job ID, or metadata-only like Flows), offer full deploy instead.
     echo ""
     local can_quick_deploy=true
     if [ -z "$VALIDATION_JOB_ID" ]; then
@@ -1358,11 +1061,9 @@ main_validate_and_deploy() {
         can_quick_deploy=false
         print_warning "Quick deploy is not available (validation ran without tests)"
     fi
-
     if [ "$can_quick_deploy" == true ]; then
         read -p "$(echo -e ${GREEN}Validation successful. Run quick deploy now? \(y/n\)${NC} )" -n 1 -r
         echo
-
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             run_quick_deploy
             post_deployment_tasks
@@ -1374,7 +1075,6 @@ main_validate_and_deploy() {
     else
         read -p "$(echo -e ${GREEN}Validation successful. Run full deployment now? \(y/n\)${NC} )" -n 1 -r
         echo
-
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             run_full_deployment
             post_deployment_tasks
@@ -1383,60 +1083,39 @@ main_validate_and_deploy() {
         fi
     fi
 }
-
 main_full_deploy() {
     print_header "SALESFORCE DEPLOYMENT ASSISTANT"
     echo -e "${CYAN}Full Deployment Workflow (No Validation)${NC}\n"
-
-    # Pre-deployment checks
     select_manifest
     check_changelog_updated
     check_git_commit
     handle_release_tagging
     check_pr_status
-
-    # Deployment configuration
     select_target_org
     select_test_level
-
-    # Run deployment
     run_full_deployment
     post_deployment_tasks
 }
-
 main_quick_deploy_only() {
     print_header "QUICK DEPLOY FROM VALIDATION"
-
     read -p "Enter validation job ID: " VALIDATION_JOB_ID
-
     if [ -z "$VALIDATION_JOB_ID" ]; then
         print_error "Validation job ID is required"
         exit 1
     fi
-
-    # Reuse the select_target_org function for consistency
     select_target_org
-
-    # Detect production (already done in select_target_org, but keeping for clarity)
     if detect_production "$TARGET_ORG"; then
         IS_PRODUCTION=true
     fi
-
     run_quick_deploy
     post_deployment_tasks
 }
-
 main_post_deployment_only() {
     print_header "POST-DEPLOYMENT TASKS"
     echo -e "${CYAN}For deployments already completed outside this script${NC}\n"
-
-    # Select manifest - include deployed manifests since deployment already happened
     select_manifest true
-
-    # Check if already tagged
     local current_branch=$(get_current_branch)
     local existing_tag=$(git tag -l "v${RELEASE_VERSION}" 2>/dev/null)
-
     if [ -n "$existing_tag" ]; then
         print_warning "Tag 'v${RELEASE_VERSION}' already exists"
         echo ""
@@ -1472,22 +1151,16 @@ main_post_deployment_only() {
             print_success "Skipping tag creation"
         fi
     fi
-
-    # Archive manifest files (skip if already in deployed/)
     echo ""
     if [[ "$MANIFEST_PATH" != *"/deployed/"* ]]; then
         archive_deployed_manifest
     else
         print_success "Manifest already archived in deployed/"
     fi
-
-    # Offer to create PR if not on main
     if [ "$current_branch" != "main" ] && [ "$current_branch" != "master" ]; then
         echo ""
         offer_pr_creation "$current_branch"
     fi
-
-    # Summary
     echo ""
     print_success "═══════════════════════════════════════════════════"
     print_success "  POST-DEPLOYMENT TASKS COMPLETE"
@@ -1498,18 +1171,14 @@ main_post_deployment_only() {
     print_success "═══════════════════════════════════════════════════"
     echo ""
 }
-
-# --- Main Menu ---
-
 echo -e "${GREEN}${BOLD}"
 echo "╔═══════════════════════════════════════════════════════════╗"
 echo "║                                                           ║"
 echo "║         SALESFORCE DEPLOYMENT ASSISTANT                   ║"
-echo "║         ${PROJECT_NAME}$(printf '%*s' $((34 - ${#PROJECT_NAME})) '')║"
+echo "║         ${PROJECT_NAME}$(printf '%*s' $((34 - ${
 echo "║                                                           ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
-
 COLUMNS=1
 PS3="$(echo -e ${GREEN}Select deployment action:${NC} )"
 options=(
@@ -1519,7 +1188,6 @@ options=(
     "Post-Deployment Tasks Only (Already Deployed)"
     "Exit"
 )
-
 select opt in "${options[@]}"
 do
     case $opt in

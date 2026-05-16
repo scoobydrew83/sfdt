@@ -4,9 +4,7 @@ import {
   createMissingDescriptionFlagsFeature,
   findElementsWithoutDescriptions,
 } from '../features/missing-description-flags.js';
-
 const { buildKeyIndex, flagCanvas, clearAllFlags } = _missingDescriptionFlagsTestApi();
-
 describe('extension/features/missing-description-flags', () => {
   describe('findElementsWithoutDescriptions', () => {
     it('finds elements with empty/missing descriptions across types', () => {
@@ -22,10 +20,8 @@ describe('extension/features/missing-description-flags', () => {
       expect(names).toContain('D1');
       expect(names).toContain('V1');
       expect(names).not.toContain('V2');
-      // The flow-level entry is appended last.
       expect(missing.find((m) => m.isFlow)).toBeDefined();
     });
-
     it('walks orchestrator stage steps', () => {
       const missing = findElementsWithoutDescriptions({
         description: 'present',
@@ -39,7 +35,6 @@ describe('extension/features/missing-description-flags', () => {
       });
       expect(missing.find((m) => m.name === 'Step1')).toBeDefined();
     });
-
     it('returns an empty array (apart from flow level) when everything has descriptions', () => {
       const missing = findElementsWithoutDescriptions({
         description: 'docs',
@@ -48,7 +43,6 @@ describe('extension/features/missing-description-flags', () => {
       expect(missing).toEqual([]);
     });
   });
-
   describe('buildKeyIndex + flagCanvas + clearAllFlags', () => {
     it('flags element cards whose label matches', () => {
       const card = document.createElement('div');
@@ -61,16 +55,13 @@ describe('extension/features/missing-description-flags', () => {
       card.appendChild(span);
       card.appendChild(base);
       document.body.replaceChildren(card);
-
       flagCanvas(document, [
         { name: 'set_owner', label: 'Set Owner', type: 'Assignment', isResource: false },
       ]);
       expect(card.querySelector('.sfut-desc-flag')).not.toBeNull();
-
       clearAllFlags(document);
       expect(card.querySelector('.sfut-desc-flag')).toBeNull();
     });
-
     it('strips orchestrator number prefixes when matching ("1. Stage")', () => {
       const card = document.createElement('div');
       card.className = 'element-card';
@@ -82,13 +73,11 @@ describe('extension/features/missing-description-flags', () => {
       card.appendChild(span);
       card.appendChild(base);
       document.body.replaceChildren(card);
-
       flagCanvas(document, [
         { name: 'Onboarding', label: 'Onboarding', type: 'Stage', isResource: false },
       ]);
       expect(card.querySelector('.sfut-desc-flag')).not.toBeNull();
     });
-
     it('builds case-insensitive lookup keys', () => {
       const index = buildKeyIndex([
         { name: 'X', label: 'My Element', type: 'Assignment', isResource: false },
@@ -98,15 +87,12 @@ describe('extension/features/missing-description-flags', () => {
     });
   });
 });
-
 describe('missing-description-flags teardown', () => {
   beforeEach(() => {
     document.body.replaceChildren();
     chrome.storage.local.clear();
   });
-
   it('removes flag badges and stops the observer on teardown', async () => {
-    // Inject a card with a matching element so flagCanvas can place a badge.
     const card = document.createElement('div');
     card.className = 'element-card';
     const span = document.createElement('span');
@@ -117,18 +103,14 @@ describe('missing-description-flags teardown', () => {
     card.appendChild(span);
     card.appendChild(base);
     document.body.appendChild(card);
-
     flagCanvas(document, [
       { name: 'set_owner', label: 'Set Owner', type: 'Assignment', isResource: false },
     ]);
     expect(document.querySelector('.sfut-desc-flag')).not.toBeNull();
-
     const feature = createMissingDescriptionFlagsFeature();
-    // Teardown should clean up regardless of whether init ran.
     await feature.teardown?.();
     expect(document.querySelector('.sfut-desc-flag')).toBeNull();
   });
-
   it('does not throw when called twice', async () => {
     const feature = createMissingDescriptionFlagsFeature();
     await feature.teardown?.();

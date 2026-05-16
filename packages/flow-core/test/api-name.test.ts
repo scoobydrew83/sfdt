@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ApiNameLibrary, ICON_TO_TYPE } from '../src/api-name.js';
 import { createMemoryStorage } from '../src/storage.js';
-
 describe('flow-core/api-name', () => {
   describe('lookups', () => {
     it('returns the default prefix entry for a known type (case-insensitive)', async () => {
@@ -10,7 +9,6 @@ describe('flow-core/api-name', () => {
       expect(lib.getByType('Get Records')?.Snake_Case).toBe('Get_');
       expect(lib.getByType('get records')?.PascalCase).toBe('Get');
     });
-
     it('returns null for an unknown type or empty input', async () => {
       const lib = new ApiNameLibrary();
       await lib.load();
@@ -18,7 +16,6 @@ describe('flow-core/api-name', () => {
       expect(lib.getByType('')).toBeNull();
       expect(lib.getByType(null)).toBeNull();
     });
-
     it('maps Lightning icon-name attributes to prefix types', async () => {
       const lib = new ApiNameLibrary();
       expect(lib.getTypeFromIconName('standard:record_lookup')).toBe('get records');
@@ -26,39 +23,31 @@ describe('flow-core/api-name', () => {
       expect(lib.getTypeFromIconName('unknown:icon')).toBeNull();
       expect(lib.getTypeFromIconName(null)).toBeNull();
     });
-
     it('exposes the ICON_TO_TYPE map directly', () => {
       expect(ICON_TO_TYPE['standard:flow']).toBe('subflow');
     });
   });
-
   describe('expand — the CHANGELOG #4 fix', () => {
     it('Snake_Case: prefix + snake_normalised label', async () => {
       const lib = new ApiNameLibrary();
       await lib.load();
       expect(lib.expand('Active Accounts', 'Get Records', 'Snake_Case')).toBe('Get_Active_Accounts');
     });
-
     it('PascalCase: prefix + PascalCased label', async () => {
       const lib = new ApiNameLibrary();
       await lib.load();
       expect(lib.expand('active accounts', 'Get Records', 'PascalCase')).toBe('GetActiveAccounts');
     });
-
     it('camelCase: prefix + camelCased label', async () => {
       const lib = new ApiNameLibrary();
       await lib.load();
-      // For Get Records, camelCase prefix is "get"; label normalises to ActiveAccounts;
-      // final is "getActiveAccounts" — but our implementation concatenates "get" + "activeAccounts"
       expect(lib.expand('active accounts', 'Get Records', 'camelCase')).toBe('getactiveAccounts');
     });
-
     it('returns null on empty label', async () => {
       const lib = new ApiNameLibrary();
       await lib.load();
       expect(lib.expand('', 'Get Records', 'Snake_Case')).toBeNull();
     });
-
     it('strips punctuation that is not alphanumeric in Snake_Case', async () => {
       const lib = new ApiNameLibrary();
       await lib.load();
@@ -66,14 +55,12 @@ describe('flow-core/api-name', () => {
         'VarString_Account_1_Renewal',
       );
     });
-
     it('uses an empty prefix when the type is unknown but still normalises the label', async () => {
       const lib = new ApiNameLibrary();
       await lib.load();
       expect(lib.expand('Some Label', 'NoSuchType', 'Snake_Case')).toBe('Some_Label');
     });
   });
-
   describe('importCustom — overrides defaults', () => {
     it('replaces the prefix list when valid JSON is imported', async () => {
       const storage = createMemoryStorage();
@@ -90,27 +77,23 @@ describe('flow-core/api-name', () => {
       expect(lib.getByType('Custom')?.Snake_Case).toBe('C_');
       expect(lib.getByType('Get Records')).toBeNull();
     });
-
     it('rejects invalid JSON', async () => {
       const lib = new ApiNameLibrary();
       const result = await lib.importCustom('not json {');
       expect(result.success).toBe(false);
       expect(result.error).toMatch(/Invalid JSON/);
     });
-
     it('rejects JSON without a prefixes array', async () => {
       const lib = new ApiNameLibrary();
       const result = await lib.importCustom('{"version": 1}');
       expect(result.success).toBe(false);
       expect(result.error).toMatch(/prefixes/);
     });
-
     it('rejects an empty prefixes array', async () => {
       const lib = new ApiNameLibrary();
       const result = await lib.importCustom('{"version": 1, "prefixes": [{"foo": "bar"}]}');
       expect(result.success).toBe(false);
     });
-
     it('accepts legacy "snake" / "pascal" / "camel" field names', async () => {
       const lib = new ApiNameLibrary();
       const result = await lib.importCustom(
@@ -122,7 +105,6 @@ describe('flow-core/api-name', () => {
       expect(result.success).toBe(true);
       expect(lib.getByType('LegacyShape')?.Snake_Case).toBe('L_');
     });
-
     it('persists imports to injected storage and rehydrates on load', async () => {
       const storage = createMemoryStorage();
       const lib1 = new ApiNameLibrary({ storage });
@@ -138,7 +120,6 @@ describe('flow-core/api-name', () => {
       expect(lib2.getByType('Persisted')?.Snake_Case).toBe('P_');
     });
   });
-
   describe('resetToDefaults', () => {
     it('clears custom prefixes and restores the defaults', async () => {
       const storage = createMemoryStorage();
@@ -155,7 +136,6 @@ describe('flow-core/api-name', () => {
       expect(lib.getByType('Get Records')?.Snake_Case).toBe('Get_');
     });
   });
-
   describe('exportAsJson', () => {
     it('round-trips through importCustom', async () => {
       const lib1 = new ApiNameLibrary();

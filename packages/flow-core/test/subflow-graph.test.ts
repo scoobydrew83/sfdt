@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildSubflowGraph, getCallChains } from '../src/subflow-graph.js';
 import type { RawFlowMetadata } from '../src/normalize.js';
-
 function withSubflows(name: string, calls: readonly string[]): RawFlowMetadata {
   return {
     label: name,
@@ -9,7 +8,6 @@ function withSubflows(name: string, calls: readonly string[]): RawFlowMetadata {
     subflows: calls.map((flowName, i) => ({ name: `sub_${i}`, flowName })),
   };
 }
-
 describe('flow-core/subflow-graph', () => {
   describe('buildSubflowGraph', () => {
     it('builds outgoing + incoming edges', () => {
@@ -21,7 +19,6 @@ describe('flow-core/subflow-graph', () => {
       expect(graph.nodes.get('A')!.outgoing.map((e) => e.id)).toEqual(['B', 'C']);
       expect(graph.nodes.get('C')!.incoming.sort()).toEqual(['A', 'B']);
     });
-
     it('flags edges that point at flows we have no metadata for', () => {
       const graph = buildSubflowGraph([
         { id: 'A', metadata: withSubflows('A', ['Missing', 'B']) },
@@ -32,7 +29,6 @@ describe('flow-core/subflow-graph', () => {
       expect(outgoing.find((e) => e.id === 'B')?.missing).toBe(false);
       expect(graph.unresolvedReferences).toEqual(['Missing']);
     });
-
     it('detects a two-flow cycle A → B → A', () => {
       const graph = buildSubflowGraph([
         { id: 'A', metadata: withSubflows('A', ['B']) },
@@ -41,7 +37,6 @@ describe('flow-core/subflow-graph', () => {
       expect(graph.cycles).toHaveLength(1);
       expect(graph.cycles[0]!.members).toEqual(['A', 'B']);
     });
-
     it('detects a self-loop A → A', () => {
       const graph = buildSubflowGraph([
         { id: 'Recursive', metadata: withSubflows('Recursive', ['Recursive']) },
@@ -49,7 +44,6 @@ describe('flow-core/subflow-graph', () => {
       expect(graph.cycles).toHaveLength(1);
       expect(graph.cycles[0]!.members).toEqual(['Recursive']);
     });
-
     it('detects a three-flow cycle A → B → C → A', () => {
       const graph = buildSubflowGraph([
         { id: 'A', metadata: withSubflows('A', ['B']) },
@@ -59,7 +53,6 @@ describe('flow-core/subflow-graph', () => {
       expect(graph.cycles).toHaveLength(1);
       expect(graph.cycles[0]!.members.sort()).toEqual(['A', 'B', 'C']);
     });
-
     it('does NOT flag a DAG (no cycles)', () => {
       const graph = buildSubflowGraph([
         { id: 'A', metadata: withSubflows('A', ['B', 'C']) },
@@ -69,7 +62,6 @@ describe('flow-core/subflow-graph', () => {
       ]);
       expect(graph.cycles).toEqual([]);
     });
-
     it('flags two independent cycles separately', () => {
       const graph = buildSubflowGraph([
         { id: 'A', metadata: withSubflows('A', ['B']) },
@@ -81,7 +73,6 @@ describe('flow-core/subflow-graph', () => {
       expect(graph.cycles[0]!.members).toEqual(['A', 'B']);
       expect(graph.cycles[1]!.members).toEqual(['X', 'Y']);
     });
-
     it('returns deterministic cycle ordering across runs', () => {
       const a = buildSubflowGraph([
         { id: 'A', metadata: withSubflows('A', ['B']) },
@@ -94,7 +85,6 @@ describe('flow-core/subflow-graph', () => {
       expect(a.cycles).toEqual(b.cycles);
     });
   });
-
   describe('maxDepth', () => {
     it('terminal flows have depth 0', () => {
       const graph = buildSubflowGraph([
@@ -102,9 +92,7 @@ describe('flow-core/subflow-graph', () => {
       ]);
       expect(graph.maxDepth.get('X')).toBe(0);
     });
-
     it('returns the longest acyclic chain length', () => {
-      // A → B → C → D, plus A → E
       const graph = buildSubflowGraph([
         { id: 'A', metadata: withSubflows('A', ['B', 'E']) },
         { id: 'B', metadata: withSubflows('B', ['C']) },
@@ -116,16 +104,11 @@ describe('flow-core/subflow-graph', () => {
       expect(graph.maxDepth.get('B')).toBe(2);
       expect(graph.maxDepth.get('E')).toBe(0);
     });
-
     it('keeps depth finite inside a cycle and reports the cycle separately', () => {
       const graph = buildSubflowGraph([
         { id: 'A', metadata: withSubflows('A', ['B']) },
         { id: 'B', metadata: withSubflows('B', ['A']) },
       ]);
-      // Memoization makes the exact depth order-dependent (whichever node
-      // we recurse from first stores a longer chain in the memo). The
-      // important guarantees are: depths stay finite (no infinite
-      // recursion), and the cycle is surfaced in graph.cycles separately.
       const depthA = graph.maxDepth.get('A') ?? -1;
       const depthB = graph.maxDepth.get('B') ?? -1;
       expect(depthA).toBeGreaterThanOrEqual(1);
@@ -135,7 +118,6 @@ describe('flow-core/subflow-graph', () => {
       expect(graph.cycles).toHaveLength(1);
     });
   });
-
   describe('getCallChains', () => {
     it('emits one chain per leaf path in a DAG', () => {
       const graph = buildSubflowGraph([
@@ -148,7 +130,6 @@ describe('flow-core/subflow-graph', () => {
       expect(chains).toContainEqual(['A', 'B', 'D']);
       expect(chains).toContainEqual(['A', 'C']);
     });
-
     it('terminates cycles with a "(cycle)" marker', () => {
       const graph = buildSubflowGraph([
         { id: 'A', metadata: withSubflows('A', ['B']) },
@@ -157,14 +138,11 @@ describe('flow-core/subflow-graph', () => {
       const chains = getCallChains(graph, 'A');
       expect(chains.some((c) => c.some((s) => s.includes('(cycle)')))).toBe(true);
     });
-
     it('returns [] for an unknown id', () => {
       const graph = buildSubflowGraph([]);
       expect(getCallChains(graph, 'NoSuchFlow')).toEqual([]);
     });
-
     it('caps very long chains with an ellipsis marker', () => {
-      // 12-deep linear chain, request maxLength 4.
       const records: Array<{ id: string; metadata: RawFlowMetadata }> = [];
       for (let i = 0; i < 12; i += 1) {
         records.push({

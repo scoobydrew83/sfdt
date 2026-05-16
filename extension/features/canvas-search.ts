@@ -1,29 +1,12 @@
-// Canvas Search & Highlight — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/features/canvas-search.js.
-//
-// Adds a search overlay to Flow Builder that scans three sources for the
-// user's query:
-//   1. Element cards on the canvas (label + element type).
-//   2. Connector badges (decision outcome labels).
-//   3. Toolbox palette items in the left panel.
-//
-// Matches are highlighted via dynamically-injected CSS rules so the colour
-// can be themed from settings. Navigation (Enter / Shift+Enter / arrow keys)
-// cycles through matches and pans the canvas via a matrix transform on
-// `.flow-container` — the same trick v2.0.2 used.
-
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { loadSettings, onSettingsChange, registerSettingsShape } from '../lib/settings.js';
 import { z } from 'zod';
-
 const CANVAS_SEARCH_SETTINGS_SCHEMA = z.object({
   shortcut: z.string().default('Ctrl+Shift+F'),
   highlightColour: z.string().default('#FFD700'),
 });
-
 registerSettingsShape('canvas-search', CANVAS_SEARCH_SETTINGS_SCHEMA);
-
 interface ShortcutParts {
   ctrl: boolean;
   shift: boolean;
@@ -31,7 +14,6 @@ interface ShortcutParts {
   meta: boolean;
   key: string;
 }
-
 interface Match {
   card: Element;
   label: string;
@@ -40,11 +22,9 @@ interface Match {
   isToolbox?: boolean;
   toolboxSection?: Element | null;
 }
-
 const HIGHLIGHT_CLASS = 'sfut-canvas-highlight';
 const FOCUS_CLASS = 'sfut-canvas-highlight-focus';
 const DYNAMIC_STYLE_ID = 'sfut-canvas-search-dynamic';
-
 export function parseShortcut(str: string): ShortcutParts {
   const parts = str.split('+').map((p) => p.trim().toLowerCase());
   return {
@@ -55,7 +35,6 @@ export function parseShortcut(str: string): ShortcutParts {
     key: parts.filter((p) => !['ctrl', 'shift', 'alt', 'meta', 'cmd'].includes(p))[0] ?? '',
   };
 }
-
 export function shortcutMatches(parts: ShortcutParts | null, e: KeyboardEvent): boolean {
   if (!parts) return false;
   return (
@@ -66,13 +45,10 @@ export function shortcutMatches(parts: ShortcutParts | null, e: KeyboardEvent): 
     e.key.toLowerCase() === parts.key
   );
 }
-
 function injectDynamicStyles(doc: Document, colour: string): void {
   doc.getElementById(DYNAMIC_STYLE_ID)?.remove();
   const style = doc.createElement('style');
   style.id = DYNAMIC_STYLE_ID;
-  // textContent on a <style> element is treated as CSS text by the parser;
-  // it is never parsed as HTML, so no escape pathway is needed.
   style.textContent = `
     .element-card.${HIGHLIGHT_CLASS} .base-card,
     .connector-badge.${HIGHLIGHT_CLASS} {
@@ -87,15 +63,10 @@ function injectDynamicStyles(doc: Document, colour: string): void {
   `;
   doc.head.appendChild(style);
 }
-
 function findMatches(doc: Document, query: string): Match[] {
   const matches: Match[] = [];
   const lower = query.toLowerCase();
   if (!lower) return matches;
-
-  // 1) Element cards on the canvas. v2.0.2 scoped this to a custom-element
-  // wrapper for defensive specificity, but the feature itself is already
-  // gated on the Flow Builder context — `.element-card` is unique enough.
   const cards = doc.querySelectorAll('.element-card');
   for (const card of cards) {
     const labelEl = card.querySelector('span.text-element-label[title]');
@@ -106,8 +77,6 @@ function findMatches(doc: Document, query: string): Match[] {
       matches.push({ card, label, type });
     }
   }
-
-  // 2) Connector badges (decision outcome labels).
   const badges = doc.querySelectorAll('.connector-badge span.slds-truncate[title]');
   for (const badge of badges) {
     const text = badge.getAttribute('title') ?? '';
@@ -115,8 +84,6 @@ function findMatches(doc: Document, query: string): Match[] {
     const container = badge.closest('.connector-badge');
     if (container) matches.push({ card: container, label: text, type: 'Connector', isBadge: true });
   }
-
-  // 3) Toolbox palette items.
   const paletteItems = doc.querySelectorAll(
     'builder_platform_interaction-left-panel-resources tr.palette-item',
   );
@@ -138,20 +105,11 @@ function findMatches(doc: Document, query: string): Match[] {
       toolboxSection: section ?? null,
     });
   }
-
   return matches;
 }
-
 interface ScrollCanvasOptions {
   doc?: Document;
 }
-
-/**
- * Pan the Flow Builder canvas so the target element sits in the centre. The
- * canvas uses a CSS matrix transform on `.flow-container`; rather than
- * `scrollIntoView` (which doesn't work with the transform), we adjust the
- * translation portion of the matrix.
- */
 export function scrollCanvasToElement(el: Element, options: ScrollCanvasOptions = {}): void {
   const doc = options.doc ?? document;
   const canvas = doc.querySelector(
@@ -162,7 +120,6 @@ export function scrollCanvasToElement(el: Element, options: ScrollCanvasOptions 
     (el as HTMLElement).scrollIntoView?.({ behavior: 'smooth', block: 'center', inline: 'center' });
     return;
   }
-
   const style = flowContainer.style.transform || '';
   let tx = 0;
   let ty = 0;
@@ -180,46 +137,38 @@ export function scrollCanvasToElement(el: Element, options: ScrollCanvasOptions 
       ty = parseFloat(translateMatch[2]!) || 0;
     }
   }
-
   const elRect = el.getBoundingClientRect();
   const canvasRect = canvas.getBoundingClientRect();
   const dx = canvasRect.left + canvasRect.width / 2 - (elRect.left + elRect.width / 2);
   const dy = canvasRect.top + canvasRect.height / 2 - (elRect.top + elRect.height / 2);
-
   flowContainer.style.transition = 'transform 0.35s ease';
   flowContainer.style.transform = `matrix(${scale}, 0, 0, ${scale}, ${tx + dx}, ${ty + dy})`;
   setTimeout(() => {
     flowContainer.style.transition = '';
   }, 400);
 }
-
 export interface CanvasSearchOptions {
   doc?: Document;
   win?: Window;
 }
-
 export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Feature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
-
   let isOpen = false;
   let matches: Match[] = [];
   let currentIndex = -1;
   let highlightColour = '#FFD700';
   let shortcutParts: ShortcutParts | null = null;
-
   let bar: HTMLDivElement | null = null;
   let input: HTMLInputElement | null = null;
   let countLabel: HTMLSpanElement | null = null;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
   function clearHighlights(): void {
     for (const el of doc.querySelectorAll(`.${HIGHLIGHT_CLASS}`)) {
       el.classList.remove(HIGHLIGHT_CLASS);
       el.classList.remove(FOCUS_CLASS);
     }
   }
-
   function updateCount(): void {
     if (!countLabel) return;
     if (matches.length === 0) {
@@ -231,12 +180,10 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
       countLabel.classList.remove('sfut-canvas-search-bar-no-results');
     }
   }
-
   function focusMatch(index: number): void {
     const match = matches[index];
     if (!match) return;
     match.card.classList.add(FOCUS_CLASS);
-
     if (match.isToolbox) {
       const sectionEl = match.toolboxSection?.querySelector('.slds-accordion__section');
       if (sectionEl && !sectionEl.classList.contains('slds-is-open')) {
@@ -255,7 +202,6 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
       scrollCanvasToElement(match.card, { doc });
     }
   }
-
   function navigate(delta: 1 | -1): void {
     if (matches.length === 0) return;
     if (currentIndex >= 0) matches[currentIndex]?.card.classList.remove(FOCUS_CLASS);
@@ -263,7 +209,6 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
     focusMatch(currentIndex);
     updateCount();
   }
-
   function performSearch(query: string): void {
     clearHighlights();
     matches = findMatches(doc, query);
@@ -275,14 +220,12 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
     }
     updateCount();
   }
-
   function openSearch(): void {
     if (isOpen) return;
     isOpen = true;
     bar = createOverlay();
     input?.focus();
   }
-
   function closeSearch(): void {
     if (!isOpen) return;
     isOpen = false;
@@ -294,18 +237,14 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
     input = null;
     countLabel = null;
   }
-
   function createOverlay(): HTMLDivElement {
     doc.querySelector('.sfut-canvas-search-bar')?.remove();
-
     const container = doc.createElement('div');
     container.className = 'sfut-canvas-search-bar';
-
     const icon = doc.createElement('span');
     icon.className = 'sfut-canvas-search-bar-icon';
     icon.textContent = '🔍';
     container.appendChild(icon);
-
     const inputEl = doc.createElement('input');
     inputEl.type = 'text';
     inputEl.className = 'sfut-canvas-search-bar-input';
@@ -313,7 +252,6 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
     inputEl.setAttribute('autocomplete', 'off');
     inputEl.setAttribute('spellcheck', 'false');
     container.appendChild(inputEl);
-
     const prevBtn = doc.createElement('button');
     prevBtn.className = 'sfut-canvas-search-bar-nav';
     prevBtn.textContent = '▲';
@@ -324,7 +262,6 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
       inputEl.focus();
     });
     container.appendChild(prevBtn);
-
     const nextBtn = doc.createElement('button');
     nextBtn.className = 'sfut-canvas-search-bar-nav';
     nextBtn.textContent = '▼';
@@ -335,11 +272,9 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
       inputEl.focus();
     });
     container.appendChild(nextBtn);
-
     const count = doc.createElement('span');
     count.className = 'sfut-canvas-search-bar-count';
     container.appendChild(count);
-
     const closeBtn = doc.createElement('button');
     closeBtn.className = 'sfut-canvas-search-bar-close';
     closeBtn.textContent = '✕';
@@ -349,12 +284,10 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
       closeSearch();
     });
     container.appendChild(closeBtn);
-
     inputEl.addEventListener('input', () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => performSearch(inputEl.value.trim()), 150);
     });
-
     const canvasHost =
       doc.querySelector<HTMLElement>(
         'builder_platform_interaction-alc-canvas-container, builder_platform_interaction-alc-canvas',
@@ -363,12 +296,10 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
       canvasHost.style.position = canvasHost.style.position || 'relative';
     }
     canvasHost.appendChild(container);
-
     input = inputEl;
     countLabel = count;
     return container;
   }
-
   function onKeyDown(e: KeyboardEvent): void {
     if (shortcutMatches(shortcutParts, e)) {
       e.preventDefault();
@@ -400,15 +331,12 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
       navigate(-1);
     }
   }
-
   let boundKeydownListener: ((e: KeyboardEvent) => void) | null = null;
   let unsubscribeSettings: (() => void) | null = null;
-
   async function teardown(): Promise<void> {
     try {
       closeSearch();
     } catch {
-      // closeSearch is defensive; ignore failure paths.
     }
     doc.getElementById(DYNAMIC_STYLE_ID)?.remove();
     if (boundKeydownListener) {
@@ -420,7 +348,6 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
       unsubscribeSettings = null;
     }
   }
-
   return {
     manifest: {
       id: 'canvas-search',
@@ -428,7 +355,6 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
       contexts: [CONTEXTS.FLOW_BUILDER],
       settingsSchema: CANVAS_SEARCH_SETTINGS_SCHEMA,
     },
-
     async init() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.FLOW_BUILDER) {
         return;
@@ -441,7 +367,6 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
       injectDynamicStyles(doc, highlightColour);
       boundKeydownListener = onKeyDown;
       doc.addEventListener('keydown', boundKeydownListener, true);
-
       unsubscribeSettings = onSettingsChange((next) => {
         const nextCanvasConfig = (next.featureSettings?.['canvas-search'] ?? next.canvasSearch) as CanvasConfig;
         if (nextCanvasConfig.highlightColour !== highlightColour) {
@@ -451,16 +376,12 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
         shortcutParts = parseShortcut(nextCanvasConfig.shortcut);
       });
     },
-
     onActivate() {
       openSearch();
     },
-
     teardown,
   };
 }
-
-// Test seam
 export function _canvasSearchTestApi() {
   return { HIGHLIGHT_CLASS, FOCUS_CLASS, DYNAMIC_STYLE_ID, findMatches };
 }

@@ -8,28 +8,21 @@ import ReleaseNotesStep from './ReleaseNotesStep.jsx';
 import ValidateStep from './ValidateStep.jsx';
 import DeployStep from './DeployStep.jsx';
 import RollbackStep from './RollbackStep.jsx';
-
-// ─── Main page ───────────────────────────────────────────────────────────────
-
 export default function ReleaseHubPage() {
   const [activeStep, setActiveStep]       = useState('manifest');
   const [done, setDone]                   = useState(new Set());
   const [selectedManifest, setSelectedManifest] = useState(null);
   const [aiAvailable, setAiAvailable]     = useState(false);
-  const [deployMode, setDeployMode]       = useState('manifest'); // 'manifest' | 'folder'
+  const [deployMode, setDeployMode]       = useState('manifest');
   const [selectedSourceDir, setSelectedSourceDir] = useState('');
-
   useEffect(() => {
     api.aiAvailable().then((d) => setAiAvailable(d.available)).catch(() => {});
   }, []);
-
   const markDone = (stepId) => {
     setDone((prev) => new Set([...prev, stepId]));
-    // Advance to next step
     const idx = STEPS.findIndex((s) => s.id === stepId);
     if (idx < STEPS.length - 1) setActiveStep(STEPS[idx + 1].id);
   };
-
   const renderStep = () => {
     switch (activeStep) {
       case 'manifest':
@@ -64,7 +57,6 @@ export default function ReleaseHubPage() {
         return null;
     }
   };
-
   return (
     <div>
       <div className="page-header">
@@ -73,9 +65,7 @@ export default function ReleaseHubPage() {
           <p className="page-subtitle">Manage manifests, changelog, validation, and deployment</p>
         </div>
       </div>
-
       <HorizontalStepper active={activeStep} done={done} onSelect={setActiveStep} />
-
       <div style={{
         background: 'var(--bg-surface)',
         border: '1px solid var(--border-subtle)',

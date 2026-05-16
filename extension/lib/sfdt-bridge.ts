@@ -1,77 +1,36 @@
-// sfdt bridge client.
-//
-// The client side of the contract defined in
-// /Users/dkennedy/dev/sfdt/packages/flow-core/src/bridge-contract.ts. The
-// extension uses this to talk to the locally-installed sfdt CLI for any
-// operation that can't be done from the browser sandbox alone — running a
-// deploy, opening a multi-org compare, calling the AI provider, and so on.
-//
-// Transport selection at runtime:
-//
-//   1. preferredTransport === 'localhost' — only try the HTTP server.
-//   2. preferredTransport === 'native'    — only try the native messaging host.
-//   3. preferredTransport === 'auto'      — race both with a 1 second timeout,
-//                                            return the first success.
-//
-// Either transport's failure mode is the same SfdtResponse error shape, so
-// callers don't have to special-case the transport. The `code` field on
-// errors lets the UI render distinct states ("Start sfdt ui to enable this
-// feature" vs. "Token invalid — re-pair in extension settings").
-
 import type {
   SfdtRequest,
   SfdtResponse,
   SfdtErrorResponse,
   PingResponseData,
 } from '@sfdt/flow-core/bridge-contract';
-
 const DEFAULT_TIMEOUT_MS = 8000;
 const DISCOVERY_TIMEOUT_MS = 1000;
-
 export interface BridgeOptions {
   token: string;
   preferredTransport?: 'auto' | 'localhost' | 'native';
   localhostPort?: number;
   nativeHostName?: string;
-  // Test seams.
   fetchImpl?: typeof fetch;
   connectNativeImpl?: typeof chrome.runtime.connectNative;
-  /** Override for chrome.runtime.sendMessage used by getServerInfo() in tests. */
   sendMessageImpl?: (message: unknown) => Promise<unknown>;
   timeoutMs?: number;
 }
-
 type Transport = 'localhost' | 'native' | 'unknown';
-
 function makeRequestId(): string {
-  // crypto.randomUUID is available in MV3 service workers and content scripts.
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
   return `r-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
-
 function offlineResponse(requestId: string, message: string): SfdtErrorResponse {
   return { ok: false, requestId, error: message, code: 'BRIDGE_OFFLINE' };
 }
-
-/**
- * Response shape from the background service worker's `bridgePing` handler.
- * The handler wraps the raw bridge response in `{ ok, body }` so transport
- * errors are distinguishable from bridge-level errors.
- */
 interface BridgePingResponse {
   ok: boolean;
   body?: unknown;
   error?: string;
 }
-
-/**
- * Send a message to the background service worker and await its response.
- * Used to route HTTPS-incompatible fetches (Private Network Access) through
- * a context that isn't subject to that policy. Returns null if chrome.runtime
- * is unavailable (test environments).
- */
 async function chromeRuntimeSendMessage<T>(message: unknown): Promise<T | null> {
   if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return null;
   return new Promise<T | null>((resolve) => {
@@ -88,37 +47,16 @@ async function chromeRuntimeSendMessage<T>(message: unknown): Promise<T | null> 
     }
   });
 }
-
 export interface BridgeClient {
-  /**
-   * Cheap probe used to pick a transport. Returns 'localhost' / 'native' /
-   * 'unknown' depending on what answered first.
-   */
   discover(): Promise<Transport>;
-
-  /**
-   * Cheap probe used to pick a transport AND surface server-side state
-   * (currently kill-switched feature ids). Returns null when no transport
-   * answered successfully.
-   */
   getServerInfo(): Promise<{
     serverVersion: string;
     transport: 'localhost' | 'native';
     disabledFeatures: readonly string[];
   } | null>;
-
-  /**
-   * Send a typed request and await its response.
-   */
   send<R extends SfdtRequest>(request: R): Promise<SfdtResponse>;
-
-  /**
-   * Convenience for one-off requests: stamps the requestId so the caller
-   * never has to.
-   */
   call<R extends Omit<SfdtRequest, 'requestId'>>(request: R): Promise<SfdtResponse>;
 }
-
 export function createBridgeClient(options: BridgeOptions): BridgeClient {
   const token = options.token;
   const preferredTransport = options.preferredTransport ?? 'auto';
@@ -129,7 +67,6 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
   const connectNativeImpl = options.connectNativeImpl;
   const sendMessageImpl =
     options.sendMessageImpl ?? ((message: unknown) => chromeRuntimeSendMessage<unknown>(message));
-
   async function sendOverLocalhost(request: SfdtRequest): Promise<SfdtResponse> {
     if (!token) {
       return {
@@ -165,11 +102,8 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
       clearTimeout(timer);
     }
   }
-
   async function sendOverNative(request: SfdtRequest): Promise<SfdtResponse> {
     if (!connectNativeImpl) {
-      // No connectNative available — happens in test environments and any
-      // surface that's not the extension itself.
       return offlineResponse(request.requestId, 'Native messaging host is not available in this context.');
     }
     return new Promise<SfdtResponse>((resolve) => {
@@ -189,17 +123,14 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
         try {
           port.disconnect();
         } catch {
-          // ignore
         }
         resolve(offlineResponse(request.requestId, `Native host timed out after ${timeoutMs}ms.`));
       }, timeoutMs);
-
       port.onMessage.addListener((msg: SfdtResponse) => {
         clearTimeout(timer);
         try {
           port.disconnect();
         } catch {
-          // ignore
         }
         resolve(msg);
       });
@@ -221,7 +152,6 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
       }
     });
   }
-
   async function discover(): Promise<Transport> {
     if (preferredTransport === 'localhost') {
       const probe = await Promise.race([
@@ -239,7 +169,6 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
       const probe = await sendOverNative({ requestId: 'discover', kind: 'ping' } as SfdtRequest);
       return probe.ok ? 'native' : 'unknown';
     }
-    // auto: race both, fastest success wins.
     const localProbe = sendOverLocalhost({ requestId: 'discover-local', kind: 'ping' } as SfdtRequest);
     const nativeProbe = connectNativeImpl
       ? sendOverNative({ requestId: 'discover-native', kind: 'ping' } as SfdtRequest)
@@ -253,40 +182,24 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
       timeout,
     ]).then((r) => r.transport);
   }
-
   async function send(request: SfdtRequest): Promise<SfdtResponse> {
     if (preferredTransport === 'localhost') return sendOverLocalhost(request);
     if (preferredTransport === 'native') return sendOverNative(request);
-
-    // auto: try localhost first, fall back to native on offline error.
     const local = await sendOverLocalhost(request);
     if (local.ok) return local;
     const localCode = (local as SfdtErrorResponse).code;
-    // If localhost answered with an auth or invalid-request error, the user's
-    // sfdt ui is reachable — fall through to surfacing that error rather than
-    // shadowing it with a native-host attempt.
     if (localCode && localCode !== 'BRIDGE_OFFLINE') return local;
     if (!connectNativeImpl) return local;
     return sendOverNative(request);
   }
-
   async function call<R extends Omit<SfdtRequest, 'requestId'>>(req: R): Promise<SfdtResponse> {
     return send({ ...(req as object), requestId: makeRequestId() } as SfdtRequest);
   }
-
   async function getServerInfo(): Promise<{
     serverVersion: string;
     transport: 'localhost' | 'native';
     disabledFeatures: readonly string[];
   } | null> {
-    // The kill-switch fetch needs to go through the background service
-    // worker. Chrome's Private Network Access policy blocks an HTTPS page's
-    // content script from making cross-origin requests to private hosts
-    // (127.0.0.1) without preflight handling on the server side. The
-    // service worker isn't subject to PNA, and host_permissions for
-    // http://127.0.0.1/* gives it the permission it needs. This also means
-    // the kill-switch works WITHOUT a bearer token — the GET /api/bridge/
-    // ping endpoint is unauthenticated by design.
     try {
       const response = (await sendMessageImpl({
         action: 'bridgePing',
@@ -303,7 +216,6 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
         }
       }
     } catch {
-      // fall through to native or null
     }
     if (!connectNativeImpl) return null;
     const native = await sendOverNative({ requestId: makeRequestId(), kind: 'ping' } as SfdtRequest);
@@ -319,6 +231,5 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
     }
     return null;
   }
-
   return { discover, getServerInfo, send, call };
 }

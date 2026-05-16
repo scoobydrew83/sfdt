@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { IconX, IconDownload, IconAlertTri } from '../Icons.jsx';
 import { stream } from '../api.js';
-
 export default function UpdateModal({ current, latest, onClose }) {
-  const [status, setStatus]   = useState('idle'); // idle | running | restarting | done | error
+  const [status, setStatus]   = useState('idle');
   const [lines, setLines]     = useState([]);
   const [exitCode, setExitCode] = useState(null);
   const esRef      = useRef(null);
@@ -11,11 +10,9 @@ export default function UpdateModal({ current, latest, onClose }) {
   const counterRef = useRef(0);
   const deadRef    = useRef(false);
   const pollRef    = useRef(null);
-
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [lines]);
-
   useEffect(() => {
     return () => {
       deadRef.current = true;
@@ -23,7 +20,6 @@ export default function UpdateModal({ current, latest, onClose }) {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
-
   useEffect(() => {
     if (status !== 'restarting') return;
     const deadline = Date.now() + 30_000;
@@ -46,20 +42,16 @@ export default function UpdateModal({ current, latest, onClose }) {
     }, 500);
     return () => clearInterval(pollRef.current);
   }, [status]);
-
   const startUpdate = () => {
     setStatus('running');
     setLines([]);
     setExitCode(null);
     counterRef.current = 0;
-
     const es = stream.update();
     esRef.current = es;
-
     es.onmessage = (e) => {
       if (deadRef.current) return;
       const msg = e.data;
-
       if (msg.type === 'log') {
         const id = counterRef.current++;
         setLines((prev) => [...prev, { id, text: msg.line }]);
@@ -82,7 +74,6 @@ export default function UpdateModal({ current, latest, onClose }) {
         esRef.current = null;
       }
     };
-
     es.onerror = () => {
       if (deadRef.current) return;
       setStatus('error');
@@ -90,18 +81,15 @@ export default function UpdateModal({ current, latest, onClose }) {
       esRef.current = null;
     };
   };
-
   const cancel = () => {
     esRef.current?.close();
     esRef.current = null;
     setStatus('idle');
     setLines([]);
   };
-
   return (
     <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget && status !== 'running' && status !== 'restarting') onClose(); }}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="update-modal-title">
-
         <div className="modal-head">
           <span className="modal-title" id="update-modal-title">Update sfdt</span>
           {status !== 'running' && status !== 'restarting' && (
@@ -110,9 +98,7 @@ export default function UpdateModal({ current, latest, onClose }) {
             </button>
           )}
         </div>
-
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-4)' }}>
-
           <div className="update-version-row">
             <div className="update-version-item">
               <span className="update-version-label">Current</span>
@@ -124,7 +110,6 @@ export default function UpdateModal({ current, latest, onClose }) {
               <code className="update-version-value update-version-new">v{latest}</code>
             </div>
           </div>
-
           {lines.length > 0 && (
             <div className="cmd-terminal" ref={logRef} style={{ maxHeight: 260 }}>
               {lines.map(({ id, text }) => (
@@ -132,14 +117,12 @@ export default function UpdateModal({ current, latest, onClose }) {
               ))}
             </div>
           )}
-
           {status === 'restarting' && (
             <div className="update-notice">
               <div className="spinner" style={{ width: 14, height: 14, flexShrink: 0 }} />
               <span>Restarting sfdt... the page will reload automatically.</span>
             </div>
           )}
-
           {status === 'done' && (
             <div className="update-notice">
               <IconAlertTri size={14} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -149,7 +132,6 @@ export default function UpdateModal({ current, latest, onClose }) {
               </span>
             </div>
           )}
-
           {status === 'error' && (
             <div className="update-notice update-notice-error">
               <IconAlertTri size={14} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -159,9 +141,7 @@ export default function UpdateModal({ current, latest, onClose }) {
               </span>
             </div>
           )}
-
         </div>
-
         <div className="modal-foot">
           {status === 'idle' && (
             <>
@@ -184,7 +164,6 @@ export default function UpdateModal({ current, latest, onClose }) {
             <button className="btn btn-primary btn-sm" onClick={onClose}>Close</button>
           )}
         </div>
-
       </div>
     </div>
   );

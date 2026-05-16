@@ -9,7 +9,6 @@ import { initCache, getDelta, updateCache, getCacheStatus } from '../lib/pull-ca
 import { parallelRetrieve } from '../lib/parallel-retrieve.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
-
 export function registerPullCommand(program) {
   program
     .command('pull')
@@ -26,15 +25,11 @@ export function registerPullCommand(program) {
       }
     });
 }
-
 async function runPull(options) {
   const config = await loadConfig();
   const { _projectRoot: projectRoot, _configDir: configDir, defaultOrg: orgAlias } = config;
-
   if (!orgAlias) throw new Error('No defaultOrg in .sfdt/config.json — run sfdt init first.');
-
   const cacheDir = path.join(configDir, 'cache');
-
   if (options.status) {
     const db = initCache(cacheDir, orgAlias);
     const status = getCacheStatus(db, orgAlias);
@@ -46,7 +41,6 @@ async function runPull(options) {
     }
     return;
   }
-
   if (config.pullCache?.enabled === false) {
     const spinner = ora('Retrieving all metadata...').start();
     try {
@@ -62,24 +56,20 @@ async function runPull(options) {
     }
     return;
   }
-
   if (options.full) {
     await smartPull(config, { projectRoot, cacheDir, orgAlias, full: true, dryRun: options.dryRun });
     return;
   }
-
   const nonInteractive = process.env.SFDT_NON_INTERACTIVE === 'true' || !process.stdin.isTTY;
   if (nonInteractive) {
     await smartPull(config, { projectRoot, cacheDir, orgAlias, dryRun: options.dryRun });
     return;
   }
-
   const pullGroups = config.pullConfig?.pullGroups ?? {};
   const groupChoices = Object.entries(pullGroups).map(([key, g]) => ({
     name: g.description ?? key,
     value: `group:${key}`,
   }));
-
   const choices = [
     { name: 'Pull changes (smart delta)', value: 'smart' },
     { name: 'Pull all changes (full retrieve)', value: 'full' },
@@ -89,9 +79,7 @@ async function runPull(options) {
     { name: 'Pull standard profiles only', value: 'profiles' },
     ...groupChoices,
   ];
-
   const { action } = await inquirer.prompt([{ type: 'list', name: 'action', message: 'Select pull action:', choices }]);
-
   switch (action) {
     case 'smart':
       await smartPull(config, { projectRoot, cacheDir, orgAlias, dryRun: options.dryRun });
@@ -127,7 +115,6 @@ async function runPull(options) {
       }
   }
 }
-
 async function smartPull(config, { projectRoot, cacheDir, orgAlias, full = false, dryRun = false }) {
   const spinner = ora('Fetching org inventory...').start();
   let freshInventory;
@@ -142,42 +129,33 @@ async function smartPull(config, { projectRoot, cacheDir, orgAlias, full = false
     spinner.fail('Failed to fetch org inventory');
     throw err;
   }
-
   const db = initCache(cacheDir, orgAlias);
   try {
     const delta = full ? inventoryToDelta(freshInventory) : getDelta(db, freshInventory);
     const deltaCount = [...delta.values()].reduce((n, s) => n + s.size, 0);
-
     if (deltaCount === 0 && !full) {
       console.log(chalk.green('Nothing to pull — org is up to date'));
       return;
     }
-
     console.log(chalk.cyan(`${deltaCount} component(s) to retrieve`));
-
     if (dryRun) {
       for (const [type, names] of delta) {
         for (const name of names) console.log(`  ${type}:${name}`);
       }
       return;
     }
-
     const progressSpinner = ora('Retrieving changes...').start();
     const result = await parallelRetrieve(delta, config, {
       cwd: projectRoot,
       onProgress: ({ retrieved, total }) => { progressSpinner.text = `Retrieving... ${retrieved}/${total}`; },
     });
     progressSpinner.succeed(`Retrieved ${result.retrieved}/${result.total} component(s)`);
-
     if (result.errors.length > 0) {
       console.error(chalk.yellow(`${result.errors.length} batch(es) had errors:`));
       result.errors.forEach((e) => console.error(chalk.red(`  ${e.error}`)));
     }
-
     if (result.retrieved > 0) {
-      // Build an inventory containing only the components that were successfully retrieved
-      // so that a partial failure does not prevent caching the successful batches.
-      const successSet = new Set(result.successfulMembers); // "Type:Name" strings
+      const successSet = new Set(result.successfulMembers);
       const successInventory = new Map();
       for (const [type, members] of freshInventory) {
         const filtered = new Map();
@@ -197,7 +175,6 @@ async function smartPull(config, { projectRoot, cacheDir, orgAlias, full = false
     db.close();
   }
 }
-
 function inventoryToDelta(inventory) {
   const delta = new Map();
   for (const [type, members] of inventory) {
@@ -205,11 +182,9 @@ function inventoryToDelta(inventory) {
   }
   return delta;
 }
-
 async function pullProfiles(projectRoot, orgAlias) {
   await execa('sf', ['project', 'retrieve', 'start', '--metadata', 'Profile', '--target-org', orgAlias], { stdio: 'inherit', cwd: projectRoot });
 }
-
 async function pullGroup(config, projectRoot, orgAlias, groupKey) {
   const group = config.pullConfig?.pullGroups?.[groupKey];
   if (!group) throw new Error(`Pull group "${groupKey}" not found in pullConfig`);

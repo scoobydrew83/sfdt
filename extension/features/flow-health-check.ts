@@ -1,13 +1,3 @@
-// Flow Health Check — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/features/flow-health-check.js.
-//
-// Three-step pipeline:
-//   1. Fetch Flow metadata via the Salesforce API client (Tooling API).
-//   2. Run @sfdt/flow-core's normalize → evaluate → buildIssueFamilies →
-//      calculateScore. Same engine the sfdt CLI's `quality` command will
-//      use (Phase 5), so canvas results match CLI results byte-for-byte.
-//   3. Render the report in the modal.
-
 import {
   buildIssueFamilies,
   calculateScore,
@@ -21,7 +11,6 @@ import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { mountHealthModal, type HealthModalHandle, type HealthReport } from '../ui/health-modal.js';
 import { showToast } from '../ui/toast.js';
-
 const DEFAULT_RULES_CONFIG = {
   outdatedApiVersionThreshold: 6,
   currentApiVersion: 65,
@@ -32,7 +21,6 @@ const DEFAULT_RULES_CONFIG = {
     constant: /^con[A-Z].*/,
   },
 };
-
 const DATA_OPERATION_TYPES = new Set([
   'GetRecords',
   'CreateRecords',
@@ -41,7 +29,6 @@ const DATA_OPERATION_TYPES = new Set([
   'Action',
   'Subflow',
 ] as const);
-
 interface FetchedFlow {
   Id?: string;
   MasterLabel?: string;
@@ -51,7 +38,6 @@ interface FetchedFlow {
   Definition?: { DeveloperName?: string };
   [key: string]: unknown;
 }
-
 function resolveFlowApiName(record: FetchedFlow, metadata: Record<string, unknown>): string {
   const candidates = [
     (record as { DeveloperName?: string }).DeveloperName,
@@ -67,7 +53,6 @@ function resolveFlowApiName(record: FetchedFlow, metadata: Record<string, unknow
   );
   return valid ?? label ?? 'unknown_flow';
 }
-
 function buildReport(
   record: FetchedFlow,
   normalized: NormalizedFlow,
@@ -76,7 +61,6 @@ function buildReport(
   const score = calculateScore(issueFamilies);
   const nodes = normalized.nodes;
   const countOf = (type: string) => nodes.filter((n) => n.type === type).length;
-
   return {
     meta: {
       flowLabel: normalized.meta.flowLabel,
@@ -112,22 +96,17 @@ function buildReport(
     ),
   };
 }
-
 export interface FlowHealthCheckOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
-  // Test seam: the feature module owns the modal lifecycle, but tests can
-  // pre-mount a stub modal to verify the pipeline without DOM assertions.
   modal?: HealthModalHandle;
 }
-
 export function createFlowHealthCheckFeature(options: FlowHealthCheckOptions = {}): Feature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
   let modal: HealthModalHandle | null = options.modal ?? null;
-
   function getModal(): HealthModalHandle {
     if (!modal) {
       modal = mountHealthModal({
@@ -144,7 +123,6 @@ export function createFlowHealthCheckFeature(options: FlowHealthCheckOptions = {
     }
     return modal;
   }
-
   return {
     manifest: {
       id: 'flow-health-check',
@@ -152,24 +130,17 @@ export function createFlowHealthCheckFeature(options: FlowHealthCheckOptions = {
       contexts: [CONTEXTS.FLOW_BUILDER],
       permissions: ['clipboardWrite'],
     },
-
     async onActivate() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.FLOW_BUILDER) {
         getModal().showError('Open the Flow Builder canvas before running a health check.');
         return;
       }
-
-      // Read flowId from the feature's own window so it stays consistent with
-      // the context check above (the api may have been constructed with a
-      // different window in tests). v2.0.2 conflated them via globals.
       const flowId = new URL(win.location.href).searchParams.get('flowId');
       if (!flowId) {
         getModal().showError('Could not determine the current Flow ID from the URL.');
         return;
       }
-
       getModal().showLoading('Current Flow');
-
       try {
         const record = (await api.getFlowMetadata(flowId)) as FetchedFlow;
         const metadata = record?.Metadata;
@@ -177,7 +148,6 @@ export function createFlowHealthCheckFeature(options: FlowHealthCheckOptions = {
           getModal().showError('Could not retrieve Flow metadata.');
           return;
         }
-
         const resolvedApiName = resolveFlowApiName(record, metadata);
         const normalized = normalize(metadata as Parameters<typeof normalize>[0], {
           flowVersionId: record?.Id ?? flowId,
@@ -194,8 +164,6 @@ export function createFlowHealthCheckFeature(options: FlowHealthCheckOptions = {
     },
   };
 }
-
-// Test seam
 export function _flowHealthCheckTestApi() {
   return { buildReport, resolveFlowApiName };
 }

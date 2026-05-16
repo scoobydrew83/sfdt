@@ -1,17 +1,9 @@
-// Default prefix table. Embedded directly so flow-core has no I/O on first
-// use. Ported verbatim from
-// /Users/dkennedy/dev/2.0.2_0 copy/config/default-prefixes.json (v2).
-//
-// PrefixEntry lives here (the data-defining file) and is re-exported from
-// api-name.ts. That avoids a circular dependency between the two modules.
-
 export interface PrefixEntry {
   type: string;
   Snake_Case: string;
   PascalCase: string;
   camelCase: string;
 }
-
 export const DEFAULT_PREFIXES: readonly PrefixEntry[] = Object.freeze([
   { type: 'Screen Flow', Snake_Case: 'SF_', PascalCase: 'SF', camelCase: 'sf' },
   { type: 'Record-Triggered Flow', Snake_Case: 'RTF_', PascalCase: 'RTF', camelCase: 'rtf' },
@@ -23,7 +15,6 @@ export const DEFAULT_PREFIXES: readonly PrefixEntry[] = Object.freeze([
   { type: 'Autolaunched Flow - Approval Process', Snake_Case: 'ALAP_', PascalCase: 'ALAP', camelCase: 'alap' },
   { type: 'Orchestration', Snake_Case: 'Orch_', PascalCase: 'Orch', camelCase: 'orch' },
   { type: 'Flow', Snake_Case: 'Flow_', PascalCase: 'Flow', camelCase: 'flow' },
-
   { type: 'Get Records', Snake_Case: 'Get_', PascalCase: 'Get', camelCase: 'get' },
   { type: 'Create Records', Snake_Case: 'Create_', PascalCase: 'Create', camelCase: 'create' },
   { type: 'Update Records', Snake_Case: 'Update_', PascalCase: 'Update', camelCase: 'update' },
@@ -47,7 +38,6 @@ export const DEFAULT_PREFIXES: readonly PrefixEntry[] = Object.freeze([
   { type: 'Roll Back Records', Snake_Case: 'Rollback_', PascalCase: 'Rollback', camelCase: 'rollback' },
   { type: 'Collection Sort', Snake_Case: 'Sort_', PascalCase: 'Sort', camelCase: 'sort' },
   { type: 'Collection Filter', Snake_Case: 'Filter_', PascalCase: 'Filter', camelCase: 'filter' },
-
   { type: 'Formula (Text)', Snake_Case: 'CalcString_', PascalCase: 'CalcString', camelCase: 'calcstring' },
   { type: 'Formula (Number)', Snake_Case: 'CalcNum_', PascalCase: 'CalcNum', camelCase: 'calcnum' },
   { type: 'Formula (Currency)', Snake_Case: 'CalcCur_', PascalCase: 'CalcCur', camelCase: 'calccur' },
@@ -56,7 +46,6 @@ export const DEFAULT_PREFIXES: readonly PrefixEntry[] = Object.freeze([
   { type: 'Formula (Date/Time)', Snake_Case: 'CalcDateTime_', PascalCase: 'CalcDateTime', camelCase: 'calcdatetime' },
   { type: 'Formula (Time)', Snake_Case: 'CalcTime_', PascalCase: 'CalcTime', camelCase: 'calctime' },
   { type: 'Formula', Snake_Case: 'Calc_', PascalCase: 'Calc', camelCase: 'calc' },
-
   { type: 'Variable (Text)', Snake_Case: 'VarString_', PascalCase: 'VarString', camelCase: 'varstring' },
   { type: 'Variable (Number)', Snake_Case: 'VarNum_', PascalCase: 'VarNum', camelCase: 'varnum' },
   { type: 'Variable (Currency)', Snake_Case: 'VarCur_', PascalCase: 'VarCur', camelCase: 'varcur' },
@@ -69,7 +58,6 @@ export const DEFAULT_PREFIXES: readonly PrefixEntry[] = Object.freeze([
   { type: 'Variable (Multi-Select Picklist)', Snake_Case: 'VarMultiPick_', PascalCase: 'VarMultiPick', camelCase: 'varmultipick' },
   { type: 'Variable (Apex-Defined)', Snake_Case: 'VarApex_', PascalCase: 'VarApex', camelCase: 'varapex' },
   { type: 'Variable', Snake_Case: 'Var_', PascalCase: 'Var', camelCase: 'var' },
-
   { type: 'Collection (Text)', Snake_Case: 'CollString_', PascalCase: 'CollString', camelCase: 'collstring' },
   { type: 'Collection (Number)', Snake_Case: 'CollNum_', PascalCase: 'CollNum', camelCase: 'collnum' },
   { type: 'Collection (Currency)', Snake_Case: 'CollCur_', PascalCase: 'CollCur', camelCase: 'collcur' },
@@ -82,7 +70,6 @@ export const DEFAULT_PREFIXES: readonly PrefixEntry[] = Object.freeze([
   { type: 'Collection (Multi-Select Picklist)', Snake_Case: 'CollMultiPick_', PascalCase: 'CollMultiPick', camelCase: 'collmultipick' },
   { type: 'Collection (Apex-Defined)', Snake_Case: 'CollApex_', PascalCase: 'CollApex', camelCase: 'collapex' },
   { type: 'Collection', Snake_Case: 'Coll_', PascalCase: 'Coll', camelCase: 'coll' },
-
   { type: 'Constant', Snake_Case: 'Const_', PascalCase: 'Const', camelCase: 'const' },
   { type: 'Text Template', Snake_Case: 'Template_', PascalCase: 'Template', camelCase: 'template' },
   { type: 'Choice', Snake_Case: 'Choice_', PascalCase: 'Choice', camelCase: 'choice' },
@@ -92,9 +79,6 @@ export const DEFAULT_PREFIXES: readonly PrefixEntry[] = Object.freeze([
   { type: 'Stage', Snake_Case: 'Stage_', PascalCase: 'Stage', camelCase: 'stage' },
   { type: 'Step', Snake_Case: 'Step_', PascalCase: 'Step', camelCase: 'step' },
 ]);
-
-// Lightning icon → prefix-table type. Mirrors ICON_TO_TYPE from
-// config/api-name-prefixes.js:32-50.
 export const ICON_TO_TYPE: Readonly<Record<string, string>> = Object.freeze({
   'standard:record_lookup': 'get records',
   'standard:record_create': 'create records',
