@@ -109,11 +109,11 @@ describe('GET /api/bridge/ping', () => {
   it('accepts an OPTIONS preflight with 204 and CORS headers', async () => {
     const res = await request(app)
       .options('/api/bridge/ping')
-      .set('Origin', 'chrome-extension://abcdef0123456789')
+      .set('Origin', 'chrome-extension://abcdefghijklmnopabcdefghijklmnop')
       .set('Access-Control-Request-Method', 'GET')
       .set('Access-Control-Request-Headers', 'authorization, content-type');
     expect(res.status).toBe(204);
-    expect(res.headers['access-control-allow-origin']).toBe('chrome-extension://abcdef0123456789');
+    expect(res.headers['access-control-allow-origin']).toBe('chrome-extension://abcdefghijklmnopabcdefghijklmnop');
     expect(res.headers['access-control-allow-headers']).toMatch(/Authorization/i);
   });
 });
@@ -351,8 +351,10 @@ describe('GET /api/bridge/ping — disabledFeatures wiring', () => {
 
 describe('POST /api/flow/quality (direct endpoint)', () => {
   it('returns a flow-core report for valid metadata', async () => {
+    const csrf = (await request(app).get('/api/csrf-token')).body.token;
     const res = await request(app)
       .post('/api/flow/quality')
+      .set('X-SFDT-CSRF', csrf)
       .send({
         metadata: {
           label: 'Standalone',
@@ -367,8 +369,10 @@ describe('POST /api/flow/quality (direct endpoint)', () => {
   });
 
   it('returns 400 when metadata is missing or not an object', async () => {
+    const csrf = (await request(app).get('/api/csrf-token')).body.token;
     const res = await request(app)
       .post('/api/flow/quality')
+      .set('X-SFDT-CSRF', csrf)
       .send({ metadata: 'not an object' });
     expect(res.status).toBe(400);
   });

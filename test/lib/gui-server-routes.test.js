@@ -550,8 +550,10 @@ describe('POST /api/compare/manifest — version conflict (409)', () => {
   });
 
   it('returns 409 when the versioned manifest already exists', async () => {
+    const csrf = (await request(app).get('/api/csrf-token')).body.token;
     const res = await request(app)
       .post('/api/compare/manifest')
+      .set('X-SFDT-CSRF', csrf)
       .send({ save: true, version: '1.0.0', xml: '<Package/>' });
     expect(res.status).toBe(409);
   });

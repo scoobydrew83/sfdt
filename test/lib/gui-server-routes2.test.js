@@ -820,8 +820,10 @@ describe('POST /api/compare/manifest (no conflict)', () => {
   });
 
   it('returns 200 with xml when no conflict and save is false', async () => {
+    const csrf = (await request(app).get('/api/csrf-token')).body.token;
     const res = await request(app)
       .post('/api/compare/manifest')
+      .set('X-SFDT-CSRF', csrf)
       .send({ items: [], apiVersion: '59.0', save: false });
     expect(res.status).toBe(200);
     expect(typeof res.body.xml).toBe('string');

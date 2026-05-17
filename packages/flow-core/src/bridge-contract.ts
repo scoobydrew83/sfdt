@@ -280,6 +280,15 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.length > 0;
 }
 
+// Org alias regex mirrors what the gui-server enforces on the same value.
+// Salesforce CLI aliases are alphanumerics plus a small punctuation set.
+// Tightening here forecloses flag-injection attempts even though execa's
+// array form already prevents shell-level command injection.
+const ORG_ALIAS_RE = /^[A-Za-z0-9_.\-@]+$/;
+function isValidOrgAlias(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0 && ORG_ALIAS_RE.test(v);
+}
+
 const KNOWN_KINDS: readonly SfdtRequestKind[] = [
   'ping',
   'version',
@@ -334,8 +343,11 @@ export function validateSfdtRequest(input: unknown): {
       if (input.flowId !== undefined && !isNonEmptyString(input.flowId)) {
         errors.push({ field: 'flowId', reason: 'must be a non-empty string if present' });
       }
-      if (input.targetOrg !== undefined && !isNonEmptyString(input.targetOrg)) {
-        errors.push({ field: 'targetOrg', reason: 'must be a non-empty string if present' });
+      if (input.targetOrg !== undefined && !isValidOrgAlias(input.targetOrg)) {
+        errors.push({
+          field: 'targetOrg',
+          reason: 'must match /^[A-Za-z0-9_.\\-@]+$/ if present',
+        });
       }
       if (input.validateOnly !== undefined && typeof input.validateOnly !== 'boolean') {
         errors.push({ field: 'validateOnly', reason: 'must be a boolean if present' });
@@ -351,8 +363,11 @@ export function validateSfdtRequest(input: unknown): {
       if (typeof input.toVersion !== 'number' || !Number.isInteger(input.toVersion) || input.toVersion < 0) {
         errors.push({ field: 'toVersion', reason: 'must be a non-negative integer (0 deactivates)' });
       }
-      if (input.targetOrg !== undefined && !isNonEmptyString(input.targetOrg)) {
-        errors.push({ field: 'targetOrg', reason: 'must be a non-empty string if present' });
+      if (input.targetOrg !== undefined && !isValidOrgAlias(input.targetOrg)) {
+        errors.push({
+          field: 'targetOrg',
+          reason: 'must match /^[A-Za-z0-9_.\\-@]+$/ if present',
+        });
       }
       break;
     }

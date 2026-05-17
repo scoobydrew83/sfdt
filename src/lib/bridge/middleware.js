@@ -21,7 +21,8 @@ const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/[a-z0-9-]+\.salesforce-setup\.com$/i,
   /^https:\/\/[a-z0-9-]+\.my\.salesforce\.com$/i,
   /^https:\/\/[a-z0-9-]+\.lightning\.force\.com$/i,
-  /^chrome-extension:\/\/[a-z0-9]+$/i,
+  // Chrome assigns extension IDs as exactly 32 chars from [a-p] (mapped hex).
+  /^chrome-extension:\/\/[a-p]{32}$/,
 ];
 
 function isAllowedOrigin(origin, localhostOrigins) {

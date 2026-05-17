@@ -138,7 +138,13 @@ export function createGuiApp(config, version, port = 7654) {
   // Keys whose values are executed as shell commands — must not be API-writable.
   const BLOCKED_CONFIG_KEY_PREFIXES = ['mcp.salesforce.command', 'mcp.salesforce.args'];
   // Path keys must resolve within projectRoot to prevent logDir/manifestDir redirection attacks.
-  const PATH_KEYS_WITHIN_ROOT = new Set(['logDir', 'manifestDir', 'releaseNotesDir', 'changelogDir']);
+  const PATH_KEYS_WITHIN_ROOT = new Set([
+    'logDir',
+    'manifestDir',
+    'releaseNotesDir',
+    'changelogDir',
+    'defaultSourcePath',
+  ]);
 
   app.patch('/api/config', apiLimiter, async (req, res) => {
     if (!requireCsrfToken(req, res, csrfToken)) return;
@@ -388,6 +394,7 @@ export function createGuiApp(config, version, port = 7654) {
   // directly. Same engine in both paths, so results match the CLI's
   // `sfdt flow scan` output byte-for-byte.
   app.post('/api/flow/quality', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { runFlowQuality } = await import('../flow-quality.js');
       const metadata = req.body?.metadata;
@@ -1139,6 +1146,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/compare/manifest', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { items = [], apiVersion, save = false, version, xml: rawXml } = req.body ?? {};
       if (rawXml && rawXml.length > 10_000_000) return res.status(413).json({ error: 'XML content too large (max 10 MB)' });
