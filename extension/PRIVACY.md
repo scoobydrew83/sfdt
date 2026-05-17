@@ -54,6 +54,8 @@ When you also have the local sfdt CLI running, the extension may push a snapshot
 
 The extension reads Flow metadata via the Salesforce Tooling API using your existing Salesforce session. It does this from the page you're already on; no separate authentication is required and no Salesforce data ever leaves your browser via this extension.
 
+The SOQL Query Runner, Org Limits, and REST API Explorer features call Salesforce REST and Tooling endpoints (`/services/data/...`) against the same session — queries, requests, and responses stay between your browser and the org you're already authenticated to.
+
 When you use a feature that calls the local bridge (e.g. "Deploy this Flow"), the extension sends the Flow's developer name (e.g. `My_Flow`) to `http://127.0.0.1:7654` so the local sfdt CLI on your machine can run the deploy. The data goes from your browser to a process running on the same machine — it never leaves your device.
 
 ---

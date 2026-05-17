@@ -26,6 +26,9 @@ import { createFlowTriggerExplorerEnhancerFeature } from '../../features/flow-tr
 import { createTriggerConflictsFeature } from '../../features/trigger-conflicts.js';
 import { createSubflowGraphFeature } from '../../features/subflow-graph.js';
 import { createFlowDeployFeature } from '../../features/flow-deploy.js';
+import { createSoqlRunnerFeature } from '../../features/soql-runner.js';
+import { createOrgLimitsFeature } from '../../features/org-limits.js';
+import { createRestExploreFeature } from '../../features/rest-explore.js';
 
 
 const STYLES = `
@@ -199,6 +202,9 @@ async function render(): Promise<void> {
   registry.register(createTriggerConflictsFeature());
   registry.register(createSubflowGraphFeature());
   registry.register(createFlowDeployFeature());
+  registry.register(createSoqlRunnerFeature());
+  registry.register(createOrgLimitsFeature());
+  registry.register(createRestExploreFeature());
 
   const settings = await loadSettings();
   while (root.firstChild) root.removeChild(root.firstChild);

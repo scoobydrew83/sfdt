@@ -14,9 +14,9 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
   const [detecting, setDetecting]     = useState(false);
   const [destructiveTiming, setDestructiveTiming] = useState('post');
   const [deploymentMode, setDeploymentMode] = useState('deploy'); // 'deploy' or 'validate'
-  const [tagRelease, setTagRelease]       = useState(true);
+  const [tagRelease, setTagRelease]       = useState(false);
   const [createPR, setCreatePR]           = useState(false);
-  const [notifySlack, setNotifySlack]     = useState(true);
+  const [notifySlack, setNotifySlack]     = useState(false);
   const [loadingOrgs, setLoadingOrgs] = useState(true);
   const [isRunning, setIsRunning]   = useState(false);
   const [streamKey, setStreamKey]   = useState(0);
@@ -225,6 +225,24 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
                     />
                     Pre-Destructive (Delete then Deploy)
                   </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="destructiveTiming"
+                      checked={destructiveTiming === 'none'}
+                      onChange={() => setDestructiveTiming('none')}
+                    />
+                    Skip Destructive (metadata only)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="destructiveTiming"
+                      checked={destructiveTiming === 'only'}
+                      onChange={() => setDestructiveTiming('only')}
+                    />
+                    Destructive Only (no metadata deploy)
+                  </label>
                 </div>
 
                 <div style={{ marginTop: 20, borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>
@@ -351,6 +369,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
             key={streamKey}
             label={`${deploymentMode === 'validate' ? 'Validating' : 'Deploying'} to ${targetOrg}`}
             startLabel="Deploy"
+            commandHint={`sfdt deploy${deploymentMode === 'validate' ? ' --dry-run' : ''}`}
             streamFn={() => stream.deploy({
               dryRun: deploymentMode === 'validate',
               org: targetOrg,
@@ -363,8 +382,48 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
               createPR,
               notifySlack
             })}
-            onComplete={onMarkDone}
+            onComplete={() => {
+              // Validate-mode success ≠ deploy success. Don't advance to
+              // Rollback (which is the step that came up "black" before)
+              // and don't mark deploy done — let the user choose Quick Deploy
+              // (skips the test re-run) or Back-to-Config.
+              if (deploymentMode === 'validate') return;
+              onMarkDone();
+            }}
           />
+
+          {deploymentMode === 'validate' && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: '10px 12px',
+                background: 'var(--status-identical-bg)',
+                border: '1px solid var(--status-identical-border)',
+                borderRadius: 'var(--r-md)',
+                color: 'var(--status-identical-fg)',
+                fontSize: 12,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <span>
+                Validation completed against <strong>{targetOrg}</strong>.
+                Use Quick Deploy below to skip the test re-run and ship the
+                validated package.
+              </span>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  setDeploymentMode('deploy');
+                  setStreamKey((k) => k + 1);
+                }}
+              >
+                <IconRocket size={11} /> Quick Deploy
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

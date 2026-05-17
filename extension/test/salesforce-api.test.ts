@@ -217,4 +217,129 @@ describe('extension/lib/salesforce-api', () => {
       await expect(client.getFlowMetadata('missing')).rejects.toThrow(/No flow found/);
     });
   });
+
+  describe('query (REST SOQL)', () => {
+    it('hits /services/data/vXX/query with q= and returns the REST envelope', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(
+        fetchResponder({
+          'https://x.my.salesforce.com/services/data/v62.0/query': {
+            status: 200,
+            body: {
+              totalSize: 2,
+              done: true,
+              records: [{ Id: '001', Name: 'Acme' }, { Id: '002', Name: 'Universal' }],
+            },
+          },
+        }),
+      );
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy });
+      const result = await client.query('SELECT Id, Name FROM Account LIMIT 2');
+      expect(result.totalSize).toBe(2);
+      expect(result.done).toBe(true);
+      expect(result.records).toHaveLength(2);
+      const calls = fetchSpy.mock.calls.map(([url]) => String(url));
+      expect(calls[0]).toContain('/services/data/v62.0/query');
+      expect(calls[0]).toContain('q=SELECT');
+    });
+
+    it('passes nextRecordsUrl through to queryMore unchanged', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(
+        fetchResponder({
+          'https://x.my.salesforce.com/services/data/v62.0/query/01gxx-2000': {
+            status: 200,
+            body: { totalSize: 4000, done: true, records: [{ Id: '003' }] },
+          },
+        }),
+      );
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy });
+      const result = await client.queryMore('/services/data/v62.0/query/01gxx-2000');
+      expect(result.records).toEqual([{ Id: '003' }]);
+    });
+  });
+
+  describe('limits', () => {
+    it('returns the limit map from /services/data/vXX/limits/', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(
+        fetchResponder({
+          'https://x.my.salesforce.com/services/data/v62.0/limits/': {
+            status: 200,
+            body: {
+              DailyApiRequests: { Max: 15000, Remaining: 12345 },
+              DataStorageMB: { Max: 1024, Remaining: 900 },
+            },
+          },
+        }),
+      );
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy });
+      const result = await client.limits();
+      expect(result.DailyApiRequests).toEqual({ Max: 15000, Remaining: 12345 });
+      expect(result.DataStorageMB).toEqual({ Max: 1024, Remaining: 900 });
+    });
+  });
+
+  describe('rawRequest', () => {
+    it('routes GET through apiGet', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(
+        fetchResponder({
+          'https://x.my.salesforce.com/services/data/v62.0/sobjects/Account/describe': {
+            status: 200,
+            body: { name: 'Account', fields: [] },
+          },
+        }),
+      );
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy });
+      const result = await client.rawRequest('GET', '/services/data/v62.0/sobjects/Account/describe');
+      expect(result).toMatchObject({ name: 'Account' });
+    });
+
+    it('routes POST through apiRequest with the body', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(
+        fetchResponder({
+          'https://x.my.salesforce.com/services/data/v62.0/sobjects/Account': {
+            status: 201,
+            body: { id: '001new', success: true },
+          },
+        }),
+      );
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy });
+      const result = await client.rawRequest('POST', '/services/data/v62.0/sobjects/Account', {
+        Name: 'New Account',
+      });
+      expect(result).toMatchObject({ id: '001new', success: true });
+      // Confirm the body was serialised onto the request.
+      const init = fetchSpy.mock.calls[0]?.[1];
+      expect(init?.method).toBe('POST');
+      expect(init?.body).toContain('New Account');
+    });
+
+    it('routes DELETE through apiRequest with no body (204 → null)', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(async () => {
+        return {
+          ok: true,
+          status: 204,
+          async json() {
+            return null;
+          },
+          async text() {
+            return '';
+          },
+        } as Response;
+      });
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy as typeof fetch });
+      const result = await client.rawRequest('DELETE', '/services/data/v62.0/sobjects/Account/001abc');
+      expect(result).toBeNull();
+    });
+  });
 });

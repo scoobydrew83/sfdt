@@ -1446,7 +1446,7 @@ export function createGuiApp(config, version, port = 7654) {
       return res.status(400).json({ error: 'Invalid testLevel' });
     }
 
-    if (destructiveTiming !== undefined && destructiveTiming !== null && !['pre', 'post'].includes(destructiveTiming)) {
+    if (destructiveTiming !== undefined && destructiveTiming !== null && !['pre', 'post', 'none', 'only'].includes(destructiveTiming)) {
       return res.status(400).json({ error: 'Invalid destructiveTiming' });
     }
 

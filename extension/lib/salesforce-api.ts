@@ -23,6 +23,18 @@ export interface SfApiOptions {
   fetchImpl?: typeof fetch;
 }
 
+// REST query() returns `totalSize`; Tooling toolingQuery() returns `size`.
+// Optional on both so a single shape covers both endpoints.
+export interface QueryEnvelope<T = unknown> {
+  records: T[];
+  done: boolean;
+  totalSize?: number;
+  size?: number;
+  nextRecordsUrl?: string;
+}
+
+export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+
 interface SessionCandidate {
   baseUrl: string;
   sid: string;
@@ -232,6 +244,27 @@ export class SalesforceApiClient {
 
   toolingQuery<T = unknown>(soql: string): Promise<{ records: T[]; size: number; done: boolean }> {
     return this.apiGet(`/services/data/${this.apiVersion}/tooling/query`, { q: soql });
+  }
+
+  query<T = unknown>(soql: string): Promise<QueryEnvelope<T>> {
+    return this.apiGet(`/services/data/${this.apiVersion}/query`, { q: soql });
+  }
+
+  // nextRecordsUrl is a fully-formed path like /services/data/v62.0/query/01gxx-2000;
+  // pass it straight to apiGet without re-prepending the api version.
+  queryMore<T = unknown>(nextRecordsUrl: string): Promise<QueryEnvelope<T>> {
+    return this.apiGet(nextRecordsUrl);
+  }
+
+  limits(): Promise<Record<string, { Max: number; Remaining: number }>> {
+    return this.apiGet(`/services/data/${this.apiVersion}/limits/`);
+  }
+
+  // Method-agnostic passthrough for the REST Explorer. Composes on top of
+  // apiGet/apiRequest so the dual-host fallback + 401 retry stay in play.
+  rawRequest(method: HttpMethod, endpoint: string, body?: unknown): Promise<unknown> {
+    if (method === 'GET') return this.apiGet(endpoint);
+    return this.apiRequest(method, endpoint, body ?? null);
   }
 
   // Flow Builder's `?flowId=` uses two shapes:

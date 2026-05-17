@@ -21,8 +21,11 @@ import { createFlowListSearchFeature } from '../features/flow-list-search.js';
 import { createFlowTriggerExplorerEnhancerFeature } from '../features/flow-trigger-explorer-enhancer.js';
 import { createFlowVersionManagerFeature } from '../features/flow-version-manager.js';
 import { createMissingDescriptionFlagsFeature } from '../features/missing-description-flags.js';
+import { createOrgLimitsFeature } from '../features/org-limits.js';
+import { createRestExploreFeature } from '../features/rest-explore.js';
 import { createScheduledFlowExplorerFeature } from '../features/scheduled-flow-explorer.js';
 import { createSetupTabsFeature } from '../features/setup-tabs.js';
+import { createSoqlRunnerFeature } from '../features/soql-runner.js';
 import { createSubflowGraphFeature } from '../features/subflow-graph.js';
 import { createTriggerConflictsFeature } from '../features/trigger-conflicts.js';
 
@@ -67,6 +70,9 @@ export default defineContentScript({
     registry.register(createTriggerConflictsFeature());
     registry.register(createSubflowGraphFeature());
     registry.register(createFlowDeployFeature());
+    registry.register(createSoqlRunnerFeature());
+    registry.register(createOrgLimitsFeature());
+    registry.register(createRestExploreFeature());
 
     setContextSource(buildContextToFeatures(registry.listManifests()));
 
@@ -120,6 +126,9 @@ export default defineContentScript({
       'trigger-conflicts': { icon: '⚡', label: 'Trigger Conflicts' },
       'subflow-graph': { icon: '🕸', label: 'Subflow Caller Graph' },
       'flow-deploy': { icon: '🚀', label: 'Deploy or Rollback…' },
+      'soql-runner': { icon: '🗂', label: 'SOQL Query Runner' },
+      'org-limits': { icon: '🚦', label: 'Org Limits' },
+      'rest-explore': { icon: '🛠', label: 'REST API Explorer' },
     };
 
     const menuItemsProvider = (): MenuItem[] => {

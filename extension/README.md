@@ -10,7 +10,7 @@ This is one of four workspaces in the [`sfdt` monorepo](../README.md):
 
 ---
 
-## Features (14)
+## Features (17)
 
 Every feature is opt-in (toggle off in the options page), and any feature can be remotely disabled without a Web Store re-review via `sfdt feature-flags disable <id>`.
 
@@ -30,8 +30,11 @@ Every feature is opt-in (toggle off in the options page), and any feature can be
 | `ai-assistant` | Surface AI provider answers about the current Flow (Claude / Gemini / OpenAI via bridge) | Flow Builder |
 | `subflow-graph` | SVG graph of subflow invocation relationships | Setup Flows |
 | `trigger-conflicts` | Detects overlapping record-triggered Flows that would fire on the same change | Setup Flows |
+| `soql-runner` | Run SOQL against the current org (REST or Tooling), with history and CSV export | Setup + Flow Builder + Trigger Explorer |
+| `org-limits` | Live view of the org's governor-limit usage (sorted by pressure, colour-banded) | Setup + Flow Builder + Trigger Explorer |
+| `rest-explore` | Fire arbitrary GET/POST/PATCH/PUT/DELETE against `/services/data/...` with response viewer + history | Setup + Flow Builder + Trigger Explorer |
 
-Adding a 15th feature is a one-file change — see `extension/features/_template.ts` (TODO) and the registry in [`extension/lib/feature-registry.ts`](./lib/feature-registry.ts).
+Adding the next feature is a one-file change — see the existing modules in [`extension/features/`](./features/) and the registry in [`extension/lib/feature-registry.ts`](./lib/feature-registry.ts).
 
 ---
 

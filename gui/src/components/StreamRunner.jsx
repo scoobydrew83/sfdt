@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useContext, useMemo } from 'react';
 import { IconPlay, IconX, IconRefresh, IconTerminal } from '../Icons.jsx';
+import { ChatContext } from '../App.jsx';
+import { extractErrorLines } from './CommandRunner.jsx';
 
 /**
  * Like CommandRunner but drives a POST-based SSE stream from api.stream.*.
@@ -9,8 +11,9 @@ import { IconPlay, IconX, IconRefresh, IconTerminal } from '../Icons.jsx';
  *   streamFn     — () => stream object from api.stream.*
  *   onComplete   — called when exitCode === 0
  *   children     — optional content rendered above the terminal (form inputs, etc.)
+ *   commandHint  — short string used in the Ask-AI prompt to identify what ran
  */
-export default function StreamRunner({ label, startLabel = 'Run', streamFn, onComplete = () => {}, onError, children }) {
+export default function StreamRunner({ label, startLabel = 'Run', streamFn, onComplete = () => {}, onError, children, commandHint }) {
   const [status, setStatus]     = useState('idle');
   const [lines, setLines]       = useState([]);
   const [exitCode, setExitCode] = useState(null);
@@ -18,6 +21,25 @@ export default function StreamRunner({ label, startLabel = 'Run', streamFn, onCo
   const logRef      = useRef(null);
   const counterRef  = useRef(0);
   const deadRef     = useRef(false);
+
+  const { openChat } = useContext(ChatContext) ?? {};
+
+  const errorLines = useMemo(
+    () => (status === 'error' ? extractErrorLines(lines) : []),
+    [status, lines],
+  );
+
+  const askAi = () => {
+    if (!openChat) return;
+    const tail = lines.slice(-30).map((l) => l.text).join('\n');
+    const summary = errorLines.length > 0 ? errorLines.join('\n') : '(no obvious error lines)';
+    openChat(
+      `${label} failed with exit code ${exitCode ?? '?'}${commandHint ? ` (\`${commandHint}\`)` : ''}.\n\n` +
+      `Detected errors:\n${summary}\n\n` +
+      `Last 30 log lines:\n\`\`\`\n${tail}\n\`\`\`\n\n` +
+      `What's the root cause and how do I fix it?`,
+    );
+  };
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -125,6 +147,45 @@ export default function StreamRunner({ label, startLabel = 'Run', streamFn, onCo
       {children && (
         <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
           {children}
+        </div>
+      )}
+
+      {status === 'error' && (
+        <div
+          style={{
+            margin: '10px 14px 0',
+            padding: '10px 12px',
+            background: 'var(--status-conflict-bg)',
+            border: '1px solid var(--status-conflict-border)',
+            borderRadius: 'var(--r-md)',
+            color: 'var(--status-conflict-fg)',
+            fontSize: 12,
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <span>{label} failed{exitCode != null ? ` \u00B7 exit ${exitCode}` : ''}</span>
+            {openChat && (
+              <button
+                className="btn btn-ghost btn-xs"
+                onClick={askAi}
+                style={{ color: 'var(--status-conflict-fg)' }}
+                title="Open the chat with this failure as context"
+              >
+                \uD83E\uDD16 Ask AI
+              </button>
+            )}
+          </div>
+          {errorLines.length > 0 ? (
+            <ul style={{ margin: 0, paddingLeft: 18, fontFamily: 'var(--font-mono)', fontSize: 11, lineHeight: 1.5 }}>
+              {errorLines.map((line, i) => (
+                <li key={i} style={{ wordBreak: 'break-word' }}>{line}</li>
+              ))}
+            </ul>
+          ) : (
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+              No structured error lines detected \u2014 see the terminal log below.
+            </div>
+          )}
         </div>
       )}
 
