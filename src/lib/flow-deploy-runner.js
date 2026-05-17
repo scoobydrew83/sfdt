@@ -1,5 +1,42 @@
+// Flow deploy runner — invoked by the bridge `deploy` handler so the
+// extension's Flow Builder "Deploy" button completes a real round-trip.
+//
+// Wraps `sf project deploy start --metadata Flow:<name>` via execa. This is
+// the "deploy what's already in the local force-app" path: the user is
+// responsible for having pulled the flow into source first (via sfdt pull
+// or sf project retrieve start). A future enhancement is "fetch from source
+// org → write locally → deploy" so the user doesn't have to pull first,
+// but that's more state to manage.
+
 import { execa } from 'execa';
 import { loadConfig } from './config.js';
+
+/**
+ * Run a Flow deploy via sf CLI.
+ *
+ * @param {object} options
+ * @param {string} options.flowApiName       Developer name of the Flow to deploy.
+ * @param {string} [options.targetOrg]       Org alias. Defaults to config.defaultOrg.
+ * @param {boolean} [options.validateOnly]   When true, runs --dry-run (check-only).
+ * @param {number} [options.timeoutMs]       Defaults to 5 minutes — sf CLI deploys can be slow.
+ * @returns {Promise<{
+ *   ok: true,
+ *   data: {
+ *     status: string,
+ *     deployId: string|null,
+ *     summary: string,
+ *     numberComponentsTotal: number,
+ *     numberComponentErrors: number,
+ *     numberTestsCompleted: number,
+ *     componentFailures: Array<{ fullName: string, problem: string, problemType: string }>,
+ *     stdout: string,
+ *   },
+ * } | {
+ *   ok: false,
+ *   error: string,
+ *   code?: string,
+ * }>}
+ */
 export async function runFlowDeploy(options) {
   const flowApiName = options?.flowApiName;
   if (!flowApiName || typeof flowApiName !== 'string') {
@@ -12,6 +49,7 @@ export async function runFlowDeploy(options) {
       code: 'REQUEST_INVALID',
     };
   }
+
   let config;
   try {
     config = await loadConfig();
@@ -30,6 +68,7 @@ export async function runFlowDeploy(options) {
       code: 'REQUEST_INVALID',
     };
   }
+
   const args = [
     'project',
     'deploy',
@@ -43,12 +82,13 @@ export async function runFlowDeploy(options) {
     '10',
   ];
   if (options.validateOnly) args.push('--dry-run');
+
   let result;
   try {
     result = await execa('sf', args, {
       cwd: config._projectRoot,
       timeout: options.timeoutMs ?? 5 * 60 * 1000,
-      reject: false,
+      reject: false, // We parse the JSON regardless of exit code so failures still surface useful info.
     });
   } catch (err) {
     return {
@@ -57,6 +97,7 @@ export async function runFlowDeploy(options) {
       code: 'INTERNAL_ERROR',
     };
   }
+
   let parsed;
   try {
     parsed = JSON.parse(result.stdout);
@@ -67,6 +108,10 @@ export async function runFlowDeploy(options) {
       code: 'INTERNAL_ERROR',
     };
   }
+
+  // `sf project deploy start --json` shape: { status, result: { ... } }
+  // when successful. When it fails, result still carries the diagnostic
+  // payload (deployId, details.componentFailures, etc.).
   const r = parsed?.result ?? {};
   const details = r.details ?? {};
   const failures = Array.isArray(details.componentFailures)
@@ -76,8 +121,10 @@ export async function runFlowDeploy(options) {
         problemType: String(f.problemType ?? ''),
       }))
     : [];
+
   const status = r.status ?? (result.exitCode === 0 ? 'Succeeded' : 'Failed');
   const succeeded = status === 'Succeeded' || (result.exitCode === 0 && failures.length === 0);
+
   return {
     ok: true,
     data: {

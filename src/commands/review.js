@@ -14,6 +14,7 @@ import {
   formatPreflightSection,
   formatMetadataTypesSection,
 } from '../lib/ai-context.js';
+
 export function registerReviewCommand(program) {
   program
     .command('review')
@@ -24,6 +25,7 @@ export function registerReviewCommand(program) {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
         const aiEnabled = config.features?.ai;
+
         if (!aiEnabled) {
           print.error(
             'AI features are disabled. Enable them in .sfdt/config.json (features.ai: true).',
@@ -31,23 +33,32 @@ export function registerReviewCommand(program) {
           process.exitCode = 1;
           return;
         }
+
         if (!(await isAiAvailable(config))) {
           print.error(aiUnavailableMessage(config));
           process.exitCode = 1;
           return;
         }
+
         print.header(`Code Review (vs ${options.base})`);
+
+        // Get the diff
         const diffResult = await execa('git', ['diff', `${options.base}...HEAD`], {
           cwd: projectRoot,
           reject: false,
         });
+
         const diff = diffResult.stdout || '';
+
         if (!diff.trim()) {
           print.warning(`No changes found between ${options.base} and HEAD.`);
           print.info('Make sure you have commits on your branch that differ from the base.');
           return;
         }
+
         print.info(`Reviewing ${diff.split('\n').length} lines of diff...`);
+
+        // Build structured context in parallel
         const [nameStatusResult, projectCtx, testRuns, preflight] = await Promise.all([
           execa('git', ['diff', '--name-status', `${options.base}...HEAD`], {
             cwd: projectRoot,
@@ -57,19 +68,23 @@ export function registerReviewCommand(program) {
           readLatestTestRuns(config, 3),
           readLatestPreflight(config),
         ]);
+
         const metadataTypes = formatMetadataTypesSection(
           parseDiffToMetadata(nameStatusResult.stdout || '', {
             sourcePath: config.defaultSourcePath,
           }),
         );
+
         const contextBlock = buildContextBlock([
           projectCtx,
           metadataTypes,
           formatTestRunsSection(testRuns),
           formatPreflightSection(preflight),
         ]);
+
         const reviewPrompt = await getPrompt('review', config._configDir);
         const prompt = (contextBlock ? contextBlock + '\n\n' : '') + reviewPrompt + diff;
+
         await runAiPrompt(prompt, {
           config,
           allowedTools: ['Read', 'Grep'],

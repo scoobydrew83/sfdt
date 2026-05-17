@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api.js';
+
 const SECTIONS = [
   {
     title: 'General',
@@ -53,17 +54,21 @@ const SECTIONS = [
     ],
   },
 ];
+
 function getNestedValue(obj, key) {
   return key.split('.').reduce((o, k) => o?.[k], obj);
 }
+
 function FieldRow({ dotKey, label, type, options, rawConfig, onSave }) {
   const initial = getNestedValue(rawConfig, dotKey);
   const [value, setValue] = useState(initial ?? '');
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState(null); // null | 'saving' | 'saved' | 'error'
+
   useEffect(() => {
     const fresh = getNestedValue(rawConfig, dotKey);
     setValue(fresh ?? '');
   }, [rawConfig, dotKey]);
+
   async function handleSave() {
     if (dotKey === 'deployment.coverageThreshold') {
       const n = Number(value);
@@ -84,6 +89,7 @@ function FieldRow({ dotKey, label, type, options, rawConfig, onSave }) {
       setTimeout(() => setStatus(null), 3000);
     }
   }
+
   const inputStyle = {
     padding: '6px 10px',
     borderRadius: '6px',
@@ -94,6 +100,7 @@ function FieldRow({ dotKey, label, type, options, rawConfig, onSave }) {
     minWidth: 200,
     outline: 'none',
   };
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>
       <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-default)', fontWeight: 500 }}>{label}</span>
@@ -137,11 +144,13 @@ function FieldRow({ dotKey, label, type, options, rawConfig, onSave }) {
     </div>
   );
 }
+
 function InitCard() {
   const [projectName, setProjectName] = useState('');
   const [defaultOrg, setDefaultOrg] = useState('');
   const [busy, setBusy] = useState(false);
   const [initError, setInitError] = useState(null);
+
   async function handleInit(e) {
     e.preventDefault();
     if (!projectName.trim()) return;
@@ -155,6 +164,7 @@ function InitCard() {
       setBusy(false);
     }
   }
+
   return (
     <div className="page-content">
       <div className="page-header">
@@ -199,12 +209,16 @@ function InitCard() {
     </div>
   );
 }
+
+// ─── AI Prompts tab ──────────────────────────────────────────────────────────
+
 function PromptEditor() {
   const [prompts, setPrompts]       = useState([]);
   const [loading, setLoading]       = useState(true);
   const [selected, setSelected]     = useState(null);
   const [editValue, setEditValue]   = useState('');
-  const [status, setStatus]         = useState(null);
+  const [status, setStatus]         = useState(null); // null|'saving'|'saved'|'error'|'resetting'
+
   const load = useCallback(() => {
     setLoading(true);
     api.listPrompts()
@@ -220,13 +234,17 @@ function PromptEditor() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
   useEffect(() => { load(); }, [load]);
+
   const selectedPrompt = prompts.find((p) => p.key === selected);
+
   function selectPrompt(p) {
     setSelected(p.key);
     setEditValue(p.current);
     setStatus(null);
   }
+
   async function handleSave() {
     if (!selected) return;
     setStatus('saving');
@@ -240,6 +258,7 @@ function PromptEditor() {
       setTimeout(() => setStatus(null), 3000);
     }
   }
+
   async function handleReset() {
     if (!selected) return;
     setStatus('resetting');
@@ -256,10 +275,12 @@ function PromptEditor() {
       setTimeout(() => setStatus(null), 3000);
     }
   }
+
   if (loading) return <div className="spinner-center"><div className="spinner" /></div>;
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 20, minHeight: 480 }}>
-      {}
+      {/* Sidebar */}
       <div style={{ borderRight: '1px solid var(--border-subtle)', paddingRight: 16 }}>
         {prompts.map((p) => (
           <button
@@ -291,7 +312,8 @@ function PromptEditor() {
           </span>
         </div>
       </div>
-      {}
+
+      {/* Editor */}
       {selectedPrompt ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
@@ -304,6 +326,7 @@ function PromptEditor() {
             <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)', marginBottom: 2 }}>{selectedPrompt.description}</div>
             <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>Used by: {selectedPrompt.feature}</div>
           </div>
+
           <textarea
             value={editValue}
             onChange={(e) => setEditValue(e.target.value)}
@@ -316,6 +339,7 @@ function PromptEditor() {
             }}
             spellCheck={false}
           />
+
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
               className={`btn btn-sm ${status === 'saved' ? 'btn-success' : 'btn-primary'}`}
@@ -328,6 +352,7 @@ function PromptEditor() {
             >
               {status === 'saving' ? 'Saving…' : status === 'saved' ? '✓ Saved' : status === 'error' ? '✗ Error' : 'Save'}
             </button>
+
             {selectedPrompt.overridden && (
               <button
                 className="btn btn-ghost btn-sm"
@@ -337,10 +362,12 @@ function PromptEditor() {
                 {status === 'resetting' ? 'Resetting…' : 'Reset to default'}
               </button>
             )}
+
             <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)', marginLeft: 'auto' }}>
               {editValue.length.toLocaleString()} chars
             </span>
           </div>
+
           {selectedPrompt.overridden && (
             <details style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>
               <summary style={{ cursor: 'pointer', userSelect: 'none' }}>View default prompt</summary>
@@ -360,12 +387,14 @@ function PromptEditor() {
     </div>
   );
 }
+
 export default function SettingsPage() {
   const [tab, setTab] = useState('config');
   const [rawConfig, setRawConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notInitialized, setNotInitialized] = useState(false);
   const [error, setError] = useState(null);
+
   useEffect(() => {
     api.getConfig()
       .then(setRawConfig)
@@ -375,6 +404,7 @@ export default function SettingsPage() {
       })
       .finally(() => setLoading(false));
   }, []);
+
   function handleSave(key, value) {
     setRawConfig((prev) => {
       if (!prev) return prev;
@@ -389,14 +419,17 @@ export default function SettingsPage() {
       return next;
     });
   }
+
   if (loading) return <div className="spinner-center"><div className="spinner" /></div>;
   if (notInitialized) return <InitCard />;
   if (error) return <div style={{ padding: 32 }}><div className="alert alert-error">{error}</div></div>;
   if (!rawConfig) return null;
+
   const TABS = [
     { key: 'config', label: 'Config' },
     { key: 'prompts', label: 'AI Prompts' },
   ];
+
   return (
     <div className="page-content">
       <div className="page-header">
@@ -405,7 +438,8 @@ export default function SettingsPage() {
           <p className="page-subtitle">Project configuration and AI prompt customization</p>
         </div>
       </div>
-      {}
+
+      {/* Tab bar */}
       <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border-subtle)', marginBottom: 24 }}>
         {TABS.map((t) => (
           <button
@@ -423,6 +457,7 @@ export default function SettingsPage() {
           </button>
         ))}
       </div>
+
       {rawConfig.packageDirectories?.length > 0 && (
         <div className="card card-pad" style={{ marginBottom: 24 }}>
           <div className="section-label" style={{ marginBottom: 16 }}>Package Directories</div>
@@ -451,6 +486,7 @@ export default function SettingsPage() {
           </table>
         </div>
       )}
+
       {tab === 'config' && (
         <>
           <div className="alert alert-info mb-6">
@@ -480,6 +516,7 @@ export default function SettingsPage() {
           </div>
         </>
       )}
+
       {tab === 'prompts' && (
         <div className="card card-pad">
           <div className="section-label" style={{ marginBottom: 4 }}>AI Prompts</div>

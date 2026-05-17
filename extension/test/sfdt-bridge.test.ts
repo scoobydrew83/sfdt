@@ -1,8 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
+
+/**
+ * Build a sendMessage stub that returns the given bridgePing response shape.
+ * The background service worker wraps the raw bridge response as
+ * `{ ok: true|false, body?, error? }`.
+ */
 function fakeSendMessage(body: unknown, ok = true) {
   return async () => ({ ok, body });
 }
+
 describe('createBridgeClient.getServerInfo', () => {
   it('returns the full ping payload including disabledFeatures when the bridge is reachable', async () => {
     const client = createBridgeClient({
@@ -25,6 +32,7 @@ describe('createBridgeClient.getServerInfo', () => {
       disabledFeatures: ['canvas-search'],
     });
   });
+
   it('returns null when the background worker reports a fetch failure', async () => {
     const client = createBridgeClient({
       token: 'token-x',
@@ -33,6 +41,7 @@ describe('createBridgeClient.getServerInfo', () => {
     });
     expect(await client.getServerInfo()).toBeNull();
   });
+
   it('returns an empty disabledFeatures when the field is missing (older server)', async () => {
     const client = createBridgeClient({
       token: 'token-x',
@@ -45,16 +54,19 @@ describe('createBridgeClient.getServerInfo', () => {
     const info = await client.getServerInfo();
     expect(info?.disabledFeatures).toEqual([]);
   });
+
   it('returns null when the bridge envelope is ok: true but data is missing (defensive)', async () => {
     const client = createBridgeClient({
       token: 'token-x',
       preferredTransport: 'localhost',
       sendMessageImpl: fakeSendMessage({
         ok: true,
+        // data field intentionally missing
       }),
     });
     expect(await client.getServerInfo()).toBeNull();
   });
+
   it('works with no token (the kill-switch fetch does NOT require pairing)', async () => {
     const sendSpy = vi.fn(
       fakeSendMessage({
@@ -68,7 +80,7 @@ describe('createBridgeClient.getServerInfo', () => {
       }),
     );
     const client = createBridgeClient({
-      token: '',
+      token: '', // explicitly empty — pre-pairing scenario
       preferredTransport: 'localhost',
       sendMessageImpl: sendSpy,
     });
@@ -78,6 +90,7 @@ describe('createBridgeClient.getServerInfo', () => {
       transport: 'localhost',
       disabledFeatures: ['canvas-search'],
     });
+    // Confirm the message routed through the bridgePing action (not POST exchange)
     expect(sendSpy).toHaveBeenCalledOnce();
     expect(sendSpy).toHaveBeenCalledWith(expect.objectContaining({ action: 'bridgePing' }));
   });

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { streamChatMessage } from '../api.js';
+
 const DRAWER_WIDTH = 420;
+
 const styles = {
   overlay: {
     position: 'fixed',
@@ -196,27 +198,36 @@ const styles = {
     fontFamily: 'var(--font-mono)',
   },
 };
+
 export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onMessagesChange, initialMessage }) {
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const messagesEndRef = useRef(null);
   const abortRef = useRef(null);
   const textareaRef = useRef(null);
+
+  // Auto-scroll to bottom when messages change
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
+
+  // Focus textarea when drawer opens
   useEffect(() => {
     if (isOpen && textareaRef.current) {
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [isOpen]);
+
+  // Pre-seed input with initialMessage when drawer opens
   useEffect(() => {
     if (isOpen && initialMessage) {
       setInput(initialMessage);
     }
   }, [isOpen, initialMessage]);
+
+  // Abort in-flight stream when drawer closes or component unmounts
   useEffect(() => {
     if (!isOpen && abortRef.current) {
       abortRef.current();
@@ -224,6 +235,7 @@ export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onM
       setIsStreaming(false);
     }
   }, [isOpen]);
+
   useEffect(() => {
     return () => {
       if (abortRef.current) {
@@ -231,22 +243,31 @@ export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onM
       }
     };
   }, []);
+
   const handleSubmit = useCallback(() => {
     const text = input.trim();
     if (!text || isStreaming) return;
+
+    // Abort any in-flight stream before starting a new one
     if (abortRef.current) {
       abortRef.current();
       abortRef.current = null;
     }
+
     setInput('');
+
     const userMsg = { role: 'user', content: text, id: Date.now() + Math.random() };
     const assistantMsg = { role: 'assistant', content: '', streaming: true, id: Date.now() + Math.random() };
     const nextMessages = [...messages, userMsg, assistantMsg];
     onMessagesChange(nextMessages);
+
     setIsStreaming(true);
+
     const abort = streamChatMessage(
+      // Send conversation history (excluding the empty streaming placeholder)
       [...messages, userMsg],
       pageContext,
+      // onChunk — append text to the last message
       (chunk) => {
         onMessagesChange((prev) => {
           const updated = [...prev];
@@ -257,6 +278,7 @@ export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onM
           return updated;
         });
       },
+      // onDone
       () => {
         onMessagesChange((prev) => {
           const updated = [...prev];
@@ -267,6 +289,7 @@ export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onM
         setIsStreaming(false);
         abortRef.current = null;
       },
+      // onError
       (errMsg) => {
         onMessagesChange((prev) => {
           const updated = [...prev];
@@ -278,8 +301,10 @@ export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onM
         abortRef.current = null;
       },
     );
+
     abortRef.current = abort;
   }, [input, isStreaming, messages, onMessagesChange, pageContext]);
+
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Escape') {
       onClose();
@@ -290,8 +315,10 @@ export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onM
       handleSubmit();
     }
   }, [onClose, handleSubmit]);
+
   const pageName = pageContext?.page || 'this page';
   const hasMessages = messages && messages.length > 0;
+
   return (
     <>
       <style>{`
@@ -312,11 +339,13 @@ export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onM
           background: var(--brand-600) !important;
         }
       `}</style>
+
       {isOpen && (
         <div style={styles.backdrop} onClick={onClose} />
       )}
+
       <div style={styles.drawer(isOpen)} role="complementary" aria-label="AI Assistant">
-        {}
+        {/* Header */}
         <div style={styles.header}>
           <span style={styles.headerTitle}>AI Assistant</span>
           {pageName && (
@@ -336,7 +365,8 @@ export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onM
             </svg>
           </button>
         </div>
-        {}
+
+        {/* Message list or empty state */}
         {!hasMessages ? (
           <div style={styles.emptyState}>
             <div style={styles.emptyInner}>
@@ -371,7 +401,8 @@ export default function ChatDrawer({ isOpen, onClose, pageContext, messages, onM
             <div ref={messagesEndRef} />
           </div>
         )}
-        {}
+
+        {/* Input area */}
         <div style={styles.inputArea}>
           <div style={styles.inputRow}>
             <textarea

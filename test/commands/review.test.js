@@ -1,16 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Command } from 'commander';
+
 vi.mock('execa', () => ({
   execa: vi.fn(),
 }));
+
 vi.mock('../../src/lib/config.js', () => ({
   loadConfig: vi.fn(),
 }));
+
 vi.mock('../../src/lib/ai.js', () => ({
   isAiAvailable: vi.fn(),
   aiUnavailableMessage: vi.fn().mockReturnValue('AI provider not available'),
   runAiPrompt: vi.fn(),
 }));
+
 vi.mock('../../src/lib/output.js', () => ({
   print: {
     header: vi.fn(),
@@ -21,17 +25,20 @@ vi.mock('../../src/lib/output.js', () => ({
     step: vi.fn(),
   },
 }));
+
 import { execa } from 'execa';
 import { loadConfig } from '../../src/lib/config.js';
 import { isAiAvailable, aiUnavailableMessage, runAiPrompt } from '../../src/lib/ai.js';
 import { print } from '../../src/lib/output.js';
 import { registerReviewCommand } from '../../src/commands/review.js';
+
 function createProgram() {
   const program = new Command();
   program.exitOverride();
   registerReviewCommand(program);
   return program;
 }
+
 beforeEach(() => {
   vi.resetAllMocks();
   process.exitCode = undefined;
@@ -42,33 +49,45 @@ beforeEach(() => {
     features: { ai: true },
   });
 });
+
 describe('review command', () => {
   it('errors when AI features disabled', async () => {
     loadConfig.mockResolvedValue({
       _projectRoot: '/project',
       features: { ai: false },
     });
+
     await createProgram().parseAsync(['node', 'sfdt', 'review']);
+
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('AI features are disabled'));
     expect(process.exitCode).toBe(1);
   });
+
   it('errors when Claude CLI not available', async () => {
     isAiAvailable.mockResolvedValue(false);
+
     await createProgram().parseAsync(['node', 'sfdt', 'review']);
+
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('not available'));
     expect(process.exitCode).toBe(1);
   });
+
   it('warns when no diff found', async () => {
     isAiAvailable.mockResolvedValue(true);
     execa.mockResolvedValue({ stdout: '', stderr: '' });
+
     await createProgram().parseAsync(['node', 'sfdt', 'review']);
+
     expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('No changes found'));
   });
+
   it('sends diff to AI for review', async () => {
     isAiAvailable.mockResolvedValue(true);
     execa.mockResolvedValue({ stdout: '+ added line\n- removed line', stderr: '' });
     runAiPrompt.mockResolvedValue({ stdout: 'review', exitCode: 0 });
+
     await createProgram().parseAsync(['node', 'sfdt', 'review']);
+
     expect(execa).toHaveBeenCalledWith(
       'git',
       ['diff', 'main...HEAD'],
@@ -79,17 +98,23 @@ describe('review command', () => {
       expect.objectContaining({ interactive: true }),
     );
   });
+
   it('uses custom base branch with --base', async () => {
     isAiAvailable.mockResolvedValue(true);
     execa.mockResolvedValue({ stdout: 'diff content', stderr: '' });
     runAiPrompt.mockResolvedValue({ stdout: '', exitCode: 0 });
+
     await createProgram().parseAsync(['node', 'sfdt', 'review', '--base', 'develop']);
+
     expect(execa).toHaveBeenCalledWith('git', ['diff', 'develop...HEAD'], expect.any(Object));
   });
+
   it('sets exitCode 1 on failure', async () => {
     isAiAvailable.mockResolvedValue(true);
     execa.mockRejectedValue(new Error('git error'));
+
     await createProgram().parseAsync(['node', 'sfdt', 'review']);
+
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('git error'));
     expect(process.exitCode).toBe(1);
   });

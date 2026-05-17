@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { stream, api } from '../api.js';
 import { ChatContext } from '../App.jsx';
 import { IconTerminal, IconPlay, IconX, IconRefresh } from '../Icons.jsx';
+
 const AI_CONFIG_HINT = (
   <div style={{ marginTop: 8, fontSize: 12, color: 'var(--status-modified-fg)' }}>
     <strong>To enable AI features:</strong> set <code>features.ai: true</code> and <code>ai.provider</code> in{' '}
@@ -10,6 +11,7 @@ const AI_CONFIG_HINT = (
     <code>ai.apiKey</code>.
   </div>
 );
+
 function isAiError(msg) {
   return typeof msg === 'string' && (
     msg.toLowerCase().includes('not available') ||
@@ -17,28 +19,34 @@ function isAiError(msg) {
     msg.toLowerCase().includes('ai is')
   );
 }
+
 export default function ExplainPage() {
-  const [status, setStatus]     = useState('idle');
+  const [status, setStatus]     = useState('idle'); // idle | running | done | error
   const [lines, setLines]       = useState([]);
-  const [result, setResult]     = useState(null);
+  const [result, setResult]     = useState(null);   // { content: string, source: 'ai'|'heuristic' }
   const [errorMsg, setErrorMsg] = useState(null);
   const streamRef  = useRef(null);
   const counterRef = useRef(0);
   const deadRef    = useRef(false);
   const termRef    = useRef(null);
-  const [logFiles, setLogFiles]         = useState(null);
+
+  const [logFiles, setLogFiles]         = useState(null);  // null = not fetched yet
   const [logsLoading, setLogsLoading]   = useState(false);
-  const [selectedLog, setSelectedLog]   = useState('');
+  const [selectedLog, setSelectedLog]   = useState('');    // '' = latest
+
   const chat = useContext(ChatContext);
+
   useEffect(() => {
     if (termRef.current) termRef.current.scrollTop = termRef.current.scrollHeight;
   }, [lines]);
+
   useEffect(() => {
     return () => {
       deadRef.current = true;
       streamRef.current?.close();
     };
   }, []);
+
   function handleAdvancedToggle(e) {
     const open = e.target.open;
     if (open && logFiles === null && !logsLoading) {
@@ -49,6 +57,7 @@ export default function ExplainPage() {
         .finally(() => setLogsLoading(false));
     }
   }
+
   const reset = () => {
     streamRef.current?.close();
     streamRef.current = null;
@@ -58,13 +67,16 @@ export default function ExplainPage() {
     setResult(null);
     setErrorMsg(null);
   };
+
   const run = () => {
     reset();
     setStatus('running');
     counterRef.current = 0;
+
     const logPath = selectedLog || null;
     const s = stream.explain(logPath);
     streamRef.current = s;
+
     s.onmessage = ({ data: msg }) => {
       if (deadRef.current) return;
       if (msg.type === 'log') {
@@ -91,6 +103,7 @@ export default function ExplainPage() {
         streamRef.current = null;
       }
     };
+
     s.onerror = (err) => {
       if (deadRef.current) return;
       setStatus('error');
@@ -101,7 +114,9 @@ export default function ExplainPage() {
       streamRef.current = null;
     };
   };
+
   const terminalOpen = status === 'running' || status === 'error';
+
   return (
     <div>
       <div className="page-header">
@@ -110,11 +125,13 @@ export default function ExplainPage() {
           <p className="page-subtitle">AI-powered analysis of Salesforce deployment error logs</p>
         </div>
       </div>
-      {}
+
+      {/* ── Controls zone ─────────────────────────────────────────── */}
       <div className="cmd-runner">
         <div className="cmd-runner-head">
           <IconTerminal size={14} style={{ color: 'var(--fg-muted)' }} />
           <span className="cmd-runner-title">AI Log Analysis</span>
+
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             {status === 'idle' && (
               <button className="btn btn-primary btn-sm" onClick={run}>
@@ -142,6 +159,7 @@ export default function ExplainPage() {
             )}
           </div>
         </div>
+
         <details
           style={{ padding: '8px 14px', borderBottom: '1px solid var(--border)' }}
           onToggle={handleAdvancedToggle}
@@ -177,7 +195,8 @@ export default function ExplainPage() {
           </div>
         </details>
       </div>
-      {}
+
+      {/* ── Terminal zone ─────────────────────────────────────────── */}
       {lines.length > 0 && (
         <details open={terminalOpen} style={{ marginTop: 8 }}>
           <summary
@@ -202,7 +221,8 @@ export default function ExplainPage() {
           </div>
         </details>
       )}
-      {}
+
+      {/* ── Error display ─────────────────────────────────────────── */}
       {errorMsg && (
         <div style={{
           marginTop: 12,
@@ -216,7 +236,8 @@ export default function ExplainPage() {
           {isAiError(errorMsg) && AI_CONFIG_HINT}
         </div>
       )}
-      {}
+
+      {/* ── Result card ───────────────────────────────────────────── */}
       {result && (
         <div style={{
           marginTop: 16,
@@ -238,9 +259,11 @@ export default function ExplainPage() {
               : <span className="badge badge-warning"><span className="badge-dot" />Heuristic Scan</span>
             }
           </div>
+
           <div className="result-body" style={{ padding: '16px', overflowX: 'auto' }}>
             <ReactMarkdown>{result.content}</ReactMarkdown>
           </div>
+
           {chat && (
             <div style={{
               padding: '10px 16px',

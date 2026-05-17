@@ -5,6 +5,7 @@ import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { getPrompt } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { ExitCode, resolveExitCode } from '../lib/exit-codes.js';
+
 export function registerTestCommand(program) {
   program
     .command('test')
@@ -16,8 +17,11 @@ export function registerTestCommand(program) {
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
+
         const scriptPath = options.legacy ? 'core/run-tests.sh' : 'core/enhanced-test-runner.sh';
+
         print.header(`Running Tests${options.legacy ? ' (legacy)' : ''}${options.dryRun ? ' [dry-run]' : ''}`);
+
         let testFailed = false;
         try {
           await runScript(scriptPath, config, {
@@ -29,6 +33,8 @@ export function registerTestCommand(program) {
           testFailed = true;
           print.error(`Tests failed: ${testErr.message}`);
         }
+
+        // Run test-analyzer if requested
         if (options.analyze) {
           print.info('Running test analyzer...');
           try {
@@ -40,6 +46,8 @@ export function registerTestCommand(program) {
             print.warning(`Test analyzer encountered issues: ${analyzeErr.message}`);
           }
         }
+
+        // Offer AI analysis on failure (skip in dry-run)
         if (testFailed && !options.dryRun) {
           const aiEnabled = config.features?.ai;
           if (aiEnabled && (await isAiAvailable(config))) {
@@ -51,9 +59,12 @@ export function registerTestCommand(program) {
                 default: true,
               },
             ]);
+
             if (analyzeFailure) {
               print.info('Analyzing test failures...');
+
               const prompt = await getPrompt('test-failure', config._configDir);
+
               await runAiPrompt(prompt, {
                 config,
                 allowedTools: ['Read', 'Grep', 'Bash(sf apex test:*)'],
@@ -63,6 +74,7 @@ export function registerTestCommand(program) {
               });
             }
           }
+
           process.exitCode = ExitCode.ERROR;
         }
       } catch (err) {

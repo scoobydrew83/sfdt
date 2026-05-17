@@ -1,3 +1,16 @@
+// API Name Generator — port of
+// /Users/dkennedy/dev/2.0.2_0 copy/features/api-name-generator.js.
+//
+// The v2.0.2 module is 1184 LOC of Flow Builder modal manipulation (it hooks
+// into Salesforce's element- and resource-creation modals to suggest API
+// names based on the label). This port preserves the core logic — the
+// ApiNameLibrary's `expand(label, type, pattern)` method — and exposes it
+// through a lightweight standalone modal that generates names on demand. The
+// in-Flow-Builder modal hooks are deferred (they require precise selectors
+// against Salesforce's LWC modals which change between releases); the
+// standalone modal is functionally equivalent for a one-off label → API name
+// lookup.
+
 import {
   ApiNameLibrary,
   DEFAULT_PREFIXES,
@@ -9,11 +22,15 @@ import type { Feature } from '../lib/feature-registry.js';
 import { loadSettings, patchSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { z } from 'zod';
+
 const API_NAME_GENERATOR_SETTINGS_SCHEMA = z.object({
   namingPattern: z.enum(['Snake_Case', 'PascalCase', 'camelCase']).default('Snake_Case'),
 });
+
 registerSettingsShape('api-name-generator', API_NAME_GENERATOR_SETTINGS_SCHEMA);
+
 const STORAGE_KEY = 'apiNameGenerator.customPrefixes';
+
 function chromeStorageAdapter() {
   return {
     async get<T = unknown>(key: string): Promise<T | null> {
@@ -33,11 +50,13 @@ function chromeStorageAdapter() {
     },
   };
 }
+
 export interface ApiNameGeneratorOptions {
   doc?: Document;
   win?: Window;
   library?: ApiNameLibrary;
 }
+
 export function createApiNameGeneratorFeature(
   options: ApiNameGeneratorOptions = {},
 ): Feature {
@@ -46,10 +65,12 @@ export function createApiNameGeneratorFeature(
   const library =
     options.library ?? new ApiNameLibrary({ storage: chromeStorageAdapter() });
   let overlay: HTMLDivElement | null = null;
+
   function close(): void {
     overlay?.remove();
     overlay = null;
   }
+
   async function openModal(): Promise<void> {
     close();
     await library.load();
@@ -58,24 +79,29 @@ export function createApiNameGeneratorFeature(
     const apiNameConfig = (settings.featureSettings?.['api-name-generator'] ?? settings.apiNameGenerator) as ApiNameConfig;
     const pattern: NamingPattern = apiNameConfig.namingPattern;
     const prefixes: readonly PrefixEntry[] = library.isCustom() ? library.getAll() : DEFAULT_PREFIXES;
+
     overlay = doc.createElement('div');
     overlay.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) close();
     });
+
     const modal = doc.createElement('div');
     modal.style.cssText =
       'background: #fff; border-radius: 4px; width: 440px; padding: 16px;';
+
     const heading = doc.createElement('div');
     heading.style.cssText = 'font-weight: 600; font-size: 15px; margin-bottom: 12px;';
     heading.textContent = 'API Name Generator';
     modal.appendChild(heading);
+
     const labelInput = doc.createElement('input');
     labelInput.type = 'text';
     labelInput.placeholder = 'Element or resource label';
     labelInput.style.cssText = 'width: 100%; padding: 6px; margin-bottom: 8px;';
     modal.appendChild(labelInput);
+
     const typeSelect = doc.createElement('select');
     typeSelect.style.cssText = 'width: 100%; padding: 6px; margin-bottom: 8px;';
     for (const entry of prefixes) {
@@ -85,6 +111,7 @@ export function createApiNameGeneratorFeature(
       typeSelect.appendChild(opt);
     }
     modal.appendChild(typeSelect);
+
     const patternSelect = doc.createElement('select');
     patternSelect.style.cssText = 'width: 100%; padding: 6px; margin-bottom: 8px;';
     for (const p of ['Snake_Case', 'PascalCase', 'camelCase'] as const) {
@@ -95,10 +122,12 @@ export function createApiNameGeneratorFeature(
       patternSelect.appendChild(opt);
     }
     modal.appendChild(patternSelect);
+
     const preview = doc.createElement('div');
     preview.style.cssText =
       'font-family: monospace; padding: 8px; background: #fafaf9; border: 1px solid #d8dde6; border-radius: 4px; margin-bottom: 12px; min-height: 20px;';
     modal.appendChild(preview);
+
     const update = () => {
       const expanded = library.expand(
         labelInput.value,
@@ -115,6 +144,7 @@ export function createApiNameGeneratorFeature(
       } as never);
       update();
     });
+
     const footer = doc.createElement('div');
     footer.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px;';
     const cancel = doc.createElement('button');
@@ -133,10 +163,12 @@ export function createApiNameGeneratorFeature(
     footer.appendChild(cancel);
     footer.appendChild(copy);
     modal.appendChild(footer);
+
     overlay.appendChild(modal);
     doc.body.appendChild(overlay);
     labelInput.focus();
   }
+
   return {
     manifest: {
       id: 'api-name-generator',
@@ -144,16 +176,19 @@ export function createApiNameGeneratorFeature(
       contexts: [CONTEXTS.FLOW_BUILDER],
       settingsSchema: API_NAME_GENERATOR_SETTINGS_SCHEMA,
     },
+
     async init() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.FLOW_BUILDER) {
         return;
       }
     },
+
     async onActivate() {
       await openModal();
     },
   };
 }
+
 export function _apiNameGeneratorTestApi() {
   return { STORAGE_KEY };
 }

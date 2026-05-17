@@ -1,6 +1,9 @@
 import {
   IconPackage, IconBook, IconFileEdit, IconShield, IconRocket, IconRotateCcw,
 } from '../../Icons.jsx';
+
+// ─── Step definitions ────────────────────────────────────────────────────────
+
 export const STEPS = [
   { id: 'manifest',  label: 'Target',        Icon: IconPackage  },
   { id: 'changelog', label: 'Changelog',      Icon: IconBook     },
@@ -9,6 +12,9 @@ export const STEPS = [
   { id: 'deploy',    label: 'Deploy',         Icon: IconRocket   },
   { id: 'rollback',  label: 'Rollback',       Icon: IconRotateCcw},
 ];
+
+// ─── Horizontal Stepper ──────────────────────────────────────────────────────
+
 export default function HorizontalStepper({ active, done, onSelect }) {
   return (
     <div className="stepper">

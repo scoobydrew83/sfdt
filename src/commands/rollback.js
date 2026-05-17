@@ -4,6 +4,7 @@ import { runScript } from '../lib/script-runner.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { writeRawLog } from '../lib/log-writer.js';
+
 export function registerRollbackCommand(program) {
   program
     .command('rollback')
@@ -17,14 +18,17 @@ export function registerRollbackCommand(program) {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
         const orgAlias = options.org || config.defaultOrg;
+
         if (!jsonMode) {
           print.header(`Rolling Back (${orgAlias})${options.dryRun ? ' [dry-run]' : ''}`);
         }
+
         const env = {
           SFDT_TARGET_ORG: orgAlias,
           SFDT_BACKUP_BEFORE_ROLLBACK: String(config.deployment?.backupBeforeRollback ?? true),
           SFDT_LOG_DIR: config.logDir || '',
         };
+
         const rollbackStart = Date.now();
         const result = await runScript('ops/rollback.sh', config, {
           cwd: projectRoot,
@@ -33,6 +37,7 @@ export function registerRollbackCommand(program) {
           captureStdout: true,
         });
         const durationMs = Date.now() - rollbackStart;
+
         if (!options.dryRun) {
           const logDir = config.logDir ?? path.join(projectRoot, 'logs');
           await writeRawLog(logDir, 'rollback', result.stdout ?? '', {
@@ -42,6 +47,7 @@ export function registerRollbackCommand(program) {
             retention: config.logRetention ?? 50,
           }).catch((e) => console.debug('Log write failed:', e.message));
         }
+
         if (jsonMode) {
           process.stdout.write(
             JSON.stringify({

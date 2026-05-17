@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import { IconX } from '../Icons.jsx';
+
 export default function DiffPanel({ item, onClose }) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab]         = useState('diff');
+
   useEffect(() => {
     if (!item) { setData(null); return; }
     setLoading(true);
@@ -14,7 +16,9 @@ export default function DiffPanel({ item, onClose }) {
       .catch(() => setData({ sourceXml: '', targetXml: '' }))
       .finally(() => setLoading(false));
   }, [item?.type, item?.member]);
+
   if (!item) return null;
+
   return (
     <>
       <div className="diff-panel-backdrop" onClick={onClose} />
@@ -28,6 +32,7 @@ export default function DiffPanel({ item, onClose }) {
             <IconX size={15} />
           </button>
         </div>
+
         <div className="diff-tabs">
           {['diff', 'source', 'target'].map((t) => (
             <button
@@ -39,10 +44,12 @@ export default function DiffPanel({ item, onClose }) {
             </button>
           ))}
         </div>
+
         <div className="diff-tab-body">
           {loading && (
             <div className="spinner-center"><div className="spinner" /></div>
           )}
+
           {!loading && data && tab === 'diff' && (
             <LineDiff source={data.sourceXml ?? ''} target={data.targetXml ?? ''} />
           )}
@@ -57,11 +64,13 @@ export default function DiffPanel({ item, onClose }) {
     </>
   );
 }
+
 function LineDiff({ source, target }) {
   const srcLines = source.split('\n');
   const tgtLines = target.split('\n');
   const len = Math.max(srcLines.length, tgtLines.length);
   const rows = [];
+
   for (let i = 0; i < len; i++) {
     const s = srcLines[i] ?? '';
     const t = tgtLines[i] ?? '';
@@ -73,9 +82,11 @@ function LineDiff({ source, target }) {
       rows.push({ type: 'context', left: n, right: n, sign: ' ', code: s });
     }
   }
+
   if (rows.length === 0) {
     return <p style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)' }}>Files are identical.</p>;
   }
+
   return (
     <div className="diff-view">
       {rows.map((row, i) => (

@@ -4,6 +4,7 @@ import { runScript } from '../lib/script-runner.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { writeRawLog } from '../lib/log-writer.js';
+
 export function registerDeployCommand(program) {
   program
     .command('deploy')
@@ -18,6 +19,7 @@ export function registerDeployCommand(program) {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
         const orgAlias = options.org || config.defaultOrg;
+
         if (!options.skipPreflight) {
           print.info('Running preflight checks...');
           const preflightEnv = {};
@@ -37,10 +39,13 @@ export function registerDeployCommand(program) {
             return;
           }
         }
+
         const scriptPath = options.managed
           ? 'core/deploy-manager.sh'
           : 'core/deployment-assistant.sh';
+
         print.header(`Deploying${options.managed ? ' (managed)' : ''}${options.sourceDir ? ` [${options.sourceDir}]` : ''}${options.dryRun ? ' [dry-run]' : ''}`);
+
         const extraEnv = {};
         if (options.sourceDir) {
           if (path.isAbsolute(options.sourceDir) || options.sourceDir.includes('..')) {
@@ -48,12 +53,14 @@ export function registerDeployCommand(program) {
           }
           extraEnv.SFDT_DEPLOY_SOURCE_DIR = options.sourceDir;
         }
+
         const deployStart = Date.now();
         const deployResult = await runScript(scriptPath, config, {
           cwd: projectRoot,
           dryRun: options.dryRun,
           env: extraEnv,
         });
+
         if (!options.dryRun) {
           const logDir = config.logDir ?? path.join(projectRoot, 'logs');
           await writeRawLog(logDir, 'deploy', deployResult.stdout ?? '', {
@@ -63,6 +70,7 @@ export function registerDeployCommand(program) {
             retention: config.logRetention ?? 50,
           }).catch((e) => console.debug('Log write failed:', e.message));
         }
+
         print.success(options.dryRun ? 'Dry-run complete — no changes made.' : 'Deployment completed successfully.');
       } catch (err) {
         print.error(`Deployment failed: ${err.message}`);

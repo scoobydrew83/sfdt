@@ -1,3 +1,15 @@
+// Content script entrypoint.
+//
+// Boot orchestration (Phase B):
+//   - Detect that we're on a Salesforce page (the manifest already filtered
+//     hosts, but the SPA router re-checks on every navigation so we stop
+//     rendering when the user leaves Lightning).
+//   - Load settings and the kill-switch list (with a 1.5 s timeout fallback
+//     to the last-known cache).
+//   - Mount the side button whose menuItemsProvider filters by kill-switch,
+//     user toggle, and current page context.
+//   - Re-run the gate on settings changes and SPA route changes.
+
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import {
   buildContextToFeatures,
@@ -25,8 +37,10 @@ import { createScheduledFlowExplorerFeature } from '../features/scheduled-flow-e
 import { createSetupTabsFeature } from '../features/setup-tabs.js';
 import { createSubflowGraphFeature } from '../features/subflow-graph.js';
 import { createTriggerConflictsFeature } from '../features/trigger-conflicts.js';
+
 const SALESFORCE_HOST_PATTERN =
-  /^https:\/\/[^/]+\.(salesforce\.com|salesforce-setup\.com|my\.salesforce\.com|lightning\.force\.com)\
+  /^https:\/\/[^/]+\.(salesforce\.com|salesforce-setup\.com|my\.salesforce\.com|lightning\.force\.com)\//i;
+
 export default defineContentScript({
   matches: [
     'https://*.salesforce.com/*',
@@ -37,8 +51,14 @@ export default defineContentScript({
   runAt: 'document_idle',
   allFrames: true,
   async main() {
+    // Only mount the UI in the top frame. The all_frames match still runs
+    // this entrypoint in iframes (so they can participate in future
+    // feature wiring), but the side button itself stays top-only — same
+    // behaviour as v2.0.2's side-button.js:32.
     if (window.top !== window.self) return;
+
     if (!SALESFORCE_HOST_PATTERN.test(window.location.href)) return;
+
     const settings = await loadSettings();
     let currentSettings = settings;
     const telemetry = createTelemetry({
@@ -46,6 +66,8 @@ export default defineContentScript({
     });
     const registry = createFeatureRegistry({ track: telemetry.track });
     const router = createSpaRouter();
+
+    // ── Feature registration (unchanged from Phase A) ──
     registry.register(createSetupTabsFeature());
     registry.register(createCanvasSearchFeature());
     registry.register(createFlowListSearchFeature());
@@ -60,13 +82,21 @@ export default defineContentScript({
     registry.register(createTriggerConflictsFeature());
     registry.register(createSubflowGraphFeature());
     registry.register(createFlowDeployFeature());
+
     setContextSource(buildContextToFeatures(registry.listManifests()));
+
+    // ── Kill-switch state ──
+    // Boot path awaits one ping with a 1.5s timeout; on miss, fall back to
+    // the last-known cache. Subsequent route changes refresh in the
+    // background; the gate uses whichever list is current.
     let disabledRemote: ReadonlySet<string> = new Set(await readKillSwitchCache());
+
     let bridge = createBridgeClient({
       token: settings.bridge.token,
       preferredTransport: settings.bridge.preferredTransport,
       localhostPort: settings.bridge.localhostPort,
     });
+
     async function refreshKillSwitch(): Promise<void> {
       try {
         const info = await Promise.race([
@@ -81,13 +111,19 @@ export default defineContentScript({
         console.warn('[SFUT] kill-switch refresh failed:', err);
       }
     }
+
     function makeGate() {
       return {
         disabledRemote,
         isUserEnabled: (id: string) => isFeatureEnabled(currentSettings, id),
       };
     }
+
+    // Wait once at boot so the very first init pass already respects the
+    // remote list. If the bridge times out we proceed with the cached list.
     await refreshKillSwitch();
+
+    // ── Menu items + side button (ICONS map preserved from Phase A) ──
     const ICONS: Record<string, { icon: string; label: string }> = {
       'setup-tabs': { icon: '📑', label: 'Setup Tabs' },
       'flow-list-search': { icon: '🔍', label: 'Flow List Search' },
@@ -104,6 +140,7 @@ export default defineContentScript({
       'subflow-graph': { icon: '🕸', label: 'Subflow Caller Graph' },
       'flow-deploy': { icon: '🚀', label: 'Deploy or Rollback…' },
     };
+
     const menuItemsProvider = (): MenuItem[] => {
       const available = getAvailableFeatures();
       const items: MenuItem[] = [];
@@ -117,6 +154,7 @@ export default defineContentScript({
       }
       return items;
     };
+
     const sideButton = mountSideButton({
       menuItemsProvider,
       handlers: {
@@ -128,6 +166,8 @@ export default defineContentScript({
         },
       },
     });
+
+    // ── Settings change → re-run the gate ──
     onSettingsChange((next) => {
       const bridgeChanged =
         next.bridge.token !== currentSettings.bridge.token ||
@@ -140,11 +180,15 @@ export default defineContentScript({
           preferredTransport: next.bridge.preferredTransport,
           localhostPort: next.bridge.localhostPort,
         });
+        // New client → refresh kill-switch immediately so subsequent route
+        // changes use the new server's view of disabled features.
         void refreshKillSwitch();
       }
       void registry.initForCurrentRoute(getAvailableFeatures(), makeGate());
       sideButton.refresh();
     });
+
+    // ── SPA route change → refresh kill-switch (fire-and-forget), then init ──
     router.onChange(({ url }) => {
       registry.resetForRouteChange(url);
       void refreshKillSwitch();
@@ -152,7 +196,9 @@ export default defineContentScript({
       void registry.initForCurrentRoute(getAvailableFeatures(), makeGate());
     });
     router.start();
+
     await registry.initForCurrentRoute(getAvailableFeatures(), makeGate());
+
     console.log('[SFUT] Shell mounted with kill-switch enabled.');
   },
 });

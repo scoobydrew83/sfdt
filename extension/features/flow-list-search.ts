@@ -1,5 +1,15 @@
+// Flow List Search — port of
+// /Users/dkennedy/dev/2.0.2_0 copy/features/flow-list-search.js.
+//
+// Adds a search and filter bar above the Setup Flows list (Status / Type /
+// free-text). Indexes the table rows in place and toggles row visibility
+// via inline style so the existing Salesforce list-view virtualizer keeps
+// working. Auto-scrolls the list on first interaction so Salesforce's lazy
+// renderer surfaces every row before the user types.
+
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
+
 interface RowIndexEntry {
   row: HTMLElement;
   name: string;
@@ -9,6 +19,7 @@ interface RowIndexEntry {
   typeDisplay: string;
   searchBlob: string;
 }
+
 const SELECTORS = {
   listViewManager:
     '.forceListViewManager, .forceListViewManagerGrid, [data-aura-class="forceListViewManager"]',
@@ -20,11 +31,12 @@ const SELECTORS = {
     '.listViewContent .slds-page-header, .forceListViewManagerHeader, .slds-page-header',
   flowNameCell: 'th[scope="row"] a, td:first-child a, th a',
 };
+
 const TRIGGER_TYPE_LABELS: Record<string, string> = {
   Activation: 'Activation-Triggered Flow',
   AutomationEvent: 'Automation Event-Triggered Flow',
   Capability: 'Capability-Triggered Flow',
-  Capabilitiy: 'Capability-Triggered Flow',
+  Capabilitiy: 'Capability-Triggered Flow', // typo-safe mapping (matches v2.0.2)
   DataCloudDataChange: 'Data Cloud Data Change Flow',
   DataGraphDataChange: 'Data Graph Data Change Flow',
   EventDrivenJourney: 'Event-Driven Journey Flow',
@@ -37,6 +49,7 @@ const TRIGGER_TYPE_LABELS: Record<string, string> = {
   ScheduledJourney: 'Scheduled Journey Flow',
   Segment: 'Segment Flow',
 };
+
 const PROCESS_TYPE_LABELS: Record<string, string> = {
   ActionableEventManagementFlow: 'Actionable Event Management Flow',
   ActionCadenceAutolaunchedFlow: 'Action Cadence Autolaunched Flow',
@@ -71,24 +84,29 @@ const PROCESS_TYPE_LABELS: Record<string, string> = {
   SurveyEnrich: 'Survey Enrichment Flow',
   Workflow: 'Workflow',
 };
+
 function humanizeEnum(value: string): string {
   return value.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ').trim();
 }
+
 function typeDisplay(processType: string, triggerType: string): string {
   if (triggerType) return TRIGGER_TYPE_LABELS[triggerType] ?? humanizeEnum(triggerType);
   if (processType) return PROCESS_TYPE_LABELS[processType] ?? humanizeEnum(processType);
   return '';
 }
+
 function normalizeStatus(raw: string): RowIndexEntry['statusNormalized'] {
   const v = raw.trim().toLowerCase();
   if (v === 'true' || v === 'active') return 'active';
   if (v === 'false' || v === 'inactive') return 'inactive';
   return '';
 }
+
 function cellText(cell: Element | null): string {
   if (!cell) return '';
   return (cell.textContent ?? '').trim().replace(/\s+/g, ' ');
 }
+
 function cellValue(cell: Element | null): string {
   if (!cell) return '';
   const title = cell.querySelector('[title]')?.getAttribute('title')?.trim();
@@ -99,6 +117,7 @@ function cellValue(cell: Element | null): string {
   if (ariaLabel && ariaLabel !== 'true' && ariaLabel !== 'false') return ariaLabel;
   return cellText(cell);
 }
+
 function checkboxValue(cell: Element | null): string {
   if (!cell) return '';
   const candidate =
@@ -119,22 +138,26 @@ function checkboxValue(cell: Element | null): string {
   if (text === 'true' || text === 'false' || text === 'active' || text === 'inactive') return text;
   return '';
 }
+
 function extractRowData(row: HTMLElement): RowIndexEntry | null {
   const rowHeader = row.querySelector('th[scope="row"]');
   if (!rowHeader) return null;
   const tds = Array.from(row.querySelectorAll('td'));
+
   const nameLink = row.querySelector(SELECTORS.flowNameCell);
   const name = nameLink ? cellText(nameLink) : cellText(rowHeader);
   const apiName = cellValue(tds[1] ?? null);
   const processTypeRaw = cellValue(tds[2] ?? null);
   const triggerTypeRaw = cellValue(tds[3] ?? null);
   const statusNormalized = normalizeStatus(checkboxValue(tds[4] ?? null));
+
   const typeRaw = (triggerTypeRaw || processTypeRaw || '').trim();
   const typeDisp = typeDisplay(processTypeRaw, triggerTypeRaw);
   const searchBlob = [name, apiName, processTypeRaw, triggerTypeRaw, typeRaw, typeDisp]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
+
   if (!name) return null;
   return {
     row,
@@ -146,16 +169,19 @@ function extractRowData(row: HTMLElement): RowIndexEntry | null {
     searchBlob,
   };
 }
+
 export function indexRows(doc: Document): RowIndexEntry[] {
   return Array.from(doc.querySelectorAll<HTMLElement>(SELECTORS.tableRow))
     .map(extractRowData)
     .filter((entry): entry is RowIndexEntry => entry !== null);
 }
+
 interface FilterState {
   text: string;
   status: '' | 'active' | 'inactive';
   type: string;
 }
+
 export function applyFilters(
   rows: readonly RowIndexEntry[],
   state: FilterState,
@@ -172,15 +198,18 @@ export function applyFilters(
   }
   return { visible, total: rows.length };
 }
+
 export interface FlowListSearchOptions {
   doc?: Document;
   win?: Window;
   waitTimeoutMs?: number;
 }
+
 export function createFlowListSearchFeature(options: FlowListSearchOptions = {}): Feature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const waitTimeoutMs = options.waitTimeoutMs ?? 10_000;
+
   let searchInput: HTMLInputElement | null = null;
   let statusFilter: HTMLSelectElement | null = null;
   let typeFilter: HTMLSelectElement | null = null;
@@ -189,12 +218,14 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
   let rowIndex: RowIndexEntry[] = [];
   let allRowsLoaded = false;
   let scrolling = false;
+
   function updateClearButtonState(): void {
     if (!clearBtn) return;
     const hasInputs =
       !!(searchInput?.value || statusFilter?.value || typeFilter?.value);
     clearBtn.style.display = hasInputs ? 'inline-block' : 'none';
   }
+
   function updateCount(visible: number, total: number, loading = false): void {
     if (!countLabel) return;
     if (loading) {
@@ -208,6 +239,7 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
     else if (visible === 0) countLabel.textContent = 'No matching flows';
     else countLabel.textContent = `${visible} of ${total} flows`;
   }
+
   function refreshFilterOptions(): void {
     if (!typeFilter) return;
     const previous = typeFilter.value;
@@ -217,6 +249,7 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
       if (!seen.has(item.typeRaw)) seen.set(item.typeRaw, item.typeDisplay || item.typeRaw);
     }
     const sorted = Array.from(seen.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+
     while (typeFilter.firstChild) typeFilter.removeChild(typeFilter.firstChild);
     const defaultOpt = doc.createElement('option');
     defaultOpt.value = '';
@@ -235,6 +268,7 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
       typeFilter.value = '';
     }
   }
+
   function reIndexAndFilter(): void {
     rowIndex = indexRows(doc);
     refreshFilterOptions();
@@ -247,10 +281,12 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
     updateCount(counts.visible, counts.total);
     updateClearButtonState();
   }
+
   async function autoScrollToLoadAll(): Promise<void> {
     if (allRowsLoaded || scrolling) return;
     scrolling = true;
     updateCount(0, 0, true);
+
     const scroller = doc.querySelector<HTMLElement>(SELECTORS.scrollContainer);
     if (!scroller) {
       allRowsLoaded = true;
@@ -258,6 +294,7 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
       reIndexAndFilter();
       return;
     }
+
     let previous = 0;
     let stable = 0;
     for (let i = 0; i < 100; i += 1) {
@@ -277,20 +314,24 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
     scrolling = false;
     reIndexAndFilter();
   }
+
   function injectBar(): void {
     if (doc.getElementById('sfut-flow-search-container')) return;
     const header = doc.querySelector(SELECTORS.listHeader);
     const manager = doc.querySelector(SELECTORS.listViewManager);
     const insertTarget = header ?? manager;
     if (!insertTarget) return;
+
     const container = doc.createElement('div');
     container.id = 'sfut-flow-search-container';
     container.className = 'sfut-flow-search-container';
+
     const icon = doc.createElement('span');
     icon.className = 'sfut-flow-search-icon';
     icon.setAttribute('aria-hidden', 'true');
     icon.textContent = '🔍';
     container.appendChild(icon);
+
     searchInput = doc.createElement('input');
     searchInput.id = 'sfut-flow-search-input';
     searchInput.className = 'sfut-flow-search-input';
@@ -300,6 +341,7 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
     searchInput.setAttribute('autocomplete', 'off');
     searchInput.setAttribute('spellcheck', 'false');
     container.appendChild(searchInput);
+
     statusFilter = doc.createElement('select');
     statusFilter.id = 'sfut-flow-status-filter';
     statusFilter.className = 'sfut-flow-search-filter';
@@ -316,6 +358,7 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
       statusFilter.appendChild(opt);
     }
     container.appendChild(statusFilter);
+
     typeFilter = doc.createElement('select');
     typeFilter.id = 'sfut-flow-type-filter';
     typeFilter.className = 'sfut-flow-search-filter';
@@ -325,21 +368,25 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
     allTypes.textContent = 'All Types';
     typeFilter.appendChild(allTypes);
     container.appendChild(typeFilter);
+
     clearBtn = doc.createElement('button');
     clearBtn.className = 'sfut-flow-search-clear';
     clearBtn.textContent = 'Clear';
     clearBtn.title = 'Clear search and filters';
     clearBtn.setAttribute('aria-label', 'Clear search and filters');
     container.appendChild(clearBtn);
+
     countLabel = doc.createElement('span');
     countLabel.id = 'sfut-flow-search-count';
     countLabel.className = 'sfut-flow-search-count';
     container.appendChild(countLabel);
+
     if (header && header.parentNode) {
       header.parentNode.insertBefore(container, header.nextSibling);
     } else if (insertTarget) {
       insertTarget.insertBefore(container, insertTarget.firstChild);
     }
+
     let debounce: ReturnType<typeof setTimeout> | null = null;
     searchInput.addEventListener('input', () => {
       if (debounce) clearTimeout(debounce);
@@ -367,8 +414,10 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
       reIndexAndFilter();
       searchInput?.focus();
     });
+
     reIndexAndFilter();
   }
+
   async function waitForListView(): Promise<void> {
     const start = Date.now();
     while (Date.now() - start < waitTimeoutMs) {
@@ -380,17 +429,20 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
       await new Promise((r) => setTimeout(r, 100));
     }
   }
+
   return {
     manifest: {
       id: 'flow-list-search',
       name: 'Flow List Search',
       contexts: [CONTEXTS.SETUP_FLOWS],
     },
+
     async init() {
       const context = detectContext({ location: { href: win.location.href } }, doc);
       if (context !== CONTEXTS.SETUP_FLOWS) return;
       await waitForListView();
     },
+
     onActivate() {
       if (searchInput) {
         searchInput.focus();
@@ -401,6 +453,8 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
     },
   };
 }
+
+// Test seam
 export function _flowListSearchTestApi() {
   return { humanizeEnum, typeDisplay, normalizeStatus, indexRows, applyFilters };
 }

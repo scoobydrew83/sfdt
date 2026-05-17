@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 vi.mock('fs-extra', () => ({
   default: {
     pathExists: vi.fn(),
@@ -6,9 +7,11 @@ vi.mock('fs-extra', () => ({
     readJson: vi.fn(),
   },
 }));
+
 vi.mock('../../src/lib/log-writer.js', () => ({
   readLatestLog: vi.fn(),
 }));
+
 import fs from 'fs-extra';
 import { readLatestLog } from '../../src/lib/log-writer.js';
 import {
@@ -19,7 +22,11 @@ import {
   readQuality,
   readDrift,
 } from '../../src/lib/gui-server/parsers.js';
+
 beforeEach(() => vi.clearAllMocks());
+
+// ─── parseTestRunLines ────────────────────────────────────────────────────────
+
 describe('parseTestRunLines', () => {
   it('returns zero counts when no JSON line is present', () => {
     const result = parseTestRunLines(['[INFO] running tests', '[PASS] done']);
@@ -28,6 +35,7 @@ describe('parseTestRunLines', () => {
       coverage: null, tests: [], classCoverage: [],
     });
   });
+
   it('parses a standard SF CLI result envelope', () => {
     const payload = {
       result: {
@@ -57,6 +65,7 @@ describe('parseTestRunLines', () => {
     });
     expect(result.tests[1].status).toBe('fail');
   });
+
   it('extracts classCoverage sorted by percent ascending', () => {
     const payload = {
       result: {
@@ -82,6 +91,7 @@ describe('parseTestRunLines', () => {
     expect(classCoverage[2].name).toBe('HighCoverage');
     expect(classCoverage[2].percent).toBe(95);
   });
+
   it('handles top-level codeCoverage field (aggregated output)', () => {
     const payload = {
       result: {
@@ -98,6 +108,7 @@ describe('parseTestRunLines', () => {
     expect(classCoverage[0].coveredLines).toBe(16);
     expect(classCoverage[0].totalLines).toBe(20);
   });
+
   it('returns zero percent when numLocations is 0', () => {
     const payload = {
       result: {
@@ -115,6 +126,7 @@ describe('parseTestRunLines', () => {
     const { classCoverage } = parseTestRunLines([JSON.stringify(payload)]);
     expect(classCoverage[0].percent).toBe(0);
   });
+
   it('skips non-JSON lines before finding the JSON payload', () => {
     const lines = [
       'Starting tests...',
@@ -125,6 +137,7 @@ describe('parseTestRunLines', () => {
     const result = parseTestRunLines(lines);
     expect(result.passed).toBe(7);
   });
+
   it('normalises test field names from alternative SF CLI shapes', () => {
     const payload = {
       result: {
@@ -138,12 +151,16 @@ describe('parseTestRunLines', () => {
     expect(tests[0].durationMs).toBe(50);
   });
 });
+
+// ─── parseQualityLines ────────────────────────────────────────────────────────
+
 describe('parseQualityLines', () => {
   it('returns PASS with no violations when no JSON line found', () => {
     const result = parseQualityLines(['no json here']);
     expect(result.status).toBe('PASS');
     expect(result.violations).toHaveLength(0);
   });
+
   it('parses violations and sets FAIL status', () => {
     const payload = {
       result: [
@@ -162,6 +179,7 @@ describe('parseQualityLines', () => {
     expect(result.summary.high).toBe(1);
     expect(result.summary.medium).toBe(1);
   });
+
   it('accumulates summary counts across severity levels', () => {
     const payload = [
       {
@@ -177,22 +195,28 @@ describe('parseQualityLines', () => {
     const result = parseQualityLines([JSON.stringify(payload)]);
     expect(result.summary).toEqual({ critical: 1, high: 1, medium: 1, low: 1 });
   });
+
   it('returns PASS when violations array is empty', () => {
     const payload = { result: [] };
     const result = parseQualityLines([JSON.stringify(payload)]);
     expect(result.status).toBe('PASS');
   });
 });
+
+// ─── readTestRuns ─────────────────────────────────────────────────────────────
+
 describe('readTestRuns', () => {
   it('returns empty array when results directory does not exist', async () => {
     fs.pathExists.mockResolvedValue(false);
     expect(await readTestRuns('/logs')).toEqual([]);
   });
+
   it('returns empty array when readdir throws', async () => {
     fs.pathExists.mockResolvedValue(true);
     fs.readdir.mockRejectedValue(new Error('EACCES'));
     expect(await readTestRuns('/logs')).toEqual([]);
   });
+
   it('skips latest.json and non-json files', async () => {
     fs.pathExists.mockResolvedValue(true);
     fs.readdir.mockResolvedValue(['latest.json', 'README.txt', '20260509_120000.json']);
@@ -206,6 +230,7 @@ describe('readTestRuns', () => {
     const runs = await readTestRuns('/logs');
     expect(runs).toHaveLength(1);
   });
+
   it('parses schemaVersion 1 envelope and passes through classCoverage', async () => {
     fs.pathExists.mockResolvedValue(true);
     fs.readdir.mockResolvedValue(['20260509_120000.json']);
@@ -226,6 +251,7 @@ describe('readTestRuns', () => {
     expect(runs[0].duration).toBe(4000);
     expect(runs[0].classCoverage).toEqual(classCoverage);
   });
+
   it('falls back to result.summary shape for legacy files', async () => {
     fs.pathExists.mockResolvedValue(true);
     fs.readdir.mockResolvedValue(['legacy.json']);
@@ -247,6 +273,7 @@ describe('readTestRuns', () => {
     expect(runs[0].coverage).toBe(75.0);
     expect(runs[0].duration).toBe(6000);
   });
+
   it('falls back to raw.summary shape', async () => {
     fs.pathExists.mockResolvedValue(true);
     fs.readdir.mockResolvedValue(['flat.json']);
@@ -264,6 +291,7 @@ describe('readTestRuns', () => {
     expect(runs[0].passed).toBe(3);
     expect(runs[0].failed).toBe(1);
   });
+
   it('falls back to array shape', async () => {
     fs.pathExists.mockResolvedValue(true);
     fs.readdir.mockResolvedValue(['array.json']);
@@ -276,6 +304,9 @@ describe('readTestRuns', () => {
     expect(runs[0].failed).toBe(1);
   });
 });
+
+// ─── readPreflight ────────────────────────────────────────────────────────────
+
 describe('readPreflight', () => {
   it('returns shaped preflight data from log-writer envelope', async () => {
     readLatestLog.mockResolvedValue({
@@ -295,12 +326,16 @@ describe('readPreflight', () => {
     expect(result.checks[0]).toEqual({ name: 'git', status: 'PASS', message: null });
     expect(result.checks[1]).toEqual({ name: 'changelog', status: 'WARN', message: 'Missing entry' });
   });
+
   it('returns null when no log exists and no legacy files', async () => {
     readLatestLog.mockResolvedValue(null);
     fs.readdir.mockResolvedValue([]);
     expect(await readPreflight('/logs')).toBeNull();
   });
 });
+
+// ─── readQuality ──────────────────────────────────────────────────────────────
+
 describe('readQuality', () => {
   it('returns shaped quality data from log-writer envelope', async () => {
     readLatestLog.mockResolvedValue({
@@ -318,11 +353,15 @@ describe('readQuality', () => {
     expect(result.violations).toHaveLength(1);
     expect(result.unavailableMessage).toBeNull();
   });
+
   it('returns null when readLatestLog returns null', async () => {
     readLatestLog.mockResolvedValue(null);
     expect(await readQuality('/logs')).toBeNull();
   });
 });
+
+// ─── readDrift ────────────────────────────────────────────────────────────────
+
 describe('readDrift', () => {
   it('returns shaped drift data from log-writer envelope', async () => {
     readLatestLog.mockResolvedValue({
@@ -337,6 +376,7 @@ describe('readDrift', () => {
     expect(result.components).toHaveLength(1);
     expect(result.date).toBe('2026-05-08T08:00:00Z');
   });
+
   it('returns null when no log and no legacy files', async () => {
     readLatestLog.mockResolvedValue(null);
     fs.readdir.mockResolvedValue([]);

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import EmptyState from '../components/EmptyState.jsx';
 import { IconX, IconCopy, IconDownload, IconFileText, IconPackage, IconPlus } from '../Icons.jsx';
+
 const METADATA_TYPES = [
   'ApexClass', 'ApexTrigger', 'ApexComponent', 'ApexPage',
   'AuraDefinitionBundle', 'LightningComponentBundle',
@@ -16,23 +17,28 @@ const METADATA_TYPES = [
   'AssignmentRule', 'EscalationRule', 'AutoResponseRule',
   'SharingRule', 'Territory2', 'Queue',
 ];
+
 function fmtSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
+
 function fmtDate(iso) {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
 }
+
 function AddComponentForm({ existingComponents, onAdd }) {
   const [type, setType]         = useState('ApexClass');
-  const [members, setMembers]   = useState([]);
+  const [members, setMembers]   = useState([]);   // discovered from source
   const [filter, setFilter]     = useState('');
   const [selected, setSelected] = useState(new Set());
   const [loading, setLoading]   = useState(false);
   const [busy, setBusy]         = useState(false);
+
   const existingForType = existingComponents
     .filter((c) => c.type === type)
     .map((c) => c.member);
+
   useEffect(() => {
     let cancelled = false;
     setMembers([]);
@@ -45,29 +51,35 @@ function AddComponentForm({ existingComponents, onAdd }) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [type]);
+
   const visible = filter
     ? members.filter((m) => m.toLowerCase().includes(filter.toLowerCase()))
     : members;
+
   const toggleOne = (m) => setSelected((prev) => {
     const next = new Set(prev);
     next.has(m) ? next.delete(m) : next.add(m);
     return next;
   });
+
   const allVisibleSelected = visible.length > 0 && visible.every((m) => selected.has(m));
   const toggleVisible = () => setSelected((prev) => {
     const next = new Set(prev);
     allVisibleSelected ? visible.forEach((m) => next.delete(m)) : visible.forEach((m) => next.add(m));
     return next;
   });
+
   const handleAdd = async () => {
     if (!selected.size) return;
     setBusy(true);
     for (const m of selected) await onAdd(type, m);
     setSelected(new Set());
+    // Refresh discovered list
     const { members: fresh = [] } = await api.discoverComponents(type, existingForType).catch(() => ({ members: [] }));
     setMembers(fresh);
     setBusy(false);
   };
+
   return (
     <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 10, paddingTop: 10 }}>
       <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)', marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -90,12 +102,15 @@ function AddComponentForm({ existingComponents, onAdd }) {
           style={{ flex: 1, fontSize: 'var(--fs-xs)' }}
         />
       </div>
+
       {loading && <div style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-xs)', padding: '6px 0' }}>Discovering…</div>}
+
       {!loading && members.length === 0 && (
         <div style={{ color: 'var(--fg-subtle)', fontSize: 'var(--fs-xs)', padding: '6px 0' }}>
           No {type} components found in source path (or all already in manifest).
         </div>
       )}
+
       {!loading && visible.length > 0 && (
         <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 'var(--r-sm)', marginBottom: 8 }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', background: 'var(--bg-subtle)' }}>
@@ -110,6 +125,7 @@ function AddComponentForm({ existingComponents, onAdd }) {
           ))}
         </div>
       )}
+
       <button
         className="btn btn-primary btn-sm"
         disabled={busy || selected.size === 0}
@@ -120,9 +136,11 @@ function AddComponentForm({ existingComponents, onAdd }) {
     </div>
   );
 }
+
 function ManifestViewer({ manifest, preloadedXml, onClose }) {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(null); // { xml, components: [] }
   const [loading, setLoading] = useState(true);
+
   const load = async () => {
     setLoading(true);
     try {
@@ -143,7 +161,9 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
       setLoading(false);
     }
   };
+
   useEffect(() => { load(); }, [manifest, preloadedXml]);
+
   const removeComponent = async (type, member) => {
     try {
       await api.removeManifestComponent(manifest.relPath, type, member);
@@ -152,6 +172,7 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
       alert(`Remove failed: ${err.message}`);
     }
   };
+
   const addComponent = async (type, member) => {
     try {
       await api.addManifestComponent(manifest.relPath, type, member);
@@ -160,7 +181,9 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
       alert(`Add failed: ${err.message}`);
     }
   };
+
   if (!manifest && !preloadedXml) return null;
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 900, width: '95vw' }} onClick={(e) => e.stopPropagation()}>
@@ -172,11 +195,12 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
           <button className="btn btn-icon" onClick={onClose}><IconX size={15} /></button>
         </div>
         <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxHeight: '65vh' }}>
+          
           {loading ? (
             <div style={{ gridColumn: 'span 2', padding: 40, textAlign: 'center' }}><div className="spinner" /></div>
           ) : (
             <>
-              {}
+              {/* Left Column: Component List */}
               <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div className="section-label" style={{ marginBottom: 10 }}>Components ({data?.components?.length ?? 0})</div>
                 <div className="table-wrap" style={{ flex: 1, overflowY: 'auto' }}>
@@ -204,7 +228,8 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
                   <AddComponentForm existingComponents={data?.components ?? []} onAdd={addComponent} />
                 )}
               </div>
-              {}
+
+              {/* Right Column: XML Preview */}
               <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div className="section-label" style={{ marginBottom: 10 }}>XML Preview</div>
                 <pre style={{
@@ -237,12 +262,14 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
     </div>
   );
 }
+
 function computeFilename(name, pkg, packages) {
   if (!name) return '';
   const hasPkg = packages.length > 0 && pkg !== 'all';
   const suffix = hasPkg ? `-${pkg}` : '';
   return `manifest/release/rl-${name}${suffix}-package.xml`;
 }
+
 function BuilderSection({ aiInfo, onBuilt }) {
   const [base, setBase] = useState('main');
   const [head, setHead] = useState('HEAD');
@@ -253,10 +280,12 @@ function BuilderSection({ aiInfo, onBuilt }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [viewerOpen, setViewerOpen] = useState(false);
+
   useEffect(() => {
     api.getPackages().then((d) => setPackages(d.packages ?? [])).catch(() => {});
     api.suggestVersion().then((d) => setReleaseName(d.version ?? '')).catch(() => {});
   }, []);
+
   const handleBuild = async () => {
     setBuilding(true);
     setError(null);
@@ -275,6 +304,7 @@ function BuilderSection({ aiInfo, onBuilt }) {
       setBuilding(false);
     }
   };
+
   return (
     <div className="card mb-4">
       <div className="card-head">
@@ -317,6 +347,7 @@ function BuilderSection({ aiInfo, onBuilt }) {
             {building ? 'Generating…' : 'Generate & Save'}
           </button>
         </div>
+
         {packages.length > 0 && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
             {['all', ...packages.map((p) => p.name)].map((name) => (
@@ -331,20 +362,24 @@ function BuilderSection({ aiInfo, onBuilt }) {
             ))}
           </div>
         )}
+
         {releaseName && (
           <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', marginBottom: 6 }}>
             → {computeFilename(releaseName, selectedPkg, packages)}
           </div>
         )}
+
         <p style={{ marginTop: 'var(--s-2)', fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>
           Generates a package.xml from changed metadata files between the two git refs.
           {aiInfo?.enabled && ' For AI dependency cleanup, run <code>sfdt manifest --ai-cleanup</code> in your terminal.'}
         </p>
+
         {error && (
           <div className="alert alert-error mt-3">
             <span>{error}</span>
           </div>
         )}
+
         {result && (
           <div className="mt-3" style={{ display: 'flex', alignItems: 'center', gap: 'var(--s-3)', flexWrap: 'wrap' }}>
             <span className="badge badge-success">Generated</span>
@@ -376,15 +411,18 @@ function BuilderSection({ aiInfo, onBuilt }) {
     </div>
   );
 }
+
 export default function ManifestsPage() {
   const [manifests, setManifests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [aiInfo, setAiInfo] = useState(null);
   const [selectedManifest, setSelectedManifest] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
   useEffect(() => {
     api.aiAvailable().then(setAiInfo).catch(() => null);
   }, []);
+
   useEffect(() => {
     setLoading(true);
     api.listManifests()
@@ -392,6 +430,7 @@ export default function ManifestsPage() {
       .catch(() => setManifests([]))
       .finally(() => setLoading(false));
   }, [refreshKey]);
+
   return (
     <div>
       <div className="page-header">
@@ -400,7 +439,9 @@ export default function ManifestsPage() {
           <p className="page-subtitle">Build and manage deployment package.xml manifests</p>
         </div>
       </div>
+
       <BuilderSection aiInfo={aiInfo} onBuilt={() => setRefreshKey((k) => k + 1)} />
+
       <div className="card">
         <div className="card-head">
           <div className="card-title">Manifest history</div>
@@ -408,13 +449,16 @@ export default function ManifestsPage() {
             {manifests.length} file{manifests.length !== 1 ? 's' : ''}
           </span>
         </div>
+
         {loading && <div className="spinner-center"><div className="spinner" /></div>}
+
         {!loading && manifests.length === 0 && (
           <EmptyState
             title="No manifests yet"
             message="Build a manifest above or run sfdt manifest / sfdt compare in your terminal."
           />
         )}
+
         {!loading && manifests.length > 0 && (
           <table className="data-table">
             <thead>
@@ -453,6 +497,7 @@ export default function ManifestsPage() {
           </table>
         )}
       </div>
+
       {selectedManifest && <ManifestViewer manifest={selectedManifest} onClose={() => { setSelectedManifest(null); setRefreshKey(k => k + 1); }} />}
     </div>
   );

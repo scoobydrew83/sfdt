@@ -6,6 +6,7 @@ import EmptyState from '../components/EmptyState.jsx';
 import CommandRunner from '../components/CommandRunner.jsx';
 import { IconCheckCircle, IconXCircle, IconAlertTri } from '../Icons.jsx';
 import { ChatContext } from '../App.jsx';
+
 function subtaskState(status) {
   const s = (status ?? '').toLowerCase();
   if (s === 'pass' || s === 'passed' || s === 'success') return 'done';
@@ -13,6 +14,7 @@ function subtaskState(status) {
   if (s === 'warn' || s === 'warning') return 'active';
   return 'pending';
 }
+
 function SubtaskIcon({ status }) {
   const s = (status ?? '').toLowerCase();
   if (s === 'pass' || s === 'passed' || s === 'success')
@@ -23,16 +25,21 @@ function SubtaskIcon({ status }) {
     return <IconAlertTri size={14} />;
   return <span style={{ fontSize: 12, lineHeight: 1 }}>—</span>;
 }
+
 const MAX_MISSING_SHOWN = 5;
+
 function DependencyCheckSection() {
-  const [depState, setDepState] = useState('idle');
+  const [depState, setDepState] = useState('idle'); // idle | loading | done | error
   const [depResult, setDepResult] = useState(null);
   const [depError, setDepError] = useState(null);
+
   useEffect(() => {
     let cancelled = false;
+
     async function run() {
       setDepState('loading');
       try {
+        // Resolve org from project info
         const projectInfo = await api.project();
         const org = projectInfo?.org;
         if (!org) {
@@ -42,6 +49,8 @@ function DependencyCheckSection() {
           }
           return;
         }
+
+        // Resolve manifest: use the first available manifest
         const manifestsData = await api.listManifests();
         const manifests = manifestsData?.manifests ?? [];
         if (manifests.length === 0) {
@@ -51,8 +60,10 @@ function DependencyCheckSection() {
           }
           return;
         }
+
         const manifestRelPath = manifests[0].relPath;
         const result = await api.dependenciesPreflight(manifestRelPath, org);
+
         if (!cancelled) {
           setDepResult(result);
           setDepState('done');
@@ -64,11 +75,15 @@ function DependencyCheckSection() {
         }
       }
     }
+
     run();
     return () => { cancelled = true; };
   }, []);
+
   if (depState === 'idle') return null;
+
   const rows = [];
+
   if (depState === 'loading') {
     rows.push(
       <div key="loading" className="subtask pending">
@@ -85,6 +100,7 @@ function DependencyCheckSection() {
     );
   } else if (depState === 'done' && depResult) {
     const { status, missing = [], warnings = [] } = depResult;
+
     if (status === 'pass') {
       rows.push(
         <div key="pass" className="subtask done">
@@ -125,6 +141,7 @@ function DependencyCheckSection() {
       }
     }
   }
+
   return (
     <div className="card" style={{ marginTop: '16px' }}>
       <div className="card-head">
@@ -139,11 +156,13 @@ function DependencyCheckSection() {
     </div>
   );
 }
+
 export default function PreflightPage() {
   const [data, setData]             = useState(null);
   const [loading, setLoading]       = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const chat = useContext(ChatContext);
+
   useEffect(() => {
     setLoading(true);
     api.preflight()
@@ -165,11 +184,13 @@ export default function PreflightPage() {
       .catch(() => null)
       .finally(() => setLoading(false));
   }, [refreshKey, chat]);
+
   const checks      = data?.checks ?? [];
   const passCount   = checks.filter((c) => ['pass','passed','success'].includes(c.status?.toLowerCase())).length;
   const failCount   = checks.filter((c) => ['fail','failed','error'].includes(c.status?.toLowerCase())).length;
   const warnCount   = checks.filter((c) => ['warn','warning'].includes(c.status?.toLowerCase())).length;
   const overallStatus = data?.status;
+
   return (
     <div>
       <div className="page-header">
@@ -185,7 +206,9 @@ export default function PreflightPage() {
           </div>
         )}
       </div>
+
       <CommandRunner command="preflight" label="Preflight Check" onComplete={() => setRefreshKey((k) => k + 1)} />
+
       {checks.length > 0 && (
         <div className="stats-grid mb-6" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
           <StatCard label="Passed" value={passCount} accent="green" />
@@ -193,13 +216,16 @@ export default function PreflightPage() {
           <StatCard label="Warnings" value={warnCount} accent={warnCount > 0 ? 'amber' : 'brand'} />
         </div>
       )}
+
       {loading && <div className="spinner-center"><div className="spinner spinner-lg" /></div>}
+
       {!loading && checks.length === 0 && (
         <EmptyState
           title="No preflight data"
           message="Run sfdt preflight to generate a report."
         />
       )}
+
       {!loading && checks.length > 0 && (
         <div className="card">
           <div className="card-head">
@@ -240,6 +266,7 @@ export default function PreflightPage() {
           </div>
         </div>
       )}
+
       {!loading && checks.length > 0 && <DependencyCheckSection key={refreshKey} />}
     </div>
   );

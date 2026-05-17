@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import EmptyState from '../components/EmptyState.jsx';
 import StatCard from '../components/StatCard.jsx';
+
 function formatRelativeTime(dateStr) {
   if (!dateStr) return null;
   const d = new Date(dateStr);
@@ -16,6 +17,7 @@ function formatRelativeTime(dateStr) {
   if (diffDay < 1) return `${diffHr}h ago`;
   return `${diffDay}d ago`;
 }
+
 export default function ScanPage() {
   const [orgs, setOrgs]                   = useState([]);
   const [selectedOrg, setSelectedOrg]     = useState('');
@@ -24,6 +26,7 @@ export default function ScanPage() {
   const [error, setError]                 = useState(null);
   const [selectedType, setSelectedType]   = useState(null);
   const [memberSearch, setMemberSearch]   = useState('');
+
   useEffect(() => {
     api.orgs()
       .then(({ orgs: list }) => {
@@ -41,15 +44,19 @@ export default function ScanPage() {
       })
       .catch(() => {});
   }, []);
+
   const sortedTypes = scanData
     ? Object.entries(scanData.inventory).sort(([a], [b]) => a.localeCompare(b))
     : [];
+
   const currentMembers = scanData && selectedType
     ? (scanData.inventory[selectedType] ?? [])
     : [];
+
   const filteredMembers = memberSearch
     ? currentMembers.filter((m) => m.toLowerCase().includes(memberSearch.toLowerCase()))
     : currentMembers;
+
   const handleRunScan = async () => {
     if (!selectedOrg) return;
     setError(null);
@@ -66,19 +73,22 @@ export default function ScanPage() {
       setRunning(false);
     }
   };
+
   const subtitle = scanData
     ? `${scanData.org} · ${formatRelativeTime(scanData.timestamp)}`
     : 'No scan yet';
+
   return (
     <div>
-      {}
+      {/* Page header */}
       <div className="page-header">
         <div className="page-header-text">
           <h1>Scan</h1>
           <p className="page-subtitle">{subtitle}</p>
         </div>
       </div>
-      {}
+
+      {/* Org selector card */}
       <div className="card mb-4">
         <div className="card-head">
           <div className="card-title">Run Scan</div>
@@ -109,27 +119,31 @@ export default function ScanPage() {
           </div>
         </div>
       </div>
-      {}
+
+      {/* Error banner */}
       {error && (
         <div className="alert alert-error mb-4">
           <span>{error}</span>
         </div>
       )}
-      {}
+
+      {/* Spinner while running */}
       {running && (
         <div className="spinner-center"><div className="spinner spinner-lg" /></div>
       )}
-      {}
+
+      {/* Empty state */}
       {!running && !scanData && (
         <EmptyState
           title="No scan yet"
           message="Run `sfdt scan` or click Run Scan above."
         />
       )}
-      {}
+
+      {/* Results */}
       {!running && scanData && (
         <>
-          {}
+          {/* Stats row — 3 cards */}
           <div className="stats-grid mb-6" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
             <StatCard label="Types"   value={scanData.summary.totalTypes}   accent="brand" />
             <StatCard label="Members" value={scanData.summary.totalMembers} accent="brand" />
@@ -140,11 +154,13 @@ export default function ScanPage() {
               accent="green"
             />
           </div>
-          {}
+
+          {/* Two-panel inventory */}
           <div className="card" style={{ marginTop: 'var(--s-4)' }}>
             <div className="card-body" style={{ padding: 0, overflow: 'hidden' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', height: 500 }}>
-                {}
+
+                {/* Left panel: metadata type list */}
                 <div style={{ borderRight: '1px solid var(--border-subtle)', overflowY: 'auto' }}>
                   {sortedTypes.map(([type, members]) => (
                     <button
@@ -172,7 +188,8 @@ export default function ScanPage() {
                     </button>
                   ))}
                 </div>
-                {}
+
+                {/* Right panel: member grid */}
                 <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                   <div style={{ padding: 'var(--s-3)', borderBottom: '1px solid var(--border-subtle)' }}>
                     <input
@@ -214,6 +231,7 @@ export default function ScanPage() {
                     )}
                   </div>
                 </div>
+
               </div>
             </div>
           </div>

@@ -1,21 +1,26 @@
 import { execa } from 'execa';
+
 function chunk(arr, size) {
   const out = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
 }
+
 export async function parallelRetrieve(delta, config, { cwd, onProgress, signal } = {}) {
   const members = [];
   for (const [type, names] of delta) {
     for (const name of names) members.push(`${type}:${name}`);
   }
+
   if (members.length === 0) return { retrieved: 0, total: 0, errors: [] };
+
   const batchSize = config.pullCache?.batchSize ?? 100;
   const parallelism = config.pullCache?.parallelism ?? 5;
   const batches = chunk(members, batchSize);
   const errors = [];
   const successfulMembers = [];
   let retrieved = 0;
+
   for (let i = 0; i < batches.length; i += parallelism) {
     const window = batches.slice(i, i + parallelism);
     const windowResults = await Promise.all(
@@ -36,5 +41,6 @@ export async function parallelRetrieve(delta, config, { cwd, onProgress, signal 
     retrieved = successfulMembers.length;
     onProgress?.({ retrieved, total: members.length });
   }
+
   return { retrieved, total: members.length, errors, successfulMembers };
 }

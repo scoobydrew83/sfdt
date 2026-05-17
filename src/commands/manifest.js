@@ -12,6 +12,8 @@ import {
   renderPackageXml,
   countMembers,
 } from '../lib/metadata-mapper.js';
+
+
 export function registerManifestCommand(program) {
   program
     .command('manifest')
@@ -33,6 +35,8 @@ export function registerManifestCommand(program) {
         const sourcePath = config.defaultSourcePath || 'force-app/main/default';
         const apiVersion = config.sourceApiVersion || '63.0';
         const manifestDir = config.manifestDir || 'manifest/release';
+
+        // Resolve release name
         let releaseName = options.name || options.version || null;
         if (releaseName === 'today') {
           releaseName = new Date().toISOString().slice(0, 10);
@@ -42,10 +46,13 @@ export function registerManifestCommand(program) {
           process.exitCode = 1;
           return;
         }
+
+        // Resolve package target and git diff paths
         const pkgTarget = options.package || 'all';
         const packages = config.packageDirectories || [];
-        let diffPaths;
-        let diffSourcePath = sourcePath;
+
+        let diffPaths; // array of path prefixes for git diff
+        let diffSourcePath = sourcePath; // used for parseDiffToMetadata filtering
         if (pkgTarget !== 'all') {
           if (packages.length === 0) {
             print.error(`--package requires packageDirectories to be configured in .sfdt/config.json`);
@@ -61,34 +68,44 @@ export function registerManifestCommand(program) {
           diffPaths = [matched.path + '/'];
           diffSourcePath = matched.path;
         } else {
+          // all packages — use top-level roots (deduplicated)
           diffPaths = packages.length > 0
             ? [...new Set(packages.map((p) => p.path.split('/')[0] + '/'))]
             : [sourcePath.split('/')[0] + '/'];
         }
+
         print.header(`Smart Manifest (${options.base}...${options.head})${pkgTarget !== 'all' ? ` [${pkgTarget}]` : ''}`);
+
+        // Resolve base ref — if it's a branch name that's not reachable, fall back to merge-base
         const baseRef = await resolveBaseRef(options.base, options.head, projectRoot);
         if (baseRef !== options.base) {
           print.info(`Using merge-base ${baseRef.slice(0, 7)} as diff base`);
         }
+
         const diffResult = await execa(
           'git',
           ['diff', '--name-status', baseRef, options.head, '--', ...diffPaths],
           { cwd: projectRoot, reject: false },
         );
+
         if (diffResult.exitCode !== 0) {
           print.error(`git diff failed: ${diffResult.stderr || 'unknown error'}`);
           process.exitCode = 1;
           return;
         }
+
         const { additive, destructive, unknown } = parseDiffToMetadata(diffResult.stdout, {
           sourcePath: diffSourcePath,
         });
+
         const addCount = countMembers(additive);
         const delCount = countMembers(destructive);
+
         if (addCount === 0 && delCount === 0) {
           print.warning('No metadata changes detected between refs.');
           return;
         }
+
         print.info(`Detected ${addCount} additive, ${delCount} destructive components.`);
         if (unknown.length > 0) {
           print.warning(
@@ -101,10 +118,13 @@ export function registerManifestCommand(program) {
             print.step(`  ... and ${unknown.length - 10} more`);
           }
         }
+
         const packageXml = renderPackageXml(additive, apiVersion);
+
         if (options.print) {
           console.log(packageXml);
         } else {
+          // Compute output path
           let outputPath;
           if (options.output) {
             outputPath = safeResolvePath(projectRoot, options.output);
@@ -125,6 +145,7 @@ export function registerManifestCommand(program) {
           await fs.writeFile(outputPath, packageXml);
           print.success(`Wrote package.xml → ${path.relative(projectRoot, outputPath)}`);
         }
+
         if (delCount > 0 && options.destructive) {
           const destructiveXml = renderPackageXml(destructive, apiVersion);
           const destPath = safeResolvePath(projectRoot, options.destructive);
@@ -138,11 +159,15 @@ export function registerManifestCommand(program) {
             `${delCount} destructive components detected — rerun with --destructive <path> to emit destructiveChanges.xml`,
           );
         }
+
+        // AI dependency cleanup
         const aiEnabled = config.features?.ai;
         const shouldRunAi = options.aiCleanup ?? aiEnabled;
+
         if (shouldRunAi && aiEnabled && (await isAiAvailable(config))) {
           print.header('AI Dependency Cleanup');
           print.info('Asking AI to check for missing dependencies...');
+
           const manifestPrompt = await getPrompt('manifest-dependency', config._configDir);
           await runAiPrompt(manifestPrompt + packageXml, {
             config,
@@ -162,8 +187,16 @@ export function registerManifestCommand(program) {
       }
     });
 }
+
+/**
+ * Try to resolve a base ref. If the user passed a branch name and we're on
+ * a feature branch, fall back to the merge-base to avoid pulling in changes
+ * that are already on main.
+ */
 async function resolveBaseRef(base, head, cwd) {
+  // If the caller passed a specific commit SHA we trust it as-is.
   if (/^[0-9a-f]{7,40}$/i.test(base)) return base;
+
   const mergeBase = await execa('git', ['merge-base', base, head], { cwd, reject: false });
   if (mergeBase.exitCode === 0 && mergeBase.stdout.trim()) {
     return mergeBase.stdout.trim();

@@ -4,22 +4,28 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 const CONFIG_DIR_NAME = '.sfdt';
 const SFDX_PROJECT_FILE = 'sfdx-project.json';
+
 const CONFIG_FILES = {
   config: 'config.json',
   environments: 'environments.json',
   pullConfig: 'pull-config.json',
   testConfig: 'test-config.json',
 };
+
 const _ajv = new Ajv({ allErrors: true, strict: false });
 addFormats(_ajv);
+
 const _configSchema = JSON.parse(
   readFileSync(path.join(__dirname, 'config-schema.json'), 'utf8'),
 );
 const _validate = _ajv.compile(_configSchema);
+
 function formatAjvErrors(errors) {
   const requiredErrors = errors.filter((e) => e.keyword === 'required');
   if (requiredErrors.length > 0) {
@@ -30,9 +36,10 @@ function formatAjvErrors(errors) {
     );
   }
   const e = errors[0];
-  const rawPath = e.instancePath.replace(/^\
+  const rawPath = e.instancePath.replace(/^\//, '').replace(/\//g, '.');
   const fieldPath = rawPath || '(root)';
   const more = errors.length > 1 ? ` (+ ${errors.length - 1} more errors)` : '';
+
   if (fieldPath === 'defaultOrg') {
     return (
       `Invalid configuration: "defaultOrg" must be a non-empty string (e.g. "my-org-alias")${more}.\n` +
@@ -74,8 +81,14 @@ function formatAjvErrors(errors) {
   if (e.keyword === 'additionalProperties') {
     return `Invalid configuration: "${fieldPath}" contains unknown key "${e.params.additionalProperty}"${more}.`;
   }
+
   return `Invalid configuration: field "${fieldPath}" ${e.message}${more}.`;
 }
+
+/**
+ * Error subclass for configuration problems.
+ * Carries exitCode 2 so the CLI entry point can set the correct exit status.
+ */
 export class ConfigError extends Error {
   constructor(message) {
     super(message);
@@ -83,10 +96,19 @@ export class ConfigError extends Error {
     this.exitCode = 2;
   }
 }
+
+/**
+ * Walk up from startDir to find the directory containing both
+ * sfdx-project.json and .sfdt/
+ */
 export function getConfigDir(startDir) {
   const root = findProjectWithConfig(startDir || process.cwd());
   return path.join(root, CONFIG_DIR_NAME);
 }
+
+/**
+ * Load and merge all .sfdt/ configuration files into a single object.
+ */
 export async function loadConfig(startDir) {
   let configDir;
   try {
@@ -94,12 +116,14 @@ export async function loadConfig(startDir) {
   } catch (err) {
     throw new ConfigError(err.message);
   }
+
   const configPath = path.join(configDir, CONFIG_FILES.config);
   if (!(await fs.pathExists(configPath))) {
     throw new ConfigError(
       `Configuration file not found: ${configPath}\nRun 'sfdt init' first to create the .sfdt/ configuration directory.`,
     );
   }
+
   let config;
   try {
     config = await fs.readJson(configPath);
@@ -108,8 +132,11 @@ export async function loadConfig(startDir) {
       `Failed to parse ${configPath}: ${err.message}\nEnsure the file contains valid JSON.`,
     );
   }
+
   validateConfig(config);
+
   const merged = { ...config };
+
   for (const [key, filename] of Object.entries(CONFIG_FILES)) {
     if (key === 'config') continue;
     const filePath = path.join(configDir, filename);
@@ -121,8 +148,11 @@ export async function loadConfig(startDir) {
       }
     }
   }
+
   merged._configDir = configDir;
   merged._projectRoot = path.dirname(configDir);
+
+  // Enrich with sfdx-project.json values if not already set
   const sfdxPath = path.join(merged._projectRoot, SFDX_PROJECT_FILE);
   if (await fs.pathExists(sfdxPath)) {
     const sfdxProject = await fs.readJson(sfdxPath);
@@ -145,34 +175,51 @@ export async function loadConfig(startDir) {
   }
   merged.manifestLayout = merged.manifestLayout || 'flat';
   merged.changelogDir = merged.changelogDir || 'changelogs';
+
   return merged;
 }
+
+/**
+ * Validate that a config object has the required structure.
+ * Throws ConfigError with a descriptive message on failure.
+ */
 export function validateConfig(config) {
   if (!config || typeof config !== 'object') {
     throw new ConfigError('Invalid configuration: config must be a non-null object.');
   }
+
   const valid = _validate(config);
   if (!valid) {
     throw new ConfigError(formatAjvErrors(_validate.errors));
   }
 }
+
+/**
+ * Walk up from startDir looking for a directory that contains
+ * sfdx-project.json and .sfdt/. Returns the project root path.
+ */
 function findProjectWithConfig(startDir) {
   let current = path.resolve(startDir);
   const { root } = path.parse(current);
+
   while (current !== root) {
     const hasSfdxProject = fs.pathExistsSync(path.join(current, SFDX_PROJECT_FILE));
     const hasSfdtDir = fs.pathExistsSync(path.join(current, CONFIG_DIR_NAME));
+
     if (hasSfdxProject && hasSfdtDir) {
       return current;
     }
+
     if (hasSfdxProject && !hasSfdtDir) {
       throw new ConfigError(
         `Found Salesforce DX project at ${current} but no .sfdt/ directory.\n` +
           `Run 'sfdt init' first to initialize configuration.`,
       );
     }
+
     current = path.dirname(current);
   }
+
   throw new ConfigError(
     `Could not find a Salesforce DX project with .sfdt/ configuration.\n` +
       `Run 'sfdt init' in your project root to get started.`,

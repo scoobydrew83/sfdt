@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
+
 import { registerInitCommand } from './commands/init.js';
 import { registerDeployCommand } from './commands/deploy.js';
 import { registerReleaseCommand } from './commands/release.js';
@@ -27,10 +28,13 @@ import { registerAiCommand } from './commands/ai.js';
 import { registerScanCommand } from './commands/scan.js';
 import { registerFlowCommand } from './commands/flow.js';
 import { registerExtensionCommand } from './commands/extension.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
+
 export function createCli() {
   const program = new Command();
+
   program
     .name('sfdt')
     .description(
@@ -38,6 +42,8 @@ export function createCli() {
     )
     .version(pkg.version, '-v, --version', 'Print the sfdt version and exit')
     .addHelpCommand('help [command]', 'Display help for a command');
+
+  // Register all commands
   registerInitCommand(program);
   registerDeployCommand(program);
   registerReleaseCommand(program);
@@ -63,11 +69,14 @@ export function createCli() {
   registerScanCommand(program);
   registerFlowCommand(program);
   registerExtensionCommand(program);
+
+  // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program
     .command('version')
     .description('Print the sfdt version')
     .action(() => {
       console.log(`sfdt v${pkg.version}`);
     });
+
   return program;
 }

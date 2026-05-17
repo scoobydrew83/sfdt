@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readDisabledFeatures } from '../src/lib/bridge/feature-flags.js';
+
 describe('readDisabledFeatures', () => {
   let tmp;
   beforeEach(async () => {
@@ -13,9 +14,11 @@ describe('readDisabledFeatures', () => {
   afterEach(async () => {
     await rm(tmp, { recursive: true, force: true });
   });
+
   it('returns [] when feature-flags.json does not exist', async () => {
     expect(await readDisabledFeatures(tmp)).toEqual([]);
   });
+
   it('returns the disabled array when the file is well-formed', async () => {
     await writeFile(
       join(tmp, '.sfdt', 'feature-flags.json'),
@@ -23,6 +26,7 @@ describe('readDisabledFeatures', () => {
     );
     expect(await readDisabledFeatures(tmp)).toEqual(['canvas-search', 'flow-deploy']);
   });
+
   it('returns [] and logs a warning when JSON is malformed', async () => {
     await writeFile(join(tmp, '.sfdt', 'feature-flags.json'), '{ this is not json');
     const warnings = [];
@@ -31,6 +35,7 @@ describe('readDisabledFeatures', () => {
     ).toEqual([]);
     expect(warnings.join('\n')).toContain('feature-flags.json');
   });
+
   it('returns [] when "disabled" is missing or wrong type', async () => {
     await writeFile(
       join(tmp, '.sfdt', 'feature-flags.json'),
@@ -38,6 +43,7 @@ describe('readDisabledFeatures', () => {
     );
     expect(await readDisabledFeatures(tmp)).toEqual([]);
   });
+
   it('filters non-string entries', async () => {
     await writeFile(
       join(tmp, '.sfdt', 'feature-flags.json'),

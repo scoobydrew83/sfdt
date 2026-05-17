@@ -7,6 +7,7 @@ import { fetchInventory } from '../lib/org-inventory.js';
 import { diffInventories } from '../lib/org-diff.js';
 import { renderPackageXml } from '../lib/metadata-mapper.js';
 import { safeResolvePath } from '../lib/project-detect.js';
+
 export function registerCompareCommand(program) {
   program
     .command('compare')
@@ -20,14 +21,18 @@ export function registerCompareCommand(program) {
         const source = options.source ?? 'local';
         const target = options.target ?? config.defaultOrg;
         const logDir = config.logDir ?? path.join(config._projectRoot, 'logs');
+
         print.header(`Comparing ${source} → ${target}`);
         print.info('Fetching source inventory…');
+
         const [sourceMap, targetMap] = await Promise.all([
           fetchInventory(source, config),
           fetchInventory(target, config),
         ]);
+
         print.info('Diffing inventories…');
         const items = diffInventories(sourceMap, targetMap);
+
         const resultPath = path.join(logDir, 'compare-latest.json');
         await fs.ensureDir(logDir);
         await fs.outputJson(
@@ -35,13 +40,16 @@ export function registerCompareCommand(program) {
           { date: new Date().toISOString(), source, target, items },
           { spaces: 2 },
         );
+
         const sourceOnly = items.filter((i) => i.status === 'source-only');
         const targetOnly = items.filter((i) => i.status === 'target-only');
         const both = items.filter((i) => i.status === 'both');
+
         print.success(
           `Comparison complete. ${sourceOnly.length} only in source · ${targetOnly.length} only in target · ${both.length} in both`,
         );
         print.info(`Results written to ${resultPath}`);
+
         if (options.output) {
           const manifestMeta = {};
           for (const item of sourceOnly) {

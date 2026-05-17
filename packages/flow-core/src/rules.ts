@@ -1,3 +1,13 @@
+// Flow health rules engine — ported from
+// /Users/dkennedy/dev/2.0.2_0 copy/utils/flow-health-rules.js.
+//
+// Produces raw Finding objects. Scoring is downstream (see scorer.ts).
+// Pure logic; no DOM, no API, no chrome.*.
+//
+// The v2.0.2 source used Math.random() to mint finding IDs. This port uses a
+// per-evaluation monotonic counter — same uniqueness guarantee within a run,
+// but deterministic, so the result of evaluate() is snapshottable.
+
 import type {
   Category,
   Confidence,
@@ -7,6 +17,7 @@ import type {
   Severity,
 } from './types.js';
 import type { Dependency, NormalizedFlow, NormalizedNode, NormalizedResource } from './normalize.js';
+
 export interface RulesConfig {
   namingConventions?: {
     flow?: RegExp;
@@ -18,6 +29,7 @@ export interface RulesConfig {
   outdatedApiVersionThreshold?: number;
   currentApiVersion?: number;
 }
+
 interface FindingDraft {
   ruleId: string;
   scoreFamily: string;
@@ -30,6 +42,7 @@ interface FindingDraft {
   location?: FindingLocation;
   metadata?: FindingMetadata;
 }
+
 function makeFindingFactory() {
   let counter = 0;
   return function finding(draft: FindingDraft): Finding {
@@ -49,6 +62,10 @@ function makeFindingFactory() {
     };
   };
 }
+
+// ---------------------------------------------------------------------------
+// Individual rule checks. Each returns 0..N findings.
+
 function checkFlowDescription(flow: NormalizedFlow, finding: ReturnType<typeof makeFindingFactory>): Finding[] {
   if (flow.metadata.description) return [];
   return [
@@ -64,6 +81,7 @@ function checkFlowDescription(flow: NormalizedFlow, finding: ReturnType<typeof m
     }),
   ];
 }
+
 function checkElementDescriptions(
   flow: NormalizedFlow,
   finding: ReturnType<typeof makeFindingFactory>,
@@ -85,6 +103,7 @@ function checkElementDescriptions(
       }),
     );
 }
+
 function checkResourceDescriptions(
   flow: NormalizedFlow,
   finding: ReturnType<typeof makeFindingFactory>,
@@ -105,8 +124,10 @@ function checkResourceDescriptions(
       }),
     );
 }
+
 const GENERIC_NAMING_PATTERN =
   /^(Assignment|Decision|Loop|Screen|Get Records|Update Records|Create Records|Delete Records|Action|Subflow)\s+\d+$/i;
+
 function checkGenericElementNaming(
   flow: NormalizedFlow,
   finding: ReturnType<typeof makeFindingFactory>,
@@ -127,12 +148,15 @@ function checkGenericElementNaming(
       }),
     );
 }
+
 const STANDARD_VARIABLE_NAMES = new Set(['recordId']);
+
 function isAllowedResourceName(resource: NormalizedResource): boolean {
   if (!resource?.name) return false;
   if (resource.type === 'Variable' && STANDARD_VARIABLE_NAMES.has(resource.name)) return true;
   return false;
 }
+
 function checkNamingConventions(
   flow: NormalizedFlow,
   config: RulesConfig,
@@ -140,6 +164,7 @@ function checkNamingConventions(
 ): Finding[] {
   const findings: Finding[] = [];
   const naming = config.namingConventions ?? {};
+
   if (naming.flow && flow.meta.flowApiName && !naming.flow.test(flow.meta.flowApiName)) {
     findings.push(
       finding({
@@ -153,11 +178,13 @@ function checkNamingConventions(
       }),
     );
   }
+
   flow.resources.forEach((resource) => {
     let matcher: RegExp | undefined;
     if (resource.type === 'Variable') matcher = naming.variable;
     if (resource.type === 'Formula') matcher = naming.formula;
     if (resource.type === 'Constant') matcher = naming.constant;
+
     if (isAllowedResourceName(resource)) return;
     if (matcher && !matcher.test(resource.name)) {
       findings.push(
@@ -174,8 +201,10 @@ function checkNamingConventions(
       );
     }
   });
+
   return findings;
 }
+
 function checkFaultPaths(flow: NormalizedFlow, finding: ReturnType<typeof makeFindingFactory>): Finding[] {
   return flow.nodes
     .filter((n) => n.supportsFaultPath)
@@ -207,7 +236,9 @@ function checkFaultPaths(flow: NormalizedFlow, finding: ReturnType<typeof makeFi
       });
     });
 }
+
 const DML_TYPES = new Set<NormalizedNode['type']>(['CreateRecords', 'UpdateRecords', 'DeleteRecords']);
+
 function checkDmlInsideLoops(flow: NormalizedFlow, finding: ReturnType<typeof makeFindingFactory>): Finding[] {
   return flow.nodes
     .filter((n) => DML_TYPES.has(n.type) && n.isInLoop)
@@ -225,6 +256,7 @@ function checkDmlInsideLoops(flow: NormalizedFlow, finding: ReturnType<typeof ma
       }),
     );
 }
+
 function checkQueriesInsideLoops(
   flow: NormalizedFlow,
   finding: ReturnType<typeof makeFindingFactory>,
@@ -245,6 +277,7 @@ function checkQueriesInsideLoops(
       }),
     );
 }
+
 function checkNestedLoops(flow: NormalizedFlow, finding: ReturnType<typeof makeFindingFactory>): Finding[] {
   return flow.nodes
     .filter((n) => n.loopDepth > 1)
@@ -262,6 +295,7 @@ function checkNestedLoops(flow: NormalizedFlow, finding: ReturnType<typeof makeF
       }),
     );
 }
+
 const DATA_OPERATION_TYPES = new Set<NormalizedNode['type']>([
   'GetRecords',
   'CreateRecords',
@@ -270,6 +304,7 @@ const DATA_OPERATION_TYPES = new Set<NormalizedNode['type']>([
   'Action',
   'Subflow',
 ]);
+
 function checkHighDataOperationCount(
   flow: NormalizedFlow,
   config: RulesConfig,
@@ -290,6 +325,7 @@ function checkHighDataOperationCount(
     }),
   ];
 }
+
 function checkBroadEntryCriteria(
   flow: NormalizedFlow,
   finding: ReturnType<typeof makeFindingFactory>,
@@ -308,6 +344,7 @@ function checkBroadEntryCriteria(
     }),
   ];
 }
+
 function checkTriggerTiming(
   flow: NormalizedFlow,
   finding: ReturnType<typeof makeFindingFactory>,
@@ -323,6 +360,7 @@ function checkTriggerTiming(
         n.type === 'Action' ||
         n.type === 'Subflow',
     );
+
   if (timing === 'AfterSave' && hasOnlySelfMutation) {
     return [
       finding({
@@ -340,6 +378,7 @@ function checkTriggerTiming(
   }
   return [];
 }
+
 function checkOutdatedApiVersion(
   flow: NormalizedFlow,
   config: RulesConfig,
@@ -362,9 +401,16 @@ function checkOutdatedApiVersion(
     }),
   ];
 }
+
+// Hard-coded ID and URL detection. Walks the metadata blobs hanging off each
+// node / resource and inspects only certain "literal" keys to avoid false
+// positives from internal references.
+
 const INSPECTABLE_LITERAL_KEYS = new Set(['stringValue', 'formulaExpression', 'expression', 'text', 'fieldText']);
+
 const ID_REGEX = /\b([a-zA-Z0-9]{15}|[a-zA-Z0-9]{18})\b/g;
 const URL_REGEX = /(https?:\/\/[^\s"']+)/gi;
+
 const BLOCKED_ID_LITERALS = new Set([
   '$User.Id',
   'UseStoredValues',
@@ -376,6 +422,7 @@ const BLOCKED_ID_LITERALS = new Set([
   'ComponentInstance',
   'MULTI_SELECT',
 ]);
+
 function looksLikeSalesforceId(value: string): boolean {
   const trimmed = value.trim();
   if (!/^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/.test(trimmed)) return false;
@@ -385,6 +432,7 @@ function looksLikeSalesforceId(value: string): boolean {
   if (BLOCKED_ID_LITERALS.has(trimmed)) return false;
   return true;
 }
+
 function walkLiteralStrings(obj: unknown, callback: (s: string) => void): void {
   if (obj == null) return;
   if (typeof obj === 'string') {
@@ -405,9 +453,11 @@ function walkLiteralStrings(obj: unknown, callback: (s: string) => void): void {
     }
   }
 }
+
 function checkHardCodedIds(flow: NormalizedFlow, finding: ReturnType<typeof makeFindingFactory>): Finding[] {
   const findings: Finding[] = [];
   const seen = new Set<string>();
+
   function inspect(label: string, apiName: string | null, value: string, kind: 'element' | 'resource'): void {
     const matches = value.match(ID_REGEX);
     if (!matches) return;
@@ -437,6 +487,7 @@ function checkHardCodedIds(flow: NormalizedFlow, finding: ReturnType<typeof make
       );
     }
   }
+
   flow.nodes.forEach((node) =>
     walkLiteralStrings(node.metadata, (value) => inspect(node.label, node.apiName, value, 'element')),
   );
@@ -445,9 +496,11 @@ function checkHardCodedIds(flow: NormalizedFlow, finding: ReturnType<typeof make
   );
   return findings;
 }
+
 function checkHardCodedUrls(flow: NormalizedFlow, finding: ReturnType<typeof makeFindingFactory>): Finding[] {
   const findings: Finding[] = [];
   const seen = new Set<string>();
+
   function inspect(label: string, apiName: string | null, value: string, kind: 'element' | 'resource'): void {
     const matches = value.match(URL_REGEX);
     if (!matches) return;
@@ -475,6 +528,7 @@ function checkHardCodedUrls(flow: NormalizedFlow, finding: ReturnType<typeof mak
       );
     }
   }
+
   flow.nodes.forEach((node) =>
     walkLiteralStrings(node.metadata, (value) => inspect(node.label, node.apiName, value, 'element')),
   );
@@ -483,6 +537,7 @@ function checkHardCodedUrls(flow: NormalizedFlow, finding: ReturnType<typeof mak
   );
   return findings;
 }
+
 function checkDependencyInventory(
   flow: NormalizedFlow,
   finding: ReturnType<typeof makeFindingFactory>,
@@ -509,6 +564,10 @@ function checkDependencyInventory(
     });
   });
 }
+
+// ---------------------------------------------------------------------------
+// Public entrypoint.
+
 export function evaluate(flow: NormalizedFlow, config: RulesConfig = {}): Finding[] {
   const finding = makeFindingFactory();
   return [

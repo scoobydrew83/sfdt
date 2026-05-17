@@ -1,17 +1,20 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createFeatureRegistry, type Feature } from '../lib/feature-registry.js';
+
 function makeLogger() {
   return {
     log: vi.fn(),
     warn: vi.fn(),
   };
 }
+
 function makeFeature(id: string, overrides: Partial<Feature> = {}): Feature {
   return {
     manifest: { id, name: id, contexts: [] },
     ...overrides,
   };
 }
+
 describe('extension/lib/feature-registry', () => {
   it('registers and lists features', () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
@@ -21,6 +24,7 @@ describe('extension/lib/feature-registry', () => {
     expect(reg.has('alpha')).toBe(true);
     expect(reg.has('gamma')).toBe(false);
   });
+
   it('init is called once per route per feature', async () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
     const initSpy = vi.fn();
@@ -29,6 +33,7 @@ describe('extension/lib/feature-registry', () => {
     await reg.initForCurrentRoute(['alpha']);
     expect(initSpy).toHaveBeenCalledTimes(1);
   });
+
   it('resetForRouteChange clears init state so init runs again on the next route', async () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
     const initSpy = vi.fn();
@@ -38,6 +43,7 @@ describe('extension/lib/feature-registry', () => {
     await reg.initForCurrentRoute(['alpha']);
     expect(initSpy).toHaveBeenCalledTimes(2);
   });
+
   it('dispatch activate calls onActivate', async () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
     const onActivate = vi.fn();
@@ -45,6 +51,7 @@ describe('extension/lib/feature-registry', () => {
     await reg.dispatch('alpha', 'activate');
     expect(onActivate).toHaveBeenCalledOnce();
   });
+
   it('dispatch refresh calls refresh()', async () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
     const refresh = vi.fn();
@@ -52,6 +59,7 @@ describe('extension/lib/feature-registry', () => {
     await reg.dispatch('alpha', 'refresh');
     expect(refresh).toHaveBeenCalledOnce();
   });
+
   it('dispatch logs a warning when the feature is missing the requested hook', async () => {
     const logger = makeLogger();
     const reg = createFeatureRegistry({ logger });
@@ -61,6 +69,7 @@ describe('extension/lib/feature-registry', () => {
       expect.stringContaining("does not implement onActivate()"),
     );
   });
+
   it('a thrown error in init is logged but does not stop subsequent inits', async () => {
     const logger = makeLogger();
     const reg = createFeatureRegistry({ logger });
@@ -80,6 +89,7 @@ describe('extension/lib/feature-registry', () => {
       expect.any(Error),
     );
   });
+
   it('a thrown error in onActivate is logged, not propagated', async () => {
     const logger = makeLogger();
     const reg = createFeatureRegistry({ logger });
@@ -96,6 +106,7 @@ describe('extension/lib/feature-registry', () => {
       expect.any(Error),
     );
   });
+
   it('skips unregistered feature ids when initialising a route', async () => {
     const logger = makeLogger();
     const reg = createFeatureRegistry({ logger });
@@ -104,6 +115,7 @@ describe('extension/lib/feature-registry', () => {
       expect.stringContaining("Feature 'nothing-here' not yet registered, skipping."),
     );
   });
+
   it('exposes the feature manifest via list and getManifest', () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
     reg.register({
@@ -117,6 +129,7 @@ describe('extension/lib/feature-registry', () => {
       contexts: ['flow_builder'],
     });
   });
+
   it('skips a feature whose declared permissions are not in the manifest, with a warn', () => {
     const logger = makeLogger();
     const reg = createFeatureRegistry({
@@ -137,6 +150,7 @@ describe('extension/lib/feature-registry', () => {
       expect.stringContaining("'rogue' declares permission 'tabs' which is not in the extension manifest"),
     );
   });
+
   it('registers a feature whose declared permissions are a subset of the manifest', () => {
     const logger = makeLogger();
     const reg = createFeatureRegistry({
@@ -154,6 +168,7 @@ describe('extension/lib/feature-registry', () => {
     expect(reg.has('good')).toBe(true);
     expect(logger.warn).not.toHaveBeenCalled();
   });
+
   it('skips init for features whose id is in the kill-switch list', async () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
     const initSpy = vi.fn();
@@ -167,6 +182,7 @@ describe('extension/lib/feature-registry', () => {
     });
     expect(initSpy).not.toHaveBeenCalled();
   });
+
   it('skips init for features the user has disabled', async () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
     const initSpy = vi.fn();
@@ -180,6 +196,7 @@ describe('extension/lib/feature-registry', () => {
     });
     expect(initSpy).not.toHaveBeenCalled();
   });
+
   it('calls teardown() when a previously-initialised feature is newly remote-disabled', async () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
     const init = vi.fn();
@@ -194,14 +211,16 @@ describe('extension/lib/feature-registry', () => {
       isUserEnabled: () => true,
     });
     expect(init).toHaveBeenCalledOnce();
+
     reg.resetForRouteChange('https://x.lightning.force.com/page/2');
     await reg.initForCurrentRoute(['alpha'], {
       disabledRemote: new Set(['alpha']),
       isUserEnabled: () => true,
     });
     expect(teardown).toHaveBeenCalledOnce();
-    expect(init).toHaveBeenCalledOnce();
+    expect(init).toHaveBeenCalledOnce(); // not re-inited
   });
+
   it('resetForRouteChange does not clear active features (teardown still fires after a route change)', async () => {
     const reg = createFeatureRegistry({ logger: makeLogger() });
     const teardown = vi.fn();
@@ -210,19 +229,23 @@ describe('extension/lib/feature-registry', () => {
       init: () => {},
       teardown,
     });
+    // Init the feature
     await reg.initForCurrentRoute(['alpha'], {
       disabledRemote: new Set(),
       isUserEnabled: () => true,
     });
+    // Three route changes go by without any gate change
     reg.resetForRouteChange('r2');
     reg.resetForRouteChange('r3');
     reg.resetForRouteChange('r4');
+    // Now disable the feature — teardown MUST still fire even after 3 resets
     await reg.initForCurrentRoute(['alpha'], {
       disabledRemote: new Set(['alpha']),
       isUserEnabled: () => true,
     });
     expect(teardown).toHaveBeenCalledOnce();
   });
+
   it('a thrown error in teardown is logged and does not halt other features', async () => {
     const logger = makeLogger();
     const reg = createFeatureRegistry({ logger });
@@ -247,6 +270,7 @@ describe('extension/lib/feature-registry', () => {
       expect.anything(),
     );
   });
+
   it('tracks feature.activated when dispatch activate succeeds', async () => {
     const track = vi.fn();
     const reg = createFeatureRegistry({ logger: makeLogger(), track });
@@ -257,6 +281,7 @@ describe('extension/lib/feature-registry', () => {
     await reg.dispatch('alpha', 'activate');
     expect(track).toHaveBeenCalledWith('feature.activated', { featureId: 'alpha' });
   });
+
   it('tracks feature.errored when onActivate throws', async () => {
     const track = vi.fn();
     const reg = createFeatureRegistry({ logger: makeLogger(), track });
@@ -269,6 +294,7 @@ describe('extension/lib/feature-registry', () => {
     await reg.dispatch('alpha', 'activate');
     expect(track).toHaveBeenCalledWith('feature.errored', { featureId: 'alpha' });
   });
+
   it('tracks feature.disabled.remote when a running feature is newly kill-switched', async () => {
     const track = vi.fn();
     const reg = createFeatureRegistry({ logger: makeLogger(), track });

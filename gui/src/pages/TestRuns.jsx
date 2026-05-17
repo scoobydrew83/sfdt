@@ -4,6 +4,7 @@ import StatCard from '../components/StatCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import CommandRunner from '../components/CommandRunner.jsx';
+
 function CoverageCell({ pct }) {
   if (pct == null) return <span style={{ color: 'var(--fg-subtle)' }}>—</span>;
   const color = pct >= 75
@@ -13,6 +14,7 @@ function CoverageCell({ pct }) {
     : 'var(--status-conflict-fg)';
   return <span style={{ fontWeight: 600, color, fontFamily: 'var(--font-mono)' }}>{pct}%</span>;
 }
+
 function ClassCoverageTable({ rows, threshold = 75 }) {
   if (!rows || rows.length === 0) return null;
   return (
@@ -50,11 +52,13 @@ function ClassCoverageTable({ rows, threshold = 75 }) {
     </div>
   );
 }
+
 function ClassPicker({ onRun }) {
   const [configured, setConfigured] = useState([]);
   const [discovered, setDiscovered] = useState([]);
   const [selected, setSelected]     = useState(new Set());
   const [loading, setLoading]       = useState(true);
+
   useEffect(() => {
     let cancelled = false;
     api.testClasses()
@@ -68,15 +72,19 @@ function ClassPicker({ onRun }) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
   const toggle = (name) => setSelected((prev) => {
     const next = new Set(prev);
     next.has(name) ? next.delete(name) : next.add(name);
     return next;
   });
+
   const allClasses = [...configured, ...discovered];
   const allSelected = allClasses.length > 0 && allClasses.every((c) => selected.has(c));
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(allClasses));
+
   if (loading) return <div className="spinner-center"><div className="spinner" /></div>;
+
   if (allClasses.length === 0) {
     return (
       <div style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)', padding: '12px 0' }}>
@@ -85,6 +93,7 @@ function ClassPicker({ onRun }) {
       </div>
     );
   }
+
   const classes = (label, items, muted) => items.length === 0 ? null : (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{label}</div>
@@ -98,6 +107,7 @@ function ClassPicker({ onRun }) {
       ))}
     </div>
   );
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -120,12 +130,14 @@ function ClassPicker({ onRun }) {
     </div>
   );
 }
+
 function ManifestPicker({ onRun }) {
   const [manifests, setManifests]   = useState([]);
   const [selected, setSelected]     = useState('');
   const [detected, setDetected]     = useState(null);
   const [detecting, setDetecting]   = useState(false);
   const [loading, setLoading]       = useState(true);
+
   useEffect(() => {
     let cancelled = false;
     api.listManifests()
@@ -134,6 +146,7 @@ function ManifestPicker({ onRun }) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
   const pickManifest = async (relPath) => {
     setSelected(relPath);
     setDetected(null);
@@ -148,7 +161,9 @@ function ManifestPicker({ onRun }) {
       setDetecting(false);
     }
   };
+
   if (loading) return <div className="spinner-center"><div className="spinner" /></div>;
+
   if (manifests.length === 0) {
     return (
       <div style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)', padding: '12px 0' }}>
@@ -156,6 +171,7 @@ function ManifestPicker({ onRun }) {
       </div>
     );
   }
+
   return (
     <div>
       <div style={{ marginBottom: 12 }}>
@@ -174,7 +190,9 @@ function ManifestPicker({ onRun }) {
           ))}
         </select>
       </div>
+
       {detecting && <div style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)' }}>Detecting test classes…</div>}
+
       {detected !== null && (
         detected.length === 0 ? (
           <div style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)' }}>
@@ -200,12 +218,15 @@ function ManifestPicker({ onRun }) {
     </div>
   );
 }
+
 function TestRunnerPanel({ onComplete }) {
   const [mode, setMode]           = useState('classes');
   const [classes, setClasses]     = useState(null);
+
   const handleRun = (classList) => setClasses(classList);
   const handleComplete = () => { setClasses(null); onComplete(); };
   const handleReset = () => setClasses(null);
+
   if (classes !== null) {
     return (
       <div className="card" style={{ marginBottom: 16 }}>
@@ -226,6 +247,7 @@ function TestRunnerPanel({ onComplete }) {
       </div>
     );
   }
+
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="card-head">
@@ -254,12 +276,14 @@ function TestRunnerPanel({ onComplete }) {
     </div>
   );
 }
+
 export default function TestRuns() {
   const [data, setData]         = useState(null);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [expandedRun, setExpandedRun] = useState(null);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -270,11 +294,13 @@ export default function TestRuns() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [refreshKey]);
+
   const runs       = data?.runs ?? [];
   const totalPass  = runs.reduce((s, r) => s + (r.passed ?? 0), 0);
   const totalFail  = runs.reduce((s, r) => s + (r.failed ?? 0), 0);
   const lastCov    = runs[0]?.coverage;
   const lastDate   = runs[0]?.date ? new Date(runs[0].date).toLocaleDateString() : '—';
+
   return (
     <div>
       <div className="page-header">
@@ -285,7 +311,9 @@ export default function TestRuns() {
           </p>
         </div>
       </div>
+
       <TestRunnerPanel onComplete={() => setRefreshKey((k) => k + 1)} />
+
       {runs.length > 0 && (
         <div className="stats-grid mb-6">
           <StatCard label="Total Passed"   value={totalPass}  accent="green" />
@@ -294,18 +322,22 @@ export default function TestRuns() {
           <StatCard label="Last Run"       value={lastDate}   accent="violet" />
         </div>
       )}
+
       {error && (
         <div className="alert alert-error mb-4">
           <span>Failed to load test results: {error}</span>
         </div>
       )}
+
       {loading && <div className="spinner-center"><div className="spinner spinner-lg" /></div>}
+
       {!loading && !error && runs.length === 0 && (
         <EmptyState
           title="No test runs yet"
           message="Choose test classes above and click Run to get started."
         />
       )}
+
       {!loading && !error && runs.length > 0 && (
         <div className="card">
           <div className="card-head">

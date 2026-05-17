@@ -1,3 +1,14 @@
+// AI Assistant — port of
+// /Users/dkennedy/dev/2.0.2_0 copy/features/ai-assistant.js.
+//
+// Two improvements over v2.0.2:
+//   1. Uses @sfdt/flow-core's PromptLibrary instead of the old AIPromptLibrary
+//      IIFE — same storage shape, but no chrome.* hardcoded inside.
+//   2. Adds a "Run via sfdt" button that dispatches the assembled prompt
+//      through the sfdt-bridge so the user's configured CLI AI provider
+//      can execute it without leaving the browser. The clipboard path is
+//      preserved for users who don't have the bridge configured.
+
 import { cleanFlowMetadata, estimateTokens, PromptLibrary, summariseFlowMetadata, type ResolvedPrompt } from '@sfdt/flow-core';
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
@@ -5,9 +16,13 @@ import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-ap
 import { loadSettings } from '../lib/settings.js';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
 import { showToast } from '../ui/toast.js';
+
 const STORAGE_KEY_DISABLED = 'aiPromptLibrary.disabledStandardIds';
 const STORAGE_KEY_CUSTOMS = 'aiPromptLibrary.customPrompts';
 const STORAGE_KEY_DEFAULT = 'aiPromptLibrary.defaultPromptId';
+
+// chrome.storage-backed adapter so the PromptLibrary class uses the same
+// keys v2.0.2 used (existing users' custom prompts survive the upgrade).
 function chromeStorageAdapter() {
   return {
     async get<T = unknown>(key: string): Promise<T | null> {
@@ -29,33 +44,40 @@ function chromeStorageAdapter() {
     },
   };
 }
+
 export interface AiAssistantOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
   library?: PromptLibrary;
 }
+
 export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
   const library =
     options.library ?? new PromptLibrary({ storage: chromeStorageAdapter() });
+
   let overlay: HTMLDivElement | null = null;
+
   function closePanel(): void {
     overlay?.remove();
     overlay = null;
   }
+
   async function openPanel(): Promise<void> {
     closePanel();
     overlay = doc.createElement('div');
     overlay.className = 'sfut-ai-panel-overlay';
     overlay.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
+
     const panel = doc.createElement('div');
     panel.className = 'sfut-ai-panel';
     panel.style.cssText =
       'background: #fff; border-radius: 4px; width: 640px; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column;';
+
     const header = doc.createElement('div');
     header.className = 'sfut-ai-panel-header';
     header.style.cssText =
@@ -68,16 +90,19 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
     closeBtn.style.cssText = 'background: none; border: 0; font-size: 22px; cursor: pointer; color: #80868d;';
     closeBtn.addEventListener('click', closePanel);
     header.appendChild(closeBtn);
+
     const body = doc.createElement('div');
     body.className = 'sfut-ai-panel-body';
     body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1;';
     const loading = doc.createElement('div');
     loading.textContent = 'Fetching Flow metadata…';
     body.appendChild(loading);
+
     panel.appendChild(header);
     panel.appendChild(body);
     overlay.appendChild(panel);
     doc.body.appendChild(overlay);
+
     const escHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closePanel();
     };
@@ -85,6 +110,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) closePanel();
     });
+
     try {
       const flowId = new URL(win.location.href).searchParams.get('flowId');
       if (!flowId) {
@@ -100,6 +126,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
         loading.textContent = 'No metadata returned for this Flow.';
         return;
       }
+
       await library.load();
       const cleaned = cleanFlowMetadata(metadata) ?? metadata;
       const rawJson = JSON.stringify(metadata, null, 2);
@@ -107,6 +134,8 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       const summary = summariseFlowMetadata(metadata);
       const rawTokens = estimateTokens(rawJson);
       const cleanTokens = estimateTokens(cleanJson);
+
+      // Replace loading with full content.
       while (body.firstChild) body.removeChild(body.firstChild);
       const heading = doc.createElement('div');
       heading.style.cssText = 'font-weight: 600; margin-bottom: 4px;';
@@ -116,6 +145,8 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       subline.style.cssText = 'color: #80868d; font-size: 12px; margin-bottom: 12px;';
       subline.textContent = `${summary?.totalElements ?? 0} elements, ${summary?.totalResources ?? 0} resources · raw ~${rawTokens} tokens · cleaned ~${cleanTokens} tokens`;
       body.appendChild(subline);
+
+      // Prompt picker
       const promptRow = doc.createElement('div');
       promptRow.style.cssText = 'display: flex; gap: 8px; align-items: center; margin: 8px 0;';
       const promptLabel = doc.createElement('label');
@@ -135,6 +166,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       promptRow.appendChild(promptLabel);
       promptRow.appendChild(select);
       body.appendChild(promptRow);
+
       const description = doc.createElement('div');
       description.style.cssText = 'color: #54698d; font-size: 12px; margin-bottom: 12px;';
       const updateDescription = () => {
@@ -144,6 +176,8 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       updateDescription();
       select.addEventListener('change', updateDescription);
       body.appendChild(description);
+
+      // Buttons
       const buttons = doc.createElement('div');
       buttons.style.cssText = 'display: flex; gap: 8px; flex-wrap: wrap;';
       const makeBtn = (label: string, handler: () => Promise<void> | void): HTMLButtonElement => {
@@ -199,23 +233,29 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       loading.textContent = `Error: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
+
   return {
     manifest: {
       id: 'ai-assistant',
       name: 'Flow Metadata & AI Assistant',
       contexts: [CONTEXTS.FLOW_BUILDER],
     },
+
     async init() {
       if (detectContext({ location: { href: win.location.href } }, doc) !== CONTEXTS.FLOW_BUILDER) {
         return;
       }
     },
+
     onActivate() {
       if (overlay) closePanel();
       else void openPanel();
     },
   };
 }
+
+// Test seam — exposes the storage key names so tests can assert migration
+// compatibility with v2.0.2.
 export function _aiAssistantTestApi() {
   return { STORAGE_KEY_DISABLED, STORAGE_KEY_CUSTOMS, STORAGE_KEY_DEFAULT };
 }

@@ -3,12 +3,22 @@ import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { print } from './output.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// scripts/ lives at the package root, two levels up from src/lib/
 const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', 'scripts');
+
+/**
+ * Build an object of SFDT_ environment variables from a config object.
+ * Flattens nested config keys into SFDT_UPPER_SNAKE_CASE vars.
+ */
 export function buildScriptEnv(config) {
   const env = {};
+
   if (!config || typeof config !== 'object') return env;
+
   env.SFDT_PROJECT_ROOT = config._projectRoot || '';
   env.SFDT_CONFIG_DIR = config._configDir || '';
   env.SFDT_PROJECT_NAME = config.projectName || 'Salesforce Project';
@@ -26,12 +36,16 @@ export function buildScriptEnv(config) {
   env.SFDT_PREFLIGHT_ENFORCE_SFDX_PROJECT = config.deployment?.preflight?.enforceSfdxProject !== false ? 'true' : 'false';
   env.SFDT_PREFLIGHT_ENFORCE_UNTRACKED = config.deployment?.preflight?.enforceUntrackedFiles ? 'true' : '';
   env.SFDT_PREFLIGHT_STRICT = config.deployment?.preflight?.strict ? 'true' : '';
+
+  // Flatten features
   if (config.features && typeof config.features === 'object') {
     for (const [key, value] of Object.entries(config.features)) {
       const envKey = `SFDT_FEATURE_${key.replace(/([A-Z])/g, '_$1').toUpperCase()}`;
       env[envKey] = String(value);
     }
   }
+
+  // Flatten environments
   if (config.environments && typeof config.environments === 'object') {
     if (config.environments.default) {
       env.SFDT_DEFAULT_ENV = config.environments.default;
@@ -40,6 +54,8 @@ export function buildScriptEnv(config) {
       env.SFDT_ENV_ORGS = config.environments.orgs.map((o) => o.alias || o.name || '').join(',');
     }
   }
+
+  // Test config
   if (config.testConfig && typeof config.testConfig === 'object') {
     if (config.testConfig.coverageThreshold !== undefined) {
       env.SFDT_TEST_COVERAGE_THRESHOLD = String(config.testConfig.coverageThreshold);
@@ -57,13 +73,29 @@ export function buildScriptEnv(config) {
       env.SFDT_APEX_CLASSES = config.testConfig.apexClasses.join(',');
     }
   }
+
+  // Multi-package support
   if (Array.isArray(config.packageDirectories)) {
     env.SFDT_PACKAGE_DIRS = JSON.stringify(config.packageDirectories.map((d) => d.path));
   }
   env.SFDT_MANIFEST_LAYOUT = config.manifestLayout || 'flat';
   env.SFDT_CHANGELOG_DIR = config.changelogDir || 'changelogs';
+
   return env;
 }
+
+/**
+ * Run a shell script from the sfdt package's scripts/ directory.
+ *
+ * @param {string} scriptPath - Relative path within scripts/ (e.g., 'deploy/push.sh')
+ * @param {object} config - The merged sfdt config object
+ * @param {object} [options] - Execution options
+ * @param {string[]} [options.args] - Arguments to pass to the script
+ * @param {string} [options.cwd] - Working directory (defaults to project root)
+ * @param {object} [options.env] - Additional environment variables
+ * @param {boolean} [options.interactive] - Use stdio inherit for TTY passthrough (default: true)
+ * @param {boolean} [options.dryRun] - Print what would be executed without running (default: false)
+ */
 export async function runScript(scriptPath, config, options = {}) {
   const {
     args = [],
@@ -73,10 +105,13 @@ export async function runScript(scriptPath, config, options = {}) {
     captureStdout = false,
     dryRun = false,
   } = options;
+
   const fullPath = path.resolve(SCRIPTS_DIR, scriptPath);
+
   if (!dryRun && !(await fs.pathExists(fullPath))) {
     throw new Error(`Script not found: ${fullPath}`);
   }
+
   if (dryRun) {
     const workDir = cwd || config._projectRoot || process.cwd();
     const scriptEnv = buildScriptEnv(config);
@@ -84,6 +119,7 @@ export async function runScript(scriptPath, config, options = {}) {
     const sfdtVars = Object.entries(mergedEnv)
       .filter(([k, v]) => k.startsWith('SFDT_') && v)
       .sort(([a], [b]) => a.localeCompare(b));
+
     print.info(`[dry-run] Script : ${scriptPath}`);
     print.info(`[dry-run] Full path: ${fullPath}`);
     print.info(`[dry-run] Working dir: ${workDir}`);
@@ -96,11 +132,14 @@ export async function runScript(scriptPath, config, options = {}) {
     }
     return { exitCode: 0, stdout: '', stderr: '' };
   }
+
+  // Ensure the script is executable
   try {
     await fs.chmod(fullPath, 0o755);
   } catch (err) {
     throw new Error(`Failed to set executable permission on ${fullPath}: ${err.message}`);
   }
+
   const scriptEnv = buildScriptEnv(config);
   const mergedEnv = {
     ...process.env,
@@ -108,17 +147,22 @@ export async function runScript(scriptPath, config, options = {}) {
     SFDT_NON_INTERACTIVE: !process.stdin.isTTY || options.interactive === false ? 'true' : 'false',
     ...extraEnv,
   };
+
   const execOptions = {
     cwd: cwd || config._projectRoot || process.cwd(),
     env: mergedEnv,
     reject: false,
   };
+
   if (captureStdout) {
+    // Interactive stdin/stderr but capture stdout for return value
     execOptions.stdio = ['inherit', 'pipe', 'inherit'];
   } else if (interactive) {
     execOptions.stdio = 'inherit';
   }
+
   const result = await execa(fullPath, args, execOptions);
+
   if (result.exitCode !== 0) {
     const error = new Error(
       `Script "${scriptPath}" exited with code ${result.exitCode}` +
@@ -129,5 +173,6 @@ export async function runScript(scriptPath, config, options = {}) {
     error.stderr = result.stderr;
     throw error;
   }
+
   return result;
 }

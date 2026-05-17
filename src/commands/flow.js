@@ -1,3 +1,7 @@
+// `sfdt flow` parent command — runs Flow-specific analyses CLI-side using the
+// same @sfdt/flow-core engine the extension uses, so canvas results and CLI
+// results match byte-for-byte.
+
 import path from 'path';
 import fs from 'fs-extra';
 import chalk from 'chalk';
@@ -12,6 +16,7 @@ import {
 } from '@sfdt/flow-core';
 import { loadConfig } from '../lib/config.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+
 const DEFAULT_RULES_CONFIG = {
   outdatedApiVersionThreshold: 6,
   currentApiVersion: 65,
@@ -22,7 +27,14 @@ const DEFAULT_RULES_CONFIG = {
     constant: /^con[A-Z].*/,
   },
 };
+
 const METADATA_FETCH_CONCURRENCY = 5;
+
+/**
+ * Run a Tooling-API SOQL query via `sf data query --use-tooling-api`.
+ * Same surface area sfdt's other commands use; keeps auth + token handling
+ * inside the official Salesforce CLI.
+ */
 async function toolingQuery(orgAlias, soql) {
   const result = await execa(
     'sf',
@@ -31,6 +43,7 @@ async function toolingQuery(orgAlias, soql) {
   );
   return JSON.parse(result.stdout);
 }
+
 async function listFlowDefinitions(orgAlias) {
   const soql =
     'SELECT Id, DeveloperName, ActiveVersionId FROM FlowDefinition ' +
@@ -38,6 +51,7 @@ async function listFlowDefinitions(orgAlias) {
   const result = await toolingQuery(orgAlias, soql);
   return result.result?.records ?? [];
 }
+
 async function fetchActiveVersion(orgAlias, activeVersionId) {
   const soql =
     'SELECT Id, MasterLabel, Description, Status, VersionNumber, LastModifiedDate, Metadata ' +
@@ -45,6 +59,7 @@ async function fetchActiveVersion(orgAlias, activeVersionId) {
   const result = await toolingQuery(orgAlias, soql);
   return result.result?.records?.[0] ?? null;
 }
+
 async function inParallel(items, concurrency, worker) {
   const queue = [...items];
   const runners = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
@@ -56,6 +71,7 @@ async function inParallel(items, concurrency, worker) {
   });
   await Promise.all(runners);
 }
+
 function buildFlowReport(record, definition) {
   const metadata = record.Metadata ?? {};
   const normalized = normalize(metadata, {
@@ -81,10 +97,12 @@ function buildFlowReport(record, definition) {
     issueFamilies,
   };
 }
+
 export function registerFlowCommand(program) {
   const flow = program
     .command('flow')
     .description('Flow-specific analyses (CLI uses @sfdt/flow-core, matching the Chrome extension)');
+
   flow
     .command('scan')
     .description('Run flow-core health analysis on every Flow with an active version')
@@ -103,11 +121,13 @@ export function registerFlowCommand(program) {
         const outPath = options.output
           ? path.resolve(options.output)
           : path.join(logDir, 'flow-scan-latest.json');
+
         const spinner = jsonMode
           ? null
           : ora(`Listing FlowDefinitions in ${orgAlias}…`).start();
         const definitions = await listFlowDefinitions(orgAlias);
         if (spinner) spinner.text = `Analysing ${definitions.length} Flow${definitions.length === 1 ? '' : 's'}…`;
+
         const reports = [];
         const errors = [];
         await inParallel(definitions, METADATA_FETCH_CONCURRENCY, async (def) => {
@@ -123,8 +143,13 @@ export function registerFlowCommand(program) {
             });
           }
         });
+
+        // Rank flows by lowest score first so the worst offenders surface at
+        // the top of the report.
         reports.sort((a, b) => a.overallScore - b.overallScore);
+
         spinner?.succeed(`Analysed ${reports.length} Flow${reports.length === 1 ? '' : 's'}`);
+
         const output = {
           timestamp: new Date().toISOString(),
           org: orgAlias,
@@ -137,6 +162,7 @@ export function registerFlowCommand(program) {
           reports,
           errors,
         };
+
         if (jsonMode) {
           process.stdout.write(JSON.stringify(output, null, 2) + '\n');
           return;
@@ -166,6 +192,7 @@ export function registerFlowCommand(program) {
         process.exitCode = resolveExitCode(err);
       }
     });
+
   flow
     .command('conflicts')
     .description('List record-triggered Flow groups that fire on the same object + timing + event')
@@ -184,9 +211,11 @@ export function registerFlowCommand(program) {
         const outPath = options.output
           ? path.resolve(options.output)
           : path.join(logDir, 'flow-conflicts-latest.json');
+
         const spinner = jsonMode ? null : ora(`Listing FlowDefinitions in ${orgAlias}…`).start();
         const definitions = await listFlowDefinitions(orgAlias);
         if (spinner) spinner.text = `Fetching metadata for ${definitions.length} flows…`;
+
         const candidates = [];
         const errors = [];
         await inParallel(definitions, METADATA_FETCH_CONCURRENCY, async (def) => {
@@ -206,10 +235,12 @@ export function registerFlowCommand(program) {
             });
           }
         });
+
         const groups = detectTriggerConflicts(candidates);
         spinner?.succeed(
           `Found ${groups.length} conflict group${groups.length === 1 ? '' : 's'} across ${candidates.length} flow${candidates.length === 1 ? '' : 's'}`,
         );
+
         const output = {
           timestamp: new Date().toISOString(),
           org: orgAlias,
@@ -218,6 +249,7 @@ export function registerFlowCommand(program) {
           groups,
           errors,
         };
+
         if (jsonMode) {
           process.stdout.write(JSON.stringify(output, null, 2) + '\n');
           return;

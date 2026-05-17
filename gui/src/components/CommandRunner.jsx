@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { IconPlay, IconX, IconRefresh, IconTerminal } from '../Icons.jsx';
 import { stream } from '../api.js';
+
 export default function CommandRunner({ command, label, extraParams = {}, onComplete = () => {} }) {
   const [status, setStatus]     = useState('idle');
   const [lines, setLines]       = useState([]);
@@ -9,15 +10,18 @@ export default function CommandRunner({ command, label, extraParams = {}, onComp
   const logRef     = useRef(null);
   const counterRef = useRef(0);
   const deadRef    = useRef(false);
+
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [lines]);
+
   useEffect(() => {
     return () => {
       deadRef.current = true;
       esRef.current?.close();
     };
   }, []);
+
   const reset = () => {
     esRef.current?.close();
     esRef.current = null;
@@ -26,16 +30,20 @@ export default function CommandRunner({ command, label, extraParams = {}, onComp
     setLines([]);
     setExitCode(null);
   };
+
   const run = () => {
     setStatus('running');
     setLines([]);
     setExitCode(null);
     counterRef.current = 0;
+
     const es = stream.commandRun(command, extraParams);
     esRef.current = es;
+
     es.onmessage = (e) => {
       if (deadRef.current) return;
       const msg = e.data;
+
       if (msg.type === 'log') {
         const id = counterRef.current++;
         setLines((prev) => [...prev, { id, text: msg.line }]);
@@ -52,6 +60,7 @@ export default function CommandRunner({ command, label, extraParams = {}, onComp
         esRef.current = null;
       }
     };
+
     es.onerror = () => {
       if (deadRef.current) return;
       setStatus('error');
@@ -59,6 +68,7 @@ export default function CommandRunner({ command, label, extraParams = {}, onComp
       esRef.current = null;
     };
   };
+
   const terminal = lines.length > 0 && (
     <div className="cmd-terminal" ref={logRef}>
       {lines.map(({ id, text }) => (
@@ -66,11 +76,13 @@ export default function CommandRunner({ command, label, extraParams = {}, onComp
       ))}
     </div>
   );
+
   return (
     <div className="cmd-runner">
       <div className="cmd-runner-head">
         <IconTerminal size={14} style={{ color: 'var(--fg-muted)' }} />
         <span className="cmd-runner-title">{label}</span>
+
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           {status === 'idle' && (
             <button className="btn btn-primary btn-sm" onClick={run}>
@@ -106,6 +118,7 @@ export default function CommandRunner({ command, label, extraParams = {}, onComp
           )}
         </div>
       </div>
+
       {terminal}
     </div>
   );

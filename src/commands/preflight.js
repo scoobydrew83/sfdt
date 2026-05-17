@@ -2,6 +2,7 @@ import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+
 export function registerPreflightCommand(program) {
   program
     .command('preflight')
@@ -12,16 +13,20 @@ export function registerPreflightCommand(program) {
       try {
         const config = await loadConfig();
         const projectRoot = config._projectRoot;
+
         print.header(`Pre-flight Checks${options.dryRun ? ' [dry-run]' : ''}`);
+
         const env = {};
         if (options.strict) {
           env.SFDT_PREFLIGHT_STRICT = 'true';
         }
+
         await runScript('ops/preflight.sh', config, {
           cwd: projectRoot,
           env,
           dryRun: options.dryRun,
         });
+
         print.success(
           options.dryRun ? 'Dry-run complete — no changes made.' : 'Pre-flight checks passed.',
         );

@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Dashboard from './Dashboard.jsx';
 import { api } from '../api.js';
+
 vi.mock('../api.js', () => ({
   api: {
     testRuns: vi.fn(),
@@ -10,18 +11,21 @@ vi.mock('../api.js', () => ({
     deployHistory: vi.fn(),
   },
 }));
+
 beforeEach(() => {
   api.testRuns.mockResolvedValue({ runs: [] });
   api.preflight.mockResolvedValue({ date: null, status: null, checks: [] });
   api.drift.mockResolvedValue({ date: null, status: null, components: [] });
   api.deployHistory.mockResolvedValue({ history: [] });
 });
+
 describe('Dashboard — drift activity card', () => {
   it('shows nothing when drift status is null', async () => {
     render(<Dashboard project={null} />);
     await waitFor(() => expect(api.drift).toHaveBeenCalled());
     expect(screen.queryByText(/Drift check/)).toBeNull();
   });
+
   it('shows drift count from components array', async () => {
     api.drift.mockResolvedValue({
       date: '2026-04-29T12:00:00.000Z',
@@ -35,6 +39,7 @@ describe('Dashboard — drift activity card', () => {
     await waitFor(() => expect(screen.getByText(/Drift check/)).toBeInTheDocument());
     expect(screen.getByText(/2 components differ/)).toBeInTheDocument();
   });
+
   it('shows 0 drifted when all components are clean', async () => {
     api.drift.mockResolvedValue({
       date: '2026-04-29T12:00:00.000Z',
@@ -45,18 +50,21 @@ describe('Dashboard — drift activity card', () => {
     await waitFor(() => expect(screen.getByText(/Drift check/)).toBeInTheDocument());
     expect(screen.getByText(/0 components differ/)).toBeInTheDocument();
   });
+
   it('never renders undefined in the DOM', async () => {
     render(<Dashboard project={null} />);
     await waitFor(() => expect(api.drift).toHaveBeenCalled());
     expect(document.body.textContent).not.toContain('undefined');
   });
 });
+
 describe('Dashboard — preflight activity card', () => {
   it('shows nothing when checks array is empty', async () => {
     render(<Dashboard project={null} />);
     await waitFor(() => expect(api.preflight).toHaveBeenCalled());
     expect(screen.queryByText(/Preflight —/)).toBeNull();
   });
+
   it('shows correct failure count in activity title', async () => {
     api.preflight.mockResolvedValue({
       date: '2026-04-29T12:00:00.000Z',
@@ -70,6 +78,7 @@ describe('Dashboard — preflight activity card', () => {
     await waitFor(() => expect(screen.getByText(/Preflight —/)).toBeInTheDocument());
     expect(screen.getByText(/2 checks, 1 failed/)).toBeInTheDocument();
   });
+
   it('shows 0 failed when all checks pass', async () => {
     api.preflight.mockResolvedValue({
       date: '2026-04-29T12:00:00.000Z',
@@ -84,12 +93,14 @@ describe('Dashboard — preflight activity card', () => {
     expect(screen.getByText(/2 checks, 0 failed/)).toBeInTheDocument();
   });
 });
+
 describe('Dashboard — test runs', () => {
   it('shows empty state when no runs exist', async () => {
     render(<Dashboard project={null} />);
     await waitFor(() => expect(api.testRuns).toHaveBeenCalled());
     expect(screen.getByText(/No test runs yet/)).toBeInTheDocument();
   });
+
   it('renders run rows when runs exist', async () => {
     api.testRuns.mockResolvedValue({
       runs: [

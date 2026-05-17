@@ -1,15 +1,18 @@
 function Sparkline({ values }) {
   if (!values || values.length < 2) return null;
+
   const w = 60;
   const h = 24;
   const max = Math.max(...values);
   const min = Math.min(...values);
   const range = max - min || 1;
+
   const pts = values.map((v, i) => {
     const x = (i / (values.length - 1)) * w;
     const y = h - ((v - min) / range) * h;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
+
   return (
     <svg
       className="stat-sparkline"
@@ -29,6 +32,7 @@ function Sparkline({ values }) {
     </svg>
   );
 }
+
 export default function StatCard({
   label,
   value,
@@ -40,6 +44,7 @@ export default function StatCard({
   valueColor,
 }) {
   const hasFooter = sparkline || trend;
+
   return (
     <div className={`stat-card accent-${accent}`}>
       <div className="stat-kicker">{label}</div>

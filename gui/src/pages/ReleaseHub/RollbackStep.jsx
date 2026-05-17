@@ -2,23 +2,29 @@ import { useState, useEffect } from 'react';
 import { api, stream } from '../../api.js';
 import StreamRunner from '../../components/StreamRunner.jsx';
 import { IconCheck } from '../../Icons.jsx';
+
+// ─── Rollback Step ───────────────────────────────────────────────────────────
+
 export default function RollbackStep() {
   const [history, setHistory]         = useState([]);
   const [loading, setLoading]         = useState(true);
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [streamKey, setStreamKey]     = useState(0);
+
   useEffect(() => {
     api.deployHistory()
       .then((d) => setHistory(d.history ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
   return (
     <div style={{ padding: 20 }}>
       <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Rollback</h2>
       <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: 16 }}>
         Roll back the org to a previous deployment.
       </p>
+
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head" style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600 }}>
           Deployment History
@@ -61,6 +67,7 @@ export default function RollbackStep() {
           </button>
         ))}
       </div>
+
       <StreamRunner
         key={streamKey}
         label="Rollback deployment"
@@ -73,6 +80,7 @@ export default function RollbackStep() {
           notifySlack: false,
         }) : null}
       />
+
       {!selectedEntry && (
         <div style={{ marginTop: 8, fontSize: 12, color: 'var(--fg-muted)' }}>
           Select a deployment from history above to enable rollback.

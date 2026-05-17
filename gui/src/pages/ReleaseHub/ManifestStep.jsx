@@ -3,6 +3,9 @@ import { api } from '../../api.js';
 import {
   IconPackage, IconCheck, IconDownload, IconZap, IconSearch, IconX,
 } from '../../Icons.jsx';
+
+// ─── Manifest Step ───────────────────────────────────────────────────────────
+
 export default function ManifestStep({ onSelect, selected, onMarkDone, deployMode, setDeployMode, selectedSourceDir, setSelectedSourceDir }) {
   const [manifests, setManifests] = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -10,8 +13,9 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
   const [head, setHead]           = useState('HEAD');
   const [building, setBuilding]   = useState(false);
   const [buildResult, setBuildResult] = useState(null);
-  const [viewingXml, setViewingXml] = useState(null);
+  const [viewingXml, setViewingXml] = useState(null); // { name, xml, components: [] }
   const [packages, setPackages]   = useState([]);
+
   useEffect(() => {
     api.listManifests()
       .then((d) => setManifests(d.manifests ?? []))
@@ -21,12 +25,14 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
       .then((d) => setPackages(d.packages ?? []))
       .catch(() => {});
   }, []);
+
   const buildFromGit = async () => {
     setBuilding(true);
     setBuildResult(null);
     try {
       const res = await api.buildManifestFromGit(base, head);
       setBuildResult(res);
+      // Refresh list
       const d = await api.listManifests();
       setManifests(d.manifests ?? []);
     } catch (err) {
@@ -35,6 +41,7 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
       setBuilding(false);
     }
   };
+
   const viewManifest = async (m) => {
     try {
       const { xml } = await api.getManifestContent(m.relPath);
@@ -52,6 +59,7 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
       alert(`Could not load manifest: ${err.message}`);
     }
   };
+
   const removeComponent = async (type, member) => {
     if (!viewingXml) return;
     try {
@@ -61,6 +69,7 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
       alert(`Remove failed: ${err.message}`);
     }
   };
+
   const downloadXml = (xml, name) => {
     const blob = new Blob([xml], { type: 'application/xml' });
     const url  = URL.createObjectURL(blob);
@@ -68,12 +77,14 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
     a.href = url; a.download = name; a.click();
     URL.revokeObjectURL(url);
   };
+
   return (
     <div style={{ padding: 20 }}>
       <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Target</h2>
       <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: 12 }}>
         Choose a package.xml to use for this release, or deploy a source directory directly.
       </p>
+
       <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
         <button
           className={`btn btn-sm ${deployMode === 'manifest' ? 'btn-primary' : 'btn-secondary'}`}
@@ -84,11 +95,13 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
           onClick={() => setDeployMode('folder')}
         >📁 Source folder</button>
       </div>
+
       {deployMode === 'manifest' && (
         <div style={{ display: 'grid', gridTemplateColumns: viewingXml ? '1fr 380px' : '1fr', gap: 24, alignItems: 'start' }}>
           <div>
-            {}
+            {/* Manifest list */}
             <div className="card" style={{ marginBottom: 16 }}>
+
           <div className="card-head" style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600 }}>
             Available Manifests
           </div>
@@ -133,7 +146,8 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
             </button>
           ))}
         </div>
-        {}
+
+        {/* Generate from git */}
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-head" style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600 }}>
             Generate from Git Diff
@@ -166,6 +180,7 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
             )}
           </div>
         </div>
+
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <button
             className="btn btn-primary"
@@ -176,7 +191,8 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
           </button>
         </div>
       </div>
-          {}
+
+          {/* XML viewer side panel */}
           {viewingXml && (
             <div className="card" style={{ position: 'sticky', top: 20, overflow: 'hidden' }}>
               <div className="card-head" style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -216,6 +232,7 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
           )}
       </div>
       )}
+
       {deployMode === 'folder' && (
         <div>
           <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: 12 }}>

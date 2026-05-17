@@ -1,16 +1,30 @@
+// Flow health normalizer — ported from
+// /Users/dkennedy/dev/2.0.2_0 copy/utils/flow-health-normalizer.js.
+//
+// Turns the raw Tooling API Flow.Metadata payload into a stable internal
+// shape consumed by the rules engine and scorer. Pure logic; no DOM, no API.
+
+// ---------------------------------------------------------------------------
+// Raw input shapes (Tooling API Flow.Metadata block — partial, only what the
+// normalizer actually reads). Every field is optional because Salesforce
+// omits keys whose value is the default.
+
 export interface RawConnector {
   targetReference?: string;
 }
+
 export interface RawDecisionRule {
   name?: string;
   label?: string;
   connector?: RawConnector;
 }
+
 export interface RawScreenField {
   fieldType?: string;
   extensionName?: string;
   [key: string]: unknown;
 }
+
 export interface RawElementBase {
   name?: string;
   label?: string;
@@ -19,6 +33,7 @@ export interface RawElementBase {
   faultConnector?: RawConnector;
   [key: string]: unknown;
 }
+
 export interface RawActionCall extends RawElementBase {
   actionType?: string;
   actionName?: string;
@@ -26,29 +41,36 @@ export interface RawActionCall extends RawElementBase {
   outputParameters?: unknown[];
   timeoutConnector?: RawConnector;
 }
+
 export interface RawAssignment extends RawElementBase {
   assignmentItems?: unknown[];
 }
+
 export interface RawDecision extends RawElementBase {
   rules?: RawDecisionRule[];
   defaultConnector?: RawConnector;
   defaultConnectorLabel?: string;
 }
+
 export interface RawRecordElement extends RawElementBase {
   object?: string;
   filters?: unknown[];
 }
+
 export interface RawScreen extends RawElementBase {
   fields?: RawScreenField[];
 }
+
 export interface RawLoop extends RawElementBase {
   nextValueConnector?: RawConnector;
   noMoreValuesConnector?: RawConnector;
   collectionReference?: string;
 }
+
 export interface RawSubflow extends RawElementBase {
   flowName?: string;
 }
+
 export interface RawVariable {
   name?: string;
   description?: string;
@@ -59,23 +81,27 @@ export interface RawVariable {
   value?: unknown;
   apexClass?: string;
 }
+
 export interface RawFormula {
   name?: string;
   description?: string;
   dataType?: string;
   expression?: string;
 }
+
 export interface RawConstant {
   name?: string;
   description?: string;
   dataType?: string;
   value?: unknown;
 }
+
 export interface RawTextTemplate {
   name?: string;
   description?: string;
   text?: string;
 }
+
 export interface RawStartBlock {
   triggerType?: string;
   recordTriggerType?: string;
@@ -88,6 +114,7 @@ export interface RawStartBlock {
   filters?: unknown[];
   filterFormula?: string;
 }
+
 export interface RawFlowMetadata {
   label?: string;
   description?: string;
@@ -115,10 +142,15 @@ export interface RawFlowMetadata {
   textTemplates?: RawTextTemplate[];
   [key: string]: unknown;
 }
+
 export interface NormalizeOptions {
   flowVersionId?: string | null;
   flowApiName?: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Normalized output shapes.
+
 export type NodeType =
   | 'Start'
   | 'Action'
@@ -133,6 +165,7 @@ export type NodeType =
   | 'Transform'
   | 'Subflow'
   | 'CollectionProcessor';
+
 export interface NormalizedNode {
   id: string;
   type: NodeType;
@@ -145,6 +178,7 @@ export interface NormalizedNode {
   loopDepth: number;
   metadata: Record<string, unknown>;
 }
+
 export interface NormalizedResource {
   name: string;
   type: 'Variable' | 'Formula' | 'Constant' | 'TextTemplate';
@@ -152,20 +186,25 @@ export interface NormalizedResource {
   description: string | null | undefined;
   metadata: Record<string, unknown>;
 }
+
 export interface NormalizedEdge {
   from: string;
   to: string;
   kind: 'default' | 'fault' | 'loop' | 'decision';
   label: string | null;
 }
+
 export interface Dependency {
   type: 'ApexAction' | 'LwcComponent' | 'Subflow' | 'ApexDefinedType';
   name: string;
   count: number;
 }
+
 export type FlowType = 'ScreenFlow' | 'Autolaunched' | 'Scheduled' | 'RecordTriggered' | 'Unknown';
+
 export type TriggerTiming = 'BeforeSave' | 'AfterSave' | 'Async' | 'Unknown';
 export type TriggerEvent = 'Create' | 'Update' | 'CreateOrUpdate' | 'Delete' | 'Unknown';
+
 export interface NormalizedMeta {
   flowVersionId: string | null;
   flowLabel: string;
@@ -174,6 +213,7 @@ export interface NormalizedMeta {
   apiVersion: number | string | null;
   status: string;
 }
+
 export interface NormalizedTrigger {
   objectApiName: string | null;
   timing: TriggerTiming;
@@ -181,6 +221,7 @@ export interface NormalizedTrigger {
   entryCriteriaSummary: string | null;
   runContext: string;
 }
+
 export interface NormalizedFlow {
   meta: NormalizedMeta;
   trigger: NormalizedTrigger;
@@ -190,6 +231,10 @@ export interface NormalizedFlow {
   dependencies: Dependency[];
   metadata: RawFlowMetadata;
 }
+
+// ---------------------------------------------------------------------------
+// Normalize
+
 const STANDARD_LIGHTNING_NAMESPACES = [
   'flowruntime:',
   'force:',
@@ -200,10 +245,18 @@ const STANDARD_LIGHTNING_NAMESPACES = [
   'ui:',
   'aura:',
 ];
+
 function isStandardLightningExtension(extensionName: string): boolean {
   return STANDARD_LIGHTNING_NAMESPACES.some((ns) => extensionName.startsWith(ns));
 }
+
 function detectFlowType(metadata: RawFlowMetadata): FlowType {
+  // recordTriggerType wins over processType — a record-triggered flow is
+  // almost always saved with processType="AutoLaunchedFlow", so the original
+  // v2.0.2 normalizer (which checked processType first) never classified any
+  // flow as RecordTriggered. The record-trigger-specific rules in rules.ts
+  // (broad_entry_criteria, trigger_timing_mismatch) consequently never fired.
+  // Promoting this check fixes that latent bug.
   if (metadata.start?.recordTriggerType) return 'RecordTriggered';
   if ((metadata.screens ?? []).length > 0) return 'ScreenFlow';
   if (metadata.start?.schedule) return 'Scheduled';
@@ -213,7 +266,14 @@ function detectFlowType(metadata: RawFlowMetadata): FlowType {
   if (processType === 'Workflow') return 'Autolaunched';
   return 'Unknown';
 }
+
 function detectTriggerTiming(metadata: RawFlowMetadata): TriggerTiming {
+  // Timing lives in triggerType (RecordBeforeSave / RecordAfterSave / Async).
+  // recordTriggerType is the event (Create / Update / Delete / CreateAndUpdate)
+  // and has no timing words, so reading it here would always return Unknown.
+  // The v2.0.2 normalizer had this bug too — it preferred recordTriggerType
+  // and consequently classified every record-triggered flow as Unknown
+  // timing, suppressing the trigger_timing_mismatch rule.
   const triggerType = metadata.start?.triggerType ?? metadata.start?.eventType ?? '';
   const normal = triggerType.toLowerCase();
   if (!normal) return 'Unknown';
@@ -222,6 +282,7 @@ function detectTriggerTiming(metadata: RawFlowMetadata): TriggerTiming {
   if (normal.includes('async')) return 'Async';
   return 'Unknown';
 }
+
 function detectTriggerEvent(metadata: RawFlowMetadata): TriggerEvent {
   const start = metadata.start ?? {};
   const event = start.triggerType ?? start.eventType ?? '';
@@ -232,9 +293,11 @@ function detectTriggerEvent(metadata: RawFlowMetadata): TriggerEvent {
   if (normal.includes('delete')) return 'Delete';
   return 'Unknown';
 }
+
 function detectRunContext(metadata: RawFlowMetadata): string {
   return metadata.runInMode ?? metadata.start?.flowRunAsUser ?? 'Unknown';
 }
+
 function buildEntryCriteriaSummary(metadata: RawFlowMetadata): string | null {
   const start = metadata.start ?? {};
   const filterCount = (start.filters ?? []).length;
@@ -243,6 +306,7 @@ function buildEntryCriteriaSummary(metadata: RawFlowMetadata): string | null {
   if (hasFormula) return 'Formula criteria defined';
   return `${filterCount} start filter${filterCount === 1 ? '' : 's'} configured`;
 }
+
 function buildEdges(metadata: RawFlowMetadata): NormalizedEdge[] {
   const edges: NormalizedEdge[] = [];
   function pushEdge(
@@ -254,9 +318,11 @@ function buildEdges(metadata: RawFlowMetadata): NormalizedEdge[] {
     if (!from || !to) return;
     edges.push({ from, to, kind, label });
   }
+
   if (metadata.start?.connector?.targetReference) {
     pushEdge('__start__', metadata.start.connector.targetReference, 'default');
   }
+
   (metadata.actionCalls ?? []).forEach((item) => {
     pushEdge(item.name, item.connector?.targetReference, 'default');
     pushEdge(item.name, item.faultConnector?.targetReference, 'fault');
@@ -304,23 +370,28 @@ function buildEdges(metadata: RawFlowMetadata): NormalizedEdge[] {
   (metadata.collectionProcessors ?? []).forEach((item) =>
     pushEdge(item.name, item.connector?.targetReference, 'default'),
   );
+
   return edges;
 }
+
 function computeLoopMembership(edges: NormalizedEdge[]): Record<string, number> {
   const byNode: Record<string, number> = {};
   const loopTargets = new Set(
     edges.filter((e) => e.kind === 'loop' && e.to).map((e) => e.to),
   );
   if (loopTargets.size === 0) return byNode;
+
   const outgoing: Record<string, NormalizedEdge[]> = {};
   edges.forEach((edge) => {
     (outgoing[edge.from] ??= []).push(edge);
   });
+
   const visited = new Set<string>();
   const queue: Array<{ id: string; depth: number }> = Array.from(loopTargets).map((id) => ({
     id,
     depth: 1,
   }));
+
   while (queue.length) {
     const current = queue.shift();
     if (!current || visited.has(current.id)) continue;
@@ -335,6 +406,7 @@ function computeLoopMembership(edges: NormalizedEdge[]): Record<string, number> 
   }
   return byNode;
 }
+
 function mergeDependencies(items: Dependency[]): Dependency[] {
   const map = new Map<string, Dependency>();
   for (const item of items) {
@@ -348,6 +420,7 @@ function mergeDependencies(items: Dependency[]): Dependency[] {
     return a.type.localeCompare(b.type);
   });
 }
+
 function pushNode(
   nodes: NormalizedNode[],
   base: { id: string; type: NodeType; label: string; apiName: string; description?: string | null },
@@ -367,11 +440,14 @@ function pushNode(
     ...partial,
   });
 }
+
 export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions = {}): NormalizedFlow {
   const flowType = detectFlowType(metadata);
   const nodes: NormalizedNode[] = [];
   const resources: NormalizedResource[] = [];
   const dependencies: Dependency[] = [];
+
+  // Start
   pushNode(
     nodes,
     {
@@ -387,6 +463,8 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
       },
     },
   );
+
+  // Actions
   (metadata.actionCalls ?? []).forEach((item) => {
     const isApex = item.actionType === 'apex';
     pushNode(
@@ -414,6 +492,8 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
       dependencies.push({ type: 'ApexAction', name: item.actionName, count: 1 });
     }
   });
+
+  // Assignments
   (metadata.assignments ?? []).forEach((item) => {
     pushNode(
       nodes,
@@ -432,6 +512,8 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
       },
     );
   });
+
+  // Decisions
   (metadata.decisions ?? []).forEach((item) => {
     pushNode(
       nodes,
@@ -450,6 +532,8 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
       },
     );
   });
+
+  // Record ops
   const recordTypes: Array<['recordLookups' | 'recordCreates' | 'recordUpdates' | 'recordDeletes', NodeType]> = [
     ['recordLookups', 'GetRecords'],
     ['recordCreates', 'CreateRecords'],
@@ -479,6 +563,8 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
       );
     });
   }
+
+  // Screens
   (metadata.screens ?? []).forEach((item) => {
     pushNode(
       nodes,
@@ -505,6 +591,8 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
       }
     });
   });
+
+  // Loops
   (metadata.loops ?? []).forEach((item) => {
     pushNode(
       nodes,
@@ -524,6 +612,8 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
       },
     );
   });
+
+  // Transforms
   (metadata.transforms ?? []).forEach((item) => {
     pushNode(
       nodes,
@@ -537,6 +627,8 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
       { metadata: { connectorTarget: item.connector?.targetReference ?? null } },
     );
   });
+
+  // Subflows
   (metadata.subflows ?? []).forEach((item) => {
     pushNode(
       nodes,
@@ -556,6 +648,8 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
     );
     if (item.flowName) dependencies.push({ type: 'Subflow', name: item.flowName, count: 1 });
   });
+
+  // Collection processors
   (metadata.collectionProcessors ?? []).forEach((item) => {
     pushNode(
       nodes,
@@ -569,6 +663,8 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
       { metadata: { connectorTarget: item.connector?.targetReference ?? null } },
     );
   });
+
+  // Resources
   (metadata.variables ?? []).forEach((item) => {
     resources.push({
       name: item.name ?? '',
@@ -586,6 +682,7 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
       dependencies.push({ type: 'ApexDefinedType', name: item.apexClass, count: 1 });
     }
   });
+
   (metadata.formulas ?? []).forEach((item) => {
     resources.push({
       name: item.name ?? '',
@@ -595,6 +692,7 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
       metadata: { expression: item.expression ?? null },
     });
   });
+
   (metadata.constants ?? []).forEach((item) => {
     resources.push({
       name: item.name ?? '',
@@ -604,6 +702,7 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
       metadata: { value: item.value ?? null },
     });
   });
+
   (metadata.textTemplates ?? []).forEach((item) => {
     resources.push({
       name: item.name ?? '',
@@ -613,6 +712,7 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
       metadata: { text: item.text ?? null },
     });
   });
+
   const edges = buildEdges(metadata);
   const loopByNode = computeLoopMembership(edges);
   const normalizedNodes = nodes.map((node) => ({
@@ -620,6 +720,7 @@ export function normalize(metadata: RawFlowMetadata, options: NormalizeOptions =
     isInLoop: !!loopByNode[node.id],
     loopDepth: loopByNode[node.id] ?? 0,
   }));
+
   return {
     meta: {
       flowVersionId: options.flowVersionId ?? null,

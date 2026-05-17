@@ -1,10 +1,21 @@
+// Flow Health Modal — vanilla DOM port of
+// /Users/dkennedy/dev/2.0.2_0 copy/ui/flow-health-modal.js.
+//
+// The v2.0.2 modal templated its body with `innerHTML` strings and a local
+// _escapeHtml helper. This port uses createElement + textContent throughout
+// so labels and findings are XSS-safe by construction (no escape pathway
+// needed at all). The structural sections — header / summary cards / issue
+// families / metrics / footer — are preserved.
+
 import type { IssueFamily, Rating, ScoreSummary, Severity } from '@sfdt/flow-core';
+
 export interface HealthReportMeta {
   flowLabel: string;
   flowType: string;
   apiVersion: number | string | null;
   status: string;
 }
+
 export interface HealthReportMetrics {
   elementCount: number;
   decisionCount: number;
@@ -12,12 +23,14 @@ export interface HealthReportMetrics {
   dataOperationCount: number;
   dependencyCount: number;
 }
+
 export interface HealthReport {
   meta: HealthReportMeta;
   summary: ScoreSummary & { metrics: HealthReportMetrics };
   issueFamilies: IssueFamily[];
   rawJson: string;
 }
+
 export interface HealthModalHandle {
   showLoading: (flowLabel?: string) => void;
   showError: (message: string) => void;
@@ -25,16 +38,20 @@ export interface HealthModalHandle {
   close: () => void;
   isOpen: () => boolean;
 }
+
 const OVERLAY_ID = 'sfut-health-modal-overlay';
+
 function styledDiv(doc: Document, className: string, cssText?: string): HTMLDivElement {
   const el = doc.createElement('div');
   el.className = className;
   if (cssText) el.style.cssText = cssText;
   return el;
 }
+
 function clear(el: Element): void {
   while (el.firstChild) el.removeChild(el.firstChild);
 }
+
 function severityColour(severity: Severity): string {
   switch (severity) {
     case 'high':
@@ -47,6 +64,7 @@ function severityColour(severity: Severity): string {
       return '#80868d';
   }
 }
+
 function ratingColour(rating: Rating): string {
   switch (rating) {
     case 'Excellent':
@@ -61,13 +79,16 @@ function ratingColour(rating: Rating): string {
       return '#c23934';
   }
 }
+
 export interface MountHealthModalOptions {
   doc?: Document;
   onCopyJson?: (json: string) => Promise<void> | void;
 }
+
 export function mountHealthModal(options: MountHealthModalOptions = {}): HealthModalHandle {
   const doc = options.doc ?? document;
   doc.getElementById(OVERLAY_ID)?.remove();
+
   const overlay = doc.createElement('div');
   overlay.id = OVERLAY_ID;
   overlay.className = 'sfut-modal-overlay sfut-hidden';
@@ -81,6 +102,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     'justify-content: center',
     'font-family: system-ui, -apple-system, sans-serif',
   ].join('; ');
+
   const modal = doc.createElement('div');
   modal.className = 'sfut-modal sfut-health-modal';
   modal.style.cssText = [
@@ -93,6 +115,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     'display: flex',
     'flex-direction: column',
   ].join('; ');
+
   const header = doc.createElement('div');
   header.className = 'sfut-modal-header';
   header.style.cssText =
@@ -107,19 +130,24 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     'background: none; border: 0; font-size: 22px; cursor: pointer; color: #80868d;';
   header.appendChild(headerLabel);
   header.appendChild(closeBtn);
+
   const body = doc.createElement('div');
   body.className = 'sfut-modal-body sfut-health-modal-body';
   body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1;';
+
   const footer = doc.createElement('div');
   footer.className = 'sfut-modal-footer sfut-health-modal-footer';
   footer.style.cssText =
     'padding: 12px 16px; border-top: 1px solid #d8dde6; display: flex; justify-content: flex-end; gap: 8px;';
+
   modal.appendChild(header);
   modal.appendChild(body);
   modal.appendChild(footer);
   overlay.appendChild(modal);
   doc.body.appendChild(overlay);
+
   let open = false;
+
   function show(): void {
     open = true;
     overlay.style.display = 'flex';
@@ -130,10 +158,12 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     overlay.style.display = 'none';
     overlay.classList.add('sfut-hidden');
   }
+
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
   });
+
   function renderLoading(flowLabel: string): void {
     clear(body);
     clear(footer);
@@ -151,6 +181,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     body.appendChild(wrap);
     show();
   }
+
   function renderError(message: string): void {
     clear(body);
     clear(footer);
@@ -168,6 +199,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     body.appendChild(wrap);
     show();
   }
+
   function buildSummaryCard(label: string, value: number, colour: string): HTMLDivElement {
     const card = styledDiv(
       doc,
@@ -186,6 +218,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     card.appendChild(val);
     return card;
   }
+
   function buildMetricCard(label: string, value: number): HTMLDivElement {
     const card = styledDiv(
       doc,
@@ -204,36 +237,45 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     card.appendChild(val);
     return card;
   }
+
   function buildFamilyDisclosure(family: IssueFamily): HTMLDetailsElement {
     const details = doc.createElement('details');
     details.className = 'sfut-health-family';
     details.style.cssText = 'border: 1px solid #d8dde6; border-radius: 4px; margin-bottom: 6px;';
+
     const summary = doc.createElement('summary');
     summary.style.cssText =
       'padding: 10px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px;';
+
     const sevBadge = doc.createElement('span');
     sevBadge.className = `sfut-health-family-severity sfut-health-severity-${family.severity}`;
     sevBadge.style.cssText = `display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; color: #fff; background: ${severityColour(family.severity)};`;
     sevBadge.textContent = family.severity.toUpperCase();
+
     const titleSpan = doc.createElement('span');
     titleSpan.className = 'sfut-health-family-title';
     titleSpan.style.flex = '1';
     titleSpan.textContent = family.title;
+
     const countSpan = doc.createElement('span');
     countSpan.className = 'sfut-health-family-count';
     countSpan.style.cssText = 'color: #80868d; font-size: 12px;';
     countSpan.textContent = `(${family.instanceCount})`;
+
     summary.appendChild(sevBadge);
     summary.appendChild(titleSpan);
     summary.appendChild(countSpan);
+
     const familyBody = doc.createElement('div');
     familyBody.className = 'sfut-health-family-body';
     familyBody.style.cssText = 'padding: 0 12px 10px; font-size: 13px;';
+
     const impact = doc.createElement('div');
     impact.className = 'sfut-health-family-impact';
     impact.style.cssText = 'color: #80868d; margin-bottom: 6px;';
     impact.textContent = `Score impact: -${family.scoreImpact}`;
     familyBody.appendChild(impact);
+
     const list = doc.createElement('ul');
     list.className = 'sfut-health-affected-list';
     list.style.cssText = 'margin: 0; padding-left: 18px;';
@@ -249,19 +291,24 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
       }
     }
     familyBody.appendChild(list);
+
     details.appendChild(summary);
     details.appendChild(familyBody);
     return details;
   }
+
   function renderReport(report: HealthReport): void {
     clear(body);
     clear(footer);
+
+    // Header block — flow label / meta line / score.
     const headerBlock = styledDiv(doc, 'sfut-health-header-block', 'margin-bottom: 16px;');
     const flowName = doc.createElement('div');
     flowName.className = 'sfut-health-flow-name';
     flowName.style.cssText = 'font-size: 18px; font-weight: 600;';
     flowName.textContent = report.meta.flowLabel;
     headerBlock.appendChild(flowName);
+
     const metaLine = doc.createElement('div');
     metaLine.className = 'sfut-health-flow-meta';
     metaLine.style.cssText = 'color: #80868d; font-size: 12px; display: flex; gap: 12px;';
@@ -275,6 +322,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     statusSpan.textContent = report.meta.status || 'Unknown';
     metaLine.appendChild(statusSpan);
     headerBlock.appendChild(metaLine);
+
     const scoreWrap = styledDiv(
       doc,
       'sfut-health-score-wrap',
@@ -291,7 +339,10 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     scoreWrap.appendChild(scoreNum);
     scoreWrap.appendChild(scoreRating);
     headerBlock.appendChild(scoreWrap);
+
     body.appendChild(headerBlock);
+
+    // Severity summary card grid.
     const cards = styledDiv(
       doc,
       'sfut-health-summary-cards',
@@ -302,6 +353,8 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     cards.appendChild(buildSummaryCard('Low', report.summary.severityCounts.low, severityColour('low')));
     cards.appendChild(buildSummaryCard('Info', report.summary.severityCounts.info, severityColour('info')));
     body.appendChild(cards);
+
+    // Issue families.
     const familiesSection = styledDiv(doc, 'sfut-health-section', 'margin-bottom: 16px;');
     const familiesTitle = doc.createElement('div');
     familiesTitle.className = 'sfut-health-section-title';
@@ -320,6 +373,8 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
       }
     }
     body.appendChild(familiesSection);
+
+    // Flow profile metrics.
     const profileSection = styledDiv(doc, 'sfut-health-section');
     const profileTitle = doc.createElement('div');
     profileTitle.className = 'sfut-health-section-title';
@@ -338,6 +393,8 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     metricsGrid.appendChild(buildMetricCard('Dependencies', report.summary.metrics.dependencyCount));
     profileSection.appendChild(metricsGrid);
     body.appendChild(profileSection);
+
+    // Footer — Copy JSON button.
     const copyBtn = doc.createElement('button');
     copyBtn.className = 'sfut-health-btn';
     copyBtn.textContent = 'Copy JSON';
@@ -351,8 +408,10 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
       }
     });
     footer.appendChild(copyBtn);
+
     show();
   }
+
   return {
     showLoading(label = 'Flow') {
       renderLoading(label);

@@ -24,7 +24,10 @@ import {
 } from './Icons.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 import ChatDrawer from './components/ChatDrawer.jsx';
+
 export const ChatContext = createContext(null);
+
+// Grouped nav structure: each group has a label and items
 const NAV_GROUPS = [
   {
     label: 'Observe',
@@ -63,6 +66,7 @@ const NAV_GROUPS = [
     ],
   },
 ];
+
 const PAGE_LABELS = {
   dashboard: 'Dashboard',
   tests:     'Test Runs',
@@ -81,6 +85,7 @@ const PAGE_LABELS = {
   dependency: 'Dependency Graph',
   settings:   'Settings',
 };
+
 export default function App() {
   const [page, setPage]           = useState('dashboard');
   const [project, setProject]     = useState(null);
@@ -95,6 +100,7 @@ export default function App() {
   const [availableOrgs, setAvailableOrgs] = useState([]);
   const [orgPickerOpen, setOrgPickerOpen] = useState(false);
   const orgPickerRef = useRef(null);
+
   useEffect(() => {
     api.project().then(setProject).catch(() => null);
     api.checkUpdates().then((info) => { if (info.updateAvailable) setUpdateInfo(info); }).catch(() => null);
@@ -104,6 +110,7 @@ export default function App() {
     if (saved === 'light') setDark(false);
     else if (saved === 'dark') setDark(true);
   }, []);
+
   useEffect(() => {
     const handler = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
@@ -113,6 +120,7 @@ export default function App() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+
   useEffect(() => {
     if (!orgPickerOpen) return;
     const handler = (e) => {
@@ -123,13 +131,16 @@ export default function App() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [orgPickerOpen]);
+
   const openChat = useCallback((initialMessage = '') => {
     setChatInitialMessage(initialMessage);
     setChatOpen(true);
   }, []);
+
   const setPageContext = useCallback((ctx) => {
     setChatPageContext(ctx);
   }, []);
+
   const toggleDark = () => {
     setDark((d) => {
       const next = !d;
@@ -137,6 +148,7 @@ export default function App() {
       return next;
     });
   };
+
   const renderPage = () => {
     switch (page) {
       case 'dashboard': return <Dashboard project={project} />;
@@ -158,10 +170,13 @@ export default function App() {
       default:          return <Dashboard project={project} />;
     }
   };
+
   const chatContextValue = useMemo(() => ({ openChat, setPageContext }), [openChat, setPageContext]);
+
   const initials = project?.name
     ? project.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
     : 'SF';
+
   return (
     <ChatContext.Provider value={chatContextValue}>
     <>
@@ -173,7 +188,8 @@ export default function App() {
       />
     )}
     <div className="app-shell">
-      {}
+
+      {/* ── Sidebar ──────────────────────────────────────────────── */}
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="brand-mark">
@@ -184,6 +200,7 @@ export default function App() {
             </div>
           </div>
         </div>
+
         <nav className="sidebar-nav">
           {NAV_GROUPS.map((group) => (
             <div key={group.label}>
@@ -202,6 +219,7 @@ export default function App() {
             </div>
           ))}
         </nav>
+
         <div className="sidebar-footer">
           <div className="org-picker-wrap" ref={orgPickerRef}>
             {orgPickerOpen && (
@@ -245,9 +263,11 @@ export default function App() {
           </div>
         </div>
       </aside>
-      {}
+
+      {/* ── Main area ─────────────────────────────────────────────── */}
       <div className={`main-area${dark ? '' : ' content-light'}`}>
-        {}
+
+        {/* Top bar */}
         <header className="topbar">
           <nav className="topbar-crumbs">
             <span>sfdt</span>
@@ -262,12 +282,14 @@ export default function App() {
             </button>
           </div>
         </header>
-        {}
+
+        {/* Page content */}
         <div className="page-content">
           <ErrorBoundary key={page}>
             {renderPage()}
           </ErrorBoundary>
         </div>
+
       </div>
     </div>
     <ChatDrawer

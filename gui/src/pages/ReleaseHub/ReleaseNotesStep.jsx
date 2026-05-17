@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { api, stream } from '../../api.js';
 import { IconZap } from '../../Icons.jsx';
+
+// ─── Release Notes Step ───────────────────────────────────────────────────────────
+
 export default function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
   const [content, setContent]         = useState('');
   const [generating, setGenerating]   = useState(false);
@@ -12,14 +15,17 @@ export default function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
   const counterRef = useRef(0);
   const streamRef  = useRef(null);
   const genLogRef  = useRef(null);
+
   useEffect(() => {
     api.getPackages().then((d) => setPackages(d.packages ?? [])).catch(() => {});
     api.suggestVersion().then((d) => setVersion(d.version ?? '')).catch(() => {});
     return () => streamRef.current?.close();
   }, []);
+
   useEffect(() => {
     if (genLogRef.current) genLogRef.current.scrollTop = genLogRef.current.scrollHeight;
   }, [genLines]);
+
   const generate = () => {
     setGenerating(true);
     setGenLines([]);
@@ -44,6 +50,7 @@ export default function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
     };
     s.onerror = () => setGenerating(false);
   };
+
   const save = async () => {
     setSaving(true);
     try {
@@ -58,6 +65,7 @@ export default function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
       setSaving(false);
     }
   };
+
   return (
     <div style={{ padding: 20 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -73,6 +81,7 @@ export default function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
           </button>
         )}
       </div>
+
       {packages.length > 0 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
           <button
@@ -88,6 +97,7 @@ export default function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
           ))}
         </div>
       )}
+
       <div style={{ marginBottom: 12 }}>
         <label style={{ display: 'block', fontSize: 12, color: 'var(--fg-muted)', marginBottom: 4 }}>Version</label>
         <input
@@ -108,6 +118,7 @@ export default function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
           }}
         />
       </div>
+
       <textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
@@ -128,6 +139,7 @@ export default function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
         placeholder="## Overview&#10;&#10;## What's New&#10;&#10;## Bug Fixes"
         spellCheck={false}
       />
+
       {genLines.length > 0 && (
         <div className="cmd-terminal" ref={genLogRef} style={{ maxHeight: 120, marginBottom: 10 }}>
           {genLines.map(({ id, text }) => (
@@ -135,6 +147,7 @@ export default function ReleaseNotesStep({ aiAvailable, onMarkDone }) {
           ))}
         </div>
       )}
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <button className="btn btn-ghost" onClick={onMarkDone}>
           Skip (Don't Save)

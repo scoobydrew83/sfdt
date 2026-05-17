@@ -1,23 +1,52 @@
+// Side button — vanilla DOM port of
+// /Users/dkennedy/dev/2.0.2_0 copy/ui/side-button.js.
+//
+// The button itself is a floating element on the right edge of the page. The
+// menu opens to its left and lists the feature actions available for the
+// current route. The menu is rebuilt every time it opens so dynamic labels
+// (e.g. "Show / Hide Missing Description Flags") stay accurate.
+//
+//
+// Gating is the caller's responsibility — the menuItemsProvider passed into
+// mountSideButton() filters items by kill-switch, user toggle, and current
+// page context. See extension/entrypoints/content.ts.
+//
+// The menu items come from a typed registry instead of a string-keyed
+// switch, so adding a feature is "register({ manifest, ... })" rather than
+// editing this file.
+//
+// Implementation note: the v2.0.2 module built its DOM with innerHTML
+// templates. This rewrite uses createElement + textContent throughout so
+// every label and icon is escaped automatically and the XSS surface from a
+// rogue feature label is exactly zero.
+
 export interface MenuItem {
   featureId: string;
   icon: string;
   label: string;
   action?: 'activate' | 'refresh';
 }
+
 export type MenuItemsProvider = () => MenuItem[];
+
 export interface SideButtonHandlers {
+  /** Called when the user clicks a feature menu item. */
   onActivate: (item: MenuItem) => void | Promise<void>;
+  /** Called when the user clicks the Settings link in the menu footer. */
   onOpenSettings: () => void;
 }
+
 export interface SideButtonHandle {
   refresh: () => void;
   destroy: () => void;
   isMounted: () => boolean;
 }
+
 const BUTTON_ID = 'sfut-side-button';
 const MENU_ID = 'sfut-menu';
 const MENU_HIDDEN_CLASS = 'sfut-menu-hidden';
 const MENU_VISIBLE_CLASS = 'sfut-menu-visible';
+
 const BUTTON_STYLE = [
   'position: fixed',
   'top: 50%',
@@ -36,6 +65,7 @@ const BUTTON_STYLE = [
   'box-shadow: 0 0 6px rgba(0,0,0,0.2)',
   'user-select: none',
 ].join('; ');
+
 const MENU_STYLE = [
   'position: fixed',
   'top: 50%',
@@ -52,6 +82,7 @@ const MENU_STYLE = [
   'font-size: 13px',
   'display: none',
 ].join('; ');
+
 function styled<K extends keyof HTMLElementTagNameMap>(
   doc: Document,
   tag: K,
@@ -65,6 +96,11 @@ function styled<K extends keyof HTMLElementTagNameMap>(
   }
   return el;
 }
+
+/**
+ * Mount the side button and its menu. Caller controls rendering by passing a
+ * `menuItemsProvider` (so this module stays oblivious to the registry shape).
+ */
 export function mountSideButton(opts: {
   doc?: Document;
   win?: Window;
@@ -73,6 +109,8 @@ export function mountSideButton(opts: {
 }): SideButtonHandle {
   const doc = opts.doc ?? document;
   const win = opts.win ?? window;
+
+  // Only render in the top window, never inside Salesforce VF iframes.
   if (win.top !== win.self) {
     return {
       refresh: () => {},
@@ -80,16 +118,24 @@ export function mountSideButton(opts: {
       isMounted: () => false,
     };
   }
+
+  // If a previous instance is still in the DOM, remove it. Re-mounting on the
+  // same page should never accumulate duplicate buttons.
   doc.getElementById(BUTTON_ID)?.remove();
   doc.getElementById(MENU_ID)?.remove();
-  const button = styled(doc, 'div', BUTTON_STYLE, { id: BUTTON_ID, title: 'SFDT SF Helper' });
+
+  // ── Button ──
+  const button = styled(doc, 'div', BUTTON_STYLE, { id: BUTTON_ID, title: 'SF Flow Utility Toolkit' });
   button.className = 'sfut-side-button';
   const buttonIcon = doc.createElement('span');
   buttonIcon.className = 'sfut-side-button-icon';
   buttonIcon.textContent = '⚡';
   button.appendChild(buttonIcon);
+
+  // ── Menu shell (header / content / footer) ──
   const menu = styled(doc, 'div', MENU_STYLE, { id: MENU_ID });
   menu.className = `sfut-menu ${MENU_HIDDEN_CLASS}`;
+
   const header = doc.createElement('div');
   header.className = 'sfut-menu-header';
   header.style.cssText =
@@ -97,17 +143,19 @@ export function mountSideButton(opts: {
   const headerTitle = doc.createElement('span');
   headerTitle.className = 'sfut-menu-title';
   headerTitle.style.fontWeight = '600';
-  headerTitle.textContent = 'SFDT SF Helper';
+  headerTitle.textContent = 'SF Flow Utility Toolkit';
   const headerClose = doc.createElement('span');
   headerClose.className = 'sfut-menu-close';
   headerClose.style.cssText = 'cursor: pointer; font-size: 18px; color: #80868d;';
   headerClose.textContent = '×';
   header.appendChild(headerTitle);
   header.appendChild(headerClose);
+
   const content = doc.createElement('div');
   content.id = 'sfut-menu-content';
   content.className = 'sfut-menu-content';
   content.style.cssText = 'max-height: 60vh; overflow-y: auto;';
+
   const footer = doc.createElement('div');
   footer.className = 'sfut-menu-footer';
   footer.style.cssText = 'padding: 8px 14px; border-top: 1px solid #d8dde6;';
@@ -118,16 +166,21 @@ export function mountSideButton(opts: {
   settingsLink.style.cssText = 'color: #0070d2; text-decoration: none; font-size: 12px;';
   settingsLink.textContent = '⚙ Settings';
   footer.appendChild(settingsLink);
+
   menu.appendChild(header);
   menu.appendChild(content);
   menu.appendChild(footer);
+
   doc.body.appendChild(button);
   doc.body.appendChild(menu);
+
   let isOpen = false;
   let destroyed = false;
+
   function clearContent(): void {
     while (content.firstChild) content.removeChild(content.firstChild);
   }
+
   function buildMenuItemNode(item: MenuItem): HTMLDivElement {
     const node = doc.createElement('div');
     node.className = 'sfut-menu-item';
@@ -151,6 +204,7 @@ export function mountSideButton(opts: {
     });
     return node;
   }
+
   function buildEmptyState(): HTMLDivElement {
     const empty = doc.createElement('div');
     empty.className = 'sfut-menu-empty';
@@ -158,6 +212,7 @@ export function mountSideButton(opts: {
     empty.textContent = 'No tools available for this page.';
     return empty;
   }
+
   function renderMenu(): void {
     const items = opts.menuItemsProvider();
     clearContent();
@@ -167,6 +222,7 @@ export function mountSideButton(opts: {
     }
     for (const item of items) content.appendChild(buildMenuItemNode(item));
   }
+
   function setOpen(state: boolean): void {
     if (destroyed) return;
     isOpen = state;
@@ -175,6 +231,7 @@ export function mountSideButton(opts: {
     menu.classList.toggle(MENU_HIDDEN_CLASS, !state);
     menu.classList.toggle(MENU_VISIBLE_CLASS, state);
   }
+
   button.addEventListener('click', (e) => {
     e.stopPropagation();
     setOpen(!isOpen);
@@ -188,6 +245,7 @@ export function mountSideButton(opts: {
     opts.handlers.onOpenSettings();
     setOpen(false);
   });
+
   const docClickHandler = (e: MouseEvent): void => {
     if (!isOpen) return;
     const target = e.target as Node | null;
@@ -195,7 +253,10 @@ export function mountSideButton(opts: {
     setOpen(false);
   };
   doc.addEventListener('click', docClickHandler);
+
+  // Initial render so the menu structure exists before the first open.
   renderMenu();
+
   return {
     refresh: renderMenu,
     destroy: () => {

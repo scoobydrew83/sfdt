@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { api, stream } from '../../api.js';
 import StreamRunner from '../../components/StreamRunner.jsx';
 import { IconRocket, IconRotateCcw } from '../../Icons.jsx';
+
+// ─── Deploy Step ─────────────────────────────────────────────────────────────
+
 export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
   const [orgs, setOrgs]             = useState([]);
   const [targetOrg, setTargetOrg]   = useState('');
@@ -10,7 +13,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
   const [detectedTests, setDetectedTests] = useState([]);
   const [detecting, setDetecting]     = useState(false);
   const [destructiveTiming, setDestructiveTiming] = useState('post');
-  const [deploymentMode, setDeploymentMode] = useState('deploy');
+  const [deploymentMode, setDeploymentMode] = useState('deploy'); // 'deploy' or 'validate'
   const [tagRelease, setTagRelease]       = useState(true);
   const [createPR, setCreatePR]           = useState(false);
   const [notifySlack, setNotifySlack]     = useState(true);
@@ -19,18 +22,21 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
   const [streamKey, setStreamKey]   = useState(0);
   const [orgError, setOrgError]     = useState(false);
   const [lastDeployStats, setLastDeployStats] = useState(null);
+
   useEffect(() => {
     let cancelled = false;
     api.orgs()
       .then((d) => {
         if (cancelled) return;
         setOrgs(d.orgs ?? []);
+        // Set default org if available
         api.project().then(p => {
           if (!cancelled && p.org) setTargetOrg(p.org);
         }).catch(() => {});
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoadingOrgs(false); });
+    // Load last deploy stats for metrics panel
     api.deployHistory()
       .then((d) => {
         if (cancelled) return;
@@ -40,6 +46,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
   useEffect(() => {
     if (testLevel === 'RunSpecifiedTests' && manifest?.relPath) {
       setDetecting(true);
@@ -54,6 +61,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
         .finally(() => setDetecting(false));
     }
   }, [testLevel, manifest?.relPath, testClasses]);
+
   const toggleTest = (name) => {
     const list = testClasses.split(',').map(s => s.trim()).filter(Boolean);
     const newList = list.includes(name)
@@ -61,12 +69,14 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
       : [...list, name];
     setTestClasses(newList.join(', '));
   };
+
   const runDeployment = () => {
     if (!targetOrg) { setOrgError(true); return; }
     setOrgError(false);
     setIsRunning(true);
     setStreamKey(k => k + 1);
   };
+
   const cliPreview = [
     'sfdt deploy',
     deploymentMode === 'validate' ? '--dry-run' : '',
@@ -77,17 +87,19 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
       : '',
     manifest ? `--manifest ${manifest.relPath}` : '',
   ].filter(Boolean).join(' ');
+
   return (
     <div style={{ padding: 20 }}>
       <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Deploy</h2>
       <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: 20 }}>
         Configure your deployment settings and execute.
       </p>
+
       {!isRunning ? (
         <div className="deploy-grid">
-          {}
+          {/* ── Left: main controls ── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {}
+            {/* Target Org */}
             <div className="card" style={{ padding: 16 }}>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Target Organization</label>
               {loadingOrgs ? (
@@ -111,8 +123,9 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
                 </div>
               )}
             </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              {}
+              {/* Mode & Tests */}
               <div className="card" style={{ padding: 16 }}>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Deployment Mode</label>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -131,6 +144,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
                     Validate Only
                   </button>
                 </div>
+
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Test Level</label>
                 <select
                   className="input"
@@ -143,6 +157,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
                   <option value="RunSpecifiedTests">RunSpecifiedTests (Manual List)</option>
                   <option value="RunAllTestsInOrg">RunAllTestsInOrg (Managed + Local)</option>
                 </select>
+
                 {testLevel === 'RunSpecifiedTests' && (
                   <div style={{ marginTop: 10 }}>
                     <input
@@ -152,12 +167,15 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
                       value={testClasses}
                       onChange={(e) => setTestClasses(e.target.value)}
                     />
+
                     <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-subtle)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                       DETECTED IN MANIFEST {detecting && <div className="live-dot" />}
                     </div>
+
                     {!detecting && detectedTests.length === 0 && (
                       <div style={{ fontSize: 11, color: 'var(--fg-muted)', fontStyle: 'italic' }}>No test classes found in manifest.</div>
                     )}
+
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                       {detectedTests.map(name => {
                         const isActive = testClasses.split(',').map(s => s.trim()).includes(name);
@@ -184,7 +202,8 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
                   </div>
                 )}
               </div>
-              {}
+
+              {/* Destructive & Advanced */}
               <div className="card" style={{ padding: 16 }}>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Destructive Changes</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -207,6 +226,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
                     Pre-Destructive (Delete then Deploy)
                   </label>
                 </div>
+
                 <div style={{ marginTop: 20, borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', marginBottom: 8 }}>
                     <input type="checkbox" className="cbx" checked={tagRelease} onChange={e => setTagRelease(e.target.checked)} />
@@ -223,7 +243,8 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
                 </div>
               </div>
             </div>
-            {}
+
+            {/* CLI Preview */}
             <div style={{
               fontFamily: 'var(--font-mono)',
               fontSize: 11,
@@ -237,6 +258,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
               <div style={{ position: 'absolute', top: -8, left: 12, background: 'var(--bg-surface)', padding: '0 4px', fontSize: 10, fontWeight: 600 }}>CLI PREVIEW</div>
               $ {cliPreview}
             </div>
+
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 className="btn btn-primary btn-lg"
@@ -249,7 +271,8 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
               </button>
             </div>
           </div>
-          {}
+
+          {/* ── Right: metrics sidebar ── */}
           <div className="metrics-panel" style={{ alignSelf: 'start' }}>
             <div className="panel-hdr">Last Deploy Metrics</div>
             {!lastDeployStats ? (
@@ -323,6 +346,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
               <IconRotateCcw size={11} /> Back to Config
             </button>
           </div>
+
           <StreamRunner
             key={streamKey}
             label={`${deploymentMode === 'validate' ? 'Validating' : 'Deploying'} to ${targetOrg}`}

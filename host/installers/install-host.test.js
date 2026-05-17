@@ -1,5 +1,15 @@
+/**
+ * Unit tests for the native messaging host installer. Everything that would
+ * touch the real filesystem or the Windows registry is mocked so the tests
+ * are safe to run on a developer machine.
+ */
+
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// In-memory filesystem keyed by path. Mock fs-extra so we can observe what
+// the installer writes without actually creating manifests anywhere real.
 const fsState = new Map();
+
 vi.mock('fs-extra', () => {
   const ensureDir = vi.fn(async (p) => {
     fsState.set(`__dir:${p}`, true);
@@ -9,6 +19,9 @@ vi.mock('fs-extra', () => {
   });
   const readFile = vi.fn(async (p) => {
     if (fsState.has(p)) return fsState.get(p);
+    // Fall back to the real fs for the manifest templates that ship with the
+    // host workspace — we want to verify they parse cleanly through the
+    // template substitution.
     const real = await import('node:fs/promises');
     return real.readFile(p, 'utf-8');
   });
@@ -32,14 +45,17 @@ vi.mock('fs-extra', () => {
     remove,
   };
 });
+
 const execaCalls = [];
 let execaImpl = async () => ({ exitCode: 0, stdout: '/usr/local/bin/sfdt-host', stderr: '' });
+
 vi.mock('execa', () => ({
   execa: vi.fn(async (cmd, args, opts) => {
     execaCalls.push({ cmd, args, opts });
     return execaImpl(cmd, args, opts);
   }),
 }));
+
 import {
   buildManifest,
   installNativeHost,
@@ -47,12 +63,15 @@ import {
   nativeHostStatus,
   manifestDirsForBrowser,
 } from './install-host.js';
-const VALID_EXTENSION_ID = 'abcdefghijklmnopabcdefghijklmnop';
+
+const VALID_EXTENSION_ID = 'abcdefghijklmnopabcdefghijklmnop'; // 32 lowercase a–p
 const HOST_PATH = '/Users/dev/sfdt/host/src/index.js';
+
 beforeEach(() => {
   fsState.clear();
   execaCalls.length = 0;
 });
+
 describe('buildManifest', () => {
   it('substitutes both placeholders into the template', () => {
     const tpl = '{"name":"com.sfdt.host","path":"__SFDT_HOST_PATH__","allowed_origins":["chrome-extension://__SFDT_EXTENSION_ID__/"]}';
@@ -61,6 +80,7 @@ describe('buildManifest', () => {
     expect(m.allowed_origins).toEqual([`chrome-extension://${VALID_EXTENSION_ID}/`]);
   });
 });
+
 describe('manifestDirsForBrowser', () => {
   it('returns a manifest directory for chrome on darwin', () => {
     expect(manifestDirsForBrowser('darwin', 'chrome')).toMatch(/NativeMessagingHosts$/);
@@ -75,23 +95,30 @@ describe('manifestDirsForBrowser', () => {
     expect(manifestDirsForBrowser('darwin', 'safari')).toBeUndefined();
   });
 });
+
 describe('installNativeHost — validation', () => {
   it('rejects a missing extensionId', async () => {
     const r = await installNativeHost({ hostPath: HOST_PATH });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/extensionId is required/);
   });
+
   it('rejects a malformed extensionId', async () => {
     const r = await installNativeHost({ extensionId: 'not-a-real-id', hostPath: HOST_PATH });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/Invalid extension ID/);
   });
+
   it('rejects an extensionId with capital letters', async () => {
+    // Chrome IDs are lowercase a–p only. Catching this early prevents a
+    // silent failure where the manifest is "installed" but Chrome never
+    // considers it valid.
     const r = await installNativeHost({ extensionId: 'A'.repeat(32), hostPath: HOST_PATH });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/Invalid extension ID/);
   });
 });
+
 describe('installNativeHost — darwin', () => {
   it('writes the manifest to ~/Library/Application Support/Google/Chrome/...', async () => {
     const r = await installNativeHost({
@@ -104,6 +131,7 @@ describe('installNativeHost — darwin', () => {
     const installed = r.results[0];
     expect(installed.ok).toBe(true);
     expect(installed.manifestPath).toMatch(/Google\/Chrome\/NativeMessagingHosts\/com\.sfdt\.host\.json$/);
+
     const written = fsState.get(installed.manifestPath);
     expect(written).toBeTruthy();
     const parsed = JSON.parse(written);
@@ -111,6 +139,7 @@ describe('installNativeHost — darwin', () => {
     expect(parsed.path).toBe(HOST_PATH);
     expect(parsed.allowed_origins).toEqual([`chrome-extension://${VALID_EXTENSION_ID}/`]);
   });
+
   it('installs to every browser when --browser=all is passed', async () => {
     const r = await installNativeHost({
       extensionId: VALID_EXTENSION_ID,
@@ -119,12 +148,15 @@ describe('installNativeHost — darwin', () => {
       browser: 'all',
     });
     expect(r.ok).toBe(true);
+    // chrome, edge, brave, chromium, vivaldi
     expect(r.results).toHaveLength(5);
     expect(r.results.every((res) => res.ok)).toBe(true);
+    // Each browser writes to its own directory.
     const paths = r.results.map((res) => res.manifestPath);
     expect(new Set(paths).size).toBe(5);
   });
 });
+
 describe('installNativeHost — linux', () => {
   it('writes the manifest to ~/.config/google-chrome/NativeMessagingHosts/', async () => {
     const r = await installNativeHost({
@@ -138,6 +170,7 @@ describe('installNativeHost — linux', () => {
     expect(installed.manifestPath).toMatch(/\.config\/google-chrome\/NativeMessagingHosts\/com\.sfdt\.host\.json$/);
   });
 });
+
 describe('installNativeHost — win32', () => {
   it('writes a registry entry via `reg add` pointing to the manifest', async () => {
     const r = await installNativeHost({
@@ -150,6 +183,8 @@ describe('installNativeHost — win32', () => {
     const installed = r.results[0];
     expect(installed.ok).toBe(true);
     expect(installed.registryKey).toMatch(/HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\com\.sfdt\.host$/);
+
+    // The installer should have spawned `reg add <key> /ve /t REG_SZ /d <manifestPath> /f`.
     const regAdd = execaCalls.find((c) => c.cmd === 'reg' && c.args.includes('add'));
     expect(regAdd).toBeTruthy();
     expect(regAdd.args).toContain('/ve');
@@ -159,6 +194,7 @@ describe('installNativeHost — win32', () => {
     expect(regAdd.args[regAdd.args.length - 2]).toBe(installed.manifestPath);
   });
 });
+
 describe('uninstallNativeHost', () => {
   it('removes a previously installed darwin manifest', async () => {
     await installNativeHost({
@@ -170,13 +206,16 @@ describe('uninstallNativeHost', () => {
     const r = await uninstallNativeHost({ platform: 'darwin', browser: 'chrome' });
     expect(r.ok).toBe(true);
     expect(r.results[0].removed).toBe(true);
+    // After uninstall, the file is gone.
     expect(fsState.has(r.results[0].manifestPath)).toBe(false);
   });
+
   it('reports removed:false when nothing was installed', async () => {
     const r = await uninstallNativeHost({ platform: 'darwin', browser: 'chrome' });
     expect(r.ok).toBe(true);
     expect(r.results[0].removed).toBe(false);
   });
+
   it('on windows, calls `reg delete` for the host key', async () => {
     await uninstallNativeHost({ platform: 'win32', browser: 'chrome' });
     const regDelete = execaCalls.find((c) => c.cmd === 'reg' && c.args.includes('delete'));
@@ -185,6 +224,7 @@ describe('uninstallNativeHost', () => {
     expect(regDelete.args).toContain('/f');
   });
 });
+
 describe('nativeHostStatus', () => {
   it('reports installed for browsers that have a manifest, not for others', async () => {
     await installNativeHost({

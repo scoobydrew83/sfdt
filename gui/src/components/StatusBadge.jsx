@@ -20,6 +20,7 @@ const CONFIG = {
   target:        { cls: 'badge-target',   label: 'Target' },
   unknown:       { cls: 'badge-neutral',  label: 'Unknown' },
 };
+
 export default function StatusBadge({ status, showDot = true }) {
   const key = (status ?? 'unknown').toLowerCase();
   const { cls, label } = CONFIG[key] ?? CONFIG.unknown;

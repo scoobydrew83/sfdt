@@ -1,7 +1,34 @@
 #!/usr/bin/env node
+/**
+ * @sfdt/host — Chrome Native Messaging host for the SF Flow Utility Toolkit
+ * extension.
+ *
+ * Protocol (https://developer.chrome.com/docs/apps/nativeMessaging):
+ *
+ *   Each message is a UTF-8 JSON document preceded by a 4-byte little-endian
+ *   unsigned int containing the document's byte length. Chrome sends up to
+ *   64 MB per message; the host may reply with up to 1 MB.
+ *
+ * Why this exists: the extension's primary transport is HTTP to the running
+ * `sfdt ui` server on http://127.0.0.1:7654. When that server is not running,
+ * this host is the fallback: the extension launches it via
+ * `chrome.runtime.connectNative('com.sfdt.host')`, sends a framed SfdtRequest,
+ * and waits for the framed SfdtResponse.
+ *
+ * Handlers for individual request kinds live in handleRequest below. The
+ * routing mirrors the HTTP /api/bridge/exchange dispatcher in
+ * sfdt/src/lib/bridge/routes.js so the extension can be written against a
+ * single SfdtRequest/SfdtResponse contract regardless of transport.
+ */
+
 import { execa } from 'execa';
 import { createRequire } from 'module';
+
 const require = createRequire(import.meta.url);
+
+// flow-core's bridge-contract module ships compiled to dist/. Load it
+// lazily; if the build is missing we still respond to messages with a
+// useful error rather than crashing the host.
 let _contract = null;
 async function loadContract() {
   if (_contract) return _contract;
@@ -15,6 +42,7 @@ async function loadContract() {
   }
   return _contract;
 }
+
 const HOST_VERSION = (() => {
   try {
     return require('../package.json').version;
@@ -22,11 +50,17 @@ const HOST_VERSION = (() => {
     return '0.0.0';
   }
 })();
-const MAX_RESPONSE_BYTES = 1024 * 1024;
+
+// ─── Framing ────────────────────────────────────────────────────────────────
+
+const MAX_RESPONSE_BYTES = 1024 * 1024; // Chrome's host→extension limit
+
 function writeFrame(payload) {
   const json = JSON.stringify(payload);
   const body = Buffer.from(json, 'utf8');
   if (body.length > MAX_RESPONSE_BYTES) {
+    // Truncate to something Chrome will accept; preserve the requestId so
+    // the extension can correlate.
     const trimmed = {
       ok: false,
       requestId: payload?.requestId ?? 'unknown',
@@ -40,8 +74,10 @@ function writeFrame(payload) {
   process.stdout.write(header);
   process.stdout.write(body);
 }
+
 function setupStdinReader(onMessage) {
   let buffer = Buffer.alloc(0);
+
   const drain = async () => {
     while (true) {
       if (buffer.length < 4) return;
@@ -61,9 +97,11 @@ function setupStdinReader(onMessage) {
         });
         continue;
       }
+      // eslint-disable-next-line no-await-in-loop
       await onMessage(parsed);
     }
   };
+
   process.stdin.on('data', (chunk) => {
     buffer = Buffer.concat([buffer, chunk]);
     drain().catch((err) => {
@@ -75,10 +113,15 @@ function setupStdinReader(onMessage) {
       });
     });
   });
+
   process.stdin.on('end', () => process.exit(0));
 }
+
+// ─── Request handling ───────────────────────────────────────────────────────
+
 async function dispatch(request) {
   const { makeSuccessResponse, makeErrorResponse } = await loadContract();
+
   switch (request.kind) {
     case 'ping':
       return makeSuccessResponse(request.requestId, {
@@ -87,6 +130,8 @@ async function dispatch(request) {
         transport: 'native',
       });
     case 'version': {
+      // The native host runs at extension-installer time, before sfdt is
+      // necessarily on PATH. Try sfdt first; fall back to our own version.
       try {
         const { stdout } = await execa('sfdt', ['version'], { timeout: 5000 });
         return makeSuccessResponse(request.requestId, { version: stdout.trim() });
@@ -116,6 +161,7 @@ async function dispatch(request) {
       );
   }
 }
+
 export async function handleMessage(raw) {
   const { validateSfdtRequest, makeErrorResponse } = await loadContract();
   const validation = validateSfdtRequest(raw);
@@ -133,7 +179,13 @@ export async function handleMessage(raw) {
     return makeErrorResponse(validation.request.requestId, err.message, 'INTERNAL_ERROR');
   }
 }
+
+// ─── Entrypoint ─────────────────────────────────────────────────────────────
+
 async function main() {
+  // --smoke mode: read a single JSON request from argv[2], write the framed
+  // response to stdout, and exit. Used by tests and by humans poking at the
+  // host without running Chrome.
   const smokeArg = process.argv.find((a) => a.startsWith('--smoke='));
   if (smokeArg) {
     const json = smokeArg.slice('--smoke='.length);
@@ -153,11 +205,14 @@ async function main() {
     writeFrame(response);
     process.exit(0);
   }
+
+  // Stdio (native messaging) mode.
   setupStdinReader(async (msg) => {
     const response = await handleMessage(msg);
     writeFrame(response);
   });
 }
+
 main().catch((err) => {
   writeFrame({
     ok: false,

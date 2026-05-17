@@ -1,33 +1,59 @@
+// Typed extension settings backed by chrome.storage.local.
+//
+// The v2.0.2 extension at /Users/dkennedy/dev/2.0.2_0 copy/utils/
+// settings-manager.js split state across chrome.storage.sync (per-feature
+// flags) and chrome.storage.local (AI prompt library) with a one-time
+// migration shim. This module consolidates everything to chrome.storage.local
+// — local has a 10 MB quota vs. sync's 100 KB, doesn't sync prompts to the
+// user's other browsers (a feature, not a bug — prompts are local creative
+// work, not preferences), and lets the migration shim live in one place.
+//
+// Schema is validated with zod so a corrupt write or a future schema bump
+// surfaces as a typed error rather than silently breaking a feature.
+
 import { z } from 'zod';
+
 export const SettingsSchema = z.object({
+  // Feature enable flags. Open-ended record so any feature id can have a
+  // toggle. Undefined entries mean "enabled by default" — features declare
+  // their own enabledByDefault on the manifest. Three legacy camelCase keys
+  // are tolerated via LEGACY_FEATURE_ID_MAP.
   features: z.record(z.string(), z.boolean()).default({}),
+
   setupTabs: z
     .object({
       automationHomeEnabled: z.boolean().default(false),
       groupingEnabled: z.boolean().default(false),
     })
     .default({}),
+
   canvasSearch: z
     .object({
       shortcut: z.string().default('Ctrl+Shift+F'),
       highlightColour: z.string().default('#FFD700'),
     })
     .default({}),
+
   apiNameGenerator: z
     .object({
       namingPattern: z.enum(['Snake_Case', 'PascalCase', 'camelCase']).default('Snake_Case'),
     })
     .default({}),
+
   scheduledFlowExplorer: z
     .object({
       defaultView: z.enum(['list', 'calendar']).default('list'),
     })
     .default({}),
+
   telemetry: z
     .object({
       enabled: z.boolean().default(false),
     })
     .default({}),
+
+  // Bridge configuration. The bearer token is pasted in by the user from the
+  // sfdt ui "Connect extension" flow.
   bridge: z
     .object({
       token: z.string().default(''),
@@ -36,14 +62,27 @@ export const SettingsSchema = z.object({
     })
     .default({}),
 });
+
 export type Settings = z.infer<typeof SettingsSchema> & {
   featureSettings?: Record<string, Record<string, unknown>>;
 };
+
+/**
+ * Three legacy keys from before the manifest migration. The settings UI
+ * previously stored these in camelCase; the rest of the system now keys on
+ * kebab-case feature ids. We keep the legacy keys readable by mapping them
+ * to their canonical form on access. New writes go to kebab-case only.
+ */
 const LEGACY_FEATURE_ID_MAP: Record<string, string> = {
   setupTabs: 'setup-tabs',
   missingDescriptions: 'missing-descriptions',
   scheduledFlowExplorer: 'scheduled-flow-explorer',
 };
+
+/**
+ * Return true when the user has not explicitly disabled featureId. Honours
+ * the legacy camelCase keys stored before the migration.
+ */
 export function isFeatureEnabled(settings: Settings, featureId: string): boolean {
   if (Object.prototype.hasOwnProperty.call(settings.features, featureId)) {
     return settings.features[featureId] !== false;
@@ -55,19 +94,35 @@ export function isFeatureEnabled(settings: Settings, featureId: string): boolean
   }
   return true;
 }
+
 const STORAGE_KEY = 'sfut.settings';
+
+// In-memory cache so callers don't pay the chrome.storage round-trip on every
+// read. Invalidated by the storage onChanged listener at the bottom.
 let _cache: Settings | null = null;
+
+// ── Feature-contributed settings shapes ──────────────────────────────────
+//
+// Features register their settings schema at module top so by the time the
+// first loadSettings() runs, the composed schema knows every feature.
+
 const featureShapes = new Map<string, z.ZodTypeAny>();
 let _composedSchema: z.ZodTypeAny | null = null;
+
 export function registerSettingsShape(featureId: string, schema: z.ZodTypeAny): void {
   featureShapes.set(featureId, schema);
-  _cache = null;
+  _cache = null; // Invalidate so the next load uses the composed shape.
   _composedSchema = null;
 }
+
 function getComposedSchema(): z.ZodTypeAny {
   if (_composedSchema) return _composedSchema;
   const shapeFields: Record<string, z.ZodTypeAny> = {};
   for (const [id, schema] of featureShapes.entries()) {
+    // .optional() applied unconditionally so non-ZodObject schemas
+    // (e.g. ZodEffects from .refine(), ZodIntersection) get the same
+    // undefined-when-missing semantics that the legacy-fallback pattern
+    // in feature factories relies on.
     shapeFields[id] = schema.optional();
   }
   _composedSchema = SettingsSchema.extend({
@@ -75,24 +130,33 @@ function getComposedSchema(): z.ZodTypeAny {
   });
   return _composedSchema;
 }
+
 export function _resetSettingsShapesForTests(): void {
   featureShapes.clear();
   _composedSchema = null;
   _cache = null;
 }
+
 function defaultSettings(): Settings {
   return getComposedSchema().parse({}) as Settings;
 }
+
 async function readRaw(): Promise<unknown> {
   return new Promise((resolve) => {
     chrome.storage.local.get(STORAGE_KEY, (result) => resolve(result?.[STORAGE_KEY]));
   });
 }
+
 async function writeRaw(value: Settings): Promise<void> {
   return new Promise((resolve) => {
     chrome.storage.local.set({ [STORAGE_KEY]: value }, () => resolve());
   });
 }
+
+/**
+ * Load settings, applying defaults for missing fields. Safe to call from any
+ * extension surface (content script, background, popup, options page).
+ */
 export async function loadSettings(): Promise<Settings> {
   if (_cache) return _cache;
   const raw = await readRaw();
@@ -101,17 +165,29 @@ export async function loadSettings(): Promise<Settings> {
   _cache = parsed.success ? (parsed.data as Settings) : defaultSettings();
   return _cache;
 }
+
+/**
+ * Replace the entire settings blob. Validates against the schema first;
+ * throws if the proposed value is invalid.
+ */
 export async function saveSettings(next: Settings): Promise<void> {
   const validated = getComposedSchema().parse(next) as Settings;
   await writeRaw(validated);
   _cache = validated;
 }
+
+/**
+ * Patch a subset of settings. Reads current state, merges deeply at the top
+ * level (one level deep — enough for the schema's shape), re-validates,
+ * persists.
+ */
 export async function patchSettings(patch: Partial<Settings>): Promise<Settings> {
   const current = await loadSettings();
   const next = {
     ...current,
     ...patch,
   } as Settings;
+  // Deep-merge each top-level section the patch touches.
   for (const key of Object.keys(patch) as Array<keyof Settings>) {
     const a = current[key];
     const b = patch[key];
@@ -122,6 +198,13 @@ export async function patchSettings(patch: Partial<Settings>): Promise<Settings>
   await saveSettings(next);
   return next;
 }
+
+/**
+ * Subscribe to settings changes. The callback fires every time another
+ * extension surface writes a new settings blob.
+ *
+ * @returns a function that unsubscribes the listener.
+ */
 export function onSettingsChange(callback: (settings: Settings) => void): () => void {
   const listener = (
     changes: Record<string, chrome.storage.StorageChange>,
@@ -138,6 +221,11 @@ export function onSettingsChange(callback: (settings: Settings) => void): () => 
   chrome.storage.onChanged.addListener(listener);
   return () => chrome.storage.onChanged.removeListener(listener);
 }
+
+/**
+ * Test helper: clear the in-memory cache so the next read pulls from storage.
+ * Production code never needs this.
+ */
 export function _clearSettingsCacheForTests(): void {
   _cache = null;
 }

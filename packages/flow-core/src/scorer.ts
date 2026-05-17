@@ -1,3 +1,18 @@
+// Flow health scorer — ported from
+// /Users/dkennedy/dev/2.0.2_0 copy/utils/flow-health-scorer.js (v1.2.2 formula
+// restored in v2.0.0; see CHANGELOG-v2.0.0.md:29-47). The scoring math is
+// preserved verbatim; only the surface shape changes (TypeScript exports
+// instead of an IIFE module).
+//
+// Formula per family:
+//   deduction = min( appearancePenalty + weight * log2(instanceCount + 1), cap )
+//
+// Severity model:
+//   High    appearance 1.5  weight 5.5  cap 22
+//   Medium  appearance 0.5  weight 3.0  cap 13
+//   Low     appearance 0.0  weight 1.0  cap 6
+//   Info    appearance 0.0  weight 0.0  cap 0
+
 import type {
   AffectedItem,
   Category,
@@ -7,30 +22,35 @@ import type {
   ScoreSummary,
   Severity,
 } from './types.js';
+
 const SCORE_APPEARANCE: Record<Severity, number> = {
   high: 1.5,
   medium: 0.5,
   low: 0,
   info: 0,
 };
+
 const SCORE_WEIGHTS: Record<Severity, number> = {
   high: 5.5,
   medium: 3,
   low: 1,
   info: 0,
 };
+
 const SCORE_CAPS: Record<Severity, number> = {
   high: 22,
   medium: 13,
   low: 6,
   info: 0,
 };
+
 const SEVERITY_ORDER: Record<Severity, number> = {
   high: 4,
   medium: 3,
   low: 2,
   info: 1,
 };
+
 const FAMILY_TITLES: Record<string, string> = {
   flow_description: 'Flow description missing',
   element_descriptions: 'Elements missing descriptions',
@@ -56,6 +76,7 @@ const FAMILY_TITLES: Record<string, string> = {
   apex_defined_dependencies: 'Apex-defined dependencies detected',
   elevated_run_context: 'Elevated run context detected',
 };
+
 function computeDeduction(severity: Severity, instanceCount: number): number {
   const appearance = SCORE_APPEARANCE[severity];
   const weight = SCORE_WEIGHTS[severity];
@@ -65,9 +86,11 @@ function computeDeduction(severity: Severity, instanceCount: number): number {
   const capped = Math.min(raw, cap);
   return Math.round(capped * 10) / 10;
 }
+
 function titleFromFamily(scoreFamily: string): string {
   return FAMILY_TITLES[scoreFamily] ?? scoreFamily;
 }
+
 function extractAffectedItem(finding: Finding): AffectedItem | null {
   if (finding.location?.elementLabel) {
     return {
@@ -92,6 +115,7 @@ function extractAffectedItem(finding: Finding): AffectedItem | null {
   }
   return null;
 }
+
 function uniqueAffectedItems(items: AffectedItem[]): AffectedItem[] {
   const seen = new Set<string>();
   const out: AffectedItem[] = [];
@@ -103,11 +127,14 @@ function uniqueAffectedItems(items: AffectedItem[]): AffectedItem[] {
   }
   return out;
 }
+
 export function buildIssueFamilies(findings: Finding[]): IssueFamily[] {
   const families = new Map<string, IssueFamily>();
+
   for (const finding of findings) {
     const key = finding.scoreFamily || finding.ruleId;
     const affected = extractAffectedItem(finding);
+
     const existing = families.get(key);
     if (!existing) {
       families.set(key, {
@@ -122,14 +149,17 @@ export function buildIssueFamilies(findings: Finding[]): IssueFamily[] {
       });
       continue;
     }
+
     existing.instanceCount += 1;
     existing.findings.push(finding);
     if (affected) existing.affectedItems.push(affected);
+
     if (SEVERITY_ORDER[finding.severity] > SEVERITY_ORDER[existing.severity]) {
       existing.severity = finding.severity;
       existing.category = finding.category;
     }
   }
+
   return Array.from(families.values())
     .map((family) => ({
       ...family,
@@ -142,6 +172,7 @@ export function buildIssueFamilies(findings: Finding[]): IssueFamily[] {
       return a.title.localeCompare(b.title);
     });
 }
+
 export function getScoreRating(score: number): Rating {
   if (score >= 90) return 'Excellent';
   if (score >= 80) return 'Very Good';
@@ -149,11 +180,13 @@ export function getScoreRating(score: number): Rating {
   if (score >= 55) return 'Poor';
   return 'Very Poor';
 }
+
 function countBySeverity(families: IssueFamily[]): Record<Severity, number> {
   const counts: Record<Severity, number> = { high: 0, medium: 0, low: 0, info: 0 };
   for (const family of families) counts[family.severity] += 1;
   return counts;
 }
+
 function countByCategory(families: IssueFamily[]): Record<Category, number> {
   const counts: Record<Category, number> = {
     performance: 0,
@@ -166,10 +199,13 @@ function countByCategory(families: IssueFamily[]): Record<Category, number> {
   }
   return counts;
 }
+
 export function calculateScore(issueFamilies: IssueFamily[]): ScoreSummary {
   let score = 100;
   for (const family of issueFamilies) score -= family.scoreImpact;
+
   const finalScore = Math.max(0, Math.min(100, Math.round(score)));
+
   return {
     overallScore: finalScore,
     rating: getScoreRating(finalScore),

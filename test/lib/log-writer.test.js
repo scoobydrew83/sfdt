@@ -9,13 +9,19 @@ import {
   parseSfdtLogLines,
   writeRawLog,
 } from '../../src/lib/log-writer.js';
+
 let tmpDir;
+
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-log-test-'));
 });
+
 afterEach(async () => {
   await fs.remove(tmpDir);
 });
+
+// ── parseSfdtLogLines ─────────────────────────────────────────────────────────
+
 describe('parseSfdtLogLines', () => {
   it('parses check lines into checks array', () => {
     const lines = [
@@ -30,6 +36,7 @@ describe('parseSfdtLogLines', () => {
     ]);
     expect(result.components).toEqual([]);
   });
+
   it('parses component lines into components array', () => {
     const lines = [
       'SFDT_LOG:component:MyClass:ApexClass:Modified',
@@ -42,27 +49,34 @@ describe('parseSfdtLogLines', () => {
     ]);
     expect(result.checks).toEqual([]);
   });
+
   it('handles message field containing colons', () => {
     const lines = ['SFDT_LOG:check:coverage:WARN:Coverage: 70% (threshold: 75%)'];
     const result = parseSfdtLogLines(lines);
     expect(result.checks[0].message).toBe('Coverage: 70% (threshold: 75%)');
   });
+
   it('ignores non-SFDT_LOG lines', () => {
     const lines = ['normal output', '', 'SFDT_LOG:unknown:x:y:z'];
     const result = parseSfdtLogLines(lines);
     expect(result.checks).toEqual([]);
     expect(result.components).toEqual([]);
   });
+
   it('returns empty arrays for empty input', () => {
     const result = parseSfdtLogLines([]);
     expect(result.checks).toEqual([]);
     expect(result.components).toEqual([]);
   });
+
   it('returns empty arrays for null or undefined input', () => {
     expect(parseSfdtLogLines(null)).toEqual({ checks: [], components: [] });
     expect(parseSfdtLogLines(undefined)).toEqual({ checks: [], components: [] });
   });
 });
+
+// ── validateLogSchema ─────────────────────────────────────────────────────────
+
 describe('validateLogSchema', () => {
   it('returns true for a valid preflight log', () => {
     const log = {
@@ -77,23 +91,31 @@ describe('validateLogSchema', () => {
     };
     expect(validateLogSchema(log)).toBe(true);
   });
+
   it('returns false for missing schemaVersion', () => {
     expect(validateLogSchema({ type: 'preflight', timestamp: 'x', data: {} })).toBe(false);
   });
+
   it('returns false for unknown type', () => {
     expect(validateLogSchema({ schemaVersion: '1', type: 'unknown', timestamp: 'x', data: {} })).toBe(false);
   });
+
   it('returns false for null', () => {
     expect(validateLogSchema(null)).toBe(false);
   });
+
   it('returns false for missing data', () => {
     expect(validateLogSchema({ schemaVersion: '1', type: 'preflight', timestamp: 'x' })).toBe(false);
   });
 });
+
+// ── writeLog ──────────────────────────────────────────────────────────────────
+
 describe('writeLog', () => {
   it('writes preflight-latest.json with correct envelope', async () => {
     const data = { status: 'PASS', checks: [{ name: 'git', status: 'PASS', message: 'Clean' }] };
     await writeLog(tmpDir, 'preflight', data, { org: 'dev-org', projectName: 'TestProj', exitCode: 0, durationMs: 500 });
+
     const written = await fs.readJson(path.join(tmpDir, 'preflight-latest.json'));
     expect(written.schemaVersion).toBe('1');
     expect(written.type).toBe('preflight');
@@ -104,6 +126,7 @@ describe('writeLog', () => {
     expect(written.data).toEqual(data);
     expect(typeof written.timestamp).toBe('string');
   });
+
   it('archives a timestamped copy in preflight-results/', async () => {
     await writeLog(tmpDir, 'preflight', { status: 'PASS', checks: [] }, {});
     const archiveDir = path.join(tmpDir, 'preflight-results');
@@ -112,20 +135,23 @@ describe('writeLog', () => {
     expect(files.length).toBe(1);
     expect(files[0]).toMatch(/\.json$/);
   });
+
   it('prunes archive to logRetention count', async () => {
     for (let i = 0; i < 5; i++) {
       await writeLog(tmpDir, 'drift', { status: 'clean', components: [] }, { retention: 3 });
-      await new Promise((r) => setTimeout(r, 2));
+      await new Promise((r) => setTimeout(r, 2)); // ensure distinct ms timestamps in archive filenames
     }
     const archiveDir = path.join(tmpDir, 'drift-results');
     const files = await fs.readdir(archiveDir);
     expect(files.length).toBe(3);
   });
+
   it('writes test-results/latest.json for test-run type', async () => {
     const data = { passed: 10, failed: 0, errors: 0, skipped: 0, coverage: 85, tests: [] };
     await writeLog(tmpDir, 'test-run', data, {});
     expect(await fs.pathExists(path.join(tmpDir, 'test-results', 'latest.json'))).toBe(true);
   });
+
   it('archives test-run into test-results/ directory', async () => {
     await writeLog(tmpDir, 'test-run', { passed: 1, failed: 0, errors: 0, skipped: 0, coverage: 90, tests: [] }, {});
     const archiveDir = path.join(tmpDir, 'test-results');
@@ -133,14 +159,19 @@ describe('writeLog', () => {
     expect(files.length).toBe(1);
   });
 });
+
+// ── readLatestLog ─────────────────────────────────────────────────────────────
+
 describe('readLatestLog', () => {
   it('returns null when file does not exist', async () => {
     expect(await readLatestLog(tmpDir, 'preflight')).toBeNull();
   });
+
   it('returns null for corrupt JSON', async () => {
     await fs.outputFile(path.join(tmpDir, 'preflight-latest.json'), 'not json');
     expect(await readLatestLog(tmpDir, 'preflight')).toBeNull();
   });
+
   it('returns null for file with wrong schemaVersion', async () => {
     await fs.outputJson(path.join(tmpDir, 'preflight-latest.json'), {
       schemaVersion: '99',
@@ -150,6 +181,7 @@ describe('readLatestLog', () => {
     });
     expect(await readLatestLog(tmpDir, 'preflight')).toBeNull();
   });
+
   it('returns the envelope for a valid file', async () => {
     const data = { status: 'PASS', checks: [] };
     const envelope = await writeLog(tmpDir, 'preflight', data, { org: 'x', projectName: 'y', exitCode: 0, durationMs: 1 });
@@ -157,6 +189,9 @@ describe('readLatestLog', () => {
     expect(result).toEqual(envelope);
   });
 });
+
+// ── writeRawLog ───────────────────────────────────────────────────────────────
+
 describe('writeRawLog', () => {
   it('writes a JSON envelope to the archive dir', async () => {
     await writeRawLog(tmpDir, 'deploy', 'Deployment output\nDone.', {
@@ -164,6 +199,7 @@ describe('writeRawLog', () => {
       exitCode: 0,
       durationMs: 5000,
     });
+
     const archiveDir = path.join(tmpDir, 'deploy-results');
     const files = await fs.readdir(archiveDir);
     expect(files).toHaveLength(1);
@@ -178,21 +214,27 @@ describe('writeRawLog', () => {
     });
     expect(written.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
+
   it('writes to rollback-results for type "rollback"', async () => {
     await writeRawLog(tmpDir, 'rollback', 'Rollback done.', { org: 'prod', exitCode: 0 });
+
     const archiveDir = path.join(tmpDir, 'rollback-results');
     const files = await fs.readdir(archiveDir);
     expect(files).toHaveLength(1);
   });
+
   it('prunes oldest files beyond retention limit', async () => {
     for (let i = 0; i < 3; i++) {
       await writeRawLog(tmpDir, 'deploy', `run ${i}`, { org: 'dev', exitCode: 0, retention: 2 });
+      // Small delay to ensure unique timestamps for deterministic sorting in prune logic
       await new Promise((r) => setTimeout(r, 10));
     }
+
     const archiveDir = path.join(tmpDir, 'deploy-results');
     const files = await fs.readdir(archiveDir);
     expect(files).toHaveLength(2);
   });
+
   it('returns the written envelope', async () => {
     const result = await writeRawLog(tmpDir, 'deploy', 'stdout text', { org: 'dev', exitCode: 0 });
     expect(result).toMatchObject({ schemaVersion: 'raw-1', type: 'deploy', rawOutput: 'stdout text' });

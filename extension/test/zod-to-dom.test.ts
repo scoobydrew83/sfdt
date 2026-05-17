@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { buildField } from '../lib/zod-to-dom.js';
+
 describe('zod-to-dom buildField', () => {
   it('renders ZodBoolean as a checkbox initialised to the current value', () => {
     const { node, getValue } = buildField(z.boolean(), true);
@@ -10,6 +11,7 @@ describe('zod-to-dom buildField', () => {
     input.checked = false;
     expect(getValue()).toBe(false);
   });
+
   it('renders ZodString as a text input', () => {
     const { node, getValue } = buildField(z.string(), 'hello');
     const input = node as HTMLInputElement;
@@ -18,10 +20,12 @@ describe('zod-to-dom buildField', () => {
     input.value = 'world';
     expect(getValue()).toBe('world');
   });
+
   it('renders a 7-char hex string starting with # as a color input', () => {
     const { node } = buildField(z.string(), '#FFD700');
     expect((node as HTMLInputElement).type).toBe('color');
   });
+
   it('renders ZodEnum as a select with one option per enum value', () => {
     const { node, getValue } = buildField(z.enum(['list', 'calendar']), 'calendar');
     const sel = node as HTMLSelectElement;
@@ -31,6 +35,7 @@ describe('zod-to-dom buildField', () => {
     sel.value = 'list';
     expect(getValue()).toBe('list');
   });
+
   it('renders ZodNumber as a number input that returns numbers', () => {
     const { node, getValue } = buildField(z.number(), 42);
     const input = node as HTMLInputElement;
@@ -39,6 +44,7 @@ describe('zod-to-dom buildField', () => {
     input.value = '99';
     expect(getValue()).toBe(99);
   });
+
   it('renders ZodObject as a fieldset of named child fields', () => {
     const { node, getValue } = buildField(
       z.object({ name: z.string(), enabled: z.boolean() }),
@@ -49,6 +55,7 @@ describe('zod-to-dom buildField', () => {
     expect(inputs.length).toBe(2);
     expect(getValue()).toEqual({ name: 'alpha', enabled: true });
   });
+
   it('throws on unsupported Zod types', () => {
     expect(() => buildField(z.bigint(), 0n as never)).toThrow(/Unsupported zod type/i);
   });

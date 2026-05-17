@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { loadConfig } from '../lib/config.js';
 import { fetchInventory } from '../lib/org-inventory.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+
 export function registerScanCommand(program) {
   program
     .command('scan')
@@ -25,7 +26,9 @@ export function registerScanCommand(program) {
         const outPath = options.output
           ? path.resolve(options.output)
           : path.join(logDir, 'scan-latest.json');
+
         const spinner = jsonMode ? null : ora(`Fetching inventory from ${orgAlias}…`).start();
+
         let inventory;
         try {
           inventory = await fetchInventory(orgAlias, config);
@@ -34,22 +37,27 @@ export function registerScanCommand(program) {
           spinner?.fail('Inventory fetch failed');
           throw err;
         }
+
         const summary = {
           totalTypes: inventory.size,
           totalMembers: [...inventory.values()].reduce((n, s) => n + s.size, 0),
         };
+
         const output = {
           timestamp: new Date().toISOString(),
           org: orgAlias,
           inventory: Object.fromEntries([...inventory.entries()].map(([k, v]) => [k, [...v]])),
           summary,
         };
+
         if (jsonMode) {
           process.stdout.write(JSON.stringify(output, null, 2) + '\n');
           return;
         }
+
         await fs.ensureDir(path.dirname(outPath));
         await fs.writeJson(outPath, output, { spaces: 2 });
+
         if (options.format === 'table') {
           console.log('');
           for (const [type, members] of [...inventory.entries()].sort()) {
@@ -58,6 +66,7 @@ export function registerScanCommand(program) {
           console.log('');
           console.log(chalk.bold(`Total: ${summary.totalTypes} types · ${summary.totalMembers} members`));
         }
+
         console.log(chalk.green(`\nJSON written to ${outPath}`));
       } catch (err) {
         if (jsonMode) {

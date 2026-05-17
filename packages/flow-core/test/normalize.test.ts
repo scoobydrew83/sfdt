@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { normalize, type RawFlowMetadata } from '../src/normalize.js';
+
 describe('flow-core/normalize', () => {
   describe('flow type detection', () => {
     it('ScreenFlow when screens exist', () => {
       const meta: RawFlowMetadata = { label: 'Onboarding', screens: [{ name: 'Welcome' }] };
       expect(normalize(meta).meta.flowType).toBe('ScreenFlow');
     });
+
     it('Scheduled when start has schedule block', () => {
       const meta: RawFlowMetadata = {
         label: 'Nightly Job',
@@ -13,6 +15,7 @@ describe('flow-core/normalize', () => {
       };
       expect(normalize(meta).meta.flowType).toBe('Scheduled');
     });
+
     it('RecordTriggered when start.recordTriggerType is set', () => {
       const meta: RawFlowMetadata = {
         label: 'Account After Save',
@@ -20,31 +23,40 @@ describe('flow-core/normalize', () => {
       };
       expect(normalize(meta).meta.flowType).toBe('RecordTriggered');
     });
+
     it('Autolaunched for processType Flow / AutoLaunchedFlow / Workflow', () => {
       for (const pt of ['Flow', 'AutoLaunchedFlow', 'Workflow']) {
         const meta: RawFlowMetadata = { label: 't', processType: pt };
         expect(normalize(meta).meta.flowType).toBe('Autolaunched');
       }
     });
+
     it('Unknown when no signal', () => {
       expect(normalize({ label: 't' }).meta.flowType).toBe('Unknown');
     });
   });
+
   describe('trigger detection', () => {
     it('timing BeforeSave', () => {
+      // v2.0.2's detectTriggerTiming prefers recordTriggerType when set; only
+      // falls back to triggerType when it is absent. So this fixture omits
+      // recordTriggerType.
       const flow = normalize({ start: { triggerType: 'RecordBeforeSave' } });
       expect(flow.trigger.timing).toBe('BeforeSave');
     });
+
     it('event CreateOrUpdate when both words present', () => {
       const flow = normalize({ start: { triggerType: 'RecordAfterCreateOrUpdate' } });
       expect(flow.trigger.event).toBe('CreateOrUpdate');
     });
+
     it('entryCriteriaSummary counts filters', () => {
       const flow = normalize({
         start: { recordTriggerType: 'Create', filters: [{}, {}] },
       });
       expect(flow.trigger.entryCriteriaSummary).toBe('2 start filters configured');
     });
+
     it('entryCriteriaSummary acknowledges a formula', () => {
       const flow = normalize({
         start: { recordTriggerType: 'Create', filterFormula: 'X > 0' },
@@ -52,12 +64,14 @@ describe('flow-core/normalize', () => {
       expect(flow.trigger.entryCriteriaSummary).toBe('Formula criteria defined');
     });
   });
+
   describe('node construction', () => {
     it('always emits a __start__ node', () => {
       const flow = normalize({ label: 'Empty' });
       expect(flow.nodes[0]!.id).toBe('__start__');
       expect(flow.nodes[0]!.type).toBe('Start');
     });
+
     it('marks DML elements as supporting fault paths', () => {
       const flow = normalize({
         recordUpdates: [{ name: 'UpdateAcct', label: 'Update', object: 'Account' }],
@@ -66,6 +80,7 @@ describe('flow-core/normalize', () => {
       expect(node.supportsFaultPath).toBe(true);
       expect(node.hasFaultPath).toBe(false);
     });
+
     it('detects fault path when faultConnector.targetReference is set', () => {
       const flow = normalize({
         recordCreates: [
@@ -80,6 +95,7 @@ describe('flow-core/normalize', () => {
       const node = flow.nodes.find((n) => n.apiName === 'MakeAcct')!;
       expect(node.hasFaultPath).toBe(true);
     });
+
     it('does NOT mark assignments / decisions / screens as supporting fault paths', () => {
       const flow = normalize({
         assignments: [{ name: 'A' }],
@@ -91,6 +107,7 @@ describe('flow-core/normalize', () => {
       }
     });
   });
+
   describe('loop membership', () => {
     it('marks the loop body as isInLoop with depth 1', () => {
       const flow = normalize({
@@ -113,6 +130,7 @@ describe('flow-core/normalize', () => {
       expect(update.isInLoop).toBe(true);
       expect(update.loopDepth).toBe(1);
     });
+
     it('does NOT mark the post-loop node (noMoreValues target) as in loop', () => {
       const flow = normalize({
         loops: [
@@ -128,6 +146,7 @@ describe('flow-core/normalize', () => {
       expect(flow.nodes.find((n) => n.apiName === 'AfterLoop')?.isInLoop).toBe(false);
     });
   });
+
   describe('dependencies', () => {
     it('records apex action dependencies', () => {
       const flow = normalize({
@@ -135,6 +154,7 @@ describe('flow-core/normalize', () => {
       });
       expect(flow.dependencies).toEqual([{ type: 'ApexAction', name: 'MyApexClass', count: 1 }]);
     });
+
     it('records non-flowruntime LWC dependencies from screen components', () => {
       const flow = normalize({
         screens: [
@@ -142,21 +162,26 @@ describe('flow-core/normalize', () => {
             name: 'S',
             fields: [
               { fieldType: 'ComponentInstance', extensionName: 'c:MyComponent' },
-              { fieldType: 'ComponentInstance', extensionName: 'flowruntime:input' },
+              { fieldType: 'ComponentInstance', extensionName: 'flowruntime:input' }, // standard, ignored
             ],
           },
         ],
       });
       expect(flow.dependencies).toEqual([{ type: 'LwcComponent', name: 'c:MyComponent', count: 1 }]);
     });
+
     it('filters out all standard Lightning namespaces from LWC dependencies', () => {
       const flow = normalize({
         screens: [
           {
             name: 'S',
             fields: [
+              // User component — should be kept.
               { fieldType: 'ComponentInstance', extensionName: 'c:CustomCmp' },
+              // Managed-package component — should be kept.
               { fieldType: 'ComponentInstance', extensionName: 'mypkg:Widget' },
+              // Standard Lightning namespaces — every one of these ships
+              // with Salesforce, so they must not surface as dependencies.
               { fieldType: 'ComponentInstance', extensionName: 'flowruntime:input' },
               { fieldType: 'ComponentInstance', extensionName: 'force:outputField' },
               { fieldType: 'ComponentInstance', extensionName: 'forceContent:fileUpload' },
@@ -174,18 +199,21 @@ describe('flow-core/normalize', () => {
         { type: 'LwcComponent', name: 'mypkg:Widget', count: 1 },
       ]);
     });
+
     it('records subflow dependencies', () => {
       const flow = normalize({
         subflows: [{ name: 'CallChild', flowName: 'Child_Flow' }],
       });
       expect(flow.dependencies).toEqual([{ type: 'Subflow', name: 'Child_Flow', count: 1 }]);
     });
+
     it('records Apex-defined-type dependencies from variables', () => {
       const flow = normalize({
         variables: [{ name: 'thing', dataType: 'Apex', apexClass: 'MyApex' }],
       });
       expect(flow.dependencies).toEqual([{ type: 'ApexDefinedType', name: 'MyApex', count: 1 }]);
     });
+
     it('dedupes and merges counts for repeated dependencies', () => {
       const flow = normalize({
         actionCalls: [
@@ -196,6 +224,7 @@ describe('flow-core/normalize', () => {
       expect(flow.dependencies).toEqual([{ type: 'ApexAction', name: 'Shared', count: 2 }]);
     });
   });
+
   describe('edges', () => {
     it('builds the start edge', () => {
       const flow = normalize({
@@ -204,6 +233,7 @@ describe('flow-core/normalize', () => {
       });
       expect(flow.edges).toContainEqual({ from: '__start__', to: 'first', kind: 'default', label: null });
     });
+
     it('builds decision edges with rule labels', () => {
       const flow = normalize({
         decisions: [
@@ -219,11 +249,13 @@ describe('flow-core/normalize', () => {
       expect(flow.edges).toContainEqual({ from: 'D', to: 'B', kind: 'decision', label: 'Otherwise' });
     });
   });
+
   describe('meta defaults', () => {
     it('falls back to options.flowApiName when fullName is absent', () => {
       const flow = normalize({ label: 'My Flow' }, { flowApiName: 'My_Flow' });
       expect(flow.meta.flowApiName).toBe('My_Flow');
     });
+
     it('preserves options.flowVersionId', () => {
       const flow = normalize({ label: 'x' }, { flowVersionId: '301AB' });
       expect(flow.meta.flowVersionId).toBe('301AB');
