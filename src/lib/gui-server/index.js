@@ -1411,6 +1411,7 @@ export function createGuiApp(config, version, port = 7654) {
       testLevel,
       testClasses,
       destructiveTiming,
+      validationJobId,
     } = req.body ?? {};
 
     const projectRoot = config._projectRoot ?? process.cwd();
@@ -1448,6 +1449,14 @@ export function createGuiApp(config, version, port = 7654) {
 
     if (destructiveTiming !== undefined && destructiveTiming !== null && !['pre', 'post', 'none', 'only'].includes(destructiveTiming)) {
       return res.status(400).json({ error: 'Invalid destructiveTiming' });
+    }
+
+    // Salesforce job IDs are 15- or 18-char alphanumeric — reject anything else so
+    // we don't shell out with arbitrary user input.
+    if (validationJobId !== undefined && validationJobId !== null) {
+      if (typeof validationJobId !== 'string' || !/^[A-Za-z0-9]{15,18}$/.test(validationJobId)) {
+        return res.status(400).json({ error: 'Invalid validationJobId' });
+      }
     }
 
     const VALID_CLASS = /^[A-Za-z][A-Za-z0-9_]*$/;
@@ -1488,14 +1497,23 @@ export function createGuiApp(config, version, port = 7654) {
         SFDT_DESTRUCTIVE_TIMING: destructiveTiming ?? 'post',
         ...(manifest ? { SFDT_MANIFEST_PATH: path.join(projectRoot, manifest) } : {}),
         ...(sourceDir ? { SFDT_DEPLOY_SOURCE_DIR: sourceDir } : {}),
+        ...(validationJobId ? { SFDT_VALIDATION_JOB_ID: validationJobId } : {}),
       };
 
       const lines = [];
+      // Captured job id from a dry-run / validate flow, surfaced to the client
+      // in the final `result` message so the next click can do a true quick deploy.
+      let capturedValidationJobId = null;
+      const JOB_ID_PATTERN = /Validation Job ID:\s*([A-Za-z0-9]{15,18})/;
       const streamLines = (readable) => {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });
         rl.on('line', (line) => {
           lines.push(line);
           const stripped = stripAnsi(line);
+          if (!capturedValidationJobId) {
+            const m = stripped.match(JOB_ID_PATTERN);
+            if (m) capturedValidationJobId = m[1];
+          }
           if (!res.writableEnded && !stripped.startsWith('SFDT_LOG:'))
             res.write('data: ' + JSON.stringify({ type: 'log', line: stripped, ts: new Date().toISOString() }) + '\n\n');
         });
@@ -1557,7 +1575,9 @@ export function createGuiApp(config, version, port = 7654) {
       await fs.outputJson(historyPath, history.slice(0, 100), { spaces: 2 });
 
       if (!res.writableEnded) {
-        res.write('data: ' + JSON.stringify({ type: 'result', exitCode }) + '\n\n');
+        const resultMsg = { type: 'result', exitCode };
+        if (capturedValidationJobId) resultMsg.content = { validationJobId: capturedValidationJobId };
+        res.write('data: ' + JSON.stringify(resultMsg) + '\n\n');
         res.end();
       }
     } catch (err) {

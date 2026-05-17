@@ -90,6 +90,7 @@
     "eslint": "^9.22.0",
     "prettier": "^3.5.3",
     "supertest": "^7.1.0",
+    "typescript-eslint": "^8.59.3",
     "vitest": "^4.1.4"
   },
   "repository": {

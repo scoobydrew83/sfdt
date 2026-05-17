@@ -1395,11 +1395,19 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
 
     if [[ "$DRY_RUN" == "true" ]]; then
         run_validation
+    elif [[ -n "${SFDT_VALIDATION_JOB_ID:-}" ]]; then
+        # Quick Deploy path: reuse the validation job from a prior dry-run so
+        # the org doesn't re-run the full test suite. The GUI captures the job
+        # id from the validate stream and passes it back on Quick Deploy.
+        VALIDATION_JOB_ID="$SFDT_VALIDATION_JOB_ID"
+        print_step "Quick Deploy using validation job ID: $VALIDATION_JOB_ID"
+        run_quick_deploy
+        archive_deployed_manifest
     else
         run_full_deployment
         # Only archive and tag if it was a successful real deployment
         archive_deployed_manifest
-        
+
         if [[ "$TAG_RELEASE" == "true" && -n "$RELEASE_VERSION" ]]; then
             print_step "Auto-tagging release v${RELEASE_VERSION}..."
             git tag -a "v${RELEASE_VERSION}" -m "Release ${RELEASE_VERSION}" || print_warning "Tag v${RELEASE_VERSION} already exists, skipping"

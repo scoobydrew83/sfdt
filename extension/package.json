@@ -11,6 +11,7 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "compile": "tsc --noEmit",
+    "lint": "eslint entrypoints features lib ui test",
     "postinstall": "wxt prepare || true",
     "test": "vitest run"
   },

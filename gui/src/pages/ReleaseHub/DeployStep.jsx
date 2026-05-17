@@ -22,6 +22,9 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
   const [streamKey, setStreamKey]   = useState(0);
   const [orgError, setOrgError]     = useState(false);
   const [lastDeployStats, setLastDeployStats] = useState(null);
+  // Captured from a successful validate run so the next Quick Deploy can
+  // reuse the validation job and skip the test re-run.
+  const [validationJobId, setValidationJobId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -369,7 +372,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
             key={streamKey}
             label={`${deploymentMode === 'validate' ? 'Validating' : 'Deploying'} to ${targetOrg}`}
             startLabel="Deploy"
-            commandHint={`sfdt deploy${deploymentMode === 'validate' ? ' --dry-run' : ''}`}
+            commandHint={`sfdt deploy${deploymentMode === 'validate' ? ' --dry-run' : validationJobId ? ` --quick (job ${validationJobId})` : ''}`}
             streamFn={() => stream.deploy({
               dryRun: deploymentMode === 'validate',
               org: targetOrg,
@@ -380,14 +383,25 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
               destructiveTiming,
               tagRelease,
               createPR,
-              notifySlack
+              notifySlack,
+              // Only pass the validation job id on a non-validate run — sending
+              // it on the validate path would have no effect server-side.
+              ...(deploymentMode === 'deploy' && validationJobId
+                ? { validationJobId }
+                : {}),
             })}
-            onComplete={() => {
-              // Validate-mode success ≠ deploy success. Don't advance to
-              // Rollback (which is the step that came up "black" before)
-              // and don't mark deploy done — let the user choose Quick Deploy
-              // (skips the test re-run) or Back-to-Config.
-              if (deploymentMode === 'validate') return;
+            onComplete={(content) => {
+              // Validate-mode success captures the job id so a follow-up
+              // Quick Deploy can reuse it. We deliberately do NOT auto-advance
+              // to Rollback — that's the navigation that produced the "black
+              // screen" symptom on production validates.
+              if (deploymentMode === 'validate') {
+                if (content?.validationJobId) setValidationJobId(content.validationJobId);
+                return;
+              }
+              // Real deploy completed — clear any stale job id so the next
+              // validate-then-deploy cycle starts fresh.
+              setValidationJobId(null);
               onMarkDone();
             }}
           />
@@ -410,8 +424,18 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
             >
               <span>
                 Validation completed against <strong>{targetOrg}</strong>.
-                Use Quick Deploy below to skip the test re-run and ship the
-                validated package.
+                {validationJobId ? (
+                  <>
+                    {' '}Quick Deploy will reuse validation job{' '}
+                    <code style={{ fontFamily: 'var(--font-mono)' }}>{validationJobId}</code>
+                    {' '}— Salesforce skips the test re-run.
+                  </>
+                ) : (
+                  <>
+                    {' '}Job ID wasn’t captured; Quick Deploy will re-run the deploy
+                    end-to-end (tests will run again).
+                  </>
+                )}
               </span>
               <button
                 className="btn btn-primary btn-sm"
