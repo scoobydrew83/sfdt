@@ -1,13 +1,9 @@
-// Flow health normalizer — ported from
-// /Users/dkennedy/dev/2.0.2_0 copy/utils/flow-health-normalizer.js.
-//
-// Turns the raw Tooling API Flow.Metadata payload into a stable internal
-// shape consumed by the rules engine and scorer. Pure logic; no DOM, no API.
+// Pure logic; no DOM, no API. Turns Tooling API Flow.Metadata into the
+// stable shape that rules and scorer consume.
 
-// ---------------------------------------------------------------------------
-// Raw input shapes (Tooling API Flow.Metadata block — partial, only what the
-// normalizer actually reads). Every field is optional because Salesforce
-// omits keys whose value is the default.
+// Raw input shapes — partial Tooling API Flow.Metadata, only what the
+// normalizer reads. Every field is optional because Salesforce omits keys
+// whose value is the default.
 
 export interface RawConnector {
   targetReference?: string;

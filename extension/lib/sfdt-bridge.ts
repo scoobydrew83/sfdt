@@ -1,29 +1,18 @@
-// sfdt bridge client.
-//
-// The client side of the contract defined in
-// /Users/dkennedy/dev/sfdt/packages/flow-core/src/bridge-contract.ts. The
-// extension uses this to talk to the locally-installed sfdt CLI for any
-// operation that can't be done from the browser sandbox alone — running a
-// deploy, opening a multi-org compare, calling the AI provider, and so on.
-//
-// Transport selection at runtime:
-//
-//   1. preferredTransport === 'localhost' — only try the HTTP server.
-//   2. preferredTransport === 'native'    — only try the native messaging host.
-//   3. preferredTransport === 'auto'      — race both with a 1 second timeout,
-//                                            return the first success.
-//
-// Either transport's failure mode is the same SfdtResponse error shape, so
-// callers don't have to special-case the transport. The `code` field on
-// errors lets the UI render distinct states ("Start sfdt ui to enable this
-// feature" vs. "Token invalid — re-pair in extension settings").
+// Client for @sfdt/flow-core/bridge-contract. Both transports return the
+// same SfdtResponse error shape — callers branch on response.code, not on
+// which transport was used.
+//   localhost → HTTP only
+//   native    → native messaging host only
+//   auto      → race both, fastest success wins (1s timeout)
 
 import type {
   SfdtRequest,
   SfdtResponse,
   SfdtErrorResponse,
   PingResponseData,
+  ProtocolNegotiation,
 } from '@sfdt/flow-core/bridge-contract';
+import { negotiateProtocolVersion } from '@sfdt/flow-core/bridge-contract';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const DISCOVERY_TIMEOUT_MS = 1000;
@@ -33,10 +22,8 @@ export interface BridgeOptions {
   preferredTransport?: 'auto' | 'localhost' | 'native';
   localhostPort?: number;
   nativeHostName?: string;
-  // Test seams.
   fetchImpl?: typeof fetch;
   connectNativeImpl?: typeof chrome.runtime.connectNative;
-  /** Override for chrome.runtime.sendMessage used by getServerInfo() in tests. */
   sendMessageImpl?: (message: unknown) => Promise<unknown>;
   timeoutMs?: number;
 }
@@ -44,7 +31,6 @@ export interface BridgeOptions {
 type Transport = 'localhost' | 'native' | 'unknown';
 
 function makeRequestId(): string {
-  // crypto.randomUUID is available in MV3 service workers and content scripts.
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
@@ -55,23 +41,17 @@ function offlineResponse(requestId: string, message: string): SfdtErrorResponse 
   return { ok: false, requestId, error: message, code: 'BRIDGE_OFFLINE' };
 }
 
-/**
- * Response shape from the background service worker's `bridgePing` handler.
- * The handler wraps the raw bridge response in `{ ok, body }` so transport
- * errors are distinguishable from bridge-level errors.
- */
+// Background-worker bridgePing handler wraps the raw bridge response in
+// `{ ok, body }` so transport errors stay distinguishable from bridge-level errors.
 interface BridgePingResponse {
   ok: boolean;
   body?: unknown;
   error?: string;
 }
 
-/**
- * Send a message to the background service worker and await its response.
- * Used to route HTTPS-incompatible fetches (Private Network Access) through
- * a context that isn't subject to that policy. Returns null if chrome.runtime
- * is unavailable (test environments).
- */
+// Routes fetches that violate Chrome's Private Network Access policy through
+// the service worker, which isn't subject to PNA. Returns null when
+// chrome.runtime is unavailable (test environments).
 async function chromeRuntimeSendMessage<T>(message: unknown): Promise<T | null> {
   if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return null;
   return new Promise<T | null>((resolve) => {
@@ -90,32 +70,28 @@ async function chromeRuntimeSendMessage<T>(message: unknown): Promise<T | null> 
 }
 
 export interface BridgeClient {
-  /**
-   * Cheap probe used to pick a transport. Returns 'localhost' / 'native' /
-   * 'unknown' depending on what answered first.
-   */
   discover(): Promise<Transport>;
 
-  /**
-   * Cheap probe used to pick a transport AND surface server-side state
-   * (currently kill-switched feature ids). Returns null when no transport
-   * answered successfully.
-   */
+  /** Returns null when no transport answered. */
   getServerInfo(): Promise<{
     serverVersion: string;
+    protocolVersion: string | undefined;
+    negotiation: ProtocolNegotiation;
     transport: 'localhost' | 'native';
     disabledFeatures: readonly string[];
   } | null>;
 
+  /** Most recent negotiation result, or null if getServerInfo hasn't run. */
+  getNegotiation(): ProtocolNegotiation | null;
+
   /**
-   * Send a typed request and await its response.
+   * Returns BRIDGE_OFFLINE with the negotiation message when a prior
+   * getServerInfo detected a major protocol mismatch — ping/version are
+   * exempt so diagnostics still flow.
    */
   send<R extends SfdtRequest>(request: R): Promise<SfdtResponse>;
 
-  /**
-   * Convenience for one-off requests: stamps the requestId so the caller
-   * never has to.
-   */
+  /** Stamps the requestId for the caller. */
   call<R extends Omit<SfdtRequest, 'requestId'>>(request: R): Promise<SfdtResponse>;
 }
 
@@ -129,6 +105,10 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
   const connectNativeImpl = options.connectNativeImpl;
   const sendMessageImpl =
     options.sendMessageImpl ?? ((message: unknown) => chromeRuntimeSendMessage<unknown>(message));
+
+  // send() short-circuits non-ping/version traffic when the bridge is on
+  // an incompatible major version; ping/version stay open for diagnostics.
+  let cachedNegotiation: ProtocolNegotiation | null = null;
 
   async function sendOverLocalhost(request: SfdtRequest): Promise<SfdtResponse> {
     if (!token) {
@@ -168,8 +148,7 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
 
   async function sendOverNative(request: SfdtRequest): Promise<SfdtResponse> {
     if (!connectNativeImpl) {
-      // No connectNative available — happens in test environments and any
-      // surface that's not the extension itself.
+      // Tests and non-extension surfaces lack chrome.runtime.connectNative.
       return offlineResponse(request.requestId, 'Native messaging host is not available in this context.');
     }
     return new Promise<SfdtResponse>((resolve) => {
@@ -239,7 +218,6 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
       const probe = await sendOverNative({ requestId: 'discover', kind: 'ping' } as SfdtRequest);
       return probe.ok ? 'native' : 'unknown';
     }
-    // auto: race both, fastest success wins.
     const localProbe = sendOverLocalhost({ requestId: 'discover-local', kind: 'ping' } as SfdtRequest);
     const nativeProbe = connectNativeImpl
       ? sendOverNative({ requestId: 'discover-native', kind: 'ping' } as SfdtRequest)
@@ -255,16 +233,29 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
   }
 
   async function send(request: SfdtRequest): Promise<SfdtResponse> {
+    // Major protocol mismatch → refuse non-diagnostic traffic.
+    if (
+      cachedNegotiation &&
+      !cachedNegotiation.ok &&
+      request.kind !== 'ping' &&
+      request.kind !== 'version'
+    ) {
+      return {
+        ok: false,
+        requestId: request.requestId,
+        error: `Bridge protocol negotiation failed: ${cachedNegotiation.message}`,
+        code: 'BRIDGE_OFFLINE',
+      };
+    }
+
     if (preferredTransport === 'localhost') return sendOverLocalhost(request);
     if (preferredTransport === 'native') return sendOverNative(request);
 
-    // auto: try localhost first, fall back to native on offline error.
     const local = await sendOverLocalhost(request);
     if (local.ok) return local;
     const localCode = (local as SfdtErrorResponse).code;
-    // If localhost answered with an auth or invalid-request error, the user's
-    // sfdt ui is reachable — fall through to surfacing that error rather than
-    // shadowing it with a native-host attempt.
+    // Any non-offline error means sfdt ui IS reachable — surface that error
+    // rather than shadowing it with a native-host attempt.
     if (localCode && localCode !== 'BRIDGE_OFFLINE') return local;
     if (!connectNativeImpl) return local;
     return sendOverNative(request);
@@ -276,17 +267,15 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
 
   async function getServerInfo(): Promise<{
     serverVersion: string;
+    protocolVersion: string | undefined;
+    negotiation: ProtocolNegotiation;
     transport: 'localhost' | 'native';
     disabledFeatures: readonly string[];
   } | null> {
-    // The kill-switch fetch needs to go through the background service
-    // worker. Chrome's Private Network Access policy blocks an HTTPS page's
-    // content script from making cross-origin requests to private hosts
-    // (127.0.0.1) without preflight handling on the server side. The
-    // service worker isn't subject to PNA, and host_permissions for
-    // http://127.0.0.1/* gives it the permission it needs. This also means
-    // the kill-switch works WITHOUT a bearer token — the GET /api/bridge/
-    // ping endpoint is unauthenticated by design.
+    // Route through the service worker — Chrome's PNA blocks
+    // HTTPS-content-script → http://127.0.0.1 without server-side preflight;
+    // the worker isn't subject to PNA. /api/bridge/ping is also unauthenticated
+    // by design so the kill-switch works without a token.
     try {
       const response = (await sendMessageImpl({
         action: 'bridgePing',
@@ -295,8 +284,12 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
       if (response?.ok && response.body && typeof response.body === 'object') {
         const envelope = response.body as { ok?: boolean; data?: PingResponseData };
         if (envelope.ok && envelope.data) {
+          const negotiation = negotiateProtocolVersion(envelope.data.protocolVersion);
+          cachedNegotiation = negotiation;
           return {
             serverVersion: envelope.data.serverVersion,
+            protocolVersion: envelope.data.protocolVersion,
+            negotiation,
             transport: envelope.data.transport === 'native' ? 'native' : 'localhost',
             disabledFeatures: envelope.data.disabledFeatures ?? [],
           };
@@ -310,8 +303,12 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
     if (native.ok) {
       const data = (native as { data?: PingResponseData }).data;
       if (data) {
+        const negotiation = negotiateProtocolVersion(data.protocolVersion);
+        cachedNegotiation = negotiation;
         return {
           serverVersion: data.serverVersion,
+          protocolVersion: data.protocolVersion,
+          negotiation,
           transport: 'native',
           disabledFeatures: data.disabledFeatures ?? [],
         };
@@ -320,5 +317,9 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
     return null;
   }
 
-  return { discover, getServerInfo, send, call };
+  function getNegotiation(): ProtocolNegotiation | null {
+    return cachedNegotiation;
+  }
+
+  return { discover, getServerInfo, getNegotiation, send, call };
 }

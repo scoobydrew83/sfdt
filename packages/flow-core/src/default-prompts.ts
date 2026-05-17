@@ -1,10 +1,6 @@
-// Default AI prompt templates — ported from
-// /Users/dkennedy/dev/2.0.2_0 copy/config/default-ai-prompt-templates.js.
-//
-// Verbatim port of the 5 shipped templates. The prompt bodies are preserved
-// character-for-character because they have been tuned against real model
-// behaviour (the draw-io template in particular relies on exact phrasing to
-// keep ChatGPT from wrapping the XML in commentary).
+// Prompt bodies are tuned against real model behaviour — edit with care.
+// The draw-io template in particular needs its exact phrasing to keep
+// ChatGPT from wrapping the XML in commentary.
 
 export type PromptContext = 'flow-canvas';
 

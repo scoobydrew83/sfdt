@@ -1,16 +1,5 @@
-// API name prefix library — ported from
-// /Users/dkennedy/dev/2.0.2_0 copy/config/api-name-prefixes.js.
-//
-// The v2.0.2 module is an IIFE that hard-codes chrome.storage.local access
-// and emits its own chrome.runtime fetch for the JSON config. This port
-// inverts both dependencies: storage is injected, defaults are embedded.
-//
-// CHANGELOG-v2.0.0.md:146 — "Custom API name prefix expansion" was noted as
-// missing. We add it here as `expand(label, type, pattern)`: it generates an
-// API name by combining the prefix for the given type with a normalised
-// version of the label in the requested naming pattern. The previous code
-// stopped at lookup; this gives the api-name-generator feature a single call
-// to invoke during Phase 4 instead of reimplementing case-conversion inline.
+// Storage is injected and defaults are embedded so this module stays free
+// of chrome.* and bundler-side JSON imports.
 
 import { DEFAULT_PREFIXES, ICON_TO_TYPE } from './api-name-defaults.js';
 import type { PrefixEntry } from './api-name-defaults.js';
@@ -136,15 +125,14 @@ export class ApiNameLibrary {
   exportAsJson(): string {
     const file: PrefixFile = {
       version: 1,
-      description: 'Custom API name prefixes for SF Flow Utility Toolkit.',
+      description: 'Custom API name prefixes for SFDT SF Helper.',
       prefixes: this.prefixes,
     };
     return JSON.stringify(file, null, 2);
   }
 
-  // CHANGELOG-v2.0.0.md:146 fix — full expansion at the library level.
-  // Returns a generated API name. Returns null when the prefix is unknown,
-  // leaving the caller to decide whether to fall back to the bare label.
+  // Returns a generated API name, or null when the prefix is unknown so the
+  // caller can decide whether to fall back to the bare label.
   expand(label: string, typeName: string, pattern: NamingPattern): string | null {
     if (!label || !label.trim()) return null;
     const entry = this.getByType(typeName);

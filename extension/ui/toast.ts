@@ -1,12 +1,6 @@
-// One shared toast helper. Supersedes the seven near-duplicate _showToast
-// implementations across the v2.0.2 extension that the CHANGELOG-v2.0.0.md
-// called out at lines 139-145.
-//
-// Vanilla DOM by design — the toast must work inside any content script,
-// including ones that mount before React is available. The CSS lives in
-// extension/ui/styles.css (Phase 4 will add it; Phase 3 inlines the bare
-// minimum so the side button can show "Initialised" without depending on
-// the stylesheet yet).
+// Vanilla DOM by design — must work in content scripts that mount before
+// React is available. CSS is inlined so the toast renders without depending
+// on extension/ui/styles.css.
 
 const TOAST_CONTAINER_ID = 'sfut-toast-container';
 const TOAST_BASE_CLASS = 'sfut-toast';
@@ -24,9 +18,7 @@ function ensureContainer(doc: Document): HTMLElement {
   if (container) return container;
   container = doc.createElement('div');
   container.id = TOAST_CONTAINER_ID;
-  // The z-index value of 100010 mirrors the v1.2.3 fix at
-  // /Users/dkennedy/dev/2.0.2_0 copy/CHANGELOG-v2.0.0.md:55 — toasts must
-  // sit above the Health Modal (100001) but below any browser-native dialog.
+  // z-index 100010: above the Health Modal (100001), below browser-native dialogs.
   container.style.cssText = [
     'position: fixed',
     'top: 20px',
@@ -48,10 +40,7 @@ const KIND_BACKGROUND: Record<ToastKind, string> = {
   error: '#c23934',
 };
 
-/**
- * Show a transient toast. Returns a `dismiss()` function so callers can
- * close the toast early (e.g. when a long-running operation finishes).
- */
+// Returns a dismiss() so callers can close the toast early.
 export function showToast(message: string, options: ToastOptions = {}): () => void {
   const doc = options.doc ?? document;
   const kind = options.kind ?? 'info';

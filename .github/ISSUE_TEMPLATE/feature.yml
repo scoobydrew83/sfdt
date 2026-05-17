@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest a new capability or improvement.
+title: "[feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. The `area:` field is required so we can route this to the right roadmap.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which workspace would this land in?
+      options:
+        - cli — the @sfdt/cli npm package
+        - extension — the Chrome extension
+        - host — the native messaging host
+        - flow-core — the shared TypeScript library
+        - dashboard — the sfdt ui local web dashboard
+        - docs
+        - cross-cutting / unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What's the pain today? Be concrete — "this is slow" / "I can't do X without falling back to Y."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Roughly what should the new capability do? Sketch the CLI flag, the UI surface, or the data shape if you have one in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds exist today? Why aren't they enough?

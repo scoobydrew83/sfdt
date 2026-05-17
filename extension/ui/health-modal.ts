@@ -1,11 +1,5 @@
-// Flow Health Modal — vanilla DOM port of
-// /Users/dkennedy/dev/2.0.2_0 copy/ui/flow-health-modal.js.
-//
-// The v2.0.2 modal templated its body with `innerHTML` strings and a local
-// _escapeHtml helper. This port uses createElement + textContent throughout
-// so labels and findings are XSS-safe by construction (no escape pathway
-// needed at all). The structural sections — header / summary cards / issue
-// families / metrics / footer — are preserved.
+// createElement + textContent throughout — labels and findings are
+// XSS-safe by construction with no escape pathway needed.
 
 import type { IssueFamily, Rating, ScoreSummary, Severity } from '@sfdt/flow-core';
 
@@ -301,7 +295,6 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     clear(body);
     clear(footer);
 
-    // Header block — flow label / meta line / score.
     const headerBlock = styledDiv(doc, 'sfut-health-header-block', 'margin-bottom: 16px;');
     const flowName = doc.createElement('div');
     flowName.className = 'sfut-health-flow-name';
@@ -342,7 +335,6 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
 
     body.appendChild(headerBlock);
 
-    // Severity summary card grid.
     const cards = styledDiv(
       doc,
       'sfut-health-summary-cards',
@@ -354,7 +346,6 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     cards.appendChild(buildSummaryCard('Info', report.summary.severityCounts.info, severityColour('info')));
     body.appendChild(cards);
 
-    // Issue families.
     const familiesSection = styledDiv(doc, 'sfut-health-section', 'margin-bottom: 16px;');
     const familiesTitle = doc.createElement('div');
     familiesTitle.className = 'sfut-health-section-title';
@@ -374,7 +365,6 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     }
     body.appendChild(familiesSection);
 
-    // Flow profile metrics.
     const profileSection = styledDiv(doc, 'sfut-health-section');
     const profileTitle = doc.createElement('div');
     profileTitle.className = 'sfut-health-section-title';
@@ -394,7 +384,6 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     profileSection.appendChild(metricsGrid);
     body.appendChild(profileSection);
 
-    // Footer — Copy JSON button.
     const copyBtn = doc.createElement('button');
     copyBtn.className = 'sfut-health-btn';
     copyBtn.textContent = 'Copy JSON';

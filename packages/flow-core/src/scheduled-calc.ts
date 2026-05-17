@@ -1,11 +1,8 @@
-// Schedule-Triggered Flow calculator — ported from
-// /Users/dkennedy/dev/2.0.2_0 copy/utils/scheduled-flow-calculator.js.
-//
-// Pure logic. No DOM, no API, no chrome.*. Date handling matches v2.0.2
-// semantics: Salesforce stores the schedule's startTime as `HH:MM:SS.SSSZ`
-// but the Z suffix is misleading — it is wall-clock time in the org's
-// timezone, not UTC. We strip the Z and treat the time-of-day as local-tz so
-// `new Date(...)` operations stay self-consistent inside the calculator.
+// Pure logic. No DOM, no API, no chrome.*.
+// Salesforce stores startTime as `HH:MM:SS.SSSZ` but the Z suffix is
+// misleading — it is wall-clock time in the org's timezone, not UTC. We
+// strip the Z and treat the time-of-day as local-tz so `new Date(...)`
+// stays self-consistent inside the calculator.
 
 export const FREQUENCY = {
   ONCE: 'Once',

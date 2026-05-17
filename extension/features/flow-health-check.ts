@@ -1,13 +1,3 @@
-// Flow Health Check — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/features/flow-health-check.js.
-//
-// Three-step pipeline:
-//   1. Fetch Flow metadata via the Salesforce API client (Tooling API).
-//   2. Run @sfdt/flow-core's normalize → evaluate → buildIssueFamilies →
-//      calculateScore. Same engine the sfdt CLI's `quality` command will
-//      use (Phase 5), so canvas results match CLI results byte-for-byte.
-//   3. Render the report in the modal.
-
 import {
   buildIssueFamilies,
   calculateScore,
@@ -117,8 +107,7 @@ export interface FlowHealthCheckOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
-  // Test seam: the feature module owns the modal lifecycle, but tests can
-  // pre-mount a stub modal to verify the pipeline without DOM assertions.
+  // Test seam — pre-mount a stub modal to bypass DOM assertions.
   modal?: HealthModalHandle;
 }
 
@@ -159,9 +148,9 @@ export function createFlowHealthCheckFeature(options: FlowHealthCheckOptions = {
         return;
       }
 
-      // Read flowId from the feature's own window so it stays consistent with
-      // the context check above (the api may have been constructed with a
-      // different window in tests). v2.0.2 conflated them via globals.
+      // Read flowId from the feature's own window so it stays consistent
+      // with the context check above — the api may use a different window
+      // in tests.
       const flowId = new URL(win.location.href).searchParams.get('flowId');
       if (!flowId) {
         getModal().showError('Could not determine the current Flow ID from the URL.');
@@ -195,7 +184,6 @@ export function createFlowHealthCheckFeature(options: FlowHealthCheckOptions = {
   };
 }
 
-// Test seam
 export function _flowHealthCheckTestApi() {
   return { buildReport, resolveFlowApiName };
 }

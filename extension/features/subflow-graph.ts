@@ -1,19 +1,5 @@
-// Subflow Caller Graph — Phase 6a feature.
-//
-// Renders the @sfdt/flow-core subflow graph in two complementary views:
-//
-//   • Graph view (default): a hand-rolled SVG node-and-edge diagram. Nodes
-//     are laid out in columns by their max acyclic call depth — root flows
-//     on the left, deepest callers on the right. Edges are drawn as smooth
-//     curves; cycles are stroked red; unresolved references are dashed.
-//     No external graph library — keeps the bundle lean and the security
-//     surface tiny.
-//   • List view: the original textual breakdown — depth, fan-out / fan-in,
-//     up to five call chains per node. Better for very large graphs where
-//     the SVG gets cramped.
-//
-// A view toggle lives in the modal header. Cycles always surface at the
-// top regardless of which view is active.
+// Hand-rolled SVG — no external graph library, to keep the bundle lean
+// and the security surface tiny.
 
 import {
   buildSubflowGraph,
@@ -70,8 +56,6 @@ async function fetchAllFlowMetadata(
   return out;
 }
 
-// ─── SVG graph rendering ─────────────────────────────────────────────────
-
 interface LaidOutNode {
   node: SubflowGraphNode;
   depth: number;
@@ -88,14 +72,9 @@ const ROW_GAP = 16;
 const MARGIN = 24;
 const MAX_LABEL_CHARS = 22;
 
-/**
- * Hierarchical layout: every node gets placed in a column equal to its
- * maxDepth. Within each column, nodes are sorted alphabetically so the
- * layout is stable across runs. The y position is "first available slot"
- * — we don't attempt a barycentric edge-crossing minimisation because the
- * marginal benefit doesn't justify the complexity for the typical subflow
- * graph size (rarely more than 50 nodes per org).
- */
+// Within-column ordering is alphabetical for run-to-run stability.
+// No barycentric edge-crossing minimisation — typical orgs have <50 flows
+// so the complexity isn't worth it.
 function layoutGraph(graph: SubflowGraph): { nodes: LaidOutNode[]; width: number; height: number } {
   const columns = new Map<number, SubflowGraphNode[]>();
   for (const node of graph.nodes.values()) {
@@ -126,17 +105,13 @@ function layoutGraph(graph: SubflowGraph): { nodes: LaidOutNode[]; width: number
   return { nodes: out, width, height };
 }
 
-/**
- * Build the SVG element. Public for testing — the modal embeds it under
- * the Graph tab.
- */
+// Exported for testing — the modal also embeds it under the Graph tab.
 export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVGElement {
   const { nodes: laid, width, height } = layoutGraph(graph);
   const byId = new Map<string, LaidOutNode>(laid.map((n) => [n.node.id, n]));
 
-  // Build a set of (from, to) edges that participate in a cycle so we can
-  // colour them red. We assume an edge (a→b) is in a cycle when both a and
-  // b appear in the same cycle and b directly follows a (or wraps around).
+  // An edge (a→b) is in a cycle when a and b are adjacent (with wrap-around)
+  // in the cycle's members list.
   const cycleEdges = new Set<string>();
   for (const cycle of graph.cycles) {
     const m = cycle.members;
@@ -163,7 +138,6 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
   svg.style.cssText =
     'display: block; font-family: system-ui, sans-serif; background: #fff;';
 
-  // Arrow head marker, reused by every edge.
   const defs = doc.createElementNS(SVG_NS, 'defs');
   for (const [id, fill] of [
     ['sfut-arrow', '#54698d'],
@@ -186,13 +160,12 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
   }
   svg.appendChild(defs);
 
-  // Draw edges first so node rectangles sit on top.
+  // Edges first so node rectangles paint on top of them.
   for (const from of laid) {
     for (const edge of from.node.outgoing) {
       const to = byId.get(edge.id);
       const isCycle = cycleEdges.has(`${from.node.id}->${edge.id}`);
-      // Edges to unresolved/missing flows: render as a dashed stub going
-      // out to the right of the source node, since we have no target box.
+      // Unresolved target → render a dashed stub since we have no box to land on.
       if (!to) {
         const line = doc.createElementNS(SVG_NS, 'line');
         const sx = from.x + from.width;
@@ -224,7 +197,6 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
     }
   }
 
-  // Draw nodes.
   for (const lay of laid) {
     const inCycle = cycleNodes.has(lay.node.id);
     const group = doc.createElementNS(SVG_NS, 'g');
@@ -258,8 +230,6 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
   return svg;
 }
 
-// ─── Modal assembly ──────────────────────────────────────────────────────
-
 export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTMLDivElement {
   const overlay = doc.createElement('div');
   overlay.style.cssText =
@@ -279,7 +249,6 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTML
   headerLabel.textContent = `Subflow Caller Graph — ${graph.nodes.size} flow${graph.nodes.size === 1 ? '' : 's'} · ${graph.cycles.length} cycle${graph.cycles.length === 1 ? '' : 's'}`;
   headerLeft.appendChild(headerLabel);
 
-  // View toggle.
   const toggle = doc.createElement('div');
   toggle.style.cssText = 'display: inline-flex; border: 1px solid #d8dde6; border-radius: 4px; overflow: hidden;';
   const graphBtn = doc.createElement('button');
@@ -305,8 +274,8 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTML
   const body = doc.createElement('div');
   body.style.cssText = 'padding: 16px; overflow: auto; flex: 1;';
 
-  // Cycle banner — always shown above whichever view is selected because
-  // recursion is the most actionable finding the modal surfaces.
+  // Cycles sit above whichever view is active — recursion is the most
+  // actionable finding the modal surfaces.
   if (graph.cycles.length > 0) {
     const cycleBox = doc.createElement('div');
     cycleBox.style.cssText =
@@ -394,7 +363,6 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTML
 
   modal.appendChild(body);
 
-  // View-toggle wiring.
   const setView = (mode: 'graph' | 'list') => {
     if (mode === 'graph') {
       graphPane.style.display = '';

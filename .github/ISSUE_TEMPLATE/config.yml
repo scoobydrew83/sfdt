@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussion / general questions
+    url: https://github.com/scoobydrew83/sfdt/discussions
+    about: Open-ended questions, ideas, or "how do I…" go to Discussions, not Issues.
+  - name: Security vulnerability
+    url: https://github.com/scoobydrew83/sfdt/security/advisories/new
+    about: Please report security issues privately via GitHub Security Advisories, not as a public issue.

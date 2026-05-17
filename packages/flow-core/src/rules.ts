@@ -1,12 +1,7 @@
-// Flow health rules engine — ported from
-// /Users/dkennedy/dev/2.0.2_0 copy/utils/flow-health-rules.js.
-//
-// Produces raw Finding objects. Scoring is downstream (see scorer.ts).
+// Produces raw Finding objects; scoring is downstream in scorer.ts.
 // Pure logic; no DOM, no API, no chrome.*.
-//
-// The v2.0.2 source used Math.random() to mint finding IDs. This port uses a
-// per-evaluation monotonic counter — same uniqueness guarantee within a run,
-// but deterministic, so the result of evaluate() is snapshottable.
+// Finding ids use a per-evaluation monotonic counter (not Math.random) so
+// evaluate() output is deterministic and snapshottable.
 
 import type {
   Category,

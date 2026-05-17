@@ -1,8 +1,3 @@
-// @sfdt/flow-core — public surface
-// Each module is ported from the v2.0.2 extension utilities. See the plan at
-// /Users/dkennedy/.claude/plans/analyze-this-project-its-enchanted-treasure.md
-// for the full mapping table.
-
 export const VERSION = '0.0.1';
 
 export type {

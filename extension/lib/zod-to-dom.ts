@@ -1,10 +1,5 @@
-// Zod schema → DOM control adapter.
-//
-// Each call returns a node ready to insert into the page and a getValue()
-// closure that reads the current control state in the shape the schema
-// expects. Coverage is intentionally narrow — only the Zod types our
-// feature settings actually use today. Unsupported types throw at build
-// time so we hear about new shapes immediately.
+// Coverage is intentionally narrow — only the Zod types feature settings
+// actually use today. Unsupported types throw so new shapes surface loudly.
 
 import { z, type ZodTypeAny } from 'zod';
 

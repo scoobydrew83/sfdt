@@ -1,24 +1,7 @@
-// Side button — vanilla DOM port of
-// /Users/dkennedy/dev/2.0.2_0 copy/ui/side-button.js.
-//
-// The button itself is a floating element on the right edge of the page. The
-// menu opens to its left and lists the feature actions available for the
-// current route. The menu is rebuilt every time it opens so dynamic labels
-// (e.g. "Show / Hide Missing Description Flags") stay accurate.
-//
-//
-// Gating is the caller's responsibility — the menuItemsProvider passed into
-// mountSideButton() filters items by kill-switch, user toggle, and current
-// page context. See extension/entrypoints/content.ts.
-//
-// The menu items come from a typed registry instead of a string-keyed
-// switch, so adding a feature is "register({ manifest, ... })" rather than
-// editing this file.
-//
-// Implementation note: the v2.0.2 module built its DOM with innerHTML
-// templates. This rewrite uses createElement + textContent throughout so
-// every label and icon is escaped automatically and the XSS surface from a
-// rogue feature label is exactly zero.
+// createElement + textContent only — every label and icon is escaped
+// automatically, so a rogue feature label has zero XSS surface here.
+// Gating is the caller's responsibility (see entrypoints/content.ts);
+// the menu rebuilds on every open so dynamic labels stay accurate.
 
 export interface MenuItem {
   featureId: string;
@@ -97,10 +80,8 @@ function styled<K extends keyof HTMLElementTagNameMap>(
   return el;
 }
 
-/**
- * Mount the side button and its menu. Caller controls rendering by passing a
- * `menuItemsProvider` (so this module stays oblivious to the registry shape).
- */
+// The caller supplies menuItemsProvider so this module stays oblivious
+// to the registry shape.
 export function mountSideButton(opts: {
   doc?: Document;
   win?: Window;
@@ -119,20 +100,17 @@ export function mountSideButton(opts: {
     };
   }
 
-  // If a previous instance is still in the DOM, remove it. Re-mounting on the
-  // same page should never accumulate duplicate buttons.
+  // Re-mounts on the same page must not accumulate duplicate buttons.
   doc.getElementById(BUTTON_ID)?.remove();
   doc.getElementById(MENU_ID)?.remove();
 
-  // ── Button ──
-  const button = styled(doc, 'div', BUTTON_STYLE, { id: BUTTON_ID, title: 'SF Flow Utility Toolkit' });
+  const button = styled(doc, 'div', BUTTON_STYLE, { id: BUTTON_ID, title: 'SFDT SF Helper' });
   button.className = 'sfut-side-button';
   const buttonIcon = doc.createElement('span');
   buttonIcon.className = 'sfut-side-button-icon';
   buttonIcon.textContent = '⚡';
   button.appendChild(buttonIcon);
 
-  // ── Menu shell (header / content / footer) ──
   const menu = styled(doc, 'div', MENU_STYLE, { id: MENU_ID });
   menu.className = `sfut-menu ${MENU_HIDDEN_CLASS}`;
 
@@ -143,7 +121,7 @@ export function mountSideButton(opts: {
   const headerTitle = doc.createElement('span');
   headerTitle.className = 'sfut-menu-title';
   headerTitle.style.fontWeight = '600';
-  headerTitle.textContent = 'SF Flow Utility Toolkit';
+  headerTitle.textContent = 'SFDT SF Helper';
   const headerClose = doc.createElement('span');
   headerClose.className = 'sfut-menu-close';
   headerClose.style.cssText = 'cursor: pointer; font-size: 18px; color: #80868d;';

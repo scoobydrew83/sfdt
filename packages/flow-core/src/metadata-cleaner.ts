@@ -1,10 +1,6 @@
-// Flow metadata cleaner — ported from
-// /Users/dkennedy/dev/2.0.2_0 copy/utils/flow-metadata-cleaner.js.
-//
-// Pure transform: strips canvas coordinates, builder internals, nulls, and
-// empty containers from a Tooling API Flow.Metadata blob. Used by the AI
-// Assistant (smaller payload → fewer tokens) and by the CLI's quality
-// command when serialising findings.
+// Strips canvas coordinates, builder internals, nulls, and empty containers
+// from a Tooling API Flow.Metadata blob — smaller AI payload, cleaner CLI
+// serialisation.
 
 export interface FlowMetadataSummary {
   label: string;

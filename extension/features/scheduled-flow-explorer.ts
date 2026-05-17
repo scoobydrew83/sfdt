@@ -1,12 +1,3 @@
-// Scheduled Flow Explorer — port of the v2.0.2 feature plus its discovery
-// layer in /Users/dkennedy/dev/2.0.2_0 copy/utils/scheduled-flow-discovery.js.
-//
-// Walks FlowDefinition + Flow Metadata via Tooling API to find every active
-// Schedule-Triggered Flow, derives the parsed schedule via
-// @sfdt/flow-core's scheduled-calc, and renders a sortable list in a modal.
-// The calendar view from v2.0.2 is deferred to a follow-up; the list view
-// is the most-used path.
-
 import {
   calculateNextRun,
   formatDateLong,

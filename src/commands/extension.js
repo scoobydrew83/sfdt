@@ -1,6 +1,6 @@
 /**
  * `sfdt extension` — manage the Chrome native messaging host that bridges
- * the SF Flow Utility Toolkit extension to this CLI when the local
+ * the SFDT SF Helper extension to this CLI when the local
  * `sfdt ui` HTTP server isn't running.
  *
  * Subcommands:
@@ -16,11 +16,14 @@
  */
 
 import chalk from 'chalk';
+import fs from 'fs-extra';
+import path from 'path';
 import {
   installNativeHost,
   uninstallNativeHost,
   nativeHostStatus,
 } from '../../host/installers/install-host.js';
+import { getConfigDir } from '../lib/config.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 
 const BROWSER_CHOICES = ['chrome', 'edge', 'brave', 'chromium', 'vivaldi', 'all'];
@@ -32,7 +35,7 @@ export function registerExtensionCommand(program) {
 
   extension
     .command('install-host')
-    .description('Install the Chrome native messaging host manifest for the SF Flow Utility Toolkit extension')
+    .description('Install the Chrome native messaging host manifest for the SFDT SF Helper extension')
     .requiredOption(
       '--extension-id <id>',
       'The Chrome extension ID (32 lowercase letters a–p; find it at chrome://extensions with Developer Mode on)',
@@ -131,6 +134,75 @@ export function registerExtensionCommand(program) {
           );
         } else {
           console.error(chalk.red(`extension uninstall-host failed: ${err.message}`));
+        }
+        process.exitCode = resolveExitCode(err);
+      }
+    });
+
+  extension
+    .command('stats')
+    .description(
+      'Show the latest telemetry snapshot the extension pushed to .sfdt/telemetry-snapshot.json',
+    )
+    .option('--json', 'Emit the result as JSON')
+    .option('--limit <n>', 'Cap the number of features shown (default: 10)', '10')
+    .action(async (options) => {
+      const jsonMode = !!options.json;
+      try {
+        const file = path.join(getConfigDir(), 'telemetry-snapshot.json');
+        if (!(await fs.pathExists(file))) {
+          const msg =
+            'No telemetry snapshot has been pushed yet. Open the extension options page (with Telemetry enabled) and refresh once to populate it.';
+          if (jsonMode) {
+            process.stdout.write(JSON.stringify({ ok: false, file, error: msg }, null, 2) + '\n');
+          } else {
+            console.log(chalk.dim(msg));
+            console.log(chalk.dim(`(would read from: ${file})`));
+          }
+          process.exitCode = 1;
+          return;
+        }
+        const snapshot = await fs.readJson(file);
+        if (jsonMode) {
+          process.stdout.write(JSON.stringify({ ok: true, file, ...snapshot }, null, 2) + '\n');
+          return;
+        }
+        const limit = Math.max(1, Number(options.limit) || 10);
+        const ids = Object.keys(snapshot.counters ?? {}).sort(
+          (a, b) =>
+            (snapshot.counters[b]?.activated ?? 0) - (snapshot.counters[a]?.activated ?? 0),
+        );
+        console.log(chalk.bold(`\nExtension telemetry — ${snapshot.monthKey ?? 'unknown month'}`));
+        if (snapshot.writtenAt) {
+          console.log(chalk.dim(`(snapshot written at ${snapshot.writtenAt})`));
+        }
+        if (ids.length === 0) {
+          console.log(chalk.dim('\nNo features have fired yet this month.\n'));
+          return;
+        }
+        console.log('');
+        const idWidth = Math.min(40, Math.max(...ids.map((id) => id.length), 12));
+        console.log(
+          `  ${'feature'.padEnd(idWidth)}  ${'activated'.padStart(10)}  ${'errored'.padStart(8)}  ${'disabled.remote'.padStart(16)}`,
+        );
+        console.log(`  ${'-'.repeat(idWidth)}  ${'-'.repeat(10)}  ${'-'.repeat(8)}  ${'-'.repeat(16)}`);
+        for (const id of ids.slice(0, limit)) {
+          const c = snapshot.counters[id] ?? {};
+          console.log(
+            `  ${id.padEnd(idWidth)}  ${String(c.activated ?? 0).padStart(10)}  ${String(c.errored ?? 0).padStart(8)}  ${String(c.disabled_remote ?? 0).padStart(16)}`,
+          );
+        }
+        if (ids.length > limit) {
+          console.log(chalk.dim(`\n(${ids.length - limit} more — use --limit to see)`));
+        }
+        console.log('');
+      } catch (err) {
+        if (jsonMode) {
+          process.stdout.write(
+            JSON.stringify({ ok: false, error: err.message, exitCode: resolveExitCode(err) }) + '\n',
+          );
+        } else {
+          console.error(chalk.red(`extension stats failed: ${err.message}`));
         }
         process.exitCode = resolveExitCode(err);
       }

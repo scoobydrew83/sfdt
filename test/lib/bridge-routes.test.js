@@ -6,7 +6,10 @@
  * the other gui-server test files in this directory.
  */
 
-import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const FIXED_TOKEN = 'test-bridge-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -18,6 +21,9 @@ const FIXED_TOKEN = 'test-bridge-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const TOKEN_PATH_SUFFIX = '/.sfdt/bridge-token';
 const isTokenPath = (p) => typeof p === 'string' && p.endsWith(TOKEN_PATH_SUFFIX);
 
+const { outputJsonSpy } = vi.hoisted(() => ({
+  outputJsonSpy: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('fs-extra', () => ({
   default: {
     existsSync: vi.fn().mockReturnValue(false),
@@ -25,7 +31,7 @@ vi.mock('fs-extra', () => ({
     readJson: vi.fn().mockResolvedValue({}),
     readdir: vi.fn().mockResolvedValue([]),
     readFile: vi.fn(async (p) => (isTokenPath(p) ? `${FIXED_TOKEN}\n` : '')),
-    outputJson: vi.fn().mockResolvedValue(undefined),
+    outputJson: outputJsonSpy,
     stat: vi.fn().mockResolvedValue({ mtime: new Date(), size: 0 }),
     remove: vi.fn().mockResolvedValue(undefined),
     ensureDir: vi.fn().mockResolvedValue(undefined),
@@ -79,7 +85,7 @@ describe('GET /api/bridge/ping', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       ok: true,
-      data: { pong: true, serverVersion: VERSION, transport: 'localhost', disabledFeatures: [] },
+      data: { pong: true, serverVersion: VERSION, protocolVersion: '1.1', transport: 'localhost', disabledFeatures: [] },
     });
   });
 
@@ -139,7 +145,7 @@ describe('POST /api/bridge/exchange — authentication', () => {
     expect(res.body).toEqual({
       ok: true,
       requestId: 'r1',
-      data: { pong: true, serverVersion: VERSION, transport: 'localhost', disabledFeatures: [] },
+      data: { pong: true, serverVersion: VERSION, protocolVersion: '1.1', transport: 'localhost', disabledFeatures: [] },
     });
   });
 });
@@ -222,6 +228,124 @@ describe('POST /api/bridge/exchange — dispatch', () => {
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(false);
     expect(res.body.code).toBe('REQUEST_INVALID');
+  });
+});
+
+describe('POST /api/bridge/exchange — telemetry.snapshot dispatch', () => {
+  let tmp;
+  let originalCwd;
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    tmp = join(tmpdir(), `sfdt-bridge-tel-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await mkdir(join(tmp, '.sfdt'), { recursive: true });
+    process.chdir(tmp);
+  });
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it('writes a snapshot to .sfdt/telemetry-snapshot.json and echoes the path back', async () => {
+    outputJsonSpy.mockClear();
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({
+        requestId: 'tel-1',
+        kind: 'telemetry.snapshot',
+        monthKey: '2026-05',
+        counters: {
+          'canvas-search': { activated: 3, errored: 0, disabled_remote: 0 },
+          'flow-deploy': { activated: 1, errored: 1, disabled_remote: 0 },
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.requestId).toBe('tel-1');
+    expect(res.body.data.writtenTo).toContain('telemetry-snapshot.json');
+    expect(outputJsonSpy).toHaveBeenCalledOnce();
+    const [file, payload] = outputJsonSpy.mock.calls[0];
+    expect(file).toContain('.sfdt/telemetry-snapshot.json');
+    expect(payload.monthKey).toBe('2026-05');
+    expect(payload.counters['canvas-search'].activated).toBe(3);
+    expect(payload.writtenAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('returns REQUEST_INVALID when monthKey does not match YYYY-MM', async () => {
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({
+        requestId: 'tel-2',
+        kind: 'telemetry.snapshot',
+        monthKey: 'May 2026',
+        counters: {},
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('REQUEST_INVALID');
+  });
+
+  it('returns REQUEST_INVALID when a counter has a non-number field', async () => {
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({
+        requestId: 'tel-3',
+        kind: 'telemetry.snapshot',
+        monthKey: '2026-05',
+        counters: { 'canvas-search': { activated: 'three', errored: 0, disabled_remote: 0 } },
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('REQUEST_INVALID');
+  });
+});
+
+describe('GET /api/bridge/ping — disabledFeatures wiring', () => {
+  // Integration test: write a real .sfdt/feature-flags.json into a temp CWD,
+  // hit the ping endpoint, assert the disabled array flows through. The other
+  // tests in this file rely on the absence of feature-flags.json (the
+  // `disabledFeatures: []` default); chdir keeps that intact afterward.
+  let tmp;
+  let originalCwd;
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    tmp = join(tmpdir(), `sfdt-bridge-ff-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await mkdir(join(tmp, '.sfdt'), { recursive: true });
+    process.chdir(tmp);
+  });
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it('returns the disabled list on GET /api/bridge/ping', async () => {
+    await writeFile(
+      join(tmp, '.sfdt', 'feature-flags.json'),
+      JSON.stringify({ disabled: ['canvas-search', 'flow-deploy'] }),
+    );
+    const res = await request(app).get('/api/bridge/ping');
+    expect(res.status).toBe(200);
+    expect(res.body.data.disabledFeatures).toEqual(['canvas-search', 'flow-deploy']);
+  });
+
+  it('exchange ping kind also returns disabledFeatures', async () => {
+    await writeFile(
+      join(tmp, '.sfdt', 'feature-flags.json'),
+      JSON.stringify({ disabled: ['canvas-search'] }),
+    );
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({ requestId: 'r-ff', kind: 'ping' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.disabledFeatures).toEqual(['canvas-search']);
+  });
+
+  it('returns [] when .sfdt/feature-flags.json contains malformed JSON', async () => {
+    await writeFile(join(tmp, '.sfdt', 'feature-flags.json'), '{ this is not json');
+    const res = await request(app).get('/api/bridge/ping');
+    expect(res.status).toBe(200);
+    expect(res.body.data.disabledFeatures).toEqual([]);
   });
 });
 

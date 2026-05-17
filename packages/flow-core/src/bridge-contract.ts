@@ -1,16 +1,28 @@
-// Bridge contract between the @sfdt/extension Chrome extension and either the
-// running sfdt ui localhost server (HTTP transport) or the @sfdt/host native
-// messaging app (stdio transport). The extension sends an SfdtRequest, the
-// bridge resolves it through sfdt, and the extension receives an SfdtResponse.
+// Contract between the @sfdt/extension Chrome extension and either the sfdt
+// ui localhost server (HTTP transport) or the @sfdt/host native messaging
+// app (stdio transport).
 //
-// This module is consumed by:
-//   - extension/lib/sfdt-bridge.ts        — chooses a transport and validates
-//   - sfdt/src/lib/bridge/routes.js       — implements the HTTP routes
-//   - host/src/index.js                   — implements the stdio router
+// Keep wire shapes flat and JSON-safe (no Dates, no Maps, no functions);
+// all optional fields are explicit so the runtime validators stay simple.
+
+// Wire-protocol version exchanged on /api/bridge/ping. Bumped per semver
+// against the request/response shape — NOT against the CLI release version,
+// which moves independently. The extension and CLI compare this value to
+// detect mismatched builds and warn (minor mismatch) or refuse (major
+// mismatch). See negotiateProtocolVersion below.
 //
-// Keep wire shapes flat and JSON-safe (no Dates, no Maps, no functions).
-// All optional fields are explicit so the runtime validators below stay
-// straightforward.
+// Bump rules:
+//   - MINOR (1.0 → 1.1): additive, backward-compatible — a new
+//     SfdtRequestKind, a new optional response field, a new error code.
+//     Old clients keep working.
+//   - MAJOR (1.x → 2.0): removed kind, changed field type, renamed required
+//     field, removed legacy fallback. Old clients break and must refuse.
+//
+// Changelog:
+//   1.0 — initial release. ping/version/deploy/rollback/quality/ai/drift/
+//         scan/compare. Added disabledFeatures on the ping response.
+//   1.1 — added telemetry.snapshot request kind.
+export const PROTOCOL_VERSION = '1.1';
 
 export type SfdtRequestKind =
   | 'ping'
@@ -21,7 +33,8 @@ export type SfdtRequestKind =
   | 'ai'
   | 'drift'
   | 'scan'
-  | 'compare';
+  | 'compare'
+  | 'telemetry.snapshot';
 
 export interface RequestEnvelope {
   // Client-generated correlation id. Servers MUST echo it back in the response
@@ -98,6 +111,25 @@ export interface CompareRequest extends RequestEnvelope {
   right: string;
 }
 
+/**
+ * Push the extension's local telemetry counters to the bridge so the CLI
+ * (`sfdt extension stats`) can show them. The extension calls this from the
+ * options page on load when telemetry is opted in. The bridge writes the
+ * payload to <project>/.sfdt/telemetry-snapshot.json.
+ */
+export interface TelemetrySnapshotRequest extends RequestEnvelope {
+  kind: 'telemetry.snapshot';
+  monthKey: string; // e.g. "2026-05"
+  counters: Record<
+    string,
+    {
+      activated: number;
+      errored: number;
+      disabled_remote: number;
+    }
+  >;
+}
+
 export type SfdtRequest =
   | PingRequest
   | VersionRequest
@@ -107,7 +139,8 @@ export type SfdtRequest =
   | AiRequest
   | DriftRequest
   | ScanRequest
-  | CompareRequest;
+  | CompareRequest
+  | TelemetrySnapshotRequest;
 
 export interface SfdtSuccessResponse<T = unknown> {
   ok: true;
@@ -148,6 +181,10 @@ export type SfdtResponse<T = unknown> = SfdtSuccessResponse<T> | SfdtErrorRespon
 export interface PingResponseData {
   pong: true;
   serverVersion: string;
+  // Wire-protocol semver — see PROTOCOL_VERSION above. Distinct from
+  // serverVersion (the sfdt CLI release). Optional only for back-compat with
+  // pre-1.0 bridge servers; new servers must set it.
+  protocolVersion?: string;
   transport: 'localhost' | 'native' | 'unknown';
   /**
    * Feature ids the user (or CI) has disabled remotely via
@@ -155,6 +192,62 @@ export interface PingResponseData {
    * servers that don't return the field — consumers treat undefined as [].
    */
   disabledFeatures?: readonly string[];
+}
+
+export type ProtocolNegotiation =
+  | { ok: true; severity: 'ok' }
+  | { ok: true; severity: 'warn'; message: string }
+  | { ok: false; severity: 'error'; message: string };
+
+/**
+ * Compare a server-reported protocolVersion against the client's expected
+ * version. Returns an explicit negotiation result so the client can decide
+ * whether to log a warning, refuse to send requests, or proceed silently.
+ *
+ *   same major + same minor   → ok
+ *   same major + diff minor   → warn (backward-compatible per semver)
+ *   different major           → error (refuse)
+ *   unparseable               → error (refuse, defensive)
+ *
+ * Treats a missing serverVersion as the legacy "0.0" so old bridge servers
+ * which never sent the field surface as a major mismatch that prompts the
+ * user to upgrade.
+ */
+export function negotiateProtocolVersion(
+  serverVersion: string | undefined,
+  clientVersion: string = PROTOCOL_VERSION,
+): ProtocolNegotiation {
+  const effectiveServer = serverVersion ?? '0.0';
+  const parse = (v: string): { major: number; minor: number } | null => {
+    const m = /^(\d+)\.(\d+)(?:\..*)?$/.exec(v);
+    if (!m) return null;
+    return { major: Number(m[1]), minor: Number(m[2]) };
+  };
+  const s = parse(effectiveServer);
+  const c = parse(clientVersion);
+  if (!s || !c) {
+    return {
+      ok: false,
+      severity: 'error',
+      message: `Could not parse protocol version: server="${effectiveServer}", client="${clientVersion}".`,
+    };
+  }
+  if (s.major !== c.major) {
+    const direction = s.major > c.major ? 'extension' : 'sfdt CLI';
+    return {
+      ok: false,
+      severity: 'error',
+      message: `Bridge protocol major version mismatch: server ${effectiveServer}, client ${clientVersion}. Upgrade the ${direction} to continue.`,
+    };
+  }
+  if (s.minor !== c.minor) {
+    return {
+      ok: true,
+      severity: 'warn',
+      message: `Bridge protocol minor mismatch: server ${effectiveServer}, client ${clientVersion}. Compatible, but newer fields/kinds may be unavailable on the older side.`,
+    };
+  }
+  return { ok: true, severity: 'ok' };
 }
 
 export interface VersionResponseData {
@@ -197,6 +290,7 @@ const KNOWN_KINDS: readonly SfdtRequestKind[] = [
   'drift',
   'scan',
   'compare',
+  'telemetry.snapshot',
 ];
 
 export function validateSfdtRequest(input: unknown): {
@@ -225,11 +319,9 @@ export function validateSfdtRequest(input: unknown): {
   switch (kind) {
     case 'ping':
     case 'version':
-      // No body fields.
       break;
     case 'deploy':
-      // flowApiName is preferred; flowId is the legacy field. At least one
-      // must be a non-empty string.
+      // flowApiName preferred; flowId is the legacy fallback.
       if (!isNonEmptyString(input.flowApiName) && !isNonEmptyString(input.flowId)) {
         errors.push({
           field: 'flowApiName',
@@ -250,8 +342,7 @@ export function validateSfdtRequest(input: unknown): {
       }
       break;
     case 'rollback': {
-      // One of flowApiName / flowId must be present. flowApiName wins on the
-      // bridge side; flowId stays as a back-compat field for older callers.
+      // flowApiName wins on the bridge side; flowId is the legacy fallback.
       const hasApiName = isNonEmptyString(input.flowApiName);
       const hasFlowId = isNonEmptyString(input.flowId);
       if (!hasApiName && !hasFlowId) {
@@ -285,6 +376,28 @@ export function validateSfdtRequest(input: unknown): {
     case 'compare':
       if (!isNonEmptyString(input.left)) errors.push({ field: 'left', reason: 'must be a non-empty string' });
       if (!isNonEmptyString(input.right)) errors.push({ field: 'right', reason: 'must be a non-empty string' });
+      break;
+    case 'telemetry.snapshot':
+      if (!isNonEmptyString(input.monthKey)) {
+        errors.push({ field: 'monthKey', reason: "must be a non-empty string like '2026-05'" });
+      } else if (!/^\d{4}-\d{2}$/.test(input.monthKey)) {
+        errors.push({ field: 'monthKey', reason: "must match 'YYYY-MM'" });
+      }
+      if (!isObject(input.counters)) {
+        errors.push({ field: 'counters', reason: 'must be an object keyed by featureId' });
+      } else {
+        for (const [id, counter] of Object.entries(input.counters)) {
+          if (!isObject(counter)) {
+            errors.push({ field: `counters.${id}`, reason: 'must be an object' });
+            continue;
+          }
+          for (const k of ['activated', 'errored', 'disabled_remote']) {
+            if (typeof counter[k] !== 'number' || !Number.isFinite(counter[k])) {
+              errors.push({ field: `counters.${id}.${k}`, reason: 'must be a finite number' });
+            }
+          }
+        }
+      }
       break;
   }
 

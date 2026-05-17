@@ -1,7 +1,5 @@
-// Opt-in local telemetry. Counts feature activations / errors / remote
-// disables in chrome.storage.local. No network egress; the data exists
-// only so a support engineer (or the user) can see which features are
-// actually used inside this browser profile.
+// Opt-in, local-only — no network egress. The data exists so the user
+// (or support) can see which features run in this browser profile.
 
 const STORAGE_KEY = 'sfut.telemetry';
 const MAX_FEATURE_IDS = 500;
@@ -25,7 +23,15 @@ export interface TelemetrySnapshot {
 export interface Telemetry {
   track(event: TelemetryEvent, data: { featureId: string }): Promise<void>;
   snapshot(): Promise<TelemetrySnapshot>;
+  /**
+   * No-op when telemetry is opt-out. Returns true when the bridge accepted
+   * the snapshot. The pusher is injected so this module stays import-free
+   * of sfdt-bridge.
+   */
+  pushSnapshot(pusher: SnapshotPusher): Promise<boolean>;
 }
+
+export type SnapshotPusher = (snapshot: TelemetrySnapshot) => Promise<boolean>;
 
 function monthKeyOf(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -92,6 +98,21 @@ export function createTelemetry(opts: {
         return { monthKey: today, counters: {} };
       }
       return existing;
+    },
+
+    async pushSnapshot(pusher) {
+      if (!opts.isEnabled()) return false;
+      const existing = await read();
+      const today = monthKeyOf(now());
+      const snap: TelemetrySnapshot =
+        existing && existing.monthKey === today
+          ? existing
+          : { monthKey: today, counters: {} };
+      try {
+        return await pusher(snap);
+      } catch {
+        return false;
+      }
     },
   };
 }

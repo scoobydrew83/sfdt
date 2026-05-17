@@ -1,10 +1,6 @@
-// Persistent fallback for the remote kill-switch list. Written on every
-// successful ping; read on boot when the ping fails / times out.
-//
-// Stored under chrome.storage.local['sfut.killswitch.cache'] with a timestamp
-// so future work can age out very-stale caches. Today we honour the cached
-// list indefinitely — better to keep a known-broken feature disabled than
-// have it suddenly reappear when the bridge is offline.
+// Cache is honoured indefinitely — better to keep a known-broken feature
+// disabled than have it reappear when the bridge is offline. ts is stored
+// for a future age-out pass.
 
 const STORAGE_KEY = 'sfut.killswitch.cache';
 

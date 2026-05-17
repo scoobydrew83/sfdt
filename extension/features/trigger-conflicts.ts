@@ -1,18 +1,6 @@
-// Trigger Conflict Detector — extension UI for the detection engine that
-// already lives in @sfdt/flow-core (Phase 5). Fetches every active Flow's
-// metadata via Tooling API, runs detectTriggerConflicts, and renders the
-// groups in a modal with per-flow Activate / Deactivate buttons.
-//
-// Activation / deactivation routes through the sfdt bridge's `rollback`
-// handler (which PATCHes FlowDefinition.Metadata.activeVersionNumber):
-//
-//   - "Activate vN"  → bridge rollback { flowApiName, toVersion: N }
-//   - "Deactivate"   → bridge rollback { flowApiName, toVersion: 0 }
-//
-// Both are non-destructive — the underlying Flow versions stay on disk;
-// only which one is active changes. The UI updates each row in-place
-// once the bridge response lands so the user can see the new state
-// without re-running the scan.
+// Activation routes through the sfdt bridge's `rollback` handler:
+// activate-vN → toVersion: N, deactivate → toVersion: 0. Both flip
+// FlowDefinition.Metadata.activeVersionNumber non-destructively.
 
 import { detectTriggerConflicts, type FlowConflictGroup } from '@sfdt/flow-core';
 import type { SfdtResponse } from '@sfdt/flow-core/bridge-contract';
@@ -61,8 +49,7 @@ async function fetchActiveFlows(api: SalesforceApiClient): Promise<FetchedConfli
   const candidates: FetchedConflictCandidates['candidates'] = [];
   const extras: FetchedConflictCandidates['extras'] = {};
 
-  // Modest concurrency — Tooling API supports it and discovery is mostly
-  // sequential time waiting for round-trips.
+  // Modest concurrency — discovery is mostly waiting on Tooling API round-trips.
   const queue = [...defs.records];
   const concurrency = 5;
   await Promise.all(
@@ -87,8 +74,7 @@ async function fetchActiveFlows(api: SalesforceApiClient): Promise<FetchedConfli
             };
           }
         } catch {
-          // Skip flows we can't read — surfacing every individual error is
-          // noisy; the user will see them as missing rows in the modal.
+          // Per-flow read errors surface as missing rows in the modal.
         }
       }
     }),
@@ -323,8 +309,6 @@ function setBadgeState(badge: HTMLSpanElement, active: boolean): void {
     badge.style.color = '#80868d';
   }
 }
-
-// ─── Bridge dispatch helpers ─────────────────────────────────────────────
 
 async function dispatchRollback(
   flowApiName: string,

@@ -1,12 +1,3 @@
-// Extension options page — vanilla DOM, no framework. Mounts at
-// chrome-extension://<id>/options.html (WXT auto-generates the
-// options_page manifest entry for any entrypoints/options/index.html).
-//
-// Mirrors the settings model in extension/lib/settings.ts byte-for-byte.
-// Every change writes back through the same patchSettings() path, so
-// the content scripts pick up changes via the chrome.storage.onChanged
-// subscription they already have.
-
 import { z } from 'zod';
 import {
   isFeatureEnabled,
@@ -168,11 +159,7 @@ function row(labelStrong: string, labelHelp: string, control: HTMLElement): HTML
   return label;
 }
 
-/**
- * Build the hint banner ("Find your bridge token at ~/.sfdt/bridge-token…")
- * with createElement so the hook stays happy — we have inline <code>
- * sections, just no innerHTML.
- */
+// createElement-only — no innerHTML, the CSP hook rejects it.
 function buildHintBanner(): HTMLDivElement {
   const hint = el('div', { class: 'hint' });
   const code1 = el('code');
@@ -193,7 +180,6 @@ async function render(): Promise<void> {
   const root = document.getElementById('sfut-options-root');
   if (!root) return;
 
-  // Inject styles once.
   const styleTag = document.createElement('style');
   styleTag.textContent = STYLES;
   document.head.appendChild(styleTag);
@@ -220,7 +206,7 @@ async function render(): Promise<void> {
   const wrap = el('div', { class: 'wrap' });
 
   const title = el('h1');
-  title.textContent = '⚡ SF Flow Utility Toolkit';
+  title.textContent = '⚡ SFDT SF Helper';
   wrap.appendChild(title);
 
   const subtitle = el('p', { class: 'subtitle' });
@@ -228,7 +214,6 @@ async function render(): Promise<void> {
     'Settings sync to chrome.storage.local. Changes apply immediately — no reload needed.';
   wrap.appendChild(subtitle);
 
-  // ─── Bridge section ───────────────────────────────────────────────────
   const bridgeSection = el('section');
   bridgeSection.appendChild(el('h2', {}, 'sfdt bridge'));
   const bridgeHelp = el('p', { class: 'section-help' });
@@ -290,7 +275,6 @@ async function render(): Promise<void> {
   bridgeSection.appendChild(actions);
   wrap.appendChild(bridgeSection);
 
-  // ─── Per-feature toggles (registry-driven) ──────────────────────────
   const featuresSection = el('section');
   featuresSection.appendChild(el('h2', {}, 'Features'));
   const featuresHelp = el('p', { class: 'section-help' });
@@ -313,7 +297,6 @@ async function render(): Promise<void> {
   }
   wrap.appendChild(featuresSection);
 
-  // ─── Per-feature config (registry-driven via zod-to-dom) ──────────
   interface FeatureFieldGroup {
     id: string;
     getValues: () => Record<string, unknown>;
@@ -350,7 +333,6 @@ async function render(): Promise<void> {
     wrap.appendChild(section);
   }
 
-  // ─── Telemetry (opt-in) ────────────────────────────────────────────
   const telemetrySection = el('section');
   telemetrySection.appendChild(el('h2', {}, 'Telemetry'));
   const telemetryHelp = el('p', { class: 'section-help' });
@@ -385,7 +367,31 @@ async function render(): Promise<void> {
   }
   wrap.appendChild(telemetrySection);
 
-  // ─── Save bar ──────────────────────────────────────────────────────
+  // Best-effort push of the current telemetry snapshot to the bridge so
+  // `sfdt extension stats` has fresh data. Only fires when telemetry is
+  // opted in, never blocks the options page, never throws into the UI.
+  if (telemetryCb.checked) {
+    void (async () => {
+      try {
+        const client = createBridgeClient({
+          token: tokenInput.value,
+          preferredTransport: transportSelect.value as Settings['bridge']['preferredTransport'],
+          localhostPort: Number(portInput.value) || 7654,
+        });
+        await telemetry.pushSnapshot(async (snap) => {
+          const res = await client.call({
+            kind: 'telemetry.snapshot',
+            monthKey: snap.monthKey,
+            counters: snap.counters,
+          });
+          return !!res.ok;
+        });
+      } catch {
+        // Snapshot push is best-effort. Failures are invisible to the user.
+      }
+    })();
+  }
+
   const saveBar = el('section');
   const saveBtn = el('button', { class: 'primary' });
   saveBtn.textContent = 'Save changes';

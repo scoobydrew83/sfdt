@@ -1,17 +1,3 @@
-// Canvas Search & Highlight — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/features/canvas-search.js.
-//
-// Adds a search overlay to Flow Builder that scans three sources for the
-// user's query:
-//   1. Element cards on the canvas (label + element type).
-//   2. Connector badges (decision outcome labels).
-//   3. Toolbox palette items in the left panel.
-//
-// Matches are highlighted via dynamically-injected CSS rules so the colour
-// can be themed from settings. Navigation (Enter / Shift+Enter / arrow keys)
-// cycles through matches and pans the canvas via a matrix transform on
-// `.flow-container` — the same trick v2.0.2 used.
-
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { loadSettings, onSettingsChange, registerSettingsShape } from '../lib/settings.js';
@@ -93,9 +79,6 @@ function findMatches(doc: Document, query: string): Match[] {
   const lower = query.toLowerCase();
   if (!lower) return matches;
 
-  // 1) Element cards on the canvas. v2.0.2 scoped this to a custom-element
-  // wrapper for defensive specificity, but the feature itself is already
-  // gated on the Flow Builder context — `.element-card` is unique enough.
   const cards = doc.querySelectorAll('.element-card');
   for (const card of cards) {
     const labelEl = card.querySelector('span.text-element-label[title]');
@@ -107,7 +90,6 @@ function findMatches(doc: Document, query: string): Match[] {
     }
   }
 
-  // 2) Connector badges (decision outcome labels).
   const badges = doc.querySelectorAll('.connector-badge span.slds-truncate[title]');
   for (const badge of badges) {
     const text = badge.getAttribute('title') ?? '';
@@ -116,7 +98,6 @@ function findMatches(doc: Document, query: string): Match[] {
     if (container) matches.push({ card: container, label: text, type: 'Connector', isBadge: true });
   }
 
-  // 3) Toolbox palette items.
   const paletteItems = doc.querySelectorAll(
     'builder_platform_interaction-left-panel-resources tr.palette-item',
   );
@@ -146,12 +127,8 @@ interface ScrollCanvasOptions {
   doc?: Document;
 }
 
-/**
- * Pan the Flow Builder canvas so the target element sits in the centre. The
- * canvas uses a CSS matrix transform on `.flow-container`; rather than
- * `scrollIntoView` (which doesn't work with the transform), we adjust the
- * translation portion of the matrix.
- */
+// scrollIntoView doesn't work with the matrix transform on `.flow-container`;
+// adjust the translation portion of the matrix directly instead.
 export function scrollCanvasToElement(el: Element, options: ScrollCanvasOptions = {}): void {
   const doc = options.doc ?? document;
   const canvas = doc.querySelector(
@@ -460,7 +437,6 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
   };
 }
 
-// Test seam
 export function _canvasSearchTestApi() {
   return { HIGHLIGHT_CLASS, FOCUS_CLASS, DYNAMIC_STYLE_ID, findMatches };
 }

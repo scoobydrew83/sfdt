@@ -1,8 +1,3 @@
-// Shared types for @sfdt/flow-core. These describe the data model that the
-// normalizer, rules, and scorer pass between each other. The shapes mirror
-// what v2.0.2 used at runtime so existing fixtures replay identically; the
-// types are added on top, not bolted onto a redesign.
-
 export type Severity = 'high' | 'medium' | 'low' | 'info';
 
 export type Category = 'performance' | 'reliability' | 'maintainability' | 'portability';

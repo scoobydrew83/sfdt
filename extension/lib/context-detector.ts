@@ -1,10 +1,3 @@
-// Context detector — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/utils/context-detector.js.
-//
-// Inspects the current URL (and a couple of fallback DOM probes) to figure
-// out which Salesforce page the user is on. Each context maps to a set of
-// feature ids the side menu should expose.
-
 export const CONTEXTS = {
   SETUP_FLOWS: 'setup_flows',
   FLOW_DETAILS: 'flow_details',
@@ -25,8 +18,8 @@ function isCompareFlows(url: string, doc: Document): boolean {
   if (!isFlowBuilder(url)) return false;
   if (url.includes('compareTargetFlowId')) return true;
 
-  // Fallback DOM probes for the Compare Versions view which can load inside
-  // Flow Builder without a URL change.
+  // Compare Versions can load inside Flow Builder without a URL change,
+  // so fall back to DOM probes.
   if (doc.querySelector('[data-testid="baseFlowCompareVersionSelect"]')) return true;
   if (doc.querySelector('[data-testid="secondaryFlowCompareVersionSelect"]')) return true;
   if (doc.querySelector('.test-flow-compare-panel')) return true;
@@ -56,13 +49,8 @@ function isSetup(url: string): boolean {
   return url.includes('lightning/setup/');
 }
 
-/**
- * Detect the current Salesforce page context.
- *
- * Order matters: more specific checks come first. In particular, Compare
- * Flows shares its base URL with Flow Builder, so the compare check has to
- * win when both could match.
- */
+// Order matters: Compare Flows shares its base URL with Flow Builder, so
+// the compare check has to win when both could match.
 export function detectContext(
   win: { location: { href: string } } = window,
   doc: Document = document,
@@ -85,13 +73,9 @@ export function shouldShowSideButton(
   return detectContext(win, doc) !== CONTEXTS.NONE;
 }
 
-// ── Feature-to-context inversion ────────────────────────────────────────────
-//
 // Source of truth for which features show on which page lives on each
-// feature's manifest. The registry composes the manifests at boot and calls
-// setContextSource() with the inverted map below. getAvailableFeatures()
-// reads from that injected map.
-
+// feature's manifest. content.ts inverts the manifests at boot and calls
+// setContextSource(); getAvailableFeatures() reads back from there.
 interface ContextSource {
   readonly map: Readonly<Record<Context, readonly string[]>>;
 }
@@ -113,10 +97,7 @@ export interface FeatureContextDecl {
   contexts: readonly Context[];
 }
 
-/**
- * Build a context-keyed map of feature ids from per-feature context lists.
- * Pure function — exported so tests can verify without touching module state.
- */
+// Pure function — exported so tests can verify without touching module state.
 export function buildContextToFeatures(
   manifests: readonly FeatureContextDecl[],
 ): Readonly<Record<Context, readonly string[]>> {
@@ -137,19 +118,12 @@ export function buildContextToFeatures(
   return out;
 }
 
-/**
- * Install the context source built from the registry. Called once at boot
- * after all registry.register() calls in content.ts.
- */
 export function setContextSource(map: Readonly<Record<Context, readonly string[]>>): void {
   _source = { map };
 }
 
-/**
- * Return the feature ids available for the current context. Combine with
- * `settings.features.<id>` and the kill-switch list in the caller to decide
- * what to actually show.
- */
+// The caller must still gate the result on `settings.features.<id>` and the
+// kill-switch list before showing anything.
 export function getAvailableFeatures(
   win: { location: { href: string } } = window,
   doc: Document = document,
@@ -157,9 +131,6 @@ export function getAvailableFeatures(
   return _source.map[detectContext(win, doc)] ?? [];
 }
 
-/**
- * Test helper — reset the module-level source so tests don't leak into each other.
- */
 export function _resetContextSourceForTests(): void {
   _source = { map: EMPTY_MAP };
 }

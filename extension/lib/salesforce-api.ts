@@ -1,27 +1,16 @@
-// Salesforce API client — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/utils/salesforce-api.js.
-//
-// Authentication strategy preserved verbatim from v2.0.2:
-//
-//   - HttpOnly `sid` cookies are unreachable from a content script. The
-//     background service worker has the `cookies` permission, so this client
-//     ASKS the background for the sid via `chrome.runtime.sendMessage`.
-//   - Two candidate hostnames are tried in priority order:
-//       1. <org>.my.salesforce.com   (always honoured for REST/Tooling)
-//       2. The current page origin   (often Lightning, which 401s on REST)
-//     The first one whose sid Salesforce accepts wins.
-//   - A 401 on every candidate clears the session cache and retries once.
-//
-// The hostname conversion logic lives in `./hostname.ts` so the same rules
-// are testable in isolation and reused by Setup Tabs.
+// HttpOnly `sid` cookies are unreachable from a content script — the
+// background service worker holds the `cookies` permission and is queried
+// via chrome.runtime.sendMessage. Two candidate hostnames are tried in
+// priority order: <org>.my.salesforce.com (REST/Tooling reliable) then the
+// page origin (Lightning often 401s on REST). A 401 on every candidate
+// clears the session cache and retries once.
 
 import { mySalesforceHostname } from './hostname.js';
 
 const DEFAULT_API_VERSION = 'v62.0';
 const SEND_MESSAGE_TIMEOUT_MS = 5000;
 
-// Minimal interface that lets tests inject a mock without depending on the
-// global chrome.runtime / window.location.
+// Lets tests mock messaging without pulling in chrome.runtime / window.location.
 export interface MessageBus {
   sendMessage<T = unknown>(message: unknown, timeoutMs?: number): Promise<T | null>;
 }
@@ -97,10 +86,6 @@ export class SalesforceApiClient {
     this.session = null;
   }
 
-  /**
-   * Reads the flow id query parameter from the current URL. Returns null if
-   * the page isn't a Flow Builder URL.
-   */
   getFlowIdFromUrl(): string | null {
     const params = new URLSearchParams(this.win.location.search);
     return params.get('flowId');
@@ -114,8 +99,7 @@ export class SalesforceApiClient {
     const mySf = mySalesforceHostname(hostname);
     const mySfOrigin = mySf ? `https://${mySf}` : null;
 
-    // Dedupe while preserving order. `.my.salesforce.com` first because it
-    // reliably accepts REST/Tooling API calls; lightning.force.com often 401s.
+    // `.my.salesforce.com` first — REST/Tooling reliable. lightning.force.com often 401s.
     const baseUrls = Array.from(new Set([mySfOrigin, currentOrigin].filter((v): v is string => !!v)));
 
     const response = await this.bus.sendMessage<{
@@ -136,10 +120,6 @@ export class SalesforceApiClient {
     return this.session;
   }
 
-  /**
-   * GET an endpoint. Returns parsed JSON. Throws if every candidate host
-   * returns a non-401 error, or if a 401 retry also fails.
-   */
   async apiGet<T = unknown>(
     endpoint: string,
     params: Record<string, string> = {},
@@ -189,10 +169,6 @@ export class SalesforceApiClient {
     );
   }
 
-  /**
-   * Generic non-GET request (POST / PATCH / PUT / DELETE). Same dual-host +
-   * 401-retry strategy as apiGet.
-   */
   async apiRequest<T = unknown>(
     method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
     endpoint: string,
@@ -254,33 +230,16 @@ export class SalesforceApiClient {
     return this.apiRequest<T>('PATCH', endpoint, body);
   }
 
-  /**
-   * Run a SOQL query through the Tooling API. Returns the raw envelope so
-   * callers can read `.records`, `.size`, `.done`, etc.
-   */
   toolingQuery<T = unknown>(soql: string): Promise<{ records: T[]; size: number; done: boolean }> {
     return this.apiGet(`/services/data/${this.apiVersion}/tooling/query`, { q: soql });
   }
 
-  /**
-   * Fetch the active version of a Flow's metadata. Handles two URL shapes
-   * Flow Builder uses in `?flowId=`:
-   *
-   *   1. Real Salesforce Id (15 or 18 alphanumeric chars) — try
-   *      `DefinitionId = '<id>'` first (the Flow Builder URL usually gives
-   *      the DefinitionId), fall back to `Id = '<id>'` for callers that
-   *      pass a version id directly.
-   *
-   *   2. Managed-package developer-name path
-   *      `<namespace>__<devname>-<version>` (e.g.
-   *      `runtime_appointmentbooking__AddAttnd-1`). Look up via
-   *      `Definition.DeveloperName` + `Definition.NamespacePrefix` so the
-   *      query is scoped to the right flow.
-   *
-   * v2.0.2 only handled case 1, so managed-package flows surfaced as a
-   * 400 INVALID_QUERY_FILTER_OPERATOR ("invalid ID field"). Smoke-test
-   * regression — fixed here.
-   */
+  // Flow Builder's `?flowId=` uses two shapes:
+  //   1. Salesforce Id (15/18 chars) — try DefinitionId first (URL usually
+  //      gives the DefinitionId), fall back to Id for version-id callers.
+  //   2. Managed-package developer-name path `<namespace>__<devname>-<version>`
+  //      (e.g. `runtime_appointmentbooking__AddAttnd-1`). Look up via
+  //      Definition.DeveloperName + Definition.NamespacePrefix.
   async getFlowMetadata(flowId: string): Promise<Record<string, unknown>> {
     const COMMON_FIELDS =
       "Id, Definition.DeveloperName, FullName, Metadata, MasterLabel, Description, ProcessType, Status";
@@ -299,10 +258,8 @@ export class SalesforceApiClient {
       throw new Error(`No flow found for ID: ${flowId}`);
     }
 
-    // Case 2: parse as `[namespace__]devname[-version]`. The trailing
-    // `-<digit>` is sometimes a real version but on some URLs it's a draft
-    // / runtime suffix, so we don't filter on it — always grab the latest
-    // version of the matching flow.
+    // The trailing `-<digit>` is sometimes a version, sometimes a draft/runtime
+    // suffix — don't filter on it; just grab the latest matching version.
     const stripped = flowId.replace(/-\d+$/, '');
     const namespaceMatch = stripped.match(/^(.+?)__(.+)$/);
     const namespace = namespaceMatch ? namespaceMatch[1]! : '';
@@ -319,8 +276,7 @@ export class SalesforceApiClient {
     );
     if (result.records.length > 0) return result.records[0]!;
 
-    // Last-ditch fallback for unusual managed-package URL shapes: drop the
-    // namespace filter entirely.
+    // Last-ditch fallback for unusual managed-package URLs: drop the namespace filter.
     if (namespace) {
       const fallback = await this.toolingQuery<Record<string, unknown>>(
         `SELECT ${COMMON_FIELDS} FROM Flow WHERE Definition.DeveloperName = '${escDev}' ORDER BY VersionNumber DESC LIMIT 1`,
@@ -336,7 +292,6 @@ export class SalesforceApiClient {
   }
 }
 
-// Convenience singleton accessor for the content-script side.
 let _singleton: SalesforceApiClient | null = null;
 export function getSalesforceApi(): SalesforceApiClient {
   if (!_singleton) _singleton = new SalesforceApiClient();

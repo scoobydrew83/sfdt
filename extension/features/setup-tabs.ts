@@ -1,16 +1,3 @@
-// Setup Tabs feature — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/features/setup-tabs.js.
-//
-// Injects quick-access tabs into Salesforce's Setup tab bar: Flows, Flow
-// Trigger Explorer, Process Automation Settings, and (opt-in) Automation
-// Home. Honours the master `setupTabs.enabled` toggle, the
-// `automationHomeEnabled` opt-in, and the `groupingEnabled` switch that
-// collapses everything under a single "Automation" dropdown.
-//
-// The hostname construction uses the v1.2.2-restored helpers in
-// extension/lib/hostname.ts. The v1.2.3 toast z-index fix is inherited
-// automatically by routing through extension/ui/toast.ts.
-
 import {
   lightningHostname as toLightningHost,
   setupHostname as toSetupHost,
@@ -114,8 +101,8 @@ function removeInjectedTabs(doc: Document): void {
 }
 
 function navigateInPage(url: string, win: Window): void {
-  // Best-effort: use Lightning's force:navigateToURL when available so
-  // navigation stays inside the SPA. Fall back to a hard location assignment.
+  // Prefer Lightning's force:navigateToURL so we stay inside the SPA;
+  // fall back to a hard location assignment.
   const winWithAura = win as unknown as {
     $A?: { get?: (event: string) => { setParams: (p: { url: string }) => void; fire: () => void } | null };
   };
@@ -347,7 +334,7 @@ export function createSetupTabsFeature(options: SetupTabsOptions = {}): Feature 
       return;
     }
     if (injecting) return;
-    if (doc.querySelector(`.${TAB_CLASS}`)) return; // Already mounted.
+    if (doc.querySelector(`.${TAB_CLASS}`)) return;
 
     injecting = true;
     try {
@@ -356,7 +343,7 @@ export function createSetupTabsFeature(options: SetupTabsOptions = {}): Feature 
         console.warn('[SFUT setup-tabs] tab bar not found within timeout');
         return;
       }
-      if (doc.querySelector(`.${TAB_CLASS}`)) return; // Lost a race.
+      if (doc.querySelector(`.${TAB_CLASS}`)) return; // Re-check — another async pass may have mounted while we waited.
 
       const setupTabsConfig = settings.featureSettings?.['setup-tabs'] ?? settings.setupTabs;
       const tabsToInject: TabDefinition[] = [...BASE_TABS];
@@ -416,9 +403,6 @@ export function createSetupTabsFeature(options: SetupTabsOptions = {}): Feature 
   };
 }
 
-/**
- * Test seam — exposes the unsubscribe so component tests can clean up.
- */
 export function _setupTabsTestApi() {
   return { TAB_CLASS, GROUP_LABEL };
 }

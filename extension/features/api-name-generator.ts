@@ -1,16 +1,3 @@
-// API Name Generator — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/features/api-name-generator.js.
-//
-// The v2.0.2 module is 1184 LOC of Flow Builder modal manipulation (it hooks
-// into Salesforce's element- and resource-creation modals to suggest API
-// names based on the label). This port preserves the core logic — the
-// ApiNameLibrary's `expand(label, type, pattern)` method — and exposes it
-// through a lightweight standalone modal that generates names on demand. The
-// in-Flow-Builder modal hooks are deferred (they require precise selectors
-// against Salesforce's LWC modals which change between releases); the
-// standalone modal is functionally equivalent for a one-off label → API name
-// lookup.
-
 import {
   ApiNameLibrary,
   DEFAULT_PREFIXES,

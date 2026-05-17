@@ -1,19 +1,6 @@
-// Subflow caller graph — Phase 6 feature.
-//
-// Given a set of Flow metadata records, build a directed graph where:
-//   - Each node is a Flow (identified by its DeveloperName, falling back to
-//     a caller-supplied id).
-//   - Each edge A → B means Flow A's `subflows` block calls Flow B by
-//     `flowName`.
-//
-// The graph supports:
-//   - Cycle detection (Tarjan SCC) so users can spot A→B→A and longer.
-//     v2.0.2 had no equivalent — recursive subflows were a debugging nightmare.
-//   - Maximum call depth per node (longest acyclic path starting from that
-//     node). Useful for flagging "depth bombs" where a small Flow at the top
-//     spawns a deep chain.
-//   - Adjacency lookups for the extension UI to render outgoing / incoming
-//     edges per node.
+// Directed graph: node per Flow (id = DeveloperName), edge A→B when A's
+// `subflows` block references B by `flowName`. Cycle detection uses
+// Tarjan SCC; maxDepth is the longest acyclic path starting from a node.
 
 import type { RawFlowMetadata } from './normalize.js';
 

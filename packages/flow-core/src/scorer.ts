@@ -1,13 +1,7 @@
-// Flow health scorer — ported from
-// /Users/dkennedy/dev/2.0.2_0 copy/utils/flow-health-scorer.js (v1.2.2 formula
-// restored in v2.0.0; see CHANGELOG-v2.0.0.md:29-47). The scoring math is
-// preserved verbatim; only the surface shape changes (TypeScript exports
-// instead of an IIFE module).
-//
 // Formula per family:
 //   deduction = min( appearancePenalty + weight * log2(instanceCount + 1), cap )
 //
-// Severity model:
+// Severity model (tuned constants — do not adjust without re-running fixtures):
 //   High    appearance 1.5  weight 5.5  cap 22
 //   Medium  appearance 0.5  weight 3.0  cap 13
 //   Low     appearance 0.0  weight 1.0  cap 6

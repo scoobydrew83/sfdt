@@ -1,17 +1,6 @@
-// AI Prompt Library — ported from
-// /Users/dkennedy/dev/2.0.2_0 copy/config/ai-prompt-library.js.
-//
-// Unified API over the shipped default prompts and any user-created custom
-// prompts. The v2.0.2 module hard-coded chrome.storage.* access and the
-// legacy-sync migration; this port inverts both — storage is injected via
-// KeyValueStorage, and the migration shim lives in the extension wrapper
-// where it has access to chrome.storage.sync.
-//
-// Surface preserved at parity: load, reload, getCategories, getAll, getEnabled,
-// getStandardPrompts, getCustomPrompts, getById, getDefaultPromptId,
-// getStoredDefaultPromptId, setDefaultPromptId, assemble, setStandardEnabled,
-// cloneToCustom, addCustom, updateCustom, deleteCustom, exportCustomsAsJson,
-// importCustoms, validateCustomPrompt.
+// Storage is injected via KeyValueStorage so this module stays free of
+// chrome.storage.*; the legacy-sync migration lives in the extension
+// wrapper where it has access to chrome.storage.sync.
 
 import {
   DEFAULT_PROMPT_TEMPLATES,

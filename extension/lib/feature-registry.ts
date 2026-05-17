@@ -1,36 +1,18 @@
-// Feature registry.
-//
-// Ports the IIFE pattern at /Users/dkennedy/dev/2.0.2_0 copy/main.js:14-187
-// into a typed contract. Each v2.0.2 feature implements three optional
-// lifecycle hooks:
-//
-//   init()       — called once per page context. Sets up DOM observers,
-//                  injects buttons, registers shortcuts. Idempotent.
-//   onActivate() — called when the user clicks the feature in the side menu.
-//                  Opens modals, runs ad-hoc actions.
-//   refresh()    — called when the user picks "Refresh ..." in the side menu,
-//                  or when the SPA route changes and the feature wants to
-//                  re-run its setup.
-//
-// The registry tracks which features have been initialised for the current
-// URL so a Salesforce SPA navigation does not double-init.
+// initialisedKeys is route-scoped so SPA navigations get a fresh init() pass
+// without double-initialising on the same URL.
 
 import type { Context } from './context-detector.js';
 
 export type FeatureId = string;
 
 export interface FeatureManifest {
-  /** Stable kebab-case id, used as the registry key and the side-menu data-feature attribute. */
   id: FeatureId;
-  /** Human-readable label, shown in the options page and as the side-menu item text. */
   name: string;
-  /** Contexts the feature appears in. Empty means the feature is never shown by the side menu. */
   contexts: readonly Context[];
-  /** Additional manifest permissions this feature needs beyond the shared baseline (storage, cookies). */
   permissions?: readonly chrome.runtime.ManifestPermissions[];
-  /** Whether the feature is on by default when the user has no explicit `settings.features[id]` entry. Defaults to true. */
+  /** Defaults to true when the user has no explicit `settings.features[id]` entry. */
   enabledByDefault?: boolean;
-  /** Per-feature Zod settings schema. Composed into the top-level Settings via registerSettingsShape. */
+  /** Composed into the top-level Settings via registerSettingsShape. */
   settingsSchema?: import('zod').ZodTypeAny;
 }
 
@@ -40,10 +22,10 @@ export interface Feature {
   onActivate?: () => void | Promise<void>;
   refresh?: () => void | Promise<void>;
   /**
-   * Called when a feature that previously ran init() becomes disabled
-   * mid-session (either by the remote kill-switch or a user toggle change).
-   * Implementations remove any DOM they injected and unbind any global
-   * listeners. Errors are logged and swallowed — never throw out of teardown.
+   * Runs when a previously-init'd feature becomes disabled mid-session
+   * (remote kill-switch or user toggle). Must unwind injected DOM and
+   * unbind any global listeners. Errors are logged and swallowed — never
+   * throw out of teardown.
    */
   teardown?: () => void | Promise<void>;
 }
@@ -59,19 +41,11 @@ export interface FeatureRegistry {
   register(feature: Feature): void;
   has(id: FeatureId): boolean;
   list(): FeatureId[];
-  /** Returns the full manifest for a registered feature, or undefined. */
   getManifest(id: FeatureId): FeatureManifest | undefined;
-  /** Returns every registered feature's manifest in registration order. */
   listManifests(): readonly FeatureManifest[];
-  /**
-   * Initialise every feature in availableIds that passes the optional gate.
-   * If gate is omitted, all available ids are initialised (back-compat for
-   * tests written before the gate was introduced).
-   */
+  /** When gate is omitted, every available id is initialised unconditionally. */
   initForCurrentRoute(availableIds: readonly FeatureId[], gate?: InitGate): Promise<void>;
   dispatch(id: FeatureId, action: FeatureAction): Promise<void>;
-  // Resets the per-route initialisation state. Called by the SPA router
-  // when the URL changes so features get a fresh init() pass.
   resetForRouteChange(routeKey: string): void;
 }
 
@@ -86,7 +60,7 @@ export type TrackFn = (
 ) => void | Promise<void>;
 
 function readManifestPermissions(): readonly chrome.runtime.ManifestPermissions[] {
-  // Guard for tests + non-extension surfaces where chrome.runtime is undefined.
+  // chrome.runtime is undefined in tests and other non-extension surfaces.
   if (typeof chrome === 'undefined' || !chrome.runtime?.getManifest) return [];
   try {
     const m = chrome.runtime.getManifest();
@@ -98,12 +72,7 @@ function readManifestPermissions(): readonly chrome.runtime.ManifestPermissions[
 
 export function createFeatureRegistry(options: {
   logger?: RegistryLogger;
-  /**
-   * The manifest permissions available to the extension. Used to validate
-   * feature.manifest.permissions at registration. Defaults to reading
-   * chrome.runtime.getManifest().permissions when chrome is available, or
-   * an empty array (treats everything as missing) when not.
-   */
+  /** Defaults to chrome.runtime.getManifest().permissions; empty in non-extension surfaces (treats everything as missing). */
   manifestPermissions?: readonly chrome.runtime.ManifestPermissions[];
   track?: TrackFn;
 } = {}): FeatureRegistry {
@@ -120,15 +89,12 @@ export function createFeatureRegistry(options: {
   );
 
   const features = new Map<FeatureId, Feature>();
-  // Tracks features that have been init()'d for the current route. The key
-  // combines the route signature with the feature id so a route change can
-  // reset just those entries.
+  // Route-scoped: key is `${routeKey}::${id}` so a route change resets only
+  // those entries without forgetting that the feature is currently active.
   let initialisedKeys = new Set<string>();
   let currentRouteKey = '__initial__';
-  // Set of feature ids whose init() has run and whose teardown() has not.
-  // Lives across route changes — teardown only runs when the gate disables
-  // a feature that is currently active, not on every route change.
-  // Separate from initialisedKeys (which is route-scoped).
+  // Lives across route changes — teardown only fires when the gate disables
+  // a currently-active feature, not on every navigation.
   const activeFeatureIds = new Set<FeatureId>();
 
   return {
@@ -171,8 +137,7 @@ export function createFeatureRegistry(options: {
         const allowed = !gate || (!gate.disabledRemote.has(id) && gate.isUserEnabled(id));
         const key = `${currentRouteKey}::${id}`;
         if (!allowed) {
-          // If we previously initialised this feature and it's now gated off,
-          // run its teardown to unwind any DOM mutations.
+          // Previously-active feature is now gated off → unwind its DOM.
           if (activeFeatureIds.has(id)) {
             if (typeof feature.teardown === 'function') {
               try {
@@ -183,7 +148,7 @@ export function createFeatureRegistry(options: {
               }
             }
             activeFeatureIds.delete(id);
-            // Only attribute disabled.remote when the kill-switch was the cause.
+            // Only attribute disabled.remote when the kill-switch caused the disable.
             if (gate && gate.disabledRemote.has(id)) {
               void track('feature.disabled.remote', { featureId: id });
             }

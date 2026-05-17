@@ -1,15 +1,3 @@
-// Content script entrypoint.
-//
-// Boot orchestration (Phase B):
-//   - Detect that we're on a Salesforce page (the manifest already filtered
-//     hosts, but the SPA router re-checks on every navigation so we stop
-//     rendering when the user leaves Lightning).
-//   - Load settings and the kill-switch list (with a 1.5 s timeout fallback
-//     to the last-known cache).
-//   - Mount the side button whose menuItemsProvider filters by kill-switch,
-//     user toggle, and current page context.
-//   - Re-run the gate on settings changes and SPA route changes.
-
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import {
   buildContextToFeatures,
@@ -51,10 +39,8 @@ export default defineContentScript({
   runAt: 'document_idle',
   allFrames: true,
   async main() {
-    // Only mount the UI in the top frame. The all_frames match still runs
-    // this entrypoint in iframes (so they can participate in future
-    // feature wiring), but the side button itself stays top-only — same
-    // behaviour as v2.0.2's side-button.js:32.
+    // The all_frames match runs this entrypoint in iframes too, but the
+    // side button must mount only in the top frame to avoid duplicates.
     if (window.top !== window.self) return;
 
     if (!SALESFORCE_HOST_PATTERN.test(window.location.href)) return;
@@ -67,7 +53,6 @@ export default defineContentScript({
     const registry = createFeatureRegistry({ track: telemetry.track });
     const router = createSpaRouter();
 
-    // ── Feature registration (unchanged from Phase A) ──
     registry.register(createSetupTabsFeature());
     registry.register(createCanvasSearchFeature());
     registry.register(createFlowListSearchFeature());
@@ -85,10 +70,9 @@ export default defineContentScript({
 
     setContextSource(buildContextToFeatures(registry.listManifests()));
 
-    // ── Kill-switch state ──
-    // Boot path awaits one ping with a 1.5s timeout; on miss, fall back to
-    // the last-known cache. Subsequent route changes refresh in the
-    // background; the gate uses whichever list is current.
+    // Boot awaits one ping with a 1.5s timeout; on miss, fall back to the
+    // last-known cache so the side button still renders something useful.
+    // Subsequent route changes refresh in the background.
     let disabledRemote: ReadonlySet<string> = new Set(await readKillSwitchCache());
 
     let bridge = createBridgeClient({
@@ -119,11 +103,8 @@ export default defineContentScript({
       };
     }
 
-    // Wait once at boot so the very first init pass already respects the
-    // remote list. If the bridge times out we proceed with the cached list.
     await refreshKillSwitch();
 
-    // ── Menu items + side button (ICONS map preserved from Phase A) ──
     const ICONS: Record<string, { icon: string; label: string }> = {
       'setup-tabs': { icon: '📑', label: 'Setup Tabs' },
       'flow-list-search': { icon: '🔍', label: 'Flow List Search' },
@@ -167,7 +148,6 @@ export default defineContentScript({
       },
     });
 
-    // ── Settings change → re-run the gate ──
     onSettingsChange((next) => {
       const bridgeChanged =
         next.bridge.token !== currentSettings.bridge.token ||
@@ -180,15 +160,12 @@ export default defineContentScript({
           preferredTransport: next.bridge.preferredTransport,
           localhostPort: next.bridge.localhostPort,
         });
-        // New client → refresh kill-switch immediately so subsequent route
-        // changes use the new server's view of disabled features.
         void refreshKillSwitch();
       }
       void registry.initForCurrentRoute(getAvailableFeatures(), makeGate());
       sideButton.refresh();
     });
 
-    // ── SPA route change → refresh kill-switch (fire-and-forget), then init ──
     router.onChange(({ url }) => {
       registry.resetForRouteChange(url);
       void refreshKillSwitch();

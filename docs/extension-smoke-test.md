@@ -28,7 +28,7 @@ Produced by `npm run build:ext` from the sfdt repo root.
 2. **Load unpacked** into Chrome:
    - `chrome://extensions/` → Developer Mode ON → "Load unpacked" →
      pick `extension/.output/chrome-mv3/`.
-   - Extension should appear as "SF Flow Utility Toolkit" v0.0.1.
+   - Extension should appear as "SFDT SF Helper" v0.0.1.
    - Note the assigned extension ID (will need it for Phase 7 native
      messaging manifests).
 3. **Confirm the manifest looks right** in `chrome://extensions/`:

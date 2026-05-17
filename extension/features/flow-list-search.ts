@@ -1,12 +1,3 @@
-// Flow List Search — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/features/flow-list-search.js.
-//
-// Adds a search and filter bar above the Setup Flows list (Status / Type /
-// free-text). Indexes the table rows in place and toggles row visibility
-// via inline style so the existing Salesforce list-view virtualizer keeps
-// working. Auto-scrolls the list on first interaction so Salesforce's lazy
-// renderer surfaces every row before the user types.
-
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 
@@ -36,7 +27,7 @@ const TRIGGER_TYPE_LABELS: Record<string, string> = {
   Activation: 'Activation-Triggered Flow',
   AutomationEvent: 'Automation Event-Triggered Flow',
   Capability: 'Capability-Triggered Flow',
-  Capabilitiy: 'Capability-Triggered Flow', // typo-safe mapping (matches v2.0.2)
+  Capabilitiy: 'Capability-Triggered Flow', // typo-safe mapping — observed in Salesforce metadata
   DataCloudDataChange: 'Data Cloud Data Change Flow',
   DataGraphDataChange: 'Data Graph Data Change Flow',
   EventDrivenJourney: 'Event-Driven Journey Flow',
@@ -454,7 +445,6 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
   };
 }
 
-// Test seam
 export function _flowListSearchTestApi() {
   return { humanizeEnum, typeDisplay, normalizeStatus, indexRows, applyFilters };
 }

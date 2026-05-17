@@ -19,10 +19,9 @@ describe('extension/lib/hostname', () => {
       expect(setupHostname('myco.my.salesforce.com')).toBe('myco.my.salesforce-setup.com');
     });
 
-    it('uses only the first hostname segment (CHANGELOG-v2.0.0.md:60-95 v1.2.2 fix)', () => {
-      // The pre-fix construction concatenated the existing middle segment in.
-      // Newer dev-edition orgs do NOT have a `.my.` middle segment in their
-      // Lightning hostname, so that produced a non-existent DNS name.
+    it('rebuilds from the first hostname segment only', () => {
+      // Newer dev-edition orgs lack a `.my.` middle segment in their
+      // Lightning hostname; concatenating it in produces a non-existent DNS name.
       expect(setupHostname('learningtoflow-dev-ed.lightning.force.com')).toBe(
         'learningtoflow-dev-ed.my.salesforce-setup.com',
       );
@@ -56,8 +55,7 @@ describe('extension/lib/hostname', () => {
       );
     });
 
-    it('handles the dev-ed regression case from CHANGELOG-v2.0.0.md:88-90', () => {
-      // External reporter validated this conversion in production v1.2.3.
+    it('builds the lightning host for a dev-edition setup source', () => {
       expect(lightningHostname('learningtoflow-dev-ed.my.salesforce-setup.com')).toBe(
         'learningtoflow-dev-ed.lightning.force.com',
       );

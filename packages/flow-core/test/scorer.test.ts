@@ -155,10 +155,9 @@ describe('flow-core/scorer', () => {
       expect(result.rating).toBe('Very Poor');
     });
 
-    it('matches the CHANGELOG-v2.0.0.md "Account Verification Flow" band', () => {
-      // CHANGELOG-v2.0.0.md:50-51 documents that an Account Verification
-      // Flow lands in the 40–50 band under the v1.2.2 formula. We hit that
-      // shape with two big high-severity families plus medium descriptive debt.
+    it('lands an Account-Verification-shaped flow in the 40–55 band', () => {
+      // Two big high-severity families plus medium descriptive debt — the
+      // canonical mid-range failure mode the scoring formula was tuned against.
       const findings: Finding[] = [
         ...Array.from({ length: 30 }, () => f('hard_coded_ids', 'high')), // caps at 22
         ...Array.from({ length: 25 }, () => f('dml_inside_loops', 'high')), // caps at 22

@@ -1,14 +1,3 @@
-// AI Assistant — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/features/ai-assistant.js.
-//
-// Two improvements over v2.0.2:
-//   1. Uses @sfdt/flow-core's PromptLibrary instead of the old AIPromptLibrary
-//      IIFE — same storage shape, but no chrome.* hardcoded inside.
-//   2. Adds a "Run via sfdt" button that dispatches the assembled prompt
-//      through the sfdt-bridge so the user's configured CLI AI provider
-//      can execute it without leaving the browser. The clipboard path is
-//      preserved for users who don't have the bridge configured.
-
 import { cleanFlowMetadata, estimateTokens, PromptLibrary, summariseFlowMetadata, type ResolvedPrompt } from '@sfdt/flow-core';
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
@@ -21,8 +10,8 @@ const STORAGE_KEY_DISABLED = 'aiPromptLibrary.disabledStandardIds';
 const STORAGE_KEY_CUSTOMS = 'aiPromptLibrary.customPrompts';
 const STORAGE_KEY_DEFAULT = 'aiPromptLibrary.defaultPromptId';
 
-// chrome.storage-backed adapter so the PromptLibrary class uses the same
-// keys v2.0.2 used (existing users' custom prompts survive the upgrade).
+// Storage keys above are pinned to legacy names so existing users' custom
+// prompts survive the upgrade — do not rename without a migration.
 function chromeStorageAdapter() {
   return {
     async get<T = unknown>(key: string): Promise<T | null> {
@@ -135,7 +124,6 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       const rawTokens = estimateTokens(rawJson);
       const cleanTokens = estimateTokens(cleanJson);
 
-      // Replace loading with full content.
       while (body.firstChild) body.removeChild(body.firstChild);
       const heading = doc.createElement('div');
       heading.style.cssText = 'font-weight: 600; margin-bottom: 4px;';
@@ -146,7 +134,6 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       subline.textContent = `${summary?.totalElements ?? 0} elements, ${summary?.totalResources ?? 0} resources · raw ~${rawTokens} tokens · cleaned ~${cleanTokens} tokens`;
       body.appendChild(subline);
 
-      // Prompt picker
       const promptRow = doc.createElement('div');
       promptRow.style.cssText = 'display: flex; gap: 8px; align-items: center; margin: 8px 0;';
       const promptLabel = doc.createElement('label');
@@ -177,7 +164,6 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       select.addEventListener('change', updateDescription);
       body.appendChild(description);
 
-      // Buttons
       const buttons = doc.createElement('div');
       buttons.style.cssText = 'display: flex; gap: 8px; flex-wrap: wrap;';
       const makeBtn = (label: string, handler: () => Promise<void> | void): HTMLButtonElement => {
@@ -254,8 +240,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
   };
 }
 
-// Test seam — exposes the storage key names so tests can assert migration
-// compatibility with v2.0.2.
+// Test seam — exposes the pinned storage keys for migration assertions.
 export function _aiAssistantTestApi() {
   return { STORAGE_KEY_DISABLED, STORAGE_KEY_CUSTOMS, STORAGE_KEY_DEFAULT };
 }

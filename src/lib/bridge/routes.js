@@ -61,11 +61,13 @@ export function mountBridgeRoutes(app, { port, version, rateLimiter }) {
       // the try here is defensive against unforeseen throws so the ping
       // response always lands.
     }
+    const { PROTOCOL_VERSION } = await loadContract();
     res.json({
       ok: true,
       data: {
         pong: true,
         serverVersion: version,
+        protocolVersion: PROTOCOL_VERSION,
         transport: 'localhost',
         disabledFeatures,
       },
@@ -116,9 +118,11 @@ async function dispatch(request, { version, makeSuccessResponse, makeErrorRespon
       } catch {
         // Defensive — readDisabledFeatures already swallows known errors.
       }
+      const { PROTOCOL_VERSION } = await loadContract();
       return makeSuccessResponse(request.requestId, {
         pong: true,
         serverVersion: version,
+        protocolVersion: PROTOCOL_VERSION,
         transport: 'localhost',
         disabledFeatures,
       });
@@ -183,6 +187,32 @@ async function dispatch(request, { version, makeSuccessResponse, makeErrorRespon
       return result.ok
         ? makeSuccessResponse(request.requestId, result.data)
         : makeErrorResponse(request.requestId, result.error, result.code ?? 'INTERNAL_ERROR');
+    }
+    case 'telemetry.snapshot': {
+      // Persist the extension-reported telemetry counters so
+      // `sfdt extension stats` can read them. Writes are best-effort: a
+      // failure to write the file should not break the extension.
+      const fsExtra = (await import('fs-extra')).default;
+      const path = await import('path');
+      const file = path.join(process.cwd(), '.sfdt', 'telemetry-snapshot.json');
+      try {
+        await fsExtra.outputJson(
+          file,
+          {
+            monthKey: request.monthKey,
+            counters: request.counters,
+            writtenAt: new Date().toISOString(),
+          },
+          { spaces: 2 },
+        );
+        return makeSuccessResponse(request.requestId, { writtenTo: file });
+      } catch (err) {
+        return makeErrorResponse(
+          request.requestId,
+          `Could not write telemetry snapshot: ${err.message}`,
+          'INTERNAL_ERROR',
+        );
+      }
     }
     case 'ai':
     case 'drift':

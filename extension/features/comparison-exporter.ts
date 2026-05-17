@@ -1,17 +1,3 @@
-// Comparison Exporter — minimal port of
-// /Users/dkennedy/dev/2.0.2_0 copy/features/comparison-exporter.js.
-//
-// The v2.0.2 module scrapes the Compare Flows view and writes a pre-formatted
-// XLSX (using the bundled `lib/xlsx.bundle.js`). The XLSX bundle is heavy
-// (~600 kB) and lives outside the WXT module graph; deferring full XLSX
-// generation to Phase 7 when the asset is wired through `public/`.
-//
-// This port preserves the user-facing surface: a feature that activates on
-// the Compare Flows view, scrapes the diff rows, and exports them as a
-// plain-text TSV the user can paste into Excel. When the xlsx asset is
-// wired, the only change required is to feed `rows` into a workbook writer
-// instead of joining them.
-
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { showToast } from '../ui/toast.js';
@@ -26,7 +12,7 @@ interface DiffRow {
 
 function scrapeDiffRows(doc: Document): DiffRow[] {
   const rows: DiffRow[] = [];
-  // The selectors mirror v2.0.2's scrape — Salesforce's Compare Versions table.
+  // Selectors target the Salesforce Compare Versions table.
   const trs = doc.querySelectorAll('table.slds-table tbody tr');
   for (const tr of trs) {
     const cells = Array.from(tr.querySelectorAll('td'));

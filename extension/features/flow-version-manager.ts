@@ -1,12 +1,3 @@
-// Flow Version Manager — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/features/flow-version-manager.js.
-//
-// Adds row checkboxes and a "Delete Selected Versions" toolbar button to the
-// classic Flow Details / Versions page. v2.0.2 also implemented a
-// sessionStorage-based queue so navigations between deletes resumed
-// automatically; this port keeps the same surface but simplifies to a
-// straight loop with the user-facing modal confirming bulk action.
-
 import type { Feature } from '../lib/feature-registry.js';
 import { CONTEXTS } from '../lib/context-detector.js';
 

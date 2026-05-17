@@ -1,11 +1,3 @@
-// Missing Description Flags — port of
-// /Users/dkennedy/dev/2.0.2_0 copy/features/missing-description-flags.js.
-//
-// Fetches the active Flow's metadata, walks every element + resource looking
-// for missing descriptions, and decorates the Flow Builder canvas (and the
-// Toolbox palette) with a ⚠ marker on each affected card. Re-runs after the
-// user saves the flow so the markers stay accurate without a reload.
-
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
@@ -69,7 +61,6 @@ export function findElementsWithoutDescriptions(
           isResource: false,
         });
       }
-      // Orchestrator stage steps — nested under stage elements.
       if ((key === 'orchestratedStages' || key === 'stages') && Array.isArray(item.stageSteps)) {
         for (const step of item.stageSteps as Array<Record<string, unknown>>) {
           const stepDesc = typeof step.description === 'string' ? step.description.trim() : '';
@@ -157,7 +148,6 @@ function flagCanvas(doc: Document, missing: readonly MissingItem[]): number {
     count += 1;
   }
 
-  // Flow-level flag near the flow name header.
   const flowMissing = missing.find((m) => m.isFlow);
   if (flowMissing) {
     const flowNameEl = doc.querySelector('.test-flow-name');

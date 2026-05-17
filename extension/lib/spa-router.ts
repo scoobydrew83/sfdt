@@ -1,16 +1,6 @@
-// SPA router.
-//
-// Salesforce Lightning is a single-page application. The v2.0.2 extension
-// detected URL changes at /Users/dkennedy/dev/2.0.2_0 copy/main.js:169-180
-// by polling location.href every 500ms. That's wasteful, racy, and burns
-// battery on every Lightning page even when the toolkit has nothing to do.
-//
-// This implementation uses the same primitives Chrome uses internally for
-// the omnibox: chrome.webNavigation.onHistoryStateUpdated fires on every
-// history.pushState() / replaceState() inside a Salesforce page, scoped to
-// the URL patterns the manifest covers. Falls back to a MutationObserver
-// when running in a context that doesn't have webNavigation (popup, options,
-// jsdom tests).
+// Detects Salesforce SPA navigations via MutationObserver — Lightning's
+// pushState/replaceState don't fire a window event, but every route swap
+// mutates document.body. Cheaper than polling location.href.
 
 export type RouteChangeListener = (info: { url: string; previousUrl: string }) => void | Promise<void>;
 
@@ -24,23 +14,6 @@ export interface SpaRouter {
 const SALESFORCE_HOST_PATTERN =
   /^https:\/\/[^/]+\.(salesforce\.com|salesforce-setup\.com|my\.salesforce\.com|lightning\.force\.com)\//i;
 
-/**
- * Detects Salesforce SPA navigations.
- *
- * Strategy:
- *   1. In the background service worker, listen for
- *      chrome.webNavigation.onHistoryStateUpdated, filtered to Salesforce
- *      origins. Broadcast a custom event to interested tabs.
- *   2. In the content script (this module), subscribe to:
- *        - the custom event from the background (preferred), or
- *        - a MutationObserver on document.body that watches for any change
- *          and re-reads location.href (fallback).
- *
- * Phase 3 ships only the content-script side. The background broadcast
- * lands in Phase 4 when feature ports actually depend on it; until then
- * the MutationObserver is sufficient and matches v2.0.2 behaviour without
- * the 500 ms timer.
- */
 export function createSpaRouter(options: {
   doc?: Document;
   win?: Window;
@@ -79,10 +52,8 @@ export function createSpaRouter(options: {
       if (started) return;
       started = true;
       lastUrl = win.location.href;
-      // The same trick the v2.0.2 SideButton used at side-button.js:355: any
-      // childList mutation on body could mean Lightning swapped a route.
-      // Cheap to check the URL string after each batched mutation; expensive
-      // ops only happen inside the listener.
+      // Any childList mutation on body could mean Lightning swapped a route.
+      // Checking the URL string is cheap; the listener pays the real cost.
       observer = new MutationObserver(() => {
         const url = win.location.href;
         if (url !== lastUrl) fire(url);

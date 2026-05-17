@@ -1,9 +1,6 @@
-// Default prefix table. Embedded directly so flow-core has no I/O on first
-// use. Ported verbatim from
-// /Users/dkennedy/dev/2.0.2_0 copy/config/default-prefixes.json (v2).
-//
-// PrefixEntry lives here (the data-defining file) and is re-exported from
-// api-name.ts. That avoids a circular dependency between the two modules.
+// Embedded directly so flow-core has no I/O on first use.
+// PrefixEntry is defined here (the data-owning file) and re-exported from
+// api-name.ts to avoid a circular dependency.
 
 export interface PrefixEntry {
   type: string;

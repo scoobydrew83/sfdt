@@ -1,13 +1,3 @@
-// One-click Deploy / Rollback from the Flow Builder canvas — Phase 6c +
-// Phase 7's bridge wiring.
-//
-// Deploy is now wired end-to-end: the extension fetches the Flow's
-// metadata via Tooling API to resolve the developer name, then dispatches
-// `kind: deploy` through the sfdt bridge. The bridge handler runs `sf
-// project deploy start --metadata Flow:<name>` against the configured
-// target org and returns a structured result. Rollback still routes to
-// NOT_IMPLEMENTED on the server side and is surfaced as a clear toast.
-
 import type { SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
@@ -53,13 +43,9 @@ export interface FlowDeployFeatureOptions {
   api?: SalesforceApiClient;
 }
 
-/**
- * Resolve the Flow's developer name from Tooling API. Required because the
- * Flow Builder URL's `?flowId=` is a Salesforce Id (or a managed-package
- * path), but `sf project deploy start --metadata Flow:<name>` needs the
- * developer name. v2.0.2 never integrated with deploy so this round-trip
- * is new to the port.
- */
+// The Flow Builder URL's `?flowId=` is a Salesforce Id, but the deploy
+// command (`sf project deploy start --metadata Flow:<name>`) needs the
+// developer name — Tooling API round-trip is required to bridge them.
 async function resolveFlowApiName(api: SalesforceApiClient, flowId: string): Promise<string> {
   const record = (await api.getFlowMetadata(flowId)) as {
     Definition?: { DeveloperName?: string };
@@ -105,8 +91,8 @@ export function createFlowDeployFeature(options: FlowDeployFeatureOptions = {}):
 
       showDeployModal(doc, async (action) => {
         if (action === 'rollback') {
-          // Server-side handler still NOT_IMPLEMENTED; surface that early
-          // instead of paying the metadata-fetch round-trip.
+          // Server-side rollback returns NOT_IMPLEMENTED; skip the
+          // metadata-fetch round-trip and surface the error directly.
           const response = await dispatchBridge('rollback', { flowId, toVersion: 1 });
           showToast(describeBridgeError(response), { kind: 'error', doc });
           return;

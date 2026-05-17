@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createTelemetry } from '../lib/telemetry.js';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createTelemetry, type TelemetrySnapshot } from '../lib/telemetry.js';
 
 describe('telemetry', () => {
   beforeEach(() => {
@@ -55,5 +55,34 @@ describe('telemetry', () => {
     await t.track('feature.disabled.remote', { featureId: 'canvas-search' });
     const { counters } = await t.snapshot();
     expect(counters['canvas-search']!.disabled_remote).toBe(1);
+  });
+
+  describe('pushSnapshot', () => {
+    it('is a no-op (returns false) when telemetry is opted out', async () => {
+      const t = createTelemetry({ isEnabled: () => false });
+      const pusher = vi.fn(async (_snap: TelemetrySnapshot) => true);
+      const result = await t.pushSnapshot(pusher);
+      expect(result).toBe(false);
+      expect(pusher).not.toHaveBeenCalled();
+    });
+
+    it('passes the current snapshot to the pusher when opted in', async () => {
+      const t = createTelemetry({ isEnabled: () => true });
+      await t.track('feature.activated', { featureId: 'canvas-search' });
+      const pusher = vi.fn(async (_snap: TelemetrySnapshot) => true);
+      const result = await t.pushSnapshot(pusher);
+      expect(result).toBe(true);
+      expect(pusher).toHaveBeenCalledOnce();
+      const snap = pusher.mock.calls[0]?.[0];
+      expect(snap?.counters['canvas-search']?.activated).toBe(1);
+    });
+
+    it('returns false when the pusher throws (best-effort)', async () => {
+      const t = createTelemetry({ isEnabled: () => true });
+      const result = await t.pushSnapshot(async () => {
+        throw new Error('network down');
+      });
+      expect(result).toBe(false);
+    });
   });
 });

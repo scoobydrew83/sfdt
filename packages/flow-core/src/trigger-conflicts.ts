@@ -1,9 +1,6 @@
-// Trigger conflict detector — groups record-triggered Flows that share the
-// same object + timing + event combination. The plan calls this out as a
-// Phase 6 feature, but the detection itself is pure data analysis over
-// already-normalized Flow records, so it lands in flow-core now. Phase 5
-// surfaces it as `sfdt flow conflicts` (CLI-only preview); Phase 6 wires the
-// extension UI on top of the same engine.
+// Groups record-triggered Flows that share the same object + timing + event.
+// Pure data analysis over already-normalized records — the CLI and extension
+// share this engine.
 
 import { normalize, type NormalizedFlow, type RawFlowMetadata } from './normalize.js';
 

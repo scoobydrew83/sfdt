@@ -1,17 +1,3 @@
-// Background service worker.
-//
-// Ports the message handlers from
-// /Users/dkennedy/dev/2.0.2_0 copy/background.js. Phase 3 implements the two
-// handlers the shell needs:
-//
-//   - openSettings   — opens chrome.runtime.openOptionsPage()
-//   - getSidForUrls  — reads the HttpOnly Salesforce session cookie via
-//                      chrome.cookies, returning a host → sid map
-//
-// The v2.0.2 handlers for resolveAppDurableId*, fetchExtensionFile, and
-// injectXlsxLib are deferred to Phase 4 when the feature modules that need
-// them are ported.
-
 import { defineBackground } from 'wxt/utils/define-background';
 
 export default defineBackground(() => {
@@ -41,11 +27,10 @@ export default defineBackground(() => {
           }
 
           case 'bridgePing': {
-            // Forwarded by content scripts so the HTTP fetch happens in the
-            // service worker context, bypassing Chrome's Private Network
-            // Access preflight enforcement that blocks HTTPS-page → HTTP-
-            // localhost requests. host_permissions for http://127.0.0.1/*
-            // gives the service worker permission to make this call.
+            // Forwarded from content scripts so the HTTP fetch runs in the
+            // service worker context — Chrome's Private Network Access
+            // preflight blocks HTTPS-page → HTTP-localhost requests from
+            // content scripts even with host_permissions set.
             const port: number =
               typeof message.port === 'number' && message.port > 0 ? message.port : 7654;
             const url = `http://127.0.0.1:${port}/api/bridge/ping`;
@@ -75,6 +60,6 @@ export default defineBackground(() => {
       .then(sendResponse)
       .catch((err) => sendResponse({ ok: false, error: String(err?.message ?? err) }));
 
-    return true; // Always async — keep the channel open until sendResponse fires.
+    return true; // Keep the message channel open for the async sendResponse.
   });
 });
