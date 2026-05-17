@@ -37,6 +37,28 @@
 - sfdt skills library — 10 Salesforce domain skills for use with AI agents (apex-review, data, deploy, flow-review, lwc, org-audit, pmd-scan, scratch-org, test, sfdt-cli)
 - Pre-built GUI included in the published npm package
 
+### Chrome extension (`@sfdt/extension`)
+- 14 productivity features for Salesforce Flow Builder and Setup — full list in [extension/README.md](extension/README.md)
+- Three-layer feature gating — remote kill-switch (`.sfdt/feature-flags.json`) → per-user toggle → context filter
+- Opt-in local telemetry (no network egress); snapshot pushed to `.sfdt/telemetry-snapshot.json` for `sfdt extension stats`
+- Registry-driven options page — adding a feature with a Zod settings schema auto-generates its controls
+- Privacy policy declared in [extension/PRIVACY.md](extension/PRIVACY.md)
+
+### Native messaging host (`@sfdt/host`)
+- Stdio loop with installers for Chrome / Edge / Brave / Chromium / Vivaldi on macOS, Linux, and Windows
+- One-command install via `sfdt extension install-host --extension-id <id>`
+- Fallback transport when the HTTP bridge (`sfdt ui`) isn't running
+
+### Shared library (`@sfdt/flow-core`)
+- Flow normalization, rules engine, scoring — same code path on the CLI and in the extension so verdicts match byte-for-byte
+- Versioned bridge contract (`PROTOCOL_VERSION`, `negotiateProtocolVersion`) — extension and CLI warn on minor mismatch, refuse on major mismatch
+
+### Bridge + diagnostics
+- `GET /api/bridge/ping` and `POST /api/bridge/exchange` mounted by `sfdt ui`; surfaces `disabledFeatures` from `.sfdt/feature-flags.json` and `protocolVersion` for negotiation
+- `sfdt feature-flags` CLI for operator-friendly kill-switch management
+- `sfdt extension stats` CLI for telemetry visibility
+- `sfdt doctor --extension` end-to-end health check (bridge / native host / kill-switch / telemetry)
+
 ---
 
 ## In Progress

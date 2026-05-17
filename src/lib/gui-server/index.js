@@ -23,6 +23,7 @@ import { fetchOrgInventory, fetchInventory } from '../org-inventory.js';
 import { initCache, getDelta, updateCache } from '../pull-cache.js';
 import { parallelRetrieve } from '../parallel-retrieve.js';
 import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken } from './security.js';
+import { mountBridgeRoutes } from '../bridge/routes.js';
 import { stripAnsi, tryReadJson, safeReaddir, buildPlaceholderHtml } from './shared.js';
 import {
   parseTestRunLines, parseQualityLines,
@@ -99,6 +100,13 @@ export function createGuiApp(config, version, port = 7654) {
 
   const apiLimiter = createRateLimiter(60, 60_000);
   const csrfLimiter = createRateLimiter(10, 60_000);
+
+  // Bridge routes are mounted BEFORE the default origin guard because they
+  // accept cross-origin requests from chrome-extension:// and *.salesforce.com.
+  // Each bridge route applies its own origin allowlist + bearer-token auth
+  // (see src/lib/bridge/middleware.js).
+  mountBridgeRoutes(app, { port, version, rateLimiter: apiLimiter });
+
   const originGuard = createOriginGuard(port);
   app.use('/api/', originGuard);
 
@@ -369,6 +377,28 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const data = await readQuality(logDir);
       res.json(data ?? { date: null, status: null, summary: { critical: 0, high: 0, medium: 0, low: 0 }, violations: [], unavailableMessage: null });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Flow-specific quality endpoint: takes a Tooling-API-shaped Flow.Metadata
+  // payload in the request body and returns the @sfdt/flow-core report.
+  // The Chrome extension hits this via the bridge; the dashboard hits it
+  // directly. Same engine in both paths, so results match the CLI's
+  // `sfdt flow scan` output byte-for-byte.
+  app.post('/api/flow/quality', apiLimiter, async (req, res) => {
+    try {
+      const { runFlowQuality } = await import('../flow-quality.js');
+      const metadata = req.body?.metadata;
+      if (!metadata || typeof metadata !== 'object') {
+        return res.status(400).json({ error: 'metadata (object) is required in the body' });
+      }
+      const report = runFlowQuality(metadata, {
+        flowApiName: req.body?.flowApiName,
+        flowVersionId: req.body?.flowVersionId,
+      });
+      res.json(report);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1381,6 +1411,7 @@ export function createGuiApp(config, version, port = 7654) {
       testLevel,
       testClasses,
       destructiveTiming,
+      validationJobId,
     } = req.body ?? {};
 
     const projectRoot = config._projectRoot ?? process.cwd();
@@ -1416,8 +1447,16 @@ export function createGuiApp(config, version, port = 7654) {
       return res.status(400).json({ error: 'Invalid testLevel' });
     }
 
-    if (destructiveTiming !== undefined && destructiveTiming !== null && !['pre', 'post'].includes(destructiveTiming)) {
+    if (destructiveTiming !== undefined && destructiveTiming !== null && !['pre', 'post', 'none', 'only'].includes(destructiveTiming)) {
       return res.status(400).json({ error: 'Invalid destructiveTiming' });
+    }
+
+    // Salesforce job IDs are 15- or 18-char alphanumeric — reject anything else so
+    // we don't shell out with arbitrary user input.
+    if (validationJobId !== undefined && validationJobId !== null) {
+      if (typeof validationJobId !== 'string' || !/^[A-Za-z0-9]{15,18}$/.test(validationJobId)) {
+        return res.status(400).json({ error: 'Invalid validationJobId' });
+      }
     }
 
     const VALID_CLASS = /^[A-Za-z][A-Za-z0-9_]*$/;
@@ -1458,14 +1497,23 @@ export function createGuiApp(config, version, port = 7654) {
         SFDT_DESTRUCTIVE_TIMING: destructiveTiming ?? 'post',
         ...(manifest ? { SFDT_MANIFEST_PATH: path.join(projectRoot, manifest) } : {}),
         ...(sourceDir ? { SFDT_DEPLOY_SOURCE_DIR: sourceDir } : {}),
+        ...(validationJobId ? { SFDT_VALIDATION_JOB_ID: validationJobId } : {}),
       };
 
       const lines = [];
+      // Captured job id from a dry-run / validate flow, surfaced to the client
+      // in the final `result` message so the next click can do a true quick deploy.
+      let capturedValidationJobId = null;
+      const JOB_ID_PATTERN = /Validation Job ID:\s*([A-Za-z0-9]{15,18})/;
       const streamLines = (readable) => {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });
         rl.on('line', (line) => {
           lines.push(line);
           const stripped = stripAnsi(line);
+          if (!capturedValidationJobId) {
+            const m = stripped.match(JOB_ID_PATTERN);
+            if (m) capturedValidationJobId = m[1];
+          }
           if (!res.writableEnded && !stripped.startsWith('SFDT_LOG:'))
             res.write('data: ' + JSON.stringify({ type: 'log', line: stripped, ts: new Date().toISOString() }) + '\n\n');
         });
@@ -1527,7 +1575,9 @@ export function createGuiApp(config, version, port = 7654) {
       await fs.outputJson(historyPath, history.slice(0, 100), { spaces: 2 });
 
       if (!res.writableEnded) {
-        res.write('data: ' + JSON.stringify({ type: 'result', exitCode }) + '\n\n');
+        const resultMsg = { type: 'result', exitCode };
+        if (capturedValidationJobId) resultMsg.content = { validationJobId: capturedValidationJobId };
+        res.write('data: ' + JSON.stringify(resultMsg) + '\n\n');
         res.end();
       }
     } catch (err) {

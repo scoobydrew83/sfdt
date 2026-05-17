@@ -15,6 +15,7 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
   const [buildResult, setBuildResult] = useState(null);
   const [viewingXml, setViewingXml] = useState(null); // { name, xml, components: [] }
   const [packages, setPackages]   = useState([]);
+  const [manifestFilter, setManifestFilter] = useState('');
 
   useEffect(() => {
     api.listManifests()
@@ -102,8 +103,19 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
             {/* Manifest list */}
             <div className="card" style={{ marginBottom: 16 }}>
 
-          <div className="card-head" style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600 }}>
-            Available Manifests
+          <div className="card-head" style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <span>Available Manifests</span>
+            {manifests.length > 4 && (
+              <input
+                className="input"
+                type="search"
+                placeholder="Filter…"
+                value={manifestFilter}
+                onChange={(e) => setManifestFilter(e.target.value)}
+                style={{ fontSize: 12, padding: '4px 8px', maxWidth: 180 }}
+                aria-label="Filter manifests by name"
+              />
+            )}
           </div>
           {loading && <div style={{ padding: 14, color: 'var(--fg-muted)', fontSize: 12 }}>Loading…</div>}
           {!loading && manifests.length === 0 && (
@@ -111,14 +123,35 @@ export default function ManifestStep({ onSelect, selected, onMarkDone, deployMod
               No manifests found. Generate one from git or run a Compare first.
             </div>
           )}
-          {manifests.map((m) => (
+          {!loading && manifests.length > 0 && manifests.filter((m) => {
+            const q = manifestFilter.trim().toLowerCase();
+            if (!q) return true;
+            return (
+              m.name?.toLowerCase().includes(q) ||
+              m.source?.toLowerCase().includes(q) ||
+              m.relPath?.toLowerCase().includes(q)
+            );
+          }).length === 0 && (
+            <div style={{ padding: 14, color: 'var(--fg-muted)', fontSize: 12 }}>
+              No manifests match “{manifestFilter}”.
+            </div>
+          )}
+          {manifests.filter((m) => {
+            const q = manifestFilter.trim().toLowerCase();
+            if (!q) return true;
+            return (
+              m.name?.toLowerCase().includes(q) ||
+              m.source?.toLowerCase().includes(q) ||
+              m.relPath?.toLowerCase().includes(q)
+            );
+          }).map((m) => (
             <button
               key={m.relPath}
               onClick={() => onSelect(m)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10,
                 width: '100%', padding: '9px 14px',
-                background: selected?.relPath === m.relPath ? 'var(--brand-50)' : 'transparent',
+                background: selected?.relPath === m.relPath ? 'var(--bg-selected)' : 'transparent',
                 border: 'none',
                 borderBottom: '1px solid var(--border-subtle)',
                 cursor: 'pointer',

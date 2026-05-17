@@ -1,0 +1,73 @@
+name: Bug report
+description: Something is broken or behaving unexpectedly.
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing! Please fill in every section — the `area:` field is required so we can route this to the right place.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which workspace is this about? Pick the closest match.
+      options:
+        - cli — the @sfdt/cli npm package
+        - extension — the Chrome extension
+        - host — the native messaging host
+        - flow-core — the shared TypeScript library
+        - dashboard — the sfdt ui local web dashboard
+        - docs — README, ARCHITECTURE, CHANGELOG, USAGE
+        - other / unsure
+    validations:
+      required: true
+
+  - type: input
+    id: sfdt-version
+    attributes:
+      label: sfdt version
+      description: Output of `sfdt --version` (or the extension version from chrome://extensions if this is an extension bug).
+      placeholder: "0.8.1"
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node version, and (if relevant) Chrome version + sf CLI version.
+      placeholder: "macOS 15.4, Node 22.18, Chrome 134, sf 2.x"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you see, what did you expect?
+      placeholder: |
+        Steps to reproduce:
+        1. …
+        2. …
+
+        Expected:
+        Actual:
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: Paste any relevant output. For CLI issues, the contents of `<project>/logs/` are often useful. Redact org names / record ids.
+      render: shell
+
+  - type: checkboxes
+    id: doctor
+    attributes:
+      label: Diagnostic
+      options:
+        - label: I ran `sfdt doctor --extension` (for extension/bridge issues) and pasted the output above
+          required: false

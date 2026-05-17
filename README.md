@@ -32,6 +32,19 @@ Production-grade CLI for Salesforce DX deployment, testing, quality analysis, an
 
 For in-depth command walkthroughs and workflow examples, see [docs/USAGE.md](docs/USAGE.md).
 
+## Repository layout
+
+`@sfdt/cli` is one of four workspaces in this monorepo:
+
+| Workspace | What it is | Status |
+|---|---|---|
+| **`@sfdt/cli`** (`/src`, `/bin`, `/scripts`) | The npm CLI documented below. | Published to npm |
+| **`@sfdt/extension`** (`/extension`) | Chrome extension for Salesforce Flow Builder + Setup productivity. Talks to the CLI via the local bridge for deploy / rollback / quality / AI features. See [extension/README.md](extension/README.md) and [extension/PRIVACY.md](extension/PRIVACY.md). | Pre-Web-Store |
+| **`@sfdt/host`** (`/host`) | Native messaging host used as the extension's fallback transport when `sfdt ui` isn't running. Installed with `sfdt extension install-host`. | Bundled with CLI |
+| **`@sfdt/flow-core`** (`/packages/flow-core`) | Shared TypeScript library — Flow normalization, rules engine, scoring, and the versioned bridge contract. Consumed by both CLI and extension. | Workspace-only (not yet on npm) |
+
+The CLI's `sfdt ui` command starts a local web dashboard (`/gui`) that exposes the same bridge endpoints the extension uses.
+
 ## Quick Start
 
 ```bash
@@ -82,6 +95,20 @@ sfdt deploy
 | Command | Description | Key Options |
 |---|---|---|
 | `sfdt ui` | Launch local Salesforce Lightning Design System dashboard | `--port <n>` (default 7654), `--no-open` |
+
+### Extension & bridge
+
+| Command | Description | Key Options |
+|---|---|---|
+| `sfdt extension install-host` | Register the Chrome native messaging host so the extension can fall back to native transport when `sfdt ui` isn't running | `--extension-id <id>`, `--browser <chrome\|edge\|brave\|chromium\|vivaldi\|all>` |
+| `sfdt extension uninstall-host` | Remove the native host manifest | `--browser <browser>` |
+| `sfdt extension status` | Report which browsers have the native host installed | `--json` |
+| `sfdt extension stats` | Show the latest telemetry snapshot the extension pushed to `.sfdt/telemetry-snapshot.json` | `--json`, `--limit <n>` |
+| `sfdt feature-flags list` | List remotely-disabled features from `.sfdt/feature-flags.json` | `--json` |
+| `sfdt feature-flags disable <id>` | Add a feature id to the kill-switch | `--json` |
+| `sfdt feature-flags enable <id>` | Remove a feature id from the kill-switch | `--json` |
+| `sfdt feature-flags clear` | Re-enable everything | `--remove`, `--json` |
+| `sfdt doctor --extension` | Diagnose the extension stack (bridge reachable, native host, kill-switch file, telemetry) | `--port <n>`, `--json` |
 
 ## Configuration
 
