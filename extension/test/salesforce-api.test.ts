@@ -110,8 +110,14 @@ describe('extension/lib/salesforce-api', () => {
       const result = await client.toolingQuery('SELECT Id FROM Flow');
       expect(result.records).toEqual([]);
       const calls = fetchSpy.mock.calls.map(([url]) => String(url));
-      expect(calls.some((c) => c.includes('my.salesforce.com'))).toBe(true);
-      expect(calls.some((c) => c.includes('lightning.force.com'))).toBe(true);
+      // Use anchored hostname checks rather than .includes() so the assertion
+      // matches the production hostname guard in extension/lib/hostname.ts —
+      // and so CodeQL's incomplete-url-substring-sanitization rule stays
+      // happy (a bare .includes('my.salesforce.com') would also match a
+      // hostile URL like https://evil.my.salesforce.com.attacker.com/...).
+      const hostnames = calls.map((c) => new URL(c).hostname);
+      expect(hostnames.some((h) => h.endsWith('.my.salesforce.com'))).toBe(true);
+      expect(hostnames.some((h) => h.endsWith('.lightning.force.com'))).toBe(true);
     });
 
     it('throws when the message bus cannot return any sid', async () => {
