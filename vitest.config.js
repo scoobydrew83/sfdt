@@ -15,6 +15,7 @@ export default defineConfig({
         test: {
           name: 'cli',
           include: ['test/**/*.test.js'],
+          setupFiles: ['./test/setup-supertest-origin.js'],
         },
       },
       './extension/vitest.config.ts',

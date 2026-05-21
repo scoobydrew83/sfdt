@@ -181,6 +181,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/init', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const projectRoot = config._projectRoot || process.cwd();
       const configDir = path.join(projectRoot, '.sfdt');
@@ -1304,9 +1305,11 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/manifest/build', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { base = 'main', head = 'HEAD', package: pkg = 'all', name: releaseName } = req.body ?? {};
-      const safeRefPattern = /^[A-Za-z0-9._/~^@:{}-]+$/;
+      // Refs that start with '-' are git option flags (e.g. --output, -c), not refs.
+      const safeRefPattern = /^[A-Za-z0-9._/~^@:{}][A-Za-z0-9._/~^@:{}-]*$/;
       if (!safeRefPattern.test(String(base)) || !safeRefPattern.test(String(head))) {
         return res.status(400).json({ error: 'Invalid git ref' });
       }
@@ -1657,6 +1660,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/changelog/save', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { content, package: pkgName } = req.body ?? {};
       if (content === undefined) return res.status(400).json({ error: 'content is required' });
@@ -1703,6 +1707,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/release-notes/save', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { content, package: pkgTarget, version } = req.body ?? {};
       if (content === undefined) return res.status(400).json({ error: 'content is required' });
@@ -1729,6 +1734,7 @@ export function createGuiApp(config, version, port = 7654) {
   // ── Release Hub: AI changelog generation (SSE) ────────────────────────────
 
   app.post('/api/changelog/generate', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -1783,6 +1789,7 @@ export function createGuiApp(config, version, port = 7654) {
   // ── Release Hub: AI release notes generation (SSE) ────────────────────────
 
   app.post('/api/release-notes/generate', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -1836,6 +1843,7 @@ export function createGuiApp(config, version, port = 7654) {
   // ── Release Hub: remove component from manifest ────────────────────────────
 
   app.post('/api/manifest/remove-component', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { relPath, type, member } = req.body ?? {};
       if (!relPath || !type || !member) {
@@ -1936,6 +1944,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/manifest/add-component', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { relPath, type, member } = req.body ?? {};
       if (!relPath || !type || !member) {
@@ -2008,8 +2017,9 @@ export function createGuiApp(config, version, port = 7654) {
   // ── Release Hub: AI code review (SSE) ─────────────────────────────────────
 
   app.post('/api/review', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     const { base = 'main' } = req.body ?? {};
-    if (!/^[A-Za-z0-9._/~^@:{}-]+$/.test(base)) {
+    if (!/^[A-Za-z0-9._/~^@:{}][A-Za-z0-9._/~^@:{}-]*$/.test(base)) {
       return res.status(400).json({ error: 'Invalid base ref' });
     }
 
@@ -2093,6 +2103,7 @@ export function createGuiApp(config, version, port = 7654) {
   // ── Release Hub: AI explain (SSE) ─────────────────────────────────────────
 
   app.post('/api/explain', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     const { logPath } = req.body ?? {};
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -2222,7 +2233,8 @@ export function createGuiApp(config, version, port = 7654) {
 
   // ── Quality: AI fix plan (SSE) ────────────────────────────────────────────
 
-  app.post('/api/quality/fix-plan', apiLimiter, async (_req, res) => {
+  app.post('/api/quality/fix-plan', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -2294,6 +2306,7 @@ export function createGuiApp(config, version, port = 7654) {
   // ── AI chat (SSE) ─────────────────────────────────────────────────────────
 
   app.post('/api/ai/chat', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     const { messages, pageContext } = req.body ?? {};
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -2399,6 +2412,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.patch('/api/prompts/:key', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { key } = req.params;
       const { value } = req.body ?? {};
@@ -2412,6 +2426,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.delete('/api/prompts/:key', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { key } = req.params;
       if (!config._configDir) return res.status(503).json({ error: 'Project not initialized' });

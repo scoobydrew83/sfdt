@@ -22,6 +22,8 @@ vi.mock('../../src/lib/output.js', () => ({
     info: vi.fn(),
     step: vi.fn(),
   },
+  printSplash: vi.fn(),
+  formatSplash: vi.fn(() => 'sfdt'),
 }));
 
 import { loadConfig } from '../../src/lib/config.js';

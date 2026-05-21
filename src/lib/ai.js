@@ -134,20 +134,33 @@ async function runClaudePrompt(prompt, options) {
 // ─── Gemini provider ──────────────────────────────────────────────────────────
 
 async function runGeminiPrompt(prompt, options) {
-  const { cwd = process.cwd(), interactive = false } = options;
+  const { cwd = process.cwd(), interactive = false, allowedTools } = options;
   const execOptions = { cwd, reject: false, timeout: 300_000 };
   if (interactive) execOptions.stdio = 'inherit';
-  const result = await execa('gemini', ['-p', prompt], execOptions);
+  const args = ['-p', prompt];
+  // Claude's allowedTools are read-only patterns (`Bash(git log:*)`, `Read`, `Grep`).
+  // Gemini does not honour the same patterns, so we map any presence of an
+  // allowedTools restriction to Gemini's `plan` approval mode (read-only).
+  if (Array.isArray(allowedTools) && allowedTools.length > 0) {
+    args.unshift('--approval-mode', 'plan');
+  }
+  const result = await execa('gemini', args, execOptions);
   return { stdout: result.stdout || '', stderr: result.stderr || '', exitCode: result.exitCode };
 }
 
 // ─── OpenAI/Codex provider ────────────────────────────────────────────────────
 
 async function runOpenAiPrompt(prompt, options) {
-  const { cwd = process.cwd(), interactive = false } = options;
+  const { cwd = process.cwd(), interactive = false, allowedTools } = options;
   const execOptions = { cwd, reject: false, timeout: 300_000 };
   if (interactive) execOptions.stdio = 'inherit';
-  const result = await execa('codex', [prompt], execOptions);
+  const args = [];
+  // Mirror Gemini: read-only sandbox when caller restricted tools.
+  if (Array.isArray(allowedTools) && allowedTools.length > 0) {
+    args.push('-s', 'read-only');
+  }
+  args.push(prompt);
+  const result = await execa('codex', args, execOptions);
   return { stdout: result.stdout || '', stderr: result.stderr || '', exitCode: result.exitCode };
 }
 
@@ -265,7 +278,9 @@ async function streamClaudeResponse(messages, systemPrompt, config, onChunk, onP
 
 async function streamOpenAiResponse(messages, systemPrompt, _config, onChunk, onProcess) {
   const serialized = buildSerializedPrompt(messages, systemPrompt);
-  const proc = execa('codex', [serialized], { stdio: ['pipe', 'pipe', 'pipe'], reject: false, timeout: 300_000 });
+  // /api/ai/chat streams reach here. Prompt content can include attacker-controlled
+  // page context from the browser, so always run Codex in its read-only sandbox.
+  const proc = execa('codex', ['-s', 'read-only', serialized], { stdio: ['pipe', 'pipe', 'pipe'], reject: false, timeout: 300_000 });
   if (onProcess) onProcess(proc);
   for await (const chunk of proc.stdout) {
     onChunk(chunk.toString());
@@ -278,7 +293,8 @@ async function streamOpenAiResponse(messages, systemPrompt, _config, onChunk, on
 
 async function streamGeminiResponse(messages, systemPrompt, _config, onChunk, onProcess) {
   const serialized = buildSerializedPrompt(messages, systemPrompt);
-  const proc = execa('gemini', ['-p', serialized], { stdio: ['pipe', 'pipe', 'pipe'], reject: false, timeout: 300_000 });
+  // Same reasoning as streamOpenAiResponse — force read-only approval mode.
+  const proc = execa('gemini', ['--approval-mode', 'plan', '-p', serialized], { stdio: ['pipe', 'pipe', 'pipe'], reject: false, timeout: 300_000 });
   if (onProcess) onProcess(proc);
   for await (const chunk of proc.stdout) {
     onChunk(chunk.toString());

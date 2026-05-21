@@ -254,7 +254,11 @@ describe('streamAiResponse', () => {
     expect(onChunk).toHaveBeenCalledWith('there');
     const geminiCall = execa.mock.calls.find((c) => c[0] === 'gemini');
     expect(geminiCall).toBeDefined();
-    expect(geminiCall[1][0]).toBe('-p');
+    // Stream path forces Gemini into the read-only 'plan' approval mode so
+    // prompt-injected commit messages cannot trigger destructive tool use.
+    expect(geminiCall[1]).toContain('--approval-mode');
+    expect(geminiCall[1]).toContain('plan');
+    expect(geminiCall[1]).toContain('-p');
   });
 
   it('OpenAI: throws when codex CLI exits non-zero', async () => {

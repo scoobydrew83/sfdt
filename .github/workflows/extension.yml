@@ -1,0 +1,133 @@
+name: Extension CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'extension/**'
+      - 'packages/flow-core/**'
+      - '.github/workflows/extension.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'extension/**'
+      - 'packages/flow-core/**'
+      - '.github/workflows/extension.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        node-version: [22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - name: Build flow-core
+        run: npm run build:flow-core
+      - name: Lint extension
+        run: npm run lint --workspace=@sfdt/extension
+      - name: Typecheck extension
+        run: npm run compile --workspace=@sfdt/extension
+      - name: Test flow-core
+        run: npm run test:flow-core
+      - name: Test extension
+        run: npm run test:extension
+      - name: Build Chrome zip
+        run: npm run package:ext
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-chrome-zip
+          path: extension/.output/*.zip
+          retention-days: 14
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: extension-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Check for extension version bump
+        id: version
+        run: |
+          CURR_VERSION=$(node -p "require('./extension/package.json').version")
+          PREV_VERSION=$(git show HEAD~1:extension/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" 2>/dev/null || echo "0.0.0")
+          echo "Current: v${CURR_VERSION}, Previous: v${PREV_VERSION}"
+          if [[ "${CURR_VERSION}" == *"-"* ]]; then
+            echo "ERROR: prerelease version ${CURR_VERSION} not supported for extension release from main"
+            exit 1
+          fi
+          if [ "${CURR_VERSION}" != "${PREV_VERSION}" ]; then
+            echo "Version bump detected: v${PREV_VERSION} -> v${CURR_VERSION}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No version change (${CURR_VERSION})"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=${CURR_VERSION}" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+        if: steps.version.outputs.changed == 'true'
+      - name: Build flow-core
+        if: steps.version.outputs.changed == 'true'
+        run: npm run build:flow-core
+      - name: Build Chrome zip
+        if: steps.version.outputs.changed == 'true'
+        run: npm run package:ext
+      - name: Create extension git tag
+        if: steps.version.outputs.changed == 'true'
+        env:
+          EXT_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -d "ext-v${EXT_VERSION}" 2>/dev/null || true
+          git push origin ":refs/tags/ext-v${EXT_VERSION}" 2>/dev/null || true
+          git tag -a "ext-v${EXT_VERSION}" -m "Extension v${EXT_VERSION}"
+          git push origin "ext-v${EXT_VERSION}"
+      - name: Create GitHub Release
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXT_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "ext-v${EXT_VERSION}" \
+            --title "Extension v${EXT_VERSION}" \
+            --generate-notes \
+            extension/.output/*.zip
+
+      # Uncomment once these secrets are configured in the extension-release environment:
+      #   CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN, CWS_EXTENSION_ID
+      #
+      # - name: Publish to Chrome Web Store
+      #   if: steps.version.outputs.changed == 'true'
+      #   env:
+      #     CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+      #     CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+      #     CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+      #     CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+      #   run: |
+      #     CHROME_ZIP=$(ls extension/.output/*-chrome.zip | head -1)
+      #     npx chrome-webstore-upload-cli@3 upload \
+      #       --source "${CHROME_ZIP}" \
+      #       --extension-id "${CWS_EXTENSION_ID}" \
+      #       --client-id "${CWS_CLIENT_ID}" \
+      #       --client-secret "${CWS_CLIENT_SECRET}" \
+      #       --refresh-token "${CWS_REFRESH_TOKEN}" \
+      #       --auto-publish

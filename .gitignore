@@ -52,4 +52,6 @@ logs/
 /docs/superpowers/
 conductor/
 admin/
+# Brand asset originals (heavy nano-banana JPGs — PNG/SVG masters are committed)
+images/*.jpg
 TODO.md

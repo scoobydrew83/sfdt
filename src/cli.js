@@ -30,6 +30,7 @@ import { registerFlowCommand } from './commands/flow.js';
 import { registerExtensionCommand } from './commands/extension.js';
 import { registerFeatureFlagsCommand } from './commands/feature-flags.js';
 import { registerDoctorCommand } from './commands/doctor.js';
+import { formatSplash } from './lib/output.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
@@ -43,7 +44,8 @@ export function createCli() {
       'Salesforce DevTools — deployment, testing, quality, and release management for any Salesforce DX project',
     )
     .version(pkg.version, '-v, --version', 'Print the sfdt version and exit')
-    .addHelpCommand('help [command]', 'Display help for a command');
+    .addHelpCommand('help [command]', 'Display help for a command')
+    .addHelpText('beforeAll', () => formatSplash({ version: pkg.version, size: 'compact' }));
 
   // Register all commands
   registerInitCommand(program);

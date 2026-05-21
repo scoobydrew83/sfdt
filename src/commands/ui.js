@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { loadConfig } from '../lib/config.js';
-import { print } from '../lib/output.js';
+import { print, printSplash } from '../lib/output.js';
 import { startGuiServer } from '../lib/gui-server/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -29,7 +29,7 @@ export function registerUiCommand(program) {
         config = { _projectRoot: process.cwd() };
       }
 
-      print.header('SFDT Dashboard');
+      printSplash({ version: pkg.version, size: 'block' });
 
       let server;
       try {
