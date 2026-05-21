@@ -73,7 +73,16 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
-      - run: npm pack
+      - name: Build @sfdt/flow-core (CLI runtime dep)
+        run: npm run build:flow-core
+      - name: Pack @sfdt/flow-core and @sfdt/cli
+        # @sfdt/cli declares @sfdt/flow-core@^0.9.0 as a runtime dep. On a
+        # commit where flow-core is not yet on the public npm registry, the
+        # CLI tarball install would 404. Packing flow-core alongside and
+        # installing both at once keeps the integration job self-contained.
+        run: |
+          npm pack --workspace=@sfdt/flow-core
+          npm pack
       - name: Install Salesforce CLI
         run: npm install -g @salesforce/cli
       - name: Checkout synthetic-spark fixture
@@ -81,8 +90,11 @@ jobs:
         with:
           repository: scoobydrew83/synthetic-spark
           path: synthetic-spark
-      - name: Install sfdt globally from packed tarball
-        run: npm install -g sfdt-*.tgz
+      - name: Install sfdt globally from packed tarballs
+        # Install flow-core first so npm's local cache satisfies @sfdt/cli's
+        # runtime dep without hitting the registry. Explicit filenames so the
+        # glob doesn't double-list flow-core.
+        run: npm install -g sfdt-flow-core-*.tgz sfdt-cli-*.tgz
       - name: Authenticate DevHub
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
