@@ -284,12 +284,24 @@ function isNonEmptyString(v: unknown): v is string {
 }
 
 // Org alias regex mirrors what the gui-server enforces on the same value.
-// Salesforce CLI aliases are alphanumerics plus a small punctuation set.
-// Tightening here forecloses flag-injection attempts even though execa's
-// array form already prevents shell-level command injection.
-const ORG_ALIAS_RE = /^[A-Za-z0-9_.\-@]+$/;
-function isValidOrgAlias(v: unknown): v is string {
-  return typeof v === 'string' && v.length > 0 && ORG_ALIAS_RE.test(v);
+// Salesforce CLI aliases are alphanumerics plus a small punctuation set, and
+// MUST start with an alphanumeric (or `@` for username-style aliases) so
+// `--flag-injection` style values never pass: `sf` would otherwise interpret
+// the value passed to `--target-org` as another option. Defence in depth on
+// top of execa's array form, which already prevents shell injection.
+//
+// The length cap bounds runtime — Salesforce aliases are conventionally
+// short (≤30 chars in most setups); 80 is a generous ceiling that prevents
+// oversized aliases from being padded with bogus suffixes.
+export const ORG_ALIAS_RE = /^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/;
+export const ORG_ALIAS_MAX_LEN = 80;
+export function isValidOrgAlias(v: unknown): v is string {
+  return (
+    typeof v === 'string' &&
+    v.length > 0 &&
+    v.length <= ORG_ALIAS_MAX_LEN &&
+    ORG_ALIAS_RE.test(v)
+  );
 }
 
 // Salesforce DeveloperName grammar: alphanumerics + underscore, must start

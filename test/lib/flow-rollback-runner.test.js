@@ -158,6 +158,13 @@ describe('runFlowRollback — happy path', () => {
     expect(lookup.args[targetIdx + 1]).toBe('prod-alias');
   });
 
+  it('rejects a malformed targetOrg before invoking sf (defence in depth vs bridge contract)', async () => {
+    const r = await runFlowRollback({ flowApiName: 'My_Flow', toVersion: 1, targetOrg: '--injected' });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('REQUEST_INVALID');
+    expect(execaCalls).toHaveLength(0);
+  });
+
   it('escapes apostrophes in flowApiName when building the SOQL', async () => {
     // The regex blocks apostrophes outright at validation time, but if a
     // future caller bypasses that check, the SOQL builder must still escape.

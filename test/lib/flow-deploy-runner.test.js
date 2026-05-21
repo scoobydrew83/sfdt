@@ -91,6 +91,20 @@ describe('runFlowDeploy', () => {
     expect(execaCalls[0].args[targetIdx + 1]).toBe('prod-alias');
   });
 
+  it('rejects a malformed targetOrg before invoking sf (defence in depth vs bridge contract)', async () => {
+    const r = await runFlowDeploy({ flowApiName: 'My_Flow', targetOrg: '--flag-injection' });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('REQUEST_INVALID');
+    expect(execaCalls).toHaveLength(0);
+  });
+
+  it('rejects an over-length targetOrg', async () => {
+    const r = await runFlowDeploy({ flowApiName: 'My_Flow', targetOrg: 'a'.repeat(81) });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('REQUEST_INVALID');
+    expect(execaCalls).toHaveLength(0);
+  });
+
   it('returns a structured success report on a successful deploy', async () => {
     const r = await runFlowDeploy({ flowApiName: 'My_Flow' });
     expect(r.ok).toBe(true);

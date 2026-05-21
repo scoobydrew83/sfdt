@@ -26,9 +26,20 @@ import { readDisabledFeatures } from './feature-flags.js';
 // JSON.parse runs.
 const MAX_FLOW_XML_BYTES = 5 * 1024 * 1024;
 
-// Lazy import so flow-core's build is not required to start the server; the
-// import happens the first time /api/bridge/exchange runs, by which point
-// `npm run build:flow-core` should have produced dist/.
+// Lazy imports are used throughout this file (flow-core's bridge contract,
+// flow-quality, flow-deploy-runner, flow-rollback-runner). Two reasons:
+//
+//  1. flow-core ships as a separate npm package whose `dist/` is produced by
+//     a TypeScript build. `sfdt ui` must boot even before
+//     `npm run build:flow-core` has run — eager static imports would crash
+//     the server at module-load time.
+//  2. The runners (flow-deploy-runner, flow-rollback-runner) spawn `sf`
+//     subprocesses on demand. Static-importing them eagerly would defeat
+//     code-splitting and force every dashboard cold-start to read modules
+//     it may never use this session.
+//
+// The first call to each path pays a one-time import cost (cached via
+// require/import's own module cache); subsequent calls are free.
 let _contract = null;
 async function loadContract() {
   if (_contract) return _contract;
@@ -79,6 +90,13 @@ export function mountBridgeRoutes(app, { port, version, projectRoot, configDir, 
 
   // Discovery probe — no auth required so the extension can detect whether
   // localhost is reachable without prompting the user for a token first.
+  //
+  // Security model: this endpoint deliberately exposes serverVersion,
+  // protocolVersion, and the disabledFeatures kill-switch list to any
+  // process able to reach localhost:7654. None of these are secrets, but on
+  // a shared/containerised dev host other local users could enumerate them
+  // (the bind is per-user but the loopback is shared). The bearer token —
+  // the authoritative gate on mutating bridge calls — is NEVER exposed here.
   app.get('/api/bridge/ping', limiter, async (_req, res) => {
     let disabledFeatures = [];
     if (resolvedProjectRoot) {

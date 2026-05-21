@@ -150,6 +150,15 @@ export function createGuiApp(config, version, port = 7654) {
   //   - `deployment.preflight.*`: silently flipping enforcement flags off
   //     (e.g. enforceGitClean) would let a subsequent deploy bypass the
   //     safety check that the operator deliberately enabled.
+  //
+  // The match check below is `key === prefix || key.startsWith(`${prefix}.`)`
+  // — exact match OR a dot-bounded prefix. That means:
+  //   - `defaultOrg` blocks the literal key (the schema's only legitimate
+  //     shape — defaultOrg is a string, not a nested object).
+  //   - `defaultOrgFoo` is NOT blocked (different key entirely; the dot
+  //     boundary prevents over-broad matching).
+  //   - `deployment.preflight` blocks every nested enforcement flag like
+  //     `deployment.preflight.enforceGitClean` and `deployment.preflight.strict`.
   const BLOCKED_CONFIG_KEY_PREFIXES = [
     'mcp.salesforce.command',
     'mcp.salesforce.args',
@@ -284,8 +293,14 @@ export function createGuiApp(config, version, port = 7654) {
     if (!requireCsrfToken(req, res, csrfToken)) return;
     const { org } = req.body ?? {};
     if (!org || typeof org !== 'string') return res.status(400).json({ error: 'org is required' });
-    const safe = org.trim().slice(0, 100);
+    const safe = org.trim().slice(0, 80);
     if (!safe) return res.status(400).json({ error: 'org is required' });
+    // Match the bridge-contract ORG_ALIAS_RE and the /api/compare org checks:
+    // first char must be alphanumeric or '@' (no leading '-' so a flag-style
+    // value can't sneak into `sf --target-org`).
+    if (!/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(safe)) {
+      return res.status(400).json({ error: 'Invalid org alias' });
+    }
     sessionOrg = safe;
     res.json({ org: sessionOrg });
   });

@@ -16,6 +16,10 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
+// See src/commands/extension.js for the rationale: host/ ships bundled inside
+// the @sfdt/cli tarball, @sfdt/host is private so a named-package dep would
+// 404 on npm install. test/lib/host-installer-resolves.test.js guards the
+// relative path from silently breaking.
 import { nativeHostStatus } from '../../host/installers/install-host.js';
 import { getConfigDir } from '../lib/config.js';
 import { resolveExitCode } from '../lib/exit-codes.js';

@@ -9,8 +9,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-PR #85 follow-up review feedback. The two HIGH items, all MEDIUMs, every LOW raised
-across the four independent code reviews, and the open CodeQL alerts were the targets.
+PR #85 final review pass — addresses the five blocking items, all non-blocking
+suggestions, and the test-file CodeQL alerts from the latest claude-review.
+
+- **HIGH H1 — Runners now re-validate `targetOrg` independently of the bridge contract.**
+  `runFlowDeploy` and `runFlowRollback` previously trusted the contract's pre-check; any
+  caller path other than the bridge (CLI, plugins, tests) could feed an arbitrary string
+  to `--target-org`. Inline ORG_ALIAS_RE + 80-char cap in both runners, mirroring the
+  bridge contract; flag-injection shape (`--anything`) now rejects at the runner before
+  any `sf` invocation.
+- **HIGH H2 — CSRF compare is constant-time.** `requireCsrfToken` and
+  `requireCsrfTokenFromQueryOrHeader` in `gui-server/security.js` switched from plain
+  string equality (`provided !== token`) to `constantTimeEqual` from `bridge/token.js`.
+  Closes the partial-match timing oracle that the PR description had mistakenly
+  documented as already constant-time.
+- **MEDIUM/A1 — `@sfdt/host` import path locked in by a regression test.**
+  The host installer is bundled INSIDE the published `@sfdt/cli` tarball
+  (`host/installers/`, `host/src/`, `host/manifests/` are in `files`). Switching to a
+  named-package dep would 404 because `@sfdt/host` is `"private": true`. Added
+  explanatory comments at every import site and a no-mock smoke test
+  (`test/lib/host-installer-resolves.test.js`) that fails CI immediately if the file
+  is moved or accidentally excluded from the tarball.
+- **Q2 — Host stdin accumulator now bounded.** `host/src/index.js` previously checked
+  the declared frame length against `MAX_REQUEST_BYTES` but allowed the accumulating
+  buffer between chunks to grow without bound. A peer streaming a 4 MB − 1 partial
+  message would have held that memory indefinitely. Added a projected-size check that
+  trips before the next `Buffer.concat` and emits a framed `REQUEST_INVALID`.
+- **CLAUDE.md env var table — gaps closed.** Added entries for
+  `SFDT_VALIDATION_JOB_ID` (Quick Deploy promotion via `sf project deploy quick`)
+  and `SFDT_DESTRUCTIVE_TIMING` now documents the full `pre`/`post`/`none`/`only` set.
+- **Hardening (Claude-review non-blocking items folded in):**
+  * Tightened `ORG_ALIAS_RE` everywhere to `/^[A-Za-z0-9@][A-Za-z0-9_.\\-@]*$/` so a
+    flag-style value (`--target-org`) can never sneak in (previously accepted leading
+    hyphens). Added explicit length cap of 80 chars.
+  * `POST /api/session/org` now applies the same alias regex (previously only
+    `.trim().slice(0, 100)`).
+  * Bridge origin allowlist (`middleware.js`) gained anchored `.force.com` and
+    `.visualforce.com` patterns to match `extension/entrypoints/background.ts`'s
+    cookie-host allowlist (managed-package custom domains, Visualforce pages).
+  * Documented the bridge no-Origin security model (single-user POSIX boundary,
+    bearer token as authoritative gate), the `GET /api/bridge/ping` unauth model
+    (no secrets exposed; serverVersion/protocolVersion/disabledFeatures are
+    intentionally enumerable on a shared host), and the lazy-import rationale in
+    `bridge/routes.js`.
+  * `BLOCKED_CONFIG_KEY_PREFIXES` match semantics documented inline (exact OR
+    dot-bounded prefix → `defaultOrg` blocks the literal key but not `defaultOrgFoo`).
+  * `sfdt --help` splash hook gated on `process.stdout.isTTY` — no banner on
+    piped or CI-captured help output (was emitting a single line label even with
+    formatSplash's inner guard).
+  * `constantTimeEqual` continues to terminate with `eq && ba.length === bb.length`
+    — `eq` is the constant-time path; the length check after is on a boolean
+    AND, no timing oracle (kept the existing comment that explains the layered
+    guard).
+
+
 
 - **HIGH — Bridge no longer reads/writes through `process.cwd()`.** `mountBridgeRoutes`
   now accepts `projectRoot`/`configDir` from the gui-server and routes `feature-flags.json`

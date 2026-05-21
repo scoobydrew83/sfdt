@@ -16,11 +16,24 @@
 
 import { getOrCreateBridgeToken, constantTimeEqual } from './token.js';
 
+// Origin allowlist. Kept in sync with the cookie-host allowlist in
+// extension/entrypoints/background.ts (SALESFORCE_HOST_SUFFIXES) — any
+// origin permitted to fetch a sid cookie on the extension side must also be
+// permitted to call the bridge, or the extension can collect a sid it can't
+// use. The reverse — bridge accepts an origin the extension doesn't trust
+// — isn't a leak (the bridge bearer token is still required for mutating
+// routes), but symmetry keeps the surface auditable.
 const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/[a-z0-9-]+\.salesforce\.com$/i,
   /^https:\/\/[a-z0-9-]+\.salesforce-setup\.com$/i,
   /^https:\/\/[a-z0-9-]+\.my\.salesforce\.com$/i,
   /^https:\/\/[a-z0-9-]+\.lightning\.force\.com$/i,
+  // Visualforce pages (sandbox/dev orgs serve Lightning over a separate host)
+  // and managed-package custom domains both end in .force.com or
+  // .visualforce.com. Anchored sub-domain match prevents
+  // evil.force.com.attacker.com from slipping through.
+  /^https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.force\.com$/i,
+  /^https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.visualforce\.com$/i,
   // Chrome assigns extension IDs as exactly 32 chars from [a-p] (mapped hex).
   /^chrome-extension:\/\/[a-p]{32}$/,
 ];
@@ -30,10 +43,19 @@ function isAllowedOrigin(origin, localhostOrigins) {
   // non-browser callers (the @sfdt/host native messaging process and curl-style
   // smoke tests), and those never send an Origin header. The authoritative
   // access control on this surface is the bearer-token check in
-  // createBridgeBearerAuthMiddleware — without a valid token any caller is
-  // rejected regardless of origin. Unlike the gui-server's same-origin CSRF
-  // model (which DOES require Origin on mutating requests), this endpoint is
+  // createBridgeAuthMiddleware — without a valid token any caller is rejected
+  // regardless of origin. Unlike the gui-server's same-origin CSRF model
+  // (which DOES require Origin on mutating requests), this endpoint is
   // explicitly cross-origin and bearer-authenticated.
+  //
+  // Security model: this bind is single-user. The bridge token at
+  // ~/.sfdt/bridge-token is created mode-0600 so other users on the same
+  // host cannot read it. Any local process running as the same Unix user
+  // CAN therefore call the bridge — that is by design (the dashboard, the
+  // native host, and ad-hoc curl smoke tests all do this). Multi-user
+  // hardening (per-user binds, mutual TLS) would require the token to be
+  // scoped narrower than the per-user POSIX boundary, which sfdt does not
+  // currently do.
   if (!origin) return true;
   if (localhostOrigins.has(origin)) return true;
   return ALLOWED_ORIGIN_PATTERNS.some((p) => p.test(origin));

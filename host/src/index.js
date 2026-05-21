@@ -122,6 +122,22 @@ function setupStdinReader(onMessage) {
   };
 
   process.stdin.on('data', (chunk) => {
+    // Guard the ACCUMULATING buffer, not just the per-frame length. A peer
+    // streaming a 4 MB - 1 byte partial frame with a valid length header
+    // would otherwise hold that memory indefinitely. MAX_REQUEST_BYTES + a
+    // small headroom for the 4-byte length prefix and any chunk-boundary
+    // overshoot keeps the buffer bounded while still accepting legitimate
+    // back-to-back frames.
+    const projectedSize = buffer.length + chunk.length;
+    if (projectedSize > MAX_REQUEST_BYTES + 1024) {
+      writeFrame({
+        ok: false,
+        requestId: 'overflow',
+        error: `Accumulated stdin buffer ${projectedSize} exceeds the ${MAX_REQUEST_BYTES}-byte limit`,
+        code: 'REQUEST_INVALID',
+      });
+      process.exit(1);
+    }
     buffer = Buffer.concat([buffer, chunk]);
     drain().catch((err) => {
       writeFrame({

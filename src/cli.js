@@ -44,8 +44,18 @@ export function createCli() {
       'Salesforce DevTools — deployment, testing, quality, and release management for any Salesforce DX project',
     )
     .version(pkg.version, '-v, --version', 'Print the sfdt version and exit')
-    .addHelpCommand('help [command]', 'Display help for a command')
-    .addHelpText('beforeAll', () => formatSplash({ version: pkg.version, size: 'compact' }));
+    .addHelpCommand('help [command]', 'Display help for a command');
+
+  // Splash banner on --help. Gate on isTTY at hook-registration time so
+  // non-TTY help output (CI snapshots, piped `sfdt --help | grep …`) stays
+  // pristine. formatSplash also self-degrades on non-TTY, but the inner
+  // guard alone still emits a one-line label which tripped tools that
+  // snapshot exact --help output.
+  if (process.stdout.isTTY) {
+    program.addHelpText('beforeAll', () =>
+      formatSplash({ version: pkg.version, size: 'compact' }),
+    );
+  }
 
   // Register all commands
   registerInitCommand(program);

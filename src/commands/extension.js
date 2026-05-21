@@ -18,6 +18,18 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
+// host/ is bundled inside the published @sfdt/cli tarball (see "files" in
+// package.json), and @sfdt/host itself is `"private": true` because it is
+// not a separately consumable npm package — it only makes sense as part of
+// sfdt. That rules out the alternative shape "@sfdt/host" as a named
+// dependency: in development npm workspaces would resolve it locally, but
+// once @sfdt/cli is published the consumer's npm would try to fetch
+// @sfdt/host from the public registry and 404.
+//
+// The relative path is the load-bearing contract: a regression here is
+// caught by test/lib/host-installer-resolves.test.js, which imports the
+// module without mocks so a moved file fails CI immediately rather than
+// surfacing as ERR_MODULE_NOT_FOUND at the user's first `sfdt extension`.
 import {
   installNativeHost,
   uninstallNativeHost,

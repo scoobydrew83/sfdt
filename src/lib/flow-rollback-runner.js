@@ -26,6 +26,22 @@ import { loadConfig } from './config.js';
 
 const DEVELOPER_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
 
+// Defence in depth: the bridge contract already validates targetOrg, but this
+// runner is also reachable from the CLI, plugins, and tests. Mirrors
+// ORG_ALIAS_RE in packages/flow-core/src/bridge-contract.ts.
+const ORG_ALIAS_RE = /^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/;
+const ORG_ALIAS_MAX_LEN = 80;
+function assertValidTargetOrg(value) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > ORG_ALIAS_MAX_LEN || !ORG_ALIAS_RE.test(value)) {
+    return {
+      ok: false,
+      error: `targetOrg "${value}" is not a valid Salesforce org alias`,
+      code: 'REQUEST_INVALID',
+    };
+  }
+  return null;
+}
+
 // SOQL string-literal escape. SOQL only treats `\` and `'` as special inside
 // single-quoted string literals — and backslash MUST be escaped first so the
 // quote's escape isn't itself double-escaped on the second pass. Defense in
@@ -99,6 +115,8 @@ export async function runFlowRollback(options) {
       code: 'REQUEST_INVALID',
     };
   }
+  const orgErr = assertValidTargetOrg(targetOrg);
+  if (orgErr) return orgErr;
 
   const timeout = options.timeoutMs ?? 60 * 1000;
   const cwd = config._projectRoot;

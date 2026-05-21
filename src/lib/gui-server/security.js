@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import { constantTimeEqual } from '../bridge/token.js';
 
 export function createRateLimiter(maxRequests = 60, windowMs = 60_000) {
   return rateLimit({ windowMs, limit: maxRequests, standardHeaders: true, legacyHeaders: false });
@@ -35,7 +36,10 @@ export function createCsrfToken() {
 
 export function requireCsrfToken(req, res, token) {
   const provided = req.get('x-sfdt-csrf');
-  if (!provided || provided !== token) {
+  // constantTimeEqual handles non-string / empty input by returning false, so
+  // we don't need a separate `!provided` short-circuit (which would leak
+  // presence-vs-mismatch timing).
+  if (!constantTimeEqual(provided, token)) {
     res.status(403).json({ error: 'Forbidden' });
     return false;
   }
@@ -45,11 +49,12 @@ export function requireCsrfToken(req, res, token) {
 /**
  * CSRF check variant for endpoints that cannot send custom headers — notably
  * EventSource (SSE), which only supports query strings. Accepts the token
- * from `?csrf=...` or the `x-sfdt-csrf` header. Same constant-time semantics.
+ * from `?csrf=...` or the `x-sfdt-csrf` header. Constant-time comparison
+ * via constantTimeEqual so a partial match cannot be timed.
  */
 export function requireCsrfTokenFromQueryOrHeader(req, res, token) {
   const provided = req.get('x-sfdt-csrf') || (typeof req.query?.csrf === 'string' ? req.query.csrf : '');
-  if (!provided || provided !== token) {
+  if (!constantTimeEqual(provided, token)) {
     res.status(403).json({ error: 'Forbidden' });
     return false;
   }

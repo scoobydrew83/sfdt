@@ -11,6 +11,26 @@
 import { execa } from 'execa';
 import { loadConfig } from './config.js';
 
+// Defence in depth: the bridge contract already validates targetOrg, but this
+// runner is also reachable from the CLI, plugins, and tests. Independent
+// validation here forecloses flag-injection (--target-org "--garbage") for
+// every caller, not just bridge-routed ones. Mirrors ORG_ALIAS_RE in
+// packages/flow-core/src/bridge-contract.ts and the gui-server's
+// /api/session/org check; kept inline so this lib stays node-only with no
+// flow-core dependency.
+const ORG_ALIAS_RE = /^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/;
+const ORG_ALIAS_MAX_LEN = 80;
+function assertValidTargetOrg(value) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > ORG_ALIAS_MAX_LEN || !ORG_ALIAS_RE.test(value)) {
+    return {
+      ok: false,
+      error: `targetOrg "${value}" is not a valid Salesforce org alias`,
+      code: 'REQUEST_INVALID',
+    };
+  }
+  return null;
+}
+
 /**
  * Run a Flow deploy via sf CLI.
  *
@@ -68,6 +88,8 @@ export async function runFlowDeploy(options) {
       code: 'REQUEST_INVALID',
     };
   }
+  const orgErr = assertValidTargetOrg(targetOrg);
+  if (orgErr) return orgErr;
 
   const args = [
     'project',
