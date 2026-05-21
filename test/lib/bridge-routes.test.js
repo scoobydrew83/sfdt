@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -220,6 +220,26 @@ describe('POST /api/bridge/exchange — dispatch', () => {
     expect(res.body.data.rating).toBe('Excellent');
   });
 
+  it('rejects oversized flowXml payloads before they reach JSON.parse', async () => {
+    // Layered defence: express.json() rejects at its body-limit (~100KB default,
+    // → HTTP 413), and the route-level guard in dispatch() catches anything that
+    // slips past at a higher MB-scale cap. We only need to confirm here that
+    // the layered defence is active — the actual rejection arrives as 413
+    // (Express) under the default body limit; either status is acceptable so
+    // long as the payload is refused.
+    const oversized = '"' + 'a'.repeat(200_000) + '"';
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({ requestId: 'r-big', kind: 'quality', flowXml: oversized });
+    // 413 (Express body limit) or 200 with REQUEST_INVALID (route guard).
+    expect([413, 200]).toContain(res.status);
+    if (res.status === 200) {
+      expect(res.body.ok).toBe(false);
+      expect(res.body.code).toBe('REQUEST_INVALID');
+    }
+  });
+
   it('returns REQUEST_INVALID when flowXml is not valid JSON', async () => {
     const res = await request(app)
       .post('/api/bridge/exchange')
@@ -232,18 +252,10 @@ describe('POST /api/bridge/exchange — dispatch', () => {
 });
 
 describe('POST /api/bridge/exchange — telemetry.snapshot dispatch', () => {
-  let tmp;
-  let originalCwd;
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    tmp = join(tmpdir(), `sfdt-bridge-tel-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    await mkdir(join(tmp, '.sfdt'), { recursive: true });
-    process.chdir(tmp);
-  });
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    await rm(tmp, { recursive: true, force: true });
-  });
+  // The bridge resolves the snapshot file against the projectRoot threaded
+  // through mountBridgeRoutes (MOCK_CONFIG._projectRoot === '/project'), and
+  // fs-extra.outputJson is mocked at the top of this file — no real disk I/O
+  // happens, so no temp dir or chdir is required.
 
   it('writes a snapshot to .sfdt/telemetry-snapshot.json and echoes the path back', async () => {
     outputJsonSpy.mockClear();
@@ -301,20 +313,24 @@ describe('POST /api/bridge/exchange — telemetry.snapshot dispatch', () => {
 });
 
 describe('GET /api/bridge/ping — disabledFeatures wiring', () => {
-  // Integration test: write a real .sfdt/feature-flags.json into a temp CWD,
-  // hit the ping endpoint, assert the disabled array flows through. The other
-  // tests in this file rely on the absence of feature-flags.json (the
-  // `disabledFeatures: []` default); chdir keeps that intact afterward.
+  // Integration test: build a fresh app whose projectRoot points at a temp
+  // dir, write a real .sfdt/feature-flags.json there, and assert the disabled
+  // array flows through. The bridge resolves feature-flags.json against the
+  // explicit projectRoot passed to mountBridgeRoutes (NOT process.cwd()), so
+  // each case stands up its own app instance scoped to its temp dir.
   let tmp;
-  let originalCwd;
+  let localApp;
   beforeEach(async () => {
-    originalCwd = process.cwd();
-    tmp = join(tmpdir(), `sfdt-bridge-ff-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tmp = await mkdtemp(join(tmpdir(), 'sfdt-bridge-ff-'));
     await mkdir(join(tmp, '.sfdt'), { recursive: true });
-    process.chdir(tmp);
+    localApp = createGuiApp(
+      { ...MOCK_CONFIG, _projectRoot: tmp, _configDir: join(tmp, '.sfdt') },
+      VERSION,
+      PORT,
+    );
   });
   afterEach(async () => {
-    process.chdir(originalCwd);
+    await localApp?.cleanup?.();
     await rm(tmp, { recursive: true, force: true });
   });
 
@@ -323,7 +339,7 @@ describe('GET /api/bridge/ping — disabledFeatures wiring', () => {
       join(tmp, '.sfdt', 'feature-flags.json'),
       JSON.stringify({ disabled: ['canvas-search', 'flow-deploy'] }),
     );
-    const res = await request(app).get('/api/bridge/ping');
+    const res = await request(localApp).get('/api/bridge/ping');
     expect(res.status).toBe(200);
     expect(res.body.data.disabledFeatures).toEqual(['canvas-search', 'flow-deploy']);
   });
@@ -333,7 +349,7 @@ describe('GET /api/bridge/ping — disabledFeatures wiring', () => {
       join(tmp, '.sfdt', 'feature-flags.json'),
       JSON.stringify({ disabled: ['canvas-search'] }),
     );
-    const res = await request(app)
+    const res = await request(localApp)
       .post('/api/bridge/exchange')
       .set('Authorization', `Bearer ${FIXED_TOKEN}`)
       .send({ requestId: 'r-ff', kind: 'ping' });
@@ -343,7 +359,7 @@ describe('GET /api/bridge/ping — disabledFeatures wiring', () => {
 
   it('returns [] when .sfdt/feature-flags.json contains malformed JSON', async () => {
     await writeFile(join(tmp, '.sfdt', 'feature-flags.json'), '{ this is not json');
-    const res = await request(app).get('/api/bridge/ping');
+    const res = await request(localApp).get('/api/bridge/ping');
     expect(res.status).toBe(200);
     expect(res.body.data.disabledFeatures).toEqual([]);
   });

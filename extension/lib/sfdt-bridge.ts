@@ -218,18 +218,34 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
       const probe = await sendOverNative({ requestId: 'discover', kind: 'ping' } as SfdtRequest);
       return probe.ok ? 'native' : 'unknown';
     }
-    const localProbe = sendOverLocalhost({ requestId: 'discover-local', kind: 'ping' } as SfdtRequest);
-    const nativeProbe = connectNativeImpl
-      ? sendOverNative({ requestId: 'discover-native', kind: 'ping' } as SfdtRequest)
-      : Promise.resolve(offlineResponse('discover-native', 'no native messaging'));
-    const timeout = new Promise<{ transport: Transport }>((resolve) =>
-      setTimeout(() => resolve({ transport: 'unknown' }), DISCOVERY_TIMEOUT_MS),
+    // Auto-discovery: prefer "fastest SUCCESS wins" over "fastest response
+    // wins" so a localhost probe that fails fast (BRIDGE_OFFLINE) does not
+    // mask a healthy native host that needed a few more ms to respond.
+    // Promise.any resolves on the first fulfilment and rejects only when ALL
+    // inputs reject — reject within each probe when ok=false so unsuccessful
+    // probes don't count as the winner.
+    const localProbe: Promise<Transport> = sendOverLocalhost({
+      requestId: 'discover-local',
+      kind: 'ping',
+    } as SfdtRequest).then((r) => {
+      if (r.ok) return 'localhost' as Transport;
+      throw new Error('localhost probe failed');
+    });
+    const nativeProbe: Promise<Transport> = connectNativeImpl
+      ? sendOverNative({ requestId: 'discover-native', kind: 'ping' } as SfdtRequest).then((r) => {
+          if (r.ok) return 'native' as Transport;
+          throw new Error('native probe failed');
+        })
+      : Promise.reject(new Error('no native messaging'));
+    const timeout = new Promise<Transport>((_resolve, reject) =>
+      setTimeout(() => reject(new Error('discovery timed out')), DISCOVERY_TIMEOUT_MS),
     );
-    return Promise.race<{ transport: Transport }>([
-      localProbe.then((r) => ({ transport: (r.ok ? 'localhost' : 'unknown') as Transport })),
-      nativeProbe.then((r) => ({ transport: (r.ok ? 'native' : 'unknown') as Transport })),
-      timeout,
-    ]).then((r) => r.transport);
+    try {
+      return await Promise.any<Transport>([localProbe, nativeProbe, timeout]);
+    } catch {
+      // All probes rejected — neither transport is reachable.
+      return 'unknown';
+    }
   }
 
   async function send(request: SfdtRequest): Promise<SfdtResponse> {

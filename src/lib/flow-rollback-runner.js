@@ -26,6 +26,16 @@ import { loadConfig } from './config.js';
 
 const DEVELOPER_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
 
+// SOQL string-literal escape. SOQL only treats `\` and `'` as special inside
+// single-quoted string literals — and backslash MUST be escaped first so the
+// quote's escape isn't itself double-escaped on the second pass. Defense in
+// depth: the caller is already gated by DEVELOPER_NAME_RE which forbids both
+// characters, so this is structural correctness rather than exploit
+// mitigation, but it satisfies the CodeQL string-escape rule too.
+function escapeSoql(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 /**
  * Run a Flow rollback / activate / deactivate via sf CLI.
  *
@@ -99,7 +109,7 @@ export async function runFlowRollback(options) {
     'query',
     '--use-tooling-api',
     '-q',
-    `SELECT Id, ActiveVersionId, LatestVersion.VersionNumber FROM FlowDefinition WHERE DeveloperName = '${flowApiName.replace(/'/g, "\\'")}' LIMIT 1`,
+    `SELECT Id, ActiveVersionId, LatestVersion.VersionNumber FROM FlowDefinition WHERE DeveloperName = '${escapeSoql(flowApiName)}' LIMIT 1`,
     '--target-org',
     targetOrg,
     '--json',

@@ -85,11 +85,21 @@ export function createBridgeCorsMiddleware(port) {
  *
  * @returns {import('express').RequestHandler}
  */
+// Authorization-header limit. Real Bearer tokens are ~50 bytes; cap at 4 KB
+// so a pathological header can't drive any string work in this hot path.
+const MAX_AUTH_HEADER_BYTES = 4096;
+const BEARER_PREFIX_RE = /^Bearer /i;
+
 export function createBridgeAuthMiddleware() {
   return async (req, res, next) => {
     const header = req.get('Authorization') ?? '';
-    const match = header.match(/^Bearer\s+(.+)$/i);
-    const provided = match ? match[1].trim() : null;
+    // Manual prefix-and-slice instead of /^Bearer\s+(.+)$/i — the `\s+` over
+    // attacker-controlled headers is a polynomial-ReDoS pattern flagged by
+    // CodeQL. Match the prefix in one anchored shot, then slice and trim.
+    let provided = null;
+    if (header.length <= MAX_AUTH_HEADER_BYTES && BEARER_PREFIX_RE.test(header)) {
+      provided = header.slice(7).trim() || null;
+    }
 
     if (!provided) {
       return res.status(401).json({

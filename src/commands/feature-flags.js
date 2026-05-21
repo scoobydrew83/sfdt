@@ -15,6 +15,20 @@ import { resolveExitCode } from '../lib/exit-codes.js';
 
 const FILE_NAME = 'feature-flags.json';
 
+// Feature IDs in the extension manifest are kebab-case and bounded; the
+// regex matches the shape every legitimate feature uses and protects the
+// JSON file from being bloated by a pasted essay or polluted by control
+// characters that survive a downstream readFile.
+const FEATURE_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+function assertValidFeatureId(featureId) {
+  if (typeof featureId !== 'string' || !FEATURE_ID_RE.test(featureId)) {
+    throw new Error(
+      `featureId must match ${FEATURE_ID_RE} (1–128 chars, alphanumerics, '_' or '-'). Got: ${featureId}`,
+    );
+  }
+}
+
 function flagsPath(startDir) {
   return path.join(getConfigDir(startDir), FILE_NAME);
 }
@@ -77,6 +91,7 @@ export function registerFeatureFlagsCommand(program) {
     .option('--json', 'Emit the result as JSON')
     .action(async (featureId, options) => {
       try {
+        assertValidFeatureId(featureId);
         const file = flagsPath();
         const flags = await readFlags(file);
         const before = flags.disabled.length;
@@ -108,6 +123,7 @@ export function registerFeatureFlagsCommand(program) {
     .option('--json', 'Emit the result as JSON')
     .action(async (featureId, options) => {
       try {
+        assertValidFeatureId(featureId);
         const file = flagsPath();
         const flags = await readFlags(file);
         const before = flags.disabled.length;

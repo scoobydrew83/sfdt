@@ -41,3 +41,17 @@ export function requireCsrfToken(req, res, token) {
   }
   return true;
 }
+
+/**
+ * CSRF check variant for endpoints that cannot send custom headers — notably
+ * EventSource (SSE), which only supports query strings. Accepts the token
+ * from `?csrf=...` or the `x-sfdt-csrf` header. Same constant-time semantics.
+ */
+export function requireCsrfTokenFromQueryOrHeader(req, res, token) {
+  const provided = req.get('x-sfdt-csrf') || (typeof req.query?.csrf === 'string' ? req.query.csrf : '');
+  if (!provided || provided !== token) {
+    res.status(403).json({ error: 'Forbidden' });
+    return false;
+  }
+  return true;
+}

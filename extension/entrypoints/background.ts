@@ -1,8 +1,58 @@
 import { defineBackground } from 'wxt/utils/define-background';
 
+// Only the extension's own content scripts may invoke privileged actions.
+// chrome.runtime.id is the canonical id of THIS extension at runtime — a
+// message from a different extension would carry a different sender.id.
+function isSelfSender(sender: chrome.runtime.MessageSender): boolean {
+  return typeof sender?.id === 'string' && sender.id === chrome.runtime.id;
+}
+
+// `getSidForUrls` calls chrome.cookies.get(), which honours the cookies
+// permission and can read sid cookies from ANY host. Lock the API down to
+// Salesforce-hosted URLs so an XSS on a non-Salesforce page that somehow
+// reached the service worker can't exfiltrate cross-site credentials. The
+// allowlist mirrors the manifest's host_permissions and hostname.ts's suffix
+// checks.
+const SALESFORCE_HOST_SUFFIXES = [
+  '.salesforce.com',
+  '.salesforce-setup.com',
+  '.lightning.force.com',
+  '.force.com',
+  '.visualforce.com',
+] as const;
+
+function isAllowedCookieUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'https:') return false;
+  const hostname = parsed.hostname.toLowerCase();
+  return SALESFORCE_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix));
+}
+
+// Localhost-only — the bridge ping fetch must target 127.0.0.1, and the port
+// must be in the unprivileged range. A compromised content script could
+// otherwise drive arbitrary loopback port-scans through the service worker.
+function clampBridgePort(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0 || value > 65535) {
+    return 7654;
+  }
+  return value;
+}
+
 export default defineBackground(() => {
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
+      // Sender gate: every privileged action below assumes the caller is one
+      // of THIS extension's own content scripts. External messages (including
+      // from other extensions via externally_connectable, even though it's not
+      // configured) bypass this guard.
+      if (!isSelfSender(sender)) {
+        return { ok: false, error: 'Forbidden: sender is not this extension' };
+      }
       try {
         switch (message?.action) {
           case 'openSettings':
@@ -10,8 +60,13 @@ export default defineBackground(() => {
             return { ok: true };
 
           case 'getSidForUrls': {
-            const urls: string[] = Array.isArray(message.urls) ? message.urls : [];
-            if (!urls.length) return { ok: false, sids: {}, error: 'No urls provided' };
+            const rawUrls: unknown = Array.isArray(message.urls) ? message.urls : [];
+            const urls = (rawUrls as unknown[]).filter(
+              (u): u is string => typeof u === 'string' && isAllowedCookieUrl(u),
+            );
+            if (!urls.length) {
+              return { ok: false, sids: {}, error: 'No allowed Salesforce URLs provided' };
+            }
 
             const getSid = (url: string): Promise<string | null> =>
               new Promise((resolve) => {
@@ -31,8 +86,7 @@ export default defineBackground(() => {
             // service worker context — Chrome's Private Network Access
             // preflight blocks HTTPS-page → HTTP-localhost requests from
             // content scripts even with host_permissions set.
-            const port: number =
-              typeof message.port === 'number' && message.port > 0 ? message.port : 7654;
+            const port = clampBridgePort(message.port);
             const url = `http://127.0.0.1:${port}/api/bridge/ping`;
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 1500);

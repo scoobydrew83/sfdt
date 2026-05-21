@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+PR #85 follow-up review feedback. The two HIGH items, all MEDIUMs, every LOW raised
+across the four independent code reviews, and the open CodeQL alerts were the targets.
+
+- **HIGH — Bridge no longer reads/writes through `process.cwd()`.** `mountBridgeRoutes`
+  now accepts `projectRoot`/`configDir` from the gui-server and routes `feature-flags.json`
+  reads and the `telemetry.snapshot` write through that — so `extension stats` finds the
+  snapshot and the extension's kill-switch is honoured even when `sfdt ui` is launched
+  from a non-project working directory. (CLAUDE.md CRITICAL RULE.)
+- **HIGH — `quality.flowXml` is size-capped before `JSON.parse`.** 5 MB ceiling in the
+  dispatcher; layered with Express's own body limit so a multi-GB string from a
+  misbehaving caller cannot exhaust memory.
+- **MEDIUM — `setNestedValue` audit:** already rejects `__proto__`, `constructor`, and
+  `prototype` segments via the explicit deny-list in `config-utils.js`. Documented.
+- **MEDIUM — `PATCH /api/config` blocklist widened** to cover `defaultOrg` (intended path
+  is `POST /api/session/org` with its alias regex) and `deployment.preflight.*`
+  enforcement flags (so a write can't silently disable git-clean or strict mode).
+- **MEDIUM — Native host stdin reader size cap.** A 0xFFFFFFFF length header would have
+  driven a 4 GB allocation before any validation; capped at 4 MB with a framed error
+  response and clean exit.
+- **MEDIUM — `GET /api/compare/stream` is CSRF-protected.** EventSource can't set
+  headers, so the route now accepts the CSRF token via `?csrf=` (or the standard
+  `X-SFDT-CSRF` header for non-SSE callers); the Compare page splices it in. New
+  `requireCsrfTokenFromQueryOrHeader` helper in `security.js`.
+- **MEDIUM — Extension background sender validation.** `onMessage` listener now rejects
+  any message whose `sender.id !== chrome.runtime.id`, and `getSidForUrls` filters
+  inputs through a Salesforce-suffix allowlist (`.salesforce.com`, `.salesforce-setup.com`,
+  `.lightning.force.com`, `.force.com`, `.visualforce.com`). Bridge-ping port clamped
+  to `[1, 65535]`.
+- **MEDIUM — `discover()` uses `Promise.any` (fastest-SUCCESS-wins).** Previously a
+  localhost probe that failed fast with `BRIDGE_OFFLINE` shadowed a healthy native host
+  that needed a few more ms. The discriminator now waits for the first fulfilment.
+- **MEDIUM — `onSettingsChange` uses the composed schema.** Switched from
+  `SettingsSchema.safeParse` to `getComposedSchema().safeParse` so dynamically-registered
+  `featureSettings.<id>` entries survive a storage round-trip — the old code silently
+  stripped per-feature settings on every other tab's storage event.
+- **LOW — `constantTimeEqual` pads to equal length before `timingSafeEqual`** so the
+  early `if (ba.length !== bb.length) return false` no longer leaks expected token length.
+- **LOW — `/api/compare/diff` and `/api/compare/stream` use `fs.mkdtemp`** (atomic,
+  mode-0700, unguessable) instead of `path.join(os.tmpdir(), \`sfdt-…-${Date.now()}\`)`,
+  and `/api/compare/diff` cleans up its temp dir in `finally`.
+- **LOW — `--extension-id` validated at parse time.** `^[a-p]{32}$` regex applied in
+  `extension install-host` before any installer code runs.
+- **LOW — `feature-flags` enforces `featureId` shape.** `^[A-Za-z0-9_-]{1,128}$` regex in
+  both `disable` and `enable` paths.
+- **LOW — `doctor --port` upper-bounded.** Now rejects values outside `[1, 65535]`
+  with an explicit error.
+- **CodeQL — Polynomial regex in bridge auth header.** Replaced
+  `/^Bearer\s+(.+)$/i.match(...)` with an anchored-prefix test + slice. 4 KB cap on the
+  Authorization header for defence in depth.
+- **CodeQL — `flow-rollback-runner` SOQL escape.** Routed the FlowDefinition.DeveloperName
+  literal through a local `escapeSoql` helper that escapes backslash before quote (the
+  caller's regex already forbids both characters; this is structural correctness).
+- **CodeQL — Insecure temp file in tests.** `bridge-feature-flags.test.js` and
+  `bridge-routes.test.js` use `fs/promises.mkdtemp` rather than predictable
+  `${Date.now()}-${Math.random()}` paths.
+
 ## [0.9.0] - 2026-05-21
 
 The monorepo release. Adds a Chrome extension surface, a local HTTP bridge that lets the extension drive sfdt commands from inside Salesforce, three new CLI commands, three new GUI tools (SOQL Runner, Org Limits, REST Explorer), and a hardened CSRF + origin guard around the local GUI server.

@@ -98,12 +98,25 @@ export async function rotateBridgeToken() {
 }
 
 /**
- * Constant-time comparison so token validation does not leak bytes via timing.
+ * Constant-time comparison so token validation does not leak bytes — or the
+ * expected token length — via timing. timingSafeEqual requires equal-length
+ * buffers, and a bare length pre-check would leak which length the server
+ * expects. Pad both sides to the same length first; equal-length AND
+ * timingSafeEqual must both hold for the token to be accepted.
  */
 export function constantTimeEqual(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const ba = Buffer.from(a);
   const bb = Buffer.from(b);
-  if (ba.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ba, bb);
+  // Pad both sides to a common length so timingSafeEqual can run regardless
+  // of input length. The bare length pre-check (`if (ba.length !== bb.length)
+  // return false`) was the canonical timing-leak pattern — observing how
+  // quickly we reject a candidate reveals the expected length. Padding to a
+  // minimum of 1 byte keeps the empty-string == empty-string edge case
+  // working without skipping the constant-time call.
+  const maxLen = Math.max(ba.length, bb.length, 1);
+  const paddedA = Buffer.concat([ba, Buffer.alloc(maxLen - ba.length)], maxLen);
+  const paddedB = Buffer.concat([bb, Buffer.alloc(maxLen - bb.length)], maxLen);
+  const eq = crypto.timingSafeEqual(paddedA, paddedB);
+  return eq && ba.length === bb.length;
 }

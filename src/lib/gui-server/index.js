@@ -22,7 +22,7 @@ import { buildScriptEnv } from '../script-runner.js';
 import { fetchOrgInventory, fetchInventory } from '../org-inventory.js';
 import { initCache, getDelta, updateCache } from '../pull-cache.js';
 import { parallelRetrieve } from '../parallel-retrieve.js';
-import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken } from './security.js';
+import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken, requireCsrfTokenFromQueryOrHeader } from './security.js';
 import { mountBridgeRoutes } from '../bridge/routes.js';
 import { stripAnsi, tryReadJson, safeReaddir, buildPlaceholderHtml } from './shared.js';
 import {
@@ -105,7 +105,13 @@ export function createGuiApp(config, version, port = 7654) {
   // accept cross-origin requests from chrome-extension:// and *.salesforce.com.
   // Each bridge route applies its own origin allowlist + bearer-token auth
   // (see src/lib/bridge/middleware.js).
-  mountBridgeRoutes(app, { port, version, rateLimiter: apiLimiter });
+  mountBridgeRoutes(app, {
+    port,
+    version,
+    projectRoot: config._projectRoot,
+    configDir: config._configDir,
+    rateLimiter: apiLimiter,
+  });
 
   const originGuard = createOriginGuard(port);
   app.use('/api/', originGuard);
@@ -135,8 +141,21 @@ export function createGuiApp(config, version, port = 7654) {
     }
   });
 
-  // Keys whose values are executed as shell commands — must not be API-writable.
-  const BLOCKED_CONFIG_KEY_PREFIXES = ['mcp.salesforce.command', 'mcp.salesforce.args'];
+  // Keys that must not be API-writable. Three categories:
+  //   - Shell-command keys whose values would execute as commands.
+  //   - `defaultOrg`: flows into `--target-org` for every sf invocation; the
+  //     dashboard's intended path is POST /api/session/org which validates the
+  //     alias against a strict regex. PATCH-ing it directly would let a write
+  //     coerce sf to point at an attacker-controlled org.
+  //   - `deployment.preflight.*`: silently flipping enforcement flags off
+  //     (e.g. enforceGitClean) would let a subsequent deploy bypass the
+  //     safety check that the operator deliberately enabled.
+  const BLOCKED_CONFIG_KEY_PREFIXES = [
+    'mcp.salesforce.command',
+    'mcp.salesforce.args',
+    'defaultOrg',
+    'deployment.preflight',
+  ];
   // Path keys must resolve within projectRoot to prevent logDir/manifestDir redirection attacks.
   const PATH_KEYS_WITHIN_ROOT = new Set([
     'logDir',
@@ -1017,6 +1036,11 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.get('/api/compare/stream', apiLimiter, async (req, res) => {
+    // EventSource can't set custom headers, so accept the CSRF token from
+    // `?csrf=`. The route spawns `sf project retrieve start` and creates temp
+    // dirs — without this guard, any cross-origin page could trigger retrieves
+    // by loading the URL in an <img> or via fetch.
+    if (!requireCsrfTokenFromQueryOrHeader(req, res, csrfToken)) return;
     const data = await readCompare(logDir);
     if (!data) return res.status(404).json({ error: 'No comparison result found. Run compare first.' });
 
@@ -1031,7 +1055,10 @@ export function createGuiApp(config, version, port = 7654) {
     });
 
     const os = await import('os');
-    let tmpDir = path.join(os.tmpdir(), `sfdt-compare-${Date.now()}`);
+    // mkdtemp creates a uniquely-named, mode-0700 directory atomically —
+    // robust against the race where a predictable `${Date.now()}` name
+    // already exists on a busy box.
+    let tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-compare-'));
 
     try {
       const bothItems = data.items.filter((i) => i.status === 'both');
@@ -1194,23 +1221,23 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.get('/api/compare/diff', apiLimiter, async (req, res) => {
+    const { type, member } = req.query;
+    if (typeof type !== 'string' || typeof member !== 'string' || !type || !member) {
+      return res.status(400).json({ error: 'type and member are required' });
+    }
+    // Block path traversal: null bytes, parent-directory sequences, absolute paths.
+    // Dots and slashes are valid in Salesforce member names (e.g. CustomMetadata__mdt.Record, reports/Folder/Name).
+    if (/[\x00]|\.\./.test(member) || /^[/\\]/.test(member)) {
+      return res.status(400).json({ error: 'Invalid member name' });
+    }
+
+    const data = await readCompare(logDir);
+    if (!data) return res.status(404).json({ error: 'No comparison result found.' });
+
+    const os = await import('os');
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-diff-'));
+
     try {
-      const { type, member } = req.query;
-      if (typeof type !== 'string' || typeof member !== 'string' || !type || !member) {
-        return res.status(400).json({ error: 'type and member are required' });
-      }
-      // Block path traversal: null bytes, parent-directory sequences, absolute paths.
-      // Dots and slashes are valid in Salesforce member names (e.g. CustomMetadata__mdt.Record, reports/Folder/Name).
-      if (/[\x00]|\.\./.test(member) || /^[/\\]/.test(member)) {
-        return res.status(400).json({ error: 'Invalid member name' });
-      }
-
-      const data = await readCompare(logDir);
-      if (!data) return res.status(404).json({ error: 'No comparison result found.' });
-
-      const os = await import('os');
-      const tmpDir = path.join(os.tmpdir(), `sfdt-diff-${Date.now()}`);
-
       const [sourceXml, targetXml] = await Promise.all([
         data.source === 'local'
           ? readLocalComponentXml(config, type, member)
@@ -1221,6 +1248,8 @@ export function createGuiApp(config, version, port = 7654) {
       res.json({ sourceXml: sourceXml ?? '', targetXml: targetXml ?? '' });
     } catch (err) {
       res.status(500).json({ error: err.message });
+    } finally {
+      await fs.remove(tmpDir).catch(() => {});
     }
   });
 

@@ -50,6 +50,7 @@ vi.mock('fs-extra', () => ({
     ensureDir: vi.fn().mockResolvedValue(undefined),
     writeFile: vi.fn().mockResolvedValue(undefined),
     writeJson: vi.fn().mockResolvedValue(undefined),
+    mkdtemp: vi.fn(async (prefix) => `${prefix}mocked`),
   },
 }));
 
@@ -639,9 +640,11 @@ describe('POST /api/compare', () => {
 
 describe('GET /api/compare/stream', () => {
   let app;
+  let csrf;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    csrf = (await request(app).get('/api/csrf-token')).body.token;
   });
 
   afterAll(async () => {
@@ -649,11 +652,17 @@ describe('GET /api/compare/stream', () => {
   });
 
   it('returns 200 SSE stream when compare data exists (readJson returns {})', async () => {
-    // readJson returns {} by default → data = {} (truthy) → SSE mode
-    const res = await request(app).get('/api/compare/stream');
-    // When data exists (even empty), SSE headers are set
+    // readJson returns {} by default → data = {} (truthy) → SSE mode.
+    // The endpoint requires CSRF via ?csrf= because EventSource cannot
+    // set custom headers.
+    const res = await request(app).get(`/api/compare/stream?csrf=${csrf}`);
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/event-stream/);
+  });
+
+  it('returns 403 when csrf query param is missing', async () => {
+    const res = await request(app).get('/api/compare/stream');
+    expect(res.status).toBe(403);
   });
 });
 

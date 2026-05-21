@@ -28,6 +28,12 @@ import { resolveExitCode } from '../lib/exit-codes.js';
 
 const BROWSER_CHOICES = ['chrome', 'edge', 'brave', 'chromium', 'vivaldi', 'all'];
 
+// Chrome assigns extension IDs as exactly 32 chars from [a-p]
+// (a base-16 mapping of the public-key SHA-256 hash). Validate at parse time
+// so a typo or pasted URL produces a clear error before any installer or
+// registry-write code runs.
+const EXTENSION_ID_RE = /^[a-p]{32}$/;
+
 export function registerExtensionCommand(program) {
   const extension = program
     .command('extension')
@@ -52,6 +58,11 @@ export function registerExtensionCommand(program) {
         if (!BROWSER_CHOICES.includes(options.browser)) {
           throw new Error(
             `--browser must be one of: ${BROWSER_CHOICES.join(', ')}. Got: ${options.browser}`,
+          );
+        }
+        if (typeof options.extensionId !== 'string' || !EXTENSION_ID_RE.test(options.extensionId)) {
+          throw new Error(
+            `--extension-id must be 32 lowercase letters a–p (Chrome extension IDs are base-16 → a-p). Got: ${options.extensionId}`,
           );
         }
         const result = await installNativeHost({

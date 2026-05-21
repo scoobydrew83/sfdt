@@ -174,7 +174,11 @@ export function registerDoctorCommand(program) {
           // top-level checks (config validity, sf CLI version, git status).
           console.log(chalk.dim('No diagnostic group selected; defaulting to --extension.'));
         }
-        const port = Math.max(1, Number(options.port) || DEFAULT_PORT);
+        const parsedPort = Number(options.port);
+        if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+          throw new Error(`--port must be an integer in [1, 65535]. Got: ${options.port}`);
+        }
+        const port = parsedPort;
         const { results, ok } = await runExtensionDoctor({ port });
         if (options.json) {
           process.stdout.write(JSON.stringify({ ok, results }, null, 2) + '\n');

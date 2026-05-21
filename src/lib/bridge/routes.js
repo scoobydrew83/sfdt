@@ -16,8 +16,15 @@
  * @sfdt/flow-core rejects malformed payloads before they reach a handler.
  */
 
+import path from 'node:path';
 import { createBridgeAuthMiddleware, createBridgeCorsMiddleware } from './middleware.js';
 import { readDisabledFeatures } from './feature-flags.js';
+
+// Hard cap on `quality.flowXml` payloads. Salesforce Flow JSON is typically
+// tens of KB; the largest realistic flow we've measured is ~800 KB. 5 MB is a
+// safe ceiling that still prevents memory-exhaustion via crafted JSON before
+// JSON.parse runs.
+const MAX_FLOW_XML_BYTES = 5 * 1024 * 1024;
 
 // Lazy import so flow-core's build is not required to start the server; the
 // import happens the first time /api/bridge/exchange runs, by which point
@@ -30,19 +37,39 @@ async function loadContract() {
 }
 
 /**
+ * Resolve the project root that the bridge should read/write files against.
+ * Prefers an explicit projectRoot from caller; falls back to deriving it
+ * from configDir (one level up from `.sfdt/`). process.cwd() is intentionally
+ * NOT consulted — the bridge runs inside `sfdt ui` whose working directory
+ * may not be the project (per CLAUDE.md CRITICAL RULE).
+ */
+function resolveProjectRoot({ projectRoot, configDir }) {
+  if (projectRoot) return projectRoot;
+  if (configDir) return path.dirname(configDir);
+  return null;
+}
+
+/**
  * Mount bridge routes onto the Express app.
  *
  * @param {import('express').Application} app
  * @param {object} opts
  * @param {number} opts.port              - The port the gui server is on.
  * @param {string} opts.version           - sfdt CLI version string.
+ * @param {string} [opts.projectRoot]     - Absolute path to the user's
+ *   Salesforce project. The bridge reads .sfdt/feature-flags.json and writes
+ *   .sfdt/telemetry-snapshot.json against this root. If omitted, derived from
+ *   `configDir`.
+ * @param {string} [opts.configDir]       - Absolute path to the project's
+ *   `.sfdt/` directory. Used as the fallback source for projectRoot.
  * @param {import('express').RequestHandler} [opts.rateLimiter]
  *   Optional rate limiter (uses gui-server's apiLimiter when supplied).
  */
-export function mountBridgeRoutes(app, { port, version, rateLimiter }) {
+export function mountBridgeRoutes(app, { port, version, projectRoot, configDir, rateLimiter }) {
   const cors = createBridgeCorsMiddleware(port);
   const auth = createBridgeAuthMiddleware();
   const limiter = rateLimiter ?? ((_req, _res, next) => next());
+  const resolvedProjectRoot = resolveProjectRoot({ projectRoot, configDir });
 
   // Mount CORS as a path-prefix middleware so it runs on every HTTP method —
   // including OPTIONS preflights — for any /api/bridge/* path. The middleware
@@ -54,12 +81,14 @@ export function mountBridgeRoutes(app, { port, version, rateLimiter }) {
   // localhost is reachable without prompting the user for a token first.
   app.get('/api/bridge/ping', limiter, async (_req, res) => {
     let disabledFeatures = [];
-    try {
-      disabledFeatures = await readDisabledFeatures(process.cwd());
-    } catch {
-      // readDisabledFeatures already handles known I/O / parse errors;
-      // the try here is defensive against unforeseen throws so the ping
-      // response always lands.
+    if (resolvedProjectRoot) {
+      try {
+        disabledFeatures = await readDisabledFeatures(resolvedProjectRoot);
+      } catch {
+        // readDisabledFeatures already handles known I/O / parse errors;
+        // the try here is defensive against unforeseen throws so the ping
+        // response always lands.
+      }
     }
     const { PROTOCOL_VERSION } = await loadContract();
     res.json({
@@ -93,7 +122,12 @@ export function mountBridgeRoutes(app, { port, version, rateLimiter }) {
 
     const { request } = validation;
     try {
-      const response = await dispatch(request, { version, makeSuccessResponse, makeErrorResponse });
+      const response = await dispatch(request, {
+        version,
+        projectRoot: resolvedProjectRoot,
+        makeSuccessResponse,
+        makeErrorResponse,
+      });
       return res.json(response);
     } catch (err) {
       return res.status(500).json(makeErrorResponse(request.requestId, err.message, 'INTERNAL_ERROR'));
@@ -109,14 +143,16 @@ export function mountBridgeRoutes(app, { port, version, rateLimiter }) {
  * can be built (Phase 3), then individual handlers fill in as Phases 4–6
  * land.
  */
-async function dispatch(request, { version, makeSuccessResponse, makeErrorResponse }) {
+async function dispatch(request, { version, projectRoot, makeSuccessResponse, makeErrorResponse }) {
   switch (request.kind) {
     case 'ping': {
       let disabledFeatures = [];
-      try {
-        disabledFeatures = await readDisabledFeatures(process.cwd());
-      } catch {
-        // Defensive — readDisabledFeatures already swallows known errors.
+      if (projectRoot) {
+        try {
+          disabledFeatures = await readDisabledFeatures(projectRoot);
+        } catch {
+          // Defensive — readDisabledFeatures already swallows known errors.
+        }
       }
       const { PROTOCOL_VERSION } = await loadContract();
       return makeSuccessResponse(request.requestId, {
@@ -135,6 +171,16 @@ async function dispatch(request, { version, makeSuccessResponse, makeErrorRespon
       // accept JSON-stringified Tooling API Metadata so the Chrome extension
       // and the CLI dashboard share this path. Full XML parsing lands in
       // Phase 7's distribution work.
+      //
+      // Size-cap the payload BEFORE JSON.parse so a multi-GB string from a
+      // misbehaving caller can't exhaust memory.
+      if (typeof request.flowXml === 'string' && request.flowXml.length > MAX_FLOW_XML_BYTES) {
+        return makeErrorResponse(
+          request.requestId,
+          `quality.flowXml exceeds the ${MAX_FLOW_XML_BYTES}-byte limit`,
+          'REQUEST_INVALID',
+        );
+      }
       const { runFlowQuality } = await import('../flow-quality.js');
       let metadata;
       try {
@@ -192,9 +238,20 @@ async function dispatch(request, { version, makeSuccessResponse, makeErrorRespon
       // Persist the extension-reported telemetry counters so
       // `sfdt extension stats` can read them. Writes are best-effort: a
       // failure to write the file should not break the extension.
+      //
+      // The snapshot must land in the project's .sfdt/ directory so
+      // `sfdt extension stats` (which reads via getConfigDir()) finds it —
+      // process.cwd() would point at wherever the user launched sfdt ui from,
+      // not the project root, and the read would always miss.
+      if (!projectRoot) {
+        return makeErrorResponse(
+          request.requestId,
+          'Cannot persist telemetry snapshot: no project root resolved on the bridge',
+          'INTERNAL_ERROR',
+        );
+      }
       const fsExtra = (await import('fs-extra')).default;
-      const path = await import('path');
-      const file = path.join(process.cwd(), '.sfdt', 'telemetry-snapshot.json');
+      const file = path.join(projectRoot, '.sfdt', 'telemetry-snapshot.json');
       try {
         await fsExtra.outputJson(
           file,

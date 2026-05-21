@@ -971,24 +971,40 @@ describe('PATCH /api/config — success path', () => {
 
   it('returns 200 with ok, key, and value when key and value are valid', async () => {
     const { default: fsMock } = await import('fs-extra');
-    fsMock.readJson.mockResolvedValueOnce({ defaultOrg: 'dev' });
+    fsMock.readJson.mockResolvedValueOnce({ projectName: 'old' });
 
     const res = await request(app)
       .patch('/api/config')
       .set('X-SFDT-CSRF', csrf)
-      .send({ key: 'defaultOrg', value: 'staging' });
+      .send({ key: 'projectName', value: 'new' });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
-    expect(res.body.key).toBe('defaultOrg');
+    expect(res.body.key).toBe('projectName');
   });
 
   it('returns 400 when value is missing', async () => {
     const res = await request(app)
       .patch('/api/config')
       .set('X-SFDT-CSRF', csrf)
-      .send({ key: 'defaultOrg' });
+      .send({ key: 'projectName' });
     expect(res.status).toBe(400);
     expect(res.body.error).toBeTruthy();
+  });
+
+  it('returns 403 when key targets defaultOrg (must go through /api/session/org)', async () => {
+    const res = await request(app)
+      .patch('/api/config')
+      .set('X-SFDT-CSRF', csrf)
+      .send({ key: 'defaultOrg', value: 'staging' });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 403 when key targets a deployment.preflight.* enforcement flag', async () => {
+    const res = await request(app)
+      .patch('/api/config')
+      .set('X-SFDT-CSRF', csrf)
+      .send({ key: 'deployment.preflight.enforceGitClean', value: 'false' });
+    expect(res.status).toBe(403);
   });
 });
 

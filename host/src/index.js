@@ -54,6 +54,12 @@ const HOST_VERSION = (() => {
 // ─── Framing ────────────────────────────────────────────────────────────────
 
 const MAX_RESPONSE_BYTES = 1024 * 1024; // Chrome's host→extension limit
+// Chrome's documented extension→host limit is 64 MB, but the host only ever
+// needs to receive SfdtRequest envelopes (a few KB at most for routine calls,
+// up to a couple hundred KB for the largest realistic flow-quality payload).
+// Cap at 4 MB so a 0xFFFFFFFF length header — which would otherwise allocate
+// 4 GB before any validation runs — fails fast.
+const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 
 function writeFrame(payload) {
   const json = JSON.stringify(payload);
@@ -82,6 +88,19 @@ function setupStdinReader(onMessage) {
     while (true) {
       if (buffer.length < 4) return;
       const length = buffer.readUInt32LE(0);
+      if (length > MAX_REQUEST_BYTES) {
+        // Reject the frame and re-sync by dropping the 4-byte length prefix so
+        // subsequent bytes are not interpreted as a stale frame body. Chrome
+        // closes the channel after an oversized message, so exiting is safe
+        // and prevents a multi-GB allocation on the next loop iteration.
+        writeFrame({
+          ok: false,
+          requestId: 'oversized',
+          error: `Frame length ${length} exceeds the ${MAX_REQUEST_BYTES}-byte limit`,
+          code: 'REQUEST_INVALID',
+        });
+        process.exit(1);
+      }
       if (buffer.length < 4 + length) return;
       const body = buffer.subarray(4, 4 + length);
       buffer = buffer.subarray(4 + length);

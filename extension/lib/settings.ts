@@ -177,10 +177,14 @@ export function onSettingsChange(callback: (settings: Settings) => void): () => 
   ): void => {
     if (namespace !== 'local') return;
     if (!changes[STORAGE_KEY]) return;
-    const next = SettingsSchema.safeParse(changes[STORAGE_KEY].newValue ?? {});
+    // Use the composed schema (same as loadSettings/saveSettings) so dynamically
+    // registered featureSettings.<id> entries survive a storage round-trip. The
+    // base SettingsSchema would strip them, silently clearing per-feature
+    // preferences on every other tab's onChanged fire.
+    const next = getComposedSchema().safeParse(changes[STORAGE_KEY].newValue ?? {});
     if (next.success) {
-      _cache = next.data;
-      callback(next.data);
+      _cache = next.data as Settings;
+      callback(next.data as Settings);
     }
   };
   chrome.storage.onChanged.addListener(listener);

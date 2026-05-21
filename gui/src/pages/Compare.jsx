@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { api } from '../api.js';
+import { api, csrfQuery } from '../api.js';
 import CompareTable from '../components/CompareTable.jsx';
 import DiffPanel from '../components/DiffPanel.jsx';
 import EmptyState from '../components/EmptyState.jsx';
@@ -79,12 +79,15 @@ export default function ComparePage() {
 
   const allOrgs = useMemo(() => [LOCAL_OPT, ...orgs.map((o) => ({ id: o.alias, label: o.alias, alias: o.alias }))], [orgs]);
 
-  const startPhase2 = () => {
+  const startPhase2 = async () => {
     esRef.current?.close();
     setPhase2Active(true);
     setPhase2Done(0);
 
-    const es = new EventSource('/api/compare/stream');
+    // CSRF: the stream endpoint accepts the token via ?csrf because
+    // EventSource can't set custom headers.
+    const query = await csrfQuery();
+    const es = new EventSource(`/api/compare/stream?${query}`);
     esRef.current = es;
 
     es.onmessage = (e) => {

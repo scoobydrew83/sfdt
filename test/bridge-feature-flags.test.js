@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readDisabledFeatures } from '../src/lib/bridge/feature-flags.js';
@@ -7,8 +7,10 @@ import { readDisabledFeatures } from '../src/lib/bridge/feature-flags.js';
 describe('readDisabledFeatures', () => {
   let tmp;
   beforeEach(async () => {
-    tmp = join(tmpdir(), `sfdt-ff-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    await mkdir(tmp, { recursive: true });
+    // mkdtemp gives us an OS-allocated, unguessable, mode-0700 directory.
+    // Predictable `${Date.now()}-${Math.random()}` names race on a busy
+    // worker and trip CodeQL's "insecure temp file" rule.
+    tmp = await mkdtemp(join(tmpdir(), 'sfdt-ff-'));
     await mkdir(join(tmp, '.sfdt'), { recursive: true });
   });
   afterEach(async () => {
