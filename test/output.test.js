@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { print, createSpinner } from '../src/lib/output.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { print, createSpinner, formatSplash, printSplash } from '../src/lib/output.js';
 
 describe('print', () => {
   it('print.success writes to stdout', () => {
@@ -89,6 +89,62 @@ describe('print', () => {
     print.success('hello');
     const arg = spy.mock.calls[0][0];
     expect(arg).toMatch(/hello/);
+    spy.mockRestore();
+  });
+});
+
+describe('formatSplash', () => {
+  const originalIsTTY = process.stdout.isTTY;
+
+  afterEach(() => {
+    process.stdout.isTTY = originalIsTTY;
+  });
+
+  it('returns single-line fallback when stdout is not a TTY', () => {
+    process.stdout.isTTY = false;
+    const out = formatSplash({ version: '1.2.3' });
+    expect(out).toBe('sfdt · Salesforce DevOps Toolkit · v1.2.3');
+  });
+
+  it('renders compact banner by default in TTY mode', () => {
+    process.stdout.isTTY = true;
+    const out = formatSplash({ version: '9.9.9' });
+    expect(out).toContain('v9.9.9');
+    expect(out).toContain('sfdt.dev');
+    // Compact banner contains the rounded box character set
+    expect(out).toContain('┌');
+    expect(out).toContain('└');
+  });
+
+  it('renders block banner when size=block in TTY mode', () => {
+    process.stdout.isTTY = true;
+    const out = formatSplash({ version: '0.1.0', size: 'block' });
+    expect(out).toContain('v0.1.0');
+    expect(out).toContain('Salesforce DevOps Toolkit');
+    // Block banner uses full-width block characters
+    expect(out).toContain('███');
+  });
+
+  it('defaults size to compact when not provided', () => {
+    process.stdout.isTTY = true;
+    const compact = formatSplash({ version: '1.0.0' });
+    const explicit = formatSplash({ version: '1.0.0', size: 'compact' });
+    expect(compact).toBe(explicit);
+  });
+
+  it('handles missing opts object gracefully', () => {
+    process.stdout.isTTY = false;
+    const out = formatSplash();
+    expect(out).toContain('vundefined');
+  });
+});
+
+describe('printSplash', () => {
+  it('writes the splash to stdout via console.log', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    printSplash({ version: '2.0.0' });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0]).toContain('v2.0.0');
     spy.mockRestore();
   });
 });

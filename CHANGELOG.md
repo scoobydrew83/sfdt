@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-21
+
+The monorepo release. Adds a Chrome extension surface, a local HTTP bridge that lets the extension drive sfdt commands from inside Salesforce, three new CLI commands, three new GUI tools (SOQL Runner, Org Limits, REST Explorer), and a hardened CSRF + origin guard around the local GUI server.
+
+### Added
+
+- **`sfdt extension` command** with four subcommands for managing the Chrome native messaging host:
+  - `install-host --extension-id <id> [--browser chrome|edge|brave|chromium|vivaldi|all]` — registers the native host manifest for the SFDT SF Helper extension. Strict `^[a-p]{32}$` validation on the extension ID.
+  - `uninstall-host [--browser <name>]` — removes the manifest from one or all browsers.
+  - `status` — reports which browsers have the manifest installed and where each one points.
+  - `stats [--limit N] [--json]` — pretty-prints the telemetry snapshot the extension pushes to `.sfdt/telemetry-snapshot.json`.
+- **`sfdt doctor --extension` command** — end-to-end diagnostic for the extension stack: bridge ping, native host registration, feature flags, telemetry snapshot. Exits non-zero on any failure for CI use.
+- **`sfdt feature-flags` command** — manage `.sfdt/feature-flags.json` to remotely disable individual extension features (kill switch).
+- **`sfdt flow` command** — Flow-focused subcommands shared with the extension via the new flow-core library.
+- **Native messaging host** (`host/` workspace, published separately from the CLI) — backs the extension's `chrome.runtime.connectNative` transport when the local `sfdt ui` HTTP server isn't running.
+- **HTTP bridge** at `/api/bridge/*` — lets the Chrome extension drive `sfdt deploy`, `sfdt rollback`, and `sfdt quality` from inside any Salesforce org. Authenticated with a per-user bearer token at `~/.sfdt/bridge-token` (32 bytes CSPRNG, file mode 0600, constant-time compare).
+- **Shared `@sfdt/flow-core` TypeScript library** (`packages/flow-core/`) — bridge contract, Flow XML normaliser, API-name defaults, scheduled-Flow calculator, scorer rules, subflow graph builder, and trigger-conflict analyser. Consumed by both the CLI and the extension.
+- **GUI: SOQL Runner page** — arbitrary SOQL execution with REST/Tooling API toggle, query history, and CSV export.
+- **GUI: Org Limits page** — `sf org limits` results rendered as cards with utilisation bands and warning thresholds.
+- **GUI: REST API Explorer** — arbitrary `GET`/`POST`/`PATCH`/`PUT`/`DELETE` calls against the connected org, with header editor, JSON body editor, and request history.
+- **GUI: Release Hub Quick Deploy** — promote a successful validation by validation job ID (true Salesforce Quick Deploy, no re-validation roundtrip).
+- **GUI: Release Hub destructive modes** — opt-in `destructive` and `destructive-only` deploy modes surface in the Deploy step with explicit confirmations.
+- **GUI: structured failure rendering + Ask-AI** — `CommandRunner` and `StreamRunner` now render structured failures (parsed test failures, code-coverage gaps) and offer an Ask-AI button that pipes the failure into the explain pipeline.
+- **GUI: manifest picklist search** — the Release Hub manifest picker becomes type-ahead searchable when more than a handful of manifests exist.
+- **CLI splash banner** — `sfdt ui` and other entry points print a colourised ASCII splash with the current version on TTY stdout (falls back to a one-line label in CI).
+- **Bridge ping surfaces feature flags** — `/api/bridge/ping` and the native messaging `ping` handler now include `disabledFeatures` derived from `.sfdt/feature-flags.json`, so the extension can react to remote kill switches without a separate fetch.
+
+### Changed
+
+- **`SalesforceApiClient` additions** in the shared library: `query`, `queryMore`, `limits`, `rawRequest` + `QueryEnvelope<T>` / `HttpMethod` types. Used by all extension features and by the new GUI SOQL/Limits/REST pages.
+- **AI command handling enforces read-only modes** for Gemini and Codex providers — prevents accidental mutations when the explain/review pipelines invoke a non-Claude provider.
+- **Release Hub white-on-white dark-mode bug fixed** on the Deploy step.
+- **Deploy checkbox defaults flipped to `false`** — opt-in for `runAllTests`, `rollbackOnError`, and the new destructive modes.
+- **TypeScript workspaces linted** — `extension/`, `packages/flow-core/`, and `host/` are now covered by the root `npm run lint`.
+- **Extension renamed to "SFDT SF Helper"** with strict comment-strip across `extension/` and `packages/flow-core/src/` for a smaller bundle.
+
+### Fixed
+
+- **GUI Release Hub failure UX**: deploy/quality/rollback failures now render with structured rows and a one-click Ask-AI affordance, replacing the previous opaque "non-zero exit" terminal dump.
+- **Bridge `readDisabledFeatures` resilience**: defensive try/catch in the ping handlers so a malformed `.sfdt/feature-flags.json` does not 500 the ping endpoint.
+
+### Security
+
+- **Path-traversal hardening** in `/api/changelog/save` and `/api/release-notes/save`. `pkgName`/`pkgTarget` are now validated against `/^[A-Za-z0-9_-]+$/`; `version` is validated against `/^[A-Za-z0-9][A-Za-z0-9._-]*$/` and rejects any `..` substring. Prevents overwrite of arbitrary `.md` files inside `_projectRoot` via a CSRF-authenticated POST. (Closed two medium findings raised by the pre-release adversarial security review.)
+- **CSRF protection** on all mutating GUI API routes via a per-session token returned from `GET /api/csrf-token` and required on the `X-SFDT-CSRF` header. The token is bound to the server process and never sent cross-origin.
+- **Tightened origin guard** — the localhost-only middleware now rejects mutating requests (POST/PATCH/DELETE) that arrive without an `Origin` header, in addition to the existing allowlist check.
+- **Strict `targetOrg` validation** before any `sf` CLI shell-out: `/^[A-Za-z0-9_.\-@]+$/`. Same regex applied to `flowApiName` (`/^[A-Za-z][A-Za-z0-9_]*$/`) in the flow deploy and rollback runners.
+- **Bridge bearer token** at `~/.sfdt/bridge-token` — 32 bytes from `crypto.randomBytes`, base64url-encoded, file mode 0600 on POSIX, validated with `crypto.timingSafeEqual` on every `/api/bridge/*` request.
+- **Extension ID JSON-injection foreclosed** — the native host installer validates `extensionId` against `/^[a-p]{32}$/` before substituting it into the manifest template.
+
 ## [0.8.1] - 2026-05-13
 
 ### Fixed

@@ -20,6 +20,11 @@ vi.mock('../../host/installers/install-host.js', () => ({
 
 import fs from 'fs-extra';
 import { getConfigDir } from '../../src/lib/config.js';
+import {
+  installNativeHost,
+  uninstallNativeHost,
+  nativeHostStatus,
+} from '../../host/installers/install-host.js';
 import { registerExtensionCommand } from '../../src/commands/extension.js';
 
 function createProgram() {
@@ -114,5 +119,176 @@ describe('sfdt extension stats', () => {
     expect(allOutput).toContain('b ');
     expect(allOutput).toContain('2 more');
     logSpy.mockRestore();
+  });
+});
+
+describe('sfdt extension install-host', () => {
+  it('installs the native host and pretty-prints per-browser results', async () => {
+    installNativeHost.mockResolvedValue({
+      ok: true,
+      platform: 'darwin',
+      hostPath: '/usr/local/bin/sfdt-host',
+      results: [
+        { browser: 'chrome', ok: true, manifestPath: '/Users/me/Library/Chrome/com.sfdt.host.json' },
+        { browser: 'edge', ok: false, error: 'Edge not installed' },
+      ],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'extension', 'install-host',
+      '--extension-id', 'abcdefghijklmnopabcdefghijklmnop',
+      '--browser', 'chrome',
+    ]);
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('Installed native host on darwin');
+    expect(out).toContain('/usr/local/bin/sfdt-host');
+    expect(out).toContain('chrome');
+    expect(out).toContain('edge');
+    expect(process.exitCode).toBeFalsy();
+    logSpy.mockRestore();
+  });
+
+  it('--json mode emits the full result envelope', async () => {
+    installNativeHost.mockResolvedValue({
+      ok: true,
+      platform: 'darwin',
+      hostPath: '/usr/local/bin/sfdt-host',
+      results: [{ browser: 'chrome', ok: true, manifestPath: '/m.json' }],
+    });
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'extension', 'install-host',
+      '--extension-id', 'abcdefghijklmnopabcdefghijklmnop',
+      '--json',
+    ]);
+    const parsed = JSON.parse(writeSpy.mock.calls[0][0]);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.platform).toBe('darwin');
+    expect(parsed.results).toHaveLength(1);
+    writeSpy.mockRestore();
+  });
+
+  it('reports installer failure with exit code 1', async () => {
+    installNativeHost.mockResolvedValue({ ok: false, error: 'Permission denied' });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'extension', 'install-host',
+      '--extension-id', 'abcdefghijklmnopabcdefghijklmnop',
+    ]);
+    expect(process.exitCode).toBe(1);
+    expect(errSpy.mock.calls.some((c) => String(c[0]).includes('Permission denied'))).toBe(true);
+    errSpy.mockRestore();
+  });
+
+  it('rejects an unsupported --browser value', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'extension', 'install-host',
+      '--extension-id', 'abcdefghijklmnopabcdefghijklmnop',
+      '--browser', 'safari',
+    ]);
+    expect(process.exitCode).toBeGreaterThan(0);
+    expect(errSpy.mock.calls.some((c) => String(c[0]).includes('--browser must be one of'))).toBe(true);
+    errSpy.mockRestore();
+  });
+
+  it('catches installer exceptions and emits JSON error when --json is set', async () => {
+    installNativeHost.mockRejectedValue(new Error('disk full'));
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'extension', 'install-host',
+      '--extension-id', 'abcdefghijklmnopabcdefghijklmnop',
+      '--json',
+    ]);
+    const parsed = JSON.parse(writeSpy.mock.calls[0][0]);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toBe('disk full');
+    writeSpy.mockRestore();
+  });
+});
+
+describe('sfdt extension uninstall-host', () => {
+  it('pretty-prints per-browser removal results', async () => {
+    uninstallNativeHost.mockResolvedValue({
+      platform: 'darwin',
+      results: [
+        { browser: 'chrome', removed: true, manifestPath: '/path/chrome.json' },
+        { browser: 'edge', removed: false, reason: 'not installed' },
+      ],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'extension', 'uninstall-host']);
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('Uninstalled native host on darwin');
+    expect(out).toContain('chrome');
+    expect(out).toContain('edge');
+    expect(out).toContain('not installed');
+    logSpy.mockRestore();
+  });
+
+  it('--json mode emits the result envelope', async () => {
+    uninstallNativeHost.mockResolvedValue({
+      platform: 'darwin',
+      results: [{ browser: 'chrome', removed: true, manifestPath: '/m.json' }],
+    });
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'extension', 'uninstall-host', '--json']);
+    const parsed = JSON.parse(writeSpy.mock.calls[0][0]);
+    expect(parsed.platform).toBe('darwin');
+    expect(parsed.results[0].removed).toBe(true);
+    writeSpy.mockRestore();
+  });
+
+  it('rejects an unsupported --browser value', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'extension', 'uninstall-host', '--browser', 'firefox',
+    ]);
+    expect(process.exitCode).toBeGreaterThan(0);
+    expect(errSpy.mock.calls.some((c) => String(c[0]).includes('--browser must be one of'))).toBe(true);
+    errSpy.mockRestore();
+  });
+});
+
+describe('sfdt extension status', () => {
+  it('pretty-prints installed and not-installed browsers', async () => {
+    nativeHostStatus.mockResolvedValue({
+      platform: 'darwin',
+      browsers: [
+        { browser: 'chrome', installed: true, manifestPath: '/path/chrome.json', hostPath: '/usr/local/bin/sfdt-host' },
+        { browser: 'edge', installed: false },
+      ],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'extension', 'status']);
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('Native host status — darwin');
+    expect(out).toContain('chrome');
+    expect(out).toContain('edge');
+    expect(out).toContain('not installed');
+    expect(out).toContain('launcher: /usr/local/bin/sfdt-host');
+    logSpy.mockRestore();
+  });
+
+  it('--json mode emits the status envelope', async () => {
+    nativeHostStatus.mockResolvedValue({
+      platform: 'darwin',
+      browsers: [{ browser: 'chrome', installed: false }],
+    });
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'extension', 'status', '--json']);
+    const parsed = JSON.parse(writeSpy.mock.calls[0][0]);
+    expect(parsed.platform).toBe('darwin');
+    expect(parsed.browsers[0].installed).toBe(false);
+    writeSpy.mockRestore();
+  });
+
+  it('catches errors and reports them', async () => {
+    nativeHostStatus.mockRejectedValue(new Error('boom'));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'extension', 'status']);
+    expect(process.exitCode).toBeGreaterThan(0);
+    expect(errSpy.mock.calls.some((c) => String(c[0]).includes('boom'))).toBe(true);
+    errSpy.mockRestore();
   });
 });

@@ -182,4 +182,54 @@ describe('sfdt doctor command wiring', () => {
     expect(process.exitCode).toBe(1);
     writeSpy.mockRestore();
   });
+
+  it('pretty-prints results when --json is not set, with the extension stack header', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetchOk({
+      ok: true,
+      data: { serverVersion: 'X', protocolVersion: 'Y' },
+    });
+    try {
+      await createProgram().parseAsync(['node', 'sfdt', 'doctor', '--extension']);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('Extension stack diagnostic');
+    expect(out).toContain('sfdt ui bridge');
+    logSpy.mockRestore();
+  });
+
+  it('prints the red failure summary and sets exitCode 1 in pretty mode when a check fails', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetchThrows();
+    try {
+      await createProgram().parseAsync(['node', 'sfdt', 'doctor', '--extension']);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(process.exitCode).toBe(1);
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toMatch(/Some checks failed/i);
+    logSpy.mockRestore();
+  });
+
+  it('warns and defaults to --extension when no diagnostic group is selected', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetchOk({
+      ok: true,
+      data: { serverVersion: 'X', protocolVersion: 'Y' },
+    });
+    try {
+      await createProgram().parseAsync(['node', 'sfdt', 'doctor']);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('defaulting to --extension');
+    logSpy.mockRestore();
+  });
 });
