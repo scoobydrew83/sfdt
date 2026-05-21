@@ -1613,8 +1613,35 @@ export function createGuiApp(config, version, port = 7654) {
 
   // ── Release Hub: path helpers ─────────────────────────────────────────────
 
+  // Reject anything that could introduce a path separator or `..` traversal
+  // segment once interpolated into a file path. Package names are simple
+  // identifiers; versions may contain dots (semver) but never `..`.
+  const PKG_SEGMENT_RE = /^[A-Za-z0-9_-]+$/;
+  const VERSION_SEGMENT_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+  function assertSafePkgSegment(value, label) {
+    if (typeof value !== 'string' || !PKG_SEGMENT_RE.test(value)) {
+      const err = new Error(`Invalid ${label}: must match ${PKG_SEGMENT_RE}`);
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
+  function assertSafeVersionSegment(value) {
+    if (
+      typeof value !== 'string' ||
+      !VERSION_SEGMENT_RE.test(value) ||
+      value.includes('..')
+    ) {
+      const err = new Error(`Invalid version: must match ${VERSION_SEGMENT_RE} and not contain '..'`);
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
   function resolveChangelogFilePath(projectRoot, pkgName) {
     if (!pkgName) return path.join(projectRoot, 'CHANGELOG.md');
+    assertSafePkgSegment(pkgName, 'package name');
     const changelogDir = config.changelogDir ?? 'changelogs';
     return path.join(projectRoot, changelogDir, `${pkgName}.md`);
   }
@@ -1623,10 +1650,12 @@ export function createGuiApp(config, version, port = 7654) {
     const releaseNotesDir = config.releaseNotesDir ?? 'release-notes';
     const layout = config.manifestLayout ?? 'flat';
     const ts = new Date().toISOString().split('T')[0];
+    if (version) assertSafeVersionSegment(version);
     if (!pkgTarget || pkgTarget === 'all') {
       const name = version ? `rl-${version}-RELEASE-NOTES.md` : `release-notes-${ts}.md`;
       return path.join(projectRoot, releaseNotesDir, name);
     }
+    assertSafePkgSegment(pkgTarget, 'package target');
     if (layout === 'subpath') {
       const name = version ? `rl-${version}-RELEASE-NOTES.md` : `release-notes-${ts}.md`;
       return path.join(projectRoot, releaseNotesDir, pkgTarget, name);
@@ -1655,7 +1684,7 @@ export function createGuiApp(config, version, port = 7654) {
       const content = match ? match[1].trim() : '';
       res.json({ content, exists: true, file: path.relative(projectRoot, changelogPath) });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(err.statusCode ?? 500).json({ error: err.message });
     }
   });
 
@@ -1702,7 +1731,7 @@ export function createGuiApp(config, version, port = 7654) {
       await fs.writeFile(changelogPath, updated);
       res.json({ ok: true, file: path.relative(projectRoot, changelogPath) });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(err.statusCode ?? 500).json({ error: err.message });
     }
   });
 
@@ -1727,7 +1756,7 @@ export function createGuiApp(config, version, port = 7654) {
       await fs.writeFile(notesPath, content);
       res.json({ ok: true, path: path.relative(projectRoot, notesPath) });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(err.statusCode ?? 500).json({ error: err.message });
     }
   });
 

@@ -1043,6 +1043,22 @@ describe('POST /api/release-notes/save', () => {
       .send({ content: bigContent });
     expect(res.status).toBe(413);
   });
+
+  it('returns 400 when package contains path traversal segments', async () => {
+    const res = await request(app)
+      .post('/api/release-notes/save')
+      .send({ content: 'notes', package: '../scripts', version: 'v1' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid package target/i);
+  });
+
+  it('returns 400 when version contains traversal sequences', async () => {
+    const res = await request(app)
+      .post('/api/release-notes/save')
+      .send({ content: 'notes', package: 'core', version: '1..hostile' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid version/i);
+  });
 });
 
 // ─── POST /api/changelog/save ─────────────────────────────────────────────────
@@ -1097,5 +1113,21 @@ describe('POST /api/changelog/save', () => {
       .post('/api/changelog/save')
       .send({ content: bigContent });
     expect(res.status).toBe(413);
+  });
+
+  it('returns 400 when package contains path traversal segments', async () => {
+    const res = await request(app)
+      .post('/api/changelog/save')
+      .send({ content: 'pwned', package: '../README' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid package name/i);
+  });
+
+  it('returns 400 when package contains a path separator', async () => {
+    const res = await request(app)
+      .post('/api/changelog/save')
+      .send({ content: 'pwned', package: 'foo/bar' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid package name/i);
   });
 });
