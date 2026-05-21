@@ -31,6 +31,36 @@ const HIGHLIGHT_CLASS = 'sfut-canvas-highlight';
 const FOCUS_CLASS = 'sfut-canvas-highlight-focus';
 const DYNAMIC_STYLE_ID = 'sfut-canvas-search-dynamic';
 
+// Salesforce LWC custom-element tags contain underscores
+// (e.g. `builder_platform_interaction-alc-canvas`). Real browsers accept these
+// in CSS selectors; some DOM emulators (happy-dom >=20) reject them via stricter
+// CSS-identifier validation. getElementsByTagName bypasses CSS parsing entirely,
+// so route LWC tag lookups through it and apply any inner selector via
+// querySelectorAll on each match.
+function queryByLwcTag(
+  root: Document | Element,
+  tagNames: string[],
+  innerSelector?: string,
+): Element[] {
+  const results: Element[] = [];
+  for (const tag of tagNames) {
+    const matches =
+      root instanceof Document || (root as Element).getElementsByTagName
+        ? root.getElementsByTagName(tag)
+        : [];
+    for (const el of Array.from(matches) as Element[]) {
+      if (!innerSelector) {
+        results.push(el);
+      } else {
+        for (const inner of el.querySelectorAll(innerSelector)) {
+          results.push(inner);
+        }
+      }
+    }
+  }
+  return results;
+}
+
 export function parseShortcut(str: string): ShortcutParts {
   const parts = str.split('+').map((p) => p.trim().toLowerCase());
   return {
@@ -98,13 +128,18 @@ function findMatches(doc: Document, query: string): Match[] {
     if (container) matches.push({ card: container, label: text, type: 'Connector', isBadge: true });
   }
 
-  const paletteItems = doc.querySelectorAll(
-    'builder_platform_interaction-left-panel-resources tr.palette-item',
+  const paletteItems = queryByLwcTag(
+    doc,
+    ['builder_platform_interaction-left-panel-resources'],
+    'tr.palette-item',
   );
   for (const row of paletteItems) {
-    const nameEl = row.querySelector(
-      'builder_platform_interaction-palette-item .slds-truncate',
+    const paletteItemEls = queryByLwcTag(
+      row,
+      ['builder_platform_interaction-palette-item'],
+      '.slds-truncate',
     );
+    const nameEl = paletteItemEls[0] ?? null;
     const itemName = (nameEl?.textContent ?? '').trim();
     if (!itemName || !itemName.toLowerCase().includes(lower)) continue;
     const section = row.closest('lightning-accordion-section');
@@ -131,9 +166,11 @@ interface ScrollCanvasOptions {
 // adjust the translation portion of the matrix directly instead.
 export function scrollCanvasToElement(el: Element, options: ScrollCanvasOptions = {}): void {
   const doc = options.doc ?? document;
-  const canvas = doc.querySelector(
-    'builder_platform_interaction-alc-canvas .canvas',
-  ) as HTMLElement | null;
+  const canvas = (queryByLwcTag(
+    doc,
+    ['builder_platform_interaction-alc-canvas'],
+    '.canvas',
+  )[0] ?? null) as HTMLElement | null;
   const flowContainer = canvas?.querySelector('.flow-container') as HTMLElement | null;
   if (!canvas || !flowContainer) {
     (el as HTMLElement).scrollIntoView?.({ behavior: 'smooth', block: 'center', inline: 'center' });
@@ -333,9 +370,10 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
     });
 
     const canvasHost =
-      doc.querySelector<HTMLElement>(
-        'builder_platform_interaction-alc-canvas-container, builder_platform_interaction-alc-canvas',
-      ) ?? doc.body;
+      (queryByLwcTag(doc, [
+        'builder_platform_interaction-alc-canvas-container',
+        'builder_platform_interaction-alc-canvas',
+      ])[0] as HTMLElement | undefined) ?? doc.body;
     if (canvasHost !== doc.body) {
       canvasHost.style.position = canvasHost.style.position || 'relative';
     }
