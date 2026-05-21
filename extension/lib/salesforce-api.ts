@@ -5,6 +5,7 @@
 // page origin (Lightning often 401s on REST). A 401 on every candidate
 // clears the session cache and retries once.
 
+import { escapeSoql } from './escape.js';
 import { mySalesforceHostname } from './hostname.js';
 
 const DEFAULT_API_VERSION = 'v62.0';
@@ -298,8 +299,8 @@ export class SalesforceApiClient {
     const namespace = namespaceMatch ? namespaceMatch[1]! : '';
     const developerName = namespaceMatch ? namespaceMatch[2]! : stripped;
 
-    const escDev = developerName.replace(/'/g, "\\'");
-    const escNs = namespace.replace(/'/g, "\\'");
+    const escDev = escapeSoql(developerName);
+    const escNs = escapeSoql(namespace);
     const nsClause = namespace
       ? ` AND Definition.NamespacePrefix = '${escNs}'`
       : ` AND Definition.NamespacePrefix = null`;

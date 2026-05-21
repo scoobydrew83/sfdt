@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { escapeHtml, html } from '../lib/escape.js';
+import { escapeHtml, escapeSoql, html } from '../lib/escape.js';
 
 describe('extension/lib/escape', () => {
   describe('escapeHtml', () => {
@@ -38,6 +38,31 @@ describe('extension/lib/escape', () => {
 
     it('does not touch the static strings', () => {
       expect(html`<a href="">${'x'}</a>`).toBe('<a href="">x</a>');
+    });
+  });
+
+  describe('escapeSoql', () => {
+    it("escapes single quotes with a backslash", () => {
+      expect(escapeSoql("O'Brien")).toBe("O\\'Brien");
+    });
+
+    it('escapes backslashes before single quotes (order matters)', () => {
+      // Input ends with a backslash; without the leading backslash-escape the
+      // emitted SOQL would terminate the string early.
+      expect(escapeSoql('foo\\')).toBe('foo\\\\');
+    });
+
+    it('escapes both backslashes and quotes in one pass', () => {
+      expect(escapeSoql("a\\b'c")).toBe("a\\\\b\\'c");
+    });
+
+    it('returns plain text unchanged', () => {
+      expect(escapeSoql('Activated Flow 01')).toBe('Activated Flow 01');
+    });
+
+    it('handles null and undefined as empty string', () => {
+      expect(escapeSoql(null)).toBe('');
+      expect(escapeSoql(undefined)).toBe('');
     });
   });
 });

@@ -99,18 +99,29 @@ export interface PromptLibraryOptions {
 
 interface CryptoLike {
   randomUUID?: () => string;
+  getRandomValues?: <T extends ArrayBufferView>(array: T) => T;
 }
 
 function defaultIdGenerator(): string {
   // crypto.randomUUID is available in Node 22+ and all modern browsers via
   // globalThis. Look it up without referring to the ambient `crypto` global
-  // so flow-core's tsconfig stays DOM-free.
+  // so flow-core's tsconfig stays DOM-free. Fall back to crypto.getRandomValues
+  // (also universally available in our runtime targets) before Math.random,
+  // so the ID is never derived from a non-cryptographic source even though it
+  // isn't strictly used in a security-sensitive context.
   const g = (globalThis as unknown as { crypto?: CryptoLike }).crypto;
-  const uuid =
-    g && typeof g.randomUUID === 'function'
-      ? g.randomUUID()
-      : `${Math.random().toString(16).slice(2, 10)}-${Date.now().toString(16)}`;
-  return `${CUSTOM_ID_PREFIX}${uuid.replace(/-/g, '').slice(0, 8)}`;
+  if (g && typeof g.randomUUID === 'function') {
+    return `${CUSTOM_ID_PREFIX}${g.randomUUID().replace(/-/g, '').slice(0, 8)}`;
+  }
+  if (g && typeof g.getRandomValues === 'function') {
+    const buf = new Uint8Array(4);
+    g.getRandomValues(buf);
+    const hex = Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+    return `${CUSTOM_ID_PREFIX}${hex}`;
+  }
+  // Defensive fallback for exotic runtimes that lack both APIs. Documented as
+  // non-security-sensitive (collision-tolerant prompt ID, not a token).
+  return `${CUSTOM_ID_PREFIX}${Date.now().toString(16).slice(-8)}`;
 }
 
 function defaultNow(): string {

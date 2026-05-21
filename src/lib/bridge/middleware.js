@@ -26,7 +26,15 @@ const ALLOWED_ORIGIN_PATTERNS = [
 ];
 
 function isAllowedOrigin(origin, localhostOrigins) {
-  if (!origin) return true; // server-to-server / curl with no Origin header
+  // Missing Origin is intentionally permitted here. The bridge accepts
+  // non-browser callers (the @sfdt/host native messaging process and curl-style
+  // smoke tests), and those never send an Origin header. The authoritative
+  // access control on this surface is the bearer-token check in
+  // createBridgeBearerAuthMiddleware — without a valid token any caller is
+  // rejected regardless of origin. Unlike the gui-server's same-origin CSRF
+  // model (which DOES require Origin on mutating requests), this endpoint is
+  // explicitly cross-origin and bearer-authenticated.
+  if (!origin) return true;
   if (localhostOrigins.has(origin)) return true;
   return ALLOWED_ORIGIN_PATTERNS.some((p) => p.test(origin));
 }

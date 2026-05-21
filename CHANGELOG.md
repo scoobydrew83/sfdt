@@ -51,6 +51,21 @@ The monorepo release. Adds a Chrome extension surface, a local HTTP bridge that 
 ### Security
 
 - **Path-traversal hardening** in `/api/changelog/save` and `/api/release-notes/save`. `pkgName`/`pkgTarget` are now validated against `/^[A-Za-z0-9_-]+$/`; `version` is validated against `/^[A-Za-z0-9][A-Za-z0-9._-]*$/` and rejects any `..` substring. Prevents overwrite of arbitrary `.md` files inside `_projectRoot` via a CSRF-authenticated POST. (Closed two medium findings raised by the pre-release adversarial security review.)
+- **SOQL escape correctness in extension features** — six SOQL string-literal escape sites now escape backslashes before quotes (previously only quotes were escaped). A new shared `escapeSoql()` helper in `extension/lib/escape.ts` enforces the order. Affects `flow-trigger-explorer-enhancer`, `scheduled-flow-explorer`, `subflow-graph`, `trigger-conflicts`, and the `SalesforceApiClient.getFlowMetadata` namespace/developer-name path.
+- **URL suffix anchoring** in `extension/lib/hostname.ts` — every Salesforce hostname check switched from `String.prototype.includes` to suffix-anchored `endsWith`. The previous form would have accepted hostile hostnames like `evil.lightning.force.com.attacker.com` if the function were ever invoked outside the extension's host-permission-restricted content scripts.
+- **flowApiName contract validation** — the bridge contract validator (`validateSfdtRequest`) now applies the same `/^[A-Za-z][A-Za-z0-9_]*$/` developer-name regex the deploy/rollback runners already enforce, so malformed names are rejected at the contract layer rather than only at the runner.
+- **Insecure-randomness fallback removed** — `defaultIdGenerator` in `packages/flow-core/src/prompts.ts` previously fell back to `Math.random()` when `crypto.randomUUID` wasn't available. The fallback chain now uses `crypto.getRandomValues` before any non-cryptographic path.
+
+### Fixed (release blockers)
+
+- **`host/` workspace included in the npm tarball**. Adding `host/installers/`, `host/manifests/`, `host/src/`, and `host/package.json` to `files` in the root `package.json`. Without this, every `sfdt extension {install-host,uninstall-host,status,stats}` subcommand would throw `ERR_MODULE_NOT_FOUND` on a real npm install (workspaces masked the bug locally and the existing unit tests mock the import).
+- **Windows path bug in native-host manifest installer** (`host/installers/install-host.js`). `buildManifest` substituted the bare host path into the JSON template, which produced invalid JSON when the path contained backslashes (every Windows install path). The substitution now uses `JSON.stringify(hostPath)` against the quoted placeholder, escaping backslashes and embedded quotes correctly.
+
+### Changed (cleanup from code review)
+
+- **`sfdt flow scan` now delegates to `runFlowQuality`** instead of reimplementing the normalize → evaluate → score pipeline inline. CLI, GUI, and bridge `quality` handler now share a single chokepoint for byte-identical scoring.
+- **`currentApiVersion` no longer hardcoded in two places** — `flow-quality.js` accepts a `currentApiVersion` override that the CLI sources from `sfdx-project.json`'s `sourceApiVersion`. The hardcoded fallback constant is documented as the floor when no config is available.
+- **Bridge `isAllowedOrigin` no-Origin behavior documented** — the bearer token is the authoritative access control on `/api/bridge/*`; the origin allowlist is permissive for non-browser callers by design. Code comment now explains the asymmetry vs the gui-server's CSRF model.
 - **CSRF protection** on all mutating GUI API routes via a per-session token returned from `GET /api/csrf-token` and required on the `X-SFDT-CSRF` header. The token is bound to the server process and never sent cross-origin.
 - **Tightened origin guard** — the localhost-only middleware now rejects mutating requests (POST/PATCH/DELETE) that arrive without an `Origin` header, in addition to the existing allowlist check.
 - **Strict `targetOrg` validation** before any `sf` CLI shell-out: `/^[A-Za-z0-9_.\-@]+$/`. Same regex applied to `flowApiName` (`/^[A-Za-z][A-Za-z0-9_]*$/`) in the flow deploy and rollback runners.

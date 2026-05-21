@@ -8,6 +8,7 @@ import {
   type ParsedSchedule,
 } from '@sfdt/flow-core';
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
+import { escapeSoql } from '../lib/escape.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { registerSettingsShape } from '../lib/settings.js';
@@ -78,7 +79,7 @@ export async function discoverScheduledFlows(
       try {
         const result = await api.toolingQuery<FlowVersionRecord>(
           'SELECT Id, MasterLabel, Description, Status, VersionNumber, LastModifiedDate, Metadata ' +
-            `FROM Flow WHERE Id = '${def.ActiveVersionId.replace(/'/g, "\\'")}'`,
+            `FROM Flow WHERE Id = '${escapeSoql(def.ActiveVersionId)}'`,
         );
         const record = result.records[0];
         if (!record) continue;

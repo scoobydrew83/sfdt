@@ -123,9 +123,15 @@ export function manifestDirsForBrowser(platform, browser) {
  * path and the extension ID. Used by the install function and by tests.
  */
 export function buildManifest(templateString, { hostPath, extensionId }) {
-  let out = templateString;
-  out = out.replace('__SFDT_HOST_PATH__', hostPath);
-  out = out.replace('__SFDT_EXTENSION_ID__', extensionId);
+  // hostPath needs JSON-escaping. On Windows it contains backslashes
+  // (C:\Users\…) which are not valid JSON escape sequences and would crash
+  // JSON.parse. JSON.stringify produces a complete JSON string literal —
+  // surrounding quotes plus all required escapes — so we substitute the
+  // quoted placeholder. extensionId is validated against /^[a-p]{32}$/
+  // before we get here so a bare substring replace is safe.
+  const out = templateString
+    .replace('"__SFDT_HOST_PATH__"', JSON.stringify(hostPath))
+    .replace('__SFDT_EXTENSION_ID__', extensionId);
   return JSON.parse(out);
 }
 

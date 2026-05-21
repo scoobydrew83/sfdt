@@ -26,3 +26,13 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): strin
   }
   return out;
 }
+
+// SOQL string-literal escape. SOQL only treats `\` and `'` as special inside
+// single-quoted string literals. Backslash MUST be escaped first or the
+// quote's escape would itself be double-escaped on the second pass.
+// Reference: https://developer.salesforce.com/docs/atlas.en-us.soql_sosl.meta/soql_sosl/sforce_api_calls_soql_select_quotedstringescapes.htm
+export function escapeSoql(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const str = typeof value === 'string' ? value : String(value);
+  return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}

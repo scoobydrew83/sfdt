@@ -13,12 +13,21 @@
 
 const KNOWN_MIDDLE_SEGMENTS = ['sandbox', 'develop', 'scratch', 'trailblaze'] as const;
 
+// Suffix-anchored matches. `includes` would also accept hostile hostnames like
+// `evil.lightning.force.com.attacker.com`; `endsWith` requires the Salesforce
+// suffix to be the actual end of the hostname.
+function hasSuffix(hostname: string, suffix: string): boolean {
+  return hostname.endsWith(suffix);
+}
+
 function orgIdentifier(hostname: string): string {
   const first = hostname.split('.')[0];
   return first ?? hostname;
 }
 
 function middleSegmentOf(hostname: string): string | null {
+  // Only meaningful when the caller has already confirmed the input is a
+  // Salesforce hostname via hasSuffix(). Detects "<org>.<segment>.<suffix>".
   for (const segment of KNOWN_MIDDLE_SEGMENTS) {
     if (hostname.includes(`.${segment}.`)) return segment;
   }
@@ -26,12 +35,12 @@ function middleSegmentOf(hostname: string): string | null {
 }
 
 export function setupHostname(hostname: string): string {
-  if (hostname.includes('.salesforce-setup.com')) return hostname;
+  if (hasSuffix(hostname, '.salesforce-setup.com')) return hostname;
   return `${orgIdentifier(hostname)}.my.salesforce-setup.com`;
 }
 
 export function lightningHostname(hostname: string): string {
-  if (hostname.includes('.lightning.force.com')) return hostname;
+  if (hasSuffix(hostname, '.lightning.force.com')) return hostname;
   const middle = middleSegmentOf(hostname);
   return middle === null
     ? `${orgIdentifier(hostname)}.lightning.force.com`
@@ -43,10 +52,10 @@ export function lightningHostname(hostname: string): string {
 // it produces a non-existent host and the cookie lookup returns nothing,
 // surfacing as 401 INVALID_SESSION_ID.
 export function mySalesforceHostname(hostname: string): string | null {
-  if (hostname.includes('.my.salesforce.com')) return hostname;
+  if (hasSuffix(hostname, '.my.salesforce.com')) return hostname;
   if (
-    hostname.includes('.lightning.force.com') ||
-    hostname.includes('.salesforce-setup.com')
+    hasSuffix(hostname, '.lightning.force.com') ||
+    hasSuffix(hostname, '.salesforce-setup.com')
   ) {
     const middle = middleSegmentOf(hostname);
     return middle === null

@@ -83,9 +83,12 @@ export interface RollbackRequest extends RequestEnvelope {
 
 export interface QualityRequest extends RequestEnvelope {
   kind: 'quality';
-  // The full Flow XML, exactly as Tooling API would return it. The bridge
-  // delegates to @sfdt/flow-core for normalization + rules + scoring so the
-  // extension and the CLI produce identical results.
+  // Flow metadata payload. Despite the historical field name, the value is
+  // JSON-stringified Tooling API `Flow.Metadata` (not XML) — the bridge
+  // immediately JSON.parses it before passing to flow-core's normalize().
+  // The field is kept named `flowXml` for protocol-version continuity with
+  // extension clients already on the wire; a future major version of the
+  // contract should rename it to `flowMetadata` and add a discriminator.
   flowXml: string;
 }
 
@@ -289,6 +292,16 @@ function isValidOrgAlias(v: unknown): v is string {
   return typeof v === 'string' && v.length > 0 && ORG_ALIAS_RE.test(v);
 }
 
+// Salesforce DeveloperName grammar: alphanumerics + underscore, must start
+// with a letter. This is the same regex flow-deploy-runner.js and
+// flow-rollback-runner.js enforce before any `sf` invocation; centralising
+// it in the contract keeps the type definition self-documenting and lets the
+// extension reject bad input client-side before a round-trip.
+export const DEVELOPER_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
+function isValidDeveloperName(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0 && DEVELOPER_NAME_RE.test(v);
+}
+
 const KNOWN_KINDS: readonly SfdtRequestKind[] = [
   'ping',
   'version',
@@ -337,8 +350,11 @@ export function validateSfdtRequest(input: unknown): {
           reason: 'must be a non-empty string (or set flowId for legacy compatibility)',
         });
       }
-      if (input.flowApiName !== undefined && !isNonEmptyString(input.flowApiName)) {
-        errors.push({ field: 'flowApiName', reason: 'must be a non-empty string if present' });
+      if (input.flowApiName !== undefined && !isValidDeveloperName(input.flowApiName)) {
+        errors.push({
+          field: 'flowApiName',
+          reason: 'must match /^[A-Za-z][A-Za-z0-9_]*$/ if present',
+        });
       }
       if (input.flowId !== undefined && !isNonEmptyString(input.flowId)) {
         errors.push({ field: 'flowId', reason: 'must be a non-empty string if present' });
@@ -359,6 +375,12 @@ export function validateSfdtRequest(input: unknown): {
       const hasFlowId = isNonEmptyString(input.flowId);
       if (!hasApiName && !hasFlowId) {
         errors.push({ field: 'flowApiName', reason: 'must be a non-empty string (or pass flowId)' });
+      }
+      if (hasApiName && !isValidDeveloperName(input.flowApiName)) {
+        errors.push({
+          field: 'flowApiName',
+          reason: 'must match /^[A-Za-z][A-Za-z0-9_]*$/',
+        });
       }
       if (typeof input.toVersion !== 'number' || !Number.isInteger(input.toVersion) || input.toVersion < 0) {
         errors.push({ field: 'toVersion', reason: 'must be a non-negative integer (0 deactivates)' });

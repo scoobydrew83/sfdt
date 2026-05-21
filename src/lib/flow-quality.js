@@ -19,9 +19,15 @@ import {
   normalize,
 } from '@sfdt/flow-core';
 
+// Salesforce ships ~4 API versions per year. The hardcoded fallback below is
+// the floor for the "outdated API version" rule when no config is provided;
+// callers (CLI + GUI + bridge) should pass currentApiVersion through
+// rulesConfig, normally derived from sfdx-project.json's sourceApiVersion.
+const FALLBACK_API_VERSION = 65;
+
 export const DEFAULT_RULES_CONFIG = {
   outdatedApiVersionThreshold: 6,
-  currentApiVersion: 65,
+  currentApiVersion: FALLBACK_API_VERSION,
   highDataOperationThreshold: 8,
   namingConventions: {
     variable: /^var[A-Z].*/,
@@ -29,6 +35,19 @@ export const DEFAULT_RULES_CONFIG = {
     constant: /^con[A-Z].*/,
   },
 };
+
+/**
+ * Convert a Salesforce API version string ("62.0", "v62.0", "62", 62) into a
+ * positive integer. Returns null when the value isn't parseable.
+ */
+export function parseApiVersion(raw) {
+  if (raw === undefined || raw === null) return null;
+  const str = typeof raw === 'string' ? raw : String(raw);
+  const match = str.match(/(\d+)/);
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 /**
  * Run the flow-core pipeline on a Tooling-API-shaped Flow.Metadata payload.
@@ -39,6 +58,10 @@ export const DEFAULT_RULES_CONFIG = {
  *                                          name baked into the report.
  * @param {string} [options.flowVersionId]
  * @param {object} [options.rulesConfig]    Overrides DEFAULT_RULES_CONFIG.
+ * @param {string|number} [options.currentApiVersion]
+ *                                          Overrides DEFAULT_RULES_CONFIG.currentApiVersion;
+ *                                          accepts "62.0"/"v62.0"/62. Ignored if
+ *                                          a full rulesConfig is provided.
  * @returns {{
  *   meta: object,
  *   summary: object,
@@ -48,7 +71,13 @@ export const DEFAULT_RULES_CONFIG = {
  * }}
  */
 export function runFlowQuality(metadata, options = {}) {
-  const rulesConfig = options.rulesConfig ?? DEFAULT_RULES_CONFIG;
+  let rulesConfig = options.rulesConfig ?? DEFAULT_RULES_CONFIG;
+  if (!options.rulesConfig && options.currentApiVersion !== undefined) {
+    const parsed = parseApiVersion(options.currentApiVersion);
+    if (parsed !== null) {
+      rulesConfig = { ...DEFAULT_RULES_CONFIG, currentApiVersion: parsed };
+    }
+  }
   const normalized = normalize(metadata, {
     flowApiName: options.flowApiName ?? metadata?.label ?? 'unknown_flow',
     flowVersionId: options.flowVersionId ?? null,

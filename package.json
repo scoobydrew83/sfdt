@@ -19,6 +19,10 @@
     "gui/vite.config.js",
     "gui/index.html",
     "gui/src/",
+    "host/installers/",
+    "host/manifests/",
+    "host/src/",
+    "host/package.json",
     "README.md",
     "LICENSE",
     "SECURITY.md"

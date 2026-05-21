@@ -6,6 +6,7 @@ import { detectTriggerConflicts, type FlowConflictGroup } from '@sfdt/flow-core'
 import type { SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 import type { Feature } from '../lib/feature-registry.js';
 import { CONTEXTS } from '../lib/context-detector.js';
+import { escapeSoql } from '../lib/escape.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { loadSettings } from '../lib/settings.js';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
@@ -59,7 +60,7 @@ async function fetchActiveFlows(api: SalesforceApiClient): Promise<FetchedConfli
         if (!def?.ActiveVersionId) continue;
         try {
           const result = await api.toolingQuery<FlowVersionRecord>(
-            `SELECT Id, MasterLabel, Metadata FROM Flow WHERE Id = '${def.ActiveVersionId.replace(/'/g, "\\'")}'`,
+            `SELECT Id, MasterLabel, Metadata FROM Flow WHERE Id = '${escapeSoql(def.ActiveVersionId)}'`,
           );
           const record = result.records[0];
           if (record?.Metadata) {

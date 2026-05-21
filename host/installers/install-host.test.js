@@ -79,6 +79,20 @@ describe('buildManifest', () => {
     expect(m.path).toBe('/x');
     expect(m.allowed_origins).toEqual([`chrome-extension://${VALID_EXTENSION_ID}/`]);
   });
+
+  it('JSON-escapes backslashes in Windows paths so JSON.parse succeeds', () => {
+    const tpl = '{"name":"com.sfdt.host","path":"__SFDT_HOST_PATH__","allowed_origins":["chrome-extension://__SFDT_EXTENSION_ID__/"]}';
+    const winPath = 'C:\\Users\\me\\AppData\\Roaming\\npm\\sfdt-host.cmd';
+    const m = buildManifest(tpl, { hostPath: winPath, extensionId: VALID_EXTENSION_ID });
+    expect(m.path).toBe(winPath);
+  });
+
+  it('handles paths containing embedded double quotes safely', () => {
+    const tpl = '{"name":"com.sfdt.host","path":"__SFDT_HOST_PATH__","allowed_origins":["chrome-extension://__SFDT_EXTENSION_ID__/"]}';
+    const quirky = '/tmp/has "quotes" inside';
+    const m = buildManifest(tpl, { hostPath: quirky, extensionId: VALID_EXTENSION_ID });
+    expect(m.path).toBe(quirky);
+  });
 });
 
 describe('manifestDirsForBrowser', () => {

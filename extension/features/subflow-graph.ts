@@ -9,6 +9,7 @@ import {
 } from '@sfdt/flow-core';
 import type { Feature } from '../lib/feature-registry.js';
 import { CONTEXTS } from '../lib/context-detector.js';
+import { escapeSoql } from '../lib/escape.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
 
@@ -37,7 +38,7 @@ async function fetchAllFlowMetadata(
             MasterLabel?: string;
             Metadata?: Record<string, unknown>;
           }>(
-            `SELECT MasterLabel, Metadata FROM Flow WHERE Id = '${def.ActiveVersionId.replace(/'/g, "\\'")}'`,
+            `SELECT MasterLabel, Metadata FROM Flow WHERE Id = '${escapeSoql(def.ActiveVersionId)}'`,
           );
           const record = result.records[0];
           if (record?.Metadata) {

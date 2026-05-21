@@ -7,26 +7,10 @@ import fs from 'fs-extra';
 import chalk from 'chalk';
 import ora from 'ora';
 import { execa } from 'execa';
-import {
-  buildIssueFamilies,
-  calculateScore,
-  detectTriggerConflicts,
-  evaluate,
-  normalize,
-} from '@sfdt/flow-core';
+import { detectTriggerConflicts } from '@sfdt/flow-core';
 import { loadConfig } from '../lib/config.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
-
-const DEFAULT_RULES_CONFIG = {
-  outdatedApiVersionThreshold: 6,
-  currentApiVersion: 65,
-  highDataOperationThreshold: 8,
-  namingConventions: {
-    variable: /^var[A-Z].*/,
-    formula: /^frm[A-Z].*/,
-    constant: /^con[A-Z].*/,
-  },
-};
+import { runFlowQuality } from '../lib/flow-quality.js';
 
 const METADATA_FETCH_CONCURRENCY = 5;
 
@@ -52,10 +36,16 @@ async function listFlowDefinitions(orgAlias) {
   return result.result?.records ?? [];
 }
 
+function escapeSoqlString(value) {
+  // SOQL string-literal escape: backslash first, then single quote (order
+  // matters or the quote's own escape gets double-escaped on the second pass).
+  return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 async function fetchActiveVersion(orgAlias, activeVersionId) {
   const soql =
     'SELECT Id, MasterLabel, Description, Status, VersionNumber, LastModifiedDate, Metadata ' +
-    `FROM Flow WHERE Id = '${activeVersionId.replace(/'/g, "\\'")}'`;
+    `FROM Flow WHERE Id = '${escapeSoqlString(activeVersionId)}'`;
   const result = await toolingQuery(orgAlias, soql);
   return result.result?.records?.[0] ?? null;
 }
@@ -72,27 +62,27 @@ async function inParallel(items, concurrency, worker) {
   await Promise.all(runners);
 }
 
-function buildFlowReport(record, definition) {
-  const metadata = record.Metadata ?? {};
-  const normalized = normalize(metadata, {
+function buildFlowReport(record, definition, currentApiVersion) {
+  // Delegate the whole normalize → evaluate → score pipeline to flow-quality.js
+  // so the CLI, the GUI's /api/flow/quality route, and the bridge `quality`
+  // handler all share one chokepoint and stay byte-identical.
+  const { meta, summary, issueFamilies } = runFlowQuality(record.Metadata ?? {}, {
     flowVersionId: record.Id,
     flowApiName: definition.DeveloperName,
+    currentApiVersion,
   });
-  const findings = evaluate(normalized, DEFAULT_RULES_CONFIG);
-  const issueFamilies = buildIssueFamilies(findings);
-  const score = calculateScore(issueFamilies);
   return {
     flowDefinitionId: definition.Id,
     flowVersionId: record.Id,
     developerName: definition.DeveloperName,
     label: record.MasterLabel ?? definition.DeveloperName,
-    flowType: normalized.meta.flowType,
-    apiVersion: normalized.meta.apiVersion,
-    status: normalized.meta.status,
-    overallScore: score.overallScore,
-    rating: score.rating,
-    severityCounts: score.severityCounts,
-    categoryCounts: score.categoryCounts,
+    flowType: meta.flowType,
+    apiVersion: meta.apiVersion,
+    status: meta.status,
+    overallScore: summary.overallScore,
+    rating: summary.rating,
+    severityCounts: summary.severityCounts,
+    categoryCounts: summary.categoryCounts,
     issueFamilyCount: issueFamilies.length,
     issueFamilies,
   };
@@ -128,13 +118,17 @@ export function registerFlowCommand(program) {
         const definitions = await listFlowDefinitions(orgAlias);
         if (spinner) spinner.text = `Analysing ${definitions.length} Flow${definitions.length === 1 ? '' : 's'}…`;
 
+        // sourceApiVersion is enriched into config by loadConfig from
+        // sfdx-project.json; runFlowQuality parses "63.0" → 63 internally.
+        const currentApiVersion = config.sourceApiVersion;
+
         const reports = [];
         const errors = [];
         await inParallel(definitions, METADATA_FETCH_CONCURRENCY, async (def) => {
           try {
             const record = await fetchActiveVersion(orgAlias, def.ActiveVersionId);
             if (!record?.Metadata) return;
-            reports.push(buildFlowReport(record, def));
+            reports.push(buildFlowReport(record, def, currentApiVersion));
           } catch (err) {
             errors.push({
               flowDefinitionId: def.Id,

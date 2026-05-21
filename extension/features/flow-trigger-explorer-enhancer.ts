@@ -1,4 +1,5 @@
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
+import { escapeSoql } from '../lib/escape.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 
@@ -19,7 +20,7 @@ export async function batchFetchFlowDefinitions(
   const out: FlowDefinitionBatchRecord[] = [];
   for (let i = 0; i < ids.length; i += chunk) {
     const slice = ids.slice(i, i + chunk);
-    const escaped = slice.map((id) => `'${id.replace(/'/g, "\\'")}'`).join(',');
+    const escaped = slice.map((id) => `'${escapeSoql(id)}'`).join(',');
     const soql =
       'SELECT Id, DeveloperName, ActiveVersionId, MasterLabel ' +
       `FROM FlowDefinition WHERE Id IN (${escaped})`;
