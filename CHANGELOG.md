@@ -59,7 +59,9 @@ The monorepo release. Adds a Chrome extension surface, a local HTTP bridge that 
 ### Fixed (release blockers)
 
 - **`host/` workspace included in the npm tarball**. Adding `host/installers/`, `host/manifests/`, `host/src/`, and `host/package.json` to `files` in the root `package.json`. Without this, every `sfdt extension {install-host,uninstall-host,status,stats}` subcommand would throw `ERR_MODULE_NOT_FOUND` on a real npm install (workspaces masked the bug locally and the existing unit tests mock the import).
+- **`@sfdt/flow-core` is now a published npm package** (`0.9.0`). Previously it was marked `"private": true` while `@sfdt/cli` listed it as a runtime dependency, which meant a real `npm install -g @sfdt/cli` would 404 on `@sfdt/flow-core`. The package is now public, `cli` and `host` pin `^0.9.0`, and the CI release workflow publishes `@sfdt/flow-core` before `@sfdt/cli`. The flow-core workspace also gained a `prepack` hook that builds `dist/` from source so the published tarball always contains the compiled output.
 - **Windows path bug in native-host manifest installer** (`host/installers/install-host.js`). `buildManifest` substituted the bare host path into the JSON template, which produced invalid JSON when the path contained backslashes (every Windows install path). The substitution now uses `JSON.stringify(hostPath)` against the quoted placeholder, escaping backslashes and embedded quotes correctly.
+- **`pretest` hook builds `@sfdt/flow-core` before the test suite runs**, so CI doesn't try to resolve the workspace package against an empty `dist/`. Without this, tests that import `@sfdt/flow-core` (bridge routes, host smoke, the new `flow` command) fail with `Failed to resolve entry for package "@sfdt/flow-core"` on a fresh checkout.
 
 ### Changed (cleanup from code review)
 

@@ -136,7 +136,10 @@ jobs:
       - name: Build GUI
         if: steps.version.outputs.changed == 'true'
         run: npm run build:gui
-      - name: Publish beta to npm
+      - name: Publish @sfdt/flow-core beta to npm
+        if: steps.version.outputs.changed == 'true'
+        run: npx npm@latest publish --workspace=@sfdt/flow-core --provenance --access public --tag beta
+      - name: Publish @sfdt/cli beta to npm
         if: steps.version.outputs.changed == 'true'
         run: npx npm@latest publish --provenance --access public --tag beta
       - name: Create GitHub Pre-Release
@@ -198,7 +201,22 @@ jobs:
       - name: Build GUI
         if: steps.version.outputs.changed == 'true'
         run: npm run build:gui
-      - name: Publish to npm
+      - name: Publish @sfdt/flow-core to npm
+        # Must publish flow-core BEFORE @sfdt/cli — the CLI depends on it as
+        # a regular runtime dep. The workspace's prepack hook builds dist/
+        # before packing. Idempotent: a "you cannot publish over previously
+        # published version" error from npm is acceptable on republish.
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          npx npm@latest publish --workspace=@sfdt/flow-core --provenance --access public || {
+            EXIT=$?
+            if npm view @sfdt/flow-core@$(node -p "require('./packages/flow-core/package.json').version") >/dev/null 2>&1; then
+              echo "flow-core version already published — continuing"
+            else
+              exit $EXIT
+            fi
+          }
+      - name: Publish @sfdt/cli to npm
         if: steps.version.outputs.changed == 'true'
         run: npx npm@latest publish --provenance --access public
       - name: Create GitHub Release

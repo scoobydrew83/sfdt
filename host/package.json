@@ -12,6 +12,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@sfdt/flow-core": "*"
+    "@sfdt/flow-core": "^0.9.0"
   }
 }
