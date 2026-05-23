@@ -1339,6 +1339,21 @@ if [[ -n "${SFDT_DEPLOY_SOURCE_DIR:-}" ]]; then
     fi
     "${sf_cmd[@]}"
     print_success "Source directory deploy complete"
+
+    # Archive a manifest snapshot so `sfdt rollback` has a deployable artifact.
+    # Without this, folder-mode deploys leave manifest/release/deployed/ empty
+    # and rollback aborts with "No deployed manifests found".
+    snapshot_dir="${MANIFEST_BASE_DIR}/deployed"
+    snapshot_name="source-dir-$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$snapshot_dir"
+    if sf project generate manifest \
+        --source-dir "${SFDT_DEPLOY_SOURCE_DIR}" \
+        --name "$snapshot_name" \
+        --output-dir "$snapshot_dir" >/dev/null 2>&1; then
+        print_success "Archived deployment manifest: ${snapshot_dir}/${snapshot_name}.xml"
+    else
+        print_warning "Could not generate manifest snapshot from ${SFDT_DEPLOY_SOURCE_DIR} (rollback will not be available for this deploy)"
+    fi
     exit 0
 fi
 

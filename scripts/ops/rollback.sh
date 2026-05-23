@@ -56,8 +56,15 @@ print_info "Available manifests for rollback (last ${#MANIFESTS[@]}):"
 echo ""
 
 if [[ "$NON_INTERACTIVE" == "true" ]]; then
-    SELECTED_MANIFEST="${MANIFESTS[-1]}"
-    print_info "Non-interactive mode: auto-selected most recent manifest: ${SELECTED_MANIFEST}"
+    # Rollback means reverting to the PREVIOUS state, so prefer the second-most-recent
+    # manifest. Fall back to the only available one when nothing older exists.
+    if [[ ${#MANIFESTS[@]} -ge 2 ]]; then
+        SELECTED_MANIFEST="${MANIFESTS[-2]}"
+        print_info "Non-interactive mode: auto-selected previous manifest: ${SELECTED_MANIFEST}"
+    else
+        SELECTED_MANIFEST="${MANIFESTS[-1]}"
+        print_info "Non-interactive mode: only one manifest available, selecting: ${SELECTED_MANIFEST}"
+    fi
 else
     PS3=$'\nSelect manifest to rollback to (number): '
     select SELECTED_MANIFEST in "${MANIFESTS[@]}"; do
