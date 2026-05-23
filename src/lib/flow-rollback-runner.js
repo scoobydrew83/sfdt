@@ -127,7 +127,13 @@ export async function runFlowRollback(options) {
     'query',
     '--use-tooling-api',
     '-q',
-    `SELECT Id, ActiveVersionId, LatestVersion.VersionNumber FROM FlowDefinition WHERE DeveloperName = '${escapeSoql(flowApiName)}' LIMIT 1`,
+    // ActiveVersion.VersionNumber (NOT LatestVersion.VersionNumber) — we need
+    // the version that is currently active so the extension can render a
+    // truthful "before → after" toast. After a prior rollback the latest
+    // version may be higher than the active one (e.g. v3 active, v5 latest),
+    // and reporting v5 as the pre-rollback baseline would silently corrupt
+    // audit trails downstream.
+    `SELECT Id, ActiveVersionId, ActiveVersion.VersionNumber FROM FlowDefinition WHERE DeveloperName = '${escapeSoql(flowApiName)}' LIMIT 1`,
     '--target-org',
     targetOrg,
     '--json',
@@ -169,7 +175,7 @@ export async function runFlowRollback(options) {
   // Pre-rollback active version, surfaced back so the extension can show a
   // "before → after" message in the toast.
   const previousActiveVersion = definition.ActiveVersionId
-    ? definition.LatestVersion?.VersionNumber ?? null
+    ? definition.ActiveVersion?.VersionNumber ?? null
     : null;
 
   // ─── Step 2: PATCH FlowDefinition.Metadata.activeVersionNumber. ──────────

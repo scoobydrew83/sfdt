@@ -54,7 +54,7 @@ function queueDefaultRollbackPair({
           {
             Id: flowDefinitionId,
             ActiveVersionId: activeVersionId,
-            LatestVersion: { VersionNumber: versionNumber },
+            ActiveVersion: { VersionNumber: versionNumber },
           },
         ],
       },
@@ -196,7 +196,7 @@ describe('runFlowRollback — failure modes', () => {
         exitCode: 0,
         stdout: JSON.stringify({
           status: 0,
-          result: { records: [{ Id: '3000W', ActiveVersionId: null, LatestVersion: null }] },
+          result: { records: [{ Id: '3000W', ActiveVersionId: null, ActiveVersion: null }] },
         }),
         stderr: '',
       },
