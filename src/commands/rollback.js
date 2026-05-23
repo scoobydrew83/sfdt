@@ -65,9 +65,24 @@ export function registerRollbackCommand(program) {
           );
         }
       } catch (err) {
+        // rollback.sh uses captureStdout: true, so every print_* helper in the
+        // script (all of which write to stdout) lands in err.stdout instead
+        // of the console. Without surfacing it, a failure shows up as just
+        // "Script exited with code 1" with no clue why. Replay the captured
+        // stdout so users — and CI logs — can see what actually went wrong.
+        if (err.stdout) {
+          process.stderr.write(err.stdout.toString());
+          if (!err.stdout.toString().endsWith('\n')) process.stderr.write('\n');
+        }
         if (jsonMode) {
           process.stdout.write(
-            JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err), dryRun: !!options.dryRun }) + '\n',
+            JSON.stringify({
+              status: 'error',
+              message: err.message,
+              exitCode: resolveExitCode(err),
+              dryRun: !!options.dryRun,
+              log: err.stdout ? err.stdout.toString() : '',
+            }) + '\n',
           );
         } else {
           print.error(`Rollback failed: ${err.message}`);
