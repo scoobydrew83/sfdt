@@ -220,24 +220,45 @@ describe('POST /api/bridge/exchange — dispatch', () => {
     expect(res.body.data.rating).toBe('Excellent');
   });
 
-  it('rejects oversized flowXml payloads before they reach JSON.parse', async () => {
-    // Layered defence: express.json() rejects at its body-limit (~100KB default,
-    // → HTTP 413), and the route-level guard in dispatch() catches anything that
-    // slips past at a higher MB-scale cap. We only need to confirm here that
-    // the layered defence is active — the actual rejection arrives as 413
-    // (Express) under the default body limit; either status is acceptable so
-    // long as the payload is refused.
-    const oversized = '"' + 'a'.repeat(200_000) + '"';
+  it('accepts a legitimate 300 KB flowXml payload (above Express default but under MAX_FLOW_XML_BYTES)', async () => {
+    // Express's default body limit is 100 KB; the bridge mounts a 6 MB
+    // parser on /api/bridge so realistic Flow.Metadata (200–800 KB)
+    // reaches the handler. This test exists to prevent a regression that
+    // would silently truncate complex flows.
+    const flow = {
+      label: 'Big',
+      description: 'present',
+      apiVersion: 60,
+      processType: 'Flow',
+      // pad with assignments to push the payload well over the 100 KB Express default
+      assignments: Array.from({ length: 5000 }, (_, i) => ({
+        name: `A_${i}`,
+        label: 'Set',
+        description: 'present',
+      })),
+    };
+    const flowXml = JSON.stringify(flow);
+    expect(flowXml.length).toBeGreaterThan(150_000); // sanity: well above 100 KB
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({ requestId: 'r-300k', kind: 'quality', flowXml });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
+  it('rejects an over-the-5MB-cap flowXml at the route guard (REQUEST_INVALID, not Express 413)', async () => {
+    // 6 MB string — above MAX_FLOW_XML_BYTES (5 MB) but under the express.json
+    // limit (6 MB) so the route guard is what fires, not the body parser.
+    const oversized = '"' + 'a'.repeat(5 * 1024 * 1024 + 1024) + '"';
     const res = await request(app)
       .post('/api/bridge/exchange')
       .set('Authorization', `Bearer ${FIXED_TOKEN}`)
       .send({ requestId: 'r-big', kind: 'quality', flowXml: oversized });
-    // 413 (Express body limit) or 200 with REQUEST_INVALID (route guard).
-    expect([413, 200]).toContain(res.status);
-    if (res.status === 200) {
-      expect(res.body.ok).toBe(false);
-      expect(res.body.code).toBe('REQUEST_INVALID');
-    }
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.code).toBe('REQUEST_INVALID');
+    expect(res.body.error).toMatch(/exceeds/i);
   });
 
   it('returns REQUEST_INVALID when flowXml is not valid JSON', async () => {

@@ -191,8 +191,20 @@ async function dispatch(request, { version, projectRoot, makeSuccessResponse, ma
       // Phase 7's distribution work.
       //
       // Size-cap the payload BEFORE JSON.parse so a multi-GB string from a
-      // misbehaving caller can't exhaust memory.
-      if (typeof request.flowXml === 'string' && request.flowXml.length > MAX_FLOW_XML_BYTES) {
+      // misbehaving caller can't exhaust memory. Measure in UTF-8 BYTES
+      // (Buffer.byteLength) rather than String.length, which returns UTF-16
+      // code units — a payload of mostly multibyte characters could otherwise
+      // be up to 3× larger than length suggests. Flow XML is ASCII-heavy in
+      // practice so the gap rarely bites, but the comment promised "before
+      // JSON.parse a multi-GB string", and that promise needs byte
+      // accuracy. Pairs with the per-route 6 MB express.json limit applied
+      // in gui-server/index.js (defence in depth: parser rejects oversized
+      // bodies first; this catches anything that slips past a reconfigured
+      // limit or a non-HTTP entrypoint).
+      if (
+        typeof request.flowXml === 'string' &&
+        Buffer.byteLength(request.flowXml, 'utf8') > MAX_FLOW_XML_BYTES
+      ) {
         return makeErrorResponse(
           request.requestId,
           `quality.flowXml exceeds the ${MAX_FLOW_XML_BYTES}-byte limit`,

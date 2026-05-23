@@ -9,8 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+Second claude-review pass on PR #85 — three more items spotted after the previous
+fix landed:
+
+- **MEDIUM (functional) — bridge body limit aligned with `MAX_FLOW_XML_BYTES`.**
+  Express's default `express.json()` body limit is 100 KB, which silently rejected
+  realistic Flow.Metadata payloads (a complex Flow easily reaches 200–800 KB) with
+  an HTTP 413 LONG before the 5 MB `MAX_FLOW_XML_BYTES` guard could fire. Mounted
+  a 6 MB parser specifically on `/api/bridge` so the route guard is reachable, with
+  the rest of `/api/*` getting a 2 MB ceiling (room for legitimate 1 MB
+  changelog/release-notes saves with the existing content caps applied AFTER
+  parsing).
+- **LOW — `flowXml` size check now byte-accurate.** `String.length` returns UTF-16
+  code units, not bytes. A document of mostly multibyte characters could be up to
+  3× larger in UTF-8 bytes than length suggests. Switched to
+  `Buffer.byteLength(flowXml, 'utf8')` so the documented "before JSON.parse a
+  multi-GB string" guarantee actually holds.
+- **LOW — defense-in-depth response headers.** `gui-server` now sends
+  `X-Content-Type-Options: nosniff` and `X-Frame-Options: SAMEORIGIN` on every
+  response. The bind is localhost-only so the exposure was low, but these are
+  zero-cost and close browser-side MIME-sniffing/clickjacking edges. Asserted via
+  a new `/api/health` test case.
+
+Test coverage:
+- New test: `/api/bridge/exchange` accepts a legitimate 300 KB+ `flowXml`
+  (above old Express 100 KB default, below the new 6 MB cap) so the runner
+  guard is reachable for realistic Flow.Metadata.
+- New test: oversized 5 MB+ `flowXml` is now rejected by the route guard with
+  `REQUEST_INVALID` (not a generic Express 413), confirming the layered defence
+  is in the right order.
+- New test: `/api/health` response carries the two security headers.
+
 PR #85 final review pass — addresses the five blocking items, all non-blocking
-suggestions, and the test-file CodeQL alerts from the latest claude-review.
+suggestions, and the test-file CodeQL alerts from the previous claude-review.
 
 - **HIGH H1 — Runners now re-validate `targetOrg` independently of the bridge contract.**
   `runFlowDeploy` and `runFlowRollback` previously trusted the contract's pre-check; any

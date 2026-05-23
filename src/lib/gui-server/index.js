@@ -90,7 +90,28 @@ export function createGuiApp(config, version, port = 7654) {
   let sessionOrg = null;
   const csrfToken = createCsrfToken();
   const app = express();
-  app.use(express.json());
+
+  // Defense-in-depth response headers. Set globally before any route handler
+  // runs so static assets and JSON responses both inherit them. The bind is
+  // localhost-only so the exposure is low, but these are zero-cost and stop
+  // browser-side MIME-sniffing/clickjacking edge cases dead.
+  app.use((_req, res, next) => {
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('X-Frame-Options', 'SAMEORIGIN');
+    next();
+  });
+
+  // Body parsers split by route prefix so legitimately large bridge payloads
+  // are not rejected by Express's 100 KB default. The bridge `quality`
+  // handler accepts JSON-stringified Flow.Metadata, which for a complex flow
+  // routinely runs 200–800 KB. Mounting a 6 MB parser on /api/bridge BEFORE
+  // the global 100 KB default keeps every other endpoint conservative —
+  // changelog/save and release-notes/save have their own 1 MB content caps
+  // applied AFTER parsing, so the 100 KB Express default would actually
+  // truncate legitimate writes there too. The MAX_FLOW_XML_BYTES check in
+  // bridge/routes.js (5 MB) is now reachable as intended.
+  app.use('/api/bridge', express.json({ limit: '6mb' }));
+  app.use(express.json({ limit: '2mb' }));
 
   let mcpClient = null;
 
