@@ -43,7 +43,7 @@ jobs:
       - name: Build Chrome zip
         run: npm run package:ext
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: extension-chrome-zip
           path: extension/.output/*.zip
