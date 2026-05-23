@@ -83,41 +83,63 @@ function writeFrame(payload) {
 
 function setupStdinReader(onMessage) {
   let buffer = Buffer.alloc(0);
+  // Concurrency guard: process.stdin can emit `data` for a new chunk while a
+  // previous drain() is still awaiting onMessage(). Without this lock, two
+  // drain() invocations could observe the same buffer state and either
+  // advance past the same frame twice or interleave their `buffer =
+  // buffer.subarray(...)` writes, corrupting the framing. Chrome's native
+  // messaging protocol is half-duplex in practice so this rarely triggers,
+  // but the implementation is racy without it.
+  let draining = false;
+  let pending = false;
 
   const drain = async () => {
-    while (true) {
-      if (buffer.length < 4) return;
-      const length = buffer.readUInt32LE(0);
-      if (length > MAX_REQUEST_BYTES) {
-        // Reject the frame and re-sync by dropping the 4-byte length prefix so
-        // subsequent bytes are not interpreted as a stale frame body. Chrome
-        // closes the channel after an oversized message, so exiting is safe
-        // and prevents a multi-GB allocation on the next loop iteration.
-        writeFrame({
-          ok: false,
-          requestId: 'oversized',
-          error: `Frame length ${length} exceeds the ${MAX_REQUEST_BYTES}-byte limit`,
-          code: 'REQUEST_INVALID',
-        });
-        process.exit(1);
-      }
-      if (buffer.length < 4 + length) return;
-      const body = buffer.subarray(4, 4 + length);
-      buffer = buffer.subarray(4 + length);
-      let parsed;
-      try {
-        parsed = JSON.parse(body.toString('utf8'));
-      } catch (err) {
-        writeFrame({
-          ok: false,
-          requestId: 'parse-error',
-          error: `Invalid JSON frame: ${err.message}`,
-          code: 'REQUEST_INVALID',
-        });
-        continue;
-      }
-      // eslint-disable-next-line no-await-in-loop
-      await onMessage(parsed);
+    if (draining) {
+      // Mark that more data arrived. The active drain() will re-check
+      // `pending` after each frame and keep going until the buffer is
+      // either drained or short of a complete frame.
+      pending = true;
+      return;
+    }
+    draining = true;
+    try {
+      do {
+        pending = false;
+        while (buffer.length >= 4) {
+          const length = buffer.readUInt32LE(0);
+          if (length > MAX_REQUEST_BYTES) {
+            // Reject the frame; Chrome closes the channel after an oversized
+            // message, so exiting prevents a multi-GB allocation on the
+            // next loop iteration.
+            writeFrame({
+              ok: false,
+              requestId: 'oversized',
+              error: `Frame length ${length} exceeds the ${MAX_REQUEST_BYTES}-byte limit`,
+              code: 'REQUEST_INVALID',
+            });
+            process.exit(1);
+          }
+          if (buffer.length < 4 + length) break;
+          const body = buffer.subarray(4, 4 + length);
+          buffer = buffer.subarray(4 + length);
+          let parsed;
+          try {
+            parsed = JSON.parse(body.toString('utf8'));
+          } catch (err) {
+            writeFrame({
+              ok: false,
+              requestId: 'parse-error',
+              error: `Invalid JSON frame: ${err.message}`,
+              code: 'REQUEST_INVALID',
+            });
+            continue;
+          }
+          // eslint-disable-next-line no-await-in-loop
+          await onMessage(parsed);
+        }
+      } while (pending);
+    } finally {
+      draining = false;
     }
   };
 

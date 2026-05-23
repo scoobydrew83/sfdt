@@ -65,6 +65,11 @@ function escapeSoql(value) {
  *   data: {
  *     status: string,
  *     flowDefinitionId: string,
+ *     // The version that was active BEFORE this rollback ran, sourced from
+ *     // FlowDefinition.ActiveVersion.VersionNumber. null when the flow had
+ *     // no active version (i.e. ActiveVersionId was null). Callers use this
+ *     // for "before → after" UI messaging and audit logging — it is NOT the
+ *     // latest version ever created (LatestVersion.VersionNumber).
  *     previousActiveVersion: number|null,
  *     newActiveVersion: number,
  *     summary: string,
