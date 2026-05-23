@@ -7,24 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-05-23
+
 ### Security
 
-- **Bridge and GUI server hardening (PR #85):** raised `/api/bridge` body limit to 6 MB so the 5 MB `flowXml` route guard is reachable, with a 2 MB ceiling on other `/api/*` routes; `flowXml` size check now byte-accurate via `Buffer.byteLength`; `X-Content-Type-Options: nosniff` and `X-Frame-Options: SAMEORIGIN` sent on every response.
-- **CSRF token comparison is constant-time** in both `requireCsrfToken` and `requireCsrfTokenFromQueryOrHeader`. `GET /api/compare/stream` accepts the CSRF token via `?csrf=` for EventSource callers.
-- **Bridge runners independently re-validate `targetOrg`** against `ORG_ALIAS_RE` (80-char cap) so CLI/plugin/test paths cannot bypass the bridge contract's pre-check.
-- **Native messaging host stdin is bounded** — declared frame length capped at 4 MB and the accumulating buffer trips a projected-size check before `Buffer.concat`, preventing a partial-frame memory hold.
-- **Extension background hardened** — `onMessage` rejects messages whose `sender.id !== chrome.runtime.id`; `getSidForUrls` filters through a Salesforce-suffix allowlist (`.salesforce.com`, `.salesforce-setup.com`, `.lightning.force.com`, `.force.com`, `.visualforce.com`); bridge-ping port clamped to `[1, 65535]`.
-- **Bridge no longer reads or writes through `process.cwd()`.** `mountBridgeRoutes` now accepts `projectRoot`/`configDir` from the GUI server, so the extension's kill-switch and `extension stats` snapshot are honoured even when `sfdt ui` is launched from a non-project directory.
-- **`PATCH /api/config` blocklist widened** to cover `defaultOrg` (use `POST /api/session/org` instead) and `deployment.preflight.*` enforcement flags.
-- **Compare endpoints use `fs.mkdtemp`** (atomic, mode-0700) instead of predictable `${Date.now()}` temp paths, with `finally`-block cleanup.
-- **CodeQL fixes:** anchored-prefix Bearer-token parser with 4 KB Authorization header cap; `flow-rollback-runner` SOQL literal routed through an `escapeSoql` helper; test fixtures use `mkdtemp` instead of `${Date.now()}-${Math.random()}`.
-- **Input validation tightened on:** `--extension-id` (`^[a-p]{32}$`), `feature-flags` ID (`^[A-Za-z0-9_-]{1,128}$`), `doctor --port` (`[1, 65535]`).
+- **`qs` dependency upgraded to 6.15.2** — closes [CVE-2026-8723](https://github.com/advisories/GHSA-q8mj-m7cp-5q26) (Dependabot alert #13). `qs.stringify` previously crashed with `TypeError` on `null`/`undefined` entries in comma-format arrays when `encodeValuesOnly` was set; 6.15.2 skips those entries instead of throwing.
 
-### Fixed
+### Changed
 
-- **Native host discovery uses `Promise.any`** so a fast-failing localhost probe no longer shadows a healthy native host that needs a few more milliseconds.
-- **Per-feature extension settings preserved across storage events** — `onSettingsChange` now uses the composed schema, so dynamically-registered `featureSettings.<id>` entries survive a storage round-trip.
-- **Splash banner suppressed in piped/CI `--help` output** — gated on `process.stdout.isTTY`.
+- **Dependency bumps (production):** `express-rate-limit` 8.5.1 → 8.5.2 (patch).
+- **Dependency bumps (development-only):** `vite` 8.0.8 → 8.0.14, `vitest` 4.1.6 → 4.1.7, `@vitest/coverage-v8` 4.1.6 → 4.1.7, `typescript-eslint` 8.59.3 → 8.59.4, `@types/chrome` 0.0.280 → 0.1.42.
+- **Dependabot now targets `develop`** instead of `main`. Auto-update PRs land on the next-release branch and roll into the release PR, eliminating the previous merge-conflict noise from main-targeted upgrades.
+- **Chrome Web Store listing groundwork** — initial store assets and auto-publish setup docs added under `extension/store/`. No `@sfdt/cli` behavior change.
 
 ## [0.9.0] - 2026-05-21
 
@@ -66,6 +60,9 @@ The monorepo release. Adds a Chrome extension surface, a local HTTP bridge that 
 
 - **GUI Release Hub failure UX**: deploy/quality/rollback failures now render with structured rows and a one-click Ask-AI affordance, replacing the previous opaque "non-zero exit" terminal dump.
 - **Bridge `readDisabledFeatures` resilience**: defensive try/catch in the ping handlers so a malformed `.sfdt/feature-flags.json` does not 500 the ping endpoint.
+- **Native host discovery uses `Promise.any`** so a fast-failing localhost probe no longer shadows a healthy native host that needs a few more milliseconds.
+- **Per-feature extension settings preserved across storage events** — `onSettingsChange` now uses the composed schema, so dynamically-registered `featureSettings.<id>` entries survive a storage round-trip.
+- **Splash banner suppressed in piped/CI `--help` output** — gated on `process.stdout.isTTY`.
 
 ### Security
 
@@ -74,6 +71,16 @@ The monorepo release. Adds a Chrome extension surface, a local HTTP bridge that 
 - **URL suffix anchoring** in `extension/lib/hostname.ts` — every Salesforce hostname check switched from `String.prototype.includes` to suffix-anchored `endsWith`. The previous form would have accepted hostile hostnames like `evil.lightning.force.com.attacker.com` if the function were ever invoked outside the extension's host-permission-restricted content scripts.
 - **flowApiName contract validation** — the bridge contract validator (`validateSfdtRequest`) now applies the same `/^[A-Za-z][A-Za-z0-9_]*$/` developer-name regex the deploy/rollback runners already enforce, so malformed names are rejected at the contract layer rather than only at the runner.
 - **Insecure-randomness fallback removed** — `defaultIdGenerator` in `packages/flow-core/src/prompts.ts` previously fell back to `Math.random()` when `crypto.randomUUID` wasn't available. The fallback chain now uses `crypto.getRandomValues` before any non-cryptographic path.
+- **Bridge and GUI server body-limit hardening:** raised `/api/bridge` body limit to 6 MB so the 5 MB `flowXml` route guard is reachable, with a 2 MB ceiling on other `/api/*` routes; `flowXml` size check now byte-accurate via `Buffer.byteLength`; `X-Content-Type-Options: nosniff` and `X-Frame-Options: SAMEORIGIN` sent on every response.
+- **CSRF token comparison is constant-time** in both `requireCsrfToken` and `requireCsrfTokenFromQueryOrHeader`. `GET /api/compare/stream` accepts the CSRF token via `?csrf=` for EventSource callers.
+- **Bridge runners independently re-validate `targetOrg`** against `ORG_ALIAS_RE` (80-char cap) so CLI/plugin/test paths cannot bypass the bridge contract's pre-check.
+- **Native messaging host stdin is bounded** — declared frame length capped at 4 MB and the accumulating buffer trips a projected-size check before `Buffer.concat`, preventing a partial-frame memory hold.
+- **Extension background hardened** — `onMessage` rejects messages whose `sender.id !== chrome.runtime.id`; `getSidForUrls` filters through a Salesforce-suffix allowlist (`.salesforce.com`, `.salesforce-setup.com`, `.lightning.force.com`, `.force.com`, `.visualforce.com`); bridge-ping port clamped to `[1, 65535]`.
+- **Bridge no longer reads or writes through `process.cwd()`.** `mountBridgeRoutes` now accepts `projectRoot`/`configDir` from the GUI server, so the extension's kill-switch and `extension stats` snapshot are honoured even when `sfdt ui` is launched from a non-project directory.
+- **`PATCH /api/config` blocklist widened** to cover `defaultOrg` (use `POST /api/session/org` instead) and `deployment.preflight.*` enforcement flags.
+- **Compare endpoints use `fs.mkdtemp`** (atomic, mode-0700) instead of predictable `${Date.now()}` temp paths, with `finally`-block cleanup.
+- **CodeQL fixes:** anchored-prefix Bearer-token parser with 4 KB Authorization header cap; `flow-rollback-runner` SOQL literal routed through an `escapeSoql` helper; test fixtures use `mkdtemp` instead of `${Date.now()}-${Math.random()}`.
+- **Input validation tightened on:** `--extension-id` (`^[a-p]{32}$`), `feature-flags` ID (`^[A-Za-z0-9_-]{1,128}$`), `doctor --port` (`[1, 65535]`).
 
 ### Fixed (release blockers)
 
