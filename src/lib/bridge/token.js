@@ -31,21 +31,17 @@ function tokenPath() {
 }
 
 let _cached = null;
+// Promise mutex: serializes concurrent first-startup callers so they all
+// observe the same token instead of each generating their own and racing the
+// final disk write. The cold-start window is narrow but reachable when the
+// bridge fields its first request before any cached token exists.
+let _pending = null;
 
 export function getBridgeTokenPath() {
   return tokenPath();
 }
 
-/**
- * Read the bridge token from disk, creating it if it does not exist.
- * Returns the token string (~43 base64url characters, 32 bytes of entropy).
- *
- * Subsequent reads in the same process are served from an in-memory cache;
- * call `clearBridgeTokenCache()` to force a re-read (mostly for tests).
- */
-export async function getOrCreateBridgeToken() {
-  if (_cached) return _cached;
-
+async function readOrCreateToken() {
   const dir = tokenDir();
   const file = tokenPath();
   await fs.ensureDir(dir);
@@ -72,10 +68,30 @@ export async function getOrCreateBridgeToken() {
 }
 
 /**
+ * Read the bridge token from disk, creating it if it does not exist.
+ * Returns the token string (~43 base64url characters, 32 bytes of entropy).
+ *
+ * Subsequent reads in the same process are served from an in-memory cache;
+ * call `clearBridgeTokenCache()` to force a re-read (mostly for tests).
+ *
+ * Concurrent first-startup callers share a single in-flight promise so they
+ * cannot generate divergent tokens.
+ */
+export async function getOrCreateBridgeToken() {
+  if (_cached) return _cached;
+  if (_pending) return _pending;
+  _pending = readOrCreateToken().finally(() => {
+    _pending = null;
+  });
+  return _pending;
+}
+
+/**
  * Force a re-read on the next getOrCreateBridgeToken() call.
  */
 export function clearBridgeTokenCache() {
   _cached = null;
+  _pending = null;
 }
 
 /**

@@ -135,6 +135,13 @@ async function runClaudePrompt(prompt, options) {
 
 async function runGeminiPrompt(prompt, options) {
   const { cwd = process.cwd(), interactive = false, allowedTools } = options;
+
+  const available = await isGeminiAvailable();
+  if (!available) {
+    console.log(aiUnavailableMessage({ ai: { provider: 'gemini' } }));
+    return null;
+  }
+
   const execOptions = { cwd, reject: false, timeout: 300_000 };
   if (interactive) execOptions.stdio = 'inherit';
   const args = ['-p', prompt];
@@ -152,6 +159,13 @@ async function runGeminiPrompt(prompt, options) {
 
 async function runOpenAiPrompt(prompt, options) {
   const { cwd = process.cwd(), interactive = false, allowedTools } = options;
+
+  const available = await isCodexAvailable();
+  if (!available) {
+    console.log(aiUnavailableMessage({ ai: { provider: 'openai' } }));
+    return null;
+  }
+
   const execOptions = { cwd, reject: false, timeout: 300_000 };
   if (interactive) execOptions.stdio = 'inherit';
   const args = [];
@@ -276,7 +290,11 @@ async function streamClaudeResponse(messages, systemPrompt, config, onChunk, onP
   }
 }
 
-async function streamOpenAiResponse(messages, systemPrompt, _config, onChunk, onProcess) {
+async function streamOpenAiResponse(messages, systemPrompt, config, onChunk, onProcess) {
+  if (!(await isAiAvailable(config))) {
+    throw new Error(aiUnavailableMessage(config));
+  }
+
   const serialized = buildSerializedPrompt(messages, systemPrompt);
   // /api/ai/chat streams reach here. Prompt content can include attacker-controlled
   // page context from the browser, so always run Codex in its read-only sandbox.
@@ -291,7 +309,11 @@ async function streamOpenAiResponse(messages, systemPrompt, _config, onChunk, on
   }
 }
 
-async function streamGeminiResponse(messages, systemPrompt, _config, onChunk, onProcess) {
+async function streamGeminiResponse(messages, systemPrompt, config, onChunk, onProcess) {
+  if (!(await isAiAvailable(config))) {
+    throw new Error(aiUnavailableMessage(config));
+  }
+
   const serialized = buildSerializedPrompt(messages, systemPrompt);
   // Same reasoning as streamOpenAiResponse — force read-only approval mode.
   const proc = execa('gemini', ['--approval-mode', 'plan', '-p', serialized], { stdio: ['pipe', 'pipe', 'pipe'], reject: false, timeout: 300_000 });
