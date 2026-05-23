@@ -26,6 +26,11 @@ import { registerUpdateCommand } from './commands/update.js';
 import { registerConfigCommand } from './commands/config.js';
 import { registerAiCommand } from './commands/ai.js';
 import { registerScanCommand } from './commands/scan.js';
+import { registerFlowCommand } from './commands/flow.js';
+import { registerExtensionCommand } from './commands/extension.js';
+import { registerFeatureFlagsCommand } from './commands/feature-flags.js';
+import { registerDoctorCommand } from './commands/doctor.js';
+import { formatSplash } from './lib/output.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
@@ -40,6 +45,17 @@ export function createCli() {
     )
     .version(pkg.version, '-v, --version', 'Print the sfdt version and exit')
     .addHelpCommand('help [command]', 'Display help for a command');
+
+  // Splash banner on --help. Gate on isTTY at hook-registration time so
+  // non-TTY help output (CI snapshots, piped `sfdt --help | grep …`) stays
+  // pristine. formatSplash also self-degrades on non-TTY, but the inner
+  // guard alone still emits a one-line label which tripped tools that
+  // snapshot exact --help output.
+  if (process.stdout.isTTY) {
+    program.addHelpText('beforeAll', () =>
+      formatSplash({ version: pkg.version, size: 'compact' }),
+    );
+  }
 
   // Register all commands
   registerInitCommand(program);
@@ -65,6 +81,10 @@ export function createCli() {
   registerConfigCommand(program);
   registerAiCommand(program);
   registerScanCommand(program);
+  registerFlowCommand(program);
+  registerExtensionCommand(program);
+  registerFeatureFlagsCommand(program);
+  registerDoctorCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program

@@ -1,0 +1,36 @@
+# GitHub CODEOWNERS for the sfdt monorepo.
+#
+# CODEOWNERS auto-requests reviews on PRs touching matching paths. The
+# patterns mirror the workspace structure so a PR that touches the
+# extension and the CLI gets the right people on it without manual @-tags.
+
+# Default owner — anything not matched below.
+*                       @scoobydrew83
+
+# CLI core
+/bin/                   @scoobydrew83
+/src/                   @scoobydrew83
+/scripts/               @scoobydrew83
+/test/                  @scoobydrew83
+
+# Extension
+/extension/             @scoobydrew83
+
+# Native messaging host
+/host/                  @scoobydrew83
+
+# Shared TypeScript library
+/packages/              @scoobydrew83
+
+# Local web dashboard
+/gui/                   @scoobydrew83
+
+# Repo-wide config / governance
+/.github/               @scoobydrew83
+/docs/                  @scoobydrew83
+/README.md              @scoobydrew83
+/ROADMAP.md             @scoobydrew83
+/CHANGELOG.md           @scoobydrew83
+/RELEASING.md           @scoobydrew83
+/SECURITY.md            @scoobydrew83
+/LICENSE                @scoobydrew83

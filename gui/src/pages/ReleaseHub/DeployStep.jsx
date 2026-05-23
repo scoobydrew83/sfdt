@@ -14,14 +14,17 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
   const [detecting, setDetecting]     = useState(false);
   const [destructiveTiming, setDestructiveTiming] = useState('post');
   const [deploymentMode, setDeploymentMode] = useState('deploy'); // 'deploy' or 'validate'
-  const [tagRelease, setTagRelease]       = useState(true);
+  const [tagRelease, setTagRelease]       = useState(false);
   const [createPR, setCreatePR]           = useState(false);
-  const [notifySlack, setNotifySlack]     = useState(true);
+  const [notifySlack, setNotifySlack]     = useState(false);
   const [loadingOrgs, setLoadingOrgs] = useState(true);
   const [isRunning, setIsRunning]   = useState(false);
   const [streamKey, setStreamKey]   = useState(0);
   const [orgError, setOrgError]     = useState(false);
   const [lastDeployStats, setLastDeployStats] = useState(null);
+  // Captured from a successful validate run so the next Quick Deploy can
+  // reuse the validation job and skip the test re-run.
+  const [validationJobId, setValidationJobId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -225,6 +228,24 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
                     />
                     Pre-Destructive (Delete then Deploy)
                   </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="destructiveTiming"
+                      checked={destructiveTiming === 'none'}
+                      onChange={() => setDestructiveTiming('none')}
+                    />
+                    Skip Destructive (metadata only)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="destructiveTiming"
+                      checked={destructiveTiming === 'only'}
+                      onChange={() => setDestructiveTiming('only')}
+                    />
+                    Destructive Only (no metadata deploy)
+                  </label>
                 </div>
 
                 <div style={{ marginTop: 20, borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>
@@ -351,6 +372,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
             key={streamKey}
             label={`${deploymentMode === 'validate' ? 'Validating' : 'Deploying'} to ${targetOrg}`}
             startLabel="Deploy"
+            commandHint={`sfdt deploy${deploymentMode === 'validate' ? ' --dry-run' : validationJobId ? ` --quick (job ${validationJobId})` : ''}`}
             streamFn={() => stream.deploy({
               dryRun: deploymentMode === 'validate',
               org: targetOrg,
@@ -361,10 +383,71 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
               destructiveTiming,
               tagRelease,
               createPR,
-              notifySlack
+              notifySlack,
+              // Only pass the validation job id on a non-validate run — sending
+              // it on the validate path would have no effect server-side.
+              ...(deploymentMode === 'deploy' && validationJobId
+                ? { validationJobId }
+                : {}),
             })}
-            onComplete={onMarkDone}
+            onComplete={(content) => {
+              // Validate-mode success captures the job id so a follow-up
+              // Quick Deploy can reuse it. We deliberately do NOT auto-advance
+              // to Rollback — that's the navigation that produced the "black
+              // screen" symptom on production validates.
+              if (deploymentMode === 'validate') {
+                if (content?.validationJobId) setValidationJobId(content.validationJobId);
+                return;
+              }
+              // Real deploy completed — clear any stale job id so the next
+              // validate-then-deploy cycle starts fresh.
+              setValidationJobId(null);
+              onMarkDone();
+            }}
           />
+
+          {deploymentMode === 'validate' && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: '10px 12px',
+                background: 'var(--status-identical-bg)',
+                border: '1px solid var(--status-identical-border)',
+                borderRadius: 'var(--r-md)',
+                color: 'var(--status-identical-fg)',
+                fontSize: 12,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <span>
+                Validation completed against <strong>{targetOrg}</strong>.
+                {validationJobId ? (
+                  <>
+                    {' '}Quick Deploy will reuse validation job{' '}
+                    <code style={{ fontFamily: 'var(--font-mono)' }}>{validationJobId}</code>
+                    {' '}— Salesforce skips the test re-run.
+                  </>
+                ) : (
+                  <>
+                    {' '}Job ID wasn’t captured; Quick Deploy will re-run the deploy
+                    end-to-end (tests will run again).
+                  </>
+                )}
+              </span>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  setDeploymentMode('deploy');
+                  setStreamKey((k) => k + 1);
+                }}
+              >
+                <IconRocket size={11} /> Quick Deploy
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -135,7 +135,11 @@ describe('runAiPrompt', () => {
       config: { ai: { provider: 'gemini' } },
     });
 
-    const promptCall = execa.mock.calls.find((call) => call[0] === 'gemini');
+    // First gemini call is the availability probe (`--version`); find the
+    // actual prompt invocation by its `-p` flag.
+    const promptCall = execa.mock.calls.find(
+      (call) => call[0] === 'gemini' && call[1]?.[0] === '-p',
+    );
     expect(promptCall).toBeDefined();
     expect(promptCall[1][0]).toBe('-p');
     expect(promptCall[1][1]).toContain('test prompt');
@@ -149,7 +153,11 @@ describe('runAiPrompt', () => {
       config: { ai: { provider: 'openai' } },
     });
 
-    const promptCall = execa.mock.calls.find((call) => call[0] === 'codex');
+    // First codex call is the availability probe (`--version`); the prompt
+    // invocation is the one whose first arg contains the prompt itself.
+    const promptCall = execa.mock.calls.find(
+      (call) => call[0] === 'codex' && call[1]?.[0] !== '--version',
+    );
     expect(promptCall).toBeDefined();
     expect(promptCall[1][0]).toContain('test prompt');
     expect(result.stdout).toBe('codex result');
@@ -160,8 +168,8 @@ describe('runAiPrompt', () => {
 
 describe('streamAiResponse', () => {
   const claudeConfig = { ai: { provider: 'claude' }, features: { ai: true } };
-  const openaiConfig = { ai: { provider: 'openai' } };
-  const geminiConfig = { ai: { provider: 'gemini' } };
+  const openaiConfig = { ai: { provider: 'openai' }, features: { ai: true } };
+  const geminiConfig = { ai: { provider: 'gemini' }, features: { ai: true } };
 
   // Returns a fake execa proc whose .stdout is an async iterable of Buffer chunks.
   function makeCLIProc(chunks, exitCode = 0, stderr = '') {
@@ -254,7 +262,11 @@ describe('streamAiResponse', () => {
     expect(onChunk).toHaveBeenCalledWith('there');
     const geminiCall = execa.mock.calls.find((c) => c[0] === 'gemini');
     expect(geminiCall).toBeDefined();
-    expect(geminiCall[1][0]).toBe('-p');
+    // Stream path forces Gemini into the read-only 'plan' approval mode so
+    // prompt-injected commit messages cannot trigger destructive tool use.
+    expect(geminiCall[1]).toContain('--approval-mode');
+    expect(geminiCall[1]).toContain('plan');
+    expect(geminiCall[1]).toContain('-p');
   });
 
   it('OpenAI: throws when codex CLI exits non-zero', async () => {

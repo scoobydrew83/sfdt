@@ -78,6 +78,8 @@ Dockerfile      Official Docker image definition
 | `SFDT_RELEASE_NAME` | Per-invocation: full release label (semver, free-form, or date); passed via `env:` option |
 | `SFDT_CHANGELOG_FILE` | Per-invocation: resolved changelog file path (e.g., `changelogs/marketing.md` or `CHANGELOG.md`); set by `release.js` and `changelog.js` |
 | `SFDT_DEPLOY_SOURCE_DIR` | Per-invocation: source directory path for folder-mode deploys; empty string for manifest-mode; passed via `env:` option |
+| `SFDT_DESTRUCTIVE_TIMING` | Per-invocation: one of `"pre"`, `"post"`, `"none"`, `"only"`; controls when destructive changes are applied during deploy (default: `"post"`). `none` skips destructiveChanges, `only` runs ONLY destructive operations |
+| `SFDT_VALIDATION_JOB_ID` | Per-invocation: a Salesforce deploy validation Id (`0Af…`) for Quick Deploy; when set, `core/deployment-assistant.sh` calls `sf project deploy quick` to promote the prior validation instead of running a full deploy |
 | (removed) | `pullConfig` is consumed directly by `pull.js`; no longer flattened to env vars |
 
 When adding a new env var, update both `buildScriptEnv()` in `script-runner.js` and this table.

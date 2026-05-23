@@ -34,6 +34,13 @@ async function getCsrfToken() {
   return csrfTokenPromise;
 }
 
+// EventSource can't set custom headers — callers that need to start an SSE
+// stream against a CSRF-protected endpoint use this to splice the token
+// into the URL.
+export async function csrfQuery() {
+  return `csrf=${encodeURIComponent(await getCsrfToken())}`;
+}
+
 async function jsonHeaders() {
   return {
     'Content-Type': 'application/json',

@@ -881,7 +881,27 @@ select_test_level() {
 run_validation() {
     print_header "RUNNING DEPLOYMENT VALIDATION"
 
-    local cmd=(sf project deploy validate --manifest "$MANIFEST_PATH" --target-org "$TARGET_ORG")
+    # Destructive-only mode swaps the regular manifest for a minimal empty
+    # package.xml so Salesforce accepts the validate command.
+    local manifest_for_cmd="$MANIFEST_PATH"
+    local tmp_empty_manifest=""
+    if [ "$DESTRUCTIVE_TIMING" == "only" ]; then
+        if [ -z "$DESTRUCTIVE_PATH" ]; then
+            print_error "Destructive-only mode requested but no destructive changes file was found"
+            return 1
+        fi
+        tmp_empty_manifest=$(mktemp -t sfdt-empty-manifest-XXXXXX.xml)
+        cat > "$tmp_empty_manifest" <<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <version>${SFDT_API_VERSION:-62.0}</version>
+</Package>
+XML
+        manifest_for_cmd="$tmp_empty_manifest"
+        print_warning "Destructive-only mode: regular metadata will NOT be validated"
+    fi
+
+    local cmd=(sf project deploy validate --manifest "$manifest_for_cmd" --target-org "$TARGET_ORG")
 
     # Only add --test-level if not skipping tests
     if [ "$TEST_LEVEL" != "Skip Tests (No Apex deployments)" ]; then
@@ -897,13 +917,21 @@ run_validation() {
         print_warning "Skipping test execution (metadata-only deployment)"
     fi
 
-    if [ -n "$DESTRUCTIVE_PATH" ]; then
+    if [ "$DESTRUCTIVE_TIMING" == "none" ]; then
+        if [ -n "$DESTRUCTIVE_PATH" ]; then
+            print_warning "Destructive changes file present but mode=none — skipping deletions"
+        fi
+    elif [ -n "$DESTRUCTIVE_PATH" ]; then
         if [ "$DESTRUCTIVE_TIMING" == "pre" ]; then
             cmd+=(--pre-destructive-changes "$DESTRUCTIVE_PATH")
             print_warning "Validation includes PRE-destructive changes (delete first)"
         else
             cmd+=(--post-destructive-changes "$DESTRUCTIVE_PATH")
-            print_warning "Validation includes POST-destructive changes (deploy first)"
+            if [ "$DESTRUCTIVE_TIMING" == "only" ]; then
+                print_warning "Destructive-only validation (no metadata)"
+            else
+                print_warning "Validation includes POST-destructive changes (deploy first)"
+            fi
         fi
     fi
 
@@ -918,6 +946,7 @@ run_validation() {
     local exit_code=${PIPESTATUS[0]}
     validation_output=$(cat "$_vtmp")
     rm -f "$_vtmp"
+    [ -n "$tmp_empty_manifest" ] && rm -f "$tmp_empty_manifest"
 
     echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 
@@ -1061,6 +1090,7 @@ run_quick_deploy() {
         return 0
     else
         print_error "Deployment failed"
+        notify_slack_if_enabled deploy-failure "Quick-deploy to ${TARGET_ORG} failed with exit ${exit_code}."
         exit $exit_code
     fi
 }
@@ -1083,7 +1113,28 @@ run_full_deployment() {
         fi
     fi
 
-    local cmd=(sf project deploy start --manifest "$MANIFEST_PATH" --target-org "$TARGET_ORG")
+    # Destructive-only mode swaps the regular manifest for a minimal empty
+    # package.xml so Salesforce accepts the deploy command (the CLI rejects
+    # destructive-only deploys without a --manifest).
+    local manifest_for_cmd="$MANIFEST_PATH"
+    local tmp_empty_manifest=""
+    if [ "$DESTRUCTIVE_TIMING" == "only" ]; then
+        if [ -z "$DESTRUCTIVE_PATH" ]; then
+            print_error "Destructive-only mode requested but no destructive changes file was found"
+            return 1
+        fi
+        tmp_empty_manifest=$(mktemp -t sfdt-empty-manifest-XXXXXX.xml)
+        cat > "$tmp_empty_manifest" <<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <version>${SFDT_API_VERSION:-62.0}</version>
+</Package>
+XML
+        manifest_for_cmd="$tmp_empty_manifest"
+        print_warning "Destructive-only mode: regular metadata will NOT be deployed"
+    fi
+
+    local cmd=(sf project deploy start --manifest "$manifest_for_cmd" --target-org "$TARGET_ORG")
 
     # Only add --test-level if not skipping tests
     if [ "$TEST_LEVEL" != "Skip Tests (No Apex deployments)" ]; then
@@ -1099,13 +1150,22 @@ run_full_deployment() {
         print_warning "Skipping test execution (metadata-only deployment)"
     fi
 
-    if [ -n "$DESTRUCTIVE_PATH" ]; then
+    if [ "$DESTRUCTIVE_TIMING" == "none" ]; then
+        if [ -n "$DESTRUCTIVE_PATH" ]; then
+            print_warning "Destructive changes file present but mode=none — skipping deletions"
+        fi
+    elif [ -n "$DESTRUCTIVE_PATH" ]; then
         if [ "$DESTRUCTIVE_TIMING" == "pre" ]; then
             cmd+=(--pre-destructive-changes "$DESTRUCTIVE_PATH")
             print_warning "Deployment includes PRE-destructive changes (delete first)"
         else
+            # Default and 'only' both fall through to post-destructive flag.
             cmd+=(--post-destructive-changes "$DESTRUCTIVE_PATH")
-            print_warning "Deployment includes POST-destructive changes (deploy first)"
+            if [ "$DESTRUCTIVE_TIMING" == "only" ]; then
+                print_warning "Destructive-only deployment (no metadata)"
+            else
+                print_warning "Deployment includes POST-destructive changes (deploy first)"
+            fi
         fi
     fi
 
@@ -1115,6 +1175,8 @@ run_full_deployment() {
     "${cmd[@]}"
     local exit_code=$?
 
+    [ -n "$tmp_empty_manifest" ] && rm -f "$tmp_empty_manifest"
+
     echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 
     if [ $exit_code -eq 0 ]; then
@@ -1122,13 +1184,22 @@ run_full_deployment() {
         return 0
     else
         print_error "Deployment failed"
+        notify_slack_if_enabled deploy-failure "Deployment to ${TARGET_ORG} failed with exit ${exit_code}."
         exit $exit_code
     fi
 }
 
 # --- Post-Deployment Functions ---
 
-# Archive deployed manifest files
+# Archive deployed manifest files.
+#
+# Edge case (benign): if MANIFEST_PATH were a file at the filesystem root,
+# both `dirname` and `basename` would return "/" and `deployed_dir` could
+# end in a double slash. Salesforce DX projects always live below the
+# filesystem root in practice, so this branch is unreachable — POSIX path
+# semantics treat the double slash as equivalent regardless, so no fix is
+# needed. Documented here so a future reviewer who notices the dirname/
+# basename usage knows it was considered.
 archive_deployed_manifest() {
     # Skip if manifest path not set (e.g., quick deploy only workflow)
     if [ -z "$MANIFEST_PATH" ]; then
@@ -1144,6 +1215,13 @@ archive_deployed_manifest() {
     if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then
         local rel_path
         rel_path=$(dirname "${MANIFEST_PATH#${MANIFEST_BASE_DIR}/}")
+        # If MANIFEST_PATH was absolute and MANIFEST_BASE_DIR relative, the
+        # prefix-strip above is a no-op and rel_path leaks the absolute
+        # filesystem path (Users/drew/... lands as a subfolder). Fall back to
+        # the immediate parent directory name (the package subfolder).
+        if [[ "$rel_path" == /* ]]; then
+            rel_path=$(basename "$(dirname "$MANIFEST_PATH")")
+        fi
         if [[ -n "$rel_path" && "$rel_path" != "." ]]; then
             deployed_dir="${MANIFEST_BASE_DIR}/deployed/${rel_path}"
         fi
@@ -1188,6 +1266,25 @@ Moved to $deployed_dir/ after successful deployment to ${TARGET_ORG}"
     fi
 }
 
+notify_slack_if_enabled() {
+    # Honour the GUI toggle (SFDT_NOTIFY_SLACK=true) and config-level webhook.
+    # Quietly no-op if either is missing — keeps non-Slack users out of the path.
+    if [ "${SFDT_NOTIFY_SLACK:-false}" != "true" ]; then
+        return 0
+    fi
+    local event="$1"          # deploy-success | deploy-failure
+    local extra_message="${2:-}"
+    local notify_args=(notify "$event" --org "$TARGET_ORG")
+    if [ -n "$RELEASE_VERSION" ]; then
+        notify_args+=(--version "$RELEASE_VERSION")
+    fi
+    if [ -n "$extra_message" ]; then
+        notify_args+=(--message "$extra_message")
+    fi
+    # `|| true` so a Slack failure never breaks the deploy report.
+    sfdt "${notify_args[@]}" >/dev/null 2>&1 || true
+}
+
 post_deployment_tasks() {
     print_header "POST-DEPLOYMENT TASKS"
 
@@ -1223,6 +1320,8 @@ post_deployment_tasks() {
     fi
     print_success "═══════════════════════════════════════════════════"
     echo ""
+
+    notify_slack_if_enabled deploy-success "Deployment to ${TARGET_ORG} succeeded."
 }
 
 # --- Main Workflow ---
@@ -1248,6 +1347,21 @@ if [[ -n "${SFDT_DEPLOY_SOURCE_DIR:-}" ]]; then
     fi
     "${sf_cmd[@]}"
     print_success "Source directory deploy complete"
+
+    # Archive a manifest snapshot so `sfdt rollback` has a deployable artifact.
+    # Without this, folder-mode deploys leave manifest/release/deployed/ empty
+    # and rollback aborts with "No deployed manifests found".
+    snapshot_dir="${MANIFEST_BASE_DIR}/deployed"
+    snapshot_name="source-dir-$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$snapshot_dir"
+    if sf project generate manifest \
+        --source-dir "${SFDT_DEPLOY_SOURCE_DIR}" \
+        --name "$snapshot_name" \
+        --output-dir "$snapshot_dir" >/dev/null 2>&1; then
+        print_success "Archived deployment manifest: ${snapshot_dir}/${snapshot_name}.xml"
+    else
+        print_warning "Could not generate manifest snapshot from ${SFDT_DEPLOY_SOURCE_DIR} (rollback will not be available for this deploy)"
+    fi
     exit 0
 fi
 
@@ -1304,11 +1418,19 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
 
     if [[ "$DRY_RUN" == "true" ]]; then
         run_validation
+    elif [[ -n "${SFDT_VALIDATION_JOB_ID:-}" ]]; then
+        # Quick Deploy path: reuse the validation job from a prior dry-run so
+        # the org doesn't re-run the full test suite. The GUI captures the job
+        # id from the validate stream and passes it back on Quick Deploy.
+        VALIDATION_JOB_ID="$SFDT_VALIDATION_JOB_ID"
+        print_step "Quick Deploy using validation job ID: $VALIDATION_JOB_ID"
+        run_quick_deploy
+        archive_deployed_manifest
     else
         run_full_deployment
         # Only archive and tag if it was a successful real deployment
         archive_deployed_manifest
-        
+
         if [[ "$TAG_RELEASE" == "true" && -n "$RELEASE_VERSION" ]]; then
             print_step "Auto-tagging release v${RELEASE_VERSION}..."
             git tag -a "v${RELEASE_VERSION}" -m "Release ${RELEASE_VERSION}" || print_warning "Tag v${RELEASE_VERSION} already exists, skipping"

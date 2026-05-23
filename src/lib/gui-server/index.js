@@ -22,7 +22,8 @@ import { buildScriptEnv } from '../script-runner.js';
 import { fetchOrgInventory, fetchInventory } from '../org-inventory.js';
 import { initCache, getDelta, updateCache } from '../pull-cache.js';
 import { parallelRetrieve } from '../parallel-retrieve.js';
-import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken } from './security.js';
+import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken, requireCsrfTokenFromQueryOrHeader } from './security.js';
+import { mountBridgeRoutes } from '../bridge/routes.js';
 import { stripAnsi, tryReadJson, safeReaddir, buildPlaceholderHtml } from './shared.js';
 import {
   parseTestRunLines, parseQualityLines,
@@ -89,7 +90,28 @@ export function createGuiApp(config, version, port = 7654) {
   let sessionOrg = null;
   const csrfToken = createCsrfToken();
   const app = express();
-  app.use(express.json());
+
+  // Defense-in-depth response headers. Set globally before any route handler
+  // runs so static assets and JSON responses both inherit them. The bind is
+  // localhost-only so the exposure is low, but these are zero-cost and stop
+  // browser-side MIME-sniffing/clickjacking edge cases dead.
+  app.use((_req, res, next) => {
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('X-Frame-Options', 'SAMEORIGIN');
+    next();
+  });
+
+  // Body parsers split by route prefix so legitimately large bridge payloads
+  // are not rejected by Express's 100 KB default. The bridge `quality`
+  // handler accepts JSON-stringified Flow.Metadata, which for a complex flow
+  // routinely runs 200–800 KB. Mounting a 6 MB parser on /api/bridge BEFORE
+  // the global 100 KB default keeps every other endpoint conservative —
+  // changelog/save and release-notes/save have their own 1 MB content caps
+  // applied AFTER parsing, so the 100 KB Express default would actually
+  // truncate legitimate writes there too. The MAX_FLOW_XML_BYTES check in
+  // bridge/routes.js (5 MB) is now reachable as intended.
+  app.use('/api/bridge', express.json({ limit: '6mb' }));
+  app.use(express.json({ limit: '2mb' }));
 
   let mcpClient = null;
 
@@ -99,6 +121,19 @@ export function createGuiApp(config, version, port = 7654) {
 
   const apiLimiter = createRateLimiter(60, 60_000);
   const csrfLimiter = createRateLimiter(10, 60_000);
+
+  // Bridge routes are mounted BEFORE the default origin guard because they
+  // accept cross-origin requests from chrome-extension:// and *.salesforce.com.
+  // Each bridge route applies its own origin allowlist + bearer-token auth
+  // (see src/lib/bridge/middleware.js).
+  mountBridgeRoutes(app, {
+    port,
+    version,
+    projectRoot: config._projectRoot,
+    configDir: config._configDir,
+    rateLimiter: apiLimiter,
+  });
+
   const originGuard = createOriginGuard(port);
   app.use('/api/', originGuard);
 
@@ -127,10 +162,38 @@ export function createGuiApp(config, version, port = 7654) {
     }
   });
 
-  // Keys whose values are executed as shell commands — must not be API-writable.
-  const BLOCKED_CONFIG_KEY_PREFIXES = ['mcp.salesforce.command', 'mcp.salesforce.args'];
+  // Keys that must not be API-writable. Three categories:
+  //   - Shell-command keys whose values would execute as commands.
+  //   - `defaultOrg`: flows into `--target-org` for every sf invocation; the
+  //     dashboard's intended path is POST /api/session/org which validates the
+  //     alias against a strict regex. PATCH-ing it directly would let a write
+  //     coerce sf to point at an attacker-controlled org.
+  //   - `deployment.preflight.*`: silently flipping enforcement flags off
+  //     (e.g. enforceGitClean) would let a subsequent deploy bypass the
+  //     safety check that the operator deliberately enabled.
+  //
+  // The match check below is `key === prefix || key.startsWith(`${prefix}.`)`
+  // — exact match OR a dot-bounded prefix. That means:
+  //   - `defaultOrg` blocks the literal key (the schema's only legitimate
+  //     shape — defaultOrg is a string, not a nested object).
+  //   - `defaultOrgFoo` is NOT blocked (different key entirely; the dot
+  //     boundary prevents over-broad matching).
+  //   - `deployment.preflight` blocks every nested enforcement flag like
+  //     `deployment.preflight.enforceGitClean` and `deployment.preflight.strict`.
+  const BLOCKED_CONFIG_KEY_PREFIXES = [
+    'mcp.salesforce.command',
+    'mcp.salesforce.args',
+    'defaultOrg',
+    'deployment.preflight',
+  ];
   // Path keys must resolve within projectRoot to prevent logDir/manifestDir redirection attacks.
-  const PATH_KEYS_WITHIN_ROOT = new Set(['logDir', 'manifestDir', 'releaseNotesDir', 'changelogDir']);
+  const PATH_KEYS_WITHIN_ROOT = new Set([
+    'logDir',
+    'manifestDir',
+    'releaseNotesDir',
+    'changelogDir',
+    'defaultSourcePath',
+  ]);
 
   app.patch('/api/config', apiLimiter, async (req, res) => {
     if (!requireCsrfToken(req, res, csrfToken)) return;
@@ -167,6 +230,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/init', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const projectRoot = config._projectRoot || process.cwd();
       const configDir = path.join(projectRoot, '.sfdt');
@@ -250,8 +314,14 @@ export function createGuiApp(config, version, port = 7654) {
     if (!requireCsrfToken(req, res, csrfToken)) return;
     const { org } = req.body ?? {};
     if (!org || typeof org !== 'string') return res.status(400).json({ error: 'org is required' });
-    const safe = org.trim().slice(0, 100);
+    const safe = org.trim().slice(0, 80);
     if (!safe) return res.status(400).json({ error: 'org is required' });
+    // Match the bridge-contract ORG_ALIAS_RE and the /api/compare org checks:
+    // first char must be alphanumeric or '@' (no leading '-' so a flag-style
+    // value can't sneak into `sf --target-org`).
+    if (!/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(safe)) {
+      return res.status(400).json({ error: 'Invalid org alias' });
+    }
     sessionOrg = safe;
     res.json({ org: sessionOrg });
   });
@@ -369,6 +439,29 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const data = await readQuality(logDir);
       res.json(data ?? { date: null, status: null, summary: { critical: 0, high: 0, medium: 0, low: 0 }, violations: [], unavailableMessage: null });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Flow-specific quality endpoint: takes a Tooling-API-shaped Flow.Metadata
+  // payload in the request body and returns the @sfdt/flow-core report.
+  // The Chrome extension hits this via the bridge; the dashboard hits it
+  // directly. Same engine in both paths, so results match the CLI's
+  // `sfdt flow scan` output byte-for-byte.
+  app.post('/api/flow/quality', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { runFlowQuality } = await import('../flow-quality.js');
+      const metadata = req.body?.metadata;
+      if (!metadata || typeof metadata !== 'object') {
+        return res.status(400).json({ error: 'metadata (object) is required in the body' });
+      }
+      const report = runFlowQuality(metadata, {
+        flowApiName: req.body?.flowApiName,
+        flowVersionId: req.body?.flowVersionId,
+      });
+      res.json(report);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -979,6 +1072,11 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.get('/api/compare/stream', apiLimiter, async (req, res) => {
+    // EventSource can't set custom headers, so accept the CSRF token from
+    // `?csrf=`. The route spawns `sf project retrieve start` and creates temp
+    // dirs — without this guard, any cross-origin page could trigger retrieves
+    // by loading the URL in an <img> or via fetch.
+    if (!requireCsrfTokenFromQueryOrHeader(req, res, csrfToken)) return;
     const data = await readCompare(logDir);
     if (!data) return res.status(404).json({ error: 'No comparison result found. Run compare first.' });
 
@@ -993,7 +1091,10 @@ export function createGuiApp(config, version, port = 7654) {
     });
 
     const os = await import('os');
-    let tmpDir = path.join(os.tmpdir(), `sfdt-compare-${Date.now()}`);
+    // mkdtemp creates a uniquely-named, mode-0700 directory atomically —
+    // robust against the race where a predictable `${Date.now()}` name
+    // already exists on a busy box.
+    let tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-compare-'));
 
     try {
       const bothItems = data.items.filter((i) => i.status === 'both');
@@ -1109,6 +1210,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/compare/manifest', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { items = [], apiVersion, save = false, version, xml: rawXml } = req.body ?? {};
       if (rawXml && rawXml.length > 10_000_000) return res.status(413).json({ error: 'XML content too large (max 10 MB)' });
@@ -1155,23 +1257,23 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.get('/api/compare/diff', apiLimiter, async (req, res) => {
+    const { type, member } = req.query;
+    if (typeof type !== 'string' || typeof member !== 'string' || !type || !member) {
+      return res.status(400).json({ error: 'type and member are required' });
+    }
+    // Block path traversal: null bytes, parent-directory sequences, absolute paths.
+    // Dots and slashes are valid in Salesforce member names (e.g. CustomMetadata__mdt.Record, reports/Folder/Name).
+    if (/[\x00]|\.\./.test(member) || /^[/\\]/.test(member)) {
+      return res.status(400).json({ error: 'Invalid member name' });
+    }
+
+    const data = await readCompare(logDir);
+    if (!data) return res.status(404).json({ error: 'No comparison result found.' });
+
+    const os = await import('os');
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-diff-'));
+
     try {
-      const { type, member } = req.query;
-      if (typeof type !== 'string' || typeof member !== 'string' || !type || !member) {
-        return res.status(400).json({ error: 'type and member are required' });
-      }
-      // Block path traversal: null bytes, parent-directory sequences, absolute paths.
-      // Dots and slashes are valid in Salesforce member names (e.g. CustomMetadata__mdt.Record, reports/Folder/Name).
-      if (/[\x00]|\.\./.test(member) || /^[/\\]/.test(member)) {
-        return res.status(400).json({ error: 'Invalid member name' });
-      }
-
-      const data = await readCompare(logDir);
-      if (!data) return res.status(404).json({ error: 'No comparison result found.' });
-
-      const os = await import('os');
-      const tmpDir = path.join(os.tmpdir(), `sfdt-diff-${Date.now()}`);
-
       const [sourceXml, targetXml] = await Promise.all([
         data.source === 'local'
           ? readLocalComponentXml(config, type, member)
@@ -1182,6 +1284,8 @@ export function createGuiApp(config, version, port = 7654) {
       res.json({ sourceXml: sourceXml ?? '', targetXml: targetXml ?? '' });
     } catch (err) {
       res.status(500).json({ error: err.message });
+    } finally {
+      await fs.remove(tmpDir).catch(() => {});
     }
   });
 
@@ -1266,9 +1370,11 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/manifest/build', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { base = 'main', head = 'HEAD', package: pkg = 'all', name: releaseName } = req.body ?? {};
-      const safeRefPattern = /^[A-Za-z0-9._/~^@:{}-]+$/;
+      // Refs that start with '-' are git option flags (e.g. --output, -c), not refs.
+      const safeRefPattern = /^[A-Za-z0-9._/~^@:{}][A-Za-z0-9._/~^@:{}-]*$/;
       if (!safeRefPattern.test(String(base)) || !safeRefPattern.test(String(head))) {
         return res.status(400).json({ error: 'Invalid git ref' });
       }
@@ -1381,6 +1487,7 @@ export function createGuiApp(config, version, port = 7654) {
       testLevel,
       testClasses,
       destructiveTiming,
+      validationJobId,
     } = req.body ?? {};
 
     const projectRoot = config._projectRoot ?? process.cwd();
@@ -1416,8 +1523,16 @@ export function createGuiApp(config, version, port = 7654) {
       return res.status(400).json({ error: 'Invalid testLevel' });
     }
 
-    if (destructiveTiming !== undefined && destructiveTiming !== null && !['pre', 'post'].includes(destructiveTiming)) {
+    if (destructiveTiming !== undefined && destructiveTiming !== null && !['pre', 'post', 'none', 'only'].includes(destructiveTiming)) {
       return res.status(400).json({ error: 'Invalid destructiveTiming' });
+    }
+
+    // Salesforce job IDs are 15- or 18-char alphanumeric — reject anything else so
+    // we don't shell out with arbitrary user input.
+    if (validationJobId !== undefined && validationJobId !== null) {
+      if (typeof validationJobId !== 'string' || !/^[A-Za-z0-9]{15,18}$/.test(validationJobId)) {
+        return res.status(400).json({ error: 'Invalid validationJobId' });
+      }
     }
 
     const VALID_CLASS = /^[A-Za-z][A-Za-z0-9_]*$/;
@@ -1458,14 +1573,23 @@ export function createGuiApp(config, version, port = 7654) {
         SFDT_DESTRUCTIVE_TIMING: destructiveTiming ?? 'post',
         ...(manifest ? { SFDT_MANIFEST_PATH: path.join(projectRoot, manifest) } : {}),
         ...(sourceDir ? { SFDT_DEPLOY_SOURCE_DIR: sourceDir } : {}),
+        ...(validationJobId ? { SFDT_VALIDATION_JOB_ID: validationJobId } : {}),
       };
 
       const lines = [];
+      // Captured job id from a dry-run / validate flow, surfaced to the client
+      // in the final `result` message so the next click can do a true quick deploy.
+      let capturedValidationJobId = null;
+      const JOB_ID_PATTERN = /Validation Job ID:\s*([A-Za-z0-9]{15,18})/;
       const streamLines = (readable) => {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });
         rl.on('line', (line) => {
           lines.push(line);
           const stripped = stripAnsi(line);
+          if (!capturedValidationJobId) {
+            const m = stripped.match(JOB_ID_PATTERN);
+            if (m) capturedValidationJobId = m[1];
+          }
           if (!res.writableEnded && !stripped.startsWith('SFDT_LOG:'))
             res.write('data: ' + JSON.stringify({ type: 'log', line: stripped, ts: new Date().toISOString() }) + '\n\n');
         });
@@ -1527,7 +1651,9 @@ export function createGuiApp(config, version, port = 7654) {
       await fs.outputJson(historyPath, history.slice(0, 100), { spaces: 2 });
 
       if (!res.writableEnded) {
-        res.write('data: ' + JSON.stringify({ type: 'result', exitCode }) + '\n\n');
+        const resultMsg = { type: 'result', exitCode };
+        if (capturedValidationJobId) resultMsg.content = { validationJobId: capturedValidationJobId };
+        res.write('data: ' + JSON.stringify(resultMsg) + '\n\n');
         res.end();
       }
     } catch (err) {
@@ -1552,8 +1678,35 @@ export function createGuiApp(config, version, port = 7654) {
 
   // ── Release Hub: path helpers ─────────────────────────────────────────────
 
+  // Reject anything that could introduce a path separator or `..` traversal
+  // segment once interpolated into a file path. Package names are simple
+  // identifiers; versions may contain dots (semver) but never `..`.
+  const PKG_SEGMENT_RE = /^[A-Za-z0-9_-]+$/;
+  const VERSION_SEGMENT_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+  function assertSafePkgSegment(value, label) {
+    if (typeof value !== 'string' || !PKG_SEGMENT_RE.test(value)) {
+      const err = new Error(`Invalid ${label}: must match ${PKG_SEGMENT_RE}`);
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
+  function assertSafeVersionSegment(value) {
+    if (
+      typeof value !== 'string' ||
+      !VERSION_SEGMENT_RE.test(value) ||
+      value.includes('..')
+    ) {
+      const err = new Error(`Invalid version: must match ${VERSION_SEGMENT_RE} and not contain '..'`);
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
   function resolveChangelogFilePath(projectRoot, pkgName) {
     if (!pkgName) return path.join(projectRoot, 'CHANGELOG.md');
+    assertSafePkgSegment(pkgName, 'package name');
     const changelogDir = config.changelogDir ?? 'changelogs';
     return path.join(projectRoot, changelogDir, `${pkgName}.md`);
   }
@@ -1562,10 +1715,12 @@ export function createGuiApp(config, version, port = 7654) {
     const releaseNotesDir = config.releaseNotesDir ?? 'release-notes';
     const layout = config.manifestLayout ?? 'flat';
     const ts = new Date().toISOString().split('T')[0];
+    if (version) assertSafeVersionSegment(version);
     if (!pkgTarget || pkgTarget === 'all') {
       const name = version ? `rl-${version}-RELEASE-NOTES.md` : `release-notes-${ts}.md`;
       return path.join(projectRoot, releaseNotesDir, name);
     }
+    assertSafePkgSegment(pkgTarget, 'package target');
     if (layout === 'subpath') {
       const name = version ? `rl-${version}-RELEASE-NOTES.md` : `release-notes-${ts}.md`;
       return path.join(projectRoot, releaseNotesDir, pkgTarget, name);
@@ -1594,11 +1749,12 @@ export function createGuiApp(config, version, port = 7654) {
       const content = match ? match[1].trim() : '';
       res.json({ content, exists: true, file: path.relative(projectRoot, changelogPath) });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(err.statusCode ?? 500).json({ error: err.message });
     }
   });
 
   app.post('/api/changelog/save', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { content, package: pkgName } = req.body ?? {};
       if (content === undefined) return res.status(400).json({ error: 'content is required' });
@@ -1640,11 +1796,12 @@ export function createGuiApp(config, version, port = 7654) {
       await fs.writeFile(changelogPath, updated);
       res.json({ ok: true, file: path.relative(projectRoot, changelogPath) });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(err.statusCode ?? 500).json({ error: err.message });
     }
   });
 
   app.post('/api/release-notes/save', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { content, package: pkgTarget, version } = req.body ?? {};
       if (content === undefined) return res.status(400).json({ error: 'content is required' });
@@ -1664,13 +1821,14 @@ export function createGuiApp(config, version, port = 7654) {
       await fs.writeFile(notesPath, content);
       res.json({ ok: true, path: path.relative(projectRoot, notesPath) });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(err.statusCode ?? 500).json({ error: err.message });
     }
   });
 
   // ── Release Hub: AI changelog generation (SSE) ────────────────────────────
 
   app.post('/api/changelog/generate', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -1725,6 +1883,7 @@ export function createGuiApp(config, version, port = 7654) {
   // ── Release Hub: AI release notes generation (SSE) ────────────────────────
 
   app.post('/api/release-notes/generate', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -1778,6 +1937,7 @@ export function createGuiApp(config, version, port = 7654) {
   // ── Release Hub: remove component from manifest ────────────────────────────
 
   app.post('/api/manifest/remove-component', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { relPath, type, member } = req.body ?? {};
       if (!relPath || !type || !member) {
@@ -1878,6 +2038,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.post('/api/manifest/add-component', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { relPath, type, member } = req.body ?? {};
       if (!relPath || !type || !member) {
@@ -1950,8 +2111,9 @@ export function createGuiApp(config, version, port = 7654) {
   // ── Release Hub: AI code review (SSE) ─────────────────────────────────────
 
   app.post('/api/review', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     const { base = 'main' } = req.body ?? {};
-    if (!/^[A-Za-z0-9._/~^@:{}-]+$/.test(base)) {
+    if (!/^[A-Za-z0-9._/~^@:{}][A-Za-z0-9._/~^@:{}-]*$/.test(base)) {
       return res.status(400).json({ error: 'Invalid base ref' });
     }
 
@@ -2035,6 +2197,7 @@ export function createGuiApp(config, version, port = 7654) {
   // ── Release Hub: AI explain (SSE) ─────────────────────────────────────────
 
   app.post('/api/explain', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     const { logPath } = req.body ?? {};
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -2164,7 +2327,8 @@ export function createGuiApp(config, version, port = 7654) {
 
   // ── Quality: AI fix plan (SSE) ────────────────────────────────────────────
 
-  app.post('/api/quality/fix-plan', apiLimiter, async (_req, res) => {
+  app.post('/api/quality/fix-plan', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -2236,6 +2400,7 @@ export function createGuiApp(config, version, port = 7654) {
   // ── AI chat (SSE) ─────────────────────────────────────────────────────────
 
   app.post('/api/ai/chat', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     const { messages, pageContext } = req.body ?? {};
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -2341,6 +2506,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.patch('/api/prompts/:key', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { key } = req.params;
       const { value } = req.body ?? {};
@@ -2354,6 +2520,7 @@ export function createGuiApp(config, version, port = 7654) {
   });
 
   app.delete('/api/prompts/:key', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { key } = req.params;
       if (!config._configDir) return res.status(503).json({ error: 'Project not initialized' });

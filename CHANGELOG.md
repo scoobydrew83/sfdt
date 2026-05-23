@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Bridge and GUI server hardening (PR #85):** raised `/api/bridge` body limit to 6 MB so the 5 MB `flowXml` route guard is reachable, with a 2 MB ceiling on other `/api/*` routes; `flowXml` size check now byte-accurate via `Buffer.byteLength`; `X-Content-Type-Options: nosniff` and `X-Frame-Options: SAMEORIGIN` sent on every response.
+- **CSRF token comparison is constant-time** in both `requireCsrfToken` and `requireCsrfTokenFromQueryOrHeader`. `GET /api/compare/stream` accepts the CSRF token via `?csrf=` for EventSource callers.
+- **Bridge runners independently re-validate `targetOrg`** against `ORG_ALIAS_RE` (80-char cap) so CLI/plugin/test paths cannot bypass the bridge contract's pre-check.
+- **Native messaging host stdin is bounded** — declared frame length capped at 4 MB and the accumulating buffer trips a projected-size check before `Buffer.concat`, preventing a partial-frame memory hold.
+- **Extension background hardened** — `onMessage` rejects messages whose `sender.id !== chrome.runtime.id`; `getSidForUrls` filters through a Salesforce-suffix allowlist (`.salesforce.com`, `.salesforce-setup.com`, `.lightning.force.com`, `.force.com`, `.visualforce.com`); bridge-ping port clamped to `[1, 65535]`.
+- **Bridge no longer reads or writes through `process.cwd()`.** `mountBridgeRoutes` now accepts `projectRoot`/`configDir` from the GUI server, so the extension's kill-switch and `extension stats` snapshot are honoured even when `sfdt ui` is launched from a non-project directory.
+- **`PATCH /api/config` blocklist widened** to cover `defaultOrg` (use `POST /api/session/org` instead) and `deployment.preflight.*` enforcement flags.
+- **Compare endpoints use `fs.mkdtemp`** (atomic, mode-0700) instead of predictable `${Date.now()}` temp paths, with `finally`-block cleanup.
+- **CodeQL fixes:** anchored-prefix Bearer-token parser with 4 KB Authorization header cap; `flow-rollback-runner` SOQL literal routed through an `escapeSoql` helper; test fixtures use `mkdtemp` instead of `${Date.now()}-${Math.random()}`.
+- **Input validation tightened on:** `--extension-id` (`^[a-p]{32}$`), `feature-flags` ID (`^[A-Za-z0-9_-]{1,128}$`), `doctor --port` (`[1, 65535]`).
+
+### Fixed
+
+- **Native host discovery uses `Promise.any`** so a fast-failing localhost probe no longer shadows a healthy native host that needs a few more milliseconds.
+- **Per-feature extension settings preserved across storage events** — `onSettingsChange` now uses the composed schema, so dynamically-registered `featureSettings.<id>` entries survive a storage round-trip.
+- **Splash banner suppressed in piped/CI `--help` output** — gated on `process.stdout.isTTY`.
+
+## [0.9.0] - 2026-05-21
+
+The monorepo release. Adds a Chrome extension surface, a local HTTP bridge that lets the extension drive sfdt commands from inside Salesforce, three new CLI commands, three new GUI tools (SOQL Runner, Org Limits, REST Explorer), and a hardened CSRF + origin guard around the local GUI server.
+
+### Added
+
+- **`sfdt extension` command** with four subcommands for managing the Chrome native messaging host:
+  - `install-host --extension-id <id> [--browser chrome|edge|brave|chromium|vivaldi|all]` — registers the native host manifest for the SFDT SF Helper extension. Strict `^[a-p]{32}$` validation on the extension ID.
+  - `uninstall-host [--browser <name>]` — removes the manifest from one or all browsers.
+  - `status` — reports which browsers have the manifest installed and where each one points.
+  - `stats [--limit N] [--json]` — pretty-prints the telemetry snapshot the extension pushes to `.sfdt/telemetry-snapshot.json`.
+- **`sfdt doctor --extension` command** — end-to-end diagnostic for the extension stack: bridge ping, native host registration, feature flags, telemetry snapshot. Exits non-zero on any failure for CI use.
+- **`sfdt feature-flags` command** — manage `.sfdt/feature-flags.json` to remotely disable individual extension features (kill switch).
+- **`sfdt flow` command** — Flow-focused subcommands shared with the extension via the new flow-core library.
+- **Native messaging host** (`host/` workspace, published separately from the CLI) — backs the extension's `chrome.runtime.connectNative` transport when the local `sfdt ui` HTTP server isn't running.
+- **HTTP bridge** at `/api/bridge/*` — lets the Chrome extension drive `sfdt deploy`, `sfdt rollback`, and `sfdt quality` from inside any Salesforce org. Authenticated with a per-user bearer token at `~/.sfdt/bridge-token` (32 bytes CSPRNG, file mode 0600, constant-time compare).
+- **Shared `@sfdt/flow-core` TypeScript library** (`packages/flow-core/`) — bridge contract, Flow XML normaliser, API-name defaults, scheduled-Flow calculator, scorer rules, subflow graph builder, and trigger-conflict analyser. Consumed by both the CLI and the extension.
+- **GUI: SOQL Runner page** — arbitrary SOQL execution with REST/Tooling API toggle, query history, and CSV export.
+- **GUI: Org Limits page** — `sf org limits` results rendered as cards with utilisation bands and warning thresholds.
+- **GUI: REST API Explorer** — arbitrary `GET`/`POST`/`PATCH`/`PUT`/`DELETE` calls against the connected org, with header editor, JSON body editor, and request history.
+- **GUI: Release Hub Quick Deploy** — promote a successful validation by validation job ID (true Salesforce Quick Deploy, no re-validation roundtrip).
+- **GUI: Release Hub destructive modes** — opt-in `destructive` and `destructive-only` deploy modes surface in the Deploy step with explicit confirmations.
+- **GUI: structured failure rendering + Ask-AI** — `CommandRunner` and `StreamRunner` now render structured failures (parsed test failures, code-coverage gaps) and offer an Ask-AI button that pipes the failure into the explain pipeline.
+- **GUI: manifest picklist search** — the Release Hub manifest picker becomes type-ahead searchable when more than a handful of manifests exist.
+- **CLI splash banner** — `sfdt ui` and other entry points print a colourised ASCII splash with the current version on TTY stdout (falls back to a one-line label in CI).
+- **Bridge ping surfaces feature flags** — `/api/bridge/ping` and the native messaging `ping` handler now include `disabledFeatures` derived from `.sfdt/feature-flags.json`, so the extension can react to remote kill switches without a separate fetch.
+
+### Changed
+
+- **`SalesforceApiClient` additions** in the shared library: `query`, `queryMore`, `limits`, `rawRequest` + `QueryEnvelope<T>` / `HttpMethod` types. Used by all extension features and by the new GUI SOQL/Limits/REST pages.
+- **AI command handling enforces read-only modes** for Gemini and Codex providers — prevents accidental mutations when the explain/review pipelines invoke a non-Claude provider.
+- **Release Hub white-on-white dark-mode bug fixed** on the Deploy step.
+- **Deploy checkbox defaults flipped to `false`** — opt-in for `runAllTests`, `rollbackOnError`, and the new destructive modes.
+- **TypeScript workspaces linted** — `extension/`, `packages/flow-core/`, and `host/` are now covered by the root `npm run lint`.
+- **Extension renamed to "SFDT SF Helper"** with strict comment-strip across `extension/` and `packages/flow-core/src/` for a smaller bundle.
+
+### Fixed
+
+- **GUI Release Hub failure UX**: deploy/quality/rollback failures now render with structured rows and a one-click Ask-AI affordance, replacing the previous opaque "non-zero exit" terminal dump.
+- **Bridge `readDisabledFeatures` resilience**: defensive try/catch in the ping handlers so a malformed `.sfdt/feature-flags.json` does not 500 the ping endpoint.
+
+### Security
+
+- **Path-traversal hardening** in `/api/changelog/save` and `/api/release-notes/save`. `pkgName`/`pkgTarget` are now validated against `/^[A-Za-z0-9_-]+$/`; `version` is validated against `/^[A-Za-z0-9][A-Za-z0-9._-]*$/` and rejects any `..` substring. Prevents overwrite of arbitrary `.md` files inside `_projectRoot` via a CSRF-authenticated POST. (Closed two medium findings raised by the pre-release adversarial security review.)
+- **SOQL escape correctness in extension features** — six SOQL string-literal escape sites now escape backslashes before quotes (previously only quotes were escaped). A new shared `escapeSoql()` helper in `extension/lib/escape.ts` enforces the order. Affects `flow-trigger-explorer-enhancer`, `scheduled-flow-explorer`, `subflow-graph`, `trigger-conflicts`, and the `SalesforceApiClient.getFlowMetadata` namespace/developer-name path.
+- **URL suffix anchoring** in `extension/lib/hostname.ts` — every Salesforce hostname check switched from `String.prototype.includes` to suffix-anchored `endsWith`. The previous form would have accepted hostile hostnames like `evil.lightning.force.com.attacker.com` if the function were ever invoked outside the extension's host-permission-restricted content scripts.
+- **flowApiName contract validation** — the bridge contract validator (`validateSfdtRequest`) now applies the same `/^[A-Za-z][A-Za-z0-9_]*$/` developer-name regex the deploy/rollback runners already enforce, so malformed names are rejected at the contract layer rather than only at the runner.
+- **Insecure-randomness fallback removed** — `defaultIdGenerator` in `packages/flow-core/src/prompts.ts` previously fell back to `Math.random()` when `crypto.randomUUID` wasn't available. The fallback chain now uses `crypto.getRandomValues` before any non-cryptographic path.
+
+### Fixed (release blockers)
+
+- **`host/` workspace included in the npm tarball**. Adding `host/installers/`, `host/manifests/`, `host/src/`, and `host/package.json` to `files` in the root `package.json`. Without this, every `sfdt extension {install-host,uninstall-host,status,stats}` subcommand would throw `ERR_MODULE_NOT_FOUND` on a real npm install (workspaces masked the bug locally and the existing unit tests mock the import).
+- **`@sfdt/flow-core` is now a published npm package** (`0.9.0`). Previously it was marked `"private": true` while `@sfdt/cli` listed it as a runtime dependency, which meant a real `npm install -g @sfdt/cli` would 404 on `@sfdt/flow-core`. The package is now public, `cli` and `host` pin `^0.9.0`, and the CI release workflow publishes `@sfdt/flow-core` before `@sfdt/cli`. The flow-core workspace also gained a `prepack` hook that builds `dist/` from source so the published tarball always contains the compiled output.
+- **Windows path bug in native-host manifest installer** (`host/installers/install-host.js`). `buildManifest` substituted the bare host path into the JSON template, which produced invalid JSON when the path contained backslashes (every Windows install path). The substitution now uses `JSON.stringify(hostPath)` against the quoted placeholder, escaping backslashes and embedded quotes correctly.
+- **`pretest` hook builds `@sfdt/flow-core` before the test suite runs**, so CI doesn't try to resolve the workspace package against an empty `dist/`. Without this, tests that import `@sfdt/flow-core` (bridge routes, host smoke, the new `flow` command) fail with `Failed to resolve entry for package "@sfdt/flow-core"` on a fresh checkout.
+
+### Changed (cleanup from code review)
+
+- **`sfdt flow scan` now delegates to `runFlowQuality`** instead of reimplementing the normalize → evaluate → score pipeline inline. CLI, GUI, and bridge `quality` handler now share a single chokepoint for byte-identical scoring.
+- **`currentApiVersion` no longer hardcoded in two places** — `flow-quality.js` accepts a `currentApiVersion` override that the CLI sources from `sfdx-project.json`'s `sourceApiVersion`. The hardcoded fallback constant is documented as the floor when no config is available.
+- **Bridge `isAllowedOrigin` no-Origin behavior documented** — the bearer token is the authoritative access control on `/api/bridge/*`; the origin allowlist is permissive for non-browser callers by design. Code comment now explains the asymmetry vs the gui-server's CSRF model.
+- **CSRF protection** on all mutating GUI API routes via a per-session token returned from `GET /api/csrf-token` and required on the `X-SFDT-CSRF` header. The token is bound to the server process and never sent cross-origin.
+- **Tightened origin guard** — the localhost-only middleware now rejects mutating requests (POST/PATCH/DELETE) that arrive without an `Origin` header, in addition to the existing allowlist check.
+- **Strict `targetOrg` validation** before any `sf` CLI shell-out: `/^[A-Za-z0-9_.\-@]+$/`. Same regex applied to `flowApiName` (`/^[A-Za-z][A-Za-z0-9_]*$/`) in the flow deploy and rollback runners.
+- **Bridge bearer token** at `~/.sfdt/bridge-token` — 32 bytes from `crypto.randomBytes`, base64url-encoded, file mode 0600 on POSIX, validated with `crypto.timingSafeEqual` on every `/api/bridge/*` request.
+- **Extension ID JSON-injection foreclosed** — the native host installer validates `extensionId` against `/^[a-p]{32}$/` before substituting it into the manifest template.
+
 ## [0.8.1] - 2026-05-13
 
 ### Fixed
@@ -246,31 +332,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped `prettier` development dependency
 - CI: upgraded `actions/stale` from v9 to v10
 - CI: upgraded `github/codeql-action` from v3 to v4
-
-## [0.4.0-beta.5] - 2026-04-19
-
-### Changed
-- Synced dependency bumps from `main` (inquirer, prettier, esbuild, vite, plugin-react v5) into `develop`
-- CI: dedicated `gui-build` job now runs on Node 20 and 22
-
-### Fixed
-- Token handling fix
-
-## [0.4.0-beta.1] - 2026-04-17
-
-### Added
-- **Org Compare command** (`sfdt compare`): Side-by-side metadata inventory comparison between two Salesforce orgs. Streams live progress via SSE, showing added, removed, and changed components across all metadata types. Supports `--source` and `--target` org aliases with `--format json|table` output.
-- **Compare page** (GUI): New Compare dashboard page with live streaming progress, filterable DataTable of component diffs (`CompareTable`), and collapsible side-by-side diff viewer (`DiffPanel`) for inspecting metadata differences. Status badges and empty states follow SLDS conventions.
-- **CommandRunner component**: Reusable GUI component for live CLI command execution with SSE streaming, used on Preflight, Drift, Test Runs, and Compare pages.
-- `src/lib/org-inventory.js`: Retrieves full metadata inventory from a Salesforce org using `sf org list metadata` — used by `sfdt compare` as the data source for both orgs.
-- `src/lib/org-diff.js`: Pure diff engine that compares two org inventories and returns `added`, `removed`, and `changed` component lists.
-
-### Fixed
-- **Compare diff panel now works for all Salesforce metadata types**: The `/api/compare/diff` endpoint previously rejected member names containing `.` or `/`, blocking `CustomMetadata` records (e.g. `MyType.MyRecord`) and foldered metadata (e.g. `reports/Folder/Report`). Validation now correctly targets path traversal patterns (`..`, absolute paths, null bytes) instead of banning valid Salesforce naming characters.
-- **Beta releases can no longer accidentally publish as `latest`**: The CI `publish` job on `main` now fails immediately if the package version contains a pre-release suffix (e.g. `-beta.1`), preventing a forgotten version bump from silently pushing a beta to all users.
-
-### Security
-- **Docs automation no longer executes repo-controlled instructions under write credentials**: The `docs-update` GitHub Actions workflow previously instructed Claude to read and follow `.claude/skills/document/SKILL.md` from the just-merged branch while holding `contents: write` and `id-token: write` permissions — a path for a malicious PR to run arbitrary commands with elevated access. Workflow instructions are now fully inline in the protected workflow YAML, and the unnecessary `id-token: write` permission has been removed.
 
 ## [0.3.1] - 2026-04-14
 

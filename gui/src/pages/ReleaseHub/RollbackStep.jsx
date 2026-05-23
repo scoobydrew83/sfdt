@@ -42,7 +42,7 @@ export default function RollbackStep() {
             style={{
               display: 'flex', alignItems: 'center', gap: 12,
               width: '100%', padding: '10px 14px',
-              background: selectedEntry === entry ? 'var(--brand-50)' : 'transparent',
+              background: selectedEntry === entry ? 'var(--bg-selected)' : 'transparent',
               border: 'none',
               borderBottom: '1px solid var(--border-subtle)',
               borderLeft: selectedEntry === entry ? '3px solid var(--brand-500)' : '3px solid transparent',

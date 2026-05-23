@@ -808,6 +808,67 @@ When `gui/dist/` is missing, the server shows a build-instructions page instead 
 
 ---
 
+## Commands: Chrome Extension Bridge
+
+These commands manage the SFDT SF Helper Chrome extension's connection to the local CLI. The extension talks to sfdt either over HTTP (`sfdt ui` server on port 7654) or via Chrome's native messaging API (managed by these commands). See the top-level README for the full architecture overview.
+
+### sfdt extension
+
+Manage the Chrome native messaging host that backs the extension's fallback transport.
+
+```bash
+# Register the native host for one browser (extension ID from chrome://extensions)
+sfdt extension install-host --extension-id abcdefghijklmnopabcdefghijklmnop --browser chrome
+
+# Register for every supported Chromium-based browser
+sfdt extension install-host --extension-id <id> --browser all
+
+# Inspect which browsers have the host registered
+sfdt extension status
+
+# Remove the registration
+sfdt extension uninstall-host --browser all
+
+# Show the most recent telemetry snapshot the extension pushed
+sfdt extension stats --limit 20
+```
+
+**Subcommand options:**
+
+| Subcommand | Options |
+|---|---|
+| `install-host` | `--extension-id <id>` (required, 32 lowercase a–p chars), `--browser <chrome\|edge\|brave\|chromium\|vivaldi\|all>`, `--json` |
+| `uninstall-host` | `--browser <name>`, `--json` |
+| `status` | `--json` |
+| `stats` | `--limit <n>` (default 10), `--json` |
+
+### sfdt doctor
+
+End-to-end diagnostic for the extension stack. Checks that the bridge is reachable, the native host is registered, the kill-switch config is readable, and the telemetry snapshot exists.
+
+```bash
+sfdt doctor --extension                # pretty output
+sfdt doctor --extension --json         # CI-friendly structured output
+sfdt doctor --extension --port 8080    # bridge runs on a non-default port
+```
+
+Exits non-zero if any check fails — wire this into CI to detect a broken extension installation early.
+
+### sfdt feature-flags
+
+Manage `.sfdt/feature-flags.json` to remotely disable specific extension features. Useful as a kill switch when a feature misbehaves in production.
+
+```bash
+sfdt feature-flags list                       # show the current kill-switch file
+sfdt feature-flags disable flow-health-check  # add a feature to the kill list
+sfdt feature-flags enable flow-health-check   # remove it
+sfdt feature-flags clear --remove             # delete the entire kill-switch file
+```
+
+The extension polls the bridge ping endpoint and stops loading any feature whose id appears in this file.
+
+---
+
 ## Web Dashboard
 
 The dashboard has eight pages:

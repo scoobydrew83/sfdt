@@ -61,6 +61,9 @@
   --fg-on-brand: #ffffff;
   --fg-brand:    var(--brand-400);
 
+  /* Selected-row background — translucent brand so it reads on dark surfaces. */
+  --bg-selected: rgba(106, 98, 245, 0.16);
+
   /* Status: source (blue) */
   --status-source-bg:     rgba(47,107,239,.15);
   --status-source-border: rgba(47,107,239,.45);
@@ -164,6 +167,7 @@
   --fg-muted:    oklch(45% 0.010 250);
   --fg-subtle:   oklch(55% 0.008 250);
   --fg-brand:    var(--brand-600);
+  --bg-selected: var(--brand-50);
 
   --status-source-bg:     #e6f0ff;
   --status-source-border: #9bbcff;

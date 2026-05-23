@@ -35,13 +35,12 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          claude_args: "--allowedTools 'Bash(gh pr review*),Bash(gh pr view*),Bash(gh api*),Bash(git diff*),Bash(git log*),Read,Glob,Grep'"
+          claude_args: "--allowedTools 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Read,Glob,Grep'"
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           prompt: |
-            Run /code-review:code-review on this pull request (${{ github.repository }}/pull/${{ github.event.pull_request.number }}).
+            Run /code-review:code-review --comment on this pull request (${{ github.repository }}/pull/${{ github.event.pull_request.number }}).
 
-            After completing the review, post your findings as a PR review comment using:
-              gh pr review ${{ github.event.pull_request.number }} --comment --body "<your findings>"
+            The skill handles posting on its own (inline comments via the github_inline_comment MCP tool, summary via `gh pr comment`). Do not call `gh pr review` and do not post any file contents (CLAUDE.md, README.md, CHANGELOG.md, etc.) as a comment body — only the review findings produced by the skill.
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options

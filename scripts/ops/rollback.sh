@@ -42,12 +42,17 @@ fi
 # ── Step 2: List last 5 deployed manifests (sorted by version) ───────────────
 print_step "Scanning deployed manifests..."
 
+# Match every *.xml under deployed/. Source-dir deploys archive snapshots as
+# source-dir-YYYYMMDD_HHMMSS.xml (see deployment-assistant.sh), and named
+# releases archive as package-<version>.xml. A narrower glob (e.g. package*.xml)
+# silently skips the source-dir snapshots and aborts rollback even though
+# valid manifests exist on disk.
 mapfile -t MANIFESTS < <(
-    find "$DEPLOYED_DIR" -name "package*.xml" -type f | sort -V | tail -5
+    find "$DEPLOYED_DIR" -maxdepth 2 -name "*.xml" -type f | sort -V | tail -5
 )
 
 if [[ ${#MANIFESTS[@]} -eq 0 ]]; then
-    print_error "No package.xml files found in ${DEPLOYED_DIR}/"
+    print_error "No deployed manifests (*.xml) found in ${DEPLOYED_DIR}/"
     exit 1
 fi
 
@@ -56,8 +61,15 @@ print_info "Available manifests for rollback (last ${#MANIFESTS[@]}):"
 echo ""
 
 if [[ "$NON_INTERACTIVE" == "true" ]]; then
-    SELECTED_MANIFEST="${MANIFESTS[-1]}"
-    print_info "Non-interactive mode: auto-selected most recent manifest: ${SELECTED_MANIFEST}"
+    # Rollback means reverting to the PREVIOUS state, so prefer the second-most-recent
+    # manifest. Fall back to the only available one when nothing older exists.
+    if [[ ${#MANIFESTS[@]} -ge 2 ]]; then
+        SELECTED_MANIFEST="${MANIFESTS[-2]}"
+        print_info "Non-interactive mode: auto-selected previous manifest: ${SELECTED_MANIFEST}"
+    else
+        SELECTED_MANIFEST="${MANIFESTS[-1]}"
+        print_info "Non-interactive mode: only one manifest available, selecting: ${SELECTED_MANIFEST}"
+    fi
 else
     PS3=$'\nSelect manifest to rollback to (number): '
     select SELECTED_MANIFEST in "${MANIFESTS[@]}"; do
