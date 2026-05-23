@@ -34,6 +34,10 @@ require_jq || exit 1
 
 # ── Resolve target org ───────────────────────────────────────────────────────
 if [[ -z "$TARGET_ORG" ]]; then
+    if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
+        print_error "No target org specified (SFDT_TARGET_ORG empty in non-interactive mode)."
+        exit 1
+    fi
     echo ""
     print_info "No SFDT_TARGET_ORG set. Available orgs:"
     sf org list --json 2>/dev/null | jq -r '.result.nonScratchOrgs[]?.alias // empty' 2>/dev/null || true
@@ -71,6 +75,10 @@ if [[ ${#SMOKE_TEST_CLASSES[@]} -eq 0 ]] || [[ -z "${SMOKE_TEST_CLASSES[0]}" ]];
     print_warning "No smoke test classes configured."
     print_info "Set SFDT_SMOKE_TESTS env var or add testClasses to smokeTests in config."
     echo ""
+    if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
+        print_info "Non-interactive mode: skipping smoke tests."
+        exit 0
+    fi
     read -rp "Run RunLocalTests as fallback? (y/N): " run_fallback
     if [[ "$run_fallback" =~ ^[Yy]$ ]]; then
         print_step "Running RunLocalTests on ${TARGET_ORG}..."

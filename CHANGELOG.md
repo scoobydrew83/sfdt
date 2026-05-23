@@ -7,146 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Bridge and GUI server hardening (PR #85):** raised `/api/bridge` body limit to 6 MB so the 5 MB `flowXml` route guard is reachable, with a 2 MB ceiling on other `/api/*` routes; `flowXml` size check now byte-accurate via `Buffer.byteLength`; `X-Content-Type-Options: nosniff` and `X-Frame-Options: SAMEORIGIN` sent on every response.
+- **CSRF token comparison is constant-time** in both `requireCsrfToken` and `requireCsrfTokenFromQueryOrHeader`. `GET /api/compare/stream` accepts the CSRF token via `?csrf=` for EventSource callers.
+- **Bridge runners independently re-validate `targetOrg`** against `ORG_ALIAS_RE` (80-char cap) so CLI/plugin/test paths cannot bypass the bridge contract's pre-check.
+- **Native messaging host stdin is bounded** — declared frame length capped at 4 MB and the accumulating buffer trips a projected-size check before `Buffer.concat`, preventing a partial-frame memory hold.
+- **Extension background hardened** — `onMessage` rejects messages whose `sender.id !== chrome.runtime.id`; `getSidForUrls` filters through a Salesforce-suffix allowlist (`.salesforce.com`, `.salesforce-setup.com`, `.lightning.force.com`, `.force.com`, `.visualforce.com`); bridge-ping port clamped to `[1, 65535]`.
+- **Bridge no longer reads or writes through `process.cwd()`.** `mountBridgeRoutes` now accepts `projectRoot`/`configDir` from the GUI server, so the extension's kill-switch and `extension stats` snapshot are honoured even when `sfdt ui` is launched from a non-project directory.
+- **`PATCH /api/config` blocklist widened** to cover `defaultOrg` (use `POST /api/session/org` instead) and `deployment.preflight.*` enforcement flags.
+- **Compare endpoints use `fs.mkdtemp`** (atomic, mode-0700) instead of predictable `${Date.now()}` temp paths, with `finally`-block cleanup.
+- **CodeQL fixes:** anchored-prefix Bearer-token parser with 4 KB Authorization header cap; `flow-rollback-runner` SOQL literal routed through an `escapeSoql` helper; test fixtures use `mkdtemp` instead of `${Date.now()}-${Math.random()}`.
+- **Input validation tightened on:** `--extension-id` (`^[a-p]{32}$`), `feature-flags` ID (`^[A-Za-z0-9_-]{1,128}$`), `doctor --port` (`[1, 65535]`).
+
 ### Fixed
 
-Second claude-review pass on PR #85 — three more items spotted after the previous
-fix landed:
-
-- **MEDIUM (functional) — bridge body limit aligned with `MAX_FLOW_XML_BYTES`.**
-  Express's default `express.json()` body limit is 100 KB, which silently rejected
-  realistic Flow.Metadata payloads (a complex Flow easily reaches 200–800 KB) with
-  an HTTP 413 LONG before the 5 MB `MAX_FLOW_XML_BYTES` guard could fire. Mounted
-  a 6 MB parser specifically on `/api/bridge` so the route guard is reachable, with
-  the rest of `/api/*` getting a 2 MB ceiling (room for legitimate 1 MB
-  changelog/release-notes saves with the existing content caps applied AFTER
-  parsing).
-- **LOW — `flowXml` size check now byte-accurate.** `String.length` returns UTF-16
-  code units, not bytes. A document of mostly multibyte characters could be up to
-  3× larger in UTF-8 bytes than length suggests. Switched to
-  `Buffer.byteLength(flowXml, 'utf8')` so the documented "before JSON.parse a
-  multi-GB string" guarantee actually holds.
-- **LOW — defense-in-depth response headers.** `gui-server` now sends
-  `X-Content-Type-Options: nosniff` and `X-Frame-Options: SAMEORIGIN` on every
-  response. The bind is localhost-only so the exposure was low, but these are
-  zero-cost and close browser-side MIME-sniffing/clickjacking edges. Asserted via
-  a new `/api/health` test case.
-
-Test coverage:
-- New test: `/api/bridge/exchange` accepts a legitimate 300 KB+ `flowXml`
-  (above old Express 100 KB default, below the new 6 MB cap) so the runner
-  guard is reachable for realistic Flow.Metadata.
-- New test: oversized 5 MB+ `flowXml` is now rejected by the route guard with
-  `REQUEST_INVALID` (not a generic Express 413), confirming the layered defence
-  is in the right order.
-- New test: `/api/health` response carries the two security headers.
-
-PR #85 final review pass — addresses the five blocking items, all non-blocking
-suggestions, and the test-file CodeQL alerts from the previous claude-review.
-
-- **HIGH H1 — Runners now re-validate `targetOrg` independently of the bridge contract.**
-  `runFlowDeploy` and `runFlowRollback` previously trusted the contract's pre-check; any
-  caller path other than the bridge (CLI, plugins, tests) could feed an arbitrary string
-  to `--target-org`. Inline ORG_ALIAS_RE + 80-char cap in both runners, mirroring the
-  bridge contract; flag-injection shape (`--anything`) now rejects at the runner before
-  any `sf` invocation.
-- **HIGH H2 — CSRF compare is constant-time.** `requireCsrfToken` and
-  `requireCsrfTokenFromQueryOrHeader` in `gui-server/security.js` switched from plain
-  string equality (`provided !== token`) to `constantTimeEqual` from `bridge/token.js`.
-  Closes the partial-match timing oracle that the PR description had mistakenly
-  documented as already constant-time.
-- **MEDIUM/A1 — `@sfdt/host` import path locked in by a regression test.**
-  The host installer is bundled INSIDE the published `@sfdt/cli` tarball
-  (`host/installers/`, `host/src/`, `host/manifests/` are in `files`). Switching to a
-  named-package dep would 404 because `@sfdt/host` is `"private": true`. Added
-  explanatory comments at every import site and a no-mock smoke test
-  (`test/lib/host-installer-resolves.test.js`) that fails CI immediately if the file
-  is moved or accidentally excluded from the tarball.
-- **Q2 — Host stdin accumulator now bounded.** `host/src/index.js` previously checked
-  the declared frame length against `MAX_REQUEST_BYTES` but allowed the accumulating
-  buffer between chunks to grow without bound. A peer streaming a 4 MB − 1 partial
-  message would have held that memory indefinitely. Added a projected-size check that
-  trips before the next `Buffer.concat` and emits a framed `REQUEST_INVALID`.
-- **CLAUDE.md env var table — gaps closed.** Added entries for
-  `SFDT_VALIDATION_JOB_ID` (Quick Deploy promotion via `sf project deploy quick`)
-  and `SFDT_DESTRUCTIVE_TIMING` now documents the full `pre`/`post`/`none`/`only` set.
-- **Hardening (Claude-review non-blocking items folded in):**
-  * Tightened `ORG_ALIAS_RE` everywhere to `/^[A-Za-z0-9@][A-Za-z0-9_.\\-@]*$/` so a
-    flag-style value (`--target-org`) can never sneak in (previously accepted leading
-    hyphens). Added explicit length cap of 80 chars.
-  * `POST /api/session/org` now applies the same alias regex (previously only
-    `.trim().slice(0, 100)`).
-  * Bridge origin allowlist (`middleware.js`) gained anchored `.force.com` and
-    `.visualforce.com` patterns to match `extension/entrypoints/background.ts`'s
-    cookie-host allowlist (managed-package custom domains, Visualforce pages).
-  * Documented the bridge no-Origin security model (single-user POSIX boundary,
-    bearer token as authoritative gate), the `GET /api/bridge/ping` unauth model
-    (no secrets exposed; serverVersion/protocolVersion/disabledFeatures are
-    intentionally enumerable on a shared host), and the lazy-import rationale in
-    `bridge/routes.js`.
-  * `BLOCKED_CONFIG_KEY_PREFIXES` match semantics documented inline (exact OR
-    dot-bounded prefix → `defaultOrg` blocks the literal key but not `defaultOrgFoo`).
-  * `sfdt --help` splash hook gated on `process.stdout.isTTY` — no banner on
-    piped or CI-captured help output (was emitting a single line label even with
-    formatSplash's inner guard).
-  * `constantTimeEqual` continues to terminate with `eq && ba.length === bb.length`
-    — `eq` is the constant-time path; the length check after is on a boolean
-    AND, no timing oracle (kept the existing comment that explains the layered
-    guard).
-
-
-
-- **HIGH — Bridge no longer reads/writes through `process.cwd()`.** `mountBridgeRoutes`
-  now accepts `projectRoot`/`configDir` from the gui-server and routes `feature-flags.json`
-  reads and the `telemetry.snapshot` write through that — so `extension stats` finds the
-  snapshot and the extension's kill-switch is honoured even when `sfdt ui` is launched
-  from a non-project working directory. (CLAUDE.md CRITICAL RULE.)
-- **HIGH — `quality.flowXml` is size-capped before `JSON.parse`.** 5 MB ceiling in the
-  dispatcher; layered with Express's own body limit so a multi-GB string from a
-  misbehaving caller cannot exhaust memory.
-- **MEDIUM — `setNestedValue` audit:** already rejects `__proto__`, `constructor`, and
-  `prototype` segments via the explicit deny-list in `config-utils.js`. Documented.
-- **MEDIUM — `PATCH /api/config` blocklist widened** to cover `defaultOrg` (intended path
-  is `POST /api/session/org` with its alias regex) and `deployment.preflight.*`
-  enforcement flags (so a write can't silently disable git-clean or strict mode).
-- **MEDIUM — Native host stdin reader size cap.** A 0xFFFFFFFF length header would have
-  driven a 4 GB allocation before any validation; capped at 4 MB with a framed error
-  response and clean exit.
-- **MEDIUM — `GET /api/compare/stream` is CSRF-protected.** EventSource can't set
-  headers, so the route now accepts the CSRF token via `?csrf=` (or the standard
-  `X-SFDT-CSRF` header for non-SSE callers); the Compare page splices it in. New
-  `requireCsrfTokenFromQueryOrHeader` helper in `security.js`.
-- **MEDIUM — Extension background sender validation.** `onMessage` listener now rejects
-  any message whose `sender.id !== chrome.runtime.id`, and `getSidForUrls` filters
-  inputs through a Salesforce-suffix allowlist (`.salesforce.com`, `.salesforce-setup.com`,
-  `.lightning.force.com`, `.force.com`, `.visualforce.com`). Bridge-ping port clamped
-  to `[1, 65535]`.
-- **MEDIUM — `discover()` uses `Promise.any` (fastest-SUCCESS-wins).** Previously a
-  localhost probe that failed fast with `BRIDGE_OFFLINE` shadowed a healthy native host
-  that needed a few more ms. The discriminator now waits for the first fulfilment.
-- **MEDIUM — `onSettingsChange` uses the composed schema.** Switched from
-  `SettingsSchema.safeParse` to `getComposedSchema().safeParse` so dynamically-registered
-  `featureSettings.<id>` entries survive a storage round-trip — the old code silently
-  stripped per-feature settings on every other tab's storage event.
-- **LOW — `constantTimeEqual` pads to equal length before `timingSafeEqual`** so the
-  early `if (ba.length !== bb.length) return false` no longer leaks expected token length.
-- **LOW — `/api/compare/diff` and `/api/compare/stream` use `fs.mkdtemp`** (atomic,
-  mode-0700, unguessable) instead of `path.join(os.tmpdir(), \`sfdt-…-${Date.now()}\`)`,
-  and `/api/compare/diff` cleans up its temp dir in `finally`.
-- **LOW — `--extension-id` validated at parse time.** `^[a-p]{32}$` regex applied in
-  `extension install-host` before any installer code runs.
-- **LOW — `feature-flags` enforces `featureId` shape.** `^[A-Za-z0-9_-]{1,128}$` regex in
-  both `disable` and `enable` paths.
-- **LOW — `doctor --port` upper-bounded.** Now rejects values outside `[1, 65535]`
-  with an explicit error.
-- **CodeQL — Polynomial regex in bridge auth header.** Replaced
-  `/^Bearer\s+(.+)$/i.match(...)` with an anchored-prefix test + slice. 4 KB cap on the
-  Authorization header for defence in depth.
-- **CodeQL — `flow-rollback-runner` SOQL escape.** Routed the FlowDefinition.DeveloperName
-  literal through a local `escapeSoql` helper that escapes backslash before quote (the
-  caller's regex already forbids both characters; this is structural correctness).
-- **CodeQL — Insecure temp file in tests.** `bridge-feature-flags.test.js` and
-  `bridge-routes.test.js` use `fs/promises.mkdtemp` rather than predictable
-  `${Date.now()}-${Math.random()}` paths.
+- **Native host discovery uses `Promise.any`** so a fast-failing localhost probe no longer shadows a healthy native host that needs a few more milliseconds.
+- **Per-feature extension settings preserved across storage events** — `onSettingsChange` now uses the composed schema, so dynamically-registered `featureSettings.<id>` entries survive a storage round-trip.
+- **Splash banner suppressed in piped/CI `--help` output** — gated on `process.stdout.isTTY`.
 
 ## [0.9.0] - 2026-05-21
 
@@ -454,31 +332,6 @@ The monorepo release. Adds a Chrome extension surface, a local HTTP bridge that 
 - Bumped `prettier` development dependency
 - CI: upgraded `actions/stale` from v9 to v10
 - CI: upgraded `github/codeql-action` from v3 to v4
-
-## [0.4.0-beta.5] - 2026-04-19
-
-### Changed
-- Synced dependency bumps from `main` (inquirer, prettier, esbuild, vite, plugin-react v5) into `develop`
-- CI: dedicated `gui-build` job now runs on Node 20 and 22
-
-### Fixed
-- Token handling fix
-
-## [0.4.0-beta.1] - 2026-04-17
-
-### Added
-- **Org Compare command** (`sfdt compare`): Side-by-side metadata inventory comparison between two Salesforce orgs. Streams live progress via SSE, showing added, removed, and changed components across all metadata types. Supports `--source` and `--target` org aliases with `--format json|table` output.
-- **Compare page** (GUI): New Compare dashboard page with live streaming progress, filterable DataTable of component diffs (`CompareTable`), and collapsible side-by-side diff viewer (`DiffPanel`) for inspecting metadata differences. Status badges and empty states follow SLDS conventions.
-- **CommandRunner component**: Reusable GUI component for live CLI command execution with SSE streaming, used on Preflight, Drift, Test Runs, and Compare pages.
-- `src/lib/org-inventory.js`: Retrieves full metadata inventory from a Salesforce org using `sf org list metadata` — used by `sfdt compare` as the data source for both orgs.
-- `src/lib/org-diff.js`: Pure diff engine that compares two org inventories and returns `added`, `removed`, and `changed` component lists.
-
-### Fixed
-- **Compare diff panel now works for all Salesforce metadata types**: The `/api/compare/diff` endpoint previously rejected member names containing `.` or `/`, blocking `CustomMetadata` records (e.g. `MyType.MyRecord`) and foldered metadata (e.g. `reports/Folder/Report`). Validation now correctly targets path traversal patterns (`..`, absolute paths, null bytes) instead of banning valid Salesforce naming characters.
-- **Beta releases can no longer accidentally publish as `latest`**: The CI `publish` job on `main` now fails immediately if the package version contains a pre-release suffix (e.g. `-beta.1`), preventing a forgotten version bump from silently pushing a beta to all users.
-
-### Security
-- **Docs automation no longer executes repo-controlled instructions under write credentials**: The `docs-update` GitHub Actions workflow previously instructed Claude to read and follow `.claude/skills/document/SKILL.md` from the just-merged branch while holding `contents: write` and `id-token: write` permissions — a path for a malicious PR to run arbitrary commands with elevated access. Workflow instructions are now fully inline in the protected workflow YAML, and the unnecessary `id-token: write` permission has been removed.
 
 ## [0.3.1] - 2026-04-14
 
