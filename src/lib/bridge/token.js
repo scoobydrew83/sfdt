@@ -103,6 +103,15 @@ export async function rotateBridgeToken() {
  * buffers, and a bare length pre-check would leak which length the server
  * expects. Pad both sides to the same length first; equal-length AND
  * timingSafeEqual must both hold for the token to be accepted.
+ *
+ * Edge case: constantTimeEqual("", "") returns true. This is by design —
+ * the empty/empty path keeps the padding logic uniform and avoids a
+ * special-case branch that would itself become a timing channel. The
+ * bearer token loader (getOrCreateBridgeToken) rejects tokens shorter
+ * than 16 characters before they ever reach this function, so an empty
+ * server-side token is impossible in practice; the empty-string accept
+ * is unreachable through the auth path. Future callers that introduce a
+ * new use of constantTimeEqual must enforce non-empty inputs themselves.
  */
 export function constantTimeEqual(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;

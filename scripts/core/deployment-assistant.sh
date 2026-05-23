@@ -1191,7 +1191,15 @@ XML
 
 # --- Post-Deployment Functions ---
 
-# Archive deployed manifest files
+# Archive deployed manifest files.
+#
+# Edge case (benign): if MANIFEST_PATH were a file at the filesystem root,
+# both `dirname` and `basename` would return "/" and `deployed_dir` could
+# end in a double slash. Salesforce DX projects always live below the
+# filesystem root in practice, so this branch is unreachable — POSIX path
+# semantics treat the double slash as equivalent regardless, so no fix is
+# needed. Documented here so a future reviewer who notices the dirname/
+# basename usage knows it was considered.
 archive_deployed_manifest() {
     # Skip if manifest path not set (e.g., quick deploy only workflow)
     if [ -z "$MANIFEST_PATH" ]; then

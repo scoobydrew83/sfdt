@@ -51,6 +51,16 @@ export const SettingsSchema = z.object({
     })
     .default({}),
 
+  // Bridge config. `token` is the bearer credential the extension presents
+  // to the sfdt CLI's localhost server (/api/bridge/*) and to the native
+  // messaging host. Threat model: chrome.storage.local is origin-isolated
+  // and not exposed to web pages. The token is, however, readable by any
+  // script the extension itself runs — so a compromise of any extension
+  // bundle (XSS via an upstream dep, malicious content script, etc.)
+  // could exfiltrate the token. Rotate via `sfdt extension token rotate`
+  // if you suspect leakage. This is the standard chrome.storage.local
+  // pattern for extension credentials; we accept it because the bridge
+  // server only binds to localhost and the user can rotate at any time.
   bridge: z
     .object({
       token: z.string().default(''),
