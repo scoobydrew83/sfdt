@@ -130,6 +130,52 @@ describe('flow-core/bridge-contract', () => {
       ).toBe(true);
     });
 
+    it('rejects a requestId longer than 256 characters', () => {
+      const result = validateSfdtRequest({
+        requestId: 'a'.repeat(257),
+        kind: 'ping',
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.errors.some((e) => e.field === 'requestId')).toBe(true);
+    });
+
+    it('accepts a requestId of exactly 256 characters', () => {
+      const result = validateSfdtRequest({
+        requestId: 'a'.repeat(256),
+        kind: 'ping',
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    it('rejects telemetry.snapshot with more than 500 counter keys', () => {
+      const counters: Record<string, { activated: number; errored: number; disabled_remote: number }> = {};
+      for (let i = 0; i < 501; i++) {
+        counters[`feat_${i}`] = { activated: 0, errored: 0, disabled_remote: 0 };
+      }
+      const result = validateSfdtRequest({
+        requestId: 'r1',
+        kind: 'telemetry.snapshot',
+        monthKey: '2026-05',
+        counters,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.errors.some((e) => e.field === 'counters')).toBe(true);
+    });
+
+    it('accepts telemetry.snapshot with at most 500 counter keys', () => {
+      const counters: Record<string, { activated: number; errored: number; disabled_remote: number }> = {};
+      for (let i = 0; i < 500; i++) {
+        counters[`feat_${i}`] = { activated: 0, errored: 0, disabled_remote: 0 };
+      }
+      const result = validateSfdtRequest({
+        requestId: 'r1',
+        kind: 'telemetry.snapshot',
+        monthKey: '2026-05',
+        counters,
+      });
+      expect(result.ok).toBe(true);
+    });
+
     it('aggregates multiple errors in one response', () => {
       const result = validateSfdtRequest({ requestId: '', kind: 'rollback', toVersion: -1 });
       expect(result.ok).toBe(false);

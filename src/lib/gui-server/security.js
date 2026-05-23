@@ -51,6 +51,14 @@ export function requireCsrfToken(req, res, token) {
  * EventSource (SSE), which only supports query strings. Accepts the token
  * from `?csrf=...` or the `x-sfdt-csrf` header. Constant-time comparison
  * via constantTimeEqual so a partial match cannot be timed.
+ *
+ * Tradeoff (intentional, do not remove): the query-string path causes the
+ * CSRF token to appear in any Express access log (default morgan format,
+ * or any reverse-proxy/access log in front of the server). The token is
+ * per-session, regenerated on each `sfdt ui` start, and the server only
+ * binds to localhost — so the practical risk is low. Future reviewers:
+ * the `?csrf=` branch exists because EventSource has no header API, NOT
+ * because a header-only flow was overlooked.
  */
 export function requireCsrfTokenFromQueryOrHeader(req, res, token) {
   const provided = req.get('x-sfdt-csrf') || (typeof req.query?.csrf === 'string' ? req.query.csrf : '');

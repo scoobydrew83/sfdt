@@ -283,6 +283,24 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.length > 0;
 }
 
+// requestId is echoed back verbatim in every response, including validation
+// error paths. Without a cap, a bearer-token-authenticated caller could
+// submit a multi-MB requestId and force every error response to approach
+// the 1 MB native messaging reply limit (see host/src/index.js writeFrame).
+// 256 chars comfortably accommodates UUIDs, ULIDs, and prefixed correlation
+// ids while bounding the worst-case echo.
+const REQUEST_ID_MAX_LEN = 256;
+function isValidRequestId(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0 && v.length <= REQUEST_ID_MAX_LEN;
+}
+
+// Hard cap on telemetry.snapshot.counters key count. Per-value shape is
+// validated below, but without a key-count limit a caller could submit
+// tens of thousands of distinct featureIds (within the 6 MB body limit)
+// and force fsExtra.outputJson to write a multi-MB file on every call.
+// 500 is well above the legitimate feature catalog size (~20-50).
+const COUNTERS_MAX_KEYS = 500;
+
 // Org alias regex mirrors what the gui-server enforces on the same value.
 // Salesforce CLI aliases are alphanumerics plus a small punctuation set, and
 // MUST start with an alphanumeric (or `@` for username-style aliases) so
@@ -338,8 +356,11 @@ export function validateSfdtRequest(input: unknown): {
   if (!isObject(input)) {
     return { ok: false, errors: [{ field: '(root)', reason: 'must be an object' }] };
   }
-  if (!isNonEmptyString(input.requestId)) {
-    errors.push({ field: 'requestId', reason: 'must be a non-empty string' });
+  if (!isValidRequestId(input.requestId)) {
+    errors.push({
+      field: 'requestId',
+      reason: `must be a non-empty string of at most ${REQUEST_ID_MAX_LEN} characters`,
+    });
   }
   if (!isNonEmptyString(input.kind) || !KNOWN_KINDS.includes(input.kind as SfdtRequestKind)) {
     errors.push({
@@ -434,6 +455,11 @@ export function validateSfdtRequest(input: unknown): {
       }
       if (!isObject(input.counters)) {
         errors.push({ field: 'counters', reason: 'must be an object keyed by featureId' });
+      } else if (Object.keys(input.counters).length > COUNTERS_MAX_KEYS) {
+        errors.push({
+          field: 'counters',
+          reason: `must have at most ${COUNTERS_MAX_KEYS} keys`,
+        });
       } else {
         for (const [id, counter] of Object.entries(input.counters)) {
           if (!isObject(counter)) {

@@ -14,12 +14,31 @@ import { runFlowQuality } from '../lib/flow-quality.js';
 
 const METADATA_FETCH_CONCURRENCY = 5;
 
+// Mirrors ORG_ALIAS_RE in packages/flow-core/src/bridge-contract.ts and the
+// runners that gate `sf --target-org` calls. execa's array form prevents
+// shell injection, but without this check a leading "-" character in
+// orgAlias would be interpreted as an unintended sf flag (argument
+// injection).
+const ORG_ALIAS_RE = /^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/;
+const ORG_ALIAS_MAX_LEN = 80;
+function assertValidOrgAlias(orgAlias) {
+  if (
+    typeof orgAlias !== 'string' ||
+    orgAlias.length === 0 ||
+    orgAlias.length > ORG_ALIAS_MAX_LEN ||
+    !ORG_ALIAS_RE.test(orgAlias)
+  ) {
+    throw new Error(`Invalid org alias: "${orgAlias}"`);
+  }
+}
+
 /**
  * Run a Tooling-API SOQL query via `sf data query --use-tooling-api`.
  * Same surface area sfdt's other commands use; keeps auth + token handling
  * inside the official Salesforce CLI.
  */
 async function toolingQuery(orgAlias, soql) {
+  assertValidOrgAlias(orgAlias);
   const result = await execa(
     'sf',
     ['data', 'query', '--use-tooling-api', '-q', soql, '--json', '--target-org', orgAlias],
