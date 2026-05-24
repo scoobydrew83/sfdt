@@ -2,10 +2,12 @@ name: Documentation Verification
 
 # Runs after every merge to main. Audits documentation accuracy against the
 # current codebase and opens a GitHub issue if anything is stale or wrong.
+#
+# Triggered by docs-verify-dispatch.yml after every push to main.
+# claude-code-action does not support the push event, so dispatch is used instead.
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: docs-verify
