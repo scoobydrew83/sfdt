@@ -333,6 +333,54 @@ describe('GET /api/check-updates', () => {
   });
 });
 
+describe('GET /api/flow-core/info', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns 200 with package info and the CLI version', async () => {
+    const res = await request(app).get('/api/flow-core/info');
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('@sfdt/flow-core');
+    // package.json is always resolvable (a real workspace dependency).
+    expect(typeof res.body.installedVersion).toBe('string');
+    expect(typeof res.body.updateAvailable).toBe('boolean');
+    // protocolVersion depends on the built dist/; tolerate either.
+    expect(['string', 'object']).toContain(typeof res.body.protocolVersion);
+    expect(res.body.cliVersion).toBe(VERSION);
+  });
+
+  it('flags updateAvailable when the latest npm version differs from installed', async () => {
+    const { fetchLatestVersion } = await import('../../src/lib/update-checker.js');
+    fetchLatestVersion.mockResolvedValueOnce('99.0.0');
+
+    const res = await request(app).get('/api/flow-core/info');
+    expect(res.status).toBe(200);
+    expect(res.body.latestVersion).toBe('99.0.0');
+    expect(res.body.updateAvailable).toBe(true);
+    expect(res.body.latestError).toBe(false);
+  });
+
+  it('degrades gracefully (200, latestError) when the npm lookup fails', async () => {
+    const { fetchLatestVersion } = await import('../../src/lib/update-checker.js');
+    fetchLatestVersion.mockRejectedValueOnce(new Error('offline'));
+
+    const res = await request(app).get('/api/flow-core/info');
+    expect(res.status).toBe(200);
+    expect(res.body.latestError).toBe(true);
+    expect(res.body.latestVersion).toBeNull();
+    expect(res.body.updateAvailable).toBe(false);
+    // Installed info is still useful even when the registry is unreachable.
+    expect(typeof res.body.installedVersion).toBe('string');
+  });
+});
+
 describe('GET /api/manifests', () => {
   let app;
 

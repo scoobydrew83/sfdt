@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api.js';
+import UpdateModal from '../components/UpdateModal.jsx';
 
 const SECTIONS = [
   {
@@ -388,6 +389,132 @@ function PromptEditor() {
   );
 }
 
+// ─── Flow Core tab ───────────────────────────────────────────────────────────
+
+const FLOW_CORE_CAPABILITIES = [
+  'Health rules & scoring',
+  'Trigger-conflict detection',
+  'Scheduled-flow math',
+  'API-name expansion',
+  'AI prompt library',
+  'Metadata cleaning & token estimation',
+  'Bridge contract (Chrome extension)',
+];
+
+const FLOW_CORE_INTEGRATIONS = [
+  { label: 'CLI', detail: 'sfdt flow scan, sfdt flow conflicts' },
+  { label: 'GUI API', detail: 'POST /api/flow/quality' },
+  { label: 'Chrome extension', detail: 'bridge contract' },
+];
+
+function FlowCoreTab() {
+  const [info, setInfo] = useState(null);
+  const [cliLatest, setCliLatest] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showUpdate, setShowUpdate] = useState(false);
+
+  useEffect(() => {
+    api.flowCoreInfo()
+      .then(setInfo)
+      .catch(() => setInfo(null))
+      .finally(() => setLoading(false));
+    // The update modal upgrades the CLI, so fetch the true CLI latest for its
+    // version row. Best-effort — /api/check-updates 502s when npm is unreachable.
+    api.checkUpdates()
+      .then((u) => setCliLatest(u?.latest ?? null))
+      .catch(() => setCliLatest(null));
+  }, []);
+
+  if (loading) return <div className="spinner-center"><div className="spinner" /></div>;
+
+  if (!info || !info.installedVersion) {
+    return (
+      <div className="card card-pad">
+        <div className="section-label" style={{ marginBottom: 8 }}>Flow Core</div>
+        <p style={{ fontSize: 13, color: 'var(--fg-muted)' }}>
+          <code>@sfdt/flow-core</code> could not be resolved. Update the CLI to a version that bundles it.
+        </p>
+      </div>
+    );
+  }
+
+  const statusBadge = info.latestError
+    ? <span className="badge">offline — latest unknown</span>
+    : info.updateAvailable
+      ? <span className="badge badge-warning">update available</span>
+      : <span className="badge badge-info">up to date</span>;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* Overview */}
+      <div className="card card-pad">
+        <div className="section-label" style={{ marginBottom: 12 }}>@sfdt/flow-core</div>
+        {info.description && (
+          <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: 16 }}>{info.description}</p>
+        )}
+
+        <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span className="section-label">Installed</span>
+            <code style={{ fontSize: 13 }}>v{info.installedVersion}</code>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span className="section-label">Latest</span>
+            <code style={{ fontSize: 13 }}>
+              {info.latestError || !info.latestVersion ? '—' : `v${info.latestVersion}`}
+            </code>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span className="section-label">Bridge protocol</span>
+            <span className="badge badge-info">{info.protocolVersion ?? 'n/a'}</span>
+          </div>
+          <div style={{ marginLeft: 'auto' }}>{statusBadge}</div>
+        </div>
+
+        {info.updateAvailable && (
+          <div className="alert alert-info" style={{ marginTop: 16, fontSize: 12 }}>
+            Flow Core ships with the sfdt CLI. Updating the CLI updates Flow Core.
+            <div style={{ marginTop: 10 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => setShowUpdate(true)}>
+                Update sfdt
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Capabilities */}
+      <div className="card card-pad">
+        <div className="section-label" style={{ marginBottom: 12 }}>Capabilities</div>
+        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--fg-default)', lineHeight: 1.9 }}>
+          {FLOW_CORE_CAPABILITIES.map((c) => <li key={c}>{c}</li>)}
+        </ul>
+      </div>
+
+      {/* Integrations */}
+      <div className="card card-pad">
+        <div className="section-label" style={{ marginBottom: 12 }}>Where it’s integrated</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {FLOW_CORE_INTEGRATIONS.map((i) => (
+            <div key={i.label} style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
+              <span className="badge badge-info" style={{ minWidth: 130, justifyContent: 'center' }}>{i.label}</span>
+              <code style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{i.detail}</code>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {showUpdate && (
+        <UpdateModal
+          current={info.cliVersion}
+          latest={cliLatest ?? info.cliVersion}
+          onClose={() => setShowUpdate(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [tab, setTab] = useState('config');
   const [rawConfig, setRawConfig] = useState(null);
@@ -428,6 +555,7 @@ export default function SettingsPage() {
   const TABS = [
     { key: 'config', label: 'Config' },
     { key: 'prompts', label: 'AI Prompts' },
+    { key: 'flowcore', label: 'Flow Core' },
   ];
 
   return (
@@ -458,7 +586,7 @@ export default function SettingsPage() {
         ))}
       </div>
 
-      {rawConfig.packageDirectories?.length > 0 && (
+      {tab !== 'flowcore' && rawConfig.packageDirectories?.length > 0 && (
         <div className="card card-pad" style={{ marginBottom: 24 }}>
           <div className="section-label" style={{ marginBottom: 16 }}>Package Directories</div>
           <p style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 12 }}>
@@ -527,6 +655,8 @@ export default function SettingsPage() {
           <PromptEditor />
         </div>
       )}
+
+      {tab === 'flowcore' && <FlowCoreTab />}
     </div>
   );
 }

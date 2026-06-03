@@ -1,6 +1,6 @@
 {
   "name": "@sfdt/flow-core",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Pure-TypeScript core for Salesforce Flow analysis: normalization, health rules, scoring, scheduled-flow math, AI prompt library, API name expansion. No DOM, no chrome.*, no Node-specific APIs.",
   "license": "MIT",
   "publishConfig": {
@@ -18,7 +18,8 @@
     "./bridge-contract": {
       "types": "./dist/bridge-contract.d.ts",
       "import": "./dist/bridge-contract.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist/",

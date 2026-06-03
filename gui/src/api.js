@@ -10,6 +10,7 @@ const BASE = '/api';
  * @typedef {{ alias: string, username: string }} OrgEntry
  * @typedef {{ name: string, org: string, apiVersion: string, coverageThreshold: number, features: object, version: string }} ProjectInfo
  * @typedef {{ current: string, latest: string, updateAvailable: boolean }} UpdateInfo
+ * @typedef {{ name: string, installedVersion: string|null, latestVersion: string|null, latestError: boolean, updateAvailable: boolean, protocolVersion: string|null, description: string|null, cliVersion: string }} FlowCoreInfo
  * @typedef {{ available: boolean, enabled: boolean, provider: string }} AiAvailability
  * @typedef {{ date: string, manifest: string, org: string, dryRun: boolean, skipPreflight: boolean, exitCode: number }} DeployHistoryEntry
  */
@@ -102,6 +103,8 @@ export const api = {
   project:                () => fetchJson('/project'),
   /** @returns {Promise<UpdateInfo>} */
   checkUpdates:           () => fetchJson('/check-updates'),
+  /** @returns {Promise<FlowCoreInfo>} */
+  flowCoreInfo:           () => fetchJson('/flow-core/info'),
   /** @returns {Promise<{ runs: TestRun[] }>} */
   testRuns:               () => fetchJson('/test-runs'),
   /** @returns {Promise<{ ok: boolean }>} */
