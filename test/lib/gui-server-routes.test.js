@@ -18,7 +18,9 @@ vi.mock('../../src/lib/log-writer.js', () => ({
   readLatestLog: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock('../../src/lib/update-checker.js', () => ({
+vi.mock('../../src/lib/update-checker.js', async (importActual) => ({
+  // Keep the real (pure) isUpdateAvailable; only stub the network call.
+  ...(await importActual()),
   fetchLatestVersion: vi.fn().mockResolvedValue('1.0.0'),
 }));
 
@@ -330,6 +332,67 @@ describe('GET /api/check-updates', () => {
     const res = await request(app).get('/api/check-updates');
     expect(res.status).toBe(502);
     expect(res.body.error).toBeTruthy();
+  });
+});
+
+describe('GET /api/flow-core/info', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns 200 with package info and the CLI version', async () => {
+    const res = await request(app).get('/api/flow-core/info');
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('@sfdt/flow-core');
+    // package.json is always resolvable (a real workspace dependency).
+    expect(typeof res.body.installedVersion).toBe('string');
+    expect(typeof res.body.updateAvailable).toBe('boolean');
+    // protocolVersion depends on the built dist/; tolerate either.
+    expect(['string', 'object']).toContain(typeof res.body.protocolVersion);
+    expect(res.body.cliVersion).toBe(VERSION);
+  });
+
+  it('flags updateAvailable when the latest npm version is newer than installed', async () => {
+    const { fetchLatestVersion } = await import('../../src/lib/update-checker.js');
+    fetchLatestVersion.mockResolvedValueOnce('99.0.0');
+
+    const res = await request(app).get('/api/flow-core/info');
+    expect(res.status).toBe(200);
+    expect(res.body.latestVersion).toBe('99.0.0');
+    expect(res.body.updateAvailable).toBe(true);
+    expect(res.body.latestError).toBe(false);
+  });
+
+  it('does NOT flag updateAvailable when installed is ahead of the latest npm version', async () => {
+    // Regression for the local/pre-release case: installed (real workspace version,
+    // currently 0.9.x) is newer than what npm reports. semver.gt must return false so
+    // we never prompt a downgrade.
+    const { fetchLatestVersion } = await import('../../src/lib/update-checker.js');
+    fetchLatestVersion.mockResolvedValueOnce('0.0.1');
+
+    const res = await request(app).get('/api/flow-core/info');
+    expect(res.status).toBe(200);
+    expect(res.body.latestVersion).toBe('0.0.1');
+    expect(res.body.updateAvailable).toBe(false);
+  });
+
+  it('degrades gracefully (200, latestError) when the npm lookup fails', async () => {
+    const { fetchLatestVersion } = await import('../../src/lib/update-checker.js');
+    fetchLatestVersion.mockRejectedValueOnce(new Error('offline'));
+
+    const res = await request(app).get('/api/flow-core/info');
+    expect(res.status).toBe(200);
+    expect(res.body.latestError).toBe(true);
+    expect(res.body.latestVersion).toBeNull();
+    expect(res.body.updateAvailable).toBe(false);
+    // Installed info is still useful even when the registry is unreachable.
+    expect(typeof res.body.installedVersion).toBe('string');
   });
 });
 

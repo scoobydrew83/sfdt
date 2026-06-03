@@ -7,7 +7,7 @@ export default defineConfig({
     name: 'SFDT SF Helper',
     description:
       'Productivity toolkit for Salesforce admins and developers — Flow analysis, Setup shortcuts, and sfdt CLI bridge integration.',
-    permissions: ['storage', 'clipboardWrite', 'cookies', 'scripting'],
+    permissions: ['storage', 'clipboardWrite', 'cookies'],
     host_permissions: [
       'https://*.salesforce.com/*',
       'https://*.salesforce-setup.com/*',

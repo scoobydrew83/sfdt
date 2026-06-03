@@ -13,7 +13,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { execa } from 'execa';
 import { createInterface } from 'readline';
-import { fetchLatestVersion } from '../update-checker.js';
+import { createRequire } from 'module';
+import { fetchLatestVersion, isUpdateAvailable } from '../update-checker.js';
 import { writeLog, parseSfdtLogLines, readLatestLog } from '../log-writer.js';
 import { setNestedValue, coerceConfigValue } from '../config-utils.js';
 import { loadConfig } from '../config.js';
@@ -36,6 +37,10 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Hoisted once — used to resolve installed package metadata (e.g. @sfdt/flow-core)
+// from the CLI's own module graph, regardless of how the CLI was installed.
+const moduleRequire = createRequire(import.meta.url);
 
 // index.js lives at src/lib/gui-server/ — three levels up reaches the package root
 const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', '..', 'scripts');
@@ -541,10 +546,77 @@ export function createGuiApp(config, version, port = 7654) {
   app.get('/api/check-updates', apiLimiter, async (_req, res) => {
     try {
       const latest = await fetchLatestVersion();
-      res.json({ current: version, latest, updateAvailable: latest !== version });
+      res.json({ current: version, latest, updateAvailable: isUpdateAvailable(latest, version) });
     } catch (err) {
       res.status(502).json({ error: err.message });
     }
+  });
+
+  // ── Flow Core package info ──────────────────────────────────────────────────
+  // Read-only panel data for the Settings → Flow Core tab. @sfdt/flow-core ships
+  // as a pinned runtime dependency of the CLI, so "updating" it means updating
+  // the CLI (the panel reuses POST /api/update/stream). Always returns 200 and
+  // degrades gracefully — installed info stays useful even when npm is offline.
+  app.get('/api/flow-core/info', apiLimiter, async (_req, res) => {
+    let installedVersion = null;
+    let description = null;
+    let protocolVersion = null;
+
+    // Resolve flow-core from the CLI's own module graph so it works when the CLI
+    // is installed globally (avoid hardcoded node_modules paths).
+    try {
+      let pkg = null;
+      try {
+        // Preferred: flow-core exposes ./package.json in its exports map.
+        pkg = moduleRequire('@sfdt/flow-core/package.json');
+      } catch {
+        // Fallback for older flow-core builds (e.g. 0.9.0) whose exports map
+        // omits ./package.json: resolve the package entry and walk up to it.
+        let dir = path.dirname(moduleRequire.resolve('@sfdt/flow-core'));
+        const { root } = path.parse(dir);
+        for (;;) {
+          const candidate = path.join(dir, 'package.json');
+          if (fs.existsSync(candidate)) {
+            const parsed = JSON.parse(fs.readFileSync(candidate, 'utf8'));
+            if (parsed.name === '@sfdt/flow-core') { pkg = parsed; break; }
+          }
+          if (dir === root) break;
+          dir = path.dirname(dir);
+        }
+      }
+      installedVersion = pkg?.version ?? null;
+      description = pkg?.description ?? null;
+    } catch {
+      // Older install without flow-core, or not resolvable — leave null.
+    }
+
+    try {
+      const contract = await import('@sfdt/flow-core/bridge-contract');
+      protocolVersion = contract.PROTOCOL_VERSION ?? null;
+    } catch {
+      // Bridge contract not resolvable — leave null.
+    }
+
+    let latestVersion = null;
+    let latestError = false;
+    try {
+      latestVersion = await fetchLatestVersion('@sfdt/flow-core');
+    } catch {
+      latestError = true; // Still return installed info.
+    }
+
+    const updateAvailable = isUpdateAvailable(latestVersion, installedVersion);
+
+    res.json({
+      name: '@sfdt/flow-core',
+      installedVersion,
+      latestVersion,
+      latestError,
+      updateAvailable,
+      protocolVersion,
+      description,
+      cliVersion: version,
+    });
   });
 
   // ── Update via npm (SSE) ────────────────────────────────────────────────────

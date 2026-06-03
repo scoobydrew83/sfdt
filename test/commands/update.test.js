@@ -32,7 +32,9 @@ vi.mock('inquirer', () => ({
   default: { prompt: vi.fn() },
 }));
 
-vi.mock('../../src/lib/update-checker.js', () => ({
+vi.mock('../../src/lib/update-checker.js', async (importActual) => ({
+  // Keep the real (pure) isUpdateAvailable; only stub the network call.
+  ...(await importActual()),
   fetchLatestVersion: vi.fn(),
 }));
 
@@ -109,6 +111,17 @@ describe('update command', () => {
 
   it('prints up-to-date message and skips install when already on latest', async () => {
     fetchLatestVersion.mockResolvedValue(CURRENT_VERSION);
+
+    await createProgram().parseAsync(['node', 'sfdt', 'update']);
+
+    expect(execa).not.toHaveBeenCalled();
+    expect(inquirer.prompt).not.toHaveBeenCalled();
+    expect(print.success).toHaveBeenCalledWith(expect.stringContaining('up to date'));
+  });
+
+  it('does not offer a downgrade when the installed version is ahead of npm', async () => {
+    // Local/pre-release build ahead of the published version.
+    fetchLatestVersion.mockResolvedValue('0.0.1');
 
     await createProgram().parseAsync(['node', 'sfdt', 'update']);
 

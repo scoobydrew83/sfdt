@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-02
+
+Adds a Flow Core panel to the `sfdt ui` dashboard, surfaces `@sfdt/flow-core` package details in the GUI, and rolls in a batch of dependency hygiene — including removing the extension's unused React dependencies and forcing patched transitive packages through the extension toolchain.
+
+### Added
+
+- **GUI: Flow Core tab in Settings** — a new tab under **Settings** that surfaces the shared `@sfdt/flow-core` library: installed version, latest published version (with an up-to-date / update-available indicator), the extension bridge protocol version, the package description, a capabilities list, and a map of where it is integrated (CLI commands, the `/api/flow/quality` endpoint, and the Chrome extension bridge). When a newer version is available, the update action reuses the existing CLI self-update — because `@sfdt/flow-core` ships pinned with the CLI, updating the CLI updates it.
+- **`GET /api/flow-core/info`** — read-only GUI-server endpoint backing the Flow Core tab. Resolves the installed `@sfdt/flow-core` from the CLI's own module graph (works for global installs), reports its version/description and bridge protocol version, and fetches the latest published version from npm. Degrades gracefully (still returns installed info when offline).
+
+### Changed
+
+- **`@sfdt/flow-core` 0.9.0 → 0.9.1** — its `exports` map now exposes `./package.json`, so the installed version and description can be resolved at runtime by the new info endpoint. No analysis-logic changes.
+- **Internal `fetchLatestVersion()` helper generalized** to accept a package name, so the same npm-registry lookup now serves both the CLI self-update check and the Flow Core panel. Existing `@sfdt/cli` behavior is unchanged (the package name defaults to `@sfdt/cli`).
+- **Update detection now uses semantic-version comparison** — the `sfdt update` command, the dashboard's CLI self-update indicator, and the Flow Core panel all flag an update only when the published version is strictly newer (`semver.gt`) rather than merely different, via a shared `isUpdateAvailable` helper in `update-checker.js`. A local or pre-release build that is *ahead* of the published version is no longer incorrectly prompted to "update" (which would have been a downgrade).
+- **Dashboard streamed actions now surface the server's real error message** — when a streamed request (update, deploy, pull, etc.) fails, the UI shows the server's actual reason (e.g. "An update is already in progress" on a 409) instead of a generic failure. Previously the response body was discarded and only a bare HTTP status was shown.
+- **Production dependency bump:** `inquirer` 13.4.3 → 14.0.2 (major).
+- **Development dependency bumps:** `vite` 8.0.14 → 8.0.16, `vitest` 4.1.7 → 4.1.8, `@vitest/coverage-v8` 4.1.7 → 4.1.8, `typescript-eslint` 8.59.4 → 8.60.1.
+
+### Removed
+
+- **Unused React dependencies dropped from `@sfdt/extension`** — `react`, `react-dom`, `@types/react`, and `@types/react-dom` were declared but never imported; the extension UI is vanilla-TypeScript DOM. Removing them shrinks the install footprint and stops recurring Dependabot churn (the React 18 → 19 bumps that prompted this were no-ops for the extension). The extension also drops the unused `scripting` permission and moves to 0.0.2.
+
+### Security
+
+- **Patched transitive dependencies forced via npm `overrides`** through the extension's WXT toolchain (`wxt → web-ext-run → tmp/node-notifier → uuid`): `tmp` → 0.2.7 (closes [CVE-2026-44705](https://github.com/advisories/GHSA-ph9p-34f9-6g65) path traversal, high) and `uuid` → 11.1.1 (closes [GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq) buffer bounds check, moderate), including the nested `node-notifier > uuid` pin. Clears the `npm audit --audit-level=high` CI gate (0 vulnerabilities at all severities) and Dependabot alert #14.
+
 ## [0.9.1] - 2026-05-23
 
 ### Security

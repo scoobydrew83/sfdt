@@ -10,6 +10,7 @@ const BASE = '/api';
  * @typedef {{ alias: string, username: string }} OrgEntry
  * @typedef {{ name: string, org: string, apiVersion: string, coverageThreshold: number, features: object, version: string }} ProjectInfo
  * @typedef {{ current: string, latest: string, updateAvailable: boolean }} UpdateInfo
+ * @typedef {{ name: string, installedVersion: string|null, latestVersion: string|null, latestError: boolean, updateAvailable: boolean, protocolVersion: string|null, description: string|null, cliVersion: string }} FlowCoreInfo
  * @typedef {{ available: boolean, enabled: boolean, provider: string }} AiAvailability
  * @typedef {{ date: string, manifest: string, org: string, dryRun: boolean, skipPreflight: boolean, exitCode: number }} DeployHistoryEntry
  */
@@ -102,6 +103,8 @@ export const api = {
   project:                () => fetchJson('/project'),
   /** @returns {Promise<UpdateInfo>} */
   checkUpdates:           () => fetchJson('/check-updates'),
+  /** @returns {Promise<FlowCoreInfo>} */
+  flowCoreInfo:           () => fetchJson('/flow-core/info'),
   /** @returns {Promise<{ runs: TestRun[] }>} */
   testRuns:               () => fetchJson('/test-runs'),
   /** @returns {Promise<{ ok: boolean }>} */
@@ -203,7 +206,15 @@ export function ssePost(path, body) {
         signal: controller.signal,
       });
       if (!res.ok) {
-        if (handlers.onerror) handlers.onerror(new Error(`${res.status} ${res.statusText}`));
+        // Surface the server's error body (e.g. 409 "An update is already in
+        // progress") instead of a bare status line, so callers can show a
+        // meaningful message rather than a generic "failed".
+        let message = `${res.status} ${res.statusText}`;
+        try {
+          const data = await res.json();
+          if (data?.error) message = data.error;
+        } catch { /* non-JSON body — keep the status line */ }
+        if (handlers.onerror) handlers.onerror(new Error(message));
         return;
       }
       const reader = res.body.getReader();

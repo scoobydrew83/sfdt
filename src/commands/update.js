@@ -4,7 +4,7 @@ import path from 'path';
 import { execa } from 'execa';
 import inquirer from 'inquirer';
 import { print, createSpinner } from '../lib/output.js';
-import { fetchLatestVersion } from '../lib/update-checker.js';
+import { fetchLatestVersion, isUpdateAvailable } from '../lib/update-checker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', '..', 'package.json'), 'utf-8'));
@@ -22,7 +22,10 @@ export function registerUpdateCommand(program) {
 
         const current = pkg.version;
 
-        if (current === latestVersion) {
+        // Only treat a strictly-newer published version as an update — never
+        // offer to "update" a local/pre-release build that is ahead of npm
+        // (which would silently downgrade it).
+        if (!isUpdateAvailable(latestVersion, current)) {
           print.success(`sfdt is up to date (v${current})`);
           return;
         }

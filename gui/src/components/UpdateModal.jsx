@@ -6,6 +6,7 @@ export default function UpdateModal({ current, latest, onClose }) {
   const [status, setStatus]   = useState('idle'); // idle | running | restarting | done | error
   const [lines, setLines]     = useState([]);
   const [exitCode, setExitCode] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
   const esRef      = useRef(null);
   const logRef     = useRef(null);
   const counterRef = useRef(0);
@@ -51,6 +52,7 @@ export default function UpdateModal({ current, latest, onClose }) {
     setStatus('running');
     setLines([]);
     setExitCode(null);
+    setErrorMsg(null);
     counterRef.current = 0;
 
     const es = stream.update();
@@ -83,8 +85,10 @@ export default function UpdateModal({ current, latest, onClose }) {
       }
     };
 
-    es.onerror = () => {
+    es.onerror = (err) => {
       if (deadRef.current) return;
+      // Surface the server's message (e.g. 409 "An update is already in progress").
+      if (err?.message) setErrorMsg(err.message);
       setStatus('error');
       es.close();
       esRef.current = null;
@@ -154,8 +158,10 @@ export default function UpdateModal({ current, latest, onClose }) {
             <div className="update-notice update-notice-error">
               <IconAlertTri size={14} style={{ flexShrink: 0, marginTop: 1 }} />
               <span>
-                Update failed{exitCode != null ? ` (exit ${exitCode})` : ''}.
-                You can update manually by running <code>sfdt update</code> in your terminal.
+                {errorMsg
+                  ? errorMsg
+                  : `Update failed${exitCode != null ? ` (exit ${exitCode})` : ''}.`}
+                {' '}You can update manually by running <code>sfdt update</code> in your terminal.
               </span>
             </div>
           )}

@@ -48,6 +48,7 @@ codex.js
 logs/
 .claude/skills/*
 .agents/
+.stfolder/
 /pr-analysis/
 /docs/superpowers/
 conductor/
