@@ -206,7 +206,15 @@ export function ssePost(path, body) {
         signal: controller.signal,
       });
       if (!res.ok) {
-        if (handlers.onerror) handlers.onerror(new Error(`${res.status} ${res.statusText}`));
+        // Surface the server's error body (e.g. 409 "An update is already in
+        // progress") instead of a bare status line, so callers can show a
+        // meaningful message rather than a generic "failed".
+        let message = `${res.status} ${res.statusText}`;
+        try {
+          const data = await res.json();
+          if (data?.error) message = data.error;
+        } catch { /* non-JSON body — keep the status line */ }
+        if (handlers.onerror) handlers.onerror(new Error(message));
         return;
       }
       const reader = res.body.getReader();
