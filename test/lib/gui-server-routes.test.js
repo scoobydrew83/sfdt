@@ -356,7 +356,7 @@ describe('GET /api/flow-core/info', () => {
     expect(res.body.cliVersion).toBe(VERSION);
   });
 
-  it('flags updateAvailable when the latest npm version differs from installed', async () => {
+  it('flags updateAvailable when the latest npm version is newer than installed', async () => {
     const { fetchLatestVersion } = await import('../../src/lib/update-checker.js');
     fetchLatestVersion.mockResolvedValueOnce('99.0.0');
 
@@ -365,6 +365,19 @@ describe('GET /api/flow-core/info', () => {
     expect(res.body.latestVersion).toBe('99.0.0');
     expect(res.body.updateAvailable).toBe(true);
     expect(res.body.latestError).toBe(false);
+  });
+
+  it('does NOT flag updateAvailable when installed is ahead of the latest npm version', async () => {
+    // Regression for the local/pre-release case: installed (real workspace version,
+    // currently 0.9.x) is newer than what npm reports. semver.gt must return false so
+    // we never prompt a downgrade.
+    const { fetchLatestVersion } = await import('../../src/lib/update-checker.js');
+    fetchLatestVersion.mockResolvedValueOnce('0.0.1');
+
+    const res = await request(app).get('/api/flow-core/info');
+    expect(res.status).toBe(200);
+    expect(res.body.latestVersion).toBe('0.0.1');
+    expect(res.body.updateAvailable).toBe(false);
   });
 
   it('degrades gracefully (200, latestError) when the npm lookup fails', async () => {

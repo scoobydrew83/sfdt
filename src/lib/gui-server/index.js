@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 import { execa } from 'execa';
 import { createInterface } from 'readline';
 import { createRequire } from 'module';
+import semver from 'semver';
 import { fetchLatestVersion } from '../update-checker.js';
 import { writeLog, parseSfdtLogLines, readLatestLog } from '../log-writer.js';
 import { setNestedValue, coerceConfigValue } from '../config-utils.js';
@@ -44,6 +45,15 @@ const TEMPLATE_PATH = path.resolve(__dirname, '..', '..', 'templates', 'sfdt.con
 
 // gui/dist lives at <package-root>/gui/dist
 const GUI_DIST = path.resolve(__dirname, '..', '..', '..', 'gui', 'dist');
+
+// True only when `latest` is a strictly-greater semver than `installed`, so a
+// local/pre-release build that is *ahead* of the published version is not flagged
+// for a downgrade. Falls back to inequality for non-semver version strings.
+function isUpdateAvailable(latest, installed) {
+  if (!latest || !installed) return false;
+  if (semver.valid(latest) && semver.valid(installed)) return semver.gt(latest, installed);
+  return latest !== installed;
+}
 
 // ─── Command runner config ────────────────────────────────────────────────────
 
@@ -542,7 +552,7 @@ export function createGuiApp(config, version, port = 7654) {
   app.get('/api/check-updates', apiLimiter, async (_req, res) => {
     try {
       const latest = await fetchLatestVersion();
-      res.json({ current: version, latest, updateAvailable: latest !== version });
+      res.json({ current: version, latest, updateAvailable: isUpdateAvailable(latest, version) });
     } catch (err) {
       res.status(502).json({ error: err.message });
     }
@@ -602,8 +612,7 @@ export function createGuiApp(config, version, port = 7654) {
       latestError = true; // Still return installed info.
     }
 
-    const updateAvailable =
-      !!installedVersion && !!latestVersion && latestVersion !== installedVersion;
+    const updateAvailable = isUpdateAvailable(latestVersion, installedVersion);
 
     res.json({
       name: '@sfdt/flow-core',
