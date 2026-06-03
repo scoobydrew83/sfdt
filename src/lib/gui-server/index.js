@@ -14,8 +14,7 @@ import { fileURLToPath } from 'url';
 import { execa } from 'execa';
 import { createInterface } from 'readline';
 import { createRequire } from 'module';
-import semver from 'semver';
-import { fetchLatestVersion } from '../update-checker.js';
+import { fetchLatestVersion, isUpdateAvailable } from '../update-checker.js';
 import { writeLog, parseSfdtLogLines, readLatestLog } from '../log-writer.js';
 import { setNestedValue, coerceConfigValue } from '../config-utils.js';
 import { loadConfig } from '../config.js';
@@ -49,15 +48,6 @@ const TEMPLATE_PATH = path.resolve(__dirname, '..', '..', 'templates', 'sfdt.con
 
 // gui/dist lives at <package-root>/gui/dist
 const GUI_DIST = path.resolve(__dirname, '..', '..', '..', 'gui', 'dist');
-
-// True only when `latest` is a strictly-greater semver than `installed`, so a
-// local/pre-release build that is *ahead* of the published version is not flagged
-// for a downgrade. Falls back to inequality for non-semver version strings.
-function isUpdateAvailable(latest, installed) {
-  if (!latest || !installed) return false;
-  if (semver.valid(latest) && semver.valid(installed)) return semver.gt(latest, installed);
-  return latest !== installed;
-}
 
 // ─── Command runner config ────────────────────────────────────────────────────
 

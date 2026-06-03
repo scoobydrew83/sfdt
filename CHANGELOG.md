@@ -20,7 +20,7 @@ Adds a Flow Core panel to the `sfdt ui` dashboard, surfaces `@sfdt/flow-core` pa
 
 - **`@sfdt/flow-core` 0.9.0 → 0.9.1** — its `exports` map now exposes `./package.json`, so the installed version and description can be resolved at runtime by the new info endpoint. No analysis-logic changes.
 - **Internal `fetchLatestVersion()` helper generalized** to accept a package name, so the same npm-registry lookup now serves both the CLI self-update check and the Flow Core panel. Existing `@sfdt/cli` behavior is unchanged (the package name defaults to `@sfdt/cli`).
-- **Update detection now uses semantic-version comparison** — both the CLI self-update indicator and the Flow Core panel flag an update only when the published version is strictly newer (`semver.gt`) rather than merely different. A local or pre-release build that is *ahead* of the published version is no longer incorrectly prompted to "update" (which would have been a downgrade).
+- **Update detection now uses semantic-version comparison** — the `sfdt update` command, the dashboard's CLI self-update indicator, and the Flow Core panel all flag an update only when the published version is strictly newer (`semver.gt`) rather than merely different, via a shared `isUpdateAvailable` helper in `update-checker.js`. A local or pre-release build that is *ahead* of the published version is no longer incorrectly prompted to "update" (which would have been a downgrade).
 - **Production dependency bump:** `inquirer` 13.4.3 → 14.0.2 (major).
 - **Development dependency bumps:** `vite` 8.0.14 → 8.0.16, `vitest` 4.1.7 → 4.1.8, `@vitest/coverage-v8` 4.1.7 → 4.1.8, `typescript-eslint` 8.59.4 → 8.60.1.
 

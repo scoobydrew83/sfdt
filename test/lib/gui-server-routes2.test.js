@@ -16,7 +16,8 @@ vi.mock('../../src/lib/log-writer.js', () => ({
   readLatestLog: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock('../../src/lib/update-checker.js', () => ({
+vi.mock('../../src/lib/update-checker.js', async (importActual) => ({
+  ...(await importActual()),
   fetchLatestVersion: vi.fn().mockResolvedValue('1.0.0'),
 }));
 
