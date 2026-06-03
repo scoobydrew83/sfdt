@@ -3,6 +3,11 @@
   "version": "0.9.1",
   "description": "Pure-TypeScript core for Salesforce Flow analysis: normalization, health rules, scoring, scheduled-flow math, AI prompt library, API name expansion. No DOM, no chrome.*, no Node-specific APIs.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scoobydrew83/sfdt.git",
+    "directory": "packages/flow-core"
+  },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
