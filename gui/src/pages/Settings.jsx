@@ -409,7 +409,7 @@ const FLOW_CORE_INTEGRATIONS = [
 
 function FlowCoreTab() {
   const [info, setInfo] = useState(null);
-  const [cliLatest, setCliLatest] = useState(null);
+  const [cliUpdate, setCliUpdate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showUpdate, setShowUpdate] = useState(false);
 
@@ -418,12 +418,16 @@ function FlowCoreTab() {
       .then(setInfo)
       .catch(() => setInfo(null))
       .finally(() => setLoading(false));
-    // The update modal upgrades the CLI, so fetch the true CLI latest for its
-    // version row. Best-effort — /api/check-updates 502s when npm is unreachable.
+    // The update modal upgrades the CLI, so fetch the CLI update status for its
+    // version row. The server computes updateAvailable (semver.gt), so we only
+    // offer the live update when a genuinely newer CLI exists — never current→current.
+    // Best-effort — /api/check-updates 502s when npm is unreachable.
     api.checkUpdates()
-      .then((u) => setCliLatest(u?.latest ?? null))
-      .catch(() => setCliLatest(null));
+      .then(setCliUpdate)
+      .catch(() => setCliUpdate(null));
   }, []);
+
+  const cliUpdatable = !!cliUpdate?.updateAvailable;
 
   if (loading) return <div className="spinner-center"><div className="spinner" /></div>;
 
@@ -475,9 +479,15 @@ function FlowCoreTab() {
           <div className="alert alert-info" style={{ marginTop: 16, fontSize: 12 }}>
             Flow Core ships with the sfdt CLI. Updating the CLI updates Flow Core.
             <div style={{ marginTop: 10 }}>
-              <button className="btn btn-primary btn-sm" onClick={() => setShowUpdate(true)}>
-                Update sfdt
-              </button>
+              {cliUpdatable ? (
+                <button className="btn btn-primary btn-sm" onClick={() => setShowUpdate(true)}>
+                  Update sfdt {cliUpdate.current} → {cliUpdate.latest}
+                </button>
+              ) : (
+                <span style={{ color: 'var(--fg-muted)' }}>
+                  Run <code>sfdt update</code> to refresh.
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -504,10 +514,10 @@ function FlowCoreTab() {
         </div>
       </div>
 
-      {showUpdate && (
+      {showUpdate && cliUpdatable && (
         <UpdateModal
-          current={info.cliVersion}
-          latest={cliLatest ?? info.cliVersion}
+          current={cliUpdate.current}
+          latest={cliUpdate.latest}
           onClose={() => setShowUpdate(false)}
         />
       )}

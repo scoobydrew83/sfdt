@@ -39,6 +39,10 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Hoisted once — used to resolve installed package metadata (e.g. @sfdt/flow-core)
+// from the CLI's own module graph, regardless of how the CLI was installed.
+const moduleRequire = createRequire(import.meta.url);
+
 // index.js lives at src/lib/gui-server/ — three levels up reaches the package root
 const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', '..', 'scripts');
 const TEMPLATE_PATH = path.resolve(__dirname, '..', '..', 'templates', 'sfdt.config.json');
@@ -571,15 +575,14 @@ export function createGuiApp(config, version, port = 7654) {
     // Resolve flow-core from the CLI's own module graph so it works when the CLI
     // is installed globally (avoid hardcoded node_modules paths).
     try {
-      const require = createRequire(import.meta.url);
       let pkg = null;
       try {
         // Preferred: flow-core exposes ./package.json in its exports map.
-        pkg = require('@sfdt/flow-core/package.json');
+        pkg = moduleRequire('@sfdt/flow-core/package.json');
       } catch {
         // Fallback for older flow-core builds (e.g. 0.9.0) whose exports map
         // omits ./package.json: resolve the package entry and walk up to it.
-        let dir = path.dirname(require.resolve('@sfdt/flow-core'));
+        let dir = path.dirname(moduleRequire.resolve('@sfdt/flow-core'));
         const { root } = path.parse(dir);
         for (;;) {
           const candidate = path.join(dir, 'package.json');
