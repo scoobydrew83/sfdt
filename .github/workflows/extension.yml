@@ -112,22 +112,19 @@ jobs:
             --generate-notes \
             extension/.output/*.zip
 
-      # Uncomment once these secrets are configured in the extension-release environment:
-      #   CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN, CWS_EXTENSION_ID
-      #
-      # - name: Publish to Chrome Web Store
-      #   if: steps.version.outputs.changed == 'true'
-      #   env:
-      #     CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
-      #     CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
-      #     CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
-      #     CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
-      #   run: |
-      #     CHROME_ZIP=$(ls extension/.output/*-chrome.zip | head -1)
-      #     npx chrome-webstore-upload-cli@3 upload \
-      #       --source "${CHROME_ZIP}" \
-      #       --extension-id "${CWS_EXTENSION_ID}" \
-      #       --client-id "${CWS_CLIENT_ID}" \
-      #       --client-secret "${CWS_CLIENT_SECRET}" \
-      #       --refresh-token "${CWS_REFRESH_TOKEN}" \
-      #       --auto-publish
+      - name: Publish to Chrome Web Store
+        if: steps.version.outputs.changed == 'true'
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: |
+          CHROME_ZIP=$(ls extension/.output/*-chrome.zip | head -1)
+          npx chrome-webstore-upload-cli@3 upload \
+            --source "${CHROME_ZIP}" \
+            --extension-id "${CWS_EXTENSION_ID}" \
+            --client-id "${CWS_CLIENT_ID}" \
+            --client-secret "${CWS_CLIENT_SECRET}" \
+            --refresh-token "${CWS_REFRESH_TOKEN}" \
+            --auto-publish
