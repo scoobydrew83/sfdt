@@ -112,19 +112,35 @@ jobs:
             --generate-notes \
             extension/.output/*.zip
 
-      - name: Publish to Chrome Web Store
-        if: steps.version.outputs.changed == 'true'
-        env:
-          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
-          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
-          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
-          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
-        run: |
-          CHROME_ZIP=$(ls extension/.output/*-chrome.zip | head -1)
-          npx chrome-webstore-upload-cli@3 upload \
-            --source "${CHROME_ZIP}" \
-            --extension-id "${CWS_EXTENSION_ID}" \
-            --client-id "${CWS_CLIENT_ID}" \
-            --client-secret "${CWS_CLIENT_SECRET}" \
-            --refresh-token "${CWS_REFRESH_TOKEN}" \
-            --auto-publish
+      # Chrome Web Store auto-publish is DISABLED until the OAuth refresh token
+      # is valid. On the v0.1.0 release this step failed with:
+      #   error: 'invalid_grant', error_description: 'Bad Request'
+      # i.e. CWS_REFRESH_TOKEN was expired/revoked or didn't match the
+      # CWS_CLIENT_ID/SECRET. Refresh tokens minted while the Google OAuth
+      # consent screen is in "Testing" mode expire after 7 days.
+      #
+      # TO RE-ENABLE:
+      #   1. Set the OAuth consent screen to "In production" (long-lived tokens).
+      #   2. Mint a new refresh token with the SAME client id/secret stored in
+      #      the `extension-release` environment secrets.
+      #   3. Update CWS_REFRESH_TOKEN (and verify CWS_CLIENT_ID/SECRET/EXTENSION_ID).
+      #   4. Uncomment the step below.
+      # Until then, releases publish to GitHub only; upload the zip attached to
+      # the GitHub Release manually via the CWS Developer Dashboard.
+      #
+      # - name: Publish to Chrome Web Store
+      #   if: steps.version.outputs.changed == 'true'
+      #   env:
+      #     CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+      #     CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+      #     CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+      #     CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+      #   run: |
+      #     CHROME_ZIP=$(ls extension/.output/*-chrome.zip | head -1)
+      #     npx chrome-webstore-upload-cli@3 upload \
+      #       --source "${CHROME_ZIP}" \
+      #       --extension-id "${CWS_EXTENSION_ID}" \
+      #       --client-id "${CWS_CLIENT_ID}" \
+      #       --client-secret "${CWS_CLIENT_SECRET}" \
+      #       --refresh-token "${CWS_REFRESH_TOKEN}" \
+      #       --auto-publish
