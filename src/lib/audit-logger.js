@@ -57,18 +57,19 @@ export function redactSensitiveData(value) {
   }
 
   if (typeof value === 'object') {
-    const redactedObj = {};
-    for (const key of Object.keys(value)) {
-      // Skip prototype-polluting keys before writing to redactedObj.
-      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
-      const lowerKey = key.toLowerCase().replace(/[^a-z]/g, '');
-      if (SENSITIVE_KEYS.includes(lowerKey)) {
-        redactedObj[key] = '[REDACTED]';
-      } else {
-        redactedObj[key] = redactSensitiveData(value[key]);
-      }
-    }
-    return redactedObj;
+    // Build via fromEntries (no dynamic bracket-writes) so untrusted keys can
+    // never be used as a property-write sink. Prototype-polluting keys are
+    // dropped, and sensitive keys are redacted.
+    const entries = Object.keys(value)
+      .filter((key) => key !== '__proto__' && key !== 'constructor' && key !== 'prototype')
+      .map((key) => {
+        const lowerKey = key.toLowerCase().replace(/[^a-z]/g, '');
+        const redactedValue = SENSITIVE_KEYS.includes(lowerKey)
+          ? '[REDACTED]'
+          : redactSensitiveData(value[key]);
+        return [key, redactedValue];
+      });
+    return Object.fromEntries(entries);
   }
 
   return value;
