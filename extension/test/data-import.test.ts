@@ -46,6 +46,16 @@ describe('data-import — csvParse', () => {
     expect(() => csvParse(csv, ',')).toThrow(/Row 3 has 3 cells, expected 2/);
   });
 
+  it('ignores trailing empty rows from trailing newlines', () => {
+    const csv = 'Name,Email\nJohn,john@example.com\nJane,jane@example.com\n\n';
+    const parsed = csvParse(csv, ',');
+    expect(parsed).toEqual([
+      ['Name', 'Email'],
+      ['John', 'john@example.com'],
+      ['Jane', 'jane@example.com'],
+    ]);
+  });
+
   it('detects separators correctly', () => {
     expect(detectSeparator('A\tB\tC\n1\t2\t3')).toBe('\t');
     expect(detectSeparator('A,B,C\n1,2,3')).toBe(',');
@@ -124,5 +134,84 @@ describe('data-import — UI Flow & Mock SOAP', () => {
 
     const succeededCell = Array.from(document.querySelectorAll('span')).find(s => s.textContent?.includes('Succeeded: 2'));
     expect(succeededCell).not.toBeUndefined();
+  });
+
+  it('keeps import disabled for delete until an Id column is mapped, then sends mapped Ids', async () => {
+    const mockSobjects = {
+      sobjects: [
+        { name: 'Account', label: 'Account', queryable: true, createable: true, updateable: true, keyPrefix: '001' },
+      ],
+    };
+
+    const mockDescribe = {
+      name: 'Account',
+      label: 'Account',
+      fields: [
+        { name: 'Id', label: 'ID', type: 'id', updateable: false, createable: false, idLookup: true, externalId: false, soapType: 'tns:ID' },
+        { name: 'Name', label: 'Account Name', type: 'string', updateable: true, createable: true, idLookup: false, externalId: false, soapType: 'xsd:string' },
+      ],
+    };
+
+    const api = fakeApi({
+      apiGet: vi.fn(async (url: string) => {
+        if (url.includes('/describe')) return mockDescribe;
+        return mockSobjects;
+      }) as any,
+      apiSoap: vi.fn(async () => [
+        { success: 'true', id: '001800000000001AAA' },
+      ]) as any,
+    });
+
+    const feature = createDataImportFeature({ api });
+    await feature.onActivate?.();
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Paste data with a non-Id header so auto-guess maps "Name" but not "Id"
+    const pasteArea = document.querySelector('textarea') as HTMLTextAreaElement;
+    pasteArea.value = 'Name\nSome Account';
+    pasteArea.dispatchEvent(new Event('input'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Choose Account
+    const sobjSelect = document.querySelector('select') as HTMLSelectElement;
+    sobjSelect.value = 'Account';
+    sobjSelect.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Switch operation to Delete
+    const opSelect = Array.from(document.querySelectorAll('select')).find(
+      (s) => Array.from(s.options).some((o) => o.value === 'delete'),
+    ) as HTMLSelectElement;
+    opSelect.value = 'delete';
+    opSelect.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const importBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Start Import',
+    ) as HTMLButtonElement;
+    // No Id mapped yet -> disabled
+    expect(importBtn.disabled).toBe(true);
+
+    // Map the "Name" column's mapping select to "Id".
+    // Mapping selects are the only ones with a "Skip field" (empty-value) option.
+    const mappingSelect = Array.from(document.querySelectorAll('select')).find(
+      (s) =>
+        Array.from(s.options).some((o) => o.value === 'Id') &&
+        Array.from(s.options).some((o) => o.value === ''),
+    ) as HTMLSelectElement;
+    mappingSelect.value = 'Id';
+    mappingSelect.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(importBtn.disabled).toBe(false);
+
+    importBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Id column index is derived from columnMappings, so the mapped cell value is sent
+    expect(api.apiSoap).toHaveBeenCalledWith('Partner', 'delete', expect.objectContaining({
+      ID: ['Some Account'],
+    }));
   });
 });

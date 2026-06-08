@@ -257,11 +257,18 @@ async function runQuery(
 
   // GraphQL query mode
   if (trimmed.startsWith('{') || trimmed.toLowerCase().startsWith('query')) {
-    const response = await api.apiRequest<{ data: any }>(
+    const response = await api.apiRequest<{ data: any; errors?: Array<{ message?: string }> }>(
       'POST',
       `/services/data/${apiVersion}/graphql`,
       { query: soql }
     );
+    // The GraphQL endpoint returns HTTP 200 even on failure; surface any errors.
+    if (Array.isArray(response?.errors) && response.errors.length > 0) {
+      const messages = response.errors
+        .map((e) => e?.message)
+        .filter((m): m is string => typeof m === 'string' && m.length > 0);
+      throw new Error(messages.length > 0 ? messages.join('\n') : 'GraphQL query failed.');
+    }
     const records: any[] = [];
     if (response?.data) {
       const findNodes = (obj: any) => {

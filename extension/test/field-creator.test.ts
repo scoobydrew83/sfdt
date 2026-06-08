@@ -137,4 +137,79 @@ describe('field-creator — UI flow & Tooling API deployment', () => {
       PermissionsRead: true,
     }));
   });
+
+  it('applies required/unique/externalId for Text fields and normalizes a manually typed __c suffix', async () => {
+    const mockSobjects = {
+      sobjects: [
+        { name: 'Contact', label: 'Contact', queryable: true, createable: true, updateable: true, keyPrefix: '003' },
+      ],
+    };
+
+    const mockPermissionSets = {
+      records: [
+        { Id: '0PS800000000001AAA', Name: 'SystemAdministrator', Profile: { Name: 'System Administrator' } },
+      ],
+    };
+
+    const api = fakeApi({
+      apiGet: vi.fn(async () => mockSobjects) as any,
+      query: vi.fn(async () => mockPermissionSets) as any,
+      apiRequest: vi.fn(async () => ({ id: '01I800000000001AAA', success: true })) as any,
+    });
+
+    const feature = createFieldCreatorFeature({ api });
+    await feature.onActivate?.();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const sobjSelect = document.querySelector('select') as HTMLSelectElement;
+    sobjSelect.value = 'Contact';
+    sobjSelect.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Type a label, then manually overwrite the developer name with a trailing __c
+    const labelInput = document.querySelector('input[placeholder="Field Label..."]') as HTMLInputElement;
+    labelInput.value = 'External Code';
+    labelInput.dispatchEvent(new Event('input'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const nameInput = document.querySelector('input[placeholder="Developer_Name"]') as HTMLInputElement;
+    nameInput.value = 'ExternalCode__c';
+    nameInput.dispatchEvent(new Event('input'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Open the Options modal and toggle Required, Unique, External ID
+    const optBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Options'));
+    optBtn!.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const optModalCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+    // Required, Unique, External ID checkboxes (Text exposes all three)
+    expect(optModalCheckboxes.length).toBeGreaterThanOrEqual(3);
+    optModalCheckboxes.forEach((cb) => {
+      cb.checked = true;
+      cb.dispatchEvent(new Event('change'));
+    });
+
+    const saveOptBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save');
+    saveOptBtn!.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Deploy
+    const deployBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Deploy Fields');
+    deployBtn!.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The manually-typed __c must be normalized (no Name__c__c) and Text options applied
+    expect(api.apiRequest).toHaveBeenCalledWith('POST', expect.stringContaining('/tooling/sobjects/CustomField'), expect.objectContaining({
+      FullName: 'Contact.ExternalCode__c',
+      Metadata: expect.objectContaining({
+        type: 'Text',
+        length: 255,
+        required: true,
+        unique: true,
+        externalId: true,
+      }),
+    }));
+  });
 });

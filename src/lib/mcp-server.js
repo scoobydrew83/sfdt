@@ -305,7 +305,9 @@ export class SfdtMcpServer {
       }
 
       case 'sfdt_validate': {
-        // Validation: run in deploy command but configured as a dry-run
+        // Validation = a dry-run deploy. Pass the explicit --dry-run flag so
+        // deploy.js sets options.dryRun (and thus SFDT_DRY_RUN) for the script,
+        // rather than relying on ambient env-var inheritance through the CLI.
         const env = {
           SFDT_NON_INTERACTIVE: 'true',
           SFDT_TARGET_ORG: args.targetOrg,
@@ -317,7 +319,7 @@ export class SfdtMcpServer {
           env.SFDT_SPECIFIED_TESTS = args.testClasses.join(' ');
         }
 
-        const { exitCode, stdout, stderr } = await this.#runCliCommand(['deploy'], env);
+        const { exitCode, stdout, stderr } = await this.#runCliCommand(['deploy', '--dry-run'], env);
         return { exitCode, stdout, stderr };
       }
 

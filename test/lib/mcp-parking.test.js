@@ -37,6 +37,11 @@ describe('MCP Parking', () => {
   };
 
   describe('parkIfNeeded', () => {
+    it('returns undefined without throwing when payload is undefined', async () => {
+      const result = await parkIfNeeded(undefined, config);
+      expect(result).toBeUndefined();
+    });
+
     it('returns original payload if parking is disabled', async () => {
       const disabledConfig = {
         ...config,

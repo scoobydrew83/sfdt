@@ -1162,7 +1162,10 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const { org } = req.body ?? {};
       if (!org || !org.trim()) return res.status(400).json({ error: 'org is required' });
-      
+      if (!/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(org.trim())) {
+        return res.status(400).json({ error: 'Invalid org alias' });
+      }
+
       const currentApiVersion = config.sourceApiVersion;
       const data = await runFlowScan(org.trim(), currentApiVersion);
       
@@ -1192,6 +1195,9 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const { org } = req.body ?? {};
       if (!org || !org.trim()) return res.status(400).json({ error: 'org is required' });
+      if (!/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(org.trim())) {
+        return res.status(400).json({ error: 'Invalid org alias' });
+      }
 
       const data = await runFlowConflicts(org.trim());
       const conflictsFile = path.join(logDir, 'flow-conflicts-latest.json');
@@ -1220,6 +1226,9 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const { org } = req.body ?? {};
       if (!org || !org.trim()) return res.status(400).json({ error: 'org is required' });
+      if (!/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(org.trim())) {
+        return res.status(400).json({ error: 'Invalid org alias' });
+      }
 
       const data = await runFlowGraph(org.trim());
       const graphFile = path.join(logDir, 'flow-graph-latest.json');

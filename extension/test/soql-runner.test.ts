@@ -491,6 +491,21 @@ describe('soql-runner — runQuery', () => {
       { Id: '002', Name: 'GraphQL Account 2' }
     ]);
   });
+
+  it('should throw GraphQL errors even when the endpoint returns HTTP 200', async () => {
+    const apiRequestMock = vi.fn().mockResolvedValue({
+      data: null,
+      errors: [
+        { message: "Cannot query field 'Bogus' on type 'Account'" },
+        { message: 'Validation error of type FieldUndefined' }
+      ]
+    });
+    const client = fakeApi({ apiRequest: apiRequestMock });
+
+    await expect(
+      runQuery(client, `query { uiapi { query { Account { edges { node { Bogus } } } } } }`, 'rest')
+    ).rejects.toThrow("Cannot query field 'Bogus' on type 'Account'");
+  });
 });
 
 describe('soql-runner — Saved Queries storage', () => {

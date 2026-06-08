@@ -213,6 +213,66 @@ describe('SalesforceBayeuxClient', () => {
     expect(statusChanges).toContain('Connection lost: Connection expired');
   });
 
+  it('auto-stops the loop when /meta/connect reports successful === false', async () => {
+    let connectCalls = 0;
+    const fetchSpy = vi.fn(async (url, options: any) => {
+      const body = JSON.parse(options.body);
+      const channel = body[0]?.channel;
+
+      if (channel === '/meta/handshake') {
+        return {
+          ok: true,
+          json: async () => [{ channel: '/meta/handshake', clientId: 'client-123', successful: true }],
+        } as Response;
+      }
+      if (channel === '/meta/subscribe') {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              channel: '/meta/subscribe',
+              clientId: 'client-123',
+              subscription: '/event/My_Event__e',
+              successful: true,
+            },
+          ],
+        } as Response;
+      }
+      if (channel === '/meta/connect') {
+        connectCalls++;
+        return {
+          ok: true,
+          json: async () => [{ channel: '/meta/connect', successful: false, error: 'Invalid client id' }],
+        } as Response;
+      }
+      if (channel === '/meta/disconnect') {
+        return { ok: true, json: async () => [{ channel: '/meta/disconnect', successful: true }] } as Response;
+      }
+      return { ok: false } as Response;
+    });
+
+    const client = new SalesforceBayeuxClient(
+      'https://test.salesforce.com',
+      'session-id',
+      'v62.0',
+      fetchSpy as any,
+    );
+
+    const statusChanges: string[] = [];
+    client.onStatus((status) => {
+      statusChanges.push(status);
+    });
+
+    await client.start('/event/My_Event__e', -1);
+    await new Promise((r) => setTimeout(r, 20));
+
+    // The loop must not spam connect calls: a single failing /meta/connect
+    // stops the client rather than looping forever.
+    expect(connectCalls).toBe(1);
+    expect(statusChanges).toContain('Connection lost: Invalid client id');
+    expect(statusChanges).toContain('Disconnected');
+  });
+
   it('retries connect on HTTP failure and increments attempts with backoff', async () => {
     vi.useFakeTimers();
 
@@ -375,6 +435,26 @@ describe('Event Streaming Monitor UI Feature', () => {
     expect(bodyText).toContain('HourlyPublishedPlatformEvents: Remaining 42000 out of 50000');
     // DailyApiRequests should be filtered out because it's not a PlatformEvent / Streaming limit.
     expect(bodyText).not.toContain('DailyApiRequests');
+  });
+
+  it('does not subscribe when no channel is selected and no custom path is provided', async () => {
+    const startSpy = vi.spyOn(SalesforceBayeuxClient.prototype, 'start').mockResolvedValue();
+
+    // fakeApi returns empty records, so the channel dropdown falls back to the
+    // placeholder option whose name is '' (empty), and no custom path is typed.
+    const api = fakeApi();
+
+    const feature = createEventMonitorFeature({ api });
+    await feature.onActivate?.();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const subscribeBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Subscribe');
+    expect(subscribeBtn).not.toBeUndefined();
+    subscribeBtn?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('Please specify or select a streaming channel first.');
   });
 
   it('subscribes to events, updates UI list, allows filter, copy, clear, and unsubscribe', async () => {

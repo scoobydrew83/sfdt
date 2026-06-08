@@ -1,3 +1,4 @@
+import { asArray } from '../lib/collections.js';
 import { CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import {
@@ -80,7 +81,9 @@ export function csvParse(csv: string, separator: string): string[][] {
       } else {
         offset++;
       }
-      table.push(row);
+      if (row.length !== 1 || row[0] !== '') {
+        table.push(row);
+      }
       row = [];
     } else if (csv[offset] === separator) {
       offset++;
@@ -96,11 +99,6 @@ export function detectSeparator(text: string): string {
   return '\t';
 }
 
-function asArray<T>(x: T | T[] | undefined | null): T[] {
-  if (!x) return [];
-  if (Array.isArray(x)) return x;
-  return [x];
-}
 
 interface ImportRow {
   index: number;
@@ -613,9 +611,19 @@ export function createDataImportFeature(options: {
         importBtn.disabled = true;
         return;
       }
+      // Delete/undelete require an Id column to be mapped
+      if (selectedOperation === 'delete' || selectedOperation === 'undelete') {
+        const hasId = columnMappings.some(m => m.toLowerCase() === 'id');
+        if (!hasId) {
+          importBtn.disabled = true;
+          return;
+        }
+        importBtn.disabled = false;
+        return;
+      }
       // Check if at least one column is mapped
       const hasMapped = columnMappings.some(m => m !== '');
-      if (!hasMapped && selectedOperation !== 'delete' && selectedOperation !== 'undelete') {
+      if (!hasMapped) {
         importBtn.disabled = true;
         return;
       }
@@ -800,7 +808,7 @@ export function createDataImportFeature(options: {
       const isDelete = selectedOperation === 'delete' || selectedOperation === 'undelete';
       let idColIdx = -1;
       if (isDelete || selectedOperation === 'update' || selectedOperation === 'upsert') {
-        idColIdx = headers.findIndex(h => h.toLowerCase() === 'id' || h.toLowerCase() === '__id');
+        idColIdx = columnMappings.findIndex(m => m.toLowerCase() === 'id');
       }
 
       const importArgs: any = {};

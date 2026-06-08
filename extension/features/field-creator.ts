@@ -833,12 +833,15 @@ export function createFieldCreatorFeature(options: {
       if (!field.profiles || !Array.isArray(field.profiles)) {
         return;
       }
+      // Strip a trailing __c the user may have manually typed so the field
+      // reference matches the deployed Name__c rather than Name__c__c.
+      const fieldApiName = field.name.replace(/__c$/i, '');
       const permissionPromises = field.profiles.map(profile => {
         const permissionSetId = permissionSetMap[profile.name] || profile.name;
         const fieldPermissionBody = {
           ParentId: permissionSetId,
           SobjectType: objectName,
-          Field: `${objectName}.${field.name}__c`,
+          Field: `${objectName}.${fieldApiName}__c`,
           PermissionsEdit: profile.access === 'edit',
           PermissionsRead: profile.access === 'edit' || profile.access === 'read'
         };
@@ -851,8 +854,11 @@ export function createFieldCreatorFeature(options: {
     }
 
     async function deploySingleField(field: CustomFieldDefinition, objectName: string) {
+      // Strip a trailing __c the user may have manually typed so we don't
+      // produce Name__c__c when re-appending the custom-field suffix.
+      const fieldApiName = field.name.replace(/__c$/i, '');
       const newField: any = {
-        FullName: `${objectName}.${field.name}__c`,
+        FullName: `${objectName}.${fieldApiName}__c`,
         Metadata: {
           label: field.label,
           type: mapFieldType(field.type),

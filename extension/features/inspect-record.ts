@@ -67,10 +67,15 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
   const api = options.api ?? getSalesforceApi();
 
   let overlay: HTMLDivElement | null = null;
+  let escHandler: ((e: KeyboardEvent) => void) | null = null;
   let globalDescribeCached: GlobalDescribe | null = null;
   const sobjectDescribesCached = new Map<string, SObjectDescribe>();
 
   function close(): void {
+    if (escHandler) {
+      doc.removeEventListener('keydown', escHandler);
+      escHandler = null;
+    }
     overlay?.remove();
     overlay = null;
   }
@@ -483,12 +488,12 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       void loadRecord();
     }
 
-    doc.addEventListener('keydown', function escHandler(e) {
+    escHandler = (e) => {
       if (e.key === 'Escape' && overlay) {
         close();
-        doc.removeEventListener('keydown', escHandler);
       }
-    });
+    };
+    doc.addEventListener('keydown', escHandler);
   }
 
   return {

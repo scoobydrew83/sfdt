@@ -143,7 +143,7 @@ export function registerInitCommand(program) {
             default: true,
           },
           {
-            type: 'select',
+            type: 'list',
             name: 'aiProvider',
             message: 'AI provider:',
             choices: [

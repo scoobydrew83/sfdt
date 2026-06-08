@@ -30,15 +30,19 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
     setValidationJobId(jobId);
     if (manifest?.relPath) {
       const key = `sfdt_validation_${manifest.relPath}`;
-      if (jobId) {
-        const value = {
-          validationJobId: jobId,
-          targetOrg,
-          timestamp: Date.now()
-        };
-        localStorage.setItem(key, JSON.stringify(value));
-      } else {
-        localStorage.removeItem(key);
+      try {
+        if (jobId) {
+          const value = {
+            validationJobId: jobId,
+            targetOrg,
+            timestamp: Date.now()
+          };
+          localStorage.setItem(key, JSON.stringify(value));
+        } else {
+          localStorage.removeItem(key);
+        }
+      } catch (e) {
+        console.error('Failed to persist validation to localStorage', e);
       }
     }
   };
@@ -414,7 +418,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
 
           <StreamRunner
             key={streamKey}
-            autoStart={true}
+            autoStart={isRunning}
             label={`${deploymentMode === 'validate' ? 'Validating' : 'Deploying'} to ${targetOrg}`}
             startLabel="Deploy"
             commandHint={`sfdt deploy${deploymentMode === 'validate' ? ' --dry-run' : validationJobId ? ` --quick (job ${validationJobId})` : ''}`}

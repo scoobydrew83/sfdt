@@ -140,6 +140,8 @@ export class SalesforceBayeuxClient {
           }
           if (msg.channel === '/meta/connect' && msg.successful === false) {
             this.logStatus(`Connection lost: ${msg.error || 'Unknown error'}`, true);
+            void this.stop();
+            return;
           }
         }
       } catch (err: any) {
@@ -553,7 +555,7 @@ export function createEventMonitorFeature(options: {
       let path = '';
       if (customChannelPath) {
         path = customChannelPath;
-      } else {
+      } else if (selectedChannelName) {
         const prefix = selectedChannelType === 'changeEvent' ? '/data/' : '/event/';
         path = `${prefix}${selectedChannelName}`;
       }

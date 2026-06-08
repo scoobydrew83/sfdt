@@ -90,8 +90,13 @@ export function createSoapExploreFeature(options: {
 
   let overlay: HTMLDivElement | null = null;
   let isWorking = false;
+  let docClickHandler: ((e: MouseEvent) => void) | null = null;
 
   function close(): void {
+    if (docClickHandler) {
+      doc.removeEventListener('click', docClickHandler);
+      docClickHandler = null;
+    }
     overlay?.remove();
     overlay = null;
     isWorking = false;
@@ -266,11 +271,12 @@ export function createSoapExploreFeature(options: {
         await renderHistoryMenu();
         historyMenu.style.display = 'block';
       });
-      doc.addEventListener('click', (e) => {
+      docClickHandler = (e) => {
         if (historyMenu && !histWrap.contains(e.target as Node)) {
           historyMenu.style.display = 'none';
         }
-      });
+      };
+      doc.addEventListener('click', docClickHandler);
       const clearBtn = doc.createElement('button');
       clearBtn.textContent = 'Clear history';
       clearBtn.style.cssText = 'padding: 6px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';

@@ -119,6 +119,18 @@ describe('SfdtMcpServer', () => {
       expect(result.content[0].text).toContain('driftStatus');
     });
 
+    it('executes sfdt_validate as a dry-run deploy (passes --dry-run)', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'validated', stderr: '' });
+
+      const result = await callTool('sfdt_validate', { targetOrg: 'prod' });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['deploy', '--dry-run']),
+        expect.anything()
+      );
+      expect(result.content[0].text).toContain('validated');
+    });
+
     it('executes sfdt_compare tool and returns latest log when successful', async () => {
       fs.pathExists.mockResolvedValueOnce(true);
       fs.readJson.mockResolvedValueOnce({ compare: 'diff' });

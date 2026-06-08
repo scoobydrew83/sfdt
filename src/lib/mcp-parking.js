@@ -14,6 +14,8 @@ const DEFAULT_TTL_SECONDS = 24 * 60 * 60; // 24 hours
  * @returns {Promise<any>}
  */
 export async function parkIfNeeded(payload, config) {
+  // JSON.stringify(undefined) returns undefined, which would throw in Buffer.byteLength below.
+  if (payload === undefined) return undefined;
   const mcpConfig = config.mcp ?? {};
   const parkingConfig = mcpConfig.parking ?? {};
   

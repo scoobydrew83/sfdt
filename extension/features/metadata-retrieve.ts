@@ -1,3 +1,4 @@
+import { asArray } from '../lib/collections.js';
 import { CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import {
@@ -31,11 +32,6 @@ interface FileProperty {
   isFolder?: boolean;
 }
 
-function asArray<T>(x: T | T[] | undefined | null): T[] {
-  if (!x) return [];
-  if (Array.isArray(x)) return x;
-  return [x];
-}
 
 export function createMetadataRetrieveFeature(options: {
   doc?: Document;
@@ -86,6 +82,7 @@ export function createMetadataRetrieveFeature(options: {
     renderLogs();
   }
 
+  let xmlTextareaEl: HTMLTextAreaElement | null = null;
   let logsContainer: HTMLDivElement | null = null;
   function renderLogs(): void {
     if (!logsContainer) return;
@@ -272,8 +269,7 @@ export function createMetadataRetrieveFeature(options: {
     xml += '</Package>';
 
     packageXml = xml;
-    const xmlTextarea = doc.getElementById('sfut-meta-xml-textarea') as HTMLTextAreaElement;
-    if (xmlTextarea) xmlTextarea.value = packageXml;
+    if (xmlTextareaEl) xmlTextareaEl.value = packageXml;
   }
 
   function loadFromPackageXml(xmlStr: string): void {
@@ -320,8 +316,7 @@ export function createMetadataRetrieveFeature(options: {
       }
 
       packageXml = xmlStr;
-      const xmlTextarea = doc.getElementById('sfut-meta-xml-textarea') as HTMLTextAreaElement;
-      if (xmlTextarea) xmlTextarea.value = packageXml;
+      if (xmlTextareaEl) xmlTextareaEl.value = packageXml;
       renderTree();
       addLog('success', 'package.xml imported successfully and tree updated.');
     } catch (err: any) {
@@ -366,12 +361,18 @@ export function createMetadataRetrieveFeature(options: {
       const jobId = result.id;
       addLog('working', `Retrieve job submitted. Job ID: ${jobId}`);
 
-      // Polling loop
+      // Polling loop (capped to avoid hanging forever if the job stalls)
+      const pollDelayMs = 2000;
+      const maxPollMs = 5 * 60 * 1000; // ~5 minutes total wait
+      const maxChecks = Math.ceil(maxPollMs / pollDelayMs);
       let done = false;
       let checkCount = 0;
       while (!done) {
+        if (checkCount >= maxChecks) {
+          throw new Error(`Retrieve timed out after ${Math.round(maxPollMs / 1000)}s waiting for job ${jobId} to complete.`);
+        }
         checkCount++;
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, pollDelayMs));
         addLog('working', `Checking retrieve status (attempt ${checkCount})...`);
         const statusRes = await api.apiSoap<any>('Metadata', 'checkRetrieveStatus', { id: jobId });
         if (statusRes.done === 'true' || statusRes.done === true) {
@@ -450,11 +451,18 @@ export function createMetadataRetrieveFeature(options: {
       const jobId = result.id;
       addLog('working', `Deploy job submitted. Job ID: ${jobId}`);
 
+      // Polling loop (capped to avoid hanging forever if the job stalls)
+      const pollDelayMs = 2000;
+      const maxPollMs = 5 * 60 * 1000; // ~5 minutes total wait
+      const maxChecks = Math.ceil(maxPollMs / pollDelayMs);
       let done = false;
       let checkCount = 0;
       while (!done) {
+        if (checkCount >= maxChecks) {
+          throw new Error(`Deploy timed out after ${Math.round(maxPollMs / 1000)}s waiting for job ${jobId} to complete.`);
+        }
         checkCount++;
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, pollDelayMs));
         addLog('working', `Checking deploy status (attempt ${checkCount})...`);
         const statusRes = await api.apiSoap<any>('Metadata', 'checkDeployStatus', {
           id: jobId,
@@ -706,6 +714,7 @@ export function createMetadataRetrieveFeature(options: {
     xmlTextarea.readOnly = true;
     xmlTextarea.value = packageXml;
     xmlTextarea.style.cssText = 'flex: 1; padding: 8px; border: 1px solid #d8dde6; border-radius: 4px; font-family: monospace; font-size: 11px; background: #fafaf9; resize: none; outline: none;';
+    xmlTextareaEl = xmlTextarea;
     xmlDiv.appendChild(xmlTextarea);
 
     const rActions = doc.createElement('div');

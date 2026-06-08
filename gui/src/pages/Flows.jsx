@@ -371,7 +371,7 @@ export default function FlowsPage() {
                                 textAlign: 'left',
                                 padding: '10px 12px',
                                 background: isSelected ? 'var(--brand-500)' : 'transparent',
-                                color: isSelected ? '#white' : 'var(--fg-default)',
+                                color: isSelected ? 'white' : 'var(--fg-default)',
                                 border: 'none',
                                 cursor: 'pointer',
                                 borderBottom: '1px solid var(--border-subtle)',
