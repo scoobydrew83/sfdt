@@ -211,6 +211,9 @@ export function createGuiApp(config, version, port = 7654) {
     'mcp.salesforce.args',
     'defaultOrg',
     'deployment.preflight',
+    // `plugins` entries are dynamically import()ed at CLI startup, so allowing
+    // the API to set them would be an arbitrary-code-execution path.
+    'plugins',
   ];
   // Path keys must resolve within projectRoot to prevent logDir/manifestDir redirection attacks.
   const PATH_KEYS_WITHIN_ROOT = new Set([
