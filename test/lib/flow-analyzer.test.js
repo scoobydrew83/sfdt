@@ -229,6 +229,32 @@ describe('Flow Analyzer', () => {
       expect(graph.mermaid).toContain('Flow_Parent --> Flow_Child');
     });
 
+    it('escapes backslashes and quotes in node labels for Mermaid', async () => {
+      execa.mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          result: {
+            records: [{ Id: 'def-1', DeveloperName: 'Flow_Risky', ActiveVersionId: 'ver-1' }],
+          },
+        }),
+      });
+      execa.mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          result: {
+            records: [{
+              Id: 'ver-1',
+              MasterLabel: 'A\\B"C',
+              Metadata: { subflows: [] },
+            }],
+          },
+        }),
+      });
+
+      const graph = await runFlowGraph(org);
+
+      // Backslash escaped first (\\), then quote (\"): A\\B\"C
+      expect(graph.mermaid).toContain('Flow_Risky["A\\\\B\\"C"]');
+    });
+
     it('detects circular dependencies and appends red styling to Mermaid flowchart', async () => {
       execa.mockResolvedValueOnce({
         stdout: JSON.stringify({

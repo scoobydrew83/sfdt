@@ -73,6 +73,15 @@ describe('Audit Logger', () => {
       expect(output[1]).toBe('[REDACTED_ACCESS_TOKEN]');
       expect(output[2].password).toBe('[REDACTED]');
     });
+
+    it('drops prototype-polluting keys without polluting Object.prototype', () => {
+      const payload = JSON.parse('{"__proto__": {"polluted": true}, "safeKey": "ok"}');
+      const output = redactSensitiveData(payload);
+
+      expect(output.safeKey).toBe('ok');
+      expect(Object.prototype.hasOwnProperty.call(output, '__proto__')).toBe(false);
+      expect(({}).polluted).toBeUndefined();
+    });
   });
 
   describe('logAuditEvent', () => {

@@ -180,7 +180,9 @@ export async function runFlowGraph(orgAlias) {
   const nodesMap = {};
   
   for (const [id, node] of graph.nodes.entries()) {
-    const cleanLabel = (node.label ?? id).replace(/"/g, '\\"');
+    // Escape backslashes before quotes so a label like `a\` can't break the
+    // Mermaid `["..."]` string (CodeQL: incomplete string escaping).
+    const cleanLabel = (node.label ?? id).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     mermaidLines.push(`  ${id}["${cleanLabel}"]`);
     nodesMap[id] = {
       id: node.id,

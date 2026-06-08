@@ -404,7 +404,11 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           editedRecordData[field.name] = val;
         }
 
-        headerTitle.innerHTML = `🔍 Inspect Record: <span style="color:#0070d2; font-family:ui-monospace, monospace; margin-left: 6px;">${sobject} · ${recordId}</span>`;
+        headerTitle.textContent = '🔍 Inspect Record: ';
+        const idSpan = doc.createElement('span');
+        idSpan.style.cssText = 'color:#0070d2; font-family:ui-monospace, monospace; margin-left: 6px;';
+        idSpan.textContent = `${sobject} · ${recordId}`;
+        headerTitle.appendChild(idSpan);
         
         filterRow.style.display = 'flex';
         renderFields();

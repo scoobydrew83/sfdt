@@ -59,6 +59,8 @@ export function redactSensitiveData(value) {
   if (typeof value === 'object') {
     const redactedObj = {};
     for (const key of Object.keys(value)) {
+      // Skip prototype-polluting keys before writing to redactedObj.
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
       const lowerKey = key.toLowerCase().replace(/[^a-z]/g, '');
       if (SENSITIVE_KEYS.includes(lowerKey)) {
         redactedObj[key] = '[REDACTED]';
