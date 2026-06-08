@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-08
+
+Promotes a backlog of work that had accumulated on `main` since 0.10.1 but was never published — three new commands, Flow analysis, and an audit trail — and repairs two regressions that shipped alongside the inquirer 14 upgrade and the gui-server refactor in 0.10.0.
+
+### Added
+
+- **`sfdt mcp` command** — manage the built-in Model Context Protocol server so agents can drive sfdt as a tool:
+  - `sfdt mcp start` — start the MCP server in stdio mode.
+  - `sfdt mcp cleanup` — purge expired "parked" results from the cache directory.
+- **`sfdt plugin` command** — manage CLI plugins:
+  - `sfdt plugin create [name]` — scaffold a new sfdt CLI plugin project (`--description`, `--author`). Complements the existing auto-discovery of `sfdt-plugin-*` packages and `.sfdt/plugins/*.js`.
+- **`sfdt skills` command** — manage agent skills:
+  - `sfdt skills export [--json]` — export local agent skills to IDE/agent-specific configurations.
+- **Flow analysis** — a new Flow analyzer library powers Flow health/quality analysis, surfaced in the GUI as a **Flow Intelligence** page.
+- **Local audit trail** — privileged/local actions are now recorded to `logs/audit.json`, with OAuth session tokens and passwords automatically redacted.
+
+### Fixed
+
+- **`sfdt init` and `sfdt pull` no longer crash at their interactive prompts.** inquirer 14 (shipped in 0.10.0) removed the legacy `list` prompt type, so `sfdt init` aborted at the "AI provider" step and `sfdt pull` aborted at its action picker with `Prompt type "list" is not registered`. Both prompts now use inquirer 14's `select` type. This also unblocks first-time project setup — a fresh `.sfdt/config.json` could not be created while `init` was crashing.
+- **The `sfdt ui` dashboard loads again.** After the gui-server was split into `gui-server/index.js`, `startGuiServer()` returned the HTTP server without its launch token, so the browser opened with `?token=undefined`, every `/api/*` request returned `401 Unauthorized`, and every page showed *"Failed to load dashboard data: 401 Unauthorized"*. The per-launch token is now propagated onto the running server, restoring authenticated access to the dashboard.
+
+### Security
+
+- **The `plugins` config key can no longer be written through the GUI server's config API** — closes a path where a writable config value could be used to load arbitrary local JavaScript at startup.
+- **CodeQL hardening in the audit logger** — cleared a remote-property-injection finding by constructing redacted objects from a fixed key set rather than copying arbitrary input keys.
+- **Additional CodeQL findings resolved** carried over from the release-branch review, including incomplete URL sanitization in test fixtures and several critical/high/medium items flagged in PR review.
+
 ## [0.10.0] - 2026-06-02
 
 Adds a Flow Core panel to the `sfdt ui` dashboard, surfaces `@sfdt/flow-core` package details in the GUI, and rolls in a batch of dependency hygiene — including removing the extension's unused React dependencies and forcing patched transitive packages through the extension toolchain.
