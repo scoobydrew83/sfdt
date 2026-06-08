@@ -3050,6 +3050,7 @@ export async function startGuiServer(port, config, version) {
   return new Promise((resolve, reject) => {
     const server = app.listen(port, '127.0.0.1', () => {
       server.cleanup = app.cleanup;
+      server.launchToken = app.launchToken;
       resolve(server);
     });
     server.once('error', reject);
