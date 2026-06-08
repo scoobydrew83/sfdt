@@ -5,6 +5,7 @@ export const CONTEXTS = {
   COMPARE_FLOWS: 'compare_flows',
   FLOW_TRIGGER_EXPLORER: 'flow_trigger_explorer',
   SETUP_OTHER: 'setup_other',
+  RECORD_PAGE: 'record_page',
   NONE: 'none',
 } as const;
 
@@ -49,6 +50,42 @@ function isSetup(url: string): boolean {
   return url.includes('lightning/setup/');
 }
 
+export function extractRecordContext(url: string): { recordId: string; sobjectName?: string } | null {
+  try {
+    const urlObj = new URL(url);
+    const path = urlObj.pathname;
+
+    const lightningPattern = /\/lightning\/r\/([a-zA-Z0-9_]+)\/([a-zA-Z0-9]{15,18})\/view/i;
+    const match1 = lightningPattern.exec(url);
+    if (match1) {
+      return { sobjectName: match1[1], recordId: match1[2]! };
+    }
+
+    const lightningPatternNoSobject = /\/lightning\/r\/([a-zA-Z0-9]{15,18})\/view/i;
+    const match2 = lightningPatternNoSobject.exec(url);
+    if (match2) {
+      return { recordId: match2[1]! };
+    }
+
+    const queryParamPattern = /[?&]id=([a-zA-Z0-9]{15,18})/i;
+    const match3 = queryParamPattern.exec(urlObj.search || url);
+    if (match3) {
+      return { recordId: match3[1]! };
+    }
+
+    if (!path.startsWith('/lightning/') && !path.startsWith('/apex/') && !path.startsWith('/services/') && !path.startsWith('/setup/')) {
+      const classicPattern = /^\/([a-zA-Z0-9]{15,18})(?:\/|$)/;
+      const match4 = classicPattern.exec(path);
+      if (match4 && !match4[1]?.startsWith('000')) {
+        return { recordId: match4[1]! };
+      }
+    }
+  } catch {
+    // Ignore URL parse errors
+  }
+  return null;
+}
+
 // Order matters: Compare Flows shares its base URL with Flow Builder, so
 // the compare check has to win when both could match.
 export function detectContext(
@@ -63,6 +100,7 @@ export function detectContext(
   if (isFlowDetails(url, doc)) return CONTEXTS.FLOW_DETAILS;
   if (isSetupFlows(url)) return CONTEXTS.SETUP_FLOWS;
   if (isSetup(url)) return CONTEXTS.SETUP_OTHER;
+  if (extractRecordContext(url)) return CONTEXTS.RECORD_PAGE;
   return CONTEXTS.NONE;
 }
 
@@ -87,6 +125,7 @@ const EMPTY_MAP: Readonly<Record<Context, readonly string[]>> = {
   [CONTEXTS.COMPARE_FLOWS]: [],
   [CONTEXTS.FLOW_TRIGGER_EXPLORER]: [],
   [CONTEXTS.SETUP_OTHER]: [],
+  [CONTEXTS.RECORD_PAGE]: [],
   [CONTEXTS.NONE]: [],
 };
 
@@ -108,6 +147,7 @@ export function buildContextToFeatures(
     [CONTEXTS.COMPARE_FLOWS]: [],
     [CONTEXTS.FLOW_TRIGGER_EXPLORER]: [],
     [CONTEXTS.SETUP_OTHER]: [],
+    [CONTEXTS.RECORD_PAGE]: [],
     [CONTEXTS.NONE]: [],
   };
   for (const m of manifests) {

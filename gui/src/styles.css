@@ -10,6 +10,7 @@
    TOKENS
    ========================================================== */
 :root {
+  color-scheme: dark;
   /* Brand (Indigo) */
   --brand-50:  #eef1ff;
   --brand-100: #e0e5ff;
@@ -152,6 +153,7 @@
 
 /* Light mode opt-in for content area */
 .content-light {
+  color-scheme: light;
   --bg-app:     oklch(98% 0.004 250);
   --bg-surface: oklch(96% 0.006 250);
   --bg-subtle:  oklch(93% 0.008 250);
@@ -2059,3 +2061,8 @@ select.input { cursor: pointer; }
   background: var(--brand-400);
 }
 .btn-link:hover { color: var(--brand-500) !important; }
+
+select option {
+  background: var(--bg-surface);
+  color: var(--fg-default);
+}

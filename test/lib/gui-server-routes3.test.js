@@ -151,6 +151,37 @@ describe('POST /api/pull — invalid org alias', () => {
   });
 });
 
+describe('POST /api/flow/scan — invalid org alias', () => {
+  let app;
+  let csrf;
+
+  beforeAll(async () => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+    csrf = (await request(app).get('/api/csrf-token')).body.token;
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns 400 when org alias contains invalid characters', async () => {
+    const res = await request(app)
+      .post('/api/flow/scan')
+      .set('X-SFDT-CSRF', csrf)
+      .send({ org: '-target=evil' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid org alias/);
+  });
+
+  it('returns 400 when org is missing', async () => {
+    const res = await request(app)
+      .post('/api/flow/scan')
+      .set('X-SFDT-CSRF', csrf)
+      .send({});
+    expect(res.status).toBe(400);
+  });
+});
+
 // ─── POST /api/init (already initialized) ────────────────────────────────────
 
 describe('POST /api/init — already initialized', () => {

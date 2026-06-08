@@ -219,6 +219,7 @@ describe('extension/lib/context-detector', () => {
         'trigger-conflicts',
         'subflow-graph',
       ],
+      [CONTEXTS.RECORD_PAGE]: [],
       [CONTEXTS.NONE]: [],
     };
 

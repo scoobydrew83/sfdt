@@ -44,8 +44,9 @@ export function registerUiCommand(program) {
         return;
       }
 
-      const url = `http://localhost:${port}`;
-      print.success(`Dashboard running at ${url}`);
+      const url = `http://localhost:${port}?token=${server.launchToken}`;
+      const printUrl = `http://localhost:${port}`;
+      print.success(`Dashboard running at ${printUrl}`);
       print.info('Press Ctrl+C to stop.');
 
       // Open browser unless suppressed
@@ -55,7 +56,7 @@ export function registerUiCommand(program) {
           await open(url);
         } catch {
           // `open` is optional — non-fatal if unavailable
-          print.info(`Open ${url} in your browser.`);
+          print.info(`Open ${printUrl} in your browser.`);
         }
       }
 

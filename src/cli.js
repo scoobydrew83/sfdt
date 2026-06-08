@@ -30,6 +30,9 @@ import { registerFlowCommand } from './commands/flow.js';
 import { registerExtensionCommand } from './commands/extension.js';
 import { registerFeatureFlagsCommand } from './commands/feature-flags.js';
 import { registerDoctorCommand } from './commands/doctor.js';
+import { registerMcpCommand } from './commands/mcp.js';
+import { registerPluginCommand } from './commands/plugin.js';
+import { registerSkillsCommand } from './commands/skills.js';
 import { formatSplash } from './lib/output.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -85,6 +88,9 @@ export function createCli() {
   registerExtensionCommand(program);
   registerFeatureFlagsCommand(program);
   registerDoctorCommand(program);
+  registerMcpCommand(program);
+  registerPluginCommand(program);
+  registerSkillsCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program

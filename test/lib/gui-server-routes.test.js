@@ -528,6 +528,22 @@ describe('PATCH /api/config — key injection guards', () => {
     expect(res.status).toBe(403);
   });
 
+  it('blocks plugins (dynamically import()ed → code execution)', async () => {
+    const res = await request(app)
+      .patch('/api/config')
+      .set('X-SFDT-CSRF', csrf)
+      .send({ key: 'plugins', value: ['/tmp/evil.js'] });
+    expect(res.status).toBe(403);
+  });
+
+  it('blocks keys nested under plugins', async () => {
+    const res = await request(app)
+      .patch('/api/config')
+      .set('X-SFDT-CSRF', csrf)
+      .send({ key: 'plugins.0', value: '/tmp/evil.js' });
+    expect(res.status).toBe(403);
+  });
+
   it('rejects missing key', async () => {
     const res = await request(app)
       .patch('/api/config')

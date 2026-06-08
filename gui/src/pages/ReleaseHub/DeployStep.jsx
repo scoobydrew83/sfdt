@@ -26,6 +26,49 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
   // reuse the validation job and skip the test re-run.
   const [validationJobId, setValidationJobId] = useState(null);
 
+  const updateValidationJobId = (jobId) => {
+    setValidationJobId(jobId);
+    if (manifest?.relPath) {
+      const key = `sfdt_validation_${manifest.relPath}`;
+      try {
+        if (jobId) {
+          const value = {
+            validationJobId: jobId,
+            targetOrg,
+            timestamp: Date.now()
+          };
+          localStorage.setItem(key, JSON.stringify(value));
+        } else {
+          localStorage.removeItem(key);
+        }
+      } catch (e) {
+        console.error('Failed to persist validation to localStorage', e);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (manifest?.relPath) {
+      const key = `sfdt_validation_${manifest.relPath}`;
+      try {
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
+            setValidationJobId(parsed.validationJobId);
+            if (parsed.targetOrg) setTargetOrg(parsed.targetOrg);
+          } else {
+            localStorage.removeItem(key);
+          }
+        } else {
+          setValidationJobId(null);
+        }
+      } catch (e) {
+        console.error('Failed to load validation from localStorage', e);
+      }
+    }
+  }, [manifest?.relPath]);
+
   useEffect(() => {
     let cancelled = false;
     api.orgs()
@@ -112,7 +155,12 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
                   className="input"
                   style={{ width: '100%', fontSize: 13, borderColor: orgError ? 'var(--status-conflict-fg)' : undefined }}
                   value={targetOrg}
-                  onChange={(e) => { setTargetOrg(e.target.value); if (e.target.value) setOrgError(false); }}
+                  onChange={(e) => {
+                    const newOrg = e.target.value;
+                    setTargetOrg(newOrg);
+                    if (newOrg) setOrgError(false);
+                    updateValidationJobId(null);
+                  }}
                 >
                   <option value="">Select an org...</option>
                   {orgs.map(o => (
@@ -370,6 +418,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
 
           <StreamRunner
             key={streamKey}
+            autoStart={isRunning}
             label={`${deploymentMode === 'validate' ? 'Validating' : 'Deploying'} to ${targetOrg}`}
             startLabel="Deploy"
             commandHint={`sfdt deploy${deploymentMode === 'validate' ? ' --dry-run' : validationJobId ? ` --quick (job ${validationJobId})` : ''}`}
@@ -396,12 +445,12 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
               // to Rollback — that's the navigation that produced the "black
               // screen" symptom on production validates.
               if (deploymentMode === 'validate') {
-                if (content?.validationJobId) setValidationJobId(content.validationJobId);
+                if (content?.validationJobId) updateValidationJobId(content.validationJobId);
                 return;
               }
               // Real deploy completed — clear any stale job id so the next
               // validate-then-deploy cycle starts fresh.
-              setValidationJobId(null);
+              updateValidationJobId(null);
               onMarkDone();
             }}
           />

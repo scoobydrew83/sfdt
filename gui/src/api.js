@@ -25,7 +25,19 @@ let csrfTokenPromise = null;
 
 async function getCsrfToken() {
   if (!csrfTokenPromise) {
-    csrfTokenPromise = fetch(`${BASE}/csrf-token`)
+    const params = new URLSearchParams(window.location.search);
+    let token = params.get('token');
+    if (token) {
+      sessionStorage.setItem('sfdt_launch_token', token);
+      const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+      window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+    } else {
+      token = sessionStorage.getItem('sfdt_launch_token');
+    }
+
+    csrfTokenPromise = fetch(`${BASE}/csrf-token`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    })
       .then((res) => {
         if (!res.ok) throw httpError(res);
         return res.json();
@@ -51,7 +63,11 @@ async function jsonHeaders() {
 
 /** @returns {Promise<any>} */
 async function fetchJson(path) {
-  const res = await fetch(`${BASE}${path}`);
+  const res = await fetch(`${BASE}${path}`, {
+    headers: {
+      'X-SFDT-CSRF': await getCsrfToken(),
+    },
+  });
   if (!res.ok) throw httpError(res);
   return res.json();
 }
@@ -187,6 +203,13 @@ export const api = {
   getPackages:            () => fetchJson('/packages'),
   /** @returns {Promise<{ files: string[] }>} */
   logsList:               () => fetchJson('/logs/list'),
+  flowScan:               () => fetchJson('/flow/scan'),
+  runFlowScan:            (org) => postJson('/flow/scan', { org }),
+  flowConflicts:          () => fetchJson('/flow/conflicts'),
+  runFlowConflicts:       (org) => postJson('/flow/conflicts', { org }),
+  flowGraph:              () => fetchJson('/flow/graph'),
+  runFlowGraph:           (org) => postJson('/flow/graph', { org }),
+  auditLogs:              () => fetchJson('/audit/logs'),
 };
 
 // ─── SSE helpers ──────────────────────────────────────────────────────────────

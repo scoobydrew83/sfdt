@@ -39,6 +39,7 @@ function createProgram() {
 }
 
 const mockServer = {
+  launchToken: 'test-launch-token',
   close: vi.fn((cb) => cb && cb()),
 };
 
@@ -112,7 +113,7 @@ describe('ui command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'ui']);
 
-    expect(open).toHaveBeenCalledWith('http://localhost:7654');
+    expect(open).toHaveBeenCalledWith('http://localhost:7654?token=test-launch-token');
   });
 
   it('does not open browser when --no-open is passed', async () => {

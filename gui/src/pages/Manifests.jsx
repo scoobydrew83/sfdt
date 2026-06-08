@@ -29,11 +29,16 @@ function fmtDate(iso) {
 
 function AddComponentForm({ existingComponents, onAdd }) {
   const [type, setType]         = useState('ApexClass');
+  const [typeSearch, setTypeSearch] = useState('');
   const [members, setMembers]   = useState([]);   // discovered from source
   const [filter, setFilter]     = useState('');
   const [selected, setSelected] = useState(new Set());
   const [loading, setLoading]   = useState(false);
   const [busy, setBusy]         = useState(false);
+
+  const filteredTypes = typeSearch
+    ? METADATA_TYPES.filter((t) => t.toLowerCase().includes(typeSearch.toLowerCase()))
+    : METADATA_TYPES;
 
   const existingForType = existingComponents
     .filter((c) => c.type === type)
@@ -86,19 +91,33 @@ function AddComponentForm({ existingComponents, onAdd }) {
         Add components
       </div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <input
+          className="input"
+          value={typeSearch}
+          onChange={(e) => {
+            const val = e.target.value;
+            setTypeSearch(val);
+            const matches = METADATA_TYPES.filter(t => t.toLowerCase().includes(val.toLowerCase()));
+            if (matches.length > 0 && !matches.includes(type)) {
+              setType(matches[0]);
+            }
+          }}
+          placeholder="Search type…"
+          style={{ flex: '0 0 auto', width: 120, fontSize: 'var(--fs-xs)' }}
+        />
         <select
           value={type}
           onChange={(e) => setType(e.target.value)}
           className="input"
-          style={{ flex: '0 0 auto', minWidth: 180, fontSize: 'var(--fs-xs)' }}
+          style={{ flex: '0 0 auto', minWidth: 150, fontSize: 'var(--fs-xs)' }}
         >
-          {METADATA_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          {filteredTypes.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
         <input
           className="input"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter…"
+          placeholder="Filter members…"
           style={{ flex: 1, fontSize: 'var(--fs-xs)' }}
         />
       </div>

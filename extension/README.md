@@ -10,7 +10,7 @@ This is one of four workspaces in the [`sfdt` monorepo](../README.md):
 
 ---
 
-## Features (17)
+## Features (23)
 
 Every feature is opt-in (toggle off in the options page), and any feature can be remotely disabled without a Web Store re-review via `sfdt feature-flags disable <id>`.
 
@@ -30,9 +30,15 @@ Every feature is opt-in (toggle off in the options page), and any feature can be
 | `ai-assistant` | Surface AI provider answers about the current Flow (Claude / Gemini / OpenAI via bridge) | Flow Builder |
 | `subflow-graph` | SVG graph of subflow invocation relationships | Setup Flows |
 | `trigger-conflicts` | Detects overlapping record-triggered Flows that would fire on the same change | Setup Flows |
-| `soql-runner` | Run SOQL against the current org (REST or Tooling), with history and CSV export | Setup + Flow Builder + Trigger Explorer |
+| `soql-runner` | Run SOQL against the current org (REST or Tooling), with field/object autocomplete, history, and CSV export | Setup + Flow Builder + Trigger Explorer |
 | `org-limits` | Live view of the org's governor-limit usage (sorted by pressure, colour-banded) | Setup + Flow Builder + Trigger Explorer |
 | `rest-explore` | Fire arbitrary GET/POST/PATCH/PUT/DELETE against `/services/data/...` with response viewer + history | Setup + Flow Builder + Trigger Explorer |
+| `inspect-record` | Inspect a record's complete field set (including empty/system fields) via the REST API | Record page + Setup + Flow Builder |
+| `data-import` | Guided CSV data import into the org | Record page + Setup + Flow Builder |
+| `field-creator` | Bulk-create multiple custom fields at once | Record page + Object Manager + Flow Builder |
+| `metadata-retrieve` | Retrieve and deploy metadata directly from the browser | Record page + Setup + Flow Builder |
+| `soap-explore` | Build and send SOAP API requests with a payload editor + response viewer | Record page + Setup + Flow Builder |
+| `event-monitor` | Subscribe to and monitor platform/streaming events live | Record page + Setup + Flow Builder |
 
 Adding the next feature is a one-file change — see the existing modules in [`extension/features/`](./features/) and the registry in [`extension/lib/feature-registry.ts`](./lib/feature-registry.ts).
 

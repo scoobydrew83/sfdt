@@ -662,7 +662,9 @@ describe('GET /api/compare/stream', () => {
   });
 
   it('returns 403 when csrf query param is missing', async () => {
-    const res = await request(app).get('/api/compare/stream');
+    const res = await request(app)
+      .get('/api/compare/stream')
+      .set('X-SFDT-CSRF', 'invalid-token');
     expect(res.status).toBe(403);
   });
 });

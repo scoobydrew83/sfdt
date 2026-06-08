@@ -28,6 +28,12 @@ import { createSetupTabsFeature } from '../features/setup-tabs.js';
 import { createSoqlRunnerFeature } from '../features/soql-runner.js';
 import { createSubflowGraphFeature } from '../features/subflow-graph.js';
 import { createTriggerConflictsFeature } from '../features/trigger-conflicts.js';
+import { createInspectRecordFeature } from '../features/inspect-record.js';
+import { createDataImportFeature } from '../features/data-import.js';
+import { createFieldCreatorFeature } from '../features/field-creator.js';
+import { createMetadataRetrieveFeature } from '../features/metadata-retrieve.js';
+import { createSoapExploreFeature } from '../features/soap-explore.js';
+import { createEventMonitorFeature } from '../features/event-monitor.js';
 
 const SALESFORCE_HOST_PATTERN =
   /^https:\/\/[^/]+\.(salesforce\.com|salesforce-setup\.com|my\.salesforce\.com|lightning\.force\.com)\//i;
@@ -73,6 +79,12 @@ export default defineContentScript({
     registry.register(createSoqlRunnerFeature());
     registry.register(createOrgLimitsFeature());
     registry.register(createRestExploreFeature());
+    registry.register(createInspectRecordFeature());
+    registry.register(createDataImportFeature());
+    registry.register(createFieldCreatorFeature());
+    registry.register(createMetadataRetrieveFeature());
+    registry.register(createSoapExploreFeature());
+    registry.register(createEventMonitorFeature());
 
     setContextSource(buildContextToFeatures(registry.listManifests()));
 
@@ -129,6 +141,12 @@ export default defineContentScript({
       'soql-runner': { icon: '🗂', label: 'SOQL Query Runner' },
       'org-limits': { icon: '🚦', label: 'Org Limits' },
       'rest-explore': { icon: '🛠', label: 'REST API Explorer' },
+      'inspect-record': { icon: '🔍', label: 'Inspect Record (Show All Data)' },
+      'data-import': { icon: '📥', label: 'Data Import Wizard' },
+      'field-creator': { icon: '🛠', label: 'Bulk Field Creator' },
+      'metadata-retrieve': { icon: '📦', label: 'Metadata Retrieve & Deploy' },
+      'soap-explore': { icon: '💬', label: 'SOAP API Explorer' },
+      'event-monitor': { icon: '📡', label: 'Event Streaming Monitor' },
     };
 
     const menuItemsProvider = (): MenuItem[] => {
