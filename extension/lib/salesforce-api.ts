@@ -7,6 +7,8 @@
 
 import { escapeSoql } from './escape.js';
 import { mySalesforceHostname } from './hostname.js';
+import { XML } from './xml.js';
+
 
 const DEFAULT_API_VERSION = 'v62.0';
 const SEND_MESSAGE_TIMEOUT_MS = 5000;
@@ -133,6 +135,12 @@ export class SalesforceApiClient {
     return this.session;
   }
 
+  async getSessionDetails(): Promise<{ baseUrl: string; sid: string } | null> {
+    const session = await this.getSession();
+    if (!session || !session.candidates.length) return null;
+    return session.candidates[0]!;
+  }
+
   async apiGet<T = unknown>(
     endpoint: string,
     params: Record<string, string> = {},
@@ -242,6 +250,123 @@ export class SalesforceApiClient {
   apiPatch<T = unknown>(endpoint: string, body: unknown): Promise<T | null> {
     return this.apiRequest<T>('PATCH', endpoint, body);
   }
+
+  async apiSoap<T = unknown>(
+    apiName: 'Partner' | 'Metadata' | 'Tooling' | 'Enterprise' | 'Apex',
+    method: string,
+    args: any,
+    options: { retryOn401?: boolean; headers?: Record<string, any> } = {},
+  ): Promise<T> {
+    const retryOn401 = options.retryOn401 ?? true;
+    const session = await this.getSession();
+    if (!session) throw new Error('No Salesforce session available');
+
+    const wsdls = {
+      Enterprise: {
+        servicePortAddress: "/services/Soap/c/" + this.apiVersion,
+        targetNamespaces: ' xmlns="urn:enterprise.soap.sforce.com" xmlns:sf="urn:sobject.enterprise.soap.sforce.com"',
+        apiName: "Enterprise"
+      },
+      Partner: {
+        servicePortAddress: "/services/Soap/u/" + this.apiVersion,
+        targetNamespaces: ' xmlns="urn:partner.soap.sforce.com" xmlns:sf="urn:sobject.partner.soap.sforce.com"',
+        apiName: "Partner"
+      },
+      Apex: {
+        servicePortAddress: "/services/Soap/s/" + this.apiVersion,
+        targetNamespaces: ' xmlns="http://soap.sforce.com/2006/08/apex"',
+        apiName: "Apex"
+      },
+      Metadata: {
+        servicePortAddress: "/services/Soap/m/" + this.apiVersion,
+        targetNamespaces: ' xmlns="http://soap.sforce.com/2006/04/metadata"',
+        apiName: "Metadata"
+      },
+      Tooling: {
+        servicePortAddress: "/services/Soap/T/" + this.apiVersion,
+        targetNamespaces: ' xmlns="urn:tooling.soap.sforce.com" xmlns:sf="urn:sobject.tooling.soap.sforce.com" xmlns:mns="urn:metadata.tooling.soap.sforce.com"',
+        apiName: "Tooling"
+      }
+    };
+
+    const wsdl = wsdls[apiName];
+    const errors: Array<{ baseUrl: string; status: number; errorText: string }> = [];
+
+    for (const { baseUrl, sid } of session.candidates) {
+      try {
+        const sessionHeaderKey = wsdl.apiName === "Metadata" ? "met:SessionHeader" : "SessionHeader";
+        const sessionIdKey = wsdl.apiName === "Metadata" ? "met:sessionId" : "sessionId";
+        const requestMethod = wsdl.apiName === "Metadata" ? `met:${method}` : method;
+        const requestAttributes = [
+          'xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"',
+          'xmlns:xsd="http://www.w3.org/2001/XMLSchema"',
+          'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
+        ];
+        if (wsdl.apiName === "Metadata") {
+          requestAttributes.push('xmlns:met="http://soap.sforce.com/2006/04/metadata"');
+        }
+
+        const requestBody = XML.stringify({
+          name: "soapenv:Envelope",
+          attributes: ` ${requestAttributes.join(" ")}${wsdl.targetNamespaces}`,
+          value: {
+            "soapenv:Header": Object.assign({}, { [sessionHeaderKey]: { [sessionIdKey]: sid } }, options.headers),
+            "soapenv:Body": { [requestMethod]: args }
+          }
+        });
+
+        const res = await this.fetchImpl(`${baseUrl}${wsdl.servicePortAddress}?cache=${Math.random()}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'text/xml',
+            'SOAPAction': '""',
+            'CallOptions': 'client:SalesforceInspectorReloaded'
+          },
+          body: requestBody
+        });
+
+        if (res.ok) {
+          const text = await res.text();
+          const doc = new DOMParser().parseFromString(text, "text/xml");
+          const responseBody = doc.querySelector(method + "Response");
+          if (!responseBody) {
+            throw new Error(`Response body missing ${method}Response`);
+          }
+          const parsed = XML.parse(responseBody).result;
+          return parsed as T;
+        }
+
+        const errorText = await res.text().catch(() => '');
+        let faultString = '';
+        try {
+          const doc = new DOMParser().parseFromString(errorText, "text/xml");
+          faultString = doc.querySelector("faultstring")?.textContent ?? '';
+        } catch {}
+        errors.push({ baseUrl, status: res.status, errorText: faultString || errorText });
+      } catch (err) {
+        errors.push({
+          baseUrl,
+          status: 0,
+          errorText: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const has401 = errors.some((e) => e.status === 401);
+    const hasNon401 = errors.some((e) => e.status >= 400 && e.status !== 401);
+    if (retryOn401 && has401 && !hasNon401) {
+      this.clearSession();
+      return this.apiSoap<T>(apiName, method, args, { retryOn401: false, headers: options.headers });
+    }
+
+    const primary = errors.find((e) => e.status >= 400 && e.status !== 401) ?? errors[0]!;
+    const err = new Error(primary.errorText || `SOAP error ${primary.status}`);
+    err.name = "SalesforceSoapError";
+    (err as any).status = primary.status;
+    (err as any).detail = primary.errorText;
+    throw err;
+  }
+
 
   toolingQuery<T = unknown>(soql: string): Promise<{ records: T[]; size: number; done: boolean }> {
     return this.apiGet(`/services/data/${this.apiVersion}/tooling/query`, { q: soql });

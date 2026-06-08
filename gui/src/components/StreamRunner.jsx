@@ -13,7 +13,7 @@ import { extractErrorLines } from './CommandRunner.jsx';
  *   children     — optional content rendered above the terminal (form inputs, etc.)
  *   commandHint  — short string used in the Ask-AI prompt to identify what ran
  */
-export default function StreamRunner({ label, startLabel = 'Run', streamFn, onComplete = () => {}, onError, children, commandHint }) {
+export default function StreamRunner({ label, startLabel = 'Run', streamFn, onComplete = () => {}, onError, children, commandHint, autoStart = false }) {
   const [status, setStatus]     = useState('idle');
   const [lines, setLines]       = useState([]);
   const [exitCode, setExitCode] = useState(null);
@@ -101,6 +101,13 @@ export default function StreamRunner({ label, startLabel = 'Run', streamFn, onCo
       streamRef.current = null;
     };
   };
+
+  useEffect(() => {
+    if (autoStart) {
+      run();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
 
   return (
     <div className="cmd-runner">

@@ -50,11 +50,17 @@ Test.prototype.end = function patchedEnd(fn) {
     this.set('Origin', DEFAULT_TEST_ORIGIN);
   }
 
-  const method = (this.method || '').toUpperCase();
+  const appFn = typeof this.app === 'function' ? this.app : this.app?._events?.request;
+  const launchToken = appFn?.launchToken;
+
+  if ((this.url || '').includes('/api/csrf-token') && launchToken && !getHeader(this, 'authorization') && !getHeader(this, 'Authorization')) {
+    this.set('Authorization', `Bearer ${launchToken}`);
+  }
+
   const skipCsrf =
-    SAFE_METHODS.has(method) ||
     getHeader(this, 'x-sfdt-csrf') ||
-    (this.url || '').includes('/api/csrf-token');
+    (this.url || '').includes('/api/csrf-token') ||
+    (this.url || '').includes('/api/health');
 
   if (skipCsrf) {
     return originalEnd.call(this, fn);
@@ -69,15 +75,19 @@ Test.prototype.end = function patchedEnd(fn) {
 
   // First mutating request against this app — fetch the token.
   const self = this;
-  request(self.app)
-    .get('/api/csrf-token')
-    .end((err, tokenRes) => {
-      const token = tokenRes?.body?.token;
-      if (!err && token) {
-        if (key) tokenCache.set(key, token);
-        self.set('X-SFDT-CSRF', token);
-      }
-      originalEnd.call(self, fn);
-    });
+
+  const req = request(self.app).get('/api/csrf-token');
+  if (launchToken) {
+    req.set('Authorization', `Bearer ${launchToken}`);
+  }
+
+  req.end((err, tokenRes) => {
+    const token = tokenRes?.body?.token;
+    if (!err && token) {
+      if (key) tokenCache.set(key, token);
+      self.set('X-SFDT-CSRF', token);
+    }
+    originalEnd.call(self, fn);
+  });
   return self;
 };

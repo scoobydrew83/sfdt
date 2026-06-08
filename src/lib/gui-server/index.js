@@ -25,6 +25,7 @@ import { initCache, getDelta, updateCache } from '../pull-cache.js';
 import { parallelRetrieve } from '../parallel-retrieve.js';
 import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken, requireCsrfTokenFromQueryOrHeader } from './security.js';
 import { mountBridgeRoutes } from '../bridge/routes.js';
+import { constantTimeEqual } from '../bridge/token.js';
 import { stripAnsi, tryReadJson, safeReaddir, buildPlaceholderHtml } from './shared.js';
 import {
   parseTestRunLines, parseQualityLines,
@@ -34,6 +35,8 @@ import {
   removeComponentFromXml, addComponentToXml,
   retrieveComponentXml, batchRetrieveTypeMembers, readLocalComponentXml,
 } from './handlers.js';
+import { logAuditEvent, redactSensitiveData } from '../audit-logger.js';
+import { runFlowScan, runFlowConflicts, runFlowGraph } from '../flow-analyzer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -94,7 +97,9 @@ export function createGuiApp(config, version, port = 7654) {
   let updateInProgress = false;
   let sessionOrg = null;
   const csrfToken = createCsrfToken();
+  const launchToken = createCsrfToken();
   const app = express();
+  app.launchToken = launchToken;
 
   // Defense-in-depth response headers. Set globally before any route handler
   // runs so static assets and JSON responses both inherit them. The bind is
@@ -142,13 +147,29 @@ export function createGuiApp(config, version, port = 7654) {
   const originGuard = createOriginGuard(port);
   app.use('/api/', originGuard);
 
+  app.use('/api/', (req, res, next) => {
+    if (req.path === '/health' || req.path === '/csrf-token' || req.path.startsWith('/bridge')) {
+      return next();
+    }
+    if (!requireCsrfTokenFromQueryOrHeader(req, res, csrfToken)) return;
+    next();
+  });
+
   // ── API routes ──────────────────────────────────────────────────────────────
 
   app.get('/api/health', apiLimiter, (_req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
 
-  app.get('/api/csrf-token', csrfLimiter, (_req, res) => {
+  app.get('/api/csrf-token', csrfLimiter, (req, res) => {
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const token = auth.substring(7);
+    if (!constantTimeEqual(token, launchToken)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     res.json({ token: csrfToken });
   });
 
@@ -225,6 +246,7 @@ export function createGuiApp(config, version, port = 7654) {
       const coerced = coerceConfigValue(String(value));
       setNestedValue(raw, key, coerced);
       await fs.writeJson(rawConfigPath, raw, { spaces: 2 });
+      await logAuditEvent('config-update', { key, value: coerced }, { actor: 'GUI Operator', ip: req.ip });
       // Refresh in-memory config so subsequent script runs use updated values
       const fresh = await loadConfig(config._projectRoot);
       Object.assign(config, fresh);
@@ -712,7 +734,7 @@ export function createGuiApp(config, version, port = 7654) {
     if (!requireCsrfToken(req, res, csrfToken)) return;
     const { command, classes, testLevel, targetOrg } = req.body ?? {};
 
-    if (targetOrg !== undefined && !/^[A-Za-z0-9_.\-@]+$/.test(String(targetOrg))) {
+    if (targetOrg !== undefined && !/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(String(targetOrg))) {
       return res.status(400).json({ error: 'Invalid targetOrg' });
     }
     const cmd = COMMANDS[command];
@@ -837,7 +859,12 @@ export function createGuiApp(config, version, port = 7654) {
         });
       } else {
         // Non-structured commands (deploy, rollback) keep raw format
-        const logPayload = { date: new Date().toISOString(), command, exitCode, lines };
+        const logPayload = {
+          date: new Date().toISOString(),
+          command,
+          exitCode,
+          lines: redactSensitiveData(lines)
+        };
         const logFilePath = path.join(projectRoot, cmd.logFile);
         await fs.outputJson(logFilePath, logPayload, { spaces: 2 });
       }
@@ -884,7 +911,7 @@ export function createGuiApp(config, version, port = 7654) {
       return;
     }
 
-    if (!/^[A-Za-z0-9_.\-@]+$/.test(String(rawOrg))) {
+    if (!/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(String(rawOrg))) {
       emit({ type: 'log', line: 'Invalid org alias.' });
       emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed: 0 });
       res.end();
@@ -1107,6 +1134,109 @@ export function createGuiApp(config, version, port = 7654) {
       const data = await readScan(logDir);
       if (!data) return res.status(204).end();
       res.json(data);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Flow Intelligence endpoints ──────────────────────────────────────────
+
+  app.get('/api/flow/scan', apiLimiter, async (_req, res) => {
+    try {
+      const scanFile = path.join(logDir, 'flow-scan-latest.json');
+      if (await fs.pathExists(scanFile)) {
+        const data = await fs.readJson(scanFile);
+        return res.json(data);
+      }
+      res.status(204).end();
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/flow/scan', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { org } = req.body ?? {};
+      if (!org || !org.trim()) return res.status(400).json({ error: 'org is required' });
+      
+      const currentApiVersion = config.sourceApiVersion;
+      const data = await runFlowScan(org.trim(), currentApiVersion);
+      
+      const scanFile = path.join(logDir, 'flow-scan-latest.json');
+      await fs.outputJson(scanFile, data, { spaces: 2 });
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/flow/conflicts', apiLimiter, async (_req, res) => {
+    try {
+      const conflictsFile = path.join(logDir, 'flow-conflicts-latest.json');
+      if (await fs.pathExists(conflictsFile)) {
+        const data = await fs.readJson(conflictsFile);
+        return res.json(data);
+      }
+      res.status(204).end();
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/flow/conflicts', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { org } = req.body ?? {};
+      if (!org || !org.trim()) return res.status(400).json({ error: 'org is required' });
+
+      const data = await runFlowConflicts(org.trim());
+      const conflictsFile = path.join(logDir, 'flow-conflicts-latest.json');
+      await fs.outputJson(conflictsFile, data, { spaces: 2 });
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/flow/graph', apiLimiter, async (_req, res) => {
+    try {
+      const graphFile = path.join(logDir, 'flow-graph-latest.json');
+      if (await fs.pathExists(graphFile)) {
+        const data = await fs.readJson(graphFile);
+        return res.json(data);
+      }
+      res.status(204).end();
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/flow/graph', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { org } = req.body ?? {};
+      if (!org || !org.trim()) return res.status(400).json({ error: 'org is required' });
+
+      const data = await runFlowGraph(org.trim());
+      const graphFile = path.join(logDir, 'flow-graph-latest.json');
+      await fs.outputJson(graphFile, data, { spaces: 2 });
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Governance & Audit Trail ──────────────────────────────────────────────
+
+  app.get('/api/audit/logs', apiLimiter, async (_req, res) => {
+    try {
+      const auditFilePath = path.join(logDir, 'audit.json');
+      if (await fs.pathExists(auditFilePath)) {
+        const data = await fs.readJson(auditFilePath);
+        return res.json({ logs: data });
+      }
+      res.json({ logs: [] });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1585,7 +1715,7 @@ export function createGuiApp(config, version, port = 7654) {
     }
 
     if (org !== undefined && org !== null) {
-      if (typeof org !== 'string' || !/^[A-Za-z0-9_.\-@]+$/.test(org)) {
+      if (typeof org !== 'string' || !/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(org)) {
         return res.status(400).json({ error: 'Invalid org alias' });
       }
     }
@@ -1623,6 +1753,12 @@ export function createGuiApp(config, version, port = 7654) {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
+
+    await logAuditEvent(
+      dryRun ? 'validation-start' : 'deployment-start',
+      { org, manifest, sourceDir, testLevel, dryRun, tagRelease, createPR, notifySlack, validationJobId },
+      { actor: 'GUI Operator', ip: req.ip }
+    );
 
     let child;
     req.on('close', () => { if (child && !child.killed) child.kill(); });
@@ -1721,6 +1857,12 @@ export function createGuiApp(config, version, port = 7654) {
         exitCode,
       });
       await fs.outputJson(historyPath, history.slice(0, 100), { spaces: 2 });
+
+      await logAuditEvent(
+        dryRun ? 'validation-end' : 'deployment-end',
+        { org, manifest, dryRun, exitCode, capturedValidationJobId },
+        { actor: 'GUI Operator', status: exitCode === 0 ? 'success' : 'failure', ip: req.ip }
+      );
 
       if (!res.writableEnded) {
         const resultMsg = { type: 'result', exitCode };
@@ -2637,7 +2779,7 @@ export function createGuiApp(config, version, port = 7654) {
       }
       // Sanitize: org aliases are alphanumeric + hyphens/underscores/dots only
       const safeOrg = String(org).trim();
-      if (!/^[A-Za-z0-9_.\-@]+$/.test(safeOrg)) {
+      if (!/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(safeOrg)) {
         return res.status(400).json({ error: 'Invalid org alias' });
       }
 
@@ -2741,7 +2883,7 @@ export function createGuiApp(config, version, port = 7654) {
 
       // Validate org alias
       const safeOrg = String(org).trim();
-      if (!/^[A-Za-z0-9_.\-@]+$/.test(safeOrg)) {
+      if (!/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(safeOrg)) {
         return res.status(400).json({ error: 'Invalid org alias' });
       }
 

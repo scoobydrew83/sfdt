@@ -10,7 +10,18 @@ import {
 import { _resetSettingsShapesForTests, _clearSettingsCacheForTests } from '../lib/settings.js';
 import type { SalesforceApiClient, QueryEnvelope } from '../lib/salesforce-api.js';
 
-const { columnsFromRecords, formatCell, recordsToCsv, HISTORY_CAP } = _soqlRunnerTestApi();
+const {
+  columnsFromRecords,
+  formatCell,
+  recordsToCsv,
+  HISTORY_CAP,
+  readSavedQueries,
+  writeSavedQueries,
+  pushSavedQuery,
+  deleteSavedQuery,
+  DescribeCache,
+  runQuery,
+} = _soqlRunnerTestApi();
 
 function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
   return {
@@ -29,6 +40,8 @@ function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiCli
       done: true,
       records: [],
     } as QueryEnvelope<Record<string, unknown>>)),
+    apiGet: vi.fn(async () => ({})),
+    apiRequest: vi.fn(async () => ({})),
     ...overrides,
   } as unknown as SalesforceApiClient;
 }
@@ -303,5 +316,212 @@ describe('soql-runner — modal execution', () => {
 
     expect(api.queryMore).toHaveBeenCalledWith('/services/data/v62.0/query/01gxx-2000');
     expect(document.querySelectorAll('tbody tr')).toHaveLength(3);
+  });
+
+  it('renders and updates autocomplete suggestions', async () => {
+    setSalesforceUrl();
+    const globalMock = vi.fn().mockResolvedValue({
+      sobjects: [
+        { name: 'Account', label: 'Account Label', keyPrefix: '001' },
+        { name: 'Contact', label: 'Contact Label', keyPrefix: '003' }
+      ]
+    });
+    const api = fakeApi({ apiGet: globalMock });
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    expect(textarea).toBeTruthy();
+
+    textarea.value = 'SELECT Id FROM ';
+    textarea.selectionStart = 15;
+    textarea.selectionEnd = 15;
+    textarea.dispatchEvent(new Event('input'));
+    
+    await vi.waitFor(() => {
+      const title = document.querySelector('.sfut-soql-autocomplete-box span') as HTMLSpanElement;
+      expect(title.textContent).toContain('Objects suggestions:');
+    });
+
+    const buttons = document.querySelectorAll('.sfut-soql-autocomplete-box button');
+    const suggestionButtons = Array.from(buttons).filter(b => b.textContent && !b.textContent.includes('Expand') && !b.textContent.includes('Collapse'));
+    expect(suggestionButtons.length).toBe(2);
+    expect(suggestionButtons[0]!.textContent).toContain('Account');
+
+    const accountBtn = suggestionButtons[0]! as HTMLButtonElement;
+    accountBtn.click();
+
+    expect(textarea.value).toBe('SELECT Id FROM Account ');
+  });
+
+  it('decorates cell text matching ID and shows options menu', async () => {
+    setSalesforceUrl();
+    const api = fakeApi({
+      query: vi.fn(async () => ({
+        totalSize: 1,
+        done: true,
+        records: [
+          { Id: '001800000000001AAA', Name: 'Acme' },
+        ],
+      })) as unknown as SalesforceApiClient['query'],
+    });
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id, Name FROM Account LIMIT 1';
+    const runBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === '▶ Run',
+    );
+    runBtn?.click();
+
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const link = document.querySelector('tbody tr td a') as HTMLAnchorElement;
+    expect(link).toBeTruthy();
+    expect(link.textContent).toBe('001800000000001AAA');
+
+    link.click();
+
+    const menu = document.querySelector('.sfut-soql-cell-menu');
+    expect(menu).toBeTruthy();
+
+    const menuItems = menu?.querySelectorAll('div');
+    expect(menuItems?.length).toBe(3);
+
+    const queryRecordItem = Array.from(menuItems ?? []).find(el => el.textContent?.includes('Query Record'));
+    expect(queryRecordItem).toBeTruthy();
+    queryRecordItem?.click();
+
+    expect(textarea.value).toContain("WHERE Id = '001800000000001AAA'");
+    expect(document.querySelector('.sfut-soql-cell-menu')).toBeNull();
+  });
+});
+
+describe('soql-runner — DescribeCache', () => {
+  it('should call apiGet to fetch global sobjects and cache the result', async () => {
+    const apiGetMock = vi.fn().mockResolvedValue({
+      sobjects: [{ name: 'Account', label: 'Account', keyPrefix: '001' }]
+    });
+    const updateMock = vi.fn();
+    const client = fakeApi({ apiGet: apiGetMock });
+    const cache = new DescribeCache(client, updateMock);
+
+    const first = cache.getGlobal('rest');
+    expect(first.status).toBe('loading');
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(updateMock).toHaveBeenCalled();
+    const second = cache.getGlobal('rest');
+    expect(second.status).toBe('ready');
+    expect(second.data?.sobjects[0]?.name).toBe('Account');
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('should call apiGet to fetch sobject describe and cache it', async () => {
+    const apiGetMock = vi.fn().mockResolvedValue({
+      name: 'Account',
+      fields: [{ name: 'Name', label: 'Name', type: 'string' }]
+    });
+    const updateMock = vi.fn();
+    const client = fakeApi({ apiGet: apiGetMock });
+    const cache = new DescribeCache(client, updateMock);
+
+    const first = cache.getSObject('rest', 'Account');
+    expect(first.status).toBe('loading');
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(updateMock).toHaveBeenCalled();
+    const second = cache.getSObject('rest', 'Account');
+    expect(second.status).toBe('ready');
+    expect(second.data?.name).toBe('Account');
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('soql-runner — runQuery', () => {
+  it('should execute SOSL queries and return records', async () => {
+    const apiGetMock = vi.fn().mockResolvedValue([
+      { Id: '001', Name: 'SOSL Account' }
+    ]);
+    const client = fakeApi({ apiGet: apiGetMock });
+    const result = await runQuery(client, 'FIND {Acme} IN ALL FIELDS', 'rest');
+    
+    expect(apiGetMock).toHaveBeenCalledWith(
+      expect.stringContaining('/search'),
+      { q: 'FIND {Acme} IN ALL FIELDS' }
+    );
+    expect(result.records).toEqual([{ Id: '001', Name: 'SOSL Account' }]);
+  });
+
+  it('should execute GraphQL queries and tabularize nested records', async () => {
+    const apiRequestMock = vi.fn().mockResolvedValue({
+      data: {
+        uiapi: {
+          query: {
+            Account: {
+              edges: [
+                { node: { Id: '001', Name: 'GraphQL Account 1' } },
+                { node: { Id: '002', Name: 'GraphQL Account 2' } }
+              ]
+            }
+          }
+        }
+      }
+    });
+    const client = fakeApi({ apiRequest: apiRequestMock });
+    const result = await runQuery(
+      client,
+      `query { uiapi { query { Account { edges { node { Id Name } } } } } }`,
+      'rest'
+    );
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      'POST',
+      expect.stringContaining('/graphql'),
+      expect.objectContaining({
+        query: expect.stringContaining('query {')
+      })
+    );
+    expect(result.records).toEqual([
+      { Id: '001', Name: 'GraphQL Account 1' },
+      { Id: '002', Name: 'GraphQL Account 2' }
+    ]);
+  });
+});
+
+describe('soql-runner — Saved Queries storage', () => {
+  beforeEach(async () => {
+    await writeSavedQueries([]);
+  });
+
+  it('should read, write, and push saved queries', async () => {
+    const initial = await readSavedQueries();
+    expect(initial).toEqual([]);
+
+    const query1 = { name: 'Query One', q: 'SELECT Id FROM Account', api: 'rest' as const };
+    await pushSavedQuery(query1);
+
+    const afterPush = await readSavedQueries();
+    expect(afterPush).toEqual([query1]);
+
+    const query2 = { name: 'Query One', q: 'SELECT Name FROM Account', api: 'tooling' as const };
+    await pushSavedQuery(query2);
+
+    const afterDedupe = await readSavedQueries();
+    expect(afterDedupe).toEqual([query2]);
+  });
+
+  it('should delete a saved query by name', async () => {
+    const q1 = { name: 'Q1', q: 'SELECT Id FROM Contact', api: 'rest' as const };
+    const q2 = { name: 'Q2', q: 'SELECT Id FROM Opportunity', api: 'rest' as const };
+    await writeSavedQueries([q1, q2]);
+
+    await deleteSavedQuery('Q1');
+    const back = await readSavedQueries();
+    expect(back).toEqual([q2]);
   });
 });

@@ -14,6 +14,7 @@ import ReleaseHubPage from './pages/ReleaseHub/index.jsx';
 import ReviewPage from './pages/Review.jsx';
 import ExplainPage from './pages/Explain.jsx';
 import DependencyPage from './pages/Dependency.jsx';
+import FlowsPage from './pages/Flows.jsx';
 import SettingsPage from './pages/Settings.jsx';
 import LogsPage from './pages/Logs.jsx';
 import CoveragePage from './pages/Coverage.jsx';
@@ -56,6 +57,7 @@ const NAV_GROUPS = [
       { id: 'pull',      label: 'Pull',      Icon: IconCloudDown },
       { id: 'review',     label: 'Review',           Icon: IconCode },
       { id: 'explain',    label: 'Explain',           Icon: IconSearch },
+      { id: 'flows',      label: 'Flow Intelligence', Icon: IconGraph },
       { id: 'dependency', label: 'Dependency Graph',  Icon: IconGraph },
     ],
   },
@@ -81,6 +83,7 @@ const PAGE_LABELS = {
   release:   'Release Hub',
   review:    'Review',
   explain:   'Explain',
+  flows:      'Flow Intelligence',
   logs:       'Log History',
   dependency: 'Dependency Graph',
   settings:   'Settings',
@@ -164,6 +167,7 @@ export default function App() {
       case 'release':   return <ReleaseHubPage />;
       case 'review':    return <ReviewPage />;
       case 'explain':   return <ExplainPage />;
+      case 'flows':      return <FlowsPage />;
       case 'logs':       return <LogsPage />;
       case 'dependency': return <DependencyPage />;
       case 'settings':   return <SettingsPage />;

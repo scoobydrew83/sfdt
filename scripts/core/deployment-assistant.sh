@@ -1213,12 +1213,16 @@ archive_deployed_manifest() {
     # In subpath layout, mirror the package subfolder under deployed/
     local deployed_dir="${MANIFEST_BASE_DIR}/deployed"
     if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then
+        # Resolve both paths to absolute/canonical representations first
+        # to ensure prefix-stripping matches correctly and doesn't leak
+        # absolute folders or relative dot-segments.
+        local abs_manifest_path
+        abs_manifest_path=$(cd "$(dirname "$MANIFEST_PATH")" && pwd)/$(basename "$MANIFEST_PATH")
+        local abs_manifest_base
+        abs_manifest_base=$(cd "$MANIFEST_BASE_DIR" && pwd)
+
         local rel_path
-        rel_path=$(dirname "${MANIFEST_PATH#${MANIFEST_BASE_DIR}/}")
-        # If MANIFEST_PATH was absolute and MANIFEST_BASE_DIR relative, the
-        # prefix-strip above is a no-op and rel_path leaks the absolute
-        # filesystem path (Users/drew/... lands as a subfolder). Fall back to
-        # the immediate parent directory name (the package subfolder).
+        rel_path=$(dirname "${abs_manifest_path#${abs_manifest_base}/}")
         if [[ "$rel_path" == /* ]]; then
             rel_path=$(basename "$(dirname "$MANIFEST_PATH")")
         fi

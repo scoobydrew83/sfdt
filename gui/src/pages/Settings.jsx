@@ -525,6 +525,102 @@ function FlowCoreTab() {
   );
 }
 
+function AuditTrailTab() {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api.auditLogs()
+      .then((d) => setLogs(d.logs ?? []))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="spinner-center"><div className="spinner" /></div>;
+  if (error) return <div className="alert alert-error">{error}</div>;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <div className="card card-pad">
+        <div className="section-label" style={{ marginBottom: 12 }}>Governance & Audit Trail</div>
+        <p style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 16 }}>
+          Local action trail logged in <code>logs/audit.json</code>. OAuth session tokens and passwords are automatically redacted.
+        </p>
+
+        {logs.length === 0 ? (
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--fg-subtle)', fontStyle: 'italic' }}>
+            No audit entries found.
+          </div>
+        ) : (
+          <div style={{ maxHeight: 500, overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 6 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, margin: 0 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border-subtle)', position: 'sticky', top: 0 }}>
+                  <th style={{ textAlign: 'left', padding: '10px 12px', color: 'var(--fg-muted)', fontWeight: 600 }}>Timestamp</th>
+                  <th style={{ textAlign: 'left', padding: '10px 12px', color: 'var(--fg-muted)', fontWeight: 600 }}>Action</th>
+                  <th style={{ textAlign: 'left', padding: '10px 12px', color: 'var(--fg-muted)', fontWeight: 600 }}>Actor / IP</th>
+                  <th style={{ textAlign: 'left', padding: '10px 12px', color: 'var(--fg-muted)', fontWeight: 600 }}>Status</th>
+                  <th style={{ textAlign: 'left', padding: '10px 12px', color: 'var(--fg-muted)', fontWeight: 600 }}>Metadata</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((log, idx) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                    <td style={{ padding: '10px 12px', color: 'var(--fg-subtle)', whiteSpace: 'nowrap' }}>
+                      {new Date(log.timestamp).toLocaleString()}
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <span style={{
+                        fontWeight: 600,
+                        fontSize: 10,
+                        textTransform: 'uppercase',
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        background: log.action.includes('start') ? 'var(--status-changed-bg)' : 'var(--bg-subtle)',
+                        color: log.action.includes('start') ? 'var(--status-changed-fg)' : 'var(--fg-default)'
+                      }}>
+                        {log.action}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 12px', color: 'var(--fg-muted)' }}>
+                      <div>{log.actor}</div>
+                      {log.ip && <div style={{ fontSize: 10, color: 'var(--fg-subtle)' }}>IP: {log.ip}</div>}
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <span style={{
+                        fontWeight: 'bold',
+                        color: log.status === 'success' ? 'var(--status-identical-fg)' : 'var(--status-conflict-fg)'
+                      }}>
+                        {log.status}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 12px', maxWidth: 300, overflow: 'hidden' }}>
+                      <pre style={{
+                        margin: 0,
+                        padding: 6,
+                        fontSize: 10,
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: 4,
+                        maxHeight: 120,
+                        overflow: 'auto',
+                        fontFamily: 'var(--font-mono)'
+                      }}>
+                        {JSON.stringify(log.metadata, null, 2)}
+                      </pre>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [tab, setTab] = useState('config');
   const [rawConfig, setRawConfig] = useState(null);
@@ -566,6 +662,7 @@ export default function SettingsPage() {
     { key: 'config', label: 'Config' },
     { key: 'prompts', label: 'AI Prompts' },
     { key: 'flowcore', label: 'Flow Core' },
+    { key: 'audit', label: 'Audit Trail' },
   ];
 
   return (
@@ -667,6 +764,8 @@ export default function SettingsPage() {
       )}
 
       {tab === 'flowcore' && <FlowCoreTab />}
+
+      {tab === 'audit' && <AuditTrailTab />}
     </div>
   );
 }
