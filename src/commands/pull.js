@@ -90,7 +90,7 @@ async function runPull(options) {
     ...groupChoices,
   ];
 
-  const { action } = await inquirer.prompt([{ type: 'list', name: 'action', message: 'Select pull action:', choices }]);
+  const { action } = await inquirer.prompt([{ type: 'select', name: 'action', message: 'Select pull action:', choices }]);
 
   switch (action) {
     case 'smart':

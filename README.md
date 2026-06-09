@@ -110,6 +110,15 @@ sfdt deploy
 | `sfdt feature-flags clear` | Re-enable everything | `--remove`, `--json` |
 | `sfdt doctor --extension` | Diagnose the extension stack (bridge reachable, native host, kill-switch file, telemetry) | `--port <n>`, `--json` |
 
+### Agent & extensibility
+
+| Command | Description | Key Options |
+|---|---|---|
+| `sfdt mcp start` | Start the built-in Model Context Protocol server (stdio) so agents can drive sfdt as a tool | — |
+| `sfdt mcp cleanup` | Purge expired parked results from the MCP cache directory | — |
+| `sfdt plugin create [name]` | Scaffold a new sfdt CLI plugin project | `--description <desc>`, `--author <author>` |
+| `sfdt skills export` | Export local agent skills to IDE/agent-specific configurations | `--json` |
+
 ## Configuration
 
 Running `sfdt init` creates a `.sfdt/` directory in your project root:
