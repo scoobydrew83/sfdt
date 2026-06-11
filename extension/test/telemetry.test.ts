@@ -57,6 +57,33 @@ describe('telemetry', () => {
     expect(counters['canvas-search']!.disabled_remote).toBe(1);
   });
 
+  describe('trackBridgeFailure', () => {
+    it('records nothing when opt-in is false', async () => {
+      const t = createTelemetry({ isEnabled: () => false });
+      await t.trackBridgeFailure('offline');
+      const snapshot = await t.snapshot();
+      expect(snapshot.bridge).toBeUndefined();
+    });
+
+    it('increments per-category bridge counters when opted in', async () => {
+      const t = createTelemetry({ isEnabled: () => true });
+      await t.trackBridgeFailure('offline');
+      await t.trackBridgeFailure('offline');
+      await t.trackBridgeFailure('unauthorized');
+      const snapshot = await t.snapshot();
+      expect(snapshot.bridge).toEqual({ offline: 2, unauthorized: 1 });
+    });
+
+    it('keeps feature counters and bridge counters in the same monthly snapshot', async () => {
+      const t = createTelemetry({ isEnabled: () => true });
+      await t.track('feature.activated', { featureId: 'canvas-search' });
+      await t.trackBridgeFailure('timeout');
+      const snapshot = await t.snapshot();
+      expect(snapshot.counters['canvas-search']?.activated).toBe(1);
+      expect(snapshot.bridge?.timeout).toBe(1);
+    });
+  });
+
   describe('pushSnapshot', () => {
     it('is a no-op (returns false) when telemetry is opted out', async () => {
       const t = createTelemetry({ isEnabled: () => false });

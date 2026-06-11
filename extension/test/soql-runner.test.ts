@@ -25,6 +25,7 @@ const {
 
 function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
   return {
+    apiVersion: 'v62.0',
     query: vi.fn(async (_soql: string) => ({
       totalSize: 0,
       done: true,

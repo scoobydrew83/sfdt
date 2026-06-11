@@ -139,7 +139,7 @@ export class DescribeCache {
     if (cached) return cached;
 
     this.globalCache.set(mode, { status: 'loading' });
-    const apiVersion = (this.api as any).apiVersion ?? 'v62.0';
+    const apiVersion = this.api.apiVersion;
     const endpoint = mode === 'tooling'
       ? `/services/data/${apiVersion}/tooling/sobjects/`
       : `/services/data/${apiVersion}/sobjects/`;
@@ -165,7 +165,7 @@ export class DescribeCache {
     if (cached) return cached;
 
     this.sobjectCache.set(key, { status: 'loading' });
-    const apiVersion = (this.api as any).apiVersion ?? 'v62.0';
+    const apiVersion = this.api.apiVersion;
     const endpoint = mode === 'tooling'
       ? `/services/data/${apiVersion}/tooling/sobjects/${name}/describe`
       : `/services/data/${apiVersion}/sobjects/${name}/describe`;
@@ -186,6 +186,17 @@ export class DescribeCache {
   }
 }
 
+
+// Shape shared by every autocomplete chip (objects, fields, values, retry).
+// `rank`/`dataType` are optional because sentinel entries (e.g. Retry) omit them.
+interface AutocompleteSuggestion {
+  value: string;
+  title: string;
+  suffix: string;
+  autocompleteType: string;
+  rank?: number;
+  dataType?: string;
+}
 
 export function columnsFromRecords(records: ReadonlyArray<Record<string, unknown>>): string[] {
   const seen = new Set<string>();
@@ -244,7 +255,7 @@ async function runQuery(
   mode: ApiMode,
 ): Promise<QueryEnvelope<Record<string, unknown>>> {
   const trimmed = soql.trim();
-  const apiVersion = (api as any).apiVersion ?? 'v62.0';
+  const apiVersion = api.apiVersion;
 
   // SOSL search mode
   if (trimmed.toLowerCase().startsWith('find')) {
@@ -257,7 +268,7 @@ async function runQuery(
 
   // GraphQL query mode
   if (trimmed.startsWith('{') || trimmed.toLowerCase().startsWith('query')) {
-    const response = await api.apiRequest<{ data: any; errors?: Array<{ message?: string }> }>(
+    const response = await api.apiRequest<{ data: unknown; errors?: Array<{ message?: string }> }>(
       'POST',
       `/services/data/${apiVersion}/graphql`,
       { query: soql }
@@ -269,26 +280,28 @@ async function runQuery(
         .filter((m): m is string => typeof m === 'string' && m.length > 0);
       throw new Error(messages.length > 0 ? messages.join('\n') : 'GraphQL query failed.');
     }
-    const records: any[] = [];
+    const isRecord = (v: unknown): v is Record<string, unknown> =>
+      typeof v === 'object' && v !== null && !Array.isArray(v);
+    const records: Record<string, unknown>[] = [];
     if (response?.data) {
-      const findNodes = (obj: any) => {
-        if (!obj || typeof obj !== 'object') return;
+      const findNodes = (obj: unknown): void => {
         if (Array.isArray(obj)) {
           for (const item of obj) {
-            if (item && item.node) {
+            if (isRecord(item) && isRecord(item.node)) {
               records.push(item.node);
             } else {
               findNodes(item);
             }
           }
-        } else {
+        } else if (isRecord(obj)) {
           for (const key of Object.keys(obj)) {
-            if (key === 'edges' && Array.isArray(obj[key])) {
-              for (const edge of obj[key]) {
-                if (edge && edge.node) records.push(edge.node);
+            const value = obj[key];
+            if (key === 'edges' && Array.isArray(value)) {
+              for (const edge of value) {
+                if (isRecord(edge) && isRecord(edge.node)) records.push(edge.node);
               }
             } else {
-              findNodes(obj[key]);
+              findNodes(value);
             }
           }
         }
@@ -296,7 +309,7 @@ async function runQuery(
       findNodes(response.data);
     }
     return {
-      records: records.length > 0 ? records : [response as any],
+      records: records.length > 0 ? records : [(response ?? {}) as Record<string, unknown>],
       done: true,
     };
   }
@@ -912,8 +925,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         return i;
       }
       
-      function resultsSort(a: any, b: any) {
-        return sortRank(a.value, a.title) - sortRank(b.value, b.title) || a.rank - b.rank || a.value.localeCompare(b.value);
+      function resultsSort(a: AutocompleteSuggestion, b: AutocompleteSuggestion) {
+        return sortRank(a.value, a.title) - sortRank(b.value, b.title) || (a.rank ?? 0) - (b.rank ?? 0) || a.value.localeCompare(b.value);
       }
 
       const textBefore = query.substring(0, replaceStart);
@@ -1156,7 +1169,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
           return;
         }
 
-        const suggestions: any[] = [];
+        const suggestions: AutocompleteSuggestion[] = [];
         for (const { field } of contextValueFields) {
           for (const pv of field.picklistValues) {
             if (!inValuesUtilized.includes(pv.value.toLowerCase())) {
@@ -1276,7 +1289,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         return;
       }
 
-      const fieldSuggestions: any[] = [];
+      const fieldSuggestions: AutocompleteSuggestion[] = [];
       for (const desc of contextSobjectDescribes) {
         const fields = desc.fields.filter(
           field => field.name.toLowerCase().includes(searchTerm.toLowerCase()) || field.label.toLowerCase().includes(searchTerm.toLowerCase())
@@ -1332,7 +1345,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       });
     }
 
-    function getIconForSuggestion(type: string, dataType: string): string {
+    function getIconForSuggestion(type: string, dataType: string | undefined): string {
       if (type === 'object') return '📦';
       if (type === 'relationshipName') return '🔗';
       if (type === 'variable') return '⚙️';
@@ -1366,7 +1379,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       return '🔹';
     }
 
-    function renderAutocompleteUI(data: { sobjectName: string; title: string; results: any[] }) {
+    function renderAutocompleteUI(data: { sobjectName: string; title: string; results: AutocompleteSuggestion[] }) {
       autocompleteTitle.textContent = data.title || '\u00A0';
       
       while (autocompleteResults.firstChild) {
@@ -1410,7 +1423,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       }
     }
 
-    function onAutocompleteClick(item: any) {
+    function onAutocompleteClick(item: AutocompleteSuggestion) {
       if (item.value === 'Retry') {
         describeCache.clear();
         void runAutocomplete();

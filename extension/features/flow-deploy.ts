@@ -3,7 +3,7 @@ import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { loadSettings } from '../lib/settings.js';
-import { createBridgeClient, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.js';
+import { createBridgeClient, getBridgeData, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.js';
 import { showToast } from '../ui/toast.js';
 
 async function dispatchBridge(
@@ -112,9 +112,9 @@ export function createFlowDeployFeature(options: FlowDeployFeatureOptions = {}):
         showToast(`Deploying ${flowApiName}…`, { doc });
         const response = await dispatchBridge('deploy', { flowApiName, flowId });
         if (response.ok) {
-          const data = response.data as { status?: string; summary?: string };
-          showToast(data?.summary ?? `Deploy ${data?.status ?? 'completed'}`, {
-            kind: data?.status === 'Succeeded' ? 'success' : 'warning',
+          const data = getBridgeData<{ status: string; summary: string }>(response);
+          showToast(data.summary ?? `Deploy ${data.status ?? 'completed'}`, {
+            kind: data.status === 'Succeeded' ? 'success' : 'warning',
             doc,
           });
         } else {

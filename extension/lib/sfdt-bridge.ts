@@ -13,6 +13,7 @@ import type {
   ProtocolNegotiation,
 } from '@sfdt/flow-core/bridge-contract';
 import { negotiateProtocolVersion } from '@sfdt/flow-core/bridge-contract';
+import type { BridgeFailureCategory } from './telemetry.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const DISCOVERY_TIMEOUT_MS = 1000;
@@ -38,6 +39,12 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Emitted once per failed logical bridge call (after any retry), never per attempt. */
+export interface BridgeFailureEvent {
+  kind: string;
+  category: BridgeFailureCategory;
+}
+
 export interface BridgeOptions {
   token: string;
   preferredTransport?: 'auto' | 'localhost' | 'native';
@@ -47,6 +54,14 @@ export interface BridgeOptions {
   connectNativeImpl?: typeof chrome.runtime.connectNative;
   sendMessageImpl?: (message: unknown) => Promise<unknown>;
   timeoutMs?: number;
+  /**
+   * Fire-and-forget transport-health hook (typically telemetry). Invoked
+   * synchronously but never awaited; exceptions are swallowed so it can
+   * never alter a bridge call's result. NOT invoked for `telemetry.*`
+   * request kinds — telemetry ships through this same bridge, and counting
+   * its own failures would feed back on itself.
+   */
+  onBridgeFailure?: (failure: BridgeFailureEvent) => void;
 }
 
 type Transport = 'localhost' | 'native' | 'unknown';
@@ -126,6 +141,20 @@ export interface BridgeClient {
   ): Promise<SfdtResponse>;
 }
 
+/**
+ * Narrow runtime guard for success-response payloads. The contract types
+ * `data` as required on `ok: true`, but the wire gives no such guarantee —
+ * older or buggy servers can answer `{ ok: true }` with no data. Returns the
+ * payload as a Partial so every property access stays optional, or {} when
+ * the response failed or `data` is not an object.
+ */
+export function getBridgeData<T extends object>(response: SfdtResponse): Partial<T> {
+  if (!response.ok) return {};
+  const data: unknown = (response as { data?: unknown }).data;
+  if (data === null || typeof data !== 'object') return {};
+  return data as Partial<T>;
+}
+
 export function createBridgeClient(options: BridgeOptions): BridgeClient {
   const token = options.token;
   const preferredTransport = options.preferredTransport ?? 'auto';
@@ -140,6 +169,30 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
   // send() short-circuits non-ping/version traffic when the bridge is on
   // an incompatible major version; ping/version stay open for diagnostics.
   let cachedNegotiation: ProtocolNegotiation | null = null;
+
+  function categorizeFailure(response: SfdtErrorResponse): BridgeFailureCategory {
+    switch (response.code) {
+      case 'BRIDGE_OFFLINE':
+        return /timed out|abort/i.test(response.error) ? 'timeout' : 'offline';
+      case 'BRIDGE_UNAUTHORIZED':
+      case 'BRIDGE_FORBIDDEN':
+        return 'unauthorized';
+      default:
+        return 'other';
+    }
+  }
+
+  // Fire-and-forget: never awaited, never throws into the caller, and never
+  // fires for telemetry's own bridge traffic (recursion guard).
+  function emitFailure(kind: string, category: BridgeFailureCategory): void {
+    if (!options.onBridgeFailure) return;
+    if (kind.startsWith('telemetry')) return;
+    try {
+      options.onBridgeFailure({ kind, category });
+    } catch {
+      // The hook must never affect bridge call results.
+    }
+  }
 
   async function sendOverLocalhost(
     request: SfdtRequest,
@@ -312,6 +365,7 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
       request.kind !== 'ping' &&
       request.kind !== 'version'
     ) {
+      emitFailure(request.kind, 'protocol');
       return {
         ok: false,
         requestId: request.requestId,
@@ -321,6 +375,17 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
     }
 
     const requestTimeoutMs = callOptions?.timeoutMs ?? timeoutMs;
+    const final = await sendWithRetry(request, requestTimeoutMs);
+    // One failure event per logical send(), emitted after the retry (if any)
+    // resolved — never one per attempt.
+    if (!final.ok) emitFailure(request.kind, categorizeFailure(final as SfdtErrorResponse));
+    return final;
+  }
+
+  async function sendWithRetry(
+    request: SfdtRequest,
+    requestTimeoutMs: number,
+  ): Promise<SfdtResponse> {
     const first = await sendOnce(request, requestTimeoutMs);
     if (first.ok) return first;
     // One retry, idempotent kinds only, and only for transport-level failures
@@ -371,7 +436,10 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
     } catch {
       // fall through to native or null
     }
-    if (!connectNativeImpl) return null;
+    if (!connectNativeImpl) {
+      emitFailure('ping', 'offline');
+      return null;
+    }
     const native = await sendOverNative({ requestId: makeRequestId(), kind: 'ping' } as SfdtRequest);
     if (native.ok) {
       const data = (native as { data?: PingResponseData }).data;
@@ -387,6 +455,7 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
         };
       }
     }
+    emitFailure('ping', 'offline');
     return null;
   }
 

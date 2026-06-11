@@ -1,19 +1,31 @@
-// Cache is honoured indefinitely — better to keep a known-broken feature
-// disabled than have it reappear when the bridge is offline. ts is stored
-// for a future age-out pass.
+// The cache is a fallback for when the bridge ping fails. Entries are
+// stamped with a storedAt timestamp (`ts`) at write time; reads treat
+// anything older than 24h as stale and ignore it, falling back to the same
+// safe default as "no cache" (nothing remotely disabled). This stops a
+// bridge that has been offline since install — or a long-abandoned cache —
+// from pinning features off (or on) forever. Records without a valid `ts`
+// (pre-stamping writes, manual tampering) are treated as stale too: their
+// age is unknowable, and the next successful ping rewrites a stamped record.
 
 const STORAGE_KEY = 'sfut.killswitch.cache';
+
+/** Cache entries older than this are ignored on read. */
+export const KILL_SWITCH_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 interface CacheRecord {
   disabled: string[];
   ts: number;
 }
 
-export async function readKillSwitchCache(): Promise<readonly string[]> {
+export async function readKillSwitchCache(now: number = Date.now()): Promise<readonly string[]> {
   return new Promise((resolve) => {
     chrome.storage.local.get(STORAGE_KEY, (result) => {
       const raw = result?.[STORAGE_KEY] as CacheRecord | undefined;
       if (!raw || !Array.isArray(raw.disabled)) return resolve([]);
+      // Stale or un-stamped → behave exactly as if no cache existed.
+      if (typeof raw.ts !== 'number' || now - raw.ts > KILL_SWITCH_CACHE_MAX_AGE_MS) {
+        return resolve([]);
+      }
       resolve(raw.disabled.filter((v) => typeof v === 'string' && v.length > 0));
     });
   });

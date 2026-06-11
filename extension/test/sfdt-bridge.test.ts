@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createBridgeClient } from '../lib/sfdt-bridge.js';
+import { createBridgeClient, getBridgeData, type BridgeFailureEvent } from '../lib/sfdt-bridge.js';
 
 /**
  * Build a sendMessage stub that returns the given bridgePing response shape.
@@ -306,5 +306,158 @@ describe('createBridgeClient — retries and per-call timeout', () => {
     if (!res.ok) expect(res.code).toBe('BRIDGE_OFFLINE');
     expect(Date.now() - started).toBeLessThan(4000);
     expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+});
+
+describe('createBridgeClient — bridge failure telemetry hook', () => {
+  it('emits ONE offline event per logical call even when the idempotent retry also fails', async () => {
+    const onBridgeFailure = vi.fn((_f: BridgeFailureEvent) => {});
+    const fetchSpy = vi.fn(async () => {
+      throw new Error('network down');
+    });
+    const client = createBridgeClient({
+      token: 'token-x',
+      preferredTransport: 'localhost',
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+      onBridgeFailure,
+    });
+    const res = await client.send({ requestId: 'r1', kind: 'version' });
+    expect(res.ok).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(2); // two attempts…
+    expect(onBridgeFailure).toHaveBeenCalledOnce(); // …one event
+    expect(onBridgeFailure).toHaveBeenCalledWith({ kind: 'version', category: 'offline' });
+  });
+
+  it('emits unauthorized when the bearer token is missing', async () => {
+    const onBridgeFailure = vi.fn((_f: BridgeFailureEvent) => {});
+    const client = createBridgeClient({
+      token: '',
+      preferredTransport: 'localhost',
+      fetchImpl: vi.fn() as unknown as typeof fetch,
+      onBridgeFailure,
+    });
+    const res = await client.send({ requestId: 'r2', kind: 'ping' });
+    expect(res.ok).toBe(false);
+    expect(onBridgeFailure).toHaveBeenCalledOnce();
+    expect(onBridgeFailure).toHaveBeenCalledWith({ kind: 'ping', category: 'unauthorized' });
+  });
+
+  it('emits protocol when a major version mismatch blocks the call locally', async () => {
+    const onBridgeFailure = vi.fn((_f: BridgeFailureEvent) => {});
+    const client = createBridgeClient({
+      token: 'token-x',
+      preferredTransport: 'localhost',
+      sendMessageImpl: async () => ({
+        ok: true,
+        body: {
+          ok: true,
+          data: {
+            pong: true,
+            serverVersion: '2.0.0',
+            protocolVersion: '2.0',
+            transport: 'localhost',
+            disabledFeatures: [],
+          },
+        },
+      }),
+      onBridgeFailure,
+    });
+    await client.getServerInfo();
+    onBridgeFailure.mockClear(); // only interested in the send() below
+    const res = await client.send({ requestId: 'r3', kind: 'quality', flowXml: '{}' });
+    expect(res.ok).toBe(false);
+    expect(onBridgeFailure).toHaveBeenCalledOnce();
+    expect(onBridgeFailure).toHaveBeenCalledWith({ kind: 'quality', category: 'protocol' });
+  });
+
+  it('never emits for telemetry.* kinds (no recursion when telemetry ships over the bridge)', async () => {
+    const onBridgeFailure = vi.fn((_f: BridgeFailureEvent) => {});
+    const fetchSpy = vi.fn(async () => {
+      throw new Error('network down');
+    });
+    const client = createBridgeClient({
+      token: 'token-x',
+      preferredTransport: 'localhost',
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+      onBridgeFailure,
+    });
+    const res = await client.send({
+      requestId: 'r4',
+      kind: 'telemetry.snapshot',
+      monthKey: '2026-06',
+      counters: {},
+    });
+    expect(res.ok).toBe(false);
+    expect(onBridgeFailure).not.toHaveBeenCalled();
+  });
+
+  it('does not emit on a successful call', async () => {
+    const onBridgeFailure = vi.fn((_f: BridgeFailureEvent) => {});
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ok: true, requestId: 'r5', data: { version: '0.9.0' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    const client = createBridgeClient({
+      token: 'token-x',
+      preferredTransport: 'localhost',
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+      onBridgeFailure,
+    });
+    const res = await client.send({ requestId: 'r5', kind: 'version' });
+    expect(res.ok).toBe(true);
+    expect(onBridgeFailure).not.toHaveBeenCalled();
+  });
+
+  it('a throwing hook never affects the bridge call result', async () => {
+    const onBridgeFailure = vi.fn(() => {
+      throw new Error('hook exploded');
+    });
+    const fetchSpy = vi.fn(async () => {
+      throw new Error('network down');
+    });
+    const client = createBridgeClient({
+      token: 'token-x',
+      preferredTransport: 'localhost',
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+      onBridgeFailure,
+    });
+    const res = await client.send({ requestId: 'r6', kind: 'ping' });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe('BRIDGE_OFFLINE');
+  });
+});
+
+describe('getBridgeData', () => {
+  it('returns the payload when ok and data is an object', () => {
+    const data = getBridgeData<{ serverVersion: string }>({
+      ok: true,
+      requestId: 'r1',
+      data: { serverVersion: '0.9.0' },
+    });
+    expect(data.serverVersion).toBe('0.9.0');
+  });
+
+  it('returns {} when the response is ok but data is missing (contract violation)', () => {
+    const response = { ok: true, requestId: 'r2' } as never;
+    expect(getBridgeData<{ serverVersion: string }>(response)).toEqual({});
+  });
+
+  it('returns {} when data is not an object', () => {
+    const response = { ok: true, requestId: 'r3', data: 'oops' } as never;
+    expect(getBridgeData<{ serverVersion: string }>(response)).toEqual({});
+  });
+
+  it('returns {} for error responses', () => {
+    expect(
+      getBridgeData<{ serverVersion: string }>({
+        ok: false,
+        requestId: 'r4',
+        error: 'down',
+        code: 'BRIDGE_OFFLINE',
+      }),
+    ).toEqual({});
   });
 });

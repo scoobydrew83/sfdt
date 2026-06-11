@@ -348,4 +348,135 @@ describe('extension/lib/salesforce-api', () => {
       expect(result).toBeNull();
     });
   });
+
+  describe('multi-host failure error messages', () => {
+    it('throws a short user-facing message with no candidate URL list', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({
+        'https://x.my.salesforce.com': 'sid-mysf',
+        'https://x.lightning.force.com': 'sid-light',
+      });
+      const fetchSpy = vi.fn(
+        fetchResponder({
+          'https://x.my.salesforce.com/services/data': {
+            status: 400,
+            body: '[{"message":"unexpected token: FRM","errorCode":"MALFORMED_QUERY"}]',
+          },
+          'https://x.lightning.force.com/services/data': {
+            status: 400,
+            body: '[{"message":"unexpected token: FRM","errorCode":"MALFORMED_QUERY"}]',
+          },
+        }),
+      );
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy });
+      const err: Error = await client.query('SELECT Id FRM Account').then(
+        () => {
+          throw new Error('expected query to reject');
+        },
+        (e: Error) => e,
+      );
+
+      // Short, user-appropriate: operation + status + Salesforce message.
+      expect(err.message).toContain('GET request failed');
+      expect(err.message).toContain('HTTP 400');
+      expect(err.message).toContain('unexpected token: FRM');
+      // No host/URL dump in the toast-facing message.
+      expect(err.message).not.toContain('https://');
+      expect(err.message).not.toContain('All results');
+
+      // Full multi-host diagnostics still reach the console.
+      expect(consoleSpy).toHaveBeenCalled();
+      const logged = consoleSpy.mock.calls[0]!.map(String).join(' ');
+      expect(logged).toContain('https://x.my.salesforce.com');
+      expect(logged).toContain('https://x.lightning.force.com');
+      consoleSpy.mockRestore();
+    });
+
+    it('reports a network error without a fake HTTP status', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(async () => {
+        throw new Error('Failed to fetch');
+      });
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy as unknown as typeof fetch });
+      await expect(client.apiRequest('POST', '/services/data/v62.0/sobjects/Account', {})).rejects.toThrow(
+        /POST request failed \(network error\)/,
+      );
+      expect(consoleSpy).toHaveBeenCalled();
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('apiSoap SOAP parsing', () => {
+    function xmlFetch(status: number, xml: string): typeof fetch {
+      return (async () => ({
+        ok: status >= 200 && status < 300,
+        status,
+        async text() {
+          return xml;
+        },
+        async json() {
+          return null;
+        },
+      })) as unknown as typeof fetch;
+    }
+
+    it('parses a namespace-prefixed SOAP response body', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const xml = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">',
+        '<soapenv:Body>',
+        '<ns:getUserInfoResponse xmlns:ns="urn:partner.soap.sforce.com">',
+        '<ns:result><ns:userName>admin@example.com</ns:userName></ns:result>',
+        '</ns:getUserInfoResponse>',
+        '</soapenv:Body>',
+        '</soapenv:Envelope>',
+      ].join('');
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: xmlFetch(200, xml) });
+      const result = await client.apiSoap<{ userName: string }>('Partner', 'getUserInfo', {});
+      expect(result).toMatchObject({ userName: 'admin@example.com' });
+    });
+
+    it('parses an unprefixed (default-namespace) SOAP response body', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const xml = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">',
+        '<soapenv:Body>',
+        '<getUserInfoResponse xmlns="urn:partner.soap.sforce.com">',
+        '<result><userName>admin@example.com</userName></result>',
+        '</getUserInfoResponse>',
+        '</soapenv:Body>',
+        '</soapenv:Envelope>',
+      ].join('');
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: xmlFetch(200, xml) });
+      const result = await client.apiSoap<{ userName: string }>('Partner', 'getUserInfo', {});
+      expect(result).toMatchObject({ userName: 'admin@example.com' });
+    });
+
+    it('extracts the faultstring from a namespace-prefixed SOAP fault', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const faultXml = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">',
+        '<soapenv:Body>',
+        '<soapenv:Fault>',
+        '<soapenv:faultcode>sf:INVALID_TYPE</soapenv:faultcode>',
+        '<soapenv:faultstring>INVALID_TYPE: sObject type Bogus is not supported</soapenv:faultstring>',
+        '</soapenv:Fault>',
+        '</soapenv:Body>',
+        '</soapenv:Envelope>',
+      ].join('');
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: xmlFetch(500, faultXml) });
+      await expect(client.apiSoap('Partner', 'describeSObject', { sObjectType: 'Bogus' })).rejects.toThrow(
+        'INVALID_TYPE: sObject type Bogus is not supported',
+      );
+    });
+  });
 });
