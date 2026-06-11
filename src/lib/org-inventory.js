@@ -37,12 +37,17 @@ export async function fetchOrgInventory(
     ? metadataTypes
     : await listMetadataTypes(orgAlias);
   const inventory = new Map();
+  const failedTypes = [];
 
   for (let i = 0; i < types.length; i += BATCH_SIZE) {
     const batch = types.slice(i, i + BATCH_SIZE);
     await Promise.all(
       batch.map(async (type) => {
         const members = await listMetadataMembers(orgAlias, type);
+        if (members === null) {
+          failedTypes.push(type);
+          return;
+        }
         if (members.length > 0) {
           if (withDates) {
             inventory.set(type, new Map(members.map((m) => [m.name, m.lastModifiedDate])));
@@ -51,6 +56,15 @@ export async function fetchOrgInventory(
           }
         }
       }),
+    );
+  }
+
+  if (failedTypes.length > 0) {
+    const shown = failedTypes.slice(0, 10).join(', ');
+    const more = failedTypes.length > 10 ? ` (+${failedTypes.length - 10} more)` : '';
+    console.warn(
+      `Warning: could not list ${failedTypes.length} metadata type(s) from ${orgAlias}: ${shown}${more}. ` +
+      'Inventory may be incomplete.',
     );
   }
 
@@ -115,7 +129,8 @@ async function listMetadataMembers(orgAlias, metadataType) {
       lastModifiedDate: item.lastModifiedDate ?? '',
     }));
   } catch {
-    // Some metadata types are not retrievable; skip silently
-    return [];
+    // Some metadata types are not listable; null lets the caller distinguish
+    // "failed to list" from "type has no members" and report the gap.
+    return null;
   }
 }

@@ -34,6 +34,12 @@
       "transport": "stdio",
       "command": "sf",
       "args": ["mcp", "start"]
+    },
+    "parking": {
+      "enabled": true,
+      "thresholdBytes": 51200,
+      "ttlSeconds": 86400,
+      "cacheScope": "session"
     }
   },
   "pullCache": {

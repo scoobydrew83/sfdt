@@ -5,7 +5,7 @@ import {
   patchSettings,
   type Settings,
 } from '../../lib/settings.js';
-import { createBridgeClient } from '../../lib/sfdt-bridge.js';
+import { createBridgeClient, getBridgeData } from '../../lib/sfdt-bridge.js';
 import { createFeatureRegistry } from '../../lib/feature-registry.js';
 import { buildField } from '../../lib/zod-to-dom.js';
 import { createTelemetry } from '../../lib/telemetry.js';
@@ -267,7 +267,7 @@ async function render(): Promise<void> {
     });
     const response = await client.call({ kind: 'ping' });
     if (response.ok) {
-      const data = response.data as { serverVersion?: string; transport?: string };
+      const data = getBridgeData<{ serverVersion: string; transport: string }>(response);
       testStatus.className = 'status show ok';
       testStatus.textContent = `OK — sfdt v${data.serverVersion ?? '?'} via ${data.transport ?? '?'}`;
     } else {

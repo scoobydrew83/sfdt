@@ -8,7 +8,7 @@ import { createFeatureRegistry } from '../lib/feature-registry.js';
 import { createSpaRouter } from '../lib/spa-router.js';
 import { isFeatureEnabled, loadSettings, onSettingsChange } from '../lib/settings.js';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
-import { createTelemetry } from '../lib/telemetry.js';
+import { createTelemetry, type BridgeFailureCategory } from '../lib/telemetry.js';
 import { readKillSwitchCache, writeKillSwitchCache } from '../lib/killswitch-cache.js';
 import { mountSideButton, type MenuItem } from '../ui/side-button.js';
 import { createAiAssistantFeature } from '../features/ai-assistant.js';
@@ -90,13 +90,22 @@ export default defineContentScript({
 
     // Boot awaits one ping with a 1.5s timeout; on miss, fall back to the
     // last-known cache so the side button still renders something useful.
+    // Cache entries older than 24h are ignored (treated as no cache) so a
+    // long-dead bridge can't pin stale kill-switch state forever.
     // Subsequent route changes refresh in the background.
     let disabledRemote: ReadonlySet<string> = new Set(await readKillSwitchCache());
+
+    // Fire-and-forget by design — the bridge never awaits this hook, and the
+    // bridge layer already skips telemetry.* kinds to avoid feedback loops.
+    const onBridgeFailure = (failure: { category: BridgeFailureCategory }): void => {
+      void telemetry.trackBridgeFailure(failure.category);
+    };
 
     let bridge = createBridgeClient({
       token: settings.bridge.token,
       preferredTransport: settings.bridge.preferredTransport,
       localhostPort: settings.bridge.localhostPort,
+      onBridgeFailure,
     });
 
     async function refreshKillSwitch(): Promise<void> {
@@ -186,6 +195,7 @@ export default defineContentScript({
           token: next.bridge.token,
           preferredTransport: next.bridge.preferredTransport,
           localhostPort: next.bridge.localhostPort,
+          onBridgeFailure,
         });
         void refreshKillSwitch();
       }

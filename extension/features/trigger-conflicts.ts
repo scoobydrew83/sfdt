@@ -9,7 +9,7 @@ import { CONTEXTS } from '../lib/context-detector.js';
 import { escapeSoql } from '../lib/escape.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { loadSettings } from '../lib/settings.js';
-import { createBridgeClient } from '../lib/sfdt-bridge.js';
+import { createBridgeClient, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.js';
 import { showToast } from '../ui/toast.js';
 
 interface FlowDefinitionRecord {
@@ -322,7 +322,9 @@ async function dispatchRollback(
     localhostPort: settings.bridge.localhostPort,
     connectNativeImpl: chrome.runtime?.connectNative?.bind(chrome.runtime),
   });
-  return bridge.call({ kind: 'rollback', flowApiName, toVersion });
+  // Rollback runs real `sf` CLI work server-side — give it far longer than
+  // the default request timeout.
+  return bridge.call({ kind: 'rollback', flowApiName, toVersion }, { timeoutMs: LONG_RUNNING_TIMEOUT_MS });
 }
 
 function describeBridgeError(response: SfdtResponse): string {

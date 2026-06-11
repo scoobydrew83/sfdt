@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createEventMonitorFeature, SalesforceBayeuxClient } from '../features/event-monitor.js';
+import { createEventMonitorFeature, SalesforceBayeuxClient, type BayeuxMessage } from '../features/event-monitor.js';
 import type { SalesforceApiClient } from '../lib/salesforce-api.js';
 
 function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
   return {
+    apiVersion: 'v62.0',
     apiGet: vi.fn(async () => ({ records: [] })),
     toolingQuery: vi.fn(async () => ({ records: [] })),
     limits: vi.fn(async () => ({})),
@@ -95,6 +96,62 @@ describe('SalesforceBayeuxClient', () => {
     expect(statusChanges).toContain('Handshake successful. Subscribing...');
     expect(statusChanges).toContain('Listening on /event/My_Event__e...');
     expect(statusChanges).toContain('Disconnected');
+  });
+
+  it('sends a typed replay extension and delivers typed message data', async () => {
+    // Typed fixture — compiles against the exported BayeuxMessage shape,
+    // including the replay `ext` and channel-specific `data` payload.
+    const connectMessages: BayeuxMessage[] = [
+      {
+        channel: '/event/My_Event__e',
+        data: { payload: { Message__c: 'typed' }, event: { replayId: 7 } },
+        ext: { replay: { '/event/My_Event__e': 7 } },
+      },
+    ];
+
+    const sentBodies: BayeuxMessage[][] = [];
+    const fetchSpy = vi.fn(async (url, options: any) => {
+      const body = JSON.parse(options.body) as BayeuxMessage[];
+      sentBodies.push(body);
+      const channel = body[0]?.channel;
+
+      if (channel === '/meta/handshake') {
+        return {
+          ok: true,
+          json: async () => [{ channel: '/meta/handshake', clientId: 'client-123', successful: true }],
+        } as Response;
+      }
+      if (channel === '/meta/subscribe') {
+        return {
+          ok: true,
+          json: async () => [{ channel: '/meta/subscribe', successful: true }],
+        } as Response;
+      }
+      if (channel === '/meta/connect') {
+        return { ok: true, json: async () => connectMessages } as Response;
+      }
+      return { ok: true, json: async () => [{ channel: '/meta/disconnect', successful: true }] } as Response;
+    });
+
+    const client = new SalesforceBayeuxClient(
+      'https://test.salesforce.com',
+      'session-id',
+      'v62.0',
+      fetchSpy as any,
+    );
+
+    const received: unknown[] = [];
+    client.onMessage((msg) => {
+      received.push(msg);
+      void client.stop();
+    });
+
+    await client.start('/event/My_Event__e', -5);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const subscribeBody = sentBodies.find((b) => b[0]?.channel === '/meta/subscribe');
+    expect(subscribeBody?.[0]?.ext?.replay).toEqual({ '/event/My_Event__e': -5 });
+    expect(received).toEqual([{ payload: { Message__c: 'typed' }, event: { replayId: 7 } }]);
   });
 
   it('stops if handshake fails', async () => {

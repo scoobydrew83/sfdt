@@ -185,7 +185,7 @@ export function createSoapExploreFeature(options: {
 
     function syncOperations(): void {
       const wsdl = wsdlSelect.value;
-      opSelect.innerHTML = '';
+      opSelect.replaceChildren();
       const ops = Object.keys(TEMPLATES[wsdl] || {});
       ops.forEach(op => {
         const opt = doc.createElement('option');
@@ -307,7 +307,7 @@ export function createSoapExploreFeature(options: {
 
     async function renderHistoryMenu(): Promise<void> {
       if (!historyMenu) return;
-      historyMenu.innerHTML = '';
+      historyMenu.replaceChildren();
       const entries = await readSoapHistory();
       if (entries.length === 0) {
         const empty = doc.createElement('div');

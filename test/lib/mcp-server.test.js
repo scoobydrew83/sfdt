@@ -81,6 +81,9 @@ describe('SfdtMcpServer', () => {
     const result = await handler({});
     expect(result.tools).toBeDefined();
     expect(result.tools.some((t) => t.name === 'sfdt_preflight')).toBe(true);
+    // SEP-2549 cache metadata: catalog is static, so long TTL + global scope
+    expect(result.ttlMs).toBe(86_400_000);
+    expect(result.cacheScope).toBe('global');
   });
 
   describe('call-tool actions', () => {
@@ -291,6 +294,81 @@ describe('SfdtMcpServer', () => {
       const result = await callTool('non_existent_tool', {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Unknown tool');
+    });
+  });
+
+  describe('W3C trace context', () => {
+    const VALID_TRACEPARENT = `00-${'a'.repeat(32)}-${'b'.repeat(16)}-01`;
+    let callHandler;
+
+    beforeEach(() => {
+      callHandler = mockRegisteredHandlers.get('call-tool');
+    });
+
+    it('echoes traceparent and tracestate in result _meta on success', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
+
+      const result = await callHandler({
+        params: {
+          name: 'sfdt_preflight',
+          arguments: {},
+          _meta: { traceparent: VALID_TRACEPARENT, tracestate: 'vendor=x' },
+        },
+      });
+      expect(result._meta).toEqual({ traceparent: VALID_TRACEPARENT, tracestate: 'vendor=x' });
+    });
+
+    it('echoes trace context on the error path', async () => {
+      const result = await callHandler({
+        params: {
+          name: 'non_existent_tool',
+          arguments: {},
+          _meta: { traceparent: VALID_TRACEPARENT },
+        },
+      });
+      expect(result.isError).toBe(true);
+      expect(result._meta).toEqual({ traceparent: VALID_TRACEPARENT });
+    });
+
+    it('treats a malformed traceparent as absent', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const result = await callHandler({
+        params: {
+          name: 'sfdt_preflight',
+          arguments: {},
+          _meta: { traceparent: 'not-a-trace; rm -rf /' },
+        },
+      });
+      expect(result._meta).toBeUndefined();
+      const logged = errorSpy.mock.calls.flat().join(' ');
+      expect(logged).not.toContain('not-a-trace');
+      errorSpy.mockRestore();
+    });
+
+    it('omits _meta when no trace context is provided', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
+
+      const result = await callHandler({ params: { name: 'sfdt_preflight', arguments: {} } });
+      expect(result._meta).toBeUndefined();
+    });
+  });
+
+  describe('argument log redaction', () => {
+    it('logs arg keys but never arg values', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const callHandler = mockRegisteredHandlers.get('call-tool');
+      await callHandler({
+        params: { name: 'sfdt_validate', arguments: { targetOrg: 'SENTINEL-secret-org' } },
+      });
+
+      const logged = errorSpy.mock.calls.flat().join(' ');
+      expect(logged).toContain('targetOrg');
+      expect(logged).not.toContain('SENTINEL-secret-org');
+      errorSpy.mockRestore();
     });
   });
 });

@@ -3,7 +3,7 @@ import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { loadSettings } from '../lib/settings.js';
-import { createBridgeClient } from '../lib/sfdt-bridge.js';
+import { createBridgeClient, getBridgeData, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.js';
 import { showToast } from '../ui/toast.js';
 
 async function dispatchBridge(
@@ -17,7 +17,9 @@ async function dispatchBridge(
     localhostPort: settings.bridge.localhostPort,
     connectNativeImpl: chrome.runtime?.connectNative?.bind(chrome.runtime),
   });
-  return bridge.call({ kind, ...payload } as never);
+  // Deploys and rollbacks run real `sf` CLI work server-side — give them far
+  // longer than the default request timeout.
+  return bridge.call({ kind, ...payload } as never, { timeoutMs: LONG_RUNNING_TIMEOUT_MS });
 }
 
 function describeBridgeError(response: SfdtResponse): string {
@@ -110,9 +112,9 @@ export function createFlowDeployFeature(options: FlowDeployFeatureOptions = {}):
         showToast(`Deploying ${flowApiName}…`, { doc });
         const response = await dispatchBridge('deploy', { flowApiName, flowId });
         if (response.ok) {
-          const data = response.data as { status?: string; summary?: string };
-          showToast(data?.summary ?? `Deploy ${data?.status ?? 'completed'}`, {
-            kind: data?.status === 'Succeeded' ? 'success' : 'warning',
+          const data = getBridgeData<{ status: string; summary: string }>(response);
+          showToast(data.summary ?? `Deploy ${data.status ?? 'completed'}`, {
+            kind: data.status === 'Succeeded' ? 'success' : 'warning',
             doc,
           });
         } else {

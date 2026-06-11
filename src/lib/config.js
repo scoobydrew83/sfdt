@@ -171,6 +171,18 @@ export async function loadConfig(startDir) {
         absolutePath: path.join(merged._projectRoot, d.path),
         name: d.name ?? d.path.split('/').at(-1),
       }));
+
+      // Surface missing package directories at load time rather than letting
+      // deploy/manifest/pull fail later with an opaque sf CLI error.
+      const missing = merged.packageDirectories.filter(
+        (d) => !fs.pathExistsSync(d.absolutePath),
+      );
+      if (missing.length > 0) {
+        console.warn(
+          `Warning: packageDirectories path(s) in ${SFDX_PROJECT_FILE} not found on disk: ` +
+            missing.map((d) => d.path).join(', '),
+        );
+      }
     }
   }
   merged.manifestLayout = merged.manifestLayout || 'flat';

@@ -88,20 +88,29 @@ export default defineBackground(() => {
             // content scripts even with host_permissions set.
             const port = clampBridgePort(message.port);
             const url = `http://127.0.0.1:${port}/api/bridge/ping`;
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 1500);
-            try {
-              const res = await fetch(url, { method: 'GET', signal: controller.signal });
-              const body = (await res.json().catch(() => null)) as unknown;
-              return { ok: true, body };
-            } catch (err) {
-              return {
-                ok: false,
-                error: err instanceof Error ? err.message : String(err),
-              };
-            } finally {
-              clearTimeout(timer);
-            }
+            const attempt = async (): Promise<{ ok: boolean; body?: unknown; error?: string }> => {
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), 1500);
+              try {
+                const res = await fetch(url, { method: 'GET', signal: controller.signal });
+                const body = (await res.json().catch(() => null)) as unknown;
+                return { ok: true, body };
+              } catch (err) {
+                return {
+                  ok: false,
+                  error: err instanceof Error ? err.message : String(err),
+                };
+              } finally {
+                clearTimeout(timer);
+              }
+            };
+            // The ping result feeds the feature kill-switch — retry once so a
+            // single slow/failed ping doesn't flip feature state. Ping is
+            // idempotent (GET), so the retry is safe.
+            const first = await attempt();
+            if (first.ok) return first;
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            return attempt();
           }
 
           default:

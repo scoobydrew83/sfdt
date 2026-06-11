@@ -7,6 +7,7 @@ import { loadConfig } from '../lib/config.js';
 import { fetchOrgInventory } from '../lib/org-inventory.js';
 import { initCache, getDelta, updateCache, getCacheStatus } from '../lib/pull-cache.js';
 import { parallelRetrieve } from '../lib/parallel-retrieve.js';
+import { buildSourceDirArgs } from '../lib/source-dirs.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 
@@ -50,10 +51,7 @@ async function runPull(options) {
   if (config.pullCache?.enabled === false) {
     const spinner = ora('Retrieving all metadata...').start();
     try {
-      const sourceDirArgs = (config.packageDirectories?.length
-        ? config.packageDirectories.map((d) => d.path)
-        : [config.defaultSourcePath ?? 'force-app/main/default']
-      ).flatMap((d) => ['--source-dir', d]);
+      const sourceDirArgs = buildSourceDirArgs(config);
       await execa('sf', ['project', 'retrieve', 'start', ...sourceDirArgs, '--target-org', orgAlias], { stdio: 'inherit', cwd: projectRoot });
       spinner.succeed('Retrieve complete (cache disabled)');
     } catch (err) {
@@ -99,22 +97,12 @@ async function runPull(options) {
     case 'full':
       await smartPull(config, { projectRoot, cacheDir, orgAlias, full: true, dryRun: options.dryRun });
       break;
-    case 'preview': {
-      const sourceDirArgs = (config.packageDirectories?.length
-        ? config.packageDirectories.map((d) => d.path)
-        : [config.defaultSourcePath ?? 'force-app/main/default']
-      ).flatMap((d) => ['--source-dir', d]);
-      await execa('sf', ['project', 'retrieve', 'preview', ...sourceDirArgs, '--target-org', orgAlias], { stdio: 'inherit', cwd: projectRoot });
+    case 'preview':
+      await execa('sf', ['project', 'retrieve', 'preview', ...buildSourceDirArgs(config), '--target-org', orgAlias], { stdio: 'inherit', cwd: projectRoot });
       break;
-    }
-    case 'conflict': {
-      const sourceDirArgs = (config.packageDirectories?.length
-        ? config.packageDirectories.map((d) => d.path)
-        : [config.defaultSourcePath ?? 'force-app/main/default']
-      ).flatMap((d) => ['--source-dir', d]);
-      await execa('sf', ['project', 'retrieve', 'start', '--verbose', ...sourceDirArgs, '--target-org', orgAlias], { stdio: 'inherit', cwd: projectRoot });
+    case 'conflict':
+      await execa('sf', ['project', 'retrieve', 'start', '--verbose', ...buildSourceDirArgs(config), '--target-org', orgAlias], { stdio: 'inherit', cwd: projectRoot });
       break;
-    }
     case 'reset':
       await execa('sf', ['project', 'reset', 'tracking', '--no-prompt', '--target-org', orgAlias], { stdio: 'inherit', cwd: projectRoot });
       break;
