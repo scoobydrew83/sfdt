@@ -300,7 +300,7 @@ export function createEventMonitorFeature(options: {
   let channelSelect: HTMLSelectElement | null = null;
   async function updateChannelDropdown(): Promise<void> {
     if (!channelSelect) return;
-    channelSelect.innerHTML = '';
+    channelSelect.replaceChildren();
     const list = await fetchChannels(selectedChannelType);
     list.forEach(c => {
       const opt = doc.createElement('option');
@@ -316,7 +316,7 @@ export function createEventMonitorFeature(options: {
   let eventListContainer: HTMLDivElement | null = null;
   function renderEvents(): void {
     if (!eventListContainer) return;
-    eventListContainer.innerHTML = '';
+    eventListContainer.replaceChildren();
 
     const filtered = events.filter(e => {
       if (!eventFilter) return true;
@@ -371,7 +371,7 @@ export function createEventMonitorFeature(options: {
       limitsContainer.textContent = 'Loading limits...';
       try {
         const res = await api.limits();
-        limitsContainer.innerHTML = '';
+        limitsContainer.replaceChildren();
         const keys = Object.keys(res).filter(k => k.includes('PlatformEvent') || k.includes('Streaming'));
         if (keys.length === 0) {
           limitsContainer.textContent = 'No Platform Event limits returned by org.';

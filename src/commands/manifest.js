@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
-import { execa } from 'execa';
 import { loadConfig } from '../lib/config.js';
+import { isSafeGitRef, resolveBaseRef, diffNameStatus } from '../lib/git-utils.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { getPrompt } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
@@ -36,13 +36,21 @@ export function registerManifestCommand(program) {
         const apiVersion = config.sourceApiVersion || '63.0';
         const manifestDir = config.manifestDir || 'manifest/release';
 
+        if (!isSafeGitRef(options.base) || !isSafeGitRef(options.head)) {
+          print.error('Invalid git ref — refs must not start with "-" or contain shell metacharacters');
+          process.exitCode = 1;
+          return;
+        }
+
         // Resolve release name
         let releaseName = options.name || options.version || null;
         if (releaseName === 'today') {
           releaseName = new Date().toISOString().slice(0, 10);
         }
-        if (releaseName && !/^[A-Za-z0-9._-]+$/.test(releaseName)) {
-          print.error('--name must contain only alphanumeric characters, dots, underscores, or hyphens');
+        // Must start alphanumeric so labels like "..." or "-x" can't produce
+        // confusing or path-traversing filenames (matches the GUI validation).
+        if (releaseName && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(releaseName)) {
+          print.error('--name must start with an alphanumeric character and contain only alphanumerics, dots, underscores, or hyphens');
           process.exitCode = 1;
           return;
         }
@@ -82,11 +90,7 @@ export function registerManifestCommand(program) {
           print.info(`Using merge-base ${baseRef.slice(0, 7)} as diff base`);
         }
 
-        const diffResult = await execa(
-          'git',
-          ['diff', '--name-status', baseRef, options.head, '--', ...diffPaths],
-          { cwd: projectRoot, reject: false },
-        );
+        const diffResult = await diffNameStatus(baseRef, options.head, diffPaths, projectRoot);
 
         if (diffResult.exitCode !== 0) {
           print.error(`git diff failed: ${diffResult.stderr || 'unknown error'}`);
@@ -186,20 +190,4 @@ export function registerManifestCommand(program) {
         process.exitCode = resolveExitCode(err);
       }
     });
-}
-
-/**
- * Try to resolve a base ref. If the user passed a branch name and we're on
- * a feature branch, fall back to the merge-base to avoid pulling in changes
- * that are already on main.
- */
-async function resolveBaseRef(base, head, cwd) {
-  // If the caller passed a specific commit SHA we trust it as-is.
-  if (/^[0-9a-f]{7,40}$/i.test(base)) return base;
-
-  const mergeBase = await execa('git', ['merge-base', base, head], { cwd, reject: false });
-  if (mergeBase.exitCode === 0 && mergeBase.stdout.trim()) {
-    return mergeBase.stdout.trim();
-  }
-  return base;
 }

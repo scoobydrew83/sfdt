@@ -7,6 +7,7 @@ import { getPrompt } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { safeResolvePath } from '../lib/project-detect.js';
+import { isSafeGitRef, diffNameStatus } from '../lib/git-utils.js';
 import { parseDiffToMetadata, countMembers } from '../lib/metadata-mapper.js';
 
 const VALID_FORMATS = ['github', 'slack', 'markdown'];
@@ -28,6 +29,12 @@ export function registerPrDescriptionCommand(program) {
           print.error(
             `Unknown format "${options.format}". Valid: ${VALID_FORMATS.join(', ')}`,
           );
+          process.exitCode = 1;
+          return;
+        }
+
+        if (!isSafeGitRef(options.base) || !isSafeGitRef(options.head)) {
+          print.error('Invalid git ref — refs must not start with "-" or contain shell metacharacters');
           process.exitCode = 1;
           return;
         }
@@ -118,17 +125,11 @@ async function collectDiffContext(cwd, sourcePath, options) {
   );
 
   // Name-status diff scoped to the source root (force-app/, etc.)
-  const diff = await execa(
-    'git',
-    [
-      'diff',
-      '--name-status',
-      options.base,
-      options.head,
-      '--',
-      `${sourcePath.split('/')[0]}/`,
-    ],
-    execOpts,
+  const diff = await diffNameStatus(
+    options.base,
+    options.head,
+    [`${sourcePath.split('/')[0]}/`],
+    cwd,
   );
 
   const commits = (log.stdout || '').split('\n').filter(Boolean);
