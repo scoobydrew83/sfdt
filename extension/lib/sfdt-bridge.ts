@@ -16,6 +16,27 @@ import { negotiateProtocolVersion } from '@sfdt/flow-core/bridge-contract';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const DISCOVERY_TIMEOUT_MS = 1000;
+const RETRY_DELAY_MS = 300;
+
+/** Per-call timeout for bridge operations that run real sf CLI work. */
+export const LONG_RUNNING_TIMEOUT_MS = 60000;
+
+// Read-only request kinds per the bridge contract — safe to retry once on a
+// transport failure. Mutating kinds (deploy, rollback), cost-incurring kinds
+// (ai), and write-on-server kinds (telemetry.snapshot) are deliberately
+// excluded: a retry there could double-apply the operation.
+const IDEMPOTENT_KINDS: ReadonlySet<string> = new Set([
+  'ping',
+  'version',
+  'quality',
+  'drift',
+  'scan',
+  'compare',
+]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export interface BridgeOptions {
   token: string;
@@ -69,6 +90,11 @@ async function chromeRuntimeSendMessage<T>(message: unknown): Promise<T | null> 
   });
 }
 
+export interface BridgeCallOptions {
+  /** Overrides the client-level timeout for this call only. */
+  timeoutMs?: number;
+}
+
 export interface BridgeClient {
   discover(): Promise<Transport>;
 
@@ -87,12 +113,17 @@ export interface BridgeClient {
   /**
    * Returns BRIDGE_OFFLINE with the negotiation message when a prior
    * getServerInfo detected a major protocol mismatch — ping/version are
-   * exempt so diagnostics still flow.
+   * exempt so diagnostics still flow. Idempotent (read-only) kinds are
+   * retried once after a short delay on a transport failure; mutating
+   * kinds are never retried.
    */
-  send<R extends SfdtRequest>(request: R): Promise<SfdtResponse>;
+  send<R extends SfdtRequest>(request: R, options?: BridgeCallOptions): Promise<SfdtResponse>;
 
   /** Stamps the requestId for the caller. */
-  call<R extends Omit<SfdtRequest, 'requestId'>>(request: R): Promise<SfdtResponse>;
+  call<R extends Omit<SfdtRequest, 'requestId'>>(
+    request: R,
+    options?: BridgeCallOptions,
+  ): Promise<SfdtResponse>;
 }
 
 export function createBridgeClient(options: BridgeOptions): BridgeClient {
@@ -110,7 +141,10 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
   // an incompatible major version; ping/version stay open for diagnostics.
   let cachedNegotiation: ProtocolNegotiation | null = null;
 
-  async function sendOverLocalhost(request: SfdtRequest): Promise<SfdtResponse> {
+  async function sendOverLocalhost(
+    request: SfdtRequest,
+    requestTimeoutMs: number = timeoutMs,
+  ): Promise<SfdtResponse> {
     if (!token) {
       return {
         ok: false,
@@ -121,7 +155,7 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
     }
     const url = `http://127.0.0.1:${port}/api/bridge/exchange`;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
     try {
       const res = await fetchImpl(url, {
         method: 'POST',
@@ -146,7 +180,10 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
     }
   }
 
-  async function sendOverNative(request: SfdtRequest): Promise<SfdtResponse> {
+  async function sendOverNative(
+    request: SfdtRequest,
+    requestTimeoutMs: number = timeoutMs,
+  ): Promise<SfdtResponse> {
     if (!connectNativeImpl) {
       // Tests and non-extension surfaces lack chrome.runtime.connectNative.
       return offlineResponse(request.requestId, 'Native messaging host is not available in this context.');
@@ -170,8 +207,10 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
         } catch {
           // ignore
         }
-        resolve(offlineResponse(request.requestId, `Native host timed out after ${timeoutMs}ms.`));
-      }, timeoutMs);
+        resolve(
+          offlineResponse(request.requestId, `Native host timed out after ${requestTimeoutMs}ms.`),
+        );
+      }, requestTimeoutMs);
 
       port.onMessage.addListener((msg: SfdtResponse) => {
         clearTimeout(timer);
@@ -248,7 +287,24 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
     }
   }
 
-  async function send(request: SfdtRequest): Promise<SfdtResponse> {
+  async function sendOnce(request: SfdtRequest, requestTimeoutMs: number): Promise<SfdtResponse> {
+    if (preferredTransport === 'localhost') return sendOverLocalhost(request, requestTimeoutMs);
+    if (preferredTransport === 'native') return sendOverNative(request, requestTimeoutMs);
+
+    const local = await sendOverLocalhost(request, requestTimeoutMs);
+    if (local.ok) return local;
+    const localCode = (local as SfdtErrorResponse).code;
+    // Any non-offline error means sfdt ui IS reachable — surface that error
+    // rather than shadowing it with a native-host attempt.
+    if (localCode && localCode !== 'BRIDGE_OFFLINE') return local;
+    if (!connectNativeImpl) return local;
+    return sendOverNative(request, requestTimeoutMs);
+  }
+
+  async function send(
+    request: SfdtRequest,
+    callOptions?: BridgeCallOptions,
+  ): Promise<SfdtResponse> {
     // Major protocol mismatch → refuse non-diagnostic traffic.
     if (
       cachedNegotiation &&
@@ -264,21 +320,22 @@ export function createBridgeClient(options: BridgeOptions): BridgeClient {
       };
     }
 
-    if (preferredTransport === 'localhost') return sendOverLocalhost(request);
-    if (preferredTransport === 'native') return sendOverNative(request);
-
-    const local = await sendOverLocalhost(request);
-    if (local.ok) return local;
-    const localCode = (local as SfdtErrorResponse).code;
-    // Any non-offline error means sfdt ui IS reachable — surface that error
-    // rather than shadowing it with a native-host attempt.
-    if (localCode && localCode !== 'BRIDGE_OFFLINE') return local;
-    if (!connectNativeImpl) return local;
-    return sendOverNative(request);
+    const requestTimeoutMs = callOptions?.timeoutMs ?? timeoutMs;
+    const first = await sendOnce(request, requestTimeoutMs);
+    if (first.ok) return first;
+    // One retry, idempotent kinds only, and only for transport-level failures
+    // (timeout / network) — BRIDGE_UNAUTHORIZED etc. won't fix themselves.
+    if (!IDEMPOTENT_KINDS.has(request.kind)) return first;
+    if ((first as SfdtErrorResponse).code !== 'BRIDGE_OFFLINE') return first;
+    await sleep(RETRY_DELAY_MS);
+    return sendOnce(request, requestTimeoutMs);
   }
 
-  async function call<R extends Omit<SfdtRequest, 'requestId'>>(req: R): Promise<SfdtResponse> {
-    return send({ ...(req as object), requestId: makeRequestId() } as SfdtRequest);
+  async function call<R extends Omit<SfdtRequest, 'requestId'>>(
+    req: R,
+    callOptions?: BridgeCallOptions,
+  ): Promise<SfdtResponse> {
+    return send({ ...(req as object), requestId: makeRequestId() } as SfdtRequest, callOptions);
   }
 
   async function getServerInfo(): Promise<{

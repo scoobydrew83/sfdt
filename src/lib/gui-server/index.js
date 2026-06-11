@@ -807,7 +807,10 @@ export function createGuiApp(config, version, port = 7654) {
 
       const streamLines = (readable) => {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });
-        rl.on('line', (line) => {
+        rl.on('line', (rawLine) => {
+          // Redact at ingest so secrets never sit in the in-memory buffer or
+          // reach the browser via the SSE stream.
+          const line = redactSensitiveData(rawLine);
           lines.push(line);
           const stripped = stripAnsi(line);
           if (!res.writableEnded && !stripped.startsWith('SFDT_LOG:')) {
@@ -863,12 +866,13 @@ export function createGuiApp(config, version, port = 7654) {
           retention: config.logRetention ?? 50,
         });
       } else {
-        // Non-structured commands (deploy, rollback) keep raw format
+        // Non-structured commands (deploy, rollback) keep raw format.
+        // Lines were already redacted at ingest in streamLines.
         const logPayload = {
           date: new Date().toISOString(),
           command,
           exitCode,
-          lines: redactSensitiveData(lines)
+          lines
         };
         const logFilePath = path.join(projectRoot, cmd.logFile);
         await fs.outputJson(logFilePath, logPayload, { spaces: 2 });
@@ -1796,7 +1800,9 @@ export function createGuiApp(config, version, port = 7654) {
       const JOB_ID_PATTERN = /Validation Job ID:\s*([A-Za-z0-9]{15,18})/;
       const streamLines = (readable) => {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });
-        rl.on('line', (line) => {
+        rl.on('line', (rawLine) => {
+          // Redact at ingest so secrets never reach the buffer or the SSE stream.
+          const line = redactSensitiveData(rawLine);
           lines.push(line);
           const stripped = stripAnsi(line);
           if (!capturedValidationJobId) {

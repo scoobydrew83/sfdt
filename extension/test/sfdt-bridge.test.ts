@@ -214,3 +214,97 @@ describe('createBridgeClient — protocol negotiation', () => {
     expect(client.getNegotiation()).toBeNull();
   });
 });
+
+describe('createBridgeClient — retries and per-call timeout', () => {
+  function okResponse(requestId: string, data: unknown = { version: '0.9.0' }) {
+    return new Response(JSON.stringify({ ok: true, requestId, data }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  it('retries an idempotent kind once after a transport failure', async () => {
+    const fetchSpy = vi.fn(async () => {
+      if (fetchSpy.mock.calls.length === 1) throw new Error('network down');
+      return okResponse('r1');
+    });
+    const client = createBridgeClient({
+      token: 'token-x',
+      preferredTransport: 'localhost',
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+    });
+    const res = await client.send({ requestId: 'r1', kind: 'version' });
+    expect(res.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after the single retry when the transport keeps failing', async () => {
+    const fetchSpy = vi.fn(async () => {
+      throw new Error('network down');
+    });
+    const client = createBridgeClient({
+      token: 'token-x',
+      preferredTransport: 'localhost',
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+    });
+    const res = await client.send({ requestId: 'r1', kind: 'ping' });
+    expect(res.ok).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('does NOT retry a mutating kind on transport failure', async () => {
+    const fetchSpy = vi.fn(async () => {
+      throw new Error('network down');
+    });
+    const client = createBridgeClient({
+      token: 'token-x',
+      preferredTransport: 'localhost',
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+    });
+    const res = await client.send({
+      requestId: 'r2',
+      kind: 'deploy',
+      flowApiName: 'My_Flow',
+    });
+    expect(res.ok).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+
+  it('does NOT retry non-transport errors (missing token short-circuits once)', async () => {
+    const fetchSpy = vi.fn(async () => okResponse('r3'));
+    const client = createBridgeClient({
+      token: '', // → BRIDGE_UNAUTHORIZED before any fetch
+      preferredTransport: 'localhost',
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+    });
+    const res = await client.send({ requestId: 'r3', kind: 'ping' });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe('BRIDGE_UNAUTHORIZED');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('honours a per-call timeoutMs override over the 8s default', async () => {
+    // Never resolves except via abort — only the per-call 50ms timeout can
+    // bring this test home before the suite timeout.
+    const fetchSpy = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+    );
+    const client = createBridgeClient({
+      token: 'token-x',
+      preferredTransport: 'localhost',
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+    });
+    const started = Date.now();
+    const res = await client.send(
+      { requestId: 'r4', kind: 'deploy', flowApiName: 'My_Flow' },
+      { timeoutMs: 50 },
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe('BRIDGE_OFFLINE');
+    expect(Date.now() - started).toBeLessThan(4000);
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+});
