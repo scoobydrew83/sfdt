@@ -27,7 +27,8 @@ Configure the MCP server in your `.sfdt/config.json` under the `mcp` key:
     "parking": {
       "enabled": true,
       "thresholdBytes": 50000,
-      "ttlSeconds": 86400
+      "ttlSeconds": 86400,
+      "cacheScope": "session"
     }
   }
 }
@@ -36,7 +37,8 @@ Configure the MCP server in your `.sfdt/config.json` under the `mcp` key:
 * **`mcp.enabled`:** Toggle MCP integration.
 * **`mcp.parking.enabled`:** Enables context budget governance.
 * **`mcp.parking.thresholdBytes`:** Size limit above which response payloads are parked (default: 50 KB).
-* **`mcp.parking.ttlSeconds`:** Time-to-live before parked cache files are deleted (default: 24 hours).
+* **`mcp.parking.ttlSeconds`:** Time-to-live before parked cache files are deleted (default: 24 hours). The `ttlMs` field in parked envelopes is derived from this value.
+* **`mcp.parking.cacheScope`:** SEP-2549 cache scope advertised on parked envelopes — `"global"`, `"user"`, or `"session"` (default: `"session"`).
 
 ---
 
@@ -116,10 +118,40 @@ Reads the latest deployment, preflight, quality, or drift logs.
 
 ### 4. Context Budget Governance & Parking
 
+When a tool result exceeds `mcp.parking.thresholdBytes`, the server writes the full payload to `.sfdt/cache/parked/<uuid>.json` and returns a lightweight envelope instead:
+
+```json
+{
+  "_parked": true,
+  "ref": "parked://<uuid>",
+  "byteSize": 123456,
+  "rowCount": 42,
+  "preview": "...",
+  "ttlMs": 86400000,
+  "cacheScope": "session"
+}
+```
+
+> [!NOTE]
+> **Breaking envelope change:** the `expiresAt` ISO timestamp field was replaced by `ttlMs` + `cacheScope` to match the SEP-2549 cache metadata shape in the MCP 2026-07-28 release candidate. Consumers should treat `ttlMs` as relative to when the envelope was received.
+
 #### `sfdt_get_parked_result`
 Retrieves the full content of an oversized payload cached under `.sfdt/cache/parked/`.
 * **Arguments:**
   * `ref` (string, required): The reference URI (e.g. `parked://<uuid>`).
+
+---
+
+## MCP RC Alignment (2026-07-28)
+
+The server is aligned with the MCP 2026-07-28 release candidate at the application level. The pinned SDK (`~1.29.0`) predates the RC, so protocol-level negotiation is unchanged; the items below are sfdt's own surface:
+
+* **No deprecated primitives.** The server advertises a tools-only capability — `Roots`, `Sampling`, and `Logging` (deprecated in the RC with a 12-month removal runway) are not exposed and must not be added.
+* **Stateless per-request design.** Every tool call shells out to the sfdt CLI; no session state exists beyond the parked-file cache, matching the RC's stateless posture (SEP-2567).
+* **SEP-2549 cache metadata.** `tools/list` responses include `ttlMs: 86400000, cacheScope: "global"` (the catalog is static per process). Parked envelopes carry `ttlMs`/`cacheScope` instead of `expiresAt`. If a strict non-SDK client ever rejects the top-level fields on `tools/list`, relocating them into `_meta` is a one-line change.
+* **W3C Trace Context (SEP-414).** `traceparent`/`tracestate` are read from `params._meta` on `tools/call`, validated, included in stderr audit logs for correlation, and echoed back in the result `_meta`.
+* **Redacted audit logging.** Tool-call logs record the tool name, argument keys, payload size, and traceparent — never argument values.
+* **Deferred until an RC-aware SDK ships:** consuming server-advertised `ttlMs` in `src/lib/mcp-client.js` (which currently uses a local 30s cache), and any Streamable HTTP transport (which would require `Mcp-Method`/`Mcp-Name` header enforcement plus an OAuth/OIDC story).
 
 ---
 

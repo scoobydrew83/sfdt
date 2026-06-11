@@ -116,6 +116,7 @@ Before any release PR is merged:
 - [ ] If anything in `packages/flow-core/src/bridge-contract.ts` changed, the `/pre-release-cli-test` skill has been run (verifies all 21 CLI commands' `--help` smoke).
 - [ ] If anything in `gui/` changed, the `/pre-release-ui-test` skill has been run.
 - [ ] If anything outside docs/tests changed, the `/pre-release-security` skill has been run.
+- [ ] If `@modelcontextprotocol/sdk` was bumped past 1.29.x, a manual smoke test has been run against both `sf mcp start` (client side, `src/lib/mcp-client.js`) and `sfdt mcp start` (server side) — at minimum a `tools/list` plus one `tools/call` round-trip. The server relies on verified-but-undocumented SDK behaviors (handler results passed through verbatim, loose `_meta` parsing), so SDK bumps must not land silently.
 - [ ] `CHANGELOG.md` updated.
 
 The user invokes those skills (`/pre-release-cli-test`, `/pre-release-ui-test`, `/pre-release-security`) — they are not auto-runnable from CI.

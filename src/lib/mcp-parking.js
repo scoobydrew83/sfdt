@@ -69,8 +69,9 @@ export async function parkIfNeeded(payload, config) {
     preview = preview.slice(0, 1000) + '\n... (truncated preview)';
   }
 
+  // SEP-2549 cache metadata shape (ttlMs/cacheScope) so the envelope matches
+  // the MCP 2026-07-28 RC fields rather than a parallel expiresAt timestamp.
   const ttl = parkingConfig.ttlSeconds ?? DEFAULT_TTL_SECONDS;
-  const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
 
   return {
     _parked: true,
@@ -78,7 +79,8 @@ export async function parkIfNeeded(payload, config) {
     byteSize,
     rowCount,
     preview,
-    expiresAt,
+    ttlMs: ttl * 1000,
+    cacheScope: parkingConfig.cacheScope ?? 'session',
   };
 }
 
