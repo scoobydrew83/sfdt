@@ -236,6 +236,47 @@ export function recordsToCsv(records: ReadonlyArray<Record<string, unknown>>): s
   return [header, ...rows].join('\n');
 }
 
+export function generateLangGraphNode(soql: string, records: ReadonlyArray<Record<string, unknown>>): string {
+  const cols = columnsFromRecords(records);
+  const typeMap: Record<string, string> = {};
+
+  if (records.length > 0) {
+    const firstRow = records[0] as Record<string, unknown>;
+    for (const col of cols) {
+       const val = firstRow[col];
+       if (typeof val === 'number') typeMap[col] = 'float';
+       else if (typeof val === 'boolean') typeMap[col] = 'bool';
+       else typeMap[col] = 'str';
+    }
+  }
+
+  const fieldsDef = cols.map(c => `    ${c}: ${typeMap[c] || 'str'}`).join('\n');
+
+  return `from typing import Any, Dict, List
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph.message import add_messages
+from pydantic import BaseModel, Field
+
+class SoqlResult(BaseModel):
+${fieldsDef || '    pass'}
+
+def execute_soql_node(state: Dict[str, Any], config: RunnableConfig) -> Dict[str, Any]:
+    """
+    Executes a SOQL query against Salesforce.
+    """
+    query = """
+${soql}
+    """
+
+    # Example implementation using simple_salesforce or similar
+    # sf = get_salesforce_client(config)
+    # results = sf.query(query)
+
+    # return {"soql_results": results['records']}
+    pass
+`;
+}
+
 function triggerDownload(doc: Document, filename: string, text: string, mime: string): void {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -566,9 +607,14 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     exportCsvBtn.textContent = 'Export CSV';
     exportCsvBtn.style.cssText =
       'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    const langGraphBtn = doc.createElement('button');
+    langGraphBtn.textContent = 'LangGraph Node';
+    langGraphBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     footer.appendChild(loadMoreBtn);
     footer.appendChild(copyCsvBtn);
     footer.appendChild(exportCsvBtn);
+    footer.appendChild(langGraphBtn);
 
     if (historyEnabled) {
       const clearHistBtn = doc.createElement('button');
@@ -598,6 +644,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       loadMoreBtn.style.display = 'none';
       copyCsvBtn.style.display = 'none';
       exportCsvBtn.style.display = 'none';
+      langGraphBtn.style.display = 'none';
     }
 
     function clearError(): void {
@@ -724,6 +771,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       resultsWrap.style.display = 'block';
       copyCsvBtn.style.display = 'inline-block';
       exportCsvBtn.style.display = 'inline-block';
+      langGraphBtn.style.display = 'inline-block';
       const canPaginate =
         !!lastEnvelope && lastEnvelope.done === false && !!lastEnvelope.nextRecordsUrl;
       loadMoreBtn.style.display = canPaginate && pagesLoaded < PAGE_CAP ? 'inline-block' : 'none';
@@ -1516,6 +1564,17 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       triggerDownload(doc, `soql-${stamp}.csv`, csv, 'text/csv');
     });
 
+    langGraphBtn.addEventListener('click', async () => {
+      const currentSoql = textarea.value.trim();
+      const code = generateLangGraphNode(currentSoql, records);
+      try {
+        await win.navigator.clipboard.writeText(code);
+        showToast('LangGraph node copied to clipboard', { doc, kind: 'success' });
+      } catch {
+        showToast('Could not copy to clipboard', { doc, kind: 'error' });
+      }
+    });
+
     doc.addEventListener('keydown', function escHandler(e) {
       if (e.key === 'Escape' && overlay) {
         close();
@@ -1556,6 +1615,7 @@ export function _soqlRunnerTestApi() {
     columnsFromRecords,
     formatCell,
     recordsToCsv,
+    generateLangGraphNode,
     readSoqlHistory,
     writeSoqlHistory,
     pushSoqlHistory,
