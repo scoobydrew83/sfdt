@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { _exportForPromptTestApi } from '../features/export-for-prompt.js';
 
-const { buildSchemaMarkdown, escapeCell } = _exportForPromptTestApi();
+const { buildSchemaMarkdown, escapeCell, extractSetupObject } = _exportForPromptTestApi();
 
 describe('export-for-prompt — buildSchemaMarkdown', () => {
   it('renders a dense field table with required + description columns', () => {
@@ -36,5 +36,46 @@ describe('export-for-prompt — buildSchemaMarkdown', () => {
       ],
     });
     expect(md).toContain('| `Notes` | Notes \\| Extra | textarea | No | see this |');
+  });
+});
+
+describe('export-for-prompt — extractSetupObject', () => {
+  it('extracts a standard object from an Object Manager URL', () => {
+    expect(
+      extractSetupObject(
+        'https://my.lightning.force.com/lightning/setup/ObjectManager/Account/FieldsAndRelationships/view',
+      ),
+    ).toBe('Account');
+  });
+
+  it('extracts a custom object API name', () => {
+    expect(
+      extractSetupObject(
+        'https://my.lightning.force.com/lightning/setup/ObjectManager/Broker__c/Details/view',
+      ),
+    ).toBe('Broker__c');
+  });
+
+  it('extracts a durable entity id segment', () => {
+    expect(
+      extractSetupObject(
+        'https://my.lightning.force.com/lightning/setup/ObjectManager/01I5g000000abcdEAA/Details/view',
+      ),
+    ).toBe('01I5g000000abcdEAA');
+  });
+
+  it('returns null for the Object Manager landing page', () => {
+    expect(
+      extractSetupObject('https://my.lightning.force.com/lightning/setup/ObjectManager/home/list'),
+    ).toBeNull();
+  });
+
+  it('returns null for non–Object Manager URLs', () => {
+    expect(
+      extractSetupObject('https://my.lightning.force.com/lightning/r/Account/001xx/view'),
+    ).toBeNull();
+    expect(
+      extractSetupObject('https://my.lightning.force.com/lightning/setup/FlowDefinition/home'),
+    ).toBeNull();
   });
 });

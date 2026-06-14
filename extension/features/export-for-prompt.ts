@@ -27,12 +27,35 @@ interface GlobalDescribe {
   sobjects: { name: string; keyPrefix: string | null }[];
 }
 
+/** Salesforce 15- or 18-char record/entity id. */
+const SF_ID_RE = /^[a-zA-Z0-9]{15,18}$/;
+
 /** Escape a value so it is safe to embed in a Markdown table cell. */
 function escapeCell(value: string): string {
   return value
     .replace(/\|/g, '\\|')
     .replace(/\r?\n/g, ' ')
     .trim();
+}
+
+/**
+ * Extract the object segment from a Lightning Object Manager setup URL, e.g.
+ * `/lightning/setup/ObjectManager/Account/FieldsAndRelationships/view` → `Account`.
+ * Returns null for the Object Manager landing page (`.../ObjectManager/home/...`)
+ * and any non–Object Manager URL. The segment is usually the API name, but can
+ * be a durable entity id for some custom objects — callers resolve that.
+ */
+export function extractSetupObject(url: string): string | null {
+  const m = /\/lightning\/setup\/ObjectManager\/([^/?#]+)/i.exec(url);
+  if (!m) return null;
+  let seg: string;
+  try {
+    seg = decodeURIComponent(m[1]!);
+  } catch {
+    seg = m[1]!;
+  }
+  if (!seg || seg.toLowerCase() === 'home') return null;
+  return seg;
 }
 
 /**
@@ -59,22 +82,67 @@ export function buildSchemaMarkdown(objectName: string, describe: SObjectDescrib
   return lines.join('\n');
 }
 
-/**
- * Resolve the SObject API name for a record. Prefers the name embedded in the
- * URL; otherwise looks it up by key prefix via the global describe (replacing
- * the old hardcoded five-object prefix map).
- */
-async function resolveObjectName(
+/** Look up an object's API name from a record key prefix via the global describe. */
+async function resolveApiNameFromKeyPrefix(
   api: SalesforceApiClient,
-  recordContext: { recordId: string; sobjectName?: string },
+  prefix: string,
 ): Promise<string | null> {
-  if (recordContext.sobjectName) return recordContext.sobjectName;
-  const prefix = recordContext.recordId.slice(0, 3);
   const global = await api.apiGet<GlobalDescribe>(
     `/services/data/${api.apiVersion}/sobjects/`,
   );
   const match = global?.sobjects?.find((s) => s.keyPrefix === prefix);
   return match ? match.name : null;
+}
+
+/**
+ * Resolve the target SObject API name for the current page — either an Object
+ * Manager setup page or a record page. Returns null when neither applies.
+ */
+async function resolveTargetObject(
+  api: SalesforceApiClient,
+  url: string,
+): Promise<string | null> {
+  const setupSegment = extractSetupObject(url);
+  // The segment is the API name for standard objects and most custom objects;
+  // describeObject() falls back to an entity-id lookup when it isn't.
+  if (setupSegment) return setupSegment;
+
+  const recordContext = extractRecordContext(url);
+  if (recordContext?.recordId) {
+    if (recordContext.sobjectName) return recordContext.sobjectName;
+    return resolveApiNameFromKeyPrefix(api, recordContext.recordId.slice(0, 3));
+  }
+  return null;
+}
+
+/**
+ * Describe an object by API name. If the name is actually a durable entity id
+ * (custom objects in some Object Manager URLs), resolve it to a QualifiedApiName
+ * via the Tooling API and retry. Returns null when the object can't be described.
+ */
+async function describeObject(
+  api: SalesforceApiClient,
+  nameOrId: string,
+): Promise<SObjectDescribe | null> {
+  try {
+    return await api.apiGet<SObjectDescribe>(
+      `/services/data/${api.apiVersion}/sobjects/${encodeURIComponent(nameOrId)}/describe`,
+    );
+  } catch {
+    if (!SF_ID_RE.test(nameOrId)) return null;
+    try {
+      const res = await api.toolingQuery<{ QualifiedApiName: string }>(
+        `SELECT QualifiedApiName FROM EntityDefinition WHERE DurableId = '${nameOrId}'`,
+      );
+      const apiName = res?.records?.[0]?.QualifiedApiName;
+      if (!apiName) return null;
+      return await api.apiGet<SObjectDescribe>(
+        `/services/data/${api.apiVersion}/sobjects/${encodeURIComponent(apiName)}/describe`,
+      );
+    } catch {
+      return null;
+    }
+  }
 }
 
 export function createExportForPromptFeature(options: ExportForPromptOptions = {}): Feature {
@@ -86,7 +154,7 @@ export function createExportForPromptFeature(options: ExportForPromptOptions = {
     manifest: {
       id: 'export-for-prompt',
       name: 'Export for Prompt',
-      contexts: [CONTEXTS.RECORD_PAGE],
+      contexts: [CONTEXTS.RECORD_PAGE, CONTEXTS.SETUP_OTHER],
     },
 
     async onActivate() {
@@ -97,30 +165,27 @@ export function createExportForPromptFeature(options: ExportForPromptOptions = {
           return;
         }
 
-        const recordContext = extractRecordContext(win.location.href);
-        if (!recordContext?.recordId) {
-          showToast('No record context found on this page to export.', { kind: 'warning', doc });
+        const objectName = await resolveTargetObject(sfApi, win.location.href);
+        if (!objectName) {
+          showToast('Open a record or an Object Manager page to export its schema.', {
+            kind: 'warning',
+            doc,
+          });
           return;
         }
 
         showToast('Extracting schema for prompt…', { kind: 'info', doc });
 
-        const objectName = await resolveObjectName(sfApi, recordContext);
-        if (!objectName) {
-          showToast('Could not resolve the object type for this record.', { kind: 'warning', doc });
+        const describe = await describeObject(sfApi, objectName);
+        if (!describe) {
+          showToast(`Could not describe object "${objectName}".`, { kind: 'error', doc });
           return;
         }
 
-        const describe = await sfApi.apiGet<SObjectDescribe>(
-          `/services/data/${sfApi.apiVersion}/sobjects/${objectName}/describe`,
-        );
-        const markdown = buildSchemaMarkdown(
-          objectName,
-          describe ?? { name: objectName, label: objectName, fields: [] },
-        );
-
+        const resolvedName = describe.name || objectName;
+        const markdown = buildSchemaMarkdown(resolvedName, describe);
         await nav.clipboard.writeText(markdown);
-        showToast(`Schema for ${objectName} copied to clipboard`, { kind: 'success', doc });
+        showToast(`Schema for ${resolvedName} copied to clipboard`, { kind: 'success', doc });
       } catch (err) {
         showToast(`Export failed: ${err instanceof Error ? err.message : String(err)}`, { kind: 'error', doc });
       }
@@ -129,5 +194,5 @@ export function createExportForPromptFeature(options: ExportForPromptOptions = {
 }
 
 export function _exportForPromptTestApi() {
-  return { buildSchemaMarkdown, escapeCell };
+  return { buildSchemaMarkdown, escapeCell, extractSetupObject };
 }
