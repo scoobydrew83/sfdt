@@ -158,6 +158,7 @@ export default defineContentScript({
       'metadata-retrieve': { icon: '📦', label: 'Metadata Retrieve & Deploy' },
       'soap-explore': { icon: '💬', label: 'SOAP API Explorer' },
       'event-monitor': { icon: '📡', label: 'Event Streaming Monitor' },
+      'export-for-prompt': { icon: '📋', label: 'Copy Schema for Prompt' },
     };
 
     const menuItemsProvider = (): MenuItem[] => {
