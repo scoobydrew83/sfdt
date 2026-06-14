@@ -34,6 +34,7 @@ import { createFieldCreatorFeature } from '../features/field-creator.js';
 import { createMetadataRetrieveFeature } from '../features/metadata-retrieve.js';
 import { createSoapExploreFeature } from '../features/soap-explore.js';
 import { createEventMonitorFeature } from '../features/event-monitor.js';
+import { createExportForPromptFeature } from '../features/export-for-prompt.js';
 
 const SALESFORCE_HOST_PATTERN =
   /^https:\/\/[^/]+\.(salesforce\.com|salesforce-setup\.com|my\.salesforce\.com|lightning\.force\.com)\//i;
@@ -85,6 +86,7 @@ export default defineContentScript({
     registry.register(createMetadataRetrieveFeature());
     registry.register(createSoapExploreFeature());
     registry.register(createEventMonitorFeature());
+    registry.register(createExportForPromptFeature());
 
     setContextSource(buildContextToFeatures(registry.listManifests()));
 
@@ -156,6 +158,7 @@ export default defineContentScript({
       'metadata-retrieve': { icon: '📦', label: 'Metadata Retrieve & Deploy' },
       'soap-explore': { icon: '💬', label: 'SOAP API Explorer' },
       'event-monitor': { icon: '📡', label: 'Event Streaming Monitor' },
+      'export-for-prompt': { icon: '📋', label: 'Copy Schema for Prompt' },
     };
 
     const menuItemsProvider = (): MenuItem[] => {
