@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-15
+
+Aligns the built-in MCP server with the 2026-07-28 RC of the Model Context Protocol, hardens the GUI's AI streaming path against prompt injection, and folds in a batch of CLI robustness work (shared git-ref/source-dir validation, earlier config diagnostics) plus dependency security overrides.
+
+### Added
+
+- **MCP 2026-07-28 RC alignment** — the parking envelope now uses SEP-2549 `ttlMs` + `cacheScope` (replacing the previous `expiresAt`), and a new optional config key `mcp.parking.cacheScope` (default `"session"`) controls cache scope. `tools/list` advertises `ttlMs`/`cacheScope` for the static catalog (24h, global), and `tools/call` reads and validates a W3C Trace Context from `params._meta`, includes `traceparent` in the stderr audit log, and echoes `_meta` on results.
+
+### Changed
+
+- **Tightened the `@modelcontextprotocol/sdk` pin** from `^1.29.0` to `~1.29.0` so an RC-aware SDK cannot land silently via `npm install`. The server relies on verified-but-undocumented SDK behaviors, so SDK bumps now require a deliberate, smoke-tested upgrade (a release-checklist gate was added for this).
+- **MCP tool-call argument logging is now redacted to keys + byte size** (no values) in the stderr audit log.
+- **Shared git-ref and source-dir handling** — new `git-utils` (`isSafeGitRef`, `resolveBaseRef`, `diffNameStatus`) and `source-dirs` (`buildSourceDirArgs`) libraries replace duplicated inline logic across `manifest`, `pr-description`, and the GUI server. As a result, `sfdt manifest` and `sfdt pr-description` now validate `--base`/`--head` refs before use.
+- **`sfdt manifest --name` must start with an alphanumeric character**, matching the rule the GUI already enforced.
+- **Config load now warns when `sfdx-project.json` `packageDirectories` paths don't exist on disk**, instead of failing later at deploy/manifest time.
+- **`sfdt update` now prints an actionable error message** with a manual retry command when a self-update fails.
+- **`org-inventory` distinguishes list failures from genuinely empty metadata types**, warning once with the aggregate instead of silently returning a partial inventory.
+
+### Fixed
+
+- **GUI log redaction now happens at ingest** — secret redaction was moved into the SSE `streamLines` path, so secrets no longer reach the in-memory log buffer or the browser's live log stream (previously only the persisted log was redacted, after the fact).
+
+### Security
+
+- **The GUI AI chat's Claude streaming path is now sandboxed to read-only tools.** `streamClaudeResponse` (backing `/api/ai/chat`) invoked the Claude CLI with no tool restriction, while the sibling Codex (`-s read-only`) and Gemini (`--approval-mode plan`) paths deliberately sandbox against attacker-influenced page context. The Claude path now passes `--allowedTools Read,Grep,Glob`, denying Bash/Write/Edit so a prompt injection in page context cannot drive tool execution. Caught by the pre-release security review and covered by a regression test.
+- **Dependency security overrides** — `esbuild` pinned to `^0.28.1` (closes [GHSA-gv7w-rqvm-qjhr](https://github.com/advisories/GHSA-gv7w-rqvm-qjhr) binary-integrity / RCE and [GHSA-g7r4-m6w7-qqqr](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr) dev-server file read, both build-tooling only) and `shell-quote` to `^1.8.4` (closes [GHSA-w7jw-789q-3m8p](https://github.com/advisories/GHSA-w7jw-789q-3m8p)), both forced via npm `overrides` rather than the major-version toolchain downgrades npm audit suggested. `npm audit --audit-level=high` reports 0 vulnerabilities.
+- **Production/dev dependency bumps** — `semver` 7.8.0 → 7.8.2, plus routine development-dependency group updates (prettier, typescript-eslint, `@types/chrome`, happy-dom, vite/vitest).
+
 ## [0.11.0] - 2026-06-08
 
 Promotes a backlog of work that had accumulated on `main` since 0.10.1 but was never published — three new commands, Flow analysis, and an audit trail — and repairs two regressions that shipped alongside the inquirer 14 upgrade and the gui-server refactor in 0.10.0.
