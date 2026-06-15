@@ -147,6 +147,40 @@ const TOOLS = [
   }
 ];
 
+// SEP-2549 cache metadata for tools/list: the catalog is a static module
+// constant that cannot change within a process, so clients may cache it
+// long-lived and share it across users.
+const TOOLS_LIST_CACHE = { ttlMs: 86_400_000, cacheScope: 'global' };
+
+// W3C Trace Context traceparent: version-traceid-parentid-flags, all lowercase hex.
+const TRACEPARENT_RE = /^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/;
+const TRACESTATE_MAX_LENGTH = 512;
+
+/**
+ * Extracts W3C Trace Context from a request's `_meta`, validating shape so
+ * attacker-controlled values can't inject into audit logs. Invalid values are
+ * treated as absent.
+ *
+ * @param {object|undefined} meta - `request.params._meta`
+ * @returns {{ traceparent: string, tracestate?: string } | null}
+ */
+function extractTraceContext(meta) {
+  const traceparent = meta?.traceparent;
+  if (typeof traceparent !== 'string' || !TRACEPARENT_RE.test(traceparent)) {
+    return null;
+  }
+  const tracestate = meta.tracestate;
+  if (
+    typeof tracestate === 'string' &&
+    tracestate.length > 0 &&
+    tracestate.length <= TRACESTATE_MAX_LENGTH &&
+    !/[\r\n]/.test(tracestate)
+  ) {
+    return { traceparent, tracestate };
+  }
+  return { traceparent };
+}
+
 export class SfdtMcpServer {
   #server;
   #config;
@@ -174,11 +208,22 @@ export class SfdtMcpServer {
   #setupHandlers() {
     this.#server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: TOOLS,
+      ttlMs: TOOLS_LIST_CACHE.ttlMs,
+      cacheScope: TOOLS_LIST_CACHE.cacheScope,
     }));
 
     this.#server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
-      console.error(`MCP Call: ${name} with args:`, JSON.stringify(args));
+      const trace = extractTraceContext(request.params._meta);
+      const traceSuffix = trace ? ` traceparent=${trace.traceparent}` : '';
+
+      // Log arg keys and size only — values can carry org aliases, file
+      // paths, and job IDs that must not land in audit logs. Key names are
+      // attacker-controlled, so neutralize characters (comma, brackets, CR/LF)
+      // that could forge the bracketed list or inject extra log lines.
+      const argKeys = Object.keys(args ?? {}).map((k) => k.replace(/[^\w.-]/g, '_'));
+      const argBytes = Buffer.byteLength(JSON.stringify(args ?? {}), 'utf8');
+      console.error(`MCP Call: ${name} argKeys=[${argKeys.join(',')}] argBytes=${argBytes}${traceSuffix}`);
 
       try {
         const result = await this.#executeTool(name, args ?? {});
@@ -186,6 +231,7 @@ export class SfdtMcpServer {
         const processed = await parkIfNeeded(result, this.#config);
 
         return {
+          ...(trace && { _meta: trace }),
           content: [
             {
               type: 'text',
@@ -194,8 +240,9 @@ export class SfdtMcpServer {
           ],
         };
       } catch (err) {
-        console.error(`Tool execution failed (${name}):`, err.stack || err.message);
+        console.error(`Tool execution failed (${name})${traceSuffix}:`, err.stack || err.message);
         return {
+          ...(trace && { _meta: trace }),
           isError: true,
           content: [
             {

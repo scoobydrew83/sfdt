@@ -128,7 +128,7 @@ describe('runAiPrompt', () => {
     expect(result.stdout).toBe('claude out');
   });
 
-  it('routes to gemini CLI when provider is gemini', async () => {
+  it('routes to gemini CLI when provider is gemini (read-only sandbox by default)', async () => {
     execa.mockResolvedValue({ exitCode: 0, stdout: 'gemini result', stderr: '' });
 
     const result = await runAiPrompt('test prompt', {
@@ -138,15 +138,17 @@ describe('runAiPrompt', () => {
     // First gemini call is the availability probe (`--version`); find the
     // actual prompt invocation by its `-p` flag.
     const promptCall = execa.mock.calls.find(
-      (call) => call[0] === 'gemini' && call[1]?.[0] === '-p',
+      (call) => call[0] === 'gemini' && call[1]?.includes('-p'),
     );
     expect(promptCall).toBeDefined();
-    expect(promptCall[1][0]).toBe('-p');
-    expect(promptCall[1][1]).toContain('test prompt');
+    // runAiPrompt defaults allowedTools to read-only, so gemini runs in plan mode.
+    expect(promptCall[1]).toContain('--approval-mode');
+    expect(promptCall[1]).toContain('plan');
+    expect(promptCall[1].join(' ')).toContain('test prompt');
     expect(result.stdout).toBe('gemini result');
   });
 
-  it('routes to codex CLI when provider is openai', async () => {
+  it('routes to codex CLI when provider is openai (read-only sandbox by default)', async () => {
     execa.mockResolvedValue({ exitCode: 0, stdout: 'codex result', stderr: '' });
 
     const result = await runAiPrompt('test prompt', {
@@ -154,13 +156,30 @@ describe('runAiPrompt', () => {
     });
 
     // First codex call is the availability probe (`--version`); the prompt
-    // invocation is the one whose first arg contains the prompt itself.
+    // invocation is the one carrying the actual prompt (not `--version`).
     const promptCall = execa.mock.calls.find(
       (call) => call[0] === 'codex' && call[1]?.[0] !== '--version',
     );
     expect(promptCall).toBeDefined();
-    expect(promptCall[1][0]).toContain('test prompt');
+    // runAiPrompt defaults allowedTools to read-only, so codex runs sandboxed.
+    expect(promptCall[1]).toContain('-s');
+    expect(promptCall[1]).toContain('read-only');
+    expect(promptCall[1][promptCall[1].length - 1]).toContain('test prompt');
     expect(result.stdout).toBe('codex result');
+  });
+
+  it('defaults the claude provider to a read-only allowedTools sandbox', async () => {
+    execa.mockResolvedValue({ exitCode: 0, stdout: 'claude result', stderr: '' });
+
+    await runAiPrompt('test prompt', { config: { ai: { provider: 'claude' } } });
+
+    const promptCall = execa.mock.calls.find(
+      (call) => call[0] === 'claude' && call[1]?.includes('-p'),
+    );
+    expect(promptCall).toBeDefined();
+    const idx = promptCall[1].indexOf('--allowedTools');
+    expect(idx).toBeGreaterThan(-1);
+    expect(promptCall[1][idx + 1]).toBe('Read,Grep,Glob');
   });
 });
 

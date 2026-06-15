@@ -7,6 +7,7 @@ import { getPrompt } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { safeResolvePath } from '../lib/project-detect.js';
+import { isSafeGitRef, resolveBaseRef, diffNameStatus } from '../lib/git-utils.js';
 import { parseDiffToMetadata, countMembers } from '../lib/metadata-mapper.js';
 
 const VALID_FORMATS = ['github', 'slack', 'markdown'];
@@ -28,6 +29,12 @@ export function registerPrDescriptionCommand(program) {
           print.error(
             `Unknown format "${options.format}". Valid: ${VALID_FORMATS.join(', ')}`,
           );
+          process.exitCode = 1;
+          return;
+        }
+
+        if (!isSafeGitRef(options.base) || !isSafeGitRef(options.head)) {
+          print.error('Invalid git ref — refs must not start with "-" or contain shell metacharacters');
           process.exitCode = 1;
           return;
         }
@@ -109,26 +116,25 @@ export function registerPrDescriptionCommand(program) {
 async function collectDiffContext(cwd, sourcePath, options) {
   const execOpts = { cwd, reject: false };
 
+  // Scope the diff to the merge-base so commits already on the base branch are
+  // excluded (matches manifest.js). Without this, a feature branch that has
+  // diverged from base would surface metadata changes that predate the branch.
+  const baseRef = await resolveBaseRef(options.base, options.head, cwd);
+
   // Commit log
   const commitLimit = Math.max(1, parseInt(options.commitLimit, 10) || 30);
   const log = await execa(
     'git',
-    ['log', '--pretty=format:%h %s', `-n`, String(commitLimit), `${options.base}..${options.head}`],
+    ['log', '--pretty=format:%h %s', `-n`, String(commitLimit), `${baseRef}..${options.head}`],
     execOpts,
   );
 
   // Name-status diff scoped to the source root (force-app/, etc.)
-  const diff = await execa(
-    'git',
-    [
-      'diff',
-      '--name-status',
-      options.base,
-      options.head,
-      '--',
-      `${sourcePath.split('/')[0]}/`,
-    ],
-    execOpts,
+  const diff = await diffNameStatus(
+    baseRef,
+    options.head,
+    [`${sourcePath.split('/')[0]}/`],
+    cwd,
   );
 
   const commits = (log.stdout || '').split('\n').filter(Boolean);

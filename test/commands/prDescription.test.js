@@ -46,6 +46,19 @@ function createProgram() {
   return program;
 }
 
+// Dispatch git invocations by subcommand so tests are independent of call
+// order. collectDiffContext now calls `git merge-base` (resolveBaseRef) before
+// `git log` and `git diff`.
+function mockGit({ log = '', diff = '' } = {}) {
+  execa.mockImplementation((_cmd, args) => {
+    const sub = args?.[0];
+    if (sub === 'merge-base') return Promise.resolve({ exitCode: 0, stdout: 'base000sha', stderr: '' });
+    if (sub === 'log') return Promise.resolve({ exitCode: 0, stdout: log, stderr: '' });
+    if (sub === 'diff') return Promise.resolve({ exitCode: 0, stdout: diff, stderr: '' });
+    return Promise.resolve({ exitCode: 0, stdout: '', stderr: '' });
+  });
+}
+
 const defaultConfig = {
   _projectRoot: '/project',
   defaultOrg: 'dev',
@@ -86,11 +99,10 @@ describe('pr-description command', () => {
 
   it('generates github-format description and prints to stdout', async () => {
     isAiAvailable.mockResolvedValue(true);
-    execa
-      .mockResolvedValueOnce({ stdout: 'abc1234 Add AccountHelper' }) // git log
-      .mockResolvedValueOnce({
-        stdout: 'A\tforce-app/main/default/classes/AccountHelper.cls',
-      }); // git diff
+    mockGit({
+      log: 'abc1234 Add AccountHelper',
+      diff: 'A\tforce-app/main/default/classes/AccountHelper.cls',
+    });
 
     runAiPrompt.mockResolvedValue({
       stdout: '## Summary\nAdded AccountHelper class.',
@@ -112,9 +124,7 @@ describe('pr-description command', () => {
 
   it('writes output to file with --output', async () => {
     isAiAvailable.mockResolvedValue(true);
-    execa
-      .mockResolvedValueOnce({ stdout: 'abc1234 Commit msg' })
-      .mockResolvedValueOnce({ stdout: 'A\tforce-app/main/default/classes/Foo.cls' });
+    mockGit({ log: 'abc1234 Commit msg', diff: 'A\tforce-app/main/default/classes/Foo.cls' });
 
     runAiPrompt.mockResolvedValue({ stdout: '## Summary\nPR body', exitCode: 0 });
 
@@ -135,9 +145,7 @@ describe('pr-description command', () => {
 
   it('supports slack format', async () => {
     isAiAvailable.mockResolvedValue(true);
-    execa
-      .mockResolvedValueOnce({ stdout: 'abc1234 Commit' })
-      .mockResolvedValueOnce({ stdout: 'A\tforce-app/main/default/classes/Foo.cls' });
+    mockGit({ log: 'abc1234 Commit', diff: 'A\tforce-app/main/default/classes/Foo.cls' });
 
     runAiPrompt.mockResolvedValue({
       stdout: ':rocket: *feature/new* is ready for deploy',
@@ -178,9 +186,7 @@ describe('pr-description command', () => {
 
   it('warns when no changes between refs', async () => {
     isAiAvailable.mockResolvedValue(true);
-    execa
-      .mockResolvedValueOnce({ stdout: '' }) // no commits
-      .mockResolvedValueOnce({ stdout: '' }); // no diff
+    mockGit({ log: '', diff: '' }); // no commits, no diff
 
     await createProgram().parseAsync(['node', 'sfdt', 'pr-description']);
 
@@ -189,9 +195,7 @@ describe('pr-description command', () => {
 
   it('handles AI returning empty output', async () => {
     isAiAvailable.mockResolvedValue(true);
-    execa
-      .mockResolvedValueOnce({ stdout: 'abc1234 Commit' })
-      .mockResolvedValueOnce({ stdout: 'A\tforce-app/main/default/classes/Foo.cls' });
+    mockGit({ log: 'abc1234 Commit', diff: 'A\tforce-app/main/default/classes/Foo.cls' });
     runAiPrompt.mockResolvedValue({ stdout: '', exitCode: 0 });
 
     await createProgram().parseAsync(['node', 'sfdt', 'pr-description']);

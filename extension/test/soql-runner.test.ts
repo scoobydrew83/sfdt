@@ -14,6 +14,7 @@ const {
   columnsFromRecords,
   formatCell,
   recordsToCsv,
+  generateLangGraphNode,
   HISTORY_CAP,
   readSavedQueries,
   writeSavedQueries,
@@ -25,6 +26,7 @@ const {
 
 function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
   return {
+    apiVersion: 'v62.0',
     query: vi.fn(async (_soql: string) => ({
       totalSize: 0,
       done: true,
@@ -116,6 +118,29 @@ describe('soql-runner — pure helpers', () => {
         { Name: 'A, B', Notes: 'has "quotes"', Body: 'line1\nline2' },
       ]);
       expect(csv).toBe('Name,Notes,Body\n"A, B","has ""quotes""","line1\nline2"');
+    });
+  });
+
+  describe('generateLangGraphNode', () => {
+    it('infers Python types from the first record row', () => {
+      const code = generateLangGraphNode('SELECT Name, Amount, IsWon FROM Opportunity', [
+        { Name: 'Acme', Amount: 1000, IsWon: true },
+      ]);
+      expect(code).toContain('class SoqlResult(BaseModel):');
+      expect(code).toContain('Name: str');
+      expect(code).toContain('Amount: float');
+      expect(code).toContain('IsWon: bool');
+      expect(code).toContain('def execute_soql_node(');
+    });
+
+    it('embeds the supplied SOQL string in the node body', () => {
+      const soql = 'SELECT Id FROM Account';
+      expect(generateLangGraphNode(soql, [{ Id: '001' }])).toContain(soql);
+    });
+
+    it('falls back to a pass body when there are no records', () => {
+      const code = generateLangGraphNode('SELECT Id FROM Account', []);
+      expect(code).toContain('class SoqlResult(BaseModel):\n    pass');
     });
   });
 });

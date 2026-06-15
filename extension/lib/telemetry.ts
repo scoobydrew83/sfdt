@@ -9,6 +9,21 @@ export type TelemetryEvent =
   | 'feature.errored'
   | 'feature.disabled.remote';
 
+/**
+ * Coarse transport-health buckets for bridge call failures.
+ *   offline      — bridge endpoint unreachable (BRIDGE_OFFLINE)
+ *   timeout      — request aborted / native host timed out
+ *   unauthorized — bearer token missing/invalid or origin rejected
+ *   protocol     — refused locally after a major protocol-version mismatch
+ *   other        — any other bridge error code
+ */
+export type BridgeFailureCategory =
+  | 'offline'
+  | 'timeout'
+  | 'unauthorized'
+  | 'protocol'
+  | 'other';
+
 export interface FeatureCounter {
   activated: number;
   errored: number;
@@ -18,10 +33,19 @@ export interface FeatureCounter {
 export interface TelemetrySnapshot {
   monthKey: string;
   counters: Record<string, FeatureCounter>;
+  /** Bridge failure counts by category. Absent on snapshots written before
+   * bridge tracking existed — readers treat undefined as all-zero. */
+  bridge?: Partial<Record<BridgeFailureCategory, number>>;
 }
 
 export interface Telemetry {
   track(event: TelemetryEvent, data: { featureId: string }): Promise<void>;
+  /**
+   * Counts a bridge transport failure. MUST never be fed by telemetry's own
+   * bridge traffic (the bridge layer filters `telemetry.*` kinds before
+   * emitting) — otherwise a dead bridge would count its own push failures.
+   */
+  trackBridgeFailure(category: BridgeFailureCategory): Promise<void>;
   snapshot(): Promise<TelemetrySnapshot>;
   /**
    * No-op when telemetry is opt-out. Returns true when the bridge accepted
@@ -88,6 +112,20 @@ export function createTelemetry(opts: {
       if (event === 'feature.activated') counter.activated += 1;
       else if (event === 'feature.errored') counter.errored += 1;
       else if (event === 'feature.disabled.remote') counter.disabled_remote += 1;
+      await write(snapshot);
+    },
+
+    async trackBridgeFailure(category) {
+      if (!opts.isEnabled()) return;
+      const today = monthKeyOf(now());
+      const existing = await read();
+      const snapshot: TelemetrySnapshot =
+        existing && existing.monthKey === today
+          ? existing
+          : { monthKey: today, counters: {} };
+      const bridge = snapshot.bridge ?? {};
+      bridge[category] = (bridge[category] ?? 0) + 1;
+      snapshot.bridge = bridge;
       await write(snapshot);
     },
 

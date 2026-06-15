@@ -295,6 +295,68 @@ describe('extension/lib/feature-registry', () => {
     expect(track).toHaveBeenCalledWith('feature.errored', { featureId: 'alpha' });
   });
 
+  it('notifies once per feature per page load when init throws (no spam on route changes)', async () => {
+    const notify = vi.fn();
+    const reg = createFeatureRegistry({ logger: makeLogger(), notify });
+    reg.register({
+      manifest: { id: 'alpha', name: 'Alpha Feature', contexts: [] },
+      init: () => {
+        throw new Error('boom');
+      },
+    });
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(),
+      isUserEnabled: () => true,
+    });
+    reg.resetForRouteChange('r2');
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(),
+      isUserEnabled: () => true,
+    });
+    expect(notify).toHaveBeenCalledOnce();
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Alpha Feature'));
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('failed to start'));
+  });
+
+  it('does not notify for teardown errors (console-only)', async () => {
+    const notify = vi.fn();
+    const reg = createFeatureRegistry({ logger: makeLogger(), notify });
+    reg.register({
+      manifest: { id: 'alpha', name: 'alpha', contexts: [] },
+      init: () => {},
+      teardown: () => {
+        throw new Error('teardown boom');
+      },
+    });
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(),
+      isUserEnabled: () => true,
+    });
+    reg.resetForRouteChange('r2');
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(['alpha']),
+      isUserEnabled: () => true,
+    });
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('default notify renders a toast into the document on init failure', async () => {
+    const reg = createFeatureRegistry({ logger: makeLogger() });
+    reg.register({
+      manifest: { id: 'alpha', name: 'Alpha Feature', contexts: [] },
+      init: () => {
+        throw new Error('boom');
+      },
+    });
+    await reg.initForCurrentRoute(['alpha'], {
+      disabledRemote: new Set(),
+      isUserEnabled: () => true,
+    });
+    const container = document.getElementById('sfut-toast-container');
+    expect(container?.textContent).toContain('Alpha Feature');
+    container?.remove();
+  });
+
   it('tracks feature.disabled.remote when a running feature is newly kill-switched', async () => {
     const track = vi.fn();
     const reg = createFeatureRegistry({ logger: makeLogger(), track });

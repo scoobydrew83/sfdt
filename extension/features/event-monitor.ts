@@ -3,6 +3,7 @@ import { CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import {
   getSalesforceApi,
+  type QueryEnvelope,
   type SalesforceApiClient,
 } from '../lib/salesforce-api.js';
 import { registerSettingsShape } from '../lib/settings.js';
@@ -14,7 +15,14 @@ const EVENT_MONITOR_SETTINGS_SCHEMA = z.object({
 
 registerSettingsShape('event-monitor', EVENT_MONITOR_SETTINGS_SCHEMA);
 
-interface BayeuxMessage {
+// Bayeux/CometD `ext` field — this client only uses the Salesforce replay
+// extension (replayId per channel), but servers may echo arbitrary keys.
+interface BayeuxExt {
+  replay?: Record<string, number>;
+  [key: string]: unknown;
+}
+
+export interface BayeuxMessage {
   channel: string;
   clientId?: string;
   version?: string;
@@ -22,9 +30,11 @@ interface BayeuxMessage {
   supportedConnectionTypes?: string[];
   connectionType?: string;
   subscription?: string;
-  ext?: any;
+  ext?: BayeuxExt;
   id?: string;
-  data?: any;
+  // Event payload shape depends entirely on the subscribed channel; consumers
+  // must narrow before use.
+  data?: unknown;
   successful?: boolean;
   error?: string;
 }
@@ -33,7 +43,7 @@ export class SalesforceBayeuxClient {
   private clientId = '';
   private isConnected = false;
   private abortController: AbortController | null = null;
-  private messageListener: ((message: any) => void) | null = null;
+  private messageListener: ((message: unknown) => void) | null = null;
   private statusListener: ((status: string, isError: boolean) => void) | null = null;
   private connectAttempts = 0;
 
@@ -44,7 +54,7 @@ export class SalesforceBayeuxClient {
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
-  onMessage(callback: (message: any) => void): void {
+  onMessage(callback: (message: unknown) => void): void {
     this.messageListener = callback;
   }
 
@@ -69,7 +79,7 @@ export class SalesforceBayeuxClient {
       const endpoint = `${this.baseUrl}/cometd/${this.apiVersion.replace(/^v/, '')}`;
 
       // 1. Handshake
-      const handshakePayload = [
+      const handshakePayload: BayeuxMessage[] = [
         {
           version: '1.0',
           minimumVersion: '0.9',
@@ -88,7 +98,7 @@ export class SalesforceBayeuxClient {
       this.logStatus('Handshake successful. Subscribing...');
 
       // 2. Subscribe
-      const subscribePayload = [
+      const subscribePayload: BayeuxMessage[] = [
         {
           channel: '/meta/subscribe',
           clientId: this.clientId,
@@ -112,16 +122,17 @@ export class SalesforceBayeuxClient {
       // 3. Connect Loop
       void this.connectLoop(endpoint, channelPath);
 
-    } catch (err: any) {
+    } catch (err) {
       this.isConnected = false;
-      this.logStatus(`Connection failed: ${err.message}`, true);
+      const message = err instanceof Error ? err.message : String(err);
+      this.logStatus(`Connection failed: ${message}`, true);
     }
   }
 
   private async connectLoop(endpoint: string, channelPath: string): Promise<void> {
     while (this.isConnected) {
       try {
-        const connectPayload = [
+        const connectPayload: BayeuxMessage[] = [
           {
             channel: '/meta/connect',
             clientId: this.clientId,
@@ -144,12 +155,13 @@ export class SalesforceBayeuxClient {
             return;
           }
         }
-      } catch (err: any) {
-        if (err.name === 'AbortError' || !this.isConnected) {
+      } catch (err) {
+        if ((err instanceof Error && err.name === 'AbortError') || !this.isConnected) {
           break;
         }
         this.connectAttempts++;
-        this.logStatus(`Connection error (attempt ${this.connectAttempts}): ${err.message}`, true);
+        const message = err instanceof Error ? err.message : String(err);
+        this.logStatus(`Connection error (attempt ${this.connectAttempts}): ${message}`, true);
         
         // Exponential backoff up to 30 seconds
         const delay = Math.min(30000, 1000 * Math.pow(2, this.connectAttempts));
@@ -165,19 +177,19 @@ export class SalesforceBayeuxClient {
 
     try {
       const endpoint = `${this.baseUrl}/cometd/${this.apiVersion.replace(/^v/, '')}`;
-      const disconnectPayload = [
+      const disconnectPayload: BayeuxMessage[] = [
         {
           channel: '/meta/disconnect',
           clientId: this.clientId,
         },
       ];
-      await this.post<any>(endpoint, disconnectPayload).catch(() => {});
+      await this.post<BayeuxMessage[]>(endpoint, disconnectPayload).catch(() => {});
     } finally {
       this.logStatus('Disconnected');
     }
   }
 
-  private async post<T>(url: string, body: any): Promise<T> {
+  private async post<T>(url: string, body: BayeuxMessage[]): Promise<T> {
     const response = await this.fetchImpl(url, {
       method: 'POST',
       headers: {
@@ -220,8 +232,8 @@ export function createEventMonitorFeature(options: {
   let replayId = -1;
   let eventFilter = '';
   let showMetrics = false;
-  const events: any[] = [];
-  let selectedEvent: any = null;
+  const events: unknown[] = [];
+  let selectedEvent: unknown = null;
 
   // Cached lists
   const channelsCache: Record<string, ChannelOption[]> = {
@@ -245,48 +257,55 @@ export function createEventMonitorFeature(options: {
       return channelsCache[type];
     }
 
-    const apiVersion = (api as any).apiVersion ?? 'v62.0';
+    const apiVersion = api.apiVersion;
     let query = '';
     const list: ChannelOption[] = [];
 
     try {
       if (type === 'standardPlatformEvent') {
         query = "SELECT Label, QualifiedApiName FROM EntityDefinition WHERE IsCustomizable = FALSE AND IsEverCreatable = TRUE AND QualifiedApiName LIKE '%Event' AND (NOT QualifiedApiName LIKE '%ChangeEvent') ORDER BY Label ASC LIMIT 200";
-        const res = await api.apiGet<any>(`/services/data/${apiVersion}/query`, { q: query });
+        const res = await api.apiGet<QueryEnvelope<{ Label: string; QualifiedApiName: string }>>(
+          `/services/data/${apiVersion}/query`,
+          { q: query },
+        );
         if (res && res.records) {
-          res.records.forEach((r: any) => {
+          res.records.forEach((r) => {
             list.push({ name: r.QualifiedApiName, label: `${r.Label} (${r.QualifiedApiName})` });
           });
         }
       } else if (type === 'platformEvent') {
         query = "SELECT QualifiedApiName, Label FROM EntityDefinition WHERE isCustomizable = TRUE AND KeyPrefix LIKE 'e%' ORDER BY Label ASC";
-        const res = await api.apiGet<any>(`/services/data/${apiVersion}/query`, { q: query });
+        const res = await api.apiGet<QueryEnvelope<{ Label: string; QualifiedApiName: string }>>(
+          `/services/data/${apiVersion}/query`,
+          { q: query },
+        );
         if (res && res.records) {
-          res.records.forEach((r: any) => {
+          res.records.forEach((r) => {
             list.push({ name: r.QualifiedApiName, label: `${r.Label} (${r.QualifiedApiName})` });
           });
         }
       } else if (type === 'customChannel') {
         query = 'SELECT FullName, MasterLabel FROM PlatformEventChannel ORDER BY DeveloperName';
-        const res = await api.toolingQuery<any>(query);
+        const res = await api.toolingQuery<{ FullName: string; MasterLabel: string }>(query);
         if (res && res.records) {
-          res.records.forEach((r: any) => {
+          res.records.forEach((r) => {
             list.push({ name: r.FullName, label: `${r.MasterLabel} (${r.FullName})` });
           });
         }
       } else if (type === 'changeEvent') {
         list.push({ name: 'ChangeEvents', label: 'All Change Events (ChangeEvents)' });
         query = "SELECT MasterLabel, SelectedEntity FROM PlatformEventChannelMember WHERE EventChannel = 'ChangeEvents' ORDER BY MasterLabel";
-        const res = await api.toolingQuery<any>(query);
+        const res = await api.toolingQuery<{ MasterLabel: string; SelectedEntity?: string }>(query);
         if (res && res.records) {
-          res.records.forEach((r: any) => {
+          res.records.forEach((r) => {
             const label = r.SelectedEntity ? r.SelectedEntity.replace(/([A-Z])/g, ' $1').trim() : r.MasterLabel;
             list.push({ name: `${r.SelectedEntity}ChangeEvent`, label: `${label} Change Event` });
           });
         }
       }
-    } catch (err: any) {
-      console.warn(`[SFUT] Failed to fetch channels for ${type}: ${err.message}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[SFUT] Failed to fetch channels for ${type}: ${message}`);
     }
 
     if (list.length === 0) {
@@ -300,7 +319,7 @@ export function createEventMonitorFeature(options: {
   let channelSelect: HTMLSelectElement | null = null;
   async function updateChannelDropdown(): Promise<void> {
     if (!channelSelect) return;
-    channelSelect.innerHTML = '';
+    channelSelect.replaceChildren();
     const list = await fetchChannels(selectedChannelType);
     list.forEach(c => {
       const opt = doc.createElement('option');
@@ -316,7 +335,7 @@ export function createEventMonitorFeature(options: {
   let eventListContainer: HTMLDivElement | null = null;
   function renderEvents(): void {
     if (!eventListContainer) return;
-    eventListContainer.innerHTML = '';
+    eventListContainer.replaceChildren();
 
     const filtered = events.filter(e => {
       if (!eventFilter) return true;
@@ -371,7 +390,7 @@ export function createEventMonitorFeature(options: {
       limitsContainer.textContent = 'Loading limits...';
       try {
         const res = await api.limits();
-        limitsContainer.innerHTML = '';
+        limitsContainer.replaceChildren();
         const keys = Object.keys(res).filter(k => k.includes('PlatformEvent') || k.includes('Streaming'));
         if (keys.length === 0) {
           limitsContainer.textContent = 'No Platform Event limits returned by org.';
@@ -385,8 +404,9 @@ export function createEventMonitorFeature(options: {
           p.textContent = `${k}: Remaining ${limit.Remaining} out of ${limit.Max} (${percentage}% consumed)`;
           limitsContainer!.appendChild(p);
         });
-      } catch (err: any) {
-        limitsContainer.textContent = `Failed to load limits: ${err.message}`;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        limitsContainer.textContent = `Failed to load limits: ${message}`;
       }
     }
   }
@@ -578,8 +598,7 @@ export function createEventMonitorFeature(options: {
         return;
       }
 
-      const apiVersion = (api as any).apiVersion ?? 'v62.0';
-      client = new SalesforceBayeuxClient(details.baseUrl, details.sid, apiVersion);
+      client = new SalesforceBayeuxClient(details.baseUrl, details.sid, api.apiVersion);
       
       client.onStatus((status, isErr) => {
         updateStatus(status, isErr);

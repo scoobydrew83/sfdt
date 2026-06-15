@@ -21,6 +21,8 @@ import { loadConfig } from '../config.js';
 import { getPrompt, getAllPrompts, setPromptOverride, resetPromptOverride, interpolate } from '../prompts.js';
 import { buildScriptEnv } from '../script-runner.js';
 import { fetchOrgInventory, fetchInventory } from '../org-inventory.js';
+import { isSafeGitRef, resolveBaseRef } from '../git-utils.js';
+import { buildSourceDirArgs } from '../source-dirs.js';
 import { initCache, getDelta, updateCache } from '../pull-cache.js';
 import { parallelRetrieve } from '../parallel-retrieve.js';
 import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken, requireCsrfTokenFromQueryOrHeader } from './security.js';
@@ -805,7 +807,10 @@ export function createGuiApp(config, version, port = 7654) {
 
       const streamLines = (readable) => {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });
-        rl.on('line', (line) => {
+        rl.on('line', (rawLine) => {
+          // Redact at ingest so secrets never sit in the in-memory buffer or
+          // reach the browser via the SSE stream.
+          const line = redactSensitiveData(rawLine);
           lines.push(line);
           const stripped = stripAnsi(line);
           if (!res.writableEnded && !stripped.startsWith('SFDT_LOG:')) {
@@ -861,12 +866,13 @@ export function createGuiApp(config, version, port = 7654) {
           retention: config.logRetention ?? 50,
         });
       } else {
-        // Non-structured commands (deploy, rollback) keep raw format
+        // Non-structured commands (deploy, rollback) keep raw format.
+        // Lines were already redacted at ingest in streamLines.
         const logPayload = {
           date: new Date().toISOString(),
           command,
           exitCode,
-          lines: redactSensitiveData(lines)
+          lines
         };
         const logFilePath = path.join(projectRoot, cmd.logFile);
         await fs.outputJson(logFilePath, logPayload, { spaces: 2 });
@@ -988,10 +994,7 @@ export function createGuiApp(config, version, port = 7654) {
           db.close();
         }
       } else if (mode === 'full') {
-        const sourceDirArgs = (config.packageDirectories?.length
-          ? config.packageDirectories.map((d) => d.path)
-          : [config.defaultSourcePath ?? 'force-app/main/default']
-        ).flatMap((d) => ['--source-dir', d]);
+        const sourceDirArgs = buildSourceDirArgs(config);
         const exitCode = await streamChild(spawn('sf', ['project', 'retrieve', 'start', ...sourceDirArgs, '--target-org', org], {
           cwd: projectRoot,
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -999,10 +1002,7 @@ export function createGuiApp(config, version, port = 7654) {
         const elapsed = Math.round((Date.now() - startTime) / 1000);
         emit({ type: 'result', exitCode, retrieved: 0, elapsed });
       } else if (mode === 'preview') {
-        const sourceDirArgs = (config.packageDirectories?.length
-          ? config.packageDirectories.map((d) => d.path)
-          : [config.defaultSourcePath ?? 'force-app/main/default']
-        ).flatMap((d) => ['--source-dir', d]);
+        const sourceDirArgs = buildSourceDirArgs(config);
         const exitCode = await streamChild(spawn('sf', ['project', 'retrieve', 'preview', ...sourceDirArgs, '--target-org', org], {
           cwd: projectRoot,
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -1587,9 +1587,7 @@ export function createGuiApp(config, version, port = 7654) {
     if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { base = 'main', head = 'HEAD', package: pkg = 'all', name: releaseName } = req.body ?? {};
-      // Refs that start with '-' are git option flags (e.g. --output, -c), not refs.
-      const safeRefPattern = /^[A-Za-z0-9._/~^@:{}][A-Za-z0-9._/~^@:{}-]*$/;
-      if (!safeRefPattern.test(String(base)) || !safeRefPattern.test(String(head))) {
+      if (!isSafeGitRef(String(base)) || !isSafeGitRef(String(head))) {
         return res.status(400).json({ error: 'Invalid git ref' });
       }
       const packages = config.packageDirectories ?? [];
@@ -1599,8 +1597,7 @@ export function createGuiApp(config, version, port = 7654) {
 
       const { parseDiffToMetadata, renderPackageXml: renderXml, countMembers } = await import('../metadata-mapper.js');
 
-      const mergeBase = await execa('git', ['merge-base', base, head], { cwd: projectRoot, reject: false });
-      const baseRef = (mergeBase.exitCode === 0 && mergeBase.stdout.trim()) ? mergeBase.stdout.trim() : base;
+      const baseRef = await resolveBaseRef(base, head, projectRoot);
 
       let diffPaths;
       let diffSourcePath = sourcePath;
@@ -1803,7 +1800,9 @@ export function createGuiApp(config, version, port = 7654) {
       const JOB_ID_PATTERN = /Validation Job ID:\s*([A-Za-z0-9]{15,18})/;
       const streamLines = (readable) => {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });
-        rl.on('line', (line) => {
+        rl.on('line', (rawLine) => {
+          // Redact at ingest so secrets never reach the buffer or the SSE stream.
+          const line = redactSensitiveData(rawLine);
           lines.push(line);
           const stripped = stripAnsi(line);
           if (!capturedValidationJobId) {
@@ -2339,7 +2338,7 @@ export function createGuiApp(config, version, port = 7654) {
   app.post('/api/review', apiLimiter, async (req, res) => {
     if (!requireCsrfToken(req, res, csrfToken)) return;
     const { base = 'main' } = req.body ?? {};
-    if (!/^[A-Za-z0-9._/~^@:{}][A-Za-z0-9._/~^@:{}-]*$/.test(base)) {
+    if (!isSafeGitRef(base)) {
       return res.status(400).json({ error: 'Invalid base ref' });
     }
 

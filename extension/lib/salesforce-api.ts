@@ -47,6 +47,63 @@ interface Session {
   candidates: SessionCandidate[];
 }
 
+interface RequestFailure {
+  baseUrl: string;
+  status: number;
+  errorText: string;
+}
+
+// Salesforce REST error bodies are usually JSON like
+// [{"message":"...","errorCode":"..."}]; pull out the human-readable message
+// so user-facing errors stay short instead of dumping raw JSON.
+function extractErrorDetail(errorText: string): string {
+  if (!errorText) return '';
+  try {
+    const parsed = JSON.parse(errorText) as unknown;
+    const first = Array.isArray(parsed) ? (parsed[0] as unknown) : parsed;
+    if (
+      first &&
+      typeof first === 'object' &&
+      'message' in first &&
+      typeof (first as { message: unknown }).message === 'string'
+    ) {
+      return (first as { message: string }).message;
+    }
+  } catch {
+    // not JSON — fall through to the raw text
+  }
+  return errorText.length > 200 ? `${errorText.slice(0, 200)}…` : errorText;
+}
+
+// Multi-host failures log the full per-host breakdown to the console for
+// debugging; the thrown Error stays short because callers surface
+// err.message directly in user-facing toasts and error panels.
+function buildRequestError(operation: string, endpoint: string, errors: RequestFailure[]): Error {
+  const primary = errors.find((e) => e.status >= 400 && e.status !== 401) ?? errors[0]!;
+  // First arg is a constant literal — operation/endpoint are passed as separate
+  // arguments so they are never interpreted as console format-string specifiers.
+  console.error(
+    '[SFDT] Salesforce request failed:',
+    `${operation} ${endpoint}`,
+    errors
+      .map((e) => `${e.baseUrl} -> ${e.status || 'network error'}${e.errorText ? ` (${e.errorText})` : ''}`)
+      .join('; '),
+  );
+  const detail = extractErrorDetail(primary.errorText);
+  const summary = primary.status > 0 ? `HTTP ${primary.status}` : 'network error';
+  return new Error(`Salesforce ${operation} failed (${summary})${detail ? `: ${detail}` : ''}`);
+}
+
+// SOAP responses may namespace-prefix every element (<soapenv:Envelope>
+// wrapping <ns:queryResponse xmlns:ns="...">). CSS selectors cannot express
+// namespace prefixes, so match on localName instead of querySelector().
+function findElementByLocalName(doc: Document, localName: string): Element | null {
+  for (const el of Array.from(doc.getElementsByTagName('*'))) {
+    if (el.localName === localName) return el;
+  }
+  return null;
+}
+
 function defaultMessageBus(): MessageBus {
   return {
     sendMessage(message, timeoutMs = SEND_MESSAGE_TIMEOUT_MS) {
@@ -84,7 +141,7 @@ function maybeDecodeSid(sid: string): string {
 }
 
 export class SalesforceApiClient {
-  private readonly apiVersion: string;
+  readonly apiVersion: string;
   private readonly win: Window;
   private readonly bus: MessageBus;
   private readonly fetchImpl: typeof fetch;
@@ -155,7 +212,7 @@ export class SalesforceApiClient {
 
     const queryString =
       Object.keys(params).length > 0 ? `?${new URLSearchParams(params).toString()}` : '';
-    const errors: Array<{ baseUrl: string; status: number; errorText: string }> = [];
+    const errors: RequestFailure[] = [];
 
     for (const { baseUrl, sid } of session.candidates) {
       try {
@@ -181,13 +238,7 @@ export class SalesforceApiClient {
       return this.apiGet<T>(endpoint, params, { retryOn401: false });
     }
 
-    const primary = errors.find((e) => e.status >= 400 && e.status !== 401) ?? errors[0]!;
-    throw new Error(
-      `Salesforce API error: ${primary.baseUrl} -> ${primary.status}. ` +
-        `Details: ${primary.errorText}. All results: ${errors
-          .map((e) => `${e.baseUrl} -> ${e.status}`)
-          .join(', ')}`,
-    );
+    throw buildRequestError('GET request', endpoint, errors);
   }
 
   async apiRequest<T = unknown>(
@@ -203,7 +254,7 @@ export class SalesforceApiClient {
     const session = await this.getSession();
     if (!session) throw new Error('No Salesforce session available');
 
-    const errors: Array<{ baseUrl: string; status: number; errorText: string }> = [];
+    const errors: RequestFailure[] = [];
 
     for (const { baseUrl, sid } of session.candidates) {
       try {
@@ -238,13 +289,7 @@ export class SalesforceApiClient {
       return this.apiRequest<T>(method, endpoint, body, { retryOn401: false });
     }
 
-    const primary = errors.find((e) => e.status >= 400 && e.status !== 401) ?? errors[0]!;
-    throw new Error(
-      `Salesforce API error: ${primary.baseUrl} -> ${primary.status}. ` +
-        `Details: ${primary.errorText}. All results: ${errors
-          .map((e) => `${e.baseUrl} -> ${e.status}`)
-          .join(', ')}`,
-    );
+    throw buildRequestError(`${method} request`, endpoint, errors);
   }
 
   apiPatch<T = unknown>(endpoint: string, body: unknown): Promise<T | null> {
@@ -254,8 +299,8 @@ export class SalesforceApiClient {
   async apiSoap<T = unknown>(
     apiName: 'Partner' | 'Metadata' | 'Tooling' | 'Enterprise' | 'Apex',
     method: string,
-    args: any,
-    options: { retryOn401?: boolean; headers?: Record<string, any> } = {},
+    args: unknown,
+    options: { retryOn401?: boolean; headers?: Record<string, unknown> } = {},
   ): Promise<T> {
     const retryOn401 = options.retryOn401 ?? true;
     const session = await this.getSession();
@@ -290,7 +335,7 @@ export class SalesforceApiClient {
     };
 
     const wsdl = wsdls[apiName];
-    const errors: Array<{ baseUrl: string; status: number; errorText: string }> = [];
+    const errors: RequestFailure[] = [];
 
     for (const { baseUrl, sid } of session.candidates) {
       try {
@@ -328,7 +373,7 @@ export class SalesforceApiClient {
         if (res.ok) {
           const text = await res.text();
           const doc = new DOMParser().parseFromString(text, "text/xml");
-          const responseBody = doc.querySelector(method + "Response");
+          const responseBody = findElementByLocalName(doc, method + "Response");
           if (!responseBody) {
             throw new Error(`Response body missing ${method}Response`);
           }
@@ -340,7 +385,7 @@ export class SalesforceApiClient {
         let faultString = '';
         try {
           const doc = new DOMParser().parseFromString(errorText, "text/xml");
-          faultString = doc.querySelector("faultstring")?.textContent ?? '';
+          faultString = findElementByLocalName(doc, "faultstring")?.textContent ?? '';
         } catch {}
         errors.push({ baseUrl, status: res.status, errorText: faultString || errorText });
       } catch (err) {
@@ -360,10 +405,13 @@ export class SalesforceApiClient {
     }
 
     const primary = errors.find((e) => e.status >= 400 && e.status !== 401) ?? errors[0]!;
-    const err = new Error(primary.errorText || `SOAP error ${primary.status}`);
+    const err = new Error(primary.errorText || `SOAP error ${primary.status}`) as Error & {
+      status?: number;
+      detail?: string;
+    };
     err.name = "SalesforceSoapError";
-    (err as any).status = primary.status;
-    (err as any).detail = primary.errorText;
+    err.status = primary.status;
+    err.detail = primary.errorText;
     throw err;
   }
 

@@ -2,6 +2,7 @@
 // without double-initialising on the same URL.
 
 import type { Context } from './context-detector.js';
+import { showToast } from '../ui/toast.js';
 
 export type FeatureId = string;
 
@@ -75,6 +76,8 @@ export function createFeatureRegistry(options: {
   /** Defaults to chrome.runtime.getManifest().permissions; empty in non-extension surfaces (treats everything as missing). */
   manifestPermissions?: readonly chrome.runtime.ManifestPermissions[];
   track?: TrackFn;
+  /** Shown when a feature fails to initialise. Defaults to a toast; no-op without a DOM. */
+  notify?: (message: string) => void;
 } = {}): FeatureRegistry {
   const logger: RegistryLogger = options.logger ?? {
     log: (msg, ...rest) => console.log(`[SFUT] ${msg}`, ...rest),
@@ -83,6 +86,21 @@ export function createFeatureRegistry(options: {
   const log = (msg: string, ...rest: unknown[]): void => logger.log(msg, ...rest);
   const warn = (msg: string, ...rest: unknown[]): void => logger.warn(msg, ...rest);
   const track: TrackFn = options.track ?? (() => {});
+  const notify: (message: string) => void =
+    options.notify ??
+    ((message) => {
+      // The registry also runs in tests and the options page; only toast when
+      // a document is available, and never let the toast break init flow.
+      if (typeof document === 'undefined' || !document.body) return;
+      try {
+        showToast(message, { kind: 'warning' });
+      } catch {
+        // ignore — the console log above is the source of truth
+      }
+    });
+  // One toast per feature per page load — init retries on every SPA route
+  // change, and a persistently broken feature must not spam the user.
+  const initFailureNotified = new Set<FeatureId>();
 
   const manifestPermissions: ReadonlySet<string> = new Set(
     options.manifestPermissions ?? readManifestPermissions(),
@@ -169,6 +187,12 @@ export function createFeatureRegistry(options: {
         } catch (err) {
           log(`Error initialising feature '${id}': ${(err as Error).message}`, err);
           void track('feature.errored', { featureId: id });
+          if (!initFailureNotified.has(id)) {
+            initFailureNotified.add(id);
+            notify(
+              `sfdt: feature '${feature.manifest.name}' failed to start — see console for details`,
+            );
+          }
         }
       }
     },

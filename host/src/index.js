@@ -207,7 +207,9 @@ async function dispatch(request) {
     case 'compare':
       return makeErrorResponse(
         request.requestId,
-        `Request kind "${request.kind}" is not yet implemented on the native host.`,
+        `Request kind "${request.kind}" is not available via the native messaging host, ` +
+          'which is a limited fallback transport. This operation requires the HTTP bridge: ' +
+          'run `sfdt ui` in your Salesforce project to start it, then retry.',
         'NOT_IMPLEMENTED',
       );
     default:

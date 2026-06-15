@@ -74,7 +74,25 @@ describe('MCP Parking', () => {
       expect(result.ref).toMatch(/^parked:\/\/[a-f0-9-]{36}$/);
       expect(result.byteSize).toBeGreaterThan(100);
       expect(result.preview).toContain('a'.repeat(200));
-      expect(result.expiresAt).toBeDefined();
+      // SEP-2549 cache metadata shape — config sets ttlSeconds: 60
+      expect(result.ttlMs).toBe(60_000);
+      expect(result.cacheScope).toBe('session');
+      expect(result.expiresAt).toBeUndefined();
+    });
+
+    it('honors mcp.parking.cacheScope config override', async () => {
+      const scopedConfig = {
+        ...config,
+        mcp: {
+          parking: { ...config.mcp.parking, cacheScope: 'user' },
+        },
+      };
+      fs.ensureDir.mockResolvedValue(undefined);
+      fs.writeFile.mockResolvedValue(undefined);
+
+      const result = await parkIfNeeded({ data: 'a'.repeat(200) }, scopedConfig);
+      expect(result._parked).toBe(true);
+      expect(result.cacheScope).toBe('user');
     });
 
     it('handles string payload above threshold', async () => {

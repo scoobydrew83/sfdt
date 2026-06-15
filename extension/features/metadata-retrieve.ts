@@ -86,7 +86,7 @@ export function createMetadataRetrieveFeature(options: {
   let logsContainer: HTMLDivElement | null = null;
   function renderLogs(): void {
     if (!logsContainer) return;
-    logsContainer.innerHTML = '';
+    logsContainer.replaceChildren();
     for (const msg of logMessages) {
       const item = doc.createElement('div');
       item.style.cssText = 'padding: 2px 0; font-family: monospace; font-size: 11px; border-bottom: 1px solid #f3f3f3;';
@@ -502,7 +502,7 @@ export function createMetadataRetrieveFeature(options: {
   let treeContainer: HTMLDivElement | null = null;
   function renderTree(): void {
     if (!treeContainer) return;
-    treeContainer.innerHTML = '';
+    treeContainer.replaceChildren();
 
     const list = doc.createElement('ul');
     list.style.cssText = 'list-style: none; padding-left: 0; margin: 0;';

@@ -55,7 +55,13 @@ export function registerUpdateCommand(program) {
 
         print.success(`sfdt updated to v${latestVersion}`);
       } catch (err) {
-        print.error(err.message);
+        print.error(`Update failed: ${err.message}`);
+        if (err.exitCode !== undefined) {
+          print.info(
+            'Common causes: no network access, or missing permission to write global npm packages. ' +
+            'Retry manually with: npm install --global @sfdt/cli@latest',
+          );
+        }
         process.exitCode = 1;
       }
     });
