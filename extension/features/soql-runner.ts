@@ -239,6 +239,9 @@ export function recordsToCsv(records: ReadonlyArray<Record<string, unknown>>): s
 export function generateLangGraphNode(soql: string, records: ReadonlyArray<Record<string, unknown>>): string {
   const cols = columnsFromRecords(records);
   const typeMap: Record<string, string> = {};
+  // Escape any `"""` (and a trailing `"`) so the query can't break out of the
+  // Python triple-quoted string literal it is embedded in below.
+  const safeSoql = soql.replace(/"/g, '\\"');
 
   if (records.length > 0) {
     const firstRow = records[0] as Record<string, unknown>;
@@ -265,7 +268,7 @@ def execute_soql_node(state: Dict[str, Any], config: RunnableConfig) -> Dict[str
     Executes a SOQL query against Salesforce.
     """
     query = """
-${soql}
+${safeSoql}
     """
 
     # Example implementation using simple_salesforce or similar

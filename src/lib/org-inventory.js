@@ -60,10 +60,13 @@ export async function fetchOrgInventory(
   }
 
   if (failedTypes.length > 0) {
-    const shown = failedTypes.slice(0, 10).join(', ');
+    // Strip CR/LF from externally-derived values (metadata type names, org
+    // alias) before logging so they cannot forge additional log lines.
+    const oneLine = (s) => String(s).replace(/[\r\n]+/g, ' ');
+    const shown = oneLine(failedTypes.slice(0, 10).join(', '));
     const more = failedTypes.length > 10 ? ` (+${failedTypes.length - 10} more)` : '';
     console.warn(
-      `Warning: could not list ${failedTypes.length} metadata type(s) from ${orgAlias}: ${shown}${more}. ` +
+      `Warning: could not list ${failedTypes.length} metadata type(s) from ${oneLine(orgAlias)}: ${shown}${more}. ` +
       'Inventory may be incomplete.',
     );
   }

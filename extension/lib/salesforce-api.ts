@@ -80,8 +80,11 @@ function extractErrorDetail(errorText: string): string {
 // err.message directly in user-facing toasts and error panels.
 function buildRequestError(operation: string, endpoint: string, errors: RequestFailure[]): Error {
   const primary = errors.find((e) => e.status >= 400 && e.status !== 401) ?? errors[0]!;
+  // First arg is a constant literal — operation/endpoint are passed as separate
+  // arguments so they are never interpreted as console format-string specifiers.
   console.error(
-    `[SFDT] Salesforce ${operation} ${endpoint} failed:`,
+    '[SFDT] Salesforce request failed:',
+    `${operation} ${endpoint}`,
     errors
       .map((e) => `${e.baseUrl} -> ${e.status || 'network error'}${e.errorText ? ` (${e.errorText})` : ''}`)
       .join('; '),

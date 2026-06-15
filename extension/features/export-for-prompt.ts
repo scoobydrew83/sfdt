@@ -33,6 +33,7 @@ const SF_ID_RE = /^[a-zA-Z0-9]{15,18}$/;
 /** Escape a value so it is safe to embed in a Markdown table cell. */
 function escapeCell(value: string): string {
   return value
+    .replace(/\\/g, '\\\\')
     .replace(/\|/g, '\\|')
     .replace(/\r?\n/g, ' ')
     .trim();
