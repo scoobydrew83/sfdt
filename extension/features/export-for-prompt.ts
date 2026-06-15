@@ -27,8 +27,8 @@ interface GlobalDescribe {
   sobjects: { name: string; keyPrefix: string | null }[];
 }
 
-/** Salesforce 15- or 18-char record/entity id. */
-const SF_ID_RE = /^[a-zA-Z0-9]{15,18}$/;
+/** Salesforce record/entity id — exactly 15 or 18 alphanumeric characters. */
+const SF_ID_RE = /^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/;
 
 /** Escape a value so it is safe to embed in a Markdown table cell. */
 function escapeCell(value: string): string {
