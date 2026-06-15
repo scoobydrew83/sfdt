@@ -218,8 +218,10 @@ export class SfdtMcpServer {
       const traceSuffix = trace ? ` traceparent=${trace.traceparent}` : '';
 
       // Log arg keys and size only — values can carry org aliases, file
-      // paths, and job IDs that must not land in audit logs.
-      const argKeys = Object.keys(args ?? {});
+      // paths, and job IDs that must not land in audit logs. Key names are
+      // attacker-controlled, so neutralize characters (comma, brackets, CR/LF)
+      // that could forge the bracketed list or inject extra log lines.
+      const argKeys = Object.keys(args ?? {}).map((k) => k.replace(/[^\w.-]/g, '_'));
       const argBytes = Buffer.byteLength(JSON.stringify(args ?? {}), 'utf8');
       console.error(`MCP Call: ${name} argKeys=[${argKeys.join(',')}] argBytes=${argBytes}${traceSuffix}`);
 

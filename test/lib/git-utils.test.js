@@ -34,6 +34,13 @@ describe('isSafeGitRef', () => {
     expect(isSafeGitRef(undefined)).toBe(false);
     expect(isSafeGitRef(null)).toBe(false);
   });
+
+  it('rejects refs containing ".." (path-traversal / range syntax)', () => {
+    expect(isSafeGitRef('..')).toBe(false);
+    expect(isSafeGitRef('../../etc/passwd')).toBe(false);
+    expect(isSafeGitRef('main..HEAD')).toBe(false);
+    expect(isSafeGitRef('a/../b')).toBe(false);
+  });
 });
 
 describe('resolveBaseRef', () => {

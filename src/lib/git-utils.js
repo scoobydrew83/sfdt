@@ -2,8 +2,11 @@ import { execa } from 'execa';
 
 // Refs that start with '-' would be parsed by git as option flags rather
 // than refs; the rest of the class covers branch names, tags, SHAs, and
-// rev syntax (~, ^, @{...}, refs/heads/...).
-export const SAFE_GIT_REF_PATTERN = /^[A-Za-z0-9._/~^@:{}][A-Za-z0-9._/~^@:{}-]*$/;
+// rev syntax (~, ^, @{...}, refs/heads/...). The leading `(?!.*\.\.)` rejects
+// any `..` sequence: git ref names never legitimately contain it, and barring
+// it keeps a validated ref safe to reuse in a file-path context downstream
+// (defense-in-depth — callers pass single refs, never range expressions).
+export const SAFE_GIT_REF_PATTERN = /^(?!.*\.\.)[A-Za-z0-9._/~^@:{}][A-Za-z0-9._/~^@:{}-]*$/;
 
 export function isSafeGitRef(ref) {
   return typeof ref === 'string' && SAFE_GIT_REF_PATTERN.test(ref);
