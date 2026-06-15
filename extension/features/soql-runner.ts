@@ -239,9 +239,9 @@ export function recordsToCsv(records: ReadonlyArray<Record<string, unknown>>): s
 export function generateLangGraphNode(soql: string, records: ReadonlyArray<Record<string, unknown>>): string {
   const cols = columnsFromRecords(records);
   const typeMap: Record<string, string> = {};
-  // Escape any `"""` (and a trailing `"`) so the query can't break out of the
-  // Python triple-quoted string literal it is embedded in below.
-  const safeSoql = soql.replace(/"/g, '\\"');
+  // Escape backslashes first, then double-quotes, so the query can't break out
+  // of the Python triple-quoted string literal it is embedded in below.
+  const safeSoql = soql.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
   if (records.length > 0) {
     const firstRow = records[0] as Record<string, unknown>;
