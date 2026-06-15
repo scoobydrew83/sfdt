@@ -238,7 +238,14 @@ async function streamClaudeResponse(messages, systemPrompt, config, onChunk, onP
 
   const serialized = buildSerializedPrompt(messages, systemPrompt);
 
-  const proc = execa('claude', ['--output-format', 'stream-json', '--no-color', '-p', serialized],
+  // /api/ai/chat streams reach here. The prompt can include attacker-controlled
+  // page context from the browser, so restrict Claude to read-only tools — the
+  // same posture as the Codex (`-s read-only`) and Gemini (`--approval-mode plan`)
+  // streaming paths below. This prevents a prompt injection from invoking Bash,
+  // Write, or Edit, and does not rely on `claude -p` permission defaults.
+  const proc = execa(
+    'claude',
+    ['--output-format', 'stream-json', '--no-color', '--allowedTools', 'Read,Grep,Glob', '-p', serialized],
     { stdio: ['pipe', 'pipe', 'pipe'], reject: false, timeout: 300_000 },
   );
   if (onProcess) onProcess(proc);

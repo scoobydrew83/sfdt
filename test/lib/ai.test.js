@@ -442,4 +442,40 @@ describe('streamAiResponse', () => {
       freshStream(messages, 'system', { config }, vi.fn()),
     ).rejects.toThrow(/AI stream failed \[openai\]/);
   });
+
+  it('restricts the claude streaming path to read-only tools (prompt-injection guard)', async () => {
+    // The /api/ai/chat prompt can carry attacker-controlled page context, so the
+    // claude streaming invocation must pass `--allowedTools Read,Grep,Glob` to deny
+    // Bash/Write/Edit — matching the codex (`-s read-only`) and gemini
+    // (`--approval-mode plan`) streaming guards. Regression guard for security
+    // finding H1 (2026-06-13 pre-release review).
+    const proc = {
+      stdout: {
+        [Symbol.asyncIterator]() {
+          // emits no chunks, then completes
+          return { next: () => Promise.resolve({ done: true, value: undefined }) };
+        },
+      },
+      then: (resolve) => resolve({ exitCode: 0, stdout: '', stderr: '' }),
+    };
+    execa
+      .mockResolvedValueOnce({ exitCode: 0 }) // isClaudeAvailable --version
+      .mockReturnValueOnce(proc); // streaming proc
+
+    vi.resetModules();
+    const { streamAiResponse: freshStream } = await import('../../src/lib/ai.js');
+    const config = makeConfig({ ai: { provider: 'claude' } });
+    const messages = [{ role: 'user', content: 'hello' }];
+
+    await freshStream(messages, 'system prompt', { config }, vi.fn());
+
+    const streamCall = execa.mock.calls.find(
+      (c) => c[0] === 'claude' && Array.isArray(c[1]) && c[1].includes('-p'),
+    );
+    expect(streamCall).toBeDefined();
+    const args = streamCall[1];
+    const idx = args.indexOf('--allowedTools');
+    expect(idx).toBeGreaterThan(-1);
+    expect(args[idx + 1]).toBe('Read,Grep,Glob');
+  });
 });
