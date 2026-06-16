@@ -4,6 +4,32 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-16
+
+### Added
+- `export-for-prompt` — **Export Schema for Prompt**: copy a dense Markdown schema for a Salesforce object to the clipboard for pasting into an LLM prompt. Works on record pages and Lightning **Object Manager** setup pages; resolves the object from the Object Manager URL segment or the record-page key-prefix, with a Tooling `EntityDefinition` fallback for durable-id URLs, and uses the REST describe endpoint for the full field list (label, type, required, inline help).
+- `soql-runner` — **LangGraph Node generator**: a button that turns the current SOQL query and its result columns into a ready-to-paste LangGraph node definition (Pydantic result model + node stub).
+
+### Changed
+- `sfdt-bridge` — per-call `timeoutMs` option; deploy/rollback use a 60s long-running timeout; idempotent bridge kinds retry once on transport failure (mutating kinds and auth errors never retry); unsafe `response.data` casts replaced with a `getBridgeData<T>` runtime guard.
+- `salesforce-api` — user-facing request errors shortened to HTTP status + extracted Salesforce message (full per-host detail moved to `console.error`); SOAP lookups match by `localName`, so namespace-prefixed (`<soapenv:…>`) envelopes parse correctly.
+- `telemetry` — bridge failures tracked by category (offline/timeout/unauthorized/protocol/other) via an `onBridgeFailure` hook, emitted fire-and-forget.
+- `background` — kill-switch ping retries once before reporting the bridge down.
+- `feature-registry` — feature init failures surface a toast (teardown errors stay console-only).
+- DOM updates across features use `replaceChildren()` instead of `innerHTML = ''`.
+- `SalesforceApiClient.apiVersion` is now public/readonly, and remaining `any` casts in `soql-runner`/`event-monitor` were replaced with proper types.
+
+### Fixed
+- `export-for-prompt` is now reachable — it was missing from the `content.ts` ICONS map, so the menu builder dropped it and it could never activate.
+- `killswitch-cache` — cached reads age out entries older than 24h (the timestamp was written but never checked); un-stamped legacy entries are treated as stale.
+- `soql-runner`/`event-monitor` — GraphQL traversal uses type guards, fixing a latent crash on null records; `BayeuxMessage` is properly typed.
+
+### Security
+- `escapeCell` (`export-for-prompt`) escapes backslashes before pipes, closing an incomplete-Markdown-escaping issue (CodeQL `js/incomplete-sanitization`).
+- `salesforce-api` error logging passes dynamic values as separate `console.error` arguments rather than interpolating them into the format string (CodeQL `js/tainted-format-string`).
+- `generateLangGraphNode` escapes backslashes and double-quotes in the embedded SOQL so a query cannot break out of the generated Python triple-quoted string.
+- `SF_ID_RE` now matches exactly 15 or 18 characters (it previously also accepted invalid 16/17-char strings).
+
 ## [0.1.0] - 2026-06-07
 
 ### Added
