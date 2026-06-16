@@ -255,10 +255,9 @@ export function generateLangGraphNode(soql: string, records: ReadonlyArray<Recor
 
   const fieldsDef = cols.map(c => `    ${c}: ${typeMap[c] || 'str'}`).join('\n');
 
-  return `from typing import Any, Dict, List
+  return `from typing import Any, Dict
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph.message import add_messages
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 class SoqlResult(BaseModel):
 ${fieldsDef || '    pass'}
