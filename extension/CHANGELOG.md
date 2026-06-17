@@ -4,6 +4,11 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-17
+
+### Changed
+- Broadened the extension's manifest description to reflect that it now spans Flow Builder, Setup, Object Manager, and record pages (schema/data/API tooling + AI), not just Flow analysis and Setup. Also refreshed the Chrome Web Store listing copy to match (24 features, broadened positioning) and consolidated the store-submission assets under `extension/store-assets/`.
+
 ## [0.2.0] - 2026-06-16
 
 ### Added
