@@ -4,6 +4,9 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Changed
+- Broadened the extension's manifest description to reflect that it now spans Flow Builder, Setup, Object Manager, and record pages (schema/data/API tooling + AI), not just Flow analysis and Setup.
+
 ## [0.2.0] - 2026-06-16
 
 ### Added

@@ -6,7 +6,7 @@ export default defineConfig({
   manifest: {
     name: 'SFDT SF Helper',
     description:
-      'Productivity toolkit for Salesforce admins and developers — Flow analysis, Setup shortcuts, and sfdt CLI bridge integration.',
+      'Productivity tools for Salesforce admins & developers — Flow, Setup, Object Manager, record pages, SOQL/REST/SOAP & AI.',
     permissions: ['storage', 'clipboardWrite', 'cookies'],
     host_permissions: [
       'https://*.salesforce.com/*',
