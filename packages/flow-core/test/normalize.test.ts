@@ -37,6 +37,16 @@ describe('flow-core/normalize', () => {
   });
 
   describe('trigger detection', () => {
+    it('timing Async', () => {
+      const flow = normalize({ start: { triggerType: 'RecordAsync' } });
+      expect(flow.trigger.timing).toBe('Async');
+    });
+
+    it('timing Unknown when empty or no match', () => {
+      expect(normalize({ start: { triggerType: 'RandomEvent' } }).trigger.timing).toBe('Unknown');
+      expect(normalize({ start: {} }).trigger.timing).toBe('Unknown');
+    });
+
     it('timing BeforeSave', () => {
       // v2.0.2's detectTriggerTiming prefers recordTriggerType when set; only
       // falls back to triggerType when it is absent. So this fixture omits
@@ -48,6 +58,11 @@ describe('flow-core/normalize', () => {
     it('event CreateOrUpdate when both words present', () => {
       const flow = normalize({ start: { triggerType: 'RecordAfterCreateOrUpdate' } });
       expect(flow.trigger.event).toBe('CreateOrUpdate');
+    });
+
+    it('event Delete when delete is present', () => {
+      const flow = normalize({ start: { triggerType: 'RecordBeforeDelete' } });
+      expect(flow.trigger.event).toBe('Delete');
     });
 
     it('entryCriteriaSummary counts filters', () => {
@@ -66,6 +81,25 @@ describe('flow-core/normalize', () => {
   });
 
   describe('node construction', () => {
+    it('normalizes transforms, formulas, textTemplates, variables and recordLookups correctly', () => {
+      const flow = normalize({
+        recordLookups: [{ name: 'get1', filters: [ { field: 'Id' } ] }],
+        transforms: [{ name: 'transform1' }],
+        collectionProcessors: [{ name: 'colProc1' }],
+        formulas: [{ name: 'f1', dataType: 'String', expression: '1 + 1' }],
+        textTemplates: [{ name: 'tt1', text: 'Hello' }],
+        variables: [{ name: 'var1', isInput: true, value: 'test' }],
+        constants: [{ name: 'const1', dataType: 'String', value: 'myVal' }]
+      });
+      expect(flow.nodes.find(n => n.apiName === 'get1')?.metadata?.filters).toHaveLength(1);
+      expect(flow.nodes.find(n => n.apiName === 'transform1')?.type).toBe('Transform');
+      expect(flow.nodes.find(n => n.apiName === 'colProc1')?.type).toBe('CollectionProcessor');
+      expect(flow.resources.find(r => r.name === 'f1')?.type).toBe('Formula');
+      expect(flow.resources.find(r => r.name === 'tt1')?.type).toBe('TextTemplate');
+      expect(flow.resources.find(r => r.name === 'var1')?.metadata?.isInput).toBe(true);
+      expect(flow.resources.find(r => r.name === 'const1')?.type).toBe('Constant');
+    });
+
     it('always emits a __start__ node', () => {
       const flow = normalize({ label: 'Empty' });
       expect(flow.nodes[0]!.id).toBe('__start__');
@@ -129,6 +163,58 @@ describe('flow-core/normalize', () => {
       const update = flow.nodes.find((n) => n.apiName === 'UpdateAcct')!;
       expect(update.isInLoop).toBe(true);
       expect(update.loopDepth).toBe(1);
+    });
+
+    it('handles multiple paths to same loop body correctly', () => {
+      const flow = normalize({
+        loops: [
+          {
+            name: 'L',
+            nextValueConnector: { targetReference: 'Split' },
+          }
+        ],
+        decisions: [
+          {
+            name: 'Split',
+            rules: [{ name: 'Rule1', connector: { targetReference: 'Shared' } }],
+            defaultConnector: { targetReference: 'Shared' }
+          }
+        ],
+        recordUpdates: [
+          { name: 'Shared', object: 'A', connector: { targetReference: 'L' } }
+        ]
+      });
+      const shared = flow.nodes.find((n) => n.apiName === 'Shared')!;
+      expect(shared.isInLoop).toBe(true);
+      expect(shared.loopDepth).toBe(1);
+    });
+
+    it('handles multiple loops with fault connector exclusion', () => {
+      const flow = normalize({
+        loops: [
+          {
+            name: 'L1',
+            nextValueConnector: { targetReference: 'InL1' },
+          },
+          {
+            name: 'L2',
+            nextValueConnector: { targetReference: 'InL2' },
+          }
+        ],
+        recordUpdates: [
+          { name: 'InL1', object: 'A', connector: { targetReference: 'L2' }, faultConnector: { targetReference: 'FaultL1' } },
+          { name: 'InL2', object: 'B', connector: { targetReference: 'L1' } }
+        ],
+        recordCreates: [{ name: 'FaultL1', object: 'C' }]
+      });
+      const inL1 = flow.nodes.find((n) => n.apiName === 'InL1')!;
+      const inL2 = flow.nodes.find((n) => n.apiName === 'InL2')!;
+      const faultL1 = flow.nodes.find((n) => n.apiName === 'FaultL1')!;
+
+      expect(inL1.isInLoop).toBe(true);
+      expect(inL2.isInLoop).toBe(true);
+      expect(inL2.loopDepth).toBeGreaterThanOrEqual(1);
+      expect(faultL1.isInLoop).toBe(false);
     });
 
     it('does NOT mark the post-loop node (noMoreValues target) as in loop', () => {
@@ -250,7 +336,28 @@ describe('flow-core/normalize', () => {
     });
   });
 
+      it('builds recordDeletes, transforms, and subflows edges', () => {
+      const flow = normalize({
+        recordDeletes: [{ name: 'delete1', connector: { targetReference: 'end' }, faultConnector: { targetReference: 'fault' } }],
+        transforms: [{ name: 'transform1', connector: { targetReference: 'end' } }],
+        subflows: [{ name: 'subflow1', connector: { targetReference: 'end' }, faultConnector: { targetReference: 'fault' } }],
+        collectionProcessors: [{ name: 'colProc1', connector: { targetReference: 'end' } }],
+      });
+      expect(flow.edges).toContainEqual({ from: 'delete1', to: 'end', kind: 'default', label: null });
+      expect(flow.edges).toContainEqual({ from: 'delete1', to: 'fault', kind: 'fault', label: null });
+      expect(flow.edges).toContainEqual({ from: 'transform1', to: 'end', kind: 'default', label: null });
+      expect(flow.edges).toContainEqual({ from: 'subflow1', to: 'end', kind: 'default', label: null });
+      expect(flow.edges).toContainEqual({ from: 'subflow1', to: 'fault', kind: 'fault', label: null });
+      expect(flow.edges).toContainEqual({ from: 'colProc1', to: 'end', kind: 'default', label: null });
+    });
+
   describe('meta defaults', () => {
+    it('falls back to defaults when label and fullName are missing', () => {
+      const flow = normalize({}, {});
+      expect(flow.meta.flowApiName).toBe('unknown_flow');
+      expect(flow.meta.flowLabel).toBe('Unknown Flow');
+    });
+
     it('falls back to options.flowApiName when fullName is absent', () => {
       const flow = normalize({ label: 'My Flow' }, { flowApiName: 'My_Flow' });
       expect(flow.meta.flowApiName).toBe('My_Flow');
