@@ -437,10 +437,15 @@ export function createGuiApp(config, version, port = 7654) {
     if (!requireCsrfToken(req, res, csrfToken)) return;
     try {
       const { filename } = req.params;
-      if (!filename.endsWith('.json') || filename.includes('/') || filename.includes('..')) {
+      if (!filename.endsWith('.json') || path.basename(filename) !== filename || filename.includes('..')) {
         return res.status(400).json({ error: 'Invalid filename' });
       }
-      const filePath = path.join(logDir, 'test-results', filename);
+      const testResultsDir = path.resolve(logDir, 'test-results');
+      const filePath = path.resolve(testResultsDir, filename);
+      if (!filePath.startsWith(testResultsDir + path.sep)) {
+        return res.status(400).json({ error: 'Invalid filename' });
+      }
+
       if (!(await fs.pathExists(filePath))) return res.status(404).json({ error: 'Not found' });
       await fs.remove(filePath);
       res.json({ ok: true });
