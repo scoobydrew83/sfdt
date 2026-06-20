@@ -96,6 +96,36 @@ export async function deleteSavedQuery(name: string): Promise<void> {
   await writeSavedQueries(filtered);
 }
 
+// --- PENDING QUERY HAND-OFF ---
+// The Saved SOQL workspace panel stashes a chosen query here, then opens the
+// runner; open() consumes and clears it to pre-fill the editor. This keeps the
+// two features decoupled (saved-soql depends on soql-runner, not vice-versa).
+const PENDING_QUERY_STORAGE_KEY = 'soqlRunner.pendingQuery';
+
+export interface PendingQuery {
+  q: string;
+  api: ApiMode;
+}
+
+export async function writePendingQuery(entry: PendingQuery): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [PENDING_QUERY_STORAGE_KEY]: entry }, () => resolve());
+  });
+}
+
+export async function takePendingQuery(): Promise<PendingQuery | null> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(PENDING_QUERY_STORAGE_KEY, (result) => {
+      const raw = result?.[PENDING_QUERY_STORAGE_KEY] as PendingQuery | undefined;
+      if (raw && typeof raw.q === 'string') {
+        chrome.storage.local.remove(PENDING_QUERY_STORAGE_KEY, () => resolve(raw));
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
 // --- METADATA DESCRIBE INTERFACES & CACHE ---
 export interface FieldDescribe {
   name: string;
@@ -1583,6 +1613,13 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         doc.removeEventListener('keydown', escHandler);
       }
     });
+
+    // A Saved SOQL panel selection pre-fills the editor (and the API mode).
+    const pending = await takePendingQuery();
+    if (pending) {
+      textarea.value = pending.q;
+      mode = pending.api;
+    }
 
     textarea.focus();
     setMode(mode);
