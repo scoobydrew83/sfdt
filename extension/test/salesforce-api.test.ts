@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { SalesforceApiClient, type MessageBus } from '../lib/salesforce-api.js';
+import {
+  SalesforceApiClient,
+  configureSalesforceApi,
+  getSalesforceApi,
+  _resetSalesforceApiSingletonForTests,
+  type MessageBus,
+} from '../lib/salesforce-api.js';
 
 function fakeWin(href: string): Window {
   const u = new URL(href);
@@ -406,6 +412,83 @@ describe('extension/lib/salesforce-api', () => {
       );
       expect(consoleSpy).toHaveBeenCalled();
       consoleSpy.mockRestore();
+    });
+  });
+
+  describe('targetOrigin (Workspace tab)', () => {
+    it('derives session candidates from targetOrigin, not win.location', async () => {
+      // The Workspace tab's own location is a chrome-extension:// URL with no
+      // Salesforce host; targetOrigin must take over.
+      const win = fakeWin('chrome-extension://abcdef/app.html');
+      const bus = makeBus({
+        'https://acme.my.salesforce.com': 'sid-mysf',
+        'https://acme.lightning.force.com': 'sid-light',
+      });
+      const fetchSpy = vi.fn(
+        fetchResponder({
+          'https://acme.my.salesforce.com/services/data/v62.0/query': {
+            status: 200,
+            body: { totalSize: 0, done: true, records: [] },
+          },
+        }),
+      );
+      const client = new SalesforceApiClient({
+        win,
+        messageBus: bus,
+        fetchImpl: fetchSpy,
+        targetOrigin: 'https://acme.lightning.force.com',
+      });
+      await client.query('SELECT Id FROM Account');
+      const calls = fetchSpy.mock.calls.map(([url]) => String(url));
+      expect(new URL(calls[0]!).hostname).toBe('acme.my.salesforce.com');
+    });
+  });
+
+  describe('configureSalesforceApi singleton', () => {
+    it('binds the shared singleton and returns a stable instance', () => {
+      _resetSalesforceApiSingletonForTests();
+      configureSalesforceApi({ targetOrigin: 'https://acme.lightning.force.com' });
+      const a = getSalesforceApi();
+      const b = getSalesforceApi();
+      expect(a).toBe(b);
+      expect(a).toBeInstanceOf(SalesforceApiClient);
+      _resetSalesforceApiSingletonForTests();
+    });
+  });
+
+  describe('apiGetText', () => {
+    it('returns the raw response body as text (not JSON-parsed)', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(
+        async () =>
+          ({
+            ok: true,
+            status: 200,
+            async text() {
+              return '08:00:00.0 (1)|USER_DEBUG|[1]|DEBUG|Hello';
+            },
+            async json() {
+              throw new Error('should not be called');
+            },
+          }) as unknown as Response,
+      );
+      const client = new SalesforceApiClient({
+        win,
+        messageBus: bus,
+        fetchImpl: fetchSpy as typeof fetch,
+      });
+      const text = await client.apiGetText(
+        '/services/data/v62.0/tooling/sobjects/ApexLog/07L000000000001/Body',
+      );
+      expect(text).toContain('USER_DEBUG');
+    });
+
+    it('rejects endpoints that do not start with /', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const client = new SalesforceApiClient({ win, messageBus: bus });
+      await expect(client.apiGetText('services/data')).rejects.toThrow(/must start with/);
     });
   });
 

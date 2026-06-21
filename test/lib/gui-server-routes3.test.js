@@ -205,6 +205,74 @@ describe('POST /api/init — already initialized', () => {
   });
 });
 
+// ─── DELETE /api/test-runs/:filename ──────────────────────────────────────────
+
+describe('DELETE /api/test-runs/:filename', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('deletes a valid log file', async () => {
+    const fsMock = await import('fs-extra');
+    fsMock.default.pathExists.mockResolvedValueOnce(true);
+
+    const res = await request(app)
+      .delete('/api/test-runs/my-test-run.json')
+      .set('Authorization', `Bearer ${app.launchToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(fsMock.default.remove).toHaveBeenCalled();
+  });
+
+  it('rejects path traversal attempts', async () => {
+    // Note: express router naturally blocks / in params by 404ing
+    // So we test encoded slashes or backslashes which would make it into the parameter
+    const maliciousPaths = [
+      '..%5Ctest-runs%5Cmy-test-run.json', // ..\test-runs\my-test-run.json
+      '%2e%2e%2fmy-test-run.json', // ../my-test-run.json
+      'subdir%2fmy-test-run.json', // subdir/my-test-run.json
+      '..%2fmy-test-run.json' // ../my-test-run.json
+    ];
+
+    for (const p of maliciousPaths) {
+      const res = await request(app)
+        .delete(`/api/test-runs/${p}`) // already URI encoded in the strings above for slashes
+        .set('Authorization', `Bearer ${app.launchToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Invalid filename');
+    }
+  });
+
+  it('returns 404 for non-existent file', async () => {
+    const fsMock = await import('fs-extra');
+    fsMock.default.pathExists.mockResolvedValueOnce(false);
+
+    const res = await request(app)
+      .delete('/api/test-runs/non-existent.json')
+      .set('Authorization', `Bearer ${app.launchToken}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Not found');
+  });
+
+  it('rejects non-json files', async () => {
+    const res = await request(app)
+      .delete('/api/test-runs/not-json.txt')
+      .set('Authorization', `Bearer ${app.launchToken}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid filename');
+  });
+});
+
 // ─── GET /api/test-runs (with data) ──────────────────────────────────────────
 
 describe('GET /api/test-runs with test results directory', () => {
