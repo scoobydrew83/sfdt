@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
-import { registerSettingsShape } from '../lib/settings.js';
+import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import {
   readSavedQueries,
@@ -51,7 +51,10 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
 
   async function open(): Promise<void> {
     close();
-    const config = SAVED_SOQL_SETTINGS_SCHEMA.parse({});
+    const settings = await loadSettings();
+    const config = (settings.featureSettings?.['saved-soql'] ?? {
+      showHistory: true,
+    }) as z.infer<typeof SAVED_SOQL_SETTINGS_SCHEMA>;
 
     overlay = doc.createElement('div');
     overlay.className = 'sfut-saved-soql-overlay';

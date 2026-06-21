@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
-import { registerSettingsShape } from '../lib/settings.js';
+import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 
 const DEBUG_LOG_SETTINGS_SCHEMA = z.object({
@@ -64,6 +64,11 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
 
   async function open(): Promise<void> {
     close();
+
+    const settings = await loadSettings();
+    const config = (settings.featureSettings?.['debug-log-viewer'] ?? {
+      pageSize: 50,
+    }) as z.infer<typeof DEBUG_LOG_SETTINGS_SCHEMA>;
 
     overlay = doc.createElement('div');
     overlay.className = 'sfut-debug-log-overlay';
@@ -133,7 +138,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       status.textContent = 'Loading logs…';
       while (table.firstChild) table.removeChild(table.firstChild);
       try {
-        const result = await api.toolingQuery<ApexLogRow>(buildApexLogQuery(50));
+        const result = await api.toolingQuery<ApexLogRow>(buildApexLogQuery(config.pageSize));
         status.textContent = `${result.records.length} log${result.records.length === 1 ? '' : 's'}`;
         if (result.records.length === 0) {
           const empty = doc.createElement('div');
