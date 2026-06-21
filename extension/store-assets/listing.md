@@ -1,9 +1,11 @@
 # Chrome Web Store Listing
 
-> **Store-sync status:** Updated for **v0.2.0** (24 features). As of 2026-06-17 the
-> *live* CWS listing still reflects the older **17-feature** copy — this file is ahead
-> of the store. Paste the sections below into the CWS dashboard during the manual
-> v0.2.0 upload, then this file and the store will be back in sync.
+> **Store-sync status:** Updated for **v0.2.1** (24 features). v0.2.1 is a
+> republish of the v0.2.0 listing copy — the version bump was forced by a deploy
+> issue, with no feature or code changes. As of 2026-06-17 the *live* CWS listing
+> still reflects the older **17-feature** copy — this file is ahead of the store.
+> Paste the sections below into the CWS dashboard during the manual v0.2.1 upload,
+> then this file and the store will be back in sync.
 >
 > Screenshots and the store icon live alongside this file in `extension/store-assets/`
 > (`final_01`–`final_05` + `store-icon-128.png`). The screenshots predate the
