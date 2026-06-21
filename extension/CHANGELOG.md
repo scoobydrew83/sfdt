@@ -4,6 +4,17 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Added
+- **Standalone Workspace tab** (`chrome-extension://…/app.html`) — a full-page workspace opened from the side button's "Open Workspace ↗". Tools run in their own browser tab, so dismissing a panel never costs the user their place on the Salesforce page. The Workspace hands features a synthetic window reporting the chosen org's Salesforce URL, satisfying both the API host derivation and each feature's `detectContext()` gate with zero per-feature edits (`CONTEXTS.WORKSPACE`, curated `WORKSPACE_TOOLS` allowlist).
+- `apex-anonymous` — **Execute Anonymous Apex**: run anonymous Apex (`executeAnonymous`) with a snippet library.
+- `debug-log-viewer` — **Debug Log Viewer**: list `ApexLog` records and view raw log bodies; honours the `pageSize` feature setting.
+- `org-switcher` — **Multi-Org Switcher**: discover orgs the user is logged into (via a background `listSalesforceOrgs` action over `sid` cookies, deduped) and target tools at a chosen org.
+- `saved-soql` — **Saved SOQL**: bookmark and re-run SOQL queries / history, loaded into the runner via a pending-query hand-off; honours the `showHistory` feature setting.
+
+### Changed
+- `salesforce-api` — `SalesforceApiClient` gains an explicit `targetOrigin` (+ `configureSalesforceApi` singleton binding) so it works from the `chrome-extension://` origin, plus `apiGetText()` for `text/plain` bodies (e.g. ApexLog).
+- Feature `ICONS` map extracted to `lib/feature-icons.ts`, shared by `content.ts` and the Workspace shell.
+
 ## [0.2.1] - 2026-06-17
 
 > Version-only republish — the bump was forced by a deploy issue. No feature or
