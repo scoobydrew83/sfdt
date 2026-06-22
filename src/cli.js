@@ -29,6 +29,8 @@ import { registerScanCommand } from './commands/scan.js';
 import { registerAuditCommand } from './commands/audit.js';
 import { registerMonitorCommand } from './commands/monitor.js';
 import { registerDocsCommand } from './commands/docs.js';
+import { registerDataCommand } from './commands/data.js';
+import { registerScratchCommand } from './commands/scratch.js';
 import { registerFlowCommand } from './commands/flow.js';
 import { registerExtensionCommand } from './commands/extension.js';
 import { registerFeatureFlagsCommand } from './commands/feature-flags.js';
@@ -90,6 +92,8 @@ export function createCli() {
   registerAuditCommand(program);
   registerMonitorCommand(program);
   registerDocsCommand(program);
+  registerDataCommand(program);
+  registerScratchCommand(program);
   registerFlowCommand(program);
   registerExtensionCommand(program);
   registerFeatureFlagsCommand(program);
