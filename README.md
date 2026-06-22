@@ -72,6 +72,18 @@ sfdt deploy
 | `sfdt compare` | Compare metadata between two orgs or local source vs an org | `--source <alias\|local>`, `--target <alias>`, `--output <file>` |
 | `sfdt scan` | Fetch complete metadata inventory from an org | `--org <alias>`, `--output <file>`, `--format json\|table` |
 | `sfdt notify` | Send Slack deployment notifications | `--org <alias>`, `--version <ver>`, `--message <msg>` |
+
+### Org Health & Operations
+
+| Command | Description | Key Options |
+|---|---|---|
+| `sfdt audit [check\|all]` | Diagnose org health: `audittrail`, `licenses`, `mfa`, `unused-apex`, `inactive-users`, `api-versions` | `--org <alias>`, `--json` |
+| `sfdt monitor [check\|all]` | Monitor org: `limits`, `errors`, `health`, plus `backup`; `all --backup` to include a metadata backup | `--org <alias>`, `--backup`, `--json` |
+| `sfdt monitor backup` | Retrieve a full metadata backup into the configured backup directory | `--org <alias>`, `--json` |
+| `sfdt docs generate` | Generate MkDocs-compatible docs (objects, Apex, flows) with optional AI overview | `--ai`, `--json` |
+| `sfdt docs diagram` | Print/write a Mermaid ER diagram of the data model | `--output <file>`, `--json` |
+| `sfdt data <list\|export\|import\|delete> [set]` | Manage data sets via native `sf data tree` for sandbox/scratch seeding | `--org <alias>`, `--json` |
+| `sfdt scratch <create\|delete\|list\|pool>` | Create/delete/list scratch orgs and manage a pre-created pool | `--alias`, `--days <n>`, `--size <n>`, `--json` |
 | `sfdt config get <key>` | Print a config value using dot notation (e.g. `defaultOrg`) | — |
 | `sfdt config set <key> <value>` | Set a config value using dot notation (e.g. `deployment.coverageThreshold`) | — |
 | `sfdt completion <shell>` | Print shell completion script (`bash`, `zsh`, `fish`) | — |
