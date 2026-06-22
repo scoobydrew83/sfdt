@@ -4,6 +4,8 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-20
+
 ### Added
 - **Standalone Workspace tab** (`chrome-extension://…/app.html`) — a full-page workspace opened from the side button's "Open Workspace ↗". Tools run in their own browser tab, so dismissing a panel never costs the user their place on the Salesforce page. The Workspace hands features a synthetic window reporting the chosen org's Salesforce URL, satisfying both the API host derivation and each feature's `detectContext()` gate with zero per-feature edits (`CONTEXTS.WORKSPACE`, curated `WORKSPACE_TOOLS` allowlist).
 - `apex-anonymous` — **Execute Anonymous Apex**: run anonymous Apex (`executeAnonymous`) with a snippet library.

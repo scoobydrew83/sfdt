@@ -18,9 +18,17 @@ Everything the CWS dashboard needs, version-controlled so it's diffable per rele
 
 The extension's **runtime** icons live in `../public/icon/{16,32,48,128}.png` — wxt copies them into the build and the manifest references them, so they must stay there. `store-icon-128.png` here is a deliberate copy for the *store listing* (CWS uploads the store icon separately from the packaged icon).
 
+## Screenshot set
+
+`final_01`–`final_05` (May 23) cover flow/setup-era features. `final_06`–`final_16` were captured for 0.3.0 (1280×800, cover-cropped from 2× Retina originals kept locally in `_raw/`, which is gitignored):
+
+- **0.3.0 Workspace:** `final_06` home, `final_07` Execute Anonymous Apex, `final_08` Debug Log Viewer, `final_09` Multi-Org Switcher, `final_10` Saved SOQL.
+- **0.1.0 + 0.2.0:** `final_11` inspect-record, `final_12` data-import, `final_13` field-creator, `final_14` metadata-retrieve, `final_15` soap-explore, `final_16` event-monitor.
+
+> CWS displays a max of **5** screenshots; the set above is a source pool. Suggested 5 to feature (lead with the Workspace story): `final_06`, `final_09`, `final_07`, `final_11`, `final_13`.
+
 ## TODO before next submission
 
-- Refresh/add screenshots for features shipped since the current set was captured (May 23, covering only flow/setup-era features). Still missing:
-  - **0.1.0 + 0.2.0:** `inspect-record`, `data-import`, `field-creator`, `metadata-retrieve`, `soap-explore`, `event-monitor`, `export-for-prompt`.
-  - **Unreleased (#129 Workspace):** the standalone **Workspace** tab, `apex-anonymous`, `debug-log-viewer`, `org-switcher`, `saved-soql`.
+- Capture `final_17` for **Copy Schema for Prompt** (`export-for-prompt`) — reachable from the Workspace left-nav or a record/Object Manager page (menu label is "Copy Schema for Prompt", not "Export…").
+- Optional: stronger re-shoots of `final_07` (show an Apex execution result) and `final_13` (show a target object + filled field rows).
 - Optional: add CWS promo tiles (440×280 small; 1400×560 marquee) — none exist yet.
