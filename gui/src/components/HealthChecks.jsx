@@ -18,7 +18,8 @@ function describeFinding(f) {
   if (f.username) return `${f.name ?? f.username} <${f.username}>${f.lastLogin ? ` — last login ${f.lastLogin}` : ''}`;
   if (f.action) return `${f.date}: ${f.action} (${f.section}) by ${f.user}`;
   if (f.job) return `${f.date}: ${f.job} (${f.type}) — ${f.errors} error(s)`;
-  if (f.name && f.max != null) return `${f.name}: ${f.used}/${f.max}`;
+  // Licenses emit `total`; limits emit `max` — accept either.
+  if (f.name && (f.max ?? f.total) != null) return `${f.name}: ${f.used}/${f.max ?? f.total}`;
   if (f.score != null) return `score ${f.score}% (floor ${f.floor}%)`;
   if (f.name) return String(f.name);
   return JSON.stringify(f);

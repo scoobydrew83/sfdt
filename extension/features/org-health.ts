@@ -58,7 +58,8 @@ export function describeFinding(f: Record<string, unknown>): string {
   }
   if (f.action != null) return `${str(f.date)}: ${str(f.action)} (${str(f.section)}) by ${str(f.user)}`;
   if (f.job != null) return `${str(f.date)}: ${str(f.job)} (${str(f.type)}) — ${str(f.errors)} error(s)`;
-  if (f.name != null && f.max != null) return `${str(f.name)}: ${str(f.used)}/${str(f.max)}`;
+  // Licenses emit `total`; limits emit `max` — accept either.
+  if (f.name != null && (f.max ?? f.total) != null) return `${str(f.name)}: ${str(f.used)}/${str(f.max ?? f.total)}`;
   if (f.score != null) return `score ${str(f.score)}% (floor ${str(f.floor)}%)`;
   if (f.name != null) return String(f.name);
   return JSON.stringify(f);

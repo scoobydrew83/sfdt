@@ -47,11 +47,14 @@ async function executeMonitor(checks, options, { backup = false } = {}) {
       throw err;
     }
 
+    // Always persist the snapshot — the GUI (/api/monitor) and bridge org-health
+    // handler read this file, so --json runs (CI/automation) must update it too.
+    await fs.ensureDir(logDir);
+    await fs.writeJson(outPath, snapshot, { spaces: 2 });
+
     if (jsonMode) {
       process.stdout.write(JSON.stringify(snapshot, null, 2) + '\n');
     } else {
-      await fs.ensureDir(logDir);
-      await fs.writeJson(outPath, snapshot, { spaces: 2 });
       printReport(snapshot);
       console.log(chalk.dim(`\nSnapshot written to ${outPath}`));
     }

@@ -90,7 +90,21 @@ export async function rawQuery(orgAlias, soql, options = {}) {
   const args = ['data', 'query', '--query', soql, '--target-org', orgAlias, '--json'];
   if (options.tooling) args.push('--use-tooling-api');
   if (options.all) args.push('--all-rows');
-  const result = await execa('sf', args);
+  let result;
+  try {
+    result = await execa('sf', args);
+  } catch (err) {
+    // Mirror query(): sf emits a JSON error envelope on stdout for query
+    // failures (malformed SOQL, missing sObject). Surface the structured
+    // message instead of the opaque execa error.
+    const parsed = safeParse(err.stdout);
+    if (parsed?.message) {
+      const e = new Error(parsed.message);
+      e.stderr = err.stderr;
+      throw e;
+    }
+    throw err;
+  }
   const parsed = safeParse(result.stdout);
   return {
     records: parsed?.result?.records ?? [],

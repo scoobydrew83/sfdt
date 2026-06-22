@@ -73,10 +73,11 @@ describe('monitor command', () => {
     writeSpy.mockRestore();
   });
 
-  it('emits JSON to stdout in --json mode', async () => {
+  it('emits JSON to stdout AND persists the snapshot in --json mode', async () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'monitor', 'all', '--json']);
-    expect(fs.writeJson).not.toHaveBeenCalled();
+    // The snapshot must be written even in --json mode — the GUI/bridge read it.
+    expect(fs.writeJson).toHaveBeenCalled();
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
     expect(JSON.parse(out)).toMatchObject({ org: 'dev-org' });
     writeSpy.mockRestore();

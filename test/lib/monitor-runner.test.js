@@ -78,10 +78,10 @@ describe('checkHealth', () => {
     expect(r.status).toBe('ok');
   });
 
-  it('handles a missing score gracefully', async () => {
+  it('warns when the score is unavailable (no rows)', async () => {
     query.mockResolvedValueOnce([]);
     const r = await checkHealth('dev');
-    expect(r.status).toBe('ok');
+    expect(r.status).toBe('warn');
     expect(r.summary).toMatch(/unavailable/);
   });
 });

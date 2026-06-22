@@ -65,10 +65,11 @@ describe('audit command', () => {
     expect(runAudit).toHaveBeenCalledWith('staging', expect.any(Object));
   });
 
-  it('emits JSON to stdout in --json mode without writing a file', async () => {
+  it('emits JSON to stdout AND persists the snapshot in --json mode', async () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'audit', 'all', '--json']);
-    expect(fs.writeJson).not.toHaveBeenCalled();
+    // The snapshot must be written even in --json mode — the GUI/bridge read it.
+    expect(fs.writeJson).toHaveBeenCalled();
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
     expect(JSON.parse(out)).toMatchObject({ org: 'dev-org', summary: { ok: 1 } });
     writeSpy.mockRestore();

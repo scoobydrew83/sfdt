@@ -100,7 +100,9 @@ export async function checkHealth(orgAlias, { minScore = MONITOR_DEFAULTS.health
     const rows = await query(orgAlias, 'SELECT Score FROM SecurityHealthCheck', { tooling: true });
     const score = rows[0]?.Score;
     if (score == null) {
-      return result_(id, title, 'ok', 'Security health-check score unavailable', []);
+      // No rows means the check failed silently or the user lacks permission —
+      // not a healthy org. Surface it as a warning rather than a false 'ok'.
+      return result_(id, title, 'warn', 'Security health-check score unavailable (no rows returned)', []);
     }
     const rounded = Math.round(score);
     return result_(id, title, rounded < minScore ? 'warn' : 'ok',
