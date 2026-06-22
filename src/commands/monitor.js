@@ -59,7 +59,9 @@ async function executeMonitor(checks, options, { backup = false } = {}) {
       printReport(snapshot);
       console.log(chalk.dim(`\nSnapshot written to ${outPath}`));
     }
-    if (snapshot.summary.fail > 0) process.exitCode = 1;
+    // Fail the exit code for outright failures AND errored checks (e.g. an
+    // unreachable org), so monitoring can't silently pass in CI.
+    if (snapshot.summary.fail > 0 || snapshot.summary.error > 0) process.exitCode = 1;
   } catch (err) {
     if (jsonMode) {
       process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');

@@ -105,10 +105,13 @@ export async function importDataSet(config, setName, orgAlias) {
 /** Bulk-delete the records targeted by a data set's queries. */
 export async function deleteDataSet(config, setName, orgAlias) {
   const queries = await readQueries(config, setName);
-  const sobjects = [...new Set(queries.map(extractSObject).filter(Boolean))];
   const results = [];
-  for (const sobject of sobjects) {
-    const query = queries.find((q) => extractSObject(q) === sobject);
+  // Run a delete for EVERY query — a data set may have multiple queries for the
+  // same sObject (different WHERE filters). Deduping by sObject would silently
+  // leave the records matched by all but the first such query behind.
+  for (const query of queries) {
+    const sobject = extractSObject(query);
+    if (!sobject) continue;
     try {
       await execa('sf', ['data', 'delete', 'bulk', '--sobject', sobject, '--query', query, '--target-org', orgAlias, '--json']);
       results.push({ sobject, status: 'ok' });

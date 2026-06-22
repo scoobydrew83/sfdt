@@ -173,12 +173,20 @@ export async function checkUnusedApex(orgAlias) {
       `SELECT Id, Name, ApiVersion FROM ApexClass WHERE NamespacePrefix = null ORDER BY Name`,
       { tooling: true },
     );
-    // Aggregate coverage per class id.
+    // Aggregate coverage per class id. Note: this returns at most one page
+    // (~2000 rows); very large orgs may under-report coverage here.
     const coverage = await query(
       orgAlias,
       `SELECT ApexClassOrTriggerId, NumLinesCovered, NumLinesUncovered FROM ApexCodeCoverageAggregate`,
       { tooling: true },
     );
+    // ApexCodeCoverageAggregate is empty until tests have been run in the org.
+    // Without that data every class would look "uncovered", so don't flag a
+    // storm of false positives — report that coverage data is unavailable.
+    if (coverage.length === 0) {
+      return result(id, title, 'warn',
+        'No Apex code-coverage data in this org (run tests first); unused-class detection skipped', []);
+    }
     const covered = new Set(
       coverage
         .filter((c) => (c.NumLinesCovered ?? 0) > 0)

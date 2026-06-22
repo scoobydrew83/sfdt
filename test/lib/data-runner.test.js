@@ -118,6 +118,16 @@ describe('deleteDataSet', () => {
     const res = await deleteDataSet(config, 'qa', 'dev');
     expect(res.sobjects[0]).toMatchObject({ sobject: 'Account', status: 'error' });
   });
+  it('runs every query, including multiple for the same sObject', async () => {
+    fs.readJson.mockResolvedValueOnce({
+      queries: ["SELECT Id FROM Account WHERE Region='US'", "SELECT Id FROM Account WHERE Region='EU'"],
+    });
+    execa.mockResolvedValue({ stdout: '{}' });
+    const res = await deleteDataSet(config, 'qa', 'dev');
+    // Both Account filters must run — deduping by sObject would drop the second.
+    expect(execa).toHaveBeenCalledTimes(2);
+    expect(res.sobjects).toHaveLength(2);
+  });
 });
 
 describe('listDataSets', () => {

@@ -29,8 +29,11 @@ export function describeFinding(f: Record<string, unknown>): string {
   }
   // Setup audit trail: { date, action, section, user }
   if (f.action != null) return `${str(f.date)}: ${str(f.action)} (${str(f.section)}) by ${str(f.user)}`;
-  // Failed async Apex jobs: { date, job, type, errors }
-  if (f.job != null) return `${str(f.date)}: ${str(f.job)} (${str(f.type)}) — ${str(f.errors)} error(s)`;
+  // Failed async Apex jobs: { date, job, type, errors, status? (ExtendedStatus) }
+  if (f.job != null) {
+    const detail = f.status ? ` — ${str(f.status)}` : '';
+    return `${str(f.date)}: ${str(f.job)} (${str(f.type)}) — ${str(f.errors)} error(s)${detail}`;
+  }
   // License usage emits `total`; governor limits emit `max` (with a `ratio`).
   // Accept either denominator and append the percentage when a ratio is present.
   const denom = f.max ?? f.total;

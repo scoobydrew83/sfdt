@@ -82,6 +82,13 @@ describe('audit command', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('sets a non-zero exit code when a check errors (e.g. unreachable org)', async () => {
+    runAudit.mockResolvedValue({ ...okSnapshot, summary: { total: 1, ok: 0, warn: 0, fail: 0, error: 1 } });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'all']);
+    expect(process.exitCode).toBe(1);
+  });
+
   it('emits error JSON when no org is configured', async () => {
     loadConfig.mockResolvedValue({ _projectRoot: '/project' });
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);

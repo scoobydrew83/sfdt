@@ -57,8 +57,10 @@ async function executeAudit(checks, options) {
       console.log(chalk.dim(`\nSnapshot written to ${outPath}`));
     }
 
-    // Non-zero exit when any check failed outright (not warnings).
-    if (snapshot.summary.fail > 0) process.exitCode = 1;
+    // Non-zero exit when any check failed outright OR errored (e.g. an
+    // unreachable org / missing permission) — but not for warnings. An errored
+    // check must not read as a healthy org in CI.
+    if (snapshot.summary.fail > 0 || snapshot.summary.error > 0) process.exitCode = 1;
   } catch (err) {
     if (jsonMode) {
       process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');

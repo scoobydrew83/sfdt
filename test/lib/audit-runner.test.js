@@ -85,6 +85,16 @@ describe('checkUnusedApex', () => {
     // c1 covered, c2 is a test, c3 uncovered → only c3 flagged
     expect(r.findings.map((f) => f.name)).toEqual(['Helper']);
   });
+
+  it('skips detection (warn, no findings) when coverage data is empty', async () => {
+    query
+      .mockResolvedValueOnce([{ Id: 'c1', Name: 'Service', ApiVersion: 58 }])
+      .mockResolvedValueOnce([]); // no ApexCodeCoverageAggregate rows
+    const r = await checkUnusedApex('dev');
+    expect(r.status).toBe('warn');
+    expect(r.findings).toEqual([]);
+    expect(r.summary).toMatch(/coverage data/i);
+  });
 });
 
 describe('checkInactiveUsers', () => {

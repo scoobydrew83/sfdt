@@ -186,9 +186,15 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
       const monitor = (data.monitor?.data ?? null) as Snapshot | null;
       renderSnapshot(body, 'Diagnostics & Audit', 'audit', audit);
       renderSnapshot(body, 'Monitoring', 'monitor', monitor);
-      const auditIssues = shapeChecks(audit).filter((c) => c.status !== 'ok').length;
-      const monIssues = shapeChecks(monitor).filter((c) => c.status !== 'ok').length;
-      status.textContent = `${auditIssues + monIssues} issue(s)`;
+      const auditChecks = shapeChecks(audit);
+      const monChecks = shapeChecks(monitor);
+      if (auditChecks.length === 0 && monChecks.length === 0) {
+        // No snapshots yet — don't imply a healthy org with "0 issue(s)".
+        status.textContent = 'No data';
+      } else {
+        const issues = [...auditChecks, ...monChecks].filter((c) => c.status !== 'ok').length;
+        status.textContent = `${issues} issue(s)`;
+      }
       return data;
     } catch (err) {
       const errorPanel = doc.createElement('div');

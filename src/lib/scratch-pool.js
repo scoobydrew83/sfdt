@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs-extra';
 import { execa } from 'execa';
+import { safeParse } from './org-query.js';
 
 /**
  * Scratch org and pool management.
@@ -28,7 +29,12 @@ export async function createScratch(config, { alias, durationDays } = {}) {
   const definitionFile = config.scratch?.definitionFile ?? 'config/project-scratch-def.json';
   const duration = durationDays ?? config.scratch?.durationDays ?? 7;
   const result = await execa('sf', buildCreateArgs({ definitionFile, alias, durationDays: duration }));
-  const parsed = JSON.parse(result.stdout);
+  const parsed = safeParse(result.stdout);
+  if (!parsed) {
+    // The org may already have been created; surface a clear, actionable error
+    // instead of a raw SyntaxError so the user can reconcile via `sf org list`.
+    throw new Error(`Unparseable output from 'sf org create scratch' (the org may exist — check 'sf org list'): ${String(result.stdout).slice(0, 200)}`);
+  }
   const r = parsed.result ?? {};
   return {
     alias: alias ?? null,
@@ -47,8 +53,8 @@ export async function deleteScratch(target) {
 /** List the org's scratch orgs (alias, username, expiration). */
 export async function listScratch() {
   const result = await execa('sf', ['org', 'list', '--json']);
-  const parsed = JSON.parse(result.stdout);
-  const scratch = parsed.result?.scratchOrgs ?? [];
+  const parsed = safeParse(result.stdout);
+  const scratch = parsed?.result?.scratchOrgs ?? [];
   return scratch.map((o) => ({
     alias: o.alias ?? null,
     username: o.username,
