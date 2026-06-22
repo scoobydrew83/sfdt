@@ -1,16 +1,18 @@
 # Chrome Web Store Listing
 
-> **Store-sync status:** Updated for **v0.2.1** (24 features). v0.2.1 is a
-> republish of the v0.2.0 listing copy — the version bump was forced by a deploy
-> issue, with no feature or code changes. As of 2026-06-17 the *live* CWS listing
-> still reflects the older **17-feature** copy — this file is ahead of the store.
-> Paste the sections below into the CWS dashboard during the manual v0.2.1 upload,
-> then this file and the store will be back in sync.
+> **Store-sync status:** Updated for **v0.3.1** (28 features). The 0.3.x line adds
+> a standalone **Workspace** tab plus four new tools — Execute Anonymous Apex,
+> Debug Logs, Saved SOQL, and Switch Org (multi-org). As of the last manual
+> upload the *live* CWS listing still reflects the older **17-feature** copy —
+> this file is ahead of the store. Paste the sections below into the CWS
+> dashboard during the manual v0.3.1 upload, then this file and the store will
+> be back in sync.
 >
 > Screenshots and the store icon live alongside this file in `extension/store-assets/`
-> (`final_01`–`final_05` + `store-icon-128.png`). The screenshots predate the
-> 0.1.0/0.2.0 features — adding shots for `export-for-prompt` and the other newer
-> features is an optional follow-up.
+> (`store-icon-128.png` + `final_01`–`final_16`). The set was refreshed for 0.3.0:
+> `final_01`–`final_05` (flow/setup era) plus `final_06`–`final_16` (Workspace
+> tools + schema/data tooling). CWS shows up to 5 — see this folder's README for
+> the suggested five.
 
 ## Item name
 SFDT SF Helper
@@ -25,7 +27,7 @@ Developer Tools (alt: Workflow & Planning)
 English (United States)
 
 ## Detailed description
-SFDT SF Helper adds 24 productivity features for Salesforce admins and developers across Flow Builder, Setup, Object Manager, and record pages — spanning flow analysis, schema and data tooling, SOQL/REST/SOAP exploration, event monitoring, and optional AI assistance. Every feature is opt-in via the options page, and any feature can be remotely disabled without a Web Store re-review.
+SFDT SF Helper adds 28 productivity features for Salesforce admins and developers across Flow Builder, Setup, Object Manager, and record pages — now including a standalone Workspace tab that runs SOQL, Apex, and other tools in their own browser tab so they never disturb the Salesforce page you're on. Features span flow analysis, schema and data tooling, SOQL/REST/SOAP exploration, anonymous Apex, debug-log and event monitoring, and optional AI assistance. Every feature is opt-in via the options page, and any feature can be remotely disabled without a Web Store re-review.
 
 Features include:
 - Setup Tabs — adds an Automation Home tab plus reorderable, groupable tabs to the Setup tab bar
@@ -52,6 +54,10 @@ Features include:
 - SOAP API Explorer — build and send SOAP API requests with a payload editor and response viewer
 - Event Streaming Monitor — subscribe to and monitor platform/streaming events live
 - Export Schema for Prompt — copy a dense Markdown schema for an object to the clipboard for pasting into an LLM prompt (record pages and Object Manager)
+- Execute Anonymous Apex — run anonymous Apex with a reusable snippet library
+- Debug Logs — list ApexLog debug logs and view raw log bodies
+- Saved SOQL — bookmark and re-run SOQL queries and history
+- Switch Org — discover every org you're logged into and run any tool against it (multi-org)
 
 Privacy
 - No user data is sent to any third-party service.
@@ -75,7 +81,7 @@ Saves user preferences and per-feature toggle settings to chrome.storage.local s
 Lets the user one-click copy generated API names, compare-report data, SOQL results, the SOQL-derived LangGraph node, and the object schema produced by Export Schema for Prompt to the clipboard.
 
 ### cookies
-Reads the user's existing Salesforce session cookie on the Salesforce tab so the extension can authenticate Tooling API and REST calls to the user's own org. No cookies are ever sent off-origin.
+Reads the user's existing Salesforce session cookies so the extension can authenticate Tooling API and REST calls to the user's own org(s). The Switch Org / Workspace multi-org feature reads Salesforce session cookies to list the orgs you're already logged into and target tools at the one you pick. No cookies are ever sent off-origin.
 
 ### host_permissions: https://*.salesforce.com/*, https://*.salesforce-setup.com/*, https://*.my.salesforce.com/*, https://*.lightning.force.com/*
 The extension only operates on Salesforce origins. Required to inject UI and call the Tooling/REST APIs of the user's logged-in org.

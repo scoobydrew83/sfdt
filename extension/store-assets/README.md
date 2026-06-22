@@ -7,7 +7,7 @@ Everything the CWS dashboard needs, version-controlled so it's diffable per rele
 |------|------------|-----------|
 | `listing.md` | Item name, summary, detailed description, category, single-purpose, permission justifications, distribution | Listing + Privacy tabs |
 | `store-icon-128.png` | 128×128 store icon (copy of `../public/icon/128.png`) | Store icon |
-| `final_01`–`final_05*.png` | Screenshots (1280×800 / 640×400) | Screenshots |
+| `final_01`–`final_16*.png` | Screenshots (1280×800) | Screenshots |
 
 ## Keeping it in sync
 
@@ -27,8 +27,9 @@ The extension's **runtime** icons live in `../public/icon/{16,32,48,128}.png` �
 
 > CWS displays a max of **5** screenshots; the set above is a source pool. Suggested 5 to feature (lead with the Workspace story): `final_06`, `final_09`, `final_07`, `final_11`, `final_13`.
 
-## TODO before next submission
+## Optional enhancements (not blocking submission)
 
-- Capture `final_17` for **Copy Schema for Prompt** (`export-for-prompt`) — reachable from the Workspace left-nav or a record/Object Manager page (menu label is "Copy Schema for Prompt", not "Export…").
-- Optional: stronger re-shoots of `final_07` (show an Apex execution result) and `final_13` (show a target object + filled field rows).
-- Optional: add CWS promo tiles (440×280 small; 1400×560 marquee) — none exist yet.
+The screenshot set above is submission-ready. Nice-to-haves, none required:
+
+- A dedicated `final_17` for **Copy Schema for Prompt** (`export-for-prompt`) — it's already visible in the `final_06` Workspace nav, so a standalone shot is optional (menu label is "Copy Schema for Prompt", not "Export…").
+- CWS promo tiles (440×280 small; 1400×560 marquee) — none exist yet.
