@@ -22,6 +22,7 @@ import { createFlowTriggerExplorerEnhancerFeature } from '../features/flow-trigg
 import { createFlowVersionManagerFeature } from '../features/flow-version-manager.js';
 import { createMissingDescriptionFlagsFeature } from '../features/missing-description-flags.js';
 import { createOrgLimitsFeature } from '../features/org-limits.js';
+import { createOrgHealthFeature } from '../features/org-health.js';
 import { createRestExploreFeature } from '../features/rest-explore.js';
 import { createScheduledFlowExplorerFeature } from '../features/scheduled-flow-explorer.js';
 import { createSetupTabsFeature } from '../features/setup-tabs.js';
@@ -79,6 +80,7 @@ export default defineContentScript({
     registry.register(createFlowDeployFeature());
     registry.register(createSoqlRunnerFeature());
     registry.register(createOrgLimitsFeature());
+    registry.register(createOrgHealthFeature());
     registry.register(createRestExploreFeature());
     registry.register(createInspectRecordFeature());
     registry.register(createDataImportFeature());
@@ -151,6 +153,7 @@ export default defineContentScript({
       'flow-deploy': { icon: '🚀', label: 'Deploy or Rollback…' },
       'soql-runner': { icon: '🗂', label: 'SOQL Query Runner' },
       'org-limits': { icon: '🚦', label: 'Org Limits' },
+      'org-health': { icon: '🏥', label: 'Org Health' },
       'rest-explore': { icon: '🛠', label: 'REST API Explorer' },
       'inspect-record': { icon: '🔍', label: 'Inspect Record (Show All Data)' },
       'data-import': { icon: '📥', label: 'Data Import Wizard' },

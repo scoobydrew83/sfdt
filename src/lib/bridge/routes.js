@@ -301,6 +301,33 @@ async function dispatch(request, { version, projectRoot, makeSuccessResponse, ma
         );
       }
     }
+    case 'org-health': {
+      // Return the latest audit/monitor snapshots the CLI wrote under logs/.
+      // Read-only; mirrors the gui-server /api/audit + /api/monitor routes.
+      if (!projectRoot) {
+        return makeErrorResponse(
+          request.requestId,
+          'Cannot read org health: no project root resolved on the bridge',
+          'INTERNAL_ERROR',
+        );
+      }
+      const fsExtra = (await import('fs-extra')).default;
+      const readSnapshot = async (name) => {
+        const file = path.join(projectRoot, 'logs', name);
+        if (!(await fsExtra.pathExists(file))) return null;
+        try {
+          const data = await fsExtra.readJson(file);
+          return { timestamp: data?.timestamp ?? new Date().toISOString(), data };
+        } catch {
+          return null;
+        }
+      };
+      const [audit, monitor] = await Promise.all([
+        readSnapshot('audit-latest.json'),
+        readSnapshot('monitor-latest.json'),
+      ]);
+      return makeSuccessResponse(request.requestId, { audit, monitor });
+    }
     case 'ai':
     case 'drift':
     case 'scan':

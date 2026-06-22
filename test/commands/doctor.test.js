@@ -57,13 +57,13 @@ describe('runExtensionDoctor', () => {
   it('passes the bridge ping check when /api/bridge/ping returns ok', async () => {
     const fetchImpl = mockFetchOk({
       ok: true,
-      data: { serverVersion: '0.8.1', protocolVersion: '1.1' },
+      data: { serverVersion: '0.8.1', protocolVersion: '1.2' },
     });
     const { results, ok } = await runExtensionDoctor({ port: 7654, fetchImpl });
     const bridge = results.find((r) => r.name === 'sfdt ui bridge');
     expect(bridge.status).toBe('pass');
     expect(bridge.detail).toContain('0.8.1');
-    expect(bridge.detail).toContain('1.1');
+    expect(bridge.detail).toContain('1.2');
     expect(ok).toBe(true);
   });
 
