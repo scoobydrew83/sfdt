@@ -104,7 +104,7 @@ export default function HealthChecks({ title, subtitle, pageKey, fetcher, comman
           {c.findings?.length > 0 && (
             <div>
               {c.findings.slice(0, 50).map((f, i) => (
-                <div key={i} className="subtask pending">
+                <div key={f.name ?? f.username ?? f.action ?? f.job ?? i} className="subtask pending">
                   <span className="s-icon"><span style={{ fontSize: 12, lineHeight: 1 }}>·</span></span>
                   <span className="s-name">{describeFinding(f)}</span>
                 </div>

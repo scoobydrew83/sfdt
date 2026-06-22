@@ -235,15 +235,21 @@ export async function checkApiVersions(orgAlias, { minApiVersion = AUDIT_DEFAULT
   const id = 'api-versions';
   const title = 'Deprecated API versions';
   try {
-    const findings = [];
-    for (const type of ['ApexClass', 'ApexTrigger']) {
-      const rows = await query(
+    // ApexClass and ApexTrigger are independent Tooling queries — run them in
+    // parallel. Iterate the types in order afterwards so findings stay stable
+    // (all ApexClass rows before ApexTrigger rows).
+    const types = ['ApexClass', 'ApexTrigger'];
+    const rowsByType = await Promise.all(
+      types.map((type) => query(
         orgAlias,
         `SELECT Name, ApiVersion FROM ${type} WHERE NamespacePrefix = null AND ApiVersion < ${minApiVersion} ORDER BY ApiVersion`,
         { tooling: true },
-      );
-      for (const r of rows) findings.push({ type, name: r.Name, apiVersion: r.ApiVersion });
-    }
+      )),
+    );
+    const findings = [];
+    types.forEach((type, i) => {
+      for (const r of rowsByType[i]) findings.push({ type, name: r.Name, apiVersion: r.ApiVersion });
+    });
     return result(id, title, findings.length ? 'warn' : 'ok',
       findings.length
         ? `${findings.length} component(s) below API v${minApiVersion}`

@@ -1,4 +1,5 @@
 import path from 'path';
+import fs from 'fs-extra';
 import { execa } from 'execa';
 import { query } from './org-query.js';
 import { fetchOrgInventory } from './org-inventory.js';
@@ -143,7 +144,6 @@ export async function runBackup(orgAlias, config, { onProgress } = {}) {
     const outDir = path.join(backupRoot, `${sanitize(orgAlias)}-${stamp}`);
 
     const inventory = await fetchOrgInventory(orgAlias, config);
-    const fs = (await import('fs-extra')).default;
     await fs.ensureDir(outDir);
 
     const { retrieved, total, errors } = await parallelRetrieve(inventory, config, {

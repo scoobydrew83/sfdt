@@ -59,8 +59,7 @@ describe('org-health — modal', () => {
     });
     const feature = createOrgHealthFeature({ bridgeFactory: async () => bridge });
     await feature.onActivate?.();
-    await new Promise((r) => setTimeout(r, 0));
-    await new Promise((r) => setTimeout(r, 0));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Diagnostics & Audit'));
 
     expect(bridge.call).toHaveBeenCalledWith({ kind: 'org-health' });
     const body = document.body.textContent ?? '';
@@ -76,8 +75,7 @@ describe('org-health — modal', () => {
     const bridge = fakeBridge({ ok: false, requestId: 'r1', error: 'bridge offline', code: 'BRIDGE_OFFLINE' });
     const feature = createOrgHealthFeature({ bridgeFactory: async () => bridge });
     await feature.onActivate?.();
-    await new Promise((r) => setTimeout(r, 0));
-    await new Promise((r) => setTimeout(r, 0));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('bridge offline'));
 
     const body = document.body.textContent ?? '';
     expect(body).toContain('bridge offline');
@@ -89,8 +87,7 @@ describe('org-health — modal', () => {
     const bridge = fakeBridge({ ok: true, requestId: 'r1', data: { audit: null, monitor: null } });
     const feature = createOrgHealthFeature({ bridgeFactory: async () => bridge });
     await feature.onActivate?.();
-    await new Promise((r) => setTimeout(r, 0));
-    await new Promise((r) => setTimeout(r, 0));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Run `sfdt'));
 
     expect(document.body.textContent).toContain('Run `sfdt');
   });
