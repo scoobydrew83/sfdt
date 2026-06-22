@@ -472,6 +472,33 @@ export function createGuiApp(config, version, port = 7654) {
     }
   });
 
+  // Org diagnose/audit and monitoring snapshots are plain JSON written by the
+  // `sfdt audit` / `sfdt monitor` commands; serve them read-only for the
+  // Audit and Monitor dashboard pages.
+  const readSnapshotFile = async (name) => {
+    const file = path.join(logDir, name);
+    if (!(await fs.pathExists(file))) return null;
+    return fs.readJson(file);
+  };
+
+  app.get('/api/audit', apiLimiter, async (_req, res) => {
+    try {
+      const data = await readSnapshotFile('audit-latest.json');
+      res.json(data ?? { timestamp: null, org: null, checks: [], summary: { total: 0, ok: 0, warn: 0, fail: 0, error: 0 } });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/monitor', apiLimiter, async (_req, res) => {
+    try {
+      const data = await readSnapshotFile('monitor-latest.json');
+      res.json(data ?? { timestamp: null, org: null, checks: [], summary: { total: 0, ok: 0, warn: 0, fail: 0, error: 0 } });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/quality', apiLimiter, async (_req, res) => {
     try {
       const data = await readQuality(logDir);

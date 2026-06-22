@@ -133,6 +133,10 @@ export const api = {
   preflight:              () => fetchJson('/preflight'),
   /** @returns {Promise<DriftResult>} */
   drift:                  () => fetchJson('/drift'),
+  /** Org diagnose/audit snapshot. @returns {Promise<{timestamp:string|null, org:string|null, checks:Array, summary:object}>} */
+  audit:                  () => fetchJson('/audit'),
+  /** Org monitoring snapshot. @returns {Promise<{timestamp:string|null, org:string|null, checks:Array, summary:object}>} */
+  monitor:                () => fetchJson('/monitor'),
   /** @returns {Promise<{date:string|null, status:string|null, summary:{critical:number,high:number,medium:number,low:number}, violations:Array, unavailableMessage:string|null}>} */
   quality:                () => fetchJson('/quality'),
   /** @returns {Promise<{ ok: boolean }>} */

@@ -5,6 +5,8 @@ import Dashboard from './pages/Dashboard.jsx';
 import TestRuns from './pages/TestRuns.jsx';
 import PreflightPage from './pages/Preflight.jsx';
 import DriftPage from './pages/Drift.jsx';
+import AuditPage from './pages/Audit.jsx';
+import MonitorPage from './pages/Monitor.jsx';
 import ComparePage from './pages/Compare.jsx';
 import ScanPage from './pages/Scan.jsx';
 import ManifestsPage from './pages/Manifests.jsx';
@@ -35,6 +37,8 @@ const NAV_GROUPS = [
     items: [
       { id: 'dashboard', label: 'Dashboard', Icon: IconHome },
       { id: 'drift',     label: 'Drift',     Icon: IconRefresh },
+      { id: 'audit',     label: 'Org Audit', Icon: IconCheck },
+      { id: 'monitor',   label: 'Org Monitor', Icon: IconActivity },
       { id: 'tests',     label: 'Test Runs', Icon: IconList },
       { id: 'coverage',  label: 'Coverage',  Icon: IconActivity },
       { id: 'logs',      label: 'Logs',      Icon: IconClock },
@@ -75,6 +79,8 @@ const PAGE_LABELS = {
   coverage:  'Coverage',
   preflight: 'Preflight',
   drift:     'Drift',
+  audit:     'Org Audit',
+  monitor:   'Org Monitor',
   compare:   'Compare',
   scan:      'Scan',
   manifests: 'Manifests',
@@ -159,6 +165,8 @@ export default function App() {
       case 'coverage':  return <CoveragePage />;
       case 'preflight': return <PreflightPage />;
       case 'drift':     return <DriftPage />;
+      case 'audit':     return <AuditPage />;
+      case 'monitor':   return <MonitorPage />;
       case 'compare':   return <ComparePage />;
       case 'scan':      return <ScanPage />;
       case 'manifests': return <ManifestsPage />;
