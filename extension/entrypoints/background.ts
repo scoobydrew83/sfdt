@@ -1,4 +1,5 @@
 import { defineBackground } from 'wxt/utils/define-background';
+import { dedupeOrgs } from '../lib/org-list.js';
 
 // Only the extension's own content scripts may invoke privileged actions.
 // chrome.runtime.id is the canonical id of THIS extension at runtime — a
@@ -29,7 +30,10 @@ function isAllowedCookieUrl(url: string): boolean {
     return false;
   }
   if (parsed.protocol !== 'https:') return false;
-  const hostname = parsed.hostname.toLowerCase();
+  return isAllowedSalesforceDomain(parsed.hostname.toLowerCase());
+}
+
+function isAllowedSalesforceDomain(hostname: string): boolean {
   return SALESFORCE_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix));
 }
 
@@ -79,6 +83,31 @@ export default defineBackground(() => {
               urls.map(async (url) => [url, await getSid(url)] as const),
             );
             return { ok: true, sids: Object.fromEntries(entries) };
+          }
+
+          case 'listSalesforceOrgs': {
+            // Enumerate sid cookies to discover which orgs the user is logged
+            // in to. Same security posture as getSidForUrls: results are
+            // filtered to Salesforce-suffixed hosts and we return ONLY org host
+            // names — never the cookie values themselves.
+            const cookies = await new Promise<chrome.cookies.Cookie[]>((resolve) => {
+              chrome.cookies.getAll({ name: 'sid' }, (c) => resolve(c ?? []));
+            });
+            const orgs = dedupeOrgs(cookies, isAllowedSalesforceDomain);
+            return { ok: true, orgs };
+          }
+
+          case 'openApp': {
+            // Open the standalone Workspace tab, passing the current org so it
+            // can target the right session. The org is validated against the
+            // Salesforce host allowlist before it ever reaches the URL.
+            const org = typeof message.org === 'string' ? message.org : '';
+            const safe = org && isAllowedCookieUrl(`https://${org}/`) ? org : '';
+            const url =
+              chrome.runtime.getURL('app.html') +
+              (safe ? `?org=${encodeURIComponent(safe)}` : '');
+            await chrome.tabs.create({ url });
+            return { ok: true };
           }
 
           case 'bridgePing': {

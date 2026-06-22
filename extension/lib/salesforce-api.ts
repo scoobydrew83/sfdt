@@ -24,6 +24,11 @@ export interface SfApiOptions {
   messageBus?: MessageBus;
   // Custom fetch only used in tests.
   fetchImpl?: typeof fetch;
+  // Explicit org origin (e.g. "https://acme.lightning.force.com"). When set,
+  // getSession() derives candidate hosts from this instead of win.location.
+  // Used by the standalone Workspace tab (chrome-extension:// page), whose
+  // own location carries no Salesforce host. Null/absent in content scripts.
+  targetOrigin?: string;
 }
 
 // REST query() returns `totalSize`; Tooling toolingQuery() returns `size`.
@@ -145,6 +150,7 @@ export class SalesforceApiClient {
   private readonly win: Window;
   private readonly bus: MessageBus;
   private readonly fetchImpl: typeof fetch;
+  private readonly targetOrigin: string | null;
   private session: Session | null = null;
 
   constructor(options: SfApiOptions = {}) {
@@ -152,6 +158,7 @@ export class SalesforceApiClient {
     this.win = options.win ?? window;
     this.bus = options.messageBus ?? defaultMessageBus();
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
+    this.targetOrigin = options.targetOrigin ?? null;
   }
 
   clearSession(): void {
@@ -166,8 +173,12 @@ export class SalesforceApiClient {
   private async getSession(): Promise<Session | null> {
     if (this.session?.candidates.length) return this.session;
 
-    const hostname = this.win.location.hostname;
-    const currentOrigin = this.win.location.origin;
+    // The Workspace tab supplies targetOrigin because its own location is a
+    // chrome-extension:// URL with no Salesforce host. Content scripts leave
+    // it null and fall back to the page's own location.
+    const explicit = this.targetOrigin ? new URL(this.targetOrigin) : null;
+    const hostname = explicit ? explicit.hostname : this.win.location.hostname;
+    const currentOrigin = explicit ? explicit.origin : this.win.location.origin;
     const mySf = mySalesforceHostname(hostname);
     const mySfOrigin = mySf ? `https://${mySf}` : null;
 
@@ -236,6 +247,53 @@ export class SalesforceApiClient {
     if (retryOn401 && errors.some((e) => e.status === 401) && !hasNon401) {
       this.clearSession();
       return this.apiGet<T>(endpoint, params, { retryOn401: false });
+    }
+
+    throw buildRequestError('GET request', endpoint, errors);
+  }
+
+  // Like apiGet but returns the raw response body as text instead of JSON.
+  // Some endpoints serve text/plain — most notably ApexLog/<id>/Body — where
+  // apiGet's res.json() would throw. Shares the session/dual-host/401-retry
+  // machinery so the Workspace's Debug Log viewer behaves like everything else.
+  async apiGetText(
+    endpoint: string,
+    params: Record<string, string> = {},
+    options: { retryOn401?: boolean } = {},
+  ): Promise<string> {
+    if (!endpoint.startsWith('/')) {
+      throw new Error(`apiGetText: endpoint must start with "/". Got: ${endpoint}`);
+    }
+    const retryOn401 = options.retryOn401 ?? true;
+    const session = await this.getSession();
+    if (!session) throw new Error('No Salesforce session available');
+
+    const queryString =
+      Object.keys(params).length > 0 ? `?${new URLSearchParams(params).toString()}` : '';
+    const errors: RequestFailure[] = [];
+
+    for (const { baseUrl, sid } of session.candidates) {
+      try {
+        const res = await this.fetchImpl(`${baseUrl}${endpoint}${queryString}`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${sid}` },
+        });
+        if (res.ok) return await res.text();
+        const errorText = await res.text().catch(() => '');
+        errors.push({ baseUrl, status: res.status, errorText });
+      } catch (err) {
+        errors.push({
+          baseUrl,
+          status: 0,
+          errorText: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const hasNon401 = errors.some((e) => e.status >= 400 && e.status !== 401);
+    if (retryOn401 && errors.some((e) => e.status === 401) && !hasNon401) {
+      this.clearSession();
+      return this.apiGetText(endpoint, params, { retryOn401: false });
     }
 
     throw buildRequestError('GET request', endpoint, errors);
@@ -500,11 +558,27 @@ export class SalesforceApiClient {
 }
 
 let _singleton: SalesforceApiClient | null = null;
+let _singletonTargetOrigin: string | null = null;
+
+// Binds the shared singleton to an explicit org origin. The Workspace tab calls
+// this once at boot (before any feature registers) so even features that reach
+// for getSalesforceApi() directly — bypassing options.api — get an org-bound
+// client. Re-callable: the org-switcher invokes it again on org change.
+export function configureSalesforceApi(opts: { targetOrigin: string }): void {
+  _singletonTargetOrigin = opts.targetOrigin;
+  _singleton = new SalesforceApiClient({ targetOrigin: opts.targetOrigin });
+}
+
 export function getSalesforceApi(): SalesforceApiClient {
-  if (!_singleton) _singleton = new SalesforceApiClient();
+  if (!_singleton) {
+    _singleton = new SalesforceApiClient(
+      _singletonTargetOrigin ? { targetOrigin: _singletonTargetOrigin } : {},
+    );
+  }
   return _singleton;
 }
 
 export function _resetSalesforceApiSingletonForTests(): void {
   _singleton = null;
+  _singletonTargetOrigin = null;
 }

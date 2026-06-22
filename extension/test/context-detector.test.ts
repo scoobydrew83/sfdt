@@ -220,6 +220,7 @@ describe('extension/lib/context-detector', () => {
         'subflow-graph',
       ],
       [CONTEXTS.RECORD_PAGE]: [],
+      [CONTEXTS.WORKSPACE]: [],
       [CONTEXTS.NONE]: [],
     };
 

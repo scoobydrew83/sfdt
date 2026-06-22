@@ -6,6 +6,11 @@ export const CONTEXTS = {
   FLOW_TRIGGER_EXPLORER: 'flow_trigger_explorer',
   SETUP_OTHER: 'setup_other',
   RECORD_PAGE: 'record_page',
+  // The standalone Workspace tab. No URL maps to it (detectContext never
+  // returns WORKSPACE — the Workspace gives features a synthetic win that
+  // reports a real Salesforce URL). The bucket exists so Workspace-only tools
+  // can declare themselves and the options page can list them.
+  WORKSPACE: 'workspace',
   NONE: 'none',
 } as const;
 
@@ -126,6 +131,7 @@ const EMPTY_MAP: Readonly<Record<Context, readonly string[]>> = {
   [CONTEXTS.FLOW_TRIGGER_EXPLORER]: [],
   [CONTEXTS.SETUP_OTHER]: [],
   [CONTEXTS.RECORD_PAGE]: [],
+  [CONTEXTS.WORKSPACE]: [],
   [CONTEXTS.NONE]: [],
 };
 
@@ -148,6 +154,7 @@ export function buildContextToFeatures(
     [CONTEXTS.FLOW_TRIGGER_EXPLORER]: [],
     [CONTEXTS.SETUP_OTHER]: [],
     [CONTEXTS.RECORD_PAGE]: [],
+    [CONTEXTS.WORKSPACE]: [],
     [CONTEXTS.NONE]: [],
   };
   for (const m of manifests) {

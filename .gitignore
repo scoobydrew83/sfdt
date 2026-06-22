@@ -56,3 +56,5 @@ admin/
 # Brand asset originals (heavy nano-banana JPGs — PNG/SVG masters are committed)
 images/*.jpg
 TODO.md
+# Local 2x screenshot originals (re-croppable backup, not version-controlled)
+extension/store-assets/_raw/

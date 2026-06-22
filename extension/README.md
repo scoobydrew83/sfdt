@@ -10,7 +10,25 @@ This is one of four workspaces in the [`sfdt` monorepo](../README.md):
 
 ---
 
-## Features (24)
+## Workspace tab
+
+Click the ⚡ side button on any Salesforce page and choose **Open Workspace ↗** to launch a
+standalone full-page tab (`chrome-extension://…/app.html`). The Workspace hosts the tools below —
+SOQL first — in their own browser tab, so opening a query runner or executing Apex never disturbs
+the Salesforce page you were on, and closing a tool's modal no longer loses your place.
+
+- **Org targeting** — the Workspace opens against the org you launched it from. With no org in the
+  URL it falls back to your last-used org, then to an **org picker** listing every Salesforce org
+  you're currently logged in to (detected from session cookies).
+- **Switch org** — the top bar's *Switch org* button reloads the Workspace against another logged-in
+  org, cleanly rebuilding every tool's session.
+
+The Workspace works without a content script on the page — features run against a *synthetic*
+window that reports the chosen org's URL, so the existing tools run unchanged.
+
+---
+
+## Features (28)
 
 Every feature is opt-in (toggle off in the options page), and any feature can be remotely disabled without a Web Store re-review via `sfdt feature-flags disable <id>`.
 
@@ -40,6 +58,10 @@ Every feature is opt-in (toggle off in the options page), and any feature can be
 | `soap-explore` | Build and send SOAP API requests with a payload editor + response viewer | Record page + Setup + Flow Builder |
 | `event-monitor` | Subscribe to and monitor platform/streaming events live | Record page + Setup + Flow Builder |
 | `export-for-prompt` | Copy a dense Markdown schema for an object to the clipboard for pasting into an LLM prompt | Record page + Object Manager |
+| `apex-anonymous` | Execute anonymous Apex with compile/runtime result and saved snippets | Workspace + Setup |
+| `debug-log-viewer` | List recent `ApexLog` records and view full log bodies | Workspace + Setup |
+| `saved-soql` | Browse bookmarked + recent SOQL and load any query straight into the runner | Workspace |
+| `org-switcher` | Switch the Workspace between logged-in orgs | Workspace |
 
 Adding the next feature is a one-file change — see the existing modules in [`extension/features/`](./features/) and the registry in [`extension/lib/feature-registry.ts`](./lib/feature-registry.ts).
 
