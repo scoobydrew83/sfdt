@@ -296,8 +296,10 @@ async function buildAiOverview(meta, config) {
     `Apex classes: ${meta.apex.map((a) => a.name).join(', ') || 'none'}. ` +
     `Flows: ${meta.flows.map((f) => f.label).join(', ') || 'none'}.`;
   try {
-    const text = await runAiPrompt(prompt, { config, aiEnabled: true });
-    return typeof text === 'string' ? text.trim() : null;
+    // runAiPrompt resolves to { stdout, stderr, exitCode } (or null), not a
+    // bare string — read .stdout, else the overview is silently always null.
+    const res = await runAiPrompt(prompt, { config, aiEnabled: true });
+    return typeof res?.stdout === 'string' ? res.stdout.trim() || null : null;
   } catch {
     return null;
   }

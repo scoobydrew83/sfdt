@@ -47,7 +47,7 @@
     "build:gui": "npm run build:flow-core && npm run build -w gui",
     "build:flow-core": "npm run build -w @sfdt/flow-core",
     "build:ext": "npm run build:flow-core && npm run build -w @sfdt/extension",
-    "build:vscode": "npm run build -w @sfdt/vscode",
+    "build:vscode": "npm run build:flow-core && npm run build -w @sfdt/vscode",
     "package:ext": "npm run build:ext && npm run zip -w @sfdt/extension",
     "package:vscode": "npm run package -w @sfdt/vscode",
     "test:flow-core": "npm run test -w @sfdt/flow-core",

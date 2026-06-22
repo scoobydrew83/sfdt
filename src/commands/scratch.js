@@ -1,5 +1,6 @@
 import ora from 'ora';
 import chalk from 'chalk';
+import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
 import { createScratch, deleteScratch, listScratch, ensurePool, readPool } from '../lib/scratch-pool.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
@@ -55,9 +56,26 @@ export function registerScratchCommand(program) {
     .command('delete <target>')
     .description('Delete a scratch org by alias or username')
     .option('--json', 'Emit structured JSON to stdout')
+    .option('-y, --yes', 'Skip the confirmation prompt (required for non-interactive use)')
     .action(async (target, options) => {
       const jsonMode = !!options.json;
       try {
+        // Deleting a scratch org is irreversible — confirm first, mirroring
+        // `data delete`. Non-interactive runs must pass --yes.
+        if (!options.yes) {
+          const nonInteractive =
+            jsonMode || process.env.SFDT_NON_INTERACTIVE === 'true' || !process.stdin.isTTY;
+          if (nonInteractive) {
+            throw new Error(`Refusing to delete scratch org "${target}" without confirmation — re-run with --yes to proceed.`);
+          }
+          const { confirmed } = await inquirer.prompt([
+            { type: 'confirm', name: 'confirmed', message: `Delete scratch org "${target}"? This is irreversible.`, default: false },
+          ]);
+          if (!confirmed) {
+            console.log(chalk.dim('Aborted — scratch org not deleted.'));
+            return;
+          }
+        }
         await deleteScratch(target);
         emit(jsonMode, { status: 'success', deleted: target }, () => console.log(chalk.green(`Deleted ${target}`)));
       } catch (err) {

@@ -50,6 +50,13 @@ describe('checkLimits', () => {
     const r = await checkLimits('dev');
     expect(r.status).toBe('ok');
   });
+
+  it('returns error status when sf org list limits throws', async () => {
+    execa.mockRejectedValueOnce(new Error('auth failure'));
+    const r = await checkLimits('dev');
+    expect(r.status).toBe('error');
+    expect(r.summary).toMatch(/auth failure/);
+  });
 });
 
 describe('checkErrors', () => {

@@ -79,6 +79,9 @@
       }
     }
   },
+  "dependencies": {
+    "@sfdt/flow-core": "^0.9.0"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.80.0",

@@ -22,10 +22,12 @@ function CheckIcon({ status }) {
 export default function HealthChecks({ title, subtitle, pageKey, fetcher, command }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const chat = useContext(ChatContext);
 
   const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     fetcher()
       .then((result) => {
         setData(result);
@@ -36,7 +38,8 @@ export default function HealthChecks({ title, subtitle, pageKey, fetcher, comman
           });
         }
       })
-      .catch(() => null)
+      // Surface fetch failures instead of silently showing an empty state.
+      .catch((err) => setError(err?.message || 'Failed to load data'))
       .finally(() => setLoading(false));
   }, [fetcher, chat, title]);
 
@@ -74,7 +77,13 @@ export default function HealthChecks({ title, subtitle, pageKey, fetcher, comman
 
       {loading && <div className="spinner-center"><div className="spinner spinner-lg" /></div>}
 
-      {!loading && checks.length === 0 && (
+      {!loading && error && (
+        <div className="card" style={{ borderColor: 'var(--red, #c23934)', color: 'var(--red, #c23934)', padding: '12px 16px', marginBottom: 12 }}>
+          Failed to load {pageKey} data: {error}
+        </div>
+      )}
+
+      {!loading && !error && checks.length === 0 && (
         <EmptyState
           title={`No ${pageKey} data`}
           message={`Run \`sfdt ${command}\` (CLI, MCP, or the VS Code extension) to generate a report.`}

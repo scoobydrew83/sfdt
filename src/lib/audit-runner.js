@@ -138,6 +138,10 @@ export async function checkMfa(orgAlias) {
   const title = 'MFA coverage';
   try {
     // Users that have registered at least one verification method.
+    // NOTE: this returns a single page (~2000 rows). A server-side semi-join
+    // (`User WHERE Id NOT IN (SELECT UserId FROM TwoFactorMethodsInfo)`) would be
+    // ideal but Salesforce rejects it (INVALID_TYPE — not semi-join-able), so we
+    // diff client-side; very large orgs may under-count enrolled users.
     const mfaRows = await query(orgAlias, 'SELECT UserId FROM TwoFactorMethodsInfo');
     const enrolled = new Set(mfaRows.map((r) => r.UserId));
     // Active, human (non-integration) users.

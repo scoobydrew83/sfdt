@@ -4,6 +4,8 @@
  * to TreeItems. Keeping this logic here makes it unit-testable in isolation.
  */
 
+import { describeFinding } from '@sfdt/flow-core';
+
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'error';
 
 export interface CheckResult {
@@ -64,7 +66,7 @@ function sectionFromSnapshot(id: string, label: string, snap: Snapshot | null, r
   return {
     id,
     label,
-    description: `${snap.summary.warn + snap.summary.fail} issue(s) · ${snap.org}`,
+    description: `${snap.summary.warn + snap.summary.fail + snap.summary.error} issue(s) · ${snap.org}`,
     status: rollupStatus(snap.checks),
     children: snap.checks.map((c) => ({
       id: `${id}.${c.id}`,
@@ -91,14 +93,8 @@ export function buildHealthTree(audit: Snapshot | null, monitor: Snapshot | null
   ];
 }
 
-/** Best-effort one-line description for an arbitrary finding object. */
-export function describeFinding(f: Record<string, unknown>): string {
-  if (f.name && f.apiVersion != null) return `${f.type ? `${f.type} ` : ''}${f.name} (API ${f.apiVersion})`;
-  if (f.username) return `${f.name ?? f.username} <${f.username}>${f.lastLogin ? ` — last login ${f.lastLogin}` : ''}`;
-  if (f.action) return `${f.date}: ${f.action} (${f.section}) by ${f.user}`;
-  if (f.job) return `${f.date}: ${f.job} (${f.type}) — ${f.errors} error(s)`;
-  if (f.name && f.max != null) return `${f.name}: ${f.used}/${f.max}`;
-  if (f.score != null) return `score ${f.score}% (floor ${f.floor}%)`;
-  if (f.name) return String(f.name);
-  return JSON.stringify(f);
-}
+// describeFinding is the canonical renderer from @sfdt/flow-core (imported at
+// the top of this file); re-exported so the tree provider and tests keep their
+// import path. A local copy previously diverged — it dropped license findings
+// (`total` vs `max`) to raw JSON.
+export { describeFinding };

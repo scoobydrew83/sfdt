@@ -47,8 +47,14 @@ async function executeAudit(checks, options) {
 
     // Always persist the snapshot — the GUI (/api/audit) and bridge org-health
     // handler read this file, so --json runs (CI/automation) must update it too.
-    await fs.ensureDir(logDir);
-    await fs.writeJson(outPath, snapshot, { spaces: 2 });
+    // A write failure must not fail the (successful) audit or emit a second JSON
+    // envelope to stdout — warn on stderr and carry on.
+    try {
+      await fs.ensureDir(logDir);
+      await fs.writeJson(outPath, snapshot, { spaces: 2 });
+    } catch (writeErr) {
+      process.stderr.write(`Warning: could not write snapshot to ${outPath}: ${writeErr.message}\n`);
+    }
 
     if (jsonMode) {
       process.stdout.write(JSON.stringify(snapshot, null, 2) + '\n');

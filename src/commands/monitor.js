@@ -50,8 +50,14 @@ async function executeMonitor(checks, options, { backup = false } = {}) {
 
     // Always persist the snapshot — the GUI (/api/monitor) and bridge org-health
     // handler read this file, so --json runs (CI/automation) must update it too.
-    await fs.ensureDir(logDir);
-    await fs.writeJson(outPath, snapshot, { spaces: 2 });
+    // A write failure must not fail the run or emit a second JSON envelope to
+    // stdout — warn on stderr and carry on.
+    try {
+      await fs.ensureDir(logDir);
+      await fs.writeJson(outPath, snapshot, { spaces: 2 });
+    } catch (writeErr) {
+      process.stderr.write(`Warning: could not write snapshot to ${outPath}: ${writeErr.message}\n`);
+    }
 
     if (jsonMode) {
       process.stdout.write(JSON.stringify(snapshot, null, 2) + '\n');
@@ -88,7 +94,10 @@ async function executeBackup(options) {
           if (spinner) spinner.text = `Backing up ${orgAlias}… ${retrieved}/${total}`;
         },
       });
-      if (res.status === 'error') spinner?.fail('Backup failed');
+      // Surface the backup's own error summary (auth/network/etc.) rather than a
+      // bare "Backup failed" — the error-status return path never reaches the
+      // outer catch, so this is the only place it's shown in non-JSON mode.
+      if (res.status === 'error') spinner?.fail(res.summary || 'Backup failed');
       else spinner?.succeed(res.summary);
     } catch (err) {
       spinner?.fail('Backup failed');

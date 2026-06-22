@@ -83,7 +83,7 @@ sfdt deploy
 | `sfdt docs generate` | Generate MkDocs-compatible docs (objects, Apex, flows) with optional AI overview | `--ai`, `--json` |
 | `sfdt docs diagram` | Print/write a Mermaid ER diagram of the data model | `--output <file>`, `--json` |
 | `sfdt data <list\|export\|import\|delete> [set]` | Manage data sets via native `sf data tree` for sandbox/scratch seeding | `--org <alias>`, `--json`, `--yes` (delete: skip confirmation; required non-interactively) |
-| `sfdt scratch <create\|delete\|list\|pool>` | Create/delete/list scratch orgs and manage a pre-created pool | `--alias`, `--days <n>`, `--size <n>`, `--json` |
+| `sfdt scratch <create\|delete\|list\|pool>` | Create/delete/list scratch orgs and manage a pre-created pool | `--alias`, `--days <n>`, `--size <n>`, `--json`, `--yes` (delete: skip confirmation; required non-interactively) |
 | `sfdt config get <key>` | Print a config value using dot notation (e.g. `defaultOrg`) | — |
 | `sfdt config set <key> <value>` | Set a config value using dot notation (e.g. `deployment.coverageThreshold`) | — |
 | `sfdt completion <shell>` | Print shell completion script (`bash`, `zsh`, `fish`) | — |
