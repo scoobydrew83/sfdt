@@ -4,6 +4,10 @@ vi.mock('execa', () => ({ execa: vi.fn() }));
 vi.mock('../../src/lib/org-query.js', () => ({ query: vi.fn() }));
 vi.mock('../../src/lib/org-inventory.js', () => ({ fetchOrgInventory: vi.fn() }));
 vi.mock('../../src/lib/parallel-retrieve.js', () => ({ parallelRetrieve: vi.fn() }));
+// runBackup dynamically imports fs-extra for ensureDir; mock it so the unit test
+// never touches the real filesystem (the timestamped backup dir is an absolute
+// path like /project/backups/... that is unwritable in CI -> EACCES).
+vi.mock('fs-extra', () => ({ default: { ensureDir: vi.fn() } }));
 
 import { execa } from 'execa';
 import { query } from '../../src/lib/org-query.js';
