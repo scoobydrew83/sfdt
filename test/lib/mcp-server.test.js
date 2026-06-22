@@ -207,6 +207,17 @@ describe('SfdtMcpServer', () => {
       );
     });
 
+    it('executes sfdt_docs with --ai when requested', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ status: 'success', counts: {} }), stderr: '' });
+      const result = await callTool('sfdt_docs', { ai: true });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['docs', 'generate', '--json', '--ai']),
+        expect.anything()
+      );
+      expect(result.content[0].text).toContain('success');
+    });
+
     it('executes sfdt_manifest_from_git tool', async () => {
       execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'manifest generated', stderr: '' });
 

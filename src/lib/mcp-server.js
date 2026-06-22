@@ -166,6 +166,16 @@ const TOOLS = [
     }
   },
   {
+    name: 'sfdt_docs',
+    description: 'Generate MkDocs-compatible project documentation (custom objects + fields, Apex classes, Flows) with an optional AI overview and a Mermaid ER diagram of the data model.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ai: { type: 'boolean', description: 'Enrich the index with an AI-written project overview.' }
+      }
+    }
+  },
+  {
     name: 'sfdt_get_parked_result',
     description: 'Retrieve the full payload of a previously parked tool result.',
     inputSchema: {
@@ -469,6 +479,17 @@ export class SfdtMcpServer {
         const cmdArgs = ['monitor', check, '--json'];
         if (args.org) cmdArgs.push('--org', args.org);
         if (check === 'all' && args.backup) cmdArgs.push('--backup');
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        try {
+          return JSON.parse(stdout);
+        } catch {
+          return stdout;
+        }
+      }
+
+      case 'sfdt_docs': {
+        const cmdArgs = ['docs', 'generate', '--json'];
+        if (args.ai) cmdArgs.push('--ai');
         const { stdout } = await this.#runCliCommand(cmdArgs);
         try {
           return JSON.parse(stdout);
