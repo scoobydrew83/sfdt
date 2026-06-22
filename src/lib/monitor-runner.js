@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs-extra';
 import { execa } from 'execa';
-import { query } from './org-query.js';
+import { query, safeParse } from './org-query.js';
 import { fetchOrgInventory } from './org-inventory.js';
 import { parallelRetrieve } from './parallel-retrieve.js';
 
@@ -17,7 +17,9 @@ import { parallelRetrieve } from './parallel-retrieve.js';
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const ISODate = (d) => new Date(d).toISOString();
+// Salesforce SOQL datetime literals reject the milliseconds that toISOString()
+// emits (…:00.000Z), so strip them for use in WHERE clauses.
+const ISODate = (d) => new Date(d).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 /**
  * Single source of truth for monitoring-check fallback defaults. Mirrored in
@@ -39,7 +41,7 @@ export async function checkLimits(orgAlias, { warnThreshold = MONITOR_DEFAULTS.l
   const title = 'Org limits';
   try {
     const result = await execa('sf', ['org', 'list', 'limits', '--target-org', orgAlias, '--json']);
-    const rows = JSON.parse(result.stdout)?.result ?? [];
+    const rows = safeParse(result.stdout)?.result ?? [];
     const findings = rows
       .map((r) => {
         const max = r.max ?? 0;
@@ -179,10 +181,9 @@ export async function runBackup(orgAlias, config, { onProgress } = {}) {
  */
 export async function runMonitor(orgAlias, config, { checks = CHECK_IDS, backup = false, params = {} } = {}) {
   const selected = checks.filter((cid) => CHECKS[cid]);
-  const results = [];
-  for (const cid of selected) {
-    results.push(await CHECKS[cid](orgAlias, params[cid] ?? {}));
-  }
+  // Checks are independent and self-contained (each catches its own errors), so
+  // run them concurrently. Backup runs after, only when requested.
+  const results = await Promise.all(selected.map((cid) => CHECKS[cid](orgAlias, params[cid] ?? {})));
   if (backup) results.push(await runBackup(orgAlias, config, params.backup ?? {}));
 
   const summary = {

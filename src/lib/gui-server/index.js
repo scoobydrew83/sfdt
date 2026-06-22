@@ -143,6 +143,7 @@ export function createGuiApp(config, version, port = 7654) {
     version,
     projectRoot: config._projectRoot,
     configDir: config._configDir,
+    logDir,
     rateLimiter: apiLimiter,
   });
 

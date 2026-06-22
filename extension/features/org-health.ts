@@ -28,7 +28,7 @@ interface Snapshot {
 }
 
 // ---------------------------------------------------------------------------
-// Pure helpers (exported for tests via _orgHealthTestApi)
+// Pure helpers (exported directly for tests)
 // ---------------------------------------------------------------------------
 
 const BAND_COLOUR: Record<'green' | 'amber' | 'red' | 'grey', string> = {
@@ -100,7 +100,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     overlay = null;
   }
 
-  function renderSnapshot(container: HTMLElement, title: string, snapshot: Snapshot | null): void {
+  function renderSnapshot(container: HTMLElement, title: string, command: 'audit' | 'monitor', snapshot: Snapshot | null): void {
     const section = doc.createElement('div');
     section.style.cssText = 'margin-bottom: 16px;';
 
@@ -114,7 +114,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     if (checks.length === 0) {
       const empty = doc.createElement('div');
       empty.style.cssText = 'padding: 8px 0; color: #80868d; font-size: 12px;';
-      empty.textContent = `No data. Run \`sfdt ${title.toLowerCase().includes('audit') ? 'audit' : 'monitor'} all\` to populate.`;
+      empty.textContent = `No data. Run \`sfdt ${command} all\` to populate.`;
       section.appendChild(empty);
       container.appendChild(section);
       return;
@@ -184,8 +184,8 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
       const data = (response.data ?? {}) as OrgHealthResponseData;
       const audit = (data.audit?.data ?? null) as Snapshot | null;
       const monitor = (data.monitor?.data ?? null) as Snapshot | null;
-      renderSnapshot(body, 'Diagnostics & Audit', audit);
-      renderSnapshot(body, 'Monitoring', monitor);
+      renderSnapshot(body, 'Diagnostics & Audit', 'audit', audit);
+      renderSnapshot(body, 'Monitoring', 'monitor', monitor);
       const auditIssues = shapeChecks(audit).filter((c) => c.status !== 'ok').length;
       const monIssues = shapeChecks(monitor).filter((c) => c.status !== 'ok').length;
       status.textContent = `${auditIssues + monIssues} issue(s)`;
@@ -288,8 +288,4 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
       await open();
     },
   };
-}
-
-export function _orgHealthTestApi() {
-  return { bandFor, describeFinding, shapeChecks };
 }

@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../src/lib/org-query.js', () => ({
   query: vi.fn(),
-  rawQuery: vi.fn(),
 }));
 
 import { query } from '../../src/lib/org-query.js';

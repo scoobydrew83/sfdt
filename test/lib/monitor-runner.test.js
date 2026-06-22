@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('execa', () => ({ execa: vi.fn() }));
-vi.mock('../../src/lib/org-query.js', () => ({ query: vi.fn() }));
+vi.mock('../../src/lib/org-query.js', () => ({
+  query: vi.fn(),
+  // checkLimits parses `sf org list limits` output with safeParse; provide the
+  // real (trivial) implementation so the mock doesn't break JSON parsing.
+  safeParse: (t) => { try { return JSON.parse(t); } catch { return null; } },
+}));
 vi.mock('../../src/lib/org-inventory.js', () => ({ fetchOrgInventory: vi.fn() }));
 vi.mock('../../src/lib/parallel-retrieve.js', () => ({ parallelRetrieve: vi.fn() }));
 // runBackup dynamically imports fs-extra for ensureDir; mock it so the unit test

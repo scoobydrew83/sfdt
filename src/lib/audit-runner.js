@@ -1,4 +1,4 @@
-import { query, rawQuery } from './org-query.js';
+import { query } from './org-query.js';
 
 /**
  * Org diagnose & audit runner.
@@ -57,7 +57,9 @@ const SUSPECT_PATTERNS = [
   'manageipranges',
 ];
 
-const ISODate = (d) => new Date(d).toISOString();
+// Salesforce SOQL datetime literals reject the milliseconds that
+// toISOString() emits (…:00.000Z), so strip them for use in WHERE clauses.
+const ISODate = (d) => new Date(d).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 /**
  * Recent suspicious setup activity from SetupAuditTrail.
@@ -235,6 +237,12 @@ export async function checkApiVersions(orgAlias, { minApiVersion = AUDIT_DEFAULT
   const id = 'api-versions';
   const title = 'Deprecated API versions';
   try {
+    // minApiVersion is interpolated into SOQL and may originate from
+    // user-editable config — coerce to a safe number to prevent SOQL injection.
+    const minApi = Number.parseInt(minApiVersion, 10);
+    if (!Number.isFinite(minApi)) {
+      throw new Error(`audit.minApiVersion must be a number, got: ${minApiVersion}`);
+    }
     // ApexClass and ApexTrigger are independent Tooling queries — run them in
     // parallel. Iterate the types in order afterwards so findings stay stable
     // (all ApexClass rows before ApexTrigger rows).
@@ -242,7 +250,7 @@ export async function checkApiVersions(orgAlias, { minApiVersion = AUDIT_DEFAULT
     const rowsByType = await Promise.all(
       types.map((type) => query(
         orgAlias,
-        `SELECT Name, ApiVersion FROM ${type} WHERE NamespacePrefix = null AND ApiVersion < ${minApiVersion} ORDER BY ApiVersion`,
+        `SELECT Name, ApiVersion FROM ${type} WHERE NamespacePrefix = null AND ApiVersion < ${minApi} ORDER BY ApiVersion`,
         { tooling: true },
       )),
     );
@@ -252,8 +260,8 @@ export async function checkApiVersions(orgAlias, { minApiVersion = AUDIT_DEFAULT
     });
     return result(id, title, findings.length ? 'warn' : 'ok',
       findings.length
-        ? `${findings.length} component(s) below API v${minApiVersion}`
-        : `All components on API v${minApiVersion} or newer`,
+        ? `${findings.length} component(s) below API v${minApi}`
+        : `All components on API v${minApi} or newer`,
       findings);
   } catch (err) {
     return errored(id, title, err);
@@ -282,10 +290,10 @@ export const CHECK_IDS = Object.keys(CHECKS);
  */
 export async function runAudit(orgAlias, { checks = CHECK_IDS, params = {} } = {}) {
   const selected = checks.filter((id) => CHECKS[id]);
-  const results = [];
-  for (const id of selected) {
-    results.push(await CHECKS[id](orgAlias, params[id] ?? {}));
-  }
+  // Each check makes independent SOQL/Tooling calls and catches its own errors
+  // (returning an 'error'-status result), so run them concurrently rather than
+  // serialising ~18 round-trips.
+  const results = await Promise.all(selected.map((id) => CHECKS[id](orgAlias, params[id] ?? {})));
   const summary = {
     total: results.length,
     ok: results.filter((r) => r.status === 'ok').length,
@@ -313,6 +321,3 @@ function errored(id, title, err) {
 function oneLine(s) {
   return String(s ?? '').replace(/[\r\n]+/g, ' ').slice(0, 300);
 }
-
-// re-exported for callers needing pagination metadata
-export { rawQuery };

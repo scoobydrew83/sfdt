@@ -68,10 +68,19 @@ describe('org-query rawQuery()', () => {
 });
 
 describe('org-query count()', () => {
-  it('returns the number of returned records', async () => {
+  it('returns totalSize for a regular query', async () => {
     execa.mockResolvedValueOnce({
-      stdout: JSON.stringify({ result: { records: [{ Id: '1' }, { Id: '2' }, { Id: '3' }] } }),
+      stdout: JSON.stringify({ result: { records: [{ Id: '1' }, { Id: '2' }, { Id: '3' }], totalSize: 3 } }),
     });
     expect(await count('dev', 'SELECT Id FROM Account')).toBe(3);
+  });
+
+  it('returns totalSize for an aggregate COUNT() query (empty records)', async () => {
+    // `SELECT COUNT() FROM …` returns totalSize with NO records — counting
+    // records.length would wrongly yield 0.
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify({ result: { records: [], totalSize: 42 } }),
+    });
+    expect(await count('dev', 'SELECT COUNT() FROM Account')).toBe(42);
   });
 });

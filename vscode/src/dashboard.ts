@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { spawn, type ChildProcess } from 'node:child_process';
+import * as http from 'node:http';
 
 /**
  * Manages the embedded sfdt dashboard. Spawns `sfdt ui` once (reusing the
@@ -45,8 +46,35 @@ export class DashboardController {
     this.server.on('error', (err) => {
       vscode.window.showErrorMessage(`Failed to start sfdt ui: ${err.message}`);
     });
-    // Give the server a moment to bind before the webview loads it.
-    await new Promise((r) => setTimeout(r, 1200));
+    // Poll the health endpoint until the server is actually listening rather
+    // than racing a fixed delay (which fails on slow machines or busy ports).
+    await this.waitForServer(this.port());
+  }
+
+  /** Resolve once the GUI server answers /api/health, or after a timeout. */
+  private waitForServer(port: number, timeoutMs = 15000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    const url = `http://localhost:${port}/api/health`;
+    const attempt = (): Promise<boolean> =>
+      new Promise((resolve) => {
+        const req = http.get(url, (res) => {
+          res.resume();
+          resolve(res.statusCode === 200);
+        });
+        req.on('error', () => resolve(false));
+        req.setTimeout(1000, () => {
+          req.destroy();
+          resolve(false);
+        });
+      });
+    return (async () => {
+      while (Date.now() < deadline) {
+        if (await attempt()) return;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      // Fall through after the timeout — let the webview load and surface its
+      // own connection error if the server never came up.
+    })();
   }
 
   dispose(): void {

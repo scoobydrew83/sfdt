@@ -44,7 +44,7 @@
     "lint:fix": "eslint src/ bin/ --fix",
     "format": "prettier --write \"src/**/*.js\" \"bin/*.js\" \"test/**/*.js\" \"README.md\" \"package.json\"",
     "dev": "npm link",
-    "build:gui": "npm run build -w gui",
+    "build:gui": "npm run build:flow-core && npm run build -w gui",
     "build:flow-core": "npm run build -w @sfdt/flow-core",
     "build:ext": "npm run build:flow-core && npm run build -w @sfdt/extension",
     "build:vscode": "npm run build -w @sfdt/vscode",

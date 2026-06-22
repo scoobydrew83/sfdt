@@ -1,8 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createOrgHealthFeature, _orgHealthTestApi } from '../features/org-health.js';
+import { createOrgHealthFeature, bandFor, shapeChecks } from '../features/org-health.js';
+import { describeFinding } from '@sfdt/flow-core';
 import type { SfdtResponse } from '@sfdt/flow-core/bridge-contract';
-
-const { bandFor, describeFinding, shapeChecks } = _orgHealthTestApi();
 
 function clearBody(): void {
   while (document.body.firstChild) document.body.removeChild(document.body.firstChild);

@@ -68,10 +68,12 @@ export async function query(orgAlias, soql, { tooling = false, all = false } = {
  * @returns {Promise<number>}
  */
 export async function count(orgAlias, soql, options = {}) {
-  const records = await query(orgAlias, soql, options);
-  // `SELECT COUNT() FROM …` returns no records but a totalSize; for safety we
-  // return records.length, and callers that need totalSize use rawQuery.
-  return records.length;
+  // Use rawQuery and return totalSize: a `SELECT COUNT() FROM …` query returns
+  // an empty `records` array with the real count in `totalSize`, so counting
+  // records.length would always yield 0. totalSize is also correct for normal
+  // (non-aggregate) queries.
+  const { totalSize } = await rawQuery(orgAlias, soql, options);
+  return totalSize;
 }
 
 /**
@@ -113,7 +115,7 @@ export async function rawQuery(orgAlias, soql, options = {}) {
   };
 }
 
-function safeParse(text) {
+export function safeParse(text) {
   if (!text) return null;
   try {
     return JSON.parse(text);
