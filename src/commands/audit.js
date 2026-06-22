@@ -3,7 +3,7 @@ import fs from 'fs-extra';
 import ora from 'ora';
 import chalk from 'chalk';
 import { loadConfig } from '../lib/config.js';
-import { runAudit, CHECK_IDS } from '../lib/audit-runner.js';
+import { runAudit, CHECK_IDS, AUDIT_DEFAULTS } from '../lib/audit-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 
 const STATUS_COLOR = {
@@ -16,10 +16,10 @@ const STATUS_COLOR = {
 function buildParams(config) {
   const a = config.audit ?? {};
   return {
-    audittrail: { lookbackDays: a.auditTrailLookbackDays ?? 30 },
-    licenses: { warnThreshold: a.licenseWarnThreshold ?? 0.9 },
-    'inactive-users': { lookbackDays: a.inactiveUserDays ?? 90 },
-    'api-versions': { minApiVersion: a.minApiVersion ?? 45 },
+    audittrail: { lookbackDays: a.auditTrailLookbackDays ?? AUDIT_DEFAULTS.auditTrailLookbackDays },
+    licenses: { warnThreshold: a.licenseWarnThreshold ?? AUDIT_DEFAULTS.licenseWarnThreshold },
+    'inactive-users': { lookbackDays: a.inactiveUserDays ?? AUDIT_DEFAULTS.inactiveUserDays },
+    'api-versions': { minApiVersion: a.minApiVersion ?? AUDIT_DEFAULTS.minApiVersion },
   };
 }
 

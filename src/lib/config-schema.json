@@ -104,7 +104,8 @@
       "properties": {
         "backupDir": { "type": "string" },
         "limitWarnThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
-        "errorLookbackDays": { "type": "integer", "minimum": 1 }
+        "errorLookbackDays": { "type": "integer", "minimum": 1 },
+        "healthMinScore": { "type": "number", "minimum": 0, "maximum": 100 }
       }
     },
     "docs": {

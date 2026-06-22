@@ -65,7 +65,8 @@
   "monitoring": {
     "backupDir": "monitoring-backup",
     "limitWarnThreshold": 0.8,
-    "errorLookbackDays": 7
+    "errorLookbackDays": 7,
+    "healthMinScore": 80
   },
   "docs": {
     "outputDir": "docs",

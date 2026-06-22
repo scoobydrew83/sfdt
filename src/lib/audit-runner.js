@@ -17,6 +17,24 @@ import { query, rawQuery } from './org-query.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Single source of truth for audit-check fallback defaults.
+ *
+ * These values are mirrored in src/templates/sfdt.config.json (under `audit`)
+ * which remains the canonical config the user edits. They are duplicated here
+ * only as a defensive fallback for programmatic callers and when a config key
+ * is absent — keeping them in one constant prevents the literals from drifting
+ * across the runner and command layers. Update the floor (e.g. when Salesforce
+ * retires an API version) in `.sfdt/config.json` → `audit.minApiVersion`, or
+ * here for the built-in default.
+ */
+export const AUDIT_DEFAULTS = {
+  auditTrailLookbackDays: 30,
+  licenseWarnThreshold: 0.9,
+  inactiveUserDays: 90,
+  minApiVersion: 45,
+};
+
 // Setup-audit-trail actions/sections that warrant a closer look. Matched as
 // case-insensitive substrings against the Action and Section columns.
 const SUSPECT_PATTERNS = [
@@ -44,7 +62,7 @@ const ISODate = (d) => new Date(d).toISOString();
 /**
  * Recent suspicious setup activity from SetupAuditTrail.
  */
-export async function checkAuditTrail(orgAlias, { lookbackDays = 30 } = {}) {
+export async function checkAuditTrail(orgAlias, { lookbackDays = AUDIT_DEFAULTS.auditTrailLookbackDays } = {}) {
   const id = 'audittrail';
   const title = 'Suspicious setup activity';
   try {
@@ -79,7 +97,7 @@ export async function checkAuditTrail(orgAlias, { lookbackDays = 30 } = {}) {
 /**
  * License usage — flags licenses near or at their limit.
  */
-export async function checkLicenses(orgAlias, { warnThreshold = 0.9 } = {}) {
+export async function checkLicenses(orgAlias, { warnThreshold = AUDIT_DEFAULTS.licenseWarnThreshold } = {}) {
   const id = 'licenses';
   const title = 'License usage';
   try {
@@ -181,7 +199,7 @@ export async function checkUnusedApex(orgAlias) {
  * Inactive users — active licenses held by users who have not logged in
  * within the lookback window (or never).
  */
-export async function checkInactiveUsers(orgAlias, { lookbackDays = 90 } = {}) {
+export async function checkInactiveUsers(orgAlias, { lookbackDays = AUDIT_DEFAULTS.inactiveUserDays } = {}) {
   const id = 'inactive-users';
   const title = 'Inactive users';
   try {
@@ -213,7 +231,7 @@ export async function checkInactiveUsers(orgAlias, { lookbackDays = 90 } = {}) {
  * configured floor. Salesforce hard-blocks very old versions, so this surfaces
  * remediation work before it becomes a breaking change.
  */
-export async function checkApiVersions(orgAlias, { minApiVersion = 45 } = {}) {
+export async function checkApiVersions(orgAlias, { minApiVersion = AUDIT_DEFAULTS.minApiVersion } = {}) {
   const id = 'api-versions';
   const title = 'Deprecated API versions';
   try {
