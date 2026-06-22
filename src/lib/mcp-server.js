@@ -135,6 +135,37 @@ const TOOLS = [
     }
   },
   {
+    name: 'sfdt_audit',
+    description: 'Run read-only org health diagnostics (suspicious setup audit trail, license usage, MFA coverage, unused Apex classes, inactive users, deprecated API versions). Returns a normalised snapshot of check results.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        check: {
+          type: 'string',
+          enum: ['all', 'audittrail', 'licenses', 'mfa', 'unused-apex', 'inactive-users', 'api-versions'],
+          description: 'Run a single named check, or "all" (default).'
+        }
+      }
+    }
+  },
+  {
+    name: 'sfdt_monitor',
+    description: 'Run org monitoring checks (org limit consumption, recent Apex job failures, security health-check score) and optionally a full metadata backup. Returns a normalised snapshot of check results.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        check: {
+          type: 'string',
+          enum: ['all', 'limits', 'errors', 'health', 'backup'],
+          description: 'Run a single named check, "backup" for a metadata backup, or "all" (default).'
+        },
+        backup: { type: 'boolean', description: 'When running "all", also perform a metadata backup.' }
+      }
+    }
+  },
+  {
     name: 'sfdt_get_parked_result',
     description: 'Retrieve the full payload of a previously parked tool result.',
     inputSchema: {
@@ -413,6 +444,31 @@ export class SfdtMcpServer {
         }
 
         const cmdArgs = ['rollback', '--json'];
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        try {
+          return JSON.parse(stdout);
+        } catch {
+          return stdout;
+        }
+      }
+
+      case 'sfdt_audit': {
+        const check = args.check && args.check !== 'all' ? args.check : 'all';
+        const cmdArgs = ['audit', check, '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        try {
+          return JSON.parse(stdout);
+        } catch {
+          return stdout;
+        }
+      }
+
+      case 'sfdt_monitor': {
+        const check = args.check && args.check !== 'all' ? args.check : 'all';
+        const cmdArgs = ['monitor', check, '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        if (check === 'all' && args.backup) cmdArgs.push('--backup');
         const { stdout } = await this.#runCliCommand(cmdArgs);
         try {
           return JSON.parse(stdout);
