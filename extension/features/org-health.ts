@@ -3,6 +3,7 @@ import type { Feature } from '../lib/feature-registry.js';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
 import { loadSettings } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
+import { describeFinding } from '@sfdt/flow-core';
 import type { OrgHealthResponseData, SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 
 // ---------------------------------------------------------------------------
@@ -44,26 +45,8 @@ export function bandFor(status: string): 'green' | 'amber' | 'red' | 'grey' {
   return 'grey';
 }
 
-function str(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : v == null ? undefined : String(v);
-}
-
-/** One-line description for an arbitrary finding object (mirrors the CLI/GUI). */
-export function describeFinding(f: Record<string, unknown>): string {
-  if (f.name != null && f.apiVersion != null) {
-    return `${f.type ? `${str(f.type)} ` : ''}${str(f.name)} (API ${str(f.apiVersion)})`;
-  }
-  if (f.username != null) {
-    return `${str(f.name) ?? str(f.username)} <${str(f.username)}>${f.lastLogin ? ` — last login ${str(f.lastLogin)}` : ''}`;
-  }
-  if (f.action != null) return `${str(f.date)}: ${str(f.action)} (${str(f.section)}) by ${str(f.user)}`;
-  if (f.job != null) return `${str(f.date)}: ${str(f.job)} (${str(f.type)}) — ${str(f.errors)} error(s)`;
-  // Licenses emit `total`; limits emit `max` — accept either.
-  if (f.name != null && (f.max ?? f.total) != null) return `${str(f.name)}: ${str(f.used)}/${str(f.max ?? f.total)}`;
-  if (f.score != null) return `score ${str(f.score)}% (floor ${str(f.floor)}%)`;
-  if (f.name != null) return String(f.name);
-  return JSON.stringify(f);
-}
+// describeFinding now lives in @sfdt/flow-core (imported above) so the CLI, GUI,
+// and this panel render findings identically.
 
 /** Normalise a snapshot's checks array, tolerating null/partial payloads. */
 export function shapeChecks(snapshot: Snapshot | null | undefined): Check[] {

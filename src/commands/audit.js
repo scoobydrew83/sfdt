@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import ora from 'ora';
 import chalk from 'chalk';
+import { describeFinding } from '@sfdt/flow-core';
 import { loadConfig } from '../lib/config.js';
 import { runAudit, CHECK_IDS, AUDIT_DEFAULTS } from '../lib/audit-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
@@ -85,14 +86,6 @@ function printReport(snapshot) {
   console.log(chalk.bold(`Summary: ${s.ok} ok · ${s.warn} warn · ${s.fail} fail · ${s.error} error`));
 }
 
-function describeFinding(f) {
-  if (f.name && f.apiVersion) return `${f.type ? f.type + ' ' : ''}${f.name} (API ${f.apiVersion})`;
-  if (f.username) return `${f.name ?? f.username} <${f.username}>${f.lastLogin ? ` last login ${f.lastLogin}` : ''}`;
-  if (f.action) return `${f.date}: ${f.action} (${f.section}) by ${f.user}`;
-  if (f.name && f.total != null) return `${f.name}: ${f.used}/${f.total}`;
-  if (f.name) return f.name;
-  return JSON.stringify(f);
-}
 
 export function registerAuditCommand(program) {
   const audit = program

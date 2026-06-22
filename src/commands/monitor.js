@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import ora from 'ora';
 import chalk from 'chalk';
+import { describeFinding } from '@sfdt/flow-core';
 import { loadConfig } from '../lib/config.js';
 import { runMonitor, runBackup, CHECK_IDS, MONITOR_DEFAULTS } from '../lib/monitor-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
@@ -118,13 +119,6 @@ function printReport(snapshot) {
   console.log(chalk.bold(`Summary: ${s.ok} ok · ${s.warn} warn · ${s.fail} fail · ${s.error} error`));
 }
 
-function describeFinding(f) {
-  if (f.name && f.max != null) return `${f.name}: ${f.used}/${f.max} (${Math.round(f.ratio * 100)}%)`;
-  if (f.job) return `${f.date}: ${f.job} (${f.type}) — ${f.errors} error(s)`;
-  if (f.score != null) return `score ${f.score}% (floor ${f.floor}%)`;
-  if (f.error) return f.error;
-  return JSON.stringify(f);
-}
 
 export function registerMonitorCommand(program) {
   const monitor = program

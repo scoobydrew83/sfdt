@@ -4,6 +4,7 @@ import StatCard from './StatCard.jsx';
 import StatusBadge from './StatusBadge.jsx';
 import EmptyState from './EmptyState.jsx';
 import { IconCheckCircle, IconXCircle, IconAlertTri } from '../Icons.jsx';
+import { describeFinding } from '@sfdt/flow-core';
 import { ChatContext } from '../App.jsx';
 
 function CheckIcon({ status }) {
@@ -13,17 +14,6 @@ function CheckIcon({ status }) {
   return <span style={{ fontSize: 12, lineHeight: 1 }}>—</span>;
 }
 
-function describeFinding(f) {
-  if (f.name && f.apiVersion != null) return `${f.type ? `${f.type} ` : ''}${f.name} (API ${f.apiVersion})`;
-  if (f.username) return `${f.name ?? f.username} <${f.username}>${f.lastLogin ? ` — last login ${f.lastLogin}` : ''}`;
-  if (f.action) return `${f.date}: ${f.action} (${f.section}) by ${f.user}`;
-  if (f.job) return `${f.date}: ${f.job} (${f.type}) — ${f.errors} error(s)`;
-  // Licenses emit `total`; limits emit `max` — accept either.
-  if (f.name && (f.max ?? f.total) != null) return `${f.name}: ${f.used}/${f.max ?? f.total}`;
-  if (f.score != null) return `score ${f.score}% (floor ${f.floor}%)`;
-  if (f.name) return String(f.name);
-  return JSON.stringify(f);
-}
 
 /**
  * Shared presentational page for the audit/monitor snapshot shape:
