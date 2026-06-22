@@ -1,7 +1,8 @@
 import ora from 'ora';
 import chalk from 'chalk';
+import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
-import { exportDataSet, importDataSet, deleteDataSet, listDataSets } from '../lib/data-runner.js';
+import { exportDataSet, importDataSet, deleteDataSet, listDataSets, readQueries, extractSObject } from '../lib/data-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 
 function resolveOrg(config, options) {
@@ -35,6 +36,67 @@ function makeAction(verb, fn) {
         process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');
       } else {
         console.error(chalk.red(`${verb} failed: ${err.message}`));
+      }
+      process.exitCode = resolveExitCode(err);
+    }
+  };
+}
+
+/**
+ * `data delete` is irreversible — it bulk-removes every record the data set's
+ * queries match (often all records of an object, by design for scratch/sandbox
+ * seed cleanup). Gate it behind a confirmation that previews the blast radius;
+ * `--yes` skips the prompt, and non-interactive runs MUST pass `--yes` rather
+ * than deleting silently.
+ */
+function makeDeleteAction() {
+  return async (setName, options) => {
+    const jsonMode = !!options.json;
+    try {
+      const config = await loadConfig();
+      const org = resolveOrg(config, options);
+
+      if (!options.yes) {
+        const nonInteractive =
+          jsonMode || process.env.SFDT_NON_INTERACTIVE === 'true' || !process.stdin.isTTY;
+        if (nonInteractive) {
+          throw new Error(
+            `Refusing to bulk-delete data set "${setName}" on ${org} without confirmation — re-run with --yes to proceed.`,
+          );
+        }
+        const queries = await readQueries(config, setName);
+        const targets = [...new Set(queries.map(extractSObject).filter(Boolean))];
+        console.log(chalk.yellow(`\n⚠  This will BULK DELETE records on ${chalk.bold(org)} for data set "${setName}":`));
+        for (const q of queries) console.log(chalk.dim(`     ${q}`));
+        console.log(chalk.yellow(`   Objects affected: ${targets.join(', ') || '(none resolved)'}`));
+        const { confirmed } = await inquirer.prompt([
+          { type: 'confirm', name: 'confirmed', message: `Delete these records on ${org}?`, default: false },
+        ]);
+        if (!confirmed) {
+          console.log(chalk.dim('Aborted — no records deleted.'));
+          return;
+        }
+      }
+
+      const spinner = jsonMode ? null : ora(`Delete data set "${setName}" (${org})…`).start();
+      let result;
+      try {
+        result = await deleteDataSet(config, setName, org);
+        spinner?.succeed(`Delete complete: ${setName}`);
+      } catch (err) {
+        spinner?.fail('Delete failed');
+        throw err;
+      }
+      if (jsonMode) {
+        process.stdout.write(JSON.stringify({ status: 'success', ...result }, null, 2) + '\n');
+      } else {
+        console.log(chalk.green(`\n${JSON.stringify(result, null, 2)}`));
+      }
+    } catch (err) {
+      if (jsonMode) {
+        process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');
+      } else {
+        console.error(chalk.red(`Delete failed: ${err.message}`));
       }
       process.exitCode = resolveExitCode(err);
     }
@@ -91,5 +153,6 @@ export function registerDataCommand(program) {
     .description('Bulk-delete the records targeted by a data set')
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
     .option('--json', 'Emit structured JSON to stdout')
-    .action(makeAction('Delete', deleteDataSet));
+    .option('-y, --yes', 'Skip the confirmation prompt (required for non-interactive use)')
+    .action(makeDeleteAction());
 }
