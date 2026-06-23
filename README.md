@@ -41,7 +41,7 @@ For in-depth command walkthroughs and workflow examples, see [docs/USAGE.md](doc
 | **`@sfdt/cli`** (`/src`, `/bin`, `/scripts`) | The npm CLI documented below. | Published to npm |
 | **`@sfdt/extension`** (`/extension`) | Chrome extension for Salesforce Flow Builder + Setup productivity. Talks to the CLI via the local bridge for deploy / rollback / quality / AI features. See [extension/README.md](extension/README.md) and [extension/PRIVACY.md](extension/PRIVACY.md). | Pre-Web-Store |
 | **`@sfdt/host`** (`/host`) | Native messaging host used as the extension's fallback transport when `sfdt ui` isn't running. Installed with `sfdt extension install-host`. | Bundled with CLI |
-| **`@sfdt/flow-core`** (`/packages/flow-core`) | Shared TypeScript library — Flow normalization, rules engine, scoring, and the versioned bridge contract. Consumed by both CLI and extension. | Workspace-only (not yet on npm) |
+| **`@sfdt/flow-core`** (`/packages/flow-core`) | Shared TypeScript library — Flow normalization, rules engine, scoring, and the versioned bridge contract. Consumed by both CLI and extension. | Published to npm (publishes alongside the CLI) |
 
 The CLI's `sfdt ui` command starts a local web dashboard (`/gui`) that exposes the same bridge endpoints the extension uses.
 

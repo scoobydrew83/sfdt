@@ -32,12 +32,19 @@ This guide covers every sfdt command in depth: what it does, when to use it, all
    - [sfdt pr-description](#sfdt-pr-description)
    - [sfdt ai](#sfdt-ai)
 10. [Commands: Operations](#commands-operations)
+    - [sfdt config](#sfdt-config)
     - [sfdt notify](#sfdt-notify)
     - [sfdt ui](#sfdt-ui)
-11. [Web Dashboard](#web-dashboard)
-12. [Drift vs Compare: choosing the right tool](#drift-vs-compare-choosing-the-right-tool)
-13. [Common workflows](#common-workflows)
-14. [CI/CD integration](#cicd-integration)
+11. [Commands: Org Health & Operations](#commands-org-health--operations)
+    - [sfdt audit](#sfdt-audit)
+    - [sfdt monitor](#sfdt-monitor)
+    - [sfdt docs](#sfdt-docs)
+    - [sfdt data](#sfdt-data)
+    - [sfdt scratch](#sfdt-scratch)
+12. [Web Dashboard](#web-dashboard)
+13. [Drift vs Compare: choosing the right tool](#drift-vs-compare-choosing-the-right-tool)
+14. [Common workflows](#common-workflows)
+15. [CI/CD integration](#cicd-integration)
 
 ---
 
@@ -805,6 +812,158 @@ npm run build:gui
 ```
 
 When `gui/dist/` is missing, the server shows a build-instructions page instead of the dashboard. The pre-built `gui/dist/` is included in the published npm package so end users don't need to build it.
+
+---
+
+## Commands: Org Health & Operations
+
+Native, clean-room reimplementations of org diagnose/audit, monitoring/backup, documentation, data-set, and scratch-org workflows — no AGPL dependency. Each command queries the org through a shared SOQL helper and writes a normalised JSON snapshot (`logs/audit-latest.json`, `logs/monitor-latest.json`) that the web dashboard, the MCP server, and the VS Code extension all read.
+
+---
+
+### sfdt audit
+
+Diagnose org health. Runs one check or all of them, prints a normalised result set, and writes `logs/audit-latest.json`.
+
+```bash
+sfdt audit                       # run all checks against the default org
+sfdt audit all --org production
+sfdt audit licenses --json
+```
+
+**Arguments:**
+
+| Argument | Description |
+|---|---|
+| `[check]` | One of `audittrail`, `licenses`, `mfa`, `unused-apex`, `inactive-users`, `api-versions`, or `all` (default) |
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
+| `--json` | Emit the normalised snapshot as JSON |
+
+Exits non-zero when any check reports `fail` **or** `error` status, so an unreachable org or a missing permission can't read as healthy in CI. Check thresholds are configured under the `audit` block in `.sfdt/config.json`.
+
+---
+
+### sfdt monitor
+
+Monitor an org and optionally take a full metadata backup. Writes `logs/monitor-latest.json`.
+
+```bash
+sfdt monitor                     # run all monitoring checks
+sfdt monitor limits --org production
+sfdt monitor all --backup        # checks plus a metadata backup
+sfdt monitor backup --org production
+```
+
+**Arguments:**
+
+| Argument | Description |
+|---|---|
+| `[check]` | One of `limits`, `errors`, `health`, `backup`, or `all` (default) |
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
+| `--backup` | With `all`, also retrieve a full metadata backup into the configured backup directory |
+| `--json` | Emit the normalised snapshot as JSON |
+
+Check thresholds (limit warning percentage, minimum Security Health Check score, etc.) are configured under the `monitoring` block in `.sfdt/config.json`.
+
+---
+
+### sfdt docs
+
+Generate documentation from local metadata.
+
+```bash
+sfdt docs generate               # MkDocs-compatible markdown (objects, Apex, flows)
+sfdt docs generate --ai          # include an AI-written project overview
+sfdt docs diagram                # print a Mermaid ER diagram
+sfdt docs diagram --output docs/erd.mmd
+```
+
+**Arguments:**
+
+| Argument | Description |
+|---|---|
+| `<action>` | `generate` (markdown docs) or `diagram` (Mermaid ER diagram) |
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--ai` | Generate an AI project overview (requires `features.ai`; falls back to a heuristic summary otherwise) |
+| `--output <file>` | For `diagram`: write the Mermaid source to a file instead of stdout |
+| `--json` | Emit machine-readable output |
+
+---
+
+### sfdt data
+
+Manage data sets via native `sf data export/import tree` for sandbox and scratch-org seeding.
+
+```bash
+sfdt data list
+sfdt data export accounts --org production
+sfdt data import accounts --org scratch1
+sfdt data delete accounts --org scratch1            # prompts for confirmation
+sfdt data delete accounts --org scratch1 --yes      # skip the prompt
+```
+
+**Arguments:**
+
+| Argument | Description |
+|---|---|
+| `<action>` | `list`, `export`, `import`, or `delete` |
+| `[set]` | Data-set name (required for `export`/`import`/`delete`) |
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
+| `-y, --yes` | For `delete`: skip the confirmation prompt. **Required** for non-interactive runs (`--json`, no TTY, or `SFDT_NON_INTERACTIVE`), which otherwise refuse to delete |
+| `--json` | Emit machine-readable output |
+
+> `sfdt data delete` bulk-removes every record a data set's queries match — by design for scratch/sandbox seed cleanup. It is not exposed over MCP.
+
+---
+
+### sfdt scratch
+
+Create, delete, list, and pool scratch orgs. A pre-created pool is tracked in `.sfdt/scratch-pool.json`.
+
+```bash
+sfdt scratch create --alias feature-x --days 7
+sfdt scratch list
+sfdt scratch pool status
+sfdt scratch pool fill                              # top the pool up to its configured size
+sfdt scratch delete feature-x                       # prompts for confirmation
+sfdt scratch delete feature-x --yes
+```
+
+**Arguments:**
+
+| Argument | Description |
+|---|---|
+| `<action>` | `create`, `delete`, `list`, or `pool` |
+| `[arg]` | For `pool`: `status` or `fill`. For `delete`: the org alias |
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--alias <name>` | Alias for a newly-created scratch org |
+| `--days <n>` | Scratch-org duration in days |
+| `--size <n>` | Pool size for `pool fill` |
+| `-y, --yes` | For `delete`: skip the confirmation prompt (required non-interactively). Deleting an org is irreversible |
+| `--json` | Emit machine-readable output |
 
 ---
 

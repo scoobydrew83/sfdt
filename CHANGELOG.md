@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-23
+
+Adds a native **org health & operations** suite — clean-room reimplementations of org diagnose/audit, monitoring/backup, documentation generation, data-set management, and scratch-org pooling — surfaced across four consumers: the CLI, the web dashboard, the built-in MCP server, and a brand-new VS Code extension. No AGPL dependency.
+
+### Added
+
+- **`sfdt audit` command** — native org diagnostics inspired by sfdx-hardis with no AGPL dependency. Checks an audit trail, license usage, MFA coverage, unused Apex, inactive users, and deprecated API versions, returning normalised `{ id, title, status, summary, findings }` results and writing a `logs/audit-latest.json` snapshot. Supports `sfdt audit [check|all] --org --json`.
+- **`sfdt monitor` command** — org monitoring and backup: org limits, Apex job failures, the Security Health Check score, and a full metadata backup (`sfdt monitor [check|all|backup] --org --json --backup`). Writes a `logs/monitor-latest.json` snapshot. Check-threshold defaults are centralised in `AUDIT_DEFAULTS`/`MONITOR_DEFAULTS` so they can't drift from the config template.
+- **`sfdt docs` command** — native documentation generation: `sfdt docs generate` collects local metadata (custom objects + fields, Apex classes, Flows) into MkDocs-compatible markdown, and `sfdt docs diagram` builds a Mermaid ER diagram. An optional AI project overview is generated when an AI provider is configured (heuristic fallback otherwise).
+- **`sfdt data` command** — data-set management over native `sf data export/import tree` plus bulk delete: `sfdt data list|export|import|delete <set>`.
+- **`sfdt scratch` command** — scratch-org lifecycle and pooling: `sfdt scratch create|delete|list|pool [status|fill]`, with a pool tracked in `.sfdt/scratch-pool.json`.
+- **VS Code extension (`@sfdt/vscode`)** — a thin UI over the CLI: an Org Health tree view that reads the audit/monitor snapshots (click to re-run a check), a command palette (“SFDT: Run Command…”) with dedicated deploy/preflight/audit/monitor/backup/docs commands, an embedded dashboard webview that spawns `sfdt ui`, and a status-bar item showing the active org and worst audit/monitor status.
+- **GUI Org Audit & Org Monitor pages** — read-only `/api/audit` and `/api/monitor` routes serve the snapshots, rendered by a shared `HealthChecks` component (also embedded by the VS Code dashboard webview).
+- **New MCP tools** — `sfdt_audit`, `sfdt_monitor`, and `sfdt_docs` expose the org diagnose/audit, monitoring/backup, and documentation commands to AI agents over the stdio MCP server.
+- **Bridge `org-health` request kind** — the Chrome extension gains an Org Health panel backed by a typed `org-health` bridge RPC; the bridge protocol version moves `1.1 → 1.2` (additive).
+- **Config blocks** — `audit`, `monitoring`, `docs`, `data`, and `scratch` blocks (plus matching feature flags) added to the config template and schema as the canonical user-editable source for the new commands.
+
+### Changed
+
+- **Centralised `describeFinding` in `@sfdt/flow-core`** — the org-health finding renderer had drifted into four near-identical copies (CLI audit, CLI monitor, GUI, extension) that disagreed on field handling. A single `health-findings.ts` (the union of all shapes — apiVersion / user / audit-trail / apex-job / license / limit / health-score / backup-error) now lives in flow-core and is imported by every surface, ending the per-surface drift that caused a license-rendering bug. This is why **`@sfdt/flow-core` is bumped to 0.9.2** (new additive exports) and republished alongside the CLI.
+- **Renamed the legacy `sfut` namespace to `sfdt`** in the extension (#136).
+- **CI builds `@sfdt/flow-core` before the GUI** — the GUI imports flow-core whose package `exports` resolve to compiled `dist/`, so `vite build` could not resolve it without a prior build.
+- **`actions/checkout` bumped from v4 to v7** across the workflows.
+
+### Fixed
+
+- **`sfdt data delete` runs a delete for every query** instead of deduping by sObject, so a data set with multiple WHERE filters on the same object no longer leaves all-but-the-first query's records behind.
+- **`sfdt audit`/`sfdt monitor` exit non-zero when any check has `error` status** (not only `fail`), so an unreachable org or a missing permission can't read as healthy in CI. Snapshots are now always persisted (even in `--json` mode) so the GUI and bridge never read stale data, and a snapshot-write failure warns on stderr instead of emitting a second JSON envelope to stdout.
+- **`sfdt docs generate` AI overview now renders** — `runAiPrompt` resolves to `{ stdout, … }`, not a string, so the overview was always null.
+- **SOQL datetime literals are valid** — milliseconds are stripped from `ISODate()` values (Salesforce rejects the `.000Z` that `toISOString()` emits), repairing the audit-trail, inactive-user, and Apex-job-failure WHERE clauses; `count()` now returns `totalSize` rather than `records.length` (always 0 for aggregate queries).
+- **`org-query.rawQuery()` surfaces structured `sf` errors** (bad SOQL, missing sObject) instead of an opaque execa error, mirroring `query()`.
+- **`checkUnusedApex` skips detection with a `warn` when no Apex coverage exists yet**, instead of flagging every class as unused.
+
+### Security
+
+- **`audit.minApiVersion` is coerced to a validated integer before interpolation into SOQL**, preventing SOQL injection from a crafted config value.
+- **`sfdt data delete` and `sfdt scratch delete` now confirm before destructive actions** — interactive runs preview the org/queries/objects and prompt (defaulting to no); a `-y/--yes` flag skips it; non-interactive runs (`--json`, no TTY, or `SFDT_NON_INTERACTIVE`) refuse to delete unless `--yes` is passed. (`data delete` is not exposed over MCP, so no agent path is affected.)
+- **Path-traversal hardening in test-log deletion** — `src/lib/gui-server/index.js` now requires `path.basename(filename) === filename` and that the resolved path stays within the `test-results` boundary, with tests covering backslash and URL-encoded bypasses.
+- **Dependency bumps** — `semver` and `undici` (7.27.2 → 7.28.0) updated, plus routine development-dependency group updates (typescript-eslint, `@types/chrome`, happy-dom).
+
 ## [0.12.0] - 2026-06-15
 
 Aligns the built-in MCP server with the 2026-07-28 RC of the Model Context Protocol, hardens the GUI's AI streaming path against prompt injection, and folds in a batch of CLI robustness work (shared git-ref/source-dir validation, earlier config diagnostics) plus dependency security overrides.
