@@ -141,7 +141,7 @@ describe('extension/lib/feature-registry', () => {
         id: 'rogue',
         name: 'rogue',
         contexts: [],
-        permissions: ['tabs' as chrome.runtime.ManifestPermissions],
+        permissions: ['tabs' as chrome.runtime.ManifestPermission],
       },
     });
     expect(reg.has('rogue')).toBe(false);
