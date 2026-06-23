@@ -71,7 +71,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
     }) as z.infer<typeof DEBUG_LOG_SETTINGS_SCHEMA>;
 
     overlay = doc.createElement('div');
-    overlay.className = 'sfut-debug-log-overlay';
+    overlay.className = 'sfdt-debug-log-overlay';
     overlay.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
     overlay.addEventListener('click', (e) => {

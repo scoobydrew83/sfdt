@@ -80,7 +80,7 @@ describe('settings.features legacy id adapter', () => {
 
   it('reads kebab-case ids when written kebab-case', async () => {
     chrome.storage.local.set({
-      'sfut.settings': {
+      'sfdt.settings': {
         features: { 'canvas-search': true, 'flow-deploy': false },
       },
     } as any);
@@ -91,7 +91,7 @@ describe('settings.features legacy id adapter', () => {
 
   it('treats legacy camelCase keys as the canonical kebab-case ids', async () => {
     chrome.storage.local.set({
-      'sfut.settings': {
+      'sfdt.settings': {
         features: { setupTabs: true, missingDescriptions: false },
       },
     } as any);
@@ -101,7 +101,7 @@ describe('settings.features legacy id adapter', () => {
   });
 
   it('defaults unknown ids to enabled (enabledByDefault semantics)', async () => {
-    chrome.storage.local.set({ 'sfut.settings': { features: {} } } as any);
+    chrome.storage.local.set({ 'sfdt.settings': { features: {} } } as any);
     const s = await loadSettings();
     expect(isFeatureEnabled(s, 'never-toggled')).toBe(true);
   });
@@ -123,7 +123,7 @@ describe('registerSettingsShape', () => {
     expect(sEmpty.featureSettings?.['canvas-search']).toBeUndefined();
     // Once values are explicitly stored, they are returned.
     chrome.storage.local.set({
-      'sfut.settings': { featureSettings: { 'canvas-search': { shortcut: 'Ctrl+Shift+F' } } },
+      'sfdt.settings': { featureSettings: { 'canvas-search': { shortcut: 'Ctrl+Shift+F' } } },
     } as any);
     _clearSettingsCacheForTests();
     const s = await loadSettings();
@@ -137,7 +137,7 @@ describe('registerSettingsShape', () => {
       pattern: z.enum(['a', 'b']).default('a'),
     }));
     chrome.storage.local.set({
-      'sfut.settings': {
+      'sfdt.settings': {
         featureSettings: { 'api-name-generator': { pattern: 'b' } },
       },
     } as any);
@@ -155,7 +155,7 @@ describe('registerSettingsShape', () => {
     expect(s2.featureSettings?.alpha).toBeUndefined();
     // Verify the shape IS honoured when a value is stored.
     chrome.storage.local.set({
-      'sfut.settings': { featureSettings: { alpha: { x: false } } },
+      'sfdt.settings': { featureSettings: { alpha: { x: false } } },
     } as any);
     _clearSettingsCacheForTests();
     const s3 = await loadSettings();

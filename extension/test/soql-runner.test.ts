@@ -364,11 +364,11 @@ describe('soql-runner — modal execution', () => {
     textarea.dispatchEvent(new Event('input'));
     
     await vi.waitFor(() => {
-      const title = document.querySelector('.sfut-soql-autocomplete-box span') as HTMLSpanElement;
+      const title = document.querySelector('.sfdt-soql-autocomplete-box span') as HTMLSpanElement;
       expect(title.textContent).toContain('Objects suggestions:');
     });
 
-    const buttons = document.querySelectorAll('.sfut-soql-autocomplete-box button');
+    const buttons = document.querySelectorAll('.sfdt-soql-autocomplete-box button');
     const suggestionButtons = Array.from(buttons).filter(b => b.textContent && !b.textContent.includes('Expand') && !b.textContent.includes('Collapse'));
     expect(suggestionButtons.length).toBe(2);
     expect(suggestionButtons[0]!.textContent).toContain('Account');
@@ -409,7 +409,7 @@ describe('soql-runner — modal execution', () => {
 
     link.click();
 
-    const menu = document.querySelector('.sfut-soql-cell-menu');
+    const menu = document.querySelector('.sfdt-soql-cell-menu');
     expect(menu).toBeTruthy();
 
     const menuItems = menu?.querySelectorAll('div');
@@ -420,7 +420,7 @@ describe('soql-runner — modal execution', () => {
     queryRecordItem?.click();
 
     expect(textarea.value).toContain("WHERE Id = '001800000000001AAA'");
-    expect(document.querySelector('.sfut-soql-cell-menu')).toBeNull();
+    expect(document.querySelector('.sfdt-soql-cell-menu')).toBeNull();
   });
 });
 

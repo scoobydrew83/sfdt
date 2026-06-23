@@ -11,9 +11,9 @@ const SELECTORS = {
   deleteLink: 'a[id$=":deleteLink"]',
 };
 
-const TAB_CLASS = 'sfut-version-select-cell';
-const CHECKBOX_CLASS = 'sfut-version-select-checkbox';
-const DELETE_BTN_CLASS = 'sfut-version-manager-delete-btn';
+const TAB_CLASS = 'sfdt-version-select-cell';
+const CHECKBOX_CLASS = 'sfdt-version-select-checkbox';
+const DELETE_BTN_CLASS = 'sfdt-version-manager-delete-btn';
 
 interface RowMeta {
   row: HTMLTableRowElement;
@@ -69,12 +69,12 @@ function injectCheckboxColumn(doc: Document, table: Element): void {
 async function confirmModal(doc: Document, selected: RowMeta[]): Promise<boolean> {
   return new Promise((resolve) => {
     const backdrop = doc.createElement('div');
-    backdrop.className = 'sfut-version-manager-backdrop';
+    backdrop.className = 'sfdt-version-manager-backdrop';
     backdrop.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center;';
 
     const modal = doc.createElement('div');
-    modal.className = 'sfut-version-manager-modal';
+    modal.className = 'sfdt-version-manager-modal';
     modal.setAttribute('role', 'dialog');
     modal.style.cssText =
       'background: #fff; border-radius: 4px; padding: 16px; min-width: 360px; max-width: 480px; font-family: system-ui, sans-serif;';
@@ -271,7 +271,7 @@ export function createFlowVersionManagerFeature(
         toolbarBtn = null;
       }
       doc.querySelectorAll(`.${TAB_CLASS}`).forEach((el) => el.remove());
-      doc.querySelector('.sfut-version-manager-backdrop')?.remove();
+      doc.querySelector('.sfdt-version-manager-backdrop')?.remove();
       selected.clear();
       rowMap.clear();
     },

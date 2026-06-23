@@ -402,13 +402,13 @@ describe('Event Streaming Monitor UI Feature', () => {
     const feature = createEventMonitorFeature({ api });
     await feature.onActivate?.();
 
-    expect(document.querySelector('.sfut-event-monitor-overlay')).not.toBeNull();
+    expect(document.querySelector('.sfdt-event-monitor-overlay')).not.toBeNull();
 
     const closeBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '×');
     expect(closeBtn).not.toBeUndefined();
     closeBtn?.click();
 
-    expect(document.querySelector('.sfut-event-monitor-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-event-monitor-overlay')).toBeNull();
   });
 
   it('updates channel dropdown when Channel Type changes', async () => {

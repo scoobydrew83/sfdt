@@ -134,7 +134,7 @@ describe('extension/features/canvas-search', () => {
     it('onActivate mounts the search bar', () => {
       const feature = createCanvasSearchFeature();
       feature.onActivate?.();
-      expect(document.querySelector('.sfut-canvas-search-bar')).not.toBeNull();
+      expect(document.querySelector('.sfdt-canvas-search-bar')).not.toBeNull();
     });
 
     it('typing into the search bar highlights matching cards (after debounce)', async () => {
@@ -144,14 +144,14 @@ describe('extension/features/canvas-search', () => {
       document.body.appendChild(elementCard('Send Email', 'Action'));
       feature.onActivate?.();
 
-      const input = document.querySelector<HTMLInputElement>('.sfut-canvas-search-bar-input')!;
+      const input = document.querySelector<HTMLInputElement>('.sfdt-canvas-search-bar-input')!;
       input.value = 'account';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 200));
 
       const highlighted = document.querySelectorAll(`.${HIGHLIGHT_CLASS}`);
       expect(highlighted).toHaveLength(1);
-      expect(document.querySelector('.sfut-canvas-search-bar-count')?.textContent).toBe('1 of 1');
+      expect(document.querySelector('.sfdt-canvas-search-bar-count')?.textContent).toBe('1 of 1');
     });
 
     it('the close button removes the search bar and clears highlights', () => {
@@ -159,9 +159,9 @@ describe('extension/features/canvas-search', () => {
       document.body.appendChild(elementCard('A', 'B'));
       feature.onActivate?.();
       document
-        .querySelector<HTMLButtonElement>('.sfut-canvas-search-bar-close')!
+        .querySelector<HTMLButtonElement>('.sfdt-canvas-search-bar-close')!
         .click();
-      expect(document.querySelector('.sfut-canvas-search-bar')).toBeNull();
+      expect(document.querySelector('.sfdt-canvas-search-bar')).toBeNull();
       expect(document.querySelectorAll(`.${HIGHLIGHT_CLASS}`)).toHaveLength(0);
     });
   });
@@ -182,9 +182,9 @@ describe('canvas-search teardown', () => {
   it('removes the dynamic style element', async () => {
     const feature = createCanvasSearchFeature();
     await feature.init?.();
-    expect(document.getElementById('sfut-canvas-search-dynamic')).not.toBeNull();
+    expect(document.getElementById('sfdt-canvas-search-dynamic')).not.toBeNull();
     await feature.teardown?.();
-    expect(document.getElementById('sfut-canvas-search-dynamic')).toBeNull();
+    expect(document.getElementById('sfdt-canvas-search-dynamic')).toBeNull();
   });
 
   it('does not throw when called twice', async () => {

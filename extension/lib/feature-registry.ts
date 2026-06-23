@@ -80,8 +80,8 @@ export function createFeatureRegistry(options: {
   notify?: (message: string) => void;
 } = {}): FeatureRegistry {
   const logger: RegistryLogger = options.logger ?? {
-    log: (msg, ...rest) => console.log(`[SFUT] ${msg}`, ...rest),
-    warn: (msg, ...rest) => console.warn(`[SFUT] ${msg}`, ...rest),
+    log: (msg, ...rest) => console.log(`[SFDT] ${msg}`, ...rest),
+    warn: (msg, ...rest) => console.warn(`[SFDT] ${msg}`, ...rest),
   };
   const log = (msg: string, ...rest: unknown[]): void => logger.log(msg, ...rest);
   const warn = (msg: string, ...rest: unknown[]): void => logger.warn(msg, ...rest);

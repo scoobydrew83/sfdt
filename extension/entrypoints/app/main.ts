@@ -51,20 +51,20 @@ function isAllowedSfHost(host: string): boolean {
 const STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: #16325c; background: #f3f3f3; }
-  #sfut-topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #16325c; color: #fff; }
-  #sfut-topbar .title { font-weight: 600; font-size: 15px; }
-  #sfut-topbar .org { margin-left: auto; font-size: 12px; opacity: 0.85; font-family: ui-monospace, monospace; }
-  #sfut-topbar button { padding: 5px 12px; border: 1px solid rgba(255,255,255,0.4); background: transparent; color: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; }
-  #sfut-topbar button:hover { background: rgba(255,255,255,0.12); }
-  #sfut-layout { display: flex; height: calc(100vh - 45px); }
-  #sfut-sidebar { width: 260px; background: #fff; border-right: 1px solid #d8dde6; overflow-y: auto; padding: 8px; }
-  #sfut-sidebar .tool { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
-  #sfut-sidebar .tool:hover { background: #f3f6f9; }
-  #sfut-sidebar .tool .icon { font-size: 16px; }
-  #sfut-main { flex: 1; overflow: auto; padding: 32px; }
-  #sfut-main .welcome { max-width: 560px; margin: 40px auto; text-align: center; color: #54698d; }
-  #sfut-main .welcome h2 { color: #16325c; }
-  #sfut-main code { background: #e9eef3; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  #sfdt-topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #16325c; color: #fff; }
+  #sfdt-topbar .title { font-weight: 600; font-size: 15px; }
+  #sfdt-topbar .org { margin-left: auto; font-size: 12px; opacity: 0.85; font-family: ui-monospace, monospace; }
+  #sfdt-topbar button { padding: 5px 12px; border: 1px solid rgba(255,255,255,0.4); background: transparent; color: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  #sfdt-topbar button:hover { background: rgba(255,255,255,0.12); }
+  #sfdt-layout { display: flex; height: calc(100vh - 45px); }
+  #sfdt-sidebar { width: 260px; background: #fff; border-right: 1px solid #d8dde6; overflow-y: auto; padding: 8px; }
+  #sfdt-sidebar .tool { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  #sfdt-sidebar .tool:hover { background: #f3f6f9; }
+  #sfdt-sidebar .tool .icon { font-size: 16px; }
+  #sfdt-main { flex: 1; overflow: auto; padding: 32px; }
+  #sfdt-main .welcome { max-width: 560px; margin: 40px auto; text-align: center; color: #54698d; }
+  #sfdt-main .welcome h2 { color: #16325c; }
+  #sfdt-main code { background: #e9eef3; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
 `;
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -214,7 +214,7 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
   // --- Layout ---
   while (root.firstChild) root.removeChild(root.firstChild);
 
-  const topbar = el('div', { id: 'sfut-topbar' });
+  const topbar = el('div', { id: 'sfdt-topbar' });
   const title = el('span', { class: 'title' });
   title.textContent = '⚡ SFDT Workspace';
   const orgLabel = el('span', { class: 'org' });
@@ -227,9 +227,9 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
   topbar.appendChild(switchBtn);
   root.appendChild(topbar);
 
-  const layout = el('div', { id: 'sfut-layout' });
-  const sidebar = el('div', { id: 'sfut-sidebar' });
-  const main = el('div', { id: 'sfut-main' });
+  const layout = el('div', { id: 'sfdt-layout' });
+  const sidebar = el('div', { id: 'sfdt-sidebar' });
+  const main = el('div', { id: 'sfdt-main' });
 
   const welcome = el('div', { class: 'welcome' });
   const wh = el('h2');
@@ -268,7 +268,7 @@ async function main(): Promise<void> {
   styleTag.textContent = STYLES;
   document.head.appendChild(styleTag);
 
-  const root = document.getElementById('sfut-app-root');
+  const root = document.getElementById('sfdt-app-root');
   if (!root) return;
 
   const org = resolveOrgFromUrl() ?? (await readLastOrg());

@@ -211,7 +211,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     close();
 
     overlay = doc.createElement('div');
-    overlay.className = 'sfut-org-health-overlay';
+    overlay.className = 'sfdt-org-health-overlay';
     overlay.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
     overlay.addEventListener('click', (e) => {

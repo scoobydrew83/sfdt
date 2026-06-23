@@ -132,7 +132,7 @@ describe('inspect-record — UI activation & inspection', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     // Verify modal elements are shown
-    const title = document.querySelector('.sfut-inspect-record-overlay span') as HTMLSpanElement;
+    const title = document.querySelector('.sfdt-inspect-record-overlay span') as HTMLSpanElement;
     expect(title.textContent).toContain('Account · 001800000000001AAA');
 
     const trs = document.querySelectorAll('tbody tr');

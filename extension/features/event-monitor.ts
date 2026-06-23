@@ -305,7 +305,7 @@ export function createEventMonitorFeature(options: {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[SFUT] Failed to fetch channels for ${type}: ${message}`);
+      console.warn(`[SFDT] Failed to fetch channels for ${type}: ${message}`);
     }
 
     if (list.length === 0) {
@@ -423,7 +423,7 @@ export function createEventMonitorFeature(options: {
     close();
 
     overlay = doc.createElement('div');
-    overlay.className = 'sfut-event-monitor-overlay';
+    overlay.className = 'sfdt-event-monitor-overlay';
     overlay.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
     overlay.addEventListener('click', (e) => {

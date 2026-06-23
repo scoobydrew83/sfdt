@@ -114,7 +114,7 @@ export async function discoverScheduledFlows(
 
 function buildModal(doc: Document, result: DiscoveryResult, now: Date): HTMLDivElement {
   const overlay = doc.createElement('div');
-  overlay.className = 'sfut-scheduled-flow-overlay';
+  overlay.className = 'sfdt-scheduled-flow-overlay';
   overlay.style.cssText =
     'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
 

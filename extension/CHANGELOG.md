@@ -4,6 +4,12 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Changed
+- **Internal namespace standardised to `sfdt`** across the extension (DOM ids, CSS classes, `chrome.storage` keys, log prefixes) so it matches the rest of the `@sfdt/*` project.
+
+### Note
+- The `chrome.storage.local` keys were renamed to the `sfdt.*` namespace with no migration shim. Users upgrading from an older build will start from default settings (and their opt-in telemetry resets); re-enabling preferences is a one-time step.
+
 ## [0.3.0] - 2026-06-20
 
 ### Added

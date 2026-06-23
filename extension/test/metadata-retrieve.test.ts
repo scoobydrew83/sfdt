@@ -121,7 +121,7 @@ describe('metadata-retrieve — UI & Operations', () => {
 
     await new Promise((r) => setTimeout(r, 0));
 
-    const chk = document.querySelector('.sfut-tree-chk') as HTMLInputElement;
+    const chk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
     expect(chk).not.toBeNull();
     chk.click();
 

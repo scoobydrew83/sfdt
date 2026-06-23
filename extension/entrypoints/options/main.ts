@@ -184,7 +184,7 @@ function buildHintBanner(): HTMLDivElement {
 }
 
 async function render(): Promise<void> {
-  const root = document.getElementById('sfut-options-root');
+  const root = document.getElementById('sfdt-options-root');
   if (!root) return;
 
   const styleTag = document.createElement('style');

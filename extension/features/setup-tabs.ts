@@ -15,7 +15,7 @@ const SETUP_TABS_SETTINGS_SCHEMA = z.object({
 
 registerSettingsShape('setup-tabs', SETUP_TABS_SETTINGS_SCHEMA);
 
-const TAB_CLASS = 'sfut-custom-tab';
+const TAB_CLASS = 'sfdt-custom-tab';
 const GROUP_LABEL = 'Automation';
 
 interface TabDefinition {
@@ -27,20 +27,20 @@ interface TabDefinition {
 
 const BASE_TABS: readonly TabDefinition[] = [
   {
-    id: 'sfut_tab_flows',
+    id: 'sfdt_tab_flows',
     label: 'Flows',
     buildUrl: (hostname) => `https://${toSetupHost(hostname)}/lightning/setup/Flows/home`,
     openInNewTab: false,
   },
   {
-    id: 'sfut_tab_flow_trigger_explorer',
+    id: 'sfdt_tab_flow_trigger_explorer',
     label: 'Flow Trigger Explorer',
     buildUrl: (hostname) =>
       `https://${toLightningHost(hostname)}/interaction_explorer/flowExplorer.app`,
     openInNewTab: true,
   },
   {
-    id: 'sfut_tab_process_automation_settings',
+    id: 'sfdt_tab_process_automation_settings',
     label: 'Process Automation Settings',
     buildUrl: (hostname) =>
       `https://${toSetupHost(hostname)}/lightning/setup/WorkflowSettings/home`,
@@ -49,7 +49,7 @@ const BASE_TABS: readonly TabDefinition[] = [
 ];
 
 const AUTOMATION_HOME_TAB: TabDefinition = {
-  id: 'sfut_tab_automation_home',
+  id: 'sfdt_tab_automation_home',
   label: 'Automation Home',
   buildUrl: (hostname) => `https://${toLightningHost(hostname)}/lightning/app/standard__FlowsApp`,
   openInNewTab: true,
@@ -57,13 +57,13 @@ const AUTOMATION_HOME_TAB: TabDefinition = {
 
 function isActiveTab(tabId: string, url: string): boolean {
   switch (tabId) {
-    case 'sfut_tab_flows':
+    case 'sfdt_tab_flows':
       return url.includes('/lightning/setup/Flows/');
-    case 'sfut_tab_flow_trigger_explorer':
+    case 'sfdt_tab_flow_trigger_explorer':
       return url.includes('/interaction_explorer/flowExplorer');
-    case 'sfut_tab_process_automation_settings':
+    case 'sfdt_tab_process_automation_settings':
       return url.includes('/lightning/setup/WorkflowSettings/');
-    case 'sfut_tab_automation_home':
+    case 'sfdt_tab_automation_home':
       return url.includes('/lightning/app/');
     default:
       return false;
@@ -169,7 +169,7 @@ function injectFlatTabs(
     try {
       tabBar.appendChild(buildFlatTab(doc, win, tab, hostname, url));
     } catch (err) {
-      console.warn('[SFUT setup-tabs] Failed to inject tab', tab.id, err);
+      console.warn('[SFDT setup-tabs] Failed to inject tab', tab.id, err);
     }
   }
 }
@@ -186,7 +186,7 @@ function buildGroupedTab(
     try {
       tabItems.push({ tab, url: tab.buildUrl(hostname) });
     } catch (err) {
-      console.warn('[SFUT setup-tabs] Failed to build grouped tab URL', tab.id, err);
+      console.warn('[SFDT setup-tabs] Failed to build grouped tab URL', tab.id, err);
     }
   }
   if (tabItems.length === 0) return null;
@@ -195,7 +195,7 @@ function buildGroupedTab(
 
   const li = doc.createElement('li');
   li.setAttribute('role', 'presentation');
-  li.className = `oneConsoleTabItem tabItem slds-context-bar__item borderRight navexConsoleTabItem ${TAB_CLASS} sfut-group-tab`;
+  li.className = `oneConsoleTabItem tabItem slds-context-bar__item borderRight navexConsoleTabItem ${TAB_CLASS} sfdt-group-tab`;
   if (anyChildActive) li.classList.add('slds-is-active');
 
   const anchor = doc.createElement('a');
@@ -215,7 +215,7 @@ function buildGroupedTab(
   chevronWrapper.className = 'slds-context-bar__label-action slds-p-left--none';
 
   const chevronBtn = doc.createElement('a');
-  chevronBtn.className = 'slds-button slds-button--icon sfut-group-chevron';
+  chevronBtn.className = 'slds-button slds-button--icon sfdt-group-chevron';
   chevronBtn.setAttribute('href', 'javascript:void(0)');
   chevronBtn.setAttribute('role', 'button');
   chevronBtn.setAttribute('aria-expanded', 'false');
@@ -241,7 +241,7 @@ function buildGroupedTab(
   chevronWrapper.appendChild(chevronBtn);
 
   const dropdown = doc.createElement('div');
-  dropdown.className = 'sfut-group-dropdown';
+  dropdown.className = 'sfdt-group-dropdown';
   dropdown.setAttribute('role', 'menu');
   const ul = doc.createElement('ul');
   ul.setAttribute('role', 'presentation');
@@ -273,17 +273,17 @@ function buildGroupedTab(
   const toggle = (e: Event): void => {
     e.preventDefault();
     e.stopPropagation();
-    const isOpen = dropdown.classList.contains('sfut-group-dropdown--open');
+    const isOpen = dropdown.classList.contains('sfdt-group-dropdown--open');
 
-    for (const other of doc.querySelectorAll('.sfut-group-dropdown--open')) {
-      const otherLi = other.closest('.sfut-group-tab');
-      const otherChevron = otherLi?.querySelector('.sfut-group-chevron') ?? null;
-      other.classList.remove('sfut-group-dropdown--open');
+    for (const other of doc.querySelectorAll('.sfdt-group-dropdown--open')) {
+      const otherLi = other.closest('.sfdt-group-tab');
+      const otherChevron = otherLi?.querySelector('.sfdt-group-chevron') ?? null;
+      other.classList.remove('sfdt-group-dropdown--open');
       otherChevron?.setAttribute('aria-expanded', 'false');
     }
 
     if (!isOpen) {
-      dropdown.classList.add('sfut-group-dropdown--open');
+      dropdown.classList.add('sfdt-group-dropdown--open');
       chevronBtn.setAttribute('aria-expanded', 'true');
     }
   };
@@ -309,7 +309,7 @@ function buildGroupedTab(
 }
 
 function closeDropdown(dropdown: Element, chevron: Element | null): void {
-  dropdown.classList.remove('sfut-group-dropdown--open');
+  dropdown.classList.remove('sfdt-group-dropdown--open');
   chevron?.setAttribute('aria-expanded', 'false');
 }
 
@@ -340,7 +340,7 @@ export function createSetupTabsFeature(options: SetupTabsOptions = {}): Feature 
     try {
       const tabBar = await waitForTabBar(doc, timeoutMs);
       if (!tabBar) {
-        console.warn('[SFUT setup-tabs] tab bar not found within timeout');
+        console.warn('[SFDT setup-tabs] tab bar not found within timeout');
         return;
       }
       if (doc.querySelector(`.${TAB_CLASS}`)) return; // Re-check — another async pass may have mounted while we waited.

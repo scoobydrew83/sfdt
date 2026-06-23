@@ -65,10 +65,10 @@ describe('extension/features/missing-description-flags', () => {
       flagCanvas(document, [
         { name: 'set_owner', label: 'Set Owner', type: 'Assignment', isResource: false },
       ]);
-      expect(card.querySelector('.sfut-desc-flag')).not.toBeNull();
+      expect(card.querySelector('.sfdt-desc-flag')).not.toBeNull();
 
       clearAllFlags(document);
-      expect(card.querySelector('.sfut-desc-flag')).toBeNull();
+      expect(card.querySelector('.sfdt-desc-flag')).toBeNull();
     });
 
     it('strips orchestrator number prefixes when matching ("1. Stage")', () => {
@@ -86,7 +86,7 @@ describe('extension/features/missing-description-flags', () => {
       flagCanvas(document, [
         { name: 'Onboarding', label: 'Onboarding', type: 'Stage', isResource: false },
       ]);
-      expect(card.querySelector('.sfut-desc-flag')).not.toBeNull();
+      expect(card.querySelector('.sfdt-desc-flag')).not.toBeNull();
     });
 
     it('builds case-insensitive lookup keys', () => {
@@ -121,12 +121,12 @@ describe('missing-description-flags teardown', () => {
     flagCanvas(document, [
       { name: 'set_owner', label: 'Set Owner', type: 'Assignment', isResource: false },
     ]);
-    expect(document.querySelector('.sfut-desc-flag')).not.toBeNull();
+    expect(document.querySelector('.sfdt-desc-flag')).not.toBeNull();
 
     const feature = createMissingDescriptionFlagsFeature();
     // Teardown should clean up regardless of whether init ran.
     await feature.teardown?.();
-    expect(document.querySelector('.sfut-desc-flag')).toBeNull();
+    expect(document.querySelector('.sfdt-desc-flag')).toBeNull();
   });
 
   it('does not throw when called twice', async () => {

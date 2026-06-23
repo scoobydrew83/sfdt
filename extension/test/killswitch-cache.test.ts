@@ -27,7 +27,7 @@ describe('killswitch-cache', () => {
 
   it('filters non-string entries on read (defensive)', async () => {
     chrome.storage.local.set({
-      'sfut.killswitch.cache': { disabled: ['canvas-search', 42, null], ts: Date.now() },
+      'sfdt.killswitch.cache': { disabled: ['canvas-search', 42, null], ts: Date.now() },
     } as any);
     expect(await readKillSwitchCache()).toEqual(['canvas-search']);
   });
@@ -35,7 +35,7 @@ describe('killswitch-cache', () => {
   it('honours a fresh cache (younger than 24h)', async () => {
     const now = Date.now();
     chrome.storage.local.set({
-      'sfut.killswitch.cache': {
+      'sfdt.killswitch.cache': {
         disabled: ['canvas-search'],
         ts: now - (KILL_SWITCH_CACHE_MAX_AGE_MS - 60_000), // 23h59m old
       },
@@ -46,7 +46,7 @@ describe('killswitch-cache', () => {
   it('treats a cache older than 24h as stale and falls back to the default ([])', async () => {
     const now = Date.now();
     chrome.storage.local.set({
-      'sfut.killswitch.cache': {
+      'sfdt.killswitch.cache': {
         disabled: ['canvas-search'],
         ts: now - (KILL_SWITCH_CACHE_MAX_AGE_MS + 60_000), // 24h01m old
       },
@@ -56,7 +56,7 @@ describe('killswitch-cache', () => {
 
   it('treats an un-stamped legacy record (missing ts) as stale', async () => {
     chrome.storage.local.set({
-      'sfut.killswitch.cache': { disabled: ['canvas-search'] },
+      'sfdt.killswitch.cache': { disabled: ['canvas-search'] },
     } as any);
     expect(await readKillSwitchCache()).toEqual([]);
   });

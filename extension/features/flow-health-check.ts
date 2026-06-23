@@ -177,7 +177,7 @@ export function createFlowHealthCheckFeature(options: FlowHealthCheckOptions = {
         const report = buildReport(record, normalized, issueFamilies);
         getModal().showReport(report);
       } catch (err) {
-        console.error('[SFUT flow-health-check] failed:', err);
+        console.error('[SFDT flow-health-check] failed:', err);
         getModal().showError(err instanceof Error ? err.message : 'Unexpected error');
       }
     },

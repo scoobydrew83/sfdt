@@ -105,7 +105,7 @@ export function buildConflictsModal(
   const onDeactivate = options.onDeactivate;
 
   const overlay = doc.createElement('div');
-  overlay.className = 'sfut-trigger-conflicts-overlay';
+  overlay.className = 'sfdt-trigger-conflicts-overlay';
   overlay.style.cssText =
     'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
 
