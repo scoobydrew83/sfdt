@@ -221,10 +221,10 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
     if (!countLabel) return;
     if (loading) {
       countLabel.textContent = 'Loading all flows…';
-      countLabel.classList.add('sfut-flow-search-loading');
+      countLabel.classList.add('sfdt-flow-search-loading');
       return;
     }
-    countLabel.classList.remove('sfut-flow-search-loading');
+    countLabel.classList.remove('sfdt-flow-search-loading');
     if (total === 0) countLabel.textContent = '';
     else if (visible === total) countLabel.textContent = `${total} flows`;
     else if (visible === 0) countLabel.textContent = 'No matching flows';
@@ -307,25 +307,25 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
   }
 
   function injectBar(): void {
-    if (doc.getElementById('sfut-flow-search-container')) return;
+    if (doc.getElementById('sfdt-flow-search-container')) return;
     const header = doc.querySelector(SELECTORS.listHeader);
     const manager = doc.querySelector(SELECTORS.listViewManager);
     const insertTarget = header ?? manager;
     if (!insertTarget) return;
 
     const container = doc.createElement('div');
-    container.id = 'sfut-flow-search-container';
-    container.className = 'sfut-flow-search-container';
+    container.id = 'sfdt-flow-search-container';
+    container.className = 'sfdt-flow-search-container';
 
     const icon = doc.createElement('span');
-    icon.className = 'sfut-flow-search-icon';
+    icon.className = 'sfdt-flow-search-icon';
     icon.setAttribute('aria-hidden', 'true');
     icon.textContent = '🔍';
     container.appendChild(icon);
 
     searchInput = doc.createElement('input');
-    searchInput.id = 'sfut-flow-search-input';
-    searchInput.className = 'sfut-flow-search-input';
+    searchInput.id = 'sfdt-flow-search-input';
+    searchInput.className = 'sfdt-flow-search-input';
     searchInput.type = 'text';
     searchInput.placeholder = 'Search by label or API name…';
     searchInput.setAttribute('aria-label', 'Search flows by label or API name');
@@ -334,8 +334,8 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
     container.appendChild(searchInput);
 
     statusFilter = doc.createElement('select');
-    statusFilter.id = 'sfut-flow-status-filter';
-    statusFilter.className = 'sfut-flow-search-filter';
+    statusFilter.id = 'sfdt-flow-status-filter';
+    statusFilter.className = 'sfdt-flow-search-filter';
     statusFilter.setAttribute('aria-label', 'Filter flows by status');
     const statusOptions: ReadonlyArray<readonly [string, string]> = [
       ['', 'All Statuses'],
@@ -351,8 +351,8 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
     container.appendChild(statusFilter);
 
     typeFilter = doc.createElement('select');
-    typeFilter.id = 'sfut-flow-type-filter';
-    typeFilter.className = 'sfut-flow-search-filter';
+    typeFilter.id = 'sfdt-flow-type-filter';
+    typeFilter.className = 'sfdt-flow-search-filter';
     typeFilter.setAttribute('aria-label', 'Filter flows by type');
     const allTypes = doc.createElement('option');
     allTypes.value = '';
@@ -361,15 +361,15 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
     container.appendChild(typeFilter);
 
     clearBtn = doc.createElement('button');
-    clearBtn.className = 'sfut-flow-search-clear';
+    clearBtn.className = 'sfdt-flow-search-clear';
     clearBtn.textContent = 'Clear';
     clearBtn.title = 'Clear search and filters';
     clearBtn.setAttribute('aria-label', 'Clear search and filters');
     container.appendChild(clearBtn);
 
     countLabel = doc.createElement('span');
-    countLabel.id = 'sfut-flow-search-count';
-    countLabel.className = 'sfut-flow-search-count';
+    countLabel.id = 'sfdt-flow-search-count';
+    countLabel.className = 'sfdt-flow-search-count';
     container.appendChild(countLabel);
 
     if (header && header.parentNode) {

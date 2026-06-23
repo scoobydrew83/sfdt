@@ -112,4 +112,23 @@ describe('telemetry', () => {
       expect(result).toBe(false);
     });
   });
+
+  describe('legacy key migration', () => {
+    it('reads and migrates counters from the legacy sfut.telemetry key', async () => {
+      const now = () => new Date('2026-05-20T10:00:00Z');
+      chrome.storage.local.set({
+        'sfut.telemetry': {
+          monthKey: '2026-05',
+          counters: { 'canvas-search': { activated: 3, errored: 1, disabled_remote: 0 } },
+        } satisfies TelemetrySnapshot,
+      } as any);
+      const t = createTelemetry({ isEnabled: () => true, now });
+      const snapshot = await t.snapshot();
+      expect(snapshot.counters['canvas-search']).toEqual({ activated: 3, errored: 1, disabled_remote: 0 });
+      // Migrated forward: new key written, legacy key removed.
+      const after = await new Promise<any>((r) => chrome.storage.local.get(['sfdt.telemetry', 'sfut.telemetry'], r));
+      expect(after['sfdt.telemetry']).toBeDefined();
+      expect(after['sfut.telemetry']).toBeUndefined();
+    });
+  });
 });

@@ -352,7 +352,7 @@ describe('extension/lib/feature-registry', () => {
       disabledRemote: new Set(),
       isUserEnabled: () => true,
     });
-    const container = document.getElementById('sfut-toast-container');
+    const container = document.getElementById('sfdt-toast-container');
     expect(container?.textContent).toContain('Alpha Feature');
     container?.remove();
   });

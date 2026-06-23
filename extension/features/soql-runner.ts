@@ -433,7 +433,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const historyEnabled = config.historyEnabled;
 
     overlay = doc.createElement('div');
-    overlay.className = 'sfut-soql-runner-overlay';
+    overlay.className = 'sfdt-soql-runner-overlay';
     overlay.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
     overlay.addEventListener('click', (e) => {
@@ -559,7 +559,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     });
 
     const autocompleteBox = doc.createElement('div');
-    autocompleteBox.className = 'sfut-soql-autocomplete-box';
+    autocompleteBox.className = 'sfdt-soql-autocomplete-box';
     autocompleteBox.style.cssText =
       'border: 1px solid #d8dde6; border-top: none; border-radius: 0 0 4px 4px; background: #fafaf9; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-family: system-ui, sans-serif;';
 
@@ -685,11 +685,11 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     }
 
     function showCellMenu(element: HTMLElement, id: string) {
-      const existing = doc.querySelector('.sfut-soql-cell-menu');
+      const existing = doc.querySelector('.sfdt-soql-cell-menu');
       if (existing) existing.remove();
 
       const menu = doc.createElement('div');
-      menu.className = 'sfut-soql-cell-menu';
+      menu.className = 'sfdt-soql-cell-menu';
       menu.style.cssText =
         'position: absolute; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 100030; padding: 4px 0; font-family: system-ui, sans-serif; font-size: 12px;';
 

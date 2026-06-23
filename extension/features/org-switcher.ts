@@ -3,7 +3,7 @@ import type { Feature } from '../lib/feature-registry.js';
 import type { OrgEntry } from '../lib/org-list.js';
 import { showToast } from '../ui/toast.js';
 
-const LAST_ORG_STORAGE_KEY = 'sfut.workspace.lastOrg';
+const LAST_ORG_STORAGE_KEY = 'sfdt.workspace.lastOrg';
 
 export async function readLastOrg(): Promise<string | null> {
   return new Promise((resolve) => {
@@ -81,7 +81,7 @@ export function createOrgSwitcherFeature(options: OrgSwitcherOptions = {}): Feat
     close();
 
     overlay = doc.createElement('div');
-    overlay.className = 'sfut-org-switcher-overlay';
+    overlay.className = 'sfdt-org-switcher-overlay';
     overlay.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
     overlay.addEventListener('click', (e) => {

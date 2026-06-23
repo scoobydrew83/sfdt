@@ -57,7 +57,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
     }) as z.infer<typeof SAVED_SOQL_SETTINGS_SCHEMA>;
 
     overlay = doc.createElement('div');
-    overlay.className = 'sfut-saved-soql-overlay';
+    overlay.className = 'sfdt-saved-soql-overlay';
     overlay.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
     overlay.addEventListener('click', (e) => {

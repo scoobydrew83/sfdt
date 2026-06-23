@@ -167,7 +167,7 @@ describe('extension/features/flow-list-search', () => {
       document.body.appendChild(buildTable([{ name: 'A', apiName: 'A', active: true }]));
       const feature = createFlowListSearchFeature({ waitTimeoutMs: 50 });
       await feature.init?.();
-      expect(document.getElementById('sfut-flow-search-container')).toBeNull();
+      expect(document.getElementById('sfdt-flow-search-container')).toBeNull();
     });
 
     it('init injects the search bar when the list view is present', async () => {
@@ -177,8 +177,8 @@ describe('extension/features/flow-list-search', () => {
       document.body.appendChild(wrap);
       const feature = createFlowListSearchFeature({ waitTimeoutMs: 200 });
       await feature.init?.();
-      expect(document.getElementById('sfut-flow-search-container')).not.toBeNull();
-      expect(document.getElementById('sfut-flow-search-input')).not.toBeNull();
+      expect(document.getElementById('sfdt-flow-search-container')).not.toBeNull();
+      expect(document.getElementById('sfdt-flow-search-input')).not.toBeNull();
     });
 
     it('exposes a working type filter populated from the rows', async () => {
@@ -193,7 +193,7 @@ describe('extension/features/flow-list-search', () => {
       document.body.appendChild(wrap);
       const feature = createFlowListSearchFeature({ waitTimeoutMs: 200 });
       await feature.init?.();
-      const select = document.getElementById('sfut-flow-type-filter') as HTMLSelectElement;
+      const select = document.getElementById('sfdt-flow-type-filter') as HTMLSelectElement;
       expect(select).not.toBeNull();
       // Two trigger types plus the "All Types" placeholder.
       expect(select.options.length).toBe(3);

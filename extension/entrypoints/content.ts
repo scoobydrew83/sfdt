@@ -132,7 +132,7 @@ export default defineContentScript({
           await writeKillSwitchCache(info.disabledFeatures);
         }
       } catch (err) {
-        console.warn('[SFUT] kill-switch refresh failed:', err);
+        console.warn('[SFDT] kill-switch refresh failed:', err);
       }
     }
 
@@ -218,6 +218,6 @@ export default defineContentScript({
 
     await registry.initForCurrentRoute(getAvailableFeatures(), makeGate());
 
-    console.log('[SFUT] Shell mounted with kill-switch enabled.');
+    console.log('[SFDT] Shell mounted with kill-switch enabled.');
   },
 });

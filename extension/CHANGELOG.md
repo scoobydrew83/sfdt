@@ -4,6 +4,10 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Changed
+- **Internal namespace renamed from the legacy `sfut` to `sfdt`** across the extension (DOM ids, CSS classes, storage keys, log prefixes) so it matches the rest of the `@sfdt/*` project. User-facing behaviour is unchanged.
+- `chrome.storage.local` keys moved `sfut.settings` → `sfdt.settings` and `sfut.telemetry` → `sfdt.telemetry`, with a one-time read-and-migrate on first access so existing users keep their settings and opt-in telemetry. The 24h kill-switch cache (`sfut.killswitch.cache` → `sfdt.killswitch.cache`) is intentionally not migrated — it self-heals on the next boot ping.
+
 ## [0.3.0] - 2026-06-20
 
 ### Added

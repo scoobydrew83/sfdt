@@ -36,7 +36,7 @@ Produced by `npm run build:ext` from the sfdt repo root.
    - permissions: storage, clipboardWrite, cookies, scripting
    - No yellow / red error banners
 4. **Open the DevTools console** for the Salesforce tab you'll use:
-   `Cmd+Opt+I` → Console. Anything tagged `[SFUT]` should be informational;
+   `Cmd+Opt+I` → Console. Anything tagged `[SFDT]` should be informational;
    anything red is a regression.
 5. **Pick a target org**: a scratch org or sandbox with a mix of flow
    types (at minimum: one screen flow, one record-triggered, one
@@ -57,7 +57,7 @@ Before touching any feature, verify the shell itself.
 | Menu lists items appropriate to the current context (see matrix below) | yes |
 | Closing via × or outside-click works | yes |
 | SPA navigation (e.g. clicking from Setup to Object Manager) refreshes the menu | yes |
-| Console contains `[SFUT] Shell mounted.` | yes |
+| Console contains `[SFDT] Shell mounted.` | yes |
 | Console contains no red errors | yes |
 
 The side button must mount in the top frame only — verify by opening a
@@ -141,10 +141,10 @@ Since the options page is not yet built, **for the smoke-test set the
 token manually in DevTools**:
 
 ```js
-chrome.storage.local.get('sfut.settings', (s) => console.log(s));
+chrome.storage.local.get('sfdt.settings', (s) => console.log(s));
 chrome.storage.local.set({
-  'sfut.settings': {
-    ...((await chrome.storage.local.get('sfut.settings'))['sfut.settings'] || {}),
+  'sfdt.settings': {
+    ...((await chrome.storage.local.get('sfdt.settings'))['sfdt.settings'] || {}),
     bridge: { token: 'PASTE_TOKEN_HERE', preferredTransport: 'localhost', localhostPort: 7654 },
   },
 });
@@ -167,7 +167,7 @@ Three lists, terse:
 2. **Broken**: feature numbers with what went wrong (one line each).
 3. **Surprises**: anything you noticed that isn't in the matrix —
    performance issues, ugly styling, console warnings beyond expected
-   `[SFUT]` info, mouse-trap problems, accessibility gaps.
+   `[SFDT]` info, mouse-trap problems, accessibility gaps.
 
 The deferred-status column above is what I already know is incomplete;
 focus the "Broken" list on things that don't match what the matrix

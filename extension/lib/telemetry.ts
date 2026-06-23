@@ -1,7 +1,9 @@
 // Opt-in, local-only — no network egress. The data exists so the user
 // (or support) can see which features run in this browser profile.
 
-const STORAGE_KEY = 'sfut.telemetry';
+const STORAGE_KEY = 'sfdt.telemetry';
+// Legacy "SFUT"-era key; migrated forward on first read so opt-in counters survive.
+const LEGACY_STORAGE_KEY = 'sfut.telemetry';
 const MAX_FEATURE_IDS = 500;
 
 export type TelemetryEvent =
@@ -65,19 +67,24 @@ function emptyCounter(): FeatureCounter {
   return { activated: 0, errored: 0, disabled_remote: 0 };
 }
 
+function isValidSnapshot(raw: TelemetrySnapshot | undefined): raw is TelemetrySnapshot {
+  return !!raw && typeof raw.monthKey === 'string' && !!raw.counters && typeof raw.counters === 'object';
+}
+
 async function read(): Promise<TelemetrySnapshot | null> {
   return new Promise((resolve) => {
-    chrome.storage.local.get(STORAGE_KEY, (result) => {
-      const raw = result?.[STORAGE_KEY] as TelemetrySnapshot | undefined;
-      if (
-        !raw ||
-        typeof raw.monthKey !== 'string' ||
-        !raw.counters ||
-        typeof raw.counters !== 'object'
-      ) {
-        return resolve(null);
+    chrome.storage.local.get([STORAGE_KEY, LEGACY_STORAGE_KEY], (result) => {
+      const current = result?.[STORAGE_KEY] as TelemetrySnapshot | undefined;
+      if (isValidSnapshot(current)) return resolve(current);
+      // One-time migration from the legacy sfut.* key.
+      const legacy = result?.[LEGACY_STORAGE_KEY] as TelemetrySnapshot | undefined;
+      if (isValidSnapshot(legacy)) {
+        chrome.storage.local.set({ [STORAGE_KEY]: legacy }, () => {
+          chrome.storage.local.remove(LEGACY_STORAGE_KEY, () => resolve(legacy));
+        });
+        return;
       }
-      resolve(raw);
+      resolve(null);
     });
   });
 }

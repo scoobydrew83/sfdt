@@ -41,20 +41,20 @@ describe('extension/features/setup-tabs', () => {
     await saveSettings(SettingsSchema.parse({ features: { setupTabs: false } }));
     const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
     await feature.init?.();
-    expect(document.querySelectorAll('.sfut-custom-tab')).toHaveLength(0);
+    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(0);
   });
 
   it('injects the three base tabs when enabled', async () => {
     await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
     const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
     await feature.init?.();
-    const tabs = document.querySelectorAll('.sfut-custom-tab');
+    const tabs = document.querySelectorAll('.sfdt-custom-tab');
     expect(tabs).toHaveLength(3);
     const ids = Array.from(tabs).map((t) => (t as HTMLElement).dataset.tabId);
     expect(ids).toEqual([
-      'sfut_tab_flows',
-      'sfut_tab_flow_trigger_explorer',
-      'sfut_tab_process_automation_settings',
+      'sfdt_tab_flows',
+      'sfdt_tab_flow_trigger_explorer',
+      'sfdt_tab_process_automation_settings',
     ]);
   });
 
@@ -67,7 +67,7 @@ describe('extension/features/setup-tabs', () => {
     );
     const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
     await feature.init?.();
-    expect(document.querySelector('[data-tab-id="sfut_tab_automation_home"]')).not.toBeNull();
+    expect(document.querySelector('[data-tab-id="sfdt_tab_automation_home"]')).not.toBeNull();
   });
 
   it('collapses into a single dropdown when grouping is enabled', async () => {
@@ -79,9 +79,9 @@ describe('extension/features/setup-tabs', () => {
     );
     const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
     await feature.init?.();
-    expect(document.querySelectorAll('.sfut-custom-tab')).toHaveLength(1);
-    expect(document.querySelector('.sfut-group-tab')).not.toBeNull();
-    expect(document.querySelectorAll('.sfut-group-dropdown li')).toHaveLength(3);
+    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(1);
+    expect(document.querySelector('.sfdt-group-tab')).not.toBeNull();
+    expect(document.querySelectorAll('.sfdt-group-dropdown li')).toHaveLength(3);
   });
 
   it('uses the org identifier from the URL hostname (v1.2.2 fix)', async () => {
@@ -93,7 +93,7 @@ describe('extension/features/setup-tabs', () => {
     const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
     await feature.init?.();
     const flowsTab = document.querySelector<HTMLAnchorElement>(
-      '[data-tab-id="sfut_tab_flows"] a',
+      '[data-tab-id="sfdt_tab_flows"] a',
     );
     expect(flowsTab?.href).toBe('https://x.my.salesforce-setup.com/lightning/setup/Flows/home');
   });
@@ -102,38 +102,38 @@ describe('extension/features/setup-tabs', () => {
     await saveSettings(SettingsSchema.parse({ features: { setupTabs: false } }));
     const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
     await feature.init?.();
-    expect(document.querySelectorAll('.sfut-custom-tab')).toHaveLength(0);
+    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(0);
 
     await feature.onActivate?.();
     await flushSettings();
 
-    // The toast shim writes a `.sfut-toast` div into a container.
-    expect(document.querySelector('#sfut-toast-container')).not.toBeNull();
-    expect(document.querySelector('.sfut-toast')?.textContent).toBe('Setup Tabs enabled');
+    // The toast shim writes a `.sfdt-toast` div into a container.
+    expect(document.querySelector('#sfdt-toast-container')).not.toBeNull();
+    expect(document.querySelector('.sfdt-toast')?.textContent).toBe('Setup Tabs enabled');
   });
 
   it('removes injected tabs when the setting flips off after init', async () => {
     await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
     const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
     await feature.init?.();
-    expect(document.querySelectorAll('.sfut-custom-tab').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.sfdt-custom-tab').length).toBeGreaterThan(0);
 
     await patchSettings({ features: { setupTabs: false } } as never);
     await flushSettings();
 
-    expect(document.querySelectorAll('.sfut-custom-tab')).toHaveLength(0);
+    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(0);
   });
 
   it('refresh() re-injects from current settings', async () => {
     await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
     const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
     await feature.init?.();
-    expect(document.querySelectorAll('.sfut-custom-tab')).toHaveLength(3);
+    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(3);
 
     // Force-remove and call refresh — should restore the 3 tabs.
-    document.querySelectorAll('.sfut-custom-tab').forEach((t) => t.remove());
+    document.querySelectorAll('.sfdt-custom-tab').forEach((t) => t.remove());
     await feature.refresh?.();
-    expect(document.querySelectorAll('.sfut-custom-tab')).toHaveLength(3);
+    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(3);
   });
 
   it('does nothing if the tab bar never appears (timeout, falsy bar)', async () => {
@@ -143,7 +143,7 @@ describe('extension/features/setup-tabs', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const feature = createSetupTabsFeature({ waitTimeoutMs: 5 });
     await feature.init?.();
-    expect(document.querySelectorAll('.sfut-custom-tab')).toHaveLength(0);
+    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(0);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -163,9 +163,9 @@ describe('setup-tabs teardown', () => {
     await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
     const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
     await feature.init?.();
-    expect(document.querySelectorAll('.sfut-custom-tab').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.sfdt-custom-tab').length).toBeGreaterThan(0);
     await feature.teardown?.();
-    expect(document.querySelectorAll('.sfut-custom-tab')).toHaveLength(0);
+    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(0);
   });
 
   it('does not throw when called twice', async () => {

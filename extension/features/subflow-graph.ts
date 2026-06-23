@@ -141,9 +141,9 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
 
   const defs = doc.createElementNS(SVG_NS, 'defs');
   for (const [id, fill] of [
-    ['sfut-arrow', '#54698d'],
-    ['sfut-arrow-cycle', '#c23934'],
-    ['sfut-arrow-missing', '#b46600'],
+    ['sfdt-arrow', '#54698d'],
+    ['sfdt-arrow-cycle', '#c23934'],
+    ['sfdt-arrow-missing', '#b46600'],
   ] as const) {
     const marker = doc.createElementNS(SVG_NS, 'marker');
     marker.setAttribute('id', id);
@@ -178,7 +178,7 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
         line.setAttribute('stroke', '#b46600');
         line.setAttribute('stroke-width', '1.5');
         line.setAttribute('stroke-dasharray', '4 3');
-        line.setAttribute('marker-end', 'url(#sfut-arrow-missing)');
+        line.setAttribute('marker-end', 'url(#sfdt-arrow-missing)');
         svg.appendChild(line);
         continue;
       }
@@ -193,7 +193,7 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
       path.setAttribute('stroke', isCycle ? '#c23934' : '#54698d');
       path.setAttribute('stroke-width', isCycle ? '2' : '1.5');
       if (edge.missing) path.setAttribute('stroke-dasharray', '4 3');
-      path.setAttribute('marker-end', isCycle ? 'url(#sfut-arrow-cycle)' : 'url(#sfut-arrow)');
+      path.setAttribute('marker-end', isCycle ? 'url(#sfdt-arrow-cycle)' : 'url(#sfdt-arrow)');
       svg.appendChild(path);
     }
   }

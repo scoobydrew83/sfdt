@@ -25,10 +25,10 @@ export interface SideButtonHandle {
   isMounted: () => boolean;
 }
 
-const BUTTON_ID = 'sfut-side-button';
-const MENU_ID = 'sfut-menu';
-const MENU_HIDDEN_CLASS = 'sfut-menu-hidden';
-const MENU_VISIBLE_CLASS = 'sfut-menu-visible';
+const BUTTON_ID = 'sfdt-side-button';
+const MENU_ID = 'sfdt-menu';
+const MENU_HIDDEN_CLASS = 'sfdt-menu-hidden';
+const MENU_VISIBLE_CLASS = 'sfdt-menu-visible';
 
 const BUTTON_STYLE = [
   'position: fixed',
@@ -105,42 +105,42 @@ export function mountSideButton(opts: {
   doc.getElementById(MENU_ID)?.remove();
 
   const button = styled(doc, 'div', BUTTON_STYLE, { id: BUTTON_ID, title: 'SFDT SF Helper' });
-  button.className = 'sfut-side-button';
+  button.className = 'sfdt-side-button';
   const buttonIcon = doc.createElement('span');
-  buttonIcon.className = 'sfut-side-button-icon';
+  buttonIcon.className = 'sfdt-side-button-icon';
   buttonIcon.textContent = '⚡';
   button.appendChild(buttonIcon);
 
   const menu = styled(doc, 'div', MENU_STYLE, { id: MENU_ID });
-  menu.className = `sfut-menu ${MENU_HIDDEN_CLASS}`;
+  menu.className = `sfdt-menu ${MENU_HIDDEN_CLASS}`;
 
   const header = doc.createElement('div');
-  header.className = 'sfut-menu-header';
+  header.className = 'sfdt-menu-header';
   header.style.cssText =
     'padding: 10px 14px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center;';
   const headerTitle = doc.createElement('span');
-  headerTitle.className = 'sfut-menu-title';
+  headerTitle.className = 'sfdt-menu-title';
   headerTitle.style.fontWeight = '600';
   headerTitle.textContent = 'SFDT SF Helper';
   const headerClose = doc.createElement('span');
-  headerClose.className = 'sfut-menu-close';
+  headerClose.className = 'sfdt-menu-close';
   headerClose.style.cssText = 'cursor: pointer; font-size: 18px; color: #80868d;';
   headerClose.textContent = '×';
   header.appendChild(headerTitle);
   header.appendChild(headerClose);
 
   const content = doc.createElement('div');
-  content.id = 'sfut-menu-content';
-  content.className = 'sfut-menu-content';
+  content.id = 'sfdt-menu-content';
+  content.className = 'sfdt-menu-content';
   content.style.cssText = 'max-height: 60vh; overflow-y: auto;';
 
   const footer = doc.createElement('div');
-  footer.className = 'sfut-menu-footer';
+  footer.className = 'sfdt-menu-footer';
   footer.style.cssText = 'padding: 8px 14px; border-top: 1px solid #d8dde6;';
   const settingsLink = doc.createElement('a');
   settingsLink.href = '#';
-  settingsLink.id = 'sfut-settings-link';
-  settingsLink.className = 'sfut-menu-settings-link';
+  settingsLink.id = 'sfdt-settings-link';
+  settingsLink.className = 'sfdt-menu-settings-link';
   settingsLink.style.cssText = 'color: #0070d2; text-decoration: none; font-size: 12px;';
   settingsLink.textContent = '⚙ Settings';
   footer.appendChild(settingsLink);
@@ -161,17 +161,17 @@ export function mountSideButton(opts: {
 
   function buildMenuItemNode(item: MenuItem): HTMLDivElement {
     const node = doc.createElement('div');
-    node.className = 'sfut-menu-item';
+    node.className = 'sfdt-menu-item';
     node.dataset.feature = item.featureId;
     node.dataset.action = item.action ?? 'activate';
     node.style.cssText =
       'padding: 10px 14px; cursor: pointer; display: flex; align-items: center; gap: 10px;';
     const iconNode = doc.createElement('span');
-    iconNode.className = 'sfut-menu-item-icon';
+    iconNode.className = 'sfdt-menu-item-icon';
     iconNode.style.fontSize = '16px';
     iconNode.textContent = item.icon;
     const labelNode = doc.createElement('span');
-    labelNode.className = 'sfut-menu-item-label';
+    labelNode.className = 'sfdt-menu-item-label';
     labelNode.textContent = item.label;
     node.appendChild(iconNode);
     node.appendChild(labelNode);
@@ -185,7 +185,7 @@ export function mountSideButton(opts: {
 
   function buildEmptyState(): HTMLDivElement {
     const empty = doc.createElement('div');
-    empty.className = 'sfut-menu-empty';
+    empty.className = 'sfdt-menu-empty';
     empty.style.cssText = 'padding: 16px; text-align: center; color: #80868d;';
     empty.textContent = 'No tools available for this page.';
     return empty;

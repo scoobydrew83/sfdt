@@ -66,7 +66,7 @@ describe('field-creator — UI flow & Tooling API deployment', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     // Check overlay
-    const overlay = document.querySelector('.sfut-field-creator-overlay');
+    const overlay = document.querySelector('.sfdt-field-creator-overlay');
     expect(overlay).not.toBeNull();
 
     // SObject selector

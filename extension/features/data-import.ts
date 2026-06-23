@@ -166,7 +166,7 @@ export function createDataImportFeature(options: {
     close();
 
     overlay = doc.createElement('div');
-    overlay.className = 'sfut-data-import-overlay';
+    overlay.className = 'sfdt-data-import-overlay';
     overlay.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
     overlay.addEventListener('click', (e) => {

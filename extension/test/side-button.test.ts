@@ -18,8 +18,8 @@ describe('extension/ui/side-button', () => {
       menuItemsProvider: () => [],
       handlers: { onActivate: vi.fn(), onOpenSettings: vi.fn() },
     });
-    expect(document.getElementById('sfut-side-button')).not.toBeNull();
-    expect(document.getElementById('sfut-menu')).not.toBeNull();
+    expect(document.getElementById('sfdt-side-button')).not.toBeNull();
+    expect(document.getElementById('sfdt-menu')).not.toBeNull();
     expect(handle.isMounted()).toBe(true);
   });
 
@@ -28,7 +28,7 @@ describe('extension/ui/side-button', () => {
       menuItemsProvider: () => [],
       handlers: { onActivate: vi.fn(), onOpenSettings: vi.fn() },
     });
-    expect(document.querySelector('.sfut-menu-empty')?.textContent).toContain(
+    expect(document.querySelector('.sfdt-menu-empty')?.textContent).toContain(
       'No tools available',
     );
   });
@@ -42,7 +42,7 @@ describe('extension/ui/side-button', () => {
       menuItemsProvider: () => items,
       handlers: { onActivate: vi.fn(), onOpenSettings: vi.fn() },
     });
-    const nodes = document.querySelectorAll('.sfut-menu-item');
+    const nodes = document.querySelectorAll('.sfdt-menu-item');
     expect(nodes).toHaveLength(2);
     expect(nodes[0]!.textContent).toContain('Run Health Check');
     expect(nodes[1]!.textContent).toContain('Setup Tabs');
@@ -53,8 +53,8 @@ describe('extension/ui/side-button', () => {
       menuItemsProvider: () => [],
       handlers: { onActivate: vi.fn(), onOpenSettings: vi.fn() },
     });
-    const button = document.getElementById('sfut-side-button')!;
-    const menu = document.getElementById('sfut-menu')!;
+    const button = document.getElementById('sfdt-side-button')!;
+    const menu = document.getElementById('sfdt-menu')!;
     expect((menu as HTMLElement).style.display).toBe('none');
     button.click();
     expect((menu as HTMLElement).style.display).toBe('block');
@@ -74,9 +74,9 @@ describe('extension/ui/side-button', () => {
     // textContent is the only way labels reach the DOM, so any injected HTML
     // is rendered as literal text. There should be no <img> or <script>
     // elements produced from those strings.
-    expect(document.querySelector('.sfut-menu-item img')).toBeNull();
-    expect(document.querySelector('.sfut-menu-item script')).toBeNull();
-    expect(document.querySelector('.sfut-menu-item-label')?.textContent).toBe(
+    expect(document.querySelector('.sfdt-menu-item img')).toBeNull();
+    expect(document.querySelector('.sfdt-menu-item script')).toBeNull();
+    expect(document.querySelector('.sfdt-menu-item-label')?.textContent).toBe(
       '<script>alert(2)</script>',
     );
   });
@@ -87,8 +87,8 @@ describe('extension/ui/side-button', () => {
       menuItemsProvider: () => [{ featureId: 'flow-health-check', icon: '🩺', label: 'Run' }],
       handlers: { onActivate, onOpenSettings: vi.fn() },
     });
-    document.getElementById('sfut-side-button')!.click();
-    document.querySelector<HTMLElement>('.sfut-menu-item')!.click();
+    document.getElementById('sfdt-side-button')!.click();
+    document.querySelector<HTMLElement>('.sfdt-menu-item')!.click();
     expect(onActivate).toHaveBeenCalledWith(
       expect.objectContaining({ featureId: 'flow-health-check', action: 'activate' }),
     );
@@ -100,10 +100,10 @@ describe('extension/ui/side-button', () => {
       menuItemsProvider: () => [],
       handlers: { onActivate: vi.fn(), onOpenSettings },
     });
-    document.getElementById('sfut-side-button')!.click();
-    document.getElementById('sfut-settings-link')!.click();
+    document.getElementById('sfdt-side-button')!.click();
+    document.getElementById('sfdt-settings-link')!.click();
     expect(onOpenSettings).toHaveBeenCalledOnce();
-    expect((document.getElementById('sfut-menu') as HTMLElement).style.display).toBe('none');
+    expect((document.getElementById('sfdt-menu') as HTMLElement).style.display).toBe('none');
   });
 
   it('destroy() removes the button and menu from the DOM', () => {
@@ -112,8 +112,8 @@ describe('extension/ui/side-button', () => {
       handlers: { onActivate: vi.fn(), onOpenSettings: vi.fn() },
     });
     handle.destroy();
-    expect(document.getElementById('sfut-side-button')).toBeNull();
-    expect(document.getElementById('sfut-menu')).toBeNull();
+    expect(document.getElementById('sfdt-side-button')).toBeNull();
+    expect(document.getElementById('sfdt-menu')).toBeNull();
     expect(handle.isMounted()).toBe(false);
   });
 
@@ -126,6 +126,6 @@ describe('extension/ui/side-button', () => {
       handlers: { onActivate: vi.fn(), onOpenSettings: vi.fn() },
     });
     expect(handle.isMounted()).toBe(false);
-    expect(document.getElementById('sfut-side-button')).toBeNull();
+    expect(document.getElementById('sfdt-side-button')).toBeNull();
   });
 });

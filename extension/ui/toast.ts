@@ -2,8 +2,8 @@
 // React is available. CSS is inlined so the toast renders without depending
 // on extension/ui/styles.css.
 
-const TOAST_CONTAINER_ID = 'sfut-toast-container';
-const TOAST_BASE_CLASS = 'sfut-toast';
+const TOAST_CONTAINER_ID = 'sfdt-toast-container';
+const TOAST_BASE_CLASS = 'sfdt-toast';
 
 export type ToastKind = 'info' | 'success' | 'warning' | 'error';
 

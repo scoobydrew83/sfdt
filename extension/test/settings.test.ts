@@ -80,7 +80,7 @@ describe('settings.features legacy id adapter', () => {
 
   it('reads kebab-case ids when written kebab-case', async () => {
     chrome.storage.local.set({
-      'sfut.settings': {
+      'sfdt.settings': {
         features: { 'canvas-search': true, 'flow-deploy': false },
       },
     } as any);
@@ -91,7 +91,7 @@ describe('settings.features legacy id adapter', () => {
 
   it('treats legacy camelCase keys as the canonical kebab-case ids', async () => {
     chrome.storage.local.set({
-      'sfut.settings': {
+      'sfdt.settings': {
         features: { setupTabs: true, missingDescriptions: false },
       },
     } as any);
@@ -101,9 +101,30 @@ describe('settings.features legacy id adapter', () => {
   });
 
   it('defaults unknown ids to enabled (enabledByDefault semantics)', async () => {
-    chrome.storage.local.set({ 'sfut.settings': { features: {} } } as any);
+    chrome.storage.local.set({ 'sfdt.settings': { features: {} } } as any);
     const s = await loadSettings();
     expect(isFeatureEnabled(s, 'never-toggled')).toBe(true);
+  });
+
+  it('migrates settings from the legacy sfut.settings key', async () => {
+    // Only the legacy (SFUT-era) key is present, as it would be for an existing user.
+    chrome.storage.local.set({ 'sfut.settings': { features: { 'canvas-search': false } } } as any);
+    const s = await loadSettings();
+    // The legacy value is read…
+    expect(isFeatureEnabled(s, 'canvas-search')).toBe(false);
+    // …and migrated forward: new key written, old key removed.
+    const after = await new Promise<any>((r) => chrome.storage.local.get(['sfdt.settings', 'sfut.settings'], r));
+    expect(after['sfdt.settings']).toBeDefined();
+    expect(after['sfut.settings']).toBeUndefined();
+  });
+
+  it('prefers the new key and ignores legacy when both exist', async () => {
+    chrome.storage.local.set({
+      'sfdt.settings': { features: { 'canvas-search': true } },
+      'sfut.settings': { features: { 'canvas-search': false } },
+    } as any);
+    const s = await loadSettings();
+    expect(isFeatureEnabled(s, 'canvas-search')).toBe(true);
   });
 });
 
@@ -123,7 +144,7 @@ describe('registerSettingsShape', () => {
     expect(sEmpty.featureSettings?.['canvas-search']).toBeUndefined();
     // Once values are explicitly stored, they are returned.
     chrome.storage.local.set({
-      'sfut.settings': { featureSettings: { 'canvas-search': { shortcut: 'Ctrl+Shift+F' } } },
+      'sfdt.settings': { featureSettings: { 'canvas-search': { shortcut: 'Ctrl+Shift+F' } } },
     } as any);
     _clearSettingsCacheForTests();
     const s = await loadSettings();
@@ -137,7 +158,7 @@ describe('registerSettingsShape', () => {
       pattern: z.enum(['a', 'b']).default('a'),
     }));
     chrome.storage.local.set({
-      'sfut.settings': {
+      'sfdt.settings': {
         featureSettings: { 'api-name-generator': { pattern: 'b' } },
       },
     } as any);
@@ -155,7 +176,7 @@ describe('registerSettingsShape', () => {
     expect(s2.featureSettings?.alpha).toBeUndefined();
     // Verify the shape IS honoured when a value is stored.
     chrome.storage.local.set({
-      'sfut.settings': { featureSettings: { alpha: { x: false } } },
+      'sfdt.settings': { featureSettings: { alpha: { x: false } } },
     } as any);
     _clearSettingsCacheForTests();
     const s3 = await loadSettings();
