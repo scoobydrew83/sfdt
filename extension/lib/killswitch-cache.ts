@@ -7,10 +7,10 @@
 // (pre-stamping writes, manual tampering) are treated as stale too: their
 // age is unknowable, and the next successful ping rewrites a stamped record.
 
-// Renamed from the legacy 'sfut.killswitch.cache'. Intentionally NOT migrated:
-// this is a 24h ephemeral cache the next boot ping repopulates, and carrying a
-// stale kill-switch record forward would be worse than simply dropping it.
 const STORAGE_KEY = 'sfdt.killswitch.cache';
+// Legacy "SFUT"-era key; migrated forward on first read. Safe even for a stale
+// record — the 24h staleness check below still discards it after migration.
+const LEGACY_STORAGE_KEY = 'sfut.killswitch.cache';
 
 /** Cache entries older than this are ignored on read. */
 export const KILL_SWITCH_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -20,18 +20,32 @@ interface CacheRecord {
   ts: number;
 }
 
-export async function readKillSwitchCache(now: number = Date.now()): Promise<readonly string[]> {
+function readRecord(): Promise<CacheRecord | undefined> {
   return new Promise((resolve) => {
-    chrome.storage.local.get(STORAGE_KEY, (result) => {
-      const raw = result?.[STORAGE_KEY] as CacheRecord | undefined;
-      if (!raw || !Array.isArray(raw.disabled)) return resolve([]);
-      // Stale or un-stamped → behave exactly as if no cache existed.
-      if (typeof raw.ts !== 'number' || now - raw.ts > KILL_SWITCH_CACHE_MAX_AGE_MS) {
-        return resolve([]);
+    chrome.storage.local.get([STORAGE_KEY, LEGACY_STORAGE_KEY], (result) => {
+      const current = result?.[STORAGE_KEY] as CacheRecord | undefined;
+      if (current !== undefined) return resolve(current);
+      // One-time migration from the legacy sfut.* key.
+      const legacy = result?.[LEGACY_STORAGE_KEY] as CacheRecord | undefined;
+      if (legacy !== undefined) {
+        chrome.storage.local.set({ [STORAGE_KEY]: legacy }, () => {
+          chrome.storage.local.remove(LEGACY_STORAGE_KEY, () => resolve(legacy));
+        });
+        return;
       }
-      resolve(raw.disabled.filter((v) => typeof v === 'string' && v.length > 0));
+      resolve(undefined);
     });
   });
+}
+
+export async function readKillSwitchCache(now: number = Date.now()): Promise<readonly string[]> {
+  const raw = await readRecord();
+  if (!raw || !Array.isArray(raw.disabled)) return [];
+  // Stale or un-stamped → behave exactly as if no cache existed.
+  if (typeof raw.ts !== 'number' || now - raw.ts > KILL_SWITCH_CACHE_MAX_AGE_MS) {
+    return [];
+  }
+  return raw.disabled.filter((v) => typeof v === 'string' && v.length > 0);
 }
 
 export async function writeKillSwitchCache(disabled: readonly string[]): Promise<void> {

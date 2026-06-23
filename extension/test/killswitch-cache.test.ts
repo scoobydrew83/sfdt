@@ -60,4 +60,18 @@ describe('killswitch-cache', () => {
     } as any);
     expect(await readKillSwitchCache()).toEqual([]);
   });
+
+  it('migrates a fresh record from the legacy sfut.killswitch.cache key', async () => {
+    const now = Date.now();
+    chrome.storage.local.set({
+      'sfut.killswitch.cache': { disabled: ['flow-deploy'], ts: now },
+    } as any);
+    expect(await readKillSwitchCache(now)).toEqual(['flow-deploy']);
+    // Migrated forward: new key written, legacy key removed.
+    const after = await new Promise<any>((r) =>
+      chrome.storage.local.get(['sfdt.killswitch.cache', 'sfut.killswitch.cache'], r),
+    );
+    expect(after['sfdt.killswitch.cache']).toBeDefined();
+    expect(after['sfut.killswitch.cache']).toBeUndefined();
+  });
 });
