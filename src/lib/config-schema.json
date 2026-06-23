@@ -87,6 +87,51 @@
         "default": { "type": "string" },
         "orgs": { "type": "array" }
       }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "auditTrailLookbackDays": { "type": "integer", "minimum": 1 },
+        "licenseWarnThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "inactiveUserDays": { "type": "integer", "minimum": 1 },
+        "minApiVersion": { "type": "number", "minimum": 1 }
+      }
+    },
+    "monitoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backupDir": { "type": "string" },
+        "limitWarnThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "errorLookbackDays": { "type": "integer", "minimum": 1 },
+        "healthMinScore": { "type": "number", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "docs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "outputDir": { "type": "string" },
+        "ai": { "type": "boolean" },
+        "diagrams": { "type": "boolean" }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dir": { "type": "string" }
+      }
+    },
+    "scratch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "definitionFile": { "type": "string" },
+        "durationDays": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "poolSize": { "type": "integer", "minimum": 0 }
+      }
     }
   }
 }

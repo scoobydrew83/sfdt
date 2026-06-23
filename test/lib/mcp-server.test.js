@@ -178,6 +178,46 @@ describe('SfdtMcpServer', () => {
       expect(result.content[0].text).toContain('deployRun');
     });
 
+    it('executes sfdt_audit tool with a single named check', async () => {
+      const payload = { org: 'prod', summary: { ok: 6 } };
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify(payload), stderr: '' });
+
+      const result = await callTool('sfdt_audit', { org: 'prod', check: 'mfa' });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['audit', 'mfa', '--json', '--org', 'prod']),
+        expect.anything()
+      );
+      expect(result.content[0].text).toContain('summary');
+    });
+
+    it('defaults sfdt_audit to the "all" check', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: '{}', stderr: '' });
+      await callTool('sfdt_audit', {});
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['audit', 'all', '--json']), expect.anything());
+    });
+
+    it('executes sfdt_monitor with --backup when requested', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: '{}', stderr: '' });
+      await callTool('sfdt_monitor', { check: 'all', backup: true });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['monitor', 'all', '--json', '--backup']),
+        expect.anything()
+      );
+    });
+
+    it('executes sfdt_docs with --ai when requested', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ status: 'success', counts: {} }), stderr: '' });
+      const result = await callTool('sfdt_docs', { ai: true });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['docs', 'generate', '--json', '--ai']),
+        expect.anything()
+      );
+      expect(result.content[0].text).toContain('success');
+    });
+
     it('executes sfdt_manifest_from_git tool', async () => {
       execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'manifest generated', stderr: '' });
 

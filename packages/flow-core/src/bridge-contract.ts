@@ -22,7 +22,9 @@
 //   1.0 — initial release. ping/version/deploy/rollback/quality/ai/drift/
 //         scan/compare. Added disabledFeatures on the ping response.
 //   1.1 — added telemetry.snapshot request kind.
-export const PROTOCOL_VERSION = '1.1';
+//   1.2 — added org-health request kind (reads the latest audit/monitor
+//         snapshots from logs/ over the bridge).
+export const PROTOCOL_VERSION = '1.2';
 
 export type SfdtRequestKind =
   | 'ping'
@@ -34,6 +36,7 @@ export type SfdtRequestKind =
   | 'drift'
   | 'scan'
   | 'compare'
+  | 'org-health'
   | 'telemetry.snapshot';
 
 export interface RequestEnvelope {
@@ -115,6 +118,16 @@ export interface CompareRequest extends RequestEnvelope {
 }
 
 /**
+ * Read the latest org diagnose/audit and monitoring snapshots that the
+ * `sfdt audit` / `sfdt monitor` commands wrote to `logs/audit-latest.json` and
+ * `logs/monitor-latest.json`. No request fields — the bridge reads whatever is
+ * on disk for the active project. Used by the extension's Org Health panel.
+ */
+export interface OrgHealthRequest extends RequestEnvelope {
+  kind: 'org-health';
+}
+
+/**
  * Push the extension's local telemetry counters to the bridge so the CLI
  * (`sfdt extension stats`) can show them. The extension calls this from the
  * options page on load when telemetry is opted in. The bridge writes the
@@ -143,6 +156,7 @@ export type SfdtRequest =
   | DriftRequest
   | ScanRequest
   | CompareRequest
+  | OrgHealthRequest
   | TelemetrySnapshotRequest;
 
 export interface SfdtSuccessResponse<T = unknown> {
@@ -265,6 +279,22 @@ export interface QualityResponseData {
   issueFamilyCount: number;
 }
 
+/**
+ * A single org-health snapshot as written by `sfdt audit` / `sfdt monitor`.
+ * `data` is the `{ timestamp, org, checks, summary }` payload; it is left as an
+ * open record so the contract doesn't have to track every check field.
+ */
+export interface OrgHealthSnapshot {
+  timestamp: string;
+  data: Record<string, unknown>;
+}
+
+export interface OrgHealthResponseData {
+  // null when the corresponding logs/<area>-latest.json does not exist yet.
+  audit: OrgHealthSnapshot | null;
+  monitor: OrgHealthSnapshot | null;
+}
+
 // ----- Runtime validators --------------------------------------------------
 //
 // Hand-rolled to keep the package zero-dep. Returns a structured ValidationError
@@ -342,6 +372,7 @@ const KNOWN_KINDS: readonly SfdtRequestKind[] = [
   'drift',
   'scan',
   'compare',
+  'org-health',
   'telemetry.snapshot',
 ];
 
@@ -446,6 +477,9 @@ export function validateSfdtRequest(input: unknown): {
     case 'compare':
       if (!isNonEmptyString(input.left)) errors.push({ field: 'left', reason: 'must be a non-empty string' });
       if (!isNonEmptyString(input.right)) errors.push({ field: 'right', reason: 'must be a non-empty string' });
+      break;
+    case 'org-health':
+      // No fields beyond the envelope; the bridge reads snapshots from disk.
       break;
     case 'telemetry.snapshot':
       if (!isNonEmptyString(input.monthKey)) {

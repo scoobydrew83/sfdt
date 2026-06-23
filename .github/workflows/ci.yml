@@ -46,6 +46,10 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
+      # The GUI imports @sfdt/flow-core, whose package `exports` resolve to its
+      # compiled dist/. Build flow-core first or `vite build` can't resolve it.
+      - name: Build @sfdt/flow-core (GUI build dependency)
+        run: npm run build:flow-core
       - name: Test GUI
         run: npm test --workspace=gui
       - name: Build GUI

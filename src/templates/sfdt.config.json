@@ -18,7 +18,12 @@
   "features": {
     "ai": true,
     "notifications": false,
-    "releaseManagement": true
+    "releaseManagement": true,
+    "monitoring": true,
+    "audit": true,
+    "docs": true,
+    "data": true,
+    "scratch": true
   },
   "ai": {
     "provider": "claude",
@@ -50,5 +55,30 @@
   },
   "manifestLayout": "flat",
   "changelogDir": "changelogs",
-  "logRetention": 50
+  "logRetention": 50,
+  "audit": {
+    "auditTrailLookbackDays": 30,
+    "licenseWarnThreshold": 0.9,
+    "inactiveUserDays": 90,
+    "minApiVersion": 45
+  },
+  "monitoring": {
+    "backupDir": "monitoring-backup",
+    "limitWarnThreshold": 0.8,
+    "errorLookbackDays": 7,
+    "healthMinScore": 80
+  },
+  "docs": {
+    "outputDir": "docs",
+    "ai": true,
+    "diagrams": true
+  },
+  "data": {
+    "dir": ".sfdt/data"
+  },
+  "scratch": {
+    "definitionFile": "config/project-scratch-def.json",
+    "durationDays": 7,
+    "poolSize": 0
+  }
 }

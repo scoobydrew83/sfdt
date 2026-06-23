@@ -25,6 +25,7 @@ export const FEATURE_ICONS: Record<string, FeatureIcon> = {
   'flow-deploy': { icon: '🚀', label: 'Deploy or Rollback…' },
   'soql-runner': { icon: '🗂', label: 'SOQL Query Runner' },
   'org-limits': { icon: '🚦', label: 'Org Limits' },
+  'org-health': { icon: '🏥', label: 'Org Health' },
   'rest-explore': { icon: '🛠', label: 'REST API Explorer' },
   'inspect-record': { icon: '🔍', label: 'Inspect Record (Show All Data)' },
   'data-import': { icon: '📥', label: 'Data Import Wizard' },

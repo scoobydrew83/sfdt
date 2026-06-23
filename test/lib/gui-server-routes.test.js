@@ -262,6 +262,59 @@ describe('GET /api/drift', () => {
   });
 });
 
+describe('GET /api/audit', () => {
+  let app;
+  beforeAll(() => { app = createGuiApp(MOCK_CONFIG, VERSION, PORT); });
+  afterAll(async () => { await app.cleanup?.(); });
+
+  it('returns an empty snapshot when no audit log exists', async () => {
+    const res = await request(app).get('/api/audit');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ checks: [], summary: expect.any(Object) });
+  });
+
+  it('returns the snapshot when audit-latest.json exists', async () => {
+    const fs = (await import('fs-extra')).default;
+    fs.pathExists.mockResolvedValueOnce(true);
+    fs.readJson.mockResolvedValueOnce({
+      timestamp: '2026-06-22T00:00:00Z',
+      org: 'dev',
+      checks: [{ id: 'mfa', title: 'MFA coverage', status: 'warn', summary: 'x', findings: [] }],
+      summary: { total: 1, ok: 0, warn: 1, fail: 0, error: 0 },
+    });
+    const res = await request(app).get('/api/audit');
+    expect(res.status).toBe(200);
+    expect(res.body.org).toBe('dev');
+    expect(res.body.checks[0].id).toBe('mfa');
+  });
+});
+
+describe('GET /api/monitor', () => {
+  let app;
+  beforeAll(() => { app = createGuiApp(MOCK_CONFIG, VERSION, PORT); });
+  afterAll(async () => { await app.cleanup?.(); });
+
+  it('returns an empty snapshot when no monitor log exists', async () => {
+    const res = await request(app).get('/api/monitor');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ checks: [], summary: expect.any(Object) });
+  });
+
+  it('returns the snapshot when monitor-latest.json exists', async () => {
+    const fs = (await import('fs-extra')).default;
+    fs.pathExists.mockResolvedValueOnce(true);
+    fs.readJson.mockResolvedValueOnce({
+      timestamp: '2026-06-22T00:00:00Z',
+      org: 'dev',
+      checks: [{ id: 'limits', title: 'Org limits', status: 'ok', summary: 'fine', findings: [] }],
+      summary: { total: 1, ok: 1, warn: 0, fail: 0, error: 0 },
+    });
+    const res = await request(app).get('/api/monitor');
+    expect(res.status).toBe(200);
+    expect(res.body.checks[0].id).toBe('limits');
+  });
+});
+
 describe('GET /api/deploy/history', () => {
   let app;
 

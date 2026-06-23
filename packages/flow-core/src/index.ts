@@ -15,6 +15,8 @@ export type {
 
 export { buildIssueFamilies, calculateScore, getScoreRating } from './scorer.js';
 
+export { describeFinding } from './health-findings.js';
+
 export {
   ApiNameLibrary,
   DEFAULT_PREFIXES,

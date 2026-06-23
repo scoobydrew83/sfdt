@@ -76,11 +76,14 @@ function resolveProjectRoot({ projectRoot, configDir }) {
  * @param {import('express').RequestHandler} [opts.rateLimiter]
  *   Optional rate limiter (uses gui-server's apiLimiter when supplied).
  */
-export function mountBridgeRoutes(app, { port, version, projectRoot, configDir, rateLimiter }) {
+export function mountBridgeRoutes(app, { port, version, projectRoot, configDir, logDir, rateLimiter }) {
   const cors = createBridgeCorsMiddleware(port);
   const auth = createBridgeAuthMiddleware();
   const limiter = rateLimiter ?? ((_req, _res, next) => next());
   const resolvedProjectRoot = resolveProjectRoot({ projectRoot, configDir });
+  // Where the CLI writes audit/monitor snapshots; mirrors gui-server so a custom
+  // config.logDir is honoured instead of always reading <projectRoot>/logs.
+  const resolvedLogDir = logDir || (resolvedProjectRoot ? path.join(resolvedProjectRoot, 'logs') : null);
 
   // Mount CORS as a path-prefix middleware so it runs on every HTTP method —
   // including OPTIONS preflights — for any /api/bridge/* path. The middleware
@@ -143,6 +146,7 @@ export function mountBridgeRoutes(app, { port, version, projectRoot, configDir, 
       const response = await dispatch(request, {
         version,
         projectRoot: resolvedProjectRoot,
+        logDir: resolvedLogDir,
         makeSuccessResponse,
         makeErrorResponse,
       });
@@ -161,7 +165,7 @@ export function mountBridgeRoutes(app, { port, version, projectRoot, configDir, 
  * can be built (Phase 3), then individual handlers fill in as Phases 4–6
  * land.
  */
-async function dispatch(request, { version, projectRoot, makeSuccessResponse, makeErrorResponse }) {
+async function dispatch(request, { version, projectRoot, logDir, makeSuccessResponse, makeErrorResponse }) {
   switch (request.kind) {
     case 'ping': {
       let disabledFeatures = [];
@@ -300,6 +304,33 @@ async function dispatch(request, { version, projectRoot, makeSuccessResponse, ma
           'INTERNAL_ERROR',
         );
       }
+    }
+    case 'org-health': {
+      // Return the latest audit/monitor snapshots the CLI wrote under logs/.
+      // Read-only; mirrors the gui-server /api/audit + /api/monitor routes.
+      if (!projectRoot) {
+        return makeErrorResponse(
+          request.requestId,
+          'Cannot read org health: no project root resolved on the bridge',
+          'INTERNAL_ERROR',
+        );
+      }
+      const fsExtra = (await import('fs-extra')).default;
+      const readSnapshot = async (name) => {
+        const file = path.join(logDir || path.join(projectRoot, 'logs'), name);
+        if (!(await fsExtra.pathExists(file))) return null;
+        try {
+          const data = await fsExtra.readJson(file);
+          return { timestamp: data?.timestamp ?? new Date().toISOString(), data };
+        } catch {
+          return null;
+        }
+      };
+      const [audit, monitor] = await Promise.all([
+        readSnapshot('audit-latest.json'),
+        readSnapshot('monitor-latest.json'),
+      ]);
+      return makeSuccessResponse(request.requestId, { audit, monitor });
     }
     case 'ai':
     case 'drift':
