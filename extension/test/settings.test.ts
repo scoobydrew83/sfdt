@@ -105,27 +105,6 @@ describe('settings.features legacy id adapter', () => {
     const s = await loadSettings();
     expect(isFeatureEnabled(s, 'never-toggled')).toBe(true);
   });
-
-  it('migrates settings from the legacy sfut.settings key', async () => {
-    // Only the legacy (SFUT-era) key is present, as it would be for an existing user.
-    chrome.storage.local.set({ 'sfut.settings': { features: { 'canvas-search': false } } } as any);
-    const s = await loadSettings();
-    // The legacy value is read…
-    expect(isFeatureEnabled(s, 'canvas-search')).toBe(false);
-    // …and migrated forward: new key written, old key removed.
-    const after = await new Promise<any>((r) => chrome.storage.local.get(['sfdt.settings', 'sfut.settings'], r));
-    expect(after['sfdt.settings']).toBeDefined();
-    expect(after['sfut.settings']).toBeUndefined();
-  });
-
-  it('prefers the new key and ignores legacy when both exist', async () => {
-    chrome.storage.local.set({
-      'sfdt.settings': { features: { 'canvas-search': true } },
-      'sfut.settings': { features: { 'canvas-search': false } },
-    } as any);
-    const s = await loadSettings();
-    expect(isFeatureEnabled(s, 'canvas-search')).toBe(true);
-  });
 });
 
 describe('registerSettingsShape', () => {

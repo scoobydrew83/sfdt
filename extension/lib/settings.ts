@@ -94,9 +94,6 @@ export function isFeatureEnabled(settings: Settings, featureId: string): boolean
 }
 
 const STORAGE_KEY = 'sfdt.settings';
-// The extension was formerly named "SFUT"; settings were stored under this key.
-// Read it once and migrate forward so existing users keep their preferences.
-const LEGACY_STORAGE_KEY = 'sfut.settings';
 
 // Invalidated by the storage onChanged listener at the bottom.
 let _cache: Settings | null = null;
@@ -139,21 +136,7 @@ function defaultSettings(): Settings {
 
 async function readRaw(): Promise<unknown> {
   return new Promise((resolve) => {
-    chrome.storage.local.get([STORAGE_KEY, LEGACY_STORAGE_KEY], (result) => {
-      if (result?.[STORAGE_KEY] !== undefined) {
-        resolve(result[STORAGE_KEY]);
-        return;
-      }
-      const legacy = result?.[LEGACY_STORAGE_KEY];
-      if (legacy !== undefined) {
-        // One-time migration from the legacy sfut.* key: copy forward, drop old.
-        chrome.storage.local.set({ [STORAGE_KEY]: legacy }, () => {
-          chrome.storage.local.remove(LEGACY_STORAGE_KEY, () => resolve(legacy));
-        });
-        return;
-      }
-      resolve(undefined);
-    });
+    chrome.storage.local.get(STORAGE_KEY, (result) => resolve(result?.[STORAGE_KEY]));
   });
 }
 
