@@ -4,7 +4,15 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-06-24
+
+> Version note: there is no 0.3.1 — the bump went straight from 0.3.0 to 0.3.2.
+
+### Added
+- `org-health` — **Org Health panel**: a side-button panel (modeled on `org-limits`) that surfaces the CLI's audit and monitor snapshots in the extension via the local bridge's new `org-health` request kind, rendering status dots, findings, and a Copy JSON action. Completes the fourth surface for the org-health feature set alongside the CLI, the web dashboard, and the VS Code extension.
+
 ### Changed
+- `apex-anonymous` — **richer log capture & debugging**: adds SOQL builders, trace-flag management, and UI updates for executing and inspecting anonymous Apex (builds on the feature introduced in 0.3.0).
 - **Internal namespace standardised to `sfdt`** across the extension (DOM ids, CSS classes, `chrome.storage` keys, log prefixes) so it matches the rest of the `@sfdt/*` project.
 
 ### Note
