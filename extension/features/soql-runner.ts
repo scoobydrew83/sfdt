@@ -96,6 +96,36 @@ export async function deleteSavedQuery(name: string): Promise<void> {
   await writeSavedQueries(filtered);
 }
 
+// --- PENDING QUERY HAND-OFF ---
+// The Saved SOQL workspace panel stashes a chosen query here, then opens the
+// runner; open() consumes and clears it to pre-fill the editor. This keeps the
+// two features decoupled (saved-soql depends on soql-runner, not vice-versa).
+const PENDING_QUERY_STORAGE_KEY = 'soqlRunner.pendingQuery';
+
+export interface PendingQuery {
+  q: string;
+  api: ApiMode;
+}
+
+export async function writePendingQuery(entry: PendingQuery): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [PENDING_QUERY_STORAGE_KEY]: entry }, () => resolve());
+  });
+}
+
+export async function takePendingQuery(): Promise<PendingQuery | null> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(PENDING_QUERY_STORAGE_KEY, (result) => {
+      const raw = result?.[PENDING_QUERY_STORAGE_KEY] as PendingQuery | undefined;
+      if (raw && typeof raw.q === 'string') {
+        chrome.storage.local.remove(PENDING_QUERY_STORAGE_KEY, () => resolve(raw));
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
 // --- METADATA DESCRIBE INTERFACES & CACHE ---
 export interface FieldDescribe {
   name: string;
@@ -403,7 +433,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const historyEnabled = config.historyEnabled;
 
     overlay = doc.createElement('div');
-    overlay.className = 'sfut-soql-runner-overlay';
+    overlay.className = 'sfdt-soql-runner-overlay';
     overlay.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
     overlay.addEventListener('click', (e) => {
@@ -529,7 +559,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     });
 
     const autocompleteBox = doc.createElement('div');
-    autocompleteBox.className = 'sfut-soql-autocomplete-box';
+    autocompleteBox.className = 'sfdt-soql-autocomplete-box';
     autocompleteBox.style.cssText =
       'border: 1px solid #d8dde6; border-top: none; border-radius: 0 0 4px 4px; background: #fafaf9; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-family: system-ui, sans-serif;';
 
@@ -655,11 +685,11 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     }
 
     function showCellMenu(element: HTMLElement, id: string) {
-      const existing = doc.querySelector('.sfut-soql-cell-menu');
+      const existing = doc.querySelector('.sfdt-soql-cell-menu');
       if (existing) existing.remove();
 
       const menu = doc.createElement('div');
-      menu.className = 'sfut-soql-cell-menu';
+      menu.className = 'sfdt-soql-cell-menu';
       menu.style.cssText =
         'position: absolute; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 100030; padding: 4px 0; font-family: system-ui, sans-serif; font-size: 12px;';
 
@@ -1583,6 +1613,13 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         doc.removeEventListener('keydown', escHandler);
       }
     });
+
+    // A Saved SOQL panel selection pre-fills the editor (and the API mode).
+    const pending = await takePendingQuery();
+    if (pending) {
+      textarea.value = pending.q;
+      mode = pending.api;
+    }
 
     textarea.focus();
     setMode(mode);

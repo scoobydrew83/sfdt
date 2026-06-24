@@ -11,6 +11,7 @@ import { createBridgeClient } from '../lib/sfdt-bridge.js';
 import { createTelemetry, type BridgeFailureCategory } from '../lib/telemetry.js';
 import { readKillSwitchCache, writeKillSwitchCache } from '../lib/killswitch-cache.js';
 import { mountSideButton, type MenuItem } from '../ui/side-button.js';
+import { FEATURE_ICONS } from '../lib/feature-icons.js';
 import { createAiAssistantFeature } from '../features/ai-assistant.js';
 import { createApiNameGeneratorFeature } from '../features/api-name-generator.js';
 import { createCanvasSearchFeature } from '../features/canvas-search.js';
@@ -22,6 +23,7 @@ import { createFlowTriggerExplorerEnhancerFeature } from '../features/flow-trigg
 import { createFlowVersionManagerFeature } from '../features/flow-version-manager.js';
 import { createMissingDescriptionFlagsFeature } from '../features/missing-description-flags.js';
 import { createOrgLimitsFeature } from '../features/org-limits.js';
+import { createOrgHealthFeature } from '../features/org-health.js';
 import { createRestExploreFeature } from '../features/rest-explore.js';
 import { createScheduledFlowExplorerFeature } from '../features/scheduled-flow-explorer.js';
 import { createSetupTabsFeature } from '../features/setup-tabs.js';
@@ -35,6 +37,10 @@ import { createMetadataRetrieveFeature } from '../features/metadata-retrieve.js'
 import { createSoapExploreFeature } from '../features/soap-explore.js';
 import { createEventMonitorFeature } from '../features/event-monitor.js';
 import { createExportForPromptFeature } from '../features/export-for-prompt.js';
+import { createApexAnonymousFeature } from '../features/apex-anonymous.js';
+import { createDebugLogViewerFeature } from '../features/debug-log-viewer.js';
+import { createSavedSoqlFeature } from '../features/saved-soql.js';
+import { createOrgSwitcherFeature } from '../features/org-switcher.js';
 
 const SALESFORCE_HOST_PATTERN =
   /^https:\/\/[^/]+\.(salesforce\.com|salesforce-setup\.com|my\.salesforce\.com|lightning\.force\.com)\//i;
@@ -79,6 +85,7 @@ export default defineContentScript({
     registry.register(createFlowDeployFeature());
     registry.register(createSoqlRunnerFeature());
     registry.register(createOrgLimitsFeature());
+    registry.register(createOrgHealthFeature());
     registry.register(createRestExploreFeature());
     registry.register(createInspectRecordFeature());
     registry.register(createDataImportFeature());
@@ -87,6 +94,10 @@ export default defineContentScript({
     registry.register(createSoapExploreFeature());
     registry.register(createEventMonitorFeature());
     registry.register(createExportForPromptFeature());
+    registry.register(createApexAnonymousFeature());
+    registry.register(createDebugLogViewerFeature());
+    registry.register(createSavedSoqlFeature());
+    registry.register(createOrgSwitcherFeature());
 
     setContextSource(buildContextToFeatures(registry.listManifests()));
 
@@ -121,7 +132,7 @@ export default defineContentScript({
           await writeKillSwitchCache(info.disabledFeatures);
         }
       } catch (err) {
-        console.warn('[SFUT] kill-switch refresh failed:', err);
+        console.warn('[SFDT] kill-switch refresh failed:', err);
       }
     }
 
@@ -134,36 +145,18 @@ export default defineContentScript({
 
     await refreshKillSwitch();
 
-    const ICONS: Record<string, { icon: string; label: string }> = {
-      'setup-tabs': { icon: '📑', label: 'Setup Tabs' },
-      'flow-list-search': { icon: '🔍', label: 'Flow List Search' },
-      'canvas-search': { icon: '🔎', label: 'Search & Highlight' },
-      'missing-descriptions': { icon: '⚠️', label: 'Show Missing Description Flags' },
-      'ai-assistant': { icon: '🤖', label: 'Flow Metadata & AI Assistant' },
-      'api-name-generator': { icon: '🔤', label: 'API Name Generator' },
-      'comparison-exporter': { icon: '📊', label: 'Comparison Exporter' },
-      'flow-version-manager': { icon: '🧾', label: 'Flow Version Manager' },
-      'flow-trigger-explorer-enhancer': { icon: '🧭', label: 'Flow Trigger Explorer Enhancer' },
-      'flow-health-check': { icon: '🩺', label: 'Run Health Check' },
-      'scheduled-flow-explorer': { icon: '⏰', label: 'Scheduled Flow Explorer' },
-      'trigger-conflicts': { icon: '⚡', label: 'Trigger Conflicts' },
-      'subflow-graph': { icon: '🕸', label: 'Subflow Caller Graph' },
-      'flow-deploy': { icon: '🚀', label: 'Deploy or Rollback…' },
-      'soql-runner': { icon: '🗂', label: 'SOQL Query Runner' },
-      'org-limits': { icon: '🚦', label: 'Org Limits' },
-      'rest-explore': { icon: '🛠', label: 'REST API Explorer' },
-      'inspect-record': { icon: '🔍', label: 'Inspect Record (Show All Data)' },
-      'data-import': { icon: '📥', label: 'Data Import Wizard' },
-      'field-creator': { icon: '🛠', label: 'Bulk Field Creator' },
-      'metadata-retrieve': { icon: '📦', label: 'Metadata Retrieve & Deploy' },
-      'soap-explore': { icon: '💬', label: 'SOAP API Explorer' },
-      'event-monitor': { icon: '📡', label: 'Event Streaming Monitor' },
-      'export-for-prompt': { icon: '📋', label: 'Copy Schema for Prompt' },
-    };
+    const ICONS = FEATURE_ICONS;
+
+    // Synthetic menu id — not a registered feature. Selecting it opens the
+    // standalone Workspace tab rather than dispatching to the registry.
+    const OPEN_WORKSPACE_ID = '__open-workspace__';
 
     const menuItemsProvider = (): MenuItem[] => {
       const available = getAvailableFeatures();
-      const items: MenuItem[] = [];
+      // Always offer the Workspace first — it works on any Salesforce page.
+      const items: MenuItem[] = [
+        { featureId: OPEN_WORKSPACE_ID, icon: '↗', label: 'Open Workspace ↗' },
+      ];
       for (const featureId of available) {
         if (!registry.has(featureId)) continue;
         if (disabledRemote.has(featureId)) continue;
@@ -178,7 +171,16 @@ export default defineContentScript({
     const sideButton = mountSideButton({
       menuItemsProvider,
       handlers: {
-        onActivate: (item) => registry.dispatch(item.featureId, item.action ?? 'activate'),
+        onActivate: (item) => {
+          if (item.featureId === OPEN_WORKSPACE_ID) {
+            chrome.runtime.sendMessage(
+              { action: 'openApp', org: window.location.hostname },
+              () => void chrome.runtime.lastError,
+            );
+            return;
+          }
+          return registry.dispatch(item.featureId, item.action ?? 'activate');
+        },
         onOpenSettings: () => {
           chrome.runtime.sendMessage({ action: 'openSettings' }, () => {
             void chrome.runtime.lastError;
@@ -216,6 +218,6 @@ export default defineContentScript({
 
     await registry.initForCurrentRoute(getAvailableFeatures(), makeGate());
 
-    console.log('[SFUT] Shell mounted with kill-switch enabled.');
+    console.log('[SFDT] Shell mounted with kill-switch enabled.');
   },
 });

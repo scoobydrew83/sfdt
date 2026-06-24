@@ -38,11 +38,11 @@ export function createSpaRouter(options: {
         const result = listener({ url, previousUrl });
         if (result && typeof (result as Promise<void>).then === 'function') {
           (result as Promise<void>).catch((err) => {
-            console.warn('[SFUT spa-router] listener rejected:', err);
+            console.warn('[SFDT spa-router] listener rejected:', err);
           });
         }
       } catch (err) {
-        console.warn('[SFUT spa-router] listener threw:', err);
+        console.warn('[SFDT spa-router] listener threw:', err);
       }
     }
   }

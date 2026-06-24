@@ -41,7 +41,7 @@ For in-depth command walkthroughs and workflow examples, see [docs/USAGE.md](doc
 | **`@sfdt/cli`** (`/src`, `/bin`, `/scripts`) | The npm CLI documented below. | Published to npm |
 | **`@sfdt/extension`** (`/extension`) | Chrome extension for Salesforce Flow Builder + Setup productivity. Talks to the CLI via the local bridge for deploy / rollback / quality / AI features. See [extension/README.md](extension/README.md) and [extension/PRIVACY.md](extension/PRIVACY.md). | Pre-Web-Store |
 | **`@sfdt/host`** (`/host`) | Native messaging host used as the extension's fallback transport when `sfdt ui` isn't running. Installed with `sfdt extension install-host`. | Bundled with CLI |
-| **`@sfdt/flow-core`** (`/packages/flow-core`) | Shared TypeScript library — Flow normalization, rules engine, scoring, and the versioned bridge contract. Consumed by both CLI and extension. | Workspace-only (not yet on npm) |
+| **`@sfdt/flow-core`** (`/packages/flow-core`) | Shared TypeScript library — Flow normalization, rules engine, scoring, and the versioned bridge contract. Consumed by both CLI and extension. | Published to npm (publishes alongside the CLI) |
 
 The CLI's `sfdt ui` command starts a local web dashboard (`/gui`) that exposes the same bridge endpoints the extension uses.
 
@@ -72,6 +72,18 @@ sfdt deploy
 | `sfdt compare` | Compare metadata between two orgs or local source vs an org | `--source <alias\|local>`, `--target <alias>`, `--output <file>` |
 | `sfdt scan` | Fetch complete metadata inventory from an org | `--org <alias>`, `--output <file>`, `--format json\|table` |
 | `sfdt notify` | Send Slack deployment notifications | `--org <alias>`, `--version <ver>`, `--message <msg>` |
+
+### Org Health & Operations
+
+| Command | Description | Key Options |
+|---|---|---|
+| `sfdt audit [check\|all]` | Diagnose org health: `audittrail`, `licenses`, `mfa`, `unused-apex`, `inactive-users`, `api-versions` | `--org <alias>`, `--json` |
+| `sfdt monitor [check\|all]` | Monitor org: `limits`, `errors`, `health`, plus `backup`; `all --backup` to include a metadata backup | `--org <alias>`, `--backup`, `--json` |
+| `sfdt monitor backup` | Retrieve a full metadata backup into the configured backup directory | `--org <alias>`, `--json` |
+| `sfdt docs generate` | Generate MkDocs-compatible docs (objects, Apex, flows) with optional AI overview | `--ai`, `--json` |
+| `sfdt docs diagram` | Print/write a Mermaid ER diagram of the data model | `--output <file>`, `--json` |
+| `sfdt data <list\|export\|import\|delete> [set]` | Manage data sets via native `sf data tree` for sandbox/scratch seeding | `--org <alias>`, `--json`, `--yes` (delete: skip confirmation; required non-interactively) |
+| `sfdt scratch <create\|delete\|list\|pool>` | Create/delete/list scratch orgs and manage a pre-created pool | `--alias`, `--days <n>`, `--size <n>`, `--json`, `--yes` (delete: skip confirmation; required non-interactively) |
 | `sfdt config get <key>` | Print a config value using dot notation (e.g. `defaultOrg`) | — |
 | `sfdt config set <key> <value>` | Set a config value using dot notation (e.g. `deployment.coverageThreshold`) | — |
 | `sfdt completion <shell>` | Print shell completion script (`bash`, `zsh`, `fish`) | — |

@@ -86,7 +86,7 @@ describe('GET /api/bridge/ping', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       ok: true,
-      data: { pong: true, serverVersion: VERSION, protocolVersion: '1.1', transport: 'localhost', disabledFeatures: [] },
+      data: { pong: true, serverVersion: VERSION, protocolVersion: '1.2', transport: 'localhost', disabledFeatures: [] },
     });
   });
 
@@ -146,7 +146,7 @@ describe('POST /api/bridge/exchange — authentication', () => {
     expect(res.body).toEqual({
       ok: true,
       requestId: 'r1',
-      data: { pong: true, serverVersion: VERSION, protocolVersion: '1.1', transport: 'localhost', disabledFeatures: [] },
+      data: { pong: true, serverVersion: VERSION, protocolVersion: '1.2', transport: 'localhost', disabledFeatures: [] },
     });
   });
 });
@@ -193,6 +193,41 @@ describe('POST /api/bridge/exchange — dispatch', () => {
       requestId: 'r3',
       data: { version: VERSION },
     });
+  });
+
+  it('returns null snapshots for org-health when no logs exist', async () => {
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({ requestId: 'oh1', kind: 'org-health' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.data).toEqual({ audit: null, monitor: null });
+  });
+
+  it('returns the latest audit and monitor snapshots for org-health', async () => {
+    const fs = (await import('fs-extra')).default;
+    const isSnap = (p) => typeof p === 'string' && /(audit|monitor)-latest\.json$/.test(p);
+    fs.pathExists.mockImplementation(async (p) => isSnap(p) || p.endsWith('/.sfdt/bridge-token'));
+    fs.readJson.mockImplementation(async (p) => {
+      if (p.endsWith('audit-latest.json')) return { timestamp: 't-a', org: 'dev', checks: [{ id: 'mfa' }], summary: {} };
+      if (p.endsWith('monitor-latest.json')) return { timestamp: 't-m', org: 'dev', checks: [{ id: 'limits' }], summary: {} };
+      return {};
+    });
+    try {
+      const res = await request(app)
+        .post('/api/bridge/exchange')
+        .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+        .send({ requestId: 'oh2', kind: 'org-health' });
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data.audit).toMatchObject({ timestamp: 't-a', data: { org: 'dev' } });
+      expect(res.body.data.monitor).toMatchObject({ timestamp: 't-m', data: { org: 'dev' } });
+    } finally {
+      // Restore the default suffix-based mocks for subsequent tests.
+      fs.pathExists.mockImplementation(async (p) => typeof p === 'string' && p.endsWith('/.sfdt/bridge-token'));
+      fs.readJson.mockResolvedValue({});
+    }
   });
 
   it('runs flow-core for the quality kind and returns a score', async () => {

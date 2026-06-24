@@ -112,7 +112,7 @@ export function createSoapExploreFeature(options: {
     const historyEnabled = config.historyEnabled;
 
     overlay = doc.createElement('div');
-    overlay.className = 'sfut-soap-explore-overlay';
+    overlay.className = 'sfdt-soap-explore-overlay';
     overlay.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
     overlay.addEventListener('click', (e) => {

@@ -540,7 +540,7 @@ export function createMetadataRetrieveFeature(options: {
 
       const chk = doc.createElement('input');
       chk.type = 'checkbox';
-      chk.className = 'sfut-tree-chk';
+      chk.className = 'sfdt-tree-chk';
       chk.checked = !!obj.selected;
       chk.addEventListener('change', (e) => {
         e.stopPropagation();
@@ -605,7 +605,7 @@ export function createMetadataRetrieveFeature(options: {
     close();
 
     overlay = doc.createElement('div');
-    overlay.className = 'sfut-meta-retrieve-overlay';
+    overlay.className = 'sfdt-meta-retrieve-overlay';
     overlay.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
     overlay.addEventListener('click', (e) => {
@@ -710,7 +710,7 @@ export function createMetadataRetrieveFeature(options: {
     xmlDiv.appendChild(xmlLabel);
 
     const xmlTextarea = doc.createElement('textarea');
-    xmlTextarea.id = 'sfut-meta-xml-textarea';
+    xmlTextarea.id = 'sfdt-meta-xml-textarea';
     xmlTextarea.readOnly = true;
     xmlTextarea.value = packageXml;
     xmlTextarea.style.cssText = 'flex: 1; padding: 8px; border: 1px solid #d8dde6; border-radius: 4px; font-family: monospace; font-size: 11px; background: #fafaf9; resize: none; outline: none;';

@@ -1,7 +1,7 @@
 {
   "name": "@sfdt/extension",
-  "version": "0.2.1",
-  "description": "Chrome MV3 extension for Salesforce Flow Builder. WXT + TypeScript. Replaces the v2.0.2 vanilla-JS extension.",
+  "version": "0.3.2",
+  "description": "Chrome MV3 extension for Salesforce Flow Builder and other Salesforce tools. WXT + TypeScript.",
   "private": true,
   "type": "module",
   "scripts": {
@@ -20,9 +20,9 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/chrome": "^0.1.43",
+    "@types/chrome": "^0.2.0",
     "@vitest/coverage-v8": "^4.1.4",
-    "happy-dom": "^20.10.3",
+    "happy-dom": "^20.10.6",
     "typescript": "^5.6.3",
     "vitest": "^4.1.4",
     "wxt": "^0.20.6"

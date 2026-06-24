@@ -29,6 +29,10 @@ import { createFlowDeployFeature } from '../../features/flow-deploy.js';
 import { createSoqlRunnerFeature } from '../../features/soql-runner.js';
 import { createOrgLimitsFeature } from '../../features/org-limits.js';
 import { createRestExploreFeature } from '../../features/rest-explore.js';
+import { createApexAnonymousFeature } from '../../features/apex-anonymous.js';
+import { createDebugLogViewerFeature } from '../../features/debug-log-viewer.js';
+import { createSavedSoqlFeature } from '../../features/saved-soql.js';
+import { createOrgSwitcherFeature } from '../../features/org-switcher.js';
 
 
 const STYLES = `
@@ -180,7 +184,7 @@ function buildHintBanner(): HTMLDivElement {
 }
 
 async function render(): Promise<void> {
-  const root = document.getElementById('sfut-options-root');
+  const root = document.getElementById('sfdt-options-root');
   if (!root) return;
 
   const styleTag = document.createElement('style');
@@ -205,6 +209,10 @@ async function render(): Promise<void> {
   registry.register(createSoqlRunnerFeature());
   registry.register(createOrgLimitsFeature());
   registry.register(createRestExploreFeature());
+  registry.register(createApexAnonymousFeature());
+  registry.register(createDebugLogViewerFeature());
+  registry.register(createSavedSoqlFeature());
+  registry.register(createOrgSwitcherFeature());
 
   const settings = await loadSettings();
   while (root.firstChild) root.removeChild(root.firstChild);

@@ -1,0 +1,93 @@
+{
+  "name": "@sfdt/vscode",
+  "displayName": "SFDT — Salesforce DevTools",
+  "description": "Drive the sfdt CLI from VS Code: deploy, preflight, org monitoring & audit, docs, and the sfdt dashboard — all from the command palette and a dedicated Org Health sidebar.",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "publisher": "sfdt",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Other", "Linters", "SCM Providers"],
+  "keywords": ["salesforce", "devops", "sfdx", "deployment", "monitoring"],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "compile": "tsc --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run",
+    "package": "npm run build && vsce package --no-dependencies"
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sfdt",
+          "title": "SFDT",
+          "icon": "media/sfdt.svg"
+        }
+      ]
+    },
+    "views": {
+      "sfdt": [
+        {
+          "id": "sfdtOrgHealth",
+          "name": "Org Health"
+        }
+      ]
+    },
+    "commands": [
+      { "command": "sfdt.refresh", "title": "SFDT: Refresh Org Health", "icon": "$(refresh)" },
+      { "command": "sfdt.setOrg", "title": "SFDT: Set Default Org" },
+      { "command": "sfdt.openDashboard", "title": "SFDT: Open Dashboard", "icon": "$(dashboard)" },
+      { "command": "sfdt.audit", "title": "SFDT: Run Org Audit" },
+      { "command": "sfdt.monitor", "title": "SFDT: Run Org Monitor" },
+      { "command": "sfdt.backup", "title": "SFDT: Backup Org Metadata" },
+      { "command": "sfdt.preflight", "title": "SFDT: Run Preflight Checks" },
+      { "command": "sfdt.deploy", "title": "SFDT: Deploy" },
+      { "command": "sfdt.docs", "title": "SFDT: Generate Documentation" },
+      { "command": "sfdt.runCommand", "title": "SFDT: Run Command…" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "sfdt.refresh", "when": "view == sfdtOrgHealth", "group": "navigation" },
+        { "command": "sfdt.openDashboard", "when": "view == sfdtOrgHealth", "group": "navigation" }
+      ]
+    },
+    "configuration": {
+      "title": "SFDT",
+      "properties": {
+        "sfdt.cliPath": {
+          "type": "string",
+          "default": "sfdt",
+          "description": "Path to the sfdt CLI binary. Defaults to `sfdt` on PATH."
+        },
+        "sfdt.defaultOrg": {
+          "type": "string",
+          "default": "",
+          "description": "Org alias to pass to sfdt commands via --org. Empty uses the project's configured defaultOrg."
+        },
+        "sfdt.dashboardPort": {
+          "type": "number",
+          "default": 7654,
+          "description": "Port the `sfdt ui` dashboard server listens on."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "@sfdt/flow-core": "^0.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.80.0",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.4"
+  }
+}

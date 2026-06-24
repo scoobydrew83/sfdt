@@ -205,6 +205,7 @@ async function dispatch(request) {
     case 'drift':
     case 'scan':
     case 'compare':
+    case 'org-health':
       return makeErrorResponse(
         request.requestId,
         `Request kind "${request.kind}" is not available via the native messaging host, ` +

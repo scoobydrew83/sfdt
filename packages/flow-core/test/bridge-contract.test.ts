@@ -130,6 +130,10 @@ describe('flow-core/bridge-contract', () => {
       ).toBe(true);
     });
 
+    it('org-health needs only the envelope (no extra fields)', () => {
+      expect(validateSfdtRequest({ requestId: 'r1', kind: 'org-health' }).ok).toBe(true);
+    });
+
     it('rejects a requestId longer than 256 characters', () => {
       const result = validateSfdtRequest({
         requestId: 'a'.repeat(257),

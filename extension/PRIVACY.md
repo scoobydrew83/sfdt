@@ -25,9 +25,9 @@ All extension state lives in `chrome.storage.local` inside your Chrome profile. 
 
 | Key | What it is | When it's written |
 |---|---|---|
-| `sfut.settings` | Your per-feature toggles, AI provider preferences, bridge token | When you save the options page |
-| `sfut.killswitch.cache` | The most-recent server-disabled feature list from the local bridge ping | After every successful bridge ping |
-| `sfut.telemetry` | Opt-in local feature-use counters (see below) | Only when you've enabled telemetry |
+| `sfdt.settings` | Your per-feature toggles, AI provider preferences, bridge token | When you save the options page |
+| `sfdt.killswitch.cache` | The most-recent server-disabled feature list from the local bridge ping | After every successful bridge ping |
+| `sfdt.telemetry` | Opt-in local feature-use counters (see below) | Only when you've enabled telemetry |
 
 You can clear all of it from `chrome://extensions` → SFDT SF Helper → Site data → Remove all.
 
@@ -39,7 +39,7 @@ The extension does **not** collect or transmit telemetry unless you go to the op
 
 Even when enabled, all telemetry stays on your device:
 
-- Counters are kept in `chrome.storage.local` under `sfut.telemetry`.
+- Counters are kept in `chrome.storage.local` under `sfdt.telemetry`.
 - The schema is a per-feature `{ activated, errored, disabled_remote }` integer triple, keyed by feature id, plus a `monthKey` like `2026-05`.
 - Counts roll over to zero at the start of each calendar month.
 - Capped at 500 distinct feature ids.

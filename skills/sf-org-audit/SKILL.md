@@ -15,6 +15,21 @@ triggers:
 
 Perform a comprehensive health audit of this Salesforce DX project. Work through each phase systematically.
 
+## Fast path — native sfdt commands
+
+For a live-org diagnosis, prefer the built-in commands (each emits `--json` and
+writes a snapshot the dashboard/VS Code extension read):
+
+```bash
+sfdt audit all --org <alias> --json      # audit trail, licenses, MFA, unused Apex, inactive users, API versions
+sfdt monitor all --org <alias> --json    # org limits, Apex job failures, security health-check score
+sfdt monitor backup --org <alias>        # full metadata backup
+sfdt docs generate --ai                  # objects/Apex/flows docs + ER diagram
+```
+
+Use the source-tree phases below for static analysis when an org connection is
+unavailable, or to complement the live audit.
+
 ## Phase 1: Project Structure Discovery
 
 ```bash

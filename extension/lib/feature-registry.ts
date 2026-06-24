@@ -10,7 +10,7 @@ export interface FeatureManifest {
   id: FeatureId;
   name: string;
   contexts: readonly Context[];
-  permissions?: readonly chrome.runtime.ManifestPermissions[];
+  permissions?: readonly chrome.runtime.ManifestPermission[];
   /** Defaults to true when the user has no explicit `settings.features[id]` entry. */
   enabledByDefault?: boolean;
   /** Composed into the top-level Settings via registerSettingsShape. */
@@ -60,12 +60,12 @@ export type TrackFn = (
   data: { featureId: string },
 ) => void | Promise<void>;
 
-function readManifestPermissions(): readonly chrome.runtime.ManifestPermissions[] {
+function readManifestPermissions(): readonly chrome.runtime.ManifestPermission[] {
   // chrome.runtime is undefined in tests and other non-extension surfaces.
   if (typeof chrome === 'undefined' || !chrome.runtime?.getManifest) return [];
   try {
     const m = chrome.runtime.getManifest();
-    return (m.permissions ?? []) as readonly chrome.runtime.ManifestPermissions[];
+    return (m.permissions ?? []) as readonly chrome.runtime.ManifestPermission[];
   } catch {
     return [];
   }
@@ -74,14 +74,14 @@ function readManifestPermissions(): readonly chrome.runtime.ManifestPermissions[
 export function createFeatureRegistry(options: {
   logger?: RegistryLogger;
   /** Defaults to chrome.runtime.getManifest().permissions; empty in non-extension surfaces (treats everything as missing). */
-  manifestPermissions?: readonly chrome.runtime.ManifestPermissions[];
+  manifestPermissions?: readonly chrome.runtime.ManifestPermission[];
   track?: TrackFn;
   /** Shown when a feature fails to initialise. Defaults to a toast; no-op without a DOM. */
   notify?: (message: string) => void;
 } = {}): FeatureRegistry {
   const logger: RegistryLogger = options.logger ?? {
-    log: (msg, ...rest) => console.log(`[SFUT] ${msg}`, ...rest),
-    warn: (msg, ...rest) => console.warn(`[SFUT] ${msg}`, ...rest),
+    log: (msg, ...rest) => console.log(`[SFDT] ${msg}`, ...rest),
+    warn: (msg, ...rest) => console.warn(`[SFDT] ${msg}`, ...rest),
   };
   const log = (msg: string, ...rest: unknown[]): void => logger.log(msg, ...rest);
   const warn = (msg: string, ...rest: unknown[]): void => logger.warn(msg, ...rest);

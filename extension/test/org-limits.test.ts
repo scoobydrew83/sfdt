@@ -80,7 +80,7 @@ describe('org-limits — modal', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(api.limits).toHaveBeenCalled();
-    const cards = document.querySelectorAll('.sfut-org-limits-overlay > div > div:nth-child(2) > div > div');
+    const cards = document.querySelectorAll('.sfdt-org-limits-overlay > div > div:nth-child(2) > div > div');
     expect(cards.length).toBeGreaterThanOrEqual(2);
     const body = document.body.textContent ?? '';
     expect(body).toContain('Daily Api Requests');

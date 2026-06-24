@@ -1,7 +1,7 @@
 // Opt-in, local-only — no network egress. The data exists so the user
 // (or support) can see which features run in this browser profile.
 
-const STORAGE_KEY = 'sfut.telemetry';
+const STORAGE_KEY = 'sfdt.telemetry';
 const MAX_FEATURE_IDS = 500;
 
 export type TelemetryEvent =

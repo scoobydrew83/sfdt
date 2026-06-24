@@ -133,10 +133,10 @@ function flagCanvas(doc: Document, missing: readonly MissingItem[]): number {
       card.querySelector('.base-card')?.getAttribute('aria-label') ??
       text;
     if (seen.has(cardKey)) continue;
-    if (card.querySelector('.sfut-desc-flag')) continue;
+    if (card.querySelector('.sfdt-desc-flag')) continue;
 
     const flag = doc.createElement('div');
-    flag.className = 'sfut-desc-flag';
+    flag.className = 'sfdt-desc-flag';
     flag.title = `"${text}" has no description`;
     flag.setAttribute('aria-label', `Warning: ${text} has no description`);
     flag.textContent = '⚠';
@@ -152,9 +152,9 @@ function flagCanvas(doc: Document, missing: readonly MissingItem[]): number {
   if (flowMissing) {
     const flowNameEl = doc.querySelector('.test-flow-name');
     const parent = flowNameEl?.parentElement;
-    if (parent && !parent.querySelector('.sfut-desc-flag-flow')) {
+    if (parent && !parent.querySelector('.sfdt-desc-flag-flow')) {
       const flag = doc.createElement('span');
-      flag.className = 'sfut-desc-flag-flow';
+      flag.className = 'sfdt-desc-flag-flow';
       flag.title = 'This flow has no description';
       flag.setAttribute('aria-label', 'Warning: This flow has no description');
       flag.textContent = ' ⚠';
@@ -167,7 +167,7 @@ function flagCanvas(doc: Document, missing: readonly MissingItem[]): number {
 }
 
 function clearAllFlags(doc: Document): void {
-  for (const cls of ['sfut-desc-flag', 'sfut-desc-flag-flow', 'sfut-desc-flag-toolbox']) {
+  for (const cls of ['sfdt-desc-flag', 'sfdt-desc-flag-flow', 'sfdt-desc-flag-toolbox']) {
     doc.querySelectorAll(`.${cls}`).forEach((el) => el.remove());
   }
 }
@@ -210,7 +210,7 @@ export function createMissingDescriptionFlagsFeature(
       startObserver();
       flagCanvas(doc, missingItems);
     } catch (err) {
-      console.warn('[SFUT missing-descriptions] activate failed:', err);
+      console.warn('[SFDT missing-descriptions] activate failed:', err);
     }
   }
 

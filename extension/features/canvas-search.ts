@@ -27,9 +27,9 @@ interface Match {
   toolboxSection?: Element | null;
 }
 
-const HIGHLIGHT_CLASS = 'sfut-canvas-highlight';
-const FOCUS_CLASS = 'sfut-canvas-highlight-focus';
-const DYNAMIC_STYLE_ID = 'sfut-canvas-search-dynamic';
+const HIGHLIGHT_CLASS = 'sfdt-canvas-highlight';
+const FOCUS_CLASS = 'sfdt-canvas-highlight-focus';
+const DYNAMIC_STYLE_ID = 'sfdt-canvas-search-dynamic';
 
 // Salesforce LWC custom-element tags contain underscores
 // (e.g. `builder_platform_interaction-alc-canvas`). Real browsers accept these
@@ -239,10 +239,10 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
     if (matches.length === 0) {
       const hasQuery = !!input && input.value.trim().length > 0;
       countLabel.textContent = hasQuery ? 'No matches' : '';
-      countLabel.classList.toggle('sfut-canvas-search-bar-no-results', hasQuery);
+      countLabel.classList.toggle('sfdt-canvas-search-bar-no-results', hasQuery);
     } else {
       countLabel.textContent = `${currentIndex + 1} of ${matches.length}`;
-      countLabel.classList.remove('sfut-canvas-search-bar-no-results');
+      countLabel.classList.remove('sfdt-canvas-search-bar-no-results');
     }
   }
 
@@ -310,26 +310,26 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
   }
 
   function createOverlay(): HTMLDivElement {
-    doc.querySelector('.sfut-canvas-search-bar')?.remove();
+    doc.querySelector('.sfdt-canvas-search-bar')?.remove();
 
     const container = doc.createElement('div');
-    container.className = 'sfut-canvas-search-bar';
+    container.className = 'sfdt-canvas-search-bar';
 
     const icon = doc.createElement('span');
-    icon.className = 'sfut-canvas-search-bar-icon';
+    icon.className = 'sfdt-canvas-search-bar-icon';
     icon.textContent = '🔍';
     container.appendChild(icon);
 
     const inputEl = doc.createElement('input');
     inputEl.type = 'text';
-    inputEl.className = 'sfut-canvas-search-bar-input';
+    inputEl.className = 'sfdt-canvas-search-bar-input';
     inputEl.placeholder = 'Search elements…';
     inputEl.setAttribute('autocomplete', 'off');
     inputEl.setAttribute('spellcheck', 'false');
     container.appendChild(inputEl);
 
     const prevBtn = doc.createElement('button');
-    prevBtn.className = 'sfut-canvas-search-bar-nav';
+    prevBtn.className = 'sfdt-canvas-search-bar-nav';
     prevBtn.textContent = '▲';
     prevBtn.title = 'Previous match (Shift+Enter)';
     prevBtn.addEventListener('click', (e) => {
@@ -340,7 +340,7 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
     container.appendChild(prevBtn);
 
     const nextBtn = doc.createElement('button');
-    nextBtn.className = 'sfut-canvas-search-bar-nav';
+    nextBtn.className = 'sfdt-canvas-search-bar-nav';
     nextBtn.textContent = '▼';
     nextBtn.title = 'Next match (Enter)';
     nextBtn.addEventListener('click', (e) => {
@@ -351,11 +351,11 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
     container.appendChild(nextBtn);
 
     const count = doc.createElement('span');
-    count.className = 'sfut-canvas-search-bar-count';
+    count.className = 'sfdt-canvas-search-bar-count';
     container.appendChild(count);
 
     const closeBtn = doc.createElement('button');
-    closeBtn.className = 'sfut-canvas-search-bar-close';
+    closeBtn.className = 'sfdt-canvas-search-bar-close';
     closeBtn.textContent = '✕';
     closeBtn.title = 'Close (Escape)';
     closeBtn.addEventListener('click', (e) => {

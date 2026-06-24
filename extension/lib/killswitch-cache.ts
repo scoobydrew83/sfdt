@@ -7,7 +7,7 @@
 // (pre-stamping writes, manual tampering) are treated as stale too: their
 // age is unknowable, and the next successful ping rewrites a stamped record.
 
-const STORAGE_KEY = 'sfut.killswitch.cache';
+const STORAGE_KEY = 'sfdt.killswitch.cache';
 
 /** Cache entries older than this are ignored on read. */
 export const KILL_SWITCH_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;

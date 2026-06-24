@@ -14,21 +14,21 @@ describe('flow-version-manager teardown', () => {
     const feature = createFlowVersionManagerFeature();
     await feature.init?.();
     await feature.teardown?.();
-    expect(document.querySelector('.sfut-version-manager-panel')).toBeNull();
+    expect(document.querySelector('.sfdt-version-manager-panel')).toBeNull();
   });
 
   it('removes injected checkbox column cells on teardown', async () => {
     const feature = createFlowVersionManagerFeature();
     await feature.init?.();
     await feature.teardown?.();
-    expect(document.querySelectorAll('.sfut-version-select-cell')).toHaveLength(0);
+    expect(document.querySelectorAll('.sfdt-version-select-cell')).toHaveLength(0);
   });
 
   it('removes the toolbar delete button on teardown', async () => {
     const feature = createFlowVersionManagerFeature();
     await feature.init?.();
     await feature.teardown?.();
-    expect(document.querySelector('.sfut-version-manager-delete-btn')).toBeNull();
+    expect(document.querySelector('.sfdt-version-manager-delete-btn')).toBeNull();
   });
 
   it('teardown does not throw even if init was never called', async () => {
@@ -48,10 +48,10 @@ describe('flow-version-manager teardown', () => {
     await feature.init?.();
     // Simulate an open confirmation modal by manually injecting the backdrop
     const backdrop = document.createElement('div');
-    backdrop.className = 'sfut-version-manager-backdrop';
+    backdrop.className = 'sfdt-version-manager-backdrop';
     document.body.appendChild(backdrop);
-    expect(document.querySelector('.sfut-version-manager-backdrop')).not.toBeNull();
+    expect(document.querySelector('.sfdt-version-manager-backdrop')).not.toBeNull();
     await feature.teardown?.();
-    expect(document.querySelector('.sfut-version-manager-backdrop')).toBeNull();
+    expect(document.querySelector('.sfdt-version-manager-backdrop')).toBeNull();
   });
 });

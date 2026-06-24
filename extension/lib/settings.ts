@@ -93,7 +93,7 @@ export function isFeatureEnabled(settings: Settings, featureId: string): boolean
   return true;
 }
 
-const STORAGE_KEY = 'sfut.settings';
+const STORAGE_KEY = 'sfdt.settings';
 
 // Invalidated by the storage onChanged listener at the bottom.
 let _cache: Settings | null = null;

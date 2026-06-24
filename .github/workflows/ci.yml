@@ -17,7 +17,7 @@ jobs:
       matrix:
         node-version: [22]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
@@ -39,13 +39,17 @@ jobs:
       matrix:
         node-version: [22]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
+      # The GUI imports @sfdt/flow-core, whose package `exports` resolve to its
+      # compiled dist/. Build flow-core first or `vite build` can't resolve it.
+      - name: Build @sfdt/flow-core (GUI build dependency)
+        run: npm run build:flow-core
       - name: Test GUI
         run: npm test --workspace=gui
       - name: Build GUI
@@ -66,7 +70,7 @@ jobs:
       matrix:
         node-version: [22]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
@@ -86,7 +90,7 @@ jobs:
       - name: Install Salesforce CLI
         run: npm install -g @salesforce/cli
       - name: Checkout synthetic-spark fixture
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: scoobydrew83/synthetic-spark
           path: synthetic-spark
@@ -112,7 +116,7 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4
@@ -171,7 +175,7 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4

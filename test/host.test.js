@@ -53,6 +53,13 @@ describe('@sfdt/host — smoke mode', () => {
     expect(response.requestId).toBe('r2');
   });
 
+  it('returns NOT_IMPLEMENTED for org-health (HTTP-bridge only)', async () => {
+    const response = await smoke({ requestId: 'r2b', kind: 'org-health' });
+    expect(response.ok).toBe(false);
+    expect(response.code).toBe('NOT_IMPLEMENTED');
+    expect(response.requestId).toBe('r2b');
+  });
+
   it('rejects an invalid SfdtRequest with REQUEST_INVALID', async () => {
     const response = await smoke({ requestId: 'r3', kind: 'compare' /* missing left/right */ });
     expect(response.ok).toBe(false);

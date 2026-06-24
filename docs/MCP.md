@@ -114,6 +114,23 @@ Reads the latest deployment, preflight, quality, or drift logs.
 * **Arguments:**
   * `type` (enum, required): `preflight` | `drift` | `deploy` | `rollback` | `quality`.
 
+#### `sfdt_audit`
+Runs native org-health diagnostics (audit trail, license usage, MFA coverage, unused Apex, inactive users, deprecated API versions) and returns the normalised snapshot.
+* **Arguments:**
+  * `check` (string, optional): A specific check id, or `all` (default) to run every check.
+  * `org` (string, optional): Target org.
+
+#### `sfdt_monitor`
+Runs native org monitoring (limits, Apex job failures, Security Health Check score) and optionally a full metadata backup.
+* **Arguments:**
+  * `check` (string, optional): A specific check id, `all` (default), or `backup`.
+  * `org` (string, optional): Target org.
+
+#### `sfdt_docs`
+Generates MkDocs-compatible documentation (custom objects + fields, Apex classes, Flows) with an optional AI project overview, or a Mermaid ER diagram.
+* **Arguments:**
+  * `action` (enum, optional): `generate` (default) | `diagram`.
+
 ---
 
 ### 4. Context Budget Governance & Parking

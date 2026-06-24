@@ -17,11 +17,13 @@ This is `@sfdt/cli`, a Node.js ESM CLI package for Salesforce DX deployment, tes
 bin/            CLI entry point (loads plugins, then parses args)
 src/
   commands/     Command modules (one file per command)
-  lib/          Shared libraries (config, output, AI, script-runner, project-detect, metadata-mapper, plugin-loader, gui-server)
+  lib/          Shared libraries (config, output, AI, script-runner, project-detect, metadata-mapper, plugin-loader, gui-server,
+                org-query, audit-runner, monitor-runner, doc-generator, data-runner, scratch-pool)
 scripts/        Shell scripts executed by commands (de-parameterized, use SFDT_ env vars)
                 Exception: scripts/postinstall.js is a Node.js ESM file run by npm on install
 test/           Tests (vitest)
 gui/            React + Vite web dashboard (sfdt ui); built output lives in gui/dist/
+vscode/         VS Code extension (@sfdt/vscode); thin UI over the CLI, esbuild-bundled to vscode/dist/
 Dockerfile      Official Docker image definition
 .sfdt/          Per-project config directory (created by `sfdt init` in target projects)
   plugins/      Optional local JS plugins loaded automatically at startup
@@ -37,6 +39,8 @@ Dockerfile      Official Docker image definition
 - **Web UI** (`src/commands/ui.js` + `src/lib/gui-server.js`) starts a local Express server on port 7654 serving a pre-built React/SLDS dashboard from `gui/dist/`. Build with `npm run build:gui`.
 - **File matching** uses the `glob` package (v11) for pattern-based file discovery.
 - **Metadata mapping** (`src/lib/metadata-mapper.js`) provides a pure-JS mirror of `scripts/lib/metadata-parser.sh` for use in Node commands. Used by `manifest` and `pr-description`.
+- **Org health commands** (`audit`, `monitor`) are native clean-room reimplementations of the sfdx-hardis diagnose/monitor feature set (no AGPL dependency). Each thin command delegates to a `*-runner.js` whose checks query the org via `src/lib/org-query.js` (a SOQL helper over `sf data query --json`, with a `--use-tooling-api` toggle) and return a normalised `{ id, title, status, summary, findings }` shape. The runner writes a snapshot (`logs/audit-latest.json`, `logs/monitor-latest.json`) consumed by the GUI (`/api/audit`, `/api/monitor`), MCP (`sfdt_audit`, `sfdt_monitor`), and the VS Code extension. Check-threshold defaults live in `AUDIT_DEFAULTS` / `MONITOR_DEFAULTS` constants and mirror the `audit`/`monitoring` blocks in `src/templates/sfdt.config.json` (the canonical user-editable source). `docs` (doc-generator), `data` (data-runner), and `scratch` (scratch-pool) follow the same thin-command/runner split.
+- **VS Code extension** (`vscode/`, `@sfdt/vscode`) is a thin UI over the CLI — it spawns the `sfdt` binary and reads the same JSON snapshots; it reimplements no logic. Testable logic lives in `vscode`-free modules under `vscode/src/lib/`; `vscode`-importing modules (extension/tree/dashboard/statusBar) are esbuild-bundled and not unit-tested. Build with `npm run build:vscode`, package with `npm run package:vscode`.
 
 ### SFDT_ Environment Variables
 

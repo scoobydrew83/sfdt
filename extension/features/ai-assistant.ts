@@ -58,17 +58,17 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
   async function openPanel(): Promise<void> {
     closePanel();
     overlay = doc.createElement('div');
-    overlay.className = 'sfut-ai-panel-overlay';
+    overlay.className = 'sfdt-ai-panel-overlay';
     overlay.style.cssText =
       'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
 
     const panel = doc.createElement('div');
-    panel.className = 'sfut-ai-panel';
+    panel.className = 'sfdt-ai-panel';
     panel.style.cssText =
       'background: #fff; border-radius: 4px; width: 640px; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column;';
 
     const header = doc.createElement('div');
-    header.className = 'sfut-ai-panel-header';
+    header.className = 'sfdt-ai-panel-header';
     header.style.cssText =
       'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center; font-weight: 600;';
     const title = doc.createElement('span');
@@ -81,7 +81,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
     header.appendChild(closeBtn);
 
     const body = doc.createElement('div');
-    body.className = 'sfut-ai-panel-body';
+    body.className = 'sfdt-ai-panel-body';
     body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1;';
     const loading = doc.createElement('div');
     loading.textContent = 'Fetching Flow metadata…';
