@@ -118,6 +118,15 @@ describe('deleteDataSet', () => {
     const res = await deleteDataSet(config, 'qa', 'dev');
     expect(res.sobjects[0]).toMatchObject({ sobject: 'Account', status: 'error' });
   });
+  it('prefers sf\'s structured error message over the opaque execa message', async () => {
+    fs.readJson.mockResolvedValueOnce({ queries: ['SELECT Id FROM Account'] });
+    const err = new Error('Command failed with exit code 1: sf data delete bulk');
+    err.stdout = JSON.stringify({ status: 1, message: 'No authorization information found for dev.' });
+    execa.mockRejectedValueOnce(err);
+    const res = await deleteDataSet(config, 'qa', 'dev');
+    expect(res.sobjects[0].error).toMatch(/No authorization information found for dev\./);
+    expect(res.sobjects[0].error).not.toMatch(/Command failed with exit code/);
+  });
   it('runs every query, including multiple for the same sObject', async () => {
     fs.readJson.mockResolvedValueOnce({
       queries: ["SELECT Id FROM Account WHERE Region='US'", "SELECT Id FROM Account WHERE Region='EU'"],

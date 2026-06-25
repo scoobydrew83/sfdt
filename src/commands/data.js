@@ -99,9 +99,9 @@ function makeDeleteAction() {
         // incomplete delete as a clean one. skippedCount lets them branch
         // without iterating sobjects[].
         process.stdout.write(JSON.stringify({
+          ...result,
           status: skipped.length ? 'partial' : 'success',
           skippedCount: skipped.length,
-          ...result,
         }, null, 2) + '\n');
       } else {
         if (skipped.length) {

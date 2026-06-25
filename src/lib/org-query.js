@@ -37,8 +37,11 @@ async function _execQuery(orgAlias, soql, { tooling = false, all = false } = {})
     result = await execa('sf', args);
   } catch (err) {
     // sf usually writes its JSON error envelope to stdout, but some commands
-    // route it to stderr — check both for the structured message.
-    const parsed = safeParse(err.stdout) ?? safeParse(err.stderr);
+    // route it to stderr — check both for the structured message. Only commit
+    // to the stdout parse when it actually carries a message, otherwise a
+    // messageless stdout envelope would mask a real message on stderr.
+    const fromOut = safeParse(err.stdout);
+    const parsed = fromOut?.message ? fromOut : safeParse(err.stderr);
     if (parsed?.message) {
       const e = new Error(parsed.message);
       e.stderr = err.stderr;

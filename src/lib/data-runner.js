@@ -122,7 +122,10 @@ export async function deleteDataSet(config, setName, orgAlias) {
       await execa('sf', ['data', 'delete', 'bulk', '--sobject', sobject, '--query', query, '--target-org', orgAlias, '--json']);
       results.push({ sobject, status: 'ok' });
     } catch (err) {
-      results.push({ sobject, status: 'error', error: oneLine(err.message) });
+      // Prefer sf's structured error (stdout/stderr) over the opaque execa
+      // message, matching org-query/monitor-runner.
+      const sfMsg = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
+      results.push({ sobject, status: 'error', error: oneLine(sfMsg ?? err.message) });
     }
   }
   return { set: setName, org: orgAlias, sobjects: results };
