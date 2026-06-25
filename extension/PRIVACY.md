@@ -1,6 +1,6 @@
 # Privacy Policy — SFDT SF Helper (`@sfdt/extension`)
 
-**Last updated: 2026-05-17**
+**Last updated: 2026-06-25**
 
 This Chrome extension is designed for Salesforce admins and developers. Its full source code is published in the public [`sfdt` repository on GitHub](https://github.com/scoobydrew83/sfdt) — you can verify every claim below against the code.
 
@@ -56,6 +56,8 @@ The extension reads Flow metadata via the Salesforce Tooling API using your exis
 
 The SOQL Query Runner, Org Limits, and REST API Explorer features call Salesforce REST and Tooling endpoints (`/services/data/...`) against the same session — queries, requests, and responses stay between your browser and the org you're already authenticated to.
 
+The Workspace org picker and the Switch Org feature read your existing Salesforce session cookies to list the orgs you're already logged in to, so you can target a tool at the org you choose. Only the org hostnames are used (to label and select an org); cookie values are never displayed and never leave your device. The Org Health panel reads the CLI's local audit/monitor snapshots through the same `http://127.0.0.1:7654` bridge described below.
+
 When you use a feature that calls the local bridge (e.g. "Deploy this Flow"), the extension sends the Flow's developer name (e.g. `My_Flow`) to `http://127.0.0.1:7654` so the local sfdt CLI on your machine can run the deploy. The data goes from your browser to a process running on the same machine — it never leaves your device.
 
 ---
@@ -67,11 +69,10 @@ The extension manifest requests the following permissions. Each is used for the 
 | Permission | Why |
 |---|---|
 | `storage` | Save your per-feature toggles and (opt-in) local telemetry counters |
-| `activeTab` | Run feature scripts on the Salesforce page you're currently viewing |
-| `clipboardWrite` | The Flow Health Check feature copies the report to your clipboard on demand |
-| `host_permissions: http://127.0.0.1/*` | Talk to the local sfdt CLI bridge running on your own machine |
-| `host_permissions: *://*.salesforce.com/* / *.force.com/* / *.lightning.force.com/*` | Run feature scripts on Salesforce pages |
-| `nativeMessaging` | Optional fallback transport to talk to the local sfdt CLI when the HTTP bridge isn't running. Only used if you install the native host. |
+| `clipboardWrite` | Copy generated output to your clipboard on demand — e.g. the Flow Health Check report, SOQL results, the object schema for prompts, and the Copy-JSON actions on the Org Limits / Org Health panels |
+| `cookies` | Detect which Salesforce orgs you're logged in to by reading your existing Salesforce session cookies, so the Workspace org picker / Switch Org can target the org you choose. Cookies are read locally and never transmitted off your device. |
+| `host_permissions: https://*.salesforce.com/*, https://*.salesforce-setup.com/*, https://*.my.salesforce.com/*, https://*.lightning.force.com/*` | Run feature scripts and call the Tooling/REST APIs on Salesforce pages of your logged-in org |
+| `host_permissions: http://localhost/*, http://127.0.0.1/*` | Talk to the local sfdt CLI bridge running on your own machine (default port 7654); inactive until you start the bridge yourself |
 
 ---
 

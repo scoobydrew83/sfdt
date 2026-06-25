@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import { glob } from 'glob';
 import { execa } from 'execa';
+import { safeParse } from './org-query.js';
 
 /**
  * Data set import/export runner.
@@ -111,24 +112,24 @@ export async function deleteDataSet(config, setName, orgAlias) {
   // leave the records matched by all but the first such query behind.
   for (const query of queries) {
     const sobject = extractSObject(query);
-    if (!sobject) continue;
+    if (!sobject) {
+      // Record as skipped rather than silently dropping — the user already
+      // confirmed deletion and would otherwise have no way to know a query was
+      // not run.
+      results.push({ sobject: null, status: 'skipped', query: oneLine(query) });
+      continue;
+    }
     try {
       await execa('sf', ['data', 'delete', 'bulk', '--sobject', sobject, '--query', query, '--target-org', orgAlias, '--json']);
       results.push({ sobject, status: 'ok' });
     } catch (err) {
-      results.push({ sobject, status: 'error', error: oneLine(err.message) });
+      // Prefer sf's structured error (stdout/stderr) over the opaque execa
+      // message, matching org-query/monitor-runner.
+      const sfMsg = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
+      results.push({ sobject, status: 'error', error: oneLine(sfMsg ?? err.message) });
     }
   }
   return { set: setName, org: orgAlias, sobjects: results };
-}
-
-function safeParse(text) {
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 }
 
 function oneLine(s) {

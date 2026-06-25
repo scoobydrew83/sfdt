@@ -12,6 +12,47 @@ import { execa } from 'execa';
  */
 
 /**
+ * Shared execa core for query()/rawQuery(): builds the `sf data query` argv,
+ * runs it, and returns the parsed `result` object. On failure, sf emits a JSON
+ * error envelope on stdout (malformed SOQL, missing sObject) — surface that
+ * structured message instead of the opaque execa error.
+ *
+ * @param {string} orgAlias
+ * @param {string} soql
+ * @param {object} [options]
+ * @param {boolean} [options.tooling]
+ * @param {boolean} [options.all]
+ * @returns {Promise<object|null>} The parsed sf `result` object (or null).
+ */
+async function _execQuery(orgAlias, soql, { tooling = false, all = false } = {}) {
+  if (!orgAlias) {
+    throw new Error('No org specified — pass --org <alias> or set defaultOrg in .sfdt/config.json');
+  }
+  const args = ['data', 'query', '--query', soql, '--target-org', orgAlias, '--json'];
+  if (tooling) args.push('--use-tooling-api');
+  if (all) args.push('--all-rows');
+
+  let result;
+  try {
+    result = await execa('sf', args);
+  } catch (err) {
+    // sf usually writes its JSON error envelope to stdout, but some commands
+    // route it to stderr — check both for the structured message. Only commit
+    // to the stdout parse when it actually carries a message, otherwise a
+    // messageless stdout envelope would mask a real message on stderr.
+    const fromOut = safeParse(err.stdout);
+    const parsed = fromOut?.message ? fromOut : safeParse(err.stderr);
+    if (parsed?.message) {
+      const e = new Error(parsed.message);
+      e.stderr = err.stderr;
+      throw e;
+    }
+    throw err;
+  }
+  return safeParse(result.stdout)?.result ?? null;
+}
+
+/**
  * Run a SOQL query against an org and return its records.
  *
  * @param {string} orgAlias - Target org alias.
@@ -21,40 +62,9 @@ import { execa } from 'execa';
  * @param {boolean} [options.all] - Include deleted/archived rows (`--all-rows`).
  * @returns {Promise<Array<object>>} Query records (empty array when none).
  */
-export async function query(orgAlias, soql, { tooling = false, all = false } = {}) {
-  if (!orgAlias) {
-    throw new Error('No org specified — pass --org <alias> or set defaultOrg in .sfdt/config.json');
-  }
-  const args = [
-    'data',
-    'query',
-    '--query',
-    soql,
-    '--target-org',
-    orgAlias,
-    '--json',
-  ];
-  if (tooling) args.push('--use-tooling-api');
-  if (all) args.push('--all-rows');
-
-  let result;
-  try {
-    result = await execa('sf', args);
-  } catch (err) {
-    // execa attaches stdout/stderr; sf emits a JSON error envelope on stdout
-    // for query failures (e.g. malformed SOQL, missing sObject). Prefer the
-    // structured message when present, else re-throw the raw error.
-    const parsed = safeParse(err.stdout);
-    if (parsed?.message) {
-      const e = new Error(parsed.message);
-      e.stderr = err.stderr;
-      throw e;
-    }
-    throw err;
-  }
-
-  const parsed = safeParse(result.stdout);
-  return parsed?.result?.records ?? [];
+export async function query(orgAlias, soql, options = {}) {
+  const result = await _execQuery(orgAlias, soql, options);
+  return result?.records ?? [];
 }
 
 /**
@@ -86,32 +96,11 @@ export async function count(orgAlias, soql, options = {}) {
  * @returns {Promise<{records: Array<object>, totalSize: number, done: boolean}>}
  */
 export async function rawQuery(orgAlias, soql, options = {}) {
-  if (!orgAlias) {
-    throw new Error('No org specified — pass --org <alias> or set defaultOrg in .sfdt/config.json');
-  }
-  const args = ['data', 'query', '--query', soql, '--target-org', orgAlias, '--json'];
-  if (options.tooling) args.push('--use-tooling-api');
-  if (options.all) args.push('--all-rows');
-  let result;
-  try {
-    result = await execa('sf', args);
-  } catch (err) {
-    // Mirror query(): sf emits a JSON error envelope on stdout for query
-    // failures (malformed SOQL, missing sObject). Surface the structured
-    // message instead of the opaque execa error.
-    const parsed = safeParse(err.stdout);
-    if (parsed?.message) {
-      const e = new Error(parsed.message);
-      e.stderr = err.stderr;
-      throw e;
-    }
-    throw err;
-  }
-  const parsed = safeParse(result.stdout);
+  const result = await _execQuery(orgAlias, soql, options);
   return {
-    records: parsed?.result?.records ?? [],
-    totalSize: parsed?.result?.totalSize ?? 0,
-    done: parsed?.result?.done ?? true,
+    records: result?.records ?? [],
+    totalSize: result?.totalSize ?? 0,
+    done: result?.done ?? true,
   };
 }
 

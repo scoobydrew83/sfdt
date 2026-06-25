@@ -201,7 +201,20 @@ function result_(id, title, status, summary, findings) {
 }
 
 function errored(id, title, err) {
-  return { id, title, status: 'error', summary: `Check failed: ${oneLine(err.message)}`, findings: [] };
+  // sf emits a JSON error envelope on stdout (e.g. auth failure, invalid org
+  // alias). Prefer its structured `message` over the opaque execa error so the
+  // friendly sf text surfaces. Checks that go through query()/rawQuery() already
+  // get this; this covers checks that call execa directly (e.g. checkLimits).
+  // sf usually writes its JSON error envelope to stdout, but some commands
+  // (auth/alias failures) route it to stderr — check both.
+  const structured = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
+  return {
+    id,
+    title,
+    status: 'error',
+    summary: `Check failed: ${oneLine(structured || err?.message)}`,
+    findings: [],
+  };
 }
 
 function sanitize(s) {

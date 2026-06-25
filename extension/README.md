@@ -28,7 +28,7 @@ window that reports the chosen org's URL, so the existing tools run unchanged.
 
 ---
 
-## Features (28)
+## Features (29)
 
 Every feature is opt-in (toggle off in the options page), and any feature can be remotely disabled without a Web Store re-review via `sfdt feature-flags disable <id>`.
 
@@ -62,6 +62,7 @@ Every feature is opt-in (toggle off in the options page), and any feature can be
 | `debug-log-viewer` | List recent `ApexLog` records and view full log bodies | Workspace + Setup |
 | `saved-soql` | Browse bookmarked + recent SOQL and load any query straight into the runner | Workspace |
 | `org-switcher` | Switch the Workspace between logged-in orgs | Workspace |
+| `org-health` | Side panel surfacing the CLI's audit/monitor snapshots (status dots, findings, Copy JSON) via the bridge's `org-health` request | Setup + Flow Builder |
 
 Adding the next feature is a one-file change — see the existing modules in [`extension/features/`](./features/) and the registry in [`extension/lib/feature-registry.ts`](./lib/feature-registry.ts).
 

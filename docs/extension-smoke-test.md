@@ -28,12 +28,12 @@ Produced by `npm run build:ext` from the sfdt repo root.
 2. **Load unpacked** into Chrome:
    - `chrome://extensions/` → Developer Mode ON → "Load unpacked" →
      pick `extension/.output/chrome-mv3/`.
-   - Extension should appear as "SFDT SF Helper" v0.0.1.
+   - Extension should appear as "SFDT SF Helper" v0.3.2.
    - Note the assigned extension ID (will need it for Phase 7 native
      messaging manifests).
 3. **Confirm the manifest looks right** in `chrome://extensions/`:
    - host_permissions for the 4 Salesforce domains
-   - permissions: storage, clipboardWrite, cookies, scripting
+   - permissions: storage, clipboardWrite, cookies
    - No yellow / red error banners
 4. **Open the DevTools console** for the Salesforce tab you'll use:
    `Cmd+Opt+I` → Console. Anything tagged `[SFDT]` should be informational;
