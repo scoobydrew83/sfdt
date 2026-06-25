@@ -13,8 +13,8 @@
 > `final_01`–`final_16`). The set was refreshed for 0.3.0: `final_01`–`final_05`
 > (flow/setup era) plus `final_06`–`final_16` (Workspace tools + schema/data tooling).
 > CWS shows up to 5 — featured set: `final_06`, `final_01`, `final_07`, `final_11`,
-> and `final_18` (Org Health, capture pending; fall back to `final_13`). See this
-> folder's README for the full rationale and which shots to avoid.
+> and `final_18` (Org Limits). The Org Health screenshot is still pending (future
+> `final_19`). See this folder's README for the full rationale and which shots to avoid.
 
 ## Item name
 SFDT SF Helper
