@@ -8,11 +8,13 @@
 > store. Paste the sections below into the CWS dashboard during the manual v0.3.2
 > upload, then this file and the store will be back in sync.
 >
-> Screenshots and the store icon live alongside this file in `extension/store-assets/`
-> (`store-icon-128.png` + `final_01`–`final_16`). The set was refreshed for 0.3.0:
-> `final_01`–`final_05` (flow/setup era) plus `final_06`–`final_16` (Workspace
-> tools + schema/data tooling). CWS shows up to 5 — see this folder's README for
-> the suggested five.
+> Screenshots, the store icon, and the small promo tile live alongside this file in
+> `extension/store-assets/` (`store-icon-128.png`, `promo-small-440x280.png`, and
+> `final_01`–`final_16`). The set was refreshed for 0.3.0: `final_01`–`final_05`
+> (flow/setup era) plus `final_06`–`final_16` (Workspace tools + schema/data tooling).
+> CWS shows up to 5 — featured set: `final_06`, `final_01`, `final_07`, `final_11`,
+> and `final_18` (Org Health, capture pending; fall back to `final_13`). See this
+> folder's README for the full rationale and which shots to avoid.
 
 ## Item name
 SFDT SF Helper
