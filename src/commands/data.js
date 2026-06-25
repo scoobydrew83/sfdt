@@ -82,7 +82,12 @@ function makeDeleteAction() {
       let result;
       try {
         result = await deleteDataSet(config, setName, org);
-        spinner?.succeed(`Delete complete: ${setName}`);
+        const skipped = (result.sobjects ?? []).filter((s) => s.status === 'skipped');
+        if (skipped.length) {
+          spinner?.warn(`Delete complete: ${setName} (${skipped.length} query(ies) skipped — unparseable FROM clause)`);
+        } else {
+          spinner?.succeed(`Delete complete: ${setName}`);
+        }
       } catch (err) {
         spinner?.fail('Delete failed');
         throw err;
@@ -90,6 +95,10 @@ function makeDeleteAction() {
       if (jsonMode) {
         process.stdout.write(JSON.stringify({ status: 'success', ...result }, null, 2) + '\n');
       } else {
+        const skipped = (result.sobjects ?? []).filter((s) => s.status === 'skipped');
+        if (skipped.length) {
+          console.warn(chalk.yellow(`⚠ ${skipped.length} query(ies) were skipped (could not parse the sObject from the FROM clause); their records were NOT deleted.`));
+        }
         console.log(chalk.green(`\n${JSON.stringify(result, null, 2)}`));
       }
     } catch (err) {

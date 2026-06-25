@@ -128,6 +128,17 @@ describe('deleteDataSet', () => {
     expect(execa).toHaveBeenCalledTimes(2);
     expect(res.sobjects).toHaveLength(2);
   });
+  it('records unparseable queries as skipped instead of silently dropping them', async () => {
+    fs.readJson.mockResolvedValueOnce({ queries: ['SELECT Id FROM Account', 'not soql'] });
+    execa.mockResolvedValue({ stdout: '{}' });
+    const res = await deleteDataSet(config, 'qa', 'dev');
+    // Only the parseable query runs a delete…
+    expect(execa).toHaveBeenCalledTimes(1);
+    // …but the skipped one is still surfaced in the results.
+    expect(res.sobjects).toHaveLength(2);
+    expect(res.sobjects[0]).toMatchObject({ sobject: 'Account', status: 'ok' });
+    expect(res.sobjects[1]).toMatchObject({ sobject: null, status: 'skipped' });
+  });
 });
 
 describe('listDataSets', () => {

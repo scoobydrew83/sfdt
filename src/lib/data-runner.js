@@ -111,7 +111,14 @@ export async function deleteDataSet(config, setName, orgAlias) {
   // leave the records matched by all but the first such query behind.
   for (const query of queries) {
     const sobject = extractSObject(query);
-    if (!sobject) continue;
+    if (!sobject) {
+      // The FROM clause couldn't be parsed, so we don't know what to delete.
+      // Record it as skipped rather than silently dropping it — the user already
+      // confirmed deletion and would otherwise have no way to know a query was
+      // not run.
+      results.push({ sobject: null, status: 'skipped', query: oneLine(query) });
+      continue;
+    }
     try {
       await execa('sf', ['data', 'delete', 'bulk', '--sobject', sobject, '--query', query, '--target-org', orgAlias, '--json']);
       results.push({ sobject, status: 'ok' });
