@@ -67,6 +67,17 @@ describe('checkLimits', () => {
     expect(r.summary).toMatch(/No authorization information found for dev\./);
     expect(r.summary).not.toMatch(/Command failed with exit code/);
   });
+
+  it('falls back to the structured message on stderr when stdout is empty', async () => {
+    const err = new Error('Command failed with exit code 1: sf org list limits');
+    err.stdout = '';
+    err.stderr = JSON.stringify({ status: 1, message: 'No authorization information found for dev.' });
+    execa.mockRejectedValueOnce(err);
+    const r = await checkLimits('dev');
+    expect(r.status).toBe('error');
+    expect(r.summary).toMatch(/No authorization information found for dev\./);
+    expect(r.summary).not.toMatch(/Command failed with exit code/);
+  });
 });
 
 describe('checkErrors', () => {

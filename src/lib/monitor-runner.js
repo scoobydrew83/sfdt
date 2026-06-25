@@ -205,7 +205,9 @@ function errored(id, title, err) {
   // alias). Prefer its structured `message` over the opaque execa error so the
   // friendly sf text surfaces. Checks that go through query()/rawQuery() already
   // get this; this covers checks that call execa directly (e.g. checkLimits).
-  const structured = safeParse(err?.stdout)?.message;
+  // sf usually writes its JSON error envelope to stdout, but some commands
+  // (auth/alias failures) route it to stderr — check both.
+  const structured = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
   return {
     id,
     title,

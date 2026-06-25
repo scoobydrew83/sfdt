@@ -94,7 +94,15 @@ function makeDeleteAction() {
         throw err;
       }
       if (jsonMode) {
-        process.stdout.write(JSON.stringify({ status: 'success', ...result }, null, 2) + '\n');
+        // Signal partial completion when queries were skipped, so a machine
+        // consumer (CI checking `status === 'success'`) doesn't treat an
+        // incomplete delete as a clean one. skippedCount lets them branch
+        // without iterating sobjects[].
+        process.stdout.write(JSON.stringify({
+          status: skipped.length ? 'partial' : 'success',
+          skippedCount: skipped.length,
+          ...result,
+        }, null, 2) + '\n');
       } else {
         if (skipped.length) {
           console.warn(chalk.yellow(`⚠ ${skipped.length} query(ies) were skipped (could not parse the sObject from the FROM clause); their records were NOT deleted.`));
