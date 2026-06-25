@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import { glob } from 'glob';
 import { execa } from 'execa';
+import { safeParse } from './org-query.js';
 
 /**
  * Data set import/export runner.
@@ -129,15 +130,6 @@ export async function deleteDataSet(config, setName, orgAlias) {
     }
   }
   return { set: setName, org: orgAlias, sobjects: results };
-}
-
-function safeParse(text) {
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 }
 
 function oneLine(s) {
