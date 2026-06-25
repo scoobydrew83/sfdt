@@ -32,4 +32,5 @@ The extension's **runtime** icons live in `../public/icon/{16,32,48,128}.png` �
 The screenshot set above is submission-ready. Nice-to-haves, none required:
 
 - A dedicated `final_17` for **Copy Schema for Prompt** (`export-for-prompt`) — it's already visible in the `final_06` Workspace nav, so a standalone shot is optional (menu label is "Copy Schema for Prompt", not "Export…").
+- A shot of the **Org Health** panel (`org-health`, added in 0.3.2) — the screenshot set currently has no capture of it; consider a `final_18` for the audit/monitor snapshot view if you want the newest feature represented in the store.
 - CWS promo tiles (440×280 small; 1400×560 marquee) — none exist yet.

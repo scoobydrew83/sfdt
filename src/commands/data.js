@@ -80,9 +80,10 @@ function makeDeleteAction() {
 
       const spinner = jsonMode ? null : ora(`Delete data set "${setName}" (${org})…`).start();
       let result;
+      let skipped = [];
       try {
         result = await deleteDataSet(config, setName, org);
-        const skipped = (result.sobjects ?? []).filter((s) => s.status === 'skipped');
+        skipped = (result.sobjects ?? []).filter((s) => s.status === 'skipped');
         if (skipped.length) {
           spinner?.warn(`Delete complete: ${setName} (${skipped.length} query(ies) skipped — unparseable FROM clause)`);
         } else {
@@ -95,7 +96,6 @@ function makeDeleteAction() {
       if (jsonMode) {
         process.stdout.write(JSON.stringify({ status: 'success', ...result }, null, 2) + '\n');
       } else {
-        const skipped = (result.sobjects ?? []).filter((s) => s.status === 'skipped');
         if (skipped.length) {
           console.warn(chalk.yellow(`⚠ ${skipped.length} query(ies) were skipped (could not parse the sObject from the FROM clause); their records were NOT deleted.`));
         }
