@@ -13,8 +13,8 @@ A small follow-up to 0.13.0 hardening the new org-health/data commands' error re
 
 ### Fixed
 
-- **`sfdt data delete` no longer silently drops unparseable queries.** A data-set query whose `FROM` clause can't be parsed is now recorded as `skipped` rather than discarded — the command warns on the console and, in `--json` mode, reports `status: "partial"` plus a top-level `skippedCount`. Automation (CI) checking `status === "success"` is no longer misled into treating an incomplete delete as a clean one.
-- **`sfdt audit`, `sfdt monitor`, and the org-query helpers surface Salesforce CLI's real error message.** When an org is unreachable or a permission is missing, these now extract `sf`'s structured error text (from `stdout` or `stderr`) instead of the opaque `Command failed with exit code 1…` execa string, so failures read clearly.
+- **`sfdt data delete` no longer reports incomplete deletes as clean.** A query whose `FROM` clause can't be parsed is recorded as `skipped` (rather than silently discarded), and a per-sObject delete that fails is surfaced too: `--json` now reports `status: "partial"` with top-level `skippedCount` and `errorCount`, and non-JSON mode warns for both. Automation checking `status === "success"` is no longer misled into treating a partial or failed delete as a clean one.
+- **`sfdt audit`, `sfdt monitor`, `sfdt data` (export/import/delete), and the org-query helpers surface Salesforce CLI's real error message.** When an org is unreachable or a permission is missing, these now extract `sf`'s structured error text (from `stdout` or `stderr`) instead of the opaque `Command failed with exit code 1…` execa string, so failures read clearly.
 
 ### Changed
 
