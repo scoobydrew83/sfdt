@@ -2,7 +2,7 @@
   "name": "sfdt-devtools",
   "displayName": "SFDT for Salesforce",
   "description": "Drive the sfdt CLI from VS Code: deploy, preflight, org monitoring & audit, docs, and the sfdt dashboard — all from the command palette and a dedicated Org Health sidebar.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "publisher": "sfdt",
@@ -23,7 +23,7 @@
   "categories": ["Other", "Linters", "SCM Providers"],
   "keywords": ["salesforce", "devops", "sfdx", "deployment", "monitoring"],
   "activationEvents": [],
-  "main": "./dist/extension.js",
+  "main": "./dist/extension.cjs",
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
