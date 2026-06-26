@@ -174,11 +174,6 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    # Expose the version-bump detection so the docker-publish job can gate on
-    # the exact same condition without re-deriving it.
-    outputs:
-      changed: ${{ steps.version.outputs.changed }}
-      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
