@@ -46,7 +46,7 @@ your PATH.
 
 ```bash
 npm install            # from the repo root (workspaces)
-npm run build:vscode   # build flow-core + bundle to dist/extension.js
+npm run build:vscode   # build flow-core + bundle to dist/extension.cjs
 npm run test:vscode    # unit tests (vitest)
 ```
 
