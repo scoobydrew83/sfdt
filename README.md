@@ -80,7 +80,7 @@ sfdt deploy
 | `sfdt audit [check\|all]` | Diagnose org health: `audittrail`, `licenses`, `mfa`, `unused-apex`, `inactive-users`, `api-versions` | `--org <alias>`, `--json` |
 | `sfdt monitor [check\|all]` | Monitor org: `limits`, `errors`, `health`, plus `backup`; `all --backup` to include a metadata backup | `--org <alias>`, `--backup`, `--json` |
 | `sfdt monitor backup` | Retrieve a full metadata backup into the configured backup directory | `--org <alias>`, `--json` |
-| `sfdt docs generate` | Generate MkDocs-compatible docs (objects, Apex, flows) with optional AI overview | `--ai`, `--json` |
+| `sfdt docs generate` | Generate MkDocs-compatible docs (objects, Apex, flows, LWC) with optional AI overview and per-component Developer/Admin/User/DevOps guides | `--ai`, `--roles [list]`, `--json` |
 | `sfdt docs diagram` | Print/write a Mermaid ER diagram of the data model | `--output <file>`, `--json` |
 | `sfdt data <list\|export\|import\|delete> [set]` | Manage data sets via native `sf data tree` for sandbox/scratch seeding | `--org <alias>`, `--json`, `--yes` (delete: skip confirmation; required non-interactively) |
 | `sfdt scratch <create\|delete\|list\|pool>` | Create/delete/list scratch orgs and manage a pre-created pool | `--alias`, `--days <n>`, `--size <n>`, `--json`, `--yes` (delete: skip confirmation; required non-interactively) |

@@ -114,7 +114,9 @@
       "properties": {
         "outputDir": { "type": "string" },
         "ai": { "type": "boolean" },
-        "diagrams": { "type": "boolean" }
+        "diagrams": { "type": "boolean" },
+        "roleGuides": { "type": "boolean" },
+        "roles": { "type": "array", "items": { "type": "string", "enum": ["developer", "admin", "user", "devops"] } }
       }
     },
     "data": {

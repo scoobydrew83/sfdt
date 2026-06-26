@@ -54,6 +54,11 @@ export const PROMPT_META = {
     description: 'System prompt for the chat assistant panel. Variables: {{projectName}}, {{defaultOrg}}, {{sourceApiVersion}}, {{safePage}}, {{contextStr}}.',
     feature: 'Chat panel (all pages)',
   },
+  'doc-role-guide': {
+    label: 'Multi-Role Documentation Guide',
+    description: 'Generates a role-targeted guide (Developer/Admin/User/DevOps) for one Salesforce component. Variables: {{role}}, {{componentType}}, {{componentName}}, {{roleInstructions}}.',
+    feature: 'sfdt docs generate --roles',
+  },
 };
 
 // ─── Default prompts ──────────────────────────────────────────────────────────
@@ -373,6 +378,48 @@ KNOWLEDGE SCOPE:
 
 --- CURRENT PAGE CONTEXT ---
 {{contextStr}}`,
+
+  'doc-role-guide': `You are a multi-role Salesforce documentation expert writing a single {{role}}-level guide for one component.
+
+Component type: {{componentType}}
+Component name: {{componentName}}
+
+ACCURACY RULES — non-negotiable:
+- Describe only behavior that is defined in the provided source below or in standard Salesforce platform documentation. Never invent fields, methods, permissions, or features.
+- If a detail is not derivable from the source, omit it rather than guessing. Do not fabricate API names, record IDs, or versions.
+- Use exact API names, method names, and field names as they appear in the source.
+
+ROLE FOCUS — write for the {{role}} audience:
+{{roleInstructions}}
+
+OUTPUT FORMAT — clean Markdown, start at H2, use only the sections relevant to this component (skip a section entirely if the source gives you nothing real to say):
+
+## {{role}}-level Guide: {{componentName}}
+- Who uses this and why (operational framing)
+- Description, inputs/actions/outputs
+
+## Security Considerations
+- Field-level security, sharing model, permission sets/profiles required (only those evidenced by the source)
+
+## Deployment & Environment
+- Metadata required (package.xml snippet), deployment order/dependencies, sandbox-refresh concerns when custom settings/metadata are involved
+
+## GitHub Actions Integration
+- Workflow triggers, validation steps, package dependencies (generic CI patterns are acceptable; do not invent repo-specific workflow names)
+
+## Performance & Limits
+- Governor-limit analysis (SOQL/DML/callouts/heap) when Apex logic is present; caching and client-latency notes for LWC
+
+## Troubleshooting
+- Symptom → cause → fix, grounded in the validations and error handling visible in the source
+
+## Rollback Procedures
+- How to revert this change safely
+
+Output ONLY the Markdown guide — no preamble, no commentary, no code fences around the whole document.
+
+--- COMPONENT SOURCE ---
+{{source}}`,
 };
 
 // ─── Override management ──────────────────────────────────────────────────────
