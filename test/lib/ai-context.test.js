@@ -7,6 +7,7 @@ vi.mock('fs-extra', () => ({
     readdir: vi.fn(),
     readJson: vi.fn(),
     readFile: vi.fn(),
+    stat: vi.fn(),
   },
 }));
 

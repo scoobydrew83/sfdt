@@ -69,13 +69,17 @@ require npm "npm" "ships with Node.js — reinstall Node if missing"
 require sf "Salesforce CLI (sf)" "npm install -g @salesforce/cli"
 require jq "jq" "brew install jq   (macOS)  |  apt-get install jq   (Debian/Ubuntu)"
 
-# bash 4+ is needed by some shell scripts; macOS ships 3.2 by default.
+# bash 4+ is needed by some shell scripts; macOS ships 3.2 by default. Probe the
+# `bash` on PATH (the one the project's scripts run under), not necessarily the
+# shell running this installer — a single subprocess returns major + full version.
 if have bash; then
-  BASH_MAJOR=$(bash -c 'echo "${BASH_VERSINFO[0]:-0}"')
+  BASH_PROBE=$(bash -c 'printf "%s %s" "${BASH_VERSINFO[0]:-0}" "$BASH_VERSION"')
+  BASH_MAJOR=${BASH_PROBE%% *}
+  BASH_FULL=${BASH_PROBE#* }
   if [ "${BASH_MAJOR:-0}" -ge 4 ]; then
-    ok "bash $(bash -c 'echo "$BASH_VERSION"') (>= 4)"
+    ok "bash ${BASH_FULL} (>= 4)"
   else
-    warn "bash 4.0+ recommended (found ${BASH_VERSION:-unknown}). macOS: brew install bash"
+    warn "bash 4.0+ recommended (found ${BASH_FULL:-unknown}). macOS: brew install bash"
   fi
 fi
 

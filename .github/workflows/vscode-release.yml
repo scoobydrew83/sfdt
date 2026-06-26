@@ -11,9 +11,12 @@ name: VS Code Extension Release
 on:
   push:
     branches: [main]
+    # Only vscode/ changes trigger this. The job is gated on a vscode/package.json
+    # version bump, so a bare flow-core change would run it and no-op every publish
+    # step — pure CI noise. A flow-core change that needs to ship in the extension
+    # rides a vscode/ version bump, which this path already catches.
     paths:
       - 'vscode/**'
-      - 'packages/flow-core/**'
       - '.github/workflows/vscode-release.yml'
   workflow_dispatch:
 

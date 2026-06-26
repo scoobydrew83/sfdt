@@ -284,9 +284,22 @@ export async function gatherLatestTestResults(config, maxChars = 20000) {
     } catch {
       return '';
     }
-    const newest = entries.filter((f) => f.endsWith('.json')).sort().reverse()[0];
-    if (!newest) return '';
-    target = path.join(resultsDir, newest);
+    // Pick the most recently modified .json by mtime — robust to any filename
+    // scheme (ISO timestamps, UUIDs, etc.), unlike a lexicographic sort.
+    const jsonFiles = entries.filter((f) => f.endsWith('.json'));
+    if (!jsonFiles.length) return '';
+    const stated = await Promise.all(
+      jsonFiles.map(async (f) => {
+        const full = path.join(resultsDir, f);
+        try {
+          return { full, mtime: (await fs.stat(full)).mtimeMs };
+        } catch {
+          return { full, mtime: 0 };
+        }
+      }),
+    );
+    stated.sort((a, b) => b.mtime - a.mtime);
+    target = stated[0].full;
   }
 
   try {

@@ -27,8 +27,10 @@ async function buildConfigTemplate({ projectName, defaultOrg, features, releaseN
       ...template.features,
       ai: features.ai,
     },
+    // Only write the keys the chosen provider needs. The http-specific keys
+    // (baseURL/apiKeyEnv) are included by the caller only for provider === 'http',
+    // so non-http configs stay clean (no inert baseURL/headers/timeoutMs clutter).
     ai: {
-      ...template.ai,
       ...ai,
       provider: ai.provider,
       model: ai.model || '',
