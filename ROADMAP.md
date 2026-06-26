@@ -61,9 +61,18 @@
 
 ---
 
-## In Progress
+## Next Session
 
-- **Plugin registry & scaffolding** — `sfdt plugin create` scaffold to bootstrap a new `sfdt-plugin-*` package with example `register(program)` wiring
+Consolidated, actionable queue from the v0.14.0 release cycle (2026-06-26):
+
+- **`sfdt plugin create`** — plugin registry & scaffolding to bootstrap a new `sfdt-plugin-*` package with example `register(program)` wiring. *(Was in progress — top of the queue.)*
+- **Triage the 3 parked specs** in `docs/superpowers/specs/` — for each, decide build / defer / discard:
+  - `2026-05-07-sfdt-mcp-parking-and-skills-design.md` — feeds the "Expose sfdt as MCP Server" planned item below
+  - `2026-05-09-remaining-items-design.md`
+  - `2026-05-09-scan-page-design.md`
+- **Automate the Homebrew tap bump** — add a step to the CLI publish path that computes the new tarball `sha256` and pushes `Formula/sfdt.rb` to the `scoobydrew83/homebrew-sfdt` tap. Needs a PAT with push access to that repo (the default `GITHUB_TOKEN` can't reach it). Currently a manual step in [RELEASING.md](RELEASING.md) Step 9.
+- **Fix the always-failing `integration` CI job** — it red-X's every release PR (DevHub org-auth; no org secrets available in PR context). Either wire the auth, restrict it to non-PR runs, or mark it non-required so release PRs stop showing a false failure.
+- **Refresh the "Shipped" section below** — it predates v0.14.0. Not yet reflected: the generic **`http` AI provider** (OpenAI-compatible: Ollama / OpenRouter / MiniMax), the new **install methods** (`install.sh`, Homebrew tap, **public GHCR Docker image**), and the **VS Code extension** (`sfdt.sfdt-devtools`, live on Marketplace + Open VSX at 0.1.1). The Docker line still says "Node 20" (now built from the published npm package on Node 22).
 
 ---
 
