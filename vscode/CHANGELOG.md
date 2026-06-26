@@ -6,6 +6,12 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-26
+
+### Changed
+- **Marketplace listing refresh** — the README rendered on the Marketplace now shows the correct title ("SFDT for Salesforce"), version/install badges, and `code --install-extension` instructions. The 0.1.0 listing rendered an earlier draft README that was baked into that build. No functional changes to the extension.
+- First automated publish via `.github/workflows/vscode-release.yml` (Marketplace + Open VSX).
+
 ## [0.1.0] - 2026-06-24
 
 Initial version of the SFDT VS Code extension — a thin UI over the `sfdt` CLI. It spawns the `sfdt` binary and reads the same JSON snapshots the CLI writes; it reimplements no logic of its own.
