@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import { glob } from 'glob';
 import { execa } from 'execa';
+import { safeParse } from './org-query.js';
 
 /**
  * Data set import/export runner.
@@ -65,7 +66,12 @@ export async function exportDataSet(config, setName, orgAlias) {
   const outDir = path.join(dataSetDir(config, setName), 'data');
   await fs.ensureDir(outDir);
   const args = buildExportArgs(queries, orgAlias, outDir);
-  const result = await execa('sf', args);
+  let result;
+  try {
+    result = await execa('sf', args);
+  } catch (err) {
+    throw sfError(err);
+  }
   const parsed = safeParse(result.stdout);
   const planFile = await resolvePlanFile(outDir);
   return {
@@ -90,9 +96,14 @@ export async function importDataSet(config, setName, orgAlias) {
   if (!planFile) {
     throw new Error(`No plan file found for data set "${setName}" — run \`sfdt data export ${setName}\` first.`);
   }
-  const result = await execa('sf', [
-    'data', 'import', 'tree', '--target-org', orgAlias, '--plan', planFile, '--json',
-  ]);
+  let result;
+  try {
+    result = await execa('sf', [
+      'data', 'import', 'tree', '--target-org', orgAlias, '--plan', planFile, '--json',
+    ]);
+  } catch (err) {
+    throw sfError(err);
+  }
   const parsed = safeParse(result.stdout);
   return {
     set: setName,
@@ -100,6 +111,20 @@ export async function importDataSet(config, setName, orgAlias) {
     planFile,
     imported: parsed?.result?.length ?? null,
   };
+}
+
+/**
+ * Rethrow an sf/execa failure with the CLI's structured JSON error message
+ * (from stdout or stderr) instead of the opaque "Command failed…" string.
+ */
+function sfError(err) {
+  const msg = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
+  if (msg) {
+    const e = new Error(msg);
+    e.stderr = err?.stderr;
+    return e;
+  }
+  return err;
 }
 
 /** Bulk-delete the records targeted by a data set's queries. */
@@ -111,24 +136,24 @@ export async function deleteDataSet(config, setName, orgAlias) {
   // leave the records matched by all but the first such query behind.
   for (const query of queries) {
     const sobject = extractSObject(query);
-    if (!sobject) continue;
+    if (!sobject) {
+      // Record as skipped rather than silently dropping — the user already
+      // confirmed deletion and would otherwise have no way to know a query was
+      // not run.
+      results.push({ sobject: null, status: 'skipped', query: oneLine(query) });
+      continue;
+    }
     try {
       await execa('sf', ['data', 'delete', 'bulk', '--sobject', sobject, '--query', query, '--target-org', orgAlias, '--json']);
       results.push({ sobject, status: 'ok' });
     } catch (err) {
-      results.push({ sobject, status: 'error', error: oneLine(err.message) });
+      // Prefer sf's structured error (stdout/stderr) over the opaque execa
+      // message, matching org-query/monitor-runner.
+      const sfMsg = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
+      results.push({ sobject, status: 'error', error: oneLine(sfMsg ?? err.message) });
     }
   }
   return { set: setName, org: orgAlias, sobjects: results };
-}
-
-function safeParse(text) {
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 }
 
 function oneLine(s) {

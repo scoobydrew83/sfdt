@@ -1,4 +1,4 @@
-import { query } from './org-query.js';
+import { query, safeParse } from './org-query.js';
 
 /**
  * Org diagnose & audit runner.
@@ -321,11 +321,17 @@ function result(id, title, status, summary, findings) {
 }
 
 function errored(id, title, err) {
+  // Mirror monitor-runner: prefer sf's structured JSON error message (from
+  // stdout or stderr) over the opaque execa string. Today all audit checks go
+  // through query() (which already rethrows with the structured message), but
+  // keeping the two errored() helpers symmetric guards against a future check
+  // that calls execa directly.
+  const structured = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
   return {
     id,
     title,
     status: 'error',
-    summary: `Check failed: ${oneLine(err.message)}`,
+    summary: `Check failed: ${oneLine(structured || err?.message)}`,
     findings: [],
   };
 }

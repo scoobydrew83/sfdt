@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-06-25
+
+A small follow-up to 0.13.0 hardening the new org-health/data commands' error reporting, from the post-release code review.
+
+### Fixed
+
+- **`sfdt data delete` no longer reports incomplete deletes as clean.** A query whose `FROM` clause can't be parsed is recorded as `skipped` (rather than silently discarded), and a per-sObject delete that fails is surfaced too: `--json` now reports `status: "partial"` with top-level `skippedCount` and `errorCount`, and non-JSON mode warns for both. Automation checking `status === "success"` is no longer misled into treating a partial or failed delete as a clean one.
+- **`sfdt audit`, `sfdt monitor`, `sfdt data` (export/import/delete), and the org-query helpers surface Salesforce CLI's real error message.** When an org is unreachable or a permission is missing, these now extract `sf`'s structured error text (from `stdout` or `stderr`) instead of the opaque `Command failed with exit code 1…` execa string, so failures read clearly.
+
+### Changed
+
+- **Internal:** deduplicated `query()` / `rawQuery()` into a shared `_execQuery` core and reused the shared `safeParse`, so error-handling fixes reach both paths automatically (no behavior change).
+- **Docs:** corrected the `@sfdt/extension` privacy policy and README to match the shipped manifest (notably disclosing the `cookies` permission) and synced the store listing to v0.3.2 / 29 features. (Documentation only — the extension itself is unchanged at 0.3.2.)
+
 ## [0.13.0] - 2026-06-23
 
 Adds a native **org health & operations** suite — clean-room reimplementations of org diagnose/audit, monitoring/backup, documentation generation, data-set management, and scratch-org pooling — surfaced across four consumers: the CLI, the web dashboard, the built-in MCP server, and a brand-new VS Code extension. No AGPL dependency.

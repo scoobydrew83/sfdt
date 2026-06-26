@@ -90,6 +90,38 @@ describe('data delete confirmation', () => {
     writeSpy.mockRestore();
   });
 
+  it('reports status "partial" + skippedCount in --json when a query was skipped', async () => {
+    deleteDataSet.mockResolvedValueOnce({
+      set: 'qa',
+      org: 'dev',
+      sobjects: [
+        { sobject: 'Account', status: 'ok' },
+        { sobject: null, status: 'skipped', query: 'not soql' },
+      ],
+    });
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'qa', '--yes', '--json']);
+    const out = writeSpy.mock.calls.map((c) => c[0]).join('');
+    expect(JSON.parse(out)).toMatchObject({ status: 'partial', skippedCount: 1 });
+    writeSpy.mockRestore();
+  });
+
+  it('reports status "partial" + errorCount in --json when a sobject delete failed', async () => {
+    deleteDataSet.mockResolvedValueOnce({
+      set: 'qa',
+      org: 'dev',
+      sobjects: [
+        { sobject: 'Account', status: 'ok' },
+        { sobject: 'Contact', status: 'error', error: 'No authorization information found for dev.' },
+      ],
+    });
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'qa', '--yes', '--json']);
+    const out = writeSpy.mock.calls.map((c) => c[0]).join('');
+    expect(JSON.parse(out)).toMatchObject({ status: 'partial', errorCount: 1, skippedCount: 0 });
+    writeSpy.mockRestore();
+  });
+
   it('refuses to delete non-interactively without --yes', async () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     // --json forces non-interactive; without --yes the delete must be refused.

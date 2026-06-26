@@ -57,8 +57,9 @@ export const SettingsSchema = z.object({
   // and not exposed to web pages. The token is, however, readable by any
   // script the extension itself runs — so a compromise of any extension
   // bundle (XSS via an upstream dep, malicious content script, etc.)
-  // could exfiltrate the token. Rotate via `sfdt extension token rotate`
-  // if you suspect leakage. This is the standard chrome.storage.local
+  // could exfiltrate the token. Rotate by deleting `~/.sfdt/bridge-token` and
+  // restarting the bridge (`sfdt ui`), then re-pairing the extension, if you
+  // suspect leakage. This is the standard chrome.storage.local
   // pattern for extension credentials; we accept it because the bridge
   // server only binds to localhost and the user can rotate at any time.
   bridge: z

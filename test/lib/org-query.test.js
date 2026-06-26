@@ -55,6 +55,22 @@ describe('org-query query()', () => {
     execa.mockRejectedValueOnce(err);
     await expect(query('dev', 'SELECT Foo FROM Account')).rejects.toThrow(/No such column Foo/);
   });
+
+  it('falls back to the structured error message on stderr when stdout is empty', async () => {
+    const err = new Error('Command failed with exit code 1');
+    err.stdout = '';
+    err.stderr = JSON.stringify({ status: 1, message: 'No authorization information found for dev.' });
+    execa.mockRejectedValueOnce(err);
+    await expect(query('dev', 'SELECT Id FROM Account')).rejects.toThrow(/No authorization information found/);
+  });
+
+  it('prefers the stdout message over stderr when both carry one', async () => {
+    const err = new Error('Command failed with exit code 1');
+    err.stdout = JSON.stringify({ status: 1, message: 'STDOUT message wins' });
+    err.stderr = JSON.stringify({ status: 1, message: 'STDERR message' });
+    execa.mockRejectedValueOnce(err);
+    await expect(query('dev', 'SELECT Id FROM Account')).rejects.toThrow(/STDOUT message wins/);
+  });
 });
 
 describe('org-query rawQuery()', () => {

@@ -2,6 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../src/lib/org-query.js', () => ({
   query: vi.fn(),
+  safeParse: (text) => {
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  },
 }));
 
 import { query } from '../../src/lib/org-query.js';

@@ -171,7 +171,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
           response.code === 'BRIDGE_OFFLINE'
             ? ' — run `sfdt ui` in your Salesforce project to start the bridge.'
             : response.code === 'BRIDGE_UNAUTHORIZED'
-              ? ' — open extension settings and pair the bridge token (`sfdt extension token`).'
+              ? ' — open extension settings and paste the bridge token from `~/.sfdt/bridge-token` (created when you run `sfdt ui`).'
               : '';
         const errorPanel = doc.createElement('div');
         errorPanel.style.cssText =

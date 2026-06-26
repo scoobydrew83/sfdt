@@ -4,6 +4,14 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-06-25
+
+### Fixed
+- `org-health` — the `BRIDGE_UNAUTHORIZED` error hint pointed at a non-existent `sfdt extension token` command. It now directs users to paste the bridge token from `~/.sfdt/bridge-token` (created when you run `sfdt ui`), matching the actual pairing flow.
+
+### Changed
+- Corrected the stale bridge-token rotation comment in `lib/settings.ts` (the old `sfdt extension token rotate` command does not exist) to describe the real flow: delete `~/.sfdt/bridge-token`, restart the bridge, and re-pair.
+
 ## [0.3.2] - 2026-06-24
 
 > Version note: there is no 0.3.1 — the bump went straight from 0.3.0 to 0.3.2.

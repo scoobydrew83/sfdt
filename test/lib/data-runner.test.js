@@ -88,6 +88,14 @@ describe('exportDataSet', () => {
     expect(res.planFile).toMatch(/Account-plan\.json$/);
     expect(execa).toHaveBeenCalledWith('sf', expect.arrayContaining(['data', 'export', 'tree']));
   });
+  it('surfaces sf\'s structured error message on failure', async () => {
+    fs.readJson.mockResolvedValueOnce({ queries: ['SELECT Id FROM Account'] });
+    fs.ensureDir.mockResolvedValueOnce(undefined);
+    const err = new Error('Command failed with exit code 1: sf data export tree');
+    err.stdout = JSON.stringify({ status: 1, message: 'No authorization information found for dev.' });
+    execa.mockRejectedValueOnce(err);
+    await expect(exportDataSet(config, 'qa', 'dev')).rejects.toThrow(/No authorization information found for dev\./);
+  });
 });
 
 describe('importDataSet', () => {
@@ -118,6 +126,15 @@ describe('deleteDataSet', () => {
     const res = await deleteDataSet(config, 'qa', 'dev');
     expect(res.sobjects[0]).toMatchObject({ sobject: 'Account', status: 'error' });
   });
+  it('prefers sf\'s structured error message over the opaque execa message', async () => {
+    fs.readJson.mockResolvedValueOnce({ queries: ['SELECT Id FROM Account'] });
+    const err = new Error('Command failed with exit code 1: sf data delete bulk');
+    err.stdout = JSON.stringify({ status: 1, message: 'No authorization information found for dev.' });
+    execa.mockRejectedValueOnce(err);
+    const res = await deleteDataSet(config, 'qa', 'dev');
+    expect(res.sobjects[0].error).toMatch(/No authorization information found for dev\./);
+    expect(res.sobjects[0].error).not.toMatch(/Command failed with exit code/);
+  });
   it('runs every query, including multiple for the same sObject', async () => {
     fs.readJson.mockResolvedValueOnce({
       queries: ["SELECT Id FROM Account WHERE Region='US'", "SELECT Id FROM Account WHERE Region='EU'"],
@@ -127,6 +144,17 @@ describe('deleteDataSet', () => {
     // Both Account filters must run — deduping by sObject would drop the second.
     expect(execa).toHaveBeenCalledTimes(2);
     expect(res.sobjects).toHaveLength(2);
+  });
+  it('records unparseable queries as skipped instead of silently dropping them', async () => {
+    fs.readJson.mockResolvedValueOnce({ queries: ['SELECT Id FROM Account', 'not soql'] });
+    execa.mockResolvedValue({ stdout: '{}' });
+    const res = await deleteDataSet(config, 'qa', 'dev');
+    // Only the parseable query runs a delete…
+    expect(execa).toHaveBeenCalledTimes(1);
+    // …but the skipped one is still surfaced in the results.
+    expect(res.sobjects).toHaveLength(2);
+    expect(res.sobjects[0]).toMatchObject({ sobject: 'Account', status: 'ok' });
+    expect(res.sobjects[1]).toMatchObject({ sobject: null, status: 'skipped' });
   });
 });
 

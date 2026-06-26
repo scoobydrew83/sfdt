@@ -1,18 +1,20 @@
 # Chrome Web Store Listing
 
-> **Store-sync status:** Updated for **v0.3.1** (28 features). The 0.3.x line adds
-> a standalone **Workspace** tab plus four new tools — Execute Anonymous Apex,
-> Debug Logs, Saved SOQL, and Switch Org (multi-org). As of the last manual
-> upload the *live* CWS listing still reflects the older **17-feature** copy —
-> this file is ahead of the store. Paste the sections below into the CWS
-> dashboard during the manual v0.3.1 upload, then this file and the store will
-> be back in sync.
+> **Store-sync status:** Updated for **v0.3.2** (29 features). The 0.3.x line adds
+> a standalone **Workspace** tab plus five new tools — Execute Anonymous Apex,
+> Debug Logs, Saved SOQL, Switch Org (multi-org), and **Org Health** (audit/monitor
+> snapshots via the local CLI bridge). As of the last manual upload the *live* CWS
+> listing still reflects the older **17-feature** copy — this file is ahead of the
+> store. Paste the sections below into the CWS dashboard during the manual v0.3.2
+> upload, then this file and the store will be back in sync.
 >
-> Screenshots and the store icon live alongside this file in `extension/store-assets/`
-> (`store-icon-128.png` + `final_01`–`final_16`). The set was refreshed for 0.3.0:
-> `final_01`–`final_05` (flow/setup era) plus `final_06`–`final_16` (Workspace
-> tools + schema/data tooling). CWS shows up to 5 — see this folder's README for
-> the suggested five.
+> Screenshots, the store icon, and the small promo tile live alongside this file in
+> `extension/store-assets/` (`store-icon-128.png`, `promo-small-440x280.png`, and
+> `final_01`–`final_16`). The set was refreshed for 0.3.0: `final_01`–`final_05`
+> (flow/setup era) plus `final_06`–`final_16` (Workspace tools + schema/data tooling).
+> CWS shows up to 5 — featured set: `final_06`, `final_01`, `final_07`, `final_11`,
+> and `final_18` (Org Limits). The Org Health screenshot is still pending (future
+> `final_19`). See this folder's README for the full rationale and which shots to avoid.
 
 ## Item name
 SFDT SF Helper
@@ -27,7 +29,7 @@ Developer Tools (alt: Workflow & Planning)
 English (United States)
 
 ## Detailed description
-SFDT SF Helper adds 28 productivity features for Salesforce admins and developers across Flow Builder, Setup, Object Manager, and record pages — now including a standalone Workspace tab that runs SOQL, Apex, and other tools in their own browser tab so they never disturb the Salesforce page you're on. Features span flow analysis, schema and data tooling, SOQL/REST/SOAP exploration, anonymous Apex, debug-log and event monitoring, and optional AI assistance. Every feature is opt-in via the options page, and any feature can be remotely disabled without a Web Store re-review.
+SFDT SF Helper adds 29 productivity features for Salesforce admins and developers across Flow Builder, Setup, Object Manager, and record pages — now including a standalone Workspace tab that runs SOQL, Apex, and other tools in their own browser tab so they never disturb the Salesforce page you're on. Features span flow analysis, schema and data tooling, SOQL/REST/SOAP exploration, anonymous Apex, debug-log and event monitoring, org health diagnostics, and optional AI assistance. Every feature is opt-in via the options page, and any feature can be remotely disabled without a Web Store re-review.
 
 Features include:
 - Setup Tabs — adds an Automation Home tab plus reorderable, groupable tabs to the Setup tab bar
@@ -58,6 +60,7 @@ Features include:
 - Debug Logs — list ApexLog debug logs and view raw log bodies
 - Saved SOQL — bookmark and re-run SOQL queries and history
 - Switch Org — discover every org you're logged into and run any tool against it (multi-org)
+- Org Health — view native sfdt audit and monitor snapshots (org limits, license usage, MFA coverage, security health score, Apex job failures, and more) in a side panel via the local CLI bridge
 
 Privacy
 - No user data is sent to any third-party service.
