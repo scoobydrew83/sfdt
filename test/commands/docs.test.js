@@ -31,8 +31,9 @@ beforeEach(() => {
   generateDocs.mockResolvedValue({
     outputDir: '/project/docs',
     files: ['index.md', 'objects/A.md'],
-    counts: { objects: 1, apex: 0, flows: 0 },
+    counts: { objects: 1, apex: 0, flows: 0, lwc: 0 },
     aiUsed: false,
+    guides: null,
   });
   collectProjectMetadata.mockResolvedValue({ objects: [{ name: 'A', fields: [] }] });
   buildErdMermaid.mockReturnValue('```mermaid\nerDiagram\n```');
@@ -42,13 +43,48 @@ describe('docs generate', () => {
   it('generates docs and prints a summary', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await createProgram().parseAsync(['node', 'sfdt', 'docs', 'generate']);
-    expect(generateDocs).toHaveBeenCalledWith({ _projectRoot: '/project' }, { ai: false });
+    expect(generateDocs).toHaveBeenCalledWith({ _projectRoot: '/project' }, expect.objectContaining({ ai: false, roles: null }));
   });
 
   it('passes --ai through', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await createProgram().parseAsync(['node', 'sfdt', 'docs', 'generate', '--ai']);
-    expect(generateDocs).toHaveBeenCalledWith(expect.any(Object), { ai: true });
+    expect(generateDocs).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ ai: true }));
+  });
+
+  it('defaults --roles to all four roles when no list is given', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'docs', 'generate', '--roles']);
+    expect(generateDocs).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ roles: ['developer', 'admin', 'user', 'devops'] }),
+    );
+  });
+
+  it('subsets roles from a comma list', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'docs', 'generate', '--roles', 'developer,admin']);
+    expect(generateDocs).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ roles: ['developer', 'admin'] }),
+    );
+  });
+
+  it('honors config.docs.roles when --roles has no list', async () => {
+    loadConfig.mockResolvedValue({ _projectRoot: '/project', docs: { roles: ['user'] } });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'docs', 'generate', '--roles']);
+    expect(generateDocs).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ roles: ['user'] }));
+  });
+
+  it('surfaces an AI-unavailable error from role generation', async () => {
+    generateDocs.mockRejectedValue(new Error('AI features are disabled'));
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'docs', 'generate', '--roles', '--json']);
+    const out = writeSpy.mock.calls.map((c) => c[0]).join('');
+    expect(JSON.parse(out)).toMatchObject({ status: 'error', message: 'AI features are disabled' });
+    expect(process.exitCode).toBe(1);
+    writeSpy.mockRestore();
   });
 
   it('emits JSON in --json mode', async () => {
