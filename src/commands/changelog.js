@@ -149,6 +149,8 @@ export function registerChangelogCommand(program) {
             }
             print.success(`Updated ${changelogRelPath}`);
           }
+        } else {
+          print.info('AI returned no changelog entries.');
         }
       } catch (err) {
         print.error(`Changelog generation failed: ${err.message}`);

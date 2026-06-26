@@ -462,7 +462,7 @@ describe('http provider — isAiAvailable', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('probes localhost endpoints (Ollama) for reachability', async () => {
+  it('probes localhost endpoints via the OpenAI-standard /models for reachability', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal('fetch', fetchMock);
     const ok = await isAiAvailable({
@@ -471,9 +471,19 @@ describe('http provider — isAiAvailable', () => {
     });
     expect(ok).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:9999/api/tags',
+      'http://localhost:9999/v1/models',
       expect.objectContaining({ signal: expect.anything() }),
     );
+  });
+
+  it('treats a non-200 probe response (e.g. 403/404) as reachable', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 403 });
+    vi.stubGlobal('fetch', fetchMock);
+    const ok = await isAiAvailable({
+      features: { ai: true },
+      ai: { provider: 'http', baseURL: 'http://localhost:9998/v1' },
+    });
+    expect(ok).toBe(true);
   });
 });
 

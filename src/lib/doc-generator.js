@@ -492,6 +492,14 @@ async function generateRoleGuides(meta, config, { roles, write, root, onProgress
     for (const role of resolved) jobs.push({ type, comp, role });
   }
 
+  // Announce the total upfront — each job is a 30–60s AI call, so without this
+  // the first progress line only appears after the first job completes, leaving
+  // the user with no sense of scale (e.g. 75 components × 4 roles = 300 calls).
+  onProgress?.(
+    `Generating ${jobs.length} role guide${jobs.length === 1 ? '' : 's'} ` +
+      `(${components.length} component${components.length === 1 ? '' : 's'} × ${resolved.length} role${resolved.length === 1 ? '' : 's'})…`,
+  );
+
   const template = await getPrompt('doc-role-guide', config._configDir);
   const guideFiles = [];
   let written = 0;

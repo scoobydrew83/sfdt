@@ -56,15 +56,17 @@ export async function isHttpAvailable(config) {
   if (httpAvailableCache.get(cacheKey)) return true;
 
   let available = true;
-  // Cheap reachability probe for local servers (Ollama exposes /api/tags).
+  // Cheap reachability probe for local servers. Use the OpenAI-standard
+  // `GET {baseURL}/models` (present on Ollama, LM Studio, llama.cpp, vLLM,
+  // LocalAI, …) rather than Ollama's `/api/tags`, so non-Ollama local servers
+  // aren't mis-flagged unavailable.
   if (/^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/i.test(baseURL)) {
     try {
-      const origin = new URL(baseURL).origin;
       const controller = new AbortController();
       const t = setTimeout(() => controller.abort(), 2000);
-      await fetch(`${origin}/api/tags`, { signal: controller.signal });
+      await fetch(`${baseURL}/models`, { signal: controller.signal });
       clearTimeout(t);
-      // Any HTTP response (200/404/401/403/405/500…) means a server is listening
+      // Any HTTP response (200/401/403/404/405/500…) means a server is listening
       // and reachable — that's all this probe needs to confirm. Real request
       // errors surface later on the actual /chat/completions call.
       available = true;
