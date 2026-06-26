@@ -27,7 +27,11 @@
   },
   "ai": {
     "provider": "claude",
-    "model": ""
+    "model": "",
+    "baseURL": "",
+    "apiKeyEnv": "",
+    "headers": {},
+    "timeoutMs": 300000
   },
   "plugins": [],
   "pluginOptions": {
@@ -71,7 +75,9 @@
   "docs": {
     "outputDir": "docs",
     "ai": true,
-    "diagrams": true
+    "diagrams": true,
+    "roleGuides": false,
+    "roles": ["developer", "admin", "user", "devops"]
   },
   "data": {
     "dir": ".sfdt/data"

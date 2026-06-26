@@ -1,13 +1,14 @@
 # Releasing sfdt
 
-This monorepo ships from `feature/flow-toolkit-monorepo` (today) and from `main` (once landed). It contains four workspaces with different release cadences:
+This monorepo contains five workspaces with different release cadences:
 
 | Workspace | Distribution | Versioning | Cadence |
 |---|---|---|---|
-| `@sfdt/cli` | npm (`@sfdt/cli`) | Independent semver | Whenever a meaningful CLI change lands. Most releases come from here. |
+| `@sfdt/cli` | npm (`@sfdt/cli`); also drives the **Homebrew tap** and the **GHCR Docker image** | Independent semver | Whenever a meaningful CLI change lands. Most releases come from here. |
 | `@sfdt/extension` | Chrome Web Store (zip from `npm run package:ext`) | Independent semver, tracked in `extension/package.json` | Reviewed by the Web Store — slower than CLI. Bump when Web Store-bound behavior changes, not for every CLI release. |
+| `sfdt-devtools` (`/vscode`) | VS Code Marketplace as **`sfdt.sfdt-devtools`** (+ optional Open VSX) | Independent semver, tracked in `vscode/package.json` (tag `vscode-v*`) | Bump when the extension's behavior or its README/listing changes. Versions independently of the CLI. |
 | `@sfdt/host` | Bundled inside `@sfdt/cli` (installed via `sfdt extension install-host`) | Lock-step with `@sfdt/cli` | Always shipped alongside the CLI. |
-| `@sfdt/flow-core` | Workspace-only today; **future**: npm `@sfdt/flow-core` | Independent semver once published; today consumed via workspace `*` | When the **bridge contract** or **scoring rules** change. The contract changing is the load-bearing event. |
+| `@sfdt/flow-core` | npm (`@sfdt/flow-core`), published by the CLI's `ci.yml` job as a coupled sub-step of a CLI release | Independent semver; CLI + extension depend on `^0.9.0` | When the **bridge contract** or **scoring rules** change. The contract changing is the load-bearing event. |
 
 The release policy below codifies how those cadences interact.
 
@@ -74,6 +75,34 @@ When you bump the protocol:
 
 6. **Post-release.** Run the `/post-release` skill (it archives `pr-analysis/` artifacts, confirms `main` / `develop` sync, and enumerates cleanup items).
 
+7. **Distribution channels (ride the CLI version bump).** A CLI release also feeds two channels off the same version — handle them after npm publish:
+   - **Docker / GHCR (automatic).** The `docker-publish` job in `ci.yml` builds a multi-arch image and pushes `ghcr.io/scoobydrew83/sfdt:X.Y.Z` + `:latest` when the version bumps on `main`. Verify with `gh run list --workflow=ci.yml --branch=main`. **First release only:** make the GHCR package **public** (it's created private), or `docker pull` 401s.
+   - **Homebrew (manual bump).** The tap `scoobydrew83/homebrew-sfdt` pins a tarball in `Formula/sfdt.rb` and does not auto-update. After npm publish:
+     ```bash
+     VERSION=X.Y.Z
+     curl -fsSL "https://registry.npmjs.org/@sfdt/cli/-/cli-${VERSION}.tgz" | shasum -a 256
+     # Update url + sha256 in the TAP repo's Formula/sfdt.rb, commit, push.
+     # Keep this repo's canonical Formula/sfdt.rb in sync (bump it in the release PR).
+     ```
+     A future `ci.yml` step could push this automatically (needs a PAT with write access to the tap repo). Until then it's manual.
+
+> **Note:** publish itself is CI-driven now — `.github/workflows/ci.yml` publishes `@sfdt/flow-core` then `@sfdt/cli` (with `--provenance`) on a version-bump push to `main`, and the beta channel publishes from `develop` on a pre-release version. The manual `npm publish` in step 5 is the fallback, not the normal path.
+
+### Releasing the VS Code extension (`sfdt.sfdt-devtools`)
+
+The VS Code extension lives in `vscode/` (manifest package name **`sfdt-devtools`** — unscoped, because the Marketplace rejects scoped names) and is published to the VS Code Marketplace as **`sfdt.sfdt-devtools`** ("SFDT for Salesforce", publisher `sfdt`). It versions independently of the CLI.
+
+1. Bump `vscode/package.json#version` and add a `## [X.Y.Z] - YYYY-MM-DD` block to `vscode/CHANGELOG.md`. Update `vscode/README.md` if features/settings changed (the Marketplace re-renders it on publish).
+2. Verify + package locally:
+   ```bash
+   npm run lint -w vscode && npm run test:vscode && npm run build:vscode
+   npm run package:vscode      # -> vscode/sfdt-devtools-<version>.vsix
+   ```
+3. Open a PR to `main` (stage only `vscode/package.json`, `vscode/CHANGELOG.md`, and `vscode/README.md` if changed). On merge, `.github/workflows/vscode-release.yml` runs `vsce publish` (and `ovsx publish` if `OVSX_PAT` is set), tags `vscode-v{version}`, and attaches the `.vsix` to a GitHub Release.
+4. **Required secret:** `VSCE_PAT` (Azure DevOps PAT, scope Marketplace → Manage). Without it the publish step fails — fall back to a manual `.vsix` upload at <https://marketplace.visualstudio.com/manage/publishers/sfdt>. `OVSX_PAT` (Open VSX) is optional.
+
+> The extension bundles `@sfdt/flow-core` via esbuild (`--no-dependencies` at package time), so it never publishes flow-core to npm. Workspace selection uses the **path** form (`-w vscode`), never the package name.
+
 ### Releasing `@sfdt/extension`
 
 The Web Store re-review process is slower than npm publish, so we bump the extension on a separate schedule. The extension's version is in `extension/package.json` and **does not need to match the CLI**.
@@ -115,6 +144,8 @@ Before any release PR is merged:
 - [ ] `npm run build:gui` and `npm run build:ext` both succeed.
 - [ ] If anything in `packages/flow-core/src/bridge-contract.ts` changed, the `/pre-release-cli-test` skill has been run (verifies all 21 CLI commands' `--help` smoke).
 - [ ] If anything in `gui/` changed, the `/pre-release-ui-test` skill has been run.
+- [ ] If you're releasing the VS Code extension, `npm run test:vscode` + `npm run build:vscode` pass, the `.vsix` packages cleanly, and the `VSCE_PAT` secret is configured (or you'll upload the `.vsix` manually).
+- [ ] After a CLI release: the GHCR Docker image published (public on first release) and the Homebrew tap's `Formula/sfdt.rb` was bumped to the new `url` + `sha256`.
 - [ ] If anything outside docs/tests changed, the `/pre-release-security` skill has been run.
 - [ ] If `@modelcontextprotocol/sdk` was bumped past 1.29.x, a manual smoke test has been run against both `sf mcp start` (client side, `src/lib/mcp-client.js`) and `sfdt mcp start` (server side) — at minimum a `tools/list` plus one `tools/call` round-trip. The server relies on verified-but-undocumented SDK behaviors (handler results passed through verbatim, loose `_meta` parsing), so SDK bumps must not land silently.
 - [ ] `CHANGELOG.md` updated.

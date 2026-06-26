@@ -26,6 +26,7 @@ vi.mock('inquirer', () => ({
 vi.mock('../../src/lib/ai.js', () => ({
   isAiAvailable: vi.fn(), aiUnavailableMessage: vi.fn().mockReturnValue("AI provider not available"),
   runAiPrompt: vi.fn(),
+  providerSupportsAgenticTools: () => true,
 }));
 
 vi.mock('../../src/lib/output.js', () => ({
@@ -214,7 +215,7 @@ describe('changelog generate command', () => {
   it('appends AI response to [Unreleased] section when user approves', async () => {
     fs.pathExists.mockResolvedValue(true);
     isAiAvailable.mockResolvedValue(true);
-    runAiPrompt.mockResolvedValue('### Added\n- New feature');
+    runAiPrompt.mockResolvedValue({ stdout: '### Added\n- New feature', stderr: '', exitCode: 0 });
     inquirer.prompt.mockResolvedValueOnce({ apply: true });
     fs.readFile.mockResolvedValue('# Changelog\n\n## [Unreleased]\n\n## [1.0.0]\n');
     fs.writeFile.mockResolvedValue();

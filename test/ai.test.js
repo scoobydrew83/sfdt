@@ -11,10 +11,13 @@ import {
   aiUnavailableMessage,
   runAiPrompt,
   streamAiResponse,
+  providerSupportsAgenticTools,
 } from '../src/lib/ai.js';
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 // ─── getConfiguredProvider ────────────────────────────────────────────────────
@@ -402,5 +405,185 @@ describe('streamAiResponse', () => {
         vi.fn(),
       ),
     ).rejects.toThrow('AI stream failed [openai]');
+  });
+});
+
+// ─── HTTP (OpenAI-compatible) provider ────────────────────────────────────────
+
+describe('providerSupportsAgenticTools', () => {
+  it('is false for http and true for CLI providers', () => {
+    expect(providerSupportsAgenticTools({ ai: { provider: 'http' } })).toBe(false);
+    expect(providerSupportsAgenticTools({ ai: { provider: 'claude' } })).toBe(true);
+    expect(providerSupportsAgenticTools({ ai: { provider: 'gemini' } })).toBe(true);
+    expect(providerSupportsAgenticTools({})).toBe(true);
+  });
+});
+
+describe('http provider — aiUnavailableMessage', () => {
+  it('explains a missing baseURL', () => {
+    const msg = aiUnavailableMessage({ ai: { provider: 'http' } });
+    expect(msg).toMatch(/baseURL/);
+  });
+
+  it('explains a missing API-key env var', () => {
+    vi.stubEnv('SOME_MISSING_KEY', '');
+    const msg = aiUnavailableMessage({
+      ai: { provider: 'http', baseURL: 'https://api.example.com/v1', apiKeyEnv: 'SOME_MISSING_KEY' },
+    });
+    expect(msg).toMatch(/SOME_MISSING_KEY/);
+  });
+});
+
+describe('http provider — isAiAvailable', () => {
+  it('is false when baseURL is unset', async () => {
+    const ok = await isAiAvailable({ features: { ai: true }, ai: { provider: 'http' } });
+    expect(ok).toBe(false);
+  });
+
+  it('is false when apiKeyEnv is named but the env var is empty', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', '');
+    const ok = await isAiAvailable({
+      features: { ai: true },
+      ai: { provider: 'http', baseURL: 'https://openrouter.ai/api/v1', apiKeyEnv: 'OPENROUTER_API_KEY' },
+    });
+    expect(ok).toBe(false);
+  });
+
+  it('is true for a cloud endpoint with the key present (no network probe)', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'sk-test');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const ok = await isAiAvailable({
+      features: { ai: true },
+      // Unique host avoids the per-process availability cache from prior tests.
+      ai: { provider: 'http', baseURL: 'https://cloud-no-probe.example/api/v1', apiKeyEnv: 'OPENROUTER_API_KEY' },
+    });
+    expect(ok).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('probes localhost endpoints via the OpenAI-standard /models for reachability', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+    const ok = await isAiAvailable({
+      features: { ai: true },
+      ai: { provider: 'http', baseURL: 'http://localhost:9999/v1' },
+    });
+    expect(ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:9999/v1/models',
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+  });
+
+  it('treats a non-200 probe response (e.g. 403/404) as reachable', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 403 });
+    vi.stubGlobal('fetch', fetchMock);
+    const ok = await isAiAvailable({
+      features: { ai: true },
+      ai: { provider: 'http', baseURL: 'http://localhost:9998/v1' },
+    });
+    expect(ok).toBe(true);
+  });
+});
+
+describe('http provider — runAiPrompt', () => {
+  const httpConfig = {
+    ai: { provider: 'http', baseURL: 'https://api.example.com/v1', model: 'test-model', apiKeyEnv: 'TEST_KEY' },
+  };
+
+  it('POSTs to /chat/completions with bearer auth and returns content as stdout', async () => {
+    vi.stubEnv('TEST_KEY', 'sk-abc');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'http answer' } }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await runAiPrompt('hello model', { config: httpConfig });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://api.example.com/v1/chat/completions');
+    expect(init.method).toBe('POST');
+    expect(init.headers.Authorization).toBe('Bearer sk-abc');
+    const body = JSON.parse(init.body);
+    expect(body.model).toBe('test-model');
+    expect(body.stream).toBe(false);
+    expect(body.messages.at(-1).content).toContain('hello model');
+    expect(execa).not.toHaveBeenCalled();
+    expect(result.stdout).toBe('http answer');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('maps a non-2xx response to exitCode 1 with stderr', async () => {
+    vi.stubEnv('TEST_KEY', 'sk-abc');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      text: async () => 'bad key',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await runAiPrompt('hello', { config: httpConfig });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toMatch(/401/);
+  });
+});
+
+describe('http provider — streamAiResponse', () => {
+  function makeSSEResponse(lines) {
+    async function* body() {
+      for (const line of lines) yield new TextEncoder().encode(line);
+    }
+    return { ok: true, body: body() };
+  }
+
+  it('parses SSE delta chunks and stops on [DONE]', async () => {
+    vi.stubEnv('TEST_KEY', 'sk-abc');
+    const sse = [
+      'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Hel' } }] }) + '\n\n',
+      'data: ' + JSON.stringify({ choices: [{ delta: { content: 'lo' } }] }) + '\n\n',
+      'data: [DONE]\n\n',
+    ];
+    const fetchMock = vi.fn().mockResolvedValue(makeSSEResponse(sse));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const onChunk = vi.fn();
+    await streamAiResponse(
+      [{ role: 'user', content: 'hi' }],
+      'system',
+      { config: { ai: { provider: 'http', baseURL: 'https://api.example.com/v1', apiKeyEnv: 'TEST_KEY' } } },
+      onChunk,
+    );
+
+    expect(onChunk).toHaveBeenCalledWith('Hel');
+    expect(onChunk).toHaveBeenCalledWith('lo');
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.stream).toBe(true);
+  });
+
+  it('processes a trailing event when the server closes without [DONE]', async () => {
+    vi.stubEnv('TEST_KEY', 'sk-abc');
+    // Last event has no terminating blank line and there is no [DONE] sentinel —
+    // it must still be flushed from the buffer after the stream ends.
+    const sse = [
+      'data: ' + JSON.stringify({ choices: [{ delta: { content: 'A' } }] }) + '\n\n',
+      'data: ' + JSON.stringify({ choices: [{ delta: { content: 'B' } }] }),
+    ];
+    const fetchMock = vi.fn().mockResolvedValue(makeSSEResponse(sse));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const onChunk = vi.fn();
+    await streamAiResponse(
+      [{ role: 'user', content: 'hi' }],
+      'system',
+      { config: { ai: { provider: 'http', baseURL: 'https://api.example.com/v1', apiKeyEnv: 'TEST_KEY' } } },
+      onChunk,
+    );
+
+    expect(onChunk).toHaveBeenCalledWith('A');
+    expect(onChunk).toHaveBeenCalledWith('B'); // tail event not dropped
   });
 });

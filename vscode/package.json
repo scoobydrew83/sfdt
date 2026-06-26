@@ -1,12 +1,22 @@
 {
-  "name": "@sfdt/vscode",
-  "displayName": "SFDT — Salesforce DevTools",
+  "name": "sfdt-devtools",
+  "displayName": "SFDT for Salesforce",
   "description": "Drive the sfdt CLI from VS Code: deploy, preflight, org monitoring & audit, docs, and the sfdt dashboard — all from the command palette and a dedicated Org Health sidebar.",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "publisher": "sfdt",
   "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scoobydrew83/sfdt.git",
+    "directory": "vscode"
+  },
+  "homepage": "https://github.com/scoobydrew83/sfdt/tree/main/vscode#readme",
+  "bugs": {
+    "url": "https://github.com/scoobydrew83/sfdt/issues"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },

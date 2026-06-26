@@ -6,14 +6,31 @@ import { loadConfig } from '../lib/config.js';
 import { generateDocs, collectProjectMetadata, buildErdMermaid } from '../lib/doc-generator.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 
+const DEFAULT_ROLES = ['developer', 'admin', 'user', 'devops'];
+
+/** Resolve the --roles flag value into a role list (or null when the flag is absent). */
+function resolveRoleOption(roleOption, config) {
+  if (roleOption == null) return null; // flag not passed
+  if (typeof roleOption === 'string') {
+    return roleOption.split(',').map((r) => r.trim()).filter(Boolean);
+  }
+  // flag passed without a value (boolean true) → fall back to config, then default
+  return config.docs?.roles?.length ? config.docs.roles : DEFAULT_ROLES;
+}
+
 async function executeGenerate(options) {
   const jsonMode = !!options.json;
   try {
     const config = await loadConfig();
+    const roles = resolveRoleOption(options.roles, config);
     const spinner = jsonMode ? null : ora('Generating documentation…').start();
     let result;
     try {
-      result = await generateDocs(config, { ai: !!options.ai });
+      result = await generateDocs(config, {
+        ai: !!options.ai,
+        roles,
+        onProgress: spinner ? (msg) => { spinner.text = msg; } : undefined,
+      });
       spinner?.succeed(`Documentation generated (${result.files.length} files)`);
     } catch (err) {
       spinner?.fail('Documentation generation failed');
@@ -26,7 +43,14 @@ async function executeGenerate(options) {
       console.log(`  Objects: ${result.counts.objects}`);
       console.log(`  Apex:    ${result.counts.apex}`);
       console.log(`  Flows:   ${result.counts.flows}`);
+      console.log(`  LWC:     ${result.counts.lwc}`);
       console.log(`  AI overview: ${result.aiUsed ? 'yes' : 'no'}`);
+      if (result.guides) {
+        console.log(`  Role guides: ${result.guides.written} written for [${result.guides.roles.join(', ')}]`);
+        if (result.guides.skipped.length) {
+          console.log(chalk.yellow(`  Skipped (empty AI output): ${result.guides.skipped.length}`));
+        }
+      }
       console.log(chalk.green(`\nWritten to ${result.outputDir}`));
       console.log(chalk.dim('Serve with: npx mkdocs serve (requires mkdocs-material)'));
     }
@@ -76,6 +100,7 @@ export function registerDocsCommand(program) {
     .command('generate', { isDefault: true })
     .description('Generate MkDocs-compatible markdown documentation for the project')
     .option('--ai', 'Enrich the index with an AI-written project overview')
+    .option('--roles [list]', 'Also generate per-component Developer/Admin/User/DevOps guides (AI); optional comma list to subset, e.g. --roles developer,admin')
     .option('--json', 'Emit structured JSON to stdout')
     .action((options) => executeGenerate(options));
 

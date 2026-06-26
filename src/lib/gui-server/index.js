@@ -2097,7 +2097,8 @@ export function createGuiApp(config, version, port = 7654) {
     };
 
     try {
-      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('../ai.js');
+      const { isAiAvailable: checkAi, runAiPrompt: runAi, providerSupportsAgenticTools } = await import('../ai.js');
+      const { gatherGitLog, frameProvidedContext } = await import('../ai-context.js');
       const available = await checkAi(config);
       if (!available) {
         send({ type: 'error', message: 'AI is not available or not configured.' });
@@ -2110,10 +2111,16 @@ export function createGuiApp(config, version, port = 7654) {
       const pkg = pkgName ? (config.packageDirectories ?? []).find((p) => p.name === pkgName) : null;
       const limit = 20;
       const changelogTemplate = await getPrompt('changelog', config._configDir);
-      const prompt = interpolate(changelogTemplate, {
+      let prompt = interpolate(changelogTemplate, {
         limit,
         ...(pkg ? { packagePath: pkg.path, packageName: pkg.name } : {}),
       });
+
+      // HTTP providers can't run `git log` — pre-gather it.
+      if (!providerSupportsAgenticTools(config)) {
+        const gitLog = await gatherGitLog(projectRoot, { limit, pkgPath: pkg?.path });
+        prompt += frameProvidedContext('Git history', gitLog);
+      }
 
       const scopeDesc = pkg ? ` for package "${pkg.name}"` : '';
       send({ type: 'log', line: `Analyzing recent commits${scopeDesc} with AI...`, ts: new Date().toISOString() });
@@ -2152,7 +2159,8 @@ export function createGuiApp(config, version, port = 7654) {
     };
 
     try {
-      const { isAiAvailable: checkAi, runAiPrompt: runAi } = await import('../ai.js');
+      const { isAiAvailable: checkAi, runAiPrompt: runAi, providerSupportsAgenticTools } = await import('../ai.js');
+      const { gatherGitLog, frameProvidedContext } = await import('../ai-context.js');
       const available = await checkAi(config);
       if (!available) {
         send({ type: 'error', message: 'AI is not available or not configured.' });
@@ -2164,11 +2172,17 @@ export function createGuiApp(config, version, port = 7654) {
       const { package: pkgName, version } = req.body ?? {};
       const pkg = pkgName ? (config.packageDirectories ?? []).find((p) => p.name === pkgName) : null;
       const releaseNotesTemplate = await getPrompt('release-notes', config._configDir);
-      const prompt = interpolate(releaseNotesTemplate, {
+      let prompt = interpolate(releaseNotesTemplate, {
         version: version || 'unreleased',
         outputPath: '(streaming output — do not write to file)',
         ...(pkg ? { packageName: pkg.name } : {}),
       });
+
+      // HTTP providers can't run `git log` — pre-gather it.
+      if (!providerSupportsAgenticTools(config)) {
+        const gitLog = await gatherGitLog(projectRoot, { limit: 30, pkgPath: pkg?.path });
+        prompt += frameProvidedContext('Git history', gitLog);
+      }
 
       send({ type: 'log', line: 'Generating release notes with AI...', ts: new Date().toISOString() });
 

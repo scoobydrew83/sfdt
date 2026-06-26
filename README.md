@@ -1,13 +1,26 @@
-# @sfdt/cli
+<div align="center">
 
-Production-grade CLI for Salesforce DX deployment, testing, quality analysis, and release management.
+<img src=".github/assets/logo.png" alt="SFDT logo" width="96" height="96" />
+
+# SFDT — Salesforce DevTools
+
+**Deploy, test, and ship Salesforce changes with confidence.**
+
+`@sfdt/cli` is the command-line core of the SFDT suite — a production-grade CLI for Salesforce DX
+deployment, testing, quality analysis, and release management. Pairs with the SFDT Chrome
+extension and the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools).
+
+📖 **[Read the docs at sfdt.dev →](https://sfdt.dev/)**  ·  [npm](https://www.npmjs.com/package/@sfdt/cli)  ·  [Usage guide](docs/USAGE.md)
 
 [![npm version](https://img.shields.io/npm/v/@sfdt/cli.svg)](https://www.npmjs.com/package/@sfdt/cli)
 [![npm downloads](https://img.shields.io/npm/dm/@sfdt/cli.svg)](https://www.npmjs.com/package/@sfdt/cli)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/sfdt.sfdt-devtools?label=VS%20Code)](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools)
 [![CI](https://github.com/scoobydrew83/sfdt/actions/workflows/ci.yml/badge.svg)](https://github.com/scoobydrew83/sfdt/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/scoobydrew83/sfdt/actions/workflows/codeql.yml/badge.svg)](https://github.com/scoobydrew83/sfdt/actions/workflows/codeql.yml)
 [![license](https://img.shields.io/npm/l/@sfdt/cli.svg)](https://github.com/scoobydrew83/sfdt/blob/main/LICENSE)
 [![node](https://img.shields.io/node/v/@sfdt/cli.svg)](https://nodejs.org)
+
+</div>
 
 ## Features
 
@@ -34,12 +47,13 @@ For in-depth command walkthroughs and workflow examples, see [docs/USAGE.md](doc
 
 ## Repository layout
 
-`@sfdt/cli` is one of four workspaces in this monorepo:
+`@sfdt/cli` is one of five workspaces in this monorepo:
 
 | Workspace | What it is | Status |
 |---|---|---|
 | **`@sfdt/cli`** (`/src`, `/bin`, `/scripts`) | The npm CLI documented below. | Published to npm |
 | **`@sfdt/extension`** (`/extension`) | Chrome extension for Salesforce Flow Builder + Setup productivity. Talks to the CLI via the local bridge for deploy / rollback / quality / AI features. See [extension/README.md](extension/README.md) and [extension/PRIVACY.md](extension/PRIVACY.md). | Pre-Web-Store |
+| **`sfdt-devtools`** (`/vscode`) | VS Code extension — a thin UI over the CLI (Org Health sidebar, command palette, embedded dashboard). See [vscode/README.md](vscode/README.md). | [Published to the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools) |
 | **`@sfdt/host`** (`/host`) | Native messaging host used as the extension's fallback transport when `sfdt ui` isn't running. Installed with `sfdt extension install-host`. | Bundled with CLI |
 | **`@sfdt/flow-core`** (`/packages/flow-core`) | Shared TypeScript library — Flow normalization, rules engine, scoring, and the versioned bridge contract. Consumed by both CLI and extension. | Published to npm (publishes alongside the CLI) |
 
@@ -52,6 +66,19 @@ npm install -g @sfdt/cli
 cd your-salesforce-project
 sfdt init
 sfdt deploy
+```
+
+### Other install methods
+
+```bash
+# Bootstrap script (checks prerequisites, then installs via npm)
+curl -fsSL https://raw.githubusercontent.com/scoobydrew83/sfdt/main/install.sh | bash
+
+# Homebrew (macOS/Linux)
+brew install scoobydrew83/sfdt/sfdt
+
+# Docker (official multi-arch image)
+docker run --rm -v "$PWD:/project" ghcr.io/scoobydrew83/sfdt:latest --help
 ```
 
 ## Commands Reference
@@ -80,7 +107,7 @@ sfdt deploy
 | `sfdt audit [check\|all]` | Diagnose org health: `audittrail`, `licenses`, `mfa`, `unused-apex`, `inactive-users`, `api-versions` | `--org <alias>`, `--json` |
 | `sfdt monitor [check\|all]` | Monitor org: `limits`, `errors`, `health`, plus `backup`; `all --backup` to include a metadata backup | `--org <alias>`, `--backup`, `--json` |
 | `sfdt monitor backup` | Retrieve a full metadata backup into the configured backup directory | `--org <alias>`, `--json` |
-| `sfdt docs generate` | Generate MkDocs-compatible docs (objects, Apex, flows) with optional AI overview | `--ai`, `--json` |
+| `sfdt docs generate` | Generate MkDocs-compatible docs (objects, Apex, flows, LWC) with optional AI overview and per-component Developer/Admin/User/DevOps guides | `--ai`, `--roles [list]`, `--json` |
 | `sfdt docs diagram` | Print/write a Mermaid ER diagram of the data model | `--output <file>`, `--json` |
 | `sfdt data <list\|export\|import\|delete> [set]` | Manage data sets via native `sf data tree` for sandbox/scratch seeding | `--org <alias>`, `--json`, `--yes` (delete: skip confirmation; required non-interactively) |
 | `sfdt scratch <create\|delete\|list\|pool>` | Create/delete/list scratch orgs and manage a pre-created pool | `--alias`, `--days <n>`, `--size <n>`, `--json`, `--yes` (delete: skip confirmation; required non-interactively) |
@@ -164,15 +191,21 @@ Running `sfdt init` creates a `.sfdt/` directory in your project root:
   },
   "ai": {
     "provider": "claude",
-    "model": ""
+    "model": "",
+    "baseURL": "",
+    "apiKeyEnv": "",
+    "headers": {},
+    "timeoutMs": 300000
   },
   "plugins": []
 }
 ```
 
+> `baseURL` / `apiKeyEnv` / `headers` / `timeoutMs` apply only to the `http` provider; CLI providers (`claude`/`gemini`/`openai`) ignore them. See [AI Features](#ai-features).
+
 ## AI Features
 
-AI-powered commands (`review`, `explain`, `manifest --ai-cleanup`, `quality --fix-plan`, `pr-description`, `changelog generate`, `release`) work with **Claude, Gemini, or OpenAI/Codex CLI providers**. The provider is configured during `sfdt init` or by editing `.sfdt/config.json`.
+AI-powered commands (`review`, `explain`, `manifest --ai-cleanup`, `quality --fix-plan`, `pr-description`, `changelog generate`, `release`) work with **Claude, Gemini, OpenAI/Codex CLI providers, or any OpenAI-compatible HTTP endpoint** (Ollama, OpenRouter, MiniMax, …). The provider is configured during `sfdt init` or by editing `.sfdt/config.json`.
 
 ### Claude (default)
 
@@ -215,6 +248,27 @@ npm install -g @openai/codex
 ```
 
 Authentication and model selection are handled by the Codex CLI.
+
+### HTTP (OpenAI-compatible)
+
+A single `http` provider talks to any endpoint exposing `POST /chat/completions` — local (Ollama) or cloud (OpenRouter, MiniMax, or any gateway). No extra CLI is needed; it uses Node's built-in `fetch`.
+
+```jsonc
+// Ollama (local, no API key)
+{ "ai": { "provider": "http", "baseURL": "http://localhost:11434/v1", "model": "llama3.1" } }
+
+// OpenRouter / MiniMax (cloud — key comes from an env var, never stored in config)
+{ "ai": {
+  "provider": "http",
+  "baseURL": "https://openrouter.ai/api/v1",
+  "model": "openrouter/auto",
+  "apiKeyEnv": "OPENROUTER_API_KEY"
+} }
+```
+
+`apiKeyEnv` names the environment variable holding your key (`export OPENROUTER_API_KEY=…`); the key itself is never written to `.sfdt/config.json`. Optional `headers` (object) and `timeoutMs` (default `300000`) are also supported.
+
+Because an HTTP model can't read files or run `git`/`sf` itself, sfdt pre-gathers the needed context (git history, test results) and injects it into the prompt for agentic commands. Note: with a cloud endpoint, prompt content (diffs, git logs) is transmitted to that service — sensitive values are redacted before sending.
 
 ### Disabling AI
 
@@ -390,6 +444,7 @@ Cache behavior is controlled via `pullCache` in `.sfdt/config.json`:
 - **jq** 1.6+ (required by several shell scripts)
 - **Optional:** [Claude Code CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code) for AI features with the `claude` provider
 - **Optional:** Gemini CLI or Codex CLI for AI features with the `gemini` or `openai` provider
+- **Optional:** an OpenAI-compatible HTTP endpoint (Ollama, OpenRouter, MiniMax, …) for AI features with the `http` provider — no extra CLI required
 - **Optional:** [GitHub CLI](https://cli.github.com/) (`gh`) for PR creation during deployments
 
 ## Development

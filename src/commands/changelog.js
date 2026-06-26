@@ -3,7 +3,8 @@ import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { loadConfig } from '../lib/config.js';
-import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
+import { isAiAvailable, runAiPrompt, providerSupportsAgenticTools } from '../lib/ai.js';
+import { gatherGitLog, frameProvidedContext } from '../lib/ai-context.js';
 import { getPrompt, interpolate } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { execa } from 'execa';
@@ -92,21 +93,40 @@ export function registerChangelogCommand(program) {
         print.info(`Analyzing the last ${options.limit} commits${scopeDesc}...`);
 
         const changelogTemplate = await getPrompt('changelog', config._configDir);
-        const prompt = interpolate(changelogTemplate, {
+        let prompt = interpolate(changelogTemplate, {
           limit: options.limit,
           ...(pkg ? { packagePath: pkg.path, packageName: pkg.name } : {}),
         });
 
+        // HTTP providers can't run `git log` themselves — pre-gather it.
+        if (!providerSupportsAgenticTools(config)) {
+          const gitLog = await gatherGitLog(projectRoot, {
+            limit: options.limit,
+            pkgPath: pkg?.path,
+          });
+          prompt += frameProvidedContext('Git history', gitLog);
+        }
+
         print.header('AI Changelog Generation');
+        // Capture (not interactive) so the generated entries are returned on
+        // stdout and can be appended to the changelog.
         const response = await runAiPrompt(prompt, {
           config,
           allowedTools: ['Bash(git log:*)', 'Read'],
           cwd: projectRoot,
           aiEnabled: true,
-          interactive: true,
+          interactive: false,
         });
 
-        if (response) {
+        if (response && response.exitCode !== 0) {
+          print.error(response.stderr?.trim() || 'AI changelog generation failed.');
+          process.exitCode = 1;
+          return;
+        }
+
+        const entries = response?.stdout?.trim();
+        if (entries) {
+          console.log(`\n${entries}\n`);
           const { apply } = await inquirer.prompt([
             {
               type: 'confirm',
@@ -122,13 +142,15 @@ export function registerChangelogCommand(program) {
 
             if (currentContent.includes(unreleasedTag)) {
               const parts = currentContent.split(unreleasedTag);
-              const newContent = `${parts[0]}${unreleasedTag}\n\n${response}${parts[1]}`;
+              const newContent = `${parts[0]}${unreleasedTag}\n\n${entries}\n${parts[1]}`;
               await fs.writeFile(changelogPath, newContent);
             } else {
-              await fs.appendFile(changelogPath, `\n\n${response}`);
+              await fs.appendFile(changelogPath, `\n\n${entries}\n`);
             }
             print.success(`Updated ${changelogRelPath}`);
           }
+        } else {
+          print.info('AI returned no changelog entries.');
         }
       } catch (err) {
         print.error(`Changelog generation failed: ${err.message}`);

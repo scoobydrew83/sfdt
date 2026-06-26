@@ -1,5 +1,6 @@
 import fs from 'fs-extra';
 import path from 'path';
+import { execa } from 'execa';
 
 const SFDX_PROJECT_FILE = 'sfdx-project.json';
 
@@ -235,6 +236,94 @@ export function formatDeployHistorySection(history) {
     return `- ${date}: ${org} — ${outcome}${flags ? ` [${flags}]` : ''}`;
   });
   return '## RECENT DEPLOY HISTORY\n' + lines.join('\n');
+}
+
+/**
+ * Collect recent git history as plain text, optionally scoped to a path.
+ *
+ * Used by the HTTP (OpenAI-compatible) AI provider, which cannot run `git log`
+ * itself. CLI providers let the model fetch this; for `http` the caller
+ * pre-gathers it and injects it into the prompt via frameProvidedContext().
+ *
+ * @param {string} projectRoot - Repo working directory
+ * @param {object} [opts]
+ * @param {number|string} [opts.limit=20] - Number of commits to include
+ * @param {string} [opts.pkgPath] - Restrict history to this path (a package dir)
+ * @returns {Promise<string>} The `git log` output (empty string on failure)
+ */
+export async function gatherGitLog(projectRoot, { limit = 20, pkgPath } = {}) {
+  const n = Number(limit) > 0 ? Number(limit) : 20;
+  const args = ['log', `-n${n}`, '--pretty=format:%h %s%n%b', '--stat'];
+  if (pkgPath) args.push('--', pkgPath);
+  try {
+    const { stdout } = await execa('git', args, { cwd: projectRoot, reject: false });
+    return (stdout || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Read the most recent test-results JSON as raw text, for injecting into an
+ * HTTP-provider prompt (which can't Read the file itself). Prefers
+ * `latest.json`, falling back to the newest timestamped file.
+ *
+ * @param {object} config - Loaded sfdt config
+ * @param {number} [maxChars=20000] - Truncate to keep the prompt bounded
+ * @returns {Promise<string>} File contents (possibly truncated), or '' if none
+ */
+export async function gatherLatestTestResults(config, maxChars = 20000) {
+  const resultsDir = path.join(resolveLogDir(config), 'test-results');
+  if (!(await fs.pathExists(resultsDir))) return '';
+
+  let target = path.join(resultsDir, 'latest.json');
+  if (!(await fs.pathExists(target))) {
+    let entries;
+    try {
+      entries = await fs.readdir(resultsDir);
+    } catch {
+      return '';
+    }
+    // Pick the most recently modified .json by mtime — robust to any filename
+    // scheme (ISO timestamps, UUIDs, etc.), unlike a lexicographic sort.
+    const jsonFiles = entries.filter((f) => f.endsWith('.json'));
+    if (!jsonFiles.length) return '';
+    const stated = await Promise.all(
+      jsonFiles.map(async (f) => {
+        const full = path.join(resultsDir, f);
+        try {
+          return { full, mtime: (await fs.stat(full)).mtimeMs };
+        } catch {
+          return { full, mtime: 0 };
+        }
+      }),
+    );
+    stated.sort((a, b) => b.mtime - a.mtime);
+    target = stated[0].full;
+  }
+
+  try {
+    const raw = await fs.readFile(target, 'utf8');
+    return raw.length > maxChars ? raw.slice(0, maxChars) + '\n…(truncated)' : raw;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Frame pre-gathered context for a non-agentic HTTP model so it uses the
+ * provided text instead of trying to run a command to fetch it.
+ *
+ * @param {string} label - Human label, e.g. "Git history"
+ * @param {string} content - The gathered text
+ * @returns {string} A prompt suffix (empty string if no content)
+ */
+export function frameProvidedContext(label, content) {
+  if (!content) return '';
+  return (
+    `\n\n--- ${label} (provided below; do not attempt to run commands to fetch it) ---\n` +
+    `${content}\n--- end ${label} ---\n`
+  );
 }
 
 /**

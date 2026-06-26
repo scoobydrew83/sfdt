@@ -27,8 +27,11 @@ async function buildConfigTemplate({ projectName, defaultOrg, features, releaseN
       ...template.features,
       ai: features.ai,
     },
+    // Only write the keys the chosen provider needs. The http-specific keys
+    // (baseURL/apiKeyEnv) are included by the caller only for provider === 'http',
+    // so non-http configs stay clean (no inert baseURL/headers/timeoutMs clutter).
     ai: {
-      provider: ai.provider,
+      ...ai,
       model: ai.model || '',
     },
     mcp: {
@@ -150,9 +153,29 @@ export function registerInitCommand(program) {
               { name: 'Claude (requires Claude Code CLI)', value: 'claude' },
               { name: 'Gemini (requires Gemini CLI)', value: 'gemini' },
               { name: 'OpenAI/Codex (requires Codex CLI)', value: 'openai' },
+              { name: 'HTTP (OpenAI-compatible: Ollama / OpenRouter / MiniMax)', value: 'http' },
             ],
             default: 'claude',
             when: (ans) => ans.aiEnabled,
+          },
+          {
+            type: 'input',
+            name: 'aiBaseURL',
+            message: 'HTTP endpoint base URL (e.g. http://localhost:11434/v1 for Ollama):',
+            default: 'http://localhost:11434/v1',
+            when: (ans) => ans.aiEnabled && ans.aiProvider === 'http',
+          },
+          {
+            type: 'input',
+            name: 'aiModel',
+            message: 'Model name (e.g. llama3.1, openrouter/auto):',
+            when: (ans) => ans.aiEnabled && ans.aiProvider === 'http',
+          },
+          {
+            type: 'input',
+            name: 'aiApiKeyEnv',
+            message: 'Name of the env var holding your API key (leave blank for Ollama / no auth):',
+            when: (ans) => ans.aiEnabled && ans.aiProvider === 'http',
           },
           {
             type: 'input',
@@ -226,7 +249,13 @@ export function registerInitCommand(program) {
           },
           ai: {
             provider: answers.aiProvider || 'claude',
-            model: '',
+            model: answers.aiModel || '',
+            ...(answers.aiProvider === 'http'
+              ? {
+                  baseURL: answers.aiBaseURL || '',
+                  apiKeyEnv: answers.aiApiKeyEnv || '',
+                }
+              : {}),
           },
           mcp: {
             enabled: answers.mcpEnabled,

@@ -21,9 +21,13 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "provider": { "type": "string", "enum": ["claude", "gemini", "openai"] },
+        "provider": { "type": "string", "enum": ["claude", "gemini", "openai", "http"] },
         "model": { "type": "string" },
-        "apiKey": { "type": "string" }
+        "apiKey": { "type": "string" },
+        "baseURL": { "type": "string" },
+        "apiKeyEnv": { "type": "string" },
+        "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+        "timeoutMs": { "type": "number" }
       }
     },
     "deployment": {
@@ -114,7 +118,9 @@
       "properties": {
         "outputDir": { "type": "string" },
         "ai": { "type": "boolean" },
-        "diagrams": { "type": "boolean" }
+        "diagrams": { "type": "boolean" },
+        "roleGuides": { "type": "boolean" },
+        "roles": { "type": "array", "items": { "type": "string", "enum": ["developer", "admin", "user", "devops"] } }
       }
     },
     "data": {
