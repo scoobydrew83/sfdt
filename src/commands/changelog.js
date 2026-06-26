@@ -108,15 +108,25 @@ export function registerChangelogCommand(program) {
         }
 
         print.header('AI Changelog Generation');
+        // Capture (not interactive) so the generated entries are returned on
+        // stdout and can be appended to the changelog.
         const response = await runAiPrompt(prompt, {
           config,
           allowedTools: ['Bash(git log:*)', 'Read'],
           cwd: projectRoot,
           aiEnabled: true,
-          interactive: true,
+          interactive: false,
         });
 
-        if (response) {
+        if (response && response.exitCode !== 0) {
+          print.error(response.stderr?.trim() || 'AI changelog generation failed.');
+          process.exitCode = 1;
+          return;
+        }
+
+        const entries = response?.stdout?.trim();
+        if (entries) {
+          console.log(`\n${entries}\n`);
           const { apply } = await inquirer.prompt([
             {
               type: 'confirm',
@@ -132,10 +142,10 @@ export function registerChangelogCommand(program) {
 
             if (currentContent.includes(unreleasedTag)) {
               const parts = currentContent.split(unreleasedTag);
-              const newContent = `${parts[0]}${unreleasedTag}\n\n${response}${parts[1]}`;
+              const newContent = `${parts[0]}${unreleasedTag}\n\n${entries}\n${parts[1]}`;
               await fs.writeFile(changelogPath, newContent);
             } else {
-              await fs.appendFile(changelogPath, `\n\n${response}`);
+              await fs.appendFile(changelogPath, `\n\n${entries}\n`);
             }
             print.success(`Updated ${changelogRelPath}`);
           }

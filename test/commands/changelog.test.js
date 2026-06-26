@@ -215,7 +215,7 @@ describe('changelog generate command', () => {
   it('appends AI response to [Unreleased] section when user approves', async () => {
     fs.pathExists.mockResolvedValue(true);
     isAiAvailable.mockResolvedValue(true);
-    runAiPrompt.mockResolvedValue('### Added\n- New feature');
+    runAiPrompt.mockResolvedValue({ stdout: '### Added\n- New feature', stderr: '', exitCode: 0 });
     inquirer.prompt.mockResolvedValueOnce({ apply: true });
     fs.readFile.mockResolvedValue('# Changelog\n\n## [Unreleased]\n\n## [1.0.0]\n');
     fs.writeFile.mockResolvedValue();

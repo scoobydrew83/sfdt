@@ -32,7 +32,6 @@ async function buildConfigTemplate({ projectName, defaultOrg, features, releaseN
     // so non-http configs stay clean (no inert baseURL/headers/timeoutMs clutter).
     ai: {
       ...ai,
-      provider: ai.provider,
       model: ai.model || '',
     },
     mcp: {

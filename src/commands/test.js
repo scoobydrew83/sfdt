@@ -79,13 +79,23 @@ export function registerTestCommand(program) {
                 }
               }
 
-              await runAiPrompt(prompt, {
+              const analysis = await runAiPrompt(prompt, {
                 config,
                 allowedTools: ['Read', 'Grep', 'Bash(sf apex test:*)'],
                 cwd: projectRoot,
                 aiEnabled: true,
                 interactive: !httpMode,
               });
+
+              // CLI providers stream their analysis interactively; the http
+              // provider returns it on stdout, so print it (or surface an error).
+              if (httpMode) {
+                if (analysis?.exitCode !== 0) {
+                  print.error(analysis?.stderr?.trim() || 'AI analysis failed.');
+                } else if (analysis?.stdout?.trim()) {
+                  console.log(`\n${analysis.stdout.trim()}\n`);
+                }
+              }
             }
           }
 

@@ -48,8 +48,12 @@ export async function isHttpAvailable(config) {
   if (!baseURL) return false;
   if (apiKeyEnv && !apiKey) return false;
 
+  // Only positive results are cached. A reachable endpoint stays reachable, but a
+  // negative (server not up yet, key not yet exported) must be re-checked — under
+  // a long-running `sfdt ui` the user may start Ollama or export the key after
+  // launch, and a cached `false` would otherwise pin AI as unavailable until restart.
   const cacheKey = `${baseURL}|${apiKeyEnv}`;
-  if (httpAvailableCache.has(cacheKey)) return httpAvailableCache.get(cacheKey);
+  if (httpAvailableCache.get(cacheKey)) return true;
 
   let available = true;
   // Cheap reachability probe for local servers (Ollama exposes /api/tags).
@@ -66,7 +70,7 @@ export async function isHttpAvailable(config) {
     }
   }
 
-  httpAvailableCache.set(cacheKey, available);
+  if (available) httpAvailableCache.set(cacheKey, true);
   return available;
 }
 
@@ -282,13 +286,11 @@ async function runHttpPrompt(prompt, options) {
   const { config } = options;
   const httpCfg = getHttpConfig(config);
 
-  if (!httpCfg.baseURL) {
-    console.log(aiUnavailableMessage(config));
-    return null;
-  }
-  if (httpCfg.apiKeyEnv && !httpCfg.apiKey) {
-    console.log(aiUnavailableMessage(config));
-    return null;
+  // Surface a misconfiguration as the standard failure shape (matching the
+  // on-network-failure path below) rather than null, so a caller that didn't
+  // pre-check isAiAvailable() still gets a clear error instead of silent no-op.
+  if (!httpCfg.baseURL || (httpCfg.apiKeyEnv && !httpCfg.apiKey)) {
+    return { stdout: '', stderr: aiUnavailableMessage(config), exitCode: 1 };
   }
 
   const controller = new AbortController();
