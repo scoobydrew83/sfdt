@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-25
+
 ### Added
 
 - **Generic `http` AI provider** — a fourth `ai.provider` value, `http`, talks to any OpenAI-compatible `/chat/completions` endpoint (Ollama, OpenRouter, MiniMax, or any gateway) using Node's built-in `fetch` — no extra CLI to install. Configured via `ai.baseURL`, `ai.model`, `ai.apiKeyEnv` (the **name** of the env var holding the key; the key is never stored in config), plus optional `ai.headers` and `ai.timeoutMs`. Both single-shot (`runAiPrompt`) and streaming (the GUI chat) paths are supported. `sfdt init` now offers HTTP as a provider with follow-up prompts for the endpoint, model, and key env var.
