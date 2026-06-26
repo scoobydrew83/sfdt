@@ -68,6 +68,15 @@ describe('ui command', () => {
     expect(print.success).toHaveBeenCalledWith(expect.stringContaining('localhost:7654'));
   });
 
+  it('prints the launch URL with the auth token so it is copy-pasteable', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'ui', '--no-open']);
+
+    // Must include the tokened URL — printing the bare host would 401 when used.
+    expect(print.success).toHaveBeenCalledWith(
+      expect.stringContaining('localhost:7654?token=test-launch-token'),
+    );
+  });
+
   it('starts the GUI server on a custom port with --port', async () => {
     await createProgram().parseAsync(['node', 'sfdt', 'ui', '--port', '9000', '--no-open']);
 
