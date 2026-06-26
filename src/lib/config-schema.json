@@ -81,6 +81,16 @@
             "command": { "type": "string" },
             "args": { "type": "array", "items": { "type": "string" } }
           }
+        },
+        "parking": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "thresholdBytes": { "type": "integer", "minimum": 0 },
+            "ttlSeconds": { "type": "integer", "minimum": 0 },
+            "cacheScope": { "type": "string" }
+          }
         }
       }
     },

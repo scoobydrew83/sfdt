@@ -189,6 +189,25 @@ describe('validateConfig', () => {
     expect(() => validateConfig({ defaultOrg: 'dev', features: {}, logRetention: 'lots' }))
       .toThrow(ConfigError);
   });
+
+  it('accepts the mcp.parking block written by `sfdt init`', () => {
+    // The config template (src/templates/sfdt.config.json) ships mcp.parking and
+    // src/lib/mcp-parking.js consumes it — the schema must allow it.
+    const config = {
+      ...VALID_CONFIG,
+      mcp: {
+        enabled: true,
+        salesforce: { transport: 'stdio', command: 'sf', args: ['mcp', 'start'] },
+        parking: { enabled: true, thresholdBytes: 51200, ttlSeconds: 86400, cacheScope: 'session' },
+      },
+    };
+    expect(() => validateConfig(config)).not.toThrow();
+  });
+
+  it('still rejects an unknown key under mcp.parking', () => {
+    const config = { ...VALID_CONFIG, mcp: { parking: { enabled: true, bogusKey: 1 } } };
+    expect(() => validateConfig(config)).toThrow(/"mcp\.parking" contains unknown key "bogusKey"/);
+  });
 });
 
 describe('getConfigDir', () => {
