@@ -56,7 +56,7 @@ export const PROMPT_META = {
   },
   'doc-role-guide': {
     label: 'Multi-Role Documentation Guide',
-    description: 'Generates a role-targeted guide (Developer/Admin/User/DevOps) for one Salesforce component. Variables: {{role}}, {{componentType}}, {{componentName}}, {{roleInstructions}}.',
+    description: 'Generates a role-targeted guide (Developer/Admin/User/DevOps) for one Salesforce component. Variables: {{role}}, {{componentType}}, {{componentName}}, {{roleInstructions}}, {{source}}.',
     feature: 'sfdt docs generate --roles',
   },
 };
@@ -392,7 +392,7 @@ ACCURACY RULES — non-negotiable:
 ROLE FOCUS — write for the {{role}} audience:
 {{roleInstructions}}
 
-OUTPUT FORMAT — clean Markdown, start at H2, use only the sections relevant to this component (skip a section entirely if the source gives you nothing real to say):
+OUTPUT FORMAT — clean Markdown, start at H2. The sections below are a superset; include only those relevant to BOTH this component AND the {{role}} audience, and skip a section entirely if the source gives you nothing real to say. In particular, omit developer/operations-internal sections (GitHub Actions Integration, Deployment & Environment, Rollback Procedures, Performance & Limits) from a User-facing guide:
 
 ## {{role}}-level Guide: {{componentName}}
 - Who uses this and why (operational framing)

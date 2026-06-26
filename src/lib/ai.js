@@ -62,11 +62,14 @@ export async function isHttpAvailable(config) {
       const origin = new URL(baseURL).origin;
       const controller = new AbortController();
       const t = setTimeout(() => controller.abort(), 2000);
-      const res = await fetch(`${origin}/api/tags`, { signal: controller.signal });
+      await fetch(`${origin}/api/tags`, { signal: controller.signal });
       clearTimeout(t);
-      available = res.ok || res.status === 404; // 404 still means the server answered
+      // Any HTTP response (200/404/401/403/405/500…) means a server is listening
+      // and reachable — that's all this probe needs to confirm. Real request
+      // errors surface later on the actual /chat/completions call.
+      available = true;
     } catch {
-      available = false;
+      available = false; // network error / connection refused / timeout
     }
   }
 
@@ -540,26 +543,37 @@ async function streamHttpResponse(messages, systemPrompt, config, onChunk, onPro
 
     const decoder = new TextDecoder();
     let buffer = '';
+    // Process one SSE event block; returns true on the [DONE] sentinel so the
+    // caller stops reading.
+    const processEvent = (event) => {
+      for (const line of event.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === '[DONE]') return true;
+        try {
+          const delta = JSON.parse(payload)?.choices?.[0]?.delta?.content;
+          if (delta) onChunk(delta);
+        } catch {
+          // ignore non-JSON keepalive lines
+        }
+      }
+      return false;
+    };
+
     for await (const chunk of res.body) {
       armIdleTimer();
       buffer += decoder.decode(chunk, { stream: true });
       const events = buffer.split('\n\n');
       buffer = events.pop() ?? '';
       for (const event of events) {
-        for (const line of event.split('\n')) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data:')) continue;
-          const payload = trimmed.slice(5).trim();
-          if (payload === '[DONE]') return;
-          try {
-            const delta = JSON.parse(payload)?.choices?.[0]?.delta?.content;
-            if (delta) onChunk(delta);
-          } catch {
-            // ignore non-JSON keepalive lines
-          }
-        }
+        if (processEvent(event)) return;
       }
     }
+    // Flush any multi-byte sequence the decoder is still holding, then handle a
+    // final event a server may have sent without a trailing blank line / [DONE].
+    buffer += decoder.decode();
+    if (buffer.trim()) processEvent(buffer);
   } finally {
     clearTimeout(idleTimer);
   }

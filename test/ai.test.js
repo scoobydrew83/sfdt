@@ -553,4 +553,27 @@ describe('http provider — streamAiResponse', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.stream).toBe(true);
   });
+
+  it('processes a trailing event when the server closes without [DONE]', async () => {
+    vi.stubEnv('TEST_KEY', 'sk-abc');
+    // Last event has no terminating blank line and there is no [DONE] sentinel —
+    // it must still be flushed from the buffer after the stream ends.
+    const sse = [
+      'data: ' + JSON.stringify({ choices: [{ delta: { content: 'A' } }] }) + '\n\n',
+      'data: ' + JSON.stringify({ choices: [{ delta: { content: 'B' } }] }),
+    ];
+    const fetchMock = vi.fn().mockResolvedValue(makeSSEResponse(sse));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const onChunk = vi.fn();
+    await streamAiResponse(
+      [{ role: 'user', content: 'hi' }],
+      'system',
+      { config: { ai: { provider: 'http', baseURL: 'https://api.example.com/v1', apiKeyEnv: 'TEST_KEY' } } },
+      onChunk,
+    );
+
+    expect(onChunk).toHaveBeenCalledWith('A');
+    expect(onChunk).toHaveBeenCalledWith('B'); // tail event not dropped
+  });
 });
