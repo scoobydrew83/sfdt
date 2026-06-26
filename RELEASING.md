@@ -76,7 +76,7 @@ When you bump the protocol:
 6. **Post-release.** Run the `/post-release` skill (it archives `pr-analysis/` artifacts, confirms `main` / `develop` sync, and enumerates cleanup items).
 
 7. **Distribution channels (ride the CLI version bump).** A CLI release also feeds two channels off the same version — handle them after npm publish:
-   - **Docker / GHCR (automatic).** The `docker-publish` job in `ci.yml` builds a multi-arch image and pushes `ghcr.io/scoobydrew83/sfdt:X.Y.Z` + `:latest` when the version bumps on `main`. Verify with `gh run list --workflow=ci.yml --branch=main`. **First release only:** make the GHCR package **public** (it's created private), or `docker pull` 401s.
+   - **Docker / GHCR (automatic).** The dedicated `docker-publish.yml` workflow builds a multi-arch image and pushes `ghcr.io/scoobydrew83/sfdt:X.Y.Z` + `:latest`. It triggers on `release: published` (the GitHub Release the CLI `publish` job creates), so it runs once the release is cut. To (re)publish a specific version on demand — e.g. after a Dockerfile fix that didn't ride a version bump — run it via **workflow_dispatch** with the version input (builds from `main`). Verify with `gh run list --workflow=docker-publish.yml`. **First release only:** make the GHCR package **public** (it's created private), or `docker pull` 401s.
    - **Homebrew (manual bump).** The tap `scoobydrew83/homebrew-sfdt` pins a tarball in `Formula/sfdt.rb` and does not auto-update. After npm publish:
      ```bash
      VERSION=X.Y.Z

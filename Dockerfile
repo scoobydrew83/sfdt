@@ -22,8 +22,10 @@ FROM node:20-slim AS gui-builder
 
 WORKDIR /sfdt-gui
 
-COPY gui/package.json gui/package-lock.json* ./
-RUN npm ci
+# The GUI is a workspace package with no standalone package-lock.json (the lockfile
+# lives at the monorepo root), so resolve deps with `npm install`, not `npm ci`.
+COPY gui/package.json ./
+RUN npm install --no-audit --no-fund
 
 COPY gui/ ./
 RUN npm run build

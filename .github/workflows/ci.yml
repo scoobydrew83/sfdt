@@ -174,11 +174,6 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    # Expose the version-bump detection so the docker-publish job can gate on
-    # the exact same condition without re-deriving it.
-    outputs:
-      changed: ${{ steps.version.outputs.changed }}
-      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -246,41 +241,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: gh release create "v${VERSION}" --generate-notes
-
-  # Build and push the official Docker image to GHCR on a released version bump.
-  # Gated on the publish job's version-bump output so the image is published in
-  # lockstep with the npm release (same condition, no re-derivation).
-  docker-publish:
-    needs: [publish]
-    runs-on: ubuntu-latest
-    if: needs.publish.outputs.changed == 'true'
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write
-    env:
-      IMAGE: ghcr.io/scoobydrew83/sfdt
-      VERSION: ${{ needs.publish.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Set up QEMU (multi-arch emulation)
-        uses: docker/setup-qemu-action@v3
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push multi-arch image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.IMAGE }}:${{ env.VERSION }}
-            ${{ env.IMAGE }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        # The Docker image is published by the dedicated docker-publish.yml workflow
+        # (triggered by `release: published`), so it can also be re-run on demand.
