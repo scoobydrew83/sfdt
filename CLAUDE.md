@@ -92,6 +92,8 @@ When adding a new env var, update both `buildScriptEnv()` in `script-runner.js` 
 
 `src/templates/sfdt.config.json` is the canonical source of truth for the shape and defaults of `.sfdt/config.json`. `sfdt init` reads this template via `fs.readJson` and deep-merges user-provided answers on top. When adding new config keys, add them to the template first — `init.js` will pick them up automatically.
 
+**Also update `src/lib/config-schema.json`** — config is validated by AJV against this schema with `additionalProperties: false` on every object. A key that ships in the template (or is read by code) but is missing from the schema fails `validateConfig()` at runtime with `Invalid configuration: "<path>" contains unknown key "<key>"`. Adding a config key means touching three places in lockstep: the template, the schema, and the consuming code.
+
 ### Known Gaps
 
 - **GUI not pre-built in dev**: `gui/dist/` must be compiled with `npm run build:gui` before `sfdt ui` shows the full dashboard. The server falls back to a build-instructions page when `dist/` is absent.
