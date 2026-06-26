@@ -66,7 +66,12 @@ export async function exportDataSet(config, setName, orgAlias) {
   const outDir = path.join(dataSetDir(config, setName), 'data');
   await fs.ensureDir(outDir);
   const args = buildExportArgs(queries, orgAlias, outDir);
-  const result = await execa('sf', args);
+  let result;
+  try {
+    result = await execa('sf', args);
+  } catch (err) {
+    throw sfError(err);
+  }
   const parsed = safeParse(result.stdout);
   const planFile = await resolvePlanFile(outDir);
   return {
@@ -91,9 +96,14 @@ export async function importDataSet(config, setName, orgAlias) {
   if (!planFile) {
     throw new Error(`No plan file found for data set "${setName}" — run \`sfdt data export ${setName}\` first.`);
   }
-  const result = await execa('sf', [
-    'data', 'import', 'tree', '--target-org', orgAlias, '--plan', planFile, '--json',
-  ]);
+  let result;
+  try {
+    result = await execa('sf', [
+      'data', 'import', 'tree', '--target-org', orgAlias, '--plan', planFile, '--json',
+    ]);
+  } catch (err) {
+    throw sfError(err);
+  }
   const parsed = safeParse(result.stdout);
   return {
     set: setName,
@@ -101,6 +111,20 @@ export async function importDataSet(config, setName, orgAlias) {
     planFile,
     imported: parsed?.result?.length ?? null,
   };
+}
+
+/**
+ * Rethrow an sf/execa failure with the CLI's structured JSON error message
+ * (from stdout or stderr) instead of the opaque "Command failed…" string.
+ */
+function sfError(err) {
+  const msg = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
+  if (msg) {
+    const e = new Error(msg);
+    e.stderr = err?.stderr;
+    return e;
+  }
+  return err;
 }
 
 /** Bulk-delete the records targeted by a data set's queries. */

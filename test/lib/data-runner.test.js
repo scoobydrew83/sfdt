@@ -88,6 +88,14 @@ describe('exportDataSet', () => {
     expect(res.planFile).toMatch(/Account-plan\.json$/);
     expect(execa).toHaveBeenCalledWith('sf', expect.arrayContaining(['data', 'export', 'tree']));
   });
+  it('surfaces sf\'s structured error message on failure', async () => {
+    fs.readJson.mockResolvedValueOnce({ queries: ['SELECT Id FROM Account'] });
+    fs.ensureDir.mockResolvedValueOnce(undefined);
+    const err = new Error('Command failed with exit code 1: sf data export tree');
+    err.stdout = JSON.stringify({ status: 1, message: 'No authorization information found for dev.' });
+    execa.mockRejectedValueOnce(err);
+    await expect(exportDataSet(config, 'qa', 'dev')).rejects.toThrow(/No authorization information found for dev\./);
+  });
 });
 
 describe('importDataSet', () => {

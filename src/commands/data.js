@@ -81,11 +81,16 @@ function makeDeleteAction() {
       const spinner = jsonMode ? null : ora(`Delete data set "${setName}" (${org})…`).start();
       let result;
       let skipped = [];
+      let errored = [];
       try {
         result = await deleteDataSet(config, setName, org);
         skipped = (result.sobjects ?? []).filter((s) => s.status === 'skipped');
-        if (skipped.length) {
-          spinner?.warn(`Delete complete: ${setName} (${skipped.length} query(ies) skipped — unparseable FROM clause)`);
+        errored = (result.sobjects ?? []).filter((s) => s.status === 'error');
+        if (errored.length || skipped.length) {
+          const parts = [];
+          if (errored.length) parts.push(`${errored.length} failed`);
+          if (skipped.length) parts.push(`${skipped.length} skipped`);
+          spinner?.warn(`Delete finished with issues: ${setName} (${parts.join(', ')})`);
         } else {
           spinner?.succeed(`Delete complete: ${setName}`);
         }
@@ -94,16 +99,21 @@ function makeDeleteAction() {
         throw err;
       }
       if (jsonMode) {
-        // Signal partial completion when queries were skipped, so a machine
-        // consumer (CI checking `status === 'success'`) doesn't treat an
-        // incomplete delete as a clean one. skippedCount lets them branch
-        // without iterating sobjects[].
+        // deleteDataSet records per-sobject failures and skips WITHOUT throwing,
+        // so signal partial completion when any query errored or was skipped —
+        // a machine consumer (CI checking `status === 'success'`) must not treat
+        // an incomplete delete as clean. The counts let them branch without
+        // iterating sobjects[].
         process.stdout.write(JSON.stringify({
           ...result,
-          status: skipped.length ? 'partial' : 'success',
+          status: errored.length || skipped.length ? 'partial' : 'success',
           skippedCount: skipped.length,
+          errorCount: errored.length,
         }, null, 2) + '\n');
       } else {
+        if (errored.length) {
+          console.warn(chalk.red(`⚠ ${errored.length} sobject delete(s) FAILED — see the "error" entries in the result below.`));
+        }
         if (skipped.length) {
           console.warn(chalk.yellow(`⚠ ${skipped.length} query(ies) were skipped (could not parse the sObject from the FROM clause); their records were NOT deleted.`));
         }
