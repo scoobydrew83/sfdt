@@ -26,6 +26,7 @@ vi.mock('inquirer', () => ({
 vi.mock('../../src/lib/ai.js', () => ({
   isAiAvailable: vi.fn(), aiUnavailableMessage: vi.fn().mockReturnValue("AI provider not available"),
   runAiPrompt: vi.fn(),
+  providerSupportsAgenticTools: () => true,
 }));
 
 vi.mock('../../src/lib/output.js', () => ({

@@ -1,9 +1,18 @@
-# SFDT — Salesforce DevTools for VS Code
+# SFDT for Salesforce (VS Code)
+
+[![Marketplace](https://img.shields.io/visual-studio-marketplace/v/sfdt.sfdt-devtools)](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/sfdt.sfdt-devtools)](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools)
 
 Drive the [`sfdt`](https://www.npmjs.com/package/@sfdt/cli) CLI from inside VS
 Code. This extension is a thin, fast UI over the CLI — it does not reimplement
 any logic, so it stays in lockstep with whatever version of `sfdt` you have on
 your PATH.
+
+> Published to the VS Code Marketplace as **`sfdt.sfdt-devtools`** (publisher
+> `sfdt`, display name "SFDT for Salesforce"). Install from the Extensions view,
+> or: `code --install-extension sfdt.sfdt-devtools`. The npm workspace package is
+> named `sfdt-devtools` — the Marketplace requires an unscoped name, so it is not
+> the scoped `@sfdt/...` form used by the other workspaces.
 
 ## Features
 
@@ -37,9 +46,12 @@ your PATH.
 
 ```bash
 npm install            # from the repo root (workspaces)
-npm run build -w @sfdt/vscode    # bundle to dist/extension.js
-npm run test -w @sfdt/vscode     # unit tests (vitest)
+npm run build:vscode   # build flow-core + bundle to dist/extension.js
+npm run test:vscode    # unit tests (vitest)
 ```
 
+The workspace is selected by path (`-w vscode`) rather than by package name, so
+these keep working regardless of the manifest `name`.
+
 Press **F5** in VS Code to launch an Extension Development Host. Package a
-`.vsix` with `npm run package -w @sfdt/vscode`.
+`.vsix` with `npm run package:vscode`.

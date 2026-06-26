@@ -817,7 +817,7 @@ When `gui/dist/` is missing, the server shows a build-instructions page instead 
 
 ## Commands: Org Health & Operations
 
-Native, clean-room reimplementations of org diagnose/audit, monitoring/backup, documentation, data-set, and scratch-org workflows — no AGPL dependency. Each command queries the org through a shared SOQL helper and writes a normalised JSON snapshot (`logs/audit-latest.json`, `logs/monitor-latest.json`) that the web dashboard, the MCP server, and the VS Code extension all read.
+Native, clean-room reimplementations of org diagnose/audit, monitoring/backup, documentation, data-set, and scratch-org workflows — no AGPL dependency. Each command queries the org through a shared SOQL helper and writes a normalised JSON snapshot (`logs/audit-latest.json`, `logs/monitor-latest.json`) that the web dashboard, the MCP server, and the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools) all read.
 
 ---
 

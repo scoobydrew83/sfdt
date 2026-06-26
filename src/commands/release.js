@@ -4,7 +4,8 @@ import { execa } from 'execa';
 import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
-import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
+import { isAiAvailable, runAiPrompt, providerSupportsAgenticTools } from '../lib/ai.js';
+import { gatherGitLog, frameProvidedContext } from '../lib/ai-context.js';
 import { getPrompt, interpolate } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
@@ -88,19 +89,31 @@ export function registerReleaseCommand(program) {
             print.info(`Generating release notes for ${resolvedVersion}${pkgDesc}...`);
 
             const releaseNotesTemplate = await getPrompt('release-notes', config._configDir);
-            const prompt = interpolate(releaseNotesTemplate, {
+            let prompt = interpolate(releaseNotesTemplate, {
               version: resolvedVersion,
               outputPath: notesFilePath,
               ...(pkgTarget !== 'all' ? { packageName: pkgTarget } : {}),
             });
 
-            await runAiPrompt(prompt, {
+            // HTTP providers can neither run `git log` nor Write the file.
+            const httpMode = !providerSupportsAgenticTools(config);
+            if (httpMode) {
+              const gitLog = await gatherGitLog(projectRoot, { limit: 30 });
+              prompt += frameProvidedContext('Git history', gitLog);
+            }
+
+            const notesResponse = await runAiPrompt(prompt, {
               config,
               allowedTools: ['Bash(git log:*)', 'Read', 'Write'],
               cwd: projectRoot,
               aiEnabled: true,
-              interactive: true,
+              interactive: !httpMode,
             });
+
+            // The model can't Write under HTTP — persist the returned notes here.
+            if (httpMode && notesResponse?.stdout?.trim()) {
+              await fs.writeFile(notesFilePath, notesResponse.stdout.trim() + '\n');
+            }
 
             if (await fs.pathExists(notesFilePath)) {
               print.success(`Release notes saved to ${notesRelPath}`);

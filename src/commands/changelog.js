@@ -3,7 +3,8 @@ import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { loadConfig } from '../lib/config.js';
-import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
+import { isAiAvailable, runAiPrompt, providerSupportsAgenticTools } from '../lib/ai.js';
+import { gatherGitLog, frameProvidedContext } from '../lib/ai-context.js';
 import { getPrompt, interpolate } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { execa } from 'execa';
@@ -92,10 +93,19 @@ export function registerChangelogCommand(program) {
         print.info(`Analyzing the last ${options.limit} commits${scopeDesc}...`);
 
         const changelogTemplate = await getPrompt('changelog', config._configDir);
-        const prompt = interpolate(changelogTemplate, {
+        let prompt = interpolate(changelogTemplate, {
           limit: options.limit,
           ...(pkg ? { packagePath: pkg.path, packageName: pkg.name } : {}),
         });
+
+        // HTTP providers can't run `git log` themselves — pre-gather it.
+        if (!providerSupportsAgenticTools(config)) {
+          const gitLog = await gatherGitLog(projectRoot, {
+            limit: options.limit,
+            pkgPath: pkg?.path,
+          });
+          prompt += frameProvidedContext('Git history', gitLog);
+        }
 
         print.header('AI Changelog Generation');
         const response = await runAiPrompt(prompt, {

@@ -12,6 +12,7 @@ vi.mock('../../src/lib/script-runner.js', () => ({
 vi.mock('../../src/lib/ai.js', () => ({
   isAiAvailable: vi.fn(),
   runAiPrompt: vi.fn(),
+  providerSupportsAgenticTools: () => true,
 }));
 
 vi.mock('inquirer', () => ({
