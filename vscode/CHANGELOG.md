@@ -6,6 +6,11 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-26
+
+### Fixed
+- **The Org Health sidebar and all `SFDT:` commands now work.** The extension bundle is now emitted as CommonJS (`dist/extension.cjs`) instead of `dist/extension.js`. Because the manifest declares `"type": "module"`, VS Code parsed the old `.js` bundle as an ES module and failed to load it, so `activate()` never ran — the sidebar showed *"There is no data provider registered that can provide view data"* and commands failed with *"command 'sfdt.refresh' not found"*. A `.cjs` bundle is always loaded as CommonJS, so the extension activates correctly. No functional code changed — only the build output format.
+
 ## [0.1.1] - 2026-06-26
 
 ### Changed

@@ -8,7 +8,11 @@ import { build, context } from 'esbuild';
 const options = {
   entryPoints: ['src/extension.ts'],
   bundle: true,
-  outfile: 'dist/extension.js',
+  // Emit a .cjs file so VS Code can require() the CommonJS bundle even though
+  // package.json declares "type": "module" (a bare .js would be parsed as ESM
+  // and fail to load, leaving activate() — and thus the views/commands —
+  // unregistered).
+  outfile: 'dist/extension.cjs',
   external: ['vscode'],
   format: 'cjs',
   platform: 'node',
