@@ -44,9 +44,15 @@ export function registerUiCommand(program) {
         return;
       }
 
+      // The dashboard authenticates with a one-time launch token generated fresh
+      // on every start. The browser must load the *tokened* URL — opening the
+      // bare http://localhost:<port> (a bookmark, history, or a tab left over
+      // from a previous launch) sends no/stale token and 401s on /api/csrf-token.
+      // So print the full tokened URL, not the bare host, to keep a working,
+      // copy-pasteable link available even when auto-open misfires.
       const url = `http://localhost:${port}?token=${server.launchToken}`;
-      const printUrl = `http://localhost:${port}`;
-      print.success(`Dashboard running at ${printUrl}`);
+      print.success(`Dashboard running at ${url}`);
+      print.info('Open the URL above — it includes a one-time auth token (regenerated each launch).');
       print.info('Press Ctrl+C to stop.');
 
       // Open browser unless suppressed
@@ -56,7 +62,7 @@ export function registerUiCommand(program) {
           await open(url);
         } catch {
           // `open` is optional — non-fatal if unavailable
-          print.info(`Open ${printUrl} in your browser.`);
+          print.info(`Open ${url} in your browser.`);
         }
       }
 
