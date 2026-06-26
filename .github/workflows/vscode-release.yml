@@ -1,0 +1,98 @@
+name: VS Code Extension Release
+
+# Publishes the SFDT for Salesforce VS Code extension (sfdt.sfdt-devtools) to the
+# VS Code Marketplace (and Open VSX, if a token is configured) when vscode/package.json
+# gets a version bump on main — mirroring the CLI's publish gate.
+#
+# Required repository secrets:
+#   VSCE_PAT  — Azure DevOps PAT (scope: Marketplace → Manage) for the `sfdt` publisher. REQUIRED.
+#   OVSX_PAT  — Open VSX access token. OPTIONAL; the Open VSX step is skipped when unset.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'vscode/**'
+      - 'packages/flow-core/**'
+      - '.github/workflows/vscode-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vscode-release-${{ github.ref }}
+  cancel-in-progress: false   # never abort a publish mid-flight
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: write   # create the vscode-v<version> tag + GitHub release
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check for extension version bump
+        id: version
+        run: |
+          CURR=$(node -p "require('./vscode/package.json').version")
+          PREV=$(git show HEAD~1:vscode/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" 2>/dev/null || echo "0.0.0")
+          echo "Current: v${CURR}, Previous: v${PREV}"
+          if [ "${CURR}" != "${PREV}" ]; then
+            echo "Version bump detected: v${PREV} → v${CURR}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No version change (${CURR})"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=${CURR}" >> "$GITHUB_OUTPUT"
+
+      - run: npm ci
+        if: steps.version.outputs.changed == 'true'
+
+      - name: Build + package VSIX
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          npm run build:vscode    # builds flow-core (tsc) then bundles the extension
+          npm run package:vscode  # produces vscode/sfdt-devtools-<version>.vsix
+
+      - name: Publish to VS Code Marketplace
+        if: steps.version.outputs.changed == 'true'
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: npx --yes @vscode/vsce publish --packagePath "vscode/sfdt-devtools-${VERSION}.vsix"
+
+      - name: Publish to Open VSX (optional)
+        if: steps.version.outputs.changed == 'true'
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ -z "${OVSX_PAT}" ]; then
+            echo "OVSX_PAT not set — skipping Open VSX publish."
+            exit 0
+          fi
+          npx --yes ovsx publish "vscode/sfdt-devtools-${VERSION}.vsix" -p "${OVSX_PAT}"
+
+      - name: Tag + GitHub release
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "vscode-v${VERSION}" -m "VS Code extension v${VERSION}"
+          git push origin "vscode-v${VERSION}"
+          gh release create "vscode-v${VERSION}" \
+            "vscode/sfdt-devtools-${VERSION}.vsix" \
+            --title "SFDT for Salesforce v${VERSION}" \
+            --notes "Published to the VS Code Marketplace as sfdt.sfdt-devtools."

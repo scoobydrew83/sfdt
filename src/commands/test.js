@@ -1,7 +1,8 @@
 import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
-import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
+import { isAiAvailable, runAiPrompt, providerSupportsAgenticTools } from '../lib/ai.js';
+import { gatherLatestTestResults, frameProvidedContext } from '../lib/ai-context.js';
 import { getPrompt } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { ExitCode, resolveExitCode } from '../lib/exit-codes.js';
@@ -63,14 +64,27 @@ export function registerTestCommand(program) {
             if (analyzeFailure) {
               print.info('Analyzing test failures...');
 
-              const prompt = await getPrompt('test-failure', config._configDir);
+              let prompt = await getPrompt('test-failure', config._configDir);
+
+              // HTTP providers can't Read the result files — inject them.
+              const httpMode = !providerSupportsAgenticTools(config);
+              if (httpMode) {
+                const results = await gatherLatestTestResults(config);
+                if (results) {
+                  prompt += frameProvidedContext('Test results', results);
+                } else {
+                  print.warning(
+                    'HTTP AI provider has no test-result files to analyze; results may be incomplete.',
+                  );
+                }
+              }
 
               await runAiPrompt(prompt, {
                 config,
                 allowedTools: ['Read', 'Grep', 'Bash(sf apex test:*)'],
                 cwd: projectRoot,
                 aiEnabled: true,
-                interactive: true,
+                interactive: !httpMode,
               });
             }
           }

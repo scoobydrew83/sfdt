@@ -27,7 +27,11 @@
   },
   "ai": {
     "provider": "claude",
-    "model": ""
+    "model": "",
+    "baseURL": "",
+    "apiKeyEnv": "",
+    "headers": {},
+    "timeoutMs": 300000
   },
   "plugins": [],
   "pluginOptions": {

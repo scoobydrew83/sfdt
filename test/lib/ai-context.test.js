@@ -6,10 +6,14 @@ vi.mock('fs-extra', () => ({
     pathExists: vi.fn(),
     readdir: vi.fn(),
     readJson: vi.fn(),
+    readFile: vi.fn(),
   },
 }));
 
+vi.mock('execa', () => ({ execa: vi.fn() }));
+
 import fs from 'fs-extra';
+import { execa } from 'execa';
 import {
   resolveLogDir,
   buildProjectContext,
@@ -21,6 +25,9 @@ import {
   formatPreflightSection,
   formatDeployHistorySection,
   formatMetadataTypesSection,
+  gatherGitLog,
+  gatherLatestTestResults,
+  frameProvidedContext,
 } from '../../src/lib/ai-context.js';
 
 // ---------------------------------------------------------------------------
@@ -595,5 +602,67 @@ describe('formatMetadataTypesSection', () => {
     const result = formatMetadataTypesSection({ additive: { ApexClass: ['A'] } });
     expect(result).toContain('## AFFECTED METADATA TYPES');
     expect(result).toContain('ApexClass');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HTTP-provider context shims
+// ---------------------------------------------------------------------------
+
+describe('frameProvidedContext', () => {
+  it('returns empty string when content is empty', () => {
+    expect(frameProvidedContext('Git history', '')).toBe('');
+  });
+
+  it('wraps content with a do-not-run-commands framing', () => {
+    const out = frameProvidedContext('Git history', 'abc123 commit');
+    expect(out).toContain('Git history');
+    expect(out).toMatch(/do not attempt to run commands/i);
+    expect(out).toContain('abc123 commit');
+  });
+});
+
+describe('gatherGitLog', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('runs git log scoped to a package path and returns trimmed output', async () => {
+    execa.mockResolvedValue({ stdout: 'deadbee feat: thing\n' });
+    const out = await gatherGitLog('/repo', { limit: 5, pkgPath: 'force-app' });
+    expect(out).toBe('deadbee feat: thing');
+    const [cmd, args, opts] = execa.mock.calls[0];
+    expect(cmd).toBe('git');
+    expect(args).toContain('-n5');
+    expect(args).toContain('--');
+    expect(args).toContain('force-app');
+    expect(opts).toMatchObject({ cwd: '/repo', reject: false });
+  });
+
+  it('returns empty string when git fails', async () => {
+    execa.mockRejectedValue(new Error('not a repo'));
+    expect(await gatherGitLog('/repo')).toBe('');
+  });
+});
+
+describe('gatherLatestTestResults', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('reads latest.json when present', async () => {
+    fs.pathExists.mockImplementation(async (p) => p.endsWith('test-results') || p.endsWith('latest.json'));
+    fs.readFile.mockResolvedValue('{"failures":1}');
+    const out = await gatherLatestTestResults(makeConfig());
+    expect(out).toBe('{"failures":1}');
+  });
+
+  it('returns empty string when the results dir is absent', async () => {
+    fs.pathExists.mockResolvedValue(false);
+    expect(await gatherLatestTestResults(makeConfig())).toBe('');
+  });
+
+  it('truncates oversized result files', async () => {
+    fs.pathExists.mockImplementation(async (p) => p.endsWith('test-results') || p.endsWith('latest.json'));
+    fs.readFile.mockResolvedValue('x'.repeat(50));
+    const out = await gatherLatestTestResults(makeConfig(), 10);
+    expect(out).toMatch(/truncated/);
+    expect(out.length).toBeLessThan(50);
   });
 });

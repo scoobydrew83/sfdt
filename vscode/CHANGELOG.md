@@ -1,8 +1,8 @@
 # Changelog
 
-All notable changes to `@sfdt/vscode` are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt-devtools`) are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-> **Release status:** this extension is not yet published to the VS Code Marketplace. It is built and tested in CI but ships only as source in the monorepo for now; there is no automated publish path. Versions below track the in-repo development of the extension.
+> **Release status:** published to the VS Code Marketplace as [`sfdt.sfdt-devtools`](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools). The npm workspace package is `sfdt-devtools` (the Marketplace requires an unscoped name; the original scoped `@sfdt/vscode` could not be published).
 
 ## [Unreleased]
 
