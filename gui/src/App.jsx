@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, createContext, useRef } from 'react';
-import { api } from './api.js';
+import { api, onAuthExpired } from './api.js';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import TestRuns from './pages/TestRuns.jsx';
@@ -108,6 +108,11 @@ export default function App() {
   const [sessionOrg, setSessionOrg]   = useState(null);
   const [availableOrgs, setAvailableOrgs] = useState([]);
   const [orgPickerOpen, setOrgPickerOpen] = useState(false);
+  const [authExpired, setAuthExpired] = useState(false);
+
+  // Surface a recoverable banner when the launch-token handshake fails, instead
+  // of letting every page silently render an error/empty state.
+  useEffect(() => onAuthExpired(() => setAuthExpired(true)), []);
   const orgPickerRef = useRef(null);
 
   useEffect(() => {
@@ -192,6 +197,24 @@ export default function App() {
   return (
     <ChatContext.Provider value={chatContextValue}>
     <>
+    {authExpired && (
+      <div role="alert" style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000,
+        background: '#8b1a1a', color: '#fff', padding: '10px 16px',
+        display: 'flex', alignItems: 'center', gap: 12,
+        font: '13px/1.4 system-ui, sans-serif', boxShadow: '0 1px 6px rgba(0,0,0,0.3)',
+      }}>
+        <span style={{ flex: 1 }}>
+          <strong>Dashboard session expired.</strong> The one-time auth token is no longer valid
+          (the server was restarted, or this tab was opened without it). Reopen the URL that
+          <code style={{ margin: '0 4px' }}>sfdt ui</code> printed — it carries a fresh token.
+        </span>
+        <button onClick={() => window.location.reload()} style={{
+          background: '#fff', color: '#8b1a1a', border: 0, borderRadius: 4,
+          padding: '5px 12px', fontWeight: 600, cursor: 'pointer',
+        }}>Reload</button>
+      </div>
+    )}
     {showUpdate && updateInfo && (
       <UpdateModal
         current={updateInfo.current}
