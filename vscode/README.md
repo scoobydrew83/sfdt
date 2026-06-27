@@ -16,17 +16,34 @@ your PATH.
 
 ## Features
 
-- **Org Health sidebar** — a tree view that reads the latest `sfdt audit` and
-  `sfdt monitor` snapshots (`logs/audit-latest.json`, `logs/monitor-latest.json`)
-  and shows each check's status, summary, and findings. Click any check to
-  re-run just that check.
-- **Command palette** — `SFDT: Run Command…` lists the common operations
-  (preflight, audit, monitor, backup, drift, scan, quality, docs, deploy).
-  Dedicated commands exist for the most-used ones.
-- **Embedded dashboard** — `SFDT: Open Dashboard` spawns `sfdt ui` and shows the
-  full web dashboard in an editor tab.
-- **Status bar** — shows the active org and the worst monitor/audit status; click
-  to open the dashboard.
+The SFDT activity-bar container holds three views plus a status bar:
+
+- **Commands** — a grouped tree of the *entire* sfdt command surface (30+
+  commands / 50+ subcommands) across six categories: **Deploy & Release**,
+  **Org Health**, **Quality & Analysis**, **Documentation**, **Data & Scratch
+  Orgs**, and **Project & Tools**. Click a command to run it in a dedicated
+  **SFDT** integrated terminal — live, colored, streaming output, with
+  interactive prompts supported. Destructive commands confirm first. Right-click
+  any command to **Run**, **Copy** the exact `sfdt …` invocation, or **Open
+  docs** on [sfdt.dev](https://sfdt.dev/). `SFDT: Run Command…` is a searchable
+  quick-pick over everything.
+- **Status** — the active target org (alias, instance URL, connection), the git
+  branch, an Org Health rollup, and the installed `sfdt`/`sf` versions with an
+  "update available" hint. Use the title-bar **Select Org** button to switch the
+  target org from `sf org list`.
+- **Org Health** — reads the latest `audit`, `monitor`, `scan`, and `drift`
+  snapshots and shows each check's status, summary, and findings; click a check
+  to re-run it. All views auto-refresh when a `logs/*-latest.json` snapshot
+  changes.
+- **Embedded dashboard** — `SFDT: Open Dashboard` runs `sfdt ui` and shows the
+  full web dashboard in an editor tab (authenticated via the CLI's launch token).
+- **Per-org window theming** — tints the window by org type (production = red,
+  sandbox = orange, scratch/developer = green) to prevent wrong-org mistakes
+  (toggle with `sfdt.orgColor`).
+- **Status bar** — shows the active org and the worst monitor/audit status.
+
+New here? When the `sfdt` CLI isn't found or the project isn't initialized, the
+views offer a one-click **Run sfdt init** and links to the install docs.
 
 ## Requirements
 
@@ -41,6 +58,7 @@ your PATH.
 | `sfdt.cliPath` | `sfdt` | Path to the sfdt binary. |
 | `sfdt.defaultOrg` | `""` | Org alias passed as `--org`; empty uses the project default. |
 | `sfdt.dashboardPort` | `7654` | Port the `sfdt ui` server listens on. |
+| `sfdt.orgColor` | `true` | Tint the window by org type (prod/sandbox/scratch) to prevent wrong-org mistakes. |
 
 ## Development
 

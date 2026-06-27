@@ -82,15 +82,61 @@ function sectionFromSnapshot(id: string, label: string, snap: Snapshot | null, r
   };
 }
 
+export interface ScanSnapshot {
+  org?: string;
+  summary?: { totalTypes?: number; totalMembers?: number };
+}
+
+export interface DriftSnapshot {
+  org?: string;
+  driftStatus?: string;
+  components?: unknown[];
+}
+
+function scanNode(scan: ScanSnapshot | null): TreeNode {
+  if (!scan) return { id: 'scan', label: 'Metadata Inventory', description: 'not run yet', command: ['scan'] };
+  const s = scan.summary ?? {};
+  const org = scan.org ? ` · ${scan.org}` : '';
+  return {
+    id: 'scan',
+    label: 'Metadata Inventory',
+    description: `${s.totalTypes ?? '?'} types · ${s.totalMembers ?? '?'} members${org}`,
+    status: 'ok',
+    command: ['scan'],
+  };
+}
+
+function driftNode(drift: DriftSnapshot | null): TreeNode {
+  if (!drift) return { id: 'drift', label: 'Drift', description: 'not run yet', command: ['drift'] };
+  const count = Array.isArray(drift.components) ? drift.components.length : 0;
+  const clean = (drift.driftStatus ?? '').toUpperCase() === 'PASS' || count === 0;
+  return {
+    id: 'drift',
+    label: 'Drift',
+    description: clean ? 'in sync' : `${count} drifted component(s)`,
+    status: clean ? 'ok' : 'warn',
+    command: ['drift'],
+  };
+}
+
 /**
- * Build the full Org Health tree from the latest audit and monitor snapshots
- * (either may be null when not yet run).
+ * Build the full Org Health tree from the latest snapshots. `audit`/`monitor`
+ * are always rendered; `scan`/`drift` sections are appended only when those
+ * arguments are supplied (kept optional for back-compat with existing callers).
  */
-export function buildHealthTree(audit: Snapshot | null, monitor: Snapshot | null): TreeNode[] {
-  return [
+export function buildHealthTree(
+  audit: Snapshot | null,
+  monitor: Snapshot | null,
+  scan?: ScanSnapshot | null,
+  drift?: DriftSnapshot | null,
+): TreeNode[] {
+  const nodes: TreeNode[] = [
     sectionFromSnapshot('diagnostics', 'Diagnostics & Audit', audit, ['audit', 'all']),
     sectionFromSnapshot('monitoring', 'Monitoring', monitor, ['monitor', 'all']),
   ];
+  if (scan !== undefined) nodes.push(scanNode(scan));
+  if (drift !== undefined) nodes.push(driftNode(drift));
+  return nodes;
 }
 
 // describeFinding is the canonical renderer from @sfdt/flow-core (imported at
