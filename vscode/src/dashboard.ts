@@ -1,15 +1,19 @@
 import * as vscode from 'vscode';
 import { spawn, type ChildProcess } from 'node:child_process';
 import * as http from 'node:http';
+import { parseLaunchToken, dashboardPageUrl } from './lib/dashboard-url.js';
 
 /**
- * Manages the embedded sfdt dashboard. Spawns `sfdt ui` once (reusing the
- * existing web GUI) and shows it inside a webview panel pointed at the local
- * server, so the whole dashboard is reachable without leaving the editor.
+ * Manages the embedded sfdt dashboard. Spawns `sfdt ui --no-open` once (reusing
+ * the existing web GUI) and shows it inside a webview panel pointed at the local
+ * server. The GUI authenticates with a one-time launch token printed on the
+ * `sfdt ui` stdout — we capture it and pass it in the iframe URL, otherwise the
+ * dashboard would 401 on every API call.
  */
 export class DashboardController {
   private server: ChildProcess | undefined;
   private panel: vscode.WebviewPanel | undefined;
+  private launchToken: string | undefined;
 
   constructor(
     private readonly cliPath: () => string,
@@ -17,10 +21,13 @@ export class DashboardController {
     private readonly port: () => number,
   ) {}
 
-  async open(): Promise<void> {
+  /** Open the dashboard, optionally deep-linked to a GUI page (e.g. "audit"). */
+  async open(page?: string): Promise<void> {
     const port = this.port();
     await this.ensureServer();
+    const url = this.pageUrl(port, page);
     if (this.panel) {
+      this.panel.webview.html = iframeHtml(url);
       this.panel.reveal();
       return;
     }
@@ -30,14 +37,18 @@ export class DashboardController {
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true },
     );
-    const url = `http://localhost:${port}`;
     this.panel.webview.html = iframeHtml(url);
     this.panel.onDidDispose(() => (this.panel = undefined));
   }
 
+  private pageUrl(port: number, page?: string): string {
+    return dashboardPageUrl(port, page, this.launchToken);
+  }
+
   private async ensureServer(): Promise<void> {
     if (this.server && !this.server.killed) return;
-    this.server = spawn(this.cliPath(), ['ui'], {
+    // --no-open: we render the GUI in the webview, not an external browser.
+    this.server = spawn(this.cliPath(), ['ui', '--no-open'], {
       cwd: this.cwd(),
       env: { ...process.env },
       shell: false,
@@ -46,8 +57,11 @@ export class DashboardController {
     this.server.on('error', (err) => {
       vscode.window.showErrorMessage(`Failed to start sfdt ui: ${err.message}`);
     });
-    // Poll the health endpoint until the server is actually listening rather
-    // than racing a fixed delay (which fails on slow machines or busy ports).
+    // Capture the launch token from the "Dashboard running at …?token=…" line.
+    this.server.stdout?.on('data', (d) => {
+      const token = parseLaunchToken(d.toString());
+      if (token) this.launchToken = token;
+    });
     await this.waitForServer(this.port());
   }
 
@@ -69,11 +83,13 @@ export class DashboardController {
       });
     return (async () => {
       while (Date.now() < deadline) {
-        if (await attempt()) return;
+        if (await attempt()) {
+          // Give stdout a beat to surface the token line after health is up.
+          if (!this.launchToken) await new Promise((r) => setTimeout(r, 300));
+          return;
+        }
         await new Promise((r) => setTimeout(r, 200));
       }
-      // Fall through after the timeout — let the webview load and surface its
-      // own connection error if the server never came up.
     })();
   }
 
@@ -84,11 +100,12 @@ export class DashboardController {
 }
 
 function iframeHtml(url: string): string {
+  const origin = url.replace(/(https?:\/\/[^/]+).*/, '$1');
   return `<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${url}; style-src 'unsafe-inline';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${origin}; style-src 'unsafe-inline';" />
     <style>html,body,iframe{margin:0;padding:0;height:100%;width:100%;border:0;}</style>
   </head>
   <body>

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { Snapshot } from './snapshots.js';
+import type { Snapshot, ScanSnapshot, DriftSnapshot } from './snapshots.js';
 
 /** Read and parse a JSON file, returning null if it is missing or invalid. */
 export async function readJsonIfExists<T>(filePath: string): Promise<T | null> {
@@ -27,4 +27,16 @@ export async function readSnapshots(
     readJsonIfExists<Snapshot>(path.join(dir, 'monitor-latest.json')),
   ]);
   return { audit, monitor };
+}
+
+/** Read the latest scan + drift snapshots (Org Health's secondary sections). */
+export async function readScanDrift(
+  projectRoot: string,
+): Promise<{ scan: ScanSnapshot | null; drift: DriftSnapshot | null }> {
+  const dir = logsDir(projectRoot);
+  const [scan, drift] = await Promise.all([
+    readJsonIfExists<ScanSnapshot>(path.join(dir, 'scan-latest.json')),
+    readJsonIfExists<DriftSnapshot>(path.join(dir, 'drift-latest.json')),
+  ]);
+  return { scan, drift };
 }

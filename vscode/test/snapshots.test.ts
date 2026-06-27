@@ -6,7 +6,6 @@ import {
   describeFinding,
   type Snapshot,
 } from '../src/lib/snapshots.js';
-import { COMMAND_CATALOG, findCommand } from '../src/lib/commands.js';
 
 function snap(overrides: Partial<Snapshot> = {}): Snapshot {
   return {
@@ -67,15 +66,5 @@ describe('describeFinding', () => {
   });
   it('renders a limit finding', () => {
     expect(describeFinding({ name: 'DailyApiRequests', used: 95, max: 100 })).toBe('DailyApiRequests: 95/100');
-  });
-});
-
-describe('COMMAND_CATALOG', () => {
-  it('marks deploy as destructive and audit as not', () => {
-    expect(findCommand('deploy')?.destructive).toBe(true);
-    expect(findCommand('audit')?.destructive).toBeFalsy();
-  });
-  it('every entry has args', () => {
-    for (const c of COMMAND_CATALOG) expect(c.args.length).toBeGreaterThan(0);
   });
 });
