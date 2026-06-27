@@ -130,8 +130,9 @@ describe('sfdt flow scan', () => {
 
     expect(vi.mocked(fs.writeJson)).not.toHaveBeenCalled();
     const json = JSON.parse(writes.join(''));
-    expect(json.org).toBe('dev');
-    expect(json.totalFlows).toBe(0);
+    expect(json.status).toBe(0);
+    expect(json.result.org).toBe('dev');
+    expect(json.result.totalFlows).toBe(0);
   });
 });
 

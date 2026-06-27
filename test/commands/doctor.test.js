@@ -164,9 +164,10 @@ describe('sfdt doctor command wiring', () => {
     }
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
     const parsed = JSON.parse(out);
-    expect(parsed.ok).toBe(true);
-    expect(parsed.results).toHaveLength(4);
-    expect(parsed.results.map((r) => r.name)).toContain('sfdt ui bridge');
+    expect(parsed.status).toBe(0);
+    expect(parsed.result.ok).toBe(true);
+    expect(parsed.result.results).toHaveLength(4);
+    expect(parsed.result.results.map((r) => r.name)).toContain('sfdt ui bridge');
     writeSpy.mockRestore();
   });
 

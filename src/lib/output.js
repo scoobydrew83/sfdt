@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import ora from 'ora';
+import { resolveExitCode } from './exit-codes.js';
 
 const SPLASH_INDIGO = '#4F46E5';
 const SPLASH_VIOLET = '#7C3AED';
@@ -93,6 +94,46 @@ export const print = {
     console.log('');
   },
 };
+
+/**
+ * Emit a successful command result as an sf-native JSON envelope on stdout.
+ *
+ * Matches the Salesforce CLI (`sf`) convention so `sfdt`/`sf sfdt` output
+ * composes in sf-native pipelines: `{ status, result, warnings }` where
+ * `status` is the numeric exit code (0 for success).
+ *
+ * @param {*} result - The command payload (previously the top-level object).
+ * @param {object} [opts]
+ * @param {string[]} [opts.warnings=[]] - Non-fatal warnings to surface.
+ */
+export function emitJson(result, { warnings = [] } = {}) {
+  process.stdout.write(JSON.stringify({ status: 0, result, warnings }, null, 2) + '\n');
+}
+
+/**
+ * Emit a command failure as an sf-native JSON envelope on stdout and set the
+ * process exit code. `status` and `exitCode` both carry the resolved numeric
+ * exit code (see {@link resolveExitCode}).
+ *
+ * @param {Error} err - The error thrown by the command.
+ * @param {object} [opts]
+ * @param {string[]} [opts.warnings=[]] - Non-fatal warnings to surface.
+ * @param {object} [opts.data] - Optional structured error context (sf-idiomatic
+ *   `data` field), e.g. domain fields a command wants to preserve on failure.
+ */
+export function emitJsonError(err, { warnings = [], data } = {}) {
+  const code = resolveExitCode(err);
+  const envelope = {
+    status: code,
+    name: err?.name ?? 'Error',
+    message: err?.message ?? String(err),
+    exitCode: code,
+    warnings,
+  };
+  if (data !== undefined) envelope.data = data;
+  process.stdout.write(JSON.stringify(envelope, null, 2) + '\n');
+  process.exitCode = code;
+}
 
 /**
  * Create an ora spinner instance with consistent styling.

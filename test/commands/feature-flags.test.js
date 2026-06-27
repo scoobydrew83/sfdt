@@ -14,16 +14,20 @@ vi.mock('../../src/lib/config.js', () => ({
   getConfigDir: vi.fn(),
 }));
 
-vi.mock('../../src/lib/output.js', () => ({
-  print: {
-    header: vi.fn(),
-    success: vi.fn(),
-    error: vi.fn(),
-    warning: vi.fn(),
-    info: vi.fn(),
-    step: vi.fn(),
-  },
-}));
+vi.mock('../../src/lib/output.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    print: {
+      header: vi.fn(),
+      success: vi.fn(),
+      error: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+      step: vi.fn(),
+    },
+  };
+});
 
 import fs from 'fs-extra';
 import { getConfigDir } from '../../src/lib/config.js';
@@ -71,7 +75,7 @@ describe('feature-flags list', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'list', '--json']);
     const written = spy.mock.calls[0][0];
     const parsed = JSON.parse(written);
-    expect(parsed).toEqual({ ok: true, file: FILE, disabled: ['canvas-search'] });
+    expect(parsed).toEqual({ status: 0, result: { ok: true, file: FILE, disabled: ['canvas-search'] }, warnings: [] });
     spy.mockRestore();
   });
 
@@ -121,10 +125,14 @@ describe('feature-flags disable', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'disable', 'canvas-search', '--json']);
     const parsed = JSON.parse(spy.mock.calls[0][0]);
     expect(parsed).toEqual({
-      ok: true,
-      file: FILE,
-      changed: true,
-      disabled: ['canvas-search'],
+      status: 0,
+      result: {
+        ok: true,
+        file: FILE,
+        changed: true,
+        disabled: ['canvas-search'],
+      },
+      warnings: [],
     });
     spy.mockRestore();
   });

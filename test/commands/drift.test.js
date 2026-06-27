@@ -9,16 +9,20 @@ vi.mock('../../src/lib/script-runner.js', () => ({
   runScript: vi.fn(),
 }));
 
-vi.mock('../../src/lib/output.js', () => ({
-  print: {
-    header: vi.fn(),
-    success: vi.fn(),
-    error: vi.fn(),
-    warning: vi.fn(),
-    info: vi.fn(),
-    step: vi.fn(),
-  },
-}));
+vi.mock('../../src/lib/output.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    print: {
+      header: vi.fn(),
+      success: vi.fn(),
+      error: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+      step: vi.fn(),
+    },
+  };
+});
 
 vi.mock('fs-extra', () => ({
   default: {
@@ -107,11 +111,12 @@ describe('drift command', () => {
 
       const written = JSON.parse(writeSpy.mock.calls.map((c) => c[0]).join(''));
       expect(written).toMatchObject({
-        status: 'success',
-        org: 'dev',
-        exitCode: 0,
-        driftStatus: 'drift',
-        components: ['Foo__c'],
+        status: 0,
+        result: {
+          org: 'dev',
+          driftStatus: 'drift',
+          components: ['Foo__c'],
+        },
       });
       writeSpy.mockRestore();
     });
@@ -125,7 +130,7 @@ describe('drift command', () => {
       await createProgram().parseAsync(['node', 'sfdt', 'drift', '--json']);
 
       const written = JSON.parse(writeSpy.mock.calls.map((c) => c[0]).join(''));
-      expect(written).toMatchObject({ status: 'success', driftStatus: 'clean', components: [] });
+      expect(written).toMatchObject({ status: 0, result: { driftStatus: 'clean', components: [] } });
       writeSpy.mockRestore();
     });
 
@@ -138,7 +143,7 @@ describe('drift command', () => {
 
       expect(process.exitCode).toBe(1);
       const written = JSON.parse(writeSpy.mock.calls.map((c) => c[0]).join(''));
-      expect(written).toMatchObject({ status: 'error', message: expect.stringContaining('ENOENT') });
+      expect(written).toMatchObject({ status: 1, message: expect.stringContaining('ENOENT') });
       writeSpy.mockRestore();
     });
 
@@ -152,7 +157,7 @@ describe('drift command', () => {
 
       expect(process.exitCode).toBe(1);
       const written = writeSpy.mock.calls.map((c) => c[0]).join('');
-      expect(JSON.parse(written)).toMatchObject({ status: 'error', message: 'drift failed' });
+      expect(JSON.parse(written)).toMatchObject({ status: 1, message: 'drift failed' });
       writeSpy.mockRestore();
     });
   });

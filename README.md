@@ -79,7 +79,17 @@ brew install scoobydrew83/sfdt/sfdt
 
 # Docker (official multi-arch image)
 docker run --rm -v "$PWD:/project" ghcr.io/scoobydrew83/sfdt:latest --help
+
+# Salesforce CLI plugin — run every command as `sf sfdt <command>`
+sf plugins install @sfdt/plugin
+sf sfdt deploy --dry-run
 ```
+
+> The `@sfdt/plugin` package is a thin wrapper over `@sfdt/cli` (it shells out to
+> the same binary), so every command, flag, and `--json` output is identical to
+> running `sfdt` directly. `--json` commands emit a Salesforce-native
+> `{ status, result, warnings }` envelope. As an unsigned third-party plugin, `sf`
+> shows a one-time security prompt on install.
 
 ## Commands Reference
 

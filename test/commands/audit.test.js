@@ -71,7 +71,7 @@ describe('audit command', () => {
     // The snapshot must be written even in --json mode — the GUI/bridge read it.
     expect(fs.writeJson).toHaveBeenCalled();
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ org: 'dev-org', summary: { ok: 1 } });
+    expect(JSON.parse(out)).toMatchObject({ status: 0, result: { org: 'dev-org', summary: { ok: 1 } } });
     writeSpy.mockRestore();
   });
 
@@ -94,7 +94,7 @@ describe('audit command', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'audit', 'all', '--json']);
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'error' });
+    expect(JSON.parse(out)).toMatchObject({ status: 1 });
     writeSpy.mockRestore();
   });
 });

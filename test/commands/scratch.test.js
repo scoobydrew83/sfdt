@@ -66,7 +66,7 @@ describe('scratch command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'scratch', 'delete', 'dev', '--json']);
     expect(deleteScratch).not.toHaveBeenCalled();
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'error', message: expect.stringMatching(/--yes/) });
+    expect(JSON.parse(out)).toMatchObject({ status: 1, message: expect.stringMatching(/--yes/) });
     writeSpy.mockRestore();
   });
 

@@ -82,7 +82,7 @@ describe('docs generate', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'docs', 'generate', '--roles', '--json']);
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'error', message: 'AI features are disabled' });
+    expect(JSON.parse(out)).toMatchObject({ status: 1, message: 'AI features are disabled' });
     expect(process.exitCode).toBe(1);
     writeSpy.mockRestore();
   });
@@ -91,7 +91,7 @@ describe('docs generate', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'docs', 'generate', '--json']);
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'success', counts: { objects: 1 } });
+    expect(JSON.parse(out)).toMatchObject({ status: 0, result: { counts: { objects: 1 } } });
     writeSpy.mockRestore();
   });
 
@@ -100,7 +100,7 @@ describe('docs generate', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'docs', 'generate', '--json']);
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'error', message: 'boom' });
+    expect(JSON.parse(out)).toMatchObject({ status: 1, message: 'boom' });
     writeSpy.mockRestore();
   });
 });
@@ -118,7 +118,7 @@ describe('docs diagram', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'docs', 'diagram', '--json']);
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'success', mermaid: expect.stringContaining('erDiagram') });
+    expect(JSON.parse(out)).toMatchObject({ status: 0, result: { mermaid: expect.stringContaining('erDiagram') } });
     writeSpy.mockRestore();
   });
 });

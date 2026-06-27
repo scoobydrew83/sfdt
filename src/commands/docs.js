@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { loadConfig } from '../lib/config.js';
 import { generateDocs, collectProjectMetadata, buildErdMermaid } from '../lib/doc-generator.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { emitJson, emitJsonError } from '../lib/output.js';
 
 const DEFAULT_ROLES = ['developer', 'admin', 'user', 'devops'];
 
@@ -37,7 +38,7 @@ async function executeGenerate(options) {
       throw err;
     }
     if (jsonMode) {
-      process.stdout.write(JSON.stringify({ status: 'success', ...result }, null, 2) + '\n');
+      emitJson(result);
     } else {
       console.log('');
       console.log(`  Objects: ${result.counts.objects}`);
@@ -56,11 +57,11 @@ async function executeGenerate(options) {
     }
   } catch (err) {
     if (jsonMode) {
-      process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');
+      emitJsonError(err);
     } else {
       console.error(chalk.red(`Docs failed: ${err.message}`));
+      process.exitCode = resolveExitCode(err);
     }
-    process.exitCode = resolveExitCode(err);
   }
 }
 
@@ -71,7 +72,7 @@ async function executeDiagram(options) {
     const meta = await collectProjectMetadata(config);
     const mermaid = buildErdMermaid(meta.objects);
     if (jsonMode) {
-      process.stdout.write(JSON.stringify({ status: 'success', objects: meta.objects.length, mermaid }, null, 2) + '\n');
+      emitJson({ objects: meta.objects.length, mermaid });
       return;
     }
     if (options.output) {
@@ -83,11 +84,11 @@ async function executeDiagram(options) {
     }
   } catch (err) {
     if (jsonMode) {
-      process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');
+      emitJsonError(err);
     } else {
       console.error(chalk.red(`Diagram failed: ${err.message}`));
+      process.exitCode = resolveExitCode(err);
     }
-    process.exitCode = resolveExitCode(err);
   }
 }
 

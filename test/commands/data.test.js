@@ -67,7 +67,7 @@ describe('data command', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'list', '--json']);
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ sets: ['qa', 'demo'] });
+    expect(JSON.parse(out)).toMatchObject({ status: 0, result: { sets: ['qa', 'demo'] } });
     writeSpy.mockRestore();
   });
 
@@ -76,7 +76,7 @@ describe('data command', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'export', 'qa', '--json']);
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'error' });
+    expect(JSON.parse(out)).toMatchObject({ status: 1 });
     writeSpy.mockRestore();
   });
 });
@@ -90,7 +90,7 @@ describe('data delete confirmation', () => {
     writeSpy.mockRestore();
   });
 
-  it('reports status "partial" + skippedCount in --json when a query was skipped', async () => {
+  it('reports skippedCount in --json when a query was skipped', async () => {
     deleteDataSet.mockResolvedValueOnce({
       set: 'qa',
       org: 'dev',
@@ -102,11 +102,11 @@ describe('data delete confirmation', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'qa', '--yes', '--json']);
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'partial', skippedCount: 1 });
+    expect(JSON.parse(out)).toMatchObject({ status: 0, result: { skippedCount: 1 } });
     writeSpy.mockRestore();
   });
 
-  it('reports status "partial" + errorCount in --json when a sobject delete failed', async () => {
+  it('reports errorCount in --json when a sobject delete failed', async () => {
     deleteDataSet.mockResolvedValueOnce({
       set: 'qa',
       org: 'dev',
@@ -118,7 +118,7 @@ describe('data delete confirmation', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'qa', '--yes', '--json']);
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'partial', errorCount: 1, skippedCount: 0 });
+    expect(JSON.parse(out)).toMatchObject({ status: 0, result: { errorCount: 1, skippedCount: 0 } });
     writeSpy.mockRestore();
   });
 
@@ -128,7 +128,7 @@ describe('data delete confirmation', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'qa', '--json']);
     expect(deleteDataSet).not.toHaveBeenCalled();
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'error', message: expect.stringMatching(/--yes/) });
+    expect(JSON.parse(out)).toMatchObject({ status: 1, message: expect.stringMatching(/--yes/) });
     writeSpy.mockRestore();
   });
 

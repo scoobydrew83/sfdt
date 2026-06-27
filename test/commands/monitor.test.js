@@ -79,7 +79,7 @@ describe('monitor command', () => {
     // The snapshot must be written even in --json mode — the GUI/bridge read it.
     expect(fs.writeJson).toHaveBeenCalled();
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ org: 'dev-org' });
+    expect(JSON.parse(out)).toMatchObject({ status: 0, result: { org: 'dev-org' } });
     writeSpy.mockRestore();
   });
 
