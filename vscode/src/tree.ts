@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { buildHealthTree, statusIcon, type TreeNode } from './lib/snapshots.js';
-import { readSnapshots } from './lib/io.js';
+import { readSnapshots, readScanDrift } from './lib/io.js';
 
 /**
  * Tree data provider for the "Org Health" view. Reads the latest audit/monitor
@@ -20,8 +20,11 @@ export class OrgHealthProvider implements vscode.TreeDataProvider<TreeNode> {
     if (!root) {
       this.roots = [];
     } else {
-      const { audit, monitor } = await readSnapshots(root);
-      this.roots = buildHealthTree(audit, monitor);
+      const [{ audit, monitor }, { scan, drift }] = await Promise.all([
+        readSnapshots(root),
+        readScanDrift(root),
+      ]);
+      this.roots = buildHealthTree(audit, monitor, scan, drift);
     }
     this._onDidChange.fire();
   }

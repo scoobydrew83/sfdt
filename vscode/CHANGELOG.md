@@ -6,6 +6,45 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-26
+
+A ground-up expansion from a single Org Health viewer into a full command center
+for the sfdt CLI. The extension stays a thin UI over the CLI — it spawns `sfdt`
+and reads the same JSON snapshots — but it now surfaces the *entire* command
+surface and the live state of your org and project.
+
+### Added
+- **Commands view** — a grouped tree of the full sfdt command surface (30+
+  commands / 50+ subcommands) across six categories: Deploy & Release, Org
+  Health, Quality & Analysis, Documentation, Data & Scratch Orgs, and Project &
+  Tools. Click any command to run it; subcommands nest under their parent.
+- **Integrated-terminal execution** — commands now run in a dedicated **SFDT**
+  terminal with live, colored, streaming output and support for interactive
+  prompts, instead of a hidden output channel. Destructive commands (deploy,
+  rollback, backup, data delete, scratch delete) confirm first.
+- **Status view** — the active target org (alias, instance URL, connection),
+  the git branch, an Org Health rollup, and the installed `sfdt`/`sf` versions
+  with an "update available" hint.
+- **Org picker** — select the target org from `sf org list` (or type an alias)
+  right from the Status view title bar; it updates `sfdt.defaultOrg`.
+- **Welcome / onboarding** — when the `sfdt` CLI isn't found or the project
+  isn't initialized, the views offer one-click install docs and `sfdt init`.
+- **Command search** — `SFDT: Run Command…` is now a searchable quick-pick over
+  every command (matches on label, detail, and argv).
+- **Context menus & docs links** — right-click any command to Run, Copy the
+  exact `sfdt …` invocation, or Open the matching page on https://sfdt.dev/.
+- **Per-org window theming** (`sfdt.orgColor`, on by default) — tints the window
+  by org type (production = red, sandbox = orange, scratch/developer = green) to
+  prevent wrong-org mistakes.
+- **Org Health** now also surfaces `scan` (metadata inventory) and `drift`
+  sections alongside audit and monitor, and all views auto-refresh whenever a
+  `logs/*-latest.json` snapshot changes.
+
+### Fixed
+- **The embedded dashboard no longer 401s.** It now captures the one-time launch
+  token printed by `sfdt ui` and passes it to the webview (and can deep-link to
+  a specific dashboard page), so the in-editor dashboard authenticates correctly.
+
 ## [0.1.2] - 2026-06-26
 
 ### Fixed
