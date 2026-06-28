@@ -64,6 +64,8 @@
               "webhookUrl": { "type": "string" },
               "webhookUrlEnv": { "type": "string" },
               "url": { "type": "string" },
+              "urlEnv": { "type": "string" },
+              "format": { "type": "string", "enum": ["json", "loki"] },
               "headers": { "type": "object", "additionalProperties": { "type": "string" } },
               "severityThreshold": { "type": "string", "enum": ["ok", "warn", "error", "fail"] },
               "events": { "type": "array", "items": { "type": "string" } },

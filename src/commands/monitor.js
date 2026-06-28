@@ -6,6 +6,7 @@ import { describeFinding } from '@sfdt/flow-core';
 import { loadConfig } from '../lib/config.js';
 import { runMonitor, runBackup, CHECK_IDS, MONITOR_DEFAULTS } from '../lib/monitor-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { dispatchSnapshot } from '../lib/notifier.js';
 
 const STATUS_COLOR = {
   ok: chalk.green,
@@ -60,6 +61,16 @@ async function executeMonitor(checks, options, { backup = false } = {}) {
       await fs.writeJson(outPath, snapshot, { spaces: 2 });
     } catch (writeErr) {
       process.stderr.write(`Warning: could not write snapshot to ${outPath}: ${writeErr.message}\n`);
+    }
+
+    if (options.notify) {
+      try {
+        const { results } = await dispatchSnapshot(snapshot, config, { type: 'monitor' });
+        const sent = results.filter((r) => r.ok).map((r) => r.channel);
+        if (!jsonMode) console.log(chalk.dim(`Notified: ${sent.length ? sent.join(', ') : 'no matching channel'}`));
+      } catch (notifyErr) {
+        process.stderr.write(`Warning: notification failed: ${notifyErr.message}\n`);
+      }
     }
 
     if (jsonMode) {
@@ -145,6 +156,7 @@ export function registerMonitorCommand(program) {
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
     .option('--backup', 'Also run a full metadata backup')
     .option('--json', 'Emit structured JSON to stdout')
+    .option('--notify', 'Send the snapshot to configured notification channels')
     .action((options) => executeMonitor(CHECK_IDS, options));
 
   for (const id of CHECK_IDS) {
