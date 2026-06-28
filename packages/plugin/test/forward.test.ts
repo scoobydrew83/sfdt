@@ -46,4 +46,23 @@ describe('forward', () => {
 
     exitSpy.mockRestore();
   });
+
+  it('falls back to require.resolve(@sfdt/cli) when SFDT_CLI_ENTRYPOINT is unset', async () => {
+    // With no override, entrypoint() takes the right-hand branch of the `||` and
+    // resolves the bundled @sfdt/cli bin (a runtime dep present in node_modules).
+    delete process.env.SFDT_CLI_ENTRYPOINT;
+    execaMock.mockResolvedValue({ exitCode: 0 });
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('__exit__');
+    }) as never);
+
+    const { forward } = await import('../src/lib/forward');
+    await expect(forward(['version'])).rejects.toThrow('__exit__');
+
+    const [, args] = execaMock.mock.calls[0] as [string, string[]];
+    expect(args[0]).toMatch(/@sfdt[/\\]cli[/\\]bin[/\\]sfdt\.js$/);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+
+    exitSpy.mockRestore();
+  });
 });

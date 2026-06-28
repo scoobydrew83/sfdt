@@ -230,6 +230,14 @@ describe('uninstallNativeHost', () => {
     expect(r.results[0].removed).toBe(false);
   });
 
+  it('reports "not supported" for browsers on an unknown platform', async () => {
+    // BROWSER_DIRS has no entry for e.g. freebsd, so manifestDirsForBrowser
+    // returns undefined for every browser and uninstall skips them.
+    const r = await uninstallNativeHost({ platform: 'freebsd', browser: 'all' });
+    expect(r.ok).toBe(true);
+    expect(r.results.every((res) => res.removed === false && res.reason === 'not supported')).toBe(true);
+  });
+
   it('on windows, calls `reg delete` for the host key', async () => {
     await uninstallNativeHost({ platform: 'win32', browser: 'chrome' });
     const regDelete = execaCalls.find((c) => c.cmd === 'reg' && c.args.includes('delete'));
@@ -254,5 +262,28 @@ describe('nativeHostStatus', () => {
     expect(chrome.hostPath).toBe(HOST_PATH);
     expect(chrome.allowedOrigins).toEqual([`chrome-extension://${VALID_EXTENSION_ID}/`]);
     expect(edge.installed).toBe(false);
+  });
+
+  it('marks every browser unsupported on an unknown platform', async () => {
+    const status = await nativeHostStatus({ platform: 'freebsd' });
+    expect(status.browsers.every((b) => b.supported === false && b.installed === false)).toBe(true);
+  });
+
+  it('treats a corrupt manifest as installed-but-unreadable (null host metadata)', async () => {
+    // Install to get the real manifest path, then overwrite it with invalid
+    // JSON so readJson throws and the catch falls back to manifest=null —
+    // installed:true but no hostPath/origins.
+    const install = await installNativeHost({
+      extensionId: VALID_EXTENSION_ID,
+      hostPath: HOST_PATH,
+      platform: 'darwin',
+      browser: 'chrome',
+    });
+    fsState.set(install.results[0].manifestPath, '{ not valid json');
+    const status = await nativeHostStatus({ platform: 'darwin' });
+    const chrome = status.browsers.find((b) => b.browser === 'chrome');
+    expect(chrome.installed).toBe(true);
+    expect(chrome.hostPath).toBeUndefined();
+    expect(chrome.allowedOrigins).toBeUndefined();
   });
 });

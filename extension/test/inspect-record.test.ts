@@ -260,4 +260,45 @@ describe('inspect-record — UI activation & inspection', () => {
       { Name: 'New Corp Name' }
     );
   });
+
+  it('opens an empty inspector with a blank ID input when the page is not a record', async () => {
+    setSalesforceUrl('https://x.lightning.force.com/lightning/setup/SetupOneHome/home');
+    const api = fakeApi();
+    const feature = createInspectRecordFeature({ api });
+
+    await feature.onActivate?.();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const overlay = document.querySelector('.sfdt-inspect-record-overlay');
+    expect(overlay).not.toBeNull();
+    // No record was auto-loaded, so the global describe / record fetch never ran.
+    expect(api.apiGet).not.toHaveBeenCalled();
+    const idInput = document.querySelector<HTMLInputElement>(
+      'input[placeholder^="Paste Salesforce Record ID"]',
+    );
+    expect(idInput).not.toBeNull();
+    expect(idInput!.value).toBe('');
+  });
+
+  it('warns and does not query when an invalid ID is submitted', async () => {
+    setSalesforceUrl('https://x.lightning.force.com/lightning/setup/SetupOneHome/home');
+    const api = fakeApi();
+    const feature = createInspectRecordFeature({ api });
+
+    await feature.onActivate?.();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const idInput = document.querySelector<HTMLInputElement>(
+      'input[placeholder^="Paste Salesforce Record ID"]',
+    )!;
+    idInput.value = 'not-a-valid-id';
+    const inspectBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Inspect',
+    ) as HTMLButtonElement;
+    inspectBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector('.sfdt-toast')?.textContent).toMatch(/valid 15 or 18 character/);
+    expect(api.apiGet).not.toHaveBeenCalled();
+  });
 });

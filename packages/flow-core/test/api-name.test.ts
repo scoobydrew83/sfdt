@@ -139,6 +139,60 @@ describe('flow-core/api-name', () => {
     });
   });
 
+  describe('getAll / getDisplayList', () => {
+    it('getAll returns a copy of the prefix list (mutating it does not corrupt state)', async () => {
+      const lib = new ApiNameLibrary();
+      await lib.load();
+      const all = lib.getAll();
+      expect(all.length).toBeGreaterThan(0);
+      all.length = 0; // mutate the returned copy
+      expect(lib.getAll().length).toBeGreaterThan(0);
+    });
+
+    it('getDisplayList pairs a lowercased lookup key with the original display label', async () => {
+      const lib = new ApiNameLibrary();
+      await lib.load();
+      const list = lib.getDisplayList();
+      const getRecords = list.find((e) => e.display === 'Get Records');
+      expect(getRecords).toEqual({ type: 'get records', display: 'Get Records' });
+    });
+  });
+
+  describe('load with storage', () => {
+    it('falls back to defaults when storage holds an empty list', async () => {
+      const storage = createMemoryStorage({ 'apiNameGenerator.customPrefixes': [] });
+      const lib = new ApiNameLibrary({ storage });
+      await lib.load();
+      expect(lib.isCustom()).toBe(false);
+      expect(lib.getByType('Get Records')?.Snake_Case).toBe('Get_');
+    });
+  });
+
+  describe('expand — empty normalisation', () => {
+    it('returns null when a punctuation-only label normalises to an empty string', async () => {
+      const lib = new ApiNameLibrary();
+      await lib.load();
+      expect(lib.expand('###', 'Get Records', 'Snake_Case')).toBeNull();
+      expect(lib.expand('###', 'Get Records', 'camelCase')).toBeNull();
+    });
+  });
+
+  describe('importCustom — missing case fields default to empty strings', () => {
+    it('keeps an entry with only a type, defaulting the case columns to empty', async () => {
+      const lib = new ApiNameLibrary();
+      const result = await lib.importCustom(
+        JSON.stringify({ version: 1, prefixes: [{ type: 'BareType' }] }),
+      );
+      expect(result.success).toBe(true);
+      expect(lib.getByType('BareType')).toEqual({
+        type: 'BareType',
+        Snake_Case: '',
+        PascalCase: '',
+        camelCase: '',
+      });
+    });
+  });
+
   describe('resetToDefaults', () => {
     it('clears custom prefixes and restores the defaults', async () => {
       const storage = createMemoryStorage();

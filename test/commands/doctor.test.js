@@ -126,6 +126,87 @@ describe('runExtensionDoctor', () => {
     expect(tel.status).toBe('warn');
   });
 
+  it('fails when feature-flags.json is missing the "disabled" array', async () => {
+    fs.pathExists.mockImplementation(async (p) => p.endsWith('feature-flags.json'));
+    fs.readJson.mockImplementation(async (p) => {
+      if (p.endsWith('feature-flags.json')) return { somethingElse: true };
+      return {};
+    });
+    const { results, ok } = await runExtensionDoctor({
+      port: 7654,
+      fetchImpl: mockFetchOk({ ok: true, data: {} }),
+    });
+    const ff = results.find((r) => r.name === 'feature-flags.json');
+    expect(ff.status).toBe('fail');
+    expect(ff.detail).toContain('disabled');
+    expect(ok).toBe(false);
+  });
+
+  it('passes and lists disabled features when feature-flags.json is valid', async () => {
+    fs.pathExists.mockImplementation(async (p) => p.endsWith('feature-flags.json'));
+    fs.readJson.mockImplementation(async (p) => {
+      if (p.endsWith('feature-flags.json')) return { disabled: ['canvas-search', 'apex-log'] };
+      return {};
+    });
+    const { results } = await runExtensionDoctor({
+      port: 7654,
+      fetchImpl: mockFetchOk({ ok: true, data: {} }),
+    });
+    const ff = results.find((r) => r.name === 'feature-flags.json');
+    expect(ff.status).toBe('pass');
+    expect(ff.detail).toContain('canvas-search');
+  });
+
+  it('warns when nativeHostStatus throws', async () => {
+    nativeHostStatus.mockRejectedValue(new Error('registry error'));
+    const { results } = await runExtensionDoctor({
+      port: 7654,
+      fetchImpl: mockFetchOk({ ok: true, data: {} }),
+    });
+    const host = results.find((r) => r.name === 'native messaging host');
+    expect(host.status).toBe('warn');
+    expect(host.detail).toContain('registry error');
+  });
+
+  it('passes the native host check when at least one browser has it installed', async () => {
+    nativeHostStatus.mockResolvedValue({
+      platform: 'darwin',
+      browsers: [{ browser: 'chrome', installed: true }, { browser: 'edge', installed: false }],
+    });
+    const { results } = await runExtensionDoctor({
+      port: 7654,
+      fetchImpl: mockFetchOk({ ok: true, data: {} }),
+    });
+    const host = results.find((r) => r.name === 'native messaging host');
+    expect(host.status).toBe('pass');
+    expect(host.detail).toContain('chrome');
+  });
+
+  it('fails the bridge check on a non-2xx HTTP status', async () => {
+    const { results } = await runExtensionDoctor({
+      port: 7654,
+      fetchImpl: mockFetchOk({}, 503),
+    });
+    const bridge = results.find((r) => r.name === 'sfdt ui bridge');
+    expect(bridge.status).toBe('fail');
+    expect(bridge.detail).toContain('503');
+  });
+
+  it('fails telemetry check when the snapshot is unreadable', async () => {
+    fs.pathExists.mockImplementation(async (p) => p.endsWith('telemetry-snapshot.json'));
+    fs.readJson.mockImplementation(async (p) => {
+      if (p.endsWith('telemetry-snapshot.json')) throw new Error('corrupt json');
+      return {};
+    });
+    const { results, ok } = await runExtensionDoctor({
+      port: 7654,
+      fetchImpl: mockFetchOk({ ok: true, data: {} }),
+    });
+    const tel = results.find((r) => r.name === 'telemetry-snapshot.json');
+    expect(tel.status).toBe('fail');
+    expect(ok).toBe(false);
+  });
+
   it('passes telemetry check when snapshot is present', async () => {
     fs.pathExists.mockImplementation(async (p) => p.endsWith('telemetry-snapshot.json'));
     fs.readJson.mockImplementation(async (p) => {
@@ -215,6 +296,22 @@ describe('sfdt doctor command wiring', () => {
     const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(out).toMatch(/Some checks failed/i);
     logSpy.mockRestore();
+  });
+
+  it('rejects an out-of-range --port as a JSON error', async () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'doctor', '--extension', '--port', '70000', '--json']);
+    const out = writeSpy.mock.calls.map((c) => c[0]).join('');
+    expect(JSON.parse(out)).toMatchObject({ status: 1, message: expect.stringMatching(/--port/) });
+    writeSpy.mockRestore();
+  });
+
+  it('reports a non-numeric --port failure on stderr in pretty mode', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'doctor', '--extension', '--port', 'abc']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('doctor failed'));
+    expect(process.exitCode).toBe(1);
+    errSpy.mockRestore();
   });
 
   it('warns and defaults to --extension when no diagnostic group is selected', async () => {

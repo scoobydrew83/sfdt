@@ -38,6 +38,14 @@ describe('flow-core/metadata-cleaner', () => {
       expect(out).toEqual({ label: 'X', decisions: [{ name: 'D' }] });
     });
 
+    it('drops an empty processMetadataValues array nested inside an element', () => {
+      const out = cleanFlowMetadata({
+        label: 'X',
+        assignments: [{ name: 'A', processMetadataValues: [] }],
+      });
+      expect(out).toEqual({ label: 'X', assignments: [{ name: 'A' }] });
+    });
+
     it('preserves non-empty nested arrays + objects', () => {
       const out = cleanFlowMetadata({
         label: 'X',

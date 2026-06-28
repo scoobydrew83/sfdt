@@ -97,4 +97,52 @@ describe('audit command', () => {
     expect(JSON.parse(out)).toMatchObject({ status: 1 });
     writeSpy.mockRestore();
   });
+
+  it('reports a failed audit on stderr in non-json mode', async () => {
+    runAudit.mockRejectedValue(new Error('org unreachable'));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'all']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('org unreachable'));
+    expect(process.exitCode).toBe(1);
+    errSpy.mockRestore();
+  });
+
+  it('warns but does not fail when the snapshot cannot be written', async () => {
+    fs.writeJson.mockRejectedValue(new Error('disk full'));
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'all']);
+    const out = stderrSpy.mock.calls.map((c) => c[0]).join('');
+    expect(out).toContain('could not write snapshot');
+    expect(out).toContain('disk full');
+    // A write failure must not flip the exit code for an otherwise-ok audit.
+    expect(process.exitCode).toBeUndefined();
+    stderrSpy.mockRestore();
+  });
+
+  it('falls back to <root>/logs when logDir is unset', async () => {
+    loadConfig.mockResolvedValue({ _projectRoot: '/project', defaultOrg: 'dev-org' });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'all']);
+    expect(fs.writeJson).toHaveBeenCalledWith(
+      '/project/logs/audit-latest.json',
+      expect.any(Object),
+      { spaces: 2 },
+    );
+  });
+
+  it('renders findings, truncates past 10, and handles an unknown status', async () => {
+    const findings = Array.from({ length: 12 }, (_, i) => ({ username: `u${i}@x.com` }));
+    runAudit.mockResolvedValue({
+      ...okSnapshot,
+      checks: [{ id: 'mfa', title: 'MFA', status: 'mystery', summary: 's', findings }],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'all']);
+    const out = logSpy.mock.calls.map((c) => c[0]).join('\n');
+    expect(out).toContain('u0@x.com');
+    expect(out).toContain('+2 more');
+    expect(out).toContain('MYSTERY');
+    logSpy.mockRestore();
+  });
 });

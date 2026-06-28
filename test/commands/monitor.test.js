@@ -89,4 +89,86 @@ describe('monitor command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'monitor', 'all']);
     expect(process.exitCode).toBe(1);
   });
+
+  it('prints findings (and a truncation line) in the pretty report', async () => {
+    const findings = Array.from({ length: 10 }, (_, i) => ({ message: `finding ${i}` }));
+    runMonitor.mockResolvedValue({
+      ...okSnapshot,
+      checks: [{ id: 'errors', title: 'Apex errors', status: 'warn', summary: '10 errors', findings }],
+      summary: { total: 1, ok: 0, warn: 1, fail: 0, error: 0 },
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'monitor', 'all']);
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('Apex errors');
+    expect(out).toContain('+2 more');
+    logSpy.mockRestore();
+  });
+
+  it('warns on stderr but does not fail the run when the snapshot write fails', async () => {
+    fs.writeJson.mockRejectedValue(new Error('EACCES'));
+    const errSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'monitor', 'all']);
+    expect(errSpy.mock.calls.map((c) => String(c[0])).join('')).toContain('could not write snapshot');
+    expect(process.exitCode).toBeUndefined();
+    errSpy.mockRestore();
+  });
+
+  it('reports a monitor failure as JSON when runMonitor throws', async () => {
+    runMonitor.mockRejectedValue(new Error('org unreachable'));
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'monitor', 'all', '--json']);
+    const out = writeSpy.mock.calls.map((c) => c[0]).join('');
+    expect(JSON.parse(out)).toMatchObject({ status: 1, message: 'org unreachable' });
+    writeSpy.mockRestore();
+  });
+
+  it('errors when no org is configured (pretty mode)', async () => {
+    loadConfig.mockResolvedValue({ _projectRoot: '/project' });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'monitor', 'all']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('No org specified'));
+    expect(process.exitCode).toBe(1);
+    errSpy.mockRestore();
+  });
+});
+
+describe('monitor backup', () => {
+  it('sets exit code 1 and shows the summary when the backup returns an error status', async () => {
+    runBackup.mockResolvedValue({ id: 'backup', title: 'Metadata backup', status: 'error', summary: 'auth failed', findings: [] });
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'monitor', 'backup', '--json']);
+    expect(process.exitCode).toBe(1);
+    const out = writeSpy.mock.calls.map((c) => c[0]).join('');
+    expect(JSON.parse(out)).toMatchObject({ status: 0, result: { status: 'error' } });
+    writeSpy.mockRestore();
+  });
+
+  it('reports a thrown backup failure as JSON', async () => {
+    runBackup.mockRejectedValue(new Error('retrieve crashed'));
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'monitor', 'backup', '--json']);
+    const out = writeSpy.mock.calls.map((c) => c[0]).join('');
+    expect(JSON.parse(out)).toMatchObject({ status: 1, message: 'retrieve crashed' });
+    writeSpy.mockRestore();
+  });
+
+  it('reports a backup failure on stderr in pretty mode', async () => {
+    runBackup.mockRejectedValue(new Error('retrieve crashed'));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'monitor', 'backup']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('retrieve crashed'));
+    expect(process.exitCode).toBe(1);
+    errSpy.mockRestore();
+  });
+
+  it('errors when no org is configured for backup', async () => {
+    loadConfig.mockResolvedValue({ _projectRoot: '/project' });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'monitor', 'backup']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('No org specified'));
+    expect(process.exitCode).toBe(1);
+    errSpy.mockRestore();
+  });
 });
