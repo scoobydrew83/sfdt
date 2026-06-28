@@ -39,6 +39,8 @@ import { registerMcpCommand } from './commands/mcp.js';
 import { registerPluginCommand } from './commands/plugin.js';
 import { registerSkillsCommand } from './commands/skills.js';
 import { registerCiCommand } from './commands/ci.js';
+import { registerPrCommand } from './commands/pr.js';
+import { registerRetrofitCommand } from './commands/retrofit.js';
 import { formatSplash } from './lib/output.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -103,6 +105,8 @@ export function createCli() {
   registerPluginCommand(program);
   registerSkillsCommand(program);
   registerCiCommand(program);
+  registerPrCommand(program);
+  registerRetrofitCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program

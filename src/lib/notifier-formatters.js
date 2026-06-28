@@ -172,6 +172,24 @@ export function renderLoki(message, { kind, org } = {}) {
 }
 
 /**
+ * GitHub-flavored markdown body for PR comments.
+ */
+export function renderMarkdown(message) {
+  const lines = [`### ${message.title}`];
+  if (message.fields?.length) {
+    lines.push('');
+    for (const f of message.fields) lines.push(`- **${f.label}:** ${f.value}`);
+  }
+  if (message.text) {
+    lines.push('', message.text);
+  }
+  if (message.footer) {
+    lines.push('', `_${message.footer}_`);
+  }
+  return lines.join('\n');
+}
+
+/**
  * Plain-text + minimal-HTML body for email channels (used in Step 3).
  */
 export function renderEmail(message) {

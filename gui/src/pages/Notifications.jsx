@@ -40,6 +40,7 @@ export default function NotificationsPage() {
           <h1>Notifications</h1>
           <p className="page-subtitle">
             Channels that receive deploy events and audit/monitor snapshots. Secrets are never shown.
+            {data ? ` · AI executive summary: ${data.summary ? 'on' : 'off'}` : ''}
           </p>
         </div>
       </div>

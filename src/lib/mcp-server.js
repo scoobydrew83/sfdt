@@ -170,6 +170,32 @@ const TOOLS = [
     }
   },
   {
+    name: 'sfdt_retrofit',
+    description: 'Retrofit metadata from a source org to a target org: retrieve specified metadata types, commit, then smart-deploy. Validate-only unless execute=true.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', description: 'Org alias to retrieve changes FROM.' },
+        target: { type: 'string', description: 'Org alias to deploy changes TO.' },
+        metadata: { type: 'string', description: 'Comma-separated metadata types (defaults to a common admin-changed set).' },
+        execute: { type: 'boolean', description: 'Perform a real deploy to the target (default: validate-only).' },
+        confirmExecution: { type: 'boolean', description: 'Required when execute=true to acknowledge a real deployment.' }
+      },
+      required: ['source', 'target']
+    }
+  },
+  {
+    name: 'sfdt_pr_comment',
+    description: 'Post the latest audit or monitor snapshot to the current pull request as a markdown comment (via the gh CLI).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['audit', 'monitor'], description: 'Which snapshot to post (default: monitor).' },
+        pr: { type: 'string', description: 'PR number or URL (defaults to the current branch PR).' }
+      }
+    }
+  },
+  {
     name: 'sfdt_notify',
     description: 'Send the latest audit or monitor snapshot to configured notification channels (Slack/Teams/email/webhook), applying each channel\'s event filter and severity threshold. Run an audit/monitor first so a snapshot exists.',
     inputSchema: {
@@ -518,6 +544,25 @@ export class SfdtMcpServer {
           SFDT_NON_INTERACTIVE: 'true',
         });
         return { exitCode, stdout, stderr };
+      }
+
+      case 'sfdt_retrofit': {
+        if (args.execute && !args.confirmExecution) {
+          throw new Error('A real retrofit deploy is potentially destructive. Pass confirmExecution: true (or omit execute for validate-only).');
+        }
+        const cliArgs = ['retrofit', '--source', args.source, '--target', args.target, '--json'];
+        if (args.metadata) cliArgs.push('--metadata', args.metadata);
+        if (args.execute) cliArgs.push('--execute');
+        const { exitCode, stdout, stderr } = await this.#runCliCommand(cliArgs, { SFDT_NON_INTERACTIVE: 'true' });
+        try { return JSON.parse(stdout); } catch { return { exitCode, stdout, stderr }; }
+      }
+
+      case 'sfdt_pr_comment': {
+        const type = args.type === 'audit' ? 'audit' : 'monitor';
+        const cliArgs = ['pr', 'comment', '--type', type, '--json'];
+        if (args.pr) cliArgs.push('--pr', String(args.pr));
+        const { exitCode, stdout, stderr } = await this.#runCliCommand(cliArgs, { SFDT_NON_INTERACTIVE: 'true' });
+        try { return JSON.parse(stdout); } catch { return { exitCode, stdout, stderr }; }
       }
 
       case 'sfdt_docs': {

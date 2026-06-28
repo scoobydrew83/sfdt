@@ -506,6 +506,7 @@ export function createGuiApp(config, version, port = 7654) {
       const { describeChannels } = await import('../notifier.js');
       res.json({
         enabled: config.notifications?.enabled === true || config.features?.notifications === true,
+        summary: config.notifications?.summary?.enabled === true,
         channels: describeChannels(config),
       });
     } catch (err) {

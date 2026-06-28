@@ -10,6 +10,7 @@ import { prepareSmartDeploy } from '../lib/smart-deploy.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { getPrompt } from '../lib/prompts.js';
 import { runFixLoop } from '../lib/agent-loop.js';
+import { postPrComment } from '../lib/github-pr.js';
 
 async function runPreflight(config, { dryRun } = {}) {
   print.info('Running preflight checks...');
@@ -110,9 +111,11 @@ async function runSmartDeploy(config, options) {
     const useCapture = !!options.aiFix;
 
     print.info(`Running: sf ${cmd.join(' ')}`);
+    let deployOk = false;
     try {
       const res = await execa('sf', cmd, useCapture ? { all: true } : { stdio: 'inherit' });
       if (useCapture && res.all) console.log(res.all);
+      deployOk = true;
       print.success(options.dryRun ? 'Validation succeeded — no changes applied.' : 'Smart deploy completed successfully.');
     } catch (deployErr) {
       if (useCapture && deployErr.all) console.log(deployErr.all);
@@ -148,6 +151,23 @@ async function runSmartDeploy(config, options) {
         }
       }
       process.exitCode = resolveExitCode(deployErr);
+    }
+
+    // Optional PR decoration: post the delta + outcome to the current PR.
+    if (options.prComment) {
+      const verb = options.dryRun ? 'Validation' : 'Deploy';
+      const status = deployOk ? '✅ passed' : '❌ failed';
+      const body = [
+        `### SFDT Smart ${verb} — ${status}`,
+        '',
+        `- **Org:** ${org}`,
+        `- **Delta:** ${prep.addCount} additive, ${prep.delCount} destructive`,
+        `- **Test level:** ${prep.testLevel}${prep.tests.length ? ` (${prep.tests.join(', ')})` : ''}`,
+        prep.removed.length ? `- **Overwrite-protected:** ${prep.removed.length} skipped` : '',
+      ].filter(Boolean).join('\n');
+      const res = await postPrComment(body, { cwd: projectRoot });
+      if (res.ok) print.info('Posted deploy result to PR.');
+      else print.warning(`Could not post PR comment: ${res.error}`);
     }
   } finally {
     // Clean up the temp manifest dir.
@@ -198,6 +218,7 @@ export function registerDeployCommand(program) {
     .option('--ai-deps', 'Run AI dependency cleanup on the computed delta before deploying')
     .option('--ai-fix', 'On failure, run AI deploy-error analysis, or the bounded auto-fix loop when ai.agent is enabled (CLI providers only)')
     .option('--max-turns <n>', 'Max auto-fix iterations (overrides ai.agent.maxTurns)')
+    .option('--pr-comment', 'Post the smart-deploy delta + outcome to the current PR (via gh)')
     .option('--agent', 'Non-interactive agent mode (no AI prompts block on input)')
     .action(async (options) => {
       try {

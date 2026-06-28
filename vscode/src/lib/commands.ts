@@ -52,6 +52,9 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     docsUrl: DOCS.core,
     entries: [
       { id: 'deploy', label: 'Deploy', detail: 'Deploy metadata to the org', args: ['deploy'], destructive: true, icon: 'cloud-upload' },
+      { id: 'deploy-smart', label: 'Smart Deploy (validate)', detail: 'Delta validate-only deploy with smart test selection', args: ['deploy', '--smart', '--dry-run'], icon: 'cloud-upload' },
+      { id: 'retrofit', label: 'Retrofit', detail: 'Retrieve from a source org, commit, and smart-deploy to a target', args: ['retrofit'], icon: 'sync' },
+      { id: 'pr-comment', label: 'PR Comment (monitor)', detail: 'Post the latest monitor snapshot to the current PR', args: ['pr', 'comment', '--type', 'monitor'], icon: 'comment' },
       { id: 'preflight', label: 'Preflight', detail: 'Run pre-deployment validation checks', args: ['preflight'], icon: 'checklist' },
       { id: 'rollback', label: 'Rollback', detail: 'Roll back the last deployment', args: ['rollback'], destructive: true, icon: 'discard' },
       { id: 'release', label: 'Release', detail: 'Build a release (manifest + notes)', args: ['release'], icon: 'tag' },
