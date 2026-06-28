@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, createContext, useRef } from 'react';
 import { api, onAuthExpired } from './api.js';
+import { resolveInitialTheme } from './theme.js';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import TestRuns from './pages/TestRuns.jsx';
@@ -98,7 +99,8 @@ const PAGE_LABELS = {
 export default function App() {
   const [page, setPage]           = useState('dashboard');
   const [project, setProject]     = useState(null);
-  const [dark, setDark]           = useState(true);
+  const [dark, setDark]           = useState(() =>
+    resolveInitialTheme(window.location.search, localStorage.getItem('sfdt-theme')));
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdate, setShowUpdate] = useState(false);
   const [chatOpen, setChatOpen]   = useState(false);
@@ -120,9 +122,6 @@ export default function App() {
     api.checkUpdates().then((info) => { if (info.updateAvailable) setUpdateInfo(info); }).catch(() => null);
     api.sessionOrg().then((r) => setSessionOrg(r.org)).catch(() => null);
     api.orgs().then((r) => setAvailableOrgs(r.orgs ?? [])).catch(() => null);
-    const saved = localStorage.getItem('sfdt-theme');
-    if (saved === 'light') setDark(false);
-    else if (saved === 'dark') setDark(true);
   }, []);
 
   useEffect(() => {

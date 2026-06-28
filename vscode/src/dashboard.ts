@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { spawn, type ChildProcess } from 'node:child_process';
 import * as http from 'node:http';
-import { parseLaunchToken, dashboardPageUrl } from './lib/dashboard-url.js';
+import { parseLaunchToken, dashboardPageUrl, themeQueryFromKind } from './lib/dashboard-url.js';
 
 /**
  * Manages the embedded sfdt dashboard. Spawns `sfdt ui --no-open` once (reusing
@@ -14,6 +14,8 @@ export class DashboardController {
   private server: ChildProcess | undefined;
   private panel: vscode.WebviewPanel | undefined;
   private launchToken: string | undefined;
+  private currentPage: string | undefined;
+  private themeListener: vscode.Disposable | undefined;
 
   constructor(
     private readonly cliPath: () => string,
@@ -25,6 +27,7 @@ export class DashboardController {
   async open(page?: string): Promise<void> {
     const port = this.port();
     await this.ensureServer();
+    this.currentPage = page;
     const url = this.pageUrl(port, page);
     if (this.panel) {
       this.panel.webview.html = iframeHtml(url);
@@ -38,11 +41,23 @@ export class DashboardController {
       { enableScripts: true, retainContextWhenHidden: true },
     );
     this.panel.webview.html = iframeHtml(url);
-    this.panel.onDidDispose(() => (this.panel = undefined));
+    // Reload the iframe with the new ?theme= when the editor theme changes.
+    this.themeListener = vscode.window.onDidChangeActiveColorTheme(() => this.reloadForTheme());
+    this.panel.onDidDispose(() => {
+      this.panel = undefined;
+      this.themeListener?.dispose();
+      this.themeListener = undefined;
+    });
+  }
+
+  private reloadForTheme(): void {
+    if (!this.panel) return;
+    this.panel.webview.html = iframeHtml(this.pageUrl(this.port(), this.currentPage));
   }
 
   private pageUrl(port: number, page?: string): string {
-    return dashboardPageUrl(port, page, this.launchToken);
+    const theme = themeQueryFromKind(vscode.window.activeColorTheme.kind);
+    return dashboardPageUrl(port, page, this.launchToken, theme);
   }
 
   private async ensureServer(): Promise<void> {
@@ -95,6 +110,7 @@ export class DashboardController {
 
   dispose(): void {
     this.server?.kill();
+    this.themeListener?.dispose();
     this.panel?.dispose();
   }
 }
