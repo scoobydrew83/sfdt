@@ -1,5 +1,4 @@
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
-import { escapeSoql } from '../lib/escape.js';
 import type { Feature } from '../lib/feature-registry.js';
 import {
   getSalesforceApi,
@@ -7,65 +6,19 @@ import {
 } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import {
+  resolveQueryFor,
+  referencesQuery,
+  referencedByQuery,
+  groupByType,
+  METADATA_TYPES,
+  type DependencyGroup,
+} from '@sfdt/flow-core';
 
-/** Metadata types the explorer can resolve to a component Id. */
-export type MetadataType =
-  | 'ApexClass'
-  | 'ApexTrigger'
-  | 'ApexPage'
-  | 'Flow'
-  | 'CustomField'
-  | 'LightningComponentBundle';
-
-// Per type: which Tooling object holds the Id, and which field carries the
-// developer-entered name. Apex* objects key on `Name`; Flow/LWC/CustomField
-// are stored under their own definition objects keyed on `DeveloperName`.
-const RESOLVE: Record<string, { object: string; nameField: 'Name' | 'DeveloperName' }> = {
-  ApexClass: { object: 'ApexClass', nameField: 'Name' },
-  ApexTrigger: { object: 'ApexTrigger', nameField: 'Name' },
-  ApexPage: { object: 'ApexPage', nameField: 'Name' },
-  Flow: { object: 'FlowDefinition', nameField: 'DeveloperName' },
-  LightningComponentBundle: { object: 'LightningComponentBundle', nameField: 'DeveloperName' },
-  CustomField: { object: 'CustomField', nameField: 'DeveloperName' },
-};
-
-/** The order types appear in the picker. */
-export const METADATA_TYPES = Object.keys(RESOLVE);
-
-/** Build the SOQL that resolves a name+type to its component Id (quote-escaped). */
-export function resolveQueryFor(type: string, name: string): string {
-  const cfg = RESOLVE[type];
-  if (!cfg) throw new Error(`Unsupported metadata type: ${type}`);
-  return `SELECT Id FROM ${cfg.object} WHERE ${cfg.nameField}='${escapeSoql(name)}'`;
-}
-
-export interface DependencyGroup {
-  type: string;
-  names: string[];
-}
-
-/**
- * Collapse dependency rows into per-type groups, sorted by type then name.
- * `nameKey`/`typeKey` differ between the two dependency queries
- * (Ref* for references, plain for referenced-by).
- */
-export function groupByType(
-  rows: Array<Record<string, unknown>>,
-  nameKey: string,
-  typeKey: string,
-): DependencyGroup[] {
-  const byType = new Map<string, string[]>();
-  for (const row of rows) {
-    const type = String(row[typeKey] ?? '(unknown)');
-    const name = String(row[nameKey] ?? '(unknown)');
-    const list = byType.get(type) ?? [];
-    list.push(name);
-    byType.set(type, list);
-  }
-  return [...byType.entries()]
-    .map(([type, names]) => ({ type, names: names.sort((a, b) => a.localeCompare(b)) }))
-    .sort((a, b) => a.type.localeCompare(b.type));
-}
+// Resolution/grouping/query logic now lives in @sfdt/flow-core so the Chrome
+// explorer, the GUI Dependency page, and `sfdt dependencies` resolve and group
+// identically. Re-exported so this module's test keeps importing them by name.
+export { resolveQueryFor, referencesQuery, referencedByQuery, groupByType, METADATA_TYPES };
 
 export interface DependencyExplorerOptions {
   doc?: Document;
@@ -166,12 +119,8 @@ export function createDependencyExplorerFeature(
 
       status.textContent = 'Loading dependencies…';
       const [refs, refBy] = await Promise.all([
-        api.toolingQuery<Record<string, unknown>>(
-          `SELECT RefMetadataComponentName, RefMetadataComponentType FROM MetadataComponentDependency WHERE MetadataComponentId = '${id}' ORDER BY RefMetadataComponentType, RefMetadataComponentName`,
-        ),
-        api.toolingQuery<Record<string, unknown>>(
-          `SELECT MetadataComponentName, MetadataComponentType FROM MetadataComponentDependency WHERE RefMetadataComponentId = '${id}' ORDER BY MetadataComponentType, MetadataComponentName`,
-        ),
+        api.toolingQuery<Record<string, unknown>>(referencesQuery(id)),
+        api.toolingQuery<Record<string, unknown>>(referencedByQuery(id)),
       ]);
 
       const refGroups = groupByType(refs.records, 'RefMetadataComponentName', 'RefMetadataComponentType');

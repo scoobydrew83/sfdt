@@ -32,6 +32,13 @@ import { createExportForPromptFeature } from '../../features/export-for-prompt.j
 import { createCodeCoverageFeature } from '../../features/code-coverage.js';
 import { createOrgHealthLiveFeature } from '../../features/org-health-live.js';
 import { createDependencyExplorerFeature } from '../../features/dependency-explorer.js';
+import { createApexTestRunnerFeature } from '../../features/apex-test-runner.js';
+import {
+  createDriftFeature,
+  createScanFeature,
+  createCompareFeature,
+  createQualityFeature,
+} from '../../features/bridge-tools.js';
 import {
   createOrgSwitcherFeature,
   listOrgs,
@@ -212,8 +219,13 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
     'export-for-prompt': () =>
       createExportForPromptFeature({ doc: document, win: syntheticWin }),
     'apex-coverage': () => createCodeCoverageFeature(common),
+    'apex-test-runner': () => createApexTestRunnerFeature(common),
     'org-health-live': () => createOrgHealthLiveFeature(common),
     'dependency-explorer': () => createDependencyExplorerFeature(common),
+    'flow-quality': () => createQualityFeature(common),
+    'drift-check': () => createDriftFeature(common),
+    'metadata-scan': () => createScanFeature(common),
+    'org-compare': () => createCompareFeature(common),
   };
   for (const id of WORKSPACE_TOOLS) {
     const make = factories[id];

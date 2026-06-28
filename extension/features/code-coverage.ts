@@ -6,54 +6,20 @@ import {
 } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import {
+  shapeClassCoverage,
+  classCoverageBand,
+  type RawClassCoverageRow,
+  type ClassCoverageRow,
+} from '@sfdt/flow-core';
 
-/** Raw row from `ApexCodeCoverageAggregate` (Tooling API). */
-export interface RawCoverageRow {
-  ApexClassOrTrigger?: { Name?: string } | null;
-  NumLinesCovered?: number | null;
-  NumLinesUncovered?: number | null;
-}
-
-export interface CoverageRow {
-  name: string;
-  covered: number;
-  uncovered: number;
-  total: number;
-  /** Fraction 0..1; null when the component has no executable lines. */
-  pct: number | null;
-}
-
-/** Shape raw aggregate rows into sorted, displayable coverage rows (worst first). */
-export function shapeCoverage(records: RawCoverageRow[]): CoverageRow[] {
-  const rows: CoverageRow[] = records.map((r) => {
-    const covered = Math.max(0, r.NumLinesCovered ?? 0);
-    const uncovered = Math.max(0, r.NumLinesUncovered ?? 0);
-    const total = covered + uncovered;
-    return {
-      name: r.ApexClassOrTrigger?.Name ?? '(unknown)',
-      covered,
-      uncovered,
-      total,
-      pct: total > 0 ? covered / total : null,
-    };
-  });
-  // Worst coverage first (most actionable); no-line rows last; then by name.
-  rows.sort((a, b) => {
-    if (a.pct === null && b.pct === null) return a.name.localeCompare(b.name);
-    if (a.pct === null) return 1;
-    if (b.pct === null) return -1;
-    return a.pct - b.pct || a.name.localeCompare(b.name);
-  });
-  return rows;
-}
-
-/** Salesforce requires 75% org-wide to deploy, so red = below that line. */
-export function coverageBand(pct: number | null): 'green' | 'amber' | 'red' | 'none' {
-  if (pct === null) return 'none';
-  if (pct >= 0.9) return 'green';
-  if (pct >= 0.75) return 'amber';
-  return 'red';
-}
+// Per-class coverage shaping/banding now lives in @sfdt/flow-core so the Chrome
+// viewer, the GUI Coverage page, and `sfdt coverage` band identically. These
+// aliases keep the historical local names (and this module's test) working.
+export const shapeCoverage = shapeClassCoverage;
+export const coverageBand = classCoverageBand;
+export type RawCoverageRow = RawClassCoverageRow;
+export type CoverageRow = ClassCoverageRow;
 
 const BAND_COLOUR: Record<'green' | 'amber' | 'red' | 'none', string> = {
   green: '#04844b',
