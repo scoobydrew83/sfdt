@@ -471,6 +471,95 @@ export async function checkLintAccess(orgAlias) {
   }
 }
 
+/**
+ * Inactive validation rules. ValidationRule is Tooling-queryable with an Active
+ * flag, so this is a fast SOQL check (no metadata retrieve needed).
+ */
+export async function checkInactiveValidations(orgAlias) {
+  const id = 'inactive-validations';
+  const title = 'Inactive validation rules';
+  try {
+    const rows = await query(
+      orgAlias,
+      `SELECT ValidationName, EntityDefinition.QualifiedApiName FROM ValidationRule WHERE Active = false ORDER BY ValidationName`,
+      { tooling: true },
+    );
+    const findings = rows.map((r) => ({
+      name: `${r.EntityDefinition?.QualifiedApiName ?? '?'}.${r.ValidationName}`,
+    }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} inactive validation rule(s)`
+        : 'All validation rules are active',
+      findings);
+  } catch (err) {
+    return degraded(id, title, err, 'Validation rule status');
+  }
+}
+
+/**
+ * Inactive workflow rules. Workflow rules are a legacy (deprecated) automation;
+ * WorkflowRule's Active field is not queryable in every org, so this attempts a
+ * Tooling query and degrades gracefully: an org without the workflow feature
+ * rejects WorkflowRule outright (treated as "none"), other failures degrade to warn.
+ */
+export async function checkInactiveWorkflows(orgAlias) {
+  const id = 'inactive-workflows';
+  const title = 'Inactive workflow rules';
+  try {
+    const rows = await query(
+      orgAlias,
+      `SELECT Name, TableEnumOrId, Active FROM WorkflowRule WHERE Active = false ORDER BY Name`,
+      { tooling: true },
+    );
+    const findings = rows.map((r) => ({ name: `${r.TableEnumOrId}.${r.Name}` }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length ? `${findings.length} inactive workflow rule(s)` : 'No inactive workflow rules',
+      findings);
+  } catch (err) {
+    // "Cannot use: WorkflowRule in this organization" (INVALID_TYPE) means the
+    // org simply has no workflow rules — that's fine, report ok.
+    if (/cannot use|invalid_type/i.test(String(err?.message || ''))) {
+      return result(id, title, 'ok', 'No workflow rules in this org', []);
+    }
+    return degraded(id, title, err, 'Workflow rule status');
+  }
+}
+
+/**
+ * Field access lint — custom fields that grant Read to no profile or permission
+ * set (via FieldPermissions). Complements the object-level `lint-access` check.
+ * Client-side aggregation (the checkMfa diff pattern). Note: `sf data query`
+ * auto-paginates, but FieldPermissions is large in big orgs — this scans every
+ * FLS grant row.
+ */
+export async function checkLintAccessFields(orgAlias) {
+  const id = 'lint-access-fields';
+  const title = 'Field access';
+  try {
+    const rows = await query(orgAlias, `SELECT Field, PermissionsRead FROM FieldPermissions`);
+    // FieldPermissions.Field is "SObject.FieldApiName"; custom fields end in __c.
+    const custom = rows.filter((r) => typeof r.Field === 'string' && r.Field.endsWith('__c'));
+    if (custom.length === 0) {
+      return result(id, title, 'ok', 'No custom-field permission entries to evaluate', []);
+    }
+    const readByField = new Map();
+    for (const r of custom) {
+      readByField.set(r.Field, (readByField.get(r.Field) || false) || r.PermissionsRead === true);
+    }
+    const findings = [...readByField.entries()]
+      .filter(([, hasRead]) => !hasRead)
+      .map(([field]) => ({ name: field, detail: 'No profile or permission set grants Read' }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} custom field(s) with no Read access granted`
+        : 'All custom fields with permission entries grant Read',
+      findings);
+  } catch (err) {
+    return degraded(id, title, err, 'Field access lint');
+  }
+}
+
 export const CHECKS = {
   audittrail: checkAuditTrail,
   licenses: checkLicenses,
@@ -484,6 +573,9 @@ export const CHECKS = {
   'field-descriptions': checkFieldDescriptions,
   'apex-unreferenced': checkApexUnreferenced,
   'lint-access': checkLintAccess,
+  'inactive-validations': checkInactiveValidations,
+  'inactive-workflows': checkInactiveWorkflows,
+  'lint-access-fields': checkLintAccessFields,
 };
 
 export const CHECK_IDS = Object.keys(CHECKS);

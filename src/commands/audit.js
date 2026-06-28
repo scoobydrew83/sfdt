@@ -111,7 +111,7 @@ function printReport(snapshot) {
 export function registerAuditCommand(program) {
   const audit = program
     .command('audit')
-    .description('Diagnose org health — audit trail, licenses, MFA, unused/unreferenced Apex, inactive users & flows, API versions, permission sets, connected apps, field descriptions, object access');
+    .description('Diagnose org health — audit trail, licenses, MFA, unused/unreferenced Apex, inactive users/flows/validations/workflows, API versions, permission sets, connected apps, field descriptions, object & field access');
 
   audit
     .command('all', { isDefault: true })

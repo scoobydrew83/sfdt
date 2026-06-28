@@ -147,7 +147,7 @@ const TOOLS = [
         org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
         check: {
           type: 'string',
-          enum: ['all', 'audittrail', 'licenses', 'mfa', 'unused-apex', 'inactive-users', 'api-versions', 'inactive-flows', 'unused-permsets', 'connected-apps', 'field-descriptions', 'apex-unreferenced', 'lint-access'],
+          enum: ['all', 'audittrail', 'licenses', 'mfa', 'unused-apex', 'inactive-users', 'api-versions', 'inactive-flows', 'unused-permsets', 'connected-apps', 'field-descriptions', 'apex-unreferenced', 'lint-access', 'inactive-validations', 'inactive-workflows', 'lint-access-fields'],
           description: 'Run a single named check, or "all" (default).'
         }
       }

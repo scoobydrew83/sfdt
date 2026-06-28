@@ -90,6 +90,9 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           { id: 'audit-field-descriptions', label: 'Field Descriptions', detail: 'Custom fields missing descriptions', args: ['audit', 'field-descriptions'], refreshes: 'audit' },
           { id: 'audit-apex-unreferenced', label: 'Unreferenced Apex', detail: 'Apex with no inbound dependencies', args: ['audit', 'apex-unreferenced'], refreshes: 'audit' },
           { id: 'audit-lint-access', label: 'Object Access', detail: 'Custom objects with no Read access', args: ['audit', 'lint-access'], refreshes: 'audit' },
+          { id: 'audit-lint-access-fields', label: 'Field Access', detail: 'Custom fields with no Read access', args: ['audit', 'lint-access-fields'], refreshes: 'audit' },
+          { id: 'audit-inactive-validations', label: 'Inactive Validation Rules', detail: 'Validation rules that are not active', args: ['audit', 'inactive-validations'], refreshes: 'audit' },
+          { id: 'audit-inactive-workflows', label: 'Inactive Workflow Rules', detail: 'Workflow rules that are not active', args: ['audit', 'inactive-workflows'], refreshes: 'audit' },
         ],
       },
       {

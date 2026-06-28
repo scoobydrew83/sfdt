@@ -28,6 +28,9 @@ import {
   checkFieldDescriptions,
   checkApexUnreferenced,
   checkLintAccess,
+  checkInactiveValidations,
+  checkInactiveWorkflows,
+  checkLintAccessFields,
 } from '../../src/lib/audit-runner.js';
 
 beforeEach(() => vi.resetAllMocks());
@@ -256,6 +259,79 @@ describe('checkLintAccess', () => {
     query.mockResolvedValueOnce([{ SobjectType: 'Account', PermissionsRead: true }]);
     const r = await checkLintAccess('dev');
     expect(r.status).toBe('ok');
+  });
+});
+
+describe('checkInactiveValidations', () => {
+  it('flags inactive validation rules with object qualifier', async () => {
+    query.mockResolvedValueOnce([
+      { ValidationName: 'Rule1', EntityDefinition: { QualifiedApiName: 'Account' } },
+      { ValidationName: 'Rule2', EntityDefinition: { QualifiedApiName: 'My__c' } },
+    ]);
+    const r = await checkInactiveValidations('dev');
+    expect(r.status).toBe('warn');
+    expect(r.findings.map((f) => f.name)).toEqual(['Account.Rule1', 'My__c.Rule2']);
+  });
+
+  it('is ok when all validation rules are active', async () => {
+    query.mockResolvedValueOnce([]);
+    const r = await checkInactiveValidations('dev');
+    expect(r.status).toBe('ok');
+  });
+
+  it('degrades to warn when ValidationRule is not queryable', async () => {
+    query.mockRejectedValueOnce(new Error('No such column Active'));
+    const r = await checkInactiveValidations('dev');
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/unavailable/);
+  });
+});
+
+describe('checkInactiveWorkflows', () => {
+  it('flags inactive workflow rules', async () => {
+    query.mockResolvedValueOnce([{ Name: 'WF1', TableEnumOrId: 'Account', Active: false }]);
+    const r = await checkInactiveWorkflows('dev');
+    expect(r.status).toBe('warn');
+    expect(r.findings[0].name).toBe('Account.WF1');
+  });
+
+  it('reports ok (not warn) when the org has no workflow feature', async () => {
+    query.mockRejectedValueOnce(new Error('INVALID_TYPE: Cannot use: WorkflowRule in this organization'));
+    const r = await checkInactiveWorkflows('dev');
+    expect(r.status).toBe('ok');
+    expect(r.summary).toMatch(/No workflow rules/);
+  });
+
+  it('degrades to warn on other query errors', async () => {
+    query.mockRejectedValueOnce(new Error('No such column Active on WorkflowRule'));
+    const r = await checkInactiveWorkflows('dev');
+    expect(r.status).toBe('warn');
+  });
+});
+
+describe('checkLintAccessFields', () => {
+  it('flags custom fields with no Read grant', async () => {
+    query.mockResolvedValueOnce([
+      { Field: 'Account.Visible__c', PermissionsRead: true },
+      { Field: 'Account.Visible__c', PermissionsRead: false },
+      { Field: 'Account.Hidden__c', PermissionsRead: false },
+      { Field: 'Account.Industry', PermissionsRead: false }, // standard field ignored
+    ]);
+    const r = await checkLintAccessFields('dev');
+    expect(r.status).toBe('warn');
+    expect(r.findings.map((f) => f.name)).toEqual(['Account.Hidden__c']);
+  });
+
+  it('is ok when there are no custom-field permission entries', async () => {
+    query.mockResolvedValueOnce([{ Field: 'Account.Industry', PermissionsRead: true }]);
+    const r = await checkLintAccessFields('dev');
+    expect(r.status).toBe('ok');
+  });
+
+  it('degrades to warn on query error', async () => {
+    query.mockRejectedValueOnce(new Error('boom'));
+    const r = await checkLintAccessFields('dev');
+    expect(r.status).toBe('warn');
   });
 });
 
