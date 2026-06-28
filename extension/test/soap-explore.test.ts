@@ -250,23 +250,23 @@ describe('soap-explore — UI', () => {
     setSalesforceUrl();
     const feature = createSoapExploreFeature({ api: fakeApi() });
     await feature.onActivate?.();
-    const overlay = document.querySelector('.sfdt-soap-explore-overlay') as HTMLDivElement;
+    const overlay = document.querySelector('.sfdt-view-overlay') as HTMLDivElement;
     expect(overlay).not.toBeNull();
 
     const closeBtn = Array.from(document.querySelectorAll('button')).find(
       (b) => b.textContent === '×',
     ) as HTMLButtonElement;
     closeBtn.click(); // hits close() with docClickHandler set
-    expect(document.querySelector('.sfdt-soap-explore-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
 
   it('closes when the overlay backdrop is clicked', async () => {
     setSalesforceUrl();
     const feature = createSoapExploreFeature({ api: fakeApi() });
     await feature.onActivate?.();
-    const overlay = document.querySelector('.sfdt-soap-explore-overlay') as HTMLDivElement;
+    const overlay = document.querySelector('.sfdt-view-overlay') as HTMLDivElement;
     overlay.click();
-    expect(document.querySelector('.sfdt-soap-explore-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
 });
 

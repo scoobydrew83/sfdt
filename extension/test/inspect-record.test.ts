@@ -132,8 +132,10 @@ describe('inspect-record — UI activation & inspection', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     // Verify modal elements are shown
-    const title = document.querySelector('.sfdt-inspect-record-overlay span') as HTMLSpanElement;
-    expect(title.textContent).toContain('Account · 001800000000001AAA');
+    const recordInfo = Array.from(
+      document.querySelectorAll('.sfdt-view-overlay span'),
+    ).find((s) => s.textContent?.includes('Account · 001800000000001AAA'));
+    expect(recordInfo).toBeTruthy();
 
     const trs = document.querySelectorAll('tbody tr');
     expect(trs).toHaveLength(3);
@@ -269,7 +271,7 @@ describe('inspect-record — UI activation & inspection', () => {
     await feature.onActivate?.();
     await new Promise((r) => setTimeout(r, 0));
 
-    const overlay = document.querySelector('.sfdt-inspect-record-overlay');
+    const overlay = document.querySelector('.sfdt-view-overlay');
     expect(overlay).not.toBeNull();
     // No record was auto-loaded, so the global describe / record fetch never ran.
     expect(api.apiGet).not.toHaveBeenCalled();

@@ -82,7 +82,7 @@ describe('debug-log-viewer — onActivate context gate', () => {
     const feature = createDebugLogViewerFeature({ api });
     await feature.onActivate?.();
     await flush();
-    expect(document.querySelector('.sfdt-debug-log-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
     expect(api.toolingQuery).not.toHaveBeenCalled();
     // A warning toast is shown instead.
     expect(document.querySelector('.sfdt-toast')?.textContent).toContain('debug logs');
@@ -106,7 +106,7 @@ describe('debug-log-viewer — log table', () => {
     const feature = createDebugLogViewerFeature({ api });
     await feature.onActivate?.();
     await flush();
-    const table = document.querySelector('.sfdt-debug-log-overlay')!;
+    const table = document.querySelector('.sfdt-view-overlay')!;
     const body = table.textContent ?? '';
     expect(body).toContain('2 logs');
     expect(body).toContain('Ada Lovelace');
@@ -120,8 +120,8 @@ describe('debug-log-viewer — log table', () => {
     const feature = createDebugLogViewerFeature({ api });
     await feature.onActivate?.();
     await flush();
-    expect(document.querySelector('.sfdt-debug-log-overlay')?.textContent).toContain('No debug logs');
-    expect(document.querySelector('.sfdt-debug-log-overlay')?.textContent).toContain('0 logs');
+    expect(document.querySelector('.sfdt-view-overlay')?.textContent).toContain('No debug logs');
+    expect(document.querySelector('.sfdt-view-overlay')?.textContent).toContain('0 logs');
   });
 
   it('renders an error panel when the query throws', async () => {
@@ -133,7 +133,7 @@ describe('debug-log-viewer — log table', () => {
     const feature = createDebugLogViewerFeature({ api });
     await feature.onActivate?.();
     await flush();
-    expect(document.querySelector('.sfdt-debug-log-overlay')?.textContent).toContain('INVALID_SESSION');
+    expect(document.querySelector('.sfdt-view-overlay')?.textContent).toContain('INVALID_SESSION');
   });
 
   it('clicking a row fetches and shows the log body', async () => {
@@ -146,14 +146,14 @@ describe('debug-log-viewer — log table', () => {
     await feature.onActivate?.();
     await flush();
     // The clickable row is inside the table; click the one containing the operation.
-    const rows = Array.from(document.querySelectorAll<HTMLElement>('.sfdt-debug-log-overlay div')).filter(
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('.sfdt-view-overlay div')).filter(
       (d) => d.textContent?.includes('/apex/run') && d.style.cursor === 'pointer',
     );
     expect(rows.length).toBeGreaterThan(0);
     rows[0]!.click();
     await flush();
     expect(apiGetText).toHaveBeenCalledWith(expect.stringContaining('/ApexLog/07L000000000001/Body'));
-    const pre = document.querySelector('.sfdt-debug-log-overlay pre')!;
+    const pre = document.querySelector('.sfdt-view-overlay pre')!;
     expect(pre.textContent).toContain('USER_DEBUG|hi');
   });
 
@@ -167,12 +167,12 @@ describe('debug-log-viewer — log table', () => {
     const feature = createDebugLogViewerFeature({ api });
     await feature.onActivate?.();
     await flush();
-    const row = Array.from(document.querySelectorAll<HTMLElement>('.sfdt-debug-log-overlay div')).find(
+    const row = Array.from(document.querySelectorAll<HTMLElement>('.sfdt-view-overlay div')).find(
       (d) => d.style.cursor === 'pointer',
     )!;
     row.click();
     await flush();
-    expect(document.querySelector('.sfdt-debug-log-overlay pre')?.textContent).toBe('body gone');
+    expect(document.querySelector('.sfdt-view-overlay pre')?.textContent).toBe('body gone');
   });
 
   it('the refresh button re-runs the query', async () => {
@@ -192,8 +192,8 @@ describe('debug-log-viewer — log table', () => {
     const feature = createDebugLogViewerFeature({ api: fakeApi() });
     await feature.onActivate?.();
     await flush();
-    const overlay = document.querySelector<HTMLElement>('.sfdt-debug-log-overlay')!;
+    const overlay = document.querySelector<HTMLElement>('.sfdt-view-overlay')!;
     overlay.click();
-    expect(document.querySelector('.sfdt-debug-log-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
 });
