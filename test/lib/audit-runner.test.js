@@ -16,6 +16,7 @@ import { query } from '../../src/lib/org-query.js';
 import {
   runAudit,
   CHECK_IDS,
+  AUDIT_DEFAULTS,
   checkAuditTrail,
   checkLicenses,
   checkMfa,
@@ -25,6 +26,18 @@ import {
 } from '../../src/lib/audit-runner.js';
 
 beforeEach(() => vi.resetAllMocks());
+
+describe('AUDIT_DEFAULTS', () => {
+  it('sources usage/age thresholds from the shared flow-core rulebook', () => {
+    // licenseWarnThreshold is 0.75 (not the old 0.9) after the flow-core unification.
+    expect(AUDIT_DEFAULTS).toMatchObject({
+      auditTrailLookbackDays: 30,
+      licenseWarnThreshold: 0.75,
+      inactiveUserDays: 90,
+      minApiVersion: 45,
+    });
+  });
+});
 
 describe('checkAuditTrail', () => {
   it('flags suspect actions and ignores benign ones', async () => {

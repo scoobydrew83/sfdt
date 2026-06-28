@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs-extra';
 import { execa } from 'execa';
+import { ORG_HEALTH_THRESHOLDS } from '@sfdt/flow-core';
 import { query, safeParse } from './org-query.js';
 import { fetchOrgInventory } from './org-inventory.js';
 import { parallelRetrieve } from './parallel-retrieve.js';
@@ -22,15 +23,18 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const ISODate = (d) => new Date(d).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 /**
- * Single source of truth for monitoring-check fallback defaults. Mirrored in
- * src/templates/sfdt.config.json (under `monitoring`), which is the canonical
- * config the user edits; centralised here so the literals don't drift across
- * the runner and command layers.
+ * Single source of truth for monitoring-check fallback defaults. Usage and
+ * health thresholds come from the shared @sfdt/flow-core rulebook
+ * (ORG_HEALTH_THRESHOLDS) so the CLI, GUI, and Chrome extension band findings
+ * identically. NOTE: limitWarnThreshold changed 0.8 → 0.75 here as part of that
+ * unification — the CLI now warns at the same 75% point Chrome uses. CLI-only
+ * knobs (errorLookbackDays) have no shared equivalent and stay local. Mirrored
+ * in src/templates/sfdt.config.json (under `monitoring`), the canonical config.
  */
 export const MONITOR_DEFAULTS = {
-  limitWarnThreshold: 0.8,
+  limitWarnThreshold: ORG_HEALTH_THRESHOLDS.usageAmber, // 0.75 (was 0.8 before flow-core unification)
   errorLookbackDays: 7,
-  healthMinScore: 80,
+  healthMinScore: ORG_HEALTH_THRESHOLDS.healthMinScore, // 80
 };
 
 /**
