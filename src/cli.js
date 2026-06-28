@@ -38,6 +38,7 @@ import { registerDoctorCommand } from './commands/doctor.js';
 import { registerMcpCommand } from './commands/mcp.js';
 import { registerPluginCommand } from './commands/plugin.js';
 import { registerSkillsCommand } from './commands/skills.js';
+import { registerCiCommand } from './commands/ci.js';
 import { formatSplash } from './lib/output.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -101,6 +102,7 @@ export function createCli() {
   registerMcpCommand(program);
   registerPluginCommand(program);
   registerSkillsCommand(program);
+  registerCiCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program

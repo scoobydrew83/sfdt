@@ -7,6 +7,7 @@ import { loadConfig } from '../lib/config.js';
 import { runMonitor, runBackup, CHECK_IDS, MONITOR_DEFAULTS } from '../lib/monitor-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { dispatchSnapshot } from '../lib/notifier.js';
+import { runCiInit } from './ci.js';
 
 const STATUS_COLOR = {
   ok: chalk.green,
@@ -174,4 +175,19 @@ export function registerMonitorCommand(program) {
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
     .option('--json', 'Emit structured JSON to stdout')
     .action((options) => executeBackup(options));
+
+  // Convenience alias for generating a scheduled-monitoring CI workflow. Thin
+  // delegate to `sfdt ci init --type monitor`.
+  monitor
+    .command('schedule')
+    .description('Generate a scheduled org-monitoring CI workflow (alias for "ci init --type monitor")')
+    .requiredOption('--provider <name>', 'CI provider: github | gitlab | azure | bitbucket')
+    .option('--cron <expr>', 'Cron schedule', '0 6 * * *')
+    .option('--org <alias>', 'Target org alias (defaults to config.defaultOrg)')
+    .option('--node <version>', 'Node.js version for the CI runner', '20')
+    .option('--out <path>', 'Output file path (defaults to the provider convention)')
+    .option('--print', 'Print to stdout instead of writing a file')
+    .option('--force', 'Overwrite an existing file')
+    .option('--json', 'Emit the result as JSON')
+    .action((options) => runCiInit({ ...options, type: 'monitor' }));
 }
