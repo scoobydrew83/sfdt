@@ -170,6 +170,16 @@ const TOOLS = [
     }
   },
   {
+    name: 'sfdt_notify',
+    description: 'Send the latest audit or monitor snapshot to configured notification channels (Slack/Teams/email/webhook), applying each channel\'s event filter and severity threshold. Run an audit/monitor first so a snapshot exists.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['audit', 'monitor'], description: 'Which snapshot to send (default: monitor).' }
+      }
+    }
+  },
+  {
     name: 'sfdt_docs',
     description: 'Generate MkDocs-compatible project documentation (custom objects + fields, Apex classes, Flows) with an optional AI overview and a Mermaid ER diagram of the data model.',
     inputSchema: {
@@ -500,6 +510,14 @@ export class SfdtMcpServer {
         } catch {
           return stdout;
         }
+      }
+
+      case 'sfdt_notify': {
+        const type = args.type === 'audit' ? 'audit' : 'monitor';
+        const { exitCode, stdout, stderr } = await this.#runCliCommand(['notify', 'snapshot', '--type', type], {
+          SFDT_NON_INTERACTIVE: 'true',
+        });
+        return { exitCode, stdout, stderr };
       }
 
       case 'sfdt_docs': {

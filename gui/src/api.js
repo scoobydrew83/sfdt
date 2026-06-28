@@ -137,6 +137,10 @@ export const api = {
   audit:                  () => fetchJson('/audit'),
   /** Org monitoring snapshot. @returns {Promise<{timestamp:string|null, org:string|null, checks:Array, summary:object}>} */
   monitor:                () => fetchJson('/monitor'),
+  /** Redacted notification channel config. @returns {Promise<{enabled:boolean, channels:Array}>} */
+  notifications:          () => fetchJson('/notifications'),
+  /** Send a test message to all configured channels. @returns {Promise<{results:Array}>} */
+  notificationsTest:      () => postJson('/notifications/test', {}),
   /** @returns {Promise<{date:string|null, status:string|null, summary:{critical:number,high:number,medium:number,low:number}, violations:Array, unavailableMessage:string|null}>} */
   quality:                () => fetchJson('/quality'),
   /** @returns {Promise<{ ok: boolean }>} */

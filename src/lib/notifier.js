@@ -58,6 +58,21 @@ export function notificationsConfigured(config) {
   return resolveChannels(config).length > 0;
 }
 
+/**
+ * Redacted, secret-free description of configured channels for the GUI. Never
+ * returns URLs, env-var values, or SMTP credentials — only whether a target is
+ * resolvable.
+ */
+export function describeChannels(config) {
+  return resolveChannels(config).map((ch) => ({
+    name: channelLabel(ch),
+    type: ch.type,
+    severityThreshold: ch.severityThreshold || 'warn',
+    events: Array.isArray(ch.events) ? ch.events : null,
+    target: ch.type === 'email' ? Array.isArray(ch.to) && ch.to.length > 0 : !!channelUrl(ch),
+  }));
+}
+
 function channelUrl(ch) {
   if (ch.webhookUrl) return ch.webhookUrl;
   if (ch.webhookUrlEnv && process.env[ch.webhookUrlEnv]) return process.env[ch.webhookUrlEnv];
@@ -176,6 +191,18 @@ export async function dispatch(event, ctx, config) {
  * @param {'audit'|'monitor'} [options.type]
  * @returns {Promise<{severity, results: Array}>}
  */
+/**
+ * Send a test message to every configured channel, ignoring event filters and
+ * severity thresholds (so a user can verify wiring). Returns per-channel results.
+ */
+export async function dispatchTest(config) {
+  const channels = resolveChannels(config);
+  if (channels.length === 0) return [];
+  const message = buildEventMessage('snapshot', { message: 'Test notification from sfdt — your channel is wired correctly.' });
+  message.title = 'SFDT Test Notification';
+  return Promise.all(channels.map((ch) => sendToChannel(ch, message, { kind: 'test' })));
+}
+
 export async function dispatchSnapshot(snapshot, config, { type = 'monitor' } = {}) {
   const severity = maxStatus(snapshot?.checks);
   const channels = resolveChannels(config).filter(
