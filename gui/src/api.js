@@ -274,6 +274,14 @@ export const api = {
   flowGraph:              () => fetchJson('/flow/graph'),
   runFlowGraph:           (org) => postJson('/flow/graph', { org }),
   auditLogs:              () => fetchJson('/audit/logs'),
+  /** Scratch org pool status + active scratch orgs. @returns {Promise<{pool:{size:number, members:Array}, orgs:Array<{alias:string|null, username:string, expirationDate:string|null, status:string|null}>}>} */
+  scratch:                () => fetchJson('/scratch'),
+  /** Configured data sets. @returns {Promise<{sets:string[]}>} */
+  data:                   () => fetchJson('/data'),
+  /** Docs configuration + AI gate. @returns {Promise<{config:{outputDir:string, ai:boolean, diagrams:boolean, roleGuides:boolean, roles:string[]}, aiEnabled:boolean, note:string}>} */
+  docs:                   () => fetchJson('/docs'),
+  /** Org-wide Apex coverage + per-class. @returns {Promise<{org:string|null, threshold:number|null, orgWide:number|null, belowThreshold:boolean, classes:Array<{name:string, covered:number, uncovered:number, total:number, pct:number|null}>}>} */
+  coverageOrgWide:        () => fetchJson('/coverage'),
 };
 
 // ─── SSE helpers ──────────────────────────────────────────────────────────────

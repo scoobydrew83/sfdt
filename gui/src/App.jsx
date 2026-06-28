@@ -21,6 +21,9 @@ import FlowsPage from './pages/Flows.jsx';
 import SettingsPage from './pages/Settings.jsx';
 import LogsPage from './pages/Logs.jsx';
 import CoveragePage from './pages/Coverage.jsx';
+import ScratchPage from './pages/Scratch.jsx';
+import DataPage from './pages/Data.jsx';
+import DocsPage from './pages/Docs.jsx';
 import {
   IconHome, IconList, IconCheck, IconRefresh, IconCompare,
   IconSun, IconMoon, IconFileText, IconActivity, IconCloudDown,
@@ -64,6 +67,9 @@ const NAV_GROUPS = [
       { id: 'explain',    label: 'Explain',           Icon: IconSearch },
       { id: 'flows',      label: 'Flow Intelligence', Icon: IconGraph },
       { id: 'dependency', label: 'Dependency Graph',  Icon: IconGraph },
+      { id: 'scratch',    label: 'Scratch Orgs',      Icon: IconCloudDown },
+      { id: 'data',       label: 'Data Sets',         Icon: IconList },
+      { id: 'docs',       label: 'Documentation',     Icon: IconFileText },
     ],
   },
   {
@@ -93,6 +99,9 @@ const PAGE_LABELS = {
   flows:      'Flow Intelligence',
   logs:       'Log History',
   dependency: 'Dependency Graph',
+  scratch:    'Scratch Orgs',
+  data:       'Data Sets',
+  docs:       'Documentation',
   settings:   'Settings',
 };
 
@@ -182,6 +191,9 @@ export default function App() {
       case 'flows':      return <FlowsPage />;
       case 'logs':       return <LogsPage />;
       case 'dependency': return <DependencyPage />;
+      case 'scratch':    return <ScratchPage />;
+      case 'data':       return <DataPage />;
+      case 'docs':       return <DocsPage />;
       case 'settings':   return <SettingsPage />;
       default:          return <Dashboard project={project} />;
     }
