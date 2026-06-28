@@ -1081,11 +1081,14 @@ export function createGuiApp(config, version, port = 7654) {
         emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed });
       }
 
-      if (!res.writableEnded) res.end();
     } catch (err) {
       const elapsed = Math.round((Date.now() - startTime) / 1000);
       emit({ type: 'log', line: `Pull failed: ${err.message}` });
       emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed });
+    } finally {
+      // Always close the SSE stream. Early returns in the mode dispatch above
+      // (invalid groupKey / invalid metadata entry) must not leave the
+      // connection hanging open.
       if (!res.writableEnded) res.end();
     }
   });
