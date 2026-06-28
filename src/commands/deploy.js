@@ -9,6 +9,7 @@ import { writeRawLog } from '../lib/log-writer.js';
 import { prepareSmartDeploy } from '../lib/smart-deploy.js';
 import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { getPrompt } from '../lib/prompts.js';
+import { runFixLoop } from '../lib/agent-loop.js';
 
 async function runPreflight(config, { dryRun } = {}) {
   print.info('Running preflight checks...');
@@ -95,20 +96,56 @@ async function runSmartDeploy(config, options) {
       });
     }
 
+    const buildCmd = (sub) => {
+      const c = ['project', 'deploy', sub, '--manifest', prep.manifestPath, '--target-org', org, '--test-level', prep.testLevel];
+      for (const t of prep.tests) c.push('--tests', t);
+      if (prep.destructivePath) c.push('--post-destructive-changes', prep.destructivePath);
+      return c;
+    };
+
     const sub = options.dryRun ? 'validate' : 'start';
-    const cmd = ['project', 'deploy', sub, '--manifest', prep.manifestPath, '--target-org', org, '--test-level', prep.testLevel];
-    for (const t of prep.tests) cmd.push('--tests', t);
-    if (prep.destructivePath) cmd.push('--post-destructive-changes', prep.destructivePath);
+    const cmd = buildCmd(sub);
+    // Capture output (instead of inheriting stdio) when --ai-fix is set, so the
+    // failure text can be fed to the analysis/auto-fix path; still echo it.
+    const useCapture = !!options.aiFix;
 
     print.info(`Running: sf ${cmd.join(' ')}`);
     try {
-      await execa('sf', cmd, { stdio: 'inherit' });
+      const res = await execa('sf', cmd, useCapture ? { all: true } : { stdio: 'inherit' });
+      if (useCapture && res.all) console.log(res.all);
       print.success(options.dryRun ? 'Validation succeeded — no changes applied.' : 'Smart deploy completed successfully.');
     } catch (deployErr) {
+      if (useCapture && deployErr.all) console.log(deployErr.all);
       print.error('Smart deploy failed.');
-      // Step 6 hook: AI-assisted error explanation (CLI providers only).
       if (options.aiFix) {
-        await explainDeployFailure(config, deployErr, { projectRoot, org, agent: options.agent });
+        const failureOutput = deployErr.all || deployErr.stderr || deployErr.stdout || deployErr.message;
+        // Try the bounded write-capable auto-fix loop first (off unless
+        // ai.agent.enabled + allowWrite + an agentic provider). It re-validates
+        // via dry-run each turn and never deploys.
+        const validate = async () => {
+          try {
+            const r = await execa('sf', buildCmd('validate'), { all: true });
+            return { ok: true, output: r.all };
+          } catch (e) {
+            return { ok: false, output: e.all || e.stderr || e.message };
+          }
+        };
+        const loop = await runFixLoop({
+          failureOutput,
+          config,
+          projectRoot,
+          org,
+          validate,
+          maxTurns: options.maxTurns ? Number(options.maxTurns) : undefined,
+        });
+        if (!loop.ran) {
+          // Auto-fix not eligible — fall back to a read-only explanation.
+          await explainDeployFailure(config, deployErr, { projectRoot, org, agent: options.agent });
+        } else if (loop.fixed) {
+          print.success(`AI agent resolved the errors in ${loop.turns.length} turn(s); validation now passes. Review the changes, then re-run the deploy.`);
+        } else {
+          print.warning(`AI agent could not fix the errors within ${loop.turns.length} turn(s) — review the changes it made.`);
+        }
       }
       process.exitCode = resolveExitCode(deployErr);
     }
@@ -159,7 +196,8 @@ export function registerDeployCommand(program) {
     .option('--overwrite-manifest <path>', 'Path to package-no-overwrite.xml (overrides config)')
     .option('--prod', 'Treat the target org as production (never downgrade tests)')
     .option('--ai-deps', 'Run AI dependency cleanup on the computed delta before deploying')
-    .option('--ai-fix', 'On failure, run AI deploy-error analysis (CLI providers only)')
+    .option('--ai-fix', 'On failure, run AI deploy-error analysis, or the bounded auto-fix loop when ai.agent is enabled (CLI providers only)')
+    .option('--max-turns <n>', 'Max auto-fix iterations (overrides ai.agent.maxTurns)')
     .option('--agent', 'Non-interactive agent mode (no AI prompts block on input)')
     .action(async (options) => {
       try {
