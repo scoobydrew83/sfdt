@@ -76,7 +76,7 @@ function resolveProjectRoot({ projectRoot, configDir }) {
  * @param {import('express').RequestHandler} [opts.rateLimiter]
  *   Optional rate limiter (uses gui-server's apiLimiter when supplied).
  */
-export function mountBridgeRoutes(app, { port, version, projectRoot, configDir, logDir, rateLimiter }) {
+export function mountBridgeRoutes(app, { port, version, config, projectRoot, configDir, logDir, rateLimiter }) {
   const cors = createBridgeCorsMiddleware(port);
   const auth = createBridgeAuthMiddleware();
   const limiter = rateLimiter ?? ((_req, _res, next) => next());
@@ -145,6 +145,7 @@ export function mountBridgeRoutes(app, { port, version, projectRoot, configDir, 
     try {
       const response = await dispatch(request, {
         version,
+        config,
         projectRoot: resolvedProjectRoot,
         logDir: resolvedLogDir,
         makeSuccessResponse,
@@ -165,7 +166,7 @@ export function mountBridgeRoutes(app, { port, version, projectRoot, configDir, 
  * can be built (Phase 3), then individual handlers fill in as Phases 4–6
  * land.
  */
-async function dispatch(request, { version, projectRoot, logDir, makeSuccessResponse, makeErrorResponse }) {
+async function dispatch(request, { version, config, projectRoot, logDir, makeSuccessResponse, makeErrorResponse }) {
   switch (request.kind) {
     case 'ping': {
       let disabledFeatures = [];
@@ -332,10 +333,89 @@ async function dispatch(request, { version, projectRoot, logDir, makeSuccessResp
       ]);
       return makeSuccessResponse(request.requestId, { audit, monitor });
     }
+    case 'scan': {
+      // Live metadata inventory — the same `fetchInventory` the `sfdt scan`
+      // command runs, so the bridge and CLI agree by construction.
+      try {
+        const { fetchInventory } = await import('../org-inventory.js');
+        const org = config?.defaultOrg;
+        if (!org) {
+          return makeErrorResponse(request.requestId, 'No default org configured for scan', 'REQUEST_INVALID');
+        }
+        const inventory = await fetchInventory(org, config);
+        return makeSuccessResponse(request.requestId, {
+          org,
+          scanType: request.scanType,
+          totalTypes: inventory.size,
+          totalMembers: [...inventory.values()].reduce((n, s) => n + s.size, 0),
+          inventory: Object.fromEntries([...inventory.entries()].map(([k, v]) => [k, [...v]])),
+        });
+      } catch (err) {
+        return makeErrorResponse(request.requestId, `Scan failed: ${err.message}`, 'INTERNAL_ERROR');
+      }
+    }
+    case 'compare': {
+      // Live inventory diff — the same `fetchInventory` + `diffInventories` the
+      // `sfdt compare` command runs. `left`/`right` are org aliases or "local".
+      try {
+        const { fetchInventory } = await import('../org-inventory.js');
+        const { diffInventories } = await import('../org-diff.js');
+        const [leftMap, rightMap] = await Promise.all([
+          fetchInventory(request.left, config),
+          fetchInventory(request.right, config),
+        ]);
+        const items = diffInventories(leftMap, rightMap);
+        return makeSuccessResponse(request.requestId, {
+          left: request.left,
+          right: request.right,
+          sourceOnly: items.filter((i) => i.status === 'source-only').length,
+          targetOnly: items.filter((i) => i.status === 'target-only').length,
+          both: items.filter((i) => i.status === 'both').length,
+          items,
+        });
+      } catch (err) {
+        return makeErrorResponse(request.requestId, `Compare failed: ${err.message}`, 'INTERNAL_ERROR');
+      }
+    }
+    case 'drift': {
+      // `sfdt drift` is a heavy shell-based local-vs-org content diff. Rather than
+      // trigger a multi-minute retrieve from a browser click, return the latest
+      // snapshot the CLI wrote (read-only, consistent with the dashboard),
+      // optionally scoped to a component.
+      if (!projectRoot) {
+        return makeErrorResponse(request.requestId, 'No project root resolved on the bridge', 'INTERNAL_ERROR');
+      }
+      const fsExtra = (await import('fs-extra')).default;
+      const file = path.join(logDir || path.join(projectRoot, 'logs'), 'drift-latest.json');
+      if (!(await fsExtra.pathExists(file))) {
+        return makeSuccessResponse(request.requestId, {
+          available: false,
+          hint: 'No drift snapshot yet — run `sfdt drift` in your project to generate one.',
+        });
+      }
+      let snapshot;
+      try {
+        snapshot = await fsExtra.readJson(file);
+      } catch (err) {
+        return makeErrorResponse(request.requestId, `Could not read drift snapshot: ${err.message}`, 'INTERNAL_ERROR');
+      }
+      let components = Array.isArray(snapshot?.components) ? snapshot.components : [];
+      if (request.component) {
+        const needle = request.component.toLowerCase();
+        components = components.filter((c) =>
+          `${c?.type ?? ''}.${c?.name ?? c?.member ?? ''}`.toLowerCase().includes(needle),
+        );
+      }
+      return makeSuccessResponse(request.requestId, {
+        available: true,
+        org: snapshot?.org ?? null,
+        driftStatus: snapshot?.driftStatus ?? null,
+        timestamp: snapshot?.timestamp ?? snapshot?.date ?? null,
+        component: request.component ?? null,
+        components,
+      });
+    }
     case 'ai':
-    case 'drift':
-    case 'scan':
-    case 'compare':
       return makeErrorResponse(
         request.requestId,
         `Request kind "${request.kind}" is not yet implemented on the bridge.`,

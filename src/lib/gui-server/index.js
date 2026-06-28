@@ -141,6 +141,7 @@ export function createGuiApp(config, version, port = 7654) {
   mountBridgeRoutes(app, {
     port,
     version,
+    config,
     projectRoot: config._projectRoot,
     configDir: config._configDir,
     logDir,

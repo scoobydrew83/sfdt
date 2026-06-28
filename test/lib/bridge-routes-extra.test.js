@@ -64,6 +64,13 @@ vi.mock('../../src/lib/flow-rollback-runner.js', () => ({
   runFlowRollback: vi.fn(),
 }));
 
+const { fetchInventorySpy, diffInventoriesSpy } = vi.hoisted(() => ({
+  fetchInventorySpy: vi.fn(),
+  diffInventoriesSpy: vi.fn(),
+}));
+vi.mock('../../src/lib/org-inventory.js', () => ({ fetchInventory: fetchInventorySpy }));
+vi.mock('../../src/lib/org-diff.js', () => ({ diffInventories: diffInventoriesSpy }));
+
 import request from 'supertest';
 import { createGuiApp } from '../../src/lib/gui-server/index.js';
 import { clearBridgeTokenCache } from '../../src/lib/bridge/token.js';
@@ -104,6 +111,8 @@ beforeEach(() => {
   pathExistsSpy.mockImplementation(async (p) => isTokenPath(p));
   readJsonSpy.mockResolvedValue({});
   outputJsonSpy.mockResolvedValue(undefined);
+  fetchInventorySpy.mockResolvedValue(new Map());
+  diffInventoriesSpy.mockReturnValue([]);
 });
 
 describe('POST /api/bridge/exchange — deploy dispatch', () => {
@@ -151,6 +160,76 @@ describe('POST /api/bridge/exchange — rollback dispatch', () => {
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(false);
     expect(res.body.code).toBe('INTERNAL_ERROR');
+  });
+});
+
+describe('POST /api/bridge/exchange — scan / compare / drift dispatch', () => {
+  it('scan returns the live metadata inventory', async () => {
+    fetchInventorySpy.mockResolvedValue(new Map([['ApexClass', new Set(['A', 'B'])]]));
+    const res = await post(app, { requestId: 's1', kind: 'scan', scanType: 'all' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.data.totalTypes).toBe(1);
+    expect(res.body.data.totalMembers).toBe(2);
+    expect(res.body.data.inventory.ApexClass).toEqual(['A', 'B']);
+  });
+
+  it('scan errors when no default org is configured', async () => {
+    const noOrgApp = createGuiApp({ ...ROOTED_CONFIG, defaultOrg: undefined }, VERSION, PORT);
+    const res = await post(noOrgApp, { requestId: 's2', kind: 'scan', scanType: 'all' });
+    expect(res.body.ok).toBe(false);
+    expect(res.body.code).toBe('REQUEST_INVALID');
+    await noOrgApp.cleanup?.();
+  });
+
+  it('compare diffs the two inventories', async () => {
+    diffInventoriesSpy.mockReturnValue([
+      { type: 'ApexClass', member: 'A', status: 'source-only' },
+      { type: 'ApexClass', member: 'B', status: 'both' },
+    ]);
+    const res = await post(app, { requestId: 'c1', kind: 'compare', left: 'local', right: 'dev' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.sourceOnly).toBe(1);
+    expect(res.body.data.both).toBe(1);
+    expect(res.body.data.items).toHaveLength(2);
+  });
+
+  it('compare returns INTERNAL_ERROR when inventory fetch throws', async () => {
+    fetchInventorySpy.mockRejectedValue(new Error('not authed'));
+    const res = await post(app, { requestId: 'c2', kind: 'compare', left: 'local', right: 'dev' });
+    expect(res.body.ok).toBe(false);
+    expect(res.body.code).toBe('INTERNAL_ERROR');
+    expect(res.body.error).toMatch(/not authed/);
+  });
+
+  it('drift returns the latest snapshot, component-filtered', async () => {
+    pathExistsSpy.mockImplementation(async (p) => isTokenPath(p) || String(p).endsWith('drift-latest.json'));
+    readJsonSpy.mockImplementation(async (p) =>
+      String(p).endsWith('drift-latest.json')
+        ? {
+            org: 'dev',
+            driftStatus: 'WARN',
+            components: [
+              { type: 'ApexClass', name: 'Foo' },
+              { type: 'Flow', name: 'Bar' },
+            ],
+          }
+        : {},
+    );
+    const res = await post(app, { requestId: 'dr1', kind: 'drift', component: 'foo' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.available).toBe(true);
+    expect(res.body.data.driftStatus).toBe('WARN');
+    expect(res.body.data.components).toHaveLength(1);
+    expect(res.body.data.components[0].name).toBe('Foo');
+  });
+
+  it('drift reports unavailable when there is no snapshot', async () => {
+    pathExistsSpy.mockImplementation(async (p) => isTokenPath(p)); // drift file absent
+    const res = await post(app, { requestId: 'dr2', kind: 'drift', component: 'AnyComponent' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.available).toBe(false);
+    expect(res.body.data.hint).toMatch(/sfdt drift/);
   });
 });
 
