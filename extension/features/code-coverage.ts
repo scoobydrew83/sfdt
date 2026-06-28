@@ -1,0 +1,225 @@
+import { detectContext, CONTEXTS } from '../lib/context-detector.js';
+import type { Feature } from '../lib/feature-registry.js';
+import {
+  getSalesforceApi,
+  type SalesforceApiClient,
+} from '../lib/salesforce-api.js';
+import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
+
+/** Raw row from `ApexCodeCoverageAggregate` (Tooling API). */
+export interface RawCoverageRow {
+  ApexClassOrTrigger?: { Name?: string } | null;
+  NumLinesCovered?: number | null;
+  NumLinesUncovered?: number | null;
+}
+
+export interface CoverageRow {
+  name: string;
+  covered: number;
+  uncovered: number;
+  total: number;
+  /** Fraction 0..1; null when the component has no executable lines. */
+  pct: number | null;
+}
+
+/** Shape raw aggregate rows into sorted, displayable coverage rows (worst first). */
+export function shapeCoverage(records: RawCoverageRow[]): CoverageRow[] {
+  const rows: CoverageRow[] = records.map((r) => {
+    const covered = Math.max(0, r.NumLinesCovered ?? 0);
+    const uncovered = Math.max(0, r.NumLinesUncovered ?? 0);
+    const total = covered + uncovered;
+    return {
+      name: r.ApexClassOrTrigger?.Name ?? '(unknown)',
+      covered,
+      uncovered,
+      total,
+      pct: total > 0 ? covered / total : null,
+    };
+  });
+  // Worst coverage first (most actionable); no-line rows last; then by name.
+  rows.sort((a, b) => {
+    if (a.pct === null && b.pct === null) return a.name.localeCompare(b.name);
+    if (a.pct === null) return 1;
+    if (b.pct === null) return -1;
+    return a.pct - b.pct || a.name.localeCompare(b.name);
+  });
+  return rows;
+}
+
+/** Salesforce requires 75% org-wide to deploy, so red = below that line. */
+export function coverageBand(pct: number | null): 'green' | 'amber' | 'red' | 'none' {
+  if (pct === null) return 'none';
+  if (pct >= 0.9) return 'green';
+  if (pct >= 0.75) return 'amber';
+  return 'red';
+}
+
+const BAND_COLOUR: Record<'green' | 'amber' | 'red' | 'none', string> = {
+  green: '#04844b',
+  amber: '#fe9339',
+  red: '#c23934',
+  none: '#b0adab',
+};
+
+export interface CodeCoverageOptions {
+  doc?: Document;
+  win?: Window;
+  api?: SalesforceApiClient;
+}
+
+export function createCodeCoverageFeature(options: CodeCoverageOptions = {}): Feature {
+  const doc = options.doc ?? document;
+  const win = options.win ?? window;
+  const api = options.api ?? getSalesforceApi();
+
+  let view: ViewHandle | null = null;
+
+  function close(): void {
+    view?.close();
+    view = null;
+  }
+
+  function pctLabel(pct: number | null): string {
+    return pct === null ? '—' : `${(pct * 100).toFixed(1)}%`;
+  }
+
+  async function fetchAndRender(results: HTMLElement, status: HTMLSpanElement): Promise<void> {
+    status.textContent = 'Loading…';
+    while (results.firstChild) results.removeChild(results.firstChild);
+    try {
+      const [orgWide, perClass] = await Promise.all([
+        api.toolingQuery<{ PercentCovered?: number }>(
+          'SELECT PercentCovered FROM ApexOrgWideCoverage',
+        ),
+        api.toolingQuery<RawCoverageRow>(
+          'SELECT ApexClassOrTrigger.Name, NumLinesCovered, NumLinesUncovered FROM ApexCodeCoverageAggregate',
+        ),
+      ]);
+
+      const rows = shapeCoverage(perClass.records);
+      const orgPct = orgWide.records[0]?.PercentCovered;
+      status.textContent = `${rows.length} component${rows.length === 1 ? '' : 's'}`;
+
+      // Org-wide summary banner.
+      const summary = doc.createElement('div');
+      const orgFrac = typeof orgPct === 'number' ? orgPct / 100 : null;
+      summary.style.cssText = `margin-bottom: 14px; padding: 12px 14px; border-radius: 6px; border: 1px solid #d8dde6; border-left: 4px solid ${BAND_COLOUR[coverageBand(orgFrac)]}; display: flex; align-items: baseline; gap: 10px;`;
+      const big = doc.createElement('span');
+      big.style.cssText = 'font-size: 22px; font-weight: 700;';
+      big.textContent = typeof orgPct === 'number' ? `${orgPct}%` : '—';
+      const cap = doc.createElement('span');
+      cap.style.cssText = 'font-size: 12px; color: #54698d;';
+      cap.textContent = 'org-wide Apex coverage (75% required to deploy)';
+      summary.appendChild(big);
+      summary.appendChild(cap);
+      results.appendChild(summary);
+
+      if (rows.length === 0) {
+        const empty = doc.createElement('div');
+        empty.style.cssText = 'padding: 12px; color: #80868d;';
+        empty.textContent = 'No coverage data. Run Apex tests in this org first.';
+        results.appendChild(empty);
+        return;
+      }
+
+      const grid = doc.createElement('div');
+      grid.style.cssText =
+        'display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px;';
+      for (const r of rows) {
+        const card = doc.createElement('div');
+        card.style.cssText =
+          'border: 1px solid #d8dde6; border-radius: 4px; padding: 10px; display: flex; flex-direction: column; gap: 6px;';
+        const title = doc.createElement('div');
+        title.style.cssText = 'font-weight: 600; font-size: 12px; word-break: break-all;';
+        title.textContent = r.name;
+        const bar = doc.createElement('div');
+        bar.style.cssText = 'height: 6px; background: #f3f3f3; border-radius: 3px; overflow: hidden;';
+        const fill = doc.createElement('div');
+        const band = coverageBand(r.pct);
+        fill.style.cssText = `height: 100%; width: ${((r.pct ?? 0) * 100).toFixed(1)}%; background: ${BAND_COLOUR[band]};`;
+        bar.appendChild(fill);
+        const usage = doc.createElement('div');
+        usage.style.cssText = 'font-size: 11px; color: #54698d;';
+        usage.textContent = `${pctLabel(r.pct)} — ${r.covered}/${r.total} lines`;
+        card.appendChild(title);
+        card.appendChild(bar);
+        card.appendChild(usage);
+        grid.appendChild(card);
+      }
+      results.appendChild(grid);
+    } catch (err) {
+      const errorPanel = doc.createElement('div');
+      errorPanel.style.cssText =
+        'border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+      errorPanel.textContent = err instanceof Error ? err.message : String(err);
+      results.appendChild(errorPanel);
+      status.textContent = 'Failed';
+    }
+  }
+
+  async function open(): Promise<void> {
+    close();
+
+    const body = doc.createElement('div');
+    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column;';
+
+    // Toolbar (status + refresh) lives at the top of the body so it shows in both
+    // the modal and the workspace tab — presentView's header is title + × only.
+    const toolbar = doc.createElement('div');
+    toolbar.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 12px;';
+    const status = doc.createElement('span');
+    status.style.cssText = 'color: #54698d; font-size: 12px;';
+    const refreshBtn = doc.createElement('button');
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.style.cssText =
+      'margin-left: auto; padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+    toolbar.appendChild(status);
+    toolbar.appendChild(refreshBtn);
+    body.appendChild(toolbar);
+
+    const results = doc.createElement('div');
+    body.appendChild(results);
+
+    view = presentView({
+      title: '📊 Apex Code Coverage',
+      body,
+      doc,
+      width: '820px',
+      onClose: () => { view = null; },
+    });
+
+    refreshBtn.addEventListener('click', async () => {
+      refreshBtn.disabled = true;
+      await fetchAndRender(results, status);
+      refreshBtn.disabled = false;
+    });
+    await fetchAndRender(results, status);
+  }
+
+  return {
+    manifest: {
+      id: 'apex-coverage',
+      name: 'Apex Code Coverage',
+      contexts: [
+        CONTEXTS.SETUP_FLOWS,
+        CONTEXTS.SETUP_OTHER,
+        CONTEXTS.FLOW_BUILDER,
+        CONTEXTS.FLOW_TRIGGER_EXPLORER,
+      ],
+    },
+
+    async onActivate() {
+      const ctx = detectContext({ location: { href: win.location.href } }, doc);
+      if (ctx === CONTEXTS.NONE) {
+        showToast('Open a Salesforce page to view Apex coverage.', { doc, kind: 'warning' });
+        return;
+      }
+      await open();
+    },
+  };
+}
+
+export function _codeCoverageTestApi() {
+  return { shapeCoverage, coverageBand };
+}

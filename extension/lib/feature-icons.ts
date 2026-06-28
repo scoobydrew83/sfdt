@@ -39,6 +39,9 @@ export const FEATURE_ICONS: Record<string, FeatureIcon> = {
   'debug-log-viewer': { icon: '🪵', label: 'Debug Logs' },
   'saved-soql': { icon: '⭐', label: 'Saved SOQL' },
   'org-switcher': { icon: '🏢', label: 'Switch Org' },
+  'apex-coverage': { icon: '📈', label: 'Apex Coverage' },
+  'org-health-live': { icon: '🏥', label: 'Org Health (Live)' },
+  'dependency-explorer': { icon: '🔗', label: 'Dependency Explorer' },
 };
 
 // Curated order of tools shown in the Workspace sidebar. The Workspace gives
@@ -53,6 +56,9 @@ export const WORKSPACE_TOOLS: readonly string[] = [
   'rest-explore',
   'soap-explore',
   'inspect-record',
+  'apex-coverage',
+  'org-health-live',
+  'dependency-explorer',
   'org-limits',
   'event-monitor',
   'data-import',

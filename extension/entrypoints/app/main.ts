@@ -29,6 +29,9 @@ import { createDataImportFeature } from '../../features/data-import.js';
 import { createFieldCreatorFeature } from '../../features/field-creator.js';
 import { createMetadataRetrieveFeature } from '../../features/metadata-retrieve.js';
 import { createExportForPromptFeature } from '../../features/export-for-prompt.js';
+import { createCodeCoverageFeature } from '../../features/code-coverage.js';
+import { createOrgHealthLiveFeature } from '../../features/org-health-live.js';
+import { createDependencyExplorerFeature } from '../../features/dependency-explorer.js';
 import {
   createOrgSwitcherFeature,
   listOrgs,
@@ -208,6 +211,9 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
     'metadata-retrieve': () => createMetadataRetrieveFeature(common),
     'export-for-prompt': () =>
       createExportForPromptFeature({ doc: document, win: syntheticWin }),
+    'apex-coverage': () => createCodeCoverageFeature(common),
+    'org-health-live': () => createOrgHealthLiveFeature(common),
+    'dependency-explorer': () => createDependencyExplorerFeature(common),
   };
   for (const id of WORKSPACE_TOOLS) {
     const make = factories[id];
