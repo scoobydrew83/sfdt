@@ -252,6 +252,26 @@ describe('validateConfig — AJV schema fields', () => {
     ).toThrow();
   });
 
+  it('accepts a notifications.summary block', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        notifications: { enabled: true, summary: { enabled: true }, channels: [] },
+      }),
+    ).not.toThrow();
+  });
+
+  it('throws when notifications.summary has an unknown key', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        notifications: { summary: { enabled: true, typo: 1 } },
+      }),
+    ).toThrow();
+  });
+
   it('accepts the legacy notifications.slack shape', () => {
     expect(() =>
       validateConfig({

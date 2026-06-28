@@ -48,7 +48,10 @@
   },
   "notifications": {
     "enabled": false,
-    "channels": []
+    "channels": [],
+    "summary": {
+      "enabled": false
+    }
   },
   "plugins": [],
   "pluginOptions": {

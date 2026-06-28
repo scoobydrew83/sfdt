@@ -6,6 +6,16 @@ const sendMail = vi.fn().mockResolvedValue({ messageId: 'x' });
 const createTransport = vi.fn(() => ({ sendMail }));
 vi.mock('nodemailer', () => ({ default: { createTransport } }));
 
+// ai/prompts are lazy-imported by the summary path; mock them so no real provider runs.
+vi.mock('../../src/lib/ai.js', () => ({
+  isAiAvailable: vi.fn().mockResolvedValue(true),
+  runAiPrompt: vi.fn().mockResolvedValue({ stdout: 'AI EXEC SUMMARY' }),
+}));
+vi.mock('../../src/lib/prompts.js', () => ({
+  getPrompt: vi.fn().mockResolvedValue('Summarize:'),
+  interpolate: (t) => t,
+}));
+
 import {
   resolveChannels,
   notificationsConfigured,
@@ -152,6 +162,46 @@ describe('dispatchSnapshot (severity routing)', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.streams[0].stream.org).toBe('dev');
     expect(Array.isArray(body.streams[0].values)).toBe(true);
+  });
+
+  it('replaces the body with an AI summary when notifications.summary.enabled', async () => {
+    const { isAiAvailable, runAiPrompt } = await import('../../src/lib/ai.js');
+    const { getPrompt } = await import('../../src/lib/prompts.js');
+    isAiAvailable.mockResolvedValue(true);
+    runAiPrompt.mockResolvedValue({ stdout: 'AI EXEC SUMMARY' });
+    getPrompt.mockResolvedValue('Summarize:');
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const config = {
+      features: { ai: true },
+      notifications: {
+        enabled: true,
+        summary: { enabled: true },
+        channels: [{ type: 'slack', webhookUrl: 'u', severityThreshold: 'warn', events: ['snapshot'] }],
+      },
+    };
+    await dispatchSnapshot(snapshot, config, { type: 'monitor' });
+    expect(runAiPrompt).toHaveBeenCalled();
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(JSON.stringify(body)).toContain('AI EXEC SUMMARY');
+  });
+
+  it('falls back to the normal snapshot body when AI is unavailable', async () => {
+    const { isAiAvailable } = await import('../../src/lib/ai.js');
+    isAiAvailable.mockResolvedValue(false);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const config = {
+      features: { ai: true },
+      notifications: {
+        enabled: true,
+        summary: { enabled: true },
+        channels: [{ type: 'slack', webhookUrl: 'u', severityThreshold: 'warn', events: ['snapshot'] }],
+      },
+    };
+    await dispatchSnapshot(snapshot, config, { type: 'monitor' });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(JSON.stringify(body)).not.toContain('AI EXEC SUMMARY');
   });
 
   it('redacts secrets in the Loki payload', async () => {

@@ -44,6 +44,13 @@
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean" },
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        },
         "slack": {
           "type": "object",
           "additionalProperties": false,

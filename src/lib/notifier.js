@@ -204,6 +204,38 @@ export async function dispatchTest(config) {
   return Promise.all(channels.map((ch) => sendToChannel(ch, message, { kind: 'test' })));
 }
 
+/**
+ * Build a 1–2 paragraph AI executive summary of a snapshot, or null if AI is
+ * unavailable/disabled. Lazy-imports ai/prompts so the no-summary path stays
+ * cheap. The snapshot payload is redacted before being sent to the model.
+ */
+async function buildSnapshotSummary(snapshot, type, config) {
+  try {
+    const { isAiAvailable, runAiPrompt } = await import('./ai.js');
+    if (!config?.features?.ai || !(await isAiAvailable(config))) return null;
+    const { getPrompt, interpolate } = await import('./prompts.js');
+    const tmpl = await getPrompt('monitor-summary', config._configDir);
+    const compact = {
+      org: snapshot?.org ?? null,
+      summary: snapshot?.summary ?? {},
+      checks: (snapshot?.checks ?? []).map((c) => ({ id: c.id, title: c.title, status: c.status, summary: c.summary })),
+    };
+    const payload = redactSensitiveData(JSON.stringify(compact));
+    const prompt = `${interpolate(tmpl, { type, org: snapshot?.org ?? 'org' })}\n\nSNAPSHOT JSON:\n${payload}`;
+    const res = await runAiPrompt(prompt, {
+      config,
+      allowedTools: [],
+      cwd: config._projectRoot,
+      aiEnabled: true,
+      interactive: false,
+    });
+    const text = typeof res?.stdout === 'string' ? res.stdout.trim() : '';
+    return text || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function dispatchSnapshot(snapshot, config, { type = 'monitor' } = {}) {
   const severity = maxStatus(snapshot?.checks);
   const channels = resolveChannels(config).filter(
@@ -211,6 +243,11 @@ export async function dispatchSnapshot(snapshot, config, { type = 'monitor' } = 
   );
   if (channels.length === 0) return { severity, results: [] };
   const message = buildSnapshotMessage({ ...snapshot, _severity: severity }, type);
+  // Optional AI executive summary replaces the raw findings list in the body.
+  if (config?.notifications?.summary?.enabled) {
+    const summary = await buildSnapshotSummary(snapshot, type, config);
+    if (summary) message.text = summary;
+  }
   const results = await Promise.all(
     channels.map((ch) => sendToChannel(ch, message, { kind: `${type}-snapshot`, snapshot, org: snapshot?.org })),
   );
