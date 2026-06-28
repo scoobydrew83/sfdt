@@ -26,6 +26,8 @@ import { registerUpdateCommand } from './commands/update.js';
 import { registerConfigCommand } from './commands/config.js';
 import { registerAiCommand } from './commands/ai.js';
 import { registerScanCommand } from './commands/scan.js';
+import { registerDependenciesCommand } from './commands/dependencies.js';
+import { registerCoverageCommand } from './commands/coverage.js';
 import { registerAuditCommand } from './commands/audit.js';
 import { registerMonitorCommand } from './commands/monitor.js';
 import { registerDocsCommand } from './commands/docs.js';
@@ -89,6 +91,8 @@ export function createCli() {
   registerConfigCommand(program);
   registerAiCommand(program);
   registerScanCommand(program);
+  registerDependenciesCommand(program);
+  registerCoverageCommand(program);
   registerAuditCommand(program);
   registerMonitorCommand(program);
   registerDocsCommand(program);

@@ -109,6 +109,8 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     entries: [
       { id: 'quality', label: 'Quality Analysis', detail: 'Analyze Apex test quality', args: ['quality'], icon: 'beaker' },
       { id: 'test', label: 'Run Tests', detail: 'Run Apex tests', args: ['test'], icon: 'beaker' },
+      { id: 'coverage', label: 'Code Coverage', detail: 'Report Apex code coverage (org-wide + per-class)', args: ['coverage'], icon: 'shield' },
+      { id: 'dependencies', label: 'Dependencies', detail: 'Show metadata dependencies for a component', args: ['dependencies'], icon: 'references' },
       { id: 'review', label: 'Code Review', detail: 'AI review of the current diff', args: ['review'], icon: 'comment-discussion' },
       {
         id: 'flow', label: 'Flow Analysis', detail: 'Analyze Flows', icon: 'type-hierarchy',
