@@ -154,6 +154,25 @@ describe('dispatchSnapshot (severity routing)', () => {
     expect(Array.isArray(body.streams[0].values)).toBe(true);
   });
 
+  it('redacts secrets in the Loki payload', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const leaky = {
+      org: 'dev',
+      checks: [{ id: 'a', title: 'A', status: 'warn', summary: 'token=00Dxx00000abcdEAA!secretvalue' }],
+      summary: { ok: 0, warn: 1, fail: 0, error: 0 },
+    };
+    const config = {
+      notifications: {
+        enabled: true,
+        channels: [{ type: 'webhook', format: 'loki', url: 'http://loki/push', severityThreshold: 'warn', events: ['snapshot'] }],
+      },
+    };
+    await dispatchSnapshot(leaky, config, { type: 'monitor' });
+    const raw = fetchMock.mock.calls[0][1].body;
+    expect(raw).not.toContain('00Dxx00000abcdEAA!secretvalue');
+  });
+
   it('sends email via the lazy nodemailer transport', async () => {
     const config = {
       notifications: {

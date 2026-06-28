@@ -191,7 +191,8 @@ export async function checkDeployHistory(orgAlias, { lookback = MONITOR_DEFAULTS
           : `Last ${rows.length} deployment(s) succeeded`,
       findings);
   } catch (err) {
-    return errored(id, title, err);
+    // DeployRequest is a Tooling object that some orgs/permissions reject.
+    return degraded(id, title, err, 'Deployment history');
   }
 }
 
@@ -243,7 +244,8 @@ export async function checkFlowErrors(orgAlias) {
         : 'No paused flow interviews',
       findings);
   } catch (err) {
-    return errored(id, title, err);
+    // FlowInterview / InterviewStatus is not queryable in every org.
+    return degraded(id, title, err, 'Paused flow interviews');
   }
 }
 
@@ -348,6 +350,23 @@ function errored(id, title, err) {
     title,
     status: 'error',
     summary: `Check failed: ${oneLine(structured || err?.message)}`,
+    findings: [],
+  };
+}
+
+/**
+ * Soft failure for checks that query a Tooling/license-gated object whose
+ * absence means "can't run here", not "org is unhealthy". Surfaces `warn` (not
+ * `error`) so `monitor all` doesn't exit non-zero over a missing API. Mirrors
+ * checkDeprecatedApi.
+ */
+function degraded(id, title, err, what) {
+  const structured = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
+  return {
+    id,
+    title,
+    status: 'warn',
+    summary: `${what} unavailable in this org: ${oneLine(structured || err?.message)}`,
     findings: [],
   };
 }

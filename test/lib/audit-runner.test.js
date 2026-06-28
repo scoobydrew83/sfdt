@@ -185,6 +185,13 @@ describe('checkConnectedApps', () => {
     expect(r.status).toBe('ok');
     expect(r.findings).toHaveLength(0);
   });
+
+  it('degrades to warn (not error) when the query is rejected', async () => {
+    query.mockRejectedValueOnce(new Error('No such column'));
+    const r = await checkConnectedApps('dev');
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/unavailable/);
+  });
 });
 
 describe('checkFieldDescriptions', () => {
@@ -222,6 +229,13 @@ describe('checkApexUnreferenced', () => {
     const r = await checkApexUnreferenced('dev');
     expect(r.status).toBe('warn');
     expect(r.summary).toContain('No dependency data');
+  });
+
+  it('degrades to warn (not error) when the Beta dependency API is rejected', async () => {
+    query.mockRejectedValueOnce(new Error('MetadataComponentDependency is not supported'));
+    const r = await checkApexUnreferenced('dev');
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/unavailable/);
   });
 });
 

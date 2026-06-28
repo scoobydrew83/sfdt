@@ -153,8 +153,9 @@ async function sendToChannel(ch, message, { kind, snapshot, org } = {}) {
     if (ch.type === 'slack') body = renderSlack(message);
     else if (ch.type === 'teams') body = renderTeams(message);
     else if (ch.type === 'webhook') {
+      // Both webhook shapes go to an external sink, so redact either way.
       body = ch.format === 'loki'
-        ? renderLoki(message, { kind, org })
+        ? redactSensitiveData(renderLoki(message, { kind, org }))
         : redactSensitiveData(renderWebhook(message, { kind, snapshot }));
     } else {
       return { channel: label, type: ch.type, ok: false, error: `unsupported channel type: ${ch.type}` };

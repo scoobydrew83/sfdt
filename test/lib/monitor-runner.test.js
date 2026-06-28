@@ -175,6 +175,13 @@ describe('checkDeployHistory', () => {
     const r = await checkDeployHistory('dev');
     expect(r.status).toBe('ok');
   });
+
+  it('degrades to warn (not error) when DeployRequest is rejected', async () => {
+    query.mockRejectedValueOnce(new Error('DeployRequest requires a filter'));
+    const r = await checkDeployHistory('dev');
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/unavailable/);
+  });
 });
 
 describe('checkDeprecatedApi', () => {
@@ -213,6 +220,13 @@ describe('checkFlowErrors', () => {
     query.mockResolvedValueOnce([]);
     const r = await checkFlowErrors('dev');
     expect(r.status).toBe('ok');
+  });
+
+  it('degrades to warn (not error) when FlowInterview is rejected', async () => {
+    query.mockRejectedValueOnce(new Error('No such column InterviewStatus'));
+    const r = await checkFlowErrors('dev');
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/unavailable/);
   });
 });
 

@@ -364,7 +364,8 @@ export async function checkConnectedApps(orgAlias, { flagPermissive = AUDIT_DEFA
         : `${rows.length} connected app(s); none flagged`,
       findings);
   } catch (err) {
-    return errored(id, title, err);
+    // ConnectedApplication is not queryable for every user/permission set.
+    return degraded(id, title, err, 'Connected apps review');
   }
 }
 
@@ -429,7 +430,9 @@ export async function checkApexUnreferenced(orgAlias) {
         : 'All Apex classes are referenced',
       findings);
   } catch (err) {
-    return errored(id, title, err);
+    // MetadataComponentDependency is a Beta Tooling object with limited WHERE
+    // support and isn't available/queryable in every org.
+    return degraded(id, title, err, 'Dependency analysis');
   }
 }
 
@@ -526,6 +529,25 @@ function errored(id, title, err) {
     title,
     status: 'error',
     summary: `Check failed: ${oneLine(structured || err?.message)}`,
+    findings: [],
+  };
+}
+
+/**
+ * Soft failure for checks that query a Beta / license-gated / permission-gated
+ * object (e.g. MetadataComponentDependency, ConnectedApplication): a query
+ * failure there usually means "this org can't run the check", not "the org is
+ * broken". Surface a `warn` so `audit all` doesn't exit non-zero (red CI) over a
+ * missing API, while never reading as a clean `ok`. Mirrors checkDeprecatedApi
+ * in monitor-runner.
+ */
+function degraded(id, title, err, what) {
+  const structured = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
+  return {
+    id,
+    title,
+    status: 'warn',
+    summary: `${what} unavailable in this org: ${oneLine(structured || err?.message)}`,
     findings: [],
   };
 }

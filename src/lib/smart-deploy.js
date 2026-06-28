@@ -149,13 +149,21 @@ export async function prepareSmartDeploy({
   const addCount = countMembers(additive);
   const delCount = delta.delCount;
 
+  const ownsDir = !tmpDir;
   const dir = tmpDir || (await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-smart-')));
   const manifestPath = path.join(dir, 'package.xml');
-  await fs.writeFile(manifestPath, renderPackageXml(additive, apiVersion));
   let destructivePath = null;
-  if (delCount > 0) {
-    destructivePath = path.join(dir, 'destructiveChanges.xml');
-    await fs.writeFile(destructivePath, renderPackageXml(delta.destructive, apiVersion));
+  try {
+    await fs.writeFile(manifestPath, renderPackageXml(additive, apiVersion));
+    if (delCount > 0) {
+      destructivePath = path.join(dir, 'destructiveChanges.xml');
+      await fs.writeFile(destructivePath, renderPackageXml(delta.destructive, apiVersion));
+    }
+  } catch (err) {
+    // Don't leak the temp dir we just created if a write fails — the caller's
+    // cleanup only runs once this function returns a `prep` with `tmpDir`.
+    if (ownsDir) await fs.remove(dir).catch(() => {});
+    throw err;
   }
 
   const impactingTypes = smart.impactingTypes || DEFAULT_IMPACTING_TYPES;

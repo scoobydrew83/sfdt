@@ -6,12 +6,24 @@ vi.mock('../../src/lib/git-utils.js', () => ({
   diffNameStatus: vi.fn(),
 }));
 
+vi.mock('fs-extra', () => ({
+  default: {
+    mkdtemp: vi.fn().mockResolvedValue('/tmp/sfdt-smart-x'),
+    writeFile: vi.fn().mockResolvedValue(undefined),
+    pathExists: vi.fn().mockResolvedValue(false),
+    readFile: vi.fn().mockResolvedValue(''),
+    remove: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+import fs from 'fs-extra';
 import { diffNameStatus, isSafeGitRef } from '../../src/lib/git-utils.js';
 import {
   computeDelta,
   parseNoOverwrite,
   applyOverwriteRules,
   selectTestLevel,
+  prepareSmartDeploy,
 } from '../../src/lib/smart-deploy.js';
 
 const config = { defaultSourcePath: 'force-app/main/default', packageDirectories: [{ path: 'force-app/main/default' }] };
@@ -100,5 +112,22 @@ describe('selectTestLevel', () => {
   it('respects downgradeTestsOnNonProd=false', () => {
     const r = selectTestLevel({ CustomObject: ['Acct__c'] }, { isProd: false, downgradeTestsOnNonProd: false });
     expect(r.testLevel).toBe('RunLocalTests');
+  });
+});
+
+describe('prepareSmartDeploy temp-dir cleanup', () => {
+  it('removes the temp dir it created if a manifest write fails', async () => {
+    diffNameStatus.mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: 'A\tforce-app/main/default/classes/Foo.cls',
+      stderr: '',
+    });
+    // beforeEach's resetAllMocks clears the module-level fs defaults — re-set them.
+    fs.mkdtemp.mockResolvedValue('/tmp/sfdt-smart-x');
+    fs.pathExists.mockResolvedValue(false);
+    fs.remove.mockResolvedValue(undefined);
+    fs.writeFile.mockRejectedValueOnce(new Error('disk full'));
+    await expect(prepareSmartDeploy({ base: 'main', projectRoot: '/p', config })).rejects.toThrow('disk full');
+    expect(fs.remove).toHaveBeenCalledWith('/tmp/sfdt-smart-x');
   });
 });
