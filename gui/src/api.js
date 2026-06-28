@@ -58,13 +58,20 @@ function flagAuthExpired() {
   authListeners.forEach((cb) => { try { cb(); } catch { /* ignore */ } });
 }
 
-/** Read the launch token from the URL (preferred, self-healing on reload) or
- *  sessionStorage. The token is deliberately left in the URL so a plain reload
- *  re-authenticates — it is localhost-only and already printed by `sfdt ui`. */
-function launchToken() {
+/** Read the launch token from the URL or sessionStorage. On the first read from
+ *  the URL we persist it to sessionStorage — which survives a same-tab reload —
+ *  and then scrub it from the address bar and history. Keeping reload-reauth
+ *  working without leaving the localhost-only token sitting in the URL. Exported
+ *  for testing. */
+export function launchToken() {
   const fromUrl = new URLSearchParams(window.location.search).get('token');
   if (fromUrl) {
     sessionStorage.setItem('sfdt_launch_token', fromUrl);
+    // Remove only the token, preserving other params (e.g. ?theme= from the
+    // VS Code extension). The canonical tokened URL is the one `sfdt ui` prints.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('token');
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
     return fromUrl;
   }
   return sessionStorage.getItem('sfdt_launch_token');
