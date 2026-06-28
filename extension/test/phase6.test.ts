@@ -76,8 +76,10 @@ describe('extension/features/trigger-conflicts', () => {
 
   it('buildConflictsModal renders the empty state when no groups are present', () => {
     const { buildConflictsModal } = _triggerConflictsTestApi();
-    document.body.appendChild(buildConflictsModal(document, []));
-    expect(document.body.textContent).toContain('No record-triggered flows');
+    buildConflictsModal(document, []);
+    expect(document.querySelector('.sfdt-view-overlay')?.textContent).toContain(
+      'No record-triggered flows',
+    );
   });
 
   it('buildConflictsModal lists each group with object · timing · event', () => {
@@ -93,11 +95,12 @@ describe('extension/features/trigger-conflicts', () => {
         ],
       },
     ];
-    document.body.appendChild(buildConflictsModal(document, groups));
-    expect(document.body.textContent).toContain('Account · AfterSave · Create');
-    expect(document.body.textContent).toContain('Flow A');
-    expect(document.body.textContent).toContain('Flow B');
-    expect(document.body.textContent).toContain('no entry criteria');
+    buildConflictsModal(document, groups);
+    const overlay = document.querySelector('.sfdt-view-overlay')!;
+    expect(overlay.textContent).toContain('Account · AfterSave · Create');
+    expect(overlay.textContent).toContain('Flow A');
+    expect(overlay.textContent).toContain('Flow B');
+    expect(overlay.textContent).toContain('no entry criteria');
   });
 
   it('buildConflictsModal renders Activate/Deactivate buttons that fire the bridge callbacks', async () => {
@@ -111,19 +114,17 @@ describe('extension/features/trigger-conflicts', () => {
         flows: [{ flowId: 'My_Flow', label: 'My Flow', entryCriteriaSummary: null }],
       },
     ];
-    document.body.appendChild(
-      buildConflictsModal(document, groups, {
-        extras: { My_Flow: { latestVersionNumber: 3, active: true } },
-        onActivate: async (flowApiName, toVersion) => {
-          calls.push({ kind: 'activate', flowApiName, toVersion });
-          return { ok: true };
-        },
-        onDeactivate: async (flowApiName) => {
-          calls.push({ kind: 'deactivate', flowApiName });
-          return { ok: true };
-        },
-      }),
-    );
+    buildConflictsModal(document, groups, {
+      extras: { My_Flow: { latestVersionNumber: 3, active: true } },
+      onActivate: async (flowApiName, toVersion) => {
+        calls.push({ kind: 'activate', flowApiName, toVersion });
+        return { ok: true };
+      },
+      onDeactivate: async (flowApiName) => {
+        calls.push({ kind: 'deactivate', flowApiName });
+        return { ok: true };
+      },
+    });
 
     // The Activate button is labelled with the latest version number from extras.
     const buttons = Array.from(document.querySelectorAll('button'));
@@ -165,12 +166,10 @@ describe('extension/features/trigger-conflicts', () => {
         flows: [{ flowId: 'My_Flow', label: 'My Flow', entryCriteriaSummary: null }],
       },
     ];
-    document.body.appendChild(
-      buildConflictsModal(document, groups, {
-        extras: { My_Flow: { latestVersionNumber: 2, active: true } },
-        onDeactivate: async () => ({ ok: false, error: 'sfdt offline' }),
-      }),
-    );
+    buildConflictsModal(document, groups, {
+      extras: { My_Flow: { latestVersionNumber: 2, active: true } },
+      onDeactivate: async () => ({ ok: false, error: 'sfdt offline' }),
+    });
     const buttons = Array.from(document.querySelectorAll('button'));
     const deactivateBtn = buttons.find((b) => b.textContent === 'Deactivate') as HTMLButtonElement;
     deactivateBtn.click();
@@ -249,9 +248,10 @@ describe('extension/features/subflow-graph', () => {
         metadata: { processType: 'Flow', subflows: [{ name: 'callA', flowName: 'A' }] },
       },
     ]);
-    document.body.appendChild(buildSubflowGraphModal(document, graph));
-    expect(document.body.textContent).toContain('1 cycle detected');
-    expect(document.body.textContent).toMatch(/A → B → A/);
+    buildSubflowGraphModal(document, graph);
+    const overlay = document.querySelector('.sfdt-view-overlay')!;
+    expect(overlay.textContent).toContain('1 cycle detected');
+    expect(overlay.textContent).toMatch(/A → B → A/);
   });
 
   it('buildSubflowGraphModal surfaces unresolved subflow references', () => {
@@ -262,9 +262,10 @@ describe('extension/features/subflow-graph', () => {
         metadata: { processType: 'Flow', subflows: [{ name: 'callX', flowName: 'Ghost' }] },
       },
     ]);
-    document.body.appendChild(buildSubflowGraphModal(document, graph));
-    expect(document.body.textContent).toContain(`reference`);
-    expect(document.body.textContent).toContain('Ghost');
+    buildSubflowGraphModal(document, graph);
+    const overlay = document.querySelector('.sfdt-view-overlay')!;
+    expect(overlay.textContent).toContain(`reference`);
+    expect(overlay.textContent).toContain('Ghost');
   });
 
   it('buildSubflowGraphModal lists every flow with depth + call counts', () => {
@@ -273,11 +274,12 @@ describe('extension/features/subflow-graph', () => {
       { id: 'A', metadata: { processType: 'Flow', subflows: [{ name: 'b', flowName: 'B' }] } },
       { id: 'B', metadata: { processType: 'Flow', subflows: [] } },
     ]);
-    document.body.appendChild(buildSubflowGraphModal(document, graph));
+    buildSubflowGraphModal(document, graph);
+    const overlay = document.querySelector('.sfdt-view-overlay')!;
     // List view is reachable behind the toggle — its body content is still
     // attached to the DOM (just display:none until the user switches).
-    expect(document.body.textContent).toContain('depth 1');
-    expect(document.body.textContent).toContain('depth 0');
+    expect(overlay.textContent).toContain('depth 1');
+    expect(overlay.textContent).toContain('depth 0');
   });
 
   it('buildSubflowGraphSvg renders one rect per node and an edge per outgoing call', () => {

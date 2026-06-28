@@ -5,6 +5,7 @@ import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-ap
 import { loadSettings } from '../lib/settings.js';
 import { createBridgeClient, getBridgeData, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.js';
 import { showToast } from '../ui/toast.js';
+import { presentView } from '../ui/present-view.js';
 
 async function dispatchBridge(
   kind: 'deploy' | 'rollback',
@@ -129,21 +130,13 @@ function showDeployModal(
   doc: Document,
   onChoice: (action: 'deploy' | 'rollback') => void | Promise<void>,
 ): void {
-  const overlay = doc.createElement('div');
-  overlay.style.cssText =
-    'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-  const modal = doc.createElement('div');
-  modal.style.cssText = 'background: #fff; border-radius: 4px; width: 380px; padding: 16px;';
-
-  const title = doc.createElement('div');
-  title.style.cssText = 'font-weight: 600; font-size: 15px; margin-bottom: 8px;';
-  title.textContent = 'Deploy / Rollback this Flow';
-  modal.appendChild(title);
+  const body = doc.createElement('div');
+  body.style.cssText = 'padding: 16px;';
 
   const intro = doc.createElement('p');
   intro.style.cssText = 'margin: 0 0 12px; font-size: 13px; color: #54698d;';
   intro.textContent = 'sfdt re-validates against the target org before pushing.';
-  modal.appendChild(intro);
+  body.appendChild(intro);
 
   const buttons = doc.createElement('div');
   buttons.style.cssText = 'display: flex; gap: 8px; justify-content: flex-end;';
@@ -152,7 +145,7 @@ function showDeployModal(
   deployBtn.style.cssText =
     'padding: 6px 12px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer;';
   deployBtn.addEventListener('click', async () => {
-    overlay.remove();
+    view.close();
     await onChoice('deploy');
   });
   const rollbackBtn = doc.createElement('button');
@@ -160,24 +153,20 @@ function showDeployModal(
   rollbackBtn.style.cssText =
     'padding: 6px 12px; background: #c23934; color: #fff; border: 0; border-radius: 4px; cursor: pointer;';
   rollbackBtn.addEventListener('click', async () => {
-    overlay.remove();
+    view.close();
     await onChoice('rollback');
   });
   const cancelBtn = doc.createElement('button');
   cancelBtn.textContent = 'Cancel';
   cancelBtn.style.cssText = 'padding: 6px 12px;';
-  cancelBtn.addEventListener('click', () => overlay.remove());
+  cancelBtn.addEventListener('click', () => view.close());
 
   buttons.appendChild(cancelBtn);
   buttons.appendChild(rollbackBtn);
   buttons.appendChild(deployBtn);
-  modal.appendChild(buttons);
+  body.appendChild(buttons);
 
-  overlay.appendChild(modal);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
-  doc.body.appendChild(overlay);
+  const view = presentView({ title: 'Deploy / Rollback this Flow', body, doc, width: '380px' });
 }
 
 export function _flowDeployTestApi() {

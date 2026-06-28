@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mountHealthModal, type HealthReport } from '../ui/health-modal.js';
-
-const OVERLAY_ID = 'sfdt-health-modal-overlay';
+import { setWorkspaceViewSink } from '../ui/present-view.js';
 
 function clearBody(): void {
   while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
@@ -9,6 +8,7 @@ function clearBody(): void {
 
 beforeEach(() => {
   clearBody();
+  setWorkspaceViewSink(null);
 });
 
 function makeReport(overrides: Partial<HealthReport> = {}): HealthReport {
@@ -46,24 +46,26 @@ function makeReport(overrides: Partial<HealthReport> = {}): HealthReport {
 }
 
 describe('health-modal — open/close state machine', () => {
-  it('mounts hidden and closed', () => {
+  it('presents an open overlay on mount', () => {
     const handle = mountHealthModal();
-    expect(document.getElementById(OVERLAY_ID)).not.toBeNull();
-    expect(handle.isOpen()).toBe(false);
-    expect((document.getElementById(OVERLAY_ID) as HTMLElement).style.display).toBe('none');
+    const overlay = document.querySelector('.sfdt-view-overlay') as HTMLElement | null;
+    expect(overlay).not.toBeNull();
+    expect(handle.isOpen()).toBe(true);
+    expect(overlay!.style.display).toContain('flex');
   });
 
-  it('re-mounting removes the prior overlay (no duplicates)', () => {
-    mountHealthModal();
-    mountHealthModal();
-    expect(document.querySelectorAll(`#${OVERLAY_ID}`)).toHaveLength(1);
+  it('swaps content in place without stacking overlays', () => {
+    const handle = mountHealthModal();
+    handle.showLoading('Order Flow');
+    handle.showReport(makeReport());
+    expect(document.querySelectorAll('.sfdt-view-overlay')).toHaveLength(1);
   });
 
-  it('showLoading opens the modal with the flow label', () => {
+  it('showLoading shows the modal with the flow label', () => {
     const handle = mountHealthModal();
     handle.showLoading('Order Flow');
     expect(handle.isOpen()).toBe(true);
-    expect((document.getElementById(OVERLAY_ID) as HTMLElement).style.display).toBe('flex');
+    expect(document.querySelector('.sfdt-view-overlay')).not.toBeNull();
     expect(document.querySelector('.sfdt-health-loading-subtitle')?.textContent).toBe('Order Flow');
   });
 
@@ -73,21 +75,20 @@ describe('health-modal — open/close state machine', () => {
     expect(document.querySelector('.sfdt-health-loading-subtitle')?.textContent).toBe('Flow');
   });
 
-  it('the close button closes and hides the overlay', () => {
+  it('the close button closes and removes the overlay', () => {
     const handle = mountHealthModal();
     handle.showLoading('x');
-    document.querySelector<HTMLButtonElement>('.sfdt-modal-close')!.click();
+    document.querySelector<HTMLButtonElement>('.sfdt-view-overlay button[aria-label="Close"]')!.click();
     expect(handle.isOpen()).toBe(false);
-    expect((document.getElementById(OVERLAY_ID) as HTMLElement).style.display).toBe('none');
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
 
-  it('clicking the overlay backdrop closes, but clicking the modal does not', () => {
+  it('clicking the overlay backdrop closes, but clicking the modal body does not', () => {
     const handle = mountHealthModal();
     handle.showLoading('x');
-    const modal = document.querySelector<HTMLElement>('.sfdt-health-modal')!;
-    modal.click();
+    document.querySelector<HTMLElement>('.sfdt-health-modal-body')!.click();
     expect(handle.isOpen()).toBe(true);
-    (document.getElementById(OVERLAY_ID) as HTMLElement).click();
+    (document.querySelector('.sfdt-view-overlay') as HTMLElement).click();
     expect(handle.isOpen()).toBe(false);
   });
 
@@ -96,6 +97,15 @@ describe('health-modal — open/close state machine', () => {
     handle.showLoading('x');
     handle.close();
     expect(handle.isOpen()).toBe(false);
+  });
+
+  it('reopens after close when the cached handle is reused', () => {
+    const handle = mountHealthModal();
+    handle.close();
+    expect(handle.isOpen()).toBe(false);
+    handle.showReport(makeReport());
+    expect(handle.isOpen()).toBe(true);
+    expect(document.querySelector('.sfdt-health-flow-name')?.textContent).toBe('My Flow');
   });
 });
 

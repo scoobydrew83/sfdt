@@ -8,6 +8,7 @@ import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { loadSettings, patchSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { z } from 'zod';
 
 const API_NAME_GENERATOR_SETTINGS_SCHEMA = z.object({
@@ -51,11 +52,11 @@ export function createApiNameGeneratorFeature(
   const win = options.win ?? window;
   const library =
     options.library ?? new ApiNameLibrary({ storage: chromeStorageAdapter() });
-  let overlay: HTMLDivElement | null = null;
+  let view: ViewHandle | null = null;
 
   function close(): void {
-    overlay?.remove();
-    overlay = null;
+    view?.close();
+    view = null;
   }
 
   async function openModal(): Promise<void> {
@@ -67,27 +68,14 @@ export function createApiNameGeneratorFeature(
     const pattern: NamingPattern = apiNameConfig.namingPattern;
     const prefixes: readonly PrefixEntry[] = library.isCustom() ? library.getAll() : DEFAULT_PREFIXES;
 
-    overlay = doc.createElement('div');
-    overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
-
-    const modal = doc.createElement('div');
-    modal.style.cssText =
-      'background: #fff; border-radius: 4px; width: 440px; padding: 16px;';
-
-    const heading = doc.createElement('div');
-    heading.style.cssText = 'font-weight: 600; font-size: 15px; margin-bottom: 12px;';
-    heading.textContent = 'API Name Generator';
-    modal.appendChild(heading);
+    const body = doc.createElement('div');
+    body.style.cssText = 'padding: 16px; display: flex; flex-direction: column;';
 
     const labelInput = doc.createElement('input');
     labelInput.type = 'text';
     labelInput.placeholder = 'Element or resource label';
     labelInput.style.cssText = 'width: 100%; padding: 6px; margin-bottom: 8px;';
-    modal.appendChild(labelInput);
+    body.appendChild(labelInput);
 
     const typeSelect = doc.createElement('select');
     typeSelect.style.cssText = 'width: 100%; padding: 6px; margin-bottom: 8px;';
@@ -97,7 +85,7 @@ export function createApiNameGeneratorFeature(
       opt.textContent = entry.type;
       typeSelect.appendChild(opt);
     }
-    modal.appendChild(typeSelect);
+    body.appendChild(typeSelect);
 
     const patternSelect = doc.createElement('select');
     patternSelect.style.cssText = 'width: 100%; padding: 6px; margin-bottom: 8px;';
@@ -108,12 +96,12 @@ export function createApiNameGeneratorFeature(
       if (p === pattern) opt.selected = true;
       patternSelect.appendChild(opt);
     }
-    modal.appendChild(patternSelect);
+    body.appendChild(patternSelect);
 
     const preview = doc.createElement('div');
     preview.style.cssText =
       'font-family: monospace; padding: 8px; background: #fafaf9; border: 1px solid #d8dde6; border-radius: 4px; margin-bottom: 12px; min-height: 20px;';
-    modal.appendChild(preview);
+    body.appendChild(preview);
 
     const update = () => {
       const expanded = library.expand(
@@ -149,10 +137,15 @@ export function createApiNameGeneratorFeature(
     });
     footer.appendChild(cancel);
     footer.appendChild(copy);
-    modal.appendChild(footer);
 
-    overlay.appendChild(modal);
-    doc.body.appendChild(overlay);
+    view = presentView({
+      title: 'API Name Generator',
+      body,
+      footer,
+      doc,
+      width: '440px',
+      onClose: () => { view = null; },
+    });
     labelInput.focus();
   }
 

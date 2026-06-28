@@ -2,6 +2,7 @@
 // XSS-safe by construction with no escape pathway needed.
 
 import type { IssueFamily, Rating, ScoreSummary, Severity } from '@sfdt/flow-core';
+import { presentView, type ViewHandle } from './present-view.js';
 
 export interface HealthReportMeta {
   flowLabel: string;
@@ -32,8 +33,6 @@ export interface HealthModalHandle {
   close: () => void;
   isOpen: () => boolean;
 }
-
-const OVERLAY_ID = 'sfdt-health-modal-overlay';
 
 function styledDiv(doc: Document, className: string, cssText?: string): HTMLDivElement {
   const el = doc.createElement('div');
@@ -81,50 +80,10 @@ export interface MountHealthModalOptions {
 
 export function mountHealthModal(options: MountHealthModalOptions = {}): HealthModalHandle {
   const doc = options.doc ?? document;
-  doc.getElementById(OVERLAY_ID)?.remove();
 
-  const overlay = doc.createElement('div');
-  overlay.id = OVERLAY_ID;
-  overlay.className = 'sfdt-modal-overlay sfdt-hidden';
-  overlay.style.cssText = [
-    'position: fixed',
-    'inset: 0',
-    'background: rgba(0,0,0,0.4)',
-    'z-index: 100020',
-    'display: none',
-    'align-items: center',
-    'justify-content: center',
-    'font-family: system-ui, -apple-system, sans-serif',
-  ].join('; ');
-
-  const modal = doc.createElement('div');
-  modal.className = 'sfdt-modal sfdt-health-modal';
-  modal.style.cssText = [
-    'background: #fff',
-    'border-radius: 4px',
-    'box-shadow: 0 8px 24px rgba(0,0,0,0.3)',
-    'width: 720px',
-    'max-width: 90vw',
-    'max-height: 90vh',
-    'display: flex',
-    'flex-direction: column',
-  ].join('; ');
-
-  const header = doc.createElement('div');
-  header.className = 'sfdt-modal-header';
-  header.style.cssText =
-    'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center; font-weight: 600;';
-  const headerLabel = doc.createElement('span');
-  headerLabel.textContent = 'Flow Health Check';
-  const closeBtn = doc.createElement('button');
-  closeBtn.type = 'button';
-  closeBtn.className = 'sfdt-modal-close';
-  closeBtn.textContent = '×';
-  closeBtn.style.cssText =
-    'background: none; border: 0; font-size: 22px; cursor: pointer; color: #80868d;';
-  header.appendChild(headerLabel);
-  header.appendChild(closeBtn);
-
+  // Owned content containers. presentView mounts these once; the render*
+  // helpers swap their contents. The overlay/card/header (+ ×) chrome is
+  // supplied by presentView, so the modal looks identical to every other view.
   const body = doc.createElement('div');
   body.className = 'sfdt-modal-body sfdt-health-modal-body';
   body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1;';
@@ -134,29 +93,29 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
   footer.style.cssText =
     'padding: 12px 16px; border-top: 1px solid #d8dde6; display: flex; justify-content: flex-end; gap: 8px;';
 
-  modal.appendChild(header);
-  modal.appendChild(body);
-  modal.appendChild(footer);
-  overlay.appendChild(modal);
-  doc.body.appendChild(overlay);
+  let view: ViewHandle | null = null;
 
-  let open = false;
-
+  // Present (or re-present after a close) the owned body/footer through the
+  // shared presenter. Re-presentable so a cached handle can be reopened.
   function show(): void {
-    open = true;
-    overlay.style.display = 'flex';
-    overlay.classList.remove('sfdt-hidden');
-  }
-  function close(): void {
-    open = false;
-    overlay.style.display = 'none';
-    overlay.classList.add('sfdt-hidden');
+    if (view) return;
+    view = presentView({
+      title: 'Flow Health Check',
+      body,
+      footer,
+      doc,
+      width: '720px',
+      onClose: () => {
+        view = null;
+      },
+    });
   }
 
-  closeBtn.addEventListener('click', close);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
-  });
+  function close(): void {
+    view?.close();
+  }
+
+  show();
 
   function renderLoading(flowLabel: string): void {
     clear(body);
@@ -408,6 +367,6 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     showError: renderError,
     showReport: renderReport,
     close,
-    isOpen: () => open,
+    isOpen: () => view !== null,
   };
 }

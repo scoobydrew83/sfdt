@@ -12,6 +12,7 @@ import { CONTEXTS } from '../lib/context-detector.js';
 import { escapeSoql } from '../lib/escape.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -231,27 +232,17 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
   return svg;
 }
 
-export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTMLDivElement {
-  const overlay = doc.createElement('div');
-  overlay.style.cssText =
-    'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
+export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): ViewHandle {
+  const titleText = `Subflow Caller Graph — ${graph.nodes.size} flow${graph.nodes.size === 1 ? '' : 's'} · ${graph.cycles.length} cycle${graph.cycles.length === 1 ? '' : 's'}`;
 
-  const modal = doc.createElement('div');
-  modal.style.cssText =
-    'background: #fff; border-radius: 4px; width: 880px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column;';
+  const body = doc.createElement('div');
+  body.style.cssText = 'padding: 16px; overflow: auto; flex: 1;';
 
-  const header = doc.createElement('div');
-  header.style.cssText =
-    'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center;';
-  const headerLeft = doc.createElement('div');
-  headerLeft.style.cssText = 'display: flex; align-items: center; gap: 16px;';
-  const headerLabel = doc.createElement('span');
-  headerLabel.style.fontWeight = '600';
-  headerLabel.textContent = `Subflow Caller Graph — ${graph.nodes.size} flow${graph.nodes.size === 1 ? '' : 's'} · ${graph.cycles.length} cycle${graph.cycles.length === 1 ? '' : 's'}`;
-  headerLeft.appendChild(headerLabel);
-
+  // The Graph/List toggle used to live in the modal header; presentView's
+  // header is title + × only, so it sits at the top of the body now.
   const toggle = doc.createElement('div');
-  toggle.style.cssText = 'display: inline-flex; border: 1px solid #d8dde6; border-radius: 4px; overflow: hidden;';
+  toggle.style.cssText =
+    'display: inline-flex; border: 1px solid #d8dde6; border-radius: 4px; overflow: hidden; margin-bottom: 12px;';
   const graphBtn = doc.createElement('button');
   const listBtn = doc.createElement('button');
   const baseToggleStyle =
@@ -262,18 +253,7 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTML
   listBtn.textContent = 'List';
   toggle.appendChild(graphBtn);
   toggle.appendChild(listBtn);
-  headerLeft.appendChild(toggle);
-  header.appendChild(headerLeft);
-
-  const closeBtn = doc.createElement('button');
-  closeBtn.textContent = '×';
-  closeBtn.style.cssText = 'background: none; border: 0; font-size: 22px; cursor: pointer;';
-  closeBtn.addEventListener('click', () => overlay.remove());
-  header.appendChild(closeBtn);
-  modal.appendChild(header);
-
-  const body = doc.createElement('div');
-  body.style.cssText = 'padding: 16px; overflow: auto; flex: 1;';
+  body.appendChild(toggle);
 
   // Cycles sit above whichever view is active — recursion is the most
   // actionable finding the modal surfaces.
@@ -362,8 +342,6 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTML
     body.appendChild(unresolvedBox);
   }
 
-  modal.appendChild(body);
-
   const setView = (mode: 'graph' | 'list') => {
     if (mode === 'graph') {
       graphPane.style.display = '';
@@ -385,11 +363,7 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): HTML
   listBtn.addEventListener('click', () => setView('list'));
   setView('graph');
 
-  overlay.appendChild(modal);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
-  return overlay;
+  return presentView({ title: titleText, body, doc, width: '880px' });
 }
 
 export interface SubflowGraphFeatureOptions {
@@ -418,7 +392,7 @@ export function createSubflowGraphFeature(options: SubflowGraphFeatureOptions = 
         const flows = await fetchAllFlowMetadata(api);
         const graph = buildSubflowGraph(flows);
         loading.remove();
-        doc.body.appendChild(buildSubflowGraphModal(doc, graph));
+        buildSubflowGraphModal(doc, graph);
       } catch (err) {
         loading.remove();
         showToast(

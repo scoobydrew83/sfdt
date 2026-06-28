@@ -399,7 +399,7 @@ describe('extension/features — smoke', () => {
     await feature.onActivate?.();
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(document.querySelector('.sfdt-scheduled-flow-overlay')).not.toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).not.toBeNull();
     expect(document.body.textContent).toContain('Nightly');
   });
 });
