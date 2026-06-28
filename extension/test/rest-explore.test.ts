@@ -223,7 +223,7 @@ describe('rest-explore — onActivate guard', () => {
     await feature.onActivate?.();
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(document.querySelector('.sfdt-rest-explore-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
     expect(document.body.textContent).toContain('Open a Salesforce page');
   });
 });
@@ -305,10 +305,10 @@ describe('rest-explore — modal interactions', () => {
     setSalesforceUrl();
     const feature = createRestExploreFeature({ api: fakeApi(), skipDestructiveConfirm: true });
     await feature.onActivate?.();
-    const overlay = document.querySelector('.sfdt-rest-explore-overlay') as HTMLDivElement;
+    const overlay = document.querySelector('.sfdt-view-overlay') as HTMLDivElement;
     expect(overlay).not.toBeNull();
     overlay.click(); // e.target === overlay
-    expect(document.querySelector('.sfdt-rest-explore-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
 
   it('copies the last response to the clipboard', async () => {

@@ -725,7 +725,7 @@ describe('soql-runner — modal menus & exports', () => {
       win: { location: { href: 'https://example.com/' } } as never,
     });
     await feature.onActivate?.();
-    expect(document.querySelector('.sfdt-soql-runner-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
     expect(document.querySelector('.sfdt-toast')?.textContent).toContain('Open a Salesforce page');
   });
 
@@ -878,9 +878,9 @@ describe('soql-runner — modal menus & exports', () => {
 
   it('closes the modal on Escape', async () => {
     await openWith(fakeApi());
-    expect(document.querySelector('.sfdt-soql-runner-overlay')).not.toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).not.toBeNull();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    expect(document.querySelector('.sfdt-soql-runner-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
 
   it('runs the query on Ctrl+Enter', async () => {

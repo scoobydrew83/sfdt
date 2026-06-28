@@ -669,8 +669,8 @@ describe('metadata-retrieve — toolbar & overlay', () => {
     const feature = createMetadataRetrieveFeature({ api: fakeApi() });
     await feature.onActivate?.();
     await flush();
-    const overlay = document.querySelector('.sfdt-meta-retrieve-overlay') as HTMLDivElement;
+    const overlay = document.querySelector('.sfdt-view-overlay') as HTMLDivElement;
     overlay.dispatchEvent(new Event('click'));
-    expect(document.querySelector('.sfdt-meta-retrieve-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
 });

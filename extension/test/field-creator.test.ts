@@ -66,7 +66,7 @@ describe('field-creator — UI flow & Tooling API deployment', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     // Check overlay
-    const overlay = document.querySelector('.sfdt-field-creator-overlay');
+    const overlay = document.querySelector('.sfdt-view-overlay');
     expect(overlay).not.toBeNull();
 
     // SObject selector
@@ -583,7 +583,7 @@ describe('field-creator — error & resilience branches', () => {
     });
     await feature.onActivate?.();
     await flush();
-    expect(document.querySelector('.sfdt-field-creator-overlay')).not.toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).not.toBeNull();
   });
 
   it('toasts when the SObject list fails to load', async () => {
@@ -601,9 +601,9 @@ describe('field-creator — error & resilience branches', () => {
     const { feature } = mountFC();
     await feature.onActivate?.();
     await flush();
-    const overlay = document.querySelector('.sfdt-field-creator-overlay') as HTMLDivElement;
+    const overlay = document.querySelector('.sfdt-view-overlay') as HTMLDivElement;
     overlay.dispatchEvent(new Event('click'));
-    expect(document.querySelector('.sfdt-field-creator-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
 
   it('marks a field as error when the Tooling API rejects the deploy', async () => {

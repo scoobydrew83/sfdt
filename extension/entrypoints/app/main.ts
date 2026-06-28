@@ -14,6 +14,7 @@ import {
 } from '../../lib/salesforce-api.js';
 import { FEATURE_ICONS, WORKSPACE_TOOLS } from '../../lib/feature-icons.js';
 import { showToast } from '../../ui/toast.js';
+import { createWorkspaceTabs } from '../../ui/workspace-tabs.js';
 
 import { createSoqlRunnerFeature } from '../../features/soql-runner.js';
 import { createSavedSoqlFeature } from '../../features/saved-soql.js';
@@ -61,10 +62,18 @@ const STYLES = `
   #sfdt-sidebar .tool { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
   #sfdt-sidebar .tool:hover { background: #f3f6f9; }
   #sfdt-sidebar .tool .icon { font-size: 16px; }
-  #sfdt-main { flex: 1; overflow: auto; padding: 32px; }
-  #sfdt-main .welcome { max-width: 560px; margin: 40px auto; text-align: center; color: #54698d; }
-  #sfdt-main .welcome h2 { color: #16325c; }
-  #sfdt-main code { background: #e9eef3; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  #sfdt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #sfdt-tabbar { display: flex; gap: 4px; padding: 6px 8px 0; background: #f3f3f3; border-bottom: 1px solid #d8dde6; overflow-x: auto; }
+  #sfdt-tabbar:empty { display: none; }
+  #sfdt-tabbar .tab { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: #e9eef3; border: 1px solid #d8dde6; border-bottom: none; border-radius: 4px 4px 0 0; cursor: pointer; font-size: 12px; white-space: nowrap; color: #54698d; }
+  #sfdt-tabbar .tab.active { background: #fff; color: #16325c; font-weight: 600; }
+  #sfdt-tabbar .tab .x { border: 0; background: none; cursor: pointer; font-size: 14px; line-height: 1; color: #80868d; padding: 0 2px; }
+  #sfdt-tabbar .tab .x:hover { color: #c23934; }
+  #sfdt-panes { flex: 1; overflow: auto; }
+  #sfdt-panes .pane { height: 100%; flex-direction: column; }
+  #sfdt-panes .welcome { max-width: 560px; margin: 40px auto; text-align: center; color: #54698d; padding: 0 24px; }
+  #sfdt-panes .welcome h2 { color: #16325c; }
+  #sfdt-panes code { background: #e9eef3; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
 `;
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -230,16 +239,30 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
   const layout = el('div', { id: 'sfdt-layout' });
   const sidebar = el('div', { id: 'sfdt-sidebar' });
   const main = el('div', { id: 'sfdt-main' });
+  const tabbar = el('div', { id: 'sfdt-tabbar' });
+  const panes = el('div', { id: 'sfdt-panes' });
+  main.appendChild(tabbar);
+  main.appendChild(panes);
 
   const welcome = el('div', { class: 'welcome' });
   const wh = el('h2');
   wh.textContent = 'Pick a tool to get started';
   const wp = el('p');
   wp.textContent =
-    'This Workspace runs in its own tab, so opening SOQL, Apex, or any other tool here never disturbs the Salesforce page you were on. Switch tabs freely — your session stays put.';
+    'Tools open as tabs here in the main area — switch between them freely, and your work stays put. Nothing closes on a stray click.';
   welcome.appendChild(wh);
   welcome.appendChild(wp);
-  main.appendChild(welcome);
+  panes.appendChild(welcome);
+
+  // Tabbed tool host: tools open as persistent tabs in the main area (state kept
+  // across switches, no click-dismiss). Features render into panes via presentView.
+  const workspace = createWorkspaceTabs({
+    tabbar,
+    panes,
+    welcome,
+    dispatch: (id) => void registry.dispatch(id, 'activate'),
+    labelFor: (id) => FEATURE_ICONS[id]?.label ?? id,
+  });
 
   for (const id of WORKSPACE_TOOLS) {
     if (!registry.has(id)) continue;
@@ -252,7 +275,7 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
     label.textContent = meta.label;
     tool.appendChild(icon);
     tool.appendChild(label);
-    tool.addEventListener('click', () => void registry.dispatch(id, 'activate'));
+    tool.addEventListener('click', () => workspace.openTool(id));
     sidebar.appendChild(tool);
   }
 

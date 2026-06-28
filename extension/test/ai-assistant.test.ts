@@ -75,9 +75,9 @@ describe('ai-assistant — panel toggle', () => {
     const feature = createAiAssistantFeature({ api: fakeApi(), library: fakeLibrary() });
     feature.onActivate?.();
     await flush();
-    expect(document.querySelector('.sfdt-ai-panel-overlay')).not.toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).not.toBeNull();
     feature.onActivate?.();
-    expect(document.querySelector('.sfdt-ai-panel-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
 
   it('the close button removes the panel', async () => {
@@ -86,7 +86,7 @@ describe('ai-assistant — panel toggle', () => {
     await flush();
     const closeBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '×')!;
     closeBtn.click();
-    expect(document.querySelector('.sfdt-ai-panel-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
 
   it('Escape key closes the panel', async () => {
@@ -94,7 +94,7 @@ describe('ai-assistant — panel toggle', () => {
     feature.onActivate?.();
     await flush();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    expect(document.querySelector('.sfdt-ai-panel-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
 });
 

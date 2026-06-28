@@ -246,7 +246,7 @@ describe('apex-anonymous — onActivate context gate', () => {
     const feature = createApexAnonymousFeature({ api });
     await feature.onActivate?.();
     await flush();
-    expect(document.querySelector('.sfdt-apex-anonymous-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
     expect(document.querySelector('.sfdt-toast')?.textContent).toContain('run Apex');
   });
 });
@@ -262,9 +262,9 @@ describe('apex-anonymous — execute (log capture off)', () => {
     const feature = createApexAnonymousFeature({ api: fakeApi() });
     await feature.onActivate?.();
     await flush();
-    const editor = document.querySelector<HTMLTextAreaElement>('.sfdt-apex-anonymous-overlay textarea')!;
+    const editor = document.querySelector<HTMLTextAreaElement>('.sfdt-view-overlay textarea')!;
     expect(editor.value).toContain('System.debug');
-    const labels = Array.from(document.querySelectorAll('.sfdt-apex-anonymous-overlay button')).map((b) => b.textContent);
+    const labels = Array.from(document.querySelectorAll('.sfdt-view-overlay button')).map((b) => b.textContent);
     expect(labels).toContain('Execute');
   });
 
@@ -273,13 +273,13 @@ describe('apex-anonymous — execute (log capture off)', () => {
     const feature = createApexAnonymousFeature({ api: fakeApi({ apiGet: apiGet as unknown as SalesforceApiClient['apiGet'] }) });
     await feature.onActivate?.();
     await flush();
-    const runBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-apex-anonymous-overlay button')).find(
+    const runBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find(
       (b) => b.textContent === 'Execute',
     )!;
     runBtn.click();
     await flush();
     expect(apiGet).toHaveBeenCalledWith(expect.stringContaining('executeAnonymous'), expect.objectContaining({ anonymousBody: expect.any(String) }));
-    const overlayText = document.querySelector('.sfdt-apex-anonymous-overlay')?.textContent ?? '';
+    const overlayText = document.querySelector('.sfdt-view-overlay')?.textContent ?? '';
     expect(overlayText).toContain('✓ Success');
     expect(overlayText).toContain('Compiled and executed successfully.');
     // historyEnabled true → the run is recorded.
@@ -293,9 +293,9 @@ describe('apex-anonymous — execute (log capture off)', () => {
     const feature = createApexAnonymousFeature({ api });
     await feature.onActivate?.();
     await flush();
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-apex-anonymous-overlay button')).find((b) => b.textContent === 'Execute')!.click();
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find((b) => b.textContent === 'Execute')!.click();
     await flush();
-    const text = document.querySelector('.sfdt-apex-anonymous-overlay')?.textContent ?? '';
+    const text = document.querySelector('.sfdt-view-overlay')?.textContent ?? '';
     expect(text).toContain('✗ Failed');
     expect(text).toContain('bad token');
   });
@@ -305,9 +305,9 @@ describe('apex-anonymous — execute (log capture off)', () => {
     const feature = createApexAnonymousFeature({ api: fakeApi({ apiGet: apiGet as unknown as SalesforceApiClient['apiGet'] }) });
     await feature.onActivate?.();
     await flush();
-    const editor = document.querySelector<HTMLTextAreaElement>('.sfdt-apex-anonymous-overlay textarea')!;
+    const editor = document.querySelector<HTMLTextAreaElement>('.sfdt-view-overlay textarea')!;
     editor.value = '   ';
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-apex-anonymous-overlay button')).find((b) => b.textContent === 'Execute')!.click();
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find((b) => b.textContent === 'Execute')!.click();
     await flush();
     expect(apiGet).not.toHaveBeenCalled();
     expect(document.querySelector('.sfdt-toast')?.textContent).toContain('Enter some Apex');
@@ -322,9 +322,9 @@ describe('apex-anonymous — execute (log capture off)', () => {
     const feature = createApexAnonymousFeature({ api });
     await feature.onActivate?.();
     await flush();
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-apex-anonymous-overlay button')).find((b) => b.textContent === 'Execute')!.click();
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find((b) => b.textContent === 'Execute')!.click();
     await flush();
-    expect(document.querySelector('.sfdt-apex-anonymous-overlay')?.textContent).toContain('REQUEST_LIMIT_EXCEEDED');
+    expect(document.querySelector('.sfdt-view-overlay')?.textContent).toContain('REQUEST_LIMIT_EXCEEDED');
   });
 
   it('Ctrl+Enter in the editor triggers execution', async () => {
@@ -332,7 +332,7 @@ describe('apex-anonymous — execute (log capture off)', () => {
     const feature = createApexAnonymousFeature({ api: fakeApi({ apiGet: apiGet as unknown as SalesforceApiClient['apiGet'] }) });
     await feature.onActivate?.();
     await flush();
-    const editor = document.querySelector<HTMLTextAreaElement>('.sfdt-apex-anonymous-overlay textarea')!;
+    const editor = document.querySelector<HTMLTextAreaElement>('.sfdt-view-overlay textarea')!;
     editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
     await flush();
     expect(apiGet).toHaveBeenCalled();
@@ -343,7 +343,7 @@ describe('apex-anonymous — execute (log capture off)', () => {
     const feature = createApexAnonymousFeature({ api: fakeApi() });
     await feature.onActivate?.();
     await flush();
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-apex-anonymous-overlay button')).find((b) => b.textContent === 'Save snippet')!.click();
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find((b) => b.textContent === 'Save snippet')!.click();
     await flush();
     const snips = await readApexSnippets();
     expect(snips[0]?.name).toBe('my snippet');
@@ -354,7 +354,7 @@ describe('apex-anonymous — execute (log capture off)', () => {
     const feature = createApexAnonymousFeature({ api: fakeApi() });
     await feature.onActivate?.();
     await flush();
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-apex-anonymous-overlay button')).find((b) => b.textContent === 'Execute')!.click();
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find((b) => b.textContent === 'Execute')!.click();
     await flush();
     expect(await readApexHistory()).toEqual([]);
   });
@@ -392,12 +392,12 @@ describe('apex-anonymous — execute with log capture', () => {
     const feature = createApexAnonymousFeature({ api });
     await feature.onActivate?.();
     await flush();
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-apex-anonymous-overlay button')).find((b) => b.textContent === 'Execute')!.click();
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find((b) => b.textContent === 'Execute')!.click();
     await flush();
 
-    const overlayText = document.querySelector('.sfdt-apex-anonymous-overlay')?.textContent ?? '';
+    const overlayText = document.querySelector('.sfdt-view-overlay')?.textContent ?? '';
     expect(overlayText).toContain('log ready');
-    const openLogBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-apex-anonymous-overlay button')).find(
+    const openLogBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find(
       (b) => b.textContent === '🪵 Open log',
     )!;
     expect(openLogBtn.style.display).not.toBe('none');
@@ -405,7 +405,7 @@ describe('apex-anonymous — execute with log capture', () => {
     openLogBtn.click();
     await flush();
     expect(api.apiGetText).toHaveBeenCalledWith(expect.stringContaining('/ApexLog/07Lnew/Body'));
-    expect(document.querySelector('.sfdt-apex-anonymous-overlay')?.textContent).toContain('USER_DEBUG|captured');
+    expect(document.querySelector('.sfdt-view-overlay')?.textContent).toContain('USER_DEBUG|captured');
   });
 
   it('notes "could not identify user" when no identity is resolvable', async () => {
@@ -419,8 +419,8 @@ describe('apex-anonymous — execute with log capture', () => {
     const feature = createApexAnonymousFeature({ api });
     await feature.onActivate?.();
     await flush();
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-apex-anonymous-overlay button')).find((b) => b.textContent === 'Execute')!.click();
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find((b) => b.textContent === 'Execute')!.click();
     await flush();
-    expect(document.querySelector('.sfdt-apex-anonymous-overlay')?.textContent).toContain('could not identify user');
+    expect(document.querySelector('.sfdt-view-overlay')?.textContent).toContain('could not identify user');
   });
 });
