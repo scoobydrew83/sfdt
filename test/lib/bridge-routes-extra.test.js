@@ -71,6 +71,17 @@ const { fetchInventorySpy, diffInventoriesSpy } = vi.hoisted(() => ({
 vi.mock('../../src/lib/org-inventory.js', () => ({ fetchInventory: fetchInventorySpy }));
 vi.mock('../../src/lib/org-diff.js', () => ({ diffInventories: diffInventoriesSpy }));
 
+const { isAiAvailableSpy, runAiPromptSpy } = vi.hoisted(() => ({
+  isAiAvailableSpy: vi.fn(),
+  runAiPromptSpy: vi.fn(),
+}));
+vi.mock('../../src/lib/ai.js', async (importActual) => ({
+  ...(await importActual()),
+  isAiAvailable: isAiAvailableSpy,
+  aiUnavailableMessage: () => 'AI provider not installed',
+  runAiPrompt: runAiPromptSpy,
+}));
+
 import request from 'supertest';
 import { createGuiApp } from '../../src/lib/gui-server/index.js';
 import { clearBridgeTokenCache } from '../../src/lib/bridge/token.js';
@@ -230,6 +241,54 @@ describe('POST /api/bridge/exchange — scan / compare / drift dispatch', () => 
     expect(res.status).toBe(200);
     expect(res.body.data.available).toBe(false);
     expect(res.body.data.hint).toMatch(/sfdt drift/);
+  });
+});
+
+describe('POST /api/bridge/exchange — ai dispatch', () => {
+  const AI_CONFIG = { ...ROOTED_CONFIG, features: { ai: true }, ai: { provider: 'claude' } };
+
+  it('runs the prompt through the configured provider when AI is enabled', async () => {
+    isAiAvailableSpy.mockResolvedValue(true);
+    runAiPromptSpy.mockResolvedValue('the answer');
+    const aiApp = createGuiApp(AI_CONFIG, VERSION, PORT);
+    const res = await post(aiApp, { requestId: 'ai1', kind: 'ai', prompt: 'why?' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.data.response).toBe('the answer');
+    expect(res.body.data.provider).toBe('claude');
+    expect(runAiPromptSpy).toHaveBeenCalledWith('why?', expect.objectContaining({ aiEnabled: true, interactive: false }));
+    await aiApp.cleanup?.();
+  });
+
+  it('folds provided context into the prompt', async () => {
+    isAiAvailableSpy.mockResolvedValue(true);
+    runAiPromptSpy.mockResolvedValue('ok');
+    const aiApp = createGuiApp(AI_CONFIG, VERSION, PORT);
+    await post(aiApp, { requestId: 'ai2', kind: 'ai', prompt: 'explain', context: { flow: 'My_Flow' } });
+    expect(runAiPromptSpy.mock.calls[0][0]).toMatch(/explain[\s\S]*My_Flow/);
+    await aiApp.cleanup?.();
+  });
+
+  it('reports REQUEST_INVALID when the provider is unavailable', async () => {
+    isAiAvailableSpy.mockResolvedValue(false);
+    const aiApp = createGuiApp(AI_CONFIG, VERSION, PORT);
+    const res = await post(aiApp, { requestId: 'ai3', kind: 'ai', prompt: 'why?' });
+    expect(res.body.ok).toBe(false);
+    expect(res.body.code).toBe('REQUEST_INVALID');
+    expect(res.body.error).toMatch(/not installed/);
+    await aiApp.cleanup?.();
+  });
+
+  it('maps a provider throw to INTERNAL_ERROR', async () => {
+    isAiAvailableSpy.mockResolvedValue(true);
+    runAiPromptSpy.mockRejectedValue(new Error('claude crashed'));
+    const aiApp = createGuiApp(AI_CONFIG, VERSION, PORT);
+    const res = await post(aiApp, { requestId: 'ai4', kind: 'ai', prompt: 'why?' });
+    expect(res.status).toBe(200); // handler catches and returns an error response
+    expect(res.body.ok).toBe(false);
+    expect(res.body.code).toBe('INTERNAL_ERROR');
+    expect(res.body.error).toMatch(/claude crashed/);
+    await aiApp.cleanup?.();
   });
 });
 

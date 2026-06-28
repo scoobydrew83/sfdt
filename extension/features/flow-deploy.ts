@@ -32,7 +32,7 @@ function describeBridgeError(response: SfdtResponse): string {
     case 'BRIDGE_FORBIDDEN':
       return 'sfdt bridge rejected this origin. Make sure the extension is paired with the right machine.';
     case 'NOT_IMPLEMENTED':
-      return 'That bridge action is not implemented yet (rollback still pending).';
+      return 'That bridge action is not available on this version of sfdt — update the CLI and retry.';
     case 'BRIDGE_OFFLINE':
       return 'sfdt is not running. Start `sfdt ui` or install the native messaging host.';
     default:
@@ -93,20 +93,26 @@ export function createFlowDeployFeature(options: FlowDeployFeatureOptions = {}):
       }
 
       showDeployModal(doc, async (action) => {
-        if (action === 'rollback') {
-          // Server-side rollback returns NOT_IMPLEMENTED; skip the
-          // metadata-fetch round-trip and surface the error directly.
-          const response = await dispatchBridge('rollback', { flowId, toVersion: 1 });
-          showToast(describeBridgeError(response), { kind: 'error', doc });
-          return;
-        }
-
+        // Both deploy and rollback need the Flow's developer name, not the URL Id.
         showToast('Resolving Flow metadata…', { doc });
         let flowApiName: string;
         try {
           flowApiName = await resolveFlowApiName(api, flowId);
         } catch (err) {
           showToast(err instanceof Error ? err.message : String(err), { kind: 'error', doc });
+          return;
+        }
+
+        if (action === 'rollback') {
+          // Rollback = deactivate the active version (Tooling PATCH, toVersion=0).
+          showToast(`Rolling back ${flowApiName}…`, { doc });
+          const response = await dispatchBridge('rollback', { flowApiName, flowId, toVersion: 0 });
+          if (response.ok) {
+            const data = getBridgeData<{ status?: string; summary?: string }>(response);
+            showToast(data.summary ?? `Flow "${flowApiName}" deactivated`, { kind: 'success', doc });
+          } else {
+            showToast(describeBridgeError(response), { kind: 'error', doc });
+          }
           return;
         }
 

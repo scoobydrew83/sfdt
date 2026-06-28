@@ -161,10 +161,10 @@ export function mountBridgeRoutes(app, { port, version, config, projectRoot, con
 /**
  * Dispatch a validated SfdtRequest to the correct handler.
  *
- * Phase 2 implements ping/version inline. The other kinds return
- * NOT_IMPLEMENTED — the contract is wired up end-to-end so the extension
- * can be built (Phase 3), then individual handlers fill in as Phases 4–6
- * land.
+ * All contract kinds are now handled: ping/version inline; quality/deploy/
+ * rollback/ai/scan/compare/drift/org-health/telemetry.snapshot via their
+ * handlers (each keeps its own fetch/runner). Unknown kinds are rejected by
+ * the contract validator before reaching here.
  */
 async function dispatch(request, { version, config, projectRoot, logDir, makeSuccessResponse, makeErrorResponse }) {
   switch (request.kind) {
@@ -415,12 +415,42 @@ async function dispatch(request, { version, config, projectRoot, logDir, makeSuc
         components,
       });
     }
-    case 'ai':
-      return makeErrorResponse(
-        request.requestId,
-        `Request kind "${request.kind}" is not yet implemented on the bridge.`,
-        'NOT_IMPLEMENTED',
-      );
+    case 'ai': {
+      // Run the prompt through the project's configured AI provider — the same
+      // `runAiPrompt` the `sfdt ai prompt` command uses, which already redacts
+      // sensitive data, wraps an anti-injection preamble, and runs the provider
+      // in a read-only tool sandbox. Gated on the project opting into AI.
+      if (!config) {
+        return makeErrorResponse(request.requestId, 'No config resolved on the bridge', 'INTERNAL_ERROR');
+      }
+      const { isAiAvailable, aiUnavailableMessage, runAiPrompt } = await import('../ai.js');
+      if (!config.features?.ai) {
+        return makeErrorResponse(
+          request.requestId,
+          'AI features are disabled for this project. Set "features.ai": true in .sfdt/config.json.',
+          'REQUEST_INVALID',
+        );
+      }
+      if (!(await isAiAvailable(config))) {
+        return makeErrorResponse(request.requestId, aiUnavailableMessage(config), 'REQUEST_INVALID');
+      }
+      let prompt = request.prompt;
+      if (request.context && typeof request.context === 'object' && Object.keys(request.context).length > 0) {
+        prompt += `\n\n--- Context ---\n${JSON.stringify(request.context, null, 2)}`;
+      }
+      try {
+        const result = await runAiPrompt(prompt, { config, aiEnabled: true, interactive: false });
+        if (result == null) {
+          return makeErrorResponse(request.requestId, 'AI provider returned no result.', 'INTERNAL_ERROR');
+        }
+        return makeSuccessResponse(request.requestId, {
+          response: typeof result === 'string' ? result : String(result),
+          provider: config.ai?.provider ?? 'claude',
+        });
+      } catch (err) {
+        return makeErrorResponse(request.requestId, `AI request failed: ${err.message}`, 'INTERNAL_ERROR');
+      }
+    }
     default:
       return makeErrorResponse(
         request.requestId,
