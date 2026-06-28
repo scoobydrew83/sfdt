@@ -33,6 +33,8 @@ export const AUDIT_DEFAULTS = {
   licenseWarnThreshold: 0.9,
   inactiveUserDays: 90,
   minApiVersion: 45,
+  fieldDescriptionMaxMissing: 0,
+  connectedAppFlagPermissive: true,
 };
 
 // Setup-audit-trail actions/sections that warrant a closer look. Matched as
@@ -280,6 +282,192 @@ export async function checkApiVersions(orgAlias, { minApiVersion = AUDIT_DEFAULT
   }
 }
 
+/**
+ * Inactive flows — flow definitions with no active version (deactivated or
+ * draft-only automations that clutter the org and can mask intent).
+ */
+export async function checkInactiveFlows(orgAlias) {
+  const id = 'inactive-flows';
+  const title = 'Inactive flows';
+  try {
+    const rows = await query(
+      orgAlias,
+      `SELECT DeveloperName, ActiveVersionId FROM FlowDefinition WHERE ActiveVersionId = null ORDER BY DeveloperName`,
+      { tooling: true },
+    );
+    const findings = rows.map((r) => ({ name: r.DeveloperName }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} flow(s) with no active version`
+        : 'All flow definitions have an active version',
+      findings);
+  } catch (err) {
+    return errored(id, title, err);
+  }
+}
+
+/**
+ * Unused permission sets — custom permission sets (not profile-owned) with no
+ * user assignments, directly or via an assigned permission set group. Mirrors
+ * the client-side diff used by checkMfa because Salesforce rejects the semi-join
+ * (PermissionSet WHERE Id NOT IN (SELECT PermissionSetId FROM
+ * PermissionSetAssignment)).
+ */
+export async function checkUnusedPermsets(orgAlias) {
+  const id = 'unused-permsets';
+  const title = 'Unused permission sets';
+  try {
+    const assignments = await query(orgAlias, 'SELECT PermissionSetId FROM PermissionSetAssignment');
+    const assigned = new Set(assignments.map((a) => a.PermissionSetId));
+    // A permission set used only inside an assigned permission set group has no
+    // direct PermissionSetAssignment row, so fold in group membership to avoid
+    // false positives.
+    const groupComponents = await query(orgAlias, 'SELECT PermissionSetId FROM PermissionSetGroupComponent');
+    for (const g of groupComponents) assigned.add(g.PermissionSetId);
+    const permsets = await query(
+      orgAlias,
+      `SELECT Id, Name, Label FROM PermissionSet WHERE IsOwnedByProfile = false ORDER BY Name`,
+    );
+    const findings = permsets
+      .filter((p) => !assigned.has(p.Id))
+      .map((p) => ({ name: p.Label || p.Name }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} permission set(s) with no user assignments`
+        : 'All custom permission sets are assigned',
+      findings);
+  } catch (err) {
+    return errored(id, title, err);
+  }
+}
+
+/**
+ * Connected apps review — surfaces connected apps that permit all users (admin
+ * approval not required), which widens the integration attack surface.
+ */
+export async function checkConnectedApps(orgAlias, { flagPermissive = AUDIT_DEFAULTS.connectedAppFlagPermissive } = {}) {
+  const id = 'connected-apps';
+  const title = 'Connected apps review';
+  try {
+    const rows = await query(
+      orgAlias,
+      `SELECT Name, OptionsAllowAdminApprovedUsersOnly FROM ConnectedApplication ORDER BY Name`,
+    );
+    const findings = flagPermissive
+      ? rows
+          .filter((r) => r.OptionsAllowAdminApprovedUsersOnly === false)
+          .map((r) => ({ name: r.Name, detail: 'All users permitted (admin approval not required)' }))
+      : [];
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} connected app(s) permit all users`
+        : `${rows.length} connected app(s); none flagged`,
+      findings);
+  } catch (err) {
+    return errored(id, title, err);
+  }
+}
+
+/**
+ * Missing field descriptions — custom fields without a Description, which hurts
+ * maintainability and auto-generated docs. Capped to keep the Tooling query
+ * bounded; very large orgs may under-count (documented).
+ */
+export async function checkFieldDescriptions(orgAlias, { maxMissing = AUDIT_DEFAULTS.fieldDescriptionMaxMissing } = {}) {
+  const id = 'field-descriptions';
+  const title = 'Missing field descriptions';
+  try {
+    const rows = await query(
+      orgAlias,
+      `SELECT DeveloperName, TableEnumOrId FROM CustomField WHERE NamespacePrefix = null AND Description = null ORDER BY TableEnumOrId LIMIT 2000`,
+      { tooling: true },
+    );
+    const findings = rows.map((r) => ({ name: `${r.TableEnumOrId}.${r.DeveloperName}` }));
+    const over = findings.length > maxMissing;
+    return result(id, title, over ? 'warn' : 'ok',
+      over
+        ? `${findings.length} custom field(s) missing a description (threshold ${maxMissing})`
+        : `${findings.length} custom field(s) missing a description (within threshold ${maxMissing})`,
+      findings);
+  } catch (err) {
+    return errored(id, title, err);
+  }
+}
+
+/**
+ * Unreferenced Apex — non-test classes that no other metadata component depends
+ * on (Tooling MetadataComponentDependency). Complements the coverage-based
+ * `unused-apex` heuristic with a dependency-graph view.
+ */
+export async function checkApexUnreferenced(orgAlias) {
+  const id = 'apex-unreferenced';
+  const title = 'Unreferenced Apex';
+  try {
+    const classes = await query(
+      orgAlias,
+      `SELECT Name FROM ApexClass WHERE NamespacePrefix = null ORDER BY Name`,
+      { tooling: true },
+    );
+    const deps = await query(
+      orgAlias,
+      `SELECT RefMetadataComponentName FROM MetadataComponentDependency WHERE RefMetadataComponentType = 'ApexClass'`,
+      { tooling: true },
+    );
+    // MetadataComponentDependency is empty/unsupported in some orgs; without it
+    // every class would look unreferenced, so skip rather than false-positive.
+    if (deps.length === 0) {
+      return result(id, title, 'warn',
+        'No dependency data available (MetadataComponentDependency empty or unsupported); unreferenced-Apex detection skipped', []);
+    }
+    const referenced = new Set(deps.map((d) => d.RefMetadataComponentName));
+    const findings = classes
+      .filter((c) => !/(^test|test$)/i.test(c.Name) && !referenced.has(c.Name))
+      .map((c) => ({ name: c.Name }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} Apex class(es) not referenced by any component (review for removal)`
+        : 'All Apex classes are referenced',
+      findings);
+  } catch (err) {
+    return errored(id, title, err);
+  }
+}
+
+/**
+ * Object access lint — custom objects that have permission entries but grant
+ * Read to nobody. Objects-only heuristic via ObjectPermissions aggregation;
+ * full field-level lint is deferred to a later phase. Objects with NO permission
+ * rows at all are not surfaced here (a separate, known gap).
+ */
+export async function checkLintAccess(orgAlias) {
+  const id = 'lint-access';
+  const title = 'Object access';
+  try {
+    // Filter custom objects client-side: SOQL LIKE treats '_' as a wildcard, so
+    // a `LIKE '%__c'` filter would over-match — fetch grants and match the
+    // literal '__c' suffix in JS instead.
+    const rows = await query(orgAlias, `SELECT SobjectType, PermissionsRead FROM ObjectPermissions`);
+    const custom = rows.filter((r) => typeof r.SobjectType === 'string' && r.SobjectType.endsWith('__c'));
+    if (custom.length === 0) {
+      return result(id, title, 'ok', 'No custom-object permission entries to evaluate', []);
+    }
+    const readByType = new Map();
+    for (const r of custom) {
+      readByType.set(r.SobjectType, (readByType.get(r.SobjectType) || false) || r.PermissionsRead === true);
+    }
+    const findings = [...readByType.entries()]
+      .filter(([, hasRead]) => !hasRead)
+      .map(([type]) => ({ name: type, detail: 'No profile or permission set grants Read' }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} custom object(s) with no Read access granted`
+        : 'All custom objects with permission entries grant Read',
+      findings);
+  } catch (err) {
+    return errored(id, title, err);
+  }
+}
+
 export const CHECKS = {
   audittrail: checkAuditTrail,
   licenses: checkLicenses,
@@ -287,6 +475,12 @@ export const CHECKS = {
   'unused-apex': checkUnusedApex,
   'inactive-users': checkInactiveUsers,
   'api-versions': checkApiVersions,
+  'inactive-flows': checkInactiveFlows,
+  'unused-permsets': checkUnusedPermsets,
+  'connected-apps': checkConnectedApps,
+  'field-descriptions': checkFieldDescriptions,
+  'apex-unreferenced': checkApexUnreferenced,
+  'lint-access': checkLintAccess,
 };
 
 export const CHECK_IDS = Object.keys(CHECKS);

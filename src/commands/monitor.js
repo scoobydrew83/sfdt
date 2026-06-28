@@ -20,6 +20,9 @@ function buildParams(config) {
     limits: { warnThreshold: m.limitWarnThreshold ?? MONITOR_DEFAULTS.limitWarnThreshold },
     errors: { lookbackDays: m.errorLookbackDays ?? MONITOR_DEFAULTS.errorLookbackDays },
     health: { minScore: m.healthMinScore ?? MONITOR_DEFAULTS.healthMinScore },
+    'org-info': { trialWarnDays: m.orgInfoTrialWarnDays ?? MONITOR_DEFAULTS.orgInfoTrialWarnDays },
+    'deploy-history': { lookback: m.deployHistoryLookback ?? MONITOR_DEFAULTS.deployHistoryLookback },
+    'deprecated-api': { lookbackDays: m.deprecatedApiLookbackDays ?? MONITOR_DEFAULTS.deprecatedApiLookbackDays },
   };
 }
 
@@ -134,7 +137,7 @@ function printReport(snapshot) {
 export function registerMonitorCommand(program) {
   const monitor = program
     .command('monitor')
-    .description('Monitor org health — limits, Apex failures, security score, and metadata backup');
+    .description('Monitor org health — limits, Apex failures, security score, org info, deployment history, legacy API usage, paused flows, and metadata backup');
 
   monitor
     .command('all', { isDefault: true })

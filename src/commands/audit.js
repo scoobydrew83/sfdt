@@ -21,6 +21,8 @@ function buildParams(config) {
     licenses: { warnThreshold: a.licenseWarnThreshold ?? AUDIT_DEFAULTS.licenseWarnThreshold },
     'inactive-users': { lookbackDays: a.inactiveUserDays ?? AUDIT_DEFAULTS.inactiveUserDays },
     'api-versions': { minApiVersion: a.minApiVersion ?? AUDIT_DEFAULTS.minApiVersion },
+    'connected-apps': { flagPermissive: a.connectedAppFlagPermissive ?? AUDIT_DEFAULTS.connectedAppFlagPermissive },
+    'field-descriptions': { maxMissing: a.fieldDescriptionMaxMissing ?? AUDIT_DEFAULTS.fieldDescriptionMaxMissing },
   };
 }
 
@@ -98,7 +100,7 @@ function printReport(snapshot) {
 export function registerAuditCommand(program) {
   const audit = program
     .command('audit')
-    .description('Diagnose org health — audit trail, licenses, MFA, unused Apex, inactive users, API versions');
+    .description('Diagnose org health — audit trail, licenses, MFA, unused/unreferenced Apex, inactive users & flows, API versions, permission sets, connected apps, field descriptions, object access');
 
   audit
     .command('all', { isDefault: true })

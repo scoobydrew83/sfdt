@@ -136,14 +136,14 @@ const TOOLS = [
   },
   {
     name: 'sfdt_audit',
-    description: 'Run read-only org health diagnostics (suspicious setup audit trail, license usage, MFA coverage, unused Apex classes, inactive users, deprecated API versions). Returns a normalised snapshot of check results.',
+    description: 'Run read-only org health diagnostics (suspicious setup audit trail, license usage, MFA coverage, unused Apex classes, inactive users, deprecated API versions, inactive flows, unused permission sets, connected apps, missing field descriptions, unreferenced Apex, object access lint). Returns a normalised snapshot of check results.',
     inputSchema: {
       type: 'object',
       properties: {
         org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
         check: {
           type: 'string',
-          enum: ['all', 'audittrail', 'licenses', 'mfa', 'unused-apex', 'inactive-users', 'api-versions'],
+          enum: ['all', 'audittrail', 'licenses', 'mfa', 'unused-apex', 'inactive-users', 'api-versions', 'inactive-flows', 'unused-permsets', 'connected-apps', 'field-descriptions', 'apex-unreferenced', 'lint-access'],
           description: 'Run a single named check, or "all" (default).'
         }
       }
@@ -151,14 +151,14 @@ const TOOLS = [
   },
   {
     name: 'sfdt_monitor',
-    description: 'Run org monitoring checks (org limit consumption, recent Apex job failures, security health-check score) and optionally a full metadata backup. Returns a normalised snapshot of check results.',
+    description: 'Run org monitoring checks (org limit consumption, recent Apex job failures, security health-check score, org info, recent deployment health, legacy API usage, paused flow interviews) and optionally a full metadata backup. Returns a normalised snapshot of check results.',
     inputSchema: {
       type: 'object',
       properties: {
         org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
         check: {
           type: 'string',
-          enum: ['all', 'limits', 'errors', 'health', 'backup'],
+          enum: ['all', 'limits', 'errors', 'health', 'org-info', 'deploy-history', 'deprecated-api', 'flow-errors', 'backup'],
           description: 'Run a single named check, "backup" for a metadata backup, or "all" (default).'
         },
         backup: { type: 'boolean', description: 'When running "all", also perform a metadata backup.' }
