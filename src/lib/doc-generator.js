@@ -500,7 +500,23 @@ async function generateRoleGuides(meta, config, { roles, write, root, onProgress
       `(${components.length} component${components.length === 1 ? '' : 's'} × ${resolved.length} role${resolved.length === 1 ? '' : 's'})…`,
   );
 
-  const template = await getPrompt('doc-role-guide', config._configDir);
+  // Per-metadata-type prompt selection: use a type-tuned prompt when available,
+  // falling back to the generic role-guide template. Cached per type so each is
+  // read at most once.
+  const roleTemplate = await getPrompt('doc-role-guide', config._configDir);
+  const TYPE_PROMPT = { apex: 'doc-apex', flow: 'doc-flow', lwc: 'doc-lwc', object: 'doc-object' };
+  const templateCache = new Map();
+  const templateForType = async (type) => {
+    if (templateCache.has(type)) return templateCache.get(type);
+    const key = TYPE_PROMPT[type];
+    let tmpl = roleTemplate;
+    if (key) {
+      const specific = await getPrompt(key, config._configDir);
+      if (specific && specific.trim()) tmpl = specific;
+    }
+    templateCache.set(type, tmpl);
+    return tmpl;
+  };
   const guideFiles = [];
   let written = 0;
   const skipped = [];
@@ -508,6 +524,7 @@ async function generateRoleGuides(meta, config, { roles, write, root, onProgress
 
   const runJob = async ({ type, comp, role }) => {
     const meta2 = ROLE_GUIDES[role];
+    const template = await templateForType(type);
     const prompt = interpolate(template, {
       role: meta2.label,
       componentType: type,

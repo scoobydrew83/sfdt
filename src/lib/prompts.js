@@ -64,6 +64,26 @@ export const PROMPT_META = {
     description: 'Generates a role-targeted guide (Developer/Admin/User/DevOps) for one Salesforce component. Variables: {{role}}, {{componentType}}, {{componentName}}, {{roleInstructions}}, {{source}}.',
     feature: 'sfdt docs generate --roles',
   },
+  'doc-apex': {
+    label: 'Documentation Guide — Apex',
+    description: 'Apex-tuned role guide (classes/triggers). Same variables as doc-role-guide. Falls back to doc-role-guide if blank.',
+    feature: 'sfdt docs generate --roles (Apex components)',
+  },
+  'doc-flow': {
+    label: 'Documentation Guide — Flow',
+    description: 'Flow-tuned role guide. Same variables as doc-role-guide. Falls back to doc-role-guide if blank.',
+    feature: 'sfdt docs generate --roles (Flow components)',
+  },
+  'doc-lwc': {
+    label: 'Documentation Guide — LWC',
+    description: 'Lightning Web Component-tuned role guide. Same variables as doc-role-guide. Falls back to doc-role-guide if blank.',
+    feature: 'sfdt docs generate --roles (LWC components)',
+  },
+  'doc-object': {
+    label: 'Documentation Guide — Object',
+    description: 'Custom object/field-tuned role guide. Same variables as doc-role-guide. Falls back to doc-role-guide if blank.',
+    feature: 'sfdt docs generate --roles (Object components)',
+  },
 };
 
 // ─── Default prompts ──────────────────────────────────────────────────────────
@@ -448,6 +468,54 @@ For each fix: a concrete, minimal change (show the corrected Apex/metadata snipp
 One bullet on how to catch this earlier (preflight, test, manifest tweak).
 
 Be specific and grounded only in the output and files you inspect. Do not invent component names.`,
+
+  'doc-apex': `You are a Salesforce documentation expert writing a single {{role}}-level guide for the Apex {{componentType}} "{{componentName}}".
+
+Role focus:
+{{roleInstructions}}
+
+Apex-specific emphasis: public methods and their contracts; trigger context/handler pattern; governor-limit profile (SOQL/DML/callouts/heap, bulk-safety for 200+ records); sharing/security (with sharing, WITH SECURITY_ENFORCED, stripInaccessible); error handling; and which test classes cover it.
+
+Output ONLY a Markdown guide — no preamble, no commentary, no surrounding code fences. Ground every statement in the source below or files you open with read-only tools; do not invent behavior.
+
+--- COMPONENT SOURCE ---
+{{source}}`,
+
+  'doc-flow': `You are a Salesforce documentation expert writing a single {{role}}-level guide for the Flow "{{componentName}}" ({{componentType}}).
+
+Role focus:
+{{roleInstructions}}
+
+Flow-specific emphasis: trigger type and entry conditions (record-triggered/scheduled/screen/autolaunched); the high-level path through key elements and decisions; DML and external calls performed; fault-path/error handling; and side effects on records or other automation. Avoid element-by-element narration — explain intent and outcomes.
+
+Output ONLY a Markdown guide — no preamble, no commentary, no surrounding code fences. Ground every statement in the source below; do not invent steps.
+
+--- COMPONENT SOURCE ---
+{{source}}`,
+
+  'doc-lwc': `You are a Salesforce documentation expert writing a single {{role}}-level guide for the Lightning Web Component "{{componentName}}" ({{componentType}}).
+
+Role focus:
+{{roleInstructions}}
+
+LWC-specific emphasis: public @api properties and exposed events; wired/imperative Apex and data sources; where the component is surfaced (App/Record/Home page, targets); key UX behavior; and error/loading states. Keep developer details (lifecycle, reactivity) for the Developer role and click-path/usage for User/Admin roles.
+
+Output ONLY a Markdown guide — no preamble, no commentary, no surrounding code fences. Ground every statement in the source below; do not invent props or events.
+
+--- COMPONENT SOURCE ---
+{{source}}`,
+
+  'doc-object': `You are a Salesforce documentation expert writing a single {{role}}-level guide for the {{componentType}} "{{componentName}}".
+
+Role focus:
+{{roleInstructions}}
+
+Object-specific emphasis: the object's business purpose; notable custom fields and their meaning; relationships to other objects (lookups/master-detail); validation rules and required fields; and automation that fires on its records. For Admin/User roles, favor data-entry and reporting guidance; for Developer/DevOps, favor schema and integration considerations.
+
+Output ONLY a Markdown guide — no preamble, no commentary, no surrounding code fences. Ground every statement in the source below; do not invent fields.
+
+--- COMPONENT SOURCE ---
+{{source}}`,
 };
 
 // ─── Override management ──────────────────────────────────────────────────────
