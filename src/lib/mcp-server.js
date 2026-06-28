@@ -96,18 +96,22 @@ const TOOLS = [
   },
   {
     name: 'sfdt_deploy',
-    description: 'Perform a full metadata deployment (deploy start) to a target Salesforce org. Potentially destructive.',
+    description: 'Perform a metadata deployment to a target Salesforce org. Supports a smart delta mode (only git-changed metadata with smart test selection). Potentially destructive.',
     inputSchema: {
       type: 'object',
       properties: {
-        manifest: { type: 'string', description: 'Path to package.xml manifest.' },
+        manifest: { type: 'string', description: 'Path to package.xml manifest (ignored when smart=true).' },
         targetOrg: { type: 'string', description: 'Org alias.' },
         testLevel: { type: 'string', enum: ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg'] },
         testClasses: { type: 'array', items: { type: 'string' }, description: 'Specific test classes to run.' },
         destructiveTiming: { type: 'string', enum: ['pre', 'post', 'none', 'only'] },
-        confirmExecution: { type: 'boolean', description: 'Must be set to true to acknowledge safety and execute.' }
+        smart: { type: 'boolean', description: 'Smart delta deploy: only metadata changed between deltaBase and deltaHead, with smart test selection.' },
+        deltaBase: { type: 'string', description: 'Base git ref for smart delta (default: config or "main").' },
+        deltaHead: { type: 'string', description: 'Head git ref for smart delta (default: HEAD).' },
+        dryRun: { type: 'boolean', description: 'Validate only (no changes applied). Recommended for smart mode in CI.' },
+        confirmExecution: { type: 'boolean', description: 'Must be set to true to acknowledge safety and execute (not required when dryRun=true).' }
       },
-      required: ['targetOrg', 'confirmExecution']
+      required: ['targetOrg']
     }
   },
   {
@@ -412,14 +416,25 @@ export class SfdtMcpServer {
       }
 
       case 'sfdt_deploy': {
-        if (!args.confirmExecution) {
-          throw new Error('Deployment is a potentially destructive action. You must pass confirmExecution: true to acknowledge authorization.');
+        // A real (non-dry-run) deploy mutates the org and requires explicit ack.
+        if (!args.dryRun && !args.confirmExecution) {
+          throw new Error('A real deployment is a potentially destructive action. Pass confirmExecution: true (or dryRun: true to validate only).');
+        }
+
+        if (args.smart) {
+          // Smart delta deploy runs as a self-contained, non-interactive CLI path.
+          const cliArgs = ['deploy', '--smart', '--agent', '--target-org', args.targetOrg];
+          if (args.dryRun) cliArgs.push('--dry-run');
+          if (args.deltaBase) cliArgs.push('--delta-base', args.deltaBase);
+          if (args.deltaHead) cliArgs.push('--delta-head', args.deltaHead);
+          const { exitCode, stdout, stderr } = await this.#runCliCommand(cliArgs, { SFDT_NON_INTERACTIVE: 'true' });
+          return { exitCode, stdout, stderr };
         }
 
         const env = {
           SFDT_NON_INTERACTIVE: 'true',
           SFDT_TARGET_ORG: args.targetOrg,
-          SFDT_DRY_RUN: 'false',
+          SFDT_DRY_RUN: args.dryRun ? 'true' : 'false',
         };
         if (args.manifest) env.SFDT_MANIFEST_PATH = path.resolve(projectRoot, args.manifest);
         if (args.testLevel) env.SFDT_TEST_LEVEL = args.testLevel;
