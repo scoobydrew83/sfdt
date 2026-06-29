@@ -54,8 +54,24 @@ describe('retrofit', () => {
     expect(runSmartDeploy).not.toHaveBeenCalled();
   });
 
+  it('aborts before retrieving when the source tree is already dirty (auto-commit mode)', async () => {
+    // Pre-retrieve guard sees uncommitted work in the source path → must abort
+    // before touching the org, so pre-existing WIP is never bundled into the commit.
+    execa.mockImplementation((bin, args) => {
+      if (args[0] === 'status') return Promise.resolve({ stdout: ' M force-app/wip' });
+      return Promise.resolve({ stdout: '' });
+    });
+    await run(['--source', 'prod', '--target', 'uat', '--json']);
+    expect(process.exitCode).toBeGreaterThan(0);
+    expect(parallelRetrieve).not.toHaveBeenCalled();
+    expect(runSmartDeploy).not.toHaveBeenCalled();
+  });
+
   it('commits and validate-deploys to the target by default', async () => {
     execa.mockImplementation((bin, args) => {
+      // Pre-retrieve clean-tree guard is path-scoped (`status --porcelain -- <dir>`);
+      // it must see a clean tree. The post-retrieve scan (no `--`) sees the change.
+      if (args[0] === 'status' && args.includes('--')) return Promise.resolve({ stdout: '' });
       if (args[0] === 'status') return Promise.resolve({ stdout: ' M force-app/x' });
       return Promise.resolve({ stdout: '' }); // add, commit
     });
@@ -68,6 +84,7 @@ describe('retrofit', () => {
 
   it('does a real deploy with --execute', async () => {
     execa.mockImplementation((bin, args) => {
+      if (args[0] === 'status' && args.includes('--')) return Promise.resolve({ stdout: '' });
       if (args[0] === 'status') return Promise.resolve({ stdout: ' M force-app/x' });
       return Promise.resolve({ stdout: '' });
     });

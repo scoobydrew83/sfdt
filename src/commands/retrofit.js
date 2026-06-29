@@ -40,6 +40,25 @@ async function runRetrofit(options) {
     if (!source) throw new Error('--source <alias> is required (the org to retrofit FROM)');
     if (!target && willDeploy) throw new Error('--target <alias> is required (the org to deploy TO), or pass --no-deploy');
 
+    // The metadata source dirs the retrieve writes into — also the only paths we
+    // ever stage (never `git add -A`, which would sweep in unrelated files).
+    const stagePaths = (config.packageDirectories?.map((d) => d.path).filter(Boolean))
+      || [config.defaultSourcePath || 'force-app'];
+
+    // When we'll auto-commit, refuse to start on a dirty source tree: the retrieve
+    // overwrites files in place, so pre-existing uncommitted work would be silently
+    // bundled into the machine retrofit commit. Make the user stash/commit first
+    // (or pass --no-commit to review + commit the result themselves).
+    if (willCommit) {
+      const pre = await execa('git', ['status', '--porcelain', '--', ...stagePaths], { cwd: projectRoot, reject: false });
+      if ((pre.stdout || '').trim()) {
+        throw new Error(
+          `Uncommitted changes in the metadata source path(s) (${stagePaths.join(', ')}). ` +
+            `Commit or stash them first, or re-run with --no-commit to review and commit the retrofit yourself.`,
+        );
+      }
+    }
+
     const metadataTypes = options.metadata
       ? options.metadata.split(',').map((s) => s.trim()).filter(Boolean)
       : DEFAULT_RETROFIT_TYPES;
@@ -79,11 +98,9 @@ async function runRetrofit(options) {
     }
 
     const msg = options.commitMsg || `chore: retrofit metadata from ${source}`;
-    // Stage only the metadata source dirs the retrieve writes into — never `git add -A`,
-    // which would sweep in pre-existing untracked files (a local .env, scratch files,
-    // unrelated WIP) and silently commit + deploy them.
-    const stagePaths = (config.packageDirectories?.map((d) => d.path).filter(Boolean))
-      || [config.defaultSourcePath || 'force-app'];
+    // Stage only the metadata source dirs (computed above) — never `git add -A`.
+    // Combined with the pre-retrieve clean-tree guard, the commit contains exactly
+    // what this retrieve produced.
     await execa('git', ['add', '--', ...stagePaths], { cwd: projectRoot });
     await execa('git', ['commit', '-m', msg], { cwd: projectRoot });
     if (!jsonMode) print.success(`Committed retrofit: ${msg}`);

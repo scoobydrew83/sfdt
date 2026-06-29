@@ -34,7 +34,10 @@ async function detectIsProd(org, config, options) {
   try {
     const { stdout } = await execa('sf', ['org', 'display', '--target-org', org, '--json']);
     const isSandbox = JSON.parse(stdout)?.result?.isSandbox;
-    return isSandbox === false;
+    // Fail safe to production for any non-`true` value: some org shapes (Dev Hubs,
+    // certain scratch orgs, older `sf` versions) omit `isSandbox`, and `undefined`
+    // must not be read as "non-prod" or we'd silently skip tests on a real org.
+    return isSandbox !== true;
   } catch {
     return true;
   }

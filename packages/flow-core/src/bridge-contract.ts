@@ -429,7 +429,7 @@ export function validateSfdtRequest(input: unknown): {
       if (input.targetOrg !== undefined && !isValidOrgAlias(input.targetOrg)) {
         errors.push({
           field: 'targetOrg',
-          reason: 'must match /^[A-Za-z0-9_.\\-@]+$/ if present',
+          reason: 'must match /^[A-Za-z0-9@][A-Za-z0-9_.\\-@]*$/ if present (first char alphanumeric or @)',
         });
       }
       if (input.validateOnly !== undefined && typeof input.validateOnly !== 'boolean') {
@@ -455,7 +455,7 @@ export function validateSfdtRequest(input: unknown): {
       if (input.targetOrg !== undefined && !isValidOrgAlias(input.targetOrg)) {
         errors.push({
           field: 'targetOrg',
-          reason: 'must match /^[A-Za-z0-9_.\\-@]+$/ if present',
+          reason: 'must match /^[A-Za-z0-9@][A-Za-z0-9_.\\-@]*$/ if present (first char alphanumeric or @)',
         });
       }
       break;
@@ -481,8 +481,14 @@ export function validateSfdtRequest(input: unknown): {
       }
       break;
     case 'compare':
-      if (!isNonEmptyString(input.left)) errors.push({ field: 'left', reason: 'must be a non-empty string' });
-      if (!isNonEmptyString(input.right)) errors.push({ field: 'right', reason: 'must be a non-empty string' });
+      // left/right are org aliases the bridge passes to `sf` — validate their
+      // format here too (matching deploy/rollback's targetOrg), not just non-empty.
+      if (!isValidOrgAlias(input.left)) {
+        errors.push({ field: 'left', reason: 'must match /^[A-Za-z0-9@][A-Za-z0-9_.\\-@]*$/' });
+      }
+      if (!isValidOrgAlias(input.right)) {
+        errors.push({ field: 'right', reason: 'must match /^[A-Za-z0-9@][A-Za-z0-9_.\\-@]*$/' });
+      }
       break;
     case 'org-health':
       // No fields beyond the envelope; the bridge reads snapshots from disk.

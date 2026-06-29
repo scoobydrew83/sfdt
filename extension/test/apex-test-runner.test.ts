@@ -71,7 +71,9 @@ describe('apex-test-runner feature', () => {
   beforeEach(clearBody);
 
   it('submits a run, polls for completion, and renders counts + failures', async () => {
-    const apiRequest = vi.fn((_method: string, _endpoint: string, _body?: unknown) => Promise.resolve('job1'));
+    // A realistic 18-char Salesforce AsyncApexJob id (707 prefix) — the runner now
+    // validates the id format before interpolating it into SOQL.
+    const apiRequest = vi.fn((_method: string, _endpoint: string, _body?: unknown) => Promise.resolve('707000000000000001'));
     const toolingQuery = vi.fn(async (soql: string) => {
       if (soql.includes('ApexTestRunResult')) {
         return { records: [{ Status: 'Completed' }], size: 1, done: true };

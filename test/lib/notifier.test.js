@@ -49,7 +49,23 @@ describe('resolveChannels', () => {
       notifications: { slack: { webhookUrl: 'https://hooks.slack.com/x' } },
     });
     expect(channels).toHaveLength(1);
-    expect(channels[0]).toMatchObject({ type: 'slack', events: null });
+    // Legacy channels are pinned to the original four lifecycle events — they must
+    // NOT auto-opt-in to newer events (e.g. snapshot) via a null/all-events filter.
+    expect(channels[0]).toMatchObject({
+      type: 'slack',
+      events: ['deploy-success', 'deploy-failure', 'test-failure', 'release-created'],
+    });
+  });
+
+  it('does not opt a legacy slack channel into the snapshot event', async () => {
+    const { dispatchSnapshot } = await import('../../src/lib/notifier.js');
+    const results = await dispatchSnapshot(
+      { org: 'x', checks: [{ id: 'a', status: 'warn' }], summary: {} },
+      { features: { notifications: true }, notifications: { slack: { webhookUrl: 'https://hooks.slack.com/x' } } },
+      { type: 'audit' },
+    );
+    // The legacy channel does not allow 'snapshot', so nothing is dispatched.
+    expect(results.results).toHaveLength(0);
   });
 
   it('does not synthesize legacy slack when the feature flag is off', () => {

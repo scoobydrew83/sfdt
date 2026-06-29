@@ -91,6 +91,11 @@ export function createWorkspaceTabs(opts: WorkspaceTabsOptions): WorkspaceTabs {
   }
 
   // Workspace sink: mount the feature's body/footer into the pending tool's pane.
+  // Single-instance by design — `setWorkspaceViewSink` writes a module-level
+  // singleton in present-view.ts. There is exactly one Workspace per page load
+  // (an org switch navigates via window.location, reloading the page), so this is
+  // never called twice in one lifetime. If that ever changes, the sink would need
+  // clearing on teardown to avoid stale-tab fallback-to-modal.
   setWorkspaceViewSink((view: PresentOpts): ViewHandle => {
     const pane = pendingPane;
     const toolId = pendingToolId;

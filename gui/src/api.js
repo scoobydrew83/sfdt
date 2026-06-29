@@ -132,11 +132,15 @@ async function fetchJson(path) {
   return res.json();
 }
 
-/** @returns {Promise<any>} */
+/**
+ * Bodyless DELETE (CSRF only — no Content-Type, since there's no request body).
+ * The single DELETE helper for the API; returns the parsed JSON response.
+ * @returns {Promise<any>}
+ */
 async function deleteJson(path) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'DELETE',
-    headers: await jsonHeaders(),
+    headers: { 'X-SFDT-CSRF': await getCsrfToken() },
   });
   if (!res.ok) { onMaybeAuthError(res); throw await httpError(res); }
   return res.json();
@@ -164,15 +168,6 @@ async function patchJson(path, body) {
   return res.json();
 }
 
-/** @returns {Promise<any>} */
-async function deleteRequest(path) {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'DELETE',
-    headers: { 'X-SFDT-CSRF': await getCsrfToken() },
-  });
-  if (!res.ok) { onMaybeAuthError(res); throw await httpError(res); }
-  return res.json();
-}
 
 export const api = {
   /** @returns {Promise<ProjectInfo>} */
@@ -252,7 +247,7 @@ export const api = {
   /** @returns {Promise<{ ok: boolean, key: string }>} */
   setPrompt:              (key, value) => patchJson(`/prompts/${encodeURIComponent(key)}`, { value }),
   /** @returns {Promise<{ ok: boolean, key: string }>} */
-  resetPrompt:            (key) => deleteRequest(`/prompts/${encodeURIComponent(key)}`),
+  resetPrompt:            (key) => deleteJson(`/prompts/${encodeURIComponent(key)}`),
   /** @returns {Promise<object>} */
   getConfig:              () => fetchJson('/config'),
   /** @returns {Promise<{ ok: boolean, key: string, value: any }>} */

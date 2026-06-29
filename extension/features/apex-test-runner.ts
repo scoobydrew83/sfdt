@@ -176,6 +176,13 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
         return;
       }
       const parentJobId = String(jobId);
+      // Defense-in-depth: parentJobId is interpolated into SOQL below. Salesforce
+      // ids are always 15/18-char alphanumeric — reject anything else so an
+      // unexpected response shape can't inject into the query.
+      if (!/^[A-Za-z0-9]{15,18}$/.test(parentJobId)) {
+        renderError(results, status, `Unexpected test run id from Salesforce: ${parentJobId}`);
+        return;
+      }
 
       status.textContent = 'Running tests…';
       let complete = false;

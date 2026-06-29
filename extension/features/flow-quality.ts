@@ -106,7 +106,9 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
       runBtn.disabled = true;
       try {
         const record = (await api.getFlowMetadata(name)) as { Metadata?: unknown };
-        const metadata = (record.Metadata ?? record) as never;
+        // Cast to runFlowQuality's input type (not `as never`) so a future signature
+        // change surfaces as a compile error here instead of an opaque runtime throw.
+        const metadata = (record.Metadata ?? record) as Parameters<typeof runFlowQuality>[0];
         renderScore(results, runFlowQuality(metadata, { flowApiName: name }));
         status.textContent = 'Done';
       } catch (err) {

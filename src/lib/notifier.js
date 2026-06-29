@@ -47,7 +47,10 @@ export function resolveChannels(config) {
       webhookUrl: n.slack.webhookUrl,
       webhookUrlEnv: n.slack.webhookUrlEnv,
       severityThreshold: 'warn',
-      events: null, // null → receives every event
+      // Pin to the four lifecycle events this channel handled before the modern
+      // channels[] shape existed — otherwise a null filter silently opts legacy
+      // users into newer events (e.g. `snapshot`) they never configured.
+      events: ['deploy-success', 'deploy-failure', 'test-failure', 'release-created'],
     });
   }
   return channels;
