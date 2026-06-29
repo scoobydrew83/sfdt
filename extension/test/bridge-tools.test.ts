@@ -3,11 +3,9 @@ import {
   createDriftFeature,
   createScanFeature,
   createCompareFeature,
-  createQualityFeature,
   _bridgeToolsTestApi,
 } from '../features/bridge-tools.js';
 import { setWorkspaceViewSink } from '../ui/present-view.js';
-import type { SalesforceApiClient } from '../lib/salesforce-api.js';
 import type { SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 
 function clearBody(): void {
@@ -94,25 +92,4 @@ describe('compare feature', () => {
   });
 });
 
-describe('quality feature', () => {
-  it('resolves flow metadata via the API, then scans and renders a score', async () => {
-    const bridge = fakeBridge({
-      ok: true,
-      requestId: 'r',
-      data: { overallScore: 88, rating: 'Good', severityCounts: { high: 1 }, categoryCounts: {}, issueFamilyCount: 2 },
-    });
-    const getFlowMetadata = vi.fn(async () => ({ Metadata: { label: 'My Flow' } }));
-    const api = { getFlowMetadata } as unknown as SalesforceApiClient;
-    const feature = createQualityFeature({ api, bridgeFactory: async () => bridge });
-    await feature.onActivate?.();
-    setText('Flow API name', 'My_Flow');
-    clickRun('Scan');
-
-    await vi.waitFor(() => expect(document.body.textContent).toContain('88'));
-    expect(getFlowMetadata).toHaveBeenCalledWith('My_Flow');
-    const sent = bridge.call.mock.calls[0]![0] as { kind: string; flowXml: string };
-    expect(sent.kind).toBe('quality');
-    expect(JSON.parse(sent.flowXml)).toEqual({ label: 'My Flow' });
-    expect(document.body.textContent).toContain('Good');
-  });
-});
+// flow-quality is now a DIRECT feature (no bridge) — see flow-quality.test.ts.

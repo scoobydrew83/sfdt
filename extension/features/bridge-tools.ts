@@ -19,7 +19,7 @@ import { createBridgeClient, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.
 import { loadSettings } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
-import type { SfdtRequest, SfdtResponse, QualityResponseData } from '@sfdt/flow-core/bridge-contract';
+import type { SfdtRequest, SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 
 type BridgeReq = Omit<SfdtRequest, 'requestId'>;
 
@@ -83,35 +83,6 @@ function renderJson(doc: Document, results: HTMLElement, data: unknown): void {
     'margin: 0; padding: 12px; background: #f3f3f3; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-word;';
   pre.textContent = JSON.stringify(data ?? null, null, 2);
   results.appendChild(pre);
-}
-
-function renderQuality(doc: Document, results: HTMLElement, data: unknown): void {
-  const q = (data ?? {}) as Partial<QualityResponseData>;
-  const banner = doc.createElement('div');
-  const score = typeof q.overallScore === 'number' ? q.overallScore : null;
-  const band = score === null ? '#b0adab' : score >= 80 ? '#04844b' : score >= 60 ? '#fe9339' : '#c23934';
-  banner.style.cssText = `margin-bottom: 14px; padding: 12px 14px; border-radius: 6px; border: 1px solid #d8dde6; border-left: 4px solid ${band}; display: flex; align-items: baseline; gap: 10px;`;
-  const big = doc.createElement('span');
-  big.style.cssText = 'font-size: 22px; font-weight: 700;';
-  big.textContent = score === null ? '—' : String(score);
-  const cap = doc.createElement('span');
-  cap.style.cssText = 'font-size: 12px; color: #54698d;';
-  cap.textContent = `${q.rating ?? 'quality score'} · ${q.issueFamilyCount ?? 0} issue famil${q.issueFamilyCount === 1 ? 'y' : 'ies'}`;
-  banner.append(big, cap);
-  results.appendChild(banner);
-
-  const counts = q.severityCounts ?? {};
-  const entries = Object.entries(counts);
-  if (entries.length > 0) {
-    const list = doc.createElement('ul');
-    list.style.cssText = 'margin: 0; padding-left: 18px; color: #3e3e3c; font-size: 12px;';
-    for (const [sev, n] of entries) {
-      const li = doc.createElement('li');
-      li.textContent = `${sev}: ${n}`;
-      list.appendChild(li);
-    }
-    results.appendChild(list);
-  }
 }
 
 function createBridgeToolFeature(spec: ToolSpec, options: BridgeToolOptions): Feature {
@@ -316,33 +287,6 @@ export function createCompareFeature(options: BridgeToolOptions = {}): Feature {
         };
       },
       render: renderJson,
-    },
-    options,
-  );
-}
-
-export function createQualityFeature(options: BridgeToolOptions = {}): Feature {
-  return createBridgeToolFeature(
-    {
-      id: 'flow-quality',
-      name: 'Flow Quality Scan',
-      title: '✅ Flow Quality Scan',
-      width: '720px',
-      runLabel: 'Scan',
-      setupInputs(doc, controls, api) {
-        const input = textInput(doc, 'Flow API name, e.g. My_Flow');
-        controls.appendChild(input);
-        return async () => {
-          const name = input.value.trim();
-          if (!name) throw new Error('Enter a Flow API name to scan.');
-          // The bridge `quality` kind wants JSON-stringified Flow.Metadata —
-          // resolve it via Tooling so the user only types a name.
-          const record = (await api.getFlowMetadata(name)) as { Metadata?: unknown };
-          const metadata = record.Metadata ?? record;
-          return { kind: 'quality', flowXml: JSON.stringify(metadata) };
-        };
-      },
-      render: renderQuality,
     },
     options,
   );

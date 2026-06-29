@@ -131,6 +131,9 @@ export type {
 export { evaluate } from './rules.js';
 export type { RulesConfig } from './rules.js';
 
+export { runFlowQuality, parseApiVersion, DEFAULT_RULES_CONFIG } from './flow-quality.js';
+export type { FlowQualityOptions, FlowQualityReport } from './flow-quality.js';
+
 export { detectTriggerConflicts } from './trigger-conflicts.js';
 export type {
   FlowConflictCandidate,

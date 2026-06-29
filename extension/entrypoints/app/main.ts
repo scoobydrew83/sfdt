@@ -37,8 +37,8 @@ import {
   createDriftFeature,
   createScanFeature,
   createCompareFeature,
-  createQualityFeature,
 } from '../../features/bridge-tools.js';
+import { createFlowQualityFeature } from '../../features/flow-quality.js';
 import {
   createOrgSwitcherFeature,
   listOrgs,
@@ -222,7 +222,7 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
     'apex-test-runner': () => createApexTestRunnerFeature(common),
     'org-health-live': () => createOrgHealthLiveFeature(common),
     'dependency-explorer': () => createDependencyExplorerFeature(common),
-    'flow-quality': () => createQualityFeature(common),
+    'flow-quality': () => createFlowQualityFeature(common),
     'drift-check': () => createDriftFeature(common),
     'metadata-scan': () => createScanFeature(common),
     'org-compare': () => createCompareFeature(common),
