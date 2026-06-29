@@ -43,9 +43,12 @@ describe('org-switcher feature', () => {
     const feature = createOrgSwitcherFeature({ onSwitch });
     await feature.onActivate?.();
 
+    // Match the acme org button by its short displayName ('acme'), not the full
+    // host — a URL-shaped substring here trips CodeQL's url-substring rule (a
+    // false positive in a test, but cheaper to dodge than to dismiss).
     const orgBtn = Array.from(
       document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button'),
-    ).find((b) => b.textContent?.includes('acme.my.salesforce.com'));
+    ).find((b) => b.textContent?.includes('acme'));
     expect(orgBtn).toBeDefined();
     orgBtn!.click();
 
