@@ -10,6 +10,7 @@ vi.mock('../../src/lib/org-query.js', () => ({
       return null;
     }
   },
+  toSoqlDate: (d) => new Date(d).toISOString().replace(/\.\d{3}Z$/, 'Z'),
 }));
 
 import { query } from '../../src/lib/org-query.js';

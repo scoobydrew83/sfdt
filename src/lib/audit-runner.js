@@ -1,5 +1,5 @@
 import { ORG_HEALTH_THRESHOLDS } from '@sfdt/flow-core';
-import { query, safeParse } from './org-query.js';
+import { query, safeParse, toSoqlDate } from './org-query.js';
 
 /**
  * Org diagnose & audit runner.
@@ -60,9 +60,8 @@ const SUSPECT_PATTERNS = [
   'manageipranges',
 ];
 
-// Salesforce SOQL datetime literals reject the milliseconds that
-// toISOString() emits (…:00.000Z), so strip them for use in WHERE clauses.
-const ISODate = (d) => new Date(d).toISOString().replace(/\.\d{3}Z$/, 'Z');
+// SOQL datetime literal helper (shared) — strips the milliseconds Salesforce rejects.
+const ISODate = toSoqlDate;
 
 /**
  * Recent suspicious setup activity from SetupAuditTrail.
@@ -145,21 +144,31 @@ export async function checkMfa(orgAlias) {
     // (`User WHERE Id NOT IN (SELECT UserId FROM TwoFactorMethodsInfo)`) would be
     // ideal but Salesforce rejects it (INVALID_TYPE — not semi-join-able), so we
     // diff client-side; very large orgs may under-count enrolled users.
+    // Both queries return a single SOQL page (~2000 rows). The two truncations
+    // compound in opposite directions: a capped TwoFactorMethodsInfo over-reports
+    // non-compliance (enrolled users past the cap look unenrolled), while a capped
+    // User list under-reports it (non-enrolled users past the cap are invisible).
+    // We can't reliably page both, so flag when either hits the cap.
+    const PAGE = 2000;
     const mfaRows = await query(orgAlias, 'SELECT UserId FROM TwoFactorMethodsInfo');
     const enrolled = new Set(mfaRows.map((r) => r.UserId));
     // Active, human (non-integration) users.
     const users = await query(
       orgAlias,
       `SELECT Id, Username, Name, Profile.UserLicense.Name FROM User ` +
-        `WHERE IsActive = true AND UserType = 'Standard' ORDER BY Name LIMIT 2000`,
+        `WHERE IsActive = true AND UserType = 'Standard' ORDER BY Name LIMIT ${PAGE}`,
     );
+    const truncated = mfaRows.length >= PAGE || users.length >= PAGE;
     const findings = users
       .filter((u) => !enrolled.has(u.Id))
       .map((u) => ({ username: u.Username, name: u.Name, license: u.Profile?.UserLicense?.Name }));
-    return result(id, title, findings.length ? 'warn' : 'ok',
-      findings.length
+    const truncNote = truncated
+      ? ` (results truncated at ${PAGE} rows — MFA coverage count may be incomplete)`
+      : '';
+    return result(id, title, findings.length || truncated ? 'warn' : 'ok',
+      (findings.length
         ? `${findings.length} active user(s) without a registered MFA method`
-        : 'All active standard users have MFA registered',
+        : 'All active standard users have MFA registered') + truncNote,
       findings);
   } catch (err) {
     return errored(id, title, err);

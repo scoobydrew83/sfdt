@@ -79,7 +79,12 @@ async function runRetrofit(options) {
     }
 
     const msg = options.commitMsg || `chore: retrofit metadata from ${source}`;
-    await execa('git', ['add', '-A'], { cwd: projectRoot });
+    // Stage only the metadata source dirs the retrieve writes into — never `git add -A`,
+    // which would sweep in pre-existing untracked files (a local .env, scratch files,
+    // unrelated WIP) and silently commit + deploy them.
+    const stagePaths = (config.packageDirectories?.map((d) => d.path).filter(Boolean))
+      || [config.defaultSourcePath || 'force-app'];
+    await execa('git', ['add', '--', ...stagePaths], { cwd: projectRoot });
     await execa('git', ['commit', '-m', msg], { cwd: projectRoot });
     if (!jsonMode) print.success(`Committed retrofit: ${msg}`);
 

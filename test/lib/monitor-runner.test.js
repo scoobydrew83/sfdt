@@ -6,6 +6,7 @@ vi.mock('../../src/lib/org-query.js', () => ({
   // checkLimits parses `sf org list limits` output with safeParse; provide the
   // real (trivial) implementation so the mock doesn't break JSON parsing.
   safeParse: (t) => { try { return JSON.parse(t); } catch { return null; } },
+  toSoqlDate: (d) => new Date(d).toISOString().replace(/\.\d{3}Z$/, 'Z'),
 }));
 vi.mock('../../src/lib/org-inventory.js', () => ({ fetchOrgInventory: vi.fn() }));
 vi.mock('../../src/lib/parallel-retrieve.js', () => ({ parallelRetrieve: vi.fn() }));

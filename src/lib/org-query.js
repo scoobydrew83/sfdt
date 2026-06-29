@@ -112,3 +112,10 @@ export function safeParse(text) {
     return null;
   }
 }
+
+/**
+ * Format a date/timestamp as a SOQL datetime literal. Salesforce rejects the
+ * milliseconds that `toISOString()` emits (`…:00.000Z`), so strip them for use
+ * in WHERE clauses. Accepts anything `new Date()` accepts (ms epoch, ISO string).
+ */
+export const toSoqlDate = (d) => new Date(d).toISOString().replace(/\.\d{3}Z$/, 'Z');

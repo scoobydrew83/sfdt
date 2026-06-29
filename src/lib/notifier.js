@@ -182,17 +182,6 @@ export async function dispatch(event, ctx, config) {
 }
 
 /**
- * Dispatch an audit/monitor snapshot. Routes only to channels that (a) allow the
- * 'snapshot' event and (b) have a severityThreshold at or below the snapshot's
- * worst status.
- *
- * @param {object} snapshot - { org, checks, summary }
- * @param {object} config
- * @param {object} [options]
- * @param {'audit'|'monitor'} [options.type]
- * @returns {Promise<{severity, results: Array}>}
- */
-/**
  * Send a test message to every configured channel, ignoring event filters and
  * severity thresholds (so a user can verify wiring). Returns per-channel results.
  */
@@ -236,6 +225,17 @@ async function buildSnapshotSummary(snapshot, type, config) {
   }
 }
 
+/**
+ * Dispatch an audit/monitor snapshot. Routes only to channels that (a) allow the
+ * 'snapshot' event and (b) have a severityThreshold at or below the snapshot's
+ * worst status.
+ *
+ * @param {object} snapshot - { org, checks, summary }
+ * @param {object} config
+ * @param {object} [options]
+ * @param {'audit'|'monitor'} [options.type]
+ * @returns {Promise<{severity, results: Array}>}
+ */
 export async function dispatchSnapshot(snapshot, config, { type = 'monitor' } = {}) {
   const severity = maxStatus(snapshot?.checks);
   const channels = resolveChannels(config).filter(
