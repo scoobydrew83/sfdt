@@ -28,7 +28,7 @@ window that reports the chosen org's URL, so the existing tools run unchanged.
 
 ---
 
-## Features (29)
+## Features (35)
 
 Every feature is opt-in (toggle off in the options page), and any feature can be remotely disabled without a Web Store re-review via `sfdt feature-flags disable <id>`.
 
@@ -63,6 +63,12 @@ Every feature is opt-in (toggle off in the options page), and any feature can be
 | `saved-soql` | Browse bookmarked + recent SOQL and load any query straight into the runner | Workspace |
 | `org-switcher` | Switch the Workspace between logged-in orgs | Workspace |
 | `org-health` | Side panel surfacing the CLI's audit/monitor snapshots (status dots, findings, Copy JSON) via the bridge's `org-health` request | Setup + Flow Builder |
+| `org-health-live` | Runs org-health checks live against the org (Apex coverage, inactive users, licenses, API versions, limits) — no CLI snapshot needed | Workspace |
+| `code-coverage` | Apex code coverage: org-wide % + per-class bands (worst-covered first, 75% deploy line flagged), read live from the org | Workspace |
+| `dependency-explorer` | "What references this / what does this reference" via `MetadataComponentDependency` (Apex/Flow/field/page/LWC) | Workspace |
+| `apex-test-runner` | Run Apex tests asynchronously and view pass/fail results | Workspace |
+| `flow-quality` | Score any Flow against the `@sfdt/flow-core` rules engine, run Direct in-browser (no bridge required) | Flow Builder + Workspace |
+| `bridge-tools` | Surfaces the bridge request kinds (drift / scan / compare / quality) as Workspace tools | Workspace |
 
 Adding the next feature is a one-file change — see the existing modules in [`extension/features/`](./features/) and the registry in [`extension/lib/feature-registry.ts`](./lib/feature-registry.ts).
 

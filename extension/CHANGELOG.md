@@ -4,6 +4,27 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-29
+
+A Workspace-focused release: three new live-org tools, an Apex test runner, and a redesigned tabbed Workspace where tools keep their state instead of being dismissed by a stray click — plus a shared analysis rulebook with the rest of the SFDT suite via `@sfdt/flow-core`.
+
+### Added
+- **`code-coverage`** — Apex Code Coverage tool: org-wide percentage plus per-class bands (worst-covered first, the 75% deploy line flagged red). Reads the live org directly via the Tooling/REST client — no `sfdt ui` server required.
+- **`org-health-live`** — Org Health (Live): runs checks against the org instead of reading a stale snapshot (Apex coverage, inactive users 90d+, license utilisation, Apex API-version spread, limits near cap). Resilient via `Promise.allSettled` — one failed query degrades to a red row, not a dead panel.
+- **`dependency-explorer`** — "what references this / what does this reference" via `MetadataComponentDependency`, for Apex/Flow/field/page/LWC by name.
+- **`apex-test-runner`** — run Apex tests asynchronously (`runTestsAsynchronous` + poll) from the Workspace.
+- **`bridge-tools`** — surfaces the bridge request kinds (drift / scan / compare / quality) as Workspace tools.
+
+### Changed
+- **Tabbed Workspace.** Tools now open as persistent tabs in the main area instead of fixed overlays over the page. Each tab keeps its DOM and state when you switch away, only the tab's × closes it, and a stray background click can no longer discard a half-written query or form. New shared `present-view` presenter (classic modal on a Salesforce page, tab pane in the Workspace) and a unit-tested `workspace-tabs` lifecycle; all stateful editors and the remaining flow/Workspace tools were migrated, with live-resource teardown (event-monitor CometD stream, data-import workers) now running on tab close.
+- **`flow-quality` runs Direct in the browser.** It fetches the Flow's metadata via Tooling and runs the shared `@sfdt/flow-core` rulebook in-browser, so it works for any user on any org without `sfdt ui` running — byte-identical scores to the CLI.
+- **Shared analysis rulebook.** `code-coverage`, `dependency-explorer`, and `org-health-live` now import their pure logic from `@sfdt/flow-core` (one source of truth across CLI/GUI/extension); `org-health-live` sheds ~170 lines of duplicated logic and the usage bands unify to amber ≥75% / red ≥90%.
+- **`drift-check`** gains a "Run live (slower)" option that triggers a full live drift before returning the snapshot.
+
+### Fixed
+- **`flow-deploy` Rollback** was dead (hard-coded to version 1, used the raw flow id, always errored). It now resolves the Flow's api name and deactivates it (toVersion 0), reporting success or failure.
+- Fixed several latent listener leaks (soap-explore history click handler, inspect-record and ai-assistant Esc handlers) — now torn down on close.
+
 ## [0.3.3] - 2026-06-25
 
 ### Fixed
