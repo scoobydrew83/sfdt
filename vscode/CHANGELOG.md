@@ -6,6 +6,19 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-29
+
+Tracks the CLI's v0.15.0 surface and hardens the embedded dashboard.
+
+### Added
+- **New command-palette entries** for the CLI's expanded surface: the new org-health sub-checks (inactive validation/workflow rules, field-level access lint, etc.), **Smart Deploy** (`deploy --smart`), **Retrofit**, **PR Comment**, **Send Org Health to Notifications**, and the **Dependencies** and **Coverage** commands under Quality & Analysis.
+
+### Changed
+- **Embedded dashboard follows the editor theme.** The dashboard webview opens with VS Code's active light/dark theme (`?theme=dark|light`) and reloads when you switch themes; standalone `sfdt ui` in a browser is unaffected.
+
+### Fixed
+- **Dashboard port-conflict recovery.** When the dashboard port can't be bound, the extension no longer hangs polling `/api/health` and silently attaching to a foreign or stale server (which then 401s every call). Success is now tied to *our* child process printing its launch token, so a squatting server can't masquerade as ours; on a real bind failure the extension finds the port owner, stops a recognized stale sfdt/node GUI server and retries once, never kills a foreign process, and otherwise surfaces an actionable error with an "Open Settings" action to change `sfdt.dashboardPort`.
+
 ## [0.2.0] - 2026-06-26
 
 A ground-up expansion from a single Org Health viewer into a full command center

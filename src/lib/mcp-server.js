@@ -96,18 +96,22 @@ const TOOLS = [
   },
   {
     name: 'sfdt_deploy',
-    description: 'Perform a full metadata deployment (deploy start) to a target Salesforce org. Potentially destructive.',
+    description: 'Perform a metadata deployment to a target Salesforce org. Supports a smart delta mode (only git-changed metadata with smart test selection). Potentially destructive.',
     inputSchema: {
       type: 'object',
       properties: {
-        manifest: { type: 'string', description: 'Path to package.xml manifest.' },
+        manifest: { type: 'string', description: 'Path to package.xml manifest (ignored when smart=true).' },
         targetOrg: { type: 'string', description: 'Org alias.' },
         testLevel: { type: 'string', enum: ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg'] },
         testClasses: { type: 'array', items: { type: 'string' }, description: 'Specific test classes to run.' },
         destructiveTiming: { type: 'string', enum: ['pre', 'post', 'none', 'only'] },
-        confirmExecution: { type: 'boolean', description: 'Must be set to true to acknowledge safety and execute.' }
+        smart: { type: 'boolean', description: 'Smart delta deploy: only metadata changed between deltaBase and deltaHead, with smart test selection.' },
+        deltaBase: { type: 'string', description: 'Base git ref for smart delta (default: config or "main").' },
+        deltaHead: { type: 'string', description: 'Head git ref for smart delta (default: HEAD).' },
+        dryRun: { type: 'boolean', description: 'Validate only (no changes applied). Recommended for smart mode in CI.' },
+        confirmExecution: { type: 'boolean', description: 'Must be set to true to acknowledge safety and execute (not required when dryRun=true).' }
       },
-      required: ['targetOrg', 'confirmExecution']
+      required: ['targetOrg']
     }
   },
   {
@@ -136,14 +140,14 @@ const TOOLS = [
   },
   {
     name: 'sfdt_audit',
-    description: 'Run read-only org health diagnostics (suspicious setup audit trail, license usage, MFA coverage, unused Apex classes, inactive users, deprecated API versions). Returns a normalised snapshot of check results.',
+    description: 'Run read-only org health diagnostics (suspicious setup audit trail, license usage, MFA coverage, unused Apex classes, inactive users, deprecated API versions, inactive flows, unused permission sets, connected apps, missing field descriptions, unreferenced Apex, object access lint). Returns a normalised snapshot of check results.',
     inputSchema: {
       type: 'object',
       properties: {
         org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
         check: {
           type: 'string',
-          enum: ['all', 'audittrail', 'licenses', 'mfa', 'unused-apex', 'inactive-users', 'api-versions'],
+          enum: ['all', 'audittrail', 'licenses', 'mfa', 'unused-apex', 'inactive-users', 'api-versions', 'inactive-flows', 'unused-permsets', 'connected-apps', 'field-descriptions', 'apex-unreferenced', 'lint-access', 'inactive-validations', 'inactive-workflows', 'lint-access-fields'],
           description: 'Run a single named check, or "all" (default).'
         }
       }
@@ -151,17 +155,53 @@ const TOOLS = [
   },
   {
     name: 'sfdt_monitor',
-    description: 'Run org monitoring checks (org limit consumption, recent Apex job failures, security health-check score) and optionally a full metadata backup. Returns a normalised snapshot of check results.',
+    description: 'Run org monitoring checks (org limit consumption, recent Apex job failures, security health-check score, org info, recent deployment health, legacy API usage, paused flow interviews) and optionally a full metadata backup. Returns a normalised snapshot of check results.',
     inputSchema: {
       type: 'object',
       properties: {
         org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
         check: {
           type: 'string',
-          enum: ['all', 'limits', 'errors', 'health', 'backup'],
+          enum: ['all', 'limits', 'errors', 'health', 'org-info', 'deploy-history', 'deprecated-api', 'flow-errors', 'backup'],
           description: 'Run a single named check, "backup" for a metadata backup, or "all" (default).'
         },
         backup: { type: 'boolean', description: 'When running "all", also perform a metadata backup.' }
+      }
+    }
+  },
+  {
+    name: 'sfdt_retrofit',
+    description: 'Retrofit metadata from a source org to a target org: retrieve specified metadata types, commit, then smart-deploy. Validate-only unless execute=true.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', description: 'Org alias to retrieve changes FROM.' },
+        target: { type: 'string', description: 'Org alias to deploy changes TO.' },
+        metadata: { type: 'string', description: 'Comma-separated metadata types (defaults to a common admin-changed set).' },
+        execute: { type: 'boolean', description: 'Perform a real deploy to the target (default: validate-only).' },
+        confirmExecution: { type: 'boolean', description: 'Required when execute=true to acknowledge a real deployment.' }
+      },
+      required: ['source', 'target']
+    }
+  },
+  {
+    name: 'sfdt_pr_comment',
+    description: 'Post the latest audit or monitor snapshot to the current pull request as a markdown comment (via the gh CLI).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['audit', 'monitor'], description: 'Which snapshot to post (default: monitor).' },
+        pr: { type: 'string', description: 'PR number or URL (defaults to the current branch PR).' }
+      }
+    }
+  },
+  {
+    name: 'sfdt_notify',
+    description: 'Send the latest audit or monitor snapshot to configured notification channels (Slack/Teams/email/webhook), applying each channel\'s event filter and severity threshold. Run an audit/monitor first so a snapshot exists.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['audit', 'monitor'], description: 'Which snapshot to send (default: monitor).' }
       }
     }
   },
@@ -315,11 +355,7 @@ export class SfdtMcpServer {
         if (args.org) cmdArgs.push('--org', args.org);
 
         const { stdout } = await this.#runCliCommand(cmdArgs);
-        try {
-          return JSON.parse(stdout);
-        } catch {
-          return stdout;
-        }
+        return this.#parseCliJson(stdout);
       }
 
       case 'sfdt_compare': {
@@ -412,14 +448,25 @@ export class SfdtMcpServer {
       }
 
       case 'sfdt_deploy': {
-        if (!args.confirmExecution) {
-          throw new Error('Deployment is a potentially destructive action. You must pass confirmExecution: true to acknowledge authorization.');
+        // A real (non-dry-run) deploy mutates the org and requires explicit ack.
+        if (!args.dryRun && !args.confirmExecution) {
+          throw new Error('A real deployment is a potentially destructive action. Pass confirmExecution: true (or dryRun: true to validate only).');
+        }
+
+        if (args.smart) {
+          // Smart delta deploy runs as a self-contained, non-interactive CLI path.
+          const cliArgs = ['deploy', '--smart', '--agent', '--target-org', args.targetOrg];
+          if (args.dryRun) cliArgs.push('--dry-run');
+          if (args.deltaBase) cliArgs.push('--delta-base', args.deltaBase);
+          if (args.deltaHead) cliArgs.push('--delta-head', args.deltaHead);
+          const { exitCode, stdout, stderr } = await this.#runCliCommand(cliArgs, { SFDT_NON_INTERACTIVE: 'true' });
+          return { exitCode, stdout, stderr };
         }
 
         const env = {
           SFDT_NON_INTERACTIVE: 'true',
           SFDT_TARGET_ORG: args.targetOrg,
-          SFDT_DRY_RUN: 'false',
+          SFDT_DRY_RUN: args.dryRun ? 'true' : 'false',
         };
         if (args.manifest) env.SFDT_MANIFEST_PATH = path.resolve(projectRoot, args.manifest);
         if (args.testLevel) env.SFDT_TEST_LEVEL = args.testLevel;
@@ -455,11 +502,7 @@ export class SfdtMcpServer {
 
         const cmdArgs = ['rollback', '--json'];
         const { stdout } = await this.#runCliCommand(cmdArgs);
-        try {
-          return JSON.parse(stdout);
-        } catch {
-          return stdout;
-        }
+        return this.#parseCliJson(stdout);
       }
 
       case 'sfdt_audit': {
@@ -467,11 +510,7 @@ export class SfdtMcpServer {
         const cmdArgs = ['audit', check, '--json'];
         if (args.org) cmdArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cmdArgs);
-        try {
-          return JSON.parse(stdout);
-        } catch {
-          return stdout;
-        }
+        return this.#parseCliJson(stdout);
       }
 
       case 'sfdt_monitor': {
@@ -480,22 +519,41 @@ export class SfdtMcpServer {
         if (args.org) cmdArgs.push('--org', args.org);
         if (check === 'all' && args.backup) cmdArgs.push('--backup');
         const { stdout } = await this.#runCliCommand(cmdArgs);
-        try {
-          return JSON.parse(stdout);
-        } catch {
-          return stdout;
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_notify': {
+        const type = args.type === 'audit' ? 'audit' : 'monitor';
+        const { exitCode, stdout, stderr } = await this.#runCliCommand(['notify', 'snapshot', '--type', type], {
+          SFDT_NON_INTERACTIVE: 'true',
+        });
+        return { exitCode, stdout, stderr };
+      }
+
+      case 'sfdt_retrofit': {
+        if (args.execute && !args.confirmExecution) {
+          throw new Error('A real retrofit deploy is potentially destructive. Pass confirmExecution: true (or omit execute for validate-only).');
         }
+        const cliArgs = ['retrofit', '--source', args.source, '--target', args.target, '--json'];
+        if (args.metadata) cliArgs.push('--metadata', args.metadata);
+        if (args.execute) cliArgs.push('--execute');
+        const { exitCode, stdout, stderr } = await this.#runCliCommand(cliArgs, { SFDT_NON_INTERACTIVE: 'true' });
+        try { return JSON.parse(stdout); } catch { return { exitCode, stdout, stderr }; }
+      }
+
+      case 'sfdt_pr_comment': {
+        const type = args.type === 'audit' ? 'audit' : 'monitor';
+        const cliArgs = ['pr', 'comment', '--type', type, '--json'];
+        if (args.pr) cliArgs.push('--pr', String(args.pr));
+        const { exitCode, stdout, stderr } = await this.#runCliCommand(cliArgs, { SFDT_NON_INTERACTIVE: 'true' });
+        try { return JSON.parse(stdout); } catch { return { exitCode, stdout, stderr }; }
       }
 
       case 'sfdt_docs': {
         const cmdArgs = ['docs', 'generate', '--json'];
         if (args.ai) cmdArgs.push('--ai');
         const { stdout } = await this.#runCliCommand(cmdArgs);
-        try {
-          return JSON.parse(stdout);
-        } catch {
-          return stdout;
-        }
+        return this.#parseCliJson(stdout);
       }
 
       case 'sfdt_get_parked_result': {
@@ -504,6 +562,22 @@ export class SfdtMcpServer {
 
       default:
         throw new Error(`Unknown tool: ${name}`);
+    }
+  }
+
+  // Unwrap the sf-native JSON envelope ({ status, result, warnings }) emitted by
+  // the CLI's --json commands: return the inner `result` on success. Falls back
+  // to the whole parsed object (error envelopes, which have no `result`) or the
+  // raw string when stdout is not JSON.
+  #parseCliJson(stdout) {
+    try {
+      const parsed = JSON.parse(stdout);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'result' in parsed) {
+        return parsed.result;
+      }
+      return parsed;
+    } catch {
+      return stdout;
     }
   }
 

@@ -358,4 +358,278 @@ describe('flow-core/prompts', () => {
       expect(lib.getStandardPrompts().find((p) => p.id === 'draw-io')?.enabled).toBe(false);
     });
   });
+
+  describe('default id + timestamp generators', () => {
+    // No now/generateId overrides → exercises defaultIdGenerator + defaultNow.
+    it('mints a custom_ id and a real ISO timestamp', async () => {
+      const lib = new PromptLibrary({ storage: createMemoryStorage() });
+      await lib.load();
+      const custom = await lib.addCustom({
+        title: 'X',
+        description: 'D',
+        prompt: 'P',
+        category: 'Analysis',
+      });
+      expect(custom.id).toMatch(/^custom_[0-9a-f]{8}$/);
+      expect(custom.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
+    });
+
+    it('uses the getRandomValues fallback when randomUUID is unavailable', async () => {
+      const orig = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+      Object.defineProperty(globalThis, 'crypto', {
+        configurable: true,
+        value: {
+          getRandomValues: (buf: Uint8Array) => {
+            buf.fill(0xab);
+            return buf;
+          },
+        },
+      });
+      try {
+        const lib = new PromptLibrary({ storage: createMemoryStorage() });
+        await lib.load();
+        const custom = await lib.addCustom({
+          title: 'X',
+          description: 'D',
+          prompt: 'P',
+          category: 'Analysis',
+        });
+        expect(custom.id).toBe('custom_abababab');
+      } finally {
+        if (orig) Object.defineProperty(globalThis, 'crypto', orig);
+        else delete (globalThis as { crypto?: unknown }).crypto;
+      }
+    });
+
+    it('falls back to a time-derived id when no crypto API exists', async () => {
+      const orig = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+      Object.defineProperty(globalThis, 'crypto', { configurable: true, value: undefined });
+      try {
+        const lib = new PromptLibrary({ storage: createMemoryStorage() });
+        await lib.load();
+        const custom = await lib.addCustom({
+          title: 'X',
+          description: 'D',
+          prompt: 'P',
+          category: 'Analysis',
+        });
+        expect(custom.id).toMatch(/^custom_[0-9a-f]+$/);
+      } finally {
+        if (orig) Object.defineProperty(globalThis, 'crypto', orig);
+        else delete (globalThis as { crypto?: unknown }).crypto;
+      }
+    });
+  });
+
+  describe('validateCustomPrompt edge cases', () => {
+    it('rejects a non-object payload', () => {
+      const { lib } = makeLib();
+      const result = lib.validateCustomPrompt('nope');
+      expect(result.valid).toBe(false);
+      expect(result.errors).toEqual(['Prompt must be an object.']);
+    });
+
+    it('rejects an over-length description', () => {
+      const { lib } = makeLib();
+      const result = lib.validateCustomPrompt({
+        title: 'T',
+        description: 'd'.repeat(501),
+        prompt: 'P',
+        category: 'Analysis',
+      });
+      expect(result.errors.some((e) => /Description must be/.test(e))).toBe(true);
+    });
+
+    it('rejects an over-length prompt body', () => {
+      const { lib } = makeLib();
+      const result = lib.validateCustomPrompt({
+        title: 'T',
+        description: 'D',
+        prompt: 'p'.repeat(50_001),
+        category: 'Analysis',
+      });
+      expect(result.errors.some((e) => /Prompt must be/.test(e))).toBe(true);
+    });
+
+    it('rejects an id that does not use the custom_ prefix', () => {
+      const { lib } = makeLib();
+      const result = lib.validateCustomPrompt({
+        id: 'std-id',
+        title: 'T',
+        description: 'D',
+        prompt: 'P',
+        category: 'Analysis',
+      });
+      expect(result.errors.some((e) => /must be a string starting with/.test(e))).toBe(true);
+    });
+  });
+
+  describe('without injected storage', () => {
+    it('loads with empty state and keeps customs in memory only', async () => {
+      const lib = new PromptLibrary();
+      await lib.load();
+      expect(lib.getAll()).toHaveLength(5);
+      expect(lib.getCustomPrompts()).toHaveLength(0);
+      const custom = await lib.addCustom({
+        title: 'X',
+        description: 'D',
+        prompt: 'P',
+        category: 'Analysis',
+      });
+      expect(lib.getById(custom.id)?.title).toBe('X');
+    });
+
+    it('getById returns null for a null/undefined id', () => {
+      const lib = new PromptLibrary();
+      expect(lib.getById(null)).toBeNull();
+      expect(lib.getById(undefined)).toBeNull();
+    });
+  });
+
+  describe('custom defaults', () => {
+    // A template with no `contexts` array exercises the DEFAULT_CONTEXTS
+    // fallback in shapeStandard and cloneToCustom.
+    const minimalDefaults = [
+      {
+        id: 'only-one',
+        title: 'Only One',
+        description: 'D',
+        prompt: 'P',
+        category: 'Analysis',
+        isFallbackDefault: true,
+      },
+    ] as never;
+
+    it('shapeStandard falls back to the default contexts when a template omits them', async () => {
+      const lib = new PromptLibrary({ storage: createMemoryStorage(), defaults: minimalDefaults });
+      await lib.load();
+      const std = lib.getStandardPrompts()[0]!;
+      expect(std.contexts).toEqual(['flow-canvas']);
+    });
+
+    it('cloneToCustom copies the default contexts when the source template omits them', async () => {
+      const lib = new PromptLibrary({ storage: createMemoryStorage(), defaults: minimalDefaults });
+      await lib.load();
+      const clone = await lib.cloneToCustom('only-one');
+      expect(clone.contexts).toEqual(['flow-canvas']);
+    });
+
+    it('getDefaultPromptId returns null when there are no templates at all', async () => {
+      const lib = new PromptLibrary({ storage: createMemoryStorage(), defaults: [] as never });
+      await lib.load();
+      expect(lib.getDefaultPromptId()).toBeNull();
+    });
+  });
+
+  describe('customs hydrated from storage', () => {
+    it('normalises stored customs and drops malformed entries', async () => {
+      const stored = [
+        null, // not an object
+        { id: 'not-custom', title: 'T', prompt: 'P' }, // wrong id prefix
+        { id: 'custom_a', prompt: 'P' }, // missing title
+        { id: 'custom_b', title: 'B' }, // missing prompt
+        {
+          id: 'custom_full',
+          title: '  Full  ',
+          description: '  desc  ',
+          prompt: 'body',
+          category: 'NopeCategory', // invalid → coerced to Documentation
+          contexts: ['flow-canvas'],
+          enabled: false,
+          createdAt: '2020-01-01T00:00:00.000Z',
+          modifiedAt: '2020-01-02T00:00:00.000Z',
+        },
+        {
+          id: 'custom_min',
+          title: 'Min',
+          prompt: 'body', // no description, no timestamps → defaults applied
+        },
+      ];
+      const { lib } = makeLib({ 'aiPromptLibrary.customPrompts': stored });
+      await lib.load();
+      const customs = lib.getCustomPrompts();
+      expect(customs.map((c) => c.id).sort()).toEqual(['custom_full', 'custom_min']);
+
+      const full = customs.find((c) => c.id === 'custom_full')!;
+      expect(full.title).toBe('Full'); // trimmed
+      expect(full.description).toBe('desc'); // trimmed
+      expect(full.category).toBe('Documentation'); // invalid coerced
+      expect(full.enabled).toBe(false);
+      expect(full.createdAt).toBe('2020-01-01T00:00:00.000Z');
+
+      const min = customs.find((c) => c.id === 'custom_min')!;
+      expect(min.description).toBe('');
+      expect(min.createdAt).toBe('2026-05-14T12:00:00.000Z'); // from now()
+    });
+  });
+
+  describe('getStoredDefaultPromptId', () => {
+    it('returns the raw stored id without self-healing', async () => {
+      const { lib } = makeLib({ 'aiPromptLibrary.defaultPromptId': 'improvements' });
+      await lib.load();
+      expect(lib.getStoredDefaultPromptId()).toBe('improvements');
+    });
+
+    it('returns null when nothing is stored', async () => {
+      const { lib } = makeLib();
+      await lib.load();
+      expect(lib.getStoredDefaultPromptId()).toBeNull();
+    });
+  });
+
+  describe('deleteCustom — miss', () => {
+    it('returns false when the id does not exist', async () => {
+      const { lib } = makeLib();
+      await lib.load();
+      expect(await lib.deleteCustom('custom_missing')).toBe(false);
+    });
+  });
+
+  describe('importCustoms — additional shapes', () => {
+    it('accepts a bare JSON array of prompts', async () => {
+      const { lib } = makeLib();
+      await lib.load();
+      const result = await lib.importCustoms(
+        JSON.stringify([{ title: 'Arr', description: 'D', prompt: 'P', category: 'Analysis' }]),
+      );
+      expect(result.fatal).toBeNull();
+      expect(result.imported).toHaveLength(1);
+    });
+
+    it('labels an invalid item with no string title as item[index]', async () => {
+      const { lib } = makeLib();
+      await lib.load();
+      const result = await lib.importCustoms(JSON.stringify({ prompts: [{ description: 'D' }] }));
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.title).toBe('item[0]');
+    });
+  });
+
+  describe('validateCustomPrompt — non-string fields', () => {
+    it('treats a non-string title as missing', () => {
+      const { lib } = makeLib();
+      const result = lib.validateCustomPrompt({
+        title: 123,
+        description: 'D',
+        prompt: 'P',
+        category: 'Analysis',
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => /Title is required/.test(e))).toBe(true);
+    });
+  });
+
+  describe('updateCustom validation', () => {
+    it('throws when the merged result is invalid (e.g. blanked title)', async () => {
+      const { lib } = makeLib();
+      await lib.load();
+      const created = await lib.addCustom({
+        title: 'Keep',
+        description: 'D',
+        prompt: 'P',
+        category: 'Analysis',
+      });
+      await expect(lib.updateCustom(created.id, { title: '   ' })).rejects.toThrow(/Invalid/);
+    });
+  });
 });

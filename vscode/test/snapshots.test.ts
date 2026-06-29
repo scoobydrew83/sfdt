@@ -57,6 +57,50 @@ describe('buildHealthTree', () => {
     const mfaNode = diag.children?.find((c) => c.label === 'MFA coverage');
     expect(mfaNode?.children?.[0].label).toContain('a@x.com');
   });
+
+  it('appends a scan section only when the scan arg is supplied', () => {
+    expect(buildHealthTree(snap(), null)).toHaveLength(2);
+    const tree = buildHealthTree(snap(), null, null);
+    expect(tree).toHaveLength(3);
+    const scan = tree[2];
+    expect(scan.id).toBe('scan');
+    expect(scan.description).toMatch(/not run yet/);
+    expect(scan.command).toEqual(['scan']);
+  });
+
+  it('renders scan summary counts and org when present', () => {
+    const tree = buildHealthTree(snap(), null, { org: 'prod', summary: { totalTypes: 12, totalMembers: 340 } });
+    const scan = tree[2];
+    expect(scan.description).toBe('12 types · 340 members · prod');
+    expect(scan.status).toBe('ok');
+  });
+
+  it('falls back to ? for missing scan counts and omits org', () => {
+    const tree = buildHealthTree(snap(), null, {});
+    expect(tree[2].description).toBe('? types · ? members');
+  });
+
+  it('appends a drift section only when the drift arg is supplied', () => {
+    const tree = buildHealthTree(snap(), null, null, null);
+    expect(tree).toHaveLength(4);
+    const drift = tree[3];
+    expect(drift.id).toBe('drift');
+    expect(drift.description).toMatch(/not run yet/);
+    expect(drift.command).toEqual(['drift']);
+  });
+
+  it('marks drift clean when status is PASS or there are no components', () => {
+    expect(buildHealthTree(snap(), null, undefined, { driftStatus: 'pass', components: [{}] })[2].description).toBe('in sync');
+    const empty = buildHealthTree(snap(), null, undefined, { components: [] })[2];
+    expect(empty.description).toBe('in sync');
+    expect(empty.status).toBe('ok');
+  });
+
+  it('counts drifted components and flags a warn status', () => {
+    const drift = buildHealthTree(snap(), null, undefined, { components: [{}, {}, {}] })[2];
+    expect(drift.description).toBe('3 drifted component(s)');
+    expect(drift.status).toBe('warn');
+  });
 });
 
 describe('describeFinding', () => {

@@ -18,6 +18,41 @@ export { buildIssueFamilies, calculateScore, getScoreRating } from './scorer.js'
 export { describeFinding } from './health-findings.js';
 
 export {
+  ORG_HEALTH_THRESHOLDS,
+  coverageBand,
+  usageBand,
+  inactiveBand,
+  worstBand,
+  summariseCoverage,
+  summariseInactiveUsers,
+  summariseLicenses,
+  summariseApiVersions,
+  summariseLimits,
+} from './org-health-checks.js';
+export type {
+  Band,
+  CheckBody,
+  RawOrgWideCoverageRow,
+  RawUserRow,
+  RawLicenseRow,
+  RawApexVersionRow,
+  RawLimits,
+} from './org-health-checks.js';
+
+export { shapeClassCoverage, classCoverageBand } from './coverage.js';
+export type { ClassCoverageBand, RawClassCoverageRow, ClassCoverageRow } from './coverage.js';
+
+export {
+  escapeSoql,
+  METADATA_TYPES,
+  resolveQueryFor,
+  referencesQuery,
+  referencedByQuery,
+  groupByType,
+} from './dependencies.js';
+export type { MetadataType, DependencyGroup } from './dependencies.js';
+
+export {
   ApiNameLibrary,
   DEFAULT_PREFIXES,
   ICON_TO_TYPE,
@@ -95,6 +130,9 @@ export type {
 
 export { evaluate } from './rules.js';
 export type { RulesConfig } from './rules.js';
+
+export { runFlowQuality, parseApiVersion, DEFAULT_RULES_CONFIG } from './flow-quality.js';
+export type { FlowQualityOptions, FlowQualityReport } from './flow-quality.js';
 
 export { detectTriggerConflicts } from './trigger-conflicts.js';
 export type {

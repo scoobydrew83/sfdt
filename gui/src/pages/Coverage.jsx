@@ -129,6 +129,7 @@ export default function CoveragePage() {
   const [syncing, setSyncing]             = useState(false);
   const [syncMsg, setSyncMsg]             = useState('');
   const [selectedClass, setSelectedClass] = useState(null);
+  const [orgWide, setOrgWide]             = useState(null);   // live org-wide coverage snapshot
 
   // Load test runs and orgs on mount
   useEffect(() => {
@@ -139,6 +140,9 @@ export default function CoveragePage() {
         if (list?.length) setSelectedOrg(list[0].alias);
       })
       .catch(() => {});
+    // Live org-wide coverage from `sfdt coverage --json` (ApexOrgWideCoverage).
+    // Distinct from the per-run coverage above; degrades silently if unavailable.
+    api.coverageOrgWide().then(setOrgWide).catch(() => {});
   }, []);
 
   const handleRefresh = useCallback(() => {
@@ -256,6 +260,66 @@ export default function CoveragePage() {
         <StatCard label="Threshold"       value={`${threshold}%`} accent="neutral" />
         <StatCard label="Below Threshold" value={belowCount} accent={belowCount > 0 ? 'red' : 'green'} />
         <StatCard label="Last Run"        value={lastDate} accent="neutral" />
+      </div>
+
+      {/* ── Zone 2b: Org-Wide Coverage (live snapshot) ────────────────────── */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head">
+          <div className="card-title">Org-Wide Coverage</div>
+          {orgWide?.org && (
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)', fontFamily: 'var(--font-mono)' }}>
+              {orgWide.org}
+            </span>
+          )}
+        </div>
+        <div style={{ padding: '12px 16px 16px' }}>
+          {orgWide == null ? (
+            <p style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+              Run sfdt coverage against an org to see org-wide Apex coverage.
+            </p>
+          ) : orgWide.orgWide == null ? (
+            <p style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+              No org-wide coverage available yet — run Apex tests in the org first.
+            </p>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <span style={{
+                  fontSize: 'var(--fs-2xl, 28px)', fontFamily: 'var(--font-mono)', fontWeight: 600,
+                  color: orgWide.belowThreshold ? 'var(--status-conflict-fg)' : 'var(--status-identical-fg)',
+                }}>
+                  {orgWide.orgWide}%
+                </span>
+                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--fg-muted)' }}>
+                  org-wide{orgWide.threshold != null ? ` · threshold ${orgWide.threshold}%` : ''}
+                </span>
+              </div>
+              {(() => {
+                const thr = orgWide.threshold != null ? orgWide.threshold / 100 : threshold / 100;
+                const below = (orgWide.classes ?? []).filter((c) => c.pct == null || c.pct < thr);
+                if (below.length === 0) {
+                  return <p style={{ color: 'var(--status-identical-fg)', fontSize: 'var(--fs-sm)', margin: 0 }}>All classes meet the threshold.</p>;
+                }
+                return (
+                  <table className="data-table">
+                    <thead>
+                      <tr><th>Class</th><th>Coverage</th><th>Covered / Total</th></tr>
+                    </thead>
+                    <tbody>
+                      {below.map((c) => (
+                        <tr key={c.name}>
+                          <td className="td-mono" style={{ color: 'var(--status-conflict-fg)' }}>{c.name}</td>
+                          <td className="td-mono">{c.pct == null ? 'no lines' : `${Math.round(c.pct * 100)}%`}</td>
+                          <td className="td-mono" style={{ color: 'var(--fg-muted)' }}>{c.covered} / {c.total}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </>
+          )}
+        </div>
       </div>
 
       {/* ── Zone 3: Trend ─────────────────────────────────────────────────── */}

@@ -117,6 +117,39 @@ describe('changelog release command', () => {
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('script failed'));
     expect(process.exitCode).toBe(1);
   });
+
+  it('rejects an invalid semver version before loading config', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'release', 'v1']);
+
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Invalid version'));
+    expect(process.exitCode).toBe(1);
+    expect(loadConfig).not.toHaveBeenCalled();
+  });
+
+  it('targets the per-package changelog file when --package is valid', async () => {
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/project',
+      packageDirectories: [{ name: 'marketing', path: 'force-app/marketing' }],
+    });
+    execa.mockResolvedValue({ stdout: '', exitCode: 0 });
+
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'changelog', 'release', '1.2.3', '--package', 'marketing',
+    ]);
+
+    expect(execa).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          SFDT_CHANGELOG_FILE: expect.stringContaining('changelogs/marketing.md'),
+        }),
+      }),
+    );
+    expect(print.success).toHaveBeenCalledWith(
+      expect.stringContaining('changelogs/marketing.md updated'),
+    );
+  });
 });
 
 describe('changelog check command', () => {
@@ -236,5 +269,76 @@ describe('changelog generate command', () => {
 
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('no config'));
     expect(process.exitCode).toBe(1);
+  });
+
+  it('errors on an unknown --package', async () => {
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/project',
+      features: { ai: true },
+      packageDirectories: [{ name: 'marketing', path: 'force-app/marketing' }],
+    });
+
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'changelog', 'generate', '--package', 'nope',
+    ]);
+
+    expect(print.error).toHaveBeenCalledWith(
+      expect.stringContaining('Unknown package "nope". Valid options: marketing'),
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('creates CHANGELOG.md from template when user approves', async () => {
+    // AI disabled so the command stops right after creating the file
+    loadConfig.mockResolvedValue({ _projectRoot: '/project', features: { ai: false } });
+    fs.pathExists.mockResolvedValue(false);
+    inquirer.prompt.mockResolvedValueOnce({ create: true });
+    isAiAvailable.mockResolvedValue(false);
+
+    await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'generate']);
+
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining('CHANGELOG.md'),
+      expect.stringContaining('## [Unreleased]'),
+    );
+    expect(print.success).toHaveBeenCalledWith('Created CHANGELOG.md');
+  });
+
+  it('sets exitCode 1 when the AI provider returns a non-zero exit', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
+    runAiPrompt.mockResolvedValue({ stdout: '', stderr: 'boom', exitCode: 2 });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'generate']);
+
+    expect(print.error).toHaveBeenCalledWith('boom');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('reports when the AI returns no entries', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
+    runAiPrompt.mockResolvedValue({ stdout: '   ', stderr: '', exitCode: 0 });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'generate']);
+
+    expect(print.info).toHaveBeenCalledWith('AI returned no changelog entries.');
+    expect(inquirer.prompt).not.toHaveBeenCalled();
+  });
+
+  it('appends entries when no [Unreleased] section exists', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
+    runAiPrompt.mockResolvedValue({ stdout: '### Added\n- thing', stderr: '', exitCode: 0 });
+    inquirer.prompt.mockResolvedValueOnce({ apply: true });
+    fs.readFile.mockResolvedValue('# Changelog\n\n## [1.0.0]\n');
+
+    await createProgram().parseAsync(['node', 'sfdt', 'changelog', 'generate']);
+
+    expect(fs.appendFile).toHaveBeenCalledWith(
+      expect.stringContaining('CHANGELOG.md'),
+      expect.stringContaining('### Added\n- thing'),
+    );
+    expect(fs.writeFile).not.toHaveBeenCalled();
   });
 });

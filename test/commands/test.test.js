@@ -12,7 +12,12 @@ vi.mock('../../src/lib/script-runner.js', () => ({
 vi.mock('../../src/lib/ai.js', () => ({
   isAiAvailable: vi.fn(),
   runAiPrompt: vi.fn(),
-  providerSupportsAgenticTools: () => true,
+  providerSupportsAgenticTools: vi.fn(() => true),
+}));
+
+vi.mock('../../src/lib/ai-context.js', () => ({
+  gatherLatestTestResults: vi.fn(),
+  frameProvidedContext: vi.fn(() => '\n[context]'),
 }));
 
 vi.mock('inquirer', () => ({
@@ -32,7 +37,8 @@ vi.mock('../../src/lib/output.js', () => ({
 
 import { loadConfig } from '../../src/lib/config.js';
 import { runScript } from '../../src/lib/script-runner.js';
-import { isAiAvailable, runAiPrompt } from '../../src/lib/ai.js';
+import { isAiAvailable, runAiPrompt, providerSupportsAgenticTools } from '../../src/lib/ai.js';
+import { gatherLatestTestResults } from '../../src/lib/ai-context.js';
 import inquirer from 'inquirer';
 import { print } from '../../src/lib/output.js';
 import { registerTestCommand } from '../../src/commands/test.js';
@@ -52,6 +58,7 @@ beforeEach(() => {
     defaultOrg: 'dev',
     features: { ai: true },
   });
+  providerSupportsAgenticTools.mockReturnValue(true);
 });
 
 describe('test command', () => {
@@ -132,5 +139,77 @@ describe('test command', () => {
 
     expect(inquirer.prompt).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
+  });
+
+  it('warns but continues when the analyzer fails with --analyze', async () => {
+    runScript.mockResolvedValueOnce({ exitCode: 0 }); // main run passes
+    runScript.mockRejectedValueOnce(new Error('analyzer blew up')); // analyzer fails
+
+    await createProgram().parseAsync(['node', 'sfdt', 'test', '--analyze']);
+
+    expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('analyzer blew up'));
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('skips AI analysis entirely in --dry-run even if the dry-run "fails"', async () => {
+    runScript.mockRejectedValueOnce(new Error('tests failed'));
+    isAiAvailable.mockResolvedValue(true);
+
+    await createProgram().parseAsync(['node', 'sfdt', 'test', '--dry-run']);
+
+    expect(inquirer.prompt).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('sets the error exit code when the top-level loadConfig throws', async () => {
+    loadConfig.mockRejectedValue(new Error('no config'));
+
+    await createProgram().parseAsync(['node', 'sfdt', 'test']);
+
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('no config'));
+    expect(process.exitCode).toBe(1);
+  });
+
+  describe('http AI provider (non-agentic)', () => {
+    beforeEach(() => {
+      providerSupportsAgenticTools.mockReturnValue(false);
+      runScript.mockRejectedValueOnce(new Error('tests failed'));
+      isAiAvailable.mockResolvedValue(true);
+      inquirer.prompt.mockResolvedValue({ analyzeFailure: true });
+    });
+
+    it('injects gathered test results into the prompt and prints the analysis', async () => {
+      gatherLatestTestResults.mockResolvedValue('RESULTS BLOB');
+      runAiPrompt.mockResolvedValue({ stdout: 'the analysis', exitCode: 0 });
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      await createProgram().parseAsync(['node', 'sfdt', 'test']);
+
+      expect(gatherLatestTestResults).toHaveBeenCalled();
+      expect(runAiPrompt).toHaveBeenCalledWith(
+        expect.stringContaining('[context]'),
+        expect.objectContaining({ interactive: false }),
+      );
+      expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('the analysis');
+      logSpy.mockRestore();
+    });
+
+    it('warns when there are no test-result files to inject', async () => {
+      gatherLatestTestResults.mockResolvedValue(null);
+      runAiPrompt.mockResolvedValue({ stdout: '', exitCode: 0 });
+
+      await createProgram().parseAsync(['node', 'sfdt', 'test']);
+
+      expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('no test-result files'));
+    });
+
+    it('surfaces an AI error on a non-zero exit code', async () => {
+      gatherLatestTestResults.mockResolvedValue('RESULTS');
+      runAiPrompt.mockResolvedValue({ stdout: '', stderr: 'model down', exitCode: 1 });
+
+      await createProgram().parseAsync(['node', 'sfdt', 'test']);
+
+      expect(print.error).toHaveBeenCalledWith('model down');
+    });
   });
 });

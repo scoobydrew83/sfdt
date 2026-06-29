@@ -13,6 +13,14 @@
       "enforceSfdxProject": true,
       "enforceUntrackedFiles": false,
       "strict": false
+    },
+    "smart": {
+      "enabled": false,
+      "deltaBase": "main",
+      "noOverwriteManifest": "manifest/package-no-overwrite.xml",
+      "impactingTypes": ["ApexClass", "ApexTrigger", "Flow"],
+      "downgradeTestsOnNonProd": true,
+      "assumeProd": false
     }
   },
   "features": {
@@ -31,7 +39,19 @@
     "baseURL": "",
     "apiKeyEnv": "",
     "headers": {},
-    "timeoutMs": 300000
+    "timeoutMs": 300000,
+    "agent": {
+      "enabled": false,
+      "maxTurns": 3,
+      "allowWrite": false
+    }
+  },
+  "notifications": {
+    "enabled": false,
+    "channels": [],
+    "summary": {
+      "enabled": false
+    }
   },
   "plugins": [],
   "pluginOptions": {
@@ -62,15 +82,20 @@
   "logRetention": 50,
   "audit": {
     "auditTrailLookbackDays": 30,
-    "licenseWarnThreshold": 0.9,
+    "licenseWarnThreshold": 0.75,
     "inactiveUserDays": 90,
-    "minApiVersion": 45
+    "minApiVersion": 45,
+    "fieldDescriptionMaxMissing": 0,
+    "connectedAppFlagPermissive": true
   },
   "monitoring": {
     "backupDir": "monitoring-backup",
-    "limitWarnThreshold": 0.8,
+    "limitWarnThreshold": 0.75,
     "errorLookbackDays": 7,
-    "healthMinScore": 80
+    "healthMinScore": 80,
+    "orgInfoTrialWarnDays": 14,
+    "deployHistoryLookback": 20,
+    "deprecatedApiLookbackDays": 7
   },
   "docs": {
     "outputDir": "docs",

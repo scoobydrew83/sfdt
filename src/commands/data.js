@@ -4,6 +4,7 @@ import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
 import { exportDataSet, importDataSet, deleteDataSet, listDataSets, readQueries, extractSObject } from '../lib/data-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { emitJson, emitJsonError } from '../lib/output.js';
 
 function resolveOrg(config, options) {
   const org = options.org ?? config.defaultOrg;
@@ -27,17 +28,17 @@ function makeAction(verb, fn) {
         throw err;
       }
       if (jsonMode) {
-        process.stdout.write(JSON.stringify({ status: 'success', ...result }, null, 2) + '\n');
+        emitJson(result);
       } else {
         console.log(chalk.green(`\n${JSON.stringify(result, null, 2)}`));
       }
     } catch (err) {
       if (jsonMode) {
-        process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');
+        emitJsonError(err);
       } else {
         console.error(chalk.red(`${verb} failed: ${err.message}`));
+        process.exitCode = resolveExitCode(err);
       }
-      process.exitCode = resolveExitCode(err);
     }
   };
 }
@@ -104,12 +105,11 @@ function makeDeleteAction() {
         // a machine consumer (CI checking `status === 'success'`) must not treat
         // an incomplete delete as clean. The counts let them branch without
         // iterating sobjects[].
-        process.stdout.write(JSON.stringify({
+        emitJson({
           ...result,
-          status: errored.length || skipped.length ? 'partial' : 'success',
           skippedCount: skipped.length,
           errorCount: errored.length,
-        }, null, 2) + '\n');
+        });
       } else {
         if (errored.length) {
           console.warn(chalk.red(`⚠ ${errored.length} sobject delete(s) FAILED — see the "error" entries in the result below.`));
@@ -121,11 +121,11 @@ function makeDeleteAction() {
       }
     } catch (err) {
       if (jsonMode) {
-        process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');
+        emitJsonError(err);
       } else {
         console.error(chalk.red(`Delete failed: ${err.message}`));
+        process.exitCode = resolveExitCode(err);
       }
-      process.exitCode = resolveExitCode(err);
     }
   };
 }
@@ -144,7 +144,7 @@ export function registerDataCommand(program) {
         const config = await loadConfig();
         const sets = await listDataSets(config);
         if (options.json) {
-          process.stdout.write(JSON.stringify({ status: 'success', sets }, null, 2) + '\n');
+          emitJson({ sets });
         } else if (sets.length === 0) {
           console.log(chalk.yellow('No data sets found. Create one at .sfdt/data/<name>/queries.json'));
         } else {
@@ -153,11 +153,11 @@ export function registerDataCommand(program) {
         }
       } catch (err) {
         if (options.json) {
-          process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');
+          emitJsonError(err);
         } else {
           console.error(chalk.red(`List failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
         }
-        process.exitCode = resolveExitCode(err);
       }
     });
 

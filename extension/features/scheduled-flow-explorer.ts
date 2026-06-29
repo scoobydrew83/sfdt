@@ -12,6 +12,7 @@ import { escapeSoql } from '../lib/escape.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { registerSettingsShape } from '../lib/settings.js';
+import { presentView } from '../ui/present-view.js';
 import { z } from 'zod';
 
 const SCHEDULED_FLOW_EXPLORER_SETTINGS_SCHEMA = z.object({
@@ -112,31 +113,17 @@ export async function discoverScheduledFlows(
   return { flows, errors };
 }
 
+// Builds the modal body content. The count summary lives at the top of the body
+// (presentView owns the header — title + × only). Returned so onActivate (and
+// tests) can mount it via presentView.
 function buildModal(doc: Document, result: DiscoveryResult, now: Date): HTMLDivElement {
-  const overlay = doc.createElement('div');
-  overlay.className = 'sfdt-scheduled-flow-overlay';
-  overlay.style.cssText =
-    'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-
-  const modal = doc.createElement('div');
-  modal.style.cssText =
-    'background: #fff; border-radius: 4px; width: 720px; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column;';
-
-  const header = doc.createElement('div');
-  header.style.cssText =
-    'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center; font-weight: 600;';
-  const headerLabel = doc.createElement('span');
-  headerLabel.textContent = `Scheduled Flow Explorer — ${result.flows.length} flow${result.flows.length === 1 ? '' : 's'}`;
-  const close = doc.createElement('button');
-  close.textContent = '×';
-  close.style.cssText = 'background: none; border: 0; font-size: 22px; cursor: pointer;';
-  close.addEventListener('click', () => overlay.remove());
-  header.appendChild(headerLabel);
-  header.appendChild(close);
-  modal.appendChild(header);
-
   const body = doc.createElement('div');
   body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1;';
+
+  const summary = doc.createElement('div');
+  summary.style.cssText = 'font-weight: 600; margin-bottom: 12px;';
+  summary.textContent = `Scheduled Flow Explorer — ${result.flows.length} flow${result.flows.length === 1 ? '' : 's'}`;
+  body.appendChild(summary);
 
   if (result.flows.length === 0) {
     const empty = doc.createElement('div');
@@ -177,12 +164,7 @@ function buildModal(doc: Document, result: DiscoveryResult, now: Date): HTMLDivE
     body.appendChild(errBox);
   }
 
-  modal.appendChild(body);
-  overlay.appendChild(modal);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
-  return overlay;
+  return body;
 }
 
 export interface ScheduledFlowExplorerOptions {
@@ -221,7 +203,12 @@ export function createScheduledFlowExplorerFeature(
       try {
         const result = await discoverScheduledFlows(api);
         loadingOverlay.remove();
-        doc.body.appendChild(buildModal(doc, result, now()));
+        presentView({
+          title: 'Scheduled Flow Explorer',
+          body: buildModal(doc, result, now()),
+          doc,
+          width: '720px',
+        });
       } catch (err) {
         loadingOverlay.textContent = `Failed: ${err instanceof Error ? err.message : String(err)}`;
         setTimeout(() => loadingOverlay.remove(), 3000);

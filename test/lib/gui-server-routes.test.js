@@ -1285,3 +1285,31 @@ describe('POST /api/changelog/save', () => {
     expect(res.body.error).toMatch(/invalid package name/i);
   });
 });
+
+describe('GET /api/notifications', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(
+      { ...MOCK_CONFIG, notifications: { enabled: true, channels: [{ type: 'slack', name: 'team', webhookUrl: 'https://hooks.slack.com/x', severityThreshold: 'warn', events: ['snapshot'] }] } },
+      VERSION,
+      PORT,
+    );
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('returns redacted channel descriptors (no secrets)', async () => {
+    const res = await request(app).get('/api/notifications');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.channels)).toBe(true);
+    const team = res.body.channels.find((c) => c.name === 'team');
+    expect(team).toBeTruthy();
+    expect(team.type).toBe('slack');
+    expect(team.target).toBe(true);
+    // The webhook URL must never be exposed.
+    expect(JSON.stringify(res.body)).not.toContain('hooks.slack.com');
+  });
+});

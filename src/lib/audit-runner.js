@@ -1,4 +1,5 @@
-import { query, safeParse } from './org-query.js';
+import { ORG_HEALTH_THRESHOLDS } from '@sfdt/flow-core';
+import { query, safeParse, toSoqlDate } from './org-query.js';
 
 /**
  * Org diagnose & audit runner.
@@ -20,19 +21,21 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * Single source of truth for audit-check fallback defaults.
  *
- * These values are mirrored in src/templates/sfdt.config.json (under `audit`)
- * which remains the canonical config the user edits. They are duplicated here
- * only as a defensive fallback for programmatic callers and when a config key
- * is absent — keeping them in one constant prevents the literals from drifting
- * across the runner and command layers. Update the floor (e.g. when Salesforce
- * retires an API version) in `.sfdt/config.json` → `audit.minApiVersion`, or
- * here for the built-in default.
+ * Usage/coverage/age thresholds come from the shared @sfdt/flow-core rulebook
+ * (ORG_HEALTH_THRESHOLDS) so the CLI, GUI, and Chrome extension band findings
+ * identically. NOTE: licenseWarnThreshold changed 0.9 → 0.75 here as part of
+ * that unification — the CLI now warns at the same 75% point Chrome uses.
+ * CLI-only knobs (auditTrailLookbackDays) have no shared equivalent and stay
+ * local. These values are mirrored in src/templates/sfdt.config.json (under
+ * `audit`), which remains the canonical config the user edits.
  */
 export const AUDIT_DEFAULTS = {
   auditTrailLookbackDays: 30,
-  licenseWarnThreshold: 0.9,
-  inactiveUserDays: 90,
-  minApiVersion: 45,
+  licenseWarnThreshold: ORG_HEALTH_THRESHOLDS.usageAmber, // 0.75 (was 0.9 before flow-core unification)
+  inactiveUserDays: ORG_HEALTH_THRESHOLDS.inactiveUserDays, // 90
+  minApiVersion: ORG_HEALTH_THRESHOLDS.minApiVersionFloor, // 45
+  fieldDescriptionMaxMissing: 0,
+  connectedAppFlagPermissive: true,
 };
 
 // Setup-audit-trail actions/sections that warrant a closer look. Matched as
@@ -57,9 +60,8 @@ const SUSPECT_PATTERNS = [
   'manageipranges',
 ];
 
-// Salesforce SOQL datetime literals reject the milliseconds that
-// toISOString() emits (…:00.000Z), so strip them for use in WHERE clauses.
-const ISODate = (d) => new Date(d).toISOString().replace(/\.\d{3}Z$/, 'Z');
+// SOQL datetime literal helper (shared) — strips the milliseconds Salesforce rejects.
+const ISODate = toSoqlDate;
 
 /**
  * Recent suspicious setup activity from SetupAuditTrail.
@@ -142,21 +144,31 @@ export async function checkMfa(orgAlias) {
     // (`User WHERE Id NOT IN (SELECT UserId FROM TwoFactorMethodsInfo)`) would be
     // ideal but Salesforce rejects it (INVALID_TYPE — not semi-join-able), so we
     // diff client-side; very large orgs may under-count enrolled users.
+    // Both queries return a single SOQL page (~2000 rows). The two truncations
+    // compound in opposite directions: a capped TwoFactorMethodsInfo over-reports
+    // non-compliance (enrolled users past the cap look unenrolled), while a capped
+    // User list under-reports it (non-enrolled users past the cap are invisible).
+    // We can't reliably page both, so flag when either hits the cap.
+    const PAGE = 2000;
     const mfaRows = await query(orgAlias, 'SELECT UserId FROM TwoFactorMethodsInfo');
     const enrolled = new Set(mfaRows.map((r) => r.UserId));
     // Active, human (non-integration) users.
     const users = await query(
       orgAlias,
       `SELECT Id, Username, Name, Profile.UserLicense.Name FROM User ` +
-        `WHERE IsActive = true AND UserType = 'Standard' ORDER BY Name LIMIT 2000`,
+        `WHERE IsActive = true AND UserType = 'Standard' ORDER BY Name LIMIT ${PAGE}`,
     );
+    const truncated = mfaRows.length >= PAGE || users.length >= PAGE;
     const findings = users
       .filter((u) => !enrolled.has(u.Id))
       .map((u) => ({ username: u.Username, name: u.Name, license: u.Profile?.UserLicense?.Name }));
-    return result(id, title, findings.length ? 'warn' : 'ok',
-      findings.length
+    const truncNote = truncated
+      ? ` (results truncated at ${PAGE} rows — MFA coverage count may be incomplete)`
+      : '';
+    return result(id, title, findings.length || truncated ? 'warn' : 'ok',
+      (findings.length
         ? `${findings.length} active user(s) without a registered MFA method`
-        : 'All active standard users have MFA registered',
+        : 'All active standard users have MFA registered') + truncNote,
       findings);
   } catch (err) {
     return errored(id, title, err);
@@ -280,6 +292,284 @@ export async function checkApiVersions(orgAlias, { minApiVersion = AUDIT_DEFAULT
   }
 }
 
+/**
+ * Inactive flows — flow definitions with no active version (deactivated or
+ * draft-only automations that clutter the org and can mask intent).
+ */
+export async function checkInactiveFlows(orgAlias) {
+  const id = 'inactive-flows';
+  const title = 'Inactive flows';
+  try {
+    const rows = await query(
+      orgAlias,
+      `SELECT DeveloperName, ActiveVersionId FROM FlowDefinition WHERE ActiveVersionId = null ORDER BY DeveloperName`,
+      { tooling: true },
+    );
+    const findings = rows.map((r) => ({ name: r.DeveloperName }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} flow(s) with no active version`
+        : 'All flow definitions have an active version',
+      findings);
+  } catch (err) {
+    return errored(id, title, err);
+  }
+}
+
+/**
+ * Unused permission sets — custom permission sets (not profile-owned) with no
+ * user assignments, directly or via an assigned permission set group. Mirrors
+ * the client-side diff used by checkMfa because Salesforce rejects the semi-join
+ * (PermissionSet WHERE Id NOT IN (SELECT PermissionSetId FROM
+ * PermissionSetAssignment)).
+ */
+export async function checkUnusedPermsets(orgAlias) {
+  const id = 'unused-permsets';
+  const title = 'Unused permission sets';
+  try {
+    const assignments = await query(orgAlias, 'SELECT PermissionSetId FROM PermissionSetAssignment');
+    const assigned = new Set(assignments.map((a) => a.PermissionSetId));
+    // A permission set used only inside an assigned permission set group has no
+    // direct PermissionSetAssignment row, so fold in group membership to avoid
+    // false positives.
+    const groupComponents = await query(orgAlias, 'SELECT PermissionSetId FROM PermissionSetGroupComponent');
+    for (const g of groupComponents) assigned.add(g.PermissionSetId);
+    const permsets = await query(
+      orgAlias,
+      `SELECT Id, Name, Label FROM PermissionSet WHERE IsOwnedByProfile = false ORDER BY Name`,
+    );
+    const findings = permsets
+      .filter((p) => !assigned.has(p.Id))
+      .map((p) => ({ name: p.Label || p.Name }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} permission set(s) with no user assignments`
+        : 'All custom permission sets are assigned',
+      findings);
+  } catch (err) {
+    return errored(id, title, err);
+  }
+}
+
+/**
+ * Connected apps review — surfaces connected apps that permit all users (admin
+ * approval not required), which widens the integration attack surface.
+ */
+export async function checkConnectedApps(orgAlias, { flagPermissive = AUDIT_DEFAULTS.connectedAppFlagPermissive } = {}) {
+  const id = 'connected-apps';
+  const title = 'Connected apps review';
+  try {
+    const rows = await query(
+      orgAlias,
+      `SELECT Name, OptionsAllowAdminApprovedUsersOnly FROM ConnectedApplication ORDER BY Name`,
+    );
+    const findings = flagPermissive
+      ? rows
+          .filter((r) => r.OptionsAllowAdminApprovedUsersOnly === false)
+          .map((r) => ({ name: r.Name, detail: 'All users permitted (admin approval not required)' }))
+      : [];
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} connected app(s) permit all users`
+        : `${rows.length} connected app(s); none flagged`,
+      findings);
+  } catch (err) {
+    // ConnectedApplication is not queryable for every user/permission set.
+    return degraded(id, title, err, 'Connected apps review');
+  }
+}
+
+/**
+ * Missing field descriptions — custom fields without a Description, which hurts
+ * maintainability and auto-generated docs. Capped to keep the Tooling query
+ * bounded; very large orgs may under-count (documented).
+ */
+export async function checkFieldDescriptions(orgAlias, { maxMissing = AUDIT_DEFAULTS.fieldDescriptionMaxMissing } = {}) {
+  const id = 'field-descriptions';
+  const title = 'Missing field descriptions';
+  try {
+    const rows = await query(
+      orgAlias,
+      `SELECT DeveloperName, TableEnumOrId FROM CustomField WHERE NamespacePrefix = null AND Description = null ORDER BY TableEnumOrId LIMIT 2000`,
+      { tooling: true },
+    );
+    const findings = rows.map((r) => ({ name: `${r.TableEnumOrId}.${r.DeveloperName}` }));
+    const over = findings.length > maxMissing;
+    return result(id, title, over ? 'warn' : 'ok',
+      over
+        ? `${findings.length} custom field(s) missing a description (threshold ${maxMissing})`
+        : `${findings.length} custom field(s) missing a description (within threshold ${maxMissing})`,
+      findings);
+  } catch (err) {
+    return errored(id, title, err);
+  }
+}
+
+/**
+ * Unreferenced Apex — non-test classes that no other metadata component depends
+ * on (Tooling MetadataComponentDependency). Complements the coverage-based
+ * `unused-apex` heuristic with a dependency-graph view.
+ */
+export async function checkApexUnreferenced(orgAlias) {
+  const id = 'apex-unreferenced';
+  const title = 'Unreferenced Apex';
+  try {
+    const classes = await query(
+      orgAlias,
+      `SELECT Name FROM ApexClass WHERE NamespacePrefix = null ORDER BY Name`,
+      { tooling: true },
+    );
+    const deps = await query(
+      orgAlias,
+      `SELECT RefMetadataComponentName FROM MetadataComponentDependency WHERE RefMetadataComponentType = 'ApexClass'`,
+      { tooling: true },
+    );
+    // MetadataComponentDependency is empty/unsupported in some orgs; without it
+    // every class would look unreferenced, so skip rather than false-positive.
+    if (deps.length === 0) {
+      return result(id, title, 'warn',
+        'No dependency data available (MetadataComponentDependency empty or unsupported); unreferenced-Apex detection skipped', []);
+    }
+    const referenced = new Set(deps.map((d) => d.RefMetadataComponentName));
+    const findings = classes
+      .filter((c) => !/(^test|test$)/i.test(c.Name) && !referenced.has(c.Name))
+      .map((c) => ({ name: c.Name }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} Apex class(es) not referenced by any component (review for removal)`
+        : 'All Apex classes are referenced',
+      findings);
+  } catch (err) {
+    // MetadataComponentDependency is a Beta Tooling object with limited WHERE
+    // support and isn't available/queryable in every org.
+    return degraded(id, title, err, 'Dependency analysis');
+  }
+}
+
+/**
+ * Object access lint — custom objects that have permission entries but grant
+ * Read to nobody. Objects-only heuristic via ObjectPermissions aggregation;
+ * full field-level lint is deferred to a later phase. Objects with NO permission
+ * rows at all are not surfaced here (a separate, known gap).
+ */
+export async function checkLintAccess(orgAlias) {
+  const id = 'lint-access';
+  const title = 'Object access';
+  try {
+    // Filter custom objects client-side: SOQL LIKE treats '_' as a wildcard, so
+    // a `LIKE '%__c'` filter would over-match — fetch grants and match the
+    // literal '__c' suffix in JS instead.
+    const rows = await query(orgAlias, `SELECT SobjectType, PermissionsRead FROM ObjectPermissions`);
+    const custom = rows.filter((r) => typeof r.SobjectType === 'string' && r.SobjectType.endsWith('__c'));
+    if (custom.length === 0) {
+      return result(id, title, 'ok', 'No custom-object permission entries to evaluate', []);
+    }
+    const readByType = new Map();
+    for (const r of custom) {
+      readByType.set(r.SobjectType, (readByType.get(r.SobjectType) || false) || r.PermissionsRead === true);
+    }
+    const findings = [...readByType.entries()]
+      .filter(([, hasRead]) => !hasRead)
+      .map(([type]) => ({ name: type, detail: 'No profile or permission set grants Read' }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} custom object(s) with no Read access granted`
+        : 'All custom objects with permission entries grant Read',
+      findings);
+  } catch (err) {
+    return errored(id, title, err);
+  }
+}
+
+/**
+ * Inactive validation rules. ValidationRule is Tooling-queryable with an Active
+ * flag, so this is a fast SOQL check (no metadata retrieve needed).
+ */
+export async function checkInactiveValidations(orgAlias) {
+  const id = 'inactive-validations';
+  const title = 'Inactive validation rules';
+  try {
+    const rows = await query(
+      orgAlias,
+      `SELECT ValidationName, EntityDefinition.QualifiedApiName FROM ValidationRule WHERE Active = false ORDER BY ValidationName`,
+      { tooling: true },
+    );
+    const findings = rows.map((r) => ({
+      name: `${r.EntityDefinition?.QualifiedApiName ?? '?'}.${r.ValidationName}`,
+    }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} inactive validation rule(s)`
+        : 'All validation rules are active',
+      findings);
+  } catch (err) {
+    return degraded(id, title, err, 'Validation rule status');
+  }
+}
+
+/**
+ * Inactive workflow rules. Workflow rules are a legacy (deprecated) automation;
+ * WorkflowRule's Active field is not queryable in every org, so this attempts a
+ * Tooling query and degrades gracefully: an org without the workflow feature
+ * rejects WorkflowRule outright (treated as "none"), other failures degrade to warn.
+ */
+export async function checkInactiveWorkflows(orgAlias) {
+  const id = 'inactive-workflows';
+  const title = 'Inactive workflow rules';
+  try {
+    const rows = await query(
+      orgAlias,
+      `SELECT Name, TableEnumOrId, Active FROM WorkflowRule WHERE Active = false ORDER BY Name`,
+      { tooling: true },
+    );
+    const findings = rows.map((r) => ({ name: `${r.TableEnumOrId}.${r.Name}` }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length ? `${findings.length} inactive workflow rule(s)` : 'No inactive workflow rules',
+      findings);
+  } catch (err) {
+    // "Cannot use: WorkflowRule in this organization" (INVALID_TYPE) means the
+    // org simply has no workflow rules — that's fine, report ok.
+    if (/cannot use|invalid_type/i.test(String(err?.message || ''))) {
+      return result(id, title, 'ok', 'No workflow rules in this org', []);
+    }
+    return degraded(id, title, err, 'Workflow rule status');
+  }
+}
+
+/**
+ * Field access lint — custom fields that grant Read to no profile or permission
+ * set (via FieldPermissions). Complements the object-level `lint-access` check.
+ * Client-side aggregation (the checkMfa diff pattern). Note: `sf data query`
+ * auto-paginates, but FieldPermissions is large in big orgs — this scans every
+ * FLS grant row.
+ */
+export async function checkLintAccessFields(orgAlias) {
+  const id = 'lint-access-fields';
+  const title = 'Field access';
+  try {
+    const rows = await query(orgAlias, `SELECT Field, PermissionsRead FROM FieldPermissions`);
+    // FieldPermissions.Field is "SObject.FieldApiName"; custom fields end in __c.
+    const custom = rows.filter((r) => typeof r.Field === 'string' && r.Field.endsWith('__c'));
+    if (custom.length === 0) {
+      return result(id, title, 'ok', 'No custom-field permission entries to evaluate', []);
+    }
+    const readByField = new Map();
+    for (const r of custom) {
+      readByField.set(r.Field, (readByField.get(r.Field) || false) || r.PermissionsRead === true);
+    }
+    const findings = [...readByField.entries()]
+      .filter(([, hasRead]) => !hasRead)
+      .map(([field]) => ({ name: field, detail: 'No profile or permission set grants Read' }));
+    return result(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} custom field(s) with no Read access granted`
+        : 'All custom fields with permission entries grant Read',
+      findings);
+  } catch (err) {
+    return degraded(id, title, err, 'Field access lint');
+  }
+}
+
 export const CHECKS = {
   audittrail: checkAuditTrail,
   licenses: checkLicenses,
@@ -287,6 +577,15 @@ export const CHECKS = {
   'unused-apex': checkUnusedApex,
   'inactive-users': checkInactiveUsers,
   'api-versions': checkApiVersions,
+  'inactive-flows': checkInactiveFlows,
+  'unused-permsets': checkUnusedPermsets,
+  'connected-apps': checkConnectedApps,
+  'field-descriptions': checkFieldDescriptions,
+  'apex-unreferenced': checkApexUnreferenced,
+  'lint-access': checkLintAccess,
+  'inactive-validations': checkInactiveValidations,
+  'inactive-workflows': checkInactiveWorkflows,
+  'lint-access-fields': checkLintAccessFields,
 };
 
 export const CHECK_IDS = Object.keys(CHECKS);
@@ -332,6 +631,25 @@ function errored(id, title, err) {
     title,
     status: 'error',
     summary: `Check failed: ${oneLine(structured || err?.message)}`,
+    findings: [],
+  };
+}
+
+/**
+ * Soft failure for checks that query a Beta / license-gated / permission-gated
+ * object (e.g. MetadataComponentDependency, ConnectedApplication): a query
+ * failure there usually means "this org can't run the check", not "the org is
+ * broken". Surface a `warn` so `audit all` doesn't exit non-zero (red CI) over a
+ * missing API, while never reading as a clean `ok`. Mirrors checkDeprecatedApi
+ * in monitor-runner.
+ */
+function degraded(id, title, err, what) {
+  const structured = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
+  return {
+    id,
+    title,
+    status: 'warn',
+    summary: `${what} unavailable in this org: ${oneLine(structured || err?.message)}`,
     findings: [],
   };
 }

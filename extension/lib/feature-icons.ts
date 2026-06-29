@@ -39,6 +39,15 @@ export const FEATURE_ICONS: Record<string, FeatureIcon> = {
   'debug-log-viewer': { icon: '🪵', label: 'Debug Logs' },
   'saved-soql': { icon: '⭐', label: 'Saved SOQL' },
   'org-switcher': { icon: '🏢', label: 'Switch Org' },
+  'apex-coverage': { icon: '📈', label: 'Apex Coverage' },
+  'org-health-live': { icon: '🏥', label: 'Org Health (Live)' },
+  'dependency-explorer': { icon: '🔗', label: 'Dependency Explorer' },
+  'apex-test-runner': { icon: '🧪', label: 'Apex Test Runner' },
+  // Bridge-backed tools (need `sfdt ui` running, like flow-deploy).
+  'flow-quality': { icon: '✅', label: 'Flow Quality Scan' },
+  'drift-check': { icon: '🌊', label: 'Drift Check' },
+  'metadata-scan': { icon: '🔬', label: 'Metadata Scan' },
+  'org-compare': { icon: '🔀', label: 'Org Compare' },
 };
 
 // Curated order of tools shown in the Workspace sidebar. The Workspace gives
@@ -53,6 +62,14 @@ export const WORKSPACE_TOOLS: readonly string[] = [
   'rest-explore',
   'soap-explore',
   'inspect-record',
+  'apex-coverage',
+  'apex-test-runner',
+  'org-health-live',
+  'dependency-explorer',
+  'flow-quality',
+  'drift-check',
+  'metadata-scan',
+  'org-compare',
   'org-limits',
   'event-monitor',
   'data-import',

@@ -171,14 +171,17 @@ describe('POST /api/bridge/exchange — contract validation', () => {
 });
 
 describe('POST /api/bridge/exchange — dispatch', () => {
-  it('returns NOT_IMPLEMENTED for kinds still pending implementation (drift)', async () => {
+  it('rejects ai when the project has not opted into AI features', async () => {
+    // MOCK_CONFIG.features = {} → features.ai is falsy, so the handler short-
+    // circuits before touching any AI provider.
     const res = await request(app)
       .post('/api/bridge/exchange')
       .set('Authorization', `Bearer ${FIXED_TOKEN}`)
-      .send({ requestId: 'r2', kind: 'drift', component: 'Flow:X' });
+      .send({ requestId: 'r2', kind: 'ai', prompt: 'hello' });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(false);
-    expect(res.body.code).toBe('NOT_IMPLEMENTED');
+    expect(res.body.code).toBe('REQUEST_INVALID');
+    expect(res.body.error).toMatch(/AI features are disabled/);
     expect(res.body.requestId).toBe('r2');
   });
 

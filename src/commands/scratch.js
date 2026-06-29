@@ -4,23 +4,7 @@ import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
 import { createScratch, deleteScratch, listScratch, ensurePool, readPool } from '../lib/scratch-pool.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
-
-function emit(jsonMode, payload, render) {
-  if (jsonMode) {
-    process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
-  } else {
-    render();
-  }
-}
-
-function fail(jsonMode, verb, err) {
-  if (jsonMode) {
-    process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');
-  } else {
-    console.error(chalk.red(`${verb} failed: ${err.message}`));
-  }
-  process.exitCode = resolveExitCode(err);
-}
+import { emitJson, emitJsonError } from '../lib/output.js';
 
 export function registerScratchCommand(program) {
   const scratch = program
@@ -46,9 +30,14 @@ export function registerScratchCommand(program) {
           spinner?.fail('Scratch creation failed');
           throw err;
         }
-        emit(jsonMode, { status: 'success', ...org }, () => console.log(chalk.green(JSON.stringify(org, null, 2))));
+        if (jsonMode) emitJson(org);
+        else console.log(chalk.green(JSON.stringify(org, null, 2)));
       } catch (err) {
-        fail(jsonMode, 'Create', err);
+        if (jsonMode) emitJsonError(err);
+        else {
+          console.error(chalk.red(`Create failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
+        }
       }
     });
 
@@ -77,9 +66,14 @@ export function registerScratchCommand(program) {
           }
         }
         await deleteScratch(target);
-        emit(jsonMode, { status: 'success', deleted: target }, () => console.log(chalk.green(`Deleted ${target}`)));
+        if (jsonMode) emitJson({ deleted: target });
+        else console.log(chalk.green(`Deleted ${target}`));
       } catch (err) {
-        fail(jsonMode, 'Delete', err);
+        if (jsonMode) emitJsonError(err);
+        else {
+          console.error(chalk.red(`Delete failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
+        }
       }
     });
 
@@ -91,15 +85,22 @@ export function registerScratchCommand(program) {
       const jsonMode = !!options.json;
       try {
         const orgs = await listScratch();
-        emit(jsonMode, { status: 'success', orgs }, () => {
-          if (orgs.length === 0) return console.log(chalk.yellow('No scratch orgs.'));
+        if (jsonMode) {
+          emitJson({ orgs });
+        } else if (orgs.length === 0) {
+          console.log(chalk.yellow('No scratch orgs.'));
+        } else {
           console.log('');
           for (const o of orgs) {
             console.log(`  ${(o.alias ?? '—').padEnd(20)} ${o.username}  exp:${o.expirationDate ?? '?'}`);
           }
-        });
+        }
       } catch (err) {
-        fail(jsonMode, 'List', err);
+        if (jsonMode) emitJsonError(err);
+        else {
+          console.error(chalk.red(`List failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
+        }
       }
     });
 
@@ -114,10 +115,14 @@ export function registerScratchCommand(program) {
       try {
         const config = await loadConfig();
         const state = await readPool(config);
-        emit(jsonMode, { status: 'success', ...state }, () =>
-          console.log(`Pool: ${state.members?.length ?? 0}/${state.size ?? 0} orgs`));
+        if (jsonMode) emitJson(state);
+        else console.log(`Pool: ${state.members?.length ?? 0}/${state.size ?? 0} orgs`);
       } catch (err) {
-        fail(jsonMode, 'Pool status', err);
+        if (jsonMode) emitJsonError(err);
+        else {
+          console.error(chalk.red(`Pool status failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
+        }
       }
     });
 
@@ -139,10 +144,14 @@ export function registerScratchCommand(program) {
           spinner?.fail('Pool fill failed');
           throw err;
         }
-        emit(jsonMode, { status: 'success', ...result }, () =>
-          console.log(chalk.green(`Created ${result.created} org(s); pool ${result.members.length}/${result.size}`)));
+        if (jsonMode) emitJson(result);
+        else console.log(chalk.green(`Created ${result.created} org(s); pool ${result.members.length}/${result.size}`));
       } catch (err) {
-        fail(jsonMode, 'Pool fill', err);
+        if (jsonMode) emitJsonError(err);
+        else {
+          console.error(chalk.red(`Pool fill failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
+        }
       }
     });
 }

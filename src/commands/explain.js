@@ -27,6 +27,7 @@ export function registerExplainCommand(program) {
     .description('AI-powered analysis of a Salesforce deployment error log')
     .option('--from-stdin', 'Read the deployment log from stdin')
     .option('--latest', 'Use the most recent log in the configured log directory (default)')
+    .option('--agent', 'Non-interactive agent mode (do not block waiting on the AI session)')
     .action(async (file, options) => {
       try {
         const config = await loadConfig();
@@ -92,7 +93,7 @@ export function registerExplainCommand(program) {
             allowedTools: ['Read', 'Grep', 'Glob'],
             cwd: projectRoot,
             aiEnabled: true,
-            interactive: true,
+            interactive: !options.agent,
           },
         );
       } catch (err) {

@@ -8,6 +8,7 @@ import {
 } from '../lib/salesforce-api.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 
 const REST_EXPLORE_SETTINGS_SCHEMA = z.object({
   defaultMethod: z.enum(['GET', 'POST', 'PATCH', 'PUT', 'DELETE']).default('GET'),
@@ -86,11 +87,11 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
   const api = options.api ?? getSalesforceApi();
   const skipDestructiveConfirm = options.skipDestructiveConfirm ?? false;
 
-  let overlay: HTMLDivElement | null = null;
+  let view: ViewHandle | null = null;
 
   function close(): void {
-    overlay?.remove();
-    overlay = null;
+    view?.close();
+    view = null;
   }
 
   async function open(): Promise<void> {
@@ -102,31 +103,6 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
       historyEnabled: true,
     }) as z.infer<typeof REST_EXPLORE_SETTINGS_SCHEMA>;
     const historyEnabled = config.historyEnabled;
-
-    overlay = doc.createElement('div');
-    overlay.className = 'sfdt-rest-explore-overlay';
-    overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
-
-    const modal = doc.createElement('div');
-    modal.style.cssText =
-      'background: #fff; border-radius: 4px; width: 860px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column;';
-
-    const header = doc.createElement('div');
-    header.style.cssText =
-      'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center; font-weight: 600;';
-    const headerLabel = doc.createElement('span');
-    headerLabel.textContent = '🛠 REST API Explorer';
-    const closeBtn = doc.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.style.cssText = 'background: none; border: 0; font-size: 22px; cursor: pointer;';
-    closeBtn.addEventListener('click', close);
-    header.appendChild(headerLabel);
-    header.appendChild(closeBtn);
-    modal.appendChild(header);
 
     const body = doc.createElement('div');
     body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px;';
@@ -235,9 +211,13 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     }
     body.appendChild(footer);
 
-    modal.appendChild(body);
-    overlay.appendChild(modal);
-    doc.body.appendChild(overlay);
+    view = presentView({
+      title: '🛠 REST API Explorer',
+      body,
+      doc,
+      width: '860px',
+      onClose: () => { view = null; },
+    });
 
     function showError(message: string): void {
       errorPanel.textContent = message;

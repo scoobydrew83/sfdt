@@ -9,16 +9,20 @@ vi.mock('../../src/lib/script-runner.js', () => ({
   runScript: vi.fn(),
 }));
 
-vi.mock('../../src/lib/output.js', () => ({
-  print: {
-    header: vi.fn(),
-    success: vi.fn(),
-    error: vi.fn(),
-    warning: vi.fn(),
-    info: vi.fn(),
-    step: vi.fn(),
-  },
-}));
+vi.mock('../../src/lib/output.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    print: {
+      header: vi.fn(),
+      success: vi.fn(),
+      error: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+      step: vi.fn(),
+    },
+  };
+});
 
 vi.mock('../../src/lib/log-writer.js', () => ({
   writeRawLog: vi.fn().mockResolvedValue({}),
@@ -140,12 +144,13 @@ describe('rollback command', () => {
       const written = writeSpy.mock.calls.map((c) => c[0]).join('');
       const parsed = JSON.parse(written);
       expect(parsed).toMatchObject({
-        status: 'success',
-        org: 'prod',
-        exitCode: 0,
-        log: 'Rollback complete.\nDone.',
+        status: 0,
+        result: {
+          org: 'prod',
+          log: 'Rollback complete.\nDone.',
+        },
       });
-      expect(parsed.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(parsed.result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
       writeSpy.mockRestore();
     });
 
@@ -159,7 +164,7 @@ describe('rollback command', () => {
 
       expect(process.exitCode).toBe(1);
       const written = writeSpy.mock.calls.map((c) => c[0]).join('');
-      expect(JSON.parse(written)).toMatchObject({ status: 'error', message: 'rollback failed' });
+      expect(JSON.parse(written)).toMatchObject({ status: 1, message: 'rollback failed' });
       writeSpy.mockRestore();
     });
   });

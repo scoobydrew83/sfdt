@@ -60,10 +60,28 @@ function getNestedValue(obj, key) {
   return key.split('.').reduce((o, k) => o?.[k], obj);
 }
 
+// Mirror of the server's BLOCKED_CONFIG_KEY_PREFIXES (gui-server). These keys
+// are rejected by PATCH /api/config (org hijack / disabling safety checks /
+// code execution), so we render them read-only with a reason instead of letting
+// a save fail with an opaque error.
+const PROTECTED_PREFIXES = ['defaultOrg', 'deployment.preflight', 'plugins', 'mcp.salesforce.command', 'mcp.salesforce.args'];
+
+function isProtectedKey(dotKey) {
+  return PROTECTED_PREFIXES.some((p) => dotKey === p || dotKey.startsWith(`${p}.`));
+}
+
+function protectedReason(dotKey) {
+  if (dotKey === 'defaultOrg') return 'Set via the org switcher or “sfdt init” — the dashboard can’t change the target org.';
+  if (dotKey.startsWith('deployment.preflight')) return 'Safety check — edit in .sfdt/config.json, not from the dashboard.';
+  return 'Protected — edit in .sfdt/config.json.';
+}
+
 function FieldRow({ dotKey, label, type, options, rawConfig, onSave }) {
   const initial = getNestedValue(rawConfig, dotKey);
   const [value, setValue] = useState(initial ?? '');
   const [status, setStatus] = useState(null); // null | 'saving' | 'saved' | 'error'
+  const [errMsg, setErrMsg] = useState(null);
+  const locked = isProtectedKey(dotKey);
 
   useEffect(() => {
     const fresh = getNestedValue(rawConfig, dotKey);
@@ -74,20 +92,25 @@ function FieldRow({ dotKey, label, type, options, rawConfig, onSave }) {
     if (dotKey === 'deployment.coverageThreshold') {
       const n = Number(value);
       if (!Number.isFinite(n) || n < 0 || n > 100) {
+        setErrMsg('Coverage threshold must be a number between 0 and 100.');
         setStatus('error');
-        setTimeout(() => setStatus(null), 3000);
+        setTimeout(() => { setStatus(null); setErrMsg(null); }, 4000);
         return;
       }
     }
     setStatus('saving');
+    setErrMsg(null);
     try {
       await api.setConfig(dotKey, value);
       setStatus('saved');
       onSave(dotKey, value);
       setTimeout(() => setStatus(null), 2000);
-    } catch {
+    } catch (err) {
+      // Surface the server's reason (e.g. "This config key cannot be set via the API")
+      // instead of a silent "Error".
+      setErrMsg(err?.detail || err?.message || 'Save failed.');
       setStatus('error');
-      setTimeout(() => setStatus(null), 3000);
+      setTimeout(() => { setStatus(null); setErrMsg(null); }, 6000);
     }
   }
 
@@ -103,45 +126,61 @@ function FieldRow({ dotKey, label, type, options, rawConfig, onSave }) {
   };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-      <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-default)', fontWeight: 500 }}>{label}</span>
-      {type === 'boolean' ? (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+    <div style={{ padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-default)', fontWeight: 500 }}>{label}</span>
+        {type === 'boolean' ? (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: locked ? 'not-allowed' : 'pointer' }}>
+            <input
+              type="checkbox"
+              className="cbx"
+              checked={!!value}
+              disabled={locked}
+              onChange={(e) => setValue(e.target.checked)}
+            />
+            <span style={{ fontSize: 12, color: 'var(--fg-muted)', minWidth: 60 }}>{value ? 'Enabled' : 'Disabled'}</span>
+          </label>
+        ) : type === 'select' ? (
+          <select value={value} disabled={locked} onChange={(e) => setValue(e.target.value)} style={inputStyle}>
+            {options.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        ) : (
           <input
-            type="checkbox"
-            className="cbx"
-            checked={!!value}
-            onChange={(e) => setValue(e.target.checked)}
+            type={type === 'number' ? 'number' : 'text'}
+            value={value}
+            disabled={locked}
+            onChange={(e) => setValue(type === 'number' ? Number(e.target.value) : e.target.value)}
+            style={inputStyle}
+            className="input"
+            {...(dotKey === 'deployment.coverageThreshold' ? { min: 0, max: 100 } : {})}
           />
-          <span style={{ fontSize: 12, color: 'var(--fg-muted)', minWidth: 60 }}>{value ? 'Enabled' : 'Disabled'}</span>
-        </label>
-      ) : type === 'select' ? (
-        <select value={value} onChange={(e) => setValue(e.target.value)} style={inputStyle}>
-          {options.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
-      ) : (
-        <input
-          type={type === 'number' ? 'number' : 'text'}
-          value={value}
-          onChange={(e) => setValue(type === 'number' ? Number(e.target.value) : e.target.value)}
-          style={inputStyle}
-          className="input"
-          {...(dotKey === 'deployment.coverageThreshold' ? { min: 0, max: 100 } : {})}
-        />
+        )}
+        {locked ? (
+          <span title={protectedReason(dotKey)} style={{ minWidth: 80, fontSize: 11, color: 'var(--fg-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+            🔒 Protected
+          </span>
+        ) : (
+          <button
+            className={`btn btn-sm ${status === 'saved' ? 'btn-success' : 'btn-secondary'}`}
+            onClick={handleSave}
+            disabled={status === 'saving'}
+            style={{
+              minWidth: 80,
+              justifyContent: 'center',
+              ...(status === 'saved' ? { background: 'var(--status-identical-bg)', color: 'var(--status-identical-fg)', borderColor: 'var(--status-identical-border)' } : {}),
+              ...(status === 'error' ? { background: 'var(--status-conflict-bg)', color: 'var(--status-conflict-fg)', borderColor: 'var(--status-conflict-border)' } : {}),
+            }}
+          >
+            {status === 'saving' ? '…' : status === 'saved' ? '✓ Saved' : status === 'error' ? '✗ Error' : 'Save'}
+          </button>
+        )}
+      </div>
+      {locked && (
+        <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>{protectedReason(dotKey)}</div>
       )}
-      <button
-        className={`btn btn-sm ${status === 'saved' ? 'btn-success' : 'btn-secondary'}`}
-        onClick={handleSave}
-        disabled={status === 'saving'}
-        style={{
-          minWidth: 80,
-          justifyContent: 'center',
-          ...(status === 'saved' ? { background: 'var(--status-identical-bg)', color: 'var(--status-identical-fg)', borderColor: 'var(--status-identical-border)' } : {}),
-          ...(status === 'error' ? { background: 'var(--status-conflict-bg)', color: 'var(--status-conflict-fg)', borderColor: 'var(--status-conflict-border)' } : {}),
-        }}
-      >
-        {status === 'saving' ? '…' : status === 'saved' ? '✓ Saved' : status === 'error' ? '✗ Error' : 'Save'}
-      </button>
+      {errMsg && !locked && (
+        <div style={{ fontSize: 11, color: 'var(--status-conflict-fg, #c0392b)', marginTop: 4 }}>{errMsg}</div>
+      )}
     </div>
   );
 }
@@ -549,8 +588,11 @@ function AuditTrailTab() {
         </p>
 
         {logs.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', color: 'var(--fg-subtle)', fontStyle: 'italic' }}>
-            No audit entries found.
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--fg-subtle)' }}>
+            <div style={{ fontStyle: 'italic', marginBottom: 6 }}>No actions logged yet.</div>
+            <div style={{ fontSize: 12 }}>
+              Config changes, deploys, and validations you run from the dashboard appear here.
+            </div>
           </div>
         ) : (
           <div style={{ maxHeight: 500, overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 6 }}>

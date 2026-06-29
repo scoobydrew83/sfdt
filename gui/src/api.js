@@ -15,36 +15,96 @@ const BASE = '/api';
  * @typedef {{ date: string, manifest: string, org: string, dryRun: boolean, skipPreflight: boolean, exitCode: number }} DeployHistoryEntry
  */
 
-function httpError(res) {
-  const err = new Error(`${res.status} ${res.statusText}`);
+/**
+ * Build an Error from a failed response, preferring the server's `{ error }`
+ * body message over the bare status text so callers can show *why* it failed
+ * (e.g. "This config key cannot be set via the API" instead of "403").
+ */
+async function httpError(res) {
+  let detail = '';
+  try {
+    const body = await res.clone().json();
+    if (body && typeof body.error === 'string') detail = body.error;
+  } catch { /* non-JSON / empty body */ }
+  const err = new Error(detail ? `${res.status} ${detail}` : `${res.status} ${res.statusText}`);
   err.status = res.status;
+  err.detail = detail || res.statusText;
   return err;
 }
 
+// ─── Auth state ──────────────────────────────────────────────────────────────
+// The dashboard authenticates every /api call with a one-time launch token
+// (regenerated on each `sfdt ui` start). If that token is missing or stale, the
+// CSRF handshake 401s. We must NOT cache that rejection forever (it would brick
+// every page), and we must tell the user how to recover.
+
 let csrfTokenPromise = null;
+let authExpired = false;
+const authListeners = new Set();
+
+/** Subscribe to "dashboard session expired" — returns an unsubscribe fn. */
+export function onAuthExpired(cb) {
+  authListeners.add(cb);
+  if (authExpired) cb();
+  return () => authListeners.delete(cb);
+}
+
+export function isAuthExpired() {
+  return authExpired;
+}
+
+function flagAuthExpired() {
+  authExpired = true;
+  authListeners.forEach((cb) => { try { cb(); } catch { /* ignore */ } });
+}
+
+/** Read the launch token from the URL or sessionStorage. On the first read from
+ *  the URL we persist it to sessionStorage — which survives a same-tab reload —
+ *  and then scrub it from the address bar and history. Keeping reload-reauth
+ *  working without leaving the localhost-only token sitting in the URL. Exported
+ *  for testing. */
+export function launchToken() {
+  const fromUrl = new URLSearchParams(window.location.search).get('token');
+  if (fromUrl) {
+    sessionStorage.setItem('sfdt_launch_token', fromUrl);
+    // Remove only the token, preserving other params (e.g. ?theme= from the
+    // VS Code extension). The canonical tokened URL is the one `sfdt ui` prints.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('token');
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+    return fromUrl;
+  }
+  return sessionStorage.getItem('sfdt_launch_token');
+}
 
 async function getCsrfToken() {
   if (!csrfTokenPromise) {
-    const params = new URLSearchParams(window.location.search);
-    let token = params.get('token');
-    if (token) {
-      sessionStorage.setItem('sfdt_launch_token', token);
-      const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-      window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
-    } else {
-      token = sessionStorage.getItem('sfdt_launch_token');
-    }
-
-    csrfTokenPromise = fetch(`${BASE}/csrf-token`, {
-      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-    })
-      .then((res) => {
-        if (!res.ok) throw httpError(res);
-        return res.json();
-      })
-      .then((data) => data.token);
+    csrfTokenPromise = (async () => {
+      const token = launchToken();
+      const res = await fetch(`${BASE}/csrf-token`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        // Stale/missing launch token: drop it so a fresh ?token= can replace it,
+        // and surface a recoverable "session expired" state to the UI.
+        sessionStorage.removeItem('sfdt_launch_token');
+        flagAuthExpired();
+        throw await httpError(res);
+      }
+      authExpired = false;
+      return (await res.json()).token;
+    })();
+    // Never memoize a rejected handshake — the next request must retry.
+    csrfTokenPromise.catch(() => { csrfTokenPromise = null; });
   }
   return csrfTokenPromise;
+}
+
+/** After a 401/403, force a fresh CSRF handshake on the next request — recovers
+ *  transparently when only the per-start CSRF token (not the launch token) went
+ *  stale, e.g. after the server restarted mid-session. */
+function onMaybeAuthError(res) {
+  if (res.status === 401 || res.status === 403) csrfTokenPromise = null;
 }
 
 // EventSource can't set custom headers — callers that need to start an SSE
@@ -68,17 +128,21 @@ async function fetchJson(path) {
       'X-SFDT-CSRF': await getCsrfToken(),
     },
   });
-  if (!res.ok) throw httpError(res);
+  if (!res.ok) { onMaybeAuthError(res); throw await httpError(res); }
   return res.json();
 }
 
-/** @returns {Promise<any>} */
+/**
+ * Bodyless DELETE (CSRF only — no Content-Type, since there's no request body).
+ * The single DELETE helper for the API; returns the parsed JSON response.
+ * @returns {Promise<any>}
+ */
 async function deleteJson(path) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'DELETE',
-    headers: await jsonHeaders(),
+    headers: { 'X-SFDT-CSRF': await getCsrfToken() },
   });
-  if (!res.ok) throw httpError(res);
+  if (!res.ok) { onMaybeAuthError(res); throw await httpError(res); }
   return res.json();
 }
 
@@ -89,7 +153,7 @@ async function postJson(path, body) {
     headers: await jsonHeaders(),
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw httpError(res);
+  if (!res.ok) { onMaybeAuthError(res); throw await httpError(res); }
   return res.json();
 }
 
@@ -100,19 +164,10 @@ async function patchJson(path, body) {
     headers: await jsonHeaders(),
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw httpError(res);
+  if (!res.ok) { onMaybeAuthError(res); throw await httpError(res); }
   return res.json();
 }
 
-/** @returns {Promise<any>} */
-async function deleteRequest(path) {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'DELETE',
-    headers: { 'X-SFDT-CSRF': await getCsrfToken() },
-  });
-  if (!res.ok) throw httpError(res);
-  return res.json();
-}
 
 export const api = {
   /** @returns {Promise<ProjectInfo>} */
@@ -137,6 +192,10 @@ export const api = {
   audit:                  () => fetchJson('/audit'),
   /** Org monitoring snapshot. @returns {Promise<{timestamp:string|null, org:string|null, checks:Array, summary:object}>} */
   monitor:                () => fetchJson('/monitor'),
+  /** Redacted notification channel config. @returns {Promise<{enabled:boolean, channels:Array}>} */
+  notifications:          () => fetchJson('/notifications'),
+  /** Send a test message to all configured channels. @returns {Promise<{results:Array}>} */
+  notificationsTest:      () => postJson('/notifications/test', {}),
   /** @returns {Promise<{date:string|null, status:string|null, summary:{critical:number,high:number,medium:number,low:number}, violations:Array, unavailableMessage:string|null}>} */
   quality:                () => fetchJson('/quality'),
   /** @returns {Promise<{ ok: boolean }>} */
@@ -188,7 +247,7 @@ export const api = {
   /** @returns {Promise<{ ok: boolean, key: string }>} */
   setPrompt:              (key, value) => patchJson(`/prompts/${encodeURIComponent(key)}`, { value }),
   /** @returns {Promise<{ ok: boolean, key: string }>} */
-  resetPrompt:            (key) => deleteRequest(`/prompts/${encodeURIComponent(key)}`),
+  resetPrompt:            (key) => deleteJson(`/prompts/${encodeURIComponent(key)}`),
   /** @returns {Promise<object>} */
   getConfig:              () => fetchJson('/config'),
   /** @returns {Promise<{ ok: boolean, key: string, value: any }>} */
@@ -214,6 +273,14 @@ export const api = {
   flowGraph:              () => fetchJson('/flow/graph'),
   runFlowGraph:           (org) => postJson('/flow/graph', { org }),
   auditLogs:              () => fetchJson('/audit/logs'),
+  /** Scratch org pool status + active scratch orgs. @returns {Promise<{pool:{size:number, members:Array}, orgs:Array<{alias:string|null, username:string, expirationDate:string|null, status:string|null}>}>} */
+  scratch:                () => fetchJson('/scratch'),
+  /** Configured data sets. @returns {Promise<{sets:string[]}>} */
+  data:                   () => fetchJson('/data'),
+  /** Docs configuration + AI gate. @returns {Promise<{config:{outputDir:string, ai:boolean, diagrams:boolean, roleGuides:boolean, roles:string[]}, aiEnabled:boolean, note:string}>} */
+  docs:                   () => fetchJson('/docs'),
+  /** Org-wide Apex coverage + per-class. @returns {Promise<{org:string|null, threshold:number|null, orgWide:number|null, belowThreshold:boolean, classes:Array<{name:string, covered:number, uncovered:number, total:number, pct:number|null}>}>} */
+  coverageOrgWide:        () => fetchJson('/coverage'),
 };
 
 // ─── SSE helpers ──────────────────────────────────────────────────────────────

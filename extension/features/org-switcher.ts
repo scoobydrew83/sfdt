@@ -2,6 +2,7 @@ import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import type { OrgEntry } from '../lib/org-list.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 
 const LAST_ORG_STORAGE_KEY = 'sfdt.workspace.lastOrg';
 
@@ -64,11 +65,11 @@ export function createOrgSwitcherFeature(options: OrgSwitcherOptions = {}): Feat
   const win = options.win ?? window;
   const doSwitch = options.onSwitch ?? defaultSwitch;
 
-  let overlay: HTMLDivElement | null = null;
+  let view: ViewHandle | null = null;
 
   function close(): void {
-    overlay?.remove();
-    overlay = null;
+    view?.close();
+    view = null;
   }
 
   async function apply(host: string): Promise<void> {
@@ -80,24 +81,6 @@ export function createOrgSwitcherFeature(options: OrgSwitcherOptions = {}): Feat
   async function open(): Promise<void> {
     close();
 
-    overlay = doc.createElement('div');
-    overlay.className = 'sfdt-org-switcher-overlay';
-    overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
-
-    const modal = doc.createElement('div');
-    modal.style.cssText =
-      'background: #fff; border-radius: 4px; width: 480px; max-width: 95vw; max-height: 80vh; display: flex; flex-direction: column;';
-
-    const header = doc.createElement('div');
-    header.style.cssText =
-      'padding: 12px 16px; border-bottom: 1px solid #d8dde6; font-weight: 600;';
-    header.textContent = '🏢 Switch Org';
-    modal.appendChild(header);
-
     const list = doc.createElement('div');
     list.style.cssText =
       'padding: 8px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 4px;';
@@ -105,10 +88,16 @@ export function createOrgSwitcherFeature(options: OrgSwitcherOptions = {}): Feat
     loading.style.cssText = 'padding: 12px; color: #54698d; font-size: 12px;';
     loading.textContent = 'Finding logged-in orgs…';
     list.appendChild(loading);
-    modal.appendChild(list);
 
-    overlay.appendChild(modal);
-    doc.body.appendChild(overlay);
+    view = presentView({
+      title: '🏢 Switch Org',
+      body: list,
+      doc,
+      width: '480px',
+      onClose: () => {
+        view = null;
+      },
+    });
 
     const orgs = await listOrgs();
     while (list.firstChild) list.removeChild(list.firstChild);

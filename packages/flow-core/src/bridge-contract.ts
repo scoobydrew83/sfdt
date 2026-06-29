@@ -104,6 +104,9 @@ export interface AiRequest extends RequestEnvelope {
 export interface DriftRequest extends RequestEnvelope {
   kind: 'drift';
   component: string;
+  /** When true, run drift live (heavy) before returning; otherwise return the
+   *  latest snapshot. Defaults to false. */
+  refresh?: boolean;
 }
 
 export interface ScanRequest extends RequestEnvelope {
@@ -426,7 +429,7 @@ export function validateSfdtRequest(input: unknown): {
       if (input.targetOrg !== undefined && !isValidOrgAlias(input.targetOrg)) {
         errors.push({
           field: 'targetOrg',
-          reason: 'must match /^[A-Za-z0-9_.\\-@]+$/ if present',
+          reason: 'must match /^[A-Za-z0-9@][A-Za-z0-9_.\\-@]*$/ if present (first char alphanumeric or @)',
         });
       }
       if (input.validateOnly !== undefined && typeof input.validateOnly !== 'boolean') {
@@ -452,7 +455,7 @@ export function validateSfdtRequest(input: unknown): {
       if (input.targetOrg !== undefined && !isValidOrgAlias(input.targetOrg)) {
         errors.push({
           field: 'targetOrg',
-          reason: 'must match /^[A-Za-z0-9_.\\-@]+$/ if present',
+          reason: 'must match /^[A-Za-z0-9@][A-Za-z0-9_.\\-@]*$/ if present (first char alphanumeric or @)',
         });
       }
       break;
@@ -468,6 +471,9 @@ export function validateSfdtRequest(input: unknown): {
       break;
     case 'drift':
       if (!isNonEmptyString(input.component)) errors.push({ field: 'component', reason: 'must be a non-empty string' });
+      if (input.refresh !== undefined && typeof input.refresh !== 'boolean') {
+        errors.push({ field: 'refresh', reason: 'must be a boolean when present' });
+      }
       break;
     case 'scan':
       if (input.scanType !== 'scheduled' && input.scanType !== 'all') {
@@ -475,8 +481,14 @@ export function validateSfdtRequest(input: unknown): {
       }
       break;
     case 'compare':
-      if (!isNonEmptyString(input.left)) errors.push({ field: 'left', reason: 'must be a non-empty string' });
-      if (!isNonEmptyString(input.right)) errors.push({ field: 'right', reason: 'must be a non-empty string' });
+      // left/right are org aliases the bridge passes to `sf` — validate their
+      // format here too (matching deploy/rollback's targetOrg), not just non-empty.
+      if (!isValidOrgAlias(input.left)) {
+        errors.push({ field: 'left', reason: 'must match /^[A-Za-z0-9@][A-Za-z0-9_.\\-@]*$/' });
+      }
+      if (!isValidOrgAlias(input.right)) {
+        errors.push({ field: 'right', reason: 'must match /^[A-Za-z0-9@][A-Za-z0-9_.\\-@]*$/' });
+      }
       break;
     case 'org-health':
       // No fields beyond the envelope; the bridge reads snapshots from disk.

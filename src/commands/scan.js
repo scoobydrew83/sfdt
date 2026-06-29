@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { loadConfig } from '../lib/config.js';
 import { fetchInventory } from '../lib/org-inventory.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { emitJson, emitJsonError } from '../lib/output.js';
 
 export function registerScanCommand(program) {
   program
@@ -51,7 +52,7 @@ export function registerScanCommand(program) {
         };
 
         if (jsonMode) {
-          process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+          emitJson(output);
           return;
         }
 
@@ -70,11 +71,11 @@ export function registerScanCommand(program) {
         console.log(chalk.green(`\nJSON written to ${outPath}`));
       } catch (err) {
         if (jsonMode) {
-          process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');
+          emitJsonError(err);
         } else {
           console.error(chalk.red(`Scan failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
         }
-        process.exitCode = resolveExitCode(err);
       }
     });
 }

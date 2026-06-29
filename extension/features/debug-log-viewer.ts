@@ -4,6 +4,7 @@ import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 
 const DEBUG_LOG_SETTINGS_SCHEMA = z.object({
   pageSize: z.number().int().min(1).max(200).default(50),
@@ -51,11 +52,11 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
 
-  let overlay: HTMLDivElement | null = null;
+  let view: ViewHandle | null = null;
 
   function close(): void {
-    overlay?.remove();
-    overlay = null;
+    view?.close();
+    view = null;
   }
 
   async function fetchBody(id: string): Promise<string> {
@@ -70,46 +71,23 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       pageSize: 50,
     }) as z.infer<typeof DEBUG_LOG_SETTINGS_SCHEMA>;
 
-    overlay = doc.createElement('div');
-    overlay.className = 'sfdt-debug-log-overlay';
-    overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
-
-    const modal = doc.createElement('div');
-    modal.style.cssText =
-      'background: #fff; border-radius: 4px; width: 960px; max-width: 96vw; max-height: 90vh; display: flex; flex-direction: column;';
-
-    const header = doc.createElement('div');
-    header.style.cssText =
-      'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center; font-weight: 600;';
-    const headerLabel = doc.createElement('span');
-    headerLabel.textContent = '🪵 Debug Logs';
-    const headerRight = doc.createElement('div');
-    headerRight.style.cssText = 'display: flex; gap: 8px; align-items: center;';
-    const refreshBtn = doc.createElement('button');
-    refreshBtn.textContent = '↻ Refresh';
-    refreshBtn.style.cssText =
-      'padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
-    const closeBtn = doc.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.style.cssText = 'background: none; border: 0; font-size: 22px; cursor: pointer;';
-    closeBtn.addEventListener('click', close);
-    headerRight.appendChild(refreshBtn);
-    headerRight.appendChild(closeBtn);
-    header.appendChild(headerLabel);
-    header.appendChild(headerRight);
-    modal.appendChild(header);
-
     const body = doc.createElement('div');
     body.style.cssText =
       'padding: 12px 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px;';
 
+    // Toolbar (status + refresh) lives at the top of the body so it shows in both
+    // the modal and the workspace tab — presentView's header is title + × only.
+    const toolbar = doc.createElement('div');
+    toolbar.style.cssText = 'display: flex; align-items: center; gap: 10px;';
     const status = doc.createElement('div');
     status.style.cssText = 'font-size: 12px; color: #54698d;';
-    body.appendChild(status);
+    const refreshBtn = doc.createElement('button');
+    refreshBtn.textContent = '↻ Refresh';
+    refreshBtn.style.cssText =
+      'margin-left: auto; padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+    toolbar.appendChild(status);
+    toolbar.appendChild(refreshBtn);
+    body.appendChild(toolbar);
 
     const table = doc.createElement('div');
     table.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
@@ -120,9 +98,13 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       'margin: 0; padding: 10px; background: #1e1e1e; color: #d4d4d4; border-radius: 4px; overflow: auto; max-height: 360px; font-family: ui-monospace, monospace; font-size: 11px; display: none; white-space: pre-wrap;';
     body.appendChild(logPane);
 
-    modal.appendChild(body);
-    overlay.appendChild(modal);
-    doc.body.appendChild(overlay);
+    view = presentView({
+      title: '🪵 Debug Logs',
+      body,
+      doc,
+      width: '960px',
+      onClose: () => { view = null; },
+    });
 
     async function showLog(row: ApexLogRow): Promise<void> {
       logPane.style.display = 'block';

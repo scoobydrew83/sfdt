@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { glob } from 'glob';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { emitJson, emitJsonError } from '../lib/output.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -141,18 +142,12 @@ export function registerSkillsCommand(program) {
         }
 
         if (jsonMode) {
-          process.stdout.write(
-            JSON.stringify(
-              {
-                ok: true,
-                target,
-                skillsCount: parsedSkills.length,
-                files: filesWritten.map((f) => path.relative(cwd, f)),
-              },
-              null,
-              2,
-            ) + '\n',
-          );
+          emitJson({
+            ok: true,
+            target,
+            skillsCount: parsedSkills.length,
+            files: filesWritten.map((f) => path.relative(cwd, f)),
+          });
         } else {
           console.log(chalk.green(`\n✓ Successfully exported skills for ${target}!`));
           console.log(`  Parsed ${parsedSkills.length} skills from sfdt package.`);
@@ -164,13 +159,11 @@ export function registerSkillsCommand(program) {
         }
       } catch (err) {
         if (jsonMode) {
-          process.stdout.write(
-            JSON.stringify({ ok: false, error: err.message, exitCode: resolveExitCode(err) }) + '\n',
-          );
+          emitJsonError(err);
         } else {
           console.error(chalk.red(`skills export failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
         }
-        process.exitCode = resolveExitCode(err);
       }
     });
 }

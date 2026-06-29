@@ -26,6 +26,8 @@ import { registerUpdateCommand } from './commands/update.js';
 import { registerConfigCommand } from './commands/config.js';
 import { registerAiCommand } from './commands/ai.js';
 import { registerScanCommand } from './commands/scan.js';
+import { registerDependenciesCommand } from './commands/dependencies.js';
+import { registerCoverageCommand } from './commands/coverage.js';
 import { registerAuditCommand } from './commands/audit.js';
 import { registerMonitorCommand } from './commands/monitor.js';
 import { registerDocsCommand } from './commands/docs.js';
@@ -38,6 +40,9 @@ import { registerDoctorCommand } from './commands/doctor.js';
 import { registerMcpCommand } from './commands/mcp.js';
 import { registerPluginCommand } from './commands/plugin.js';
 import { registerSkillsCommand } from './commands/skills.js';
+import { registerCiCommand } from './commands/ci.js';
+import { registerPrCommand } from './commands/pr.js';
+import { registerRetrofitCommand } from './commands/retrofit.js';
 import { formatSplash } from './lib/output.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -89,6 +94,8 @@ export function createCli() {
   registerConfigCommand(program);
   registerAiCommand(program);
   registerScanCommand(program);
+  registerDependenciesCommand(program);
+  registerCoverageCommand(program);
   registerAuditCommand(program);
   registerMonitorCommand(program);
   registerDocsCommand(program);
@@ -101,6 +108,9 @@ export function createCli() {
   registerMcpCommand(program);
   registerPluginCommand(program);
   registerSkillsCommand(program);
+  registerCiCommand(program);
+  registerPrCommand(program);
+  registerRetrofitCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program

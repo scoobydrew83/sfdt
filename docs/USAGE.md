@@ -38,13 +38,19 @@ This guide covers every sfdt command in depth: what it does, when to use it, all
 11. [Commands: Org Health & Operations](#commands-org-health--operations)
     - [sfdt audit](#sfdt-audit)
     - [sfdt monitor](#sfdt-monitor)
+    - [sfdt dependencies](#sfdt-dependencies)
+    - [sfdt coverage](#sfdt-coverage)
     - [sfdt docs](#sfdt-docs)
     - [sfdt data](#sfdt-data)
     - [sfdt scratch](#sfdt-scratch)
-12. [Web Dashboard](#web-dashboard)
-13. [Drift vs Compare: choosing the right tool](#drift-vs-compare-choosing-the-right-tool)
-14. [Common workflows](#common-workflows)
-15. [CI/CD integration](#cicd-integration)
+12. [Commands: CI/CD & Release Automation](#commands-cicd--release-automation)
+    - [sfdt ci init](#sfdt-ci-init)
+    - [sfdt pr comment](#sfdt-pr-comment)
+    - [sfdt retrofit](#sfdt-retrofit)
+13. [Web Dashboard](#web-dashboard)
+14. [Drift vs Compare: choosing the right tool](#drift-vs-compare-choosing-the-right-tool)
+15. [Common workflows](#common-workflows)
+16. [CI/CD integration](#cicd-integration)
 
 ---
 
@@ -214,6 +220,32 @@ sfdt deploy --source-dir force-app/feature-a   # deploy a folder directly (no ma
 Use `--managed` when deploying a second-generation managed package where the deploy-manager script handles namespace and version locking.
 
 Use `--source-dir` for targeted deploys of a single package directory without generating a manifest first — useful during development or when you want to deploy exactly what's in a folder.
+
+#### sfdt deploy --smart
+
+Smart delta deploy. `sfdt deploy --smart` computes a git delta (reusing the same manifest engine as `sfdt manifest`), applies `package-no-overwrite.xml` protection, auto-selects the minimal safe test level (`NoTestRun` / `RunSpecifiedTests` / `RunLocalTests` — never downgraded in production), and runs a self-contained, non-interactive `sf project deploy validate|start`. Unlike the interactive deploy path, it has no archive/commit side effects.
+
+```bash
+sfdt deploy --smart                              # validate the delta against the default org
+sfdt deploy --smart --prod                       # deploy to production (forces RunLocalTests minimum)
+sfdt deploy --smart --delta-base origin/main --delta-head HEAD
+sfdt deploy --smart --pr-comment                 # decorate the current PR with the delta + outcome
+sfdt deploy --smart --ai-fix                     # analyse failures with the editable deploy-error prompt
+```
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--smart` | Compute a git delta and run a self-contained validate/deploy |
+| `--delta-base <ref>` | Git ref to diff from (the base of the delta) |
+| `--delta-head <ref>` | Git ref to diff to (the head of the delta) |
+| `--prod` | Treat the target as production: never downgrade the test level |
+| `--pr-comment` | Decorate the current PR with the computed delta and the deploy outcome |
+| `--ai-fix` | On failure, analyse the deploy errors via the editable `deploy-error` prompt |
+| `--agent` | Run a non-interactive AI session for the deploy |
+
+The bounded coding-agent auto-fix loop is **default-off**. It requires `ai.agent.enabled` **and** `ai.agent.allowWrite` (CLI providers only), and re-validates via a dry-run each turn — it never deploys.
 
 ---
 
@@ -746,43 +778,56 @@ Values are coerced automatically: `"true"` / `"false"` become booleans, numeric 
 
 ### sfdt notify
 
-Sends a structured notification to Slack for a deployment lifecycle event. Uses the Slack Incoming Webhooks API.
+Provider-agnostic, multi-channel notifier. Dispatches a deployment lifecycle event — or the latest org-health snapshot — to one or more channels: **Slack**, **MS Teams**, **generic webhook**, **Grafana Loki**, and **email** (via a lazy-loaded `nodemailer`).
 
 ```bash
 sfdt notify deploy-success
 sfdt notify deploy-failure --org production --version 1.5.0
 sfdt notify test-failure --message "Coverage dropped below threshold"
-sfdt notify release-created --version 1.5.0
+sfdt notify snapshot --type audit          # push the latest audit snapshot
+sfdt notify snapshot --type monitor        # push the latest monitor snapshot
 ```
 
 **Arguments:**
 
 | Argument | Description |
 |---|---|
-| `<event>` | One of: `deploy-success`, `deploy-failure`, `test-failure`, `release-created` |
+| `<event>` | A lifecycle event (e.g. `deploy-success`, `deploy-failure`, `test-failure`, `release-created`), or `snapshot` to push the latest org-health snapshot |
 
 **Options:**
 
 | Option | Description |
 |---|---|
+| `--type <kind>` | For `snapshot`: which snapshot to send — `audit` or `monitor` |
 | `--version <ver>` | Version label to include in the notification |
 | `--org <alias>` | Org alias to display (defaults to `config.defaultOrg`) |
 | `--message <msg>` | Custom message body |
 
-**Setup:** Configure a Slack Incoming Webhook and add it to `.sfdt/config.json`:
+**Setup:** Channels are configured under the `notifications` block (`enabled` + a `channels[]` array). Each channel has an `events` filter and a `severityThreshold` that decides whether a given snapshot/event is loud enough to send. Channel secrets are referenced **by env-var NAME** (`webhookUrlEnv`, the SMTP `*Env` keys) — never inline.
 
 ```json
 {
   "features": { "notifications": true },
   "notifications": {
-    "slack": {
-      "webhookUrl": "https://hooks.slack.com/services/T.../B.../..."
-    }
+    "enabled": true,
+    "channels": [
+      {
+        "type": "slack",
+        "webhookUrlEnv": "SLACK_WEBHOOK_URL",
+        "events": ["deploy-failure", "test-failure"],
+        "severityThreshold": "warn"
+      }
+    ],
+    "summary": { "enabled": true }
   }
 }
 ```
 
-If `features.notifications` is `false` or no webhook URL is configured, the command exits with an error and prints setup instructions.
+When `notifications.summary.enabled` is set, `notify` first builds an AI executive-summary digest (the editable `monitor-summary` prompt; the snapshot is redacted before it is sent; works for **every** provider) and uses it as the message body.
+
+The org-health commands can push directly: `sfdt audit all --notify` and `sfdt monitor all --notify` dispatch the snapshot they just produced.
+
+The legacy single-Slack shape (`notifications.slack.webhookUrl`) is still honoured for back-compat. If `features.notifications` is `false` or no channel is configured, the command exits with an error and prints setup instructions.
 
 ---
 
@@ -844,6 +889,8 @@ sfdt audit licenses --json
 | `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
 | `--json` | Emit the normalised snapshot as JSON |
 
+`audit` now runs ~15 checks — in addition to the originals it covers inactive flows, inactive validation rules, inactive workflow rules, unused permission sets, connected apps, missing field descriptions, unreferenced Apex, and object- and field-level access lint. Pass `--notify` to dispatch the resulting snapshot through the notifier. Beta/license-gated checks degrade to `warn` (never `error`) when the org can't run them, so a missing API never fails CI.
+
 Exits non-zero when any check reports `fail` **or** `error` status, so an unreachable org or a missing permission can't read as healthy in CI. Check thresholds are configured under the `audit` block in `.sfdt/config.json`.
 
 ---
@@ -873,7 +920,55 @@ sfdt monitor backup --org production
 | `--backup` | With `all`, also retrieve a full metadata backup into the configured backup directory |
 | `--json` | Emit the normalised snapshot as JSON |
 
+`monitor` now runs ~7 checks — in addition to the originals it reports org info, deploy history, deprecated API usage, and flow errors. Pass `--notify` to dispatch the snapshot through the notifier. Beta/license-gated checks degrade to `warn` (never `error`) when the org can't run them. `sfdt monitor schedule` is a thin alias for `sfdt ci init --type monitor`.
+
 Check thresholds (limit warning percentage, minimum Security Health Check score, etc.) are configured under the `monitoring` block in `.sfdt/config.json`.
+
+---
+
+### sfdt dependencies
+
+Answer "what references this component / what does this component reference" by querying `MetadataComponentDependency` (Tooling API), shaped via `@sfdt/flow-core`.
+
+```bash
+sfdt dependencies MyApexClass --type apex
+sfdt dependencies My_Field__c --type field --org production
+sfdt dependencies My_Flow --type flow --json
+```
+
+**Arguments:**
+
+| Argument | Description |
+|---|---|
+| `<name>` | The component name to resolve dependencies for |
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--type <kind>` | Component type: `apex`, `flow`, `field`, `page`, or `lwc` |
+| `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
+| `--json` | Emit the sf-native JSON envelope |
+
+---
+
+### sfdt coverage
+
+Report org-wide and per-class Apex code coverage, with a CI gate that exits non-zero when coverage falls below the threshold.
+
+```bash
+sfdt coverage
+sfdt coverage --threshold 80
+sfdt coverage --org production --json
+```
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--threshold <pct>` | Minimum acceptable coverage percentage; exits non-zero when below it |
+| `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
+| `--json` | Emit the sf-native JSON envelope |
 
 ---
 
@@ -964,6 +1059,75 @@ sfdt scratch delete feature-x --yes
 | `--size <n>` | Pool size for `pool fill` |
 | `-y, --yes` | For `delete`: skip the confirmation prompt (required non-interactively). Deleting an org is irreversible |
 | `--json` | Emit machine-readable output |
+
+---
+
+## Commands: CI/CD & Release Automation
+
+---
+
+### sfdt ci init
+
+Generate a ready-to-use CI pipeline. `sfdt ci init` interpolates the cron schedule, org alias, Node version, and delta base into a provider-specific template. For GitHub it writes into `.github/workflows/`; other providers emit a standalone fragment under `.sfdt/ci/`.
+
+```bash
+sfdt ci init --provider github --type monitor
+sfdt ci init --provider gitlab --type deploy
+sfdt ci init --provider azure --type monitor
+sfdt ci init --provider bitbucket --type deploy
+```
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--provider <name>` | CI provider: `github`, `gitlab`, `azure`, or `bitbucket` |
+| `--type <kind>` | Pipeline type: `monitor` (scheduled `monitor all --notify`) or `deploy` (`deploy --smart` on PRs) |
+
+Templates authenticate via the `SFDX_AUTH_URL` secret (referenced by name).
+
+---
+
+### sfdt pr comment
+
+Render the latest org-health snapshot to markdown and post it to the current pull request through a thin `gh` wrapper.
+
+```bash
+sfdt pr comment --type audit
+sfdt pr comment --type monitor --pr 42
+sfdt pr comment --body "Deploy validated cleanly."
+sfdt pr comment --file ./report.md
+```
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--type <kind>` | Render and post the latest `audit` or `monitor` snapshot |
+| `--body <md>` | Post a literal markdown body instead of a snapshot |
+| `--file <path>` | Post the contents of a markdown file |
+| `--pr <n>` | Target PR number (defaults to the PR for the current branch) |
+
+Requires the GitHub CLI (`gh`) to be installed and authenticated.
+
+---
+
+### sfdt retrofit
+
+Retrieve a configurable metadata set from a source org, commit it, then smart-deploy it to a target org. Reuses the org-inventory + parallel-retrieve engine for the pull and the smart-deploy engine for the push. Validate-only unless `--execute` is passed.
+
+```bash
+sfdt retrofit --source production --target staging
+sfdt retrofit --source production --target staging --execute
+```
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--source <alias>` | Org to retrieve metadata from |
+| `--target <alias>` | Org to deploy the retrofit into |
+| `--execute` | Perform a real deploy instead of a validate-only run |
 
 ---
 

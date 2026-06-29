@@ -3,6 +3,7 @@ import type { Feature } from '../lib/feature-registry.js';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
 import { loadSettings } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { describeFinding } from '@sfdt/flow-core';
 import type { OrgHealthResponseData, SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 
@@ -93,11 +94,11 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
       });
     });
 
-  let overlay: HTMLDivElement | null = null;
+  let view: ViewHandle | null = null;
 
   function close(): void {
-    overlay?.remove();
-    overlay = null;
+    view?.close();
+    view = null;
   }
 
   function renderSnapshot(container: HTMLElement, title: string, command: 'audit' | 'monitor', snapshot: Snapshot | null): void {
@@ -210,32 +211,17 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
   async function open(): Promise<void> {
     close();
 
-    overlay = doc.createElement('div');
-    overlay.className = 'sfdt-org-health-overlay';
-    overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
+    const body = doc.createElement('div');
+    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 12px;';
 
-    const modal = doc.createElement('div');
-    modal.style.cssText =
-      'background: #fff; border-radius: 4px; width: 760px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column;';
-
-    const header = doc.createElement('div');
-    header.style.cssText =
-      'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center;';
-    const headerLeft = doc.createElement('div');
-    headerLeft.style.cssText = 'display: flex; gap: 12px; align-items: center; font-weight: 600;';
-    const headerLabel = doc.createElement('span');
-    headerLabel.textContent = '🏥 Org Health';
+    // Header extras (status + refresh/copy) move to a toolbar at the top of the
+    // body — presentView's own header is just the title + ×.
+    const toolbar = doc.createElement('div');
+    toolbar.style.cssText = 'display: flex; gap: 12px; align-items: center;';
     const status = doc.createElement('span');
-    status.style.cssText = 'color: #54698d; font-size: 12px; font-weight: normal;';
-    headerLeft.appendChild(headerLabel);
-    headerLeft.appendChild(status);
-
-    const headerRight = doc.createElement('div');
-    headerRight.style.cssText = 'display: flex; gap: 6px;';
+    status.style.cssText = 'color: #54698d; font-size: 12px;';
+    const actions = doc.createElement('div');
+    actions.style.cssText = 'display: flex; gap: 6px; margin-left: auto;';
     const refreshBtn = doc.createElement('button');
     refreshBtn.textContent = 'Refresh';
     refreshBtn.style.cssText =
@@ -244,28 +230,29 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     copyBtn.textContent = 'Copy JSON';
     copyBtn.style.cssText =
       'padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
-    const closeBtn = doc.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.style.cssText = 'background: none; border: 0; font-size: 22px; cursor: pointer; margin-left: 4px;';
-    closeBtn.addEventListener('click', close);
-    headerRight.appendChild(refreshBtn);
-    headerRight.appendChild(copyBtn);
-    headerRight.appendChild(closeBtn);
-    header.appendChild(headerLeft);
-    header.appendChild(headerRight);
-    modal.appendChild(header);
+    actions.appendChild(refreshBtn);
+    actions.appendChild(copyBtn);
+    toolbar.appendChild(status);
+    toolbar.appendChild(actions);
+    body.appendChild(toolbar);
 
-    const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1;';
-    modal.appendChild(body);
+    const content = doc.createElement('div');
+    body.appendChild(content);
 
-    overlay.appendChild(modal);
-    doc.body.appendChild(overlay);
+    view = presentView({
+      title: '🏥 Org Health',
+      body,
+      doc,
+      width: '760px',
+      onClose: () => {
+        view = null;
+      },
+    });
 
-    let raw: unknown = await fetchAndRender(body, status);
+    let raw: unknown = await fetchAndRender(content, status);
     refreshBtn.addEventListener('click', async () => {
       refreshBtn.disabled = true;
-      raw = await fetchAndRender(body, status);
+      raw = await fetchAndRender(content, status);
       refreshBtn.disabled = false;
     });
     copyBtn.addEventListener('click', async () => {

@@ -1,7 +1,8 @@
 import path from 'path';
 import fs from 'fs-extra';
 import { execa } from 'execa';
-import { query, safeParse } from './org-query.js';
+import { ORG_HEALTH_THRESHOLDS } from '@sfdt/flow-core';
+import { query, safeParse, toSoqlDate } from './org-query.js';
 import { fetchOrgInventory } from './org-inventory.js';
 import { parallelRetrieve } from './parallel-retrieve.js';
 
@@ -17,20 +18,25 @@ import { parallelRetrieve } from './parallel-retrieve.js';
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-// Salesforce SOQL datetime literals reject the milliseconds that toISOString()
-// emits (…:00.000Z), so strip them for use in WHERE clauses.
-const ISODate = (d) => new Date(d).toISOString().replace(/\.\d{3}Z$/, 'Z');
+// SOQL datetime literal helper (shared) — strips the milliseconds Salesforce rejects.
+const ISODate = toSoqlDate;
 
 /**
- * Single source of truth for monitoring-check fallback defaults. Mirrored in
- * src/templates/sfdt.config.json (under `monitoring`), which is the canonical
- * config the user edits; centralised here so the literals don't drift across
- * the runner and command layers.
+ * Single source of truth for monitoring-check fallback defaults. Usage and
+ * health thresholds come from the shared @sfdt/flow-core rulebook
+ * (ORG_HEALTH_THRESHOLDS) so the CLI, GUI, and Chrome extension band findings
+ * identically. NOTE: limitWarnThreshold changed 0.8 → 0.75 here as part of that
+ * unification — the CLI now warns at the same 75% point Chrome uses. CLI-only
+ * knobs (errorLookbackDays) have no shared equivalent and stay local. Mirrored
+ * in src/templates/sfdt.config.json (under `monitoring`), the canonical config.
  */
 export const MONITOR_DEFAULTS = {
-  limitWarnThreshold: 0.8,
+  limitWarnThreshold: ORG_HEALTH_THRESHOLDS.usageAmber, // 0.75 (was 0.8 before flow-core unification)
   errorLookbackDays: 7,
-  healthMinScore: 80,
+  healthMinScore: ORG_HEALTH_THRESHOLDS.healthMinScore, // 80
+  orgInfoTrialWarnDays: 14,
+  deployHistoryLookback: 20,
+  deprecatedApiLookbackDays: 7,
 };
 
 /**
@@ -116,10 +122,144 @@ export async function checkHealth(orgAlias, { minScore = MONITOR_DEFAULTS.health
   }
 }
 
+/**
+ * Org info / instance — informational, with a trial/expiration warning.
+ */
+export async function checkOrgInfo(orgAlias, { trialWarnDays = MONITOR_DEFAULTS.orgInfoTrialWarnDays } = {}) {
+  const id = 'org-info';
+  const title = 'Org info';
+  try {
+    const rows = await query(
+      orgAlias,
+      `SELECT Name, InstanceName, OrganizationType, IsSandbox, TrialExpirationDate FROM Organization LIMIT 1`,
+    );
+    const org = rows[0];
+    if (!org) return result_(id, title, 'warn', 'Organization record unavailable', []);
+    const finding = {
+      name: org.Name,
+      instance: org.InstanceName,
+      type: org.OrganizationType,
+      sandbox: org.IsSandbox,
+      trialExpires: org.TrialExpirationDate ?? null,
+    };
+    let status = 'ok';
+    let summary = `${org.OrganizationType} on ${org.InstanceName}${org.IsSandbox ? ' (sandbox)' : ''}`;
+    if (org.TrialExpirationDate) {
+      const daysLeft = Math.ceil((new Date(org.TrialExpirationDate).getTime() - Date.now()) / DAY_MS);
+      finding.daysLeft = daysLeft;
+      if (daysLeft <= trialWarnDays) {
+        status = 'warn';
+        summary = `Trial/expiration in ${daysLeft} day(s) (${org.InstanceName})`;
+      }
+    }
+    return result_(id, title, status, summary, [finding]);
+  } catch (err) {
+    return errored(id, title, err);
+  }
+}
+
+/**
+ * Recent deployment health (Tooling DeployRequest) — fails when the most recent
+ * deployment failed, warns when any in the window failed.
+ */
+export async function checkDeployHistory(orgAlias, { lookback = MONITOR_DEFAULTS.deployHistoryLookback } = {}) {
+  const id = 'deploy-history';
+  const title = 'Recent deployments';
+  try {
+    // lookback is interpolated into SOQL LIMIT and may come from user config —
+    // coerce to a safe integer (the checkApiVersions pattern).
+    const lim = Number.parseInt(lookback, 10);
+    if (!Number.isFinite(lim)) throw new Error(`monitoring.deployHistoryLookback must be a number, got: ${lookback}`);
+    const rows = await query(
+      orgAlias,
+      `SELECT Status, StartDate, CompletedDate, NumberComponentErrors, CreatedBy.Name FROM DeployRequest ` +
+        `ORDER BY CompletedDate DESC NULLS LAST LIMIT ${lim}`,
+      { tooling: true },
+    );
+    if (rows.length === 0) return result_(id, title, 'ok', 'No recent deployments found', []);
+    const failed = rows.filter((r) => r.Status === 'Failed' || (r.NumberComponentErrors ?? 0) > 0);
+    const latestFailed = rows[0].Status === 'Failed';
+    const findings = failed.map((r) => ({
+      status: r.Status,
+      errors: r.NumberComponentErrors ?? 0,
+      user: r.CreatedBy?.Name,
+      date: r.CompletedDate ?? r.StartDate,
+    }));
+    const status = latestFailed ? 'fail' : failed.length ? 'warn' : 'ok';
+    return result_(id, title, status,
+      latestFailed
+        ? 'Most recent deployment failed'
+        : failed.length
+          ? `${failed.length} of last ${rows.length} deployment(s) failed`
+          : `Last ${rows.length} deployment(s) succeeded`,
+      findings);
+  } catch (err) {
+    // DeployRequest is a Tooling object that some orgs/permissions reject.
+    return degraded(id, title, err, 'Deployment history');
+  }
+}
+
+/**
+ * Legacy/deprecated API usage — presence of ApiTotalUsage event logs indicates
+ * traffic against deprecated Salesforce API versions. Degrades to a warning
+ * (never a false 'ok') when EventLogFile is inaccessible (no Event Monitoring).
+ */
+export async function checkDeprecatedApi(orgAlias, { lookbackDays = MONITOR_DEFAULTS.deprecatedApiLookbackDays } = {}) {
+  const id = 'deprecated-api';
+  const title = 'Legacy API usage';
+  try {
+    const since = ISODate(Date.now() - lookbackDays * DAY_MS);
+    const rows = await query(
+      orgAlias,
+      `SELECT LogDate, EventType, LogFileLength FROM EventLogFile ` +
+        `WHERE EventType = 'ApiTotalUsage' AND LogDate >= ${since} ORDER BY LogDate DESC LIMIT 50`,
+    );
+    const findings = rows.map((r) => ({ date: r.LogDate, bytes: r.LogFileLength }));
+    return result_(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `Legacy/deprecated API traffic logged on ${findings.length} day(s) in the last ${lookbackDays} days`
+        : `No legacy API usage logs in the last ${lookbackDays} days`,
+      findings);
+  } catch (err) {
+    return result_(id, title, 'warn',
+      `Legacy API usage unavailable (EventLogFile not accessible — requires API/Event Monitoring): ${oneLine(err?.message)}`,
+      []);
+  }
+}
+
+/**
+ * Paused flow interviews — interviews stuck in a Paused state (often a Wait
+ * element with no resume) that can pile up and mask automation problems.
+ */
+export async function checkFlowErrors(orgAlias) {
+  const id = 'flow-errors';
+  const title = 'Paused flow interviews';
+  try {
+    const rows = await query(
+      orgAlias,
+      `SELECT InterviewLabel, CurrentElement, CreatedDate FROM FlowInterview ` +
+        `WHERE InterviewStatus = 'Paused' ORDER BY CreatedDate ASC LIMIT 200`,
+    );
+    const findings = rows.map((r) => ({ name: r.InterviewLabel, element: r.CurrentElement, date: r.CreatedDate }));
+    return result_(id, title, findings.length ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} paused flow interview(s) (potentially stuck)`
+        : 'No paused flow interviews',
+      findings);
+  } catch (err) {
+    // FlowInterview / InterviewStatus is not queryable in every org.
+    return degraded(id, title, err, 'Paused flow interviews');
+  }
+}
+
 export const CHECKS = {
   limits: checkLimits,
   errors: checkErrors,
   health: checkHealth,
+  'org-info': checkOrgInfo,
+  'deploy-history': checkDeployHistory,
+  'deprecated-api': checkDeprecatedApi,
+  'flow-errors': checkFlowErrors,
 };
 
 export const CHECK_IDS = Object.keys(CHECKS);
@@ -213,6 +353,23 @@ function errored(id, title, err) {
     title,
     status: 'error',
     summary: `Check failed: ${oneLine(structured || err?.message)}`,
+    findings: [],
+  };
+}
+
+/**
+ * Soft failure for checks that query a Tooling/license-gated object whose
+ * absence means "can't run here", not "org is unhealthy". Surfaces `warn` (not
+ * `error`) so `monitor all` doesn't exit non-zero over a missing API. Mirrors
+ * checkDeprecatedApi.
+ */
+function degraded(id, title, err, what) {
+  const structured = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
+  return {
+    id,
+    title,
+    status: 'warn',
+    summary: `${what} unavailable in this org: ${oneLine(structured || err?.message)}`,
     findings: [],
   };
 }

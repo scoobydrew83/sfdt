@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   SalesforceApiClient,
   configureSalesforceApi,
@@ -560,6 +560,360 @@ describe('extension/lib/salesforce-api', () => {
       await expect(client.apiSoap('Partner', 'describeSObject', { sObjectType: 'Bogus' })).rejects.toThrow(
         'INVALID_TYPE: sObject type Bogus is not supported',
       );
+    });
+
+    it('throws when the SOAP body lacks the expected <method>Response element', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const xml = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">',
+        '<soapenv:Body><somethingElse/></soapenv:Body>',
+        '</soapenv:Envelope>',
+      ].join('');
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: xmlFetch(200, xml) });
+      await expect(client.apiSoap('Partner', 'getUserInfo', {})).rejects.toThrow(
+        /missing getUserInfoResponse/,
+      );
+    });
+
+    it('builds the Metadata-namespaced envelope and parses its response', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      let sentBody = '';
+      const fetchSpy = vi.fn(async (_url: string, init: RequestInit) => {
+        sentBody = String(init.body);
+        const xml = [
+          '<?xml version="1.0" encoding="UTF-8"?>',
+          '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">',
+          '<soapenv:Body>',
+          '<readMetadataResponse xmlns="http://soap.sforce.com/2006/04/metadata">',
+          '<result><records><fullName>My_Flow</fullName></records></result>',
+          '</readMetadataResponse>',
+          '</soapenv:Body>',
+          '</soapenv:Envelope>',
+        ].join('');
+        return { ok: true, status: 200, async text() { return xml; }, async json() { return null; } } as Response;
+      });
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy as unknown as typeof fetch });
+      const result = await client.apiSoap<{ records: unknown }>('Metadata', 'readMetadata', { type: 'Flow' });
+      expect(result).toMatchObject({ records: { fullName: 'My_Flow' } });
+      // Metadata requests carry the met: namespace and prefix the session
+      // header. happy-dom lowercases created element names, so match lowercase.
+      expect(sentBody).toContain('xmlns:met="http://soap.sforce.com/2006/04/metadata"');
+      expect(sentBody.toLowerCase()).toContain('met:sessionheader');
+      expect(sentBody.toLowerCase()).toContain('met:readmetadata');
+    });
+
+    it('clears the session and retries once after a SOAP 401', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      let call = 0;
+      const okXml = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">',
+        '<soapenv:Body>',
+        '<getUserInfoResponse xmlns="urn:partner.soap.sforce.com">',
+        '<result><userName>admin@example.com</userName></result>',
+        '</getUserInfoResponse>',
+        '</soapenv:Body></soapenv:Envelope>',
+      ].join('');
+      const fetchSpy = vi.fn(async () => {
+        call += 1;
+        if (call === 1) {
+          return { ok: false, status: 401, async text() { return 'unauthorized'; }, async json() { return null; } } as Response;
+        }
+        return { ok: true, status: 200, async text() { return okXml; }, async json() { return null; } } as Response;
+      });
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy as unknown as typeof fetch });
+      const result = await client.apiSoap<{ userName: string }>('Partner', 'getUserInfo', {});
+      expect(result).toMatchObject({ userName: 'admin@example.com' });
+      // bus.sendMessage is called twice (once per getSession after clearSession).
+      expect((bus.sendMessage as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(2);
+    });
+
+    it('throws a SalesforceSoapError on a network failure', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(async () => {
+        throw new Error('socket hang up');
+      });
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy as unknown as typeof fetch });
+      await expect(client.apiSoap('Partner', 'getUserInfo', {})).rejects.toThrow('socket hang up');
+    });
+  });
+
+  describe('getSessionDetails', () => {
+    it('returns the first (preferred) session candidate', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({
+        'https://x.my.salesforce.com': 'sid-mysf',
+        'https://x.lightning.force.com': 'sid-light',
+      });
+      const client = new SalesforceApiClient({ win, messageBus: bus });
+      const details = await client.getSessionDetails();
+      expect(details).toEqual({ baseUrl: 'https://x.my.salesforce.com', sid: 'sid-mysf' });
+    });
+
+    it('returns null when no session is available', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus: MessageBus = {
+        sendMessage: (async () => ({ ok: true, sids: {} })) as unknown as MessageBus['sendMessage'],
+      };
+      const client = new SalesforceApiClient({ win, messageBus: bus });
+      expect(await client.getSessionDetails()).toBeNull();
+    });
+  });
+
+  describe('sid decoding', () => {
+    it('URL-decodes a percent-encoded sid before use', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'AB%21CD' });
+      const fetchSpy = vi.fn(
+        fetchResponder({
+          'https://x.my.salesforce.com/services/data': {
+            status: 200,
+            body: { size: 0, done: true, records: [] },
+          },
+        }),
+      );
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy });
+      await client.toolingQuery('SELECT Id FROM Flow');
+      const init = fetchSpy.mock.calls[0]?.[1];
+      expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer AB!CD');
+    });
+
+    it('keeps a malformed percent-encoded sid verbatim (decode throws)', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'AB%ZZCD' });
+      const fetchSpy = vi.fn(
+        fetchResponder({
+          'https://x.my.salesforce.com/services/data': {
+            status: 200,
+            body: { size: 0, done: true, records: [] },
+          },
+        }),
+      );
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy });
+      await client.toolingQuery('SELECT Id FROM Flow');
+      const init = fetchSpy.mock.calls[0]?.[1];
+      expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer AB%ZZCD');
+    });
+  });
+
+  describe('401 clear-and-retry (apiGet)', () => {
+    it('clears the session and retries once when every candidate 401s', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      let call = 0;
+      const fetchSpy = vi.fn(async () => {
+        call += 1;
+        const status = call === 1 ? 401 : 200;
+        const body = call === 1 ? 'unauthorized' : { size: 0, done: true, records: [] };
+        return {
+          ok: status === 200,
+          status,
+          async json() { return body; },
+          async text() { return typeof body === 'string' ? body : JSON.stringify(body); },
+        } as Response;
+      });
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy as unknown as typeof fetch });
+      const result = await client.toolingQuery('SELECT Id FROM Flow');
+      expect(result.records).toEqual([]);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      // getSession runs twice because clearSession() wiped the cache between attempts.
+      expect((bus.sendMessage as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('apiGetText error paths', () => {
+    it('clears the session and retries once on 401', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      let call = 0;
+      const fetchSpy = vi.fn(async () => {
+        call += 1;
+        if (call === 1) {
+          return { ok: false, status: 401, async text() { return 'nope'; }, async json() { return null; } } as Response;
+        }
+        return { ok: true, status: 200, async text() { return 'LOG BODY'; }, async json() { return null; } } as Response;
+      });
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy as unknown as typeof fetch });
+      const text = await client.apiGetText('/services/data/v62.0/tooling/sobjects/ApexLog/07L/Body');
+      expect(text).toBe('LOG BODY');
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('throws a request error on a non-401 failure', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(
+        fetchResponder({
+          'https://x.my.salesforce.com/services/data': { status: 404, body: 'not found' },
+        }),
+      );
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy });
+      await expect(
+        client.apiGetText('/services/data/v62.0/tooling/sobjects/ApexLog/07L/Body'),
+      ).rejects.toThrow(/HTTP 404/);
+      consoleSpy.mockRestore();
+    });
+
+    it('reports a network error (apiGetText) without a fake HTTP status', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(async () => {
+        throw new Error('Failed to fetch');
+      });
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy as unknown as typeof fetch });
+      await expect(
+        client.apiGetText('/services/data/v62.0/tooling/sobjects/ApexLog/07L/Body'),
+      ).rejects.toThrow(/network error/);
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('apiGet network error', () => {
+    it('records the thrown error as a network failure (status 0)', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(async () => {
+        throw new Error('Failed to fetch');
+      });
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy as unknown as typeof fetch });
+      await expect(client.toolingQuery('SELECT Id FROM Flow')).rejects.toThrow(/network error/);
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('apiRequest / apiPatch error paths', () => {
+    it('throws on a non-401 HTTP error', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(
+        fetchResponder({
+          'https://x.my.salesforce.com/services/data': {
+            status: 400,
+            body: '[{"message":"bad field","errorCode":"INVALID_FIELD"}]',
+          },
+        }),
+      );
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy });
+      await expect(
+        client.apiRequest('POST', '/services/data/v62.0/sobjects/Account', { Name: 'x' }),
+      ).rejects.toThrow(/bad field/);
+      consoleSpy.mockRestore();
+    });
+
+    it('clears the session and retries once on 401', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      let call = 0;
+      const fetchSpy = vi.fn(async () => {
+        call += 1;
+        if (call === 1) {
+          return { ok: false, status: 401, async text() { return 'nope'; }, async json() { return null; } } as Response;
+        }
+        return { ok: true, status: 200, async text() { return '{"id":"001","success":true}'; }, async json() { return null; } } as Response;
+      });
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy as unknown as typeof fetch });
+      const result = await client.apiPatch('/services/data/v62.0/sobjects/Account/001', { Name: 'y' });
+      expect(result).toMatchObject({ id: '001', success: true });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('getFlowMetadata — uncovered branches', () => {
+    it('throws "No flow found for ID" when an Id-shaped lookup finds nothing', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      const fetchSpy = vi.fn(
+        fetchResponder({
+          'https://x.my.salesforce.com/services/data': {
+            status: 200,
+            body: { size: 0, done: true, records: [] },
+          },
+        }),
+      );
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy });
+      // 15-char Id shape → Id branch; both DefinitionId and Id lookups empty.
+      await expect(client.getFlowMetadata('301AB000000xyz1')).rejects.toThrow(/No flow found for ID/);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('falls back to a namespace-less lookup for a managed-package developer name', async () => {
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const bus = makeBus({ 'https://x.my.salesforce.com': 'sid' });
+      let call = 0;
+      const fetchSpy = vi.fn(async () => {
+        call += 1;
+        // First query (with namespace clause) finds nothing; fallback (no
+        // namespace) returns the record.
+        const body =
+          call === 1
+            ? { size: 0, done: true, records: [] }
+            : { size: 1, done: true, records: [{ Id: '301', MasterLabel: 'Pkg Flow' }] };
+        return { ok: true, status: 200, async json() { return body; }, async text() { return JSON.stringify(body); } } as Response;
+      });
+      const client = new SalesforceApiClient({ win, messageBus: bus, fetchImpl: fetchSpy as unknown as typeof fetch });
+      const meta = await client.getFlowMetadata('mypkg__My_Flow-3');
+      expect(meta).toMatchObject({ Id: '301', MasterLabel: 'Pkg Flow' });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('defaultMessageBus (real chrome.runtime path)', () => {
+    const realSendMessage = chrome.runtime.sendMessage;
+    afterEach(() => {
+      (chrome.runtime as { sendMessage: unknown }).sendMessage = realSendMessage;
+      (chrome.runtime as { lastError?: unknown }).lastError = undefined;
+    });
+
+    it('resolves the sid via chrome.runtime.sendMessage when no messageBus is injected', async () => {
+      (chrome.runtime as { sendMessage: unknown }).sendMessage = (
+        _msg: unknown,
+        cb: (resp: unknown) => void,
+      ) => {
+        cb({ ok: true, sids: { 'https://x.my.salesforce.com': 'sid-real' } });
+      };
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const fetchSpy = vi.fn(
+        fetchResponder({
+          'https://x.my.salesforce.com/services/data': {
+            status: 200,
+            body: { size: 0, done: true, records: [] },
+          },
+        }),
+      );
+      const client = new SalesforceApiClient({ win, fetchImpl: fetchSpy });
+      const result = await client.toolingQuery('SELECT Id FROM Flow');
+      expect(result.records).toEqual([]);
+    });
+
+    it('resolves null (→ no session) when chrome.runtime.lastError is set', async () => {
+      (chrome.runtime as { sendMessage: unknown }).sendMessage = (
+        _msg: unknown,
+        cb: (resp: unknown) => void,
+      ) => {
+        (chrome.runtime as { lastError?: unknown }).lastError = { message: 'port closed' };
+        cb(undefined);
+      };
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const client = new SalesforceApiClient({ win });
+      await expect(client.toolingQuery('SELECT Id FROM Flow')).rejects.toThrow(/No Salesforce session/);
+    });
+
+    it('resolves null when chrome.runtime.sendMessage throws synchronously', async () => {
+      (chrome.runtime as { sendMessage: unknown }).sendMessage = () => {
+        throw new Error('extension context invalidated');
+      };
+      const win = fakeWin('https://x.lightning.force.com/anything');
+      const client = new SalesforceApiClient({ win });
+      await expect(client.toolingQuery('SELECT Id FROM Flow')).rejects.toThrow(/No Salesforce session/);
     });
   });
 });

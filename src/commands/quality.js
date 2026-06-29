@@ -22,6 +22,7 @@ export function registerQualityCommand(program) {
     .option('--fix-plan', 'Generate an AI-powered fix plan from quality output')
     .option('--generate-stubs', 'Generate @IsTest stub classes for untested Apex classes')
     .option('--dry-run', 'Preview --generate-stubs output without writing files')
+    .option('--agent', 'Non-interactive agent mode (do not block waiting on the AI fix-plan session)')
     .action(async (options) => {
       try {
         const config = await loadConfig();
@@ -91,7 +92,7 @@ export function registerQualityCommand(program) {
               allowedTools: ['Read', 'Grep'],
               cwd: projectRoot,
               aiEnabled: true,
-              interactive: true,
+              interactive: !options.agent,
             });
           } else {
             print.warning('AI features are not available. Skipping fix plan generation.');

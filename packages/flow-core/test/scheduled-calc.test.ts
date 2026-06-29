@@ -427,5 +427,168 @@ describe('flow-core/scheduled-calc', () => {
       expect(formatRelative(new Date(2026, 7, 15), now)).toBe('in 2 months');
       expect(formatRelative(new Date(2028, 5, 15), now)).toBe('in 2 years');
     });
+
+    it('formatRelative — past weeks, months, and years', () => {
+      const now = new Date(2026, 5, 15);
+      expect(formatRelative(new Date(2026, 5, 1), now)).toBe('2 weeks ago');
+      expect(formatRelative(new Date(2026, 3, 15), now)).toBe('2 months ago');
+      expect(formatRelative(new Date(2024, 5, 15), now)).toBe('2 years ago');
+    });
+
+    it('formatRelative — non-Date target returns empty; non-Date now falls back to today', () => {
+      expect(formatRelative('nope' as never)).toBe('');
+      // now is invalid → defaults to the real current date; the target is also
+      // "now-ish" so this just confirms no throw and a non-empty label.
+      expect(typeof formatRelative(new Date(), 'bad' as never)).toBe('string');
+    });
+
+    it('formatDateLong / formatDateTimeLong reject non-Date input', () => {
+      expect(formatDateLong('nope' as never)).toBe('');
+      expect(formatDateTimeLong('nope' as never)).toBe('');
+    });
+  });
+
+  describe('parseSchedule — malformed time and date fields', () => {
+    function scheduledFlow(startDate: unknown, startTime: unknown): FlowRecord {
+      return {
+        Metadata: {
+          start: {
+            triggerType: 'Scheduled',
+            schedule: { frequency: FREQUENCY.DAILY, startDate, startTime } as never,
+          },
+        },
+      };
+    }
+
+    it('rejects a non-string startTime', () => {
+      expect(parseSchedule(scheduledFlow('2026-04-30', 800))).toBeNull();
+    });
+
+    it('rejects a startTime without minutes', () => {
+      expect(parseSchedule(scheduledFlow('2026-04-30', '0800'))).toBeNull();
+    });
+
+    it('rejects a non-numeric startTime', () => {
+      expect(parseSchedule(scheduledFlow('2026-04-30', 'ab:cd:00'))).toBeNull();
+    });
+
+    it('rejects a non-string startDate', () => {
+      expect(parseSchedule(scheduledFlow(20260430, '08:00:00.000Z'))).toBeNull();
+    });
+
+    it('rejects a startDate that does not match YYYY-MM-DD', () => {
+      expect(parseSchedule(scheduledFlow('2026/04/30', '08:00:00.000Z'))).toBeNull();
+    });
+  });
+
+  describe('calculateNextRun / getRunsInRange — guards and activation windows', () => {
+    it('calculateNextRun returns null for a null schedule', () => {
+      expect(calculateNextRun(null, null, new Date(2026, 5, 1))).toBeNull();
+    });
+
+    it('calculateNextRun tolerates a non-Date "from" by treating it as now', () => {
+      const parsed = parseSchedule(dailyFlow('2026-04-30', '08:00:00.000Z'))!;
+      expect(calculateNextRun(parsed, null, 'not a date' as never)).toBeInstanceOf(Date);
+    });
+
+    it('getRunsInRange returns [] for a null schedule or non-Date range bounds', () => {
+      const parsed = parseSchedule(dailyFlow('2026-04-30', '08:00:00.000Z'))!;
+      expect(getRunsInRange(null, null, new Date(2026, 5, 1), new Date(2026, 5, 5))).toEqual([]);
+      expect(getRunsInRange(parsed, null, 'x' as never, new Date(2026, 5, 5))).toEqual([]);
+    });
+
+    it('getRunsInRange skips a Once flow whose schedule predates activation', () => {
+      const parsed = parseSchedule(onceFlow('2026-04-30', '08:00:00.000Z'))!;
+      const activation = new Date(2026, 5, 1);
+      expect(getRunsInRange(parsed, activation, new Date(2026, 5, 1), new Date(2026, 5, 30))).toEqual([]);
+    });
+
+    it('getRunsInRange honours an activationDate later than the schedule start (daily)', () => {
+      const parsed = parseSchedule(dailyFlow('2026-04-30', '08:00:00.000Z'))!;
+      const activation = new Date(2026, 5, 10, 12, 0, 0); // 10 June, after 08:00
+      const runs = getRunsInRange(parsed, activation, new Date(2026, 5, 1), new Date(2026, 5, 15, 23, 59, 59));
+      // First run is 11 June (08:00 on the 10th already passed at activation).
+      expect(runs[0]!.getDate()).toBe(11);
+      expect(runs.every((r) => r.getDate() >= 11)).toBe(true);
+    });
+
+    it('getRunsInRange honours an activationDate later than the schedule start (weekly)', () => {
+      const parsed = parseSchedule(weeklyFlow('2026-04-30', '09:00:00.000Z'))!; // Thursdays
+      const activation = new Date(2026, 5, 20); // Sat 20 June
+      const runs = getRunsInRange(parsed, activation, new Date(2026, 5, 1), new Date(2026, 6, 15, 23, 59, 59));
+      expect(runs.length).toBeGreaterThan(0);
+      expect(runs.every((r) => r.getDay() === 4 && r >= activation)).toBe(true);
+    });
+
+    it('calculateNextRun (weekly) anchors on the activation date when it is the later bound', () => {
+      const parsed = parseSchedule(weeklyFlow('2026-04-30', '09:00:00.000Z'))!; // Thursdays
+      const activation = new Date(2026, 5, 20); // Sat 20 June
+      const next = calculateNextRun(parsed, activation, new Date(2026, 5, 1))!;
+      expect(next.getDay()).toBe(4);
+      expect(next >= activation).toBe(true);
+    });
+  });
+
+  describe('formatFilters — value and clause variants', () => {
+    function filterFlow(filters: unknown[], filterLogic = 'and'): FlowRecord {
+      return {
+        Metadata: {
+          start: {
+            triggerType: 'Scheduled',
+            schedule: {
+              frequency: FREQUENCY.DAILY,
+              startDate: '2026-04-30',
+              startTime: '08:00:00.000Z',
+            },
+            object: 'Account',
+            filterLogic,
+            filters: filters as never,
+          },
+        },
+      };
+    }
+
+    it('renders boolean, date, datetime, raw, null, and empty-object values', () => {
+      const parsed = parseSchedule(
+        filterFlow([
+          { field: 'IsActive', operator: 'EqualTo', value: { booleanValue: true } },
+          { field: 'Closed', operator: 'EqualTo', value: { booleanValue: false } },
+          { field: 'CloseDate', operator: 'EqualTo', value: { dateValue: '2026-06-09' } },
+          { field: 'CreatedDate', operator: 'EqualTo', value: { dateTimeValue: '2026-06-09T00:00:00Z' } },
+          { field: 'Name', operator: 'EqualTo', value: 'rawstring' },
+          { field: 'Owner', operator: 'EqualTo', value: null },
+          { field: 'Empty', operator: 'EqualTo', value: {} },
+        ]),
+      )!;
+      const text = formatFilters(parsed);
+      expect(text).toContain('IsActive = true');
+      expect(text).toContain('Closed = false');
+      expect(text).toContain('CloseDate = 2026-06-09');
+      expect(text).toContain('CreatedDate = 2026-06-09T00:00:00Z');
+      expect(text).toContain('Name = rawstring');
+      expect(text).toContain('Owner = null');
+      expect(text).toContain('Empty = ?');
+    });
+
+    it('drops clauses missing a field or operator and passes unknown operators through verbatim', () => {
+      const parsed = parseSchedule(
+        filterFlow([
+          { field: 'OnlyField' }, // no operator → dropped
+          { operator: 'EqualTo' }, // no field → dropped
+          { field: 'Stage', operator: 'CustomOp', value: { stringValue: 'x' } },
+        ]),
+      )!;
+      expect(formatFilters(parsed)).toBe("Stage CustomOp 'x'");
+    });
+
+    it('returns an empty string when no clause is renderable', () => {
+      const parsed = parseSchedule(filterFlow([{ field: 'OnlyField' }]))!;
+      expect(formatFilters(parsed)).toBe('');
+    });
+
+    it('formatFilters and buildSummarySentence return empty for a null schedule', () => {
+      expect(formatFilters(null)).toBe('');
+      expect(buildSummarySentence(null)).toBe('');
+    });
   });
 });

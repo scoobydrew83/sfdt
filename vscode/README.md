@@ -37,6 +37,8 @@ The SFDT activity-bar container holds three views plus a status bar:
   changes.
 - **Embedded dashboard** — `SFDT: Open Dashboard` runs `sfdt ui` and shows the
   full web dashboard in an editor tab (authenticated via the CLI's launch token).
+  Follows the editor's light/dark theme and recovers automatically from dashboard
+  port conflicts.
 - **Per-org window theming** — tints the window by org type (production = red,
   sandbox = orange, scratch/developer = green) to prevent wrong-org mistakes
   (toggle with `sfdt.orgColor`).

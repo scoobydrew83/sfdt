@@ -141,6 +141,7 @@ export function createGuiApp(config, version, port = 7654) {
   mountBridgeRoutes(app, {
     port,
     version,
+    config,
     projectRoot: config._projectRoot,
     configDir: config._configDir,
     logDir,
@@ -495,6 +496,32 @@ export function createGuiApp(config, version, port = 7654) {
     try {
       const data = await readSnapshotFile('monitor-latest.json');
       res.json(data ?? { timestamp: null, org: null, checks: [], summary: { total: 0, ok: 0, warn: 0, fail: 0, error: 0 } });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Redacted notification-channel config (never returns secrets/URLs).
+  app.get('/api/notifications', apiLimiter, async (_req, res) => {
+    try {
+      const { describeChannels } = await import('../notifier.js');
+      res.json({
+        enabled: config.notifications?.enabled === true || config.features?.notifications === true,
+        summary: config.notifications?.summary?.enabled === true,
+        channels: describeChannels(config),
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Send a test message to all configured channels.
+  app.post('/api/notifications/test', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { dispatchTest } = await import('../notifier.js');
+      const results = await dispatchTest(config);
+      res.json({ results });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1081,11 +1108,14 @@ export function createGuiApp(config, version, port = 7654) {
         emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed });
       }
 
-      if (!res.writableEnded) res.end();
     } catch (err) {
       const elapsed = Math.round((Date.now() - startTime) / 1000);
       emit({ type: 'log', line: `Pull failed: ${err.message}` });
       emit({ type: 'result', exitCode: 1, retrieved: 0, elapsed });
+    } finally {
+      // Always close the SSE stream. Early returns in the mode dispatch above
+      // (invalid groupKey / invalid metadata entry) must not leave the
+      // connection hanging open.
       if (!res.writableEnded) res.end();
     }
   });
@@ -3054,6 +3084,76 @@ export function createGuiApp(config, version, port = 7654) {
     } catch {
       res.json({ available: false, enabled: false, provider: null });
     }
+  });
+
+  // ── Capability dashboards: scratch / data / docs / coverage ────────────────
+  // These shell out to the `sfdt` binary itself with `--json` and unwrap the
+  // sf-native `{ status, result, warnings }` envelope (see src/lib/output.js).
+  // Read-only commands only — write actions (scratch fill, docs generate) stay
+  // in the CLI / CommandRunner stream path.
+  const runSfdtJson = async (args) => {
+    const { stdout } = await execa(process.argv[0], [process.argv[1], ...args, '--json'], {
+      cwd: config._projectRoot ?? process.cwd(),
+      reject: false, // emitJsonError still prints the envelope on non-zero exit
+    });
+    let envelope;
+    try { envelope = JSON.parse(stdout); }
+    catch { throw new Error(`sfdt ${args.join(' ')} did not return valid JSON`); }
+    if (envelope && typeof envelope.status === 'number' && envelope.status !== 0) {
+      throw new Error(envelope.message || `sfdt ${args.join(' ')} failed`);
+    }
+    return envelope?.result ?? null;
+  };
+
+  app.get('/api/scratch', apiLimiter, async (_req, res) => {
+    try {
+      const [pool, list] = await Promise.all([
+        runSfdtJson(['scratch', 'pool', 'status']),
+        runSfdtJson(['scratch', 'list']),
+      ]);
+      res.json({
+        pool: pool ?? { size: 0, members: [] },
+        orgs: list?.orgs ?? [],
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/data', apiLimiter, async (_req, res) => {
+    try {
+      const result = await runSfdtJson(['data', 'list']);
+      res.json({ sets: result?.sets ?? [] });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/coverage', apiLimiter, async (_req, res) => {
+    try {
+      const result = await runSfdtJson(['coverage']);
+      res.json(result ?? { org: null, threshold: null, orgWide: null, belowThreshold: false, classes: [] });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Docs has no read-only query command — generation is a write action. Surface
+  // the configured docs settings + AI gate so the page can show status and a
+  // "generate" trigger note instead of shelling out.
+  app.get('/api/docs', apiLimiter, (_req, res) => {
+    const docs = config.docs ?? {};
+    res.json({
+      config: {
+        outputDir:  docs.outputDir  ?? 'docs',
+        ai:         docs.ai         ?? false,
+        diagrams:   docs.diagrams   ?? false,
+        roleGuides: docs.roleGuides ?? false,
+        roles:      docs.roles      ?? [],
+      },
+      aiEnabled: !!config.features?.ai,
+      note: 'Run `sfdt docs generate` to build the MkDocs site (a write action). This panel reflects the current docs configuration.',
+    });
   });
 
   // ── Static: serve pre-built React app ──────────────────────────────────────

@@ -194,6 +194,122 @@ describe('flow-core/bridge-contract', () => {
     });
   });
 
+  describe('validateSfdtRequest — field-level validation', () => {
+    it('deploy: accepts a valid targetOrg and rejects bad ones', () => {
+      expect(
+        validateSfdtRequest({ requestId: 'r1', kind: 'deploy', flowApiName: 'My_Flow', targetOrg: 'my-org@example' }).ok,
+      ).toBe(true);
+      const bad = validateSfdtRequest({
+        requestId: 'r1',
+        kind: 'deploy',
+        flowApiName: 'My_Flow',
+        targetOrg: '--inject',
+      });
+      expect(bad.ok).toBe(false);
+      if (!bad.ok) expect(bad.errors.some((e) => e.field === 'targetOrg')).toBe(true);
+    });
+
+    it('deploy: rejects a malformed flowApiName, a blank flowId, and a non-boolean validateOnly', () => {
+      const result = validateSfdtRequest({
+        requestId: 'r1',
+        kind: 'deploy',
+        flowApiName: '1bad', // starts with a digit
+        flowId: '', // present but empty
+        validateOnly: 'yes', // not a boolean
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        const fields = result.errors.map((e) => e.field);
+        expect(fields).toContain('flowApiName');
+        expect(fields).toContain('flowId');
+        expect(fields).toContain('validateOnly');
+      }
+    });
+
+    it('rollback: rejects a malformed flowApiName and a bad targetOrg', () => {
+      const result = validateSfdtRequest({
+        requestId: 'r1',
+        kind: 'rollback',
+        flowApiName: '9nope',
+        toVersion: 2,
+        targetOrg: 'has space',
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        const fields = result.errors.map((e) => e.field);
+        expect(fields).toContain('flowApiName');
+        expect(fields).toContain('targetOrg');
+      }
+    });
+
+    it('drift: requires a non-empty component', () => {
+      const result = validateSfdtRequest({ requestId: 'r1', kind: 'drift' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.errors[0]!.field).toBe('component');
+      expect(validateSfdtRequest({ requestId: 'r1', kind: 'drift', component: 'Acct_Flow' }).ok).toBe(true);
+    });
+
+    it('compare: surfaces a missing left when only right is given', () => {
+      const result = validateSfdtRequest({ requestId: 'r1', kind: 'compare', right: 'b' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.errors.some((e) => e.field === 'left')).toBe(true);
+    });
+
+    it('telemetry.snapshot: rejects a missing monthKey', () => {
+      const result = validateSfdtRequest({
+        requestId: 'r1',
+        kind: 'telemetry.snapshot',
+        counters: {},
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.errors.some((e) => e.field === 'monthKey')).toBe(true);
+    });
+
+    it('telemetry.snapshot: rejects a monthKey in the wrong format and a non-object counters', () => {
+      const result = validateSfdtRequest({
+        requestId: 'r1',
+        kind: 'telemetry.snapshot',
+        monthKey: '2026/05',
+        counters: 'nope',
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        const fields = result.errors.map((e) => e.field);
+        expect(fields).toContain('monthKey');
+        expect(fields).toContain('counters');
+      }
+    });
+
+    it('telemetry.snapshot: rejects a non-object counter and a non-numeric counter field', () => {
+      const result = validateSfdtRequest({
+        requestId: 'r1',
+        kind: 'telemetry.snapshot',
+        monthKey: '2026-05',
+        counters: {
+          good: { activated: 1, errored: 0, disabled_remote: 0 },
+          notObject: 5,
+          badField: { activated: 'x', errored: 0, disabled_remote: 0 },
+        },
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        const fields = result.errors.map((e) => e.field);
+        expect(fields).toContain('counters.notObject');
+        expect(fields).toContain('counters.badField.activated');
+      }
+    });
+
+    it('telemetry.snapshot: accepts a well-formed payload', () => {
+      const result = validateSfdtRequest({
+        requestId: 'r1',
+        kind: 'telemetry.snapshot',
+        monthKey: '2026-05',
+        counters: { feat_a: { activated: 3, errored: 1, disabled_remote: 0 } },
+      });
+      expect(result.ok).toBe(true);
+    });
+  });
+
   describe('response helpers', () => {
     it('makeSuccessResponse echoes the requestId', () => {
       expect(makeSuccessResponse('r1', { pong: true, serverVersion: '0.8.1', transport: 'localhost' })).toEqual({

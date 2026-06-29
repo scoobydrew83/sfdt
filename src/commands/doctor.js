@@ -23,6 +23,7 @@ import path from 'path';
 import { nativeHostStatus } from '../../host/installers/install-host.js';
 import { getConfigDir } from '../lib/config.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { emitJson, emitJsonError } from '../lib/output.js';
 
 const DEFAULT_PORT = 7654;
 
@@ -185,7 +186,7 @@ export function registerDoctorCommand(program) {
         const port = parsedPort;
         const { results, ok } = await runExtensionDoctor({ port });
         if (options.json) {
-          process.stdout.write(JSON.stringify({ ok, results }, null, 2) + '\n');
+          emitJson({ ok, results });
           if (!ok) process.exitCode = 1;
           return;
         }
@@ -201,13 +202,11 @@ export function registerDoctorCommand(program) {
         }
       } catch (err) {
         if (options.json) {
-          process.stdout.write(
-            JSON.stringify({ ok: false, error: err.message, exitCode: resolveExitCode(err) }) + '\n',
-          );
+          emitJsonError(err);
         } else {
           console.error(chalk.red(`doctor failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
         }
-        process.exitCode = resolveExitCode(err);
       }
     });
 }

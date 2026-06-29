@@ -109,6 +109,28 @@ describe('parseTestRunLines', () => {
     expect(classCoverage[0].totalLines).toBe(20);
   });
 
+  it('parses classCoverage from a lines dict (totalLines/lines shape)', () => {
+    // Covers the c.numLocations == null branch: coverage expressed as a
+    // per-line dict where 1 = covered, 0 = not covered.
+    const payload = {
+      result: {
+        summary: { passing: 1, failing: 0, skipped: 0 },
+        tests: [],
+        coverage: {
+          coverage: [
+            { name: 'LinesClass', lines: { '1': 1, '2': 0, '3': 1, '10': 0 } },
+          ],
+        },
+      },
+    };
+    const { classCoverage } = parseTestRunLines([JSON.stringify(payload)]);
+    expect(classCoverage).toHaveLength(1);
+    expect(classCoverage[0].coveredLines).toBe(2);
+    expect(classCoverage[0].totalLines).toBe(4);
+    expect(classCoverage[0].percent).toBe(50);
+    expect(classCoverage[0].uncoveredLines).toEqual([2, 10]);
+  });
+
   it('returns zero percent when numLocations is 0', () => {
     const payload = {
       result: {
@@ -201,6 +223,12 @@ describe('parseQualityLines', () => {
     const result = parseQualityLines([JSON.stringify(payload)]);
     expect(result.status).toBe('PASS');
   });
+
+  it('attaches unavailableMessage when _sfdt_unavailable is present', () => {
+    const payload = { result: [], _sfdt_unavailable: 'Scanner CLI not installed' };
+    const result = parseQualityLines([JSON.stringify(payload)]);
+    expect(result.unavailableMessage).toBe('Scanner CLI not installed');
+  });
 });
 
 // ─── readTestRuns ─────────────────────────────────────────────────────────────
@@ -229,6 +257,15 @@ describe('readTestRuns', () => {
     });
     const runs = await readTestRuns('/logs');
     expect(runs).toHaveLength(1);
+  });
+
+  it('skips files that fail to parse as JSON', async () => {
+    // tryReadJson swallows the read/parse error and returns null, so the
+    // file is skipped via the `if (!raw) continue` guard.
+    fs.pathExists.mockResolvedValue(true);
+    fs.readdir.mockResolvedValue(['corrupt.json']);
+    fs.readJson.mockRejectedValue(new Error('Unexpected token'));
+    expect(await readTestRuns('/logs')).toEqual([]);
   });
 
   it('parses schemaVersion 1 envelope and passes through classCoverage', async () => {

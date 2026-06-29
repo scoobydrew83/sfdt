@@ -132,8 +132,10 @@ describe('inspect-record — UI activation & inspection', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     // Verify modal elements are shown
-    const title = document.querySelector('.sfdt-inspect-record-overlay span') as HTMLSpanElement;
-    expect(title.textContent).toContain('Account · 001800000000001AAA');
+    const recordInfo = Array.from(
+      document.querySelectorAll('.sfdt-view-overlay span'),
+    ).find((s) => s.textContent?.includes('Account · 001800000000001AAA'));
+    expect(recordInfo).toBeTruthy();
 
     const trs = document.querySelectorAll('tbody tr');
     expect(trs).toHaveLength(3);
@@ -259,5 +261,46 @@ describe('inspect-record — UI activation & inspection', () => {
       expect.stringContaining('/sobjects/Account/001800000000001AAA'),
       { Name: 'New Corp Name' }
     );
+  });
+
+  it('opens an empty inspector with a blank ID input when the page is not a record', async () => {
+    setSalesforceUrl('https://x.lightning.force.com/lightning/setup/SetupOneHome/home');
+    const api = fakeApi();
+    const feature = createInspectRecordFeature({ api });
+
+    await feature.onActivate?.();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const overlay = document.querySelector('.sfdt-view-overlay');
+    expect(overlay).not.toBeNull();
+    // No record was auto-loaded, so the global describe / record fetch never ran.
+    expect(api.apiGet).not.toHaveBeenCalled();
+    const idInput = document.querySelector<HTMLInputElement>(
+      'input[placeholder^="Paste Salesforce Record ID"]',
+    );
+    expect(idInput).not.toBeNull();
+    expect(idInput!.value).toBe('');
+  });
+
+  it('warns and does not query when an invalid ID is submitted', async () => {
+    setSalesforceUrl('https://x.lightning.force.com/lightning/setup/SetupOneHome/home');
+    const api = fakeApi();
+    const feature = createInspectRecordFeature({ api });
+
+    await feature.onActivate?.();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const idInput = document.querySelector<HTMLInputElement>(
+      'input[placeholder^="Paste Salesforce Record ID"]',
+    )!;
+    idInput.value = 'not-a-valid-id';
+    const inspectBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Inspect',
+    ) as HTMLButtonElement;
+    inspectBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector('.sfdt-toast')?.textContent).toMatch(/valid 15 or 18 character/);
+    expect(api.apiGet).not.toHaveBeenCalled();
   });
 });

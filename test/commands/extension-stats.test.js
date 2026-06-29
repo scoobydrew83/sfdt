@@ -55,8 +55,8 @@ describe('sfdt extension stats', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'extension', 'stats', '--json']);
     const parsed = JSON.parse(writeSpy.mock.calls[0][0]);
-    expect(parsed.ok).toBe(false);
-    expect(parsed.file).toBe('/project/.sfdt/telemetry-snapshot.json');
+    expect(parsed.result.ok).toBe(false);
+    expect(parsed.result.file).toBe('/project/.sfdt/telemetry-snapshot.json');
     writeSpy.mockRestore();
   });
 
@@ -94,10 +94,10 @@ describe('sfdt extension stats', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'extension', 'stats', '--json']);
     const parsed = JSON.parse(writeSpy.mock.calls[0][0]);
-    expect(parsed.ok).toBe(true);
-    expect(parsed.file).toBe('/project/.sfdt/telemetry-snapshot.json');
-    expect(parsed.monthKey).toBe('2026-05');
-    expect(parsed.counters['canvas-search'].activated).toBe(3);
+    expect(parsed.result.ok).toBe(true);
+    expect(parsed.result.file).toBe('/project/.sfdt/telemetry-snapshot.json');
+    expect(parsed.result.monthKey).toBe('2026-05');
+    expect(parsed.result.counters['canvas-search'].activated).toBe(3);
     writeSpy.mockRestore();
   });
 
@@ -162,9 +162,9 @@ describe('sfdt extension install-host', () => {
       '--json',
     ]);
     const parsed = JSON.parse(writeSpy.mock.calls[0][0]);
-    expect(parsed.ok).toBe(true);
-    expect(parsed.platform).toBe('darwin');
-    expect(parsed.results).toHaveLength(1);
+    expect(parsed.result.ok).toBe(true);
+    expect(parsed.result.platform).toBe('darwin');
+    expect(parsed.result.results).toHaveLength(1);
     writeSpy.mockRestore();
   });
 
@@ -201,8 +201,8 @@ describe('sfdt extension install-host', () => {
       '--json',
     ]);
     const parsed = JSON.parse(writeSpy.mock.calls[0][0]);
-    expect(parsed.ok).toBe(false);
-    expect(parsed.error).toBe('disk full');
+    expect(parsed.status).toBe(1);
+    expect(parsed.message).toBe('disk full');
     writeSpy.mockRestore();
   });
 });
@@ -234,8 +234,8 @@ describe('sfdt extension uninstall-host', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'extension', 'uninstall-host', '--json']);
     const parsed = JSON.parse(writeSpy.mock.calls[0][0]);
-    expect(parsed.platform).toBe('darwin');
-    expect(parsed.results[0].removed).toBe(true);
+    expect(parsed.result.platform).toBe('darwin');
+    expect(parsed.result.results[0].removed).toBe(true);
     writeSpy.mockRestore();
   });
 
@@ -278,8 +278,8 @@ describe('sfdt extension status', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'extension', 'status', '--json']);
     const parsed = JSON.parse(writeSpy.mock.calls[0][0]);
-    expect(parsed.platform).toBe('darwin');
-    expect(parsed.browsers[0].installed).toBe(false);
+    expect(parsed.result.platform).toBe('darwin');
+    expect(parsed.result.browsers[0].installed).toBe(false);
     writeSpy.mockRestore();
   });
 

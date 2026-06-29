@@ -1,7 +1,7 @@
 import path from 'path';
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
-import { print } from '../lib/output.js';
+import { print, emitJson, emitJsonError } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { writeRawLog } from '../lib/log-writer.js';
 
@@ -49,16 +49,12 @@ export function registerRollbackCommand(program) {
         }
 
         if (jsonMode) {
-          process.stdout.write(
-            JSON.stringify({
-              status: 'success',
-              org: orgAlias,
-              timestamp: new Date().toISOString(),
-              exitCode: 0,
-              dryRun: !!options.dryRun,
-              log: result.stdout ?? '',
-            }, null, 2) + '\n',
-          );
+          emitJson({
+            org: orgAlias,
+            timestamp: new Date().toISOString(),
+            dryRun: !!options.dryRun,
+            log: result.stdout ?? '',
+          });
         } else {
           print.success(
             options.dryRun ? 'Dry-run complete — no changes made.' : `Rollback to ${orgAlias} completed.`,
@@ -75,19 +71,13 @@ export function registerRollbackCommand(program) {
           if (!err.stdout.toString().endsWith('\n')) process.stderr.write('\n');
         }
         if (jsonMode) {
-          process.stdout.write(
-            JSON.stringify({
-              status: 'error',
-              message: err.message,
-              exitCode: resolveExitCode(err),
-              dryRun: !!options.dryRun,
-              log: err.stdout ? err.stdout.toString() : '',
-            }) + '\n',
-          );
+          emitJsonError(err, {
+            data: { dryRun: !!options.dryRun, log: err.stdout ? err.stdout.toString() : '' },
+          });
         } else {
           print.error(`Rollback failed: ${err.message}`);
+          process.exitCode = resolveExitCode(err);
         }
-        process.exitCode = resolveExitCode(err);
       }
     });
 }

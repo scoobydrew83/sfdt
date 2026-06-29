@@ -27,7 +27,71 @@
         "baseURL": { "type": "string" },
         "apiKeyEnv": { "type": "string" },
         "headers": { "type": "object", "additionalProperties": { "type": "string" } },
-        "timeoutMs": { "type": "number" }
+        "timeoutMs": { "type": "number" },
+        "agent": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "maxTurns": { "type": "integer", "minimum": 1, "maximum": 20 },
+            "allowWrite": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "slack": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "webhookUrl": { "type": "string" },
+            "webhookUrlEnv": { "type": "string" }
+          }
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type"],
+            "properties": {
+              "type": { "type": "string", "enum": ["slack", "teams", "email", "webhook"] },
+              "name": { "type": "string" },
+              "webhookUrl": { "type": "string" },
+              "webhookUrlEnv": { "type": "string" },
+              "url": { "type": "string" },
+              "urlEnv": { "type": "string" },
+              "format": { "type": "string", "enum": ["json", "loki"] },
+              "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+              "severityThreshold": { "type": "string", "enum": ["ok", "warn", "error", "fail"] },
+              "events": { "type": "array", "items": { "type": "string" } },
+              "from": { "type": "string" },
+              "to": { "type": "array", "items": { "type": "string" } },
+              "smtp": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "hostEnv": { "type": "string" },
+                  "portEnv": { "type": "string" },
+                  "userEnv": { "type": "string" },
+                  "passwordEnv": { "type": "string" },
+                  "secure": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "deployment": {
@@ -47,6 +111,18 @@
             "enforceSfdxProject": { "type": "boolean" },
             "enforceUntrackedFiles": { "type": "boolean" },
             "strict": { "type": "boolean" }
+          }
+        },
+        "smart": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "deltaBase": { "type": "string" },
+            "noOverwriteManifest": { "type": "string" },
+            "impactingTypes": { "type": "array", "items": { "type": "string" } },
+            "downgradeTestsOnNonProd": { "type": "boolean" },
+            "assumeProd": { "type": "boolean" }
           }
         }
       }
@@ -109,7 +185,9 @@
         "auditTrailLookbackDays": { "type": "integer", "minimum": 1 },
         "licenseWarnThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
         "inactiveUserDays": { "type": "integer", "minimum": 1 },
-        "minApiVersion": { "type": "number", "minimum": 1 }
+        "minApiVersion": { "type": "number", "minimum": 1 },
+        "fieldDescriptionMaxMissing": { "type": "integer", "minimum": 0 },
+        "connectedAppFlagPermissive": { "type": "boolean" }
       }
     },
     "monitoring": {
@@ -119,7 +197,10 @@
         "backupDir": { "type": "string" },
         "limitWarnThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
         "errorLookbackDays": { "type": "integer", "minimum": 1 },
-        "healthMinScore": { "type": "number", "minimum": 0, "maximum": 100 }
+        "healthMinScore": { "type": "number", "minimum": 0, "maximum": 100 },
+        "orgInfoTrialWarnDays": { "type": "integer", "minimum": 1 },
+        "deployHistoryLookback": { "type": "integer", "minimum": 1 },
+        "deprecatedApiLookbackDays": { "type": "integer", "minimum": 1 }
       }
     },
     "docs": {

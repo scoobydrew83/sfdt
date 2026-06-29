@@ -117,10 +117,11 @@ describe('skills export command', () => {
 
     expect(stdoutSpy).toHaveBeenCalled();
     const output = JSON.parse(stdoutSpy.mock.calls[0][0]);
-    expect(output.ok).toBe(true);
-    expect(output.target).toBe('cursor');
-    expect(output.skillsCount).toBe(2);
-    expect(output.files[0]).toContain('.cursorrules');
+    expect(output.status).toBe(0);
+    expect(output.result.ok).toBe(true);
+    expect(output.result.target).toBe('cursor');
+    expect(output.result.skillsCount).toBe(2);
+    expect(output.result.files[0]).toContain('.cursorrules');
 
     stdoutSpy.mockRestore();
   });

@@ -212,4 +212,95 @@ describe('pr-description command', () => {
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('no config'));
     expect(process.exitCode).toBe(1);
   });
+
+  it('rejects an unsafe git ref before loading config', async () => {
+    await createProgram().parseAsync([
+      'node',
+      'sfdt',
+      'pr-description',
+      '--base',
+      '--evil',
+    ]);
+
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Invalid git ref'));
+    expect(process.exitCode).toBe(1);
+    expect(loadConfig).not.toHaveBeenCalled();
+  });
+
+  it('errors when AI response has a non-zero exit code', async () => {
+    isAiAvailable.mockResolvedValue(true);
+    mockGit({ log: 'abc1234 Commit', diff: 'A\tforce-app/main/default/classes/Foo.cls' });
+    runAiPrompt.mockResolvedValue({ stdout: 'partial', exitCode: 2 });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'pr-description']);
+
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('AI call failed'));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('errors when AI returns a null response', async () => {
+    isAiAvailable.mockResolvedValue(true);
+    mockGit({ log: 'abc1234 Commit', diff: 'A\tforce-app/main/default/classes/Foo.cls' });
+    runAiPrompt.mockResolvedValue(null);
+
+    await createProgram().parseAsync(['node', 'sfdt', 'pr-description']);
+
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('AI call failed'));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('formats destructive changes and truncates large member lists in the prompt', async () => {
+    isAiAvailable.mockResolvedValue(true);
+    // 12 additive classes (>10 triggers the "...N more" suffix) plus a deletion.
+    const added = Array.from({ length: 12 }, (_, i) =>
+      `A\tforce-app/main/default/classes/Cls${i}.cls`,
+    );
+    const removed = 'D\tforce-app/main/default/classes/OldThing.cls';
+    mockGit({
+      log: 'abc1234 Big change',
+      diff: [...added, removed].join('\n'),
+    });
+    runAiPrompt.mockResolvedValue({ stdout: '## Summary', exitCode: 0 });
+
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'pr-description']);
+
+    const prompt = runAiPrompt.mock.calls[0][0];
+    expect(prompt).toContain('Additive:');
+    expect(prompt).toContain('Destructive:');
+    expect(prompt).toContain('OldThing');
+    expect(prompt).toContain('more'); // "...N more" suffix for the 12 additive classes
+    spy.mockRestore();
+  });
+
+  it('uses the working-tree-only note when metadata changed but no commits exist', async () => {
+    isAiAvailable.mockResolvedValue(true);
+    // No commits, but a staged metadata change → hasChanges via addCount.
+    mockGit({ log: '', diff: 'A\tforce-app/main/default/classes/Foo.cls' });
+    runAiPrompt.mockResolvedValue({ stdout: '## Summary', exitCode: 0 });
+
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    // Non-numeric --commit-limit exercises the parseInt fallback (default 30).
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'pr-description', '--commit-limit', 'abc',
+    ]);
+
+    const prompt = runAiPrompt.mock.calls[0][0];
+    expect(prompt).toContain('no commits');
+    spy.mockRestore();
+  });
+
+  it('emits a no-metadata placeholder when only commits changed', async () => {
+    isAiAvailable.mockResolvedValue(true);
+    // Commits exist (hasChanges) but the diff touches no source metadata.
+    mockGit({ log: 'abc1234 Docs only', diff: '' });
+    runAiPrompt.mockResolvedValue({ stdout: '## Summary', exitCode: 0 });
+
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'pr-description']);
+
+    const prompt = runAiPrompt.mock.calls[0][0];
+    expect(prompt).toContain('no metadata changes detected');
+    spy.mockRestore();
+  });
 });

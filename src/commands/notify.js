@@ -1,158 +1,108 @@
+import path from 'path';
+import fs from 'fs-extra';
 import { loadConfig } from '../lib/config.js';
 import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { dispatch, dispatchSnapshot, notificationsConfigured } from '../lib/notifier.js';
 
-const VALID_EVENTS = ['deploy-success', 'deploy-failure', 'test-failure', 'release-created'];
+const LIFECYCLE_EVENTS = ['deploy-success', 'deploy-failure', 'test-failure', 'release-created'];
+const VALID_EVENTS = [...LIFECYCLE_EVENTS, 'snapshot'];
 
-const EVENT_CONFIGS = {
-  'deploy-success': {
-    color: '#36a64f',
-    emoji: ':white_check_mark:',
-    title: 'Deployment Successful',
-  },
-  'deploy-failure': {
-    color: '#e01e5a',
-    emoji: ':x:',
-    title: 'Deployment Failed',
-  },
-  'test-failure': {
-    color: '#e01e5a',
-    emoji: ':warning:',
-    title: 'Test Failure',
-  },
-  'release-created': {
-    color: '#2eb886',
-    emoji: ':rocket:',
-    title: 'Release Created',
-  },
-};
+function printNotConfiguredHelp() {
+  print.warning('Notifications are not configured.');
+  console.log('');
+  print.info('Enable a channel in .sfdt/config.json:');
+  print.step('   {');
+  print.step('     "features": { "notifications": true },');
+  print.step('     "notifications": {');
+  print.step('       "enabled": true,');
+  print.step('       "channels": [');
+  print.step('         { "type": "slack", "webhookUrlEnv": "SLACK_WEBHOOK_URL", "severityThreshold": "warn", "events": ["deploy-failure", "snapshot"] }');
+  print.step('       ]');
+  print.step('     }');
+  print.step('   }');
+  console.log('');
+  print.info('Channel types: slack | teams | email | webhook. Secrets are referenced by env-var name.');
+}
 
-function buildSlackPayload(event, { version, org, message, projectName }) {
-  const eventConfig = EVENT_CONFIGS[event];
-
-  const fields = [];
-  if (projectName) {
-    fields.push({ type: 'mrkdwn', text: `*Project:*\n${projectName}` });
+async function sendSnapshot(options) {
+  const config = await loadConfig();
+  if (!notificationsConfigured(config)) {
+    printNotConfiguredHelp();
+    process.exitCode = 1;
+    return;
   }
-  if (org) {
-    fields.push({ type: 'mrkdwn', text: `*Org:*\n${org}` });
+  const type = options.type === 'audit' ? 'audit' : 'monitor';
+  const logDir = config.logDir ?? path.join(config._projectRoot, 'logs');
+  const snapPath = path.join(logDir, `${type}-latest.json`);
+  if (!(await fs.pathExists(snapPath))) {
+    print.error(`No ${type} snapshot found at ${snapPath} — run "sfdt ${type} all" first.`);
+    process.exitCode = 1;
+    return;
   }
-  if (version) {
-    fields.push({ type: 'mrkdwn', text: `*Version:*\n${version}` });
+  const snapshot = await fs.readJson(snapPath);
+  print.info(`Dispatching ${type} snapshot (${snapshot.org ?? 'org'})…`);
+  const { severity, results } = await dispatchSnapshot(snapshot, config, { type });
+  if (results.length === 0) {
+    print.info(`No channel subscribed to snapshots at severity "${severity}".`);
+    return;
   }
+  reportResults(results);
+}
 
-  const blocks = [
-    {
-      type: 'header',
-      text: {
-        type: 'plain_text',
-        text: `${eventConfig.emoji} ${eventConfig.title}`,
-        emoji: true,
-      },
-    },
-  ];
-
-  if (fields.length > 0) {
-    blocks.push({
-      type: 'section',
-      fields,
-    });
+async function sendEvent(event, options) {
+  const config = await loadConfig();
+  if (!notificationsConfigured(config)) {
+    printNotConfiguredHelp();
+    process.exitCode = 1;
+    return;
   }
-
-  if (message) {
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: message,
-      },
-    });
-  }
-
-  blocks.push({
-    type: 'context',
-    elements: [
-      {
-        type: 'mrkdwn',
-        text: `Sent by sfdt | ${new Date().toISOString()}`,
-      },
-    ],
-  });
-
-  return {
-    blocks,
-    attachments: [
-      {
-        color: eventConfig.color,
-        blocks: [],
-      },
-    ],
+  const ctx = {
+    version: options.version,
+    org: options.org || config.defaultOrg,
+    message: options.message,
+    projectName: config.projectName,
   };
+  print.info(`Sending ${event} notification…`);
+  const results = await dispatch(event, ctx, config);
+  if (results.length === 0) {
+    print.info(`No channel subscribed to "${event}".`);
+    return;
+  }
+  reportResults(results);
+}
+
+function reportResults(results) {
+  const failures = results.filter((r) => !r.ok);
+  const sent = results.filter((r) => r.ok).map((r) => r.channel);
+  if (sent.length) print.success(`Sent to: ${sent.join(', ')}`);
+  if (failures.length) {
+    const detail = failures.map((f) => `${f.channel} (${f.error})`).join('; ');
+    print.error(`Failed: ${detail}`);
+    process.exitCode = 1;
+  }
 }
 
 export function registerNotifyCommand(program) {
   program
     .command('notify <event>')
-    .description('Send a notification to Slack for deployment events')
+    .description(`Send a notification (events: ${VALID_EVENTS.join(', ')})`)
     .option('--version <ver>', 'Version label')
     .option('--org <alias>', 'Org alias')
     .option('--message <msg>', 'Custom message')
+    .option('--type <type>', 'For the "snapshot" event: audit | monitor', 'monitor')
     .action(async (event, options) => {
       try {
         if (!VALID_EVENTS.includes(event)) {
-          print.error(`Unknown event: "${event}"\n` + `  Valid events: ${VALID_EVENTS.join(', ')}`);
+          print.error(`Unknown event: "${event}"\n  Valid events: ${VALID_EVENTS.join(', ')}`);
           process.exitCode = 1;
           return;
         }
-
-        const config = await loadConfig();
-
-        const webhookUrl =
-          config.features?.notifications && config.notifications?.slack?.webhookUrl;
-
-        if (!webhookUrl) {
-          print.warning('Slack notifications are not configured.');
-          console.log('');
-          print.info('To set up Slack notifications:');
-          print.step(
-            '1. Create a Slack Incoming Webhook at https://api.slack.com/messaging/webhooks',
-          );
-          print.step('2. Add the webhook URL to .sfdt/config.json:');
-          console.log('');
-          print.step('   {');
-          print.step('     "features": { "notifications": true },');
-          print.step('     "notifications": {');
-          print.step('       "slack": {');
-          print.step('         "webhookUrl": "https://hooks.slack.com/services/T.../B.../..."');
-          print.step('       }');
-          print.step('     }');
-          print.step('   }');
-          console.log('');
-          process.exitCode = 1;
-          return;
+        if (event === 'snapshot') {
+          await sendSnapshot(options);
+        } else {
+          await sendEvent(event, options);
         }
-
-        const payload = buildSlackPayload(event, {
-          version: options.version,
-          org: options.org || config.defaultOrg,
-          message: options.message,
-          projectName: config.projectName,
-        });
-
-        print.info(`Sending ${event} notification to Slack...`);
-
-        const response = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-          const body = await response.text();
-          throw new Error(`Slack API returned ${response.status}: ${body}`);
-        }
-
-        print.success(`Notification sent: ${event}`);
       } catch (err) {
         print.error(`Notification failed: ${err.message}`);
         process.exitCode = resolveExitCode(err);

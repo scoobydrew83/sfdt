@@ -1,0 +1,65 @@
+{
+  "name": "@sfdt/plugin",
+  "version": "0.15.0",
+  "description": "Salesforce CLI (sf) plugin for SFDT — exposes the @sfdt/cli commands as `sf sfdt <command>`. Thin wrapper; reimplements no logic.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scoobydrew83/sfdt.git",
+    "directory": "packages/plugin"
+  },
+  "homepage": "https://sfdt.dev/",
+  "bugs": {
+    "url": "https://github.com/scoobydrew83/sfdt/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/",
+    "oclif.manifest.json"
+  ],
+  "keywords": [
+    "salesforce",
+    "sf-plugin",
+    "oclif-plugin",
+    "sfdt",
+    "devops"
+  ],
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "dependencies": {
+    "@oclif/core": "^4.0.0",
+    "@sfdt/cli": ">=0.14.1",
+    "execa": "^9.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "oclif": "^4.23.24",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.4"
+  },
+  "scripts": {
+    "gen": "node scripts/generate-commands.mjs",
+    "build": "npm run gen && tsc -p tsconfig.json",
+    "prepack": "npm run build && oclif manifest",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/"
+  },
+  "oclif": {
+    "bin": "sf",
+    "commands": "./dist/commands",
+    "topicSeparator": " ",
+    "topics": {
+      "sfdt": {
+        "description": "Salesforce DevTools (sfdt) — deployment, testing, quality, audit, and release management, wrapped for sf."
+      }
+    }
+  }
+}

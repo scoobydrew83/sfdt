@@ -6,6 +6,8 @@ import {
   writeSoqlHistory,
   pushSoqlHistory,
   clearSoqlHistory,
+  writePendingQuery,
+  takePendingQuery,
 } from '../features/soql-runner.js';
 import { _resetSettingsShapesForTests, _clearSettingsCacheForTests } from '../lib/settings.js';
 import type { SalesforceApiClient, QueryEnvelope } from '../lib/salesforce-api.js';
@@ -563,5 +565,488 @@ describe('soql-runner — Saved Queries storage', () => {
     await deleteSavedQuery('Q1');
     const back = await readSavedQueries();
     expect(back).toEqual([q2]);
+  });
+});
+
+describe('soql-runner — pending query handoff', () => {
+  it('round-trips a pending query and clears it on take', async () => {
+    await writePendingQuery({ q: 'SELECT Id FROM Lead', api: 'rest' });
+    const first = await takePendingQuery();
+    expect(first).toEqual({ q: 'SELECT Id FROM Lead', api: 'rest' });
+    // Second take returns null — the entry was consumed.
+    expect(await takePendingQuery()).toBeNull();
+  });
+
+  it('returns null when no pending query is present', async () => {
+    expect(await takePendingQuery()).toBeNull();
+  });
+
+  it('returns null for a malformed pending entry', async () => {
+    await new Promise<void>((resolve) =>
+      chrome.storage.local.set({ 'soqlRunner.pendingQuery': { api: 'rest' } }, () => resolve()),
+    );
+    expect(await takePendingQuery()).toBeNull();
+  });
+});
+
+describe('soql-runner — DescribeCache extra branches', () => {
+  it('targets the tooling endpoints in tooling mode', async () => {
+    const apiGet = vi.fn().mockResolvedValue({ sobjects: [] });
+    const cache = new DescribeCache(fakeApi({ apiGet }), vi.fn());
+    cache.getGlobal('tooling');
+    cache.getSObject('tooling', 'Account');
+    expect(apiGet).toHaveBeenNthCalledWith(1, '/services/data/v62.0/tooling/sobjects/');
+    expect(apiGet).toHaveBeenNthCalledWith(
+      2,
+      '/services/data/v62.0/tooling/sobjects/Account/describe',
+    );
+  });
+
+  it('returns the cached entry without re-fetching', () => {
+    const apiGet = vi.fn().mockResolvedValue({ sobjects: [] });
+    const cache = new DescribeCache(fakeApi({ apiGet }), vi.fn());
+    cache.getGlobal('rest');
+    cache.getGlobal('rest'); // second synchronous call hits the loading cache
+    cache.getSObject('rest', 'Account');
+    cache.getSObject('rest', 'Account');
+    expect(apiGet).toHaveBeenCalledTimes(2);
+  });
+
+  it('records an error status when the describe call rejects', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const apiGet = vi.fn().mockRejectedValue(new Error('boom'));
+    const update = vi.fn();
+    const cache = new DescribeCache(fakeApi({ apiGet }), update);
+    cache.getGlobal('rest');
+    cache.getSObject('rest', 'Account');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(cache.getGlobal('rest').status).toBe('error');
+    expect(cache.getSObject('rest', 'Account').status).toBe('error');
+    err.mockRestore();
+  });
+
+  it('substitutes a safe shape when the payload lacks the expected arrays', async () => {
+    const apiGet = vi.fn(async (endpoint: string) =>
+      endpoint.includes('/describe') ? { name: 'Account' } : { foo: 'bar' },
+    );
+    const cache = new DescribeCache(
+      fakeApi({ apiGet: apiGet as unknown as SalesforceApiClient['apiGet'] }),
+      vi.fn(),
+    );
+    cache.getGlobal('rest');
+    cache.getSObject('rest', 'Account');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(cache.getGlobal('rest').data?.sobjects).toEqual([]);
+    expect(cache.getSObject('rest', 'Account').data?.fields).toEqual([]);
+  });
+
+  it('clear() drops every cached describe', async () => {
+    const apiGet = vi.fn().mockResolvedValue({ sobjects: [] });
+    const cache = new DescribeCache(fakeApi({ apiGet }), vi.fn());
+    cache.getGlobal('rest');
+    await new Promise((r) => setTimeout(r, 0));
+    cache.clear();
+    cache.getGlobal('rest');
+    expect(apiGet).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('soql-runner — runQuery extra branches', () => {
+  it('routes plain SOQL through toolingQuery in tooling mode', async () => {
+    const toolingQuery = vi.fn().mockResolvedValue({ size: 1, done: true, records: [{ Id: 'x' }] });
+    const client = fakeApi({ toolingQuery });
+    const result = await runQuery(client, 'SELECT Id FROM FlowDefinition', 'tooling');
+    expect(toolingQuery).toHaveBeenCalledWith('SELECT Id FROM FlowDefinition');
+    expect(result.records).toEqual([{ Id: 'x' }]);
+  });
+
+  it('routes plain SOQL through query in rest mode', async () => {
+    const query = vi.fn().mockResolvedValue({ totalSize: 0, done: true, records: [] });
+    const client = fakeApi({ query });
+    await runQuery(client, 'SELECT Id FROM Account', 'rest');
+    expect(query).toHaveBeenCalledWith('SELECT Id FROM Account');
+  });
+
+  it('wraps a GraphQL response with no edges/nodes as a single record', async () => {
+    const apiRequest = vi.fn().mockResolvedValue({ data: { uiapi: { somethingElse: 1 } } });
+    const result = await runQuery(fakeApi({ apiRequest }), 'query { uiapi { x } }', 'rest');
+    expect(result.records).toEqual([{ data: { uiapi: { somethingElse: 1 } } }]);
+  });
+
+  it('falls back to a generic GraphQL error when no messages are present', async () => {
+    const apiRequest = vi.fn().mockResolvedValue({ data: null, errors: [{}, {}] });
+    await expect(
+      runQuery(fakeApi({ apiRequest }), 'query { uiapi { x } }', 'rest'),
+    ).rejects.toThrow('GraphQL query failed.');
+  });
+});
+
+describe('soql-runner — modal menus & exports', () => {
+  function setSalesforceUrl(): void {
+    window.history.replaceState(
+      {},
+      '',
+      'https://x.lightning.force.com/lightning/setup/Flows/home',
+    );
+  }
+  async function flush(): Promise<void> {
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  function findButton(text: string): HTMLButtonElement | undefined {
+    return Array.from(document.querySelectorAll('button')).find((b) => b.textContent === text);
+  }
+  function stubClipboard(): ReturnType<typeof vi.fn> {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    return writeText;
+  }
+  async function openWith(api: ReturnType<typeof fakeApi>): Promise<void> {
+    setSalesforceUrl();
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+    await flush();
+  }
+  async function runSomething(): Promise<void> {
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id, Name FROM Account';
+    findButton('▶ Run')?.click();
+    await flush();
+  }
+
+  it('warns when activated off a Salesforce page', async () => {
+    // Pass a non-Salesforce location via the win option rather than mutating
+    // the real (cross-origin) window history.
+    const feature = createSoqlRunnerFeature({
+      api: fakeApi(),
+      win: { location: { href: 'https://example.com/' } } as never,
+    });
+    await feature.onActivate?.();
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
+    expect(document.querySelector('.sfdt-toast')?.textContent).toContain('Open a Salesforce page');
+  });
+
+  it('shows an error when running an empty query', async () => {
+    await openWith(fakeApi());
+    findButton('▶ Run')?.click();
+    await flush();
+    expect(document.body.textContent).toContain('Enter a SOQL query to run.');
+  });
+
+  it('renders the history menu, including a tooling badge, and fills on click', async () => {
+    await pushSoqlHistory({ q: 'SELECT Id FROM Flow', api: 'tooling', ts: 1 });
+    await openWith(fakeApi());
+    findButton('▸ History ▾')?.click();
+    await flush();
+    const menuText = document.body.textContent ?? '';
+    expect(menuText).toContain('TOOL');
+    // Click the item row (the parent of the query-text span), not the menu
+    // container which has the same textContent but no click handler.
+    const textSpan = Array.from(document.querySelectorAll('span')).find(
+      (s) => s.textContent === 'SELECT Id FROM Flow',
+    );
+    (textSpan?.parentElement as HTMLElement | undefined)?.click();
+    expect((document.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'SELECT Id FROM Flow',
+    );
+  });
+
+  it('shows the empty-history placeholder', async () => {
+    await clearSoqlHistory();
+    await openWith(fakeApi());
+    findButton('▸ History ▾')?.click();
+    await flush();
+    expect(document.body.textContent).toContain('No queries yet.');
+  });
+
+  it('clears history from the footer button', async () => {
+    await pushSoqlHistory({ q: 'SELECT Id FROM Account', api: 'rest', ts: 1 });
+    await openWith(fakeApi());
+    findButton('Clear history')?.click();
+    await flush();
+    expect(await readSoqlHistory()).toEqual([]);
+    expect(document.querySelector('.sfdt-toast')?.textContent).toBe('Query history cleared');
+  });
+
+  it('renders saved queries, fills on click, and deletes on confirm', async () => {
+    await writeSavedQueries([
+      { name: 'Mine', q: 'SELECT Id FROM Contact', api: 'rest' },
+    ]);
+    const originalConfirm = window.confirm;
+    window.confirm = vi.fn(() => true);
+    await openWith(fakeApi());
+    findButton('★ Bookmarks ▾')?.click();
+    await flush();
+    expect(document.body.textContent).toContain('Mine:');
+    // Two '×' buttons exist (modal close + bookmark delete); the delete is last.
+    const closeButtons = Array.from(document.querySelectorAll('button')).filter(
+      (b) => b.textContent === '×',
+    );
+    (closeButtons[closeButtons.length - 1] as HTMLButtonElement).click();
+    await flush();
+    expect(await readSavedQueries()).toEqual([]);
+    window.confirm = originalConfirm;
+  });
+
+  it('shows the empty-bookmarks placeholder', async () => {
+    await writeSavedQueries([]);
+    await openWith(fakeApi());
+    findButton('★ Bookmarks ▾')?.click();
+    await flush();
+    expect(document.body.textContent).toContain('No bookmarked queries yet.');
+  });
+
+  it('warns when saving a bookmark with an empty query', async () => {
+    await openWith(fakeApi());
+    findButton('★ Save')?.click();
+    await flush();
+    expect(document.querySelector('.sfdt-toast')?.textContent).toBe(
+      'Enter a query to bookmark first',
+    );
+  });
+
+  it('saves a bookmark when a name is supplied', async () => {
+    await writeSavedQueries([]);
+    const originalPrompt = window.prompt;
+    window.prompt = vi.fn(() => 'Named');
+    await openWith(fakeApi());
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id FROM Account';
+    findButton('★ Save')?.click();
+    await flush();
+    expect(await readSavedQueries()).toEqual([
+      { name: 'Named', q: 'SELECT Id FROM Account', api: 'rest' },
+    ]);
+    window.prompt = originalPrompt;
+  });
+
+  it('copies CSV / LangGraph to the clipboard and exports a CSV file', async () => {
+    const writeText = stubClipboard();
+    const createUrl = vi.fn(() => 'blob:fake');
+    const revokeUrl = vi.fn();
+    globalThis.URL.createObjectURL = createUrl as never;
+    globalThis.URL.revokeObjectURL = revokeUrl as never;
+    const api = fakeApi({
+      query: vi.fn(async () => ({
+        totalSize: 1,
+        done: true,
+        records: [{ Id: '001', Name: 'Acme' }],
+      })) as never,
+    });
+    await openWith(api);
+    await runSomething();
+
+    findButton('Copy CSV')?.click();
+    await flush();
+    expect(writeText).toHaveBeenCalledWith('Id,Name\n001,Acme');
+
+    findButton('LangGraph Node')?.click();
+    await flush();
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('class SoqlResult(BaseModel):'));
+
+    // The download anchor would otherwise navigate to the blob: URL and break
+    // the page origin for later tests — cancel its default during this click.
+    const stopNav = (e: Event): void => e.preventDefault();
+    document.addEventListener('click', stopNav, true);
+    findButton('Export CSV')?.click();
+    document.removeEventListener('click', stopNav, true);
+    expect(createUrl).toHaveBeenCalled();
+    expect(revokeUrl).toHaveBeenCalled();
+  });
+
+  it('reports a clipboard failure when copy throws', async () => {
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: undefined,
+      configurable: true,
+    });
+    const api = fakeApi({
+      query: vi.fn(async () => ({
+        totalSize: 1,
+        done: true,
+        records: [{ Id: '001' }],
+      })) as never,
+    });
+    await openWith(api);
+    await runSomething();
+    findButton('Copy CSV')?.click();
+    await flush();
+    expect(document.querySelector('.sfdt-toast')?.textContent).toBe('Could not copy to clipboard');
+  });
+
+  it('closes the modal on Escape', async () => {
+    await openWith(fakeApi());
+    expect(document.querySelector('.sfdt-view-overlay')).not.toBeNull();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
+  });
+
+  it('runs the query on Ctrl+Enter', async () => {
+    const query = vi.fn(async () => ({ totalSize: 0, done: true, records: [] }));
+    const api = fakeApi({ query: query as never });
+    await openWith(api);
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id FROM Account';
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }),
+    );
+    await flush();
+    expect(query).toHaveBeenCalledWith('SELECT Id FROM Account');
+  });
+
+  it('pre-fills the editor from a pending query', async () => {
+    await writePendingQuery({ q: 'SELECT Id FROM Pending__c', api: 'tooling' });
+    await openWith(fakeApi());
+    expect((document.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'SELECT Id FROM Pending__c',
+    );
+  });
+});
+
+describe('soql-runner — autocomplete field paths', () => {
+  function setSalesforceUrl(): void {
+    window.history.replaceState(
+      {},
+      '',
+      'https://x.lightning.force.com/lightning/setup/Flows/home',
+    );
+  }
+  async function flush(): Promise<void> {
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  const sobjectDescribe = {
+    name: 'Account',
+    label: 'Account',
+    fields: [
+      {
+        name: 'Id',
+        label: 'Record ID',
+        type: 'id',
+        relationshipName: null,
+        referenceTo: [],
+        picklistValues: [],
+        nillable: false,
+        calculated: false,
+      },
+      {
+        name: 'Name',
+        label: 'Account Name',
+        type: 'string',
+        relationshipName: null,
+        referenceTo: [],
+        picklistValues: [],
+        nillable: true,
+        calculated: false,
+      },
+      {
+        name: 'OwnerId',
+        label: 'Owner ID',
+        type: 'reference',
+        relationshipName: 'Owner',
+        referenceTo: ['User'],
+        picklistValues: [],
+        nillable: true,
+        calculated: false,
+      },
+    ],
+  };
+
+  async function openRunner(apiGet: ReturnType<typeof vi.fn>): Promise<HTMLTextAreaElement> {
+    setSalesforceUrl();
+    const feature = createSoqlRunnerFeature({
+      api: fakeApi({ apiGet: apiGet as unknown as SalesforceApiClient['apiGet'] }),
+    });
+    await feature.onActivate?.();
+    await flush();
+    return document.querySelector('textarea') as HTMLTextAreaElement;
+  }
+
+  it('renders field suggestions and fills one on click', async () => {
+    const apiGet = vi.fn(async (endpoint: string) =>
+      endpoint.includes('/describe')
+        ? sobjectDescribe
+        : { sobjects: [{ name: 'Account', label: 'Account', keyPrefix: '001' }] },
+    );
+    const textarea = await openRunner(apiGet);
+    textarea.value = 'SELECT  FROM Account';
+    textarea.selectionStart = 7;
+    textarea.selectionEnd = 7;
+    textarea.dispatchEvent(new Event('input'));
+
+    await vi.waitFor(() => {
+      const title = document.querySelector('.sfdt-soql-autocomplete-box span');
+      expect(title?.textContent).toContain('fields suggestions:');
+    });
+
+    const fieldBtn = Array.from(
+      document.querySelectorAll('.sfdt-soql-autocomplete-box button'),
+    ).find((b) => b.textContent?.includes('Name'));
+    (fieldBtn as HTMLButtonElement)?.click();
+    expect(textarea.value).toContain('Name');
+  });
+
+  it('shows the "from keyword not found" hint when there is no FROM', async () => {
+    const apiGet = vi.fn().mockResolvedValue({ sobjects: [] });
+    const textarea = await openRunner(apiGet);
+    textarea.value = 'SELECT Id';
+    textarea.selectionStart = 9;
+    textarea.selectionEnd = 9;
+    textarea.dispatchEvent(new Event('input'));
+    await flush();
+    expect(document.querySelector('.sfdt-soql-autocomplete-box span')?.textContent).toContain(
+      'keyword not found',
+    );
+  });
+
+  it('offers a Retry chip when the global describe fails', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const apiGet = vi.fn().mockRejectedValue(new Error('describe failed'));
+    const textarea = await openRunner(apiGet);
+    textarea.value = 'SELECT Id FROM ';
+    textarea.selectionStart = 15;
+    textarea.selectionEnd = 15;
+    textarea.dispatchEvent(new Event('input'));
+
+    await vi.waitFor(() => {
+      const retry = Array.from(
+        document.querySelectorAll('.sfdt-soql-autocomplete-box button'),
+      ).find((b) => b.textContent?.includes('Retry'));
+      expect(retry).toBeTruthy();
+    });
+    const retryBtn = Array.from(
+      document.querySelectorAll('.sfdt-soql-autocomplete-box button'),
+    ).find((b) => b.textContent?.includes('Retry')) as HTMLButtonElement;
+    // Clicking Retry runs the cache-clearing branch in onAutocompleteClick.
+    expect(() => retryBtn.click()).not.toThrow();
+    expect(document.querySelector('.sfdt-soql-autocomplete-box')).toBeTruthy();
+    err.mockRestore();
+  });
+
+  it('expands all matching fields on Ctrl+Space', async () => {
+    const apiGet = vi.fn(async (endpoint: string) =>
+      endpoint.includes('/describe')
+        ? sobjectDescribe
+        : { sobjects: [{ name: 'Account', label: 'Account', keyPrefix: '001' }] },
+    );
+    const textarea = await openRunner(apiGet);
+    // Warm the describe cache first.
+    textarea.value = 'SELECT  FROM Account';
+    textarea.selectionStart = 7;
+    textarea.selectionEnd = 7;
+    textarea.dispatchEvent(new Event('input'));
+    await flush();
+
+    textarea.selectionStart = 7;
+    textarea.selectionEnd = 7;
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', { key: ' ', ctrlKey: true, bubbles: true }),
+    );
+    await flush();
+    expect(textarea.value).toContain('Name');
+    expect(textarea.value).toContain('OwnerId');
   });
 });
