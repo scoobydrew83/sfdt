@@ -8,6 +8,7 @@ import {
 } from '../lib/salesforce-api.js';
 import { registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 
 const EVENT_MONITOR_SETTINGS_SCHEMA = z.object({
   historyEnabled: z.boolean().default(true),
@@ -222,8 +223,17 @@ export function createEventMonitorFeature(options: {
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
 
-  let overlay: HTMLDivElement | null = null;
+  let view: ViewHandle | null = null;
   let client: SalesforceBayeuxClient | null = null;
+
+  // Live-stream teardown — must run whenever the view closes (tab close fires
+  // onClose; modal dismiss / re-open call close()). Stops the Bayeux long-poll.
+  function stopStream(): void {
+    if (client) {
+      void client.stop();
+      client = null;
+    }
+  }
 
   // UI state
   let selectedChannelType = 'platformEvent';
@@ -244,12 +254,9 @@ export function createEventMonitorFeature(options: {
   };
 
   function close(): void {
-    if (client) {
-      void client.stop();
-      client = null;
-    }
-    overlay?.remove();
-    overlay = null;
+    stopStream();
+    view?.close();
+    view = null;
   }
 
   async function fetchChannels(type: string): Promise<ChannelOption[]> {
@@ -422,38 +429,9 @@ export function createEventMonitorFeature(options: {
   async function open(): Promise<void> {
     close();
 
-    overlay = doc.createElement('div');
-    overlay.className = 'sfdt-event-monitor-overlay';
-    overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
-
-    const modal = doc.createElement('div');
-    modal.style.cssText =
-      'background: #fff; border-radius: 4px; width: 960px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0,0,0,0.15);';
-
-    // Header
-    const header = doc.createElement('div');
-    header.style.cssText =
-      'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center;';
-    const headerTitle = doc.createElement('span');
-    headerTitle.style.cssText = 'font-weight: 600; font-size: 15px; display: flex; gap: 8px; align-items: center;';
-    headerTitle.textContent = '📡 Event Streaming Monitor';
-
-    const closeBtn = doc.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.style.cssText = 'background: none; border: 0; font-size: 24px; cursor: pointer; color: #80868d; line-height: 1;';
-    closeBtn.addEventListener('click', close);
-    header.appendChild(headerTitle);
-    header.appendChild(closeBtn);
-    modal.appendChild(header);
-
     // Body
     const body = doc.createElement('div');
     body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px;';
-    modal.appendChild(body);
 
     // Filter Config Row
     const configRow = doc.createElement('div');
@@ -696,8 +674,16 @@ export function createEventMonitorFeature(options: {
     renderEvents();
     renderEventDetails();
 
-    overlay.appendChild(modal);
-    doc.body.appendChild(overlay);
+    view = presentView({
+      title: '📡 Event Streaming Monitor',
+      body,
+      doc,
+      width: '960px',
+      onClose: () => {
+        stopStream();
+        view = null;
+      },
+    });
   }
 
   return {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, createContext, useRef } from 'react';
-import { api } from './api.js';
+import { api, onAuthExpired } from './api.js';
+import { resolveInitialTheme } from './theme.js';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import TestRuns from './pages/TestRuns.jsx';
@@ -21,6 +22,9 @@ import SettingsPage from './pages/Settings.jsx';
 import NotificationsPage from './pages/Notifications.jsx';
 import LogsPage from './pages/Logs.jsx';
 import CoveragePage from './pages/Coverage.jsx';
+import ScratchPage from './pages/Scratch.jsx';
+import DataPage from './pages/Data.jsx';
+import DocsPage from './pages/Docs.jsx';
 import {
   IconHome, IconList, IconCheck, IconRefresh, IconCompare,
   IconSun, IconMoon, IconFileText, IconActivity, IconCloudDown,
@@ -64,6 +68,9 @@ const NAV_GROUPS = [
       { id: 'explain',    label: 'Explain',           Icon: IconSearch },
       { id: 'flows',      label: 'Flow Intelligence', Icon: IconGraph },
       { id: 'dependency', label: 'Dependency Graph',  Icon: IconGraph },
+      { id: 'scratch',    label: 'Scratch Orgs',      Icon: IconCloudDown },
+      { id: 'data',       label: 'Data Sets',         Icon: IconList },
+      { id: 'docs',       label: 'Documentation',     Icon: IconFileText },
     ],
   },
   {
@@ -95,13 +102,17 @@ const PAGE_LABELS = {
   logs:       'Log History',
   dependency: 'Dependency Graph',
   notifications: 'Notifications',
+  scratch:    'Scratch Orgs',
+  data:       'Data Sets',
+  docs:       'Documentation',
   settings:   'Settings',
 };
 
 export default function App() {
   const [page, setPage]           = useState('dashboard');
   const [project, setProject]     = useState(null);
-  const [dark, setDark]           = useState(true);
+  const [dark, setDark]           = useState(() =>
+    resolveInitialTheme(window.location.search, localStorage.getItem('sfdt-theme')));
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdate, setShowUpdate] = useState(false);
   const [chatOpen, setChatOpen]   = useState(false);
@@ -111,6 +122,11 @@ export default function App() {
   const [sessionOrg, setSessionOrg]   = useState(null);
   const [availableOrgs, setAvailableOrgs] = useState([]);
   const [orgPickerOpen, setOrgPickerOpen] = useState(false);
+  const [authExpired, setAuthExpired] = useState(false);
+
+  // Surface a recoverable banner when the launch-token handshake fails, instead
+  // of letting every page silently render an error/empty state.
+  useEffect(() => onAuthExpired(() => setAuthExpired(true)), []);
   const orgPickerRef = useRef(null);
 
   useEffect(() => {
@@ -118,9 +134,6 @@ export default function App() {
     api.checkUpdates().then((info) => { if (info.updateAvailable) setUpdateInfo(info); }).catch(() => null);
     api.sessionOrg().then((r) => setSessionOrg(r.org)).catch(() => null);
     api.orgs().then((r) => setAvailableOrgs(r.orgs ?? [])).catch(() => null);
-    const saved = localStorage.getItem('sfdt-theme');
-    if (saved === 'light') setDark(false);
-    else if (saved === 'dark') setDark(true);
   }, []);
 
   useEffect(() => {
@@ -182,6 +195,9 @@ export default function App() {
       case 'logs':       return <LogsPage />;
       case 'dependency': return <DependencyPage />;
       case 'notifications': return <NotificationsPage />;
+      case 'scratch':    return <ScratchPage />;
+      case 'data':       return <DataPage />;
+      case 'docs':       return <DocsPage />;
       case 'settings':   return <SettingsPage />;
       default:          return <Dashboard project={project} />;
     }
@@ -196,6 +212,24 @@ export default function App() {
   return (
     <ChatContext.Provider value={chatContextValue}>
     <>
+    {authExpired && (
+      <div role="alert" style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000,
+        background: '#8b1a1a', color: '#fff', padding: '10px 16px',
+        display: 'flex', alignItems: 'center', gap: 12,
+        font: '13px/1.4 system-ui, sans-serif', boxShadow: '0 1px 6px rgba(0,0,0,0.3)',
+      }}>
+        <span style={{ flex: 1 }}>
+          <strong>Dashboard session expired.</strong> The one-time auth token is no longer valid
+          (the server was restarted, or this tab was opened without it). Reopen the URL that
+          <code style={{ margin: '0 4px' }}>sfdt ui</code> printed — it carries a fresh token.
+        </span>
+        <button onClick={() => window.location.reload()} style={{
+          background: '#fff', color: '#8b1a1a', border: 0, borderRadius: 4,
+          padding: '5px 12px', fontWeight: 600, cursor: 'pointer',
+        }}>Reload</button>
+      </div>
+    )}
     {showUpdate && updateInfo && (
       <UpdateModal
         current={updateInfo.current}

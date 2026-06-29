@@ -5,6 +5,7 @@ import {
   type SalesforceApiClient,
 } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 
 interface GlobalDescribe {
   sobjects: { name: string; label: string; keyPrefix: string | null; queryable: boolean; createable: boolean; updateable: boolean }[];
@@ -89,7 +90,7 @@ export function createFieldCreatorFeature(options: {
   const _win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
 
-  let overlay: HTMLDivElement | null = null;
+  let view: ViewHandle | null = null;
   let globalDescribeCached: GlobalDescribe | null = null;
 
   // State
@@ -100,8 +101,8 @@ export function createFieldCreatorFeature(options: {
   let permissionSetMap: Record<string, string> = {}; // Name -> Id
   
   function close(): void {
-    overlay?.remove();
-    overlay = null;
+    view?.close();
+    view = null;
   }
 
   async function getGlobalDescribe(): Promise<GlobalDescribe> {
@@ -130,37 +131,9 @@ export function createFieldCreatorFeature(options: {
     close();
     await fetchPermissionSets();
 
-    overlay = doc.createElement('div');
-    overlay.className = 'sfdt-field-creator-overlay';
-    overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
-
-    const modal = doc.createElement('div');
-    modal.style.cssText =
-      'background: #fff; border-radius: 4px; width: 1000px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0,0,0,0.15);';
-
-    // Header
-    const header = doc.createElement('div');
-    header.style.cssText =
-      'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center;';
-    const headerTitle = doc.createElement('span');
-    headerTitle.style.cssText = 'font-weight: 600; font-size: 15px; display: flex; gap: 8px; align-items: center;';
-    headerTitle.textContent = '🛠 Bulk Field Creator';
-    const closeBtn = doc.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.style.cssText = 'background: none; border: 0; font-size: 24px; cursor: pointer; color: #80868d; line-height: 1;';
-    closeBtn.addEventListener('click', close);
-    header.appendChild(headerTitle);
-    header.appendChild(closeBtn);
-    modal.appendChild(header);
-
-    // Body
+    // Body presented into a Workspace tab (or a modal on a Salesforce page).
     const body = doc.createElement('div');
     body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px;';
-    modal.appendChild(body);
 
     // Top Controls
     const topRow = doc.createElement('div');
@@ -230,8 +203,13 @@ export function createFieldCreatorFeature(options: {
     deployBtn.disabled = true;
     actionRow.appendChild(deployBtn);
 
-    overlay.appendChild(modal);
-    doc.body.appendChild(overlay);
+    view = presentView({
+      title: '🛠 Bulk Field Creator',
+      body,
+      doc,
+      width: '1000px',
+      onClose: () => { view = null; },
+    });
 
     // Load SObject list
     try {

@@ -10,7 +10,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { getConfigDir } from '../lib/config.js';
-import { print } from '../lib/output.js';
+import { print, emitJson, emitJsonError } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 
 const FILE_NAME = 'feature-flags.json';
@@ -66,7 +66,7 @@ export function registerFeatureFlagsCommand(program) {
         const file = flagsPath();
         const flags = await readFlags(file);
         if (options.json) {
-          process.stdout.write(JSON.stringify({ ok: true, file, ...flags }, null, 2) + '\n');
+          emitJson({ ok: true, file, ...flags });
           return;
         }
         if (flags.disabled.length === 0) {
@@ -81,8 +81,12 @@ export function registerFeatureFlagsCommand(program) {
         print.step('');
         print.step(`file: ${file}`);
       } catch (err) {
-        print.error(`feature-flags list failed: ${err.message}`);
-        process.exitCode = resolveExitCode(err);
+        if (options.json) {
+          emitJsonError(err);
+        } else {
+          print.error(`feature-flags list failed: ${err.message}`);
+          process.exitCode = resolveExitCode(err);
+        }
       }
     });
 
@@ -102,9 +106,7 @@ export function registerFeatureFlagsCommand(program) {
         }
         const changed = flags.disabled.length !== before;
         if (options.json) {
-          process.stdout.write(
-            JSON.stringify({ ok: true, file, changed, disabled: flags.disabled }, null, 2) + '\n',
-          );
+          emitJson({ ok: true, file, changed, disabled: flags.disabled });
           return;
         }
         if (changed) {
@@ -113,8 +115,12 @@ export function registerFeatureFlagsCommand(program) {
           print.info(`'${featureId}' was already disabled.`);
         }
       } catch (err) {
-        print.error(`feature-flags disable failed: ${err.message}`);
-        process.exitCode = resolveExitCode(err);
+        if (options.json) {
+          emitJsonError(err);
+        } else {
+          print.error(`feature-flags disable failed: ${err.message}`);
+          process.exitCode = resolveExitCode(err);
+        }
       }
     });
 
@@ -131,9 +137,7 @@ export function registerFeatureFlagsCommand(program) {
         const changed = flags.disabled.length !== before;
         if (changed) await writeFlags(file, flags);
         if (options.json) {
-          process.stdout.write(
-            JSON.stringify({ ok: true, file, changed, disabled: flags.disabled }, null, 2) + '\n',
-          );
+          emitJson({ ok: true, file, changed, disabled: flags.disabled });
           return;
         }
         if (changed) {
@@ -142,8 +146,12 @@ export function registerFeatureFlagsCommand(program) {
           print.info(`'${featureId}' was not disabled.`);
         }
       } catch (err) {
-        print.error(`feature-flags enable failed: ${err.message}`);
-        process.exitCode = resolveExitCode(err);
+        if (options.json) {
+          emitJsonError(err);
+        } else {
+          print.error(`feature-flags enable failed: ${err.message}`);
+          process.exitCode = resolveExitCode(err);
+        }
       }
     });
 
@@ -161,13 +169,7 @@ export function registerFeatureFlagsCommand(program) {
           await writeFlags(file, { disabled: [] });
         }
         if (options.json) {
-          process.stdout.write(
-            JSON.stringify(
-              { ok: true, file, removed: !!options.remove, existed, disabled: [] },
-              null,
-              2,
-            ) + '\n',
-          );
+          emitJson({ ok: true, file, removed: !!options.remove, existed, disabled: [] });
           return;
         }
         if (options.remove) {
@@ -176,8 +178,12 @@ export function registerFeatureFlagsCommand(program) {
           print.success('All features re-enabled.');
         }
       } catch (err) {
-        print.error(`feature-flags clear failed: ${err.message}`);
-        process.exitCode = resolveExitCode(err);
+        if (options.json) {
+          emitJsonError(err);
+        } else {
+          print.error(`feature-flags clear failed: ${err.message}`);
+          process.exitCode = resolveExitCode(err);
+        }
       }
     });
 }

@@ -282,6 +282,6 @@ describe('runMonitor', () => {
 
 describe('MONITOR_DEFAULTS', () => {
   it('exposes the centralized fallback constants', () => {
-    expect(MONITOR_DEFAULTS).toMatchObject({ limitWarnThreshold: 0.8, errorLookbackDays: 7, healthMinScore: 80 });
+    expect(MONITOR_DEFAULTS).toMatchObject({ limitWarnThreshold: 0.75, errorLookbackDays: 7, healthMinScore: 80 });
   });
 });

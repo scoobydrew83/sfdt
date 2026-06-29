@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import { loadConfig } from '../lib/config.js';
 import { runScript } from '../lib/script-runner.js';
-import { print } from '../lib/output.js';
+import { print, emitJson, emitJsonError } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 
 export function registerDriftCommand(program) {
@@ -28,38 +28,32 @@ export function registerDriftCommand(program) {
           const logDir = config.logDir ?? path.join(projectRoot, 'logs');
           const logFilePath = path.join(logDir, 'drift-latest.json');
           if (!(await fs.pathExists(logFilePath))) {
-            process.stdout.write(JSON.stringify({
-              status: 'success',
+            emitJson({
               org: orgAlias,
               timestamp: new Date().toISOString(),
-              exitCode: 0,
               driftStatus: 'in_sync',
               components: [],
-            }, null, 2) + '\n');
+            });
             return;
           }
           const logFile = await fs.readJson(logFilePath);
           const payload = logFile.data ?? logFile;
-          process.stdout.write(JSON.stringify({
-            status: 'success',
+          emitJson({
             org: orgAlias,
             timestamp: logFile.timestamp ?? new Date().toISOString(),
-            exitCode: 0,
             driftStatus: payload.status ?? null,
             components: payload.components ?? [],
-          }, null, 2) + '\n');
+          });
         } else {
           print.success(`Drift detection for ${orgAlias} completed.`);
         }
       } catch (err) {
         if (jsonMode) {
-          process.stdout.write(
-            JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n',
-          );
+          emitJsonError(err);
         } else {
           print.error(`Drift detection failed: ${err.message}`);
+          process.exitCode = resolveExitCode(err);
         }
-        process.exitCode = resolveExitCode(err);
       }
     });
 }

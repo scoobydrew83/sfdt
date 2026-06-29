@@ -14,16 +14,20 @@ vi.mock('../../src/lib/config.js', () => ({
   getConfigDir: vi.fn(),
 }));
 
-vi.mock('../../src/lib/output.js', () => ({
-  print: {
-    header: vi.fn(),
-    success: vi.fn(),
-    error: vi.fn(),
-    warning: vi.fn(),
-    info: vi.fn(),
-    step: vi.fn(),
-  },
-}));
+vi.mock('../../src/lib/output.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    print: {
+      header: vi.fn(),
+      success: vi.fn(),
+      error: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+      step: vi.fn(),
+    },
+  };
+});
 
 import fs from 'fs-extra';
 import { getConfigDir } from '../../src/lib/config.js';
@@ -71,7 +75,7 @@ describe('feature-flags list', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'list', '--json']);
     const written = spy.mock.calls[0][0];
     const parsed = JSON.parse(written);
-    expect(parsed).toEqual({ ok: true, file: FILE, disabled: ['canvas-search'] });
+    expect(parsed).toEqual({ status: 0, result: { ok: true, file: FILE, disabled: ['canvas-search'] }, warnings: [] });
     spy.mockRestore();
   });
 
@@ -81,6 +85,33 @@ describe('feature-flags list', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'list']);
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Unexpected token'));
     expect(process.exitCode).toBeDefined();
+  });
+
+  it('treats a non-array "disabled" field as empty', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.readJson.mockResolvedValue({ disabled: 'nope' });
+    await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'list']);
+    expect(print.info).toHaveBeenCalledWith('No features are disabled.');
+  });
+
+  it('notes the file exists when the disabled list is empty', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.readJson.mockResolvedValue({ disabled: [] });
+    await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'list']);
+    expect(print.info).toHaveBeenCalledWith('No features are disabled.');
+    // file exists → no "does not exist yet" suffix
+    expect(print.step).toHaveBeenCalledWith(`(file: ${FILE})`);
+  });
+
+  it('--json reports the error envelope on a malformed file', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.readJson.mockRejectedValue(new Error('Unexpected token'));
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'list', '--json']);
+    const parsed = JSON.parse(spy.mock.calls[0][0]);
+    expect(parsed.message).toContain('Unexpected token');
+    expect(parsed.status).toBeGreaterThan(0);
+    spy.mockRestore();
   });
 });
 
@@ -121,11 +152,31 @@ describe('feature-flags disable', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'disable', 'canvas-search', '--json']);
     const parsed = JSON.parse(spy.mock.calls[0][0]);
     expect(parsed).toEqual({
-      ok: true,
-      file: FILE,
-      changed: true,
-      disabled: ['canvas-search'],
+      status: 0,
+      result: {
+        ok: true,
+        file: FILE,
+        changed: true,
+        disabled: ['canvas-search'],
+      },
+      warnings: [],
     });
+    spy.mockRestore();
+  });
+
+  it('rejects an invalid feature id', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'disable', 'bad id!']);
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('featureId must match'));
+    expect(process.exitCode).toBeDefined();
+    expect(fs.outputJson).not.toHaveBeenCalled();
+  });
+
+  it('--json emits an error envelope for an invalid feature id', async () => {
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'disable', 'bad id!', '--json']);
+    const parsed = JSON.parse(spy.mock.calls[0][0]);
+    expect(parsed.message).toContain('featureId must match');
+    expect(parsed.status).toBeGreaterThan(0);
     spy.mockRestore();
   });
 });
@@ -150,6 +201,34 @@ describe('feature-flags enable', () => {
     expect(fs.outputJson).not.toHaveBeenCalled();
     expect(print.info).toHaveBeenCalledWith(expect.stringContaining('was not disabled'));
   });
+
+  it('--json reports the changed flag and remaining disabled list', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.readJson.mockResolvedValue({ disabled: ['canvas-search', 'flow-deploy'] });
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'enable', 'canvas-search', '--json']);
+    const parsed = JSON.parse(spy.mock.calls[0][0]);
+    expect(parsed).toEqual({
+      status: 0,
+      result: { ok: true, file: FILE, changed: true, disabled: ['flow-deploy'] },
+      warnings: [],
+    });
+    spy.mockRestore();
+  });
+
+  it('--json emits an error envelope for an invalid feature id', async () => {
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'enable', 'bad id!', '--json']);
+    const parsed = JSON.parse(spy.mock.calls[0][0]);
+    expect(parsed.message).toContain('featureId must match');
+    spy.mockRestore();
+  });
+
+  it('reports an error for an invalid feature id (non-json)', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'enable', 'bad id!']);
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('featureId must match'));
+    expect(process.exitCode).toBeDefined();
+  });
 });
 
 describe('feature-flags clear', () => {
@@ -172,5 +251,37 @@ describe('feature-flags clear', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'clear', '--remove']);
     expect(fs.remove).not.toHaveBeenCalled();
     expect(print.success).toHaveBeenCalledWith(expect.stringContaining('did not exist'));
+  });
+
+  it('--json reports the cleared state', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'clear', '--json']);
+    const parsed = JSON.parse(spy.mock.calls[0][0]);
+    expect(parsed).toEqual({
+      status: 0,
+      result: { ok: true, file: FILE, removed: false, existed: true, disabled: [] },
+      warnings: [],
+    });
+    spy.mockRestore();
+  });
+
+  it('reports an error when the write fails', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.outputJson.mockRejectedValue(new Error('disk full'));
+    await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'clear']);
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('disk full'));
+    expect(process.exitCode).toBeDefined();
+  });
+
+  it('--json emits an error envelope when the write fails', async () => {
+    fs.pathExists.mockResolvedValue(true);
+    fs.outputJson.mockRejectedValue(new Error('disk full'));
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'feature-flags', 'clear', '--json']);
+    const parsed = JSON.parse(spy.mock.calls[0][0]);
+    expect(parsed.message).toContain('disk full');
+    expect(parsed.status).toBeGreaterThan(0);
+    spy.mockRestore();
   });
 });

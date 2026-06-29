@@ -20,6 +20,7 @@ export default defineConfig({
       },
       './extension/vitest.config.ts',
       './packages/flow-core/vitest.config.ts',
+      './packages/plugin/vitest.config.ts',
       './host/vitest.config.js',
       './gui/vitest.config.js',
       './vscode/vitest.config.ts',

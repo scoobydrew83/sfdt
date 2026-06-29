@@ -8,6 +8,7 @@ import { runMonitor, runBackup, CHECK_IDS, MONITOR_DEFAULTS } from '../lib/monit
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { dispatchSnapshot } from '../lib/notifier.js';
 import { runCiInit } from './ci.js';
+import { emitJson, emitJsonError } from '../lib/output.js';
 
 const STATUS_COLOR = {
   ok: chalk.green,
@@ -75,7 +76,7 @@ async function executeMonitor(checks, options, { backup = false } = {}) {
     }
 
     if (jsonMode) {
-      process.stdout.write(JSON.stringify(snapshot, null, 2) + '\n');
+      emitJson(snapshot);
     } else {
       printReport(snapshot);
       console.log(chalk.dim(`\nSnapshot written to ${outPath}`));
@@ -85,11 +86,11 @@ async function executeMonitor(checks, options, { backup = false } = {}) {
     if (snapshot.summary.fail > 0 || snapshot.summary.error > 0) process.exitCode = 1;
   } catch (err) {
     if (jsonMode) {
-      process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');
+      emitJsonError(err);
     } else {
       console.error(chalk.red(`Monitoring failed: ${err.message}`));
+      process.exitCode = resolveExitCode(err);
     }
-    process.exitCode = resolveExitCode(err);
   }
 }
 
@@ -118,15 +119,15 @@ async function executeBackup(options) {
       spinner?.fail('Backup failed');
       throw err;
     }
-    if (jsonMode) process.stdout.write(JSON.stringify(res, null, 2) + '\n');
+    if (jsonMode) emitJson(res);
     if (res.status === 'error') process.exitCode = 1;
   } catch (err) {
     if (jsonMode) {
-      process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');
+      emitJsonError(err);
     } else {
       console.error(chalk.red(`Backup failed: ${err.message}`));
+      process.exitCode = resolveExitCode(err);
     }
-    process.exitCode = resolveExitCode(err);
   }
 }
 

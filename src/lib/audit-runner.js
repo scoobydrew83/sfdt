@@ -1,3 +1,4 @@
+import { ORG_HEALTH_THRESHOLDS } from '@sfdt/flow-core';
 import { query, safeParse } from './org-query.js';
 
 /**
@@ -20,19 +21,19 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * Single source of truth for audit-check fallback defaults.
  *
- * These values are mirrored in src/templates/sfdt.config.json (under `audit`)
- * which remains the canonical config the user edits. They are duplicated here
- * only as a defensive fallback for programmatic callers and when a config key
- * is absent — keeping them in one constant prevents the literals from drifting
- * across the runner and command layers. Update the floor (e.g. when Salesforce
- * retires an API version) in `.sfdt/config.json` → `audit.minApiVersion`, or
- * here for the built-in default.
+ * Usage/coverage/age thresholds come from the shared @sfdt/flow-core rulebook
+ * (ORG_HEALTH_THRESHOLDS) so the CLI, GUI, and Chrome extension band findings
+ * identically. NOTE: licenseWarnThreshold changed 0.9 → 0.75 here as part of
+ * that unification — the CLI now warns at the same 75% point Chrome uses.
+ * CLI-only knobs (auditTrailLookbackDays) have no shared equivalent and stay
+ * local. These values are mirrored in src/templates/sfdt.config.json (under
+ * `audit`), which remains the canonical config the user edits.
  */
 export const AUDIT_DEFAULTS = {
   auditTrailLookbackDays: 30,
-  licenseWarnThreshold: 0.9,
-  inactiveUserDays: 90,
-  minApiVersion: 45,
+  licenseWarnThreshold: ORG_HEALTH_THRESHOLDS.usageAmber, // 0.75 (was 0.9 before flow-core unification)
+  inactiveUserDays: ORG_HEALTH_THRESHOLDS.inactiveUserDays, // 90
+  minApiVersion: ORG_HEALTH_THRESHOLDS.minApiVersionFloor, // 45
   fieldDescriptionMaxMissing: 0,
   connectedAppFlagPermissive: true,
 };

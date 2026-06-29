@@ -5,6 +5,7 @@ import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 
 const APEX_ANONYMOUS_SETTINGS_SCHEMA = z.object({
   historyEnabled: z.boolean().default(true),
@@ -212,11 +213,11 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
 
-  let overlay: HTMLDivElement | null = null;
+  let view: ViewHandle | null = null;
 
   function close(): void {
-    overlay?.remove();
-    overlay = null;
+    view?.close();
+    view = null;
   }
 
   async function run(code: string): Promise<ExecuteAnonymousResult> {
@@ -328,31 +329,6 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       settings.featureSettings?.['apex-anonymous'] ?? {},
     );
 
-    overlay = doc.createElement('div');
-    overlay.className = 'sfdt-apex-anonymous-overlay';
-    overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
-
-    const modal = doc.createElement('div');
-    modal.style.cssText =
-      'background: #fff; border-radius: 4px; width: 860px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column;';
-
-    const header = doc.createElement('div');
-    header.style.cssText =
-      'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center; font-weight: 600;';
-    const headerLabel = doc.createElement('span');
-    headerLabel.textContent = '⚡ Execute Anonymous Apex';
-    const closeBtn = doc.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.style.cssText = 'background: none; border: 0; font-size: 22px; cursor: pointer;';
-    closeBtn.addEventListener('click', close);
-    header.appendChild(headerLabel);
-    header.appendChild(closeBtn);
-    modal.appendChild(header);
-
     const body = doc.createElement('div');
     body.style.cssText =
       'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px;';
@@ -404,9 +380,15 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     // The log captured by the most recent run, if any. Drives the Open log button.
     let capturedLogId: string | null = null;
 
-    modal.appendChild(body);
-    overlay.appendChild(modal);
-    doc.body.appendChild(overlay);
+    view = presentView({
+      title: '⚡ Execute Anonymous Apex',
+      body,
+      doc,
+      width: '860px',
+      onClose: () => {
+        view = null;
+      },
+    });
 
     async function execute(): Promise<void> {
       const code = editor.value;

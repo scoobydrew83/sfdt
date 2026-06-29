@@ -7,6 +7,7 @@ import {
 } from '../lib/salesforce-api.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 
 const SOAP_EXPLORE_SETTINGS_SCHEMA = z.object({
   historyEnabled: z.boolean().default(true),
@@ -88,18 +89,22 @@ export function createSoapExploreFeature(options: {
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
 
-  let overlay: HTMLDivElement | null = null;
+  let view: ViewHandle | null = null;
   let isWorking = false;
   let docClickHandler: ((e: MouseEvent) => void) | null = null;
 
-  function close(): void {
+  function teardown(): void {
     if (docClickHandler) {
       doc.removeEventListener('click', docClickHandler);
       docClickHandler = null;
     }
-    overlay?.remove();
-    overlay = null;
     isWorking = false;
+  }
+
+  function close(): void {
+    teardown();
+    view?.close();
+    view = null;
   }
 
   async function open(): Promise<void> {
@@ -111,44 +116,16 @@ export function createSoapExploreFeature(options: {
     }) as z.infer<typeof SOAP_EXPLORE_SETTINGS_SCHEMA>;
     const historyEnabled = config.historyEnabled;
 
-    overlay = doc.createElement('div');
-    overlay.className = 'sfdt-soap-explore-overlay';
-    overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
-
-    const modal = doc.createElement('div');
-    modal.style.cssText =
-      'background: #fff; border-radius: 4px; width: 860px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0,0,0,0.15);';
-
-    const header = doc.createElement('div');
-    header.style.cssText =
-      'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center; font-weight: 600;';
-    const headerLabel = doc.createElement('span');
-    headerLabel.textContent = '💬 SOAP API Explorer';
-
-    const spinner = doc.createElement('div');
-    spinner.style.cssText = 'border: 2px solid #f3f3f3; border-top: 2px solid #0070d2; border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; display: none;';
-    headerLabel.style.display = 'flex';
-    headerLabel.style.gap = '8px';
-    headerLabel.style.alignItems = 'center';
-    headerLabel.appendChild(spinner);
-
-    const closeBtn = doc.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.style.cssText = 'background: none; border: 0; font-size: 22px; cursor: pointer; color: #80868d; line-height: 1;';
-    closeBtn.addEventListener('click', close);
-    header.appendChild(headerLabel);
-    header.appendChild(closeBtn);
-    modal.appendChild(header);
-
     const body = doc.createElement('div');
     body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 12px;';
 
+    // Working spinner lives at the top of the body (presentView's header is title + × only).
+    const spinner = doc.createElement('div');
+    spinner.style.cssText = 'border: 2px solid #f3f3f3; border-top: 2px solid #0070d2; border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; display: none;';
+
     const configRow = doc.createElement('div');
     configRow.style.cssText = 'display: flex; gap: 8px; align-items: center;';
+    configRow.appendChild(spinner);
 
     const wsdlSelect = doc.createElement('select');
     wsdlSelect.style.cssText = 'padding: 6px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
@@ -289,9 +266,16 @@ export function createSoapExploreFeature(options: {
     }
     body.appendChild(footer);
 
-    modal.appendChild(body);
-    overlay.appendChild(modal);
-    doc.body.appendChild(overlay);
+    view = presentView({
+      title: '💬 SOAP API Explorer',
+      body,
+      doc,
+      width: '860px',
+      onClose: () => {
+        teardown();
+        view = null;
+      },
+    });
 
     function showError(message: string): void {
       errorPanel.textContent = message;

@@ -6,6 +6,7 @@ import {
   type SalesforceApiClient,
 } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 
 interface MetadataObject {
   xmlName: string;
@@ -42,7 +43,7 @@ export function createMetadataRetrieveFeature(options: {
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
 
-  let overlay: HTMLDivElement | null = null;
+  let view: ViewHandle | null = null;
   let metadataObjects: MetadataObject[] = [];
   let packageXml = '';
   let metadataFilter = '';
@@ -67,8 +68,8 @@ export function createMetadataRetrieveFeature(options: {
   const logMessages: { level: 'info' | 'working' | 'error' | 'success'; text: string }[] = [];
 
   function close(): void {
-    overlay?.remove();
-    overlay = null;
+    view?.close();
+    view = null;
     isWorking = false;
   }
 
@@ -604,40 +605,22 @@ export function createMetadataRetrieveFeature(options: {
   async function open(): Promise<void> {
     close();
 
-    overlay = doc.createElement('div');
-    overlay.className = 'sfdt-meta-retrieve-overlay';
-    overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
+    // Body wrapper presented into a Workspace tab (or a modal on a Salesforce page).
+    const body = doc.createElement('div');
+    body.style.cssText = 'flex: 1; display: flex; flex-direction: column; overflow: hidden;';
 
-    const modal = doc.createElement('div');
-    modal.style.cssText =
-      'background: #fff; border-radius: 4px; width: 960px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0,0,0,0.15);';
-
-    // Header
-    const header = doc.createElement('div');
-    header.style.cssText =
-      'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center;';
-    const headerTitle = doc.createElement('span');
-    headerTitle.style.cssText = 'font-weight: 600; font-size: 15px; display: flex; gap: 8px; align-items: center;';
-    headerTitle.textContent = '📦 Metadata Retrieve & Deploy';
-
+    // Spinner (shown while a SOAP job is in flight). Lived in the old modal
+    // header next to the title; presentView owns the header now, so it is pinned
+    // to the top of the body instead.
+    const spinnerRow = doc.createElement('div');
+    spinnerRow.style.cssText = 'padding: 6px 16px 0; display: flex; justify-content: flex-end;';
     spinnerEl = doc.createElement('div');
     spinnerEl.style.cssText = 'border: 2px solid #f3f3f3; border-top: 2px solid #0070d2; border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; display: none;';
     const style = doc.createElement('style');
     style.textContent = '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
     doc.head.appendChild(style);
-    headerTitle.appendChild(spinnerEl);
-
-    const closeBtn = doc.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.style.cssText = 'background: none; border: 0; font-size: 24px; cursor: pointer; color: #80868d; line-height: 1;';
-    closeBtn.addEventListener('click', close);
-    header.appendChild(headerTitle);
-    header.appendChild(closeBtn);
-    modal.appendChild(header);
+    spinnerRow.appendChild(spinnerEl);
+    body.appendChild(spinnerRow);
 
     // Tab Header
     const tabsRow = doc.createElement('div');
@@ -651,12 +634,12 @@ export function createMetadataRetrieveFeature(options: {
 
     tabsRow.appendChild(rTab);
     tabsRow.appendChild(dTab);
-    modal.appendChild(tabsRow);
+    body.appendChild(tabsRow);
 
     // Main Content wrapper
     const mainWrap = doc.createElement('div');
     mainWrap.style.cssText = 'flex: 1; overflow: hidden; display: flex; flex-direction: column;';
-    modal.appendChild(mainWrap);
+    body.appendChild(mainWrap);
 
     // Retrieve Panel
     const rPanel = doc.createElement('div');
@@ -888,7 +871,7 @@ export function createMetadataRetrieveFeature(options: {
     // Logs Container (Shared bottom panel)
     const logsWrap = doc.createElement('div');
     logsWrap.style.cssText = 'border-top: 1px solid #d8dde6; height: 140px; padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; background: #fafaf9;';
-    modal.appendChild(logsWrap);
+    body.appendChild(logsWrap);
 
     const logsLabel = doc.createElement('div');
     logsLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d; display: flex; justify-content: space-between;';
@@ -927,8 +910,13 @@ export function createMetadataRetrieveFeature(options: {
       rPanel.style.display = 'none';
     });
 
-    overlay.appendChild(modal);
-    doc.body.appendChild(overlay);
+    view = presentView({
+      title: '📦 Metadata Retrieve & Deploy',
+      body,
+      doc,
+      width: '960px',
+      onClose: () => { isWorking = false; view = null; },
+    });
 
     await loadMetadataDescribe();
   }

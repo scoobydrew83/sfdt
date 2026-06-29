@@ -5,6 +5,7 @@ import {
   type SalesforceApiClient,
 } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 
 interface GlobalDescribe {
   sobjects: { name: string; label: string; keyPrefix: string | null }[];
@@ -66,18 +67,22 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
 
-  let overlay: HTMLDivElement | null = null;
+  let view: ViewHandle | null = null;
   let escHandler: ((e: KeyboardEvent) => void) | null = null;
   let globalDescribeCached: GlobalDescribe | null = null;
   const sobjectDescribesCached = new Map<string, SObjectDescribe>();
 
-  function close(): void {
+  function teardown(): void {
     if (escHandler) {
       doc.removeEventListener('keydown', escHandler);
       escHandler = null;
     }
-    overlay?.remove();
-    overlay = null;
+  }
+
+  function close(): void {
+    teardown();
+    view?.close();
+    view = null;
   }
 
   async function getGlobalDescribe(): Promise<GlobalDescribe> {
@@ -109,36 +114,13 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
   async function open(initialRecordId?: string, initialSobjectName?: string): Promise<void> {
     close();
 
-    overlay = doc.createElement('div');
-    overlay.className = 'sfdt-inspect-record-overlay';
-    overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
-
-    const modal = doc.createElement('div');
-    modal.style.cssText =
-      'background: #fff; border-radius: 4px; width: 900px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0,0,0,0.15);';
-
-    const header = doc.createElement('div');
-    header.style.cssText =
-      'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center;';
-    const headerTitle = doc.createElement('span');
-    headerTitle.style.cssText = 'font-weight: 600; font-size: 15px; display: flex; gap: 8px; align-items: center;';
-    headerTitle.textContent = '🔍 Inspect Record (Show All Data)';
-
-    const closeBtn = doc.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.style.cssText = 'background: none; border: 0; font-size: 24px; cursor: pointer; color: #80868d; line-height: 1;';
-    closeBtn.addEventListener('click', close);
-    header.appendChild(headerTitle);
-    header.appendChild(closeBtn);
-    modal.appendChild(header);
-
     const body = doc.createElement('div');
     body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 12px;';
-    modal.appendChild(body);
+
+    // Record identity line lives at the top of the body (presentView's header is title + × only).
+    const recordInfo = doc.createElement('span');
+    recordInfo.style.cssText = 'font-weight: 600; font-size: 15px; display: flex; gap: 8px; align-items: center;';
+    body.appendChild(recordInfo);
 
     const searchRow = doc.createElement('div');
     searchRow.style.cssText = 'display: flex; gap: 8px; align-items: center;';
@@ -182,10 +164,18 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     saveChangesBtn.style.cssText = 'padding: 6px 14px; background: #04844b; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     saveBar.appendChild(cancelChangesBtn);
     saveBar.appendChild(saveChangesBtn);
-    modal.appendChild(saveBar);
 
-    overlay.appendChild(modal);
-    doc.body.appendChild(overlay);
+    view = presentView({
+      title: '🔍 Inspect Record (Show All Data)',
+      body,
+      footer: saveBar,
+      doc,
+      width: '900px',
+      onClose: () => {
+        teardown();
+        view = null;
+      },
+    });
 
     let activeRecordId = '';
     let activeSobjectName = '';
@@ -409,11 +399,11 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           editedRecordData[field.name] = val;
         }
 
-        headerTitle.textContent = '🔍 Inspect Record: ';
+        recordInfo.textContent = '🔍 Inspect Record: ';
         const idSpan = doc.createElement('span');
         idSpan.style.cssText = 'color:#0070d2; font-family:ui-monospace, monospace; margin-left: 6px;';
         idSpan.textContent = `${sobject} · ${recordId}`;
-        headerTitle.appendChild(idSpan);
+        recordInfo.appendChild(idSpan);
         
         filterRow.style.display = 'flex';
         renderFields();
@@ -489,7 +479,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     }
 
     escHandler = (e) => {
-      if (e.key === 'Escape' && overlay) {
+      if (e.key === 'Escape' && view) {
         close();
       }
     };

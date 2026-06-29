@@ -176,3 +176,161 @@ describe('setup-tabs teardown', () => {
     await expect(feature.teardown?.()).resolves.not.toThrow();
   });
 });
+
+// A minimal stand-in for `window` so navigation tests can observe
+// `location.href` mutations and provide a Lightning `$A` without touching the
+// real happy-dom window (which would change the page origin for later tests).
+function fakeWin(
+  href = 'https://x.lightning.force.com/lightning/setup/Other/home',
+): { location: { href: string; hostname: string; host: string } } {
+  return {
+    location: { href, hostname: 'x.lightning.force.com', host: 'x.lightning.force.com' },
+  };
+}
+
+describe('setup-tabs — flat tab navigation', () => {
+  it('navigates in-page via Lightning $A when the SPA event is available', async () => {
+    await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
+    const setParams = vi.fn();
+    const fire = vi.fn();
+    const win = { ...fakeWin(), $A: { get: vi.fn(() => ({ setParams, fire })) } };
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 0, win: win as never });
+    await feature.init?.();
+    const anchor = document.querySelector<HTMLAnchorElement>('[data-tab-id="sfdt_tab_flows"] a');
+    anchor?.click();
+    expect(setParams).toHaveBeenCalledWith({
+      url: expect.stringContaining('/lightning/setup/Flows/home'),
+    });
+    expect(fire).toHaveBeenCalled();
+  });
+
+  it('falls back to a hard location assignment when $A is absent', async () => {
+    await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
+    const win = fakeWin();
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 0, win: win as never });
+    await feature.init?.();
+    const anchor = document.querySelector<HTMLAnchorElement>('[data-tab-id="sfdt_tab_flows"] a');
+    anchor?.click();
+    expect(win.location.href).toContain('/lightning/setup/Flows/home');
+  });
+
+  it('falls back to location.href when the $A lookup throws', async () => {
+    await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
+    const win = {
+      ...fakeWin(),
+      $A: {
+        get: () => {
+          throw new Error('aura boom');
+        },
+      },
+    };
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 0, win: win as never });
+    await feature.init?.();
+    const anchor = document.querySelector<HTMLAnchorElement>('[data-tab-id="sfdt_tab_flows"] a');
+    anchor?.click();
+    expect(win.location.href).toContain('/lightning/setup/Flows/home');
+  });
+
+  it('does not navigate for tabs that open in a new browser tab', async () => {
+    await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
+    const win = fakeWin();
+    const original = win.location.href;
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 0, win: win as never });
+    await feature.init?.();
+    const anchor = document.querySelector<HTMLAnchorElement>(
+      '[data-tab-id="sfdt_tab_flow_trigger_explorer"] a',
+    );
+    anchor?.click();
+    expect(win.location.href).toBe(original);
+  });
+});
+
+describe('setup-tabs — grouped dropdown interaction', () => {
+  it('toggles the dropdown open/closed and navigates menu items in-page', async () => {
+    await saveSettings(
+      SettingsSchema.parse({
+        features: { setupTabs: true },
+        setupTabs: { groupingEnabled: true },
+      }),
+    );
+    const win = fakeWin();
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 0, win: win as never });
+    await feature.init?.();
+
+    const groupTab = document.querySelector('.sfdt-group-tab') as HTMLElement;
+    const anchor = groupTab.querySelector('a[role="tab"]') as HTMLElement;
+    const chevron = groupTab.querySelector('.sfdt-group-chevron') as HTMLElement;
+    const dropdown = document.querySelector('.sfdt-group-dropdown') as HTMLElement;
+
+    anchor.click();
+    expect(dropdown.classList.contains('sfdt-group-dropdown--open')).toBe(true);
+    expect(chevron.getAttribute('aria-expanded')).toBe('true');
+
+    // The chevron has its own click handler that re-runs the toggle.
+    chevron.click();
+    expect(dropdown.classList.contains('sfdt-group-dropdown--open')).toBe(false);
+    expect(chevron.getAttribute('aria-expanded')).toBe('false');
+
+    // Re-open and click an in-page menu item (Flows).
+    anchor.click();
+    const flowsItem = Array.from(
+      dropdown.querySelectorAll<HTMLAnchorElement>('a[role="menuitem"]'),
+    ).find((a) => a.textContent === 'Flows');
+    flowsItem?.click();
+    expect(win.location.href).toContain('/lightning/setup/Flows/home');
+    expect(dropdown.classList.contains('sfdt-group-dropdown--open')).toBe(false);
+  });
+
+  it('closes the dropdown on an outside click', async () => {
+    await saveSettings(
+      SettingsSchema.parse({
+        features: { setupTabs: true },
+        setupTabs: { groupingEnabled: true },
+      }),
+    );
+    const win = fakeWin();
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 0, win: win as never });
+    await feature.init?.();
+
+    const anchor = document.querySelector('.sfdt-group-tab a[role="tab"]') as HTMLElement;
+    const dropdown = document.querySelector('.sfdt-group-dropdown') as HTMLElement;
+    anchor.click();
+    expect(dropdown.classList.contains('sfdt-group-dropdown--open')).toBe(true);
+
+    document.body.click();
+    expect(dropdown.classList.contains('sfdt-group-dropdown--open')).toBe(false);
+  });
+
+  it('marks the group tab active when the current URL matches a child tab', async () => {
+    await saveSettings(
+      SettingsSchema.parse({
+        features: { setupTabs: true },
+        setupTabs: { groupingEnabled: true },
+      }),
+    );
+    const win = fakeWin('https://x.lightning.force.com/lightning/setup/Flows/home');
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 0, win: win as never });
+    await feature.init?.();
+    const groupTab = document.querySelector('.sfdt-group-tab') as HTMLElement;
+    expect(groupTab.classList.contains('slds-is-active')).toBe(true);
+    expect(groupTab.querySelector('a[role="tab"]')?.getAttribute('aria-selected')).toBe('true');
+  });
+});
+
+describe('setup-tabs — deferred tab bar', () => {
+  it('injects once the tab bar appears after init (MutationObserver path)', async () => {
+    document.body.replaceChildren(); // no tab bar yet
+    await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 1000 });
+    const pending = feature.init?.();
+
+    // Let the observer attach, then add the tab bar so it fires.
+    await new Promise((r) => setTimeout(r, 0));
+    const bar = document.createElement('ul');
+    bar.className = 'tabBarItems';
+    document.body.appendChild(bar);
+
+    await pending;
+    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(3);
+  });
+});

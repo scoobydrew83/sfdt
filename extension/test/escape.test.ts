@@ -64,5 +64,10 @@ describe('extension/lib/escape', () => {
       expect(escapeSoql(null)).toBe('');
       expect(escapeSoql(undefined)).toBe('');
     });
+
+    it('coerces non-string values to strings before escaping', () => {
+      expect(escapeSoql(42)).toBe('42');
+      expect(escapeSoql(true)).toBe('true');
+    });
   });
 });

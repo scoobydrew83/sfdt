@@ -4,6 +4,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { loadConfig } from '../lib/config.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { emitJson, emitJsonError } from '../lib/output.js';
 import { runFlowScan, runFlowConflicts } from '../lib/flow-analyzer.js';
 
 export function registerFlowCommand(program) {
@@ -40,7 +41,7 @@ export function registerFlowCommand(program) {
         spinner?.succeed(`Analysed ${output.totalFlows} Flow${output.totalFlows === 1 ? '' : 's'}`);
 
         if (jsonMode) {
-          process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+          emitJson(output);
           return;
         }
         await fs.ensureDir(path.dirname(outPath));
@@ -59,13 +60,11 @@ export function registerFlowCommand(program) {
         }
       } catch (err) {
         if (jsonMode) {
-          process.stdout.write(
-            JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n',
-          );
+          emitJsonError(err);
         } else {
           console.error(chalk.red(`flow scan failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
         }
-        process.exitCode = resolveExitCode(err);
       }
     });
 
@@ -96,7 +95,7 @@ export function registerFlowCommand(program) {
         );
 
         if (jsonMode) {
-          process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+          emitJson(output);
           return;
         }
         await fs.ensureDir(path.dirname(outPath));
@@ -118,13 +117,11 @@ export function registerFlowCommand(program) {
         }
       } catch (err) {
         if (jsonMode) {
-          process.stdout.write(
-            JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n',
-          );
+          emitJsonError(err);
         } else {
           console.error(chalk.red(`flow conflicts failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
         }
-        process.exitCode = resolveExitCode(err);
       }
     });
 }

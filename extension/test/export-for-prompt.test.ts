@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { _exportForPromptTestApi } from '../features/export-for-prompt.js';
+import {
+  _exportForPromptTestApi,
+  createExportForPromptFeature,
+} from '../features/export-for-prompt.js';
 
 const { buildSchemaMarkdown, escapeCell, extractSetupObject } = _exportForPromptTestApi();
 
@@ -36,6 +39,44 @@ describe('export-for-prompt — buildSchemaMarkdown', () => {
       ],
     });
     expect(md).toContain('| `Notes` | Notes \\| Extra | textarea | No | see this |');
+  });
+
+  it('escapes backslashes before other metacharacters', () => {
+    // A literal backslash is doubled first, so `\|` becomes `\\\|`.
+    expect(escapeCell('path\\to')).toBe('path\\\\to');
+    expect(escapeCell('a\\|b')).toBe('a\\\\\\|b');
+  });
+});
+
+describe('export-for-prompt — extractSetupObject decoding', () => {
+  it('URL-decodes a percent-encoded object segment', () => {
+    expect(
+      extractSetupObject(
+        'https://my.lightning.force.com/lightning/setup/ObjectManager/My%20Object__c/Details/view',
+      ),
+    ).toBe('My Object__c');
+  });
+
+  it('falls back to the raw segment when decoding throws', () => {
+    // A lone `%` is not a valid escape sequence — decodeURIComponent throws and
+    // the raw segment is used.
+    expect(
+      extractSetupObject('https://my.lightning.force.com/lightning/setup/ObjectManager/Bad%ZZ/view'),
+    ).toBe('Bad%ZZ');
+  });
+});
+
+describe('export-for-prompt — onActivate guard', () => {
+  it('warns when the page is neither a record nor an Object Manager page', async () => {
+    document.body.replaceChildren();
+    const win = {
+      location: { href: 'https://x.lightning.force.com/lightning/setup/Flows/home' },
+    } as Window;
+    const feature = createExportForPromptFeature({ win });
+    await feature.onActivate?.();
+    expect(document.querySelector('.sfdt-toast')?.textContent).toMatch(
+      /Open a record or an Object Manager page/,
+    );
   });
 });
 

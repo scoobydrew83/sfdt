@@ -37,6 +37,7 @@ import {
 } from '../../host/installers/install-host.js';
 import { getConfigDir } from '../lib/config.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { emitJson, emitJsonError } from '../lib/output.js';
 
 const BROWSER_CHOICES = ['chrome', 'edge', 'brave', 'chromium', 'vivaldi', 'all'];
 
@@ -83,7 +84,7 @@ export function registerExtensionCommand(program) {
         });
         if (!result.ok) {
           if (jsonMode) {
-            process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+            emitJson(result);
           } else {
             console.error(chalk.red(`Install failed: ${result.error}`));
           }
@@ -91,7 +92,7 @@ export function registerExtensionCommand(program) {
           return;
         }
         if (jsonMode) {
-          process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+          emitJson(result);
           return;
         }
         console.log(chalk.green(`\nInstalled native host on ${result.platform}.`));
@@ -110,13 +111,11 @@ export function registerExtensionCommand(program) {
         );
       } catch (err) {
         if (jsonMode) {
-          process.stdout.write(
-            JSON.stringify({ ok: false, error: err.message, exitCode: resolveExitCode(err) }) + '\n',
-          );
+          emitJsonError(err);
         } else {
           console.error(chalk.red(`extension install-host failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
         }
-        process.exitCode = resolveExitCode(err);
       }
     });
 
@@ -139,7 +138,7 @@ export function registerExtensionCommand(program) {
         }
         const result = await uninstallNativeHost({ browser: options.browser });
         if (jsonMode) {
-          process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+          emitJson(result);
           return;
         }
         console.log(chalk.bold(`\nUninstalled native host on ${result.platform}:`));
@@ -152,13 +151,11 @@ export function registerExtensionCommand(program) {
         }
       } catch (err) {
         if (jsonMode) {
-          process.stdout.write(
-            JSON.stringify({ ok: false, error: err.message, exitCode: resolveExitCode(err) }) + '\n',
-          );
+          emitJsonError(err);
         } else {
           console.error(chalk.red(`extension uninstall-host failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
         }
-        process.exitCode = resolveExitCode(err);
       }
     });
 
@@ -177,7 +174,7 @@ export function registerExtensionCommand(program) {
           const msg =
             'No telemetry snapshot has been pushed yet. Open the extension options page (with Telemetry enabled) and refresh once to populate it.';
           if (jsonMode) {
-            process.stdout.write(JSON.stringify({ ok: false, file, error: msg }, null, 2) + '\n');
+            emitJson({ ok: false, file, error: msg });
           } else {
             console.log(chalk.dim(msg));
             console.log(chalk.dim(`(would read from: ${file})`));
@@ -187,7 +184,7 @@ export function registerExtensionCommand(program) {
         }
         const snapshot = await fs.readJson(file);
         if (jsonMode) {
-          process.stdout.write(JSON.stringify({ ok: true, file, ...snapshot }, null, 2) + '\n');
+          emitJson({ ok: true, file, ...snapshot });
           return;
         }
         const limit = Math.max(1, Number(options.limit) || 10);
@@ -221,13 +218,11 @@ export function registerExtensionCommand(program) {
         console.log('');
       } catch (err) {
         if (jsonMode) {
-          process.stdout.write(
-            JSON.stringify({ ok: false, error: err.message, exitCode: resolveExitCode(err) }) + '\n',
-          );
+          emitJsonError(err);
         } else {
           console.error(chalk.red(`extension stats failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
         }
-        process.exitCode = resolveExitCode(err);
       }
     });
 
@@ -239,7 +234,7 @@ export function registerExtensionCommand(program) {
       try {
         const status = await nativeHostStatus();
         if (options.json) {
-          process.stdout.write(JSON.stringify(status, null, 2) + '\n');
+          emitJson(status);
           return;
         }
         console.log(chalk.bold(`\nNative host status — ${status.platform}\n`));

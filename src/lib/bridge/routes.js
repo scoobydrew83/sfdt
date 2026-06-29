@@ -76,7 +76,7 @@ function resolveProjectRoot({ projectRoot, configDir }) {
  * @param {import('express').RequestHandler} [opts.rateLimiter]
  *   Optional rate limiter (uses gui-server's apiLimiter when supplied).
  */
-export function mountBridgeRoutes(app, { port, version, projectRoot, configDir, logDir, rateLimiter }) {
+export function mountBridgeRoutes(app, { port, version, config, projectRoot, configDir, logDir, rateLimiter }) {
   const cors = createBridgeCorsMiddleware(port);
   const auth = createBridgeAuthMiddleware();
   const limiter = rateLimiter ?? ((_req, _res, next) => next());
@@ -145,6 +145,7 @@ export function mountBridgeRoutes(app, { port, version, projectRoot, configDir, 
     try {
       const response = await dispatch(request, {
         version,
+        config,
         projectRoot: resolvedProjectRoot,
         logDir: resolvedLogDir,
         makeSuccessResponse,
@@ -160,12 +161,12 @@ export function mountBridgeRoutes(app, { port, version, projectRoot, configDir, 
 /**
  * Dispatch a validated SfdtRequest to the correct handler.
  *
- * Phase 2 implements ping/version inline. The other kinds return
- * NOT_IMPLEMENTED — the contract is wired up end-to-end so the extension
- * can be built (Phase 3), then individual handlers fill in as Phases 4–6
- * land.
+ * All contract kinds are now handled: ping/version inline; quality/deploy/
+ * rollback/ai/scan/compare/drift/org-health/telemetry.snapshot via their
+ * handlers (each keeps its own fetch/runner). Unknown kinds are rejected by
+ * the contract validator before reaching here.
  */
-async function dispatch(request, { version, projectRoot, logDir, makeSuccessResponse, makeErrorResponse }) {
+async function dispatch(request, { version, config, projectRoot, logDir, makeSuccessResponse, makeErrorResponse }) {
   switch (request.kind) {
     case 'ping': {
       let disabledFeatures = [];
@@ -332,15 +333,137 @@ async function dispatch(request, { version, projectRoot, logDir, makeSuccessResp
       ]);
       return makeSuccessResponse(request.requestId, { audit, monitor });
     }
-    case 'ai':
-    case 'drift':
-    case 'scan':
-    case 'compare':
-      return makeErrorResponse(
-        request.requestId,
-        `Request kind "${request.kind}" is not yet implemented on the bridge.`,
-        'NOT_IMPLEMENTED',
-      );
+    case 'scan': {
+      // Live metadata inventory — the same `fetchInventory` the `sfdt scan`
+      // command runs, so the bridge and CLI agree by construction.
+      try {
+        const { fetchInventory } = await import('../org-inventory.js');
+        const org = config?.defaultOrg;
+        if (!org) {
+          return makeErrorResponse(request.requestId, 'No default org configured for scan', 'REQUEST_INVALID');
+        }
+        const inventory = await fetchInventory(org, config);
+        return makeSuccessResponse(request.requestId, {
+          org,
+          scanType: request.scanType,
+          totalTypes: inventory.size,
+          totalMembers: [...inventory.values()].reduce((n, s) => n + s.size, 0),
+          inventory: Object.fromEntries([...inventory.entries()].map(([k, v]) => [k, [...v]])),
+        });
+      } catch (err) {
+        return makeErrorResponse(request.requestId, `Scan failed: ${err.message}`, 'INTERNAL_ERROR');
+      }
+    }
+    case 'compare': {
+      // Live inventory diff — the same `fetchInventory` + `diffInventories` the
+      // `sfdt compare` command runs. `left`/`right` are org aliases or "local".
+      try {
+        const { fetchInventory } = await import('../org-inventory.js');
+        const { diffInventories } = await import('../org-diff.js');
+        const [leftMap, rightMap] = await Promise.all([
+          fetchInventory(request.left, config),
+          fetchInventory(request.right, config),
+        ]);
+        const items = diffInventories(leftMap, rightMap);
+        return makeSuccessResponse(request.requestId, {
+          left: request.left,
+          right: request.right,
+          sourceOnly: items.filter((i) => i.status === 'source-only').length,
+          targetOnly: items.filter((i) => i.status === 'target-only').length,
+          both: items.filter((i) => i.status === 'both').length,
+          items,
+        });
+      } catch (err) {
+        return makeErrorResponse(request.requestId, `Compare failed: ${err.message}`, 'INTERNAL_ERROR');
+      }
+    }
+    case 'drift': {
+      // `sfdt drift` is a heavy shell-based local-vs-org content diff. Rather than
+      // trigger a multi-minute retrieve from a browser click, return the latest
+      // snapshot the CLI wrote (read-only, consistent with the dashboard),
+      // optionally scoped to a component.
+      if (!projectRoot) {
+        return makeErrorResponse(request.requestId, 'No project root resolved on the bridge', 'INTERNAL_ERROR');
+      }
+      const fsExtra = (await import('fs-extra')).default;
+      const file = path.join(logDir || path.join(projectRoot, 'logs'), 'drift-latest.json');
+      if (request.refresh) {
+        // Run drift live (heavy: full retrieve + diff) before reading the fresh
+        // snapshot — same `ops/drift.sh` the `sfdt drift` command runs.
+        try {
+          const { runScript } = await import('../script-runner.js');
+          await runScript('ops/drift.sh', config ?? {}, {
+            cwd: projectRoot,
+            env: { SFDT_TARGET_ORG: config?.defaultOrg ?? '' },
+          });
+        } catch (err) {
+          return makeErrorResponse(request.requestId, `Drift run failed: ${err.message}`, 'INTERNAL_ERROR');
+        }
+      }
+      if (!(await fsExtra.pathExists(file))) {
+        return makeSuccessResponse(request.requestId, {
+          available: false,
+          hint: 'No drift snapshot yet — run `sfdt drift` in your project to generate one.',
+        });
+      }
+      let snapshot;
+      try {
+        snapshot = await fsExtra.readJson(file);
+      } catch (err) {
+        return makeErrorResponse(request.requestId, `Could not read drift snapshot: ${err.message}`, 'INTERNAL_ERROR');
+      }
+      let components = Array.isArray(snapshot?.components) ? snapshot.components : [];
+      if (request.component) {
+        const needle = request.component.toLowerCase();
+        components = components.filter((c) =>
+          `${c?.type ?? ''}.${c?.name ?? c?.member ?? ''}`.toLowerCase().includes(needle),
+        );
+      }
+      return makeSuccessResponse(request.requestId, {
+        available: true,
+        org: snapshot?.org ?? null,
+        driftStatus: snapshot?.driftStatus ?? null,
+        timestamp: snapshot?.timestamp ?? snapshot?.date ?? null,
+        component: request.component ?? null,
+        components,
+      });
+    }
+    case 'ai': {
+      // Run the prompt through the project's configured AI provider — the same
+      // `runAiPrompt` the `sfdt ai prompt` command uses, which already redacts
+      // sensitive data, wraps an anti-injection preamble, and runs the provider
+      // in a read-only tool sandbox. Gated on the project opting into AI.
+      if (!config) {
+        return makeErrorResponse(request.requestId, 'No config resolved on the bridge', 'INTERNAL_ERROR');
+      }
+      const { isAiAvailable, aiUnavailableMessage, runAiPrompt } = await import('../ai.js');
+      if (!config.features?.ai) {
+        return makeErrorResponse(
+          request.requestId,
+          'AI features are disabled for this project. Set "features.ai": true in .sfdt/config.json.',
+          'REQUEST_INVALID',
+        );
+      }
+      if (!(await isAiAvailable(config))) {
+        return makeErrorResponse(request.requestId, aiUnavailableMessage(config), 'REQUEST_INVALID');
+      }
+      let prompt = request.prompt;
+      if (request.context && typeof request.context === 'object' && Object.keys(request.context).length > 0) {
+        prompt += `\n\n--- Context ---\n${JSON.stringify(request.context, null, 2)}`;
+      }
+      try {
+        const result = await runAiPrompt(prompt, { config, aiEnabled: true, interactive: false });
+        if (result == null) {
+          return makeErrorResponse(request.requestId, 'AI provider returned no result.', 'INTERNAL_ERROR');
+        }
+        return makeSuccessResponse(request.requestId, {
+          response: typeof result === 'string' ? result : String(result),
+          provider: config.ai?.provider ?? 'claude',
+        });
+      } catch (err) {
+        return makeErrorResponse(request.requestId, `AI request failed: ${err.message}`, 'INTERNAL_ERROR');
+      }
+    }
     default:
       return makeErrorResponse(
         request.requestId,

@@ -97,7 +97,7 @@ describe('data-import — UI Flow & Mock SOAP', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     // Wizard is loaded, check DOM
-    const overlay = document.querySelector('.sfdt-data-import-overlay');
+    const overlay = document.querySelector('.sfdt-view-overlay');
     expect(overlay).not.toBeNull();
 
     // Pasting data

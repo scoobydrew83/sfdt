@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseLaunchToken, dashboardPageUrl } from '../src/lib/dashboard-url.js';
+import { parseLaunchToken, dashboardPageUrl, themeQueryFromKind } from '../src/lib/dashboard-url.js';
 
 describe('parseLaunchToken', () => {
   it('extracts the token from an sfdt ui line', () => {
@@ -26,5 +26,26 @@ describe('dashboardPageUrl', () => {
   });
   it('omits the query when no token is known', () => {
     expect(dashboardPageUrl(7654, 'scan')).toBe('http://localhost:7654/scan');
+  });
+  it('appends the theme alongside the token', () => {
+    expect(dashboardPageUrl(7654, 'audit', 'TOK', 'light')).toBe(
+      'http://localhost:7654/audit?token=TOK&theme=light',
+    );
+  });
+  it('appends the theme even without a token', () => {
+    expect(dashboardPageUrl(7654, undefined, undefined, 'dark')).toBe(
+      'http://localhost:7654/?theme=dark',
+    );
+  });
+});
+
+describe('themeQueryFromKind', () => {
+  it('maps Light (1) and HighContrastLight (4) to light', () => {
+    expect(themeQueryFromKind(1)).toBe('light');
+    expect(themeQueryFromKind(4)).toBe('light');
+  });
+  it('maps Dark (2) and HighContrast (3) to dark', () => {
+    expect(themeQueryFromKind(2)).toBe('dark');
+    expect(themeQueryFromKind(3)).toBe('dark');
   });
 });

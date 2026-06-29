@@ -233,4 +233,76 @@ describe('init command', () => {
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Init failed'));
     expect(process.exitCode).toBe(1);
   });
+
+  it('enforces validation and conditional display rules on the prompts', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'init']);
+
+    // The main questionnaire is the prompt-call array holding the projectName question.
+    const questions = inquirer.prompt.mock.calls
+      .map((c) => c[0])
+      .find((arg) => Array.isArray(arg) && arg.some((q) => q.name === 'projectName'));
+    const byName = Object.fromEntries(questions.map((q) => [q.name, q]));
+
+    // defaultOrg requires a non-empty alias (line 131).
+    expect(byName.defaultOrg.validate('  ')).toBe('Org alias is required');
+    expect(byName.defaultOrg.validate('dev')).toBe(true);
+
+    // coverageThreshold must be an integer 0–100 (lines 138-140).
+    expect(byName.coverageThreshold.validate(75)).toBe(true);
+    expect(byName.coverageThreshold.validate(150)).toContain('between 0 and 100');
+    expect(byName.coverageThreshold.validate(3.5)).toContain('between 0 and 100');
+
+    // aiProvider only shown when AI enabled (line 159).
+    expect(byName.aiProvider.when({ aiEnabled: true })).toBe(true);
+    expect(byName.aiProvider.when({ aiEnabled: false })).toBe(false);
+
+    // http-specific prompts only when provider === 'http' (lines 166, 172, 178).
+    expect(byName.aiBaseURL.when({ aiEnabled: true, aiProvider: 'http' })).toBe(true);
+    expect(byName.aiBaseURL.when({ aiEnabled: true, aiProvider: 'claude' })).toBe(false);
+    expect(byName.aiModel.when({ aiEnabled: true, aiProvider: 'http' })).toBe(true);
+    expect(byName.aiApiKeyEnv.when({ aiEnabled: true, aiProvider: 'http' })).toBe(true);
+    expect(byName.aiApiKeyEnv.when({ aiEnabled: false, aiProvider: 'http' })).toBe(false);
+  });
+
+  it('writes http provider keys when the http AI provider is chosen', async () => {
+    inquirer.prompt.mockResolvedValue({
+      projectName: 'test-project',
+      defaultOrg: 'dev',
+      coverageThreshold: 75,
+      aiEnabled: true,
+      aiProvider: 'http',
+      aiBaseURL: 'http://localhost:11434/v1',
+      aiModel: 'llama3.1',
+      aiApiKeyEnv: 'OLLAMA_KEY',
+      releaseNotesDir: 'release-notes',
+      mcpEnabled: false,
+    });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'init']);
+
+    const config = fs.writeJson.mock.calls.find((c) => c[0].endsWith('config.json'))[1];
+    expect(config.ai.provider).toBe('http');
+    expect(config.ai.baseURL).toBe('http://localhost:11434/v1');
+    expect(config.ai.apiKeyEnv).toBe('OLLAMA_KEY');
+    expect(config.ai.model).toBe('llama3.1');
+  });
+
+  it('records AI as disabled when the user opts out', async () => {
+    inquirer.prompt.mockResolvedValue({
+      projectName: 'test-project',
+      defaultOrg: 'dev',
+      coverageThreshold: 75,
+      aiEnabled: false,
+      releaseNotesDir: 'release-notes',
+      mcpEnabled: false,
+    });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'init']);
+
+    const config = fs.writeJson.mock.calls.find((c) => c[0].endsWith('config.json'))[1];
+    expect(config.features.ai).toBe(false);
+    // http keys are omitted for non-http providers.
+    expect(config.ai.baseURL).toBeUndefined();
+    expect(print.step).toHaveBeenCalledWith('  AI features: disabled');
+  });
 });

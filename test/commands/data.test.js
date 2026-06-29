@@ -21,7 +21,7 @@ vi.mock('../../src/lib/data-runner.js', () => ({
 vi.mock('../../src/lib/exit-codes.js', () => ({ resolveExitCode: vi.fn(() => 1) }));
 vi.mock('inquirer', () => ({ default: { prompt: vi.fn() } }));
 vi.mock('ora', () => ({
-  default: vi.fn(() => ({ start: vi.fn().mockReturnThis(), succeed: vi.fn().mockReturnThis(), fail: vi.fn().mockReturnThis() })),
+  default: vi.fn(() => ({ start: vi.fn().mockReturnThis(), succeed: vi.fn().mockReturnThis(), fail: vi.fn().mockReturnThis(), warn: vi.fn().mockReturnThis() })),
 }));
 
 import inquirer from 'inquirer';
@@ -67,7 +67,7 @@ describe('data command', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'list', '--json']);
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ sets: ['qa', 'demo'] });
+    expect(JSON.parse(out)).toMatchObject({ status: 0, result: { sets: ['qa', 'demo'] } });
     writeSpy.mockRestore();
   });
 
@@ -76,8 +76,59 @@ describe('data command', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'export', 'qa', '--json']);
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'error' });
+    expect(JSON.parse(out)).toMatchObject({ status: 1 });
     writeSpy.mockRestore();
+  });
+
+  it('prints the export result in pretty mode', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'export', 'qa']);
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('A-plan.json');
+    logSpy.mockRestore();
+  });
+
+  it('reports an export failure on stderr in pretty mode', async () => {
+    exportDataSet.mockRejectedValue(new Error('no such set'));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'export', 'qa']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('no such set'));
+    expect(process.exitCode).toBe(1);
+    errSpy.mockRestore();
+  });
+
+  it('lists data sets in pretty mode', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'list']);
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('qa');
+    expect(out).toContain('demo');
+    logSpy.mockRestore();
+  });
+
+  it('prints a hint when no data sets exist (pretty mode)', async () => {
+    listDataSets.mockResolvedValue([]);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'list']);
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('No data sets found');
+    logSpy.mockRestore();
+  });
+
+  it('reports a list failure as JSON', async () => {
+    listDataSets.mockRejectedValue(new Error('fs error'));
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'list', '--json']);
+    const out = writeSpy.mock.calls.map((c) => c[0]).join('');
+    expect(JSON.parse(out)).toMatchObject({ status: 1, message: 'fs error' });
+    writeSpy.mockRestore();
+  });
+
+  it('reports a list failure on stderr in pretty mode', async () => {
+    listDataSets.mockRejectedValue(new Error('fs error'));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'list']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('fs error'));
+    expect(process.exitCode).toBe(1);
+    errSpy.mockRestore();
   });
 });
 
@@ -90,7 +141,7 @@ describe('data delete confirmation', () => {
     writeSpy.mockRestore();
   });
 
-  it('reports status "partial" + skippedCount in --json when a query was skipped', async () => {
+  it('reports skippedCount in --json when a query was skipped', async () => {
     deleteDataSet.mockResolvedValueOnce({
       set: 'qa',
       org: 'dev',
@@ -102,11 +153,11 @@ describe('data delete confirmation', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'qa', '--yes', '--json']);
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'partial', skippedCount: 1 });
+    expect(JSON.parse(out)).toMatchObject({ status: 0, result: { skippedCount: 1 } });
     writeSpy.mockRestore();
   });
 
-  it('reports status "partial" + errorCount in --json when a sobject delete failed', async () => {
+  it('reports errorCount in --json when a sobject delete failed', async () => {
     deleteDataSet.mockResolvedValueOnce({
       set: 'qa',
       org: 'dev',
@@ -118,7 +169,7 @@ describe('data delete confirmation', () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'qa', '--yes', '--json']);
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'partial', errorCount: 1, skippedCount: 0 });
+    expect(JSON.parse(out)).toMatchObject({ status: 0, result: { errorCount: 1, skippedCount: 0 } });
     writeSpy.mockRestore();
   });
 
@@ -128,7 +179,7 @@ describe('data delete confirmation', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'qa', '--json']);
     expect(deleteDataSet).not.toHaveBeenCalled();
     const out = writeSpy.mock.calls.map((c) => c[0]).join('');
-    expect(JSON.parse(out)).toMatchObject({ status: 'error', message: expect.stringMatching(/--yes/) });
+    expect(JSON.parse(out)).toMatchObject({ status: 1, message: expect.stringMatching(/--yes/) });
     writeSpy.mockRestore();
   });
 
@@ -150,5 +201,32 @@ describe('data delete confirmation', () => {
     expect(inquirer.prompt).toHaveBeenCalled();
     expect(deleteDataSet).not.toHaveBeenCalled();
     logSpy.mockRestore();
+  });
+
+  it('warns on stderr about failed/skipped sobjects in pretty mode', async () => {
+    deleteDataSet.mockResolvedValueOnce({
+      set: 'qa',
+      org: 'dev',
+      sobjects: [
+        { sobject: 'Account', status: 'error', error: 'boom' },
+        { sobject: null, status: 'skipped', query: 'bad' },
+      ],
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'qa', '--yes']);
+    const warns = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(warns).toContain('FAILED');
+    expect(warns).toContain('skipped');
+    warnSpy.mockRestore();
+  });
+
+  it('reports a thrown delete failure on stderr in pretty mode', async () => {
+    deleteDataSet.mockRejectedValueOnce(new Error('bulk api down'));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'qa', '--yes']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('bulk api down'));
+    expect(process.exitCode).toBe(1);
+    errSpy.mockRestore();
   });
 });

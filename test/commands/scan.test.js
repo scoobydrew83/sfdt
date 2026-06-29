@@ -175,14 +175,17 @@ describe('scan command', () => {
       const written = writeSpy.mock.calls.map((c) => c[0]).join('');
       const parsed = JSON.parse(written);
       expect(parsed).toMatchObject({
-        org: 'dev-org',
-        summary: { totalTypes: 2, totalMembers: 3 },
-        inventory: {
-          ApexClass: expect.arrayContaining(['MyClass', 'OtherClass']),
-          CustomObject: expect.arrayContaining(['Account__c']),
+        status: 0,
+        result: {
+          org: 'dev-org',
+          summary: { totalTypes: 2, totalMembers: 3 },
+          inventory: {
+            ApexClass: expect.arrayContaining(['MyClass', 'OtherClass']),
+            CustomObject: expect.arrayContaining(['Account__c']),
+          },
         },
       });
-      expect(parsed.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(parsed.result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
       writeSpy.mockRestore();
     });
 
@@ -204,7 +207,7 @@ describe('scan command', () => {
 
       expect(process.exitCode).toBe(3);
       const written = writeSpy.mock.calls.map((c) => c[0]).join('');
-      expect(JSON.parse(written)).toMatchObject({ status: 'error', message: 'sf CLI not found', exitCode: 3 });
+      expect(JSON.parse(written)).toMatchObject({ status: 3, message: 'sf CLI not found', exitCode: 3 });
       writeSpy.mockRestore();
     });
   });

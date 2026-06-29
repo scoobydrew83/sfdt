@@ -7,6 +7,7 @@ import { loadConfig } from '../lib/config.js';
 import { runAudit, CHECK_IDS, AUDIT_DEFAULTS } from '../lib/audit-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { dispatchSnapshot } from '../lib/notifier.js';
+import { emitJson, emitJsonError } from '../lib/output.js';
 
 const STATUS_COLOR = {
   ok: chalk.green,
@@ -70,7 +71,7 @@ async function executeAudit(checks, options) {
     }
 
     if (jsonMode) {
-      process.stdout.write(JSON.stringify(snapshot, null, 2) + '\n');
+      emitJson(snapshot);
     } else {
       printReport(snapshot);
       console.log(chalk.dim(`\nSnapshot written to ${outPath}`));
@@ -82,11 +83,11 @@ async function executeAudit(checks, options) {
     if (snapshot.summary.fail > 0 || snapshot.summary.error > 0) process.exitCode = 1;
   } catch (err) {
     if (jsonMode) {
-      process.stdout.write(JSON.stringify({ status: 'error', message: err.message, exitCode: resolveExitCode(err) }) + '\n');
+      emitJsonError(err);
     } else {
       console.error(chalk.red(`Audit failed: ${err.message}`));
+      process.exitCode = resolveExitCode(err);
     }
-    process.exitCode = resolveExitCode(err);
   }
 }
 

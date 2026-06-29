@@ -355,11 +355,7 @@ export class SfdtMcpServer {
         if (args.org) cmdArgs.push('--org', args.org);
 
         const { stdout } = await this.#runCliCommand(cmdArgs);
-        try {
-          return JSON.parse(stdout);
-        } catch {
-          return stdout;
-        }
+        return this.#parseCliJson(stdout);
       }
 
       case 'sfdt_compare': {
@@ -506,11 +502,7 @@ export class SfdtMcpServer {
 
         const cmdArgs = ['rollback', '--json'];
         const { stdout } = await this.#runCliCommand(cmdArgs);
-        try {
-          return JSON.parse(stdout);
-        } catch {
-          return stdout;
-        }
+        return this.#parseCliJson(stdout);
       }
 
       case 'sfdt_audit': {
@@ -518,11 +510,7 @@ export class SfdtMcpServer {
         const cmdArgs = ['audit', check, '--json'];
         if (args.org) cmdArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cmdArgs);
-        try {
-          return JSON.parse(stdout);
-        } catch {
-          return stdout;
-        }
+        return this.#parseCliJson(stdout);
       }
 
       case 'sfdt_monitor': {
@@ -531,11 +519,7 @@ export class SfdtMcpServer {
         if (args.org) cmdArgs.push('--org', args.org);
         if (check === 'all' && args.backup) cmdArgs.push('--backup');
         const { stdout } = await this.#runCliCommand(cmdArgs);
-        try {
-          return JSON.parse(stdout);
-        } catch {
-          return stdout;
-        }
+        return this.#parseCliJson(stdout);
       }
 
       case 'sfdt_notify': {
@@ -569,11 +553,7 @@ export class SfdtMcpServer {
         const cmdArgs = ['docs', 'generate', '--json'];
         if (args.ai) cmdArgs.push('--ai');
         const { stdout } = await this.#runCliCommand(cmdArgs);
-        try {
-          return JSON.parse(stdout);
-        } catch {
-          return stdout;
-        }
+        return this.#parseCliJson(stdout);
       }
 
       case 'sfdt_get_parked_result': {
@@ -582,6 +562,22 @@ export class SfdtMcpServer {
 
       default:
         throw new Error(`Unknown tool: ${name}`);
+    }
+  }
+
+  // Unwrap the sf-native JSON envelope ({ status, result, warnings }) emitted by
+  // the CLI's --json commands: return the inner `result` on success. Falls back
+  // to the whole parsed object (error envelopes, which have no `result`) or the
+  // raw string when stdout is not JSON.
+  #parseCliJson(stdout) {
+    try {
+      const parsed = JSON.parse(stdout);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'result' in parsed) {
+        return parsed.result;
+      }
+      return parsed;
+    } catch {
+      return stdout;
     }
   }
 

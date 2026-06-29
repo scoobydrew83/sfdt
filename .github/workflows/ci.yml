@@ -28,8 +28,12 @@ jobs:
         run: npm audit --audit-level=high
       - run: npm run lint
       - run: npm test
+      - name: Build @sfdt/plugin (codegen + tsc — catches CLI command-tree drift)
+        run: npm run build:plugin
       - name: Publish dry-run
         run: npm publish --dry-run
+      - name: Publish dry-run @sfdt/plugin
+        run: npm publish --dry-run --workspace=@sfdt/plugin
 
   gui-build:
     runs-on: ubuntu-latest
@@ -158,6 +162,11 @@ jobs:
       - name: Publish @sfdt/cli beta to npm
         if: steps.version.outputs.changed == 'true'
         run: npx npm@latest publish --provenance --access public --tag beta
+      - name: Publish @sfdt/plugin beta to npm
+        # Thin sf-CLI wrapper; published AFTER the CLI so its @sfdt/cli dep
+        # resolves. prepack builds dist/ + oclif.manifest.json.
+        if: steps.version.outputs.changed == 'true'
+        run: npx npm@latest publish --workspace=@sfdt/plugin --provenance --access public --tag beta
       - name: Create GitHub Pre-Release
         if: steps.version.outputs.changed == 'true'
         env:
@@ -235,6 +244,20 @@ jobs:
       - name: Publish @sfdt/cli to npm
         if: steps.version.outputs.changed == 'true'
         run: npx npm@latest publish --provenance --access public
+      - name: Publish @sfdt/plugin to npm
+        # Thin sf-CLI wrapper. Publish AFTER @sfdt/cli so its `@sfdt/cli`
+        # dependency resolves on the registry. prepack builds dist/ +
+        # oclif.manifest.json. Idempotent: republishing the same version is OK.
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          npx npm@latest publish --workspace=@sfdt/plugin --provenance --access public || {
+            EXIT=$?
+            if npm view @sfdt/plugin@$(node -p "require('./packages/plugin/package.json').version") >/dev/null 2>&1; then
+              echo "plugin version already published — continuing"
+            else
+              exit $EXIT
+            fi
+          }
       - name: Create GitHub Release
         if: steps.version.outputs.changed == 'true'
         env:

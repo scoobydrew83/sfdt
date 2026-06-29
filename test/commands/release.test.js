@@ -223,6 +223,131 @@ describe('release command', () => {
     expect(print.success).toHaveBeenCalledWith('Tag pushed to remote');
   });
 
+  it('rejects an invalid release name', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'release', '--name', 'bad name!']);
+
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('letters, numbers'));
+    expect(process.exitCode).toBe(1);
+    expect(runScript).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown package target', async () => {
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/project',
+      features: { ai: false },
+      packageDirectories: [{ name: 'marketing' }],
+    });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'release', '--package', 'nope']);
+
+    expect(print.error).toHaveBeenCalledWith(
+      expect.stringContaining('Unknown package "nope". Valid options: all, marketing'),
+    );
+    expect(process.exitCode).toBe(1);
+    expect(runScript).not.toHaveBeenCalled();
+  });
+
+  it('resolves --name today to an ISO date and passes it to the script', async () => {
+    isAiAvailable.mockResolvedValue(false);
+    mockPromptFlow();
+    const today = new Date().toISOString().slice(0, 10);
+
+    await createProgram().parseAsync(['node', 'sfdt', 'release', '--name', 'today']);
+
+    expect(runScript).toHaveBeenCalledWith(
+      'core/generate-release-manifest.sh',
+      expect.any(Object),
+      expect.objectContaining({ env: expect.objectContaining({ SFDT_RELEASE_NAME: today }) }),
+    );
+  });
+
+  it('aborts the git workflow when commit is declined', async () => {
+    isAiAvailable.mockResolvedValue(false);
+    execa.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && args[0] === 'status') {
+        return Promise.resolve({ exitCode: 0, stdout: 'A  manifest/release/rl-1.0.0-package.xml' });
+      }
+      return Promise.resolve({ exitCode: 0, stdout: '' });
+    });
+    mockPromptFlow({ doCommit: false });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'release', '1.0.0']);
+
+    expect(print.warning).toHaveBeenCalledWith('Changes not committed');
+    const commitCall = execa.mock.calls.find((c) => c[0] === 'git' && c[1][0] === 'commit');
+    expect(commitCall).toBeUndefined();
+  });
+
+  it('confirms release notes saved when the file exists after generation', async () => {
+    const fse = (await import('fs-extra')).default;
+    fse.pathExists.mockResolvedValue(true);
+    isAiAvailable.mockResolvedValue(true);
+    runAiPrompt.mockResolvedValue({ stdout: 'notes', exitCode: 0 });
+    mockPromptFlow({ generateNotes: true });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'release', '1.0.0']);
+
+    expect(print.success).toHaveBeenCalledWith(
+      expect.stringContaining('Release notes saved to'),
+    );
+  });
+
+  it('uses subpath layout for per-package release-note paths', async () => {
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/project',
+      features: { ai: false },
+      manifestLayout: 'subpath',
+      packageDirectories: [{ name: 'marketing' }],
+    });
+    isAiAvailable.mockResolvedValue(false);
+    // notes file exists so gitWorkflow stages it via the resolved subpath path
+    const fse = (await import('fs-extra')).default;
+    fse.pathExists.mockResolvedValue(true);
+    execa.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && args[0] === 'status') {
+        return Promise.resolve({ exitCode: 0, stdout: 'A  manifest/release/marketing/rl-1.0.0-package.xml' });
+      }
+      return Promise.resolve({ exitCode: 0, stdout: '' });
+    });
+    mockPromptFlow({ doCommit: false });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'release', '1.0.0', '--package', 'marketing']);
+
+    // subpath layout stages release-notes/marketing/rl-1.0.0-RELEASE-NOTES.md
+    const addNotes = execa.mock.calls.find(
+      (c) => c[0] === 'git' && c[1][0] === 'add' &&
+        c[1].includes('release-notes/marketing/rl-1.0.0-RELEASE-NOTES.md'),
+    );
+    expect(addNotes).toBeDefined();
+  });
+
+  it('uses flat layout for per-package release-note paths', async () => {
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/project',
+      features: { ai: false },
+      manifestLayout: 'flat',
+      packageDirectories: [{ name: 'marketing' }],
+    });
+    isAiAvailable.mockResolvedValue(false);
+    const fse = (await import('fs-extra')).default;
+    fse.pathExists.mockResolvedValue(true);
+    execa.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && args[0] === 'status') {
+        return Promise.resolve({ exitCode: 0, stdout: 'A  manifest/release/rl-1.0.0-marketing-package.xml' });
+      }
+      return Promise.resolve({ exitCode: 0, stdout: '' });
+    });
+    mockPromptFlow({ doCommit: false });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'release', '1.0.0', '--package', 'marketing']);
+
+    const addNotes = execa.mock.calls.find(
+      (c) => c[0] === 'git' && c[1][0] === 'add' &&
+        c[1].includes('release-notes/rl-1.0.0-marketing-RELEASE-NOTES.md'),
+    );
+    expect(addNotes).toBeDefined();
+  });
+
   it('asks about deployment before push', async () => {
     isAiAvailable.mockResolvedValue(false);
     // git status shows staged files

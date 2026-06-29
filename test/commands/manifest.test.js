@@ -343,6 +343,81 @@ describe('manifest command', () => {
     );
   });
 
+  it('rejects an unsafe git ref', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest', '--base', '-x']);
+
+    expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Invalid git ref'));
+    expect(process.exitCode).toBe(1);
+    expect(execa).not.toHaveBeenCalled();
+  });
+
+  it('rejects a release name that does not start alphanumeric', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest', '--name', '-bad']);
+
+    expect(print.error).toHaveBeenCalledWith(
+      expect.stringContaining('--name must start with an alphanumeric'),
+    );
+    expect(process.exitCode).toBe(1);
+    expect(execa).not.toHaveBeenCalled();
+  });
+
+  it('errors when --package is used but no packageDirectories configured', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest', '--package', 'core']);
+
+    expect(print.error).toHaveBeenCalledWith(
+      expect.stringContaining('--package requires packageDirectories'),
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('diffs the deduplicated package roots when --package=all with multiple packages', async () => {
+    loadConfig.mockResolvedValue(multiPkgConfig);
+    const diffOutput = 'A\tforce-app/marketing/classes/LeadHelper.cls';
+    execa
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: diffOutput });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest']);
+
+    const diffCall = execa.mock.calls.find((c) => c[1]?.includes('--name-status'));
+    // both package roots collapse to the single 'force-app/' prefix
+    expect(diffCall[1]).toContain('force-app/');
+    expect(fs.writeFile).toHaveBeenCalled();
+  });
+
+  it('writes to an explicit --output path', async () => {
+    const diffOutput = 'A\tforce-app/main/default/classes/Foo.cls';
+    execa
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: diffOutput });
+
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'manifest', '--output', 'manifest/custom.xml',
+    ]);
+
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining('custom.xml'),
+      expect.stringContaining('<name>ApexClass</name>'),
+    );
+  });
+
+  it('warns about unmapped files and truncates the list past 10', async () => {
+    const lines = ['A\tforce-app/main/default/classes/Foo.cls'];
+    for (let i = 0; i < 11; i++) {
+      lines.push(`A\tforce-app/main/default/notes/file${i}.txt`);
+    }
+    execa
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'abc1234' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: lines.join('\n') });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'manifest']);
+
+    expect(print.warning).toHaveBeenCalledWith(
+      expect.stringContaining('could not be mapped to a metadata type'),
+    );
+    expect(print.step).toHaveBeenCalledWith(expect.stringContaining('... and 1 more'));
+  });
+
   it('includes [pkgTarget] in print.header when --package is given', async () => {
     loadConfig.mockResolvedValue(multiPkgConfig);
     const diffOutput = 'A\tforce-app/main/default/classes/AccountHelper.cls';

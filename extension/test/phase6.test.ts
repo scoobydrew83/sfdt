@@ -17,10 +17,57 @@ import {
   createFlowDeployFeature,
 } from '../features/flow-deploy.js';
 import { buildSubflowGraph, type FlowConflictGroup } from '@sfdt/flow-core';
+import { SalesforceApiClient, type MessageBus } from '../lib/salesforce-api.js';
 
 beforeEach(() => {
   document.body.replaceChildren();
 });
+
+// A fetch-backed SalesforceApiClient whose responses are routed by the SOQL
+// `q` query param, mirroring the pattern in feature-smoke.test.ts. `route`
+// returns the JSON records array for a query, or throws to simulate a 4xx.
+function makeRoutedApi(route: (soql: string) => unknown[]): SalesforceApiClient {
+  const fetchImpl = (async (url: string | URL | Request) => {
+    const soql = new URL(String(url), 'http://x').searchParams.get('q') ?? '';
+    let records: unknown[];
+    try {
+      records = route(soql);
+    } catch {
+      return {
+        ok: false,
+        status: 400,
+        async json() {
+          return {};
+        },
+        async text() {
+          return 'bad request';
+        },
+      } as Response;
+    }
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { size: records.length, done: true, records };
+      },
+      async text() {
+        return '{}';
+      },
+    } as Response;
+  }) as typeof fetch;
+  return new SalesforceApiClient({
+    win: {
+      location: { hostname: 'x.lightning.force.com', origin: 'https://x.lightning.force.com', search: '' },
+    } as never,
+    messageBus: {
+      sendMessage: (async () => ({
+        ok: true,
+        sids: { 'https://x.my.salesforce.com': 'sid' },
+      })) as unknown as MessageBus['sendMessage'],
+    },
+    fetchImpl,
+  });
+}
 
 describe('extension/features/trigger-conflicts', () => {
   it('feature id is stable', () => {
@@ -29,8 +76,10 @@ describe('extension/features/trigger-conflicts', () => {
 
   it('buildConflictsModal renders the empty state when no groups are present', () => {
     const { buildConflictsModal } = _triggerConflictsTestApi();
-    document.body.appendChild(buildConflictsModal(document, []));
-    expect(document.body.textContent).toContain('No record-triggered flows');
+    buildConflictsModal(document, []);
+    expect(document.querySelector('.sfdt-view-overlay')?.textContent).toContain(
+      'No record-triggered flows',
+    );
   });
 
   it('buildConflictsModal lists each group with object · timing · event', () => {
@@ -46,11 +95,12 @@ describe('extension/features/trigger-conflicts', () => {
         ],
       },
     ];
-    document.body.appendChild(buildConflictsModal(document, groups));
-    expect(document.body.textContent).toContain('Account · AfterSave · Create');
-    expect(document.body.textContent).toContain('Flow A');
-    expect(document.body.textContent).toContain('Flow B');
-    expect(document.body.textContent).toContain('no entry criteria');
+    buildConflictsModal(document, groups);
+    const overlay = document.querySelector('.sfdt-view-overlay')!;
+    expect(overlay.textContent).toContain('Account · AfterSave · Create');
+    expect(overlay.textContent).toContain('Flow A');
+    expect(overlay.textContent).toContain('Flow B');
+    expect(overlay.textContent).toContain('no entry criteria');
   });
 
   it('buildConflictsModal renders Activate/Deactivate buttons that fire the bridge callbacks', async () => {
@@ -64,19 +114,17 @@ describe('extension/features/trigger-conflicts', () => {
         flows: [{ flowId: 'My_Flow', label: 'My Flow', entryCriteriaSummary: null }],
       },
     ];
-    document.body.appendChild(
-      buildConflictsModal(document, groups, {
-        extras: { My_Flow: { latestVersionNumber: 3, active: true } },
-        onActivate: async (flowApiName, toVersion) => {
-          calls.push({ kind: 'activate', flowApiName, toVersion });
-          return { ok: true };
-        },
-        onDeactivate: async (flowApiName) => {
-          calls.push({ kind: 'deactivate', flowApiName });
-          return { ok: true };
-        },
-      }),
-    );
+    buildConflictsModal(document, groups, {
+      extras: { My_Flow: { latestVersionNumber: 3, active: true } },
+      onActivate: async (flowApiName, toVersion) => {
+        calls.push({ kind: 'activate', flowApiName, toVersion });
+        return { ok: true };
+      },
+      onDeactivate: async (flowApiName) => {
+        calls.push({ kind: 'deactivate', flowApiName });
+        return { ok: true };
+      },
+    });
 
     // The Activate button is labelled with the latest version number from extras.
     const buttons = Array.from(document.querySelectorAll('button'));
@@ -118,12 +166,10 @@ describe('extension/features/trigger-conflicts', () => {
         flows: [{ flowId: 'My_Flow', label: 'My Flow', entryCriteriaSummary: null }],
       },
     ];
-    document.body.appendChild(
-      buildConflictsModal(document, groups, {
-        extras: { My_Flow: { latestVersionNumber: 2, active: true } },
-        onDeactivate: async () => ({ ok: false, error: 'sfdt offline' }),
-      }),
-    );
+    buildConflictsModal(document, groups, {
+      extras: { My_Flow: { latestVersionNumber: 2, active: true } },
+      onDeactivate: async () => ({ ok: false, error: 'sfdt offline' }),
+    });
     const buttons = Array.from(document.querySelectorAll('button'));
     const deactivateBtn = buttons.find((b) => b.textContent === 'Deactivate') as HTMLButtonElement;
     deactivateBtn.click();
@@ -133,6 +179,55 @@ describe('extension/features/trigger-conflicts', () => {
     expect(document.body.textContent).toContain('Active');
     // The ✗ status indicator carries the error message in its title.
     expect(document.querySelector('span[title="sfdt offline"]')).toBeTruthy();
+  });
+
+  it('describeBridgeError maps each bridge code to a user-facing string', () => {
+    const { describeBridgeError } = _triggerConflictsTestApi();
+    const mk = (code?: string, error = 'raw error') =>
+      describeBridgeError({ ok: false, requestId: 'r', error, code: code as never });
+    expect(describeBridgeError({ ok: true, requestId: 'r', data: {} } as never)).toBe('OK');
+    expect(mk('BRIDGE_UNAUTHORIZED')).toMatch(/token/i);
+    expect(mk('BRIDGE_FORBIDDEN')).toMatch(/origin/i);
+    expect(mk('NOT_IMPLEMENTED')).toMatch(/not support/i);
+    expect(mk('BRIDGE_OFFLINE')).toMatch(/sfdt is not running/);
+    // NOT_FOUND and unknown codes fall through to the raw error text.
+    expect(mk('NOT_FOUND')).toBe('raw error');
+    expect(mk('SOME_OTHER_CODE')).toBe('raw error');
+    // Missing code is treated as BRIDGE_OFFLINE.
+    expect(mk(undefined)).toMatch(/sfdt is not running/);
+  });
+
+  it('fetchActiveFlows builds candidates+extras, skipping flows without metadata or that error', async () => {
+    const { fetchActiveFlows } = _triggerConflictsTestApi();
+    const api = makeRoutedApi((soql) => {
+      if (soql.includes('FROM FlowDefinition')) {
+        return [
+          { Id: '300A', DeveloperName: 'Has_Meta', ActiveVersionId: '301A', LatestVersion: { VersionNumber: 4 } },
+          { Id: '300B', DeveloperName: 'No_Meta', ActiveVersionId: '301B', LatestVersion: { VersionNumber: 2 } },
+          { Id: '300C', DeveloperName: 'Errors', ActiveVersionId: '301C', LatestVersion: null },
+        ];
+      }
+      // Per-flow Flow query, routed by the version id embedded in the WHERE clause.
+      if (soql.includes("'301A'")) return [{ Id: '301A', MasterLabel: 'Has Meta', Metadata: { start: {} } }];
+      if (soql.includes("'301B'")) return [{ Id: '301B', MasterLabel: 'No Meta' }]; // no Metadata → skipped
+      if (soql.includes("'301C'")) throw new Error('boom'); // per-flow read error → swallowed
+      return [];
+    });
+
+    const { candidates, extras } = await fetchActiveFlows(api);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ flowId: 'Has_Meta', label: 'Has Meta' });
+    expect(extras.Has_Meta).toEqual({ latestVersionNumber: 4, active: true });
+    expect(extras.No_Meta).toBeUndefined();
+    expect(extras.Errors).toBeUndefined();
+  });
+
+  it('fetchActiveFlows returns empty results when no flows are active', async () => {
+    const { fetchActiveFlows } = _triggerConflictsTestApi();
+    const api = makeRoutedApi((soql) => (soql.includes('FROM FlowDefinition') ? [] : []));
+    const { candidates, extras } = await fetchActiveFlows(api);
+    expect(candidates).toHaveLength(0);
+    expect(Object.keys(extras)).toHaveLength(0);
   });
 });
 
@@ -153,9 +248,10 @@ describe('extension/features/subflow-graph', () => {
         metadata: { processType: 'Flow', subflows: [{ name: 'callA', flowName: 'A' }] },
       },
     ]);
-    document.body.appendChild(buildSubflowGraphModal(document, graph));
-    expect(document.body.textContent).toContain('1 cycle detected');
-    expect(document.body.textContent).toMatch(/A → B → A/);
+    buildSubflowGraphModal(document, graph);
+    const overlay = document.querySelector('.sfdt-view-overlay')!;
+    expect(overlay.textContent).toContain('1 cycle detected');
+    expect(overlay.textContent).toMatch(/A → B → A/);
   });
 
   it('buildSubflowGraphModal surfaces unresolved subflow references', () => {
@@ -166,9 +262,10 @@ describe('extension/features/subflow-graph', () => {
         metadata: { processType: 'Flow', subflows: [{ name: 'callX', flowName: 'Ghost' }] },
       },
     ]);
-    document.body.appendChild(buildSubflowGraphModal(document, graph));
-    expect(document.body.textContent).toContain(`reference`);
-    expect(document.body.textContent).toContain('Ghost');
+    buildSubflowGraphModal(document, graph);
+    const overlay = document.querySelector('.sfdt-view-overlay')!;
+    expect(overlay.textContent).toContain(`reference`);
+    expect(overlay.textContent).toContain('Ghost');
   });
 
   it('buildSubflowGraphModal lists every flow with depth + call counts', () => {
@@ -177,11 +274,12 @@ describe('extension/features/subflow-graph', () => {
       { id: 'A', metadata: { processType: 'Flow', subflows: [{ name: 'b', flowName: 'B' }] } },
       { id: 'B', metadata: { processType: 'Flow', subflows: [] } },
     ]);
-    document.body.appendChild(buildSubflowGraphModal(document, graph));
+    buildSubflowGraphModal(document, graph);
+    const overlay = document.querySelector('.sfdt-view-overlay')!;
     // List view is reachable behind the toggle — its body content is still
     // attached to the DOM (just display:none until the user switches).
-    expect(document.body.textContent).toContain('depth 1');
-    expect(document.body.textContent).toContain('depth 0');
+    expect(overlay.textContent).toContain('depth 1');
+    expect(overlay.textContent).toContain('depth 0');
   });
 
   it('buildSubflowGraphSvg renders one rect per node and an edge per outgoing call', () => {
@@ -269,7 +367,7 @@ describe('extension/features/flow-deploy', () => {
         error: 'x',
         code: 'NOT_IMPLEMENTED',
       }),
-    ).toMatch(/not implemented/i);
+    ).toMatch(/not available/i);
     expect(
       describeBridgeError({
         ok: false,
@@ -281,5 +379,58 @@ describe('extension/features/flow-deploy', () => {
     expect(
       describeBridgeError({ ok: false, requestId: 'r', error: 'underlying' }),
     ).toBe('sfdt is not running. Start `sfdt ui` or install the native messaging host.');
+  });
+
+  it('describeBridgeError returns the raw error for an unrecognised code', () => {
+    const { describeBridgeError } = _flowDeployTestApi();
+    expect(
+      describeBridgeError({
+        ok: false,
+        requestId: 'r',
+        error: 'something specific',
+        code: 'SOME_NEW_CODE' as never,
+      }),
+    ).toBe('something specific');
+  });
+
+  it('describeBridgeError returns OK for a successful response', () => {
+    const { describeBridgeError } = _flowDeployTestApi();
+    expect(describeBridgeError({ ok: true, requestId: 'r', data: {} } as never)).toBe('OK');
+  });
+
+  it('onActivate warns and opens no modal when not on the Flow Builder canvas', async () => {
+    const win = { location: { href: 'https://example.com/not-salesforce' } } as Window;
+    const feature = createFlowDeployFeature({ win });
+    await feature.onActivate?.();
+    expect(document.querySelector('.sfdt-toast')?.textContent).toMatch(/Flow Builder canvas/);
+    // No deploy modal should have been rendered.
+    expect(document.body.querySelector('button')).toBeNull();
+  });
+
+  it('onActivate errors when the Flow Builder URL carries no flowId', async () => {
+    const win = {
+      location: { href: 'https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app' },
+    } as Window;
+    const feature = createFlowDeployFeature({ win });
+    await feature.onActivate?.();
+    expect(document.querySelector('.sfdt-toast')?.textContent).toMatch(/could not determine the current flow id/i);
+  });
+
+  it('onActivate renders the deploy/rollback modal which Cancel dismisses', async () => {
+    const win = {
+      location: {
+        href: 'https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app?flowId=301AB0000001abcAAA',
+      },
+    } as Window;
+    const feature = createFlowDeployFeature({ win });
+    await feature.onActivate?.();
+
+    const buttons = Array.from(document.querySelectorAll('button')).map((b) => b.textContent);
+    expect(buttons).toEqual(expect.arrayContaining(['Deploy', 'Rollback', 'Cancel']));
+
+    const cancel = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Cancel')!;
+    cancel.click();
+    // The overlay (and its buttons) are removed on Cancel.
+    expect(Array.from(document.querySelectorAll('button')).some((b) => b.textContent === 'Deploy')).toBe(false);
   });
 });

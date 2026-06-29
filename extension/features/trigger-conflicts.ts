@@ -11,6 +11,7 @@ import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-ap
 import { loadSettings } from '../lib/settings.js';
 import { createBridgeClient, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 
 interface FlowDefinitionRecord {
   Id: string;
@@ -99,36 +100,16 @@ export function buildConflictsModal(
   doc: Document,
   groups: readonly FlowConflictGroup[],
   options: ConflictModalOptions = {},
-): HTMLDivElement {
+): ViewHandle {
   const extras = options.extras ?? {};
   const onActivate = options.onActivate;
   const onDeactivate = options.onDeactivate;
 
-  const overlay = doc.createElement('div');
-  overlay.className = 'sfdt-trigger-conflicts-overlay';
-  overlay.style.cssText =
-    'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-
-  const modal = doc.createElement('div');
-  modal.style.cssText =
-    'background: #fff; border-radius: 4px; width: 720px; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column;';
-
-  const header = doc.createElement('div');
-  header.style.cssText =
-    'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center; font-weight: 600;';
-  const headerLabel = doc.createElement('span');
   const totalFlows = groups.reduce((n, g) => n + g.flows.length, 0);
-  headerLabel.textContent =
+  const title =
     groups.length === 0
       ? 'Trigger Conflicts'
       : `Trigger Conflicts — ${groups.length} group${groups.length === 1 ? '' : 's'} (${totalFlows} flows)`;
-  const closeBtn = doc.createElement('button');
-  closeBtn.textContent = '×';
-  closeBtn.style.cssText = 'background: none; border: 0; font-size: 22px; cursor: pointer;';
-  closeBtn.addEventListener('click', () => overlay.remove());
-  header.appendChild(headerLabel);
-  header.appendChild(closeBtn);
-  modal.appendChild(header);
 
   const body = doc.createElement('div');
   body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1;';
@@ -164,8 +145,6 @@ export function buildConflictsModal(
     }
   }
 
-  modal.appendChild(body);
-
   const footer = doc.createElement('div');
   footer.style.cssText =
     'padding: 12px 16px; border-top: 1px solid #d8dde6; display: flex; justify-content: flex-end; gap: 8px;';
@@ -173,15 +152,11 @@ export function buildConflictsModal(
   closeFooter.textContent = 'Close';
   closeFooter.style.cssText =
     'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer;';
-  closeFooter.addEventListener('click', () => overlay.remove());
   footer.appendChild(closeFooter);
-  modal.appendChild(footer);
 
-  overlay.appendChild(modal);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
-  return overlay;
+  const view = presentView({ title, body, footer, doc, width: '720px' });
+  closeFooter.addEventListener('click', () => view.close());
+  return view;
 }
 
 function buildFlowRow(
@@ -377,31 +352,29 @@ export function createTriggerConflictsFeature(
         const { candidates, extras } = await fetchActiveFlows(api);
         const groups = detectTriggerConflicts(candidates);
         loading.remove();
-        doc.body.appendChild(
-          buildConflictsModal(doc, groups, {
-            extras,
-            onActivate: async (flowApiName, toVersion) => {
-              const response = await dispatchRollback(flowApiName, toVersion);
-              if (response.ok) {
-                showToast(`Activated v${toVersion} of "${flowApiName}"`, { kind: 'success', doc });
-                return { ok: true };
-              }
-              const msg = describeBridgeError(response);
-              showToast(`Activate failed: ${msg}`, { kind: 'error', doc });
-              return { ok: false, error: msg };
-            },
-            onDeactivate: async (flowApiName) => {
-              const response = await dispatchRollback(flowApiName, 0);
-              if (response.ok) {
-                showToast(`Deactivated "${flowApiName}"`, { kind: 'success', doc });
-                return { ok: true };
-              }
-              const msg = describeBridgeError(response);
-              showToast(`Deactivate failed: ${msg}`, { kind: 'error', doc });
-              return { ok: false, error: msg };
-            },
-          }),
-        );
+        buildConflictsModal(doc, groups, {
+          extras,
+          onActivate: async (flowApiName, toVersion) => {
+            const response = await dispatchRollback(flowApiName, toVersion);
+            if (response.ok) {
+              showToast(`Activated v${toVersion} of "${flowApiName}"`, { kind: 'success', doc });
+              return { ok: true };
+            }
+            const msg = describeBridgeError(response);
+            showToast(`Activate failed: ${msg}`, { kind: 'error', doc });
+            return { ok: false, error: msg };
+          },
+          onDeactivate: async (flowApiName) => {
+            const response = await dispatchRollback(flowApiName, 0);
+            if (response.ok) {
+              showToast(`Deactivated "${flowApiName}"`, { kind: 'success', doc });
+              return { ok: true };
+            }
+            const msg = describeBridgeError(response);
+            showToast(`Deactivate failed: ${msg}`, { kind: 'error', doc });
+            return { ok: false, error: msg };
+          },
+        });
       } catch (err) {
         loading.remove();
         showToast(`Trigger conflicts failed: ${err instanceof Error ? err.message : String(err)}`, {

@@ -5,6 +5,7 @@ import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-ap
 import { loadSettings } from '../lib/settings.js';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
 import { showToast } from '../ui/toast.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 
 const STORAGE_KEY_DISABLED = 'aiPromptLibrary.disabledStandardIds';
 const STORAGE_KEY_CUSTOMS = 'aiPromptLibrary.customPrompts';
@@ -48,37 +49,15 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
   const library =
     options.library ?? new PromptLibrary({ storage: chromeStorageAdapter() });
 
-  let overlay: HTMLDivElement | null = null;
+  let view: ViewHandle | null = null;
 
   function closePanel(): void {
-    overlay?.remove();
-    overlay = null;
+    view?.close();
+    view = null;
   }
 
   async function openPanel(): Promise<void> {
     closePanel();
-    overlay = doc.createElement('div');
-    overlay.className = 'sfdt-ai-panel-overlay';
-    overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-
-    const panel = doc.createElement('div');
-    panel.className = 'sfdt-ai-panel';
-    panel.style.cssText =
-      'background: #fff; border-radius: 4px; width: 640px; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column;';
-
-    const header = doc.createElement('div');
-    header.className = 'sfdt-ai-panel-header';
-    header.style.cssText =
-      'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center; font-weight: 600;';
-    const title = doc.createElement('span');
-    title.textContent = '⚡ Flow Metadata & AI Assistant';
-    header.appendChild(title);
-    const closeBtn = doc.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.style.cssText = 'background: none; border: 0; font-size: 22px; cursor: pointer; color: #80868d;';
-    closeBtn.addEventListener('click', closePanel);
-    header.appendChild(closeBtn);
 
     const body = doc.createElement('div');
     body.className = 'sfdt-ai-panel-body';
@@ -87,17 +66,20 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
     loading.textContent = 'Fetching Flow metadata…';
     body.appendChild(loading);
 
-    panel.appendChild(header);
-    panel.appendChild(body);
-    overlay.appendChild(panel);
-    doc.body.appendChild(overlay);
-
     const escHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closePanel();
     };
     doc.addEventListener('keydown', escHandler, true);
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) closePanel();
+
+    view = presentView({
+      title: '⚡ Flow Metadata & AI Assistant',
+      body,
+      doc,
+      width: '640px',
+      onClose: () => {
+        doc.removeEventListener('keydown', escHandler, true);
+        view = null;
+      },
     });
 
     try {
@@ -234,7 +216,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
     },
 
     onActivate() {
-      if (overlay) closePanel();
+      if (view) closePanel();
       else void openPanel();
     },
   };
