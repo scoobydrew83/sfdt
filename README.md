@@ -39,8 +39,11 @@ extension and the [VS Code extension](https://marketplace.visualstudio.com/items
 - **AI-powered code review, test failure analysis, changelog generation, and release notes** — optional, works with Claude, Gemini, or OpenAI
 - **Org metadata comparison** — diff two orgs or local source vs org with optional package.xml export (`sfdt compare`)
 - **Local web dashboard** for test results, preflight, drift monitoring, and org comparison (`sfdt ui`)
-- **Plugin architecture** — extend sfdt with `sfdt-plugin-*` npm packages or local `.sfdt/plugins/` scripts
-- Slack notifications for deployment events
+- **Smart delta deployments** — minimal git-delta package with overwrite protection, automatic test-level selection, optional AI / coding-agent auto-fix (`sfdt deploy --smart`)
+- **Native org health & operations suite** — diagnose (`sfdt audit`), monitor/backup (`sfdt monitor`), dependency analysis (`sfdt dependencies`), and Apex coverage gating (`sfdt coverage`)
+- **CI/CD pipeline templates** for GitHub, GitLab, Azure, and Bitbucket (`sfdt ci init`); PR decoration (`sfdt pr comment`) and cross-org retrofit (`sfdt retrofit`)
+- **Multi-channel notifications** — Slack, MS Teams, email, webhook, and Grafana Loki, with optional AI executive-summary digests (`sfdt notify`)
+- **Plugin architecture** — extend sfdt with `sfdt-plugin-*` npm packages or local `.sfdt/plugins/` scripts, plus a **Salesforce CLI plugin** exposing every command as `sf sfdt <command>` (`sf plugins install @sfdt/plugin`)
 - Works with **any** Salesforce DX project — no project-specific values hardcoded
 
 For in-depth command walkthroughs and workflow examples, see [docs/USAGE.md](docs/USAGE.md).
@@ -99,6 +102,7 @@ sf sfdt deploy --dry-run
 |---|---|---|
 | `sfdt init` | Initialize `.sfdt/` config (interactive) | — |
 | `sfdt deploy` | Deploy to a Salesforce org | `--managed`, `--skip-preflight`, `--dry-run`, `--source-dir <path>` |
+| `sfdt deploy --smart` | Smart git-delta deploy: minimal package, overwrite protection, auto test-level | `--delta-base <ref>`, `--delta-head <ref>`, `--prod`, `--pr-comment`, `--ai-fix`, `--agent` |
 | `sfdt release` | Generate release manifest + optional AI release notes | `--package <name\|all>`, `--name <label>` |
 | `sfdt test` | Run Apex tests with the enhanced test runner | `--legacy`, `--analyze`, `--dry-run` |
 | `sfdt pull` | Pull metadata from the configured org | `--dry-run` |
@@ -108,14 +112,20 @@ sf sfdt deploy --dry-run
 | `sfdt drift` | Detect metadata drift between local source and an org | `--org <alias>`, `--json` |
 | `sfdt compare` | Compare metadata between two orgs or local source vs an org | `--source <alias\|local>`, `--target <alias>`, `--output <file>` |
 | `sfdt scan` | Fetch complete metadata inventory from an org | `--org <alias>`, `--output <file>`, `--format json\|table` |
-| `sfdt notify` | Send Slack deployment notifications | `--org <alias>`, `--version <ver>`, `--message <msg>` |
+| `sfdt notify` | Multi-channel notifications (Slack, Teams, email, webhook, Loki); `notify snapshot --type audit\|monitor` pushes the latest org-health snapshot | `--org <alias>`, `--version <ver>`, `--message <msg>`, `--type <audit\|monitor>` |
+| `sfdt pr comment` | Post the latest audit/monitor snapshot (or `--body`/`--file`) to the current PR via `gh` | `--type <audit\|monitor>`, `--body <md>`, `--file <path>`, `--pr <n>` |
+| `sfdt retrofit` | Retrieve a metadata set from a source org, commit, then smart-deploy to a target (validate-only unless `--execute`) | `--source <alias>`, `--target <alias>`, `--execute` |
+| `sfdt ci init` | Generate a CI/CD pipeline (scheduled monitor or PR smart-deploy) for a provider | `--provider <github\|gitlab\|azure\|bitbucket>`, `--type <monitor\|deploy>` |
 
 ### Org Health & Operations
 
 | Command | Description | Key Options |
 |---|---|---|
-| `sfdt audit [check\|all]` | Diagnose org health: `audittrail`, `licenses`, `mfa`, `unused-apex`, `inactive-users`, `api-versions` | `--org <alias>`, `--json` |
-| `sfdt monitor [check\|all]` | Monitor org: `limits`, `errors`, `health`, plus `backup`; `all --backup` to include a metadata backup | `--org <alias>`, `--backup`, `--json` |
+| `sfdt audit [check\|all]` | Diagnose org health (~15 checks): audit trail, licenses, MFA, unused Apex/perm-sets, inactive users/flows, inactive validation & workflow rules, connected apps, field descriptions, object- & field-level access lint, API versions | `--org <alias>`, `--json`, `--notify` |
+| `sfdt monitor [check\|all]` | Monitor org (~7 checks): limits, Apex job errors, health score, org info, deploy history, deprecated API, flow errors; `all --backup` to include a metadata backup | `--org <alias>`, `--backup`, `--json`, `--notify` |
+| `sfdt monitor schedule` | Alias for `ci init --type monitor` — scaffold a scheduled monitoring pipeline | `--provider <github\|gitlab\|azure\|bitbucket>` |
+| `sfdt dependencies <name>` | "What references this / what does this reference" via MetadataComponentDependency | `--type <apex\|flow\|field\|page\|lwc>`, `--org <alias>`, `--json` |
+| `sfdt coverage` | Org-wide + per-class Apex coverage with a CI gate | `--threshold <pct>`, `--org <alias>`, `--json` |
 | `sfdt monitor backup` | Retrieve a full metadata backup into the configured backup directory | `--org <alias>`, `--json` |
 | `sfdt docs generate` | Generate MkDocs-compatible docs (objects, Apex, flows, LWC) with optional AI overview and per-component Developer/Admin/User/DevOps guides | `--ai`, `--roles [list]`, `--json` |
 | `sfdt docs diagram` | Print/write a Mermaid ER diagram of the data model | `--output <file>`, `--json` |

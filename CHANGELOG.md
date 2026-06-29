@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-06-29
+
+A large feature release completing the sfdx-hardis parity effort: a multi-channel notifier, smart delta deployments with an optional coding-agent auto-fix loop, CI/CD pipeline templates, PR decoration and cross-org retrofit, two new analysis commands, and a brand-new Salesforce CLI plugin — all sharing one org-health rulebook in `@sfdt/flow-core`.
+
+### Added
+
+- **`sfdt notify` — multi-channel notifications.** A provider-agnostic dispatcher for Slack, MS Teams, generic webhook, Grafana Loki, and email (lazy-loaded nodemailer). Channels are configured under a new `notifications` block with per-channel event filters and a severity threshold; channel secrets are referenced by env-var **name**, never inline. `sfdt notify <event>` and `notify snapshot --type audit|monitor` drive it, and `audit all` / `monitor all` accept `--notify` to push a snapshot after a run. When `notifications.summary.enabled`, an AI **executive-summary** digest (editable `monitor-summary` prompt, snapshot redacted, works for every provider) becomes the message body.
+- **`sfdt deploy --smart` — smart delta deploy.** Computes a git delta (reusing the `manifest` engine), applies `package-no-overwrite.xml` protection, picks the minimal safe test level (`NoTestRun` / `RunSpecifiedTests` / `RunLocalTests`, never downgraded in production), and runs a self-contained non-interactive `sf project deploy validate|start` with no archive/commit side effects. `--ai-fix` analyses failures via the editable `deploy-error` prompt; with `ai.agent.enabled` + `ai.agent.allowWrite` (CLI providers only) a **bounded, default-off coding-agent auto-fix loop** edits the repo and re-validates via dry-run each turn (never deploys).
+- **`sfdt ci init` — CI/CD pipeline templates.** Generates a ready-to-use scheduled-monitor or PR-deploy pipeline for GitHub, GitLab, Azure, or Bitbucket (`--provider`/`--type`). `sfdt monitor schedule` is a thin alias.
+- **`sfdt dependencies <name> --type` and `sfdt coverage`.** `dependencies` answers "what references this / what does this reference" via `MetadataComponentDependency`; `coverage` reports org-wide + per-class Apex coverage with a non-zero-exit CI gate (`--threshold`). Both emit the sf-native JSON envelope.
+- **`sfdt pr comment` and `sfdt retrofit`.** `pr comment --type audit|monitor` (or `--body`/`--file`) posts the latest snapshot to the current PR via a thin `gh` wrapper, and `deploy --smart --pr-comment` decorates the PR with the delta + outcome. `retrofit --source <a> --target <b>` retrieves a configurable metadata set from a source org, commits, then smart-deploys to the target (validate-only unless `--execute`).
+- **`@sfdt/plugin` — Salesforce CLI plugin.** A new thin oclif wrapper that exposes the whole CLI as `sf sfdt <command>` (`sf plugins install @sfdt/plugin`). It reimplements no logic — commands forward argv to the bundled `sfdt` binary and stream output (including `--json`) verbatim. Published coupled to the CLI.
+- **Expanded org-health checks.** `audit` grows to ~15 checks (inactive flows/validation rules/workflow rules, unused permission sets, connected apps, missing field descriptions, unreferenced Apex, object- and field-level access lint) and `monitor` to ~7 (org info, deploy history, deprecated API, flow errors). Beta/license-gated checks degrade to `warn` (never `error`) when the org can't run them, so `audit all` / `monitor all` don't fail CI over a missing API.
+- **New config blocks** — `notifications`, `ai.agent`, and `deployment.smart` (template + schema + validation).
+- **New MCP tools** — `sfdt_notify`, `sfdt_pr_comment`, and `sfdt_retrofit`; `sfdt_deploy` extended with `smart`/`deltaBase`/`deltaHead`/`dryRun`.
+- **GUI** — a Notifications page (redacted channel descriptors + test action) plus Scratch, Data, and Docs pages and an org-wide coverage section, backed by new read-only `/api/{notifications,scratch,data,docs,coverage}` routes.
+- **`--agent` non-interactive mode** on `explain`, `review`, and `quality`, so coding agents can drive these without blocking, plus per-metadata-type doc prompts (`doc-apex`/`doc-flow`/`doc-lwc`/`doc-object`).
+
+### Changed
+
+- **Org-health is now computed from one source of truth.** The CLI audit/monitor runners and the GUI import thresholds, severity bands, and summarisers from the shared `@sfdt/flow-core` rulebook instead of diverging copies; the CLI's license/limit warn thresholds unify to 0.75 (amber ≥75%, red ≥90%). **Bumped `@sfdt/flow-core` to 0.9.3** — adds the browser-safe `org-health-checks`, `coverage`, and `dependencies` modules that the new commands rely on, and lifts the flow-quality rulebook into flow-core (the CLI re-exports it, unchanged).
+- **HTTP bridge implements every request kind.** The previously-stubbed `ai`, `drift`, `scan`, and `compare` kinds now run against the CLI's org logic (scan/compare at full parity with the commands; drift returns the latest snapshot, with an opt-in live-refresh); `ai` runs the prompt through the configured provider in the read-only sandbox.
+- **Dependencies** — Docker CI actions bumped to v7/v4 and several dev/prod dependencies updated (prettier, typescript-eslint, vite, wxt, oclif, @vitejs/plugin-react, ora).
+
+### Fixed
+
+- **Notifier** redacts the Grafana Loki webhook payload (the generic-webhook path already did).
+- **Smart deploy** removes the temp manifest directory it created if a manifest write throws.
+- **GUI** scrubs the launch token from the address bar/history after reading it (persisted to `sessionStorage`), always closes the `/api/pull` SSE stream, and recovers from auth-handshake failures (plus a Settings UX fix).
+
+### Security
+
+- Defense-in-depth from the security review: the localhost-only GUI launch token is scrubbed from the browser URL and history after the handshake. Notifier secrets are referenced by env-var name only, and AI / webhook / Loki payloads are run through `redactSensitiveData` before egress.
+
 ## [0.14.1] - 2026-06-26
 
 ### Fixed
