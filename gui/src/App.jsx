@@ -19,6 +19,7 @@ import ExplainPage from './pages/Explain.jsx';
 import DependencyPage from './pages/Dependency.jsx';
 import FlowsPage from './pages/Flows.jsx';
 import SettingsPage from './pages/Settings.jsx';
+import NotificationsPage from './pages/Notifications.jsx';
 import LogsPage from './pages/Logs.jsx';
 import CoveragePage from './pages/Coverage.jsx';
 import ScratchPage from './pages/Scratch.jsx';
@@ -75,6 +76,7 @@ const NAV_GROUPS = [
   {
     label: 'Config',
     items: [
+      { id: 'notifications', label: 'Notifications', Icon: IconActivity },
       { id: 'settings',  label: 'Settings',  Icon: IconSettings },
     ],
   },
@@ -99,6 +101,7 @@ const PAGE_LABELS = {
   flows:      'Flow Intelligence',
   logs:       'Log History',
   dependency: 'Dependency Graph',
+  notifications: 'Notifications',
   scratch:    'Scratch Orgs',
   data:       'Data Sets',
   docs:       'Documentation',
@@ -191,6 +194,7 @@ export default function App() {
       case 'flows':      return <FlowsPage />;
       case 'logs':       return <LogsPage />;
       case 'dependency': return <DependencyPage />;
+      case 'notifications': return <NotificationsPage />;
       case 'scratch':    return <ScratchPage />;
       case 'data':       return <DataPage />;
       case 'docs':       return <DocsPage />;

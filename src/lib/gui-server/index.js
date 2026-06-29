@@ -501,6 +501,32 @@ export function createGuiApp(config, version, port = 7654) {
     }
   });
 
+  // Redacted notification-channel config (never returns secrets/URLs).
+  app.get('/api/notifications', apiLimiter, async (_req, res) => {
+    try {
+      const { describeChannels } = await import('../notifier.js');
+      res.json({
+        enabled: config.notifications?.enabled === true || config.features?.notifications === true,
+        summary: config.notifications?.summary?.enabled === true,
+        channels: describeChannels(config),
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Send a test message to all configured channels.
+  app.post('/api/notifications/test', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { dispatchTest } = await import('../notifier.js');
+      const results = await dispatchTest(config);
+      res.json({ results });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/quality', apiLimiter, async (_req, res) => {
     try {
       const data = await readQuality(logDir);

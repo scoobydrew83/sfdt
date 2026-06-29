@@ -98,6 +98,9 @@
     "ora": "^9.3.0",
     "semver": "^7.8.0"
   },
+  "optionalDependencies": {
+    "nodemailer": "^9.0.1"
+  },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.4",
     "eslint": "^9.22.0",

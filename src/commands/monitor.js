@@ -6,6 +6,8 @@ import { describeFinding } from '@sfdt/flow-core';
 import { loadConfig } from '../lib/config.js';
 import { runMonitor, runBackup, CHECK_IDS, MONITOR_DEFAULTS } from '../lib/monitor-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { dispatchSnapshot } from '../lib/notifier.js';
+import { runCiInit } from './ci.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
 
 const STATUS_COLOR = {
@@ -21,6 +23,9 @@ function buildParams(config) {
     limits: { warnThreshold: m.limitWarnThreshold ?? MONITOR_DEFAULTS.limitWarnThreshold },
     errors: { lookbackDays: m.errorLookbackDays ?? MONITOR_DEFAULTS.errorLookbackDays },
     health: { minScore: m.healthMinScore ?? MONITOR_DEFAULTS.healthMinScore },
+    'org-info': { trialWarnDays: m.orgInfoTrialWarnDays ?? MONITOR_DEFAULTS.orgInfoTrialWarnDays },
+    'deploy-history': { lookback: m.deployHistoryLookback ?? MONITOR_DEFAULTS.deployHistoryLookback },
+    'deprecated-api': { lookbackDays: m.deprecatedApiLookbackDays ?? MONITOR_DEFAULTS.deprecatedApiLookbackDays },
   };
 }
 
@@ -58,6 +63,16 @@ async function executeMonitor(checks, options, { backup = false } = {}) {
       await fs.writeJson(outPath, snapshot, { spaces: 2 });
     } catch (writeErr) {
       process.stderr.write(`Warning: could not write snapshot to ${outPath}: ${writeErr.message}\n`);
+    }
+
+    if (options.notify) {
+      try {
+        const { results } = await dispatchSnapshot(snapshot, config, { type: 'monitor' });
+        const sent = results.filter((r) => r.ok).map((r) => r.channel);
+        if (!jsonMode) console.log(chalk.dim(`Notified: ${sent.length ? sent.join(', ') : 'no matching channel'}`));
+      } catch (notifyErr) {
+        process.stderr.write(`Warning: notification failed: ${notifyErr.message}\n`);
+      }
     }
 
     if (jsonMode) {
@@ -135,7 +150,7 @@ function printReport(snapshot) {
 export function registerMonitorCommand(program) {
   const monitor = program
     .command('monitor')
-    .description('Monitor org health — limits, Apex failures, security score, and metadata backup');
+    .description('Monitor org health — limits, Apex failures, security score, org info, deployment history, legacy API usage, paused flows, and metadata backup');
 
   monitor
     .command('all', { isDefault: true })
@@ -143,6 +158,7 @@ export function registerMonitorCommand(program) {
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
     .option('--backup', 'Also run a full metadata backup')
     .option('--json', 'Emit structured JSON to stdout')
+    .option('--notify', 'Send the snapshot to configured notification channels')
     .action((options) => executeMonitor(CHECK_IDS, options));
 
   for (const id of CHECK_IDS) {
@@ -160,4 +176,19 @@ export function registerMonitorCommand(program) {
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
     .option('--json', 'Emit structured JSON to stdout')
     .action((options) => executeBackup(options));
+
+  // Convenience alias for generating a scheduled-monitoring CI workflow. Thin
+  // delegate to `sfdt ci init --type monitor`.
+  monitor
+    .command('schedule')
+    .description('Generate a scheduled org-monitoring CI workflow (alias for "ci init --type monitor")')
+    .requiredOption('--provider <name>', 'CI provider: github | gitlab | azure | bitbucket')
+    .option('--cron <expr>', 'Cron schedule', '0 6 * * *')
+    .option('--org <alias>', 'Target org alias (defaults to config.defaultOrg)')
+    .option('--node <version>', 'Node.js version for the CI runner', '20')
+    .option('--out <path>', 'Output file path (defaults to the provider convention)')
+    .option('--print', 'Print to stdout instead of writing a file')
+    .option('--force', 'Overwrite an existing file')
+    .option('--json', 'Emit the result as JSON')
+    .action((options) => runCiInit({ ...options, type: 'monitor' }));
 }

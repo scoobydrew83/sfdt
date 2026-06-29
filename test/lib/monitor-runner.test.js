@@ -22,6 +22,10 @@ import {
   checkLimits,
   checkErrors,
   checkHealth,
+  checkOrgInfo,
+  checkDeployHistory,
+  checkDeprecatedApi,
+  checkFlowErrors,
   runBackup,
   runMonitor,
   CHECK_IDS,
@@ -114,6 +118,113 @@ describe('checkHealth', () => {
   it('warns when the score is unavailable (no rows)', async () => {
     query.mockResolvedValueOnce([]);
     const r = await checkHealth('dev');
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/unavailable/);
+  });
+});
+
+describe('checkOrgInfo', () => {
+  it('is ok for a sandbox with no trial', async () => {
+    query.mockResolvedValueOnce([
+      { Name: 'Acme', InstanceName: 'NA123', OrganizationType: 'Developer Edition', IsSandbox: true, TrialExpirationDate: null },
+    ]);
+    const r = await checkOrgInfo('dev');
+    expect(r.status).toBe('ok');
+    expect(r.findings[0].instance).toBe('NA123');
+  });
+
+  it('warns when the trial expires within the window', async () => {
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    query.mockResolvedValueOnce([
+      { Name: 'Acme', InstanceName: 'NA1', OrganizationType: 'Trial', IsSandbox: false, TrialExpirationDate: soon },
+    ]);
+    const r = await checkOrgInfo('dev', { trialWarnDays: 14 });
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/Trial\/expiration/);
+  });
+
+  it('warns when no Organization record is returned', async () => {
+    query.mockResolvedValueOnce([]);
+    const r = await checkOrgInfo('dev');
+    expect(r.status).toBe('warn');
+  });
+});
+
+describe('checkDeployHistory', () => {
+  it('fails when the most recent deployment failed', async () => {
+    query.mockResolvedValueOnce([
+      { Status: 'Failed', CompletedDate: '2026-06-20T00:00:00Z', NumberComponentErrors: 2, CreatedBy: { Name: 'Dev' } },
+      { Status: 'Succeeded', CompletedDate: '2026-06-19T00:00:00Z', NumberComponentErrors: 0 },
+    ]);
+    const r = await checkDeployHistory('dev', { lookback: 20 });
+    expect(r.status).toBe('fail');
+    expect(r.findings.length).toBeGreaterThan(0);
+  });
+
+  it('warns when an older deployment failed but the latest succeeded', async () => {
+    query.mockResolvedValueOnce([
+      { Status: 'Succeeded', CompletedDate: '2026-06-20T00:00:00Z', NumberComponentErrors: 0 },
+      { Status: 'Failed', CompletedDate: '2026-06-19T00:00:00Z', NumberComponentErrors: 1 },
+    ]);
+    const r = await checkDeployHistory('dev');
+    expect(r.status).toBe('warn');
+  });
+
+  it('is ok with no deployments', async () => {
+    query.mockResolvedValueOnce([]);
+    const r = await checkDeployHistory('dev');
+    expect(r.status).toBe('ok');
+  });
+
+  it('degrades to warn (not error) when DeployRequest is rejected', async () => {
+    query.mockRejectedValueOnce(new Error('DeployRequest requires a filter'));
+    const r = await checkDeployHistory('dev');
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/unavailable/);
+  });
+});
+
+describe('checkDeprecatedApi', () => {
+  it('warns when ApiTotalUsage logs are present', async () => {
+    query.mockResolvedValueOnce([{ LogDate: '2026-06-20T00:00:00Z', EventType: 'ApiTotalUsage', LogFileLength: 1024 }]);
+    const r = await checkDeprecatedApi('dev', { lookbackDays: 7 });
+    expect(r.status).toBe('warn');
+    expect(r.findings).toHaveLength(1);
+  });
+
+  it('is ok when there are no legacy API logs', async () => {
+    query.mockResolvedValueOnce([]);
+    const r = await checkDeprecatedApi('dev');
+    expect(r.status).toBe('ok');
+  });
+
+  it('degrades to warn (not error) when EventLogFile is inaccessible', async () => {
+    query.mockRejectedValueOnce(new Error('No such column EventLogFile'));
+    const r = await checkDeprecatedApi('dev');
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/unavailable/);
+  });
+});
+
+describe('checkFlowErrors', () => {
+  it('warns when there are paused interviews', async () => {
+    query.mockResolvedValueOnce([
+      { InterviewLabel: 'Onboarding 123', CurrentElement: 'Wait_1', CreatedDate: '2026-06-01T00:00:00Z' },
+    ]);
+    const r = await checkFlowErrors('dev');
+    expect(r.status).toBe('warn');
+    expect(r.findings[0].name).toBe('Onboarding 123');
+  });
+
+  it('is ok with no paused interviews', async () => {
+    query.mockResolvedValueOnce([]);
+    const r = await checkFlowErrors('dev');
+    expect(r.status).toBe('ok');
+  });
+
+  it('degrades to warn (not error) when FlowInterview is rejected', async () => {
+    query.mockRejectedValueOnce(new Error('No such column InterviewStatus'));
+    const r = await checkFlowErrors('dev');
     expect(r.status).toBe('warn');
     expect(r.summary).toMatch(/unavailable/);
   });

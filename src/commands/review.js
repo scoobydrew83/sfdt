@@ -20,6 +20,7 @@ export function registerReviewCommand(program) {
     .command('review')
     .description('AI-powered Salesforce code review of current branch changes')
     .option('--base <branch>', 'Base branch to diff against', 'main')
+    .option('--agent', 'Non-interactive agent mode (do not block waiting on the AI session)')
     .action(async (options) => {
       try {
         const config = await loadConfig();
@@ -90,7 +91,7 @@ export function registerReviewCommand(program) {
           allowedTools: ['Read', 'Grep'],
           cwd: projectRoot,
           aiEnabled: true,
-          interactive: true,
+          interactive: !options.agent,
         });
       } catch (err) {
         print.error(`Review failed: ${err.message}`);

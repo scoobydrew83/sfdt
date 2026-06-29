@@ -6,6 +6,7 @@ import { describeFinding } from '@sfdt/flow-core';
 import { loadConfig } from '../lib/config.js';
 import { runAudit, CHECK_IDS, AUDIT_DEFAULTS } from '../lib/audit-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { dispatchSnapshot } from '../lib/notifier.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
 
 const STATUS_COLOR = {
@@ -22,6 +23,8 @@ function buildParams(config) {
     licenses: { warnThreshold: a.licenseWarnThreshold ?? AUDIT_DEFAULTS.licenseWarnThreshold },
     'inactive-users': { lookbackDays: a.inactiveUserDays ?? AUDIT_DEFAULTS.inactiveUserDays },
     'api-versions': { minApiVersion: a.minApiVersion ?? AUDIT_DEFAULTS.minApiVersion },
+    'connected-apps': { flagPermissive: a.connectedAppFlagPermissive ?? AUDIT_DEFAULTS.connectedAppFlagPermissive },
+    'field-descriptions': { maxMissing: a.fieldDescriptionMaxMissing ?? AUDIT_DEFAULTS.fieldDescriptionMaxMissing },
   };
 }
 
@@ -55,6 +58,16 @@ async function executeAudit(checks, options) {
       await fs.writeJson(outPath, snapshot, { spaces: 2 });
     } catch (writeErr) {
       process.stderr.write(`Warning: could not write snapshot to ${outPath}: ${writeErr.message}\n`);
+    }
+
+    if (options.notify) {
+      try {
+        const { results } = await dispatchSnapshot(snapshot, config, { type: 'audit' });
+        const sent = results.filter((r) => r.ok).map((r) => r.channel);
+        if (!jsonMode) console.log(chalk.dim(`Notified: ${sent.length ? sent.join(', ') : 'no matching channel'}`));
+      } catch (notifyErr) {
+        process.stderr.write(`Warning: notification failed: ${notifyErr.message}\n`);
+      }
     }
 
     if (jsonMode) {
@@ -99,13 +112,14 @@ function printReport(snapshot) {
 export function registerAuditCommand(program) {
   const audit = program
     .command('audit')
-    .description('Diagnose org health — audit trail, licenses, MFA, unused Apex, inactive users, API versions');
+    .description('Diagnose org health — audit trail, licenses, MFA, unused/unreferenced Apex, inactive users/flows/validations/workflows, API versions, permission sets, connected apps, field descriptions, object & field access');
 
   audit
     .command('all', { isDefault: true })
     .description('Run every audit check and write a snapshot')
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
     .option('--json', 'Emit structured JSON to stdout')
+    .option('--notify', 'Send the snapshot to configured notification channels')
     .action((options) => executeAudit(CHECK_IDS, options));
 
   for (const id of CHECK_IDS) {

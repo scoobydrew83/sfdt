@@ -216,6 +216,152 @@ describe('validateConfig — AJV schema fields', () => {
     ).toThrow();
   });
 
+  it('accepts a valid notifications block with channels', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        notifications: {
+          enabled: true,
+          channels: [
+            { type: 'slack', name: 'team', webhookUrlEnv: 'SLACK_URL', severityThreshold: 'warn', events: ['snapshot'] },
+            { type: 'webhook', url: 'https://example.com/hook', severityThreshold: 'fail', events: ['snapshot'] },
+          ],
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it('throws when a notifications channel has an unknown type', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        notifications: { channels: [{ type: 'discord' }] },
+      }),
+    ).toThrow('notifications');
+  });
+
+  it('throws when a notifications channel severityThreshold is invalid', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        notifications: { channels: [{ type: 'slack', severityThreshold: 'critical' }] },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts a notifications.summary block', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        notifications: { enabled: true, summary: { enabled: true }, channels: [] },
+      }),
+    ).not.toThrow();
+  });
+
+  it('throws when notifications.summary has an unknown key', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        notifications: { summary: { enabled: true, typo: 1 } },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts the legacy notifications.slack shape', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        notifications: { enabled: true, slack: { webhookUrl: 'https://hooks.slack.com/x' } },
+      }),
+    ).not.toThrow();
+  });
+
+  it('throws when a notifications channel has an unknown key', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        notifications: { channels: [{ type: 'slack', typo: true }] },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts a valid ai.agent block', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        ai: { provider: 'claude', agent: { enabled: true, maxTurns: 5, allowWrite: false } },
+      }),
+    ).not.toThrow();
+  });
+
+  it('throws when ai.agent.maxTurns exceeds the maximum', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        ai: { agent: { maxTurns: 99 } },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts a valid deployment.smart block', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        deployment: {
+          smart: {
+            enabled: true,
+            deltaBase: 'main',
+            noOverwriteManifest: 'manifest/package-no-overwrite.xml',
+            impactingTypes: ['ApexClass', 'Flow'],
+            downgradeTestsOnNonProd: true,
+            assumeProd: false,
+          },
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it('throws when deployment.smart has an unknown key', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        deployment: { smart: { typo: true } },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts the new audit and monitoring threshold keys', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        audit: { fieldDescriptionMaxMissing: 0, connectedAppFlagPermissive: true },
+        monitoring: { orgInfoTrialWarnDays: 14, deployHistoryLookback: 20, deprecatedApiLookbackDays: 7 },
+      }),
+    ).not.toThrow();
+  });
+
+  it('throws when audit has an unknown threshold key', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        audit: { madeUpThreshold: 5 },
+      }),
+    ).toThrow();
+  });
+
   it('accepts valid full config from template', () => {
     expect(() =>
       validateConfig({

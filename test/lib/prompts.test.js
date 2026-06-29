@@ -114,6 +114,22 @@ describe('getAllPrompts — no configDir', () => {
     expect(prompts.every((p) => p.overridden === false)).toBe(true);
   });
 
+  it('includes the new deploy-error and per-type doc prompts', async () => {
+    const keys = (await getAllPrompts()).map((p) => p.key);
+    for (const k of ['deploy-error', 'doc-apex', 'doc-flow', 'doc-lwc', 'doc-object']) {
+      expect(keys).toContain(k);
+    }
+  });
+
+  it('every default prompt has non-empty text and matching metadata', async () => {
+    const prompts = await getAllPrompts();
+    for (const p of prompts) {
+      expect(typeof p.default).toBe('string');
+      expect(p.default.length).toBeGreaterThan(0);
+      expect(p.label).toBeTruthy();
+    }
+  });
+
   it('does not call fs.readJson when no configDir is provided', async () => {
     await getAllPrompts();
     expect(fs.readJson).not.toHaveBeenCalled();
