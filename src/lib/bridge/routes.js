@@ -387,6 +387,19 @@ async function dispatch(request, { version, config, projectRoot, logDir, makeSuc
       }
       const fsExtra = (await import('fs-extra')).default;
       const file = path.join(logDir || path.join(projectRoot, 'logs'), 'drift-latest.json');
+      if (request.refresh) {
+        // Run drift live (heavy: full retrieve + diff) before reading the fresh
+        // snapshot — same `ops/drift.sh` the `sfdt drift` command runs.
+        try {
+          const { runScript } = await import('../script-runner.js');
+          await runScript('ops/drift.sh', config ?? {}, {
+            cwd: projectRoot,
+            env: { SFDT_TARGET_ORG: config?.defaultOrg ?? '' },
+          });
+        } catch (err) {
+          return makeErrorResponse(request.requestId, `Drift run failed: ${err.message}`, 'INTERNAL_ERROR');
+        }
+      }
       if (!(await fsExtra.pathExists(file))) {
         return makeSuccessResponse(request.requestId, {
           available: false,

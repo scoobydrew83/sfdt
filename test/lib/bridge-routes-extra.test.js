@@ -71,6 +71,9 @@ const { fetchInventorySpy, diffInventoriesSpy } = vi.hoisted(() => ({
 vi.mock('../../src/lib/org-inventory.js', () => ({ fetchInventory: fetchInventorySpy }));
 vi.mock('../../src/lib/org-diff.js', () => ({ diffInventories: diffInventoriesSpy }));
 
+const { runScriptSpy } = vi.hoisted(() => ({ runScriptSpy: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('../../src/lib/script-runner.js', () => ({ runScript: runScriptSpy }));
+
 const { isAiAvailableSpy, runAiPromptSpy } = vi.hoisted(() => ({
   isAiAvailableSpy: vi.fn(),
   runAiPromptSpy: vi.fn(),
@@ -233,6 +236,28 @@ describe('POST /api/bridge/exchange — scan / compare / drift dispatch', () => 
     expect(res.body.data.driftStatus).toBe('WARN');
     expect(res.body.data.components).toHaveLength(1);
     expect(res.body.data.components[0].name).toBe('Foo');
+  });
+
+  it('drift with refresh:true runs the drift script before reading the snapshot', async () => {
+    runScriptSpy.mockResolvedValue(undefined);
+    pathExistsSpy.mockImplementation(async (p) => isTokenPath(p) || String(p).endsWith('drift-latest.json'));
+    readJsonSpy.mockImplementation(async (p) =>
+      String(p).endsWith('drift-latest.json') ? { org: 'dev', driftStatus: 'PASS', components: [] } : {},
+    );
+    const res = await post(app, { requestId: 'dr3', kind: 'drift', component: 'Account', refresh: true });
+    expect(runScriptSpy).toHaveBeenCalledWith('ops/drift.sh', expect.anything(), expect.objectContaining({ cwd: expect.any(String) }));
+    expect(res.status).toBe(200);
+    expect(res.body.data.available).toBe(true);
+    expect(res.body.data.driftStatus).toBe('PASS');
+  });
+
+  it('drift without refresh does NOT run the script', async () => {
+    pathExistsSpy.mockImplementation(async (p) => isTokenPath(p) || String(p).endsWith('drift-latest.json'));
+    readJsonSpy.mockImplementation(async (p) =>
+      String(p).endsWith('drift-latest.json') ? { org: 'dev', driftStatus: 'PASS', components: [] } : {},
+    );
+    await post(app, { requestId: 'dr4', kind: 'drift', component: 'Account' });
+    expect(runScriptSpy).not.toHaveBeenCalled();
   });
 
   it('drift reports unavailable when there is no snapshot', async () => {

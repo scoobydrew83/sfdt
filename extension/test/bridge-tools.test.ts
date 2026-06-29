@@ -51,7 +51,22 @@ describe('drift feature', () => {
     clickRun('Check drift');
 
     await vi.waitFor(() => expect(document.body.textContent).toContain('drifted'));
-    expect(bridge.call.mock.calls[0]![0]).toEqual({ kind: 'drift', component: 'Account.MyField__c' });
+    expect(bridge.call.mock.calls[0]![0]).toEqual({
+      kind: 'drift',
+      component: 'Account.MyField__c',
+      refresh: false, // "Run live" checkbox unchecked → snapshot
+    });
+  });
+
+  it('sends refresh:true when "Run live" is checked', async () => {
+    const bridge = fakeBridge({ ok: true, requestId: 'r', data: { drifted: false } });
+    const feature = createDriftFeature({ bridgeFactory: async () => bridge });
+    await feature.onActivate?.();
+    setText('Component', 'Account.MyField__c');
+    (document.querySelector('input[type="checkbox"]') as HTMLInputElement).checked = true;
+    clickRun('Check drift');
+    await vi.waitFor(() => expect(bridge.call).toHaveBeenCalled());
+    expect((bridge.call.mock.calls[0]![0] as { refresh: boolean }).refresh).toBe(true);
   });
 
   it('shows the offline hint when the bridge is down', async () => {

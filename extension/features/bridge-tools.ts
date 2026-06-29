@@ -225,10 +225,17 @@ export function createDriftFeature(options: BridgeToolOptions = {}): Feature {
       setupInputs(doc, controls) {
         const input = textInput(doc, 'Component, e.g. Account.MyField__c');
         controls.appendChild(input);
+        const live = doc.createElement('label');
+        live.style.cssText = 'display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #54698d;';
+        const cb = doc.createElement('input');
+        cb.type = 'checkbox';
+        live.append(cb, doc.createTextNode('Run live (slower)'));
+        controls.appendChild(live);
         return async () => {
           const component = input.value.trim();
           if (!component) throw new Error('Enter a component to check for drift.');
-          return { kind: 'drift', component };
+          // Unchecked → return the latest snapshot; checked → run drift live first.
+          return { kind: 'drift', component, refresh: cb.checked };
         };
       },
       render: renderJson,

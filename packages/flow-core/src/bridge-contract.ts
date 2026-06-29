@@ -104,6 +104,9 @@ export interface AiRequest extends RequestEnvelope {
 export interface DriftRequest extends RequestEnvelope {
   kind: 'drift';
   component: string;
+  /** When true, run drift live (heavy) before returning; otherwise return the
+   *  latest snapshot. Defaults to false. */
+  refresh?: boolean;
 }
 
 export interface ScanRequest extends RequestEnvelope {
@@ -468,6 +471,9 @@ export function validateSfdtRequest(input: unknown): {
       break;
     case 'drift':
       if (!isNonEmptyString(input.component)) errors.push({ field: 'component', reason: 'must be a non-empty string' });
+      if (input.refresh !== undefined && typeof input.refresh !== 'boolean') {
+        errors.push({ field: 'refresh', reason: 'must be a boolean when present' });
+      }
       break;
     case 'scan':
       if (input.scanType !== 'scheduled' && input.scanType !== 'all') {
