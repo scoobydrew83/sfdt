@@ -18,14 +18,27 @@ on:
         description: 'Image version tag (e.g. 0.14.0). Defaults to package.json version.'
         required: false
         default: ''
+  # Called by ci.yml's publish job so the image builds automatically on a CLI
+  # release — a GitHub Release created by GITHUB_TOKEN does NOT fire the
+  # `release: published` trigger above, so the CI publish flow invokes this
+  # directly instead of relying on the release event.
+  workflow_call:
+    inputs:
+      version:
+        description: 'Image version tag. Defaults to package.json version.'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
 jobs:
   docker-publish:
-    # For releases, only CLI tags (`v*`) — skip ext-v* / vscode-v* releases.
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
+    # Run for dispatch and workflow_call (event_name is the caller's event, e.g.
+    # 'push'); for a `release` event only build CLI tags (`v*`), skipping
+    # ext-v* / vscode-v* releases.
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -42,7 +55,8 @@ jobs:
       - name: Resolve + validate version
         id: ver
         env:
-          INPUT_VERSION: ${{ github.event.inputs.version }}
+          # `inputs` is populated for both workflow_dispatch and workflow_call.
+          INPUT_VERSION: ${{ inputs.version }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           if [ "${GITHUB_EVENT_NAME}" = "release" ]; then

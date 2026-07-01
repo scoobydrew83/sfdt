@@ -76,15 +76,14 @@ When you bump the protocol:
 6. **Post-release.** Run the `/post-release` skill (it archives `pr-analysis/` artifacts, confirms `main` / `develop` sync, and enumerates cleanup items).
 
 7. **Distribution channels (ride the CLI version bump).** A CLI release also feeds two channels off the same version — handle them after npm publish:
-   - **Docker / GHCR (automatic).** The dedicated `docker-publish.yml` workflow builds a multi-arch image and pushes `ghcr.io/scoobydrew83/sfdt:X.Y.Z` + `:latest`. It triggers on `release: published` (the GitHub Release the CLI `publish` job creates), so it runs once the release is cut. To (re)publish a specific version on demand — e.g. after a Dockerfile fix that didn't ride a version bump — run it via **workflow_dispatch** with the version input (builds from `main`). Verify with `gh run list --workflow=docker-publish.yml`. **First release only:** make the GHCR package **public** (it's created private), or `docker pull` 401s.
-   - **Homebrew (manual bump).** The tap `scoobydrew83/homebrew-sfdt` pins a tarball in `Formula/sfdt.rb` and does not auto-update. After npm publish:
+   - **Docker / GHCR (automatic).** The `publish` job's downstream `docker` job calls the reusable `docker-publish.yml` in the **same** CI run, building the multi-arch image and pushing `ghcr.io/scoobydrew83/sfdt:X.Y.Z` + `:latest`. (It does **not** rely on the `release: published` event — a Release created by `GITHUB_TOKEN` doesn't fire downstream workflows, which is why the call is wired directly.) To (re)publish a specific version on demand — e.g. after a Dockerfile fix that didn't ride a version bump — run `docker-publish.yml` via **workflow_dispatch** with the version input (builds from `main`). Verify with `gh run list --workflow=docker-publish.yml`. **First release only:** make the GHCR package **public** (it's created private), or `docker pull` 401s.
+   - **Homebrew (automatic when `HOMEBREW_TAP_TOKEN` is set).** The `publish` job's "Bump Homebrew tap" step computes the tarball `sha256` and pushes the new `url` + `sha256` to the tap repo `scoobydrew83/homebrew-sfdt` (`Formula/sfdt.rb`). This needs a **fine-grained PAT** (`contents:write` on the tap repo only) stored as the `HOMEBREW_TAP_TOKEN` secret — the default `GITHUB_TOKEN` can't write to another repo. If the secret is absent, the step logs a skip and you bump it manually:
      ```bash
      VERSION=X.Y.Z
      curl -fsSL "https://registry.npmjs.org/@sfdt/cli/-/cli-${VERSION}.tgz" | shasum -a 256
      # Update url + sha256 in the TAP repo's Formula/sfdt.rb, commit, push.
-     # Keep this repo's canonical Formula/sfdt.rb in sync (bump it in the release PR).
      ```
-     A future `ci.yml` step could push this automatically (needs a PAT with write access to the tap repo). Until then it's manual.
+     The **tap repo is the single source of truth** for the formula — treat it as a publish target like npm/GHCR, not a parallel project. (The tap must be a separate `homebrew-*` repo; that's Homebrew's requirement for the `brew tap scoobydrew83/sfdt` UX, not something to "fix" by folding it into this repo.) The in-repo `Formula/sfdt.rb` mirror is **redundant** — it can't carry a correct `sha256` until after publish — and is slated for removal; do not spend effort keeping it in sync.
 
 > **Note:** publish itself is CI-driven now — `.github/workflows/ci.yml` publishes `@sfdt/flow-core` then `@sfdt/cli` (with `--provenance`) on a version-bump push to `main`, and the beta channel publishes from `develop` on a pre-release version. The manual `npm publish` in step 5 is the fallback, not the normal path.
 
@@ -145,7 +144,7 @@ Before any release PR is merged:
 - [ ] If anything in `packages/flow-core/src/bridge-contract.ts` changed, the `/pre-release-cli-test` skill has been run (verifies all 21 CLI commands' `--help` smoke).
 - [ ] If anything in `gui/` changed, the `/pre-release-ui-test` skill has been run.
 - [ ] If you're releasing the VS Code extension, `npm run test:vscode` + `npm run build:vscode` pass, the `.vsix` packages cleanly, and the `VSCE_PAT` secret is configured (or you'll upload the `.vsix` manually).
-- [ ] After a CLI release: the GHCR Docker image published (public on first release) and the Homebrew tap's `Formula/sfdt.rb` was bumped to the new `url` + `sha256`.
+- [ ] After a CLI release: verify the CI `docker` job pushed the GHCR image (public on first release), and the "Bump Homebrew tap" step updated the tap's `Formula/sfdt.rb` (requires the `HOMEBREW_TAP_TOKEN` secret — bump manually if it skipped).
 - [ ] If anything outside docs/tests changed, the `/pre-release-security` skill has been run.
 - [ ] If `@modelcontextprotocol/sdk` was bumped past 1.29.x, a manual smoke test has been run against both `sf mcp start` (client side, `src/lib/mcp-client.js`) and `sfdt mcp start` (server side) — at minimum a `tools/list` plus one `tools/call` round-trip. The server relies on verified-but-undocumented SDK behaviors (handler results passed through verbatim, loose `_meta` parsing), so SDK bumps must not land silently.
 - [ ] `CHANGELOG.md` updated.

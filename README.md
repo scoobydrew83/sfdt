@@ -77,8 +77,10 @@ sfdt deploy
 # Bootstrap script (checks prerequisites, then installs via npm)
 curl -fsSL https://raw.githubusercontent.com/scoobydrew83/sfdt/main/install.sh | bash
 
-# Homebrew (macOS/Linux)
-brew install scoobydrew83/sfdt/sfdt
+# Homebrew (macOS/Linux) — tap once, then install by name
+brew tap scoobydrew83/sfdt
+brew install sfdt
+# (Third-party tap: it won't show in brew's website search, which only lists homebrew-core.)
 
 # Docker (official multi-arch image)
 docker run --rm -v "$PWD:/project" ghcr.io/scoobydrew83/sfdt:latest --help
@@ -93,6 +95,19 @@ sf sfdt deploy --dry-run
 > running `sfdt` directly. `--json` commands emit a Salesforce-native
 > `{ status, result, warnings }` envelope. As an unsigned third-party plugin, `sf`
 > shows a one-time security prompt on install.
+
+**npm alternatives:** `pnpm add -g @sfdt/cli` · `yarn global add @sfdt/cli` · one-off `npx @sfdt/cli --help`.
+
+**From source (contributors):**
+
+```bash
+git clone https://github.com/scoobydrew83/sfdt.git && cd sfdt
+npm install
+npm link            # makes `sfdt` available globally from your checkout
+npm run build:gui   # build the local web dashboard
+```
+
+Full install reference — every method plus CI usage — at **[sfdt.dev/cli/installation](https://sfdt.dev/cli/installation)**.
 
 ## Commands Reference
 
