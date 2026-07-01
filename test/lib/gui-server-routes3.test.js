@@ -426,11 +426,10 @@ describe('GET /api/manifests with files present', () => {
 
   it('returns manifests list when XML files are present', async () => {
     const { default: fsMock } = await import('fs-extra');
-    // logDir readdir: no compare files
+    // flat layout → readdir called twice: logDir (compare files), then release dir
     fsMock.readdir
       .mockResolvedValueOnce([]) // log files
-      .mockResolvedValueOnce(['rl-1.0.0-package.xml', 'rl-0.9.0-package.xml']) // release manifests
-      .mockResolvedValueOnce([]); // deployed
+      .mockResolvedValueOnce(['rl-1.0.0-package.xml', 'rl-0.9.0-package.xml']); // release manifests
 
     fsMock.stat.mockResolvedValue({ mtime: new Date('2026-05-01'), size: 1024, isDirectory: () => false });
 
@@ -439,6 +438,38 @@ describe('GET /api/manifests with files present', () => {
     expect(Array.isArray(res.body.manifests)).toBe(true);
     expect(res.body.manifests.length).toBeGreaterThan(0);
     expect(res.body.manifests[0].name).toBe('rl-1.0.0-package.xml');
+  });
+});
+
+// ─── GET /api/manifests — subpath layout excludes deploy/ and deployed/ ───────
+
+describe('GET /api/manifests — subpath excludes deploy/ and deployed/', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp({ ...MOCK_CONFIG, manifestLayout: 'subpath' }, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('lists only real package subdirs, not deploy/ or deployed/ artifacts', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readdir
+      .mockResolvedValueOnce([]) // logDir compare files
+      .mockResolvedValueOnce([]) // release dir top-level xml
+      .mockResolvedValueOnce(['all', 'deploy', 'deployed']) // subdirs
+      .mockResolvedValueOnce(['rl-1.0.0-package.xml']); // files inside 'all' (deploy/deployed skipped, never read)
+
+    // Every stat resolves as a directory; file entries just use mtime/size.
+    fsMock.stat.mockResolvedValue({ mtime: new Date('2026-05-01'), size: 1024, isDirectory: () => true });
+
+    const res = await request(app).get('/api/manifests');
+    expect(res.status).toBe(200);
+    const names = res.body.manifests.map((m) => m.name);
+    expect(names).toEqual(['all/rl-1.0.0-package.xml']);
+    expect(names.some((n) => n.startsWith('deploy/') || n.startsWith('deployed/'))).toBe(false);
   });
 });
 

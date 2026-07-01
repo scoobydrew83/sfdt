@@ -64,7 +64,7 @@ function getNestedValue(obj, key) {
 // are rejected by PATCH /api/config (org hijack / disabling safety checks /
 // code execution), so we render them read-only with a reason instead of letting
 // a save fail with an opaque error.
-const PROTECTED_PREFIXES = ['defaultOrg', 'deployment.preflight', 'plugins', 'mcp.salesforce.command', 'mcp.salesforce.args'];
+const PROTECTED_PREFIXES = ['defaultOrg', 'plugins', 'mcp.salesforce.command', 'mcp.salesforce.args'];
 
 function isProtectedKey(dotKey) {
   return PROTECTED_PREFIXES.some((p) => dotKey === p || dotKey.startsWith(`${p}.`));
@@ -72,8 +72,13 @@ function isProtectedKey(dotKey) {
 
 function protectedReason(dotKey) {
   if (dotKey === 'defaultOrg') return 'Set via the org switcher or “sfdt init” — the dashboard can’t change the target org.';
-  if (dotKey.startsWith('deployment.preflight')) return 'Safety check — edit in .sfdt/config.json, not from the dashboard.';
   return 'Protected — edit in .sfdt/config.json.';
+}
+
+// Preflight flags are editable but gate deploy safety, so warn (don't lock).
+function cautionReason(dotKey) {
+  if (dotKey.startsWith('deployment.preflight')) return 'Safety check — disabling this reduces deploy safety.';
+  return null;
 }
 
 function FieldRow({ dotKey, label, type, options, rawConfig, onSave }) {
@@ -177,6 +182,9 @@ function FieldRow({ dotKey, label, type, options, rawConfig, onSave }) {
       </div>
       {locked && (
         <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>{protectedReason(dotKey)}</div>
+      )}
+      {!locked && cautionReason(dotKey) && (
+        <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>⚠ {cautionReason(dotKey)}</div>
       )}
       {errMsg && !locked && (
         <div style={{ fontSize: 11, color: 'var(--status-conflict-fg, #c0392b)', marginTop: 4 }}>{errMsg}</div>
