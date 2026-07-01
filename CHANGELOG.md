@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-07-01
+
+### Changed
+
+- **Preflight safety flags are now editable from the GUI Settings page.** `deployment.preflight.*` was previously API-locked (read-only in the dashboard, 403 on write); it's now writable via `PATCH /api/config` with an inline safety caution instead of a hard lock. `defaultOrg`, `plugins`, and `mcp.salesforce.*` remain locked.
+
+### Fixed
+
+- **Deploy picker & Release Hub no longer list `manifest/release/deploy/` and `deployed/` artifacts.** Under `manifestLayout: "subpath"`, the manifest scan swept every `rl-*-package.xml` one level deep into the picker, ballooning it past the expected choices; because the CLI captured results in an unquoted array, a project path containing a space also word-split the list and broke `select`. Both the CLI (`deployment-assistant.sh`) and the GUI (`/api/manifests`) now exclude the `deploy/` and `deployed/` subfolders, and the CLI reads results newline-delimited. Rollbacks are unaffected (the post-deploy flow and Rollback step read `deployed/` on their own).
+
 ## [0.15.0] - 2026-06-29
 
 A large feature release completing the sfdx-hardis parity effort: a multi-channel notifier, smart delta deployments with an optional coding-agent auto-fix loop, CI/CD pipeline templates, PR decoration and cross-org retrofit, two new analysis commands, and a brand-new Salesforce CLI plugin — all sharing one org-health rulebook in `@sfdt/flow-core`.

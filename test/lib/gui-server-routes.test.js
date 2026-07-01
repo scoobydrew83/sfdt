@@ -1137,12 +1137,17 @@ describe('PATCH /api/config — success path', () => {
     expect(res.status).toBe(403);
   });
 
-  it('returns 403 when key targets a deployment.preflight.* enforcement flag', async () => {
+  it('allows writing a deployment.preflight.* enforcement flag (editable, not locked)', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readJson.mockResolvedValueOnce({ deployment: { preflight: { enforceGitClean: true } } });
+
     const res = await request(app)
       .patch('/api/config')
       .set('X-SFDT-CSRF', csrf)
       .send({ key: 'deployment.preflight.enforceGitClean', value: 'false' });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.key).toBe('deployment.preflight.enforceGitClean');
   });
 });
 

@@ -175,17 +175,28 @@ select_manifest() {
     local include_deployed=${1:-false}
     print_step "Finding release manifests in ${MANIFEST_BASE_DIR}/..."
 
-    # Find manifests in main release folder
+    # Find manifests in main release folder. In subpath layout we descend one
+    # level into package subdirs, but must NOT sweep in the deploy/ (in-flight
+    # artifacts) or deployed/ (post-deploy snapshots — reached via the post-deploy
+    # flow below and the rollback command) subfolders, or the picker balloons and
+    # its numbered choices become unusable. Read newline-delimited so paths that
+    # contain spaces (e.g. a project root with a space) don't word-split the array.
     local max_depth=1
     if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then max_depth=2; fi
-    local manifests=( $(find "${MANIFEST_BASE_DIR}/" -maxdepth "$max_depth" -name "rl-*-package.xml" 2>/dev/null | sort -V) )
+    local manifests=()
+    while IFS= read -r m; do
+        [[ -n "$m" ]] && manifests+=("$m")
+    done < <(find "${MANIFEST_BASE_DIR}/" -maxdepth "$max_depth" -name "rl-*-package.xml" \
+        -not -path '*/deploy/*' -not -path '*/deployed/*' 2>/dev/null | sort -V)
 
     # Also include deployed manifests when called from post-deployment flow (last 3 only)
     if [ "$include_deployed" == "true" ] && [ ${#manifests[@]} -eq 0 ]; then
         print_warning "No undeployed manifests found. Showing recent deployed manifests..."
         local fallback_depth=1
         if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then fallback_depth=2; fi
-        manifests=( $(find "${MANIFEST_BASE_DIR}/deployed/" -maxdepth $fallback_depth -name "*.xml" 2>/dev/null | sort -V | tail -3) )
+        while IFS= read -r m; do
+            [[ -n "$m" ]] && manifests+=("$m")
+        done < <(find "${MANIFEST_BASE_DIR}/deployed/" -maxdepth "$fallback_depth" -name "*.xml" 2>/dev/null | sort -V | tail -3)
     fi
 
     if [ ${#manifests[@]} -eq 0 ]; then
@@ -1387,10 +1398,14 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
     if [[ -z "$MANIFEST_PATH" ]]; then
         _auto_max_depth=1
         if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then _auto_max_depth=2; fi
-        MANIFEST_PATH=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$_auto_max_depth" -name "rl-*-package.xml" 2>/dev/null | sort -V | tail -1)
+        # Exclude deploy/ (in-flight) and deployed/ (already-deployed snapshots) so
+        # auto-select picks an active release manifest, not a stale artifact.
+        MANIFEST_PATH=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$_auto_max_depth" -name "rl-*-package.xml" \
+            -not -path '*/deploy/*' -not -path '*/deployed/*' 2>/dev/null | sort -V | tail -1)
         # Fall back to any package.xml if no versioned manifest found
         if [[ -z "$MANIFEST_PATH" ]]; then
-            MANIFEST_PATH=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$_auto_max_depth" -name "package.xml" 2>/dev/null | head -1)
+            MANIFEST_PATH=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$_auto_max_depth" -name "package.xml" \
+                -not -path '*/deploy/*' -not -path '*/deployed/*' 2>/dev/null | head -1)
         fi
         if [[ -z "$MANIFEST_PATH" ]]; then
             print_error "No manifests found in ${MANIFEST_BASE_DIR}/ and SFDT_MANIFEST_PATH not set"
