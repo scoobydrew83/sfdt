@@ -108,7 +108,7 @@ jobs:
           EXT_VERSION: ${{ steps.version.outputs.version }}
         run: |
           gh release create "ext-v${EXT_VERSION}" \
-            --title "Extension v${EXT_VERSION}" \
+            --title "Chrome Extension v${EXT_VERSION}" \
             --generate-notes \
             extension/.output/*.zip
 

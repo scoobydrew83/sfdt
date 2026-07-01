@@ -97,5 +97,6 @@ jobs:
           git push origin "vscode-v${VERSION}"
           gh release create "vscode-v${VERSION}" \
             "vscode/sfdt-devtools-${VERSION}.vsix" \
-            --title "SFDT for Salesforce v${VERSION}" \
+            --title "SFDT for Salesforce v${VERSION} - VS Code Extension" \
+            --generate-notes \
             --notes "Published to the VS Code Marketplace as sfdt.sfdt-devtools."
