@@ -272,7 +272,11 @@ jobs:
         # (scoobydrew83/homebrew-sfdt). The default GITHUB_TOKEN can't write to
         # another repo, so this needs a fine-grained PAT (contents:write on the
         # tap) stored as HOMEBREW_TAP_TOKEN. Skips cleanly if the secret is unset.
+        # continue-on-error: a cosmetic tap bump must never fail the release job
+        # (npm/GHCR already published by this point) or block the downstream
+        # `docker` job — a bad/expired PAT surfaces as a yellow step, not a red run.
         if: steps.version.outputs.changed == 'true'
+        continue-on-error: true
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
