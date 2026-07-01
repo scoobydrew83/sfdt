@@ -83,7 +83,7 @@ When you bump the protocol:
      curl -fsSL "https://registry.npmjs.org/@sfdt/cli/-/cli-${VERSION}.tgz" | shasum -a 256
      # Update url + sha256 in the TAP repo's Formula/sfdt.rb, commit, push.
      ```
-     Note: the automated step bumps the **tap** repo. This repo's mirror `Formula/sfdt.rb` is still bumped in the release PR (keep them in sync).
+     The **tap repo is the single source of truth** for the formula — treat it as a publish target like npm/GHCR, not a parallel project. (The tap must be a separate `homebrew-*` repo; that's Homebrew's requirement for the `brew tap scoobydrew83/sfdt` UX, not something to "fix" by folding it into this repo.) The in-repo `Formula/sfdt.rb` mirror is **redundant** — it can't carry a correct `sha256` until after publish — and is slated for removal; do not spend effort keeping it in sync.
 
 > **Note:** publish itself is CI-driven now — `.github/workflows/ci.yml` publishes `@sfdt/flow-core` then `@sfdt/cli` (with `--provenance`) on a version-bump push to `main`, and the beta channel publishes from `develop` on a pre-release version. The manual `npm publish` in step 5 is the fallback, not the normal path.
 
