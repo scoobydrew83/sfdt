@@ -77,8 +77,10 @@ sfdt deploy
 # Bootstrap script (checks prerequisites, then installs via npm)
 curl -fsSL https://raw.githubusercontent.com/scoobydrew83/sfdt/main/install.sh | bash
 
-# Homebrew (macOS/Linux)
-brew install scoobydrew83/sfdt/sfdt
+# Homebrew (macOS/Linux) — tap once, then install by name
+brew tap scoobydrew83/sfdt
+brew install sfdt
+# (Third-party tap: it won't show in brew's website search, which only lists homebrew-core.)
 
 # Docker (official multi-arch image)
 docker run --rm -v "$PWD:/project" ghcr.io/scoobydrew83/sfdt:latest --help
