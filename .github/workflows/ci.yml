@@ -183,6 +183,9 @@ jobs:
     permissions:
       contents: write
       id-token: write
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -264,5 +267,48 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: gh release create "v${VERSION}" --generate-notes
-        # The Docker image is published by the dedicated docker-publish.yml workflow
-        # (triggered by `release: published`), so it can also be re-run on demand.
+      - name: Bump Homebrew tap
+        # Pushes the new tarball url + sha256 to the separate tap repo
+        # (scoobydrew83/homebrew-sfdt). The default GITHUB_TOKEN can't write to
+        # another repo, so this needs a fine-grained PAT (contents:write on the
+        # tap) stored as HOMEBREW_TAP_TOKEN. Skips cleanly if the secret is unset.
+        if: steps.version.outputs.changed == 'true'
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ -z "${TAP_TOKEN}" ]; then
+            echo "HOMEBREW_TAP_TOKEN not set — skipping tap bump (bump Formula/sfdt.rb manually)."
+            exit 0
+          fi
+          TARBALL="https://registry.npmjs.org/@sfdt/cli/-/cli-${VERSION}.tgz"
+          SHA=$(curl -fsSL "${TARBALL}" | shasum -a 256 | awk '{print $1}')
+          if [ -z "${SHA}" ]; then echo "Failed to compute tarball sha256"; exit 1; fi
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/scoobydrew83/homebrew-sfdt.git" tap
+          cd tap
+          sed -i -E "s#(url \")[^\"]*(\")#\1${TARBALL}\2#" Formula/sfdt.rb
+          sed -i -E "s#(sha256 \")[^\"]*(\")#\1${SHA}\2#" Formula/sfdt.rb
+          if git diff --quiet; then
+            echo "Formula already at ${VERSION} — nothing to push."; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: bump formula to ${VERSION}"
+          git push
+        # The Docker image builds via the `docker` job below, which calls the
+        # reusable docker-publish.yml in this same run.
+
+  docker:
+    needs: publish
+    # Only when publish actually bumped the version. Builds + pushes the
+    # multi-arch GHCR image in this same run — a GITHUB_TOKEN-created release
+    # does not fire docker-publish.yml's `release` trigger, so we call it
+    # directly instead of relying on the release event.
+    if: needs.publish.outputs.changed == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker-publish.yml
+    with:
+      version: ${{ needs.publish.outputs.version }}
+    secrets: inherit
