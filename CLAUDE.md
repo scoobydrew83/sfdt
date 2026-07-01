@@ -76,7 +76,9 @@ Dockerfile      Official Docker image definition
 | `SFDT_PREFLIGHT_ENFORCE_GIT_CLEAN` | `"true"` (default) unless `config.deployment.preflight.enforceGitClean` is `false`; gates git-clean check |
 | `SFDT_PREFLIGHT_ENFORCE_SFDX_PROJECT` | `"true"` (default) unless `config.deployment.preflight.enforceSfdxProject` is `false`; gates sfdx-project.json check |
 | `SFDT_PREFLIGHT_ENFORCE_UNTRACKED` | `"true"` when `config.deployment.preflight.enforceUntrackedFiles` is set; gates untracked-files check in force-app/ |
-| `SFDT_PREFLIGHT_STRICT` | `"true"` when `config.deployment.preflight.strict` is set; promotes all WARNs to FAILs |
+| `SFDT_PREFLIGHT_STRICT` | `"true"` when `config.deployment.preflight.strict` is set; promotes all WARNs to FAILs (**overrides the per-check flags** — a check left as a WARN by `enforceX: false` is still promoted to a failure under strict) |
+
+> Note: for the opt-in enforce flags (`enforceTests`, `enforceBranchNaming`, `enforceChangelog`, `enforceUntrackedFiles`), "is set" means **truthy** — `false` is indistinguishable from omitting the key, and both leave the check as a non-fatal WARN (they never actively suppress it). Only `enforceGitClean`/`enforceSfdxProject` are default-on (`!== false`). All preflight flags are editable from the GUI Settings page (an inline caution is shown; they are no longer API-locked).
 | `SFDT_FEATURE_*` | Flattened from `config.features` |
 | `SFDT_DEFAULT_ENV` | `config.environments.default` |
 | `SFDT_ENV_ORGS` | Comma-joined org aliases from `config.environments.orgs` |

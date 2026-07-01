@@ -192,15 +192,15 @@ export function createGuiApp(config, version, port = 7654) {
     }
   });
 
-  // Keys that must not be API-writable. Three categories:
+  // Keys that must not be API-writable. Two categories:
   //   - Shell-command keys whose values would execute as commands.
   //   - `defaultOrg`: flows into `--target-org` for every sf invocation; the
   //     dashboard's intended path is POST /api/session/org which validates the
   //     alias against a strict regex. PATCH-ing it directly would let a write
   //     coerce sf to point at an attacker-controlled org.
-  //   - `deployment.preflight.*`: silently flipping enforcement flags off
-  //     (e.g. enforceGitClean) would let a subsequent deploy bypass the
-  //     safety check that the operator deliberately enabled.
+  //
+  // Note: `deployment.preflight.*` is intentionally NOT blocked — those safety
+  // flags are editable from the Settings page, which renders an inline caution.
   //
   // The match check below is `key === prefix || key.startsWith(`${prefix}.`)`
   // — exact match OR a dot-bounded prefix. That means:
@@ -208,13 +208,10 @@ export function createGuiApp(config, version, port = 7654) {
   //     shape — defaultOrg is a string, not a nested object).
   //   - `defaultOrgFoo` is NOT blocked (different key entirely; the dot
   //     boundary prevents over-broad matching).
-  //   - `deployment.preflight` blocks every nested enforcement flag like
-  //     `deployment.preflight.enforceGitClean` and `deployment.preflight.strict`.
   const BLOCKED_CONFIG_KEY_PREFIXES = [
     'mcp.salesforce.command',
     'mcp.salesforce.args',
     'defaultOrg',
-    'deployment.preflight',
     // `plugins` entries are dynamically import()ed at CLI startup, so allowing
     // the API to set them would be an arbitrary-code-execution path.
     'plugins',
@@ -1579,7 +1576,6 @@ export function createGuiApp(config, version, port = 7654) {
       const projectRoot = config._projectRoot ?? process.cwd();
       const relManifestDir = config.manifestDir ?? 'manifest/release';
       const manifestReleaseDir = path.join(projectRoot, relManifestDir);
-      const deployedDir = path.join(manifestReleaseDir, 'deployed');
       const manifests = [];
 
       const logFiles = await safeReaddir(logDir);
@@ -1603,7 +1599,9 @@ export function createGuiApp(config, version, port = 7654) {
         for (const subdir of subdirs) {
           const subdirPath = path.join(manifestReleaseDir, subdir);
           const subdirStat = await fs.stat(subdirPath).catch(() => null);
-          if (!subdirStat?.isDirectory() || subdir === 'deployed') continue;
+          // Skip deploy/ (in-flight artifacts) and deployed/ (post-deploy
+          // snapshots — surfaced via the Rollback step, not the manifest list).
+          if (!subdirStat?.isDirectory() || subdir === 'deployed' || subdir === 'deploy') continue;
           const subdirFiles = await safeReaddir(subdirPath);
           for (const file of subdirFiles.filter((f) => f.endsWith('.xml')).sort().reverse()) {
             const filePath = path.join(subdirPath, file);
@@ -1613,13 +1611,8 @@ export function createGuiApp(config, version, port = 7654) {
         }
       }
 
-      // Scan deployed manifests
-      const deployedFiles = await safeReaddir(deployedDir);
-      for (const file of deployedFiles.filter((f) => f.endsWith('.xml')).sort().reverse()) {
-        const filePath = path.join(deployedDir, file);
-        const stat = await fs.stat(filePath).catch(() => null);
-        if (stat) manifests.push({ name: file, source: 'deployed', date: stat.mtime.toISOString(), size: stat.size, relPath: `${relManifestDir}/deployed/${file}` });
-      }
+      // deployed/ snapshots are intentionally omitted here — they are surfaced
+      // through the Rollback step (log-based deployHistory), not the deploy list.
 
       res.json({ manifests });
     } catch (err) {
