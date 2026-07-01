@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-07-01
+
 ### Changed
 
 - **Preflight safety flags are now editable from the GUI Settings page.** `deployment.preflight.*` was previously API-locked (read-only in the dashboard, 403 on write); it's now writable via `PATCH /api/config` with an inline safety caution instead of a hard lock. `defaultOrg`, `plugins`, and `mcp.salesforce.*` remain locked.
