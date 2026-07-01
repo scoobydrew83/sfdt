@@ -96,6 +96,19 @@ sf sfdt deploy --dry-run
 > `{ status, result, warnings }` envelope. As an unsigned third-party plugin, `sf`
 > shows a one-time security prompt on install.
 
+**npm alternatives:** `pnpm add -g @sfdt/cli` · `yarn global add @sfdt/cli` · one-off `npx @sfdt/cli --help`.
+
+**From source (contributors):**
+
+```bash
+git clone https://github.com/scoobydrew83/sfdt.git && cd sfdt
+npm install
+npm link            # makes `sfdt` available globally from your checkout
+npm run build:gui   # build the local web dashboard
+```
+
+Full install reference — every method plus CI usage — at **[sfdt.dev/cli/installation](https://sfdt.dev/cli/installation)**.
+
 ## Commands Reference
 
 ### Core
