@@ -25,12 +25,12 @@ describe('flow-core/trigger-conflicts', () => {
       {
         flowId: 'A',
         label: 'A',
-        metadata: recordTriggered('RecordAfterSaveCreate', 'Create', 'Account'),
+        metadata: recordTriggered('RecordAfterSave', 'Create', 'Account'),
       },
       {
         flowId: 'B',
         label: 'B',
-        metadata: recordTriggered('RecordAfterSaveCreate', 'Create', 'Account'),
+        metadata: recordTriggered('RecordAfterSave', 'Create', 'Account'),
       },
     ]);
     expect(groups).toHaveLength(1);
@@ -43,12 +43,12 @@ describe('flow-core/trigger-conflicts', () => {
       {
         flowId: 'A',
         label: 'A',
-        metadata: recordTriggered('RecordAfterSaveCreate', 'Create', 'Account'),
+        metadata: recordTriggered('RecordAfterSave', 'Create', 'Account'),
       },
       {
         flowId: 'B',
         label: 'B',
-        metadata: recordTriggered('RecordAfterSaveCreate', 'Create', 'Opportunity'),
+        metadata: recordTriggered('RecordAfterSave', 'Create', 'Opportunity'),
       },
     ]);
     expect(groups).toEqual([]);
@@ -59,12 +59,12 @@ describe('flow-core/trigger-conflicts', () => {
       {
         flowId: 'A',
         label: 'A',
-        metadata: recordTriggered('RecordAfterSaveCreate', 'Create', 'Account'),
+        metadata: recordTriggered('RecordAfterSave', 'Create', 'Account'),
       },
       {
         flowId: 'B',
         label: 'B',
-        metadata: recordTriggered('RecordBeforeSaveCreate', 'Create', 'Account'),
+        metadata: recordTriggered('RecordBeforeSave', 'Create', 'Account'),
       },
     ]);
     expect(groups).toEqual([]);
@@ -75,15 +75,33 @@ describe('flow-core/trigger-conflicts', () => {
       {
         flowId: 'A',
         label: 'A',
-        metadata: recordTriggered('RecordAfterSaveCreate', 'Create', 'Account'),
+        metadata: recordTriggered('RecordAfterSave', 'Create', 'Account'),
       },
       {
         flowId: 'B',
         label: 'B',
-        metadata: recordTriggered('RecordAfterSaveUpdate', 'Update', 'Account'),
+        metadata: recordTriggered('RecordAfterSave', 'Update', 'Account'),
       },
     ]);
     expect(groups).toEqual([]);
+  });
+
+  it('groups a CreateAndUpdate flow with a Create-only flow (they overlap on create)', () => {
+    const groups = detectTriggerConflicts([
+      { flowId: 'A', label: 'A', metadata: recordTriggered('RecordAfterSave', 'CreateAndUpdate', 'Account') },
+      { flowId: 'B', label: 'B', metadata: recordTriggered('RecordAfterSave', 'Create', 'Account') },
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.flows.map((f) => f.flowId).sort()).toEqual(['A', 'B']);
+  });
+
+  it('reports a pair of CreateAndUpdate flows as ONE conflict, not two', () => {
+    const groups = detectTriggerConflicts([
+      { flowId: 'A', label: 'A', metadata: recordTriggered('RecordAfterSave', 'CreateAndUpdate', 'Account') },
+      { flowId: 'B', label: 'B', metadata: recordTriggered('RecordAfterSave', 'CreateAndUpdate', 'Account') },
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.flows).toHaveLength(2);
   });
 
   it('skips non-record-triggered flows', () => {
@@ -107,12 +125,12 @@ describe('flow-core/trigger-conflicts', () => {
       {
         flowId: 'A',
         label: 'A',
-        metadata: recordTriggered('RecordAfterSaveCreate', 'Create', 'Account', 2),
+        metadata: recordTriggered('RecordAfterSave', 'Create', 'Account', 2),
       },
       {
         flowId: 'B',
         label: 'B',
-        metadata: recordTriggered('RecordAfterSaveCreate', 'Create', 'Account', 0),
+        metadata: recordTriggered('RecordAfterSave', 'Create', 'Account', 0),
       },
     ]);
     expect(groups[0]!.flows.map((f) => f.entryCriteriaSummary)).toEqual([
@@ -126,22 +144,22 @@ describe('flow-core/trigger-conflicts', () => {
       {
         flowId: 'X1',
         label: 'X1',
-        metadata: recordTriggered('RecordAfterSaveUpdate', 'Update', 'Opportunity'),
+        metadata: recordTriggered('RecordAfterSave', 'Update', 'Opportunity'),
       },
       {
         flowId: 'X2',
         label: 'X2',
-        metadata: recordTriggered('RecordAfterSaveUpdate', 'Update', 'Opportunity'),
+        metadata: recordTriggered('RecordAfterSave', 'Update', 'Opportunity'),
       },
       {
         flowId: 'Y1',
         label: 'Y1',
-        metadata: recordTriggered('RecordAfterSaveCreate', 'Create', 'Account'),
+        metadata: recordTriggered('RecordAfterSave', 'Create', 'Account'),
       },
       {
         flowId: 'Y2',
         label: 'Y2',
-        metadata: recordTriggered('RecordAfterSaveCreate', 'Create', 'Account'),
+        metadata: recordTriggered('RecordAfterSave', 'Create', 'Account'),
       },
     ]);
     expect(groups.map((g) => g.objectApiName)).toEqual(['Account', 'Opportunity']);

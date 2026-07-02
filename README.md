@@ -14,7 +14,8 @@ extension and the [VS Code extension](https://marketplace.visualstudio.com/items
 
 [![npm version](https://img.shields.io/npm/v/@sfdt/cli.svg)](https://www.npmjs.com/package/@sfdt/cli)
 [![npm downloads](https://img.shields.io/npm/dm/@sfdt/cli.svg)](https://www.npmjs.com/package/@sfdt/cli)
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/sfdt.sfdt-devtools?label=VS%20Code)](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools)
+[![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-blue?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools)
+![Open VSX Version](https://img.shields.io/open-vsx/v/sfdt/sfdt-devtools)
 [![CI](https://github.com/scoobydrew83/sfdt/actions/workflows/ci.yml/badge.svg)](https://github.com/scoobydrew83/sfdt/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/scoobydrew83/sfdt/actions/workflows/codeql.yml/badge.svg)](https://github.com/scoobydrew83/sfdt/actions/workflows/codeql.yml)
 [![license](https://img.shields.io/npm/l/@sfdt/cli.svg)](https://github.com/scoobydrew83/sfdt/blob/main/LICENSE)

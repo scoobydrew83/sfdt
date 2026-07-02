@@ -1,13 +1,16 @@
-// Phase 5 — thin Workspace tools over the four bridge kinds the contract defines
-// but nothing surfaced: drift / scan / compare / quality. Each builds a minimal
-// input UI, calls `bridge.call({ kind, ... })`, and renders the result (modelled
-// on org-health.ts, including the BRIDGE_OFFLINE / BRIDGE_UNAUTHORIZED hint).
+// Phase 5 — thin Workspace tools over three bridge kinds the contract defines
+// but nothing surfaced: drift / scan / compare. Each builds a minimal input UI,
+// calls `bridge.call({ kind, ... })`, and renders the result (modelled on
+// org-health.ts, including the BRIDGE_OFFLINE / BRIDGE_UNAUTHORIZED hint).
+// The contract's fourth kind, `quality`, is surfaced by features/flow-quality.ts
+// instead (it runs the flow-core rulebook Direct in-browser, no bridge needed).
 //
 // These are dev-only: they need `sfdt ui` running to answer the bridge, exactly
-// like flow-deploy. On the current CLI, `drift`/`scan`/`compare` answer
-// NOT_IMPLEMENTED server-side (stubs), so those surface the bridge's own message
-// + hint; `quality` is fully wired and renders a score card. When the server
-// implements the other three, the generic JSON view shows their payload as-is.
+// like flow-deploy. All the kinds are implemented server-side
+// (src/lib/bridge/routes.js): `scan`/`compare` run live inventory diffs and
+// `drift` returns (or refreshes) the drift snapshot. The generic JSON view
+// shows each payload as-is; a missing kind would surface the bridge's own
+// NOT_IMPLEMENTED message + hint.
 
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';

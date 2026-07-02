@@ -44,6 +44,39 @@ describe('createWorkspaceTabs', () => {
     expect(document.querySelector('.sfdt-view-overlay')).toBeNull(); // not a modal
   });
 
+  it('mounts a tab (not a modal) when the tool presents on a later microtask', async () => {
+    // Real tools like SOQL Runner `await loadSettings()` before calling
+    // presentView, so the view arrives after openTool has returned. The sink must
+    // still route it into the tab pane, not fall back to a modal.
+    const tabbar = document.createElement('div');
+    const panes = document.createElement('div');
+    const welcome = document.createElement('div');
+    document.body.append(tabbar, panes, welcome);
+
+    const dispatch = vi.fn(async (id: string) => {
+      await Promise.resolve(); // yield the microtask, exactly like an awaited load
+      const body = document.createElement('div');
+      presentView({ title: id, body, doc: document });
+    });
+
+    const tabs = createWorkspaceTabs({
+      tabbar,
+      panes,
+      welcome,
+      dispatch,
+      labelFor: (id) => id.toUpperCase(),
+    });
+
+    tabs.openTool('soql');
+    await Promise.resolve(); // let the async dispatch present
+    await Promise.resolve();
+
+    expect(tabs.count()).toBe(1);
+    expect(tabs.activeId()).toBe('soql');
+    expect(tabbar.querySelectorAll('.tab').length).toBe(1);
+    expect(document.querySelector('.sfdt-view-overlay')).toBeNull(); // not a modal
+  });
+
   it('re-opening an already-open tool just focuses it (no re-dispatch, no dup tab)', () => {
     const { tabs, dispatch } = makeHost();
     tabs.openTool('soql');

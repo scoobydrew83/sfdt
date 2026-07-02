@@ -281,7 +281,14 @@ function detectTriggerTiming(metadata: RawFlowMetadata): TriggerTiming {
 
 function detectTriggerEvent(metadata: RawFlowMetadata): TriggerEvent {
   const start = metadata.start ?? {};
-  const event = start.triggerType ?? start.eventType ?? '';
+  // The record event (Create / Update / CreateAndUpdate / Delete) lives in
+  // recordTriggerType. triggerType holds the *timing* (RecordBeforeSave /
+  // RecordAfterSave / RecordBeforeDelete), which carries no Create/Update word —
+  // so reading it here made every save-triggered flow's event "Unknown",
+  // collapsing distinct Create-only and Update-only flows into one conflict
+  // bucket in detectTriggerConflicts (false positives). eventType is the
+  // fallback for platform-event flows (not used by the conflict grouping).
+  const event = start.recordTriggerType ?? start.eventType ?? '';
   const normal = String(event).toLowerCase();
   if (normal.includes('create') && normal.includes('update')) return 'CreateOrUpdate';
   if (normal.includes('create')) return 'Create';

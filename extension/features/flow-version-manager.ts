@@ -209,16 +209,29 @@ export function createFlowVersionManagerFeature(
     if (!confirmed) return;
 
     // Bypass native confirm() dialogs while clicking each delete link in turn.
+    // Bounded: auto-accept at most one confirm per clicked link, restoring the
+    // original confirm immediately after the last expected one — a blanket
+    // override left in place would silently accept ANY confirm on the page.
     const origConfirm = win.confirm;
-    win.confirm = () => true;
+    let remaining = items.length;
+    let restored = false;
+    const restore = (): void => {
+      if (restored) return;
+      restored = true;
+      win.confirm = origConfirm;
+    };
+    win.confirm = () => {
+      remaining -= 1;
+      if (remaining <= 0) restore();
+      return true;
+    };
     try {
       for (const item of items) {
         item.deleteLink?.click();
       }
     } finally {
-      setTimeout(() => {
-        win.confirm = origConfirm;
-      }, 1000);
+      // Fallback for pages that fire fewer confirms than links (or none).
+      setTimeout(restore, 1000);
     }
   }
 

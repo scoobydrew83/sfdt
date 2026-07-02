@@ -28,7 +28,7 @@ window that reports the chosen org's URL, so the existing tools run unchanged.
 
 ---
 
-## Features (35)
+## Features (36)
 
 Every feature is opt-in (toggle off in the options page), and any feature can be remotely disabled without a Web Store re-review via `sfdt feature-flags disable <id>`.
 
@@ -52,6 +52,7 @@ Every feature is opt-in (toggle off in the options page), and any feature can be
 | `org-limits` | Live view of the org's governor-limit usage (sorted by pressure, colour-banded) | Setup + Flow Builder + Trigger Explorer |
 | `rest-explore` | Fire arbitrary GET/POST/PATCH/PUT/DELETE against `/services/data/...` with response viewer + history | Setup + Flow Builder + Trigger Explorer |
 | `inspect-record` | Inspect a record's complete field set (including empty/system fields) via the REST API | Record page + Setup + Flow Builder |
+| `show-api-names` | Toggle inline field API names + object/18-char-id header annotation on record pages; copy Id / Apex `insert` / SOQL for the current record | Record page |
 | `data-import` | Guided CSV data import into the org | Record page + Setup + Flow Builder |
 | `field-creator` | Bulk-create multiple custom fields at once | Record page + Object Manager + Flow Builder |
 | `metadata-retrieve` | Retrieve and deploy metadata directly from the browser | Record page + Setup + Flow Builder |

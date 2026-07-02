@@ -55,13 +55,19 @@ describe('flow-core/normalize', () => {
       expect(flow.trigger.timing).toBe('BeforeSave');
     });
 
-    it('event CreateOrUpdate when both words present', () => {
-      const flow = normalize({ start: { triggerType: 'RecordAfterCreateOrUpdate' } });
+    it('event CreateOrUpdate from recordTriggerType (real Salesforce shape)', () => {
+      // Real metadata: timing lives in triggerType (RecordAfterSave), the
+      // event in recordTriggerType (CreateAndUpdate) — not baked into one field.
+      const flow = normalize({
+        start: { triggerType: 'RecordAfterSave', recordTriggerType: 'CreateAndUpdate' },
+      });
       expect(flow.trigger.event).toBe('CreateOrUpdate');
     });
 
-    it('event Delete when delete is present', () => {
-      const flow = normalize({ start: { triggerType: 'RecordBeforeDelete' } });
+    it('event Delete from recordTriggerType', () => {
+      const flow = normalize({
+        start: { triggerType: 'RecordBeforeDelete', recordTriggerType: 'Delete' },
+      });
       expect(flow.trigger.event).toBe('Delete');
     });
 
