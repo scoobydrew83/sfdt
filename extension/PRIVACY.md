@@ -54,7 +54,7 @@ When you also have the local sfdt CLI running, the extension may push a snapshot
 
 The extension reads Flow metadata via the Salesforce Tooling API using your existing Salesforce session. It does this from the page you're already on; no separate authentication is required and no Salesforce data ever leaves your browser via this extension.
 
-The SOQL Query Runner, Org Limits, and REST API Explorer features call Salesforce REST and Tooling endpoints (`/services/data/...`) against the same session — queries, requests, and responses stay between your browser and the org you're already authenticated to.
+The SOQL Query Runner, Org Limits, REST API Explorer, Inspect Record, and Show API Names features call Salesforce REST and Tooling endpoints (`/services/data/...`) against the same session — queries, requests, and responses stay between your browser and the org you're already authenticated to.
 
 The Workspace org picker and the Switch Org feature read your existing Salesforce session cookies to list the orgs you're already logged in to, so you can target a tool at the org you choose. Only the org hostnames are used (to label and select an org); cookie values are never displayed and never leave your device. The Org Health panel reads the CLI's local audit/monitor snapshots through the same `http://127.0.0.1:7654` bridge described below.
 
