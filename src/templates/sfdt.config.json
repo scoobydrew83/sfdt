@@ -20,6 +20,7 @@
       "noOverwriteManifest": "manifest/package-no-overwrite.xml",
       "impactingTypes": ["ApexClass", "ApexTrigger", "Flow"],
       "downgradeTestsOnNonProd": true,
+      "useRelevantTests": false,
       "assumeProd": false
     }
   },

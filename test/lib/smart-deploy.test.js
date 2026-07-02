@@ -113,6 +113,51 @@ describe('selectTestLevel', () => {
     const r = selectTestLevel({ CustomObject: ['Acct__c'] }, { isProd: false, downgradeTestsOnNonProd: false });
     expect(r.testLevel).toBe('RunLocalTests');
   });
+
+  it('emits RunRelevantTests instead of the RunLocalTests fallback when opted in (non-prod)', () => {
+    const r = selectTestLevel({ ApexClass: ['Foo'] }, { isProd: false, useRelevantTests: true });
+    expect(r.testLevel).toBe('RunRelevantTests');
+    expect(r.tests).toEqual([]);
+  });
+
+  it('never emits RunRelevantTests for production', () => {
+    const r = selectTestLevel({ ApexClass: ['Foo'] }, { isProd: true, useRelevantTests: true });
+    expect(r.testLevel).toBe('RunLocalTests');
+  });
+
+  it('keeps the more-minimal branches when opted in', () => {
+    expect(selectTestLevel({ Layout: ['L'] }, { isProd: false, useRelevantTests: true }).testLevel).toBe('NoTestRun');
+    expect(
+      selectTestLevel({ ApexClass: ['FooTest'] }, { isProd: false, useRelevantTests: true }).testLevel,
+    ).toBe('RunSpecifiedTests');
+  });
+});
+
+describe('prepareSmartDeploy useRelevantTests API gate', () => {
+  const mockApexDiff = () => {
+    diffNameStatus.mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: 'A\tforce-app/main/default/classes/Foo.cls',
+      stderr: '',
+    });
+    fs.mkdtemp.mockResolvedValue('/tmp/sfdt-smart-x');
+    fs.pathExists.mockResolvedValue(false);
+    fs.writeFile.mockResolvedValue(undefined);
+  };
+
+  it('activates RunRelevantTests when sourceApiVersion >= 66', async () => {
+    mockApexDiff();
+    const cfg = { ...config, sourceApiVersion: '66.0', deployment: { smart: { useRelevantTests: true } } };
+    const prep = await prepareSmartDeploy({ base: 'main', projectRoot: '/p', config: cfg });
+    expect(prep.testLevel).toBe('RunRelevantTests');
+  });
+
+  it('falls back to RunLocalTests when sourceApiVersion < 66', async () => {
+    mockApexDiff();
+    const cfg = { ...config, sourceApiVersion: '65.0', deployment: { smart: { useRelevantTests: true } } };
+    const prep = await prepareSmartDeploy({ base: 'main', projectRoot: '/p', config: cfg });
+    expect(prep.testLevel).toBe('RunLocalTests');
+  });
 });
 
 describe('prepareSmartDeploy temp-dir cleanup', () => {

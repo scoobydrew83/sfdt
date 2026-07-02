@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+
 ## [0.15.2] - 2026-07-02
+
+### Added
+
+- **`RunRelevantTests` support (Salesforce Spring '26 beta, API 66+).** The new Salesforce test level — the org analyzes the deployment payload and runs only the tests relevant to it — is now selectable everywhere a test level can be chosen manually: the GUI Release Hub deploy step, the interactive deployment assistant menu, and the MCP `sfdt_validate`/`sfdt_deploy` tools. Smart deploy can opt in via `deployment.smart.useRelevantTests` (default `false`): on a non-production org with `sourceApiVersion` ≥ 66 it replaces the `RunLocalTests` fallback; production deploys are never auto-downgraded and stay pinned to `RunLocalTests`. Caveat: the feature is beta and a known sf CLI issue ([forcedotcom/cli#3565](https://github.com/forcedotcom/cli/issues/3565)) can cause `deploy validate` to run zero tests with this level — verify with `--json` output.
 
 ### Changed
 

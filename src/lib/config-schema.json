@@ -122,6 +122,7 @@
             "noOverwriteManifest": { "type": "string" },
             "impactingTypes": { "type": "array", "items": { "type": "string" } },
             "downgradeTestsOnNonProd": { "type": "boolean" },
+            "useRelevantTests": { "type": "boolean" },
             "assumeProd": { "type": "boolean" }
           }
         }

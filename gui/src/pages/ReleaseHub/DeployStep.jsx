@@ -207,6 +207,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
                   <option value="RunLocalTests">RunLocalTests (All Local)</option>
                   <option value="RunSpecifiedTests">RunSpecifiedTests (Manual List)</option>
                   <option value="RunAllTestsInOrg">RunAllTestsInOrg (Managed + Local)</option>
+                  <option value="RunRelevantTests">RunRelevantTests (Relevant Only — Beta, API 66+)</option>
                 </select>
 
                 {testLevel === 'RunSpecifiedTests' && (

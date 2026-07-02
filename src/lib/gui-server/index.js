@@ -1789,7 +1789,7 @@ export function createGuiApp(config, version, port = 7654) {
       }
     }
 
-    const VALID_TEST_LEVELS = ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg'];
+    const VALID_TEST_LEVELS = ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg', 'RunRelevantTests'];
     if (testLevel !== undefined && testLevel !== null && !VALID_TEST_LEVELS.includes(testLevel)) {
       return res.status(400).json({ error: 'Invalid testLevel' });
     }

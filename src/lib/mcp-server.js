@@ -88,7 +88,7 @@ const TOOLS = [
       properties: {
         manifest: { type: 'string', description: 'Path to package.xml manifest.' },
         targetOrg: { type: 'string', description: 'Org alias.' },
-        testLevel: { type: 'string', enum: ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg'] },
+        testLevel: { type: 'string', enum: ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg', 'RunRelevantTests'] },
         testClasses: { type: 'array', items: { type: 'string' }, description: 'Specific test classes to run.' }
       },
       required: ['targetOrg']
@@ -102,7 +102,7 @@ const TOOLS = [
       properties: {
         manifest: { type: 'string', description: 'Path to package.xml manifest (ignored when smart=true).' },
         targetOrg: { type: 'string', description: 'Org alias.' },
-        testLevel: { type: 'string', enum: ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg'] },
+        testLevel: { type: 'string', enum: ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg', 'RunRelevantTests'] },
         testClasses: { type: 'array', items: { type: 'string' }, description: 'Specific test classes to run.' },
         destructiveTiming: { type: 'string', enum: ['pre', 'post', 'none', 'only'] },
         smart: { type: 'boolean', description: 'Smart delta deploy: only metadata changed between deltaBase and deltaHead, with smart test selection.' },

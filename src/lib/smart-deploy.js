@@ -94,11 +94,17 @@ function isTestClassName(name) {
  * - No impacting metadata changed → NoTestRun.
  * - Only Apex *test* classes changed → RunSpecifiedTests (those tests).
  * - Any other impacting change (non-test Apex, triggers, flows) → RunLocalTests,
- *   because we can't reliably map arbitrary changes to covering tests.
+ *   because we can't reliably map arbitrary changes to covering tests —
+ *   or RunRelevantTests (Spring '26 beta) when `useRelevantTests` is opted in.
  */
 export function selectTestLevel(
   additive,
-  { impactingTypes = DEFAULT_IMPACTING_TYPES, downgradeTestsOnNonProd = true, isProd = false } = {},
+  {
+    impactingTypes = DEFAULT_IMPACTING_TYPES,
+    downgradeTestsOnNonProd = true,
+    isProd = false,
+    useRelevantTests = false,
+  } = {},
 ) {
   if (isProd || !downgradeTestsOnNonProd) {
     return { testLevel: 'RunLocalTests', tests: [], reason: isProd ? 'production deploy' : 'test downgrade disabled' };
@@ -113,6 +119,9 @@ export function selectTestLevel(
   const nonTestApex = apex.filter((n) => !isTestClassName(n));
   if (onlyApexImpacted && nonTestApex.length === 0 && testClasses.length > 0) {
     return { testLevel: 'RunSpecifiedTests', tests: testClasses, reason: 'only Apex test classes changed' };
+  }
+  if (useRelevantTests) {
+    return { testLevel: 'RunRelevantTests', tests: [], reason: 'relevant tests (beta)' };
   }
   return { testLevel: 'RunLocalTests', tests: [], reason: `impacting types changed: ${impacted.join(', ')}` };
 }
@@ -168,7 +177,14 @@ export async function prepareSmartDeploy({
 
   const impactingTypes = smart.impactingTypes || DEFAULT_IMPACTING_TYPES;
   const downgradeTestsOnNonProd = smart.downgradeTestsOnNonProd !== false;
-  const { testLevel, tests, reason } = selectTestLevel(additive, { impactingTypes, downgradeTestsOnNonProd, isProd });
+  // RunRelevantTests requires API 66+ (Spring '26 beta); below that, fall back silently.
+  const useRelevantTests = smart.useRelevantTests === true && parseFloat(apiVersion) >= 66;
+  const { testLevel, tests, reason } = selectTestLevel(additive, {
+    impactingTypes,
+    downgradeTestsOnNonProd,
+    isProd,
+    useRelevantTests,
+  });
 
   return {
     tmpDir: dir,
