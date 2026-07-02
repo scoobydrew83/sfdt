@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-07-02
+
+### Changed
+
+- **Bumped `@sfdt/flow-core` to 0.9.4** — record-triggered flow **event** detection now reads `recordTriggerType` (the `triggerType` field holds the *timing* — before/after save — not the event). Previously every save-triggered flow's event normalised to "Unknown", collapsing distinct Create-only and Update-only flows into a single conflict bucket, so `audit`/Flow Intelligence reported trigger conflicts that don't exist. Affects every flow-core consumer (CLI, GUI, Chrome extension, VS Code extension).
+
+### Fixed
+
+- **The VS Code dashboard webview can embed the GUI again.** The GUI server now sends `Content-Security-Policy: frame-ancestors 'self' vscode-webview:` instead of `X-Frame-Options: SAMEORIGIN`, which blocked the cross-origin `vscode-webview://` frame and left the dashboard panel blank. Framing by arbitrary web origins remains blocked, and the server still binds to localhost only.
+
 ## [0.15.1] - 2026-07-01
 
 ### Changed
