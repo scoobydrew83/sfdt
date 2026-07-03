@@ -214,7 +214,7 @@ sfdt deploy --source-dir force-app/feature-a   # deploy a folder directly (no ma
 **What happens:**
 
 1. Preflight runs (`new/preflight.sh`) unless `--skip-preflight` is set. If preflight fails, the deploy is aborted.
-2. The deployment script runs (`core/deployment-assistant.sh` or `core/deploy-manager.sh`).
+2. The deployment script runs (`core/deployment-assistant.sh` or `core/deploy-manager.sh`). The interactive picker offers any `.xml` manifest found in your manifest directory (`manifestDir`, default `manifest/release/`) — generated `rl-*-package.xml` releases are listed first, but plain `package.xml` files and `preview-package.xml` work too. Companion `*-destructiveChanges.xml` files and the `deploy/`/`deployed/` subfolders are excluded.
 3. Output is streamed directly to your terminal with full TTY passthrough (spinner, colors, interactive prompts from the script).
 
 Use `--managed` when deploying a second-generation managed package where the deploy-manager script handles namespace and version locking.
