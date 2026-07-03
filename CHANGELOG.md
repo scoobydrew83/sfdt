@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`sfdt deploy` now detects any `.xml` manifest in the manifest directory, not just the generated `rl-*-package.xml` convention.** The interactive picker and the non-interactive auto-select both offer plain `package.xml` files, `sf project generate manifest` output, and un-named `sfdt manifest` previews (`preview-package.xml`). Versioned `rl-*` manifests are still listed first (and still preferred by auto-select); companion `*-destructiveChanges.xml` and `*no-overwrite*.xml` files are excluded, as are the `deploy/` and `deployed/` subfolders. The "no manifests found" error now says what was searched and how to generate one.
+
 
 
 ## [0.15.2] - 2026-07-02
