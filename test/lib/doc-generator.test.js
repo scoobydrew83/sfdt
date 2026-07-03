@@ -1,5 +1,30 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Mocks are only exercised by the generateDocs orchestration tests at the
+// bottom of this file; the pure parse/render helpers never touch fs or glob.
+vi.mock('glob', () => ({ glob: vi.fn() }));
+vi.mock('fs-extra', () => ({
+  default: {
+    readFile: vi.fn(),
+    ensureDir: vi.fn().mockResolvedValue(undefined),
+    writeFile: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+vi.mock('../../src/lib/ai.js', () => ({
+  runAiPrompt: vi.fn(),
+  isAiAvailable: vi.fn().mockResolvedValue(false),
+  aiUnavailableMessage: vi.fn().mockReturnValue('AI is not available'),
+}));
+vi.mock('../../src/lib/prompts.js', () => ({
+  getPrompt: vi.fn().mockResolvedValue('TEMPLATE'),
+  interpolate: vi.fn((t) => t),
+}));
+
+import { glob } from 'glob';
+import fs from 'fs-extra';
+import { runAiPrompt, isAiAvailable } from '../../src/lib/ai.js';
 import {
+  generateDocs,
   parseField,
   parseApexMeta,
   parseLwcMeta,
@@ -182,6 +207,57 @@ describe('resolveRoles', () => {
   });
   it('exposes all four built-in roles', () => {
     expect(Object.keys(ROLE_GUIDES)).toEqual(['developer', 'admin', 'user', 'devops']);
+  });
+});
+
+describe('generateDocs diagrams and AI gating', () => {
+  const FIELD_XML =
+    '<fullName>Account__c</fullName><label>Account</label><type>Lookup</type><referenceTo>Account</referenceTo>';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    glob.mockImplementation((pattern) =>
+      Promise.resolve(
+        pattern === 'objects/*/fields/*.field-meta.xml'
+          ? ['/p/force-app/main/default/objects/Invoice__c/fields/Account__c.field-meta.xml']
+          : [],
+      ),
+    );
+    fs.readFile.mockResolvedValue(FIELD_XML);
+    fs.ensureDir.mockResolvedValue(undefined);
+    fs.writeFile.mockResolvedValue(undefined);
+    isAiAvailable.mockResolvedValue(false);
+  });
+
+  it('writes a standalone ER-diagram page when diagrams is true', async () => {
+    const res = await generateDocs({ _projectRoot: '/p' }, { diagrams: true });
+    expect(res.diagram).toBe('diagrams/erd.md');
+    expect(res.files).toContain('diagrams/erd.md');
+    const call = fs.writeFile.mock.calls.find(([p]) => p.endsWith('diagrams/erd.md'));
+    expect(call[1]).toContain('erDiagram');
+    expect(call[1]).toContain('Invoice__c }o--|| Account : "Account__c"');
+  });
+
+  it('skips the standalone diagram page by default', async () => {
+    const res = await generateDocs({ _projectRoot: '/p' }, {});
+    expect(res.diagram).toBeNull();
+    expect(res.files).not.toContain('diagrams/erd.md');
+    expect(fs.writeFile.mock.calls.some(([p]) => p.endsWith('diagrams/erd.md'))).toBe(false);
+  });
+
+  it('does not attempt the AI overview when the resolved ai option is false', async () => {
+    isAiAvailable.mockResolvedValue(true);
+    const res = await generateDocs({ _projectRoot: '/p', docs: { ai: true } }, { ai: false });
+    expect(res.aiUsed).toBe(false);
+    expect(runAiPrompt).not.toHaveBeenCalled();
+  });
+
+  it('runs the AI overview when the resolved ai option is true and AI is available', async () => {
+    isAiAvailable.mockResolvedValue(true);
+    runAiPrompt.mockResolvedValue({ stdout: 'Overview prose.' });
+    const res = await generateDocs({ _projectRoot: '/p' }, { ai: true });
+    expect(res.aiUsed).toBe(true);
+    expect(runAiPrompt).toHaveBeenCalled();
   });
 });
 
