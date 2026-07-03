@@ -156,3 +156,49 @@ sfp community edition was archived (April 2026); commercial players (Copado Agen
 | 5 (big bets) | 4.5, 3.6, 4.12, 2.2 |
 
 Every user-facing change must be mirrored to the docs site (`sfdt-site`) in the same effort — including the manifest-detection change already on this branch.
+
+---
+
+## Appendix — Sprint execution schedule (agent-driven)
+
+Execution model: each sprint runs as a wave of parallel agents on **disjoint file sets** (shared files — config template, schema, CHANGELOG, CLAUDE.md — are edited once, up front or at consolidation, never concurrently). Every agent runs its own verification loop (implement → targeted vitest → eslint → fix until green); every wave ends with a full-suite run plus one **adversarial reviewer per item** whose job is to refute the change; confirmed findings loop back into a fix round before commit. One commit per work item.
+
+### Sprint 1 — bugs & quick wins *(in progress on this branch)*
+| Order | Item | Files (ownership) | Depends on |
+|---|---|---|---|
+| 0 | Pre-work: config keys (`defaultBranch`, `smokeTests`, `deployment.keyClasses`, `googlechat` enum) | template + schema | — |
+| 1a | 1.1 + 1.6 smoke config wiring + dead tunables | `smoke.sh`, `smoke.js`, `script-runner.js` | 0 |
+| 1b | 1.3 deploy `--tag/--create-pr/--notify` | `deploy.js`, USAGE.md | 0 |
+| 1c | 1.4 `docs.*` config keys made real | `docs.js`, `doc-generator.js` | — |
+| 1d | 1.5 analyzer stub → labelled "skipped" | `code-analyzer.sh`, `quality.js` | — |
+| 1e | 4.8 + 2.5 Google Chat channel + formatter/middleware tests | `notifier*.js`, new tests | 0 |
+| 1f | 4.2 credential-redaction sweep | scripts/src minus 1a–1e files | — |
+| 2 | Consolidation: CHANGELOG, CLAUDE.md env table, docs-site staleness list | shared docs | 1a–1f |
+
+### Sprint 2 — VS Code uplift (order matters: each builds on the previous)
+1. **3.1 native `--json` capture** (foundation; `vscode/src/lib/` runner module + result types)
+2. **3.2 Problems-pane diagnostics** (consumes 3.1's parsed results)
+3. **3.3 smart-deploy preview / execute / quick-deploy** (uses 3.1 runner; new webview)
+4. **3.5 walkthrough + catalog completeness** (independent — can run parallel to 2–3)
+Parallelizable: 3.5 with any; 3.2 and 3.3 only after 3.1 lands.
+
+### Sprint 3 — release-driven checks (all parallel; independent checks)
+- **4.1 API v67 readiness check** (new lib + audit/quality wiring; feeds VS Code diagnostics later)
+- **4.7a MFA readiness** · **4.7b SOAP login retirement** · **4.7c Connected-Apps migration** · **4.7d elastic async limits** · **4.7e release-channel awareness** (each a self-contained audit/monitor check + template/schema defaults pre-added in one commit)
+- **4.3 RunRelevantTests follow-through** (smart-deploy + quality check)
+- **2.1 GUI run-from-dashboard** (gui-server routes + pages; disjoint from checks)
+
+### Sprint 4 — depth (parallel except where noted)
+- **4.4 unified logic tests** (`test` command + runner script)
+- **4.6 Code Analyzer v5 integration** (replaces 1.5's stub path — sequence after 1d)
+- **2.4 MCP coverage expansion** (read-only tools first)
+- **3.4 VS Code test/coverage integration** (after Sprint 2's 3.1)
+- **4.10 Chrome setup deep links** · **4.11 org release/channel badge**
+
+### Sprint 5 — big bets (each is its own multi-agent effort)
+- **4.5 Agentforce** (metadata-mapper coverage, then `agent-test` gate)
+- **3.6 VS Code agent-test runner** (after 4.5)
+- **4.12 Chrome Flow Scanner surface** (flow-core powered)
+- **2.2 native-host read-only kinds** (decision recorded in plan §2.2)
+
+Cross-cutting rule: every wave's consolidation step updates CHANGELOG.md, the CLAUDE.md env-var table when `SFDT_*` vars change, and queues the matching sfdt-site (sfdt.dev) content updates.
