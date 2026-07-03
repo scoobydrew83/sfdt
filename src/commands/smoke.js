@@ -21,6 +21,11 @@ export function registerSmokeCommand(program) {
           SFDT_TARGET_ORG: orgAlias,
         };
 
+        const smokeTestClasses = config.smokeTests?.testClasses;
+        if (Array.isArray(smokeTestClasses) && smokeTestClasses.length > 0) {
+          env.SFDT_SMOKE_TESTS = smokeTestClasses.join(',');
+        }
+
         await runScript('ops/smoke.sh', config, {
           cwd: projectRoot,
           env,

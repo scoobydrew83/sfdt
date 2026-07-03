@@ -90,6 +90,17 @@ describe('buildScriptEnv', () => {
     expect(env.SFDT_APEX_CLASSES).toBe('A,B');
   });
 
+  it('maps defaultBranch to SFDT_DEFAULT_BRANCH with "main" default', () => {
+    expect(buildScriptEnv({}).SFDT_DEFAULT_BRANCH).toBe('main');
+    expect(buildScriptEnv({ defaultBranch: 'develop' }).SFDT_DEFAULT_BRANCH).toBe('develop');
+  });
+
+  it('maps testConfig.parallelDelay to SFDT_PARALLEL_DELAY only when defined', () => {
+    expect(buildScriptEnv({ testConfig: {} })).not.toHaveProperty('SFDT_PARALLEL_DELAY');
+    expect(buildScriptEnv({ testConfig: { parallelDelay: 0 } }).SFDT_PARALLEL_DELAY).toBe('0');
+    expect(buildScriptEnv({ testConfig: { parallelDelay: 5 } }).SFDT_PARALLEL_DELAY).toBe('5');
+  });
+
   it('serializes packageDirectories paths as a JSON array', () => {
     const env = buildScriptEnv({
       packageDirectories: [{ path: 'force-app/main/default' }, { path: 'force-app/mkt' }],

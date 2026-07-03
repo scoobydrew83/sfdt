@@ -67,6 +67,44 @@ describe('smoke command', () => {
     );
   });
 
+  it('passes SFDT_SMOKE_TESTS when smokeTests.testClasses is configured', async () => {
+    runScript.mockResolvedValue({ exitCode: 0 });
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/project',
+      defaultOrg: 'dev',
+      features: {},
+      smokeTests: { testClasses: ['SmokeA_Test', 'SmokeB_Test'] },
+    });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'smoke']);
+
+    expect(runScript).toHaveBeenCalledWith(
+      'ops/smoke.sh',
+      expect.any(Object),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          SFDT_TARGET_ORG: 'dev',
+          SFDT_SMOKE_TESTS: 'SmokeA_Test,SmokeB_Test',
+        }),
+      }),
+    );
+  });
+
+  it('does not set SFDT_SMOKE_TESTS when smokeTests.testClasses is empty or absent', async () => {
+    runScript.mockResolvedValue({ exitCode: 0 });
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/project',
+      defaultOrg: 'dev',
+      features: {},
+      smokeTests: { testClasses: [] },
+    });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'smoke']);
+
+    const env = runScript.mock.calls[0][2].env;
+    expect(env).not.toHaveProperty('SFDT_SMOKE_TESTS');
+  });
+
   it('sets exitCode 1 on failure', async () => {
     runScript.mockRejectedValue(new Error('smoke failed'));
 
