@@ -210,6 +210,9 @@ sfdt deploy --source-dir force-app/feature-a   # deploy a folder directly (no ma
 | `--skip-preflight` | Skip the preflight validation step and go straight to deployment |
 | `--dry-run` | Show what would be executed without making changes |
 | `--source-dir <path>` | Deploy a source directory directly instead of a manifest (relative to project root). Bypasses manifest selection and deploys the folder with `sf project deploy start --source-dir`. |
+| `--tag` | After a successful deploy, tag the release in git (`v<version>`, pushed to origin). Interactive deploy only — ignored (with a warning) under `--smart`. |
+| `--create-pr` | After a successful deploy, create a pull request from the current branch to the default branch via the `gh` CLI. Interactive deploy only — ignored (with a warning) under `--smart`. |
+| `--notify` | Send the deploy success/failure notification through `sfdt notify` (Slack). Interactive deploy only — ignored (with a warning) under `--smart`. |
 
 **What happens:**
 

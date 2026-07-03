@@ -223,6 +223,9 @@ export function registerDeployCommand(program) {
     .option('--max-turns <n>', 'Max auto-fix iterations (overrides ai.agent.maxTurns)')
     .option('--pr-comment', 'Post the smart-deploy delta + outcome to the current PR (via gh)')
     .option('--agent', 'Non-interactive agent mode (no AI prompts block on input)')
+    .option('--tag', 'Tag the release in git (v<version>, pushed to origin) after a successful deploy (interactive deploy only)')
+    .option('--create-pr', 'Create a PR from the current branch to the default branch (via gh) after a successful deploy (interactive deploy only)')
+    .option('--notify', 'Send the deploy success/failure notification (via sfdt notify) (interactive deploy only)')
     .action(async (options) => {
       try {
         const config = await loadConfig();
@@ -230,6 +233,14 @@ export function registerDeployCommand(program) {
         const orgAlias = options.org || config.defaultOrg;
 
         if (options.smart) {
+          const inertFlags = [
+            options.tag && '--tag',
+            options.createPr && '--create-pr',
+            options.notify && '--notify',
+          ].filter(Boolean);
+          if (inertFlags.length) {
+            print.warning(`${inertFlags.join(', ')} only appl${inertFlags.length === 1 ? 'ies' : 'y'} to the interactive deploy — ignored with --smart.`);
+          }
           await runSmartDeploy(config, options);
           return;
         }
@@ -255,6 +266,9 @@ export function registerDeployCommand(program) {
           }
           extraEnv.SFDT_DEPLOY_SOURCE_DIR = options.sourceDir;
         }
+        if (options.tag) extraEnv.SFDT_TAG_RELEASE = 'true';
+        if (options.createPr) extraEnv.SFDT_CREATE_PR = 'true';
+        if (options.notify) extraEnv.SFDT_NOTIFY_SLACK = 'true';
 
         const deployStart = Date.now();
         const deployResult = await runScript(scriptPath, config, {
