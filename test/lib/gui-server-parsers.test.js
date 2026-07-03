@@ -239,8 +239,21 @@ describe('parseQualityLines', () => {
     };
     const result = parseQualityLines([JSON.stringify(payload)]);
     expect(result.violations).toEqual([]);
-    expect(result.unavailableMessage).toContain('sf scanner plugin not installed');
+    expect(result.status).toBe('SKIPPED');
+    expect(result.unavailableMessage).toContain('not installed');
     expect(result.summary).toEqual({ critical: 0, high: 0, medium: 0, low: 0 });
+  });
+
+  it('marks a crashed-scanner stub as SKIPPED with the crash reason', () => {
+    const payload = {
+      status: 'skipped',
+      reason: 'sf scanner run failed',
+      result: [],
+      _sfdt_unavailable: 'sf scanner plugin not installed. Run: sf plugins install @salesforce/sfdx-scanner',
+    };
+    const result = parseQualityLines([JSON.stringify(payload)]);
+    expect(result.status).toBe('SKIPPED');
+    expect(result.unavailableMessage).toBe('sf scanner run failed');
   });
 });
 

@@ -385,6 +385,13 @@ handle_release_tagging() {
         return 0
     fi
 
+    # --tag / SFDT_TAG_RELEASE pre-selects post-deploy tagging — skip the prompt.
+    if [ "${SFDT_TAG_RELEASE:-false}" == "true" ]; then
+        TAG_TIMING="after"
+        print_success "Will tag after deployment completes (--tag)"
+        return 0
+    fi
+
     echo -e "${GREEN}When should the release be tagged?${NC}"
     options=("Tag now (before deployment)" "Tag after successful deployment" "Skip tagging")
     COLUMNS=1
@@ -1312,6 +1319,23 @@ notify_slack_if_enabled() {
     sfdt "${notify_args[@]}" >/dev/null 2>&1 || true
 }
 
+create_release_pr() {
+    # Honour the --create-pr flag / GUI toggle (SFDT_CREATE_PR=true).
+    # Quietly no-op when unset so the default flow is unchanged.
+    if [ "${SFDT_CREATE_PR:-false}" != "true" ]; then
+        return 0
+    fi
+    print_step "Auto-creating pull request..."
+    local current_branch
+    current_branch=$(get_current_branch)
+    local default_branch="${SFDT_DEFAULT_BRANCH:-main}"
+    if [ "$current_branch" != "$default_branch" ]; then
+        gh pr create --base "$default_branch" --head "$current_branch" --title "release: ${RELEASE_VERSION}" --body "Automated release PR for v${RELEASE_VERSION}" || print_warning "Could not create PR via GH CLI"
+    else
+        print_warning "Already on ${default_branch} — skipping PR creation"
+    fi
+}
+
 post_deployment_tasks() {
     print_header "POST-DEPLOYMENT TASKS"
 
@@ -1348,6 +1372,7 @@ post_deployment_tasks() {
     print_success "═══════════════════════════════════════════════════"
     echo ""
 
+    create_release_pr
     notify_slack_if_enabled deploy-success "Deployment to ${TARGET_ORG} succeeded."
 }
 
@@ -1460,6 +1485,7 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
         print_step "Quick Deploy using validation job ID: $VALIDATION_JOB_ID"
         run_quick_deploy
         archive_deployed_manifest
+        notify_slack_if_enabled deploy-success "Quick-deploy to ${TARGET_ORG} succeeded."
     else
         run_full_deployment
         # Only archive and tag if it was a successful real deployment
@@ -1471,14 +1497,8 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
             git push origin "v${RELEASE_VERSION}" || print_warning "Could not push tag to remote"
         fi
 
-        if [[ "$CREATE_PR" == "true" ]]; then
-            print_step "Auto-creating pull request..."
-            current_branch=$(get_current_branch)
-            default_branch="${SFDT_DEFAULT_BRANCH:-main}"
-            if [[ "$current_branch" != "$default_branch" ]]; then
-                gh pr create --base "$default_branch" --head "$current_branch" --title "release: ${RELEASE_VERSION}" --body "Automated release PR for v${RELEASE_VERSION}" || print_warning "Could not create PR via GH CLI"
-            fi
-        fi
+        create_release_pr
+        notify_slack_if_enabled deploy-success "Deployment to ${TARGET_ORG} succeeded."
     fi
     
     print_success "Non-interactive flow complete"

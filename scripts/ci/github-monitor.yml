@@ -3,7 +3,7 @@
 # the snapshot to configured notification channels.
 #
 # Required repository secrets (Settings > Secrets and variables > Actions):
-#   SFDX_AUTH_URL        sfdx auth URL for {{org}} (sf org display --verbose --json)
+#   SFDX_AUTH_URL        sfdx auth URL for {{org}} (sf org auth show-sfdx-auth-url; on sf CLI < 2.136 use sf org display --verbose --json)
 #   SLACK_WEBHOOK_URL    (optional) Slack incoming webhook
 #   TEAMS_WEBHOOK_URL    (optional) Microsoft Teams incoming webhook
 name: SFDT Org Monitoring

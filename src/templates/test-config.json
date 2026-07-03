@@ -1,4 +1,5 @@
 {
   "projectTestClasses": [],
-  "projectApexClasses": []
+  "projectApexClasses": [],
+  "parallelDelay": 1
 }

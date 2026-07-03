@@ -116,13 +116,15 @@ export default function QualityPage() {
               <span style={{ fontSize: 16 }}>⚠️</span>
               <div>
                 <div style={{ fontWeight: 600, fontSize: 13, color: '#c2410c', marginBottom: 4 }}>
-                  sf scanner not installed — violation analysis unavailable
+                  {qualityData.unavailableMessage} — violation analysis unavailable
                 </div>
-                <div style={{ fontSize: 12, color: '#9a3412', fontFamily: 'monospace' }}>
-                  sf plugins install @salesforce/sfdx-scanner
-                </div>
+                {/(not installed|unavailable)/i.test(qualityData.unavailableMessage) && (
+                  <div style={{ fontSize: 12, color: '#9a3412', fontFamily: 'monospace' }}>
+                    sf plugins install @salesforce/sfdx-scanner
+                  </div>
+                )}
                 <div style={{ fontSize: 12, color: 'var(--fg-muted)', marginTop: 4 }}>
-                  The basic analysis above ran successfully. Install the scanner plugin to detect PMD and ESLint violations.
+                  The basic analysis above ran successfully, but the scan was skipped — this is not a clean scanner result.
                 </div>
               </div>
             </div>

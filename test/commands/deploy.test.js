@@ -176,6 +176,20 @@ describe('deploy command', () => {
     expect(callEnv).not.toHaveProperty('SFDT_NOTIFY_SLACK');
   });
 
+  it('warns and leaves env unset when --tag/--create-pr/--notify are combined with --managed', async () => {
+    runScript.mockResolvedValue({ exitCode: 0 });
+
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'deploy', '--skip-preflight', '--managed', '--tag', '--notify',
+    ]);
+
+    expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('--managed'));
+    const callEnv = runScript.mock.calls[0][2]?.env ?? {};
+    expect(callEnv).not.toHaveProperty('SFDT_TAG_RELEASE');
+    expect(callEnv).not.toHaveProperty('SFDT_NOTIFY_SLACK');
+    expect(print.error).not.toHaveBeenCalled();
+  });
+
   it('warns (without erroring) when --tag/--create-pr/--notify are combined with --smart', async () => {
     execa.mockRejectedValue(new Error('no sf CLI in tests'));
     prepareSmartDeploy.mockResolvedValue({
@@ -192,7 +206,7 @@ describe('deploy command', () => {
     ]);
 
     expect(print.warning).toHaveBeenCalledWith(
-      expect.stringContaining('only apply to the interactive deploy'),
+      expect.stringContaining('only apply to the standard manifest deploy'),
     );
     expect(print.error).not.toHaveBeenCalled();
     expect(process.exitCode).toBeUndefined();

@@ -210,9 +210,9 @@ sfdt deploy --source-dir force-app/feature-a   # deploy a folder directly (no ma
 | `--skip-preflight` | Skip the preflight validation step and go straight to deployment |
 | `--dry-run` | Show what would be executed without making changes |
 | `--source-dir <path>` | Deploy a source directory directly instead of a manifest (relative to project root). Bypasses manifest selection and deploys the folder with `sf project deploy start --source-dir`. |
-| `--tag` | After a successful deploy, tag the release in git (`v<version>`, pushed to origin). Interactive deploy only — ignored (with a warning) under `--smart`. |
-| `--create-pr` | After a successful deploy, create a pull request from the current branch to the default branch via the `gh` CLI. Interactive deploy only — ignored (with a warning) under `--smart`. |
-| `--notify` | Send the deploy success/failure notification through `sfdt notify` (Slack). Interactive deploy only — ignored (with a warning) under `--smart`. |
+| `--tag` | Tag the release in git (`v<version>`) after a successful deploy. In an interactive terminal this pre-selects "tag after deployment" (skipping the prompt); in non-interactive/CI runs the tag is created and pushed automatically. Standard manifest deploy only — ignored (with a warning) under `--smart`, `--managed`, and `--source-dir`. |
+| `--create-pr` | Create a pull request from the current branch to the default branch (`defaultBranch` config, default `main`) via the `gh` CLI after a successful deploy. Works in interactive and non-interactive runs. Standard manifest deploy only — ignored (with a warning) under `--smart`, `--managed`, and `--source-dir`. |
+| `--notify` | Send the deploy success/failure notification through `sfdt notify`. Works in interactive and non-interactive runs. Standard manifest deploy only — ignored (with a warning) under `--smart`, `--managed`, and `--source-dir`. |
 
 **What happens:**
 
@@ -781,7 +781,7 @@ Values are coerced automatically: `"true"` / `"false"` become booleans, numeric 
 
 ### sfdt notify
 
-Provider-agnostic, multi-channel notifier. Dispatches a deployment lifecycle event — or the latest org-health snapshot — to one or more channels: **Slack**, **MS Teams**, **generic webhook**, **Grafana Loki**, and **email** (via a lazy-loaded `nodemailer`).
+Provider-agnostic, multi-channel notifier. Dispatches a deployment lifecycle event — or the latest org-health snapshot — to one or more channels: **Slack**, **MS Teams**, **Google Chat**, **generic webhook**, **Grafana Loki**, and **email** (via a lazy-loaded `nodemailer`).
 
 ```bash
 sfdt notify deploy-success

@@ -90,6 +90,25 @@ describe('smoke command', () => {
     );
   });
 
+  it('lets a user-exported SFDT_SMOKE_TESTS win over the configured list', async () => {
+    runScript.mockResolvedValue({ exitCode: 0 });
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/project',
+      defaultOrg: 'dev',
+      features: {},
+      smokeTests: { testClasses: ['SmokeA_Test'] },
+    });
+    process.env.SFDT_SMOKE_TESTS = 'Quick_Test';
+    try {
+      await createProgram().parseAsync(['node', 'sfdt', 'smoke']);
+    } finally {
+      delete process.env.SFDT_SMOKE_TESTS;
+    }
+
+    const env = runScript.mock.calls[0][2].env;
+    expect(env).not.toHaveProperty('SFDT_SMOKE_TESTS');
+  });
+
   it('does not set SFDT_SMOKE_TESTS when smokeTests.testClasses is empty or absent', async () => {
     runScript.mockResolvedValue({ exitCode: 0 });
     loadConfig.mockResolvedValue({

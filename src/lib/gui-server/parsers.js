@@ -80,12 +80,17 @@ export function parseQualityLines(lines) {
     },
     { critical: 0, high: 0, medium: 0, low: 0 }
   );
+  // A skipped scan (scanner missing or crashed) must not read as a clean PASS
+  // — the snapshot and its consumers (GUI, MCP) would report a scan that never ran.
+  const skipped = raw.status === 'skipped' || !!raw._sfdt_unavailable;
   const result = {
-    status: violations.length === 0 ? 'PASS' : 'FAIL',
+    status: skipped ? 'SKIPPED' : violations.length === 0 ? 'PASS' : 'FAIL',
     summary,
     violations,
   };
-  if (raw._sfdt_unavailable) result.unavailableMessage = raw._sfdt_unavailable;
+  if (skipped) {
+    result.unavailableMessage = raw.reason ?? raw._sfdt_unavailable ?? 'code scan skipped';
+  }
   return result;
 }
 

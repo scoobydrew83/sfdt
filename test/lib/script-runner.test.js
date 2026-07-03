@@ -101,6 +101,19 @@ describe('buildScriptEnv', () => {
     expect(buildScriptEnv({ testConfig: { parallelDelay: 5 } }).SFDT_PARALLEL_DELAY).toBe('5');
   });
 
+  it('lets user-exported SFDT_DEFAULT_BRANCH and SFDT_PARALLEL_DELAY win over config', () => {
+    process.env.SFDT_DEFAULT_BRANCH = 'release';
+    process.env.SFDT_PARALLEL_DELAY = '9';
+    try {
+      const env = buildScriptEnv({ defaultBranch: 'develop', testConfig: { parallelDelay: 5 } });
+      expect(env.SFDT_DEFAULT_BRANCH).toBe('release');
+      expect(env).not.toHaveProperty('SFDT_PARALLEL_DELAY');
+    } finally {
+      delete process.env.SFDT_DEFAULT_BRANCH;
+      delete process.env.SFDT_PARALLEL_DELAY;
+    }
+  });
+
   it('serializes packageDirectories paths as a JSON array', () => {
     const env = buildScriptEnv({
       packageDirectories: [{ path: 'force-app/main/default' }, { path: 'force-app/mkt' }],
