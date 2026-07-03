@@ -172,6 +172,26 @@ export function renderLoki(message, { kind, org } = {}) {
 }
 
 /**
+ * Google Chat incoming-webhook payload. Uses the simple `{ text }` message
+ * shape with Google Chat's basic markdown (*bold*, _italic_) — same summary
+ * content as the Slack renderer, without Block Kit. (cardsV2 exists but a
+ * text message covers the notify use case without overbuilding.)
+ */
+export function renderGoogleChat(message) {
+  const lines = [`*${message.title}*`];
+  for (const f of message.fields ?? []) {
+    lines.push(`*${f.label}:* ${f.value}`);
+  }
+  if (message.text) {
+    lines.push('', message.text);
+  }
+  if (message.footer) {
+    lines.push('', `_${message.footer}_`);
+  }
+  return { text: lines.join('\n') };
+}
+
+/**
  * GitHub-flavored markdown body for PR comments.
  */
 export function renderMarkdown(message) {

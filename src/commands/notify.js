@@ -22,7 +22,7 @@ function printNotConfiguredHelp() {
   print.step('     }');
   print.step('   }');
   console.log('');
-  print.info('Channel types: slack | teams | email | webhook. Secrets are referenced by env-var name.');
+  print.info('Channel types: slack | teams | googlechat | email | webhook. Secrets are referenced by env-var name.');
 }
 
 async function sendSnapshot(options) {
