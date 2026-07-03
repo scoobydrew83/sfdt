@@ -135,3 +135,36 @@ describe('missing-description-flags teardown', () => {
     await expect(feature.teardown?.()).resolves.not.toThrow();
   });
 });
+
+describe('missing-description-flags fetch-failure surfacing', () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+    chrome.storage.local.clear();
+    window.history.replaceState(
+      {},
+      '',
+      'https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app?flowId=301xx0000000001',
+    );
+  });
+
+  it('shows an error toast once when metadata fetch fails, not once per route re-init', async () => {
+    const api = {
+      getFlowMetadata: async () => {
+        throw new Error('403 Forbidden');
+      },
+    } as never;
+    const feature = createMissingDescriptionFlagsFeature({ api });
+
+    await feature.init?.();
+    const firstToasts = document.querySelectorAll('.sfdt-toast');
+    expect(firstToasts).toHaveLength(1);
+    expect(firstToasts[0]!.textContent).toContain('Missing-description check failed');
+    expect(firstToasts[0]!.textContent).toContain('403 Forbidden');
+
+    // Simulate an SPA route re-init: still exactly one toast in total.
+    await feature.init?.();
+    expect(document.querySelectorAll('.sfdt-toast')).toHaveLength(1);
+
+    await feature.teardown?.();
+  });
+});

@@ -5,7 +5,6 @@ import {
   type RawUserRow,
   type RawLicenseRow,
   type RawApexVersionRow,
-  type RawLimits,
   coverageBand,
   usageBand,
   inactiveBand,

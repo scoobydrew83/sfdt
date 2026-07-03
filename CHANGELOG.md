@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+
+## [0.15.2] - 2026-07-02
+
+### Added
+
+- **`RunRelevantTests` support (Salesforce Spring '26 beta, API 66+).** The new Salesforce test level — the org analyzes the deployment payload and runs only the tests relevant to it — is now selectable everywhere a test level can be chosen manually: the GUI Release Hub deploy step, the interactive deployment assistant menu, and the MCP `sfdt_validate`/`sfdt_deploy` tools. Smart deploy can opt in via `deployment.smart.useRelevantTests` (default `false`): on a non-production org with `sourceApiVersion` ≥ 66 it replaces the `RunLocalTests` fallback; production deploys are never auto-downgraded and stay pinned to `RunLocalTests`. Caveat: the feature is beta and a known sf CLI issue ([forcedotcom/cli#3565](https://github.com/forcedotcom/cli/issues/3565)) can cause `deploy validate` to run zero tests with this level — verify with `--json` output.
+
+### Changed
+
+- **Bumped `@sfdt/flow-core` to 0.9.4** — record-triggered flow **event** detection now reads `recordTriggerType` (the `triggerType` field holds the *timing* — before/after save — not the event). Previously every save-triggered flow's event normalised to "Unknown", collapsing distinct Create-only and Update-only flows into a single conflict bucket, so `audit`/Flow Intelligence reported trigger conflicts that don't exist. Affects every flow-core consumer (CLI, GUI, Chrome extension, VS Code extension).
+
+### Fixed
+
+- **The VS Code dashboard webview can embed the GUI again.** The GUI server now sends `Content-Security-Policy: frame-ancestors 'self' vscode-webview:` instead of `X-Frame-Options: SAMEORIGIN`, which blocked the cross-origin `vscode-webview://` frame and left the dashboard panel blank. Framing by arbitrary web origins remains blocked, and the server still binds to localhost only.
+
 ## [0.15.1] - 2026-07-01
 
 ### Changed

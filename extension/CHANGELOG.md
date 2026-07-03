@@ -4,6 +4,17 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-02
+
+### Added
+- **`show-api-names`** — annotate Lightning record detail pages with each field's API name next to its label (layout-describe driven, so duplicate labels resolve in layout order) and the object API name + 18-char record id in the header. Persistent on/off toggle plus copy helpers for the current record: 18-char Id, Apex `insert` statement (createable fields, typed literals), and a `SELECT` SOQL query.
+
+### Fixed
+- **`ai-assistant` now shows the AI's answer.** "Run via sfdt" previously confirmed receipt with a toast and discarded the response; it now renders the response (with provider and a copy button) in the panel, disables the button while running, and uses the long-running bridge timeout (60s) instead of the 8s default that real AI runs routinely exceeded.
+- **`flow-version-manager` bulk delete no longer blanket-overrides `confirm()`.** The bypass now auto-accepts at most one native confirm per selected version and restores the original immediately after the last one, so an unrelated confirm firing in the same window can no longer be silently accepted.
+- **`missing-descriptions` surfaces fetch failures.** A failed Flow-metadata fetch now shows an error toast (once per page load) instead of silently rendering nothing, so "no flags" is distinguishable from "check never ran".
+- **Fewer false-positive trigger conflicts** (`flow-health-check`, `flow-trigger-explorer`). The bundled `@sfdt/flow-core` analysis now reads a record-triggered flow's event from `recordTriggerType` — previously every save-triggered flow's event read as "Unknown", collapsing distinct Create-only and Update-only flows into one conflict bucket.
+
 ## [0.4.0] - 2026-06-29
 
 A Workspace-focused release: three new live-org tools, an Apex test runner, and a redesigned tabbed Workspace where tools keep their state instead of being dismissed by a stray click — plus a shared analysis rulebook with the rest of the SFDT suite via `@sfdt/flow-core`.

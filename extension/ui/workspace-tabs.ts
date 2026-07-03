@@ -103,6 +103,14 @@ export function createWorkspaceTabs(opts: WorkspaceTabsOptions): WorkspaceTabs {
       // A feature presented outside a tool click — fall back to a modal.
       return presentAsModal(view);
     }
+    // Consume the pending slot: the first presentView after openTool claims the
+    // tab. Tools that `await` (e.g. loadSettings()) before presenting reach here
+    // on a later microtask — clearing here rather than synchronously in openTool
+    // is what lets those async tools become tabs instead of falling to a modal.
+    // Any further presentView from the same tool (nested dialogs) then correctly
+    // gets a modal.
+    pendingPane = null;
+    pendingToolId = null;
     if (!view.body.style.flex) view.body.style.flex = '1';
     pane.appendChild(view.body);
     if (view.footer) pane.appendChild(view.footer);
@@ -126,9 +134,13 @@ export function createWorkspaceTabs(opts: WorkspaceTabsOptions): WorkspaceTabs {
     opts.panes.appendChild(pane);
     pendingPane = pane;
     pendingToolId = id;
-    opts.dispatch(id); // feature calls presentView() synchronously → sink mounts here
-    pendingPane = null;
-    pendingToolId = null;
+    // The sink consumes pendingPane/pendingToolId when the feature presents —
+    // which may be synchronous or on a later microtask (async tools await first).
+    // So we must NOT null them here; the sink clears them on first present, and
+    // the stale-empty-pane cleanup above reclaims the pane if a tool never presents.
+    // ponytail: two tool clicks within one async tool's pre-present await window
+    // could reassign the pending slot to the second click — pre-existing, rare.
+    opts.dispatch(id);
   }
 
   return {

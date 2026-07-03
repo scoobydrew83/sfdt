@@ -1,6 +1,6 @@
 # SFDT for Salesforce (VS Code)
 
-[![Marketplace](https://img.shields.io/visual-studio-marketplace/v/sfdt.sfdt-devtools)](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools)
+[![Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-blue?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/sfdt.sfdt-devtools)](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools)
 
 Drive the [`sfdt`](https://www.npmjs.com/package/@sfdt/cli) CLI from inside VS

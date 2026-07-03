@@ -3,9 +3,10 @@ import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { loadSettings } from '../lib/settings.js';
-import { createBridgeClient } from '../lib/sfdt-bridge.js';
+import { createBridgeClient, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import type { SfdtRequest, SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 
 const STORAGE_KEY_DISABLED = 'aiPromptLibrary.disabledStandardIds';
 const STORAGE_KEY_CUSTOMS = 'aiPromptLibrary.customPrompts';
@@ -35,11 +36,30 @@ function chromeStorageAdapter() {
   };
 }
 
+type BridgeReq = Omit<SfdtRequest, 'requestId'>;
+
+interface BridgeLike {
+  call<R extends BridgeReq>(request: R, options?: { timeoutMs?: number }): Promise<SfdtResponse>;
+}
+
+function defaultBridgeFactory(): () => Promise<BridgeLike> {
+  return async () => {
+    const settings = await loadSettings();
+    return createBridgeClient({
+      token: settings.bridge.token,
+      preferredTransport: settings.bridge.preferredTransport,
+      localhostPort: settings.bridge.localhostPort,
+      connectNativeImpl: chrome.runtime?.connectNative?.bind(chrome.runtime),
+    });
+  };
+}
+
 export interface AiAssistantOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
   library?: PromptLibrary;
+  bridgeFactory?: () => Promise<BridgeLike>;
 }
 
 export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feature {
@@ -48,6 +68,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
   const api = options.api ?? getSalesforceApi();
   const library =
     options.library ?? new PromptLibrary({ storage: chromeStorageAdapter() });
+  const bridgeFactory = options.bridgeFactory ?? defaultBridgeFactory();
 
   let view: ViewHandle | null = null;
 
@@ -177,26 +198,69 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
           }
         }),
       );
+      // Result area for the bridge AI run — the response renders here, it is
+      // not just acknowledged with a toast.
+      const resultArea = doc.createElement('div');
+      resultArea.className = 'sfdt-ai-result';
+      resultArea.style.cssText = 'margin-top: 12px;';
+
+      const renderResultError = (message: string): void => {
+        while (resultArea.firstChild) resultArea.removeChild(resultArea.firstChild);
+        const panel = doc.createElement('div');
+        panel.style.cssText =
+          'border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
+        panel.textContent = message;
+        resultArea.appendChild(panel);
+      };
+
+      const renderResult = (responseText: string, provider: string): void => {
+        while (resultArea.firstChild) resultArea.removeChild(resultArea.firstChild);
+        const header = doc.createElement('div');
+        header.style.cssText =
+          'display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px;';
+        const label = doc.createElement('span');
+        label.style.cssText = 'font-size: 12px; color: #54698d; font-weight: 600;';
+        label.textContent = provider ? `AI response (${provider})` : 'AI response';
+        const copyBtn = makeBtn('📋 Copy response', async () => {
+          await navigator.clipboard.writeText(responseText);
+          showToast('AI response copied', { doc });
+        });
+        header.append(label, copyBtn);
+        const pre = doc.createElement('pre');
+        pre.style.cssText =
+          'margin: 0; padding: 12px; background: #f3f3f3; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 45vh; overflow: auto;';
+        pre.textContent = responseText;
+        resultArea.append(header, pre);
+      };
+
       const runViaSfdt = makeBtn('🚀 Run via sfdt', async () => {
         const assembled = library.assemble(select.value, cleanJson);
         if (!assembled) return;
-        const settings = await loadSettings();
-        const bridge = createBridgeClient({
-          token: settings.bridge.token,
-          preferredTransport: settings.bridge.preferredTransport,
-          localhostPort: settings.bridge.localhostPort,
-          connectNativeImpl: chrome.runtime?.connectNative?.bind(chrome.runtime),
-        });
-        showToast('Sending to sfdt…', { doc });
-        const response = await bridge.call({ kind: 'ai', prompt: assembled });
-        if (response.ok) {
-          showToast('AI response received', { kind: 'success', doc });
-        } else {
-          showToast(`Bridge: ${response.error}`, { kind: 'error', doc });
+        runViaSfdt.disabled = true;
+        const originalLabel = runViaSfdt.textContent;
+        runViaSfdt.textContent = '⏳ Running…';
+        try {
+          const bridge = await bridgeFactory();
+          const response = await bridge.call(
+            { kind: 'ai', prompt: assembled },
+            { timeoutMs: LONG_RUNNING_TIMEOUT_MS },
+          );
+          if (response.ok) {
+            const data = (response.data ?? {}) as { response?: string; provider?: string };
+            renderResult(data.response ?? '(empty response)', data.provider ?? '');
+          } else {
+            renderResultError(`Bridge: ${response.error}`);
+          }
+        } catch (err) {
+          renderResultError(err instanceof Error ? err.message : String(err));
+        } finally {
+          runViaSfdt.disabled = false;
+          runViaSfdt.textContent = originalLabel;
         }
       });
       buttons.appendChild(runViaSfdt);
       body.appendChild(buttons);
+      body.appendChild(resultArea);
     } catch (err) {
       loading.textContent = `Error: ${err instanceof Error ? err.message : String(err)}`;
     }

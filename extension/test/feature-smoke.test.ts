@@ -191,36 +191,16 @@ describe('extension/features — smoke', () => {
     }
   });
 
-  it('flow-trigger-explorer-enhancer batches FlowDefinition fetches into a single IN-clause query per chunk', async () => {
-    const { batchFetchFlowDefinitions } = _flowTriggerExplorerEnhancerTestApi();
-    const queries: string[] = [];
-    const fetchImpl = (async (url: string | URL | Request) => {
-      const u = String(url);
-      const params = new URL(u, 'http://x').searchParams;
-      queries.push(params.get('q') ?? '');
-      return {
-        ok: true,
-        status: 200,
-        async json() {
-          return { records: [], size: 0, done: true };
-        },
-        async text() {
-          return '{}';
-        },
-      } as Response;
-    }) as typeof fetch;
-    const api = new SalesforceApiClient({
-      win: { location: { hostname: 'x.lightning.force.com', origin: 'https://x.lightning.force.com', search: '' } } as never,
-      messageBus: {
-        sendMessage: (async () => ({ ok: true, sids: { 'https://x.my.salesforce.com': 'sid' } })) as unknown as MessageBus['sendMessage'],
-      },
-      fetchImpl,
-    });
-    const ids = Array.from({ length: 110 }, (_, i) => `30100000000${i.toString(16).padStart(4, '0')}`);
-    await batchFetchFlowDefinitions(api, ids, 50);
-    // 110 ids @ 50 per chunk = 3 queries.
-    expect(queries).toHaveLength(3);
-    expect(queries[0]).toMatch(/FROM FlowDefinition WHERE Id IN/);
+  it('flow-trigger-explorer-enhancer groups triggered flows by object and timing', () => {
+    const { shapeTriggeredFlows } = _flowTriggerExplorerEnhancerTestApi();
+    const groups = shapeTriggeredFlows([
+      { ApiName: 'A_After', Label: 'A After', TriggerType: 'RecordAfterSave', RecordTriggerType: 'Update', TriggerObjectOrEventLabel: 'Account', IsActive: true, ActiveVersionId: '301x' },
+      { ApiName: 'A_Before', Label: 'A Before', TriggerType: 'RecordBeforeSave', RecordTriggerType: 'Create', TriggerObjectOrEventLabel: 'Account', IsActive: true, ActiveVersionId: '301y' },
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.object).toBe('Account');
+    // Before Save sorts ahead of After Save.
+    expect(groups[0]!.flows.map((f) => f.timing)).toEqual(['BeforeSave', 'AfterSave']);
   });
 
   it('flow-trigger-explorer-enhancer feature id is stable', () => {

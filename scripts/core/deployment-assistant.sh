@@ -813,7 +813,8 @@ extract_test_classes_from_manifest() {
 select_test_level() {
     print_step "Selecting test level..."
 
-    local options=("RunSpecifiedTests" "RunLocalTests" "RunAllTestsInOrg")
+    # ponytail: menu entries are the literal --test-level values; RunRelevantTests is Spring '26 beta, API 66+
+    local options=("RunSpecifiedTests" "RunLocalTests" "RunAllTestsInOrg" "RunRelevantTests")
 
     # Add "Skip Tests" option only for sandboxes (omits --test-level flag)
     if [ "$IS_PRODUCTION" == false ]; then

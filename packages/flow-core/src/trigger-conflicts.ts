@@ -25,11 +25,16 @@ export interface FlowConflictGroup {
   }>;
 }
 
-function groupKey(flow: NormalizedFlow): string | null {
-  if (flow.meta.flowType !== 'RecordTriggered') return null;
-  const obj = flow.trigger.objectApiName;
-  if (!obj) return null;
-  return [obj, flow.trigger.timing, flow.trigger.event].join('::');
+type TriggerEvent = NormalizedFlow['trigger']['event'];
+
+// The record events a flow actually fires on. A CreateOrUpdate flow
+// (recordTriggerType "CreateAndUpdate") runs on BOTH create and update, so it
+// overlaps — and can therefore conflict with — Create-only and Update-only
+// flows on the same object + timing. Expanding it into both base events is what
+// lets the detector catch that overlap while still keeping pure Create and pure
+// Update flows in separate, non-conflicting buckets.
+function firesOn(event: TriggerEvent): TriggerEvent[] {
+  return event === 'CreateOrUpdate' ? ['Create', 'Update'] : [event];
 }
 
 /**
@@ -64,28 +69,42 @@ export function detectTriggerConflicts(
     } catch {
       continue;
     }
-    const key = groupKey(normalized);
-    if (!key) continue;
+    if (normalized.meta.flowType !== 'RecordTriggered') continue;
+    const obj = normalized.trigger.objectApiName;
+    if (!obj) continue;
 
-    let bucket = buckets.get(key);
-    if (!bucket) {
-      bucket = {
-        objectApiName: normalized.trigger.objectApiName!,
-        triggerTiming: normalized.trigger.timing,
-        triggerEvent: normalized.trigger.event,
-        flows: [],
-      };
-      buckets.set(key, bucket);
+    for (const event of firesOn(normalized.trigger.event)) {
+      const key = [obj, normalized.trigger.timing, event].join('::');
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = {
+          objectApiName: obj,
+          triggerTiming: normalized.trigger.timing,
+          triggerEvent: event,
+          flows: [],
+        };
+        buckets.set(key, bucket);
+      }
+      bucket.flows.push({
+        flowId: candidate.flowId,
+        label: candidate.label,
+        entryCriteriaSummary: normalized.trigger.entryCriteriaSummary,
+      });
     }
-    bucket.flows.push({
-      flowId: candidate.flowId,
-      label: candidate.label,
-      entryCriteriaSummary: normalized.trigger.entryCriteriaSummary,
-    });
   }
 
+  // A group whose flows are all CreateOrUpdate lands identically under both the
+  // Create and Update buckets — collapse those by exact flow-id set so a pair of
+  // CreateAndUpdate flows reads as one conflict, not two.
+  const seen = new Set<string>();
   return Array.from(buckets.values())
     .filter((bucket) => bucket.flows.length >= 2)
+    .filter((bucket) => {
+      const sig = bucket.flows.map((f) => f.flowId).sort().join('|');
+      if (seen.has(sig)) return false;
+      seen.add(sig);
+      return true;
+    })
     .sort((a, b) => {
       if (a.objectApiName !== b.objectApiName) return a.objectApiName.localeCompare(b.objectApiName);
       if (a.triggerTiming !== b.triggerTiming) return a.triggerTiming.localeCompare(b.triggerTiming);

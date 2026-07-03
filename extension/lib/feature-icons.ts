@@ -28,6 +28,7 @@ export const FEATURE_ICONS: Record<string, FeatureIcon> = {
   'org-health': { icon: '🏥', label: 'Org Health' },
   'rest-explore': { icon: '🛠', label: 'REST API Explorer' },
   'inspect-record': { icon: '🔍', label: 'Inspect Record (Show All Data)' },
+  'show-api-names': { icon: '🏷️', label: 'Show API Names' },
   'data-import': { icon: '📥', label: 'Data Import Wizard' },
   'field-creator': { icon: '🛠', label: 'Bulk Field Creator' },
   'metadata-retrieve': { icon: '📦', label: 'Metadata Retrieve & Deploy' },

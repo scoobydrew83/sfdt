@@ -95,7 +95,8 @@ describe('GET /api/health', () => {
   it('sets defence-in-depth response headers on every endpoint', async () => {
     const res = await request(app).get('/api/health');
     expect(res.headers['x-content-type-options']).toBe('nosniff');
-    expect(res.headers['x-frame-options']).toBe('SAMEORIGIN');
+    // frame-ancestors (not X-Frame-Options) so the VS Code webview can embed the GUI.
+    expect(res.headers['content-security-policy']).toBe("frame-ancestors 'self' vscode-webview:");
   });
 });
 

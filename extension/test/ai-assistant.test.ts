@@ -189,3 +189,111 @@ describe('ai-assistant — populated panel', () => {
     expect(labels).toEqual(['📋 Copy Raw', '📋 Copy Clean', '📋 Copy Prompt', '🚀 Run via sfdt']);
   });
 });
+
+describe('ai-assistant — Run via sfdt', () => {
+  function fakeBridge(response: unknown) {
+    const call = vi.fn(async (..._args: unknown[]) => response);
+    return { bridge: { call }, factory: async () => ({ call }) };
+  }
+
+  async function openAndRun(bridgeFactory: () => Promise<{ call: ReturnType<typeof vi.fn> }>) {
+    const feature = createAiAssistantFeature({
+      api: fakeApi(),
+      library: fakeLibrary(),
+      bridgeFactory: bridgeFactory as never,
+    });
+    feature.onActivate?.();
+    await flush();
+    const runBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === '🚀 Run via sfdt',
+    ) as HTMLButtonElement;
+    runBtn.click();
+    await flush();
+    return runBtn;
+  }
+
+  it('renders the AI response text and provider on success', async () => {
+    const { bridge, factory } = fakeBridge({
+      ok: true,
+      data: { response: 'The flow looks solid.\nOne warning.', provider: 'claude' },
+    });
+    await openAndRun(factory);
+
+    const result = document.querySelector('.sfdt-ai-result')!;
+    expect(result.textContent).toContain('AI response (claude)');
+    expect(result.querySelector('pre')!.textContent).toBe('The flow looks solid.\nOne warning.');
+    expect(bridge.call).toHaveBeenCalledWith(
+      { kind: 'ai', prompt: expect.stringContaining('PROMPT[review]') },
+      { timeoutMs: expect.any(Number) },
+    );
+    // AI runs exceed the 8s default bridge timeout — the long-running one must be used.
+    const timeoutMs = (bridge.call.mock.calls[0]![1] as { timeoutMs: number }).timeoutMs;
+    expect(timeoutMs).toBeGreaterThanOrEqual(60000);
+  });
+
+  it('Copy response copies the rendered response', async () => {
+    const { factory } = fakeBridge({ ok: true, data: { response: 'answer text', provider: 'claude' } });
+    await openAndRun(factory);
+    const copyBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === '📋 Copy response',
+    )!;
+    copyBtn.click();
+    await flush();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('answer text');
+  });
+
+  it('renders a bridge error in the result area on failure', async () => {
+    const { factory } = fakeBridge({ ok: false, error: 'Bridge offline', code: 'BRIDGE_OFFLINE' });
+    await openAndRun(factory);
+    const result = document.querySelector('.sfdt-ai-result')!;
+    expect(result.textContent).toContain('Bridge: Bridge offline');
+    expect(result.querySelector('pre')).toBeNull();
+  });
+
+  it('disables the run button while the call is in flight and re-enables after', async () => {
+    let release!: (value: unknown) => void;
+    const call = vi.fn(() => new Promise((resolve) => { release = resolve; }));
+    const feature = createAiAssistantFeature({
+      api: fakeApi(),
+      library: fakeLibrary(),
+      bridgeFactory: (async () => ({ call })) as never,
+    });
+    feature.onActivate?.();
+    await flush();
+    const runBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === '🚀 Run via sfdt',
+    ) as HTMLButtonElement;
+    runBtn.click();
+    await flush();
+    expect(runBtn.disabled).toBe(true);
+    expect(runBtn.textContent).toBe('⏳ Running…');
+    release({ ok: true, data: { response: 'done', provider: 'claude' } });
+    await flush();
+    expect(runBtn.disabled).toBe(false);
+    expect(runBtn.textContent).toBe('🚀 Run via sfdt');
+  });
+
+  it('a second run replaces the previous result', async () => {
+    const call = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, data: { response: 'first', provider: 'claude' } })
+      .mockResolvedValueOnce({ ok: true, data: { response: 'second', provider: 'claude' } });
+    const feature = createAiAssistantFeature({
+      api: fakeApi(),
+      library: fakeLibrary(),
+      bridgeFactory: (async () => ({ call })) as never,
+    });
+    feature.onActivate?.();
+    await flush();
+    const runBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === '🚀 Run via sfdt',
+    ) as HTMLButtonElement;
+    runBtn.click();
+    await flush();
+    runBtn.click();
+    await flush();
+    const pres = document.querySelectorAll('.sfdt-ai-result pre');
+    expect(pres).toHaveLength(1);
+    expect(pres[0]!.textContent).toBe('second');
+  });
+});

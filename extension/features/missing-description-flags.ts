@@ -189,6 +189,9 @@ export function createMissingDescriptionFlagsFeature(
   let observer: MutationObserver | null = null;
   let _settingsHookRegistered = false;
   let unsubscribeSettings: (() => void) | null = null;
+  // One error toast per page load — activate() re-runs on every SPA route
+  // change, and a persistently failing fetch must not spam the user.
+  let fetchFailureNotified = false;
 
   function startObserver(): void {
     if (observer) return;
@@ -211,6 +214,13 @@ export function createMissingDescriptionFlagsFeature(
       flagCanvas(doc, missingItems);
     } catch (err) {
       console.warn('[SFDT missing-descriptions] activate failed:', err);
+      if (!fetchFailureNotified) {
+        fetchFailureNotified = true;
+        showToast(
+          `Missing-description check failed: ${err instanceof Error ? err.message : String(err)}`,
+          { kind: 'error', doc },
+        );
+      }
     }
   }
 

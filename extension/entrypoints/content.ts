@@ -23,7 +23,8 @@ import { createFlowTriggerExplorerEnhancerFeature } from '../features/flow-trigg
 import { createFlowVersionManagerFeature } from '../features/flow-version-manager.js';
 import { createMissingDescriptionFlagsFeature } from '../features/missing-description-flags.js';
 import { createOrgLimitsFeature } from '../features/org-limits.js';
-import { createOrgHealthFeature } from '../features/org-health.js';
+import { createOrgHealthLiveFeature } from '../features/org-health-live.js';
+import { createCodeCoverageFeature } from '../features/code-coverage.js';
 import { createRestExploreFeature } from '../features/rest-explore.js';
 import { createScheduledFlowExplorerFeature } from '../features/scheduled-flow-explorer.js';
 import { createSetupTabsFeature } from '../features/setup-tabs.js';
@@ -31,6 +32,7 @@ import { createSoqlRunnerFeature } from '../features/soql-runner.js';
 import { createSubflowGraphFeature } from '../features/subflow-graph.js';
 import { createTriggerConflictsFeature } from '../features/trigger-conflicts.js';
 import { createInspectRecordFeature } from '../features/inspect-record.js';
+import { createShowApiNamesFeature } from '../features/show-api-names.js';
 import { createDataImportFeature } from '../features/data-import.js';
 import { createFieldCreatorFeature } from '../features/field-creator.js';
 import { createMetadataRetrieveFeature } from '../features/metadata-retrieve.js';
@@ -85,9 +87,14 @@ export default defineContentScript({
     registry.register(createFlowDeployFeature());
     registry.register(createSoqlRunnerFeature());
     registry.register(createOrgLimitsFeature());
-    registry.register(createOrgHealthFeature());
+    // Org Health & Apex Coverage query the org's Tooling/REST API directly (via
+    // getSalesforceApi(), same as SOQL Runner) rather than reading static CLI
+    // snapshots — so they show live, org-specific data on the current page.
+    registry.register(createOrgHealthLiveFeature());
+    registry.register(createCodeCoverageFeature());
     registry.register(createRestExploreFeature());
     registry.register(createInspectRecordFeature());
+    registry.register(createShowApiNamesFeature());
     registry.register(createDataImportFeature());
     registry.register(createFieldCreatorFeature());
     registry.register(createMetadataRetrieveFeature());

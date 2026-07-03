@@ -109,7 +109,11 @@ export function createGuiApp(config, version, port = 7654) {
   // browser-side MIME-sniffing/clickjacking edge cases dead.
   app.use((_req, res, next) => {
     res.set('X-Content-Type-Options', 'nosniff');
-    res.set('X-Frame-Options', 'SAMEORIGIN');
+    // frame-ancestors instead of X-Frame-Options: the VS Code dashboard embeds
+    // this GUI in a webview iframe from a `vscode-webview://` origin, which is
+    // cross-origin to localhost — SAMEORIGIN blocked it (blank panel). Bind is
+    // localhost-only, so allowing self + the webview keeps clickjacking covered.
+    res.set('Content-Security-Policy', "frame-ancestors 'self' vscode-webview:");
     next();
   });
 
@@ -1785,7 +1789,7 @@ export function createGuiApp(config, version, port = 7654) {
       }
     }
 
-    const VALID_TEST_LEVELS = ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg'];
+    const VALID_TEST_LEVELS = ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg', 'RunRelevantTests'];
     if (testLevel !== undefined && testLevel !== null && !VALID_TEST_LEVELS.includes(testLevel)) {
       return res.status(400).json({ error: 'Invalid testLevel' });
     }

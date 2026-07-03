@@ -6,6 +6,14 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-02
+
+### Fixed
+- **Embedded dashboard no longer renders a blank panel.** The GUI server sent `X-Frame-Options: SAMEORIGIN`, which blocked the cross-origin `vscode-webview://` frame. The fix is server-side (the CLI now sends `Content-Security-Policy: frame-ancestors 'self' vscode-webview:`), so the dashboard webview requires **`@sfdt/cli` 0.15.2 or later**.
+
+### Changed
+- Refreshed the extension icon and README wording.
+
 ## [0.3.0] - 2026-06-29
 
 Tracks the CLI's v0.15.0 surface and hardens the embedded dashboard.

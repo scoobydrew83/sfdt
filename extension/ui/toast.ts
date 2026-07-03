@@ -18,12 +18,14 @@ function ensureContainer(doc: Document): HTMLElement {
   if (container) return container;
   container = doc.createElement('div');
   container.id = TOAST_CONTAINER_ID;
-  // z-index 100010: above the Health Modal (100001), below browser-native dialogs.
+  // z-index 100030: above presentView modals (100020, ui/present-view.ts) so a
+  // toast fired while a modal is open stays visible on top of its backdrop.
+  // Kept below browser-native dialogs.
   container.style.cssText = [
     'position: fixed',
     'top: 20px',
     'right: 20px',
-    'z-index: 100010',
+    'z-index: 100030',
     'display: flex',
     'flex-direction: column',
     'gap: 8px',

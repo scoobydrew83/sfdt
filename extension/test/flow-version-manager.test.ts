@@ -278,4 +278,59 @@ describe('flow-version-manager — decorate, select, and bulk delete', () => {
 
     await feature.teardown?.();
   });
+
+  it('bounds the confirm() bypass to one auto-accept per deleted row', async () => {
+    buildVersionsPage([
+      makeRow({ label: 'Flow', version: '2', status: 'Inactive', deleteId: '301AB0000001aaaAAA' }),
+      makeRow({ label: 'Flow', version: '3', status: 'Inactive', deleteId: '301AB0000001bbbAAA' }),
+    ]);
+
+    // Fake window whose confirm the page (and anything else) calls.
+    let originalConfirmCalls = 0;
+    const fakeWin = {
+      confirm: () => {
+        originalConfirmCalls += 1;
+        return false;
+      },
+    } as unknown as Window;
+    const originalConfirm = fakeWin.confirm;
+
+    // Mimic Classic delete links: each click asks the page's confirm().
+    const confirmResults: boolean[] = [];
+    for (const a of document.querySelectorAll('a[id$=":deleteLink"]')) {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        confirmResults.push(fakeWin.confirm('Are you sure?'));
+      });
+    }
+
+    const feature = createFlowVersionManagerFeature({ win: fakeWin });
+    await feature.init?.();
+
+    for (const checkbox of document.querySelectorAll<HTMLInputElement>('.sfdt-version-select-checkbox')) {
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change'));
+    }
+    document.querySelector<HTMLInputElement>('.sfdt-version-manager-delete-btn')!.click();
+
+    const backdrop = document.querySelector('.sfdt-version-manager-backdrop')!;
+    const input = backdrop.querySelector<HTMLInputElement>('input')!;
+    input.value = 'DELETE';
+    input.dispatchEvent(new Event('input'));
+    const confirmBtn = Array.from(backdrop.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Delete Selected Versions',
+    ) as HTMLButtonElement;
+    confirmBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Both link-driven confirms were auto-accepted…
+    expect(confirmResults).toEqual([true, true]);
+    // …and the override restored itself right after the last expected confirm:
+    // an unrelated confirm afterwards hits the ORIGINAL, which declines.
+    expect(fakeWin.confirm).toBe(originalConfirm);
+    expect(fakeWin.confirm('unrelated destructive action?')).toBe(false);
+    expect(originalConfirmCalls).toBe(1);
+
+    await feature.teardown?.();
+  });
 });
