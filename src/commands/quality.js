@@ -13,6 +13,28 @@ import {
   formatPreflightSection,
 } from '../lib/ai-context.js';
 
+/**
+ * Scan analyzer stdout for the "scan skipped" JSON marker emitted by
+ * scripts/quality/code-analyzer.sh when the Salesforce Code Analyzer
+ * (sf scanner) is not installed or its run failed. Returns the reason
+ * string when found, or null when the output represents a real scan.
+ */
+export function detectSkippedScan(output) {
+  for (const line of String(output || '').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) continue;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && (parsed.status === 'skipped' || parsed._sfdt_unavailable)) {
+        return parsed.reason || parsed._sfdt_unavailable || 'static scan skipped';
+      }
+    } catch {
+      // Not a JSON line — keep scanning.
+    }
+  }
+  return null;
+}
+
 export function registerQualityCommand(program) {
   program
     .command('quality')
@@ -41,11 +63,22 @@ export function registerQualityCommand(program) {
             });
             const output = result.stdout || '';
             qualityOutput += `\n--- ${label} ---\n${output}\n`;
-            print.success(`${label} completed.`);
+            const skippedReason = detectSkippedScan(output);
+            if (skippedReason) {
+              print.warning(`${label}: static violation scan was SKIPPED — ${skippedReason}.`);
+              print.warning('No scan was performed; this is NOT a clean result. Install the scanner with: sf plugins install @salesforce/sfdx-scanner');
+              print.success(`${label} completed (scan skipped).`);
+            } else {
+              print.success(`${label} completed.`);
+            }
             return output;
           } catch (err) {
             const output = err.stdout || err.message;
             qualityOutput += `\n--- ${label} ---\n${output}\n`;
+            const skippedReason = detectSkippedScan(output);
+            if (skippedReason) {
+              print.warning(`${label}: static violation scan was SKIPPED — ${skippedReason}. Install the scanner with: sf plugins install @salesforce/sfdx-scanner`);
+            }
             print.warning(`${label} found issues: ${err.message}`);
             return output;
           }

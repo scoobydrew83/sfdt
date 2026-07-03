@@ -125,6 +125,71 @@ describe('quality command', () => {
     expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('found issues'));
   });
 
+  it('warns when the analyzer reports the scan as skipped (scanner not installed)', async () => {
+    const stubLine = JSON.stringify({
+      status: 'skipped',
+      reason: 'sf code-analyzer not installed',
+      result: [],
+      _sfdt_unavailable: 'sf scanner plugin not installed. Run: sf plugins install @salesforce/sfdx-scanner',
+    });
+    runScript.mockResolvedValue({ exitCode: 0, stdout: `some log output\n${stubLine}` });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality']);
+
+    expect(print.warning).toHaveBeenCalledWith(
+      expect.stringContaining('sf code-analyzer not installed'),
+    );
+    expect(print.warning).toHaveBeenCalledWith(
+      expect.stringContaining('sf plugins install @salesforce/sfdx-scanner'),
+    );
+    // Skipped is not a failure — exit code must stay 0
+    expect(process.exitCode).toBeUndefined();
+    expect(print.error).not.toHaveBeenCalled();
+  });
+
+  it('warns via legacy _sfdt_unavailable marker without status field', async () => {
+    const stubLine = JSON.stringify({
+      status: 0,
+      result: [],
+      _sfdt_unavailable: 'sf scanner plugin not installed. Run: sf plugins install @salesforce/sfdx-scanner',
+    });
+    runScript.mockResolvedValue({ exitCode: 0, stdout: stubLine });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality']);
+
+    expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('SKIPPED'));
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('does not print the skipped warning for a real scan result', async () => {
+    const scanLine = JSON.stringify({ status: 0, result: [{ fileName: 'A.cls', violations: [] }] });
+    runScript.mockResolvedValue({ exitCode: 0, stdout: `log\n${scanLine}` });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality']);
+
+    expect(print.warning).not.toHaveBeenCalled();
+    expect(print.success).toHaveBeenCalledWith(expect.stringContaining('completed.'));
+  });
+
+  it('still warns about skipped scan when the analyzer exits non-zero', async () => {
+    const stubLine = JSON.stringify({
+      status: 'skipped',
+      reason: 'sf code-analyzer not installed',
+      result: [],
+      _sfdt_unavailable: 'sf scanner plugin not installed. Run: sf plugins install @salesforce/sfdx-scanner',
+    });
+    const err = new Error('config issues found');
+    err.stdout = `partial output\n${stubLine}`;
+    runScript.mockRejectedValue(err);
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality']);
+
+    expect(print.warning).toHaveBeenCalledWith(
+      expect.stringContaining('sf code-analyzer not installed'),
+    );
+    expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('found issues'));
+  });
+
   it('--generate-stubs calls generate-test-stubs.sh', async () => {
     runScript.mockResolvedValue({ exitCode: 0, stdout: '' });
 

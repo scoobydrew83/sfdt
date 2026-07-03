@@ -229,6 +229,19 @@ describe('parseQualityLines', () => {
     const result = parseQualityLines([JSON.stringify(payload)]);
     expect(result.unavailableMessage).toBe('Scanner CLI not installed');
   });
+
+  it('handles the labelled skipped stub (status "skipped" + reason) without crashing', () => {
+    const payload = {
+      status: 'skipped',
+      reason: 'sf code-analyzer not installed',
+      result: [],
+      _sfdt_unavailable: 'sf scanner plugin not installed. Run: sf plugins install @salesforce/sfdx-scanner',
+    };
+    const result = parseQualityLines([JSON.stringify(payload)]);
+    expect(result.violations).toEqual([]);
+    expect(result.unavailableMessage).toContain('sf scanner plugin not installed');
+    expect(result.summary).toEqual({ critical: 0, high: 0, medium: 0, low: 0 });
+  });
 });
 
 // ─── readTestRuns ─────────────────────────────────────────────────────────────
