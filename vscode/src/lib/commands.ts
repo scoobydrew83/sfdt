@@ -68,7 +68,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       { id: 'deploy-smart', label: 'Smart Deploy (validate)', detail: 'Delta validate-only deploy with smart test selection', args: ['deploy', '--smart', '--dry-run'], icon: 'cloud-upload' },
       { id: 'retrofit', label: 'Retrofit', detail: 'Retrieve from a source org, commit, and smart-deploy to a target', args: ['retrofit'], icon: 'sync' },
       { id: 'pr-comment', label: 'PR Comment (monitor)', detail: 'Post the latest monitor snapshot to the current PR', args: ['pr', 'comment', '--type', 'monitor'], icon: 'comment' },
-      { id: 'preflight', label: 'Preflight', detail: 'Run pre-deployment validation checks', args: ['preflight'], icon: 'checklist' },
+      { id: 'preflight', label: 'Preflight', detail: 'Run pre-deployment validation checks', args: ['preflight'], noOrg: true, icon: 'checklist' },
       { id: 'rollback', label: 'Rollback', detail: 'Roll back the last deployment', args: ['rollback'], destructive: true, icon: 'discard' },
       { id: 'release', label: 'Release', detail: 'Build a release (manifest + notes)', args: ['release'], icon: 'tag' },
       { id: 'manifest', label: 'Manifest', detail: 'Generate package.xml from a git diff', args: ['manifest'], icon: 'list-tree' },
@@ -138,7 +138,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     icon: 'beaker',
     docsUrl: DOCS.testing,
     entries: [
-      { id: 'quality', label: 'Quality Analysis', detail: 'Analyze Apex test quality', args: ['quality'], icon: 'beaker' },
+      { id: 'quality', label: 'Quality Analysis', detail: 'Analyze Apex test quality', args: ['quality'], noOrg: true, icon: 'beaker' },
       { id: 'test', label: 'Run Tests', detail: 'Run Apex tests', args: ['test'], icon: 'beaker' },
       { id: 'coverage', label: 'Code Coverage', detail: 'Report Apex code coverage (org-wide + per-class)', args: ['coverage'], icon: 'shield' },
       { id: 'dependencies', label: 'Dependencies', detail: 'Show metadata dependencies for a component', args: ['dependencies'], icon: 'references' },

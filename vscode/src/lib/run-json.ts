@@ -105,20 +105,34 @@ function isEnvelope(value: unknown): value is SfEnvelope {
 export function parseEnvelope(stdout: string): SfEnvelope | null {
   let found: SfEnvelope | null = null;
   let offset = 0;
-  for (const line of stdout.split('\n')) {
+  while (offset < stdout.length) {
+    const lineEnd = stdout.indexOf('\n', offset);
+    const end = lineEnd === -1 ? stdout.length : lineEnd;
+    const line = stdout.slice(offset, end);
     const braceCol = line.indexOf('{');
     if (braceCol !== -1 && line.slice(0, braceCol).trim() === '') {
       const candidate = matchBraces(stdout, offset + braceCol);
       if (candidate) {
         try {
           const parsed: unknown = JSON.parse(candidate);
-          if (isEnvelope(parsed)) found = parsed;
+          if (isEnvelope(parsed)) {
+            found = parsed;
+            // Skip the envelope's pretty-printed body: every nested object
+            // starts on its own indented line and would otherwise trigger a
+            // redundant brace-match + parse each (large audit/monitor results
+            // have thousands). Non-envelope JSON is NOT skipped — an envelope
+            // may legitimately appear nested inside a wrapper object.
+            const after = offset + braceCol + candidate.length;
+            const nextNl = stdout.indexOf('\n', after);
+            offset = nextNl === -1 ? stdout.length : nextNl + 1;
+            continue;
+          }
         } catch {
           // Stray brace / partial JSON — keep scanning.
         }
       }
     }
-    offset += line.length + 1;
+    offset = end + 1;
   }
   return found;
 }

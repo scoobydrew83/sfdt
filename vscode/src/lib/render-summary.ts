@@ -11,6 +11,7 @@
 import { describeFinding, classCoverageBand } from '@sfdt/flow-core';
 import type { SfdtJsonRun } from './run-json.js';
 import type { Snapshot, CheckResult } from './snapshots.js';
+import { stripAnsi } from './smart-deploy-output.js';
 
 export type SummaryKind = 'audit' | 'monitor' | 'quality' | 'coverage' | 'preflight' | 'generic';
 export type Severity = 'info' | 'warn' | 'error';
@@ -241,7 +242,6 @@ export interface QualityResult {
 }
 
 // Strip ANSI color codes so chalk-colored CLI lines still match markers.
-const ANSI_RE = /\u001b\[[0-9;]*m/g;
 
 /**
  * Shape a Salesforce Code Analyzer JSON payload (`sf scanner run --format
@@ -298,7 +298,7 @@ function shapeScannerJson(raw: unknown): QualityResult | null {
  * fabricated PASS.
  */
 export function parseQualityOutput(output: string): QualityResult | null {
-  const text = String(output ?? '').replace(ANSI_RE, '');
+  const text = stripAnsi(String(output ?? ''));
   let found: QualityResult | null = null;
   for (const line of text.split('\n')) {
     const trimmed = line.trim();

@@ -48,7 +48,7 @@ function capture(cmd: string, args: string[], cwd?: string, timeoutMs = 8000): P
     let done = false;
     const finish = (v: string) => { if (!done) { done = true; resolve(v); } };
     try {
-      const child = spawn(cmd, args, { cwd, env: { ...process.env }, shell: false });
+      const child = spawn(cmd, args, { cwd, env: { ...process.env }, shell: process.platform === 'win32' });
       const timer = setTimeout(() => { child.kill(); finish(''); }, timeoutMs);
       child.stdout?.on('data', (d) => (out += d.toString()));
       child.on('error', () => { clearTimeout(timer); finish(''); });
@@ -325,6 +325,15 @@ export function activate(context: vscode.ExtensionContext): void {
     await Promise.all([health.refresh(), status.refresh(), statusBar.refresh(defaultOrg())]);
     await applyOrgColor();
   };
+  // A native run and the snapshot FileSystemWatcher both want to refresh after
+  // the same logs/*-latest.json write; debounce so one run costs one refresh
+  // (refreshViews spawns a live `sf org display` via applyOrgColor).
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleRefreshViews = () => {
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => { refreshTimer = undefined; void refreshViews(); }, 300);
+  };
+  context.subscriptions.push({ dispose: () => { if (refreshTimer) clearTimeout(refreshTimer); } });
 
   // ── Native (non-terminal) execution for snapshot-producing commands ──
   // Runs the CLI (with --json when supported) under a progress notification,
@@ -361,7 +370,7 @@ export function activate(context: vscode.ExtensionContext): void {
       quality = qualityFromRun(run, { snapshot, since: startedAt });
       publishDiagnostics(qualityToDiagnostics(quality, root));
     }
-    await refreshViews();
+    scheduleRefreshViews();
     const summary = renderSummary(spec.kind, run, { label, quality });
     results.appendLine('');
     results.appendLine(`═══ ${new Date().toISOString()} · sfdt ${args.join(' ')} ═══`);
@@ -377,7 +386,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // envelope), offer the terminal as a graceful fallback.
     const actions = run.ok ? [] : ['Run in Terminal'];
     const picked = await show(summary.headline, ...actions);
-    if (picked === 'Run in Terminal') runInTerminal(args);
+    if (picked === 'Run in Terminal') runInTerminal(args, { noOrg: !spec.org });
   };
 
   // Single entry point for catalog entries (tree clicks, quick-pick search,
@@ -417,7 +426,7 @@ export function activate(context: vscode.ExtensionContext): void {
       new vscode.RelativePattern(root, 'logs/*-latest.json'),
     );
     const onSnapshot = (uri: vscode.Uri) => {
-      void refreshViews();
+      scheduleRefreshViews();
       if (path.basename(uri.fsPath) === 'quality-latest.json') void publishFromQualitySnapshot();
     };
     watcher.onDidCreate(onSnapshot);
