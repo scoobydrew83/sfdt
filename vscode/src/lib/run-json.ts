@@ -240,6 +240,9 @@ export function captureSfdt(args: string[], options: CaptureOptions = {}): Promi
         // refuses to spawn without a shell (EINVAL since the 2024 security
         // patch). POSIX keeps shell:false for exact argv semantics.
         shell: process.platform === 'win32',
+        // POSIX: own process group, so a timeout/cancel kill reaches the `sf`
+        // children sfdt spawns (they would otherwise keep querying the org).
+        detached: process.platform !== 'win32',
       });
     } catch (err) {
       resolve({ code: null, stdout, stderr, timedOut: false, spawnError: (err as Error).message });
@@ -247,9 +250,18 @@ export function captureSfdt(args: string[], options: CaptureOptions = {}): Promi
     }
     const killChild = () => {
       try {
-        child.kill();
+        if (process.platform !== 'win32' && child.pid) {
+          // Negative pid = the whole process group (see `detached` above).
+          process.kill(-child.pid, 'SIGTERM');
+        } else {
+          child.kill();
+        }
       } catch {
-        /* already gone */
+        try {
+          child.kill();
+        } catch {
+          /* already gone */
+        }
       }
     };
     const onAbort = () => {

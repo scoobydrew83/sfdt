@@ -448,12 +448,14 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 
   // ── Prerequisite / welcome context ──
+  let prereqsReady = false;
   const refreshPrereqs = async () => {
     const r = workspaceRoot();
     const hasSf = (await capture('sf', ['--version'], r, 5000)).trim().length > 0;
     const hasSfdt = (await capture(cliPath(), ['--version'], r, 5000)).trim().length > 0;
     const hasConfig = !!r && fs.existsSync(path.join(r, '.sfdt', 'config.json'));
     const state = evaluatePrereqs({ hasSf, hasSfdt, hasConfig });
+    prereqsReady = state.ready;
     await vscode.commands.executeCommand('setContext', 'sfdt:ready', state.ready);
     await vscode.commands.executeCommand('setContext', 'sfdt:hasSfdt', hasSfdt);
   };
@@ -563,6 +565,17 @@ export function activate(context: vscode.ExtensionContext): void {
         void refreshViews();
       }
       if (e.affectsConfiguration('sfdt.cliPath')) void refreshPrereqs();
+    }),
+  );
+
+  // Re-check prerequisites when the window regains focus while setup is still
+  // incomplete — users install the CLI or run `sfdt init` in an external
+  // terminal, and the walkthrough/welcome context keys would otherwise stay
+  // stale until a reload. Only transitions from not-ready are interesting, so
+  // a ready state never re-spawns the version probes on focus.
+  context.subscriptions.push(
+    vscode.window.onDidChangeWindowState((ws) => {
+      if (ws.focused && !prereqsReady) void refreshPrereqs();
     }),
   );
 

@@ -72,15 +72,13 @@
 
 ## Next Session
 
-Full detail for every item lives in [docs/plans/2026-07-03-gap-remediation-and-release-research.md](docs/plans/2026-07-03-gap-remediation-and-release-research.md). Priority queue:
+Live status + full queue: [docs/plans/2026-07-03-gap-remediation-and-release-research.md](docs/plans/2026-07-03-gap-remediation-and-release-research.md) (see its **Status** section). Snapshot as of 2026-07-04:
 
-- **Fix `sfdt smoke` config wiring** — `smoke.sh` reads a config filename that doesn't exist (`.sfdt/sfdt.config.json`) and `smoke.js` never sets `SFDT_SMOKE_TESTS`; configured smoke tests currently never run (plan 1.1)
-- **Deploy flags for tag / PR / notify** — `SFDT_TAG_RELEASE`/`SFDT_CREATE_PR`/`SFDT_NOTIFY_SLACK` are honoured by the deploy script but only settable from the GUI; add `--tag`/`--create-pr`/`--notify` to `sfdt deploy` (plan 1.3)
-- **Make `docs.roleGuides` / `docs.ai` / `docs.diagrams` config keys real** — today only CLI flags enable those features; config values are dead or can only disable (plan 1.4)
-- **Label the code-analyzer stub result as skipped** so a missing scanner can't read as a passing scan (plan 1.5)
-- **sf CLI credential-redaction sweep** — since sf CLI 2.136.8, tokens are redacted from `sf org display --json`; migrate any scraping to `sf org auth show-access-token` (plan 4.2)
+- ✅ **Sprint 1 shipped** (PR #171 → develop): smoke config wiring, deploy `--tag/--create-pr/--notify`, live `docs.*` config keys, skipped-scan labelling, Google Chat channel, credential-redaction sweep, formatter/middleware tests.
+- ✅ **Sprint 2 complete on the working branch** (PR pending): VS Code native results, Problems-pane diagnostics, Smart Deploy preview/execute + Quick Deploy, onboarding walkthrough, catalog completeness.
+- **Up next:** PR sprint 2 → develop; VS Code test/coverage integration (plan 3.4); then Sprint 3 (API v67 readiness check, MFA/deprecation/limits/release-channel checks, RunRelevantTests follow-through, GUI run-from-dashboard).
 - **Fix the always-failing `integration` CI job** — it red-X's every release PR (DevHub org-auth; no org secrets in PR context). Wire the auth, restrict to non-PR runs, or mark non-required.
-- ~~**Automate the Homebrew tap bump**~~ — ✅ Done (PR #167); activates once `HOMEBREW_TAP_TOKEN` is added. The in-repo `Formula/sfdt.rb` mirror is redundant and slated for removal.
+- **sfdt-site docs pass** covering both sprints (needs the `scoobydrew83/sfdt-site` repo added to the session).
 
 ---
 
