@@ -24,10 +24,20 @@ vi.mock('../../src/lib/log-writer.js', () => ({
   writeRawLog: vi.fn().mockResolvedValue({}),
 }));
 
+vi.mock('execa', () => ({
+  execa: vi.fn(),
+}));
+
+vi.mock('../../src/lib/smart-deploy.js', () => ({
+  prepareSmartDeploy: vi.fn(),
+}));
+
+import { execa } from 'execa';
 import { loadConfig } from '../../src/lib/config.js';
 import { runScript } from '../../src/lib/script-runner.js';
 import { print } from '../../src/lib/output.js';
 import { writeRawLog } from '../../src/lib/log-writer.js';
+import { prepareSmartDeploy } from '../../src/lib/smart-deploy.js';
 import { registerDeployCommand } from '../../src/commands/deploy.js';
 
 function createProgram() {
@@ -132,5 +142,73 @@ describe('deploy command', () => {
 
     const callEnv = runScript.mock.calls[0][2]?.env ?? {};
     expect(callEnv).not.toHaveProperty('SFDT_DEPLOY_SOURCE_DIR');
+  });
+
+  it('sets SFDT_TAG_RELEASE, SFDT_CREATE_PR, SFDT_NOTIFY_SLACK when --tag, --create-pr, --notify are passed', async () => {
+    runScript.mockResolvedValue({ exitCode: 0 });
+
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'deploy', '--skip-preflight', '--tag', '--create-pr', '--notify',
+    ]);
+
+    expect(runScript).toHaveBeenCalledWith(
+      'core/deployment-assistant.sh',
+      expect.any(Object),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          SFDT_TAG_RELEASE: 'true',
+          SFDT_CREATE_PR: 'true',
+          SFDT_NOTIFY_SLACK: 'true',
+        }),
+      }),
+    );
+    expect(print.warning).not.toHaveBeenCalled();
+  });
+
+  it('leaves SFDT_TAG_RELEASE, SFDT_CREATE_PR, SFDT_NOTIFY_SLACK unset when flags are absent', async () => {
+    runScript.mockResolvedValue({ exitCode: 0 });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'deploy', '--skip-preflight']);
+
+    const callEnv = runScript.mock.calls[0][2]?.env ?? {};
+    expect(callEnv).not.toHaveProperty('SFDT_TAG_RELEASE');
+    expect(callEnv).not.toHaveProperty('SFDT_CREATE_PR');
+    expect(callEnv).not.toHaveProperty('SFDT_NOTIFY_SLACK');
+  });
+
+  it('warns and leaves env unset when --tag/--create-pr/--notify are combined with --managed', async () => {
+    runScript.mockResolvedValue({ exitCode: 0 });
+
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'deploy', '--skip-preflight', '--managed', '--tag', '--notify',
+    ]);
+
+    expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('--managed'));
+    const callEnv = runScript.mock.calls[0][2]?.env ?? {};
+    expect(callEnv).not.toHaveProperty('SFDT_TAG_RELEASE');
+    expect(callEnv).not.toHaveProperty('SFDT_NOTIFY_SLACK');
+    expect(print.error).not.toHaveBeenCalled();
+  });
+
+  it('warns (without erroring) when --tag/--create-pr/--notify are combined with --smart', async () => {
+    execa.mockRejectedValue(new Error('no sf CLI in tests'));
+    prepareSmartDeploy.mockResolvedValue({
+      addCount: 0,
+      delCount: 0,
+      removed: [],
+      unknown: [],
+      tests: [],
+      testLevel: 'NoTestRun',
+    });
+
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'deploy', '--smart', '--skip-preflight', '--tag', '--create-pr', '--notify',
+    ]);
+
+    expect(print.warning).toHaveBeenCalledWith(
+      expect.stringContaining('only apply to the standard manifest deploy'),
+    );
+    expect(print.error).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
   });
 });

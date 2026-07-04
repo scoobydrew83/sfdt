@@ -146,8 +146,13 @@ else
     echo "  Significant quality issues found"
 fi
 
-# Emit structured JSON to stdout for GUI result parsing
-# Try sf scanner (Salesforce Code Analyzer) if installed; fall back to a stub
+# Emit structured JSON to stdout for GUI result parsing.
+# Try sf scanner (Salesforce Code Analyzer) if installed. When it is NOT
+# installed (or the run fails), never fabricate a clean scan result — emit an
+# unmistakably labelled skipped marker (status "skipped" + reason) so that no
+# downstream consumer can mistake the absence of a scan for a passing one.
+# "result": [] plus "_sfdt_unavailable" are kept for existing consumers
+# (gui-server parseQualityLines); "status"/"reason" are additive.
 _SCANNER_PLUGIN=""
 if command -v sf &>/dev/null; then
     _SCANNER_PLUGIN=$(sf plugins --json 2>/dev/null | \
@@ -161,11 +166,11 @@ if [[ -n "$_SCANNER_PLUGIN" ]]; then
         --target "$FORCE_APP_DIR" \
         --engine pmd,eslint \
         2>/dev/null || \
-        echo '{"status":0,"result":[]}'
+        printf '{"status":"skipped","reason":"sf scanner run failed","result":[],"_sfdt_unavailable":"sf scanner run failed — no violation data available for this run"}\n'
 else
-    log_warning "sf scanner not installed — static violation analysis unavailable."
+    log_warning "sf scanner not installed — static violation analysis SKIPPED (not run)."
     log_warning "Install with:  sf plugins install @salesforce/sfdx-scanner"
-    printf '{"status":0,"result":[],"_sfdt_unavailable":"sf scanner plugin not installed. Run: sf plugins install @salesforce/sfdx-scanner"}\n'
+    printf '{"status":"skipped","reason":"sf code-analyzer not installed","result":[],"_sfdt_unavailable":"sf scanner plugin not installed. Run: sf plugins install @salesforce/sfdx-scanner"}\n'
 fi
 
 # Exit with appropriate code

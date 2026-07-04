@@ -197,7 +197,7 @@ const TOOLS = [
   },
   {
     name: 'sfdt_notify',
-    description: 'Send the latest audit or monitor snapshot to configured notification channels (Slack/Teams/email/webhook), applying each channel\'s event filter and severity threshold. Run an audit/monitor first so a snapshot exists.',
+    description: 'Send the latest audit or monitor snapshot to configured notification channels (Slack/Teams/Google Chat/email/webhook), applying each channel\'s event filter and severity threshold. Run an audit/monitor first so a snapshot exists.',
     inputSchema: {
       type: 'object',
       properties: {

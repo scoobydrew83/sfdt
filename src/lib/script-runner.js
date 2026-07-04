@@ -29,6 +29,9 @@ export function buildScriptEnv(config) {
   env.SFDT_API_VERSION = config.sourceApiVersion || '';
   env.SFDT_COVERAGE_THRESHOLD = String(config.deployment?.coverageThreshold || 75);
   env.SFDT_LOG_DIR = config.logDir || '';
+  // User-exported env wins over config for passthrough tunables the scripts
+  // historically read straight from the environment.
+  env.SFDT_DEFAULT_BRANCH = process.env.SFDT_DEFAULT_BRANCH || config.defaultBranch || 'main';
   env.SFDT_PREFLIGHT_ENFORCE_TESTS = config.deployment?.preflight?.enforceTests ? 'true' : '';
   env.SFDT_PREFLIGHT_ENFORCE_BRANCH = config.deployment?.preflight?.enforceBranchNaming ? 'true' : '';
   env.SFDT_PREFLIGHT_ENFORCE_CHANGELOG = config.deployment?.preflight?.enforceChangelog ? 'true' : '';
@@ -71,6 +74,9 @@ export function buildScriptEnv(config) {
     }
     if (Array.isArray(config.testConfig.apexClasses)) {
       env.SFDT_APEX_CLASSES = config.testConfig.apexClasses.join(',');
+    }
+    if (config.testConfig.parallelDelay !== undefined && !process.env.SFDT_PARALLEL_DELAY) {
+      env.SFDT_PARALLEL_DELAY = String(config.testConfig.parallelDelay);
     }
   }
 

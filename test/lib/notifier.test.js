@@ -127,6 +127,52 @@ describe('dispatch (events)', () => {
   });
 });
 
+describe('dispatch (googlechat)', () => {
+  const config = {
+    notifications: {
+      enabled: true,
+      channels: [
+        { type: 'googlechat', name: 'chat', webhookUrl: 'https://chat.googleapis.com/v1/spaces/x/messages?key=k', events: ['deploy-failure'] },
+      ],
+    },
+  };
+
+  it('routes an allowed event to a googlechat channel with a { text } payload', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const results = await dispatch('deploy-failure', { org: 'dev', message: 'boom' }, config);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ channel: 'chat', type: 'googlechat', ok: true });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://chat.googleapis.com/v1/spaces/x/messages?key=k');
+    const body = JSON.parse(init.body);
+    expect(Object.keys(body)).toEqual(['text']);
+    expect(body.text).toContain('*Deployment Failed*');
+    expect(body.text).toContain('*Org:* dev');
+    expect(body.text).toContain('boom');
+  });
+
+  it('honours the events filter for googlechat channels', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const results = await dispatch('deploy-success', { org: 'dev' }, config);
+    expect(results).toHaveLength(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('resolves the googlechat webhook URL from an env var name', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.SFDT_TEST_GCHAT_HOOK = 'https://chat.googleapis.com/v1/spaces/env/messages';
+    const cfg = {
+      notifications: { enabled: true, channels: [{ type: 'googlechat', webhookUrlEnv: 'SFDT_TEST_GCHAT_HOOK' }] },
+    };
+    await dispatch('deploy-success', {}, cfg);
+    expect(fetchMock).toHaveBeenCalledWith('https://chat.googleapis.com/v1/spaces/env/messages', expect.anything());
+    delete process.env.SFDT_TEST_GCHAT_HOOK;
+  });
+});
+
 describe('dispatchSnapshot (severity routing)', () => {
   const snapshot = {
     org: 'dev',
@@ -163,6 +209,25 @@ describe('dispatchSnapshot (severity routing)', () => {
     await dispatchSnapshot(snapshot, config, { type: 'monitor' });
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body['@type']).toBe('MessageCard');
+  });
+
+  it('applies severityThreshold to googlechat channels and formats a text snapshot', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const config = {
+      notifications: {
+        enabled: true,
+        channels: [
+          { type: 'googlechat', name: 'low', webhookUrl: 'g1', severityThreshold: 'warn', events: ['snapshot'] },
+          { type: 'googlechat', name: 'high', webhookUrl: 'g2', severityThreshold: 'fail', events: ['snapshot'] },
+        ],
+      },
+    };
+    const { results } = await dispatchSnapshot(snapshot, config, { type: 'audit' });
+    expect(results.map((r) => r.channel)).toEqual(['low']); // 'high' (fail) filtered out
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.text).toContain('*Audit report — dev*');
+    expect(body.text).toContain('careful');
   });
 
   it('shapes a Loki push payload for webhook format=loki', async () => {

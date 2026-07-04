@@ -175,19 +175,29 @@ select_manifest() {
     local include_deployed=${1:-false}
     print_step "Finding release manifests in ${MANIFEST_BASE_DIR}/..."
 
-    # Find manifests in main release folder. In subpath layout we descend one
-    # level into package subdirs, but must NOT sweep in the deploy/ (in-flight
-    # artifacts) or deployed/ (post-deploy snapshots — reached via the post-deploy
-    # flow below and the rollback command) subfolders, or the picker balloons and
-    # its numbered choices become unusable. Read newline-delimited so paths that
-    # contain spaces (e.g. a project root with a space) don't word-split the array.
+    # Find manifests in main release folder. Any .xml file counts as a candidate
+    # manifest (not just the generated rl-*-package.xml convention), so hand-written
+    # package.xml files, `sf project generate manifest` output, and un-named
+    # `sfdt manifest` previews (preview-package.xml) are all offered. Companion
+    # artifacts (destructiveChanges, package-no-overwrite) are excluded. In subpath
+    # layout we descend one level into package subdirs, but must NOT sweep in the
+    # deploy/ (in-flight artifacts) or deployed/ (post-deploy snapshots — reached
+    # via the post-deploy flow below and the rollback command) subfolders, or the
+    # picker balloons and its numbered choices become unusable. Read newline-delimited
+    # so paths that contain spaces (e.g. a project root with a space) don't word-split
+    # the array.
     local max_depth=1
     if [[ "${SFDT_MANIFEST_LAYOUT:-flat}" == "subpath" ]]; then max_depth=2; fi
     local manifests=()
+    local found
+    found=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$max_depth" -name "*.xml" \
+        -not -name "*destructiveChanges*.xml" -not -name "*no-overwrite*.xml" \
+        -not -path '*/deploy/*' -not -path '*/deployed/*' 2>/dev/null | sort -V)
+    # Versioned rl-* release manifests first (the generated convention), then any
+    # other XML manifests, so existing pickers keep their familiar ordering.
     while IFS= read -r m; do
         [[ -n "$m" ]] && manifests+=("$m")
-    done < <(find "${MANIFEST_BASE_DIR}/" -maxdepth "$max_depth" -name "rl-*-package.xml" \
-        -not -path '*/deploy/*' -not -path '*/deployed/*' 2>/dev/null | sort -V)
+    done < <(grep '/rl-[^/]*\.xml$' <<<"$found"; grep -v '/rl-[^/]*\.xml$' <<<"$found")
 
     # Also include deployed manifests when called from post-deployment flow (last 3 only)
     if [ "$include_deployed" == "true" ] && [ ${#manifests[@]} -eq 0 ]; then
@@ -200,7 +210,8 @@ select_manifest() {
     fi
 
     if [ ${#manifests[@]} -eq 0 ]; then
-        print_error "No release manifests found in ${MANIFEST_BASE_DIR}/"
+        print_error "No manifests (*.xml) found in ${MANIFEST_BASE_DIR}/"
+        print_warning "Generate one with 'sfdt manifest --name <version>' or drop any package.xml in ${MANIFEST_BASE_DIR}/"
         print_warning "Already deployed manifests are in ${MANIFEST_BASE_DIR}/deployed/"
         exit 1
     fi
@@ -371,6 +382,13 @@ handle_release_tagging() {
     if git tag | grep -q "^v${RELEASE_VERSION}$"; then
         print_warning "Tag v${RELEASE_VERSION} already exists"
         TAG_TIMING="skip"
+        return 0
+    fi
+
+    # --tag / SFDT_TAG_RELEASE pre-selects post-deploy tagging — skip the prompt.
+    if [ "${SFDT_TAG_RELEASE:-false}" == "true" ]; then
+        TAG_TIMING="after"
+        print_success "Will tag after deployment completes (--tag)"
         return 0
     fi
 
@@ -1301,6 +1319,23 @@ notify_slack_if_enabled() {
     sfdt "${notify_args[@]}" >/dev/null 2>&1 || true
 }
 
+create_release_pr() {
+    # Honour the --create-pr flag / GUI toggle (SFDT_CREATE_PR=true).
+    # Quietly no-op when unset so the default flow is unchanged.
+    if [ "${SFDT_CREATE_PR:-false}" != "true" ]; then
+        return 0
+    fi
+    print_step "Auto-creating pull request..."
+    local current_branch
+    current_branch=$(get_current_branch)
+    local default_branch="${SFDT_DEFAULT_BRANCH:-main}"
+    if [ "$current_branch" != "$default_branch" ]; then
+        gh pr create --base "$default_branch" --head "$current_branch" --title "release: ${RELEASE_VERSION}" --body "Automated release PR for v${RELEASE_VERSION}" || print_warning "Could not create PR via GH CLI"
+    else
+        print_warning "Already on ${default_branch} — skipping PR creation"
+    fi
+}
+
 post_deployment_tasks() {
     print_header "POST-DEPLOYMENT TASKS"
 
@@ -1337,6 +1372,7 @@ post_deployment_tasks() {
     print_success "═══════════════════════════════════════════════════"
     echo ""
 
+    create_release_pr
     notify_slack_if_enabled deploy-success "Deployment to ${TARGET_ORG} succeeded."
 }
 
@@ -1403,10 +1439,13 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
         # auto-select picks an active release manifest, not a stale artifact.
         MANIFEST_PATH=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$_auto_max_depth" -name "rl-*-package.xml" \
             -not -path '*/deploy/*' -not -path '*/deployed/*' 2>/dev/null | sort -V | tail -1)
-        # Fall back to any package.xml if no versioned manifest found
+        # Fall back to any other XML manifest (package.xml, preview-package.xml,
+        # hand-written names) if no versioned rl-* manifest found. Companion
+        # destructiveChanges / no-overwrite files are never deploy targets.
         if [[ -z "$MANIFEST_PATH" ]]; then
-            MANIFEST_PATH=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$_auto_max_depth" -name "package.xml" \
-                -not -path '*/deploy/*' -not -path '*/deployed/*' 2>/dev/null | head -1)
+            MANIFEST_PATH=$(find "${MANIFEST_BASE_DIR}/" -maxdepth "$_auto_max_depth" -name "*.xml" \
+                -not -name "*destructiveChanges*.xml" -not -name "*no-overwrite*.xml" \
+                -not -path '*/deploy/*' -not -path '*/deployed/*' 2>/dev/null | sort -V | tail -1)
         fi
         if [[ -z "$MANIFEST_PATH" ]]; then
             print_error "No manifests found in ${MANIFEST_BASE_DIR}/ and SFDT_MANIFEST_PATH not set"
@@ -1446,6 +1485,7 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
         print_step "Quick Deploy using validation job ID: $VALIDATION_JOB_ID"
         run_quick_deploy
         archive_deployed_manifest
+        notify_slack_if_enabled deploy-success "Quick-deploy to ${TARGET_ORG} succeeded."
     else
         run_full_deployment
         # Only archive and tag if it was a successful real deployment
@@ -1457,14 +1497,8 @@ if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
             git push origin "v${RELEASE_VERSION}" || print_warning "Could not push tag to remote"
         fi
 
-        if [[ "$CREATE_PR" == "true" ]]; then
-            print_step "Auto-creating pull request..."
-            current_branch=$(get_current_branch)
-            default_branch="${SFDT_DEFAULT_BRANCH:-main}"
-            if [[ "$current_branch" != "$default_branch" ]]; then
-                gh pr create --base "$default_branch" --head "$current_branch" --title "release: ${RELEASE_VERSION}" --body "Automated release PR for v${RELEASE_VERSION}" || print_warning "Could not create PR via GH CLI"
-            fi
-        fi
+        create_release_pr
+        notify_slack_if_enabled deploy-success "Deployment to ${TARGET_ORG} succeeded."
     fi
     
     print_success "Non-interactive flow complete"

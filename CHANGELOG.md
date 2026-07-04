@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`sfdt deploy --tag / --create-pr / --notify`.** The post-deploy automations the deployment script always supported (git tag, PR creation via `gh`, success/failure notifications) were only reachable from the GUI Release Hub; they are now first-class CLI flags. `--tag` pre-selects "tag after deployment" in interactive runs and tags automatically in CI; `--create-pr` and `--notify` work in both modes (the non-interactive path now also sends the deploy-success event, which it previously never did). Flags apply to the standard manifest deploy only — combining them with `--smart`, `--managed`, or `--source-dir` warns instead of silently doing nothing.
+- **Google Chat notification channel.** `notifications.channels[]` accepts `type: "googlechat"` (incoming-webhook based, secret referenced by env-var name via `webhookUrlEnv`), with the same `events` filter and `severityThreshold` semantics as Slack/Teams.
+- **`docs.*` config keys now drive `sfdt docs generate`.** `docs.roleGuides` (with `docs.roles`) enables AI role guides without the `--roles` flag (gated on `features.ai`); AI overviews default on when `features.ai && docs.ai !== false` with new `--no-ai` to force off (`--ai` still forces on); `docs.diagrams` emits the ER-diagram page (`diagrams/erd.md`, linked in the MkDocs nav) during `generate`, with `--no-diagrams` to opt out.
+- **Config-driven smoke tests and script tunables.** `smokeTests.testClasses` now reaches `sfdt smoke` (via `SFDT_SMOKE_TESTS`), and `defaultBranch` / `testConfig.parallelDelay` are flattened to `SFDT_DEFAULT_BRANCH` / `SFDT_PARALLEL_DELAY`. For all three, a user-exported env var wins over config.
+
+### Fixed
+
+- **`sfdt smoke` could never load configured smoke tests** — the script read a config filename that doesn't exist (`.sfdt/sfdt.config.json` instead of `.sfdt/config.json`), so configured test classes were silently ignored and CI runs skipped smoke tests entirely.
+- **A missing code scanner no longer reads as a passing quality scan.** `code-analyzer.sh` labels its fallback result `status: "skipped"` with a reason, `sfdt quality` prints an explicit warning with install instructions, and the GUI/snapshot parser reports `SKIPPED` (with the real reason — a crashed scanner is no longer mislabelled "not installed") instead of a clean `PASS`.
+- **CI monitor template no longer suggests scraping the auth URL from `sf org display`** — since sf CLI 2.136.8 that output is redacted; the template now points at `sf org auth show-sfdx-auth-url`. (A repo-wide sweep confirmed no sfdt code parses redacted fields.)
+
+### Changed
+
+- **`sfdt deploy` now detects any `.xml` manifest in the manifest directory, not just the generated `rl-*-package.xml` convention.** The interactive picker and the non-interactive auto-select both offer plain `package.xml` files, `sf project generate manifest` output, and un-named `sfdt manifest` previews (`preview-package.xml`). Versioned `rl-*` manifests are still listed first (and still preferred by auto-select); companion `*-destructiveChanges.xml` and `*no-overwrite*.xml` files are excluded, as are the `deploy/` and `deployed/` subfolders. The "no manifests found" error now says what was searched and how to generate one.
+
 
 
 ## [0.15.2] - 2026-07-02

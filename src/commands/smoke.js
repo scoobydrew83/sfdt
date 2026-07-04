@@ -21,6 +21,13 @@ export function registerSmokeCommand(program) {
           SFDT_TARGET_ORG: orgAlias,
         };
 
+        // A user-exported SFDT_SMOKE_TESTS (e.g. a CI job narrowing the run)
+        // wins over the configured list.
+        const smokeTestClasses = config.smokeTests?.testClasses;
+        if (!process.env.SFDT_SMOKE_TESTS && Array.isArray(smokeTestClasses) && smokeTestClasses.length > 0) {
+          env.SFDT_SMOKE_TESTS = smokeTestClasses.join(',');
+        }
+
         await runScript('ops/smoke.sh', config, {
           cwd: projectRoot,
           env,

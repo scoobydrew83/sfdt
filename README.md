@@ -43,7 +43,7 @@ extension and the [VS Code extension](https://marketplace.visualstudio.com/items
 - **Smart delta deployments** — minimal git-delta package with overwrite protection, automatic test-level selection, optional AI / coding-agent auto-fix (`sfdt deploy --smart`)
 - **Native org health & operations suite** — diagnose (`sfdt audit`), monitor/backup (`sfdt monitor`), dependency analysis (`sfdt dependencies`), and Apex coverage gating (`sfdt coverage`)
 - **CI/CD pipeline templates** for GitHub, GitLab, Azure, and Bitbucket (`sfdt ci init`); PR decoration (`sfdt pr comment`) and cross-org retrofit (`sfdt retrofit`)
-- **Multi-channel notifications** — Slack, MS Teams, email, webhook, and Grafana Loki, with optional AI executive-summary digests (`sfdt notify`)
+- **Multi-channel notifications** — Slack, MS Teams, Google Chat, email, webhook, and Grafana Loki, with optional AI executive-summary digests (`sfdt notify`)
 - **Plugin architecture** — extend sfdt with `sfdt-plugin-*` npm packages or local `.sfdt/plugins/` scripts, plus a **Salesforce CLI plugin** exposing every command as `sf sfdt <command>` (`sf plugins install @sfdt/plugin`)
 - Works with **any** Salesforce DX project — no project-specific values hardcoded
 
@@ -128,7 +128,7 @@ Full install reference — every method plus CI usage — at **[sfdt.dev/cli/ins
 | `sfdt drift` | Detect metadata drift between local source and an org | `--org <alias>`, `--json` |
 | `sfdt compare` | Compare metadata between two orgs or local source vs an org | `--source <alias\|local>`, `--target <alias>`, `--output <file>` |
 | `sfdt scan` | Fetch complete metadata inventory from an org | `--org <alias>`, `--output <file>`, `--format json\|table` |
-| `sfdt notify` | Multi-channel notifications (Slack, Teams, email, webhook, Loki); `notify snapshot --type audit\|monitor` pushes the latest org-health snapshot | `--org <alias>`, `--version <ver>`, `--message <msg>`, `--type <audit\|monitor>` |
+| `sfdt notify` | Multi-channel notifications (Slack, Teams, Google Chat, email, webhook, Loki); `notify snapshot --type audit\|monitor` pushes the latest org-health snapshot | `--org <alias>`, `--version <ver>`, `--message <msg>`, `--type <audit\|monitor>` |
 | `sfdt pr comment` | Post the latest audit/monitor snapshot (or `--body`/`--file`) to the current PR via `gh` | `--type <audit\|monitor>`, `--body <md>`, `--file <path>`, `--pr <n>` |
 | `sfdt retrofit` | Retrieve a metadata set from a source org, commit, then smart-deploy to a target (validate-only unless `--execute`) | `--source <alias>`, `--target <alias>`, `--execute` |
 | `sfdt ci init` | Generate a CI/CD pipeline (scheduled monitor or PR smart-deploy) for a provider | `--provider <github\|gitlab\|azure\|bitbucket>`, `--type <monitor\|deploy>` |

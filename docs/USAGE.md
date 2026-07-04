@@ -210,11 +210,14 @@ sfdt deploy --source-dir force-app/feature-a   # deploy a folder directly (no ma
 | `--skip-preflight` | Skip the preflight validation step and go straight to deployment |
 | `--dry-run` | Show what would be executed without making changes |
 | `--source-dir <path>` | Deploy a source directory directly instead of a manifest (relative to project root). Bypasses manifest selection and deploys the folder with `sf project deploy start --source-dir`. |
+| `--tag` | Tag the release in git (`v<version>`) after a successful deploy. In an interactive terminal this pre-selects "tag after deployment" (skipping the prompt); in non-interactive/CI runs the tag is created and pushed automatically. Standard manifest deploy only — ignored (with a warning) under `--smart`, `--managed`, and `--source-dir`. |
+| `--create-pr` | Create a pull request from the current branch to the default branch (`defaultBranch` config, default `main`) via the `gh` CLI after a successful deploy. Works in interactive and non-interactive runs. Standard manifest deploy only — ignored (with a warning) under `--smart`, `--managed`, and `--source-dir`. |
+| `--notify` | Send the deploy success/failure notification through `sfdt notify`. Works in interactive and non-interactive runs. Standard manifest deploy only — ignored (with a warning) under `--smart`, `--managed`, and `--source-dir`. |
 
 **What happens:**
 
 1. Preflight runs (`new/preflight.sh`) unless `--skip-preflight` is set. If preflight fails, the deploy is aborted.
-2. The deployment script runs (`core/deployment-assistant.sh` or `core/deploy-manager.sh`).
+2. The deployment script runs (`core/deployment-assistant.sh` or `core/deploy-manager.sh`). The interactive picker offers any `.xml` manifest found in your manifest directory (`manifestDir`, default `manifest/release/`) — generated `rl-*-package.xml` releases are listed first, but plain `package.xml` files and `preview-package.xml` work too. Companion `*-destructiveChanges.xml` files and the `deploy/`/`deployed/` subfolders are excluded.
 3. Output is streamed directly to your terminal with full TTY passthrough (spinner, colors, interactive prompts from the script).
 
 Use `--managed` when deploying a second-generation managed package where the deploy-manager script handles namespace and version locking.
@@ -778,7 +781,7 @@ Values are coerced automatically: `"true"` / `"false"` become booleans, numeric 
 
 ### sfdt notify
 
-Provider-agnostic, multi-channel notifier. Dispatches a deployment lifecycle event — or the latest org-health snapshot — to one or more channels: **Slack**, **MS Teams**, **generic webhook**, **Grafana Loki**, and **email** (via a lazy-loaded `nodemailer`).
+Provider-agnostic, multi-channel notifier. Dispatches a deployment lifecycle event — or the latest org-health snapshot — to one or more channels: **Slack**, **MS Teams**, **Google Chat**, **generic webhook**, **Grafana Loki**, and **email** (via a lazy-loaded `nodemailer`).
 
 ```bash
 sfdt notify deploy-success

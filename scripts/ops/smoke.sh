@@ -58,10 +58,10 @@ SMOKE_TEST_CLASSES=()
 if [[ -n "$SMOKE_TESTS" ]]; then
     # From environment variable (comma-separated)
     IFS=',' read -ra SMOKE_TEST_CLASSES <<< "$SMOKE_TESTS"
-elif [[ -f "${CONFIG_DIR}/sfdt.config.json" ]]; then
+elif [[ -f "${CONFIG_DIR}/config.json" ]]; then
     # From config file
     mapfile -t SMOKE_TEST_CLASSES < <(
-        jq -r '.smokeTests.testClasses[]? // empty' "${CONFIG_DIR}/sfdt.config.json" 2>/dev/null
+        jq -r '.smokeTests.testClasses[]? // empty' "${CONFIG_DIR}/config.json" 2>/dev/null
     )
 fi
 
@@ -136,9 +136,9 @@ fi
 
 # ── Optional: Verify key classes exist in org ────────────────────────────────
 KEY_CLASSES=()
-if [[ -f "${CONFIG_DIR}/sfdt.config.json" ]]; then
+if [[ -f "${CONFIG_DIR}/config.json" ]]; then
     mapfile -t KEY_CLASSES < <(
-        jq -r '.deployment.keyClasses[]? // empty' "${CONFIG_DIR}/sfdt.config.json" 2>/dev/null
+        jq -r '.deployment.keyClasses[]? // empty' "${CONFIG_DIR}/config.json" 2>/dev/null
     )
 fi
 

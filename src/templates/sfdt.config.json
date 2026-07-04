@@ -3,8 +3,13 @@
   "defaultOrg": "",
   "releaseNotesDir": "release-notes",
   "manifestDir": "manifest/release",
+  "defaultBranch": "main",
+  "smokeTests": {
+    "testClasses": []
+  },
   "deployment": {
     "coverageThreshold": 75,
+    "keyClasses": [],
     "preflight": {
       "enforceTests": false,
       "enforceBranchNaming": false,
