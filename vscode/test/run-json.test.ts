@@ -149,6 +149,13 @@ describe('interpretCapture', () => {
     expect(spawnErr.error).toMatch(/Could not run the sfdt CLI/);
   });
 
+  it('reports cancelled runs as failures', () => {
+    const run = interpretCapture(cap({ code: null, cancelled: true }));
+    expect(run.ok).toBe(false);
+    expect(run.timedOut).toBe(false);
+    expect(run.error).toMatch(/cancelled/);
+  });
+
   it('keeps combined raw output for diagnostics', () => {
     const run = interpretCapture(cap({ stdout: 'out line', stderr: 'err line', code: 3 }), {
       expectEnvelope: false,
@@ -218,6 +225,44 @@ describe('captureSfdt', () => {
     const res = await captureSfdt(['audit']);
     expect(res.spawnError).toBe('spawn sfdt ENOENT');
     expect(res.code).toBeNull();
+  });
+
+  it('kills the child and reports cancelled when the abort signal fires', async () => {
+    const child = fakeChild('partial', '', 0, true);
+    spawnMock.mockReturnValue(child);
+    const abort = new AbortController();
+    const promise = captureSfdt(['deploy', '--smart', '--dry-run'], { signal: abort.signal });
+    await Promise.resolve(); // let the fake child flush its stdout
+    abort.abort();
+    const res = await promise;
+    expect(res.cancelled).toBe(true);
+    expect(res.timedOut).toBe(false);
+    expect(res.code).toBeNull();
+    expect(res.stdout).toBe('partial');
+    expect(child.kill).toHaveBeenCalled();
+  });
+
+  it('never spawns when the signal is already aborted', async () => {
+    const abort = new AbortController();
+    abort.abort();
+    const res = await captureSfdt(['deploy'], { signal: abort.signal });
+    expect(res.cancelled).toBe(true);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('disables the timeout entirely when timeoutMs is 0', async () => {
+    vi.useFakeTimers();
+    const child = fakeChild('slow output', '', 0, true);
+    spawnMock.mockReturnValue(child);
+    const promise = captureSfdt(['deploy', '--smart', '--dry-run'], { timeoutMs: 0 });
+    // Way past the 10-minute default — a prod validation can run for hours.
+    await vi.advanceTimersByTimeAsync(3 * 60 * 60 * 1000);
+    expect(child.kill).not.toHaveBeenCalled();
+    child.emit('close', 0);
+    const res = await promise;
+    expect(res.timedOut).toBe(false);
+    expect(res.code).toBe(0);
+    expect(res.stdout).toBe('slow output');
   });
 });
 

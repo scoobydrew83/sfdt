@@ -12,7 +12,7 @@
  * vitest against canned CLI output.
  */
 
-import { buildTerminalCommand, shellQuote } from './terminal.js';
+import { shellQuote } from './terminal.js';
 
 /** Remove ANSI escape sequences (colors survive capture when forced). */
 export function stripAnsi(text: string): string {
@@ -163,8 +163,6 @@ export function isValidationJobId(id: string): boolean {
 }
 
 export interface QuickDeployCommandOptions {
-  /** Path to the sfdt binary (defaults to "sfdt" on PATH). */
-  cliPath?: string;
   /** Target org alias. */
   org?: string;
   /** The validated deploy request ID (0Af…). */
@@ -174,22 +172,28 @@ export interface QuickDeployCommandOptions {
 /**
  * Build the terminal command line for a Quick Deploy.
  *
- * The CLI's quick-deploy path lives in `deployment-assistant.sh`, which only
- * reads `SFDT_VALIDATION_JOB_ID` on its non-interactive branch — and the CLI's
- * script runner derives `SFDT_NON_INTERACTIVE` from whether stdin is a TTY.
- * So the command (a) env-prefixes `SFDT_VALIDATION_JOB_ID` (and
- * `SFDT_TARGET_ORG`, which passes through the script runner untouched), and
- * (b) redirects stdin from /dev/null to force the non-interactive branch
- * while output still streams to the visible terminal.
+ * This deliberately targets the sf CLI directly (`sf project deploy quick`)
+ * instead of routing through the sfdt CLI's `deployment-assistant.sh`. That
+ * script path cannot promote a smart-deploy validation job:
  *
- * POSIX-shell syntax (bash/zsh/fish-compatible enough): env prefixes and
- * `< /dev/null` do not work in PowerShell/cmd — the caller should warn on
- * Windows rather than attempt shell detection.
+ * - its quick-deploy confirmation `read` is NOT gated on
+ *   `SFDT_NON_INTERACTIVE`, so under the script's `set -euo pipefail` a
+ *   non-TTY stdin (EOF) aborts the run with exit 1 before the deploy starts;
+ * - its non-interactive branch requires a version-named release manifest
+ *   under `manifest/release/` (the smart validate's manifest lives in a temp
+ *   dir the CLI deletes after the run), exiting 1 when none exists — and when
+ *   an unrelated older release manifest does exist, a successful quick deploy
+ *   would archive it as "deployed" and tag from its version.
+ *
+ * Quick Deploy is a single sf command with no sfdt-side computation, so
+ * invoking sf directly (as the extension already does for `sf org list` /
+ * `sf org display`) stays within the thin-UI rule without inheriting the
+ * release-flow side effects. Plain argv (no env prefixes, no redirects) also
+ * works in every shell, PowerShell/cmd included.
  */
 export function buildQuickDeployCommand(options: QuickDeployCommandOptions): string {
-  const { cliPath = 'sfdt', org, jobId } = options;
-  const env = [`SFDT_VALIDATION_JOB_ID=${shellQuote(jobId)}`];
-  if (org) env.push(`SFDT_TARGET_ORG=${shellQuote(org)}`);
-  const base = buildTerminalCommand(['deploy'], { cliPath, org });
-  return `${env.join(' ')} ${base} < /dev/null`;
+  const { org, jobId } = options;
+  const argv = ['sf', 'project', 'deploy', 'quick', '--job-id', jobId];
+  if (org) argv.push('--target-org', org);
+  return argv.map(shellQuote).join(' ');
 }

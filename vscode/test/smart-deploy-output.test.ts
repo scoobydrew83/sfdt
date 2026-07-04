@@ -153,19 +153,27 @@ describe('isValidationJobId', () => {
 });
 
 describe('buildQuickDeployCommand', () => {
-  it('builds the env-prefixed non-interactive command', () => {
+  // The command targets the sf CLI directly: the sfdt deployment-assistant
+  // path can't promote a smart-deploy validation job (its quick-deploy
+  // confirm read is not SFDT_NON_INTERACTIVE-gated and its non-interactive
+  // branch requires — and would archive/tag — a manifest/release manifest).
+  it('builds the direct sf quick-deploy command', () => {
     expect(buildQuickDeployCommand({ jobId: '0Af5g00000KxYzD', org: 'dev' })).toBe(
-      'SFDT_VALIDATION_JOB_ID=0Af5g00000KxYzD SFDT_TARGET_ORG=dev sfdt deploy --org dev < /dev/null',
+      'sf project deploy quick --job-id 0Af5g00000KxYzD --target-org dev',
     );
   });
   it('quotes an org alias with spaces', () => {
     expect(buildQuickDeployCommand({ jobId: '0Af5g00000KxYzD', org: 'My Org' })).toBe(
-      `SFDT_VALIDATION_JOB_ID=0Af5g00000KxYzD SFDT_TARGET_ORG='My Org' sfdt deploy --org 'My Org' < /dev/null`,
+      `sf project deploy quick --job-id 0Af5g00000KxYzD --target-org 'My Org'`,
     );
   });
-  it('omits the org when not given and honors cliPath', () => {
-    expect(buildQuickDeployCommand({ jobId: '0Af5g00000KxYzD', cliPath: '/usr/local/bin/sfdt' })).toBe(
-      'SFDT_VALIDATION_JOB_ID=0Af5g00000KxYzD /usr/local/bin/sfdt deploy < /dev/null',
+  it('omits the org when not given', () => {
+    expect(buildQuickDeployCommand({ jobId: '0Af5g00000KxYzD' })).toBe(
+      'sf project deploy quick --job-id 0Af5g00000KxYzD',
     );
+  });
+  it('contains no shell redirects or env prefixes (PowerShell-safe)', () => {
+    const cmd = buildQuickDeployCommand({ jobId: '0Af5g00000KxYzD', org: 'dev' });
+    expect(cmd).not.toMatch(/[<>]|SFDT_/);
   });
 });

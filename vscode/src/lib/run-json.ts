@@ -37,6 +37,8 @@ export interface CaptureResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  /** True when the caller aborted the run via `CaptureOptions.signal`. */
+  cancelled?: boolean;
   /** Message from a spawn-level failure (e.g. binary not found). */
   spawnError?: string;
 }
@@ -156,6 +158,9 @@ export function interpretCapture<T = unknown>(
   if (cap.spawnError) {
     return { ...base, ok: false, status: -1, error: `Could not run the sfdt CLI: ${cap.spawnError}` };
   }
+  if (cap.cancelled) {
+    return { ...base, ok: false, status: cap.code ?? -1, error: 'sfdt run was cancelled' };
+  }
   if (cap.timedOut) {
     return { ...base, ok: false, status: cap.code ?? -1, timedOut: true, error: 'sfdt timed out before completing' };
   }
@@ -200,8 +205,14 @@ export interface CaptureOptions {
   org?: string;
   /** Extra environment variables. */
   env?: NodeJS.ProcessEnv;
-  /** Kill the process after this long (default 10 minutes — audits can be slow). */
+  /**
+   * Kill the process after this long (default 10 minutes — audits can be
+   * slow). `0` (or any non-positive value) disables the timeout entirely —
+   * pair that with `signal` so the user can still stop the run.
+   */
   timeoutMs?: number;
+  /** Abort signal: aborting kills the child and resolves with `cancelled: true`. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -210,39 +221,59 @@ export interface CaptureOptions {
  * the caller has a single code path.
  */
 export function captureSfdt(args: string[], options: CaptureOptions = {}): Promise<CaptureResult> {
-  const { cliPath = 'sfdt', cwd, org, env, timeoutMs = 600_000 } = options;
+  const { cliPath = 'sfdt', cwd, org, env, timeoutMs = 600_000, signal } = options;
   const argv = buildArgs(args, org);
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
     let settled = false;
+    if (signal?.aborted) {
+      resolve({ code: null, stdout, stderr, timedOut: false, cancelled: true });
+      return;
+    }
     let child: ReturnType<typeof spawn>;
     try {
       child = spawn(cliPath, argv, {
         cwd,
         env: { ...process.env, SFDT_NON_INTERACTIVE: 'true', ...env },
-        shell: false,
+        // npm installs expose sfdt as a .cmd shim on Windows, which Node
+        // refuses to spawn without a shell (EINVAL since the 2024 security
+        // patch). POSIX keeps shell:false for exact argv semantics.
+        shell: process.platform === 'win32',
       });
     } catch (err) {
       resolve({ code: null, stdout, stderr, timedOut: false, spawnError: (err as Error).message });
       return;
     }
-    // finish() only fires from the timer or child events, both of which run
-    // strictly after `timer` is initialized below.
-    const finish = (r: CaptureResult) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(r);
-    };
-    const timer = setTimeout(() => {
+    const killChild = () => {
       try {
         child.kill();
       } catch {
         /* already gone */
       }
-      finish({ code: null, stdout, stderr, timedOut: true });
-    }, timeoutMs);
+    };
+    const onAbort = () => {
+      killChild();
+      finish({ code: null, stdout, stderr, timedOut: false, cancelled: true });
+    };
+    // finish() only fires from the timer, the abort listener, or child events,
+    // all of which run strictly after `timer` is initialized below.
+    const finish = (r: CaptureResult) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      resolve(r);
+    };
+    // timeoutMs <= 0 disables the timeout (the caller provides cancellation).
+    const timer =
+      timeoutMs > 0
+        ? setTimeout(() => {
+            killChild();
+            finish({ code: null, stdout, stderr, timedOut: true });
+          }, timeoutMs)
+        : undefined;
+    signal?.addEventListener('abort', onAbort, { once: true });
     child.stdout?.on('data', (d) => (stdout += d.toString()));
     child.stderr?.on('data', (d) => (stderr += d.toString()));
     child.on('error', (err) => finish({ code: null, stdout, stderr, timedOut: false, spawnError: err.message }));

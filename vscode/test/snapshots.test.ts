@@ -58,6 +58,26 @@ describe('buildHealthTree', () => {
     expect(mfaNode?.children?.[0].label).toContain('a@x.com');
   });
 
+  it('gives each check a tooltip carrying title, status, and summary', () => {
+    const [diag] = buildHealthTree(snap(), null);
+    const mfaNode = diag.children?.find((c) => c.label === 'MFA coverage');
+    expect(mfaNode?.tooltip).toContain('MFA coverage');
+    expect(mfaNode?.tooltip).toContain('[warn]');
+    expect(mfaNode?.tooltip).toContain('2 users without MFA');
+    expect(mfaNode?.tooltip).toContain('sfdt audit mfa');
+  });
+
+  it('tags rendered sections with their snapshot type for snapshot actions', () => {
+    const [diag, mon] = buildHealthTree(snap(), snap());
+    expect(diag.snapshotType).toBe('audit');
+    expect(mon.snapshotType).toBe('monitor');
+  });
+
+  it('omits snapshotType on placeholder sections (no snapshot to send)', () => {
+    const [, mon] = buildHealthTree(snap(), null);
+    expect(mon.snapshotType).toBeUndefined();
+  });
+
   it('appends a scan section only when the scan arg is supplied', () => {
     expect(buildHealthTree(snap(), null)).toHaveLength(2);
     const tree = buildHealthTree(snap(), null, null);

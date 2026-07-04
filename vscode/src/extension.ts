@@ -33,6 +33,10 @@ function dashboardPort(): number {
 function orgColorEnabled(): boolean {
   return cfg().get<boolean>('orgColor') !== false;
 }
+function smartDeployTimeoutMinutes(): number {
+  const v = cfg().get<number>('smartDeployTimeoutMinutes');
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
+}
 function workspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
@@ -153,14 +157,24 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.onDidCloseTerminal((t) => { if (t === terminal) terminal = undefined; }),
   );
 
-  const sendToTerminal = (commandLine: string) => {
+  const sendToTerminal = (commandLine: string, execute = true) => {
     const term = sfdtTerminal();
     term.show(true);
-    term.sendText(commandLine);
+    term.sendText(commandLine, execute);
   };
 
-  const runInTerminal = (args: string[]) => {
-    sendToTerminal(buildTerminalCommand(args, { cliPath: cliPath(), org: defaultOrg() }));
+  // `incomplete` types the command without executing it (trailing space) so
+  // the user can append required positional args (e.g. `config get <key>`).
+  // --org is not injected on that path: the user finishes the line, and most
+  // of these commands (config, feature-flags, ai prompt) take no --org flag.
+  // `noOrg` also skips --org injection: some CLI commands (doctor, init,
+  // feature-flags) accept no --org flag and would exit 1 on the unknown option.
+  const runInTerminal = (args: string[], opts: { incomplete?: boolean; noOrg?: boolean } = {}) => {
+    if (opts.incomplete) {
+      sendToTerminal(`${buildTerminalCommand(args, { cliPath: cliPath() })} `, false);
+      return;
+    }
+    sendToTerminal(buildTerminalCommand(args, { cliPath: cliPath(), org: opts.noOrg ? undefined : defaultOrg() }));
   };
 
   // ── Org picker (shared by sfdt.pickOrg and one-shot flows like Quick Deploy) ──
@@ -204,13 +218,28 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const smartDeployPreview = async (): Promise<void> => {
     const args = ['deploy', '--smart', '--dry-run'];
+    // Production validations always run the full local test suite and
+    // routinely exceed run-json's 10-minute default, so the timeout is
+    // user-configurable (0 = unlimited) and the progress notification is
+    // cancellable — cancelling kills the child CLI process.
+    const timeoutMinutes = smartDeployTimeoutMinutes();
+    const abort = new AbortController();
     const cap = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
         title: 'SFDT: computing delta and validating (sfdt deploy --smart --dry-run)…',
-        cancellable: false,
+        cancellable: true,
       },
-      () => captureSfdt(args, { cliPath: cliPath(), cwd: workspaceRoot(), org: defaultOrg() }),
+      (_progress, token) => {
+        token.onCancellationRequested(() => abort.abort());
+        return captureSfdt(args, {
+          cliPath: cliPath(),
+          cwd: workspaceRoot(),
+          org: defaultOrg(),
+          timeoutMs: timeoutMinutes * 60_000,
+          signal: abort.signal,
+        });
+      },
     );
     const raw = [cap.stdout, cap.stderr].filter((s) => s && s.trim()).join('\n');
     results.appendLine('');
@@ -221,8 +250,16 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showErrorMessage(`Could not run the sfdt CLI: ${cap.spawnError}`);
       return;
     }
+    if (cap.cancelled) {
+      vscode.window.showInformationMessage(
+        'Smart-deploy validation cancelled. A validation already submitted to the org keeps running there.',
+      );
+      return;
+    }
     if (cap.timedOut) {
-      vscode.window.showErrorMessage('Smart-deploy validation timed out — see the SFDT Results channel.');
+      vscode.window.showErrorMessage(
+        `Smart-deploy validation timed out after ${timeoutMinutes} minute(s) — raise "sfdt.smartDeployTimeoutMinutes" (0 = no limit). See the SFDT Results channel.`,
+      );
       return;
     }
     const summary = parseSmartDeployOutput(raw);
@@ -255,10 +292,9 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   // ── Quick Deploy: promote a previously validated job (0Af…) ──
-  // The CLI's quick-deploy path is deployment-assistant.sh's non-interactive
-  // branch, driven by SFDT_VALIDATION_JOB_ID; the built command env-prefixes
-  // the vars and redirects stdin from /dev/null so the CLI's script runner
-  // flags the run non-interactive while output streams in the terminal.
+  // Runs `sf project deploy quick` directly in the integrated terminal. The
+  // sfdt CLI's quick-deploy path (deployment-assistant.sh) can't promote a
+  // smart-deploy validation job — see buildQuickDeployCommand for why.
   const quickDeploy = async (): Promise<void> => {
     const jobId = (
       await vscode.window.showInputBox({
@@ -281,12 +317,7 @@ export function activate(context: vscode.ExtensionContext): void {
       'Quick Deploy',
     );
     if (picked !== 'Quick Deploy') return;
-    if (process.platform === 'win32') {
-      vscode.window.showWarningMessage(
-        'Quick Deploy sends a POSIX-style command (env prefix + /dev/null redirect) — use a bash-compatible integrated terminal (Git Bash/WSL), not PowerShell or cmd.',
-      );
-    }
-    sendToTerminal(buildQuickDeployCommand({ cliPath: cliPath(), org, jobId }));
+    sendToTerminal(buildQuickDeployCommand({ org, jobId }));
   };
 
   // ── Refresh (snapshots feed Org Health + Status + status bar) ──
@@ -367,7 +398,7 @@ export function activate(context: vscode.ExtensionContext): void {
       );
       if (ok !== 'Run') return;
     }
-    runInTerminal(entry.args);
+    runInTerminal(entry.args, { incomplete: entry.argsIncomplete, noOrg: entry.noOrg });
   };
 
   // Auto-refresh when any snapshot file changes, regardless of how it was run.
@@ -462,7 +493,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('sfdt.copyCommand', async (node?: { entry?: CommandEntry }) => {
       const entry = node?.entry;
       if (!entry?.args) return;
-      await vscode.env.clipboard.writeText(buildTerminalCommand(entry.args, { cliPath: cliPath(), org: defaultOrg() }));
+      await vscode.env.clipboard.writeText(
+        buildTerminalCommand(entry.args, { cliPath: cliPath(), org: entry.noOrg ? undefined : defaultOrg() }),
+      );
       vscode.window.showInformationMessage('Command copied to clipboard');
     }),
 
@@ -480,16 +513,36 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('sfdt.setOrg', () => vscode.commands.executeCommand('sfdt.pickOrg')),
+
+    // Org Health section nodes (audit/monitor snapshots) pass the TreeNode;
+    // push that snapshot through the CLI notifier in the terminal so channel
+    // config errors and delivery output stay visible.
+    vscode.commands.registerCommand('sfdt.notifySnapshot', (node?: { snapshotType?: 'audit' | 'monitor' }) => {
+      const type = node?.snapshotType;
+      if (!type) return;
+      runInTerminal(['notify', 'snapshot', '--type', type]);
+    }),
+
     vscode.commands.registerCommand('sfdt.smartDeployPreview', () => smartDeployPreview()),
     vscode.commands.registerCommand('sfdt.quickDeploy', () => quickDeploy()),
-    vscode.commands.registerCommand('sfdt.init', () => runInTerminal(['init'])),
+    vscode.commands.registerCommand('sfdt.init', () => runInTerminal(['init'], { noOrg: true })),
+
+    // Walkthrough step 1: verify the CLIs are installed. Pre-init safe —
+    // unlike `sfdt doctor` (the extension-bridge diagnostic, which needs
+    // `.sfdt/config.json` and a running `sfdt ui`), `--version` succeeds on a
+    // fresh machine, which is exactly the state onboarding starts from.
+    vscode.commands.registerCommand('sfdt.checkCli', () => {
+      sendToTerminal(buildTerminalCommand(['--version'], { cliPath: cliPath() }));
+      sendToTerminal('sf --version');
+      void refreshPrereqs();
+    }),
     vscode.commands.registerCommand('sfdt.clearDiagnostics', () => diagnostics.clear()),
 
     // Dedicated palette shortcuts to common commands (back-compat + discoverability).
     // runEntry routes snapshot-producing commands (audit/monitor/preflight/
     // quality/coverage) natively; interactive ones (deploy, backup, docs)
     // keep the terminal.
-    ...(['audit', 'monitor', 'deploy', 'preflight', 'quality', 'backup', 'docs-generate'].map((id) =>
+    ...(['audit', 'monitor', 'deploy', 'preflight', 'quality', 'backup', 'docs-generate', 'doctor'].map((id) =>
       vscode.commands.registerCommand(`sfdt.${id.replace('-generate', '')}`, () => {
         const entry = findCommand(id);
         if (!entry) return;
