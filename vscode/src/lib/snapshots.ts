@@ -30,6 +30,14 @@ export interface TreeNode {
   status?: CheckStatus;
   /** A run-able sfdt command (palette/inline), e.g. ['audit','mfa']. */
   command?: string[];
+  /** Rich hover text; the tree layer falls back to the command when unset. */
+  tooltip?: string;
+  /**
+   * Set on a section node that renders an audit/monitor snapshot, enabling
+   * snapshot-level actions (e.g. "Send snapshot to channels"). Only present
+   * when a snapshot actually exists to send.
+   */
+  snapshotType?: 'audit' | 'monitor';
   children?: TreeNode[];
 }
 
@@ -63,17 +71,21 @@ function sectionFromSnapshot(id: string, label: string, snap: Snapshot | null, r
       children: [{ id: `${id}.empty`, label: 'Run to populate…', command: runAll }],
     };
   }
+  const head = runAll[0];
+  const snapshotType = head === 'audit' || head === 'monitor' ? head : undefined;
   return {
     id,
     label,
     description: `${snap.summary.warn + snap.summary.fail + snap.summary.error} issue(s) · ${snap.org}`,
     status: rollupStatus(snap.checks),
+    snapshotType,
     children: snap.checks.map((c) => ({
       id: `${id}.${c.id}`,
       label: c.title,
       description: c.summary,
       status: c.status,
       command: [...runAll.slice(0, 1), c.id],
+      tooltip: `${c.title} [${c.status}]\n${c.summary}\n\nRun: sfdt ${runAll[0]} ${c.id}`,
       children: c.findings.slice(0, 25).map((f, i) => ({
         id: `${id}.${c.id}.${i}`,
         label: describeFinding(f),

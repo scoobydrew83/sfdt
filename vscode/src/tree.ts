@@ -47,6 +47,12 @@ export class OrgHealthProvider implements vscode.TreeDataProvider<TreeNode> {
       };
       item.tooltip = `Run: sfdt ${node.command.join(' ')}`;
     }
+    // A richer per-check tooltip (title, status, summary) wins over the
+    // generic "Run: …" hover when the snapshot layer provides one.
+    if (node.tooltip) item.tooltip = node.tooltip;
+    // Snapshot section nodes expose "Send snapshot to channels" via the
+    // context/inline menu (see package.json view/item/context).
+    if (node.snapshotType) item.contextValue = `sfdtHealthSnapshot.${node.snapshotType}`;
     return item;
   }
 

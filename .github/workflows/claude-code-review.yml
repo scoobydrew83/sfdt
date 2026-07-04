@@ -35,7 +35,16 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          claude_args: "--allowedTools 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Read,Glob,Grep'"
+          # The code-review plugin is installed unpinned from the marketplace on
+          # every run, and its posting path once drifted out from under this
+          # allowlist (the reviewer ran but every posting call was
+          # permission-denied — 50 denials, "No buffered inline comments" — so
+          # reviews silently stopped appearing while the job reported success).
+          # Keep BOTH comment MCP tools listed, and if reviews go silent again,
+          # rerun once with `show_full_output: true` to see what's being denied.
+          # Deliberately least-privilege: enumerated read/comment subcommands,
+          # not `gh pr:*` (which would also grant merge/close/edit).
+          claude_args: "--allowedTools 'mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment,Bash(gh pr comment:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh pr checks:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Read,Glob,Grep'"
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           prompt: |

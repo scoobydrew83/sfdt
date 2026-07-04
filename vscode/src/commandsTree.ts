@@ -4,8 +4,9 @@ import { COMMAND_GROUPS, type CommandEntry, type CommandGroup } from './lib/comm
 /**
  * Tree data provider for the "Commands" view — the full sfdt command surface,
  * grouped into categories. Group → entries → (optional) subcommands. Leaf nodes
- * carry a `sfdt.runEntry` command so a click runs them in the integrated
- * terminal. Pure presentation; all execution lives in the extension wiring.
+ * carry a `sfdt.runEntry` command so a click runs them (natively with rendered
+ * results for snapshot-producing commands, otherwise in the integrated
+ * terminal). Pure presentation; all execution lives in the extension wiring.
  */
 
 export type CmdNode =

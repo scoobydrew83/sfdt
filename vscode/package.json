@@ -76,19 +76,29 @@
       { "command": "sfdt.monitor", "title": "SFDT: Run Org Monitor" },
       { "command": "sfdt.backup", "title": "SFDT: Backup Org Metadata" },
       { "command": "sfdt.preflight", "title": "SFDT: Run Preflight Checks" },
+      { "command": "sfdt.quality", "title": "SFDT: Run Quality Analysis" },
+      { "command": "sfdt.clearDiagnostics", "title": "SFDT: Clear Problems" },
       { "command": "sfdt.deploy", "title": "SFDT: Deploy" },
-      { "command": "sfdt.docs", "title": "SFDT: Generate Documentation" }
+      { "command": "sfdt.smartDeployPreview", "title": "SFDT: Smart Deploy — Validate & Review", "icon": "$(rocket)" },
+      { "command": "sfdt.quickDeploy", "title": "SFDT: Quick Deploy (validated job ID)", "icon": "$(zap)" },
+      { "command": "sfdt.docs", "title": "SFDT: Generate Documentation" },
+      { "command": "sfdt.doctor", "title": "SFDT: Run Doctor (browser-extension bridge)", "icon": "$(verified)" },
+      { "command": "sfdt.checkCli", "title": "SFDT: Check CLI Installation", "icon": "$(verified)" },
+      { "command": "sfdt.notifySnapshot", "title": "SFDT: Send Snapshot to Channels", "icon": "$(bell)" }
     ],
     "menus": {
       "commandPalette": [
         { "command": "sfdt.runEntry", "when": "false" },
         { "command": "sfdt.runArgs", "when": "false" },
         { "command": "sfdt.copyCommand", "when": "false" },
-        { "command": "sfdt.openCommandDocs", "when": "false" }
+        { "command": "sfdt.openCommandDocs", "when": "false" },
+        { "command": "sfdt.notifySnapshot", "when": "false" }
       ],
       "view/title": [
         { "command": "sfdt.searchCommands", "when": "view == sfdtCommands", "group": "navigation@1" },
         { "command": "sfdt.refresh", "when": "view == sfdtCommands", "group": "navigation@2" },
+        { "command": "sfdt.smartDeployPreview", "when": "view == sfdtCommands", "group": "1_deploy@1" },
+        { "command": "sfdt.quickDeploy", "when": "view == sfdtCommands", "group": "1_deploy@2" },
         { "command": "sfdt.pickOrg", "when": "view == sfdtStatus", "group": "navigation@1" },
         { "command": "sfdt.refresh", "when": "view == sfdtStatus", "group": "navigation@2" },
         { "command": "sfdt.refresh", "when": "view == sfdtOrgHealth", "group": "navigation@1" },
@@ -97,9 +107,55 @@
       "view/item/context": [
         { "command": "sfdt.runEntry", "when": "view == sfdtCommands && viewItem =~ /^sfdtCommand/", "group": "inline@1" },
         { "command": "sfdt.copyCommand", "when": "view == sfdtCommands && viewItem =~ /^sfdtCommand/", "group": "1_run@1" },
-        { "command": "sfdt.openCommandDocs", "when": "view == sfdtCommands && viewItem =~ /^sfdt(Command|Group|Parent)/", "group": "2_docs@1" }
+        { "command": "sfdt.openCommandDocs", "when": "view == sfdtCommands && viewItem =~ /^sfdt(Command|Group|Parent)/", "group": "2_docs@1" },
+        { "command": "sfdt.notifySnapshot", "when": "view == sfdtOrgHealth && viewItem =~ /^sfdtHealthSnapshot/", "group": "inline@1" },
+        { "command": "sfdt.notifySnapshot", "when": "view == sfdtOrgHealth && viewItem =~ /^sfdtHealthSnapshot/", "group": "1_notify@1" }
       ]
     },
+    "walkthroughs": [
+      {
+        "id": "sfdt.gettingStarted",
+        "title": "Get started with SFDT",
+        "description": "Install the sfdt CLI, initialize your project, run your first org health checks, and validate a smart deploy.",
+        "steps": [
+          {
+            "id": "sfdt.walkthrough.installCli",
+            "title": "Install & check the sfdt CLI",
+            "description": "The extension is a thin UI over the sfdt CLI — it must be on your PATH, alongside the Salesforce ``sf`` CLI.\nInstall it with ``npm install -g @sfdt/cli``, or follow the [install guide](https://sfdt.dev/getting-started).\n[Check My Setup (sfdt --version)](command:sfdt.checkCli)",
+            "media": { "svg": "media/sfdt.svg", "altText": "SFDT logo" },
+            "completionEvents": ["onCommand:sfdt.checkCli", "onContext:sfdt:hasSfdt"]
+          },
+          {
+            "id": "sfdt.walkthrough.init",
+            "title": "Initialize your project",
+            "description": "Create ``.sfdt/config.json`` for this workspace. ``sfdt init`` asks a few questions in the integrated terminal and derives the rest from ``sfdx-project.json``.\n[Run sfdt init](command:sfdt.init)",
+            "media": { "svg": "media/sfdt.svg", "altText": "SFDT logo" },
+            "completionEvents": ["onCommand:sfdt.init", "onContext:sfdt:ready"]
+          },
+          {
+            "id": "sfdt.walkthrough.audit",
+            "title": "Run your first org audit",
+            "description": "Diagnose org health with ~25 read-only checks (MFA coverage, licenses, unused metadata, field access, …). Results land in the Org Health view and the SFDT Results channel.\n[Run Org Audit](command:sfdt.audit)",
+            "media": { "svg": "media/sfdt.svg", "altText": "SFDT logo" },
+            "completionEvents": ["onCommand:sfdt.audit"]
+          },
+          {
+            "id": "sfdt.walkthrough.smartDeploy",
+            "title": "Validate a smart deploy",
+            "description": "Compute the git delta, pick the minimal safe test level, and validate against the org without deploying anything. Review the outcome, then promote it when you're ready.\n[Smart Deploy — Validate & Review](command:sfdt.smartDeployPreview)",
+            "media": { "svg": "media/sfdt.svg", "altText": "SFDT logo" },
+            "completionEvents": ["onCommand:sfdt.smartDeployPreview"]
+          },
+          {
+            "id": "sfdt.walkthrough.dashboard",
+            "title": "Open the dashboard",
+            "description": "The embedded web dashboard (``sfdt ui``) brings audits, monitoring, releases, and settings together in one place.\n[Open the SFDT Dashboard](command:sfdt.openDashboard)",
+            "media": { "svg": "media/sfdt.svg", "altText": "SFDT logo" },
+            "completionEvents": ["onCommand:sfdt.openDashboard"]
+          }
+        ]
+      }
+    ],
     "configuration": {
       "title": "SFDT",
       "properties": {
@@ -122,6 +178,12 @@
           "type": "boolean",
           "default": true,
           "description": "Tint the VS Code window by org type (production = red, sandbox = orange, scratch/developer = green) to prevent wrong-org mistakes."
+        },
+        "sfdt.smartDeployTimeoutMinutes": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Maximum minutes to wait for the Smart Deploy — Validate & Review validation (`sfdt deploy --smart --dry-run`). 0 (default) means no limit — the progress notification stays cancellable either way. Production validations run the full local test suite and often exceed 10 minutes."
         }
       }
     }

@@ -29,6 +29,15 @@ export async function readSnapshots(
   return { audit, monitor };
 }
 
+/**
+ * Read the latest quality log envelope (`logs/quality-latest.json`) — the
+ * snapshot dashboard quality runs write and the MCP server reads. Returned
+ * untyped: `qualityFromSnapshot` (lib/diagnostics) validates the shape.
+ */
+export async function readQualityLog(projectRoot: string): Promise<unknown> {
+  return readJsonIfExists<unknown>(path.join(logsDir(projectRoot), 'quality-latest.json'));
+}
+
 /** Read the latest scan + drift snapshots (Org Health's secondary sections). */
 export async function readScanDrift(
   projectRoot: string,

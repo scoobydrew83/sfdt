@@ -49,8 +49,61 @@ describe('COMMAND_GROUPS', () => {
     }
   });
 
-  it('surfaces the full CLI breadth (>= 30 runnable leaves)', () => {
-    expect(flattenCommands().length).toBeGreaterThanOrEqual(30);
+  it('surfaces the full CLI breadth (>= 80 runnable leaves)', () => {
+    expect(flattenCommands().length).toBeGreaterThanOrEqual(80);
+  });
+
+  it('covers the ci init provider/type matrix', () => {
+    for (const provider of ['github', 'gitlab', 'azure', 'bitbucket']) {
+      for (const type of ['monitor', 'deploy']) {
+        expect(findCommand(`ci-init-${provider}-${type}`)?.args).toEqual([
+          'ci', 'init', '--provider', provider, '--type', type,
+        ]);
+      }
+    }
+  });
+
+  it('covers the feature-flags family', () => {
+    expect(findCommand('feature-flags-list')?.args).toEqual(['feature-flags', 'list']);
+    expect(findCommand('feature-flags-clear')?.args).toEqual(['feature-flags', 'clear']);
+    // disable/enable need a <featureId> the user appends in the terminal.
+    expect(findCommand('feature-flags-disable')?.argsIncomplete).toBe(true);
+    expect(findCommand('feature-flags-enable')?.argsIncomplete).toBe(true);
+  });
+
+  it('covers config get/set as incomplete-args terminal commands', () => {
+    expect(findCommand('config-get')?.args).toEqual(['config', 'get']);
+    expect(findCommand('config-get')?.argsIncomplete).toBe(true);
+    expect(findCommand('config-set')?.args).toEqual(['config', 'set']);
+    expect(findCommand('config-set')?.argsIncomplete).toBe(true);
+  });
+
+  it('covers the generic notify, pr-description, and ai prompt entries', () => {
+    expect(findCommand('notify')?.args).toEqual(['notify']);
+    expect(findCommand('notify')?.argsIncomplete).toBe(true);
+    expect(findCommand('pr-description')?.args).toEqual(['pr-description']);
+    expect(findCommand('ai-prompt')?.args).toEqual(['ai', 'prompt']);
+    expect(findCommand('ai-prompt')?.argsIncomplete).toBe(true);
+  });
+
+  it('every incomplete-args entry still carries a runnable prefix', () => {
+    for (const leaf of flattenCommands()) {
+      if (leaf.argsIncomplete) {
+        expect(leaf.args && leaf.args.length > 0, `${leaf.id} needs an args prefix`).toBe(true);
+      }
+    }
+  });
+
+  it('marks commands whose CLI takes no --org flag as noOrg', () => {
+    // These CLI commands reject --org with "unknown option" (exit 1), so the
+    // extension must not inject the configured sfdt.defaultOrg.
+    for (const id of ['doctor', 'init', 'feature-flags-list', 'feature-flags-clear']) {
+      expect(findCommand(id)?.noOrg, `${id} should be noOrg`).toBe(true);
+    }
+    // Org-scoped commands must keep --org injection.
+    for (const id of ['audit', 'monitor-limits', 'deploy', 'notify-monitor', 'ci-init-github-monitor']) {
+      expect(findCommand(id)?.noOrg, `${id} should keep --org injection`).toBeUndefined();
+    }
   });
 
   it('marks org/repo-mutating commands destructive', () => {
