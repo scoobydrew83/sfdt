@@ -76,7 +76,11 @@
       { "command": "sfdt.monitor", "title": "SFDT: Run Org Monitor" },
       { "command": "sfdt.backup", "title": "SFDT: Backup Org Metadata" },
       { "command": "sfdt.preflight", "title": "SFDT: Run Preflight Checks" },
+      { "command": "sfdt.quality", "title": "SFDT: Run Quality Analysis" },
+      { "command": "sfdt.clearDiagnostics", "title": "SFDT: Clear Problems" },
       { "command": "sfdt.deploy", "title": "SFDT: Deploy" },
+      { "command": "sfdt.smartDeployPreview", "title": "SFDT: Smart Deploy — Validate & Review", "icon": "$(rocket)" },
+      { "command": "sfdt.quickDeploy", "title": "SFDT: Quick Deploy (validated job ID)", "icon": "$(zap)" },
       { "command": "sfdt.docs", "title": "SFDT: Generate Documentation" }
     ],
     "menus": {
@@ -89,6 +93,8 @@
       "view/title": [
         { "command": "sfdt.searchCommands", "when": "view == sfdtCommands", "group": "navigation@1" },
         { "command": "sfdt.refresh", "when": "view == sfdtCommands", "group": "navigation@2" },
+        { "command": "sfdt.smartDeployPreview", "when": "view == sfdtCommands", "group": "1_deploy@1" },
+        { "command": "sfdt.quickDeploy", "when": "view == sfdtCommands", "group": "1_deploy@2" },
         { "command": "sfdt.pickOrg", "when": "view == sfdtStatus", "group": "navigation@1" },
         { "command": "sfdt.refresh", "when": "view == sfdtStatus", "group": "navigation@2" },
         { "command": "sfdt.refresh", "when": "view == sfdtOrgHealth", "group": "navigation@1" },
