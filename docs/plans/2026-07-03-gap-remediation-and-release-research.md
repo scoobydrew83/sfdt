@@ -102,7 +102,7 @@ Map snapshot findings that carry file/line (quality, lint-access, future v67 che
 A webview (or tree + confirm) showing the computed delta, chosen test level, and no-overwrite protections before deploy; add the missing `--smart` execute path (currently validate-only) and a quick-deploy action for a validated job ID (parity with GUI + MCP `sfdt_quick_deploy`).
 
 ### 3.4 Test & coverage integration — **M**
-Test-run tree from `logs/test-*-latest.json`; editor gutter coverage decoration from the coverage snapshot.
+Test-run tree from `logs/test-*-latest.json`; editor gutter coverage decoration from the coverage snapshot. Also fold in the deferred PR #172 review finding: consolidate `vscode/src/lib/run-json.ts`'s spawn/envelope path with `cli.ts`'s `runSfdt`/`runSfdtJson` so the extension has one "run sfdt and read JSON" implementation (move the timeout/AbortSignal/Windows-shell/process-group-kill improvements into the shared module).
 
 ### 3.5 Onboarding & catalog completeness — **S** — **DONE (sprint-2 branch)**
 A `walkthroughs` contribution (init → first audit → first smart deploy); add missing command families to the catalog (`ci init`, `feature-flags`, `config set/get`, `notify <event>`, `pr-description`, `ai prompt`); severity trends + "open in org" links in the org-health tree; one-click `--notify` dispatch.
