@@ -4,6 +4,7 @@
  */
 
 import { rollupStatus, type CheckStatus, type Snapshot, type TreeNode } from './snapshots.js';
+import { testRunsSection, type TestRunSummary } from './test-runs.js';
 
 export interface StatusInput {
   orgAlias?: string;
@@ -16,6 +17,13 @@ export interface StatusInput {
   sfVersion?: string;
   /** Latest sfdt version known (from `sfdt update`/registry); enables an "update" hint. */
   latestSfdtVersion?: string;
+  /**
+   * Recent Apex test runs (newest first, from logs/test-results). Omit to skip
+   * the "Test Runs" section entirely (back-compat with existing callers).
+   */
+  testRuns?: TestRunSummary[];
+  /** Absolute test-results dir; enables click-to-open on run nodes. */
+  testResultsDir?: string;
 }
 
 /** Compare two semver-ish strings; true when `current` is behind `latest`. */
@@ -82,6 +90,11 @@ export function buildStatusTree(input: StatusInput): TreeNode[] {
     status: health ?? undefined,
     command: ['audit', 'all'],
   });
+
+  // ── Test runs ──
+  if (input.testRuns !== undefined) {
+    nodes.push(testRunsSection(input.testRuns, input.testResultsDir));
+  }
 
   // ── Versions ──
   const versionChildren: TreeNode[] = [];

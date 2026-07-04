@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
 import { spawn } from 'node:child_process';
 import {
+  buildArgs,
   parseEnvelope,
   interpretCapture,
   captureSfdt,
@@ -33,6 +34,18 @@ const errorEnvelope = JSON.stringify(
 function cap(partial: Partial<CaptureResult>): CaptureResult {
   return { code: 0, stdout: '', stderr: '', timedOut: false, ...partial };
 }
+
+describe('buildArgs', () => {
+  it('appends --org when an alias is given', () => {
+    expect(buildArgs(['audit', 'all'], 'dev')).toEqual(['audit', 'all', '--org', 'dev']);
+  });
+  it('does not duplicate --org when already present', () => {
+    expect(buildArgs(['audit', '--org', 'x'], 'dev')).toEqual(['audit', '--org', 'x']);
+  });
+  it('leaves args untouched with no org', () => {
+    expect(buildArgs(['preflight'])).toEqual(['preflight']);
+  });
+});
 
 describe('parseEnvelope', () => {
   it('parses a bare pretty-printed envelope', () => {

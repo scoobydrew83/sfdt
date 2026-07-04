@@ -77,6 +77,7 @@
       { "command": "sfdt.backup", "title": "SFDT: Backup Org Metadata" },
       { "command": "sfdt.preflight", "title": "SFDT: Run Preflight Checks" },
       { "command": "sfdt.quality", "title": "SFDT: Run Quality Analysis" },
+      { "command": "sfdt.toggleCoverage", "title": "SFDT: Toggle Coverage Highlights", "icon": "$(shield)" },
       { "command": "sfdt.clearDiagnostics", "title": "SFDT: Clear Problems" },
       { "command": "sfdt.deploy", "title": "SFDT: Deploy" },
       { "command": "sfdt.smartDeployPreview", "title": "SFDT: Smart Deploy — Validate & Review", "icon": "$(rocket)" },

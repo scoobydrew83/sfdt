@@ -12,6 +12,13 @@ import { buildStatusTree } from './lib/status.js';
 import { evaluatePrereqs } from './lib/prereqs.js';
 import { classifyOrg, colorForOrg } from './lib/org-color.js';
 import { readSnapshots, readQualityLog } from './lib/io.js';
+import { readTestRuns, testResultsDir } from './lib/test-runs.js';
+import {
+  coverageRowsFromResult,
+  planCoverageDecoration,
+  COVERAGE_BAND_STYLE,
+  type CoverageClassRow,
+} from './lib/coverage-decorations.js';
 import { OrgHealthProvider } from './tree.js';
 import { CommandsProvider } from './commandsTree.js';
 import { StatusProvider } from './statusTree.js';
@@ -113,7 +120,9 @@ export function activate(context: vscode.ExtensionContext): void {
       connected = r.connectedStatus ? /connected/i.test(r.connectedStatus) : undefined;
       orgAlias = org ?? r.alias ?? r.username;
     } catch { /* no org / sf unavailable */ }
-    const { audit, monitor } = root ? await readSnapshots(root) : { audit: null, monitor: null };
+    const [{ audit, monitor }, testRuns] = root
+      ? await Promise.all([readSnapshots(root), readTestRuns(root)])
+      : [{ audit: null, monitor: null }, []];
     return buildStatusTree({
       orgAlias,
       instanceUrl,
@@ -124,6 +133,8 @@ export function activate(context: vscode.ExtensionContext): void {
       sfdtVersion: (sfdtVer.trim().split('\n')[0] || undefined),
       sfVersion: (sfVer.trim().split('\n')[0] || undefined),
       latestSfdtVersion,
+      testRuns,
+      testResultsDir: root ? testResultsDir(root) : undefined,
     });
   };
 
@@ -432,6 +443,17 @@ export function activate(context: vscode.ExtensionContext): void {
     watcher.onDidCreate(onSnapshot);
     watcher.onDidChange(onSnapshot);
     context.subscriptions.push(watcher);
+
+    // Test-run archives live one level deeper (logs/test-results/*.json), so
+    // they need their own watcher; a new run refreshes the Status view's
+    // "Test Runs" section through the same debounced path.
+    const testRunWatcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(root, 'logs/test-results/*.json'),
+    );
+    testRunWatcher.onDidCreate(scheduleRefreshViews);
+    testRunWatcher.onDidChange(scheduleRefreshViews);
+    testRunWatcher.onDidDelete(scheduleRefreshViews);
+    context.subscriptions.push(testRunWatcher);
   }
 
   // ── Per-org window tint ──
@@ -455,6 +477,105 @@ export function activate(context: vscode.ExtensionContext): void {
       await workbench.update('colorCustomizations', customizations ?? {}, vscode.ConfigurationTarget.Workspace);
     } catch { /* color update is best-effort */ }
   }
+
+  // ── Coverage highlights (per-class gutter banding) ──
+  // "SFDT: Toggle Coverage Highlights" runs `sfdt coverage --json` natively,
+  // matches open *.cls/*.trigger files to their per-class rows, and bands
+  // each editor (left gutter border + subtle background + overview-ruler
+  // stripe + first-line label) by the shared flow-core coverage band.
+  // Toggling again clears everything. State is per-window and in-memory only.
+  let coverageRows: CoverageClassRow[] | null = null;
+  const coverageTypes = new Map<string, vscode.TextEditorDecorationType>();
+  const coverageListeners: vscode.Disposable[] = [];
+
+  const coverageType = (band: keyof typeof COVERAGE_BAND_STYLE): vscode.TextEditorDecorationType => {
+    let type = coverageTypes.get(band);
+    if (!type) {
+      const style = COVERAGE_BAND_STYLE[band];
+      type = vscode.window.createTextEditorDecorationType({
+        isWholeLine: true,
+        backgroundColor: style.background,
+        borderWidth: '0 0 0 2px',
+        borderStyle: 'solid',
+        borderColor: style.color,
+        overviewRulerColor: style.color,
+        overviewRulerLane: vscode.OverviewRulerLane.Left,
+      });
+      coverageTypes.set(band, type);
+    }
+    return type;
+  };
+
+  const decorateCoverage = (editor: vscode.TextEditor) => {
+    if (!coverageRows) return;
+    // Clear every band first — the file may have moved bands since last run.
+    for (const type of coverageTypes.values()) editor.setDecorations(type, []);
+    const plan = planCoverageDecoration(editor.document.uri.fsPath, coverageRows);
+    if (!plan) return;
+    const lastLine = Math.max(0, editor.document.lineCount - 1);
+    editor.setDecorations(coverageType(plan.band), [
+      { range: new vscode.Range(0, 0, lastLine, Number.MAX_SAFE_INTEGER), hoverMessage: plan.label },
+      {
+        range: new vscode.Range(0, 0, 0, Number.MAX_SAFE_INTEGER),
+        renderOptions: {
+          after: {
+            contentText: `  ${plan.label}`,
+            color: COVERAGE_BAND_STYLE[plan.band].color,
+            fontStyle: 'italic',
+          },
+        },
+      },
+    ]);
+  };
+
+  // Disposing the decoration types removes them from every editor (visible or
+  // not), so clearing is a plain dispose-and-forget.
+  const clearCoverage = () => {
+    coverageRows = null;
+    for (const listener of coverageListeners.splice(0)) listener.dispose();
+    for (const type of coverageTypes.values()) type.dispose();
+    coverageTypes.clear();
+  };
+
+  const toggleCoverage = async (): Promise<void> => {
+    if (coverageRows) {
+      clearCoverage();
+      vscode.window.setStatusBarMessage('SFDT: coverage highlights cleared', 4000);
+      return;
+    }
+    const run = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'SFDT: fetching Apex coverage (sfdt coverage)…',
+        cancellable: false,
+      },
+      () =>
+        runSfdtForResult(['coverage'], {
+          cliPath: cliPath(),
+          cwd: workspaceRoot(),
+          org: defaultOrg(),
+        }),
+    );
+    if (!run.ok) {
+      vscode.window.showErrorMessage(`SFDT coverage failed: ${run.error ?? 'unknown error'}`);
+      return;
+    }
+    const rows = coverageRowsFromResult(run.result);
+    if (!rows) {
+      vscode.window.showErrorMessage('SFDT coverage returned an unexpected result shape — update the sfdt CLI.');
+      return;
+    }
+    coverageRows = rows;
+    coverageListeners.push(
+      vscode.window.onDidChangeVisibleTextEditors((editors) => editors.forEach(decorateCoverage)),
+    );
+    vscode.window.visibleTextEditors.forEach(decorateCoverage);
+    const orgWide = (run.result as { orgWide?: number | null } | null)?.orgWide;
+    vscode.window.showInformationMessage(
+      `SFDT coverage highlights on${typeof orgWide === 'number' ? ` — org-wide ${orgWide}%` : ''} (${rows.length} classes). Run the command again to clear.`,
+    );
+  };
+  context.subscriptions.push({ dispose: clearCoverage });
 
   // ── Prerequisite / welcome context ──
   let prereqsReady = false;
@@ -536,6 +657,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('sfdt.smartDeployPreview', () => smartDeployPreview()),
     vscode.commands.registerCommand('sfdt.quickDeploy', () => quickDeploy()),
+    vscode.commands.registerCommand('sfdt.toggleCoverage', () => toggleCoverage()),
     vscode.commands.registerCommand('sfdt.init', () => runInTerminal(['init'], { noOrg: true })),
 
     // Walkthrough step 1: verify the CLIs are installed. Pre-init safe —

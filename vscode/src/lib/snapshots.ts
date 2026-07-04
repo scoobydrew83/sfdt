@@ -28,7 +28,11 @@ export interface TreeNode {
   label: string;
   description?: string;
   status?: CheckStatus;
-  /** A run-able sfdt command (palette/inline), e.g. ['audit','mfa']. */
+  /**
+   * A run-able sfdt command (palette/inline), e.g. ['audit','mfa']. The tree
+   * layers also honour sentinels: ['__pickOrg'] opens the org picker and
+   * ['__open', <absolute path>] opens a file instead of running the CLI.
+   */
   command?: string[];
   /** Rich hover text; the tree layer falls back to the command when unset. */
   tooltip?: string;

@@ -31,11 +31,14 @@ export class StatusProvider implements vscode.TreeDataProvider<TreeNode> {
     const item = new vscode.TreeItem(node.label, collapsible);
     item.description = node.description;
     item.id = node.id;
+    if (node.tooltip) item.tooltip = node.tooltip;
     if (node.status) item.iconPath = new vscode.ThemeIcon(statusIcon(node.status));
     if (node.command) {
-      // A special sentinel routes to the org picker; anything else runs as argv.
+      // Sentinels route to the org picker / a file open; anything else runs as argv.
       if (node.command[0] === '__pickOrg') {
         item.command = { command: 'sfdt.pickOrg', title: 'Select Org', arguments: [] };
+      } else if (node.command[0] === '__open' && node.command[1]) {
+        item.command = { command: 'vscode.open', title: 'Open', arguments: [vscode.Uri.file(node.command[1])] };
       } else {
         item.command = { command: 'sfdt.runArgs', title: 'Run', arguments: [node.command] };
       }
