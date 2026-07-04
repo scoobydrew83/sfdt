@@ -33,6 +33,10 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_REF: ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
         with:
+          # TEMPORARY (remove after one PR): surface which tool calls get
+          # permission-denied so the allowlist can be tuned with data — the
+          # narrowed list still produced 6 denials on PR #172's re-review.
+          show_full_output: true
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # The code-review plugin is installed unpinned from the marketplace on
