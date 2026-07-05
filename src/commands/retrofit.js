@@ -6,6 +6,7 @@ import { resolveExitCode } from '../lib/exit-codes.js';
 import { fetchOrgInventory } from '../lib/org-inventory.js';
 import { parallelRetrieve } from '../lib/parallel-retrieve.js';
 import { runSmartDeploy } from './deploy.js';
+import { compareOrgReleases, releaseMismatchWarning } from '../lib/org-release.js';
 
 // Metadata commonly changed directly in an upstream org (e.g. admins in prod)
 // that teams want to "retrofit" back into source control / lower orgs. Override
@@ -113,6 +114,13 @@ async function runRetrofit(options) {
 
     // Deploy the just-committed delta to the target via the smart-deploy path.
     // Defaults to validate-only; pass --execute for a real deploy.
+    // Heads-up when source and target run different Salesforce releases —
+    // retrofitting from a preview org into a GA target (or vice-versa) can carry
+    // metadata the other release won't accept. Best-effort, never fatal.
+    const releaseCmp = await compareOrgReleases(source, target);
+    const releaseWarning = releaseMismatchWarning(releaseCmp, source, target);
+    if (releaseWarning && !jsonMode) print.warning(releaseWarning);
+
     if (!jsonMode) print.header(`Deploying retrofit delta to ${target}${options.execute ? '' : ' [validate]'}`);
     await runSmartDeploy(config, {
       smart: true,
@@ -124,7 +132,7 @@ async function runRetrofit(options) {
       agent: jsonMode,
     });
 
-    if (jsonMode) process.stdout.write(JSON.stringify({ ok: true, retrieved, changed: changed.length, committed: true, deployed: true, validateOnly: !options.execute }) + '\n');
+    if (jsonMode) process.stdout.write(JSON.stringify({ ok: true, retrieved, changed: changed.length, committed: true, deployed: true, validateOnly: !options.execute, releaseMismatch: releaseCmp?.differ === true }) + '\n');
   } catch (err) {
     if (jsonMode) process.stdout.write(JSON.stringify({ ok: false, error: err.message }) + '\n');
     else print.error(`Retrofit failed: ${err.message}`);

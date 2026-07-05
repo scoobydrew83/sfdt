@@ -5,6 +5,11 @@ import { ORG_HEALTH_THRESHOLDS } from '@sfdt/flow-core';
 import { query, safeParse, toSoqlDate } from './org-query.js';
 import { fetchOrgInventory } from './org-inventory.js';
 import { parallelRetrieve } from './parallel-retrieve.js';
+import { expectedGaApiVersion, detectOrgRelease } from './org-release.js';
+
+// Re-exported for back-compat: `expectedGaApiVersion` moved to org-release.js
+// (shared with compare/retrofit) but was previously imported from here.
+export { expectedGaApiVersion };
 
 /**
  * Org monitoring & backup runner.
@@ -147,50 +152,6 @@ export async function checkHealth(orgAlias, { minScore = MONITOR_DEFAULTS.health
       [{ score: rounded, floor: minScore }]);
   } catch (err) {
     return errored(id, title, err);
-  }
-}
-
-/**
- * The API version Salesforce's currently-GA release should expose, derived from
- * the fixed three-releases-a-year cadence (Spring GA ~Feb, Summer GA ~June,
- * Winter GA ~Oct; anchor: Spring '23 = v57.0). Used to spot preview instances:
- * a preview org's max supported REST API version is ahead of the GA release.
- */
-export function expectedGaApiVersion(date = new Date()) {
-  const y = date.getUTCFullYear();
-  const m = date.getUTCMonth() + 1;
-  const spring = 57 + (y - 2023) * 3; // Spring '23 = v57
-  if (m >= 10) return spring + 2; // Winter '(y+1)'
-  if (m >= 6) return spring + 1; // Summer 'y'
-  if (m >= 2) return spring; // Spring 'y'
-  return spring - 1; // January: still the prior year's Winter release
-}
-
-/**
- * Best-effort release detection: read the org's REST version list
- * (`/services/data` via `sf api request rest` — no auth plumbing or new
- * dependencies needed) and take the newest entry. Its `label` is the release
- * name (e.g. "Summer '26") and its version, compared against the expected GA
- * version, tells us whether the instance is on a preview release. Returns null
- * on any failure — release info is informational and must degrade gracefully
- * (older sf CLIs lack `sf api request`).
- */
-async function detectOrgRelease(orgAlias) {
-  try {
-    const resp = await execa('sf', ['api', 'request', 'rest', '/services/data', '--target-org', orgAlias]);
-    const versions = safeParse(resp.stdout);
-    if (!Array.isArray(versions) || versions.length === 0) return null;
-    const latest = versions.reduce((a, b) =>
-      Number.parseFloat(b?.version) > Number.parseFloat(a?.version) ? b : a);
-    const apiVersion = Number.parseFloat(latest?.version);
-    if (!Number.isFinite(apiVersion)) return null;
-    return {
-      release: latest.label ?? `API v${apiVersion}`,
-      apiVersion,
-      preview: apiVersion > expectedGaApiVersion(),
-    };
-  } catch {
-    return null;
   }
 }
 
