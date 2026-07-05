@@ -6,6 +6,7 @@ import { getPrompt } from '../lib/prompts.js';
 import { print, emitJson, emitJsonError } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { scanApexReadiness, shouldFailBuild, API_V67 } from '../lib/api-readiness.js';
+import { runTestForHintsCheck } from '../lib/smart-deploy.js';
 import {
   buildProjectContext,
   readLatestTestRuns,
@@ -57,6 +58,39 @@ const FINDING_HINTS = {
  * Exit code 1 when blocking errors exist AND the project already targets
  * sourceApiVersion >= 67; otherwise 0 (findings reported as warnings).
  */
+/**
+ * Run the RunRelevantTests hint check: flag @IsTest classes carrying no
+ * @IsTest(testFor=...) annotation. Advisory only — exit code stays 0 (an
+ * unhinted test is invisible to relevant-test selection, not a failure).
+ */
+async function runTestHintsScan(options) {
+  const jsonMode = !!options.json;
+  try {
+    const config = await loadConfig();
+    const check = await runTestForHintsCheck(config._projectRoot, config);
+    if (jsonMode) {
+      emitJson(check);
+      return;
+    }
+    print.header('RunRelevantTests hint check (@IsTest(testFor=...))');
+    if (check.status === 'ok') {
+      print.success(check.summary);
+    } else {
+      print.warning(check.summary);
+      for (const f of check.findings) {
+        console.log(chalk.yellow(`    ${f.className ?? f.name ?? JSON.stringify(f)}`));
+      }
+    }
+  } catch (err) {
+    if (jsonMode) {
+      emitJsonError(err);
+    } else {
+      print.error(`Test-hint check failed: ${err.message}`);
+    }
+    process.exitCode = resolveExitCode(err);
+  }
+}
+
 async function runApi67Scan(options) {
   const jsonMode = !!options.json;
   try {
@@ -133,10 +167,15 @@ export function registerQualityCommand(program) {
     .option('--dry-run', 'Preview --generate-stubs output without writing files')
     .option('--agent', 'Non-interactive agent mode (do not block waiting on the AI fix-plan session)')
     .option('--api67', "Run only the API v67 (Summer '26) user-mode readiness scan of local Apex sources")
-    .option('--json', 'Emit structured JSON to stdout (only honoured with --api67)')
+    .option('--test-hints', "Run only the RunRelevantTests hint check: flag @IsTest classes with no @IsTest(testFor=...) annotation (Spring '26)")
+    .option('--json', 'Emit structured JSON to stdout (only honoured with --api67 / --test-hints)')
     .action(async (options) => {
       if (options.api67) {
         await runApi67Scan(options);
+        return;
+      }
+      if (options.testHints) {
+        await runTestHintsScan(options);
         return;
       }
       try {
