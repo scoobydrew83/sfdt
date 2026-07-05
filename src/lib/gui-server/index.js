@@ -29,6 +29,7 @@ import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken
 import { mountBridgeRoutes } from '../bridge/routes.js';
 import { constantTimeEqual } from '../bridge/token.js';
 import { stripAnsi, tryReadJson, safeReaddir, buildPlaceholderHtml } from './shared.js';
+import { isCliRunCommand, buildCliRunArgv } from './cli-run.js';
 import {
   parseTestRunLines, parseQualityLines,
   readTestRuns, readPreflight, readQuality, readDrift, readCompare, readScan,
@@ -790,6 +791,85 @@ export function createGuiApp(config, version, port = 7654) {
     }
   });
 
+  // ── Native-CLI runner (SSE) ─────────────────────────────────────────────────
+  // Runs the sfdt CLI entrypoint itself (same convention as runSfdtJson and
+  // mcp-server.js) for commands that are native Node runners rather than
+  // shell scripts (audit, monitor, scratch, data, docs), streaming stdout +
+  // stderr over SSE with the same event shapes as /api/command/run. The
+  // commands write their own snapshots/artifacts (e.g. logs/audit-latest.json),
+  // so the existing GET endpoints serve fresh data after a run completes.
+  const streamCliOverSse = async (req, res, argv) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    let child;
+    req.on('close', () => { if (child && !child.killed) child.kill(); });
+
+    try {
+      child = execa(process.argv[0], [process.argv[1], ...argv], {
+        cwd: config._projectRoot ?? process.cwd(),
+        env: { ...process.env, SFDT_NON_INTERACTIVE: 'true' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const streamLines = (readable) => {
+        const rl = createInterface({ input: readable, crlfDelay: Infinity });
+        rl.on('line', (rawLine) => {
+          // Redact at ingest so secrets never reach the SSE stream.
+          const stripped = stripAnsi(redactSensitiveData(rawLine));
+          if (!res.writableEnded && !stripped.startsWith('SFDT_LOG:')) {
+            res.write('data: ' + JSON.stringify({ type: 'log', line: stripped, ts: new Date().toISOString() }) + '\n\n');
+          }
+        });
+        return rl;
+      };
+
+      const rlOut = streamLines(child.stdout);
+      const rlErr = streamLines(child.stderr);
+
+      let exitCode = 0;
+      try {
+        await child;
+      } catch (execErr) {
+        exitCode = execErr.exitCode ?? 1;
+      } finally {
+        rlOut.close();
+        rlErr.close();
+      }
+
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'result', exitCode }) + '\n\n');
+        res.end();
+      }
+    } catch (err) {
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'error', message: err.message }) + '\n\n');
+        res.end();
+      }
+    }
+  };
+
+  // ── Audit / Monitor: run from the dashboard (SSE) ───────────────────────────
+  // POST /api/audit/run and /api/monitor/run run `sfdt audit all` /
+  // `sfdt monitor all` (optionally against the session org or a validated
+  // body.targetOrg) so the snapshot file updates and GET /api/audit /
+  // GET /api/monitor return fresh data.
+  for (const snapshotCommand of ['audit', 'monitor']) {
+    app.get(`/api/${snapshotCommand}/run`, apiLimiter, (_req, res) => {
+      res.status(405).json({ error: `Use POST /api/${snapshotCommand}/run` });
+    });
+
+    app.post(`/api/${snapshotCommand}/run`, apiLimiter, async (req, res) => {
+      if (!requireCsrfToken(req, res, csrfToken)) return;
+      const built = buildCliRunArgv(snapshotCommand, req.body ?? {}, sessionOrg ?? '');
+      if (built.error) return res.status(400).json({ error: built.error });
+      await streamCliOverSse(req, res, built.argv);
+    });
+  }
+
   // ── Generic command runner (SSE) ───────────────────────────────────────────
 
   app.get('/api/command/run', apiLimiter, (_req, res) => {
@@ -805,6 +885,18 @@ export function createGuiApp(config, version, port = 7654) {
     }
     const cmd = COMMANDS[command];
     if (!cmd) {
+      // Native-CLI allowlist (scratch/data/docs actions + audit/monitor):
+      // fixed argv templates with strictly validated user values — see
+      // ./cli-run.js. Mutating operations are recorded in the audit trail;
+      // the GUI confirms them with the user before calling this endpoint.
+      if (isCliRunCommand(command)) {
+        const built = buildCliRunArgv(command, req.body ?? {}, sessionOrg ?? '');
+        if (built.error) return res.status(400).json({ error: built.error });
+        if (built.mutating) {
+          await logAuditEvent('command-run', { command, argv: built.argv }, { actor: 'GUI Operator', ip: req.ip });
+        }
+        return streamCliOverSse(req, res, built.argv);
+      }
       return res.status(400).json({ error: 'Unknown command' });
     }
 

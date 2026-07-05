@@ -346,6 +346,10 @@ export function ssePost(path, body) {
 export const stream = {
   deploy:           (opts) => ssePost('/release/deploy', opts),
   commandRun:       (command, extraParams = {}) => ssePost('/command/run', { command, ...extraParams }),
+  /** Run `sfdt audit all` server-side; the audit snapshot (GET /api/audit) refreshes on completion. */
+  auditRun:         (opts = {}) => ssePost('/audit/run', opts),
+  /** Run `sfdt monitor all` server-side; the monitor snapshot (GET /api/monitor) refreshes on completion. */
+  monitorRun:       (opts = {}) => ssePost('/monitor/run', opts),
   pull:             (opts = {}) => ssePost('/pull', opts),
   update:           () => ssePost('/update/stream', {}),
   changelogGenerate:(pkg)  => ssePost('/changelog/generate', pkg ? { package: pkg } : {}),
