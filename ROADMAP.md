@@ -68,40 +68,40 @@
 - **`RunRelevantTests` (Spring '26 beta)** selectable in Release Hub, interactive deploy, and MCP; smart-deploy opt-in via `deployment.smart.useRelevantTests`
 - **Smart deploy, retrofit, PR decoration, CI templates, notifications** — see CHANGELOG for the full v0.14–v0.15 cycle
 
+### Gap-remediation & Summer '26 sprints (PRs #171 / #172 / #174, 2026-07)
+- **Bug fixes** — `sfdt smoke` config wiring, deploy manifest detection widened beyond `rl-*`, deploy `--tag/--create-pr/--notify`, live `docs.roleGuides/docs.ai/docs.diagrams` config keys, skipped-scan labelling, dead script tunables wired, credential-redaction sweep
+- **Google Chat notifier channel**; direct notifier-formatter and bridge-middleware tests
+- **VS Code extension uplift** — native `--json` result rendering, Problems-pane diagnostics, Smart Deploy validate/execute + Quick Deploy, Test Runs view, coverage highlights, Get Started walkthrough, catalog completeness, single consolidated CLI-spawn path
+- **API v67 readiness** — `sfdt quality --api67` (Summer '26 user-mode-by-default); `--test-hints` for `@IsTest(testFor=…)` gaps; annotation-aware smart-deploy test selection
+- **New org-health checks** — MFA readiness, SOAP `login()` retirement, Connected-Apps migration note, elastic async limits, release version/preview in `monitor org-info`; cross-org release-version warning in `compare`/`retrofit`
+- **GUI run-from-dashboard** — Audit/Monitor "Run now" + Scratch/Data/Docs actions with in-app confirmations
+
 ---
 
 ## Next Session
 
-Live status + full queue: [docs/plans/2026-07-03-gap-remediation-and-release-research.md](docs/plans/2026-07-03-gap-remediation-and-release-research.md) (see its **Status** section). Snapshot as of 2026-07-04:
+Live status + full queue: [docs/plans/2026-07-03-gap-remediation-and-release-research.md](docs/plans/2026-07-03-gap-remediation-and-release-research.md) (see its **Status** section). Snapshot as of 2026-07-05:
 
 - ✅ **Sprint 1 shipped** (PR #171 → develop): smoke config wiring, deploy `--tag/--create-pr/--notify`, live `docs.*` config keys, skipped-scan labelling, Google Chat channel, credential-redaction sweep, formatter/middleware tests.
-- ✅ **Sprint 2 complete on the working branch** (PR pending): VS Code native results, Problems-pane diagnostics, Smart Deploy preview/execute + Quick Deploy, onboarding walkthrough, catalog completeness.
-- **Up next:** PR sprint 2 → develop; VS Code test/coverage integration (plan 3.4); then Sprint 3 (API v67 readiness check, MFA/deprecation/limits/release-channel checks, RunRelevantTests follow-through, GUI run-from-dashboard).
-- **Fix the always-failing `integration` CI job** — it red-X's every release PR (DevHub org-auth; no org secrets in PR context). Wire the auth, restrict to non-PR runs, or mark non-required.
-- **sfdt-site docs pass** covering both sprints (needs the `scoobydrew83/sfdt-site` repo added to the session).
+- ✅ **Sprint 2 shipped** (PR #172 → develop): VS Code native results, Problems-pane diagnostics, Smart Deploy preview/execute + Quick Deploy, onboarding walkthrough, catalog completeness.
+- ✅ **Sprint 3 shipped** (PR #174 → develop): `quality --api67`, annotation-aware smart-deploy tests + `quality --test-hints`, GUI run-from-dashboard, new audit/monitor checks (MFA readiness, SOAP login retirement, elastic async limits, release version/preview), VS Code Test Runs view + coverage highlights.
+- 🔶 **4.7 tail** — cross-org release-version warning for `compare`/`retrofit`; done on the working branch, PR pending (needs the GitHub connector authorized).
+- **Up next:** PR the 4.7-tail branch; remove the temporary `show_full_output` debug flag on the claude-review workflow; fix the always-failing `integration` CI job (DevHub org-auth; no org secrets in PR context); then Sprint 4/5 below.
+- **sfdt-site docs pass** covering all three sprints (needs the `scoobydrew83/sfdt-site` repo added to the session).
 
 ---
 
 ## Planned
 
-Grouped queue from the 2026-07-03 audit + Summer '26 / Spring '26 release research (details + sequencing in [the plan](docs/plans/2026-07-03-gap-remediation-and-release-research.md)):
+Remaining Sprint 4/5 queue from the 2026-07-03 audit + Summer '26 / Spring '26 release research (details + sequencing in [the plan](docs/plans/2026-07-03-gap-remediation-and-release-research.md)). Items shipped in PRs #171/#172/#174 (API v67 check, RunRelevantTests follow-through, the new audit/monitor checks, Google Chat channel, all VS Code native-surface work, GUI run-from-dashboard) have moved to **Shipped** above.
 
 ### CLI
-- **API v67 readiness check** — flag `WITH SECURITY_ENFORCED` (no longer compiles at v67), sharing-less classes, and system-mode assumptions before a `sourceApiVersion` bump (Summer '26 user-mode-by-default Apex)
-- **New audit/monitor checks** — MFA readiness (July 2026 enforcement), SOAP `login()` retirement (Summer '27), Connected-Apps-default-off migration, elastic async limits (`DailyAsyncApexElasticExecutions`), Release Manager channel awareness
-- **RunRelevantTests follow-through** — GA detection, `@IsTest(testFor=…)` / `@IsTest(critical=true)` awareness, quality check for missing `testFor` hints
 - **Unified logic tests** — wrap `sf logic run test` so `sfdt test` runs Apex + Flow tests in one pass
 - **Agentforce support** — Agent metadata (`GenAiFunction`, `GenAiPlannerBundle`, scorers, Agent Script) in smart-deploy deltas; `sfdt agent-test` quality gate over `sf agent test run-eval` / the Testing API
 - **Code Analyzer v5 integration** in `sfdt quality` (PMD 7, `--include-fixes` feeding the AI fix loop)
-- **Google Chat notifier channel**; **agent-skills pack** compatible with `npx skills add`
+- **Agent-skills pack** compatible with `npx skills add`
 - **MCP coverage expansion** — read-only tools for test/coverage/scan/dependencies/flow first; gated mutating tools after
-
-### VS Code extension (priority surface)
-- **Native result rendering** — capture `--json` output instead of terminal-only, render audit/monitor/quality/coverage natively
-- **Problems-pane diagnostics** from snapshot findings with file/line (quality, lint-access, future v67 checks)
-- **Smart-deploy delta preview, execute, and quick-deploy** (currently validate-only)
-- **Test tree + editor gutter coverage** from CLI snapshots
-- **Onboarding walkthrough** and catalog completeness (`ci init`, `feature-flags`, `config set/get`, `notify <event>`, `pr-description`, `ai prompt`)
+- **Release Manager channel awareness** — *blocked:* the Summer '26 Release Manager Beta exposes no stable queryable public field for the channel; revisit when Salesforce ships a documented API (release version/preview already reported by `monitor org-info`)
 
 ### Chrome extension
 - **Summer '26 setup deep links** — Field Access Summary, enhanced profile UI, Security Center Essentials, Release Manager
@@ -109,7 +109,6 @@ Grouped queue from the 2026-07-03 audit + Summer '26 / Spring '26 release resear
 - **Flow Scanner surface** powered by `@sfdt/flow-core` (Inspector Reloaded 2.0 parity)
 
 ### GUI / host / pipeline
-- **Run-from-dashboard** for Audit, Monitor, Scratch, Data, Docs (POST/SSE endpoints + buttons; pages are currently snapshot-only)
 - **Native messaging host: implement read-only kinds** (drift/scan/compare/quality/org-health) by spawning the CLI; keep mutating kinds bridge-only
 - **Chrome Web Store publish job** — un-comment behind a secrets-present guard (same pattern as the Homebrew tap job)
 
