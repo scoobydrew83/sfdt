@@ -10,13 +10,12 @@ Each item lists: what's wrong / what's new, the fix approach, files to touch, an
 
 **Sprint 1 — SHIPPED.** Merged to `develop` via [PR #171](https://github.com/scoobydrew83/sfdt/pull/171): items 1.1–1.7, 2.5, 4.2, 4.8, plus the `docs.*` config keys and all adversarial-review follow-ups (deploy-flag semantics in both interactive/CI modes, env-over-config precedence for the new tunables, SKIPPED quality snapshots, CI-template auth-URL guidance).
 
-**Sprint 2 — COMPLETE on branch `claude/salesforce-release-features-snsp3t`** (restarted from the merged `develop`; not yet PR'd): items 3.1, 3.2, 3.3, 3.5. The VS Code extension now has native `--json` result capture + rendering (SFDT Results output channel, tree refresh, terminal fallback), Problems-pane diagnostics from the quality snapshot, Smart Deploy validate-and-review with modal production-aware confirmation, Quick Deploy via `sf project deploy quick`, a Get Started walkthrough, catalog completeness (`ci init`, `feature-flags`, `config get/set`, `notify <event>`, `pr-description`, `ai prompt`), no-`--org` command handling, Windows `.cmd` spawn support, process-group kill on timeout, and focus-triggered prereq/context refresh. vscode CHANGELOG has the Unreleased entries.
+**Sprint 2 — SHIPPED.** Merged to `develop` via [PR #172](https://github.com/scoobydrew83/sfdt/pull/172): items 3.1, 3.2, 3.3, 3.5, plus all claude-review findings (noOrg for preflight/quality, Windows capture(), debounced refreshViews, parseEnvelope skip, stripAnsi reuse) and the claude-review workflow posting fix (least-privilege allowlist). The VS Code extension now has native `--json` result capture + rendering (SFDT Results output channel, tree refresh, terminal fallback), Problems-pane diagnostics from the quality snapshot, Smart Deploy validate-and-review with modal production-aware confirmation, Quick Deploy via `sf project deploy quick`, a Get Started walkthrough, catalog completeness (`ci init`, `feature-flags`, `config get/set`, `notify <event>`, `pr-description`, `ai prompt`), no-`--org` command handling, Windows `.cmd` spawn support, process-group kill on timeout, and focus-triggered prereq/context refresh. vscode CHANGELOG has the Unreleased entries.
 
 **Next session queue, in order:**
-1. **PR the sprint-2 branch to `develop`** (all verification green: vscode compile/198 tests/lint/esbuild; root suite 3239 tests).
-2. **3.4 VS Code test & coverage integration** — the one remaining Part-3 item (test-run tree + gutter coverage from snapshots; builds on run-json.ts/render-summary.ts).
-3. **Sprint 3 (release-driven, parallelizable):** 4.1 API v67 readiness check, 4.7a–e new audit/monitor checks (MFA, SOAP login retirement, Connected-Apps migration, elastic async limits, release channels), 4.3 RunRelevantTests follow-through, 2.1 GUI run-from-dashboard.
-4. Then Sprint 4/5 per the appendix.
+1. **3.4 VS Code test & coverage integration** — the one remaining Part-3 item (test-run tree + gutter coverage from snapshots; builds on run-json.ts/render-summary.ts).
+2. **Sprint 3 (release-driven, parallelizable):** 4.1 API v67 readiness check, 4.7a–e new audit/monitor checks (MFA, SOAP login retirement, Connected-Apps migration, elastic async limits, release channels), 4.3 RunRelevantTests follow-through, 2.1 GUI run-from-dashboard.
+3. Then Sprint 4/5 per the appendix.
 
 **Outstanding cross-repo work:** the sfdt-site (sfdt.dev) docs pass covering BOTH sprints — manifest any-`.xml` detection, deploy `--tag/--create-pr/--notify`, Google Chat channel, `docs.*` config semantics + `--no-ai`/`--no-diagrams`, `smokeTests.testClasses`, and the entire VS Code extension page (native results, diagnostics, smart-deploy/quick-deploy, walkthrough). Requires adding the `scoobydrew83/sfdt-site` repo to the session.
 
@@ -67,7 +66,7 @@ Each item lists: what's wrong / what's new, the fix approach, files to touch, an
 
 ## Part 2 — Surface parity: GUI, host, MCP, tests (P1–P2)
 
-### 2.1 GUI: run-from-dashboard for Audit / Monitor / Scratch / Data / Docs — **M**
+### 2.1 GUI: run-from-dashboard for Audit / Monitor / Scratch / Data / Docs — **M** — **DONE (sprint-3 branch)**
 `/api/audit`, `/api/monitor`, `/api/scratch`, `/api/data`, `/api/docs` are GET-only snapshots; sibling pages (Compare/Scan/Flow) have POST run variants.
 
 **Fix:** add POST run endpoints (SSE where long-running, reusing the `/api/command/run` streaming pattern) + "Run now" buttons on `Audit.jsx`, `Monitor.jsx`; scratch create/delete/pool-fill, data export/import, docs generate actions behind confirm dialogs. Keep snapshots raw on disk (JSON-envelope boundary rule).
@@ -101,7 +100,7 @@ Map snapshot findings that carry file/line (quality, lint-access, future v67 che
 ### 3.3 Smart-deploy delta preview + execute + quick-deploy — **M** — **DONE (sprint-2 branch)**
 A webview (or tree + confirm) showing the computed delta, chosen test level, and no-overwrite protections before deploy; add the missing `--smart` execute path (currently validate-only) and a quick-deploy action for a validated job ID (parity with GUI + MCP `sfdt_quick_deploy`).
 
-### 3.4 Test & coverage integration — **M**
+### 3.4 Test & coverage integration — **M** — **DONE (sprint-3 branch, incl. run-json/cli.ts consolidation)**
 Test-run tree from `logs/test-*-latest.json`; editor gutter coverage decoration from the coverage snapshot. Also fold in the deferred PR #172 review finding: consolidate `vscode/src/lib/run-json.ts`'s spawn/envelope path with `cli.ts`'s `runSfdt`/`runSfdtJson` so the extension has one "run sfdt and read JSON" implementation (move the timeout/AbortSignal/Windows-shell/process-group-kill improvements into the shared module).
 
 ### 3.5 Onboarding & catalog completeness — **S** — **DONE (sprint-2 branch)**
@@ -116,13 +115,13 @@ CodeLens on agent test-spec files backed by `sf agent test run-eval` / `sf logic
 
 ### CLI
 
-#### 4.1 API v67 readiness check — **M** (P1, time-sensitive)
+#### 4.1 API v67 readiness check — **M** (P1, time-sensitive) — **DONE (sprint-3 branch: `quality --api67`)**
 Summer '26 makes Apex user-mode-by-default at API 67 and `WITH SECURITY_ENFORCED` no longer compiles. New audit/quality check (`sfdt audit api67` or `sfdt quality --api67`) scanning local Apex for `WITH SECURITY_ENFORCED`, sharing-less classes, and system-mode assumptions before a `sourceApiVersion` bump. Feeds VS Code diagnostics (3.2).
 
 #### 4.2 sf CLI credential-redaction adaptation — **S** (P0-adjacent) — **DONE (PR #171)**
 Since sf CLI 2.136.8 (May 2026), tokens are redacted from `sf org display --json` / `org list --json`. Audit our scripts/libs for token scraping and switch to `sf org auth show-access-token` where needed (sfdx-hardis already shipped this).
 
-#### 4.3 RunRelevantTests follow-through — **M**
+#### 4.3 RunRelevantTests follow-through — **M** — **DONE (sprint-3 branch: testFor/critical selection + `quality --test-hints`; GA detection intentionally deferred — no reliable GA signal yet; annotation widening fires only on RunSpecifiedTests by design)**
 Detect GA (drop the non-prod gate when appropriate); recognise Spring '26 `@IsTest(testFor='...')` / `@IsTest(critical=true)` annotations; add a quality check flagging test classes without `testFor` hints; keep surfacing the known CLI bug (forcedotcom/cli#3565) in docs.
 
 #### 4.4 Unified logic tests — **M**
@@ -134,7 +133,7 @@ Wrap `sf logic run test` so `sfdt test` can run Apex + Flow tests in one pass (F
 #### 4.6 Code Analyzer v5 integration — **M**
 Run `sf code-analyzer` (PMD 7, `--include-fixes`) inside `sfdt quality`; merge findings into the snapshot/PR comment; optionally feed fixes to the AI fix loop. Replaces the 1.5 stub path.
 
-#### 4.7 New audit/monitor checks — **S each**
+#### 4.7 New audit/monitor checks — **S each** — **MOSTLY DONE (sprint-3 branch: mfa-readiness, soap-logins, connected-apps note, elastic async limits, release version in org-info; DEFERRED: Release Manager channel + retrofit/compare cross-org release-version warning)**
 - **MFA readiness** (July 1, 2026 phishing-resistant MFA enforcement; hardis parity).
 - **SOAP `login()` retirement** (Summer '27; flags API versions 31–64 auth flows).
 - **Connected Apps default-off migration** (recommend External Client Apps — extends the existing `connected-apps` check).

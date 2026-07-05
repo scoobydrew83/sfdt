@@ -92,7 +92,8 @@
     "inactiveUserDays": 90,
     "minApiVersion": 45,
     "fieldDescriptionMaxMissing": 0,
-    "connectedAppFlagPermissive": true
+    "connectedAppFlagPermissive": true,
+    "soapLoginLookbackDays": 30
   },
   "monitoring": {
     "backupDir": "monitoring-backup",

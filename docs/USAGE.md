@@ -226,7 +226,7 @@ Use `--source-dir` for targeted deploys of a single package directory without ge
 
 #### sfdt deploy --smart
 
-Smart delta deploy. `sfdt deploy --smart` computes a git delta (reusing the same manifest engine as `sfdt manifest`), applies `package-no-overwrite.xml` protection, auto-selects the minimal safe test level (`NoTestRun` / `RunSpecifiedTests` / `RunLocalTests` — never downgraded in production), and runs a self-contained, non-interactive `sf project deploy validate|start`. Unlike the interactive deploy path, it has no archive/commit side effects.
+Smart delta deploy. `sfdt deploy --smart` computes a git delta (reusing the same manifest engine as `sfdt manifest`), applies `package-no-overwrite.xml` protection, auto-selects the minimal safe test level (`NoTestRun` / `RunSpecifiedTests` / `RunLocalTests` — never downgraded in production), and runs a self-contained, non-interactive `sf project deploy validate|start`. When `RunSpecifiedTests` is chosen, the selection is widened by the Spring '26 `@IsTest` annotations: test classes whose `@IsTest(testFor='Type:Name')` targets a changed component, and every `@IsTest(critical=true)` class, are included automatically (sources are comment/string-sanitized before scanning, so commented-out annotations don't count). Unlike the interactive deploy path, it has no archive/commit side effects.
 
 ```bash
 sfdt deploy --smart                              # validate the delta against the default org
@@ -368,6 +368,8 @@ Runs static code quality analysis and optionally generates an AI fix plan. Can a
 
 ```bash
 sfdt quality                    # code analyzer only (default)
+sfdt quality --api67            # API v67 (Summer '26) user-mode readiness scan only
+sfdt quality --test-hints       # flag @IsTest classes lacking @IsTest(testFor=...) hints
 sfdt quality --tests            # test analyzer only
 sfdt quality --all              # both analyzers
 sfdt quality --fix-plan         # run analyzer + AI fix plan

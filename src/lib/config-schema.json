@@ -197,7 +197,8 @@
         "inactiveUserDays": { "type": "integer", "minimum": 1 },
         "minApiVersion": { "type": "number", "minimum": 1 },
         "fieldDescriptionMaxMissing": { "type": "integer", "minimum": 0 },
-        "connectedAppFlagPermissive": { "type": "boolean" }
+        "connectedAppFlagPermissive": { "type": "boolean" },
+        "soapLoginLookbackDays": { "type": "integer", "minimum": 1 }
       }
     },
     "monitoring": {

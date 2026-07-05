@@ -76,4 +76,26 @@ describe('buildStatusTree', () => {
     const health = tree.find((n) => n.id === 'status.health')!;
     expect(health.description).toBe('3 issue(s)');
   });
+
+  it('omits the Test Runs section when no runs are supplied (back-compat)', () => {
+    const tree = buildStatusTree(base);
+    expect(tree.find((n) => n.id === 'status.tests')).toBeUndefined();
+  });
+
+  it('renders the Test Runs section when runs are supplied', () => {
+    const tree = buildStatusTree({
+      ...base,
+      testRuns: [{ file: 'r.json', date: '2026-07-01T10:00:00Z', passed: 7, failed: 0, errors: 0 }],
+      testResultsDir: '/proj/logs/test-results',
+    });
+    const tests = tree.find((n) => n.id === 'status.tests')!;
+    expect(tests.status).toBe('ok');
+    expect(tests.description).toContain('last: PASS');
+    expect(tests.children).toHaveLength(1);
+  });
+
+  it('renders the Test Runs empty state when runs is an empty array', () => {
+    const tests = buildStatusTree({ ...base, testRuns: [] }).find((n) => n.id === 'status.tests')!;
+    expect(tests.description).toBe('none yet');
+  });
 });

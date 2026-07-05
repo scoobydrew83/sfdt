@@ -11,10 +11,28 @@
  * can be unit-tested under vitest. The impure spawn wrapper (`captureSfdt`)
  * is kept separate from the pure functions (`parseEnvelope`,
  * `interpretCapture`) so tests can feed canned stdout strings.
+ *
+ * This module is the ONE spawn-sfdt implementation in the extension — a
+ * previous parallel wrapper (lib/cli.ts runSfdt/runSfdtJson, which lacked the
+ * timeout, AbortSignal, Windows-shell, and process-group-kill behaviour) was
+ * consolidated into it. Anything that needs to run the CLI goes through
+ * `captureSfdt` (raw output) or `runSfdtForResult` (interpreted envelope).
  */
 
 import { spawn } from 'node:child_process';
-import { buildArgs } from './cli.js';
+
+/**
+ * Build the full argv for an sfdt invocation, appending `--org` when an alias
+ * is configured and not already present. Shared by the native runner below and
+ * the integrated-terminal command builder (terminal.ts) so the `--org` rule is
+ * identical on both paths.
+ */
+export function buildArgs(args: string[], org?: string): string[] {
+  if (org && !args.includes('--org')) {
+    return [...args, '--org', org];
+  }
+  return args;
+}
 
 /** The sf-native JSON envelope emitted by sfdt commands supporting `--json`. */
 export interface SfEnvelope {
@@ -215,7 +233,7 @@ export interface CaptureOptions {
   cliPath?: string;
   /** Working directory — typically the workspace folder root. */
   cwd?: string;
-  /** Org alias appended as `--org <alias>` when set (see cli.ts buildArgs). */
+  /** Org alias appended as `--org <alias>` when set (see buildArgs above). */
   org?: string;
   /** Extra environment variables. */
   env?: NodeJS.ProcessEnv;

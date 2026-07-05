@@ -59,6 +59,30 @@ describe('audit command', () => {
     expect(runAudit).toHaveBeenCalledWith('dev-org', expect.objectContaining({ checks: ['mfa'] }));
   });
 
+  it('registers the mfa-readiness subcommand', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'mfa-readiness']);
+    expect(runAudit).toHaveBeenCalledWith('dev-org', expect.objectContaining({ checks: ['mfa-readiness'] }));
+  });
+
+  it('registers the soap-logins subcommand and passes the configured lookback', async () => {
+    loadConfig.mockResolvedValue({ ...mockConfig, audit: { soapLoginLookbackDays: 60 } });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'soap-logins']);
+    expect(runAudit).toHaveBeenCalledWith('dev-org', expect.objectContaining({
+      checks: ['soap-logins'],
+      params: expect.objectContaining({ 'soap-logins': { lookbackDays: 60 } }),
+    }));
+  });
+
+  it('defaults the soap-logins lookback from AUDIT_DEFAULTS when unconfigured', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'soap-logins']);
+    expect(runAudit).toHaveBeenCalledWith('dev-org', expect.objectContaining({
+      params: expect.objectContaining({ 'soap-logins': { lookbackDays: 30 } }),
+    }));
+  });
+
   it('uses --org override', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await createProgram().parseAsync(['node', 'sfdt', 'audit', 'all', '--org', 'staging']);

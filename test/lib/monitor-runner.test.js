@@ -31,6 +31,7 @@ import {
   runMonitor,
   CHECK_IDS,
   MONITOR_DEFAULTS,
+  expectedGaApiVersion,
 } from '../../src/lib/monitor-runner.js';
 
 beforeEach(() => vi.resetAllMocks());
@@ -82,6 +83,50 @@ describe('checkLimits', () => {
     expect(r.status).toBe('error');
     expect(r.summary).toMatch(/No authorization information found for dev\./);
     expect(r.summary).not.toMatch(/Command failed with exit code/);
+  });
+
+  it('reports elastic async Apex (Beta) and warns in the overflow band', async () => {
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        result: [
+          { name: 'DailyAsyncApexExecutions', max: 250000, remaining: 250000 },
+          // Processed shows total async usage above the standard daily limit.
+          { name: 'DailyAsyncApexProcessed', max: 500000, remaining: 200000 }, // used 300000 > 250000
+          { name: 'DailyAsyncApexElasticExecutions', max: 250000, remaining: 250000 },
+        ],
+      }),
+    });
+    const r = await checkLimits('dev', { warnThreshold: 0.75 });
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/elastic overflow band/);
+    const elastic = r.findings.find((f) => f.name === 'DailyAsyncApexElastic (Beta)');
+    expect(elastic).toMatchObject({ used: 300000, standardLimit: 250000, elasticLimit: 250000, overflow: true });
+  });
+
+  it('reports elastic async informationally (ok) when usage is within the standard limit', async () => {
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        result: [
+          { name: 'DailyAsyncApexExecutions', max: 250000, remaining: 240000 },
+          { name: 'DailyAsyncApexProcessed', max: 500000, remaining: 490000 }, // used 10000
+          { name: 'DailyAsyncApexElasticExecutions', max: 250000, remaining: 250000 },
+        ],
+      }),
+    });
+    const r = await checkLimits('dev', { warnThreshold: 0.75 });
+    expect(r.status).toBe('ok');
+    const elastic = r.findings.find((f) => f.name === 'DailyAsyncApexElastic (Beta)');
+    expect(elastic).toMatchObject({ used: 10000, overflow: false });
+    expect(r.summary).not.toMatch(/overflow/);
+  });
+
+  it('silently skips elastic reporting when the org lacks the elastic keys', async () => {
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify({ result: [{ name: 'DailyAsyncApexExecutions', max: 250000, remaining: 240000 }] }),
+    });
+    const r = await checkLimits('dev', { warnThreshold: 0.75 });
+    expect(r.status).toBe('ok');
+    expect(r.findings.some((f) => f.name === 'DailyAsyncApexElastic (Beta)')).toBe(false);
   });
 });
 
@@ -148,6 +193,59 @@ describe('checkOrgInfo', () => {
     query.mockResolvedValueOnce([]);
     const r = await checkOrgInfo('dev');
     expect(r.status).toBe('warn');
+  });
+
+  it('reports the release version from the REST version list (GA instance)', async () => {
+    const ga = expectedGaApiVersion();
+    query.mockResolvedValueOnce([
+      { Name: 'Acme', InstanceName: 'NA123', OrganizationType: 'Enterprise Edition', IsSandbox: false, TrialExpirationDate: null },
+    ]);
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify([
+        { label: 'Older Release', version: `${ga - 1}.0`, url: `/services/data/v${ga - 1}.0` },
+        { label: "Current Release", version: `${ga}.0`, url: `/services/data/v${ga}.0` },
+      ]),
+    });
+    const r = await checkOrgInfo('dev');
+    expect(r.status).toBe('ok');
+    expect(r.findings[0]).toMatchObject({ release: 'Current Release', releaseApiVersion: ga, preview: false });
+    expect(r.summary).toContain('Current Release');
+    expect(r.summary).not.toContain('preview');
+    expect(execa).toHaveBeenCalledWith('sf', ['api', 'request', 'rest', '/services/data', '--target-org', 'dev']);
+  });
+
+  it('marks a preview instance when the max API version is ahead of GA', async () => {
+    const ga = expectedGaApiVersion();
+    query.mockResolvedValueOnce([
+      { Name: 'Acme', InstanceName: 'CS42', OrganizationType: 'Enterprise Edition', IsSandbox: true, TrialExpirationDate: null },
+    ]);
+    execa.mockResolvedValueOnce({
+      stdout: JSON.stringify([{ label: 'Next Release', version: `${ga + 1}.0`, url: `/services/data/v${ga + 1}.0` }]),
+    });
+    const r = await checkOrgInfo('dev');
+    expect(r.status).toBe('ok');
+    expect(r.findings[0]).toMatchObject({ release: 'Next Release', preview: true });
+    expect(r.summary).toContain('(preview instance)');
+  });
+
+  it('degrades gracefully (no release info, still ok) when the version list is unavailable', async () => {
+    query.mockResolvedValueOnce([
+      { Name: 'Acme', InstanceName: 'NA1', OrganizationType: 'Enterprise Edition', IsSandbox: false, TrialExpirationDate: null },
+    ]);
+    execa.mockRejectedValueOnce(new Error('Unknown command "api"')); // older sf CLI
+    const r = await checkOrgInfo('dev');
+    expect(r.status).toBe('ok');
+    expect(r.findings[0]).toMatchObject({ release: null, preview: null });
+    expect(r.summary).not.toContain('preview');
+  });
+});
+
+describe('expectedGaApiVersion', () => {
+  it('follows the three-releases-a-year cadence anchored at Spring 23 = v57', () => {
+    expect(expectedGaApiVersion(new Date(Date.UTC(2023, 2, 1)))).toBe(57); // Mar 2023 → Spring '23
+    expect(expectedGaApiVersion(new Date(Date.UTC(2026, 6, 4)))).toBe(67); // Jul 2026 → Summer '26
+    expect(expectedGaApiVersion(new Date(Date.UTC(2026, 10, 1)))).toBe(68); // Nov 2026 → Winter '27
+    expect(expectedGaApiVersion(new Date(Date.UTC(2027, 0, 15)))).toBe(68); // Jan 2027 → still Winter '27
   });
 });
 

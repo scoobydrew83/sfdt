@@ -8,12 +8,19 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ### Added
 
+- **Test Runs in the Status view** — recent CLI test runs (outcome, counts, org, coverage, timestamp) parsed from `logs/test-results/`, refreshing automatically; click a run to open its raw JSON.
+- **SFDT: Toggle Coverage Highlights** — runs `sfdt coverage --json` and bands open Apex files (gutter border, subtle background, overview-ruler stripe, inline label) by class coverage; toggle again to clear.
+- A custom `logDir` in `.sfdt/config.json` is now honoured when locating snapshots and test results.
 - **Native result rendering.** Audit, monitor, coverage, quality, and preflight now run with captured `--json` output under a progress notification — from every entry point (palette shortcuts, the Commands tree, and command search) — refreshing the SFDT trees and rendering a readable summary to the new **SFDT Results** output channel, with a "Run in Terminal" fallback on any failure. Interactive commands (deploy picker, init) keep the terminal.
 - **Problems-pane diagnostics.** Quality violations from the CLI's snapshot map to native VS Code diagnostics (severity 1 → Error, 2 → Warning, 3+ → Info) that open the offending file; a skipped scan (scanner not installed) produces no false-clean diagnostics. **SFDT: Clear Diagnostics** empties the collection.
 - **Smart Deploy — Validate & Review** (`sfdt.smartDeployPreview`): captures `deploy --smart --dry-run`, shows the parsed delta (components, test level, overwrite protections), then offers Deploy now / Re-validate / Cancel behind a modal, org-named confirmation that warns extra-loudly for production orgs.
 - **Quick Deploy** (`sfdt.quickDeploy`): promote a validated deployment by `0Af…` job ID via `sf project deploy quick` in the integrated terminal, with org picker and modal confirmation.
 - **"Get started with SFDT" walkthrough** (check CLI → init → first audit → smart-deploy validate → open dashboard) and new catalog entries for `ci init`, `feature-flags`, `config get/set`, `notify <event>`, `pr-description`, and `ai prompt`.
 - **Org-health tree**: per-check tooltips with summaries and a "Send snapshot to channels" action (`notify snapshot --type audit|monitor`).
+
+### Changed
+
+- Internal: the two parallel CLI spawn implementations were consolidated into `run-json.ts` (timeout, cancellation, Windows shell, process-group kill); `cli.ts` was removed.
 
 ### Fixed
 
