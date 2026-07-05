@@ -66,6 +66,12 @@ describe('monitor command', () => {
     expect(runMonitor).toHaveBeenCalledWith('dev-org', mockConfig, expect.objectContaining({ checks: ['limits'] }));
   });
 
+  it('runs the org-info check standalone (release-version reporting path)', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'monitor', 'org-info']);
+    expect(runMonitor).toHaveBeenCalledWith('dev-org', mockConfig, expect.objectContaining({ checks: ['org-info'] }));
+  });
+
   it('runs the backup subcommand via runBackup', async () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'monitor', 'backup', '--json']);

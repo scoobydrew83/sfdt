@@ -36,7 +36,19 @@ export const AUDIT_DEFAULTS = {
   minApiVersion: ORG_HEALTH_THRESHOLDS.minApiVersionFloor, // 45
   fieldDescriptionMaxMissing: 0,
   connectedAppFlagPermissive: true,
+  soapLoginLookbackDays: 30,
 };
+
+// SOAP login() retirement window: Salesforce is retiring the SOAP login() call
+// on API versions 31.0 through 64.0. Traffic in this band must move to OAuth
+// (or a current API version) before the retirement lands.
+const SOAP_LOGIN_RETIREMENT = { minApi: 31, maxApi: 64 };
+
+// Salesforce's Connected-Apps hardening: new Connected App installs are moving
+// to default-off (blocked until an admin approves), and External Client Apps
+// are the strategic successor. Surfaced whenever connected apps are found.
+const ECA_MIGRATION_NOTE =
+  'Salesforce is moving Connected Apps to default-off (blocked until admin-approved); plan migration to External Client Apps.';
 
 // Setup-audit-trail actions/sections that warrant a closer look. Matched as
 // case-insensitive substrings against the Action and Section columns.
@@ -172,6 +184,128 @@ export async function checkMfa(orgAlias) {
       findings);
   } catch (err) {
     return errored(id, title, err);
+  }
+}
+
+/**
+ * MFA enforcement readiness — active users who are not ready for Salesforce's
+ * phishing-resistant MFA enforcement (July 2026): no MFA method registered at
+ * all, or only non-phishing-resistant methods (TOTP / Salesforce Authenticator /
+ * temporary code). Phishing-resistant = security key (HasSecurityKey for modern
+ * WebAuthn registrations, HasU2F for legacy U2F ones) or built-in (platform)
+ * authenticator (HasBuiltInAuthenticator), per TwoFactorMethodsInfo.
+ *
+ * TwoFactorMethodsInfo is queryable in most orgs but is permission-gated, so a
+ * rejected query degrades to warn (never error) — a missing API must not fail CI.
+ */
+export async function checkMfaReadiness(orgAlias) {
+  const id = 'mfa-readiness';
+  const title = 'MFA enforcement readiness';
+  try {
+    // Same single-page caveat as checkMfa: both queries return one SOQL page
+    // (~2000 rows) and Salesforce rejects the semi-join, so diff client-side and
+    // flag when either result hits the cap.
+    const PAGE = 2000;
+    const methods = await query(
+      orgAlias,
+      'SELECT UserId, HasTotp, HasU2F, HasSecurityKey, HasBuiltInAuthenticator, HasSalesforceAuthenticator, HasTempCode FROM TwoFactorMethodsInfo',
+    );
+    const byUser = new Map();
+    for (const m of methods) {
+      const prev = byUser.get(m.UserId) ?? { any: false, phishingResistant: false };
+      const phishingResistant =
+        m.HasSecurityKey === true || m.HasU2F === true || m.HasBuiltInAuthenticator === true;
+      byUser.set(m.UserId, {
+        any: prev.any || phishingResistant || m.HasTotp === true ||
+          m.HasSalesforceAuthenticator === true || m.HasTempCode === true,
+        phishingResistant: prev.phishingResistant || phishingResistant,
+      });
+    }
+    const users = await query(
+      orgAlias,
+      `SELECT Id, Username, Name FROM User WHERE IsActive = true AND UserType = 'Standard' ORDER BY Name LIMIT ${PAGE}`,
+    );
+    const truncated = methods.length >= PAGE || users.length >= PAGE;
+    const findings = [];
+    for (const u of users) {
+      const reg = byUser.get(u.Id);
+      if (!reg || !reg.any) {
+        findings.push({ username: u.Username, name: u.Name, detail: 'No MFA method registered' });
+      } else if (!reg.phishingResistant) {
+        findings.push({
+          username: u.Username,
+          name: u.Name,
+          detail: 'Only non-phishing-resistant MFA (TOTP/authenticator app/temp code) — no security key or built-in authenticator',
+        });
+      }
+    }
+    const truncNote = truncated
+      ? ` (results truncated at ${PAGE} rows — readiness count may be incomplete)`
+      : '';
+    return result(id, title, findings.length || truncated ? 'warn' : 'ok',
+      (findings.length
+        ? `${findings.length} active user(s) not ready for Salesforce's phishing-resistant MFA enforcement (July 2026)`
+        : `All active standard users have a phishing-resistant MFA method ahead of the July 2026 enforcement`) + truncNote,
+      findings);
+  } catch (err) {
+    return degraded(id, title, err, 'MFA readiness (TwoFactorMethodsInfo)');
+  }
+}
+
+/**
+ * SOAP login() retirement — recent logins that used the SOAP login() call on a
+ * retiring API version (31.0–64.0). LoginHistory's ApiType/ApiVersion fields
+ * identify SOAP traffic; findings are aggregated per user + API version +
+ * client application so one chatty integration doesn't flood the report.
+ * LoginHistory is permission-gated in some orgs, so failures degrade to warn.
+ */
+export async function checkSoapLogins(orgAlias, { lookbackDays = AUDIT_DEFAULTS.soapLoginLookbackDays } = {}) {
+  const id = 'soap-logins';
+  const title = 'SOAP login() retirement';
+  try {
+    // lookbackDays is interpolated into SOQL and may come from user config —
+    // coerce to a safe integer (the checkApiVersions pattern).
+    const days = Number.parseInt(lookbackDays, 10);
+    if (!Number.isFinite(days)) {
+      throw new Error(`audit.soapLoginLookbackDays must be a number, got: ${lookbackDays}`);
+    }
+    const since = ISODate(Date.now() - days * DAY_MS);
+    const rows = await query(
+      orgAlias,
+      `SELECT UserId, LoginTime, LoginType, ApiType, ApiVersion, Application FROM LoginHistory ` +
+        `WHERE LoginTime >= ${since} AND ApiType LIKE 'SOAP%' ORDER BY LoginTime DESC LIMIT 2000`,
+    );
+    // Version banding is client-side: ApiVersion is returned as a string/decimal
+    // and SOQL comparisons on it are unreliable across orgs.
+    const { minApi, maxApi } = SOAP_LOGIN_RETIREMENT;
+    const agg = new Map();
+    for (const r of rows) {
+      const v = Number.parseFloat(r.ApiVersion);
+      if (!Number.isFinite(v) || v < minApi || v > maxApi) continue;
+      const key = `${r.UserId}|${v}|${r.Application ?? ''}`;
+      const entry = agg.get(key) ?? {
+        userId: r.UserId,
+        apiType: r.ApiType,
+        apiVersion: v,
+        application: r.Application ?? null,
+        logins: 0,
+        lastLogin: r.LoginTime,
+      };
+      entry.logins += 1;
+      if (r.LoginTime > entry.lastLogin) entry.lastLogin = r.LoginTime;
+      agg.set(key, entry);
+    }
+    const findings = [...agg.values()];
+    const truncNote = rows.length >= 2000
+      ? ' (login history truncated at 2000 rows — counts may be incomplete)'
+      : '';
+    return result(id, title, findings.length || rows.length >= 2000 ? 'warn' : 'ok',
+      findings.length
+        ? `${findings.length} client(s) used SOAP login() on retiring API versions ${minApi}.0–${maxApi}.0 in the last ${days} days — migrate to OAuth or a current API version before the retirement${truncNote}`
+        : `No SOAP login() traffic on retiring API versions ${minApi}.0–${maxApi}.0 in the last ${days} days${truncNote}`,
+      findings);
+  } catch (err) {
+    return degraded(id, title, err, 'SOAP login history (LoginHistory)');
   }
 }
 
@@ -366,12 +500,20 @@ export async function checkConnectedApps(orgAlias, { flagPermissive = AUDIT_DEFA
     const findings = flagPermissive
       ? rows
           .filter((r) => r.OptionsAllowAdminApprovedUsersOnly === false)
-          .map((r) => ({ name: r.Name, detail: 'All users permitted (admin approval not required)' }))
+          .map((r) => ({
+            name: r.Name,
+            detail: 'All users permitted (admin approval not required)',
+            recommendation: 'Migrate to an External Client App',
+          }))
       : [];
+    // Additive context only — the ok/warn banding above is unchanged. Whenever
+    // the org has connected apps at all, note the default-off direction and the
+    // External Client Apps migration path.
+    const note = rows.length ? ` Note: ${ECA_MIGRATION_NOTE}` : '';
     return result(id, title, findings.length ? 'warn' : 'ok',
-      findings.length
+      (findings.length
         ? `${findings.length} connected app(s) permit all users`
-        : `${rows.length} connected app(s); none flagged`,
+        : `${rows.length} connected app(s); none flagged`) + note,
       findings);
   } catch (err) {
     // ConnectedApplication is not queryable for every user/permission set.
@@ -574,6 +716,8 @@ export const CHECKS = {
   audittrail: checkAuditTrail,
   licenses: checkLicenses,
   mfa: checkMfa,
+  'mfa-readiness': checkMfaReadiness,
+  'soap-logins': checkSoapLogins,
   'unused-apex': checkUnusedApex,
   'inactive-users': checkInactiveUsers,
   'api-versions': checkApiVersions,

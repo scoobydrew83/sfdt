@@ -25,6 +25,7 @@ function buildParams(config) {
     'api-versions': { minApiVersion: a.minApiVersion ?? AUDIT_DEFAULTS.minApiVersion },
     'connected-apps': { flagPermissive: a.connectedAppFlagPermissive ?? AUDIT_DEFAULTS.connectedAppFlagPermissive },
     'field-descriptions': { maxMissing: a.fieldDescriptionMaxMissing ?? AUDIT_DEFAULTS.fieldDescriptionMaxMissing },
+    'soap-logins': { lookbackDays: a.soapLoginLookbackDays ?? AUDIT_DEFAULTS.soapLoginLookbackDays },
   };
 }
 
@@ -112,7 +113,7 @@ function printReport(snapshot) {
 export function registerAuditCommand(program) {
   const audit = program
     .command('audit')
-    .description('Diagnose org health — audit trail, licenses, MFA, unused/unreferenced Apex, inactive users/flows/validations/workflows, API versions, permission sets, connected apps, field descriptions, object & field access');
+    .description('Diagnose org health — audit trail, licenses, MFA coverage & enforcement readiness, SOAP login() retirement, unused/unreferenced Apex, inactive users/flows/validations/workflows, API versions, permission sets, connected apps, field descriptions, object & field access');
 
   audit
     .command('all', { isDefault: true })

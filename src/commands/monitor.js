@@ -150,7 +150,7 @@ function printReport(snapshot) {
 export function registerMonitorCommand(program) {
   const monitor = program
     .command('monitor')
-    .description('Monitor org health — limits, Apex failures, security score, org info, deployment history, legacy API usage, paused flows, and metadata backup');
+    .description('Monitor org health — limits (incl. elastic async Apex), Apex failures, security score, org info & release version, deployment history, legacy API usage, paused flows, and metadata backup');
 
   monitor
     .command('all', { isDefault: true })
