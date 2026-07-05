@@ -537,12 +537,17 @@ export function activate(context: vscode.ExtensionContext): void {
     coverageTypes.clear();
   };
 
+  let coverageFetchInFlight = false;
   const toggleCoverage = async (): Promise<void> => {
     if (coverageRows) {
       clearCoverage();
       vscode.window.setStatusBarMessage('SFDT: coverage highlights cleared', 4000);
       return;
     }
+    // Re-entrancy guard: the progress notification is non-modal, so a second
+    // invocation mid-fetch would spawn a duplicate CLI run and decorations.
+    if (coverageFetchInFlight) return;
+    coverageFetchInFlight = true;
     const run = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
@@ -556,6 +561,7 @@ export function activate(context: vscode.ExtensionContext): void {
           org: defaultOrg(),
         }),
     );
+    coverageFetchInFlight = false;
     if (!run.ok) {
       vscode.window.showErrorMessage(`SFDT coverage failed: ${run.error ?? 'unknown error'}`);
       return;
