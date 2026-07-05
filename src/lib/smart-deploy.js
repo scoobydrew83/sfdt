@@ -18,13 +18,16 @@ export const DEFAULT_IMPACTING_TYPES = ['ApexClass', 'ApexTrigger', 'Flow'];
 /** API version that introduced RunRelevantTests as a beta (Spring '26). */
 export const RELEVANT_TESTS_BETA_API = 66;
 /**
- * API version at which RunRelevantTests is treated as GA. Still beta as of
- * Summer '26 (API 67); Spring '27 (API 68) is the earliest release it could
- * GA, so that is the projected value — adjust when Salesforce announces the
- * actual GA release. GA detection is what drops the non-prod gate: an
- * opted-in project (`deployment.smart.useRelevantTests`) whose
- * `sourceApiVersion` is at or past this version may use RunRelevantTests on
- * production deploys too (below it, prod always falls back to RunLocalTests).
+ * API version at which RunRelevantTests is treated as GA. Verified 2026-07:
+ * still Beta as of Summer '26 (API 67, now GA as a platform) — the Summer '26
+ * release notes carry no RunRelevantTests GA announcement, so the platform
+ * release GA'ing does NOT mean this feature did. Spring '27 (API 68) is the
+ * earliest release it could GA, so that remains the projected value — adjust
+ * (likely down to 67) only once Salesforce publishes an actual GA note. GA
+ * detection is what drops the non-prod gate: an opted-in project
+ * (`deployment.smart.useRelevantTests`) whose `sourceApiVersion` is at or past
+ * this version may use RunRelevantTests on production deploys too (below it,
+ * prod always falls back to RunLocalTests).
  */
 export const RELEVANT_TESTS_GA_API = 68;
 
