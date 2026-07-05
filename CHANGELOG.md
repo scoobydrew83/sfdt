@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Cross-org release-version warning.** `sfdt compare` and `sfdt retrofit` now detect when the two orgs run different Salesforce releases (best-effort via each org's REST version list) and print a heads-up before comparing/deploying — metadata valid on one release may not deploy cleanly to another. Non-fatal and skipped for org↔local comparisons or when a release can't be determined; `retrofit --json` reports it as `releaseMismatch`. The release-detection helper (`expectedGaApiVersion`/`detectOrgRelease`, previously private to the monitor runner) moved to a shared `src/lib/org-release.js`.
+
+### Added
+
 - **`sfdt quality --api67`** — API v67 (Summer '26 user-mode-by-default) readiness scan of local Apex: flags `WITH SECURITY_ENFORCED` (no longer compiles at v67), classes with no sharing declaration, and `without sharing` classes doing DML/SOQL; `--json` emits the sf envelope; exit code 1 only when blocking errors exist and `sourceApiVersion` ≥ 67. Comment/string-sanitized scanning avoids false positives.
 - **`sfdt quality --test-hints`** — advisory check flagging `@IsTest` classes that carry no `@IsTest(testFor=...)` annotation (invisible to Spring '26 RunRelevantTests selection and to smart deploy's annotation-aware widening).
 - **Annotation-aware smart-deploy test selection.** When smart deploy picks `RunSpecifiedTests`, it now also includes test classes whose `@IsTest(testFor='Type:Name')` targets a changed component and every `@IsTest(critical=true)` class, merged with the existing name-heuristic selection.

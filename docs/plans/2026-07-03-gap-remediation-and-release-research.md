@@ -133,7 +133,9 @@ Wrap `sf logic run test` so `sfdt test` can run Apex + Flow tests in one pass (F
 #### 4.6 Code Analyzer v5 integration — **M**
 Run `sf code-analyzer` (PMD 7, `--include-fixes`) inside `sfdt quality`; merge findings into the snapshot/PR comment; optionally feed fixes to the AI fix loop. Replaces the 1.5 stub path.
 
-#### 4.7 New audit/monitor checks — **S each** — **MOSTLY DONE (sprint-3 branch: mfa-readiness, soap-logins, connected-apps note, elastic async limits, release version in org-info; DEFERRED: Release Manager channel + retrofit/compare cross-org release-version warning)**
+#### 4.7 New audit/monitor checks — **S each** — **DONE (sprint-3 PR #174 + follow-up branch)**
+
+> **Status:** mfa-readiness, soap-logins, connected-apps migration note, elastic async limits, and release-version/preview in `monitor org-info` shipped in PR #174. The **cross-org release-version warning** for `compare`/`retrofit` shipped on the follow-up branch (shared `src/lib/org-release.js`). The **Release Manager *channel*** sub-piece (Standard/Accelerated/Dev) is **intentionally not implemented**: the Summer '26 Release Manager is Beta and exposes no stable, queryable public field for the channel — inventing a SOQL field would fail in every org (the exact anti-pattern earlier adversarial reviews caught). Revisit once Salesforce ships a documented API for it.
 - **MFA readiness** (July 1, 2026 phishing-resistant MFA enforcement; hardis parity).
 - **SOAP `login()` retirement** (Summer '27; flags API versions 31–64 auth flows).
 - **Connected Apps default-off migration** (recommend External Client Apps — extends the existing `connected-apps` check).

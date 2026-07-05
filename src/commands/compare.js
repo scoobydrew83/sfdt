@@ -7,6 +7,7 @@ import { fetchInventory } from '../lib/org-inventory.js';
 import { diffInventories } from '../lib/org-diff.js';
 import { renderPackageXml } from '../lib/metadata-mapper.js';
 import { safeResolvePath } from '../lib/project-detect.js';
+import { compareOrgReleases, releaseMismatchWarning } from '../lib/org-release.js';
 
 export function registerCompareCommand(program) {
   program
@@ -24,6 +25,12 @@ export function registerCompareCommand(program) {
 
         print.header(`Comparing ${source} → ${target}`);
         print.info('Fetching source inventory…');
+
+        // Heads-up when comparing two orgs on different Salesforce releases —
+        // best-effort, never fatal (skips org↔local and undetectable orgs).
+        const releaseCmp = await compareOrgReleases(source, target);
+        const releaseWarning = releaseMismatchWarning(releaseCmp, source, target);
+        if (releaseWarning) print.warning(releaseWarning);
 
         const [sourceMap, targetMap] = await Promise.all([
           fetchInventory(source, config),
