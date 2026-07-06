@@ -164,6 +164,7 @@ export function registerQualityCommand(program) {
     .option('--all', 'Run both code-analyzer and test-analyzer')
     .option('--fix-plan', 'Generate an AI-powered fix plan from quality output')
     .option('--generate-stubs', 'Generate @IsTest stub classes for untested Apex classes')
+    .option('--include-fixes', 'Ask Code Analyzer v5 for actionable fixes/suggestions in the scan output (feeds the AI fix plan)')
     .option('--dry-run', 'Preview --generate-stubs output without writing files')
     .option('--agent', 'Non-interactive agent mode (do not block waiting on the AI fix-plan session)')
     .option('--api67', "Run only the API v67 (Summer '26) user-mode readiness scan of local Apex sources")
@@ -186,19 +187,24 @@ export function registerQualityCommand(program) {
 
         let qualityOutput = '';
 
-        const runAnalyzer = async (scriptPath, label) => {
+        // --include-fixes only affects the Code Analyzer v5 run (test-analyzer
+        // ignores it); the shell script reads SFDT_ANALYZER_INCLUDE_FIXES.
+        const analyzerEnv = options.includeFixes ? { SFDT_ANALYZER_INCLUDE_FIXES: 'true' } : {};
+
+        const runAnalyzer = async (scriptPath, label, extraEnv = {}) => {
           print.info(`Running ${label}...`);
           try {
             const result = await runScript(scriptPath, config, {
               cwd: projectRoot,
               interactive: false,
+              env: extraEnv,
             });
             const output = result.stdout || '';
             qualityOutput += `\n--- ${label} ---\n${output}\n`;
             const skippedReason = detectSkippedScan(output);
             if (skippedReason) {
               print.warning(`${label}: static violation scan was SKIPPED — ${skippedReason}.`);
-              print.warning('No scan was performed; this is NOT a clean result. Install the scanner with: sf plugins install @salesforce/sfdx-scanner');
+              print.warning('No scan was performed; this is NOT a clean result. Code Analyzer auto-installs with a modern sf CLI, or run: sf plugins install code-analyzer');
               print.success(`${label} completed (scan skipped).`);
             } else {
               print.success(`${label} completed.`);
@@ -209,7 +215,7 @@ export function registerQualityCommand(program) {
             qualityOutput += `\n--- ${label} ---\n${output}\n`;
             const skippedReason = detectSkippedScan(output);
             if (skippedReason) {
-              print.warning(`${label}: static violation scan was SKIPPED — ${skippedReason}. Install the scanner with: sf plugins install @salesforce/sfdx-scanner`);
+              print.warning(`${label}: static violation scan was SKIPPED — ${skippedReason}. Code Analyzer auto-installs with a modern sf CLI, or run: sf plugins install code-analyzer`);
             }
             print.warning(`${label} found issues: ${err.message}`);
             return output;
@@ -219,10 +225,10 @@ export function registerQualityCommand(program) {
         if (options.tests) {
           await runAnalyzer('quality/test-analyzer.sh', 'Test Analyzer');
         } else if (options.all) {
-          await runAnalyzer('quality/code-analyzer.sh', 'Code Analyzer');
+          await runAnalyzer('quality/code-analyzer.sh', 'Code Analyzer', analyzerEnv);
           await runAnalyzer('quality/test-analyzer.sh', 'Test Analyzer');
         } else {
-          await runAnalyzer('quality/code-analyzer.sh', 'Code Analyzer');
+          await runAnalyzer('quality/code-analyzer.sh', 'Code Analyzer', analyzerEnv);
         }
 
         // AI fix plan

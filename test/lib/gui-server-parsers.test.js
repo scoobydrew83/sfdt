@@ -202,6 +202,45 @@ describe('parseQualityLines', () => {
     expect(result.summary.medium).toBe(1);
   });
 
+  it('parses the Code Analyzer v5 flat-violations shape (locations[primaryLocationIndex])', () => {
+    const payload = {
+      runDir: '/proj',
+      violationCounts: { total: 2 },
+      versions: { 'code-analyzer': '5.0.0' },
+      violations: [
+        {
+          rule: 'ApexCRUDViolation', engine: 'pmd', severity: 1, message: 'Check FLS', tags: ['Security'],
+          primaryLocationIndex: 1,
+          locations: [
+            { file: 'force-app/Other.cls', startLine: 5 },
+            { file: 'force-app/MyClass.cls', startLine: 42, startColumn: 3 },
+          ],
+        },
+        {
+          rule: 'no-unused-vars', engine: 'eslint', severity: 4, message: 'Unused',
+          locations: [{ file: 'force-app/lwc/x/x.js', startLine: 8 }],
+        },
+      ],
+    };
+    const result = parseQualityLines([JSON.stringify(payload)]);
+    expect(result.status).toBe('FAIL');
+    expect(result.violations).toHaveLength(2);
+    // primary location (index 1) is used, not the first
+    expect(result.violations[0]).toMatchObject({
+      file: 'force-app/MyClass.cls', line: 42, rule: 'ApexCRUDViolation', engine: 'pmd', severity: 1,
+    });
+    // missing primaryLocationIndex falls back to locations[0]
+    expect(result.violations[1]).toMatchObject({ file: 'force-app/lwc/x/x.js', line: 8, engine: 'eslint' });
+    expect(result.summary.critical).toBe(1); // severity 1
+    expect(result.summary.low).toBe(1); // severity 4
+  });
+
+  it('returns PASS for a v5 run with an empty violations array', () => {
+    const result = parseQualityLines([JSON.stringify({ violations: [], violationCounts: { total: 0 } })]);
+    expect(result.status).toBe('PASS');
+    expect(result.violations).toEqual([]);
+  });
+
   it('accumulates summary counts across severity levels', () => {
     const payload = [
       {

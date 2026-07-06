@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Salesforce Code Analyzer v5 in `sfdt quality`.** The static scan now runs `sf code-analyzer run` (the v5 just-in-time plugin — PMD 7, ESLint, RetireJS) instead of the retired v4 `sf scanner run`, falling back to v4 only if that's the only plugin present and otherwise reporting the scan as SKIPPED (never a fabricated clean result). New `--include-fixes` requests actionable fixes/suggestions (`--include-fixes --include-suggestions`), enriching the output that `--fix-plan` feeds to the AI. The result parser handles the v5 flat `violations[]`/`locations[]` shape in addition to v4 and the skip marker.
+
 - **`sfdt test --logic`** — run Apex and Flow tests together in one pass via Salesforce's Spring '26 `sf logic run test` (Flow tests named `FlowTesting.<name>`; requires the org "View All Data" permission). Flags: `--org`, `--test-level`, `--tests`, `--category Apex|Flow`, `--code-coverage`, `--wait` (default 30 min; the underlying command is async and sfdt waits for results). Arg building lives in the pure, unit-tested `src/lib/logic-test.js`. On failure (with `features.ai`) sfdt offers AI failure analysis for logic runs too — the shared analyzer feeds it the captured run output (logic results aren't written to the standard result dir), and every provider gets the context injected.
 
 ### Added
