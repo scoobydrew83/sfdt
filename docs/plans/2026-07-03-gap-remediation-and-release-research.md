@@ -82,7 +82,7 @@ Each item lists: what's wrong / what's new, the fix approach, files to touch, an
 ### 2.3 Chrome Web Store publishing stub — **S** (blocked on secrets)
 `.github/workflows/extension.yml:118-145` is commented out pending `CWS_*` secrets. Un-comment behind a `secrets`-present guard (same pattern as the Homebrew tap job) so it activates when the secrets are added and skips cleanly until then.
 
-### 2.4 MCP coverage — **M**
+### 2.4 MCP coverage — **M** — **DONE (sprint-4 branch: sfdt_coverage/scan/dependencies/flow_scan)**
 Missing tools for: `test`, `coverage`, `scan`, `dependencies`, `flow`, `explain`, `review`, `release`/`changelog`, `pull`, `scratch`, `data`. Add read-only ones first (`sfdt_test_results`, `sfdt_coverage`, `sfdt_scan`, `sfdt_dependencies`, `sfdt_flow_scan`); gate mutating ones (`sfdt_release`, `sfdt_scratch_create`) behind `confirmExecution` like `sfdt_deploy`/`sfdt_retrofit`.
 
 ### 2.5 Test gaps — **S** — **DONE (PR #171)**
@@ -127,13 +127,13 @@ Since sf CLI 2.136.8 (May 2026), tokens are redacted from `sf org display --json
 #### 4.3 RunRelevantTests follow-through — **M** — **DONE (sprint-3 branch: testFor/critical selection + `quality --test-hints`; GA detection intentionally deferred — no reliable GA signal yet; annotation widening fires only on RunSpecifiedTests by design)**
 Detect GA (drop the non-prod gate when appropriate); recognise Spring '26 `@IsTest(testFor='...')` / `@IsTest(critical=true)` annotations; add a quality check flagging test classes without `testFor` hints; keep surfacing the known CLI bug (forcedotcom/cli#3565) in docs.
 
-#### 4.4 Unified logic tests — **M**
+#### 4.4 Unified logic tests — **M** — **DONE (sprint-4 branch: `test --logic` + AI analysis)**
 Wrap `sf logic run test` so `sfdt test` can run Apex + Flow tests in one pass (Flow tests as `FlowTesting.<name>`); include Flow-test outcomes in AI test analysis.
 
 #### 4.5 Agentforce support — **L**
 (a) Metadata-mapper coverage for `GenAiFunction`, `GenAiPlannerBundle`, `aiAgentScorerDefinitions`, Agent Script/authoring bundles so smart-deploy deltas include agents. (b) `sfdt agent-test`: wrap `sf agent test run-eval` / the Agentforce Testing REST API with pass/fail thresholds, notifier dispatch, and PR decoration (Gearset sells exactly this).
 
-#### 4.6 Code Analyzer v5 integration — **M**
+#### 4.6 Code Analyzer v5 integration — **M** — **DONE (sprint-4 branch: v5 migration + `--include-fixes`)**
 Run `sf code-analyzer` (PMD 7, `--include-fixes`) inside `sfdt quality`; merge findings into the snapshot/PR comment; optionally feed fixes to the AI fix loop. Replaces the 1.5 stub path.
 
 #### 4.7 New audit/monitor checks — **S each** — **DONE (PR #174 + PR #175)**
@@ -153,10 +153,10 @@ Make `sfdt skills export` emit an `npx skills add`-compatible pack (mirroring `f
 
 ### Chrome extension
 
-#### 4.10 Summer '26 setup deep links — **S**
+#### 4.10 Summer '26 setup deep links — **S** — **PARKED: setup-node URLs for the new Summer '26 pages (Field Access Summary is per-object; Security Center / Release Manager are new Beta nodes) can't be verified without a real org — guessing would ship broken deep links. Do with org access to confirm URLs.**
 Add Field Access Summary, enhanced profile UI, Security Center Essentials, and Release Manager pages to the setup-tabs/nav features.
 
-#### 4.11 Org release/channel badge — **S**
+#### 4.11 Org release/channel badge — **S** — **PARTIALLY BLOCKED: release version + preview are derivable (as `monitor org-info` does), but the Release Manager *channel* has no queryable Beta API (see 4.7). Ship the version/preview badge; omit channel until an API exists.**
 Show release version, preview vs non-preview instance, and Release Manager channel in the extension header (pairs with 4.7's release-channel check).
 
 #### 4.12 Flow Scanner surface — **L**
