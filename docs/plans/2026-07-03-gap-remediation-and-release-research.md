@@ -148,8 +148,8 @@ Run `sf code-analyzer` (PMD 7, `--include-fixes`) inside `sfdt quality`; merge f
 #### 4.8 Google Chat notifier channel — **S** — **DONE (PR #171)**
 Cheap parity with sfdx-hardis: add a `googlechat` provider to `notifier.js`/`notifier-formatters.js` (webhook-based, `webhookUrlEnv` pattern).
 
-#### 4.9 Agent-skills publishing — **M**
-Make `sfdt skills export` emit an `npx skills add`-compatible pack (mirroring `forcedotcom/sf-skills`), so coding agents get SFDT-aware workflows.
+#### 4.9 Agent-skills publishing — **M** — **DONE**
+Make `sfdt skills export` emit an `npx skills add`-compatible pack (mirroring `forcedotcom/sf-skills`), so coding agents get SFDT-aware workflows. Shipped as `sfdt skills export --target pack [--out <dir>]`: writes a root `manifest.json` (vercel-labs/skills schema — `version`, `skills[]` with `name`/`path`/`folderPath`/`category`/`files`/`description`) plus a copy of every skill folder under `<out>/skills/`. Also added `skills/` to `package.json` `files` so the export works from a global install. Publishing the pack from the repo (so `npx skills add scoobydrew83/sfdt` resolves) is a **together item** — see `docs/plans/together-items.md`.
 
 ### Chrome extension
 
