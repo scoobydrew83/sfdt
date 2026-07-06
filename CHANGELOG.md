@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agentforce metadata in smart-deploy deltas and manifests.** The metadata mapper (and its shell mirror) now recognise Agentforce / Einstein agent types — `Bot`, `BotVersion` (member `Bot.Version`), `GenAiPlanner`, `GenAiPlannerBundle`, `GenAiPlugin`, `GenAiFunction`, `GenAiPromptTemplate`, `AiEvaluationDefinition`, and `AiAuthoringBundle` (the Agent Script authoring bundle, folder-detected since its `.bundle-meta.xml`/`.agent` files have no distinctive suffix). Previously these changes mapped to UNKNOWN and were silently dropped from `deploy --smart` deltas and `sfdt manifest` output. Suffixes/directories verified against the Salesforce metadata registry.
+
+### Added
+
 - **Four new read-only MCP tools** — `sfdt_coverage` (Apex coverage), `sfdt_scan` (org metadata inventory), `sfdt_dependencies` (component references), and `sfdt_flow_scan` (Flow quality analysis), each wrapping the existing `--json` CLI command. Brings the MCP surface to 21 tools.
 
 - **Salesforce Code Analyzer v5 in `sfdt quality`.** The static scan now runs `sf code-analyzer run` (the v5 just-in-time plugin — PMD 7, ESLint, RetireJS) instead of the retired v4 `sf scanner run`, falling back to v4 only if that's the only plugin present and otherwise reporting the scan as SKIPPED (never a fabricated clean result). New `--include-fixes` requests actionable fixes/suggestions (`--include-fixes --include-suggestions`), enriching the output that `--fix-plan` feeds to the AI. The result parser handles the v5 flat `violations[]`/`locations[]` shape in addition to v4 and the skip marker.

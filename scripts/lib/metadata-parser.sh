@@ -51,9 +51,41 @@ get_metadata_type() {
         echo "AuraDefinitionBundle"
         return
     fi
+    # Agentforce Agent Script authoring bundle: its files (.bundle-meta.xml,
+    # .agent) have no distinctive suffix — identify it by its parent folder.
+    if [[ "$file_path" =~ /aiAuthoringBundles/ ]]; then
+        echo "AiAuthoringBundle"
+        return
+    fi
 
     # Extract extension
     case "$filename" in
+        # Agentforce / Einstein agent metadata (Summer '26); suffixes per the
+        # Salesforce metadata registry (source-deploy-retrieve).
+        *.bot-meta.xml)
+            echo "Bot"
+            ;;
+        *.botVersion-meta.xml)
+            echo "BotVersion"
+            ;;
+        *.genAiPlannerBundle-meta.xml)
+            echo "GenAiPlannerBundle"
+            ;;
+        *.genAiPlanner-meta.xml)
+            echo "GenAiPlanner"
+            ;;
+        *.genAiPlugin-meta.xml)
+            echo "GenAiPlugin"
+            ;;
+        *.genAiFunction-meta.xml)
+            echo "GenAiFunction"
+            ;;
+        *.genAiPromptTemplate-meta.xml)
+            echo "GenAiPromptTemplate"
+            ;;
+        *.aiEvaluationDefinition-meta.xml)
+            echo "AiEvaluationDefinition"
+            ;;
         *.cls | *.cls-meta.xml)
             echo "ApexClass"
             ;;
@@ -128,15 +160,22 @@ get_member_name() {
         return
     fi
 
-    # Handle bundled components (LWC, Aura)
-    if [ "$metadata_type" == "LightningComponentBundle" ] || [ "$metadata_type" == "AuraDefinitionBundle" ]; then
-        # Path like: lwc/myComponent/myComponent.js
-        # Extract: myComponent (parent folder name)
+    # Handle bundled components (LWC, Aura, Agent Script authoring bundle)
+    if [ "$metadata_type" == "LightningComponentBundle" ] || [ "$metadata_type" == "AuraDefinitionBundle" ] || [ "$metadata_type" == "AiAuthoringBundle" ]; then
+        # Path like: lwc/myComponent/myComponent.js → myComponent (parent folder)
         local parent_dir=$(dirname "$file_path")
         echo "$(basename "$parent_dir")"
         return
     fi
 
+    # Handle BotVersion: bots/MyBot/v1.botVersion-meta.xml → MyBot.v1
+    if [ "$metadata_type" == "BotVersion" ]; then
+        local bot_name=$(echo "$file_path" | sed -n 's/.*bots\/\([^\/]*\)\/.*/\1/p')
+        local version_name=$(echo "$filename" | sed 's/\.botVersion-meta\.xml$//')
+        echo "${bot_name}.${version_name}"
+        return
+    fi
+
     # Standard case: strip all suffixes
-    echo "$filename" | sed -E 's/\.(cls-meta\.xml|cls|trigger-meta\.xml|trigger|flow-meta\.xml|object-meta\.xml|permissionset-meta\.xml|layout-meta\.xml|page-meta\.xml|component-meta\.xml|email-meta\.xml|app-meta\.xml|tab-meta\.xml|labels-meta\.xml|lwc-meta\.xml|customMetadata-meta\.xml|md-meta\.xml|externalServiceRegistration-meta\.xml)$//'
+    echo "$filename" | sed -E 's/\.(cls-meta\.xml|cls|trigger-meta\.xml|trigger|flow-meta\.xml|object-meta\.xml|permissionset-meta\.xml|layout-meta\.xml|page-meta\.xml|component-meta\.xml|email-meta\.xml|app-meta\.xml|tab-meta\.xml|labels-meta\.xml|lwc-meta\.xml|customMetadata-meta\.xml|md-meta\.xml|externalServiceRegistration-meta\.xml|bot-meta\.xml|genAiPlannerBundle-meta\.xml|genAiPlanner-meta\.xml|genAiPlugin-meta\.xml|genAiFunction-meta\.xml|genAiPromptTemplate-meta\.xml|aiEvaluationDefinition-meta\.xml)$//'
 }
