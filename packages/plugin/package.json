@@ -34,7 +34,7 @@
     "node": ">=22.15.0"
   },
   "dependencies": {
-    "@oclif/core": "^4.0.0",
+    "@oclif/core": "^4.11.14",
     "@sfdt/cli": ">=0.14.1",
     "execa": "^9.5.2"
   },
