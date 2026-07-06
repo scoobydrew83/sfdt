@@ -22,6 +22,7 @@ describe('createCli', () => {
       'deploy',
       'release',
       'test',
+      'agent-test',
       'pull',
       'quality',
       'preflight',

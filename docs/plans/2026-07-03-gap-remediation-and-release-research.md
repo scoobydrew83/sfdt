@@ -130,7 +130,7 @@ Detect GA (drop the non-prod gate when appropriate); recognise Spring '26 `@IsTe
 #### 4.4 Unified logic tests — **M** — **DONE (sprint-4 branch: `test --logic` + AI analysis)**
 Wrap `sf logic run test` so `sfdt test` can run Apex + Flow tests in one pass (Flow tests as `FlowTesting.<name>`); include Flow-test outcomes in AI test analysis.
 
-#### 4.5 Agentforce support — **L**
+#### 4.5 Agentforce support — **L** — **DONE (sprint-4 branch: metadata-mapper agent types + `sfdt agent-test`; numeric pass-rate threshold deferred pending the agent-test JSON schema)**
 (a) Metadata-mapper coverage for `GenAiFunction`, `GenAiPlannerBundle`, `aiAgentScorerDefinitions`, Agent Script/authoring bundles so smart-deploy deltas include agents. (b) `sfdt agent-test`: wrap `sf agent test run-eval` / the Agentforce Testing REST API with pass/fail thresholds, notifier dispatch, and PR decoration (Gearset sells exactly this).
 
 #### 4.6 Code Analyzer v5 integration — **M** — **DONE (sprint-4 branch: v5 migration + `--include-fixes`)**
