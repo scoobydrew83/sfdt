@@ -33,10 +33,6 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_REF: ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
         with:
-          # TEMPORARY (remove after one PR): surface which tool calls get
-          # permission-denied so the allowlist can be tuned with data — the
-          # narrowed list still produced 6 denials on PR #172's re-review.
-          show_full_output: true
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # The code-review plugin is installed unpinned from the marketplace on
@@ -44,8 +40,13 @@ jobs:
           # allowlist (the reviewer ran but every posting call was
           # permission-denied — 50 denials, "No buffered inline comments" — so
           # reviews silently stopped appearing while the job reported success).
-          # Keep BOTH comment MCP tools listed, and if reviews go silent again,
-          # rerun once with `show_full_output: true` to see what's being denied.
+          # A one-run `show_full_output: true` diagnostic (PR #176) confirmed the
+          # allowlist below now covers posting: the only residual denials were
+          # the model exploring paths it doesn't need — the `Skill` tool and a
+          # broad `Bash(find /)` — NOT comment posting. So the list is complete
+          # as-is; do not add `Skill`/`Bash(find …)` (over-permissioning). If
+          # reviews ever go silent again, re-add `show_full_output: true` for one
+          # run to re-diagnose.
           # Deliberately least-privilege: enumerated read/comment subcommands,
           # not `gh pr:*` (which would also grant merge/close/edit).
           claude_args: "--allowedTools 'mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment,Bash(gh pr comment:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh pr checks:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Read,Glob,Grep'"
