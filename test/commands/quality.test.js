@@ -68,6 +68,20 @@ describe('quality command', () => {
       expect.any(Object),
       expect.objectContaining({ interactive: false }),
     );
+    // no fixes requested → no SFDT_ANALYZER_INCLUDE_FIXES in the env
+    expect(runScript.mock.calls[0][2].env).toEqual({});
+  });
+
+  it('passes SFDT_ANALYZER_INCLUDE_FIXES with --include-fixes (code-analyzer only)', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: 'ok' });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--include-fixes']);
+
+    expect(runScript).toHaveBeenCalledWith(
+      'quality/code-analyzer.sh',
+      expect.any(Object),
+      expect.objectContaining({ env: { SFDT_ANALYZER_INCLUDE_FIXES: 'true' } }),
+    );
   });
 
   it('runs only test-analyzer with --tests', async () => {
@@ -148,7 +162,7 @@ describe('quality command', () => {
       expect.stringContaining('sf code-analyzer not installed'),
     );
     expect(print.warning).toHaveBeenCalledWith(
-      expect.stringContaining('sf plugins install @salesforce/sfdx-scanner'),
+      expect.stringContaining('sf plugins install code-analyzer'),
     );
     // Skipped is not a failure — exit code must stay 0
     expect(process.exitCode).toBeUndefined();

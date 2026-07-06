@@ -339,6 +339,8 @@ Runs Apex tests against the configured org using the enhanced test runner. If te
 sfdt test
 sfdt test --analyze
 sfdt test --legacy
+sfdt test --logic                                   # Apex + Flow tests in one pass
+sfdt test --logic --tests FooTest,FlowTesting.MyFlow --code-coverage
 ```
 
 **Options:**
@@ -347,6 +349,15 @@ sfdt test --legacy
 |---|---|
 | `--legacy` | Use `run-tests.sh` instead of the enhanced runner |
 | `--analyze` | Run the test analyzer (`quality/test-analyzer.sh`) after tests complete, regardless of pass/fail |
+| `--logic` | Run Apex **and** Flow tests together via `sf logic run test` (Salesforce Spring '26 beta). Requires the org **"View All Data"** permission. Waits for async results (`--wait`, default 30 min). |
+| `--org <alias>` | Target org for `--logic` (default: `config.defaultOrg`) |
+| `--test-level <level>` | For `--logic`: `RunLocalTests` \| `RunAllTestsInOrg` \| `RunSpecifiedTests` |
+| `--tests <list>` | For `--logic`: comma-separated test names — Apex classes and Flow tests as `FlowTesting.<name>` |
+| `--category <cat>` | For `--logic`: restrict to `Apex` or `Flow` |
+| `--code-coverage` | For `--logic`: retrieve code coverage results |
+| `--wait <minutes>` | For `--logic`: streaming wait timeout (default 30) |
+
+> `--logic` is a thin pass-through to `sf logic run test`. On failure (with `features.ai` enabled) sfdt offers the same AI failure analysis as the Apex runner, feeding it the captured logic-test output.
 
 **AI behavior on failure:** If tests fail and `features.ai` is `true` and the configured AI provider is available, sfdt prompts:
 
@@ -384,8 +395,11 @@ sfdt quality --generate-stubs --dry-run  # preview stubs without writing files
 | `--tests` | Run `quality/test-analyzer.sh` only |
 | `--all` | Run both `quality/code-analyzer.sh` and `quality/test-analyzer.sh` |
 | `--fix-plan` | After analysis, send the output to AI for a prioritized, file-specific fix plan |
+| `--include-fixes` | Ask **Code Analyzer v5** for actionable fixes/suggestions in the scan output (`--include-fixes --include-suggestions`); the richer output feeds `--fix-plan` |
 | `--generate-stubs` | Generate `@IsTest` stub classes for Apex classes that have no test class |
 | `--dry-run` | Preview `--generate-stubs` output without writing any files |
+
+**Code Analyzer engine:** `sfdt quality` runs **Salesforce Code Analyzer v5** (`sf code-analyzer run`, a just-in-time plugin that auto-installs on a modern `sf` CLI). It falls back to the retired v4 (`sf scanner run`) if only that is present, and otherwise reports the scan as **SKIPPED** (never a fabricated clean result). Install manually with `sf plugins install code-analyzer` if needed.
 
 **AI fix plan:** The fix plan groups issues by severity (critical, high, medium, low) and provides file locations, descriptions, and concrete code suggestions. It focuses on Salesforce-specific concerns: governor limits, CRUD/FLS enforcement, bulk-safe patterns, and test coverage gaps.
 

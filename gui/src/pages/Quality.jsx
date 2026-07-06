@@ -120,7 +120,7 @@ export default function QualityPage() {
                 </div>
                 {/(not installed|unavailable)/i.test(qualityData.unavailableMessage) && (
                   <div style={{ fontSize: 12, color: '#9a3412', fontFamily: 'monospace' }}>
-                    sf plugins install @salesforce/sfdx-scanner
+                    sf plugins install code-analyzer
                   </div>
                 )}
                 <div style={{ fontSize: 12, color: 'var(--fg-muted)', marginTop: 4 }}>

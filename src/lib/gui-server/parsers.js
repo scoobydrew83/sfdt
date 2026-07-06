@@ -54,22 +54,49 @@ export function parseTestRunLines(lines) {
 }
 
 export function parseQualityLines(lines) {
+  // Accept three analyzer output shapes on stdout:
+  //   - Code Analyzer v5: `{ violations: [ { rule, engine, severity, message,
+  //     primaryLocationIndex, locations: [{ file, startLine, … }] } ], … }`
+  //   - Code Analyzer v4 (legacy sf scanner): `{ result: [ { fileName,
+  //     violations: [{ line, ruleName, severity, message }] } ] }` or a bare array
+  //   - skipped marker: `{ status: "skipped", result: [], _sfdt_unavailable }`
   const jsonLine = lines.find((l) => {
-    try { const p = JSON.parse(l); return p && (Array.isArray(p.result) || Array.isArray(p)); }
-    catch { return false; }
+    try {
+      const p = JSON.parse(l);
+      return p && (Array.isArray(p.violations) || Array.isArray(p.result) || Array.isArray(p));
+    } catch { return false; }
   });
   if (!jsonLine) return { status: 'PASS', summary: { critical: 0, high: 0, medium: 0, low: 0 }, violations: [] };
   const raw = JSON.parse(jsonLine);
-  const rawViolations = Array.isArray(raw.result) ? raw.result : Array.isArray(raw) ? raw : [];
-  const violations = rawViolations.flatMap((file) =>
-    (file.violations ?? []).map((v) => ({
-      file: file.fileName ?? '',
-      line: v.line ?? 0,
-      rule: v.ruleName ?? v.rule ?? '',
-      severity: v.severity ?? 3,
-      message: v.message ?? '',
-    }))
-  );
+
+  let violations;
+  if (Array.isArray(raw.violations)) {
+    // Code Analyzer v5 — flat violations, location in `locations[primaryLocationIndex]`.
+    violations = raw.violations.map((v) => {
+      const idx = Number.isInteger(v.primaryLocationIndex) ? v.primaryLocationIndex : 0;
+      const loc = (Array.isArray(v.locations) && (v.locations[idx] || v.locations[0])) || {};
+      return {
+        file: loc.file ?? '',
+        line: loc.startLine ?? 0,
+        rule: v.rule ?? '',
+        engine: v.engine ?? '',
+        severity: typeof v.severity === 'number' ? v.severity : 3,
+        message: v.message ?? '',
+      };
+    });
+  } else {
+    // Code Analyzer v4 / legacy — file-grouped violations.
+    const rawViolations = Array.isArray(raw.result) ? raw.result : Array.isArray(raw) ? raw : [];
+    violations = rawViolations.flatMap((file) =>
+      (file.violations ?? []).map((v) => ({
+        file: file.fileName ?? '',
+        line: v.line ?? 0,
+        rule: v.ruleName ?? v.rule ?? '',
+        severity: v.severity ?? 3,
+        message: v.message ?? '',
+      }))
+    );
+  }
   const summary = violations.reduce(
     (acc, v) => {
       if (v.severity === 1) acc.critical++;

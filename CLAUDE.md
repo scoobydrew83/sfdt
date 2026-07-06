@@ -89,6 +89,7 @@ Dockerfile      Official Docker image definition
 | `SFDT_PARALLEL_DELAY` | Seconds between parallel batch launches, from `config.testConfig.parallelDelay` when set (a user-exported env value wins); shell-script default `1` otherwise |
 | `SFDT_DEFAULT_BRANCH` | `config.defaultBranch` (default: `"main"`); a user-exported env value wins. Used by `deployment-assistant.sh` for PR base branch |
 | `SFDT_SMOKE_TESTS` | Per-invocation: comma-joined `config.smokeTests.testClasses`, set by `smoke.js` (a user-exported env value wins) |
+| `SFDT_ANALYZER_INCLUDE_FIXES` | Per-invocation: `"true"` from `quality --include-fixes`; `scripts/quality/code-analyzer.sh` adds `--include-fixes --include-suggestions` to the Code Analyzer v5 run |
 | `SFDT_TAG_RELEASE` / `SFDT_CREATE_PR` / `SFDT_NOTIFY_SLACK` | Per-invocation: `"true"` from `deploy --tag/--create-pr/--notify` (or the GUI Release Hub toggles); drive post-deploy tagging, PR creation, and notifications in `deployment-assistant.sh` |
 | `SFDT_PACKAGE_DIRS` | JSON array of all package paths from `config.packageDirectories`, e.g. `["force-app/main/default","force-app/feature-a"]` |
 | `SFDT_MANIFEST_LAYOUT` | `config.manifestLayout` (`"flat"` or `"subpath"`); default `"flat"` |

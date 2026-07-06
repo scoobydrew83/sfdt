@@ -216,6 +216,48 @@ const TOOLS = [
     }
   },
   {
+    name: 'sfdt_coverage',
+    description: 'Report Apex code coverage for a Salesforce org — org-wide percentage plus per-class coverage. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    }
+  },
+  {
+    name: 'sfdt_scan',
+    description: 'Fetch the complete metadata inventory of a Salesforce org (all component types and members). Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    }
+  },
+  {
+    name: 'sfdt_dependencies',
+    description: 'Show the metadata dependencies of a component — what it references and what references it. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Metadata component name (e.g. an Apex class or field API name).' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['name']
+    }
+  },
+  {
+    name: 'sfdt_flow_scan',
+    description: 'Analyze a Salesforce org\'s Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    }
+  },
+  {
     name: 'sfdt_get_parked_result',
     description: 'Retrieve the full payload of a previously parked tool result.',
     inputSchema: {
@@ -354,6 +396,34 @@ export class SfdtMcpServer {
         const cmdArgs = ['drift', '--json'];
         if (args.org) cmdArgs.push('--org', args.org);
 
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_coverage': {
+        const cmdArgs = ['coverage', '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_scan': {
+        const cmdArgs = ['scan', '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_dependencies': {
+        const cmdArgs = ['dependencies', args.name, '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_flow_scan': {
+        const cmdArgs = ['flow', 'scan', '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);
       }

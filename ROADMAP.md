@@ -61,7 +61,7 @@
 
 ### Since v0.14.0 (previously unlisted here)
 - **`sfdt plugin create`** — scaffolds a new `sfdt-plugin-*` package with example `register(program)` wiring, test, and README
-- **MCP server shipped** — `sfdt mcp start` exposes 17 tools (`sfdt_deploy`, `sfdt_audit`, `sfdt_monitor`, `sfdt_retrofit`, …) with `confirmExecution` gating on mutating operations
+- **MCP server shipped** — `sfdt mcp start` exposes 21 tools (`sfdt_deploy`, `sfdt_audit`, `sfdt_monitor`, `sfdt_retrofit`, `sfdt_coverage`, `sfdt_scan`, `sfdt_dependencies`, `sfdt_flow_scan`, …) with `confirmExecution` gating on mutating operations
 - **Generic `http` AI provider** — any OpenAI-compatible `/chat/completions` gateway (Ollama, OpenRouter, MiniMax); secrets referenced by env-var name only
 - **New install methods** — `install.sh`, Homebrew tap (auto-bumped by the publish job once `HOMEBREW_TAP_TOKEN` is set), public GHCR Docker image (built from the published npm package on Node 22)
 - **VS Code extension live** — `sfdt.sfdt-devtools` on the Marketplace + Open VSX (v0.3.x): command catalog, org-health/status trees, embedded GUI dashboard webview
@@ -101,7 +101,7 @@ Remaining Sprint 4/5 queue from the 2026-07-03 audit + Summer '26 / Spring '26 r
 - **Agentforce support** — Agent metadata (`GenAiFunction`, `GenAiPlannerBundle`, scorers, Agent Script) in smart-deploy deltas; `sfdt agent-test` quality gate over `sf agent test run-eval` / the Testing API
 - **Code Analyzer v5 integration** in `sfdt quality` (PMD 7, `--include-fixes` feeding the AI fix loop)
 - **Agent-skills pack** compatible with `npx skills add`
-- **MCP coverage expansion** — read-only tools for test/coverage/scan/dependencies/flow first; gated mutating tools after
+- **MCP coverage expansion** — ✅ read-only tools added for coverage/scan/dependencies/flow (test results already via `sfdt_logs`); gated mutating tools (release/scratch/data) still to do
 - **Release Manager channel awareness** — *blocked:* the Summer '26 Release Manager Beta exposes no stable queryable public field for the channel; revisit when Salesforce ships a documented API (release version/preview already reported by `monitor org-info`)
 
 ### Chrome extension

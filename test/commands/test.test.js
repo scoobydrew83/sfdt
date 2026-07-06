@@ -9,6 +9,8 @@ vi.mock('../../src/lib/script-runner.js', () => ({
   runScript: vi.fn(),
 }));
 
+vi.mock('execa', () => ({ execa: vi.fn() }));
+
 vi.mock('../../src/lib/ai.js', () => ({
   isAiAvailable: vi.fn(),
   runAiPrompt: vi.fn(),
@@ -36,6 +38,7 @@ vi.mock('../../src/lib/output.js', () => ({
 }));
 
 import { loadConfig } from '../../src/lib/config.js';
+import { execa } from 'execa';
 import { runScript } from '../../src/lib/script-runner.js';
 import { isAiAvailable, runAiPrompt, providerSupportsAgenticTools } from '../../src/lib/ai.js';
 import { gatherLatestTestResults } from '../../src/lib/ai-context.js';
@@ -168,6 +171,95 @@ describe('test command', () => {
 
     expect(print.error).toHaveBeenCalledWith(expect.stringContaining('no config'));
     expect(process.exitCode).toBe(1);
+  });
+
+  describe('--logic (unified Apex + Flow tests)', () => {
+    it('runs `sf logic run test` and never touches the shell test runner', async () => {
+      execa.mockResolvedValue({ exitCode: 0 });
+
+      await createProgram().parseAsync([
+        'node', 'sfdt', 'test', '--logic', '--org', 'qa', '--test-level', 'RunSpecifiedTests',
+        '--tests', 'FooTest,FlowTesting.MyFlow', '--code-coverage',
+      ]);
+
+      expect(runScript).not.toHaveBeenCalled();
+      expect(execa).toHaveBeenCalledWith(
+        'sf',
+        [
+          'logic', 'run', 'test', '--target-org', 'qa', '--wait', '30',
+          '--test-level', 'RunSpecifiedTests', '--tests', 'FooTest,FlowTesting.MyFlow', '--code-coverage',
+        ],
+        // AI is enabled in the default test config → capture mode (all: true)
+        // so a failure can be fed to the AI; the argv is what matters here.
+        { all: true },
+      );
+      expect(print.success).toHaveBeenCalled();
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it('falls back to config.defaultOrg when --org is omitted', async () => {
+      execa.mockResolvedValue({ exitCode: 0 });
+
+      await createProgram().parseAsync(['node', 'sfdt', 'test', '--logic']);
+
+      expect(execa).toHaveBeenCalledWith('sf', expect.arrayContaining(['--target-org', 'dev']), expect.any(Object));
+    });
+
+    it('prints the command and does not run it in --dry-run', async () => {
+      await createProgram().parseAsync(['node', 'sfdt', 'test', '--logic', '--dry-run']);
+
+      expect(execa).not.toHaveBeenCalled();
+      expect(print.info).toHaveBeenCalledWith(expect.stringContaining('sf logic run test'));
+    });
+
+    it('sets the error exit code when logic tests fail', async () => {
+      execa.mockRejectedValue(Object.assign(new Error('failing tests'), { exitCode: 1 }));
+
+      await createProgram().parseAsync(['node', 'sfdt', 'test', '--logic']);
+
+      expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Logic tests failed'));
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('errors clearly on an invalid --test-level (no execa call)', async () => {
+      await createProgram().parseAsync(['node', 'sfdt', 'test', '--logic', '--test-level', 'Bogus']);
+
+      expect(execa).not.toHaveBeenCalled();
+      expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Invalid --test-level'));
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('captures output and offers AI analysis on failure, injecting the captured run output', async () => {
+      // AI enabled (default config) → capture mode; agentic provider by default.
+      execa.mockRejectedValue(Object.assign(new Error('failed'), { exitCode: 1, all: 'LOGIC RUN OUTPUT: 1 failure' }));
+      isAiAvailable.mockResolvedValue(true);
+      inquirer.prompt.mockResolvedValue({ analyzeFailure: true });
+      runAiPrompt.mockResolvedValue({ stdout: '', exitCode: 0 });
+
+      await createProgram().parseAsync(['node', 'sfdt', 'test', '--logic']);
+
+      // capture mode → execa called with { all: true }, not stdio inherit
+      expect(execa).toHaveBeenCalledWith('sf', expect.any(Array), { all: true });
+      // the captured run output is injected as context for every provider
+      expect(gatherLatestTestResults).not.toHaveBeenCalled();
+      expect(runAiPrompt).toHaveBeenCalledWith(
+        expect.stringContaining('[context]'),
+        expect.any(Object),
+      );
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('streams (no capture) and skips AI when features.ai is off', async () => {
+      loadConfig.mockResolvedValue({ _projectRoot: '/project', defaultOrg: 'dev', features: { ai: false } });
+      execa.mockRejectedValue(Object.assign(new Error('failed'), { exitCode: 1 }));
+
+      await createProgram().parseAsync(['node', 'sfdt', 'test', '--logic']);
+
+      expect(execa).toHaveBeenCalledWith('sf', expect.any(Array), { stdio: 'inherit' });
+      expect(inquirer.prompt).not.toHaveBeenCalled();
+      expect(runAiPrompt).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    });
   });
 
   describe('http AI provider (non-agentic)', () => {

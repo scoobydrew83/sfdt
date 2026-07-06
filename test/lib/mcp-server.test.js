@@ -122,6 +122,60 @@ describe('SfdtMcpServer', () => {
       expect(result.content[0].text).toContain('driftStatus');
     });
 
+    it('executes sfdt_coverage (read-only, --json, optional org)', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ orgWide: 82 }), stderr: '' });
+
+      const result = await callTool('sfdt_coverage', { org: 'prod' });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['coverage', '--json', '--org', 'prod']),
+        expect.anything()
+      );
+      expect(result.content[0].text).toContain('orgWide');
+    });
+
+    it('executes sfdt_scan (read-only metadata inventory)', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ types: [] }), stderr: '' });
+
+      await callTool('sfdt_scan', {});
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['scan', '--json']),
+        expect.anything()
+      );
+    });
+
+    it('executes sfdt_dependencies with the required component name', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ references: [] }), stderr: '' });
+
+      await callTool('sfdt_dependencies', { name: 'MyClass', org: 'dev' });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['dependencies', 'MyClass', '--json', '--org', 'dev']),
+        expect.anything()
+      );
+    });
+
+    it('executes sfdt_flow_scan and threads the optional org (flow scan queries the org)', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ flows: [] }), stderr: '' });
+
+      await callTool('sfdt_flow_scan', { org: 'dev' });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['flow', 'scan', '--json', '--org', 'dev']),
+        expect.anything()
+      );
+    });
+
+    it('executes sfdt_flow_scan without org (falls back to config defaultOrg)', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ flows: [] }), stderr: '' });
+
+      await callTool('sfdt_flow_scan', {});
+      const call = execa.mock.calls.at(-1);
+      expect(call[1]).toContain('flow');
+      expect(call[1]).not.toContain('--org');
+    });
+
     it('executes sfdt_validate as a dry-run deploy (passes --dry-run)', async () => {
       execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'validated', stderr: '' });
 

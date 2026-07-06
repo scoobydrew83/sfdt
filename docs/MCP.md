@@ -131,6 +131,27 @@ Generates MkDocs-compatible documentation (custom objects + fields, Apex classes
 * **Arguments:**
   * `action` (enum, optional): `generate` (default) | `diagram`.
 
+#### `sfdt_coverage`
+Reports Apex code coverage for an org — org-wide percentage plus per-class coverage. Read-only.
+* **Arguments:**
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+#### `sfdt_scan`
+Fetches the complete metadata inventory of an org (all component types and members). Read-only.
+* **Arguments:**
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+#### `sfdt_dependencies`
+Shows a component's metadata dependencies — what it references and what references it. Read-only.
+* **Arguments:**
+  * `name` (string, **required**): component name (e.g. an Apex class or field API name).
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+#### `sfdt_flow_scan`
+Analyzes a Salesforce org's Flows for quality issues and anti-patterns (via `@sfdt/flow-core`) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Read-only.
+* **Arguments:**
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
 ---
 
 ### 4. Context Budget Governance & Parking
