@@ -156,15 +156,24 @@ describe('SfdtMcpServer', () => {
       );
     });
 
-    it('executes sfdt_flow_scan (local, no org)', async () => {
+    it('executes sfdt_flow_scan and threads the optional org (flow scan queries the org)', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ flows: [] }), stderr: '' });
+
+      await callTool('sfdt_flow_scan', { org: 'dev' });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['flow', 'scan', '--json', '--org', 'dev']),
+        expect.anything()
+      );
+    });
+
+    it('executes sfdt_flow_scan without org (falls back to config defaultOrg)', async () => {
       execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ flows: [] }), stderr: '' });
 
       await callTool('sfdt_flow_scan', {});
-      expect(execa).toHaveBeenCalledWith(
-        'node',
-        expect.arrayContaining(['flow', 'scan', '--json']),
-        expect.anything()
-      );
+      const call = execa.mock.calls.at(-1);
+      expect(call[1]).toContain('flow');
+      expect(call[1]).not.toContain('--org');
     });
 
     it('executes sfdt_validate as a dry-run deploy (passes --dry-run)', async () => {

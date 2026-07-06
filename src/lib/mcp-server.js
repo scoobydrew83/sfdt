@@ -249,10 +249,12 @@ const TOOLS = [
   },
   {
     name: 'sfdt_flow_scan',
-    description: 'Analyze the project\'s Flows for quality issues and anti-patterns (via @sfdt/flow-core). Returns the flow-scan report. Read-only.',
+    description: 'Analyze a Salesforce org\'s Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.',
     inputSchema: {
       type: 'object',
-      properties: {}
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
     }
   },
   {
@@ -420,7 +422,9 @@ export class SfdtMcpServer {
       }
 
       case 'sfdt_flow_scan': {
-        const { stdout } = await this.#runCliCommand(['flow', 'scan', '--json']);
+        const cmdArgs = ['flow', 'scan', '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);
       }
 

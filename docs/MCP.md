@@ -148,8 +148,9 @@ Shows a component's metadata dependencies — what it references and what refere
   * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
 
 #### `sfdt_flow_scan`
-Analyzes the project's Flows for quality issues and anti-patterns (via `@sfdt/flow-core`). Read-only.
-* **Arguments:** none.
+Analyzes a Salesforce org's Flows for quality issues and anti-patterns (via `@sfdt/flow-core`) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Read-only.
+* **Arguments:**
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
 
 ---
 
