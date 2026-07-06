@@ -10,6 +10,55 @@ import { ExitCode, resolveExitCode } from '../lib/exit-codes.js';
 import { buildLogicTestArgs } from '../lib/logic-test.js';
 
 /**
+ * On a test failure, offer AI failure analysis (when `features.ai` is on and a
+ * provider is available). Shared by the Apex runner and the `--logic` runner.
+ *
+ * `providedContext` is the captured test output to inject into the prompt. The
+ * `--logic` path always passes it (logic results aren't written to the standard
+ * `logs/test-results/` dir that an agentic provider would Read); the Apex path
+ * leaves it null so agentic providers Read the files themselves, and only http
+ * providers get the gathered results injected.
+ */
+async function offerAiFailureAnalysis(config, projectRoot, { providedContext = null } = {}) {
+  if (!config.features?.ai || !(await isAiAvailable(config))) return;
+  const { analyzeFailure } = await inquirer.prompt([
+    { type: 'confirm', name: 'analyzeFailure', message: 'Tests failed. Analyze failures with AI?', default: true },
+  ]);
+  if (!analyzeFailure) return;
+
+  print.info('Analyzing test failures...');
+  let prompt = await getPrompt('test-failure', config._configDir);
+  const httpMode = !providerSupportsAgenticTools(config);
+  if (providedContext) {
+    prompt += frameProvidedContext('Test results', providedContext);
+  } else if (httpMode) {
+    const results = await gatherLatestTestResults(config);
+    if (results) {
+      prompt += frameProvidedContext('Test results', results);
+    } else {
+      print.warning('HTTP AI provider has no test-result files to analyze; results may be incomplete.');
+    }
+  }
+
+  const analysis = await runAiPrompt(prompt, {
+    config,
+    allowedTools: ['Read', 'Grep', 'Bash(sf apex test:*)'],
+    cwd: projectRoot,
+    aiEnabled: true,
+    interactive: !httpMode,
+  });
+
+  // CLI providers stream interactively; the http provider returns on stdout.
+  if (httpMode) {
+    if (analysis?.exitCode !== 0) {
+      print.error(analysis?.stderr?.trim() || 'AI analysis failed.');
+    } else if (analysis?.stdout?.trim()) {
+      console.log(`\n${analysis.stdout.trim()}\n`);
+    }
+  }
+}
+
+/**
  * Run the Spring '26 unified test runner (`sf logic run test`) — Apex classes
  * and Flow tests in one pass. Thin wrapper over the CLI; the arg building lives
  * in `src/lib/logic-test.js`. Requires the org "View All Data" permission.
@@ -22,12 +71,21 @@ async function runLogicTests(config, options) {
     print.info(`Would run: sf ${args.join(' ')}`);
     return;
   }
+
+  // Capture the run output when AI analysis is possible, so a failure can be
+  // fed to the AI (logic results aren't written to the standard result dir);
+  // otherwise stream straight to the terminal.
+  const canAnalyze = !!config.features?.ai;
   try {
-    await execa('sf', args, { stdio: 'inherit' });
+    const res = await execa('sf', args, canAnalyze ? { all: true } : { stdio: 'inherit' });
+    if (canAnalyze && res.all) console.log(res.all);
     print.success('All logic tests passed.');
   } catch (err) {
+    if (canAnalyze && err.all) console.log(err.all);
     print.error('Logic tests failed.');
     print.info('Note: `sf logic run test` is Beta and requires the "View All Data" org permission.');
+    const output = String(err.all || err.stderr || err.stdout || err.message || '').slice(0, 12000);
+    await offerAiFailureAnalysis(config, config._projectRoot, { providedContext: output });
     process.exitCode = resolveExitCode(err);
   }
 }
@@ -87,55 +145,7 @@ export function registerTestCommand(program) {
 
         // Offer AI analysis on failure (skip in dry-run)
         if (testFailed && !options.dryRun) {
-          const aiEnabled = config.features?.ai;
-          if (aiEnabled && (await isAiAvailable(config))) {
-            const { analyzeFailure } = await inquirer.prompt([
-              {
-                type: 'confirm',
-                name: 'analyzeFailure',
-                message: 'Tests failed. Analyze failures with AI?',
-                default: true,
-              },
-            ]);
-
-            if (analyzeFailure) {
-              print.info('Analyzing test failures...');
-
-              let prompt = await getPrompt('test-failure', config._configDir);
-
-              // HTTP providers can't Read the result files — inject them.
-              const httpMode = !providerSupportsAgenticTools(config);
-              if (httpMode) {
-                const results = await gatherLatestTestResults(config);
-                if (results) {
-                  prompt += frameProvidedContext('Test results', results);
-                } else {
-                  print.warning(
-                    'HTTP AI provider has no test-result files to analyze; results may be incomplete.',
-                  );
-                }
-              }
-
-              const analysis = await runAiPrompt(prompt, {
-                config,
-                allowedTools: ['Read', 'Grep', 'Bash(sf apex test:*)'],
-                cwd: projectRoot,
-                aiEnabled: true,
-                interactive: !httpMode,
-              });
-
-              // CLI providers stream their analysis interactively; the http
-              // provider returns it on stdout, so print it (or surface an error).
-              if (httpMode) {
-                if (analysis?.exitCode !== 0) {
-                  print.error(analysis?.stderr?.trim() || 'AI analysis failed.');
-                } else if (analysis?.stdout?.trim()) {
-                  console.log(`\n${analysis.stdout.trim()}\n`);
-                }
-              }
-            }
-          }
-
+          await offerAiFailureAnalysis(config, projectRoot);
           process.exitCode = ExitCode.ERROR;
         }
       } catch (err) {

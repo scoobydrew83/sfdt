@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`sfdt test --logic`** — run Apex and Flow tests together in one pass via Salesforce's Spring '26 `sf logic run test` (Flow tests named `FlowTesting.<name>`; requires the org "View All Data" permission). Flags: `--org`, `--test-level`, `--tests`, `--category Apex|Flow`, `--code-coverage`, `--wait` (default 30 min; the underlying command is async and sfdt waits for results). Arg building lives in the pure, unit-tested `src/lib/logic-test.js`. AI failure analysis still applies to the Apex-only runner for now.
+- **`sfdt test --logic`** — run Apex and Flow tests together in one pass via Salesforce's Spring '26 `sf logic run test` (Flow tests named `FlowTesting.<name>`; requires the org "View All Data" permission). Flags: `--org`, `--test-level`, `--tests`, `--category Apex|Flow`, `--code-coverage`, `--wait` (default 30 min; the underlying command is async and sfdt waits for results). Arg building lives in the pure, unit-tested `src/lib/logic-test.js`. On failure (with `features.ai`) sfdt offers AI failure analysis for logic runs too — the shared analyzer feeds it the captured run output (logic results aren't written to the standard result dir), and every provider gets the context injected.
 
 ### Added
 

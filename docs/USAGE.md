@@ -357,7 +357,7 @@ sfdt test --logic --tests FooTest,FlowTesting.MyFlow --code-coverage
 | `--code-coverage` | For `--logic`: retrieve code coverage results |
 | `--wait <minutes>` | For `--logic`: streaming wait timeout (default 30) |
 
-> `--logic` is a thin pass-through to `sf logic run test`; AI failure analysis currently applies to the Apex-only runner (a follow-up will extend it to logic runs).
+> `--logic` is a thin pass-through to `sf logic run test`. On failure (with `features.ai` enabled) sfdt offers the same AI failure analysis as the Apex runner, feeding it the captured logic-test output.
 
 **AI behavior on failure:** If tests fail and `features.ai` is `true` and the configured AI provider is available, sfdt prompts:
 
