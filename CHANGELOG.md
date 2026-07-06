@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`sfdt test --logic`** — run Apex and Flow tests together in one pass via Salesforce's Spring '26 `sf logic run test` (Flow tests named `FlowTesting.<name>`; requires the org "View All Data" permission). Flags: `--org`, `--test-level`, `--tests`, `--category Apex|Flow`, `--code-coverage`, `--wait` (default 30 min; the underlying command is async and sfdt waits for results). Arg building lives in the pure, unit-tested `src/lib/logic-test.js`. AI failure analysis still applies to the Apex-only runner for now.
+
+### Added
+
 - **Cross-org release-version warning.** `sfdt compare` and `sfdt retrofit` now detect when the two orgs run different Salesforce releases (best-effort via each org's REST version list) and print a heads-up before comparing/deploying — metadata valid on one release may not deploy cleanly to another. Non-fatal and skipped for org↔local comparisons or when a release can't be determined; `retrofit --json` reports it as `releaseMismatch`. The release-detection helper (`expectedGaApiVersion`/`detectOrgRelease`, previously private to the monitor runner) moved to a shared `src/lib/org-release.js`.
 
 ### Added

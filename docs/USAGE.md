@@ -339,6 +339,8 @@ Runs Apex tests against the configured org using the enhanced test runner. If te
 sfdt test
 sfdt test --analyze
 sfdt test --legacy
+sfdt test --logic                                   # Apex + Flow tests in one pass
+sfdt test --logic --tests FooTest,FlowTesting.MyFlow --code-coverage
 ```
 
 **Options:**
@@ -347,6 +349,15 @@ sfdt test --legacy
 |---|---|
 | `--legacy` | Use `run-tests.sh` instead of the enhanced runner |
 | `--analyze` | Run the test analyzer (`quality/test-analyzer.sh`) after tests complete, regardless of pass/fail |
+| `--logic` | Run Apex **and** Flow tests together via `sf logic run test` (Salesforce Spring '26 beta). Requires the org **"View All Data"** permission. Waits for async results (`--wait`, default 30 min). |
+| `--org <alias>` | Target org for `--logic` (default: `config.defaultOrg`) |
+| `--test-level <level>` | For `--logic`: `RunLocalTests` \| `RunAllTestsInOrg` \| `RunSpecifiedTests` |
+| `--tests <list>` | For `--logic`: comma-separated test names — Apex classes and Flow tests as `FlowTesting.<name>` |
+| `--category <cat>` | For `--logic`: restrict to `Apex` or `Flow` |
+| `--code-coverage` | For `--logic`: retrieve code coverage results |
+| `--wait <minutes>` | For `--logic`: streaming wait timeout (default 30) |
+
+> `--logic` is a thin pass-through to `sf logic run test`; AI failure analysis currently applies to the Apex-only runner (a follow-up will extend it to logic runs).
 
 **AI behavior on failure:** If tests fail and `features.ai` is `true` and the configured AI provider is available, sfdt prompts:
 
