@@ -68,13 +68,14 @@
 - **`RunRelevantTests` (Spring '26 beta)** selectable in Release Hub, interactive deploy, and MCP; smart-deploy opt-in via `deployment.smart.useRelevantTests`
 - **Smart deploy, retrofit, PR decoration, CI templates, notifications** — see CHANGELOG for the full v0.14–v0.15 cycle
 
-### Gap-remediation & Summer '26 sprints (PRs #171 / #172 / #174, 2026-07)
+### Gap-remediation & Summer '26 sprints (PRs #171 / #172 / #174 / #175, 2026-07)
 - **Bug fixes** — `sfdt smoke` config wiring, deploy manifest detection widened beyond `rl-*`, deploy `--tag/--create-pr/--notify`, live `docs.roleGuides/docs.ai/docs.diagrams` config keys, skipped-scan labelling, dead script tunables wired, credential-redaction sweep
 - **Google Chat notifier channel**; direct notifier-formatter and bridge-middleware tests
 - **VS Code extension uplift** — native `--json` result rendering, Problems-pane diagnostics, Smart Deploy validate/execute + Quick Deploy, Test Runs view, coverage highlights, Get Started walkthrough, catalog completeness, single consolidated CLI-spawn path
 - **API v67 readiness** — `sfdt quality --api67` (Summer '26 user-mode-by-default); `--test-hints` for `@IsTest(testFor=…)` gaps; annotation-aware smart-deploy test selection
-- **New org-health checks** — MFA readiness, SOAP `login()` retirement, Connected-Apps migration note, elastic async limits, release version/preview in `monitor org-info`; cross-org release-version warning in `compare`/`retrofit`
-- **GUI run-from-dashboard** — Audit/Monitor "Run now" + Scratch/Data/Docs actions with in-app confirmations
+- **New org-health checks** — MFA readiness, SOAP `login()` retirement, Connected-Apps migration note, elastic async limits, release version/preview in `monitor org-info` (PR #174)
+- **GUI run-from-dashboard** — Audit/Monitor "Run now" + Scratch/Data/Docs actions with in-app confirmations (PR #174)
+- **Cross-org release-version warning** (PR #175) — `compare`/`retrofit` warn when the two orgs run different Salesforce releases (shared `src/lib/org-release.js`)
 
 ---
 
@@ -85,8 +86,8 @@ Live status + full queue: [docs/plans/2026-07-03-gap-remediation-and-release-res
 - ✅ **Sprint 1 shipped** (PR #171 → develop): smoke config wiring, deploy `--tag/--create-pr/--notify`, live `docs.*` config keys, skipped-scan labelling, Google Chat channel, credential-redaction sweep, formatter/middleware tests.
 - ✅ **Sprint 2 shipped** (PR #172 → develop): VS Code native results, Problems-pane diagnostics, Smart Deploy preview/execute + Quick Deploy, onboarding walkthrough, catalog completeness.
 - ✅ **Sprint 3 shipped** (PR #174 → develop): `quality --api67`, annotation-aware smart-deploy tests + `quality --test-hints`, GUI run-from-dashboard, new audit/monitor checks (MFA readiness, SOAP login retirement, elastic async limits, release version/preview), VS Code Test Runs view + coverage highlights.
-- 🔶 **4.7 tail** — cross-org release-version warning for `compare`/`retrofit`; done on the working branch, PR pending (needs the GitHub connector authorized).
-- **Up next:** PR the 4.7-tail branch; remove the temporary `show_full_output` debug flag on the claude-review workflow; fix the always-failing `integration` CI job (DevHub org-auth; no org secrets in PR context); then Sprint 4/5 below.
+- ✅ **4.7 tail shipped** (PR #175 → develop): cross-org release-version warning for `compare`/`retrofit` (shared `src/lib/org-release.js`).
+- **Up next:** remove the temporary `show_full_output` debug flag on the claude-review workflow; fix the always-failing `integration` CI job (DevHub org-auth; no org secrets in PR context); then Sprint 4/5 below. *(A follow-up PR carries doc reconciliation + a verified RunRelevantTests-still-Beta note.)*
 - **sfdt-site docs pass** covering all three sprints (needs the `scoobydrew83/sfdt-site` repo added to the session).
 
 ---
