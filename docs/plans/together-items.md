@@ -21,14 +21,6 @@ Last updated: 2026-07-06
   secrets in GitHub → Settings → Secrets. Then we wire the job to gate on
   `github.event_name`/branch.
 
-### CI-2 — Chrome Web Store publish job (2.3)
-- **Why blocked:** publishing the Chrome extension needs **CWS API credentials**
-  (`extensionId`, `clientId`, `clientSecret`, `refreshToken`) — secrets we can't
-  generate.
-- **Need from user:** register/confirm the extension in the Chrome Web Store
-  Developer Dashboard, generate the OAuth credentials, and add them as CI
-  secrets. Then we add the upload/publish job to `ci.yml`.
-
 ### CI-3 — Publish the agent-skills pack (4.9 follow-up)
 - **Why blocked:** `sfdt skills export --target pack` now produces a valid
   `npx skills add`-compatible pack locally, but for `npx skills add scoobydrew83/sfdt`
@@ -75,18 +67,6 @@ Last updated: 2026-07-06
 
 ---
 
-## Docs site
-
-### DOC-1 — sfdt-site staleness pass
-- **Why blocked here:** the public docs live in a **separate repo**
-  (`scoobydrew83/sfdt-site`, https://sfdt.dev/) that isn't in this session's
-  scope.
-- **Need from user:** add `scoobydrew83/sfdt-site` to the session (or confirm we
-  should) so we can mirror the recent CLI changes (`agent-test`, Agentforce
-  metadata, `skills export --target pack`, Code Analyzer v5, `test --logic`,
-  `quality --api67`, the four new MCP tools) into its MDX.
-
----
 
 ## Legend
 - **DevHub auth** = JWT-based `sf org login jwt` used in CI to create scratch orgs.
