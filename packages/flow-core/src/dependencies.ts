@@ -8,6 +8,7 @@ export function escapeSoql(value: string): string {
 }
 
 /** Metadata types the explorer can resolve to a component Id (CLI single-lookup). */
+// Keep in sync with METADATA_TYPE_REGISTRY (resolvable entries) — TS can't derive this union from the runtime array.
 export type MetadataType =
   | 'ApexClass'
   | 'ApexTrigger'

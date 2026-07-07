@@ -454,8 +454,8 @@ export default function Dependency() {
       <div className="graph-canvas-wrap">
         {truncated && (
           <div className="graph-truncation-banner" role="status">
-            Showing the first 5000 dependencies. Deselect types (e.g. Custom Object /
-            Custom Field) to narrow the graph — expand-on-click is coming in a later update.
+            Showing the first 5000 dependencies. Deselect source types to narrow the graph —
+            expand-on-click is coming in a later update.
           </div>
         )}
         {/* Toolbar */}
