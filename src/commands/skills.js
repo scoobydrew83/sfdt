@@ -64,6 +64,10 @@ async function exportPack(parsedSkills, outOption) {
     f.split(path.sep).join('/'),
   );
 
+  // Start from a clean skills/ tree so a renamed or removed skill doesn't leave a
+  // stale folder behind on re-export — keeps the pack reproducible from the source.
+  await fs.emptyDir(path.join(outDir, 'skills'));
+
   const manifestSkills = [];
   for (const skill of parsedSkills) {
     const folderRel = path.dirname(skill.file).split(path.sep).join('/');

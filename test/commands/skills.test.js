@@ -19,6 +19,7 @@ vi.mock('fs-extra', async (importActual) => {
       writeFile: vi.fn(),
       writeJson: vi.fn(),
       copy: vi.fn(),
+      emptyDir: vi.fn(),
     },
   };
 });
@@ -70,6 +71,7 @@ Some body text for Flow review.`;
   fs.writeFile.mockResolvedValue();
   fs.writeJson.mockResolvedValue();
   fs.copy.mockResolvedValue();
+  fs.emptyDir.mockResolvedValue();
 });
 
 describe('skills export command', () => {
@@ -164,6 +166,9 @@ describe('skills export --target pack', () => {
     ]);
 
     expect(process.exitCode).toBeUndefined();
+
+    // Output skills/ tree is emptied before copying so re-exports are reproducible.
+    expect(fs.emptyDir).toHaveBeenCalledWith(expect.stringContaining(path.join('out-pack', 'skills')));
 
     // One copy per skill folder, from SKILLS_DIR/<name> → <out>/skills/<name>
     expect(fs.copy).toHaveBeenCalledTimes(2);
