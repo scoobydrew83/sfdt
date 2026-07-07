@@ -2994,23 +2994,9 @@ export function createGuiApp(config, version, port = 7654) {
 
       let records = [];
       try {
-        const result = await execa('sf', [
-          'data', 'query',
-          '--use-tooling-api',
-          '--query', soql,
-          '--json',
-          '--target-org', safeOrg,
-        ]);
-        const parsed = JSON.parse(result.stdout);
-        records = parsed?.result?.records ?? [];
-      } catch (execErr) {
-        // Extract error message from sf CLI JSON output when possible
-        let errMsg = execErr.message ?? 'sf command failed';
-        try {
-          const errParsed = JSON.parse(execErr.stdout ?? execErr.stderr ?? '{}');
-          errMsg = errParsed?.message ?? errParsed?.result?.message ?? errMsg;
-        } catch { /* ignore */ }
-        return res.status(500).json({ error: errMsg });
+        records = await runToolingQuery(soql, safeOrg);
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
       }
 
       // Build graph — deduplicate nodes by id
