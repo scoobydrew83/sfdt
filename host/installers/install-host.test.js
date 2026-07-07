@@ -34,8 +34,11 @@ vi.mock('fs-extra', () => {
   const remove = vi.fn(async (p) => {
     fsState.delete(p);
   });
+  const writeJson = vi.fn(async (p, obj) => {
+    fsState.set(p, JSON.stringify(obj));
+  });
   return {
-    default: { ensureDir, writeFile, readFile, readJson, pathExists, chmod, remove },
+    default: { ensureDir, writeFile, readFile, readJson, pathExists, chmod, remove, writeJson },
     ensureDir,
     writeFile,
     readFile,
@@ -43,6 +46,7 @@ vi.mock('fs-extra', () => {
     pathExists,
     chmod,
     remove,
+    writeJson,
   };
 });
 
@@ -152,6 +156,33 @@ describe('installNativeHost — darwin', () => {
     expect(parsed.name).toBe('com.sfdt.host');
     expect(parsed.path).toBe(HOST_PATH);
     expect(parsed.allowed_origins).toEqual([`chrome-extension://${VALID_EXTENSION_ID}/`]);
+  });
+
+  it('records the project root in the host config when projectRoot is passed', async () => {
+    const r = await installNativeHost({
+      extensionId: VALID_EXTENSION_ID,
+      hostPath: HOST_PATH,
+      platform: 'darwin',
+      browser: 'chrome',
+      projectRoot: '/work/my-sf-project',
+    });
+    expect(r.ok).toBe(true);
+    expect(r.projectRoot).toBe('/work/my-sf-project');
+    expect(r.hostConfigFile).toMatch(/sfdt-host\.json$/);
+    const written = fsState.get(r.hostConfigFile);
+    expect(JSON.parse(written)).toMatchObject({ projectRoot: '/work/my-sf-project' });
+  });
+
+  it('installs without a host config when no projectRoot is given', async () => {
+    const r = await installNativeHost({
+      extensionId: VALID_EXTENSION_ID,
+      hostPath: HOST_PATH,
+      platform: 'darwin',
+      browser: 'chrome',
+    });
+    expect(r.ok).toBe(true);
+    expect(r.projectRoot).toBeNull();
+    expect(r.hostConfigFile).toBeNull();
   });
 
   it('installs to every browser when --browser=all is passed', async () => {

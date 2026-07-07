@@ -23,8 +23,15 @@
 
 import { execa } from 'execa';
 import { createRequire } from 'module';
+import { pathToFileURL } from 'url';
+import path from 'path';
+import fs from 'fs-extra';
+import { readHostConfig } from './host-config.js';
 
 const require = createRequire(import.meta.url);
+
+// Mirrors the HTTP bridge's cap on `quality.flowXml` payloads (routes.js).
+const MAX_FLOW_XML_BYTES = 5 * 1024 * 1024;
 
 // flow-core's bridge-contract module ships compiled to dist/. Load it
 // lazily; if the build is missing we still respond to messages with a
@@ -174,6 +181,60 @@ function setupStdinReader(onMessage) {
   process.stdin.on('end', () => process.exit(0));
 }
 
+// ─── CLI + project helpers ──────────────────────────────────────────────────
+
+const NO_PROJECT_MSG =
+  'The native host has no Salesforce project configured. Run ' +
+  '`sfdt extension install-host --extension-id <id>` from your project (or set ' +
+  'SFDT_PROJECT_ROOT) so the host can read logs/ and .sfdt/config.json.';
+
+/**
+ * Resolve the target project for read-only kinds: the host config file written
+ * by the installer, with an `SFDT_PROJECT_ROOT` env override (handy for tests
+ * and power users). Returns `{ projectRoot, logDir }` or null when unconfigured.
+ */
+async function resolveProjectContext() {
+  const cfg = await readHostConfig();
+  const projectRoot = process.env.SFDT_PROJECT_ROOT || cfg?.projectRoot || null;
+  if (!projectRoot) return null;
+  const logDir = cfg?.logDir || path.join(projectRoot, 'logs');
+  return { projectRoot, logDir };
+}
+
+/** Spawn the `sfdt` CLI (PATH binary) non-interactively; never rejects. */
+async function runSfdt(args, { cwd, timeout = 120000 } = {}) {
+  const result = await execa('sfdt', args, {
+    cwd,
+    env: { ...process.env, SFDT_NON_INTERACTIVE: 'true' },
+    reject: false,
+    timeout,
+  });
+  return {
+    exitCode: result.exitCode,
+    stdout: (result.stdout ?? '').trim(),
+    stderr: (result.stderr ?? '').trim(),
+  };
+}
+
+/** Unwrap the CLI's sf-native `{ status, result, warnings }` stdout envelope. */
+function unwrapEnvelope(stdout) {
+  const parsed = JSON.parse(stdout);
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'result' in parsed) {
+    return parsed.result;
+  }
+  return parsed;
+}
+
+/** Read a JSON file, or null when it is absent or unreadable. */
+async function readJsonIfExists(file) {
+  if (!(await fs.pathExists(file))) return null;
+  try {
+    return await fs.readJson(file);
+  } catch {
+    return null;
+  }
+}
+
 // ─── Request handling ───────────────────────────────────────────────────────
 
 async function dispatch(request) {
@@ -198,18 +259,157 @@ async function dispatch(request) {
         });
       }
     }
-    case 'quality':
+    case 'quality': {
+      // Pure flow-core — no project/org needed. Mirrors the HTTP bridge exactly.
+      if (
+        typeof request.flowXml === 'string' &&
+        Buffer.byteLength(request.flowXml, 'utf8') > MAX_FLOW_XML_BYTES
+      ) {
+        return makeErrorResponse(
+          request.requestId,
+          `quality.flowXml exceeds the ${MAX_FLOW_XML_BYTES}-byte limit`,
+          'REQUEST_INVALID',
+        );
+      }
+      let metadata;
+      try {
+        metadata = JSON.parse(request.flowXml);
+      } catch (err) {
+        return makeErrorResponse(
+          request.requestId,
+          `quality request body must be JSON-stringified Flow.Metadata. Parse error: ${err.message}`,
+          'REQUEST_INVALID',
+        );
+      }
+      const { runFlowQuality } = await import('@sfdt/flow-core');
+      const report = runFlowQuality(metadata);
+      return makeSuccessResponse(request.requestId, {
+        overallScore: report.summary.overallScore,
+        rating: report.summary.rating,
+        severityCounts: report.summary.severityCounts,
+        categoryCounts: report.summary.categoryCounts,
+        issueFamilyCount: report.issueFamilies.length,
+      });
+    }
+    case 'org-health': {
+      // Read the latest audit/monitor snapshots the CLI wrote under logs/.
+      const ctx = await resolveProjectContext();
+      if (!ctx) return makeErrorResponse(request.requestId, NO_PROJECT_MSG, 'NOT_FOUND');
+      const readSnapshot = async (name) => {
+        const data = await readJsonIfExists(path.join(ctx.logDir, name));
+        if (!data) return null;
+        return { timestamp: data?.timestamp ?? new Date().toISOString(), data };
+      };
+      const [audit, monitor] = await Promise.all([
+        readSnapshot('audit-latest.json'),
+        readSnapshot('monitor-latest.json'),
+      ]);
+      return makeSuccessResponse(request.requestId, { audit, monitor });
+    }
+    case 'drift': {
+      // Return the latest drift snapshot (optionally refreshed), scoped to a
+      // component — same read-only shape as the HTTP bridge.
+      const ctx = await resolveProjectContext();
+      if (!ctx) return makeErrorResponse(request.requestId, NO_PROJECT_MSG, 'NOT_FOUND');
+      if (request.refresh) {
+        const run = await runSfdt(['drift'], { cwd: ctx.projectRoot, timeout: 300000 });
+        if (run.exitCode !== 0) {
+          return makeErrorResponse(
+            request.requestId,
+            `Drift run failed: ${run.stderr || run.stdout || `exit ${run.exitCode}`}`,
+            'INTERNAL_ERROR',
+          );
+        }
+      }
+      const snapshot = await readJsonIfExists(path.join(ctx.logDir, 'drift-latest.json'));
+      if (!snapshot) {
+        return makeSuccessResponse(request.requestId, {
+          available: false,
+          hint: 'No drift snapshot yet — run `sfdt drift` in your project to generate one.',
+        });
+      }
+      let components = Array.isArray(snapshot?.components) ? snapshot.components : [];
+      if (request.component) {
+        const needle = request.component.toLowerCase();
+        components = components.filter((c) =>
+          `${c?.type ?? ''}.${c?.name ?? c?.member ?? ''}`.toLowerCase().includes(needle),
+        );
+      }
+      return makeSuccessResponse(request.requestId, {
+        available: true,
+        org: snapshot?.org ?? null,
+        driftStatus: snapshot?.driftStatus ?? null,
+        timestamp: snapshot?.timestamp ?? snapshot?.date ?? null,
+        component: request.component ?? null,
+        components,
+      });
+    }
+    case 'scan': {
+      // Live metadata inventory via `sfdt scan --json`, reshaped to the bridge
+      // contract (`{org, scanType, totalTypes, totalMembers, inventory}`).
+      const ctx = await resolveProjectContext();
+      if (!ctx) return makeErrorResponse(request.requestId, NO_PROJECT_MSG, 'NOT_FOUND');
+      const run = await runSfdt(['scan', '--json'], { cwd: ctx.projectRoot });
+      if (run.exitCode !== 0) {
+        return makeErrorResponse(
+          request.requestId,
+          `Scan failed: ${run.stderr || run.stdout || `exit ${run.exitCode}`}`,
+          'INTERNAL_ERROR',
+        );
+      }
+      let result;
+      try {
+        result = unwrapEnvelope(run.stdout);
+      } catch (err) {
+        return makeErrorResponse(request.requestId, `Could not parse scan output: ${err.message}`, 'INTERNAL_ERROR');
+      }
+      return makeSuccessResponse(request.requestId, {
+        org: result?.org ?? null,
+        scanType: request.scanType,
+        totalTypes: result?.summary?.totalTypes ?? 0,
+        totalMembers: result?.summary?.totalMembers ?? 0,
+        inventory: result?.inventory ?? {},
+      });
+    }
+    case 'compare': {
+      // Live inventory diff via `sfdt compare` (writes logs/compare-latest.json),
+      // reshaped to the bridge contract (`{left, right, sourceOnly, targetOnly,
+      // both, items}`).
+      const ctx = await resolveProjectContext();
+      if (!ctx) return makeErrorResponse(request.requestId, NO_PROJECT_MSG, 'NOT_FOUND');
+      const run = await runSfdt(['compare', '--source', request.left, '--target', request.right], {
+        cwd: ctx.projectRoot,
+        timeout: 180000,
+      });
+      if (run.exitCode !== 0) {
+        return makeErrorResponse(
+          request.requestId,
+          `Compare failed: ${run.stderr || run.stdout || `exit ${run.exitCode}`}`,
+          'INTERNAL_ERROR',
+        );
+      }
+      const snapshot = await readJsonIfExists(path.join(ctx.logDir, 'compare-latest.json'));
+      if (!snapshot) {
+        return makeErrorResponse(request.requestId, 'Compare produced no logs/compare-latest.json snapshot', 'INTERNAL_ERROR');
+      }
+      const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
+      return makeSuccessResponse(request.requestId, {
+        left: snapshot?.source ?? request.left,
+        right: snapshot?.target ?? request.right,
+        sourceOnly: items.filter((i) => i.status === 'source-only').length,
+        targetOnly: items.filter((i) => i.status === 'target-only').length,
+        both: items.filter((i) => i.status === 'both').length,
+        items,
+      });
+    }
     case 'deploy':
     case 'rollback':
     case 'ai':
-    case 'drift':
-    case 'scan':
-    case 'compare':
-    case 'org-health':
+      // Mutating kinds stay bridge-only — the native host is a read-only fallback.
       return makeErrorResponse(
         request.requestId,
         `Request kind "${request.kind}" is not available via the native messaging host, ` +
-          'which is a limited fallback transport. This operation requires the HTTP bridge: ' +
+          'which is a limited read-only fallback transport. This operation requires the HTTP bridge: ' +
           'run `sfdt ui` in your Salesforce project to start it, then retry.',
         'NOT_IMPLEMENTED',
       );
@@ -273,12 +473,18 @@ async function main() {
   });
 }
 
-main().catch((err) => {
-  writeFrame({
-    ok: false,
-    requestId: 'fatal',
-    error: err.message,
-    code: 'INTERNAL_ERROR',
+// Run the stdio loop only when executed as the launcher (Chrome / --smoke),
+// not when imported by tests — importing must not attach a stdin reader.
+const invokedDirectly =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (invokedDirectly) {
+  main().catch((err) => {
+    writeFrame({
+      ok: false,
+      requestId: 'fatal',
+      error: err.message,
+      code: 'INTERNAL_ERROR',
+    });
+    process.exit(1);
   });
-  process.exit(1);
-});
+}
