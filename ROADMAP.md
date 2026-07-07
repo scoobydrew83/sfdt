@@ -106,8 +106,8 @@ Remaining Sprint 4/5 queue from the 2026-07-03 audit + Summer '26 / Spring '26 r
 
 ### Chrome extension
 - **Summer '26 setup deep links** — Field Access Summary, enhanced profile UI, Security Center Essentials, Release Manager
-- **Org release/channel badge** — release version, preview vs non-preview, Release Manager channel
-- **Flow Scanner surface** powered by `@sfdt/flow-core` (Inspector Reloaded 2.0 parity)
+- **Org release badge** — ✅ Workspace top-bar shows the org's release + `(preview instance)` (via `/services/data`, shared `@sfdt/flow-core` release logic); Release Manager *channel* still blocked (no queryable API, see above)
+- **Flow Scanner surface** powered by `@sfdt/flow-core` — ✅ the `flow-quality` feature is now a full Flow Scanner (issue families + affected elements + recommendations + dependencies) and runs on real Setup/Flow pages, not just the builder canvas (Inspector Reloaded 2.0 parity)
 
 ### GUI / host / pipeline
 - **Native messaging host: implement read-only kinds** (drift/scan/compare/quality/org-health) by spawning the CLI; keep mutating kinds bridge-only

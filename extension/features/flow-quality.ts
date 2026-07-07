@@ -17,16 +17,46 @@ function bandColour(score: number | null): string {
   return '#c23934';
 }
 
+function severityColour(sev: string): string {
+  switch (sev) {
+    case 'high':
+      return '#c23934';
+    case 'medium':
+      return '#fe9339';
+    case 'low':
+      return '#0070d2';
+    default:
+      return '#706e6b';
+  }
+}
+
 export interface FlowQualityFeatureOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
+  /**
+   * Optional cross-link: when provided, each scanned dependency gets an
+   * "Explore" action that hands its component (mapped to a MetadataComponent
+   * type) to the Dependency Explorer. Wired only where that feature exists
+   * (the Workspace app); omitted on real pages, where no Explore button shows.
+   */
+  onExploreDependency?: (dep: { type: string; name: string }) => void;
 }
+
+// Map a flow-core Dependency.type to the MetadataComponent type the Dependency
+// Explorer resolves against. Unmapped types get no Explore link.
+const DEP_TYPE_TO_METADATA: Record<string, string> = {
+  ApexAction: 'ApexClass',
+  ApexDefinedType: 'ApexClass',
+  Subflow: 'Flow',
+  LwcComponent: 'LightningComponentBundle',
+};
 
 export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}): Feature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
+  const onExploreDependency = options.onExploreDependency;
 
   let view: ViewHandle | null = null;
   function close(): void {
@@ -34,7 +64,75 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
     view = null;
   }
 
-  function renderScore(results: HTMLElement, report: FlowQualityReport): void {
+  function sectionHeading(text: string): HTMLElement {
+    const h = doc.createElement('div');
+    h.style.cssText =
+      'margin: 16px 0 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: #54698d;';
+    h.textContent = text;
+    return h;
+  }
+
+  function sevBadge(sev: string): HTMLElement {
+    const b = doc.createElement('span');
+    b.style.cssText = `display: inline-block; min-width: 44px; text-align: center; font-size: 10px; font-weight: 700; text-transform: uppercase; color: #fff; background: ${severityColour(sev)}; border-radius: 3px; padding: 1px 6px;`;
+    b.textContent = sev || 'info';
+    return b;
+  }
+
+  function renderFamily(family: FlowQualityReport['issueFamilies'][number]): HTMLElement {
+    const severity = family.severity ?? 'info';
+    const findings = family.findings ?? [];
+    const affected = family.affectedItems ?? [];
+    const impact = typeof family.scoreImpact === 'number' ? family.scoreImpact : 0;
+    const count = typeof family.instanceCount === 'number' ? family.instanceCount : findings.length;
+
+    const details = doc.createElement('details');
+    details.style.cssText = 'border: 1px solid #d8dde6; border-radius: 4px; margin-bottom: 6px;';
+    const summary = doc.createElement('summary');
+    summary.style.cssText =
+      'display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; font-size: 13px; list-style: none;';
+    const name = doc.createElement('span');
+    name.style.cssText = 'flex: 1; font-weight: 600; color: #16325c;';
+    name.textContent = family.title ?? family.scoreFamily ?? 'Issue';
+    const meta = doc.createElement('span');
+    meta.style.cssText = 'font-size: 11px; color: #706e6b;';
+    meta.textContent = `${count} · −${impact}`;
+    summary.append(sevBadge(severity), name, meta);
+    details.appendChild(summary);
+
+    const inner = doc.createElement('div');
+    inner.style.cssText = 'padding: 4px 12px 10px; font-size: 12px; color: #3e3e3c;';
+
+    if (affected.length > 0) {
+      const ul = doc.createElement('ul');
+      ul.style.cssText = 'margin: 4px 0; padding-left: 18px;';
+      for (const item of affected.slice(0, 20)) {
+        const li = doc.createElement('li');
+        li.textContent = item.apiName && item.apiName !== item.label ? `${item.label} (${item.apiName})` : item.label;
+        ul.appendChild(li);
+      }
+      if (affected.length > 20) {
+        const li = doc.createElement('li');
+        li.style.cssText = 'color: #706e6b;';
+        li.textContent = `…and ${affected.length - 20} more`;
+        ul.appendChild(li);
+      }
+      inner.appendChild(ul);
+    }
+
+    // Show the first recommendation for the family (findings in a family share a fix).
+    const rec = findings.find((f) => f.recommendation)?.recommendation;
+    if (rec) {
+      const p = doc.createElement('p');
+      p.style.cssText = 'margin: 6px 0 0; padding: 6px 8px; background: #f3f6f9; border-radius: 4px;';
+      p.textContent = `💡 ${rec}`;
+      inner.appendChild(p);
+    }
+    details.appendChild(inner);
+    return details;
+  }
+
+  function renderReport(results: HTMLElement, report: FlowQualityReport): void {
     const score = typeof report.summary.overallScore === 'number' ? report.summary.overallScore : null;
     const banner = doc.createElement('div');
     banner.style.cssText = `margin-bottom: 14px; padding: 12px 14px; border-radius: 6px; border: 1px solid #d8dde6; border-left: 4px solid ${bandColour(score)}; display: flex; align-items: baseline; gap: 10px;`;
@@ -49,16 +147,60 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
     results.appendChild(banner);
 
     const counts = (report.summary.severityCounts ?? {}) as Record<string, number>;
-    const entries = Object.entries(counts);
+    const entries = Object.entries(counts).filter(([, n]) => n > 0);
     if (entries.length > 0) {
-      const list = doc.createElement('ul');
-      list.style.cssText = 'margin: 0; padding-left: 18px; color: #3e3e3c; font-size: 12px;';
+      const chips = doc.createElement('div');
+      chips.style.cssText = 'display: flex; flex-wrap: wrap; gap: 6px;';
       for (const [sev, n] of entries) {
-        const li = doc.createElement('li');
-        li.textContent = `${sev}: ${n}`;
-        list.appendChild(li);
+        const chip = doc.createElement('span');
+        chip.style.cssText = `font-size: 11px; color: #3e3e3c; border: 1px solid ${severityColour(sev)}; border-radius: 10px; padding: 1px 8px;`;
+        chip.textContent = `${sev}: ${n}`;
+        chips.appendChild(chip);
       }
-      results.appendChild(list);
+      results.appendChild(chips);
+    }
+
+    // Issue families — the full detail (affected elements + recommendations),
+    // sorted by score impact so the biggest problems surface first.
+    const families = [...report.issueFamilies].sort(
+      (a, b) => (b.scoreImpact ?? 0) - (a.scoreImpact ?? 0),
+    );
+    if (families.length > 0) {
+      results.appendChild(sectionHeading('Issues'));
+      for (const family of families) results.appendChild(renderFamily(family));
+    } else {
+      const clean = doc.createElement('p');
+      clean.style.cssText = 'margin: 12px 0; color: #04844b; font-size: 13px;';
+      clean.textContent = '✓ No quality issues detected.';
+      results.appendChild(clean);
+    }
+
+    // Dependencies — what this flow calls (Apex, LWC, subflows, types). Each row
+    // can hand off to the full org-wide Dependency Explorer when cross-linked.
+    const deps = report.dependencies ?? [];
+    if (deps.length > 0) {
+      results.appendChild(sectionHeading('Dependencies'));
+      for (const dep of deps) {
+        const row = doc.createElement('div');
+        row.style.cssText =
+          'display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; color: #3e3e3c;';
+        const label = doc.createElement('span');
+        label.style.cssText = 'flex: 1; word-break: break-all;';
+        label.textContent = dep.count > 1 ? `${dep.type}: ${dep.name} ×${dep.count}` : `${dep.type}: ${dep.name}`;
+        row.appendChild(label);
+
+        const metadataType = DEP_TYPE_TO_METADATA[dep.type];
+        if (onExploreDependency && metadataType) {
+          const explore = doc.createElement('button');
+          explore.textContent = '🔗 Explore';
+          explore.title = `Open ${dep.name} in the Dependency Explorer`;
+          explore.style.cssText =
+            'flex: none; padding: 2px 8px; border: 1px solid #d8dde6; background: #fff; color: #0070d2; border-radius: 4px; cursor: pointer; font-size: 11px;';
+          explore.addEventListener('click', () => onExploreDependency({ type: metadataType, name: dep.name }));
+          row.appendChild(explore);
+        }
+        results.appendChild(row);
+      }
     }
   }
 
@@ -88,7 +230,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
     body.appendChild(results);
 
     view = presentView({
-      title: '✅ Flow Quality Scan',
+      title: '🔍 Flow Scanner',
       body,
       doc,
       width: '720px',
@@ -109,7 +251,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
         // Cast to runFlowQuality's input type (not `as never`) so a future signature
         // change surfaces as a compile error here instead of an opaque runtime throw.
         const metadata = (record.Metadata ?? record) as Parameters<typeof runFlowQuality>[0];
-        renderScore(results, runFlowQuality(metadata, { flowApiName: name }));
+        renderReport(results, runFlowQuality(metadata, { flowApiName: name }));
         status.textContent = 'Done';
       } catch (err) {
         const panel = doc.createElement('div');
@@ -131,7 +273,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
   return {
     manifest: {
       id: 'flow-quality',
-      name: 'Flow Quality Scan',
+      name: 'Flow Scanner',
       contexts: [
         CONTEXTS.SETUP_FLOWS,
         CONTEXTS.SETUP_OTHER,

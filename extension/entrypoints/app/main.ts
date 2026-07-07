@@ -12,6 +12,7 @@ import {
   configureSalesforceApi,
   SalesforceApiClient,
 } from '../../lib/salesforce-api.js';
+import { releaseFromVersionList } from '@sfdt/flow-core';
 import { FEATURE_ICONS, WORKSPACE_TOOLS } from '../../lib/feature-icons.js';
 import { showToast } from '../../ui/toast.js';
 import { createWorkspaceTabs } from '../../ui/workspace-tabs.js';
@@ -65,6 +66,8 @@ const STYLES = `
   #sfdt-topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #16325c; color: #fff; }
   #sfdt-topbar .title { font-weight: 600; font-size: 15px; }
   #sfdt-topbar .org { margin-left: auto; font-size: 12px; opacity: 0.85; font-family: ui-monospace, monospace; }
+  #sfdt-topbar .release-badge { display: none; align-items: center; font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.14); color: #fff; white-space: nowrap; }
+  #sfdt-topbar .release-badge.preview { background: #fe9339; color: #16325c; font-weight: 600; }
   #sfdt-topbar button { padding: 5px 12px; border: 1px solid rgba(255,255,255,0.4); background: transparent; color: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; }
   #sfdt-topbar button:hover { background: rgba(255,255,255,0.12); }
   #sfdt-layout { display: flex; height: calc(100vh - 45px); }
@@ -184,6 +187,29 @@ function renderOrgPicker(root: HTMLElement): void {
   })();
 }
 
+/**
+ * Best-effort: read the org's REST version list (`/services/data`) and show its
+ * release + preview status in the top-bar badge. Silent on any failure — the
+ * badge simply stays hidden. Uses the same flow-core helper as the CLI so the
+ * "(preview instance)" wording matches `sfdt monitor org-info`.
+ */
+async function populateReleaseBadge(
+  badge: HTMLElement,
+  api: SalesforceApiClient,
+): Promise<void> {
+  try {
+    const versions = await api.apiGet<Array<{ version: string; label: string }>>('/services/data');
+    const info = releaseFromVersionList(versions);
+    if (!info) return;
+    badge.textContent = info.preview ? `${info.release} (preview instance)` : info.release;
+    badge.title = `Salesforce API v${info.apiVersion}${info.preview ? ' — preview instance (ahead of GA)' : ''}`;
+    badge.classList.toggle('preview', info.preview);
+    badge.style.display = 'inline-flex';
+  } catch {
+    // Informational only — leave the badge hidden.
+  }
+}
+
 function bootWorkspace(root: HTMLElement, orgHost: string): void {
   const orgOrigin = `https://${lightningHostname(orgHost)}`;
   const syntheticWin = makeSyntheticWin(`${orgOrigin}/lightning/setup/SetupOneHome/home`);
@@ -196,6 +222,10 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
 
   const registry = createFeatureRegistry();
   const common = { doc: document, win: syntheticWin, api };
+
+  // Created eagerly so the Flow Scanner can cross-link its dependency rows into
+  // the full org-wide Dependency Explorer (openFor pre-fills + runs the search).
+  const depExplorer = createDependencyExplorerFeature(common);
 
   // Saved SOQL hands a chosen query to the runner, then asks us to open it.
   const factories: Record<string, () => Feature> = {
@@ -221,8 +251,12 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
     'apex-coverage': () => createCodeCoverageFeature(common),
     'apex-test-runner': () => createApexTestRunnerFeature(common),
     'org-health-live': () => createOrgHealthLiveFeature(common),
-    'dependency-explorer': () => createDependencyExplorerFeature(common),
-    'flow-quality': () => createFlowQualityFeature(common),
+    'dependency-explorer': () => depExplorer,
+    'flow-quality': () =>
+      createFlowQualityFeature({
+        ...common,
+        onExploreDependency: (dep) => void depExplorer.openFor(dep.type, dep.name),
+      }),
     'drift-check': () => createDriftFeature(common),
     'metadata-scan': () => createScanFeature(common),
     'org-compare': () => createCompareFeature(common),
@@ -246,12 +280,18 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
   title.textContent = '⚡ SFDT Workspace';
   const orgLabel = el('span', { class: 'org' });
   orgLabel.textContent = orgHost;
+  // Release badge: shows the org's Salesforce release (e.g. "Summer '26") and
+  // flags preview instances, matching the CLI's `monitor org-info` wording.
+  // Populated best-effort after boot; stays hidden if release can't be read.
+  const releaseBadge = el('span', { class: 'release-badge' });
   const switchBtn = el('button');
   switchBtn.textContent = '🏢 Switch org';
   switchBtn.addEventListener('click', () => void orgSwitcher.onActivate?.());
   topbar.appendChild(title);
   topbar.appendChild(orgLabel);
+  topbar.appendChild(releaseBadge);
   topbar.appendChild(switchBtn);
+  void populateReleaseBadge(releaseBadge, api);
   root.appendChild(topbar);
 
   const layout = el('div', { id: 'sfdt-layout' });

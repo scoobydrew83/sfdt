@@ -66,13 +66,12 @@ Last updated: 2026-07-06
   copy the URL (or confirm the setup-node names). Then we add them to the
   setup-tabs/nav features.
 
-### CHR-2 — Org release/channel badge (4.11)
-- **Why partially blocked:** release version + preview/non-preview are derivable
-  (as `monitor org-info` does) and can ship. The **Release Manager channel**,
-  however, has no queryable Beta API (same gap as audit check 4.7).
-- **Need from user:** nothing to ship the version/preview badge — that half can
-  proceed. For the channel, we need Salesforce to expose an API (external
-  dependency); revisit when one exists.
+### CHR-2 — Org release/channel badge (4.11) — version/preview SHIPPED; channel still blocked
+- **Shipped:** the Workspace top-bar badge now shows release + `(preview instance)`.
+- **Still blocked:** the **Release Manager channel** has no queryable Beta API
+  (same gap as audit check 4.7).
+- **Need from user:** nothing actionable — we depend on Salesforce exposing a
+  channel API; revisit when one exists.
 
 ---
 

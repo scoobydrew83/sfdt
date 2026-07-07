@@ -132,6 +132,30 @@ describe('dependency-explorer feature', () => {
     expect(text).toContain('AccountTrigger');
   });
 
+  it('openFor pre-fills the component and runs the search immediately (cross-link)', async () => {
+    const toolingQuery = vi.fn(async (soql: string) => {
+      if (soql.startsWith('SELECT Id FROM ApexClass')) {
+        return { records: [{ Id: '01p000000000009' }], size: 1, done: true };
+      }
+      if (soql.includes('WHERE MetadataComponentId')) {
+        return {
+          records: [{ RefMetadataComponentName: 'Contact', RefMetadataComponentType: 'CustomObject' }],
+          size: 1,
+          done: true,
+        };
+      }
+      return { records: [], size: 0, done: true };
+    });
+    const feature = createDependencyExplorerFeature({ api: fakeApi(toolingQuery) });
+    await feature.openFor('ApexClass', 'AccountSvc');
+    await flush();
+
+    const input = document.querySelector('input[type="text"]') as HTMLInputElement;
+    expect(input.value).toBe('AccountSvc');
+    expect(toolingQuery).toHaveBeenCalledWith("SELECT Id FROM ApexClass WHERE Name='AccountSvc'");
+    expect(document.body.textContent).toContain('Contact');
+  });
+
   it('shows a clear message when the name is not found', async () => {
     const toolingQuery = vi.fn(async () => ({ records: [], size: 0, done: true }));
     const feature = createDependencyExplorerFeature({ api: fakeApi(toolingQuery) });

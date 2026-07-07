@@ -26,9 +26,15 @@ export interface DependencyExplorerOptions {
   api?: SalesforceApiClient;
 }
 
+/** The Dependency Explorer feature, plus an imperative opener for cross-links. */
+export type DependencyExplorerFeature = Feature & {
+  /** Open the explorer pre-filled for a component and run the search immediately. */
+  openFor: (type: string, name: string) => Promise<void>;
+};
+
 export function createDependencyExplorerFeature(
   options: DependencyExplorerOptions = {},
-): Feature {
+): DependencyExplorerFeature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
@@ -147,7 +153,7 @@ export function createDependencyExplorerFeature(
     }
   }
 
-  async function open(): Promise<void> {
+  async function open(preset?: { type: string; name: string }): Promise<void> {
     close();
 
     const body = doc.createElement('div');
@@ -206,6 +212,13 @@ export function createDependencyExplorerFeature(
     nameInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') void run();
     });
+
+    // Cross-link entry (e.g. from the Flow Scanner): pre-fill and search now.
+    if (preset) {
+      nameInput.value = preset.name;
+      if (METADATA_TYPES.includes(preset.type)) typeSelect.value = preset.type;
+      void run();
+    }
   }
 
   return {
@@ -227,6 +240,12 @@ export function createDependencyExplorerFeature(
         return;
       }
       await open();
+    },
+
+    // Explicit programmatic open (cross-link target) — skips the context gate
+    // since the caller is already inside an open workspace tool.
+    async openFor(type: string, name: string) {
+      await open({ type, name });
     },
   };
 }

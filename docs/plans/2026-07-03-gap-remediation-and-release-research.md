@@ -156,11 +156,11 @@ Make `sfdt skills export` emit an `npx skills add`-compatible pack (mirroring `f
 #### 4.10 Summer '26 setup deep links — **S** — **PARKED: setup-node URLs for the new Summer '26 pages (Field Access Summary is per-object; Security Center / Release Manager are new Beta nodes) can't be verified without a real org — guessing would ship broken deep links. Do with org access to confirm URLs.**
 Add Field Access Summary, enhanced profile UI, Security Center Essentials, and Release Manager pages to the setup-tabs/nav features.
 
-#### 4.11 Org release/channel badge — **S** — **PARTIALLY BLOCKED: release version + preview are derivable (as `monitor org-info` does), but the Release Manager *channel* has no queryable Beta API (see 4.7). Ship the version/preview badge; omit channel until an API exists.**
-Show release version, preview vs non-preview instance, and Release Manager channel in the extension header (pairs with 4.7's release-channel check).
+#### 4.11 Org release/channel badge — **S** — **DONE (version/preview); channel still blocked**
+Show release version, preview vs non-preview instance, and Release Manager channel in the extension header (pairs with 4.7's release-channel check). Shipped the version/preview half: the Workspace top bar (`extension/entrypoints/app/main.ts`) shows the org's release label and `(preview instance)` (matching `monitor org-info` wording), fetched best-effort from `/services/data` and computed with the shared `@sfdt/flow-core` release logic. The pure release-detection (`expectedGaApiVersion`, `releaseFromVersionList`) moved into `@sfdt/flow-core`, and the CLI's `src/lib/org-release.js` now consumes it (single source of truth). The Release Manager **channel** remains blocked — no queryable Beta API (see 4.7) — a together-item (CHR-2).
 
-#### 4.12 Flow Scanner surface — **L**
-Inspector Reloaded 2.0 shipped a Flow Scanner + Dependencies Explorer; `@sfdt/flow-core` already has the rules engine — expose an in-browser flow-health panel driven by it.
+#### 4.12 Flow Scanner surface — **L** — **DONE**
+Inspector Reloaded 2.0 shipped a Flow Scanner + Dependencies Explorer; `@sfdt/flow-core` already has the rules engine — expose an in-browser flow-health panel driven by it. Shipped by upgrading the existing `flow-quality` feature into a full **Flow Scanner** rather than adding a redundant third flow feature: it now renders the complete `FlowQualityReport` (issue families sorted by score impact, affected elements/resources, per-family recommendation, and a Dependencies list) and is registered on real Salesforce pages (`content.ts`), so it runs across Setup/Flow-list contexts by API name — closing the gap between `flow-quality` (broad context, score-only) and `flow-health-check` (rich, but builder-canvas-only).
 
 ### Strategic note
 sfp community edition was archived (April 2026); commercial players (Copado Agentia, Gearset Org Intelligence, Salesforce DX MCP server) are converging on agentic DevOps + MCP — which plays to SFDT's existing MCP server and AI-provider architecture. Prioritise 2.4 (MCP coverage) and 4.5 (Agentforce) accordingly.
