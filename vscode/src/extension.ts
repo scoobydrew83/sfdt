@@ -702,7 +702,9 @@ export function activate(context: vscode.ExtensionContext): void {
     // runEntry routes snapshot-producing commands (audit/monitor/preflight/
     // quality/coverage) natively; interactive ones (deploy, backup, docs)
     // keep the terminal.
-    ...(['audit', 'monitor', 'deploy', 'preflight', 'quality', 'backup', 'docs-generate', 'doctor'].map((id) =>
+    ...(['audit', 'monitor', 'deploy', 'preflight', 'quality', 'backup', 'docs-generate', 'doctor',
+      // Git-diff commands surfaced in the Source Control view (scm/title).
+      'review', 'pr-description', 'manifest', 'changelog-generate'].map((id) =>
       vscode.commands.registerCommand(`sfdt.${id.replace('-generate', '')}`, () => {
         const entry = findCommand(id);
         if (!entry) return;

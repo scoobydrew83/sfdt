@@ -87,6 +87,10 @@
       { "command": "sfdt.quickDeploy", "title": "SFDT: Quick Deploy (validated job ID)", "icon": "$(zap)" },
       { "command": "sfdt.docs", "title": "SFDT: Generate Documentation" },
       { "command": "sfdt.doctor", "title": "SFDT: Run Doctor (browser-extension bridge)", "icon": "$(verified)" },
+      { "command": "sfdt.review", "title": "SFDT: Review Diff (AI)", "icon": "$(comment-discussion)" },
+      { "command": "sfdt.pr-description", "title": "SFDT: Generate PR Description", "icon": "$(git-pull-request)" },
+      { "command": "sfdt.manifest", "title": "SFDT: Manifest from Diff", "icon": "$(list-tree)" },
+      { "command": "sfdt.changelog", "title": "SFDT: Generate Changelog", "icon": "$(history)" },
       { "command": "sfdt.checkCli", "title": "SFDT: Check CLI Installation", "icon": "$(verified)" },
       { "command": "sfdt.notifySnapshot", "title": "SFDT: Send Snapshot to Channels", "icon": "$(bell)" }
     ],
@@ -107,6 +111,12 @@
         { "command": "sfdt.refresh", "when": "view == sfdtStatus", "group": "navigation@2" },
         { "command": "sfdt.refresh", "when": "view == sfdtOrgHealth", "group": "navigation@1" },
         { "command": "sfdt.openDashboard", "when": "view == sfdtOrgHealth", "group": "navigation@2" }
+      ],
+      "scm/title": [
+        { "command": "sfdt.review", "when": "sfdt:ready && scmProvider == git", "group": "sfdt@1" },
+        { "command": "sfdt.pr-description", "when": "sfdt:ready && scmProvider == git", "group": "sfdt@2" },
+        { "command": "sfdt.manifest", "when": "sfdt:ready && scmProvider == git", "group": "sfdt@3" },
+        { "command": "sfdt.changelog", "when": "sfdt:ready && scmProvider == git", "group": "sfdt@4" }
       ],
       "view/item/context": [
         { "command": "sfdt.runEntry", "when": "view == sfdtCommands && viewItem =~ /^sfdtCommand/", "group": "inline@1" },
