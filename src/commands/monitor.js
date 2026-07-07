@@ -11,13 +11,7 @@ import { runCiInit } from './ci.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
 import { archiveSnapshot } from '../lib/log-writer.js';
 import { recordRun } from '../lib/run-history.js';
-
-/** Compact status verdict from a snapshot's summary counts. */
-function snapshotStatus(summary = {}) {
-  if ((summary.fail ?? 0) + (summary.error ?? 0) > 0) return 'fail';
-  if ((summary.warn ?? 0) > 0) return 'warn';
-  return 'ok';
-}
+import { maxStatus } from '../lib/check-status.js';
 
 const STATUS_COLOR = {
   ok: chalk.green,
@@ -82,7 +76,7 @@ async function executeMonitor(checks, options, { backup = false } = {}) {
         type: 'monitor',
         timestamp: snapshot?.timestamp,
         org: orgAlias,
-        status: snapshotStatus(s),
+        status: maxStatus(snapshot?.checks),
         summary: { ok: s.ok ?? 0, warn: s.warn ?? 0, fail: s.fail ?? 0, error: s.error ?? 0, total: s.total ?? (snapshot?.checks?.length ?? 0) },
       });
     } catch {

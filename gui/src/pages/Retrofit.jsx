@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { api } from '../api.js';
-import CommandRunner from '../components/CommandRunner.jsx';
+import { api, stream } from '../api.js';
+import { useCliRun, RunTerminal, useConfirm, ConfirmBar } from './Docs.jsx';
 
 const METADATA_RE = /^[A-Za-z0-9_]+(?:,[A-Za-z0-9_]+)*$/;
 
@@ -15,8 +15,30 @@ export default function RetrofitPage() {
     api.orgs().then(({ orgs: list }) => setOrgs(list ?? [])).catch(() => {});
   }, []);
 
+  const { run, start, running } = useCliRun();
+  const { pending, request, confirm, cancel } = useConfirm();
+
   const metadataValid = metadata === '' || METADATA_RE.test(metadata);
   const ready = source && target && source !== target && metadataValid;
+
+  const runRetrofit = () => {
+    if (!ready || running) return;
+    const params = { source, target, metadata: metadata || undefined, execute };
+    const label = `sfdt retrofit --source ${source} --target ${target}${execute ? ' --execute' : ' (validate-only)'}`;
+    const go = () => start(label, () => stream.commandRun('retrofit', params));
+    // A real deploy to the target is gated behind an explicit confirmation,
+    // mirroring the other mutating GUI actions (Data import/delete). Validate-
+    // only runs immediately since it applies no changes.
+    if (execute) {
+      request(
+        `Deploy metadata from "${source}" to "${target}"? This performs a REAL deploy to the target org.`,
+        go,
+        'Deploy',
+      );
+    } else {
+      go();
+    }
+  };
 
   return (
     <div>
@@ -74,21 +96,24 @@ export default function RetrofitPage() {
               Metadata must be comma-separated type names (letters, digits, underscores).
             </p>
           )}
+
+          <div style={{ marginTop: 'var(--s-4)' }}>
+            <button
+              className={execute ? 'btn btn-danger' : 'btn btn-primary'}
+              disabled={!ready || running}
+              onClick={runRetrofit}
+            >
+              {running ? 'Running…' : execute ? 'Deploy to target…' : 'Validate (dry run)'}
+            </button>
+          </div>
         </div>
       </div>
 
-      {ready ? (
-        <CommandRunner
-          key={`${source}:${target}:${metadata}:${execute}`}
-          command="retrofit"
-          label={`sfdt retrofit --source ${source} --target ${target}${execute ? ' --execute' : ' (validate-only)'}`}
-          extraParams={{ source, target, metadata: metadata || undefined, execute }}
-        />
-      ) : (
-        <div className="card">
-          <div className="card-body" style={{ color: 'var(--fg-muted)' }}>
-            Choose distinct source and target orgs to retrofit.
-          </div>
+      <ConfirmBar pending={pending} onConfirm={confirm} onCancel={cancel} />
+
+      {run.status !== 'idle' && (
+        <div className="card mb-4">
+          <RunTerminal run={run} />
         </div>
       )}
     </div>
