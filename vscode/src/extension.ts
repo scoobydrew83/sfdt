@@ -684,13 +684,21 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     // Run a single Apex test class (from the .cls CodeLens or the active editor).
+    // The CodeLens passes a pre-validated class name; the palette fallback must
+    // itself verify the active editor is an Apex *test* class before running.
     vscode.commands.registerCommand('sfdt.runTestClass', async (classArg?: string) => {
       let name = typeof classArg === 'string' && classArg ? classArg : undefined;
       if (!name) {
-        const active = vscode.window.activeTextEditor?.document.uri.fsPath;
-        name = (active ? classNameFromFile(active) : null) ?? undefined;
+        const doc = vscode.window.activeTextEditor?.document;
+        const candidate = doc ? classNameFromFile(doc.uri.fsPath) : null;
+        if (candidate && doc && isApexTestClass(doc.getText())) name = candidate;
       }
-      if (!name) return;
+      if (!name) {
+        vscode.window.showWarningMessage(
+          'SFDT: open an Apex test class (a .cls with @isTest) to run it, or use the "▶ Run test class" CodeLens.',
+        );
+        return;
+      }
       runInTerminal(['test', '--class-names', name]);
     }),
 

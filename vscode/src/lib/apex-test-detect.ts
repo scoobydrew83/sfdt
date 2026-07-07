@@ -4,6 +4,8 @@
  * `sfdt test --class-names <name>` runs). Free of any `vscode` import.
  */
 
+import { basenameWithoutSuffix } from './basename.js';
+
 /** Glob (and CodeLens document pattern) for Apex classes. */
 export const APEX_CLASS_GLOB = '**/*.cls';
 
@@ -23,9 +25,5 @@ export function isApexTestClass(source: string): boolean {
 
 /** Derive the Apex class name from a `.cls` file path, or null when not a class file. */
 export function classNameFromFile(filePath: string): string | null {
-  if (!filePath) return null;
-  const base = filePath.split(/[\\/]/).pop() ?? '';
-  if (!base.endsWith('.cls')) return null;
-  const name = base.slice(0, -'.cls'.length);
-  return name.length > 0 ? name : null;
+  return basenameWithoutSuffix(filePath, '.cls');
 }
