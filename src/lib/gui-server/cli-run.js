@@ -27,6 +27,12 @@ const ORG_RE = /^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/;
 // conservative identifier charset (no dots, slashes, or leading '-').
 const SET_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
+// AiEvaluationDefinition API name (agent-test spec) — a Salesforce DeveloperName.
+const DEV_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
+
+// Comma-separated metadata type list for retrofit (e.g. "CustomObject,Flow").
+const METADATA_LIST_RE = /^[A-Za-z0-9_]+(?:,[A-Za-z0-9_]+)*$/;
+
 const CLI_RUN_COMMAND_NAMES = new Set([
   'audit',
   'monitor',
@@ -37,6 +43,8 @@ const CLI_RUN_COMMAND_NAMES = new Set([
   'data-import',
   'data-delete',
   'docs-generate',
+  'agent-test',
+  'retrofit',
 ]);
 
 /** True when `command` is one of the allowlisted native-CLI run commands. */
@@ -118,6 +126,33 @@ export function buildCliRunArgv(command, body = {}, fallbackOrg = '') {
 
     case 'docs-generate':
       return { argv: ['docs', 'generate'], mutating: true };
+
+    case 'agent-test': {
+      // Runs an Agentforce agent test (AiEvaluationDefinition) as a gate. Not
+      // metadata-mutating; pass/fail is the CLI exit code.
+      const spec = body.spec;
+      if (typeof spec !== 'string' || !DEV_NAME_RE.test(spec)) return err('Invalid agent test spec (AiEvaluationDefinition API name)');
+      const org = orgArgs();
+      if (org === null) return err('Invalid targetOrg');
+      return { argv: ['agent-test', '--spec', spec, ...org], mutating: false };
+    }
+
+    case 'retrofit': {
+      // Retrieve a metadata set from a source org and (validate-only unless
+      // execute) smart-deploy it to a target. `--execute` makes it mutating.
+      const source = body.source;
+      const target = body.target;
+      if (typeof source !== 'string' || !ORG_RE.test(source)) return err('Invalid source org');
+      if (typeof target !== 'string' || !ORG_RE.test(target)) return err('Invalid target org');
+      const argv = ['retrofit', '--source', source, '--target', target];
+      if (body.metadata !== undefined && body.metadata !== null && body.metadata !== '') {
+        if (!METADATA_LIST_RE.test(String(body.metadata))) return err('Invalid metadata list (comma-separated types)');
+        argv.push('--metadata', String(body.metadata));
+      }
+      const execute = body.execute === true || body.execute === 'true';
+      if (execute) argv.push('--execute');
+      return { argv, mutating: execute };
+    }
 
     default:
       return err('Unknown command');

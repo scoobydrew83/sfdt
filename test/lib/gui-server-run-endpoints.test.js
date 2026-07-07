@@ -124,7 +124,7 @@ function spawnedCliArgs(callIndex = 0) {
 
 describe('cli-run buildCliRunArgv', () => {
   it('recognises exactly the allowlisted commands', () => {
-    for (const name of ['audit', 'monitor', 'scratch-create', 'scratch-delete', 'scratch-pool-fill', 'data-export', 'data-import', 'data-delete', 'docs-generate']) {
+    for (const name of ['audit', 'monitor', 'scratch-create', 'scratch-delete', 'scratch-pool-fill', 'data-export', 'data-import', 'data-delete', 'docs-generate', 'agent-test', 'retrofit']) {
       expect(isCliRunCommand(name)).toBe(true);
     }
     expect(isCliRunCommand('deploy')).toBe(false);
@@ -187,6 +187,26 @@ describe('cli-run buildCliRunArgv', () => {
   it('builds docs-generate with a fixed argv', () => {
     expect(buildCliRunArgv('docs-generate', { set: 'ignored', anything: true }))
       .toEqual({ argv: ['docs', 'generate'], mutating: true });
+  });
+
+  it('builds agent-test argv with a validated spec (non-mutating)', () => {
+    expect(buildCliRunArgv('agent-test', { spec: 'Support_Eval' }))
+      .toEqual({ argv: ['agent-test', '--spec', 'Support_Eval'], mutating: false });
+    expect(buildCliRunArgv('agent-test', { spec: 'X', targetOrg: 'qa' }).argv)
+      .toEqual(['agent-test', '--spec', 'X', '--org', 'qa']);
+    expect(buildCliRunArgv('agent-test', {}).error).toMatch(/spec/i);
+    expect(buildCliRunArgv('agent-test', { spec: '--evil' }).error).toMatch(/spec/i);
+    expect(buildCliRunArgv('agent-test', { spec: '9bad' }).error).toMatch(/spec/i);
+  });
+
+  it('builds retrofit argv; --execute flips it to mutating', () => {
+    expect(buildCliRunArgv('retrofit', { source: 'prod', target: 'qa' }))
+      .toEqual({ argv: ['retrofit', '--source', 'prod', '--target', 'qa'], mutating: false });
+    expect(buildCliRunArgv('retrofit', { source: 'prod', target: 'qa', metadata: 'CustomObject,Flow', execute: true }))
+      .toEqual({ argv: ['retrofit', '--source', 'prod', '--target', 'qa', '--metadata', 'CustomObject,Flow', '--execute'], mutating: true });
+    expect(buildCliRunArgv('retrofit', { source: 'prod' }).error).toMatch(/target/i);
+    expect(buildCliRunArgv('retrofit', { source: '-x', target: 'qa' }).error).toMatch(/source/i);
+    expect(buildCliRunArgv('retrofit', { source: 'a', target: 'b', metadata: 'a b' }).error).toMatch(/metadata/i);
   });
 
   it('returns an error for unknown commands', () => {
