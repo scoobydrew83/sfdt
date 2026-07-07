@@ -317,6 +317,53 @@ describe('setup-tabs — grouped dropdown interaction', () => {
   });
 });
 
+describe('setup-tabs — Field Access (object-contextual)', () => {
+  const omWin = (object: string) =>
+    ({
+      location: {
+        href: `https://x.lightning.force.com/lightning/setup/ObjectManager/${object}/FieldsAndRelationships/view`,
+        hostname: 'x.lightning.force.com',
+        host: 'x.lightning.force.com',
+      },
+    }) as never;
+
+  it('adds a Field Access tab pointed at the current object on Object Manager pages', async () => {
+    await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 0, win: omWin('Account') });
+    await feature.init?.();
+    const anchor = document.querySelector<HTMLAnchorElement>(
+      '[data-tab-id="sfdt_tab_field_access"] a',
+    );
+    expect(anchor?.href).toBe(
+      'https://x.my.salesforce-setup.com/lightning/setup/ObjectManager/Account/FieldAccess/view',
+    );
+  });
+
+  it('targets a custom object by whatever identifier is in the URL', async () => {
+    await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 0, win: omWin('My_Object__c') });
+    await feature.init?.();
+    const anchor = document.querySelector<HTMLAnchorElement>(
+      '[data-tab-id="sfdt_tab_field_access"] a',
+    );
+    expect(anchor?.href).toContain('/ObjectManager/My_Object__c/FieldAccess/view');
+  });
+
+  it('is absent on Setup pages that are not an Object Manager object', async () => {
+    await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
+    const win = {
+      location: {
+        href: 'https://x.lightning.force.com/lightning/setup/Flows/home',
+        hostname: 'x.lightning.force.com',
+        host: 'x.lightning.force.com',
+      },
+    } as never;
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 0, win });
+    await feature.init?.();
+    expect(document.querySelector('[data-tab-id="sfdt_tab_field_access"]')).toBeNull();
+  });
+});
+
 describe('setup-tabs — deferred tab bar', () => {
   it('injects once the tab bar appears after init (MutationObserver path)', async () => {
     document.body.replaceChildren(); // no tab bar yet

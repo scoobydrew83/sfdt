@@ -44,6 +44,7 @@ import { createApexAnonymousFeature } from '../features/apex-anonymous.js';
 import { createDebugLogViewerFeature } from '../features/debug-log-viewer.js';
 import { createSavedSoqlFeature } from '../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../features/org-switcher.js';
+import { createOrgReleaseBadgeFeature } from '../features/org-release-badge.js';
 
 const SALESFORCE_HOST_PATTERN =
   /^https:\/\/[^/]+\.(salesforce\.com|salesforce-setup\.com|my\.salesforce\.com|lightning\.force\.com)\//i;
@@ -73,6 +74,9 @@ export default defineContentScript({
     const router = createSpaRouter();
 
     registry.register(createSetupTabsFeature());
+    // Non-interactive pill in the Setup tab strip: org release + preview flag
+    // (derived via flow-core, same as CLI `monitor org-info`).
+    registry.register(createOrgReleaseBadgeFeature());
     registry.register(createCanvasSearchFeature());
     registry.register(createFlowListSearchFeature());
     registry.register(createFlowHealthCheckFeature());
