@@ -4,6 +4,9 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Fixed
+- **Org Health (bridge) is now registered.** The `org-health` feature — which surfaces the CLI's audit/monitor snapshots via the local bridge or native host (the `org-health` request kind) — was built, tested, and given an icon/label but never wired into any entrypoint, so it was unreachable. It's now registered on real Salesforce pages (`content.ts`) and in the Workspace, alongside the live-query "Org Health (Live)" tool. (It also now works when only the native host is available, per the host's new read-only-kinds support.)
+
 ### Added
 
 - **Flow Scanner** — the `flow-quality` feature is now a full scanner. Beyond the score banner it renders the complete `@sfdt/flow-core` report: issue families (sorted by score impact) with severity, affected elements/resources, and the recommended fix, plus a Dependencies list (Apex actions, LWCs, subflows, Apex-defined types). It's also registered on real Salesforce pages (`content.ts`), so it works across Setup and Flow-list contexts by API name — not only inside the Flow Builder canvas like `flow-health-check`. In the Workspace, each dependency row has an **Explore** cross-link that opens it (mapped to its MetadataComponent type) in the org-wide Dependency Explorer, pre-filled and searched.

@@ -26,6 +26,7 @@ import { createFlowVersionManagerFeature } from '../features/flow-version-manage
 import { createMissingDescriptionFlagsFeature } from '../features/missing-description-flags.js';
 import { createOrgLimitsFeature } from '../features/org-limits.js';
 import { createOrgHealthLiveFeature } from '../features/org-health-live.js';
+import { createOrgHealthFeature } from '../features/org-health.js';
 import { createCodeCoverageFeature } from '../features/code-coverage.js';
 import { createRestExploreFeature } from '../features/rest-explore.js';
 import { createScheduledFlowExplorerFeature } from '../features/scheduled-flow-explorer.js';
@@ -109,6 +110,10 @@ export default defineContentScript({
     // getSalesforceApi(), same as SOQL Runner) rather than reading static CLI
     // snapshots — so they show live, org-specific data on the current page.
     registry.register(createOrgHealthLiveFeature());
+    // Org Health (bridge): the CLI's audit/monitor snapshots via the local
+    // bridge or native host (the `org-health` request kind). Distinct from the
+    // live-query tool above; surfaces the governance snapshots the CLI produces.
+    registry.register(createOrgHealthFeature());
     registry.register(createCodeCoverageFeature());
     registry.register(createRestExploreFeature());
     registry.register(createInspectRecordFeature());
