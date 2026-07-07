@@ -40,3 +40,76 @@ export function buildAgentTestArgs(opts = {}, org) {
   }
   return ['agent', 'test', 'run', '--api-name', opts.spec, '--target-org', org, '--wait', wait, '--json'];
 }
+
+/**
+ * Validate a `--threshold <percent>` option. Returns the numeric threshold, or
+ * `null` when unset (exit-code gate stays authoritative). Throws on garbage.
+ *
+ * @param {string|number|undefined} raw
+ * @returns {number|null}
+ */
+export function parseThreshold(raw) {
+  if (raw == null || raw === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n > 100) {
+    throw new Error(`--threshold must be a percentage between 0 and 100 (got "${raw}")`);
+  }
+  return n;
+}
+
+// A scorer's response is a JSON string like '{"status":"PASS",...}' (new
+// "Agentforce Studio" shape). Parse it defensively — an unparseable scorer
+// counts as not-passing rather than crashing the gate.
+function scorerStatus(raw) {
+  try {
+    return JSON.parse(raw)?.status;
+  } catch {
+    return undefined;
+  }
+}
+
+// A test case passes when every one of its results passes. Handles both shapes
+// the sf plugin emits (mirrors salesforcecli/plugin-agent handleTestResults.ts):
+//   - Agentforce Studio: `testScorerResults[].scorerResponse` (JSON) status PASS
+//   - legacy:            `testResults[].result` === 'PASS'
+function casePassed(tc) {
+  if (Array.isArray(tc?.testScorerResults)) {
+    return tc.testScorerResults.length > 0 && tc.testScorerResults.every((s) => scorerStatus(s?.scorerResponse) === 'PASS');
+  }
+  if (Array.isArray(tc?.testResults)) {
+    return tc.testResults.length > 0 && tc.testResults.every((r) => r?.result === 'PASS');
+  }
+  return false;
+}
+
+/**
+ * Compute the aggregate pass rate from a parsed `sf agent test run --json`
+ * result object (the `.result` inside sf's JSON envelope).
+ *
+ * @param {object} result - the `AgentTestResultsResponse` / Studio result.
+ * @returns {{ total: number, passed: number, rate: number }|null} `null` when
+ *   the shape has no recognisable test cases (caller should not gate on it).
+ */
+export function computePassRate(result) {
+  const cases = result?.testCases;
+  if (!Array.isArray(cases) || cases.length === 0) return null;
+  const passed = cases.filter(casePassed).length;
+  return { total: cases.length, passed, rate: (passed / cases.length) * 100 };
+}
+
+/**
+ * Parse the `.result` payload out of `sf ... --json` stdout. sf wraps the
+ * command result in `{ status, result, warnings }`.
+ *
+ * @param {string} stdout
+ * @returns {object|null} the inner result, or `null` when stdout isn't JSON.
+ */
+export function parseAgentTestResult(stdout) {
+  if (!stdout || typeof stdout !== 'string') return null;
+  try {
+    const env = JSON.parse(stdout);
+    return env?.result ?? env ?? null;
+  } catch {
+    return null;
+  }
+}

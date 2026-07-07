@@ -35,15 +35,16 @@ Last updated: 2026-07-06
 
 ## Agentforce
 
-### AF-1 — `sfdt agent-test --threshold` (pass-rate gate)
-- **Why blocked:** `sfdt agent-test` currently gates on the `sf agent test run`
-  **exit code** only. A numeric pass-rate threshold (`--threshold 80`) needs the
-  **JSON result schema** of `sf agent test run --json` — the field names for
-  per-test outcomes / aggregate pass rate — which isn't documented and we
-  couldn't confirm without running a real Agentforce eval.
-- **Need from user:** run `sf agent test run --api-name <spec> --json` against a
-  real org with an `AiEvaluationDefinition` and share the JSON (redacted). Then
-  we add threshold parsing + a unit test pinned to the real shape.
+### AF-1 — `sfdt agent-test --threshold` (pass-rate gate) — SHIPPED
+- **Resolved 2026-07-06 without needing a live org.** The result schema of
+  `sf agent test run --json` is defined in open-source TypeScript
+  (`salesforcecli/plugin-agent` `handleTestResults.ts` + `@salesforce/agents`),
+  not org-only. `--threshold <percent>` now grades on the aggregate pass rate,
+  handling both result shapes the plugin emits (legacy `testResults[].result`
+  and Agentforce Studio `testScorerResults[].scorerResponse`), counting a case
+  as passing exactly as the sf plugin does. Unit tests pin both shapes.
+- **Nothing needed from user.** (Optional later: validate against a real org's
+  JSON to catch any shape drift, but the gate is grounded in the plugin source.)
 
 ---
 
