@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { COMMAND_GROUPS, flattenCommands, findCommand, docsUrlFor, type CommandEntry } from './lib/commands.js';
 import { specNameFromFile, AGENT_TEST_GLOB } from './lib/agent-test-spec.js';
+import { isApexTestClass, classNameFromFile, APEX_CLASS_GLOB } from './lib/apex-test-detect.js';
 import { buildTerminalCommand } from './lib/terminal.js';
 import { runSfdtForResult, captureSfdt } from './lib/run-json.js';
 import { parseSmartDeployOutput, summaryLines, isValidationJobId, buildQuickDeployCommand } from './lib/smart-deploy-output.js';
@@ -682,6 +683,17 @@ export function activate(context: vscode.ExtensionContext): void {
       runInTerminal(['agent-test', '--spec', spec]);
     }),
 
+    // Run a single Apex test class (from the .cls CodeLens or the active editor).
+    vscode.commands.registerCommand('sfdt.runTestClass', async (classArg?: string) => {
+      let name = typeof classArg === 'string' && classArg ? classArg : undefined;
+      if (!name) {
+        const active = vscode.window.activeTextEditor?.document.uri.fsPath;
+        name = (active ? classNameFromFile(active) : null) ?? undefined;
+      }
+      if (!name) return;
+      runInTerminal(['test', '--class-names', name]);
+    }),
+
     vscode.commands.registerCommand('sfdt.smartDeployPreview', () => smartDeployPreview()),
     vscode.commands.registerCommand('sfdt.quickDeploy', () => quickDeploy()),
     vscode.commands.registerCommand('sfdt.toggleCoverage', () => toggleCoverage()),
@@ -729,6 +741,25 @@ export function activate(context: vscode.ExtensionContext): void {
               title: '▶ Run agent test',
               command: 'sfdt.agentTest',
               arguments: [spec],
+            }),
+          ];
+        },
+      },
+    ),
+    // CodeLens: a "▶ Run test class" action at the top of every Apex test class,
+    // wired to `sfdt test --class-names <name>` via sfdt.runTestClass.
+    vscode.languages.registerCodeLensProvider(
+      { pattern: APEX_CLASS_GLOB },
+      {
+        provideCodeLenses(document) {
+          const name = classNameFromFile(document.uri.fsPath);
+          if (!name || !isApexTestClass(document.getText())) return [];
+          const top = new vscode.Range(0, 0, 0, 0);
+          return [
+            new vscode.CodeLens(top, {
+              title: '▶ Run test class',
+              command: 'sfdt.runTestClass',
+              arguments: [name],
             }),
           ];
         },
