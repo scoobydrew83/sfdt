@@ -176,6 +176,17 @@ describe('SfdtMcpServer', () => {
       expect(call[1]).not.toContain('--org');
     });
 
+    it('executes sfdt_history and threads type + limit', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { runs: [], count: 0 } }), stderr: '' });
+
+      await callTool('sfdt_history', { type: 'audit', limit: 10 });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['history', '--json', '--type', 'audit', '--limit', '10']),
+        expect.anything()
+      );
+    });
+
     it('executes sfdt_validate as a dry-run deploy (passes --dry-run)', async () => {
       execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'validated', stderr: '' });
 

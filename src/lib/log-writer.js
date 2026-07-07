@@ -1,6 +1,7 @@
 // src/lib/log-writer.js
 import fs from 'fs-extra';
 import path from 'path';
+import { recordRun } from './run-history.js';
 
 const SCHEMA_VERSION = '1';
 const LOG_TYPES = ['preflight', 'test-run', 'drift', 'quality'];
@@ -75,7 +76,7 @@ export function validateLogSchema(log) {
 export async function writeLog(logDir, type, data, meta = {}) {
   if (!LOG_TYPES.includes(type)) throw new Error(`Unknown log type: ${type}. Must be one of: ${LOG_TYPES.join(', ')}`);
   if (data === undefined || data === null) throw new Error(`writeLog: data is required for type "${type}"`);
-  const { org = '', projectName = '', exitCode = 0, durationMs = 0, retention = 50 } = meta;
+  const { org = '', projectName = '', exitCode = 0, durationMs = 0, retention = 50, status, summary } = meta;
 
   const timestamp = new Date().toISOString();
   const envelope = {
@@ -108,6 +109,17 @@ export async function writeLog(logDir, type, data, meta = {}) {
     const toDelete = entries.slice(0, entries.length - retention);
     await Promise.all(toDelete.map((f) => fs.remove(path.join(archiveDir, f))));
   }
+
+  // Index the run in the queryable history (best-effort; never throws).
+  await recordRun(logDir, {
+    type,
+    timestamp,
+    org,
+    exitCode,
+    durationMs,
+    status: status ?? (exitCode === 0 ? 'pass' : 'fail'),
+    summary: summary ?? null,
+  });
 
   return envelope;
 }
@@ -147,7 +159,41 @@ export async function writeRawLog(logDir, type, rawOutput, meta = {}) {
     await Promise.all(toDelete.map((f) => fs.remove(path.join(archiveDir, f))));
   }
 
+  await recordRun(logDir, {
+    type,
+    timestamp,
+    org,
+    exitCode,
+    durationMs,
+    status: meta.status ?? (exitCode === 0 ? 'pass' : 'fail'),
+    summary: meta.summary ?? null,
+  });
+
   return envelope;
+}
+
+/**
+ * Archive a raw snapshot (kept in its native shape, e.g. logs/audit-latest.json)
+ * as a timestamped copy under logs/<dirName>/, pruned to `retention`. Unlike
+ * writeLog this does NOT wrap the payload in an envelope — the history files are
+ * byte-identical to the `-latest.json` the GUI/VS Code already read. Used by
+ * commands (audit/monitor) that keep a raw `-latest.json` snapshot.
+ */
+export async function archiveSnapshot(logDir, dirName, snapshot, meta = {}) {
+  const { retention = 50 } = meta;
+  const timestamp = new Date().toISOString();
+  const archiveDir = path.join(logDir, dirName);
+  await fs.ensureDir(archiveDir);
+  const suffix = Math.random().toString(36).slice(2, 7);
+  const archiveName = timestamp.replace(/:/g, '-').replace(/\./g, '-') + `-${suffix}.json`;
+  await fs.outputJson(path.join(archiveDir, archiveName), snapshot, { spaces: 2 });
+
+  const entries = (await fs.readdir(archiveDir)).filter((f) => f.endsWith('.json') && f !== 'latest.json').sort();
+  if (entries.length > retention) {
+    const toDelete = entries.slice(0, entries.length - retention);
+    await Promise.all(toDelete.map((f) => fs.remove(path.join(archiveDir, f))));
+  }
+  return path.join(archiveDir, archiveName);
 }
 
 /**

@@ -258,6 +258,17 @@ const TOOLS = [
     }
   },
   {
+    name: 'sfdt_history',
+    description: 'Show recent sfdt run history (audit, monitor, quality, test, deploy, agent-test, …) from the local run index — trend org-health, test, and deploy outcomes over time. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: 'Filter to one run type (e.g. audit | monitor | quality | test-run | deploy | agent-test).' },
+        limit: { type: 'number', description: 'Maximum rows to return (default 30).' }
+      }
+    }
+  },
+  {
     name: 'sfdt_get_parked_result',
     description: 'Retrieve the full payload of a previously parked tool result.',
     inputSchema: {
@@ -424,6 +435,14 @@ export class SfdtMcpServer {
       case 'sfdt_flow_scan': {
         const cmdArgs = ['flow', 'scan', '--json'];
         if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_history': {
+        const cmdArgs = ['history', '--json'];
+        if (args.type) cmdArgs.push('--type', args.type);
+        if (args.limit != null) cmdArgs.push('--limit', String(args.limit));
         const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);
       }

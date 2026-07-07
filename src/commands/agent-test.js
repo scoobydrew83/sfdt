@@ -5,6 +5,8 @@ import { resolveExitCode } from '../lib/exit-codes.js';
 import { postPrComment } from '../lib/github-pr.js';
 import { dispatch, notificationsConfigured } from '../lib/notifier.js';
 import { buildAgentTestArgs } from '../lib/agent-test.js';
+import { recordRun } from '../lib/run-history.js';
+import path from 'path';
 
 /**
  * `sfdt agent-test` — run an Agentforce agent test (`sf agent test run`) as a
@@ -44,6 +46,15 @@ export function registerAgentTestCommand(program) {
           process.exitCode = resolveExitCode(err);
         }
         if (output) console.log(output);
+
+        // Index the run in history (best-effort).
+        await recordRun(config.logDir ?? path.join(projectRoot, 'logs'), {
+          type: 'agent-test',
+          org,
+          exitCode: passed ? 0 : process.exitCode ?? 1,
+          status: passed ? 'pass' : 'fail',
+          summary: { spec: options.spec, passed },
+        });
 
         const event = passed ? 'agent-test-success' : 'agent-test-failure';
 
