@@ -86,6 +86,26 @@ export function referencedByQuery(id: string): string {
   return `SELECT MetadataComponentName, MetadataComponentType FROM MetadataComponentDependency WHERE RefMetadataComponentId = '${escapeSoql(id)}' ORDER BY MetadataComponentType, MetadataComponentName`;
 }
 
+/**
+ * SOQL for a node's neighbors in ONE direction, selecting the neighbor's Id so the
+ * node can be expanded further in a graph. `cap` bounds the result; callers query
+ * cap+1 rows to detect whether more neighbors exist beyond the cap.
+ */
+export function neighborsQuery(
+  id: string,
+  direction: 'references' | 'referencedBy',
+  cap: number,
+): string {
+  const esc = escapeSoql(id);
+  const limit = cap + 1;
+  if (direction === 'references') {
+    // this → others: the referenced component is the neighbor.
+    return `SELECT RefMetadataComponentId, RefMetadataComponentName, RefMetadataComponentType FROM MetadataComponentDependency WHERE MetadataComponentId = '${esc}' ORDER BY RefMetadataComponentType, RefMetadataComponentName LIMIT ${limit}`;
+  }
+  // others → this: the referencing component is the neighbor.
+  return `SELECT MetadataComponentId, MetadataComponentName, MetadataComponentType FROM MetadataComponentDependency WHERE RefMetadataComponentId = '${esc}' ORDER BY MetadataComponentType, MetadataComponentName LIMIT ${limit}`;
+}
+
 export interface DependencyGroup {
   type: string;
   names: string[];

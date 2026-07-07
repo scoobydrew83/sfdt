@@ -7,6 +7,7 @@ import {
   resolveQueryFor,
   referencesQuery,
   referencedByQuery,
+  neighborsQuery,
   groupByType,
 } from '../src/dependencies.js';
 
@@ -40,6 +41,24 @@ describe('reference queries', () => {
   it('build the two MetadataComponentDependency directions with the Id', () => {
     expect(referencesQuery('01p000000000001')).toContain("MetadataComponentId = '01p000000000001'");
     expect(referencedByQuery('01p000000000001')).toContain("RefMetadataComponentId = '01p000000000001'");
+  });
+});
+
+describe('neighborsQuery', () => {
+  it('references direction selects the ref Id and applies LIMIT cap+1', () => {
+    const q = neighborsQuery('01p000000000001', 'references', 50);
+    expect(q).toContain('RefMetadataComponentId');
+    expect(q).toContain("MetadataComponentId = '01p000000000001'");
+    expect(q).toContain('LIMIT 51');
+  });
+  it('referencedBy direction selects the source Id and applies LIMIT cap+1', () => {
+    const q = neighborsQuery('01p000000000001', 'referencedBy', 10);
+    expect(q).toMatch(/SELECT MetadataComponentId,/);
+    expect(q).toContain("RefMetadataComponentId = '01p000000000001'");
+    expect(q).toContain('LIMIT 11');
+  });
+  it('escapes the id', () => {
+    expect(neighborsQuery("x'y", 'references', 5)).toContain("MetadataComponentId = 'x\\'y'");
   });
 });
 
