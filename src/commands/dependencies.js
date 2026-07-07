@@ -20,7 +20,7 @@ export function registerDependenciesCommand(program) {
   program
     .command('dependencies <name>')
     .description('Show metadata dependencies for a component (references + referenced-by)')
-    .option('--type <MetadataType>', 'Metadata type to resolve (ApexClass, ApexTrigger, Flow, …)', 'ApexClass')
+    .option('--type <MetadataType>', 'Metadata type to resolve (ApexClass, ApexTrigger, ApexPage, ApexComponent, Flow, LightningComponentBundle, AuraDefinitionBundle, CustomField)', 'ApexClass')
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
     .option('--json', 'Emit structured JSON to stdout')
     .action(async (name, options) => {

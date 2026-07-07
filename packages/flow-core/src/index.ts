@@ -45,12 +45,14 @@ export type { ClassCoverageBand, RawClassCoverageRow, ClassCoverageRow } from '.
 export {
   escapeSoql,
   METADATA_TYPES,
+  METADATA_TYPE_REGISTRY,
+  GRAPH_SOURCE_TYPES,
   resolveQueryFor,
   referencesQuery,
   referencedByQuery,
   groupByType,
 } from './dependencies.js';
-export type { MetadataType, DependencyGroup } from './dependencies.js';
+export type { MetadataType, MetadataTypeInfo, GraphSourceType, DependencyGroup } from './dependencies.js';
 
 export {
   ApiNameLibrary,

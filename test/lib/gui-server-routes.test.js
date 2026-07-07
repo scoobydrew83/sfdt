@@ -798,6 +798,39 @@ describe('GET /api/dependencies', () => {
     expect(res.status).toBe(200);
     expect(res.body.edgeCount).toBe(1); // deduplicated
   });
+
+  it('appends LIMIT and reports truncated=false under the cap', async () => {
+    const { execa: execaMock } = await import('execa');
+    const sfResponse = JSON.stringify({
+      result: { records: [{
+        MetadataComponentId: 'aaa', MetadataComponentName: 'C', MetadataComponentType: 'ApexClass',
+        RefMetadataComponentId: 'bbb', RefMetadataComponentName: 'H', RefMetadataComponentType: 'ApexClass',
+      }] },
+    });
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: sfResponse, stderr: '' });
+
+    const res = await request(app).get('/api/dependencies?org=limitcap');
+    expect(res.status).toBe(200);
+    expect(res.body.truncated).toBe(false);
+    // the SOQL passed to sf must contain a LIMIT clause
+    const call = vi.mocked(execaMock).mock.calls.at(-1);
+    const soql = call[1][call[1].indexOf('--query') + 1];
+    expect(soql).toMatch(/LIMIT 5000/);
+  });
+
+  it('sets truncated=true when the record count hits the cap', async () => {
+    const { execa: execaMock } = await import('execa');
+    const records = Array.from({ length: 5000 }, (_, i) => ({
+      MetadataComponentId: `s${i}`, MetadataComponentName: `C${i}`, MetadataComponentType: 'ApexClass',
+      RefMetadataComponentId: `r${i}`, RefMetadataComponentName: `H${i}`, RefMetadataComponentType: 'ApexClass',
+    }));
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records } }), stderr: '' });
+
+    const res = await request(app).get('/api/dependencies?org=trunc');
+    expect(res.status).toBe(200);
+    expect(res.body.truncated).toBe(true);
+    expect(res.body.limit).toBe(5000);
+  });
 });
 
 describe('GET /api/dependencies/preflight', () => {

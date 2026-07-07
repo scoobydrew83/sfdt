@@ -7,29 +7,67 @@ export function escapeSoql(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-/** Metadata types the explorer can resolve to a component Id. */
+/** Metadata types the explorer can resolve to a component Id (CLI single-lookup). */
+// Keep in sync with METADATA_TYPE_REGISTRY (resolvable entries) — TS can't derive this union from the runtime array.
 export type MetadataType =
   | 'ApexClass'
   | 'ApexTrigger'
   | 'ApexPage'
+  | 'ApexComponent'
   | 'Flow'
   | 'CustomField'
-  | 'LightningComponentBundle';
+  | 'LightningComponentBundle'
+  | 'AuraDefinitionBundle';
+
+/**
+ * Single source of truth for every metadata type the dependency features know
+ * about. The CLI resolve map, the picker order, and the GUI graph's selectable
+ * source types are all DERIVED from this array — add a type here, once.
+ */
+export interface MetadataTypeInfo {
+  /** MetadataComponentType value, e.g. 'ApexClass'. */
+  type: string;
+  /** Human label for pickers, e.g. 'Apex Class'. */
+  label: string;
+  /** Present ⇒ the CLI can resolve a single component of this type to an Id. */
+  resolve?: { object: string; nameField: 'Name' | 'DeveloperName' };
+  /** Selectable as a source type in the GUI bulk graph. */
+  graphSource: boolean;
+  /** Checked by default in the GUI graph. */
+  graphDefaultOn: boolean;
+}
+
+export const METADATA_TYPE_REGISTRY: MetadataTypeInfo[] = [
+  { type: 'ApexClass',                label: 'Apex Class',            resolve: { object: 'ApexClass', nameField: 'Name' },                        graphSource: true, graphDefaultOn: true },
+  { type: 'ApexTrigger',              label: 'Apex Trigger',          resolve: { object: 'ApexTrigger', nameField: 'Name' },                      graphSource: true, graphDefaultOn: true },
+  { type: 'ApexPage',                 label: 'Visualforce Page',      resolve: { object: 'ApexPage', nameField: 'Name' },                         graphSource: true, graphDefaultOn: true },
+  { type: 'ApexComponent',            label: 'Visualforce Component', resolve: { object: 'ApexComponent', nameField: 'Name' },                    graphSource: true, graphDefaultOn: true },
+  { type: 'Flow',                     label: 'Flow',                  resolve: { object: 'FlowDefinition', nameField: 'DeveloperName' },           graphSource: true, graphDefaultOn: true },
+  { type: 'LightningComponentBundle', label: 'LWC',                   resolve: { object: 'LightningComponentBundle', nameField: 'DeveloperName' }, graphSource: true, graphDefaultOn: true },
+  { type: 'AuraDefinitionBundle',     label: 'Aura Component',        resolve: { object: 'AuraDefinitionBundle', nameField: 'DeveloperName' },     graphSource: true, graphDefaultOn: true },
+  { type: 'CustomObject',             label: 'Custom Object',         /* GUI-only: no CLI resolve */                                              graphSource: true, graphDefaultOn: false },
+  { type: 'CustomField',              label: 'Custom Field',          resolve: { object: 'CustomField', nameField: 'DeveloperName' },             graphSource: true, graphDefaultOn: false },
+];
 
 // Per type: which Tooling object holds the Id, and which field carries the
-// developer-entered name. Apex* objects key on `Name`; Flow/LWC/CustomField
-// are stored under their own definition objects keyed on `DeveloperName`.
-const RESOLVE: Record<string, { object: string; nameField: 'Name' | 'DeveloperName' }> = {
-  ApexClass: { object: 'ApexClass', nameField: 'Name' },
-  ApexTrigger: { object: 'ApexTrigger', nameField: 'Name' },
-  ApexPage: { object: 'ApexPage', nameField: 'Name' },
-  Flow: { object: 'FlowDefinition', nameField: 'DeveloperName' },
-  LightningComponentBundle: { object: 'LightningComponentBundle', nameField: 'DeveloperName' },
-  CustomField: { object: 'CustomField', nameField: 'DeveloperName' },
-};
+// developer-entered name. Derived from the registry so it never drifts.
+const RESOLVE: Record<string, { object: string; nameField: 'Name' | 'DeveloperName' }> =
+  Object.fromEntries(
+    METADATA_TYPE_REGISTRY.filter((m) => m.resolve).map((m) => [m.type, m.resolve!]),
+  );
 
-/** The order types appear in a picker. */
+/** The order types appear in a picker (CLI-resolvable types). */
 export const METADATA_TYPES = Object.keys(RESOLVE);
+
+/** Selectable source types for the GUI bulk dependency graph, with defaults. */
+export interface GraphSourceType {
+  type: string;
+  label: string;
+  graphDefaultOn: boolean;
+}
+export const GRAPH_SOURCE_TYPES: GraphSourceType[] = METADATA_TYPE_REGISTRY
+  .filter((m) => m.graphSource)
+  .map(({ type, label, graphDefaultOn }) => ({ type, label, graphDefaultOn }));
 
 /** Build the SOQL that resolves a name+type to its component Id (quote-escaped). */
 export function resolveQueryFor(type: string, name: string): string {
