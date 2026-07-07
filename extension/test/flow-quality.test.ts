@@ -6,9 +6,20 @@ vi.mock('@sfdt/flow-core', async (importActual) => ({
   ...(await importActual()),
   runFlowQuality: vi.fn(() => ({
     summary: { overallScore: 88, rating: 'Good', severityCounts: { high: 1 }, categoryCounts: {} },
-    issueFamilies: [{}, {}],
+    issueFamilies: [
+      {
+        scoreFamily: 'faultPaths',
+        title: 'Missing fault paths',
+        severity: 'high',
+        category: 'reliability',
+        scoreImpact: 12,
+        instanceCount: 1,
+        affectedItems: [{ type: 'element', label: 'Create Account', apiName: 'Create_Account' }],
+        findings: [{ recommendation: 'Add a fault connector.' }],
+      },
+    ],
     findings: [],
-    dependencies: [],
+    dependencies: [{ type: 'ApexAction', name: 'MyController', count: 1 }],
     meta: {},
   })),
 }));
@@ -41,6 +52,11 @@ describe('flow-quality feature (Direct)', () => {
     expect(vi.mocked(runFlowQuality)).toHaveBeenCalledWith({ label: 'My Flow' }, { flowApiName: 'My_Flow' });
     expect(document.body.textContent).toContain('Good');
     expect(document.body.textContent).toContain('high: 1');
+    // Full report: issue family, affected element, recommendation, and dependency.
+    expect(document.body.textContent).toContain('Missing fault paths');
+    expect(document.body.textContent).toContain('Create Account');
+    expect(document.body.textContent).toContain('Add a fault connector.');
+    expect(document.body.textContent).toContain('MyController');
   });
 
   it('requires a Flow name and never calls the API when empty', async () => {

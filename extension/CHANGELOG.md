@@ -4,6 +4,10 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Added
+- **Flow Scanner** — the `flow-quality` feature is now a full scanner. Beyond the score banner it renders the complete `@sfdt/flow-core` report: issue families (sorted by score impact) with severity, affected elements/resources, and the recommended fix, plus a Dependencies list (Apex actions, LWCs, subflows, Apex-defined types). It's also registered on real Salesforce pages (`content.ts`), so it works across Setup and Flow-list contexts by API name — not only inside the Flow Builder canvas like `flow-health-check`.
+- **Org release badge** — the Workspace top bar now shows the org's Salesforce release (e.g. `Summer '26`) and flags preview instances with `(preview instance)`, matching the CLI's `monitor org-info` wording. Derived best-effort from the org's `/services/data` REST version list via the shared `@sfdt/flow-core` release logic (same "ahead of GA = preview" rule the CLI uses); the badge stays hidden if the release can't be read.
+
 ## [0.5.0] - 2026-07-02
 
 ### Added

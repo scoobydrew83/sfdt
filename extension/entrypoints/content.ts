@@ -18,6 +18,7 @@ import { createCanvasSearchFeature } from '../features/canvas-search.js';
 import { createComparisonExporterFeature } from '../features/comparison-exporter.js';
 import { createFlowDeployFeature } from '../features/flow-deploy.js';
 import { createFlowHealthCheckFeature } from '../features/flow-health-check.js';
+import { createFlowQualityFeature } from '../features/flow-quality.js';
 import { createFlowListSearchFeature } from '../features/flow-list-search.js';
 import { createFlowTriggerExplorerEnhancerFeature } from '../features/flow-trigger-explorer-enhancer.js';
 import { createFlowVersionManagerFeature } from '../features/flow-version-manager.js';
@@ -75,6 +76,9 @@ export default defineContentScript({
     registry.register(createCanvasSearchFeature());
     registry.register(createFlowListSearchFeature());
     registry.register(createFlowHealthCheckFeature());
+    // Flow Scanner: name/list-driven full quality report (issue families +
+    // dependencies) across Setup/Flow contexts, not just the builder canvas.
+    registry.register(createFlowQualityFeature());
     registry.register(createMissingDescriptionFlagsFeature());
     registry.register(createFlowVersionManagerFeature());
     registry.register(createAiAssistantFeature());
