@@ -5,6 +5,7 @@ import {
 import { isFeatureEnabled, loadSettings, onSettingsChange, patchSettings, registerSettingsShape } from '../lib/settings.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { CONTEXTS } from '../lib/context-detector.js';
+import { waitForTabBar } from '../lib/setup-tab-bar.js';
 import { showToast } from '../ui/toast.js';
 import { z } from 'zod';
 
@@ -65,34 +66,32 @@ function isActiveTab(tabId: string, url: string): boolean {
       return url.includes('/lightning/setup/WorkflowSettings/');
     case 'sfdt_tab_automation_home':
       return url.includes('/lightning/app/');
+    case 'sfdt_tab_field_access':
+      return url.includes('/FieldAccess/');
     default:
       return false;
   }
 }
 
-function findTabBar(doc: Document): Element | null {
-  return doc.querySelector('ul.tabBarItems');
+// Object Manager pages carry the object in the path:
+//   /lightning/setup/ObjectManager/<Object>/... (Account, MyObj__c, or a durable Id)
+// When on such a page we can offer a jump straight to that object's Field
+// Access page (Summer '26). The link is object-contextual — it only makes sense
+// with a concrete object — so we build it from the current URL, not statically.
+const OBJECT_MANAGER_RE = /\/lightning\/setup\/ObjectManager\/([^/]+)\//;
+
+function currentObjectManagerObject(url: string): string | null {
+  return OBJECT_MANAGER_RE.exec(url)?.[1] ?? null;
 }
 
-function waitForTabBar(doc: Document, timeoutMs = 10_000): Promise<Element | null> {
-  const existing = findTabBar(doc);
-  if (existing) return Promise.resolve(existing);
-
-  return new Promise((resolve) => {
-    const observer = new MutationObserver(() => {
-      const found = findTabBar(doc);
-      if (found) {
-        observer.disconnect();
-        resolve(found);
-      }
-    });
-    observer.observe(doc.body, { childList: true, subtree: true });
-
-    setTimeout(() => {
-      observer.disconnect();
-      resolve(findTabBar(doc));
-    }, timeoutMs);
-  });
+function fieldAccessTab(object: string): TabDefinition {
+  return {
+    id: 'sfdt_tab_field_access',
+    label: 'Field Access',
+    buildUrl: (hostname) =>
+      `https://${toSetupHost(hostname)}/lightning/setup/ObjectManager/${object}/FieldAccess/view`,
+    openInNewTab: false,
+  };
 }
 
 function removeInjectedTabs(doc: Document): void {
@@ -348,6 +347,11 @@ export function createSetupTabsFeature(options: SetupTabsOptions = {}): Feature 
       const setupTabsConfig = settings.featureSettings?.['setup-tabs'] ?? settings.setupTabs;
       const tabsToInject: TabDefinition[] = [...BASE_TABS];
       if (setupTabsConfig.automationHomeEnabled) tabsToInject.push(AUTOMATION_HOME_TAB);
+
+      // Object-contextual: only on an Object Manager object page, and pointed at
+      // the object you're actually viewing.
+      const omObject = currentObjectManagerObject(win.location.href);
+      if (omObject) tabsToInject.push(fieldAccessTab(omObject));
 
       const hostname = win.location.hostname;
       if (setupTabsConfig.groupingEnabled) {

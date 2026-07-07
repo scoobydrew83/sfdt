@@ -21,14 +21,6 @@ Last updated: 2026-07-06
   secrets in GitHub → Settings → Secrets. Then we wire the job to gate on
   `github.event_name`/branch.
 
-### CI-2 — Chrome Web Store publish job (2.3)
-- **Why blocked:** publishing the Chrome extension needs **CWS API credentials**
-  (`extensionId`, `clientId`, `clientSecret`, `refreshToken`) — secrets we can't
-  generate.
-- **Need from user:** register/confirm the extension in the Chrome Web Store
-  Developer Dashboard, generate the OAuth credentials, and add them as CI
-  secrets. Then we add the upload/publish job to `ci.yml`.
-
 ### CI-3 — Publish the agent-skills pack (4.9 follow-up)
 - **Why blocked:** `sfdt skills export --target pack` now produces a valid
   `npx skills add`-compatible pack locally, but for `npx skills add scoobydrew83/sfdt`
@@ -57,36 +49,36 @@ Last updated: 2026-07-06
 
 ## Chrome extension
 
-### CHR-1 — Summer '26 setup deep links (4.10)
-- **Why blocked:** the new Summer '26 setup pages (Field Access Summary — per
-  object; Security Center Essentials; Release Manager — new Beta nodes) need
-  their real `setup-node` / Lightning URLs, which vary per page and can't be
-  guessed without a live org. Guessing ships broken deep links.
-- **Need from user:** in a real Summer '26 org, open each target setup page and
-  copy the URL (or confirm the setup-node names). Then we add them to the
-  setup-tabs/nav features.
+### CHR-1 — Summer '26 setup deep links (4.10) — Field Access SHIPPED; two targets parked
+- **Field Access — DONE.** Confirmed the real URL against a live org
+  (`/lightning/setup/ObjectManager/<Object>/FieldAccess/view`). It's
+  object-contextual, so it ships as a conditional **Field Access** tab in
+  `features/setup-tabs.ts` that appears only on Object Manager object pages and
+  targets the object you're viewing.
+- **Security Center Essentials + Release Manager Beta — still blocked (parked).**
+  Neither is present in a standard Developer Edition org: **Security Center** is a
+  paid add-on (requires the Security Center license) and **Release Manager** is a
+  Beta/pilot Salesforce must enable. We can't confirm real URLs from an org that
+  lacks the feature, and shipping deep links to pages most orgs 404 on is the exact
+  broken-link risk this item guards against.
+- **Need from user:** access to an org that *has* Security Center licensed and/or
+  Release Manager Beta enabled, then open each page and copy the URL. Until then
+  these two stay out.
 
 ### CHR-2 — Org release/channel badge (4.11) — version/preview SHIPPED; channel still blocked
-- **Shipped:** the Workspace top-bar badge now shows release + `(preview instance)`.
+- **Shipped:** the Workspace top-bar badge (`entrypoints/app/main.ts`) shows the
+  release + `(preview instance)`, derived via the shared `@sfdt/flow-core`
+  `releaseFromVersionList()` (same logic as CLI `monitor org-info`).
+- **Also shipped:** `features/org-release-badge.ts` puts the same pill in the live
+  **Setup tab strip** (`ul.tabBarItems`), so the release is visible on real
+  Salesforce Setup pages, not only in the Workspace tab.
 - **Still blocked:** the **Release Manager channel** has no queryable Beta API
   (same gap as audit check 4.7).
-- **Need from user:** nothing actionable — we depend on Salesforce exposing a
-  channel API; revisit when one exists.
+- **Need from user:** nothing actionable for version/preview; the channel depends
+  on Salesforce exposing an API — revisit when one exists.
 
 ---
 
-## Docs site
-
-### DOC-1 — sfdt-site staleness pass
-- **Why blocked here:** the public docs live in a **separate repo**
-  (`scoobydrew83/sfdt-site`, https://sfdt.dev/) that isn't in this session's
-  scope.
-- **Need from user:** add `scoobydrew83/sfdt-site` to the session (or confirm we
-  should) so we can mirror the recent CLI changes (`agent-test`, Agentforce
-  metadata, `skills export --target pack`, Code Analyzer v5, `test --logic`,
-  `quality --api67`, the four new MCP tools) into its MDX.
-
----
 
 ## Legend
 - **DevHub auth** = JWT-based `sf org login jwt` used in CI to create scratch orgs.
