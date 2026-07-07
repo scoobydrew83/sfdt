@@ -116,6 +116,12 @@
         { "command": "sfdt.notifySnapshot", "when": "view == sfdtOrgHealth && viewItem =~ /^sfdtHealthSnapshot/", "group": "1_notify@1" }
       ]
     },
+    "keybindings": [
+      { "command": "sfdt.searchCommands", "key": "ctrl+alt+s", "mac": "cmd+alt+s", "when": "sfdt:hasSfdt" },
+      { "command": "sfdt.smartDeployPreview", "key": "ctrl+alt+d", "mac": "cmd+alt+d", "when": "sfdt:ready" },
+      { "command": "sfdt.quality", "key": "ctrl+alt+q", "mac": "cmd+alt+q", "when": "sfdt:ready" },
+      { "command": "sfdt.refresh", "key": "ctrl+alt+r", "mac": "cmd+alt+r", "when": "sfdt:ready" }
+    ],
     "walkthroughs": [
       {
         "id": "sfdt.gettingStarted",

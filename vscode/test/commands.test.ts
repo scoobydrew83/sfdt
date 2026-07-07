@@ -118,6 +118,19 @@ describe('COMMAND_GROUPS', () => {
     expect(findCommand('scan')?.refreshes).toBe('scan');
     expect(findCommand('drift')?.refreshes).toBe('drift');
   });
+
+  it('exposes the newly-added CLI commands', () => {
+    expect(findCommand('agent-test')?.args).toEqual(['agent-test', '--spec']);
+    expect(findCommand('agent-test')?.argsIncomplete).toBe(true);
+    expect(findCommand('monitor-schedule')?.args).toEqual(['monitor', 'schedule']);
+    expect(findCommand('extension-install-host')?.argsIncomplete).toBe(true);
+    expect(findCommand('extension-install-host')?.noOrg).toBe(true);
+    expect(findCommand('extension-uninstall-host')?.args).toEqual(['extension', 'uninstall-host']);
+    expect(findCommand('skills-pack')?.args).toEqual(['skills', 'export', '--target', 'pack']);
+    expect(findCommand('skills-pack')?.noOrg).toBe(true);
+    expect(findCommand('plugin-create')?.args).toEqual(['plugin', 'create']);
+    expect(findCommand('plugin-create')?.argsIncomplete).toBe(true);
+  });
 });
 
 describe('findCommand', () => {
