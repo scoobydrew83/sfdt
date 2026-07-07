@@ -35,7 +35,7 @@ import {
   uninstallNativeHost,
   nativeHostStatus,
 } from '../../host/installers/install-host.js';
-import { getConfigDir } from '../lib/config.js';
+import { getConfigDir, loadConfig } from '../lib/config.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
 
@@ -64,6 +64,11 @@ export function registerExtensionCommand(program) {
       `Browser to register with — one of ${BROWSER_CHOICES.join(', ')} (default: chrome)`,
       'chrome',
     )
+    .option(
+      '--project-root <path>',
+      'Salesforce project root to record for the host (default: the current project). ' +
+        'The host reads this to serve the read-only kinds (drift/scan/compare/org-health).',
+    )
     .option('--json', 'Emit the result as JSON')
     .action(async (options) => {
       const jsonMode = !!options.json;
@@ -78,9 +83,21 @@ export function registerExtensionCommand(program) {
             `--extension-id must be 32 lowercase letters a–p (Chrome extension IDs are base-16 → a-p). Got: ${options.extensionId}`,
           );
         }
+        // Record the project root so the host can find logs/ + .sfdt/config.json.
+        // Explicit flag wins; otherwise discover the current project (best-effort —
+        // install-host may be run outside a project, which is still valid).
+        let projectRoot = options.projectRoot;
+        if (!projectRoot) {
+          try {
+            projectRoot = (await loadConfig())._projectRoot;
+          } catch {
+            projectRoot = undefined;
+          }
+        }
         const result = await installNativeHost({
           extensionId: options.extensionId,
           browser: options.browser,
+          projectRoot,
         });
         if (!result.ok) {
           if (jsonMode) {
@@ -97,6 +114,16 @@ export function registerExtensionCommand(program) {
         }
         console.log(chalk.green(`\nInstalled native host on ${result.platform}.`));
         console.log(chalk.dim(`Host launcher: ${result.hostPath}`));
+        if (result.projectRoot) {
+          console.log(chalk.dim(`Project root recorded: ${result.projectRoot}`));
+        } else {
+          console.log(
+            chalk.yellow(
+              '• No project recorded — run this from your Salesforce project (or pass --project-root) ' +
+                'so the host can serve drift/scan/compare/org-health.',
+            ),
+          );
+        }
         for (const r of result.results) {
           if (r.ok) {
             console.log(`  ${chalk.green('✓')} ${r.browser}  ${chalk.dim(r.manifestPath)}`);

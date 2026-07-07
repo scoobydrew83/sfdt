@@ -12,17 +12,27 @@
 
 import { describe, it, expect } from 'vitest';
 import { execa } from 'execa';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HOST_ENTRY = path.resolve(__dirname, '..', 'host', 'src', 'index.js');
 
-async function smoke(payload) {
+// Env that guarantees the host resolves NO project: empty SFDT_PROJECT_ROOT and
+// an XDG_CONFIG_HOME pointed at a dir without a sfdt-host.json. Keeps the
+// "no project configured" assertions deterministic regardless of the dev machine.
+const NO_PROJECT_ENV = {
+  SFDT_PROJECT_ROOT: '',
+  XDG_CONFIG_HOME: path.join(os.tmpdir(), 'sfdt-host-test-noconfig'),
+};
+
+async function smoke(payload, env) {
   const result = await execa('node', [HOST_ENTRY, `--smoke=${JSON.stringify(payload)}`], {
     reject: false,
     encoding: 'buffer',
     timeout: 10_000,
+    env,
   });
   // execa returns a Uint8Array (not a Node Buffer) under `encoding: 'buffer'`,
   // so wrap it before using Buffer-specific methods.
@@ -46,18 +56,32 @@ describe('@sfdt/host — smoke mode', () => {
     expect(response.data.transport).toBe('native');
   });
 
-  it('returns NOT_IMPLEMENTED for kinds without a handler yet', async () => {
-    const response = await smoke({ requestId: 'r2', kind: 'drift', component: 'Account' });
+  it('returns NOT_FOUND for read-only kinds when no project is configured', async () => {
+    const response = await smoke({ requestId: 'r2', kind: 'drift', component: 'Account' }, NO_PROJECT_ENV);
     expect(response.ok).toBe(false);
-    expect(response.code).toBe('NOT_IMPLEMENTED');
+    expect(response.code).toBe('NOT_FOUND');
     expect(response.requestId).toBe('r2');
   });
 
-  it('returns NOT_IMPLEMENTED for org-health (HTTP-bridge only)', async () => {
-    const response = await smoke({ requestId: 'r2b', kind: 'org-health' });
+  it('returns NOT_FOUND for org-health when no project is configured', async () => {
+    const response = await smoke({ requestId: 'r2b', kind: 'org-health' }, NO_PROJECT_ENV);
+    expect(response.ok).toBe(false);
+    expect(response.code).toBe('NOT_FOUND');
+    expect(response.requestId).toBe('r2b');
+  });
+
+  it('runs quality in-process without a project (flow-core)', async () => {
+    const flowXml = JSON.stringify({ label: 'My Flow', processType: 'Flow' });
+    const response = await smoke({ requestId: 'r2c', kind: 'quality', flowXml }, NO_PROJECT_ENV);
+    expect(response.ok).toBe(true);
+    expect(typeof response.data.overallScore).toBe('number');
+    expect(response.data).toHaveProperty('issueFamilyCount');
+  });
+
+  it('keeps mutating kinds (deploy) bridge-only with NOT_IMPLEMENTED', async () => {
+    const response = await smoke({ requestId: 'r2d', kind: 'deploy', flowApiName: 'My_Flow' }, NO_PROJECT_ENV);
     expect(response.ok).toBe(false);
     expect(response.code).toBe('NOT_IMPLEMENTED');
-    expect(response.requestId).toBe('r2b');
   });
 
   it('rejects an invalid SfdtRequest with REQUEST_INVALID', async () => {

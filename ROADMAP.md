@@ -110,7 +110,7 @@ Remaining Sprint 4/5 queue from the 2026-07-03 audit + Summer '26 / Spring '26 r
 - **Flow Scanner surface** powered by `@sfdt/flow-core` — ✅ the `flow-quality` feature is now a full Flow Scanner (issue families + affected elements + recommendations + dependencies) and runs on real Setup/Flow pages, not just the builder canvas (Inspector Reloaded 2.0 parity)
 
 ### GUI / host / pipeline
-- **Native messaging host: implement read-only kinds** (drift/scan/compare/quality/org-health) by spawning the CLI; keep mutating kinds bridge-only
+- **Native messaging host: read-only kinds** — ✅ drift/scan/compare/quality/org-health implemented (quality in-process via flow-core; the rest spawn the CLI / read `logs/` snapshots, reshaped to the bridge contract). Mutating kinds (deploy/rollback/ai) stay bridge-only. The host resolves the project from a config file written by `sfdt extension install-host` (or `SFDT_PROJECT_ROOT`)
 - **Chrome Web Store publish job** — un-comment behind a secrets-present guard (same pattern as the Homebrew tap job)
 
 ---

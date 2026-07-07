@@ -19,6 +19,7 @@ import { createComparisonExporterFeature } from '../features/comparison-exporter
 import { createFlowDeployFeature } from '../features/flow-deploy.js';
 import { createFlowHealthCheckFeature } from '../features/flow-health-check.js';
 import { createFlowQualityFeature } from '../features/flow-quality.js';
+import { createDependencyExplorerFeature } from '../features/dependency-explorer.js';
 import { createFlowListSearchFeature } from '../features/flow-list-search.js';
 import { createFlowTriggerExplorerEnhancerFeature } from '../features/flow-trigger-explorer-enhancer.js';
 import { createFlowVersionManagerFeature } from '../features/flow-version-manager.js';
@@ -80,9 +81,18 @@ export default defineContentScript({
     registry.register(createCanvasSearchFeature());
     registry.register(createFlowListSearchFeature());
     registry.register(createFlowHealthCheckFeature());
+    // Dependency Explorer + Flow Scanner. The Scanner's dependency rows cross-link
+    // into the Explorer (openFor pre-fills + searches), so both are registered
+    // here — on real Setup/Flow pages — not just in the Workspace app.
+    const depExplorer = createDependencyExplorerFeature();
+    registry.register(depExplorer);
     // Flow Scanner: name/list-driven full quality report (issue families +
     // dependencies) across Setup/Flow contexts, not just the builder canvas.
-    registry.register(createFlowQualityFeature());
+    registry.register(
+      createFlowQualityFeature({
+        onExploreDependency: (dep) => void depExplorer.openFor(dep.type, dep.name),
+      }),
+    );
     registry.register(createMissingDescriptionFlagsFeature());
     registry.register(createFlowVersionManagerFeature());
     registry.register(createAiAssistantFeature());
