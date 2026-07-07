@@ -34,12 +34,29 @@ export interface FlowQualityFeatureOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
+  /**
+   * Optional cross-link: when provided, each scanned dependency gets an
+   * "Explore" action that hands its component (mapped to a MetadataComponent
+   * type) to the Dependency Explorer. Wired only where that feature exists
+   * (the Workspace app); omitted on real pages, where no Explore button shows.
+   */
+  onExploreDependency?: (dep: { type: string; name: string }) => void;
 }
+
+// Map a flow-core Dependency.type to the MetadataComponent type the Dependency
+// Explorer resolves against. Unmapped types get no Explore link.
+const DEP_TYPE_TO_METADATA: Record<string, string> = {
+  ApexAction: 'ApexClass',
+  ApexDefinedType: 'ApexClass',
+  Subflow: 'Flow',
+  LwcComponent: 'LightningComponentBundle',
+};
 
 export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}): Feature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
+  const onExploreDependency = options.onExploreDependency;
 
   let view: ViewHandle | null = null;
   function close(): void {
@@ -158,18 +175,32 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
       results.appendChild(clean);
     }
 
-    // Dependencies Explorer — what this flow calls (Apex, LWC, subflows, types).
+    // Dependencies — what this flow calls (Apex, LWC, subflows, types). Each row
+    // can hand off to the full org-wide Dependency Explorer when cross-linked.
     const deps = report.dependencies ?? [];
     if (deps.length > 0) {
       results.appendChild(sectionHeading('Dependencies'));
-      const ul = doc.createElement('ul');
-      ul.style.cssText = 'margin: 0; padding-left: 18px; color: #3e3e3c; font-size: 12px;';
       for (const dep of deps) {
-        const li = doc.createElement('li');
-        li.textContent = dep.count > 1 ? `${dep.type}: ${dep.name} ×${dep.count}` : `${dep.type}: ${dep.name}`;
-        ul.appendChild(li);
+        const row = doc.createElement('div');
+        row.style.cssText =
+          'display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; color: #3e3e3c;';
+        const label = doc.createElement('span');
+        label.style.cssText = 'flex: 1; word-break: break-all;';
+        label.textContent = dep.count > 1 ? `${dep.type}: ${dep.name} ×${dep.count}` : `${dep.type}: ${dep.name}`;
+        row.appendChild(label);
+
+        const metadataType = DEP_TYPE_TO_METADATA[dep.type];
+        if (onExploreDependency && metadataType) {
+          const explore = doc.createElement('button');
+          explore.textContent = '🔗 Explore';
+          explore.title = `Open ${dep.name} in the Dependency Explorer`;
+          explore.style.cssText =
+            'flex: none; padding: 2px 8px; border: 1px solid #d8dde6; background: #fff; color: #0070d2; border-radius: 4px; cursor: pointer; font-size: 11px;';
+          explore.addEventListener('click', () => onExploreDependency({ type: metadataType, name: dep.name }));
+          row.appendChild(explore);
+        }
+        results.appendChild(row);
       }
-      results.appendChild(ul);
     }
   }
 

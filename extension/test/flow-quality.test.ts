@@ -79,4 +79,34 @@ describe('flow-quality feature (Direct)', () => {
     scanBtn().click();
     await vi.waitFor(() => expect(document.body.textContent).toContain('Flow not found'));
   });
+
+  it('cross-links a dependency to the Dependency Explorer with the mapped type', async () => {
+    const onExploreDependency = vi.fn();
+    const api = {
+      getFlowMetadata: vi.fn(async () => ({ Metadata: {} })),
+    } as unknown as SalesforceApiClient;
+    const feature = createFlowQualityFeature({ api, onExploreDependency });
+    await feature.onActivate?.();
+    (document.querySelector('input[type="text"]') as HTMLInputElement).value = 'My_Flow';
+    scanBtn().click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('MyController'));
+
+    const explore = [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('Explore'));
+    expect(explore).toBeTruthy();
+    explore!.click();
+    // flow-core 'ApexAction' maps to the MetadataComponent type 'ApexClass'.
+    expect(onExploreDependency).toHaveBeenCalledWith({ type: 'ApexClass', name: 'MyController' });
+  });
+
+  it('shows no Explore button when no cross-link is wired', async () => {
+    const api = {
+      getFlowMetadata: vi.fn(async () => ({ Metadata: {} })),
+    } as unknown as SalesforceApiClient;
+    const feature = createFlowQualityFeature({ api });
+    await feature.onActivate?.();
+    (document.querySelector('input[type="text"]') as HTMLInputElement).value = 'My_Flow';
+    scanBtn().click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('MyController'));
+    expect([...document.querySelectorAll('button')].some((b) => b.textContent?.includes('Explore'))).toBe(false);
+  });
 });

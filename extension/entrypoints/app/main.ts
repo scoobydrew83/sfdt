@@ -223,6 +223,10 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
   const registry = createFeatureRegistry();
   const common = { doc: document, win: syntheticWin, api };
 
+  // Created eagerly so the Flow Scanner can cross-link its dependency rows into
+  // the full org-wide Dependency Explorer (openFor pre-fills + runs the search).
+  const depExplorer = createDependencyExplorerFeature(common);
+
   // Saved SOQL hands a chosen query to the runner, then asks us to open it.
   const factories: Record<string, () => Feature> = {
     'soql-runner': () => createSoqlRunnerFeature(common),
@@ -247,8 +251,12 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
     'apex-coverage': () => createCodeCoverageFeature(common),
     'apex-test-runner': () => createApexTestRunnerFeature(common),
     'org-health-live': () => createOrgHealthLiveFeature(common),
-    'dependency-explorer': () => createDependencyExplorerFeature(common),
-    'flow-quality': () => createFlowQualityFeature(common),
+    'dependency-explorer': () => depExplorer,
+    'flow-quality': () =>
+      createFlowQualityFeature({
+        ...common,
+        onExploreDependency: (dep) => void depExplorer.openFor(dep.type, dep.name),
+      }),
     'drift-check': () => createDriftFeature(common),
     'metadata-scan': () => createScanFeature(common),
     'org-compare': () => createCompareFeature(common),
