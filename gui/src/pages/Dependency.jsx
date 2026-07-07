@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api.js';
+import { GRAPH_SOURCE_TYPES } from '@sfdt/flow-core';
 import {
   forceSimulation,
   forceLink,
@@ -11,15 +12,23 @@ import { select } from 'd3-selection';
 import { zoom as d3Zoom, zoomIdentity as d3ZoomIdentity } from 'd3-zoom';
 import { drag as d3Drag } from 'd3-drag';
 
-// ─── Color map by metadata type ──────────────────────────────────────────────
+// ─── Color map by metadata type (GUI-only; flow-core stays styling-free) ─────
 const TYPE_COLORS = {
-  ApexClass:     'var(--brand-500)',
-  ApexTrigger:   'var(--status-modified-solid)',
-  ApexComponent: 'var(--status-source-solid)',
-  Flow:          'var(--status-identical-solid)',
+  ApexClass:                'var(--brand-500)',
+  ApexTrigger:              'var(--status-modified-solid)',
+  ApexPage:                 'var(--accent-500)',
+  ApexComponent:            'var(--status-source-solid)',
+  Flow:                     'var(--status-identical-solid)',
+  LightningComponentBundle: 'var(--brand-300)',
+  AuraDefinitionBundle:     'var(--accent-600)',
+  CustomObject:             'var(--status-conflict-solid)',
+  CustomField:              'var(--status-target-solid)',
 };
 
-const ALL_TYPES = ['ApexClass', 'ApexTrigger', 'ApexComponent', 'Flow'];
+// Selectable source types + labels come from flow-core so CLI/GUI never drift.
+const ALL_TYPES = GRAPH_SOURCE_TYPES.map((t) => t.type);
+const TYPE_LABELS = Object.fromEntries(GRAPH_SOURCE_TYPES.map((t) => [t.type, t.label]));
+const DEFAULT_ON_TYPES = GRAPH_SOURCE_TYPES.filter((t) => t.graphDefaultOn).map((t) => t.type);
 
 function typeColor(type) {
   return TYPE_COLORS[type] ?? 'var(--fg-muted)';
@@ -139,11 +148,12 @@ function DetailRail({ selected, nodes, onSelectNode, onClear }) {
 export default function Dependency() {
   const [orgs, setOrgs]               = useState([]);
   const [selectedOrg, setSelectedOrg] = useState('');
-  const [activeTypes, setActiveTypes] = useState(new Set(ALL_TYPES));
+  const [activeTypes, setActiveTypes] = useState(new Set(DEFAULT_ON_TYPES));
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState(null);
   const [graphData, setGraphData]     = useState(null); // { nodes, edges }
   const [nodeCount, setNodeCount]     = useState(0);
+  const [truncated, setTruncated]     = useState(false);
   const [selectedId, setSelectedId]   = useState(null);
   const [enrichedNodes, setEnrichedNodes] = useState([]);
 
@@ -219,6 +229,7 @@ export default function Dependency() {
       const data = await api.dependencies(selectedOrg, types);
       const nodes = data.nodes ?? [];
       const edges = data.edges ?? [];
+      setTruncated(!!data.truncated);
       setGraphData({ nodes, edges });
       setNodeCount(nodes.length);
     } catch (err) {
@@ -441,6 +452,12 @@ export default function Dependency() {
     <div className="graph-layout">
       {/* ── Left: canvas + toolbar ─────────────────────────────────────── */}
       <div className="graph-canvas-wrap">
+        {truncated && (
+          <div className="graph-truncation-banner" role="status">
+            Showing the first 5000 dependencies. Deselect types (e.g. Custom Object /
+            Custom Field) to narrow the graph — expand-on-click is coming in a later update.
+          </div>
+        )}
         {/* Toolbar */}
         <div className="graph-toolbar">
           <select
@@ -465,7 +482,7 @@ export default function Dependency() {
               type="button"
             >
               <span className="graph-chip-dot" style={{ background: typeColor(t) }} />
-              {t}
+              {TYPE_LABELS[t] ?? t}
             </button>
           ))}
 
