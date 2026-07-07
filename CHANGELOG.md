@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MCP mutating + test tools.** The MCP server gains the previously-owed mutating tools — `sfdt_release`, `sfdt_scratch_create`/`sfdt_scratch_delete`/`sfdt_scratch_pool`, `sfdt_data_import`/`sfdt_data_delete` (all `confirmExecution`-gated) — plus read-only `sfdt_data_export` and a `sfdt_test` runner (with optional `classNames`). Combined with `sfdt_history`, the MCP surface now covers the full CLI lifecycle for agentic workflows.
+
 - **Run history** — sfdt now keeps a durable, queryable history of runs instead of only the latest snapshot. A compact SQLite index (`logs/history.db`, via the `node:sqlite` already used by the pull cache) records every audit/monitor/quality/test/deploy/rollback/agent-test run (type, timestamp, org, exit code, duration, a small summary), and `audit`/`monitor` now also archive full timestamped snapshots under `logs/audit-results/` / `logs/monitor-results/` (like preflight/quality/drift/test already did). New **`sfdt history`** command (`--type`, `--limit`, `--json`) and MCP **`sfdt_history`** tool surface it, so org-health/coverage/deploy outcomes can be trended over time. Recording is best-effort — a history failure never fails the command.
 
 - **`sfdt test --class-names <list>`** — run only a specific comma-separated set of Apex test classes, overriding the configured `testConfig.testClasses` for that run (the runner already batches whatever list it's given). Powers the VS Code "▶ Run test class" CodeLens and targeted CI runs.

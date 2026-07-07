@@ -258,6 +258,106 @@ const TOOLS = [
     }
   },
   {
+    name: 'sfdt_release',
+    description: 'Build a release: generate the release manifest (package.xml) and release notes for a package. Writes release artifacts to the repo. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        version: { type: 'string', description: 'Release version/label (semver, free-form, or "today").' },
+        package: { type: 'string', description: 'Package directory: a short name or "all" (default).' },
+        name: { type: 'string', description: 'Release label override.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to acknowledge writing release artifacts.' }
+      },
+      required: ['confirmExecution']
+    }
+  },
+  {
+    name: 'sfdt_scratch_create',
+    description: 'Create a Salesforce scratch org. Mutating (consumes a DevHub scratch-org allocation) — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        alias: { type: 'string', description: 'Alias for the new scratch org.' },
+        days: { type: 'number', description: 'Duration in days (1-30).' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to create the scratch org.' }
+      },
+      required: ['confirmExecution']
+    }
+  },
+  {
+    name: 'sfdt_scratch_delete',
+    description: 'Delete a scratch org by alias or username. Destructive — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        target: { type: 'string', description: 'Scratch org alias or username to delete.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to delete the scratch org.' }
+      },
+      required: ['target', 'confirmExecution']
+    }
+  },
+  {
+    name: 'sfdt_scratch_pool',
+    description: 'Inspect or top up the scratch-org pool. action="status" is read-only; action="fill" creates orgs to reach the target size and requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['status', 'fill'], description: 'status (read-only) or fill (mutating).' },
+        size: { type: 'number', description: 'Desired pool size for fill (overrides config).' },
+        confirmExecution: { type: 'boolean', description: 'Required when action="fill".' }
+      },
+      required: ['action']
+    }
+  },
+  {
+    name: 'sfdt_data_export',
+    description: 'Export a configured data set from the org to local files. Reads from the org and writes local data files (read-only with respect to the org).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        set: { type: 'string', description: 'Data set name (from config).' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['set']
+    }
+  },
+  {
+    name: 'sfdt_data_import',
+    description: 'Import a configured data set into the org. Mutating (writes records) — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        set: { type: 'string', description: 'Data set name (from config).' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to write records to the org.' }
+      },
+      required: ['set', 'confirmExecution']
+    }
+  },
+  {
+    name: 'sfdt_data_delete',
+    description: 'Bulk-delete a configured data set in the org. Destructive — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        set: { type: 'string', description: 'Data set name (from config).' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to delete records in the org.' }
+      },
+      required: ['set', 'confirmExecution']
+    }
+  },
+  {
+    name: 'sfdt_test',
+    description: 'Run Apex tests via the enhanced test runner. Optionally limit to specific test classes. Consumes org test resources; not metadata-mutating.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        classNames: { type: 'array', items: { type: 'string' }, description: 'Only run these Apex test classes (defaults to the configured set).' }
+      }
+    }
+  },
+  {
     name: 'sfdt_history',
     description: 'Show recent sfdt run history (audit, monitor, quality, test, deploy, agent-test, …) from the local run index — trend org-health, test, and deploy outcomes over time. Read-only.',
     inputSchema: {
@@ -437,6 +537,85 @@ export class SfdtMcpServer {
         if (args.org) cmdArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_release': {
+        if (!args.confirmExecution) {
+          throw new Error('Building a release writes release artifacts to the repo. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['release'];
+        if (args.version) cliArgs.push(String(args.version));
+        if (args.package) cliArgs.push('--package', args.package);
+        if (args.name) cliArgs.push('--name', args.name);
+        const { exitCode, stdout, stderr } = await this.#runCliCommand(cliArgs);
+        return { exitCode, stdout, stderr };
+      }
+
+      case 'sfdt_scratch_create': {
+        if (!args.confirmExecution) {
+          throw new Error('Creating a scratch org consumes a DevHub allocation. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['scratch', 'create', '--json'];
+        if (args.alias) cliArgs.push('--alias', args.alias);
+        if (args.days != null) cliArgs.push('--days', String(args.days));
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_scratch_delete': {
+        if (!args.confirmExecution) {
+          throw new Error('Deleting a scratch org is destructive. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['scratch', 'delete', args.target, '--yes', '--json'];
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_scratch_pool': {
+        const action = args.action === 'fill' ? 'fill' : 'status';
+        if (action === 'fill' && !args.confirmExecution) {
+          throw new Error('Filling the scratch pool creates scratch orgs. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['scratch', 'pool', action, '--json'];
+        if (action === 'fill' && args.size != null) cliArgs.push('--size', String(args.size));
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_data_export': {
+        const cliArgs = ['data', 'export', args.set, '--json'];
+        if (args.org) cliArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_data_import': {
+        if (!args.confirmExecution) {
+          throw new Error('Importing a data set writes records to the org. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['data', 'import', args.set, '--json'];
+        if (args.org) cliArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_data_delete': {
+        if (!args.confirmExecution) {
+          throw new Error('Deleting a data set is destructive. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['data', 'delete', args.set, '--yes', '--json'];
+        if (args.org) cliArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_test': {
+        const cliArgs = ['test'];
+        if (Array.isArray(args.classNames) && args.classNames.length > 0) {
+          cliArgs.push('--class-names', args.classNames.join(','));
+        }
+        const { exitCode, stdout, stderr } = await this.#runCliCommand(cliArgs);
+        return { exitCode, stdout, stderr };
       }
 
       case 'sfdt_history': {
