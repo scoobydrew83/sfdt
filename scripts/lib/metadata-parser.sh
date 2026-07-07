@@ -169,10 +169,16 @@ get_member_name() {
     fi
 
     # Handle BotVersion: bots/MyBot/v1.botVersion-meta.xml → MyBot.v1
+    # Falls back to the bare version name when the path has no bots/<name>/ segment
+    # (mirrors src/lib/metadata-mapper.js, which returns versionName in that case).
     if [ "$metadata_type" == "BotVersion" ]; then
         local bot_name=$(echo "$file_path" | sed -n 's/.*bots\/\([^\/]*\)\/.*/\1/p')
         local version_name=$(echo "$filename" | sed 's/\.botVersion-meta\.xml$//')
-        echo "${bot_name}.${version_name}"
+        if [ -n "$bot_name" ]; then
+            echo "${bot_name}.${version_name}"
+        else
+            echo "${version_name}"
+        fi
         return
     fi
 

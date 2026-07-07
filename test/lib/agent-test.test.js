@@ -17,9 +17,15 @@ describe('buildAgentTestArgs', () => {
     expect(() => buildAgentTestArgs({}, 'dev')).toThrow(/--spec .* is required/);
   });
 
-  it('honours an explicit --wait (including 0)', () => {
-    expect(buildAgentTestArgs({ spec: 'X', wait: '5' }, 'dev')).toContain('5');
-    const args = buildAgentTestArgs({ spec: 'X', wait: 0 }, 'dev');
-    expect(args[args.indexOf('--wait') + 1]).toBe('0');
+  it('honours an explicit positive --wait', () => {
+    const args = buildAgentTestArgs({ spec: 'X', wait: '5' }, 'dev');
+    expect(args[args.indexOf('--wait') + 1]).toBe('5');
+  });
+
+  it('rejects a --wait that would defeat the gate (0, negative, or non-integer)', () => {
+    expect(() => buildAgentTestArgs({ spec: 'X', wait: 0 }, 'dev')).toThrow(/must be a whole number of minutes >= 1/);
+    expect(() => buildAgentTestArgs({ spec: 'X', wait: '0' }, 'dev')).toThrow(/defeat the CI gate/);
+    expect(() => buildAgentTestArgs({ spec: 'X', wait: '-5' }, 'dev')).toThrow(/>= 1/);
+    expect(() => buildAgentTestArgs({ spec: 'X', wait: '2.5' }, 'dev')).toThrow(/whole number/);
   });
 });

@@ -22,9 +22,21 @@ export function buildAgentTestArgs(opts = {}, org) {
   if (!opts.spec) {
     throw new Error('--spec <apiName> is required (the AiEvaluationDefinition / agent test API name)');
   }
-  // `sf agent test run` is async; `--wait` blocks for the result so the command
-  // is a usable CI gate. `--json` gives the machine-readable envelope; the exit
-  // code is the pass/fail signal.
-  const wait = opts.wait != null && opts.wait !== '' ? String(opts.wait) : '30';
+  // `sf agent test run` is async by default; `--wait <minutes>` is what makes the
+  // command block for the result, which is the only reason it works as a CI gate.
+  // A wait of 0 (or negative) returns immediately after the eval is *enqueued*,
+  // so `sf` would exit 0 before any test runs — silently defeating the gate.
+  // Reject anything below 1 minute rather than let a green-by-default slip through.
+  let wait = '30';
+  if (opts.wait != null && opts.wait !== '') {
+    const minutes = Number(opts.wait);
+    if (!Number.isInteger(minutes) || minutes < 1) {
+      throw new Error(
+        `--wait must be a whole number of minutes >= 1 (got "${opts.wait}"). ` +
+          'A wait of 0 returns before the agent test completes and would defeat the CI gate.',
+      );
+    }
+    wait = String(minutes);
+  }
   return ['agent', 'test', 'run', '--api-name', opts.spec, '--target-org', org, '--wait', wait, '--json'];
 }
