@@ -170,6 +170,7 @@ export default function Dependency() {
   const edgesDataRef = useRef([]);
   const selectedIdRef = useRef(null);
   const zoomRef       = useRef(null);
+  const positionsRef  = useRef(new Map()); // id -> {x,y,fx,fy}: preserved across rebuilds so expand doesn't reshuffle
   const expandedIdsRef = useRef(expandedIds);
   const nodeMetaRef    = useRef(nodeMeta);
   const nodeClickRef   = useRef(() => {});
@@ -326,8 +327,13 @@ export default function Dependency() {
 
     const { nodes: rawNodes, edges: rawEdges } = graphData;
 
-    // Deep-copy so D3 can mutate x/y without corrupting state
-    const nodes = rawNodes.map((n) => ({ ...n }));
+    // Deep-copy so D3 can mutate x/y without corrupting state. Seed each node's
+    // position from the last simulation so an expand keeps existing nodes in place
+    // (new nodes have no stored position and get laid out fresh).
+    const nodes = rawNodes.map((n) => {
+      const p = positionsRef.current.get(n.id);
+      return p ? { ...n, x: p.x, y: p.y, fx: p.fx, fy: p.fy } : { ...n };
+    });
     const edges = rawEdges.map((e) => ({ ...e }));
 
     nodesDataRef.current = nodes;
@@ -459,12 +465,16 @@ export default function Dependency() {
       applyHighlight(nodeGroup, linkSel, nodes, edges, null);
     });
 
-    // Simulation
+    // Simulation. If most nodes already have positions (an expand, not a first
+    // seed), start with a low alpha so settled nodes barely move and only the new
+    // ones find a spot, instead of re-energising the whole layout.
+    const hasPriorPositions = nodes.some((n) => n.x != null);
     const sim = forceSimulation(nodes)
       .force('link', forceLink(edges).id((d) => d.id).distance(60))
       .force('charge', forceManyBody().strength(-120))
       .force('center', forceCenter(width / 2, height / 2))
       .force('collide', forceCollide(14))
+      .alpha(hasPriorPositions ? 0.3 : 1)
       .on('tick', () => {
         linkSel
           .attr('x1', (d) => d.source.x)
@@ -473,6 +483,10 @@ export default function Dependency() {
           .attr('y2', (d) => d.target.y);
 
         nodeGroup.attr('transform', (d) => `translate(${d.x},${d.y})`);
+        // Remember positions (incl. drag pins) for the next rebuild.
+        for (const d of nodes) {
+          positionsRef.current.set(d.id, { x: d.x, y: d.y, fx: d.fx ?? null, fy: d.fy ?? null });
+        }
       });
 
     simRef.current = sim;
