@@ -97,6 +97,7 @@ export function registerTestCommand(program) {
     .option('--legacy', 'Use run-tests.sh instead of enhanced-test-runner.sh')
     .option('--analyze', 'Run test-analyzer after tests complete')
     .option('--dry-run', 'Show what would be executed without running')
+    .option('--class-names <list>', 'Run only these Apex test classes (comma-separated); overrides the configured test classes for this run')
     .option('--logic', 'Run Apex + Flow tests together via `sf logic run test` (Spring \'26 beta; needs "View All Data")')
     .option('--org <alias>', 'Target org for --logic (default: config.defaultOrg)')
     .option('--test-level <level>', 'For --logic: RunLocalTests | RunAllTestsInOrg | RunSpecifiedTests')
@@ -116,13 +117,25 @@ export function registerTestCommand(program) {
 
         const scriptPath = options.legacy ? 'core/run-tests.sh' : 'core/enhanced-test-runner.sh';
 
-        print.header(`Running Tests${options.legacy ? ' (legacy)' : ''}${options.dryRun ? ' [dry-run]' : ''}`);
+        // `--class-names` runs a specific subset (e.g. from the VS Code "Run this
+        // test class" CodeLens). It overrides the config-derived SFDT_TEST_CLASSES
+        // for this run only; the runner already batches whatever list it's given.
+        const classNames =
+          typeof options.classNames === 'string'
+            ? options.classNames.split(',').map((s) => s.trim()).filter(Boolean).join(',')
+            : '';
+        const scriptEnv = classNames ? { SFDT_TEST_CLASSES: classNames } : {};
+
+        print.header(
+          `Running Tests${options.legacy ? ' (legacy)' : ''}${classNames ? ` [${classNames}]` : ''}${options.dryRun ? ' [dry-run]' : ''}`,
+        );
 
         let testFailed = false;
         try {
           await runScript(scriptPath, config, {
             cwd: projectRoot,
             dryRun: options.dryRun,
+            env: scriptEnv,
           });
           print.success(options.dryRun ? 'Dry-run complete — no changes made.' : 'All tests passed.');
         } catch (testErr) {

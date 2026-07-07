@@ -3,6 +3,8 @@ import { spawn } from 'node:child_process';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { COMMAND_GROUPS, flattenCommands, findCommand, docsUrlFor, type CommandEntry } from './lib/commands.js';
+import { specNameFromFile, AGENT_TEST_GLOB } from './lib/agent-test-spec.js';
+import { isApexTestClass, classNameFromFile, APEX_CLASS_GLOB } from './lib/apex-test-detect.js';
 import { buildTerminalCommand } from './lib/terminal.js';
 import { runSfdtForResult, captureSfdt } from './lib/run-json.js';
 import { parseSmartDeployOutput, summaryLines, isValidationJobId, buildQuickDeployCommand } from './lib/smart-deploy-output.js';
@@ -661,6 +663,45 @@ export function activate(context: vscode.ExtensionContext): void {
       runInTerminal(['notify', 'snapshot', '--type', type]);
     }),
 
+    // Agentforce agent test. From the CodeLens the spec is known; from the
+    // palette we derive it from the active editor, else prompt. Runs in the
+    // terminal (exit-code gate; no snapshot to render natively).
+    vscode.commands.registerCommand('sfdt.agentTest', async (specArg?: string) => {
+      let spec = typeof specArg === 'string' && specArg ? specArg : undefined;
+      if (!spec) {
+        const active = vscode.window.activeTextEditor?.document.uri.fsPath;
+        spec = (active ? specNameFromFile(active) : null) ?? undefined;
+      }
+      if (!spec) {
+        spec =
+          (await vscode.window.showInputBox({
+            prompt: 'Agent test API name (AiEvaluationDefinition)',
+            placeHolder: 'e.g. SupportAgent_Eval',
+          })) || undefined;
+      }
+      if (!spec) return;
+      runInTerminal(['agent-test', '--spec', spec]);
+    }),
+
+    // Run a single Apex test class (from the .cls CodeLens or the active editor).
+    // The CodeLens passes a pre-validated class name; the palette fallback must
+    // itself verify the active editor is an Apex *test* class before running.
+    vscode.commands.registerCommand('sfdt.runTestClass', async (classArg?: string) => {
+      let name = typeof classArg === 'string' && classArg ? classArg : undefined;
+      if (!name) {
+        const doc = vscode.window.activeTextEditor?.document;
+        const candidate = doc ? classNameFromFile(doc.uri.fsPath) : null;
+        if (candidate && doc && isApexTestClass(doc.getText())) name = candidate;
+      }
+      if (!name) {
+        vscode.window.showWarningMessage(
+          'SFDT: open an Apex test class (a .cls with @isTest) to run it, or use the "▶ Run test class" CodeLens.',
+        );
+        return;
+      }
+      runInTerminal(['test', '--class-names', name]);
+    }),
+
     vscode.commands.registerCommand('sfdt.smartDeployPreview', () => smartDeployPreview()),
     vscode.commands.registerCommand('sfdt.quickDeploy', () => quickDeploy()),
     vscode.commands.registerCommand('sfdt.toggleCoverage', () => toggleCoverage()),
@@ -681,13 +722,57 @@ export function activate(context: vscode.ExtensionContext): void {
     // runEntry routes snapshot-producing commands (audit/monitor/preflight/
     // quality/coverage) natively; interactive ones (deploy, backup, docs)
     // keep the terminal.
-    ...(['audit', 'monitor', 'deploy', 'preflight', 'quality', 'backup', 'docs-generate', 'doctor'].map((id) =>
+    ...(['audit', 'monitor', 'deploy', 'preflight', 'quality', 'backup', 'docs-generate', 'doctor',
+      // Git-diff commands surfaced in the Source Control view (scm/title).
+      'review', 'pr-description', 'manifest', 'changelog-generate'].map((id) =>
       vscode.commands.registerCommand(`sfdt.${id.replace('-generate', '')}`, () => {
         const entry = findCommand(id);
         if (!entry) return;
         return runEntry(entry);
       }),
     )),
+  );
+
+  // CodeLens: a "▶ Run agent test" action at the top of every Agentforce
+  // agent-test spec file (AiEvaluationDefinition), wired to `sfdt.agentTest`
+  // with the spec pre-resolved from the file name.
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      { pattern: AGENT_TEST_GLOB },
+      {
+        provideCodeLenses(document) {
+          const spec = specNameFromFile(document.uri.fsPath);
+          if (!spec) return [];
+          const top = new vscode.Range(0, 0, 0, 0);
+          return [
+            new vscode.CodeLens(top, {
+              title: '▶ Run agent test',
+              command: 'sfdt.agentTest',
+              arguments: [spec],
+            }),
+          ];
+        },
+      },
+    ),
+    // CodeLens: a "▶ Run test class" action at the top of every Apex test class,
+    // wired to `sfdt test --class-names <name>` via sfdt.runTestClass.
+    vscode.languages.registerCodeLensProvider(
+      { pattern: APEX_CLASS_GLOB },
+      {
+        provideCodeLenses(document) {
+          const name = classNameFromFile(document.uri.fsPath);
+          if (!name || !isApexTestClass(document.getText())) return [];
+          const top = new vscode.Range(0, 0, 0, 0);
+          return [
+            new vscode.CodeLens(top, {
+              title: '▶ Run test class',
+              command: 'sfdt.runTestClass',
+              arguments: [name],
+            }),
+          ];
+        },
+      },
+    ),
   );
 
   // Initial population.

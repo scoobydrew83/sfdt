@@ -66,6 +66,7 @@ export const WORKSPACE_TOOLS: readonly string[] = [
   'apex-coverage',
   'apex-test-runner',
   'org-health-live',
+  'org-health',
   'dependency-explorer',
   'flow-quality',
   'drift-check',

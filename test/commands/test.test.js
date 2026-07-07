@@ -90,6 +90,30 @@ describe('test command', () => {
     );
   });
 
+  it('runs only the given classes with --class-names (overrides SFDT_TEST_CLASSES)', async () => {
+    runScript.mockResolvedValue({ exitCode: 0 });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'test', '--class-names', ' A_Test, B_Test ,C_Test']);
+
+    expect(runScript).toHaveBeenCalledWith(
+      'core/enhanced-test-runner.sh',
+      expect.any(Object),
+      expect.objectContaining({ env: { SFDT_TEST_CLASSES: 'A_Test,B_Test,C_Test' } }),
+    );
+  });
+
+  it('does not set SFDT_TEST_CLASSES when --class-names is omitted', async () => {
+    runScript.mockResolvedValue({ exitCode: 0 });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'test']);
+
+    expect(runScript).toHaveBeenCalledWith(
+      'core/enhanced-test-runner.sh',
+      expect.any(Object),
+      expect.objectContaining({ env: {} }),
+    );
+  });
+
   it('runs test-analyzer with --analyze flag', async () => {
     runScript.mockResolvedValue({ exitCode: 0 });
 

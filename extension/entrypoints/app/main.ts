@@ -32,6 +32,7 @@ import { createMetadataRetrieveFeature } from '../../features/metadata-retrieve.
 import { createExportForPromptFeature } from '../../features/export-for-prompt.js';
 import { createCodeCoverageFeature } from '../../features/code-coverage.js';
 import { createOrgHealthLiveFeature } from '../../features/org-health-live.js';
+import { createOrgHealthFeature } from '../../features/org-health.js';
 import { createDependencyExplorerFeature } from '../../features/dependency-explorer.js';
 import { createApexTestRunnerFeature } from '../../features/apex-test-runner.js';
 import {
@@ -251,6 +252,7 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
     'apex-coverage': () => createCodeCoverageFeature(common),
     'apex-test-runner': () => createApexTestRunnerFeature(common),
     'org-health-live': () => createOrgHealthLiveFeature(common),
+    'org-health': () => createOrgHealthFeature(common),
     'dependency-explorer': () => depExplorer,
     'flow-quality': () =>
       createFlowQualityFeature({

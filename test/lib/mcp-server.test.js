@@ -176,6 +176,17 @@ describe('SfdtMcpServer', () => {
       expect(call[1]).not.toContain('--org');
     });
 
+    it('executes sfdt_history and threads type + limit', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { runs: [], count: 0 } }), stderr: '' });
+
+      await callTool('sfdt_history', { type: 'audit', limit: 10 });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['history', '--json', '--type', 'audit', '--limit', '10']),
+        expect.anything()
+      );
+    });
+
     it('executes sfdt_validate as a dry-run deploy (passes --dry-run)', async () => {
       execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'validated', stderr: '' });
 
@@ -331,6 +342,56 @@ describe('SfdtMcpServer', () => {
         })
       );
       expect(result.content[0].text).toContain('deployed');
+    });
+
+    it('gates the mutating tools behind confirmExecution', async () => {
+      for (const [name, args] of [
+        ['sfdt_release', {}],
+        ['sfdt_scratch_create', {}],
+        ['sfdt_scratch_delete', { target: 'sc1' }],
+        ['sfdt_scratch_pool', { action: 'fill' }],
+        ['sfdt_data_import', { set: 'accounts' }],
+        ['sfdt_data_delete', { set: 'accounts' }],
+      ]) {
+        const result = await callTool(name, args);
+        expect(result.isError, name).toBe(true);
+        expect(result.content[0].text, name).toContain('confirmExecution');
+      }
+    });
+
+    it('runs sfdt_release when confirmed', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'released', stderr: '' });
+      await callTool('sfdt_release', { version: '1.2.0', package: 'all', confirmExecution: true });
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['release', '1.2.0', '--package', 'all']), expect.anything());
+    });
+
+    it('runs sfdt_scratch_create/delete with --json/--yes when confirmed', async () => {
+      execa.mockResolvedValue({ exitCode: 0, stdout: JSON.stringify({ result: { ok: true } }), stderr: '' });
+      await callTool('sfdt_scratch_create', { alias: 'dev1', days: 7, confirmExecution: true });
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['scratch', 'create', '--json', '--alias', 'dev1', '--days', '7']), expect.anything());
+      await callTool('sfdt_scratch_delete', { target: 'dev1', confirmExecution: true });
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['scratch', 'delete', 'dev1', '--yes', '--json']), expect.anything());
+    });
+
+    it('sfdt_scratch_pool status is read-only (no confirmExecution needed)', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { size: 3 } }), stderr: '' });
+      const result = await callTool('sfdt_scratch_pool', { action: 'status' });
+      expect(result.isError).toBeFalsy();
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['scratch', 'pool', 'status', '--json']), expect.anything());
+    });
+
+    it('sfdt_data_export is read-only; import/delete pass --json/--yes when confirmed', async () => {
+      execa.mockResolvedValue({ exitCode: 0, stdout: JSON.stringify({ result: { ok: true } }), stderr: '' });
+      await callTool('sfdt_data_export', { set: 'accounts', org: 'dev' });
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['data', 'export', 'accounts', '--json', '--org', 'dev']), expect.anything());
+      await callTool('sfdt_data_delete', { set: 'accounts', confirmExecution: true });
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['data', 'delete', 'accounts', '--yes', '--json']), expect.anything());
+    });
+
+    it('runs sfdt_test with --class-names', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'tests passed', stderr: '' });
+      await callTool('sfdt_test', { classNames: ['A_Test', 'B_Test'] });
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['test', '--class-names', 'A_Test,B_Test']), expect.anything());
     });
 
     it('executes sfdt_quick_deploy tool and throws if confirmExecution is not true', async () => {

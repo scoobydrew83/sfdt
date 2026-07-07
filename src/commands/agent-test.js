@@ -5,6 +5,8 @@ import { resolveExitCode } from '../lib/exit-codes.js';
 import { postPrComment } from '../lib/github-pr.js';
 import { dispatch, notificationsConfigured } from '../lib/notifier.js';
 import { buildAgentTestArgs, parseThreshold, parseAgentTestResult, computePassRate } from '../lib/agent-test.js';
+import { recordRun } from '../lib/run-history.js';
+import path from 'path';
 
 /**
  * `sfdt agent-test` — run an Agentforce agent test (`sf agent test run`) as a
@@ -51,6 +53,7 @@ export function registerAgentTestCommand(program) {
         }
         if (output) console.log(output);
 
+        let passRate = null;
         if (threshold != null) {
           // Threshold gate: grade on the aggregate pass rate, overriding the
           // exit-code result (which fails if *any* single test fails).
@@ -60,6 +63,7 @@ export function registerAgentTestCommand(program) {
             process.exitCode = runError ? resolveExitCode(runError) : 1;
             passed = false;
           } else {
+            passRate = rate;
             passed = rate.rate >= threshold;
             const pct = rate.rate.toFixed(1);
             print[passed ? 'success' : 'error'](
@@ -73,6 +77,17 @@ export function registerAgentTestCommand(program) {
           print.error('Agent tests failed.');
           process.exitCode = resolveExitCode(runError);
         }
+
+        // Index the run in history (best-effort).
+        await recordRun(config.logDir ?? path.join(projectRoot, 'logs'), {
+          type: 'agent-test',
+          org,
+          exitCode: passed ? 0 : (process.exitCode ?? 1),
+          status: passed ? 'pass' : 'fail',
+          summary: passRate
+            ? { spec: options.spec, passed, rate: Number(passRate.rate.toFixed(1)), total: passRate.total, passedCount: passRate.passed }
+            : { spec: options.spec, passed },
+        });
 
         const event = passed ? 'agent-test-success' : 'agent-test-failure';
 

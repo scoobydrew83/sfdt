@@ -8,6 +8,9 @@ import { runAudit, CHECK_IDS, AUDIT_DEFAULTS } from '../lib/audit-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { dispatchSnapshot } from '../lib/notifier.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
+import { archiveSnapshot } from '../lib/log-writer.js';
+import { recordRun } from '../lib/run-history.js';
+import { maxStatus } from '../lib/check-status.js';
 
 const STATUS_COLOR = {
   ok: chalk.green,
@@ -59,6 +62,23 @@ async function executeAudit(checks, options) {
       await fs.writeJson(outPath, snapshot, { spaces: 2 });
     } catch (writeErr) {
       process.stderr.write(`Warning: could not write snapshot to ${outPath}: ${writeErr.message}\n`);
+    }
+
+    // History: a timestamped snapshot archive + a compact run-index row so the
+    // org's audit posture can be trended over time. Best-effort — never fails
+    // the audit or emits to stdout.
+    try {
+      const s = snapshot?.summary ?? {};
+      await archiveSnapshot(logDir, 'audit-results', snapshot);
+      await recordRun(logDir, {
+        type: 'audit',
+        timestamp: snapshot?.timestamp,
+        org: orgAlias,
+        status: maxStatus(snapshot?.checks),
+        summary: { ok: s.ok ?? 0, warn: s.warn ?? 0, fail: s.fail ?? 0, error: s.error ?? 0, total: s.total ?? (snapshot?.checks?.length ?? 0) },
+      });
+    } catch {
+      // History is best-effort.
     }
 
     if (options.notify) {

@@ -109,8 +109,8 @@ Test-run tree from `logs/test-*-latest.json`; editor gutter coverage decoration 
 ### 3.5 Onboarding & catalog completeness — **S** — **DONE (sprint-2 branch)**
 A `walkthroughs` contribution (init → first audit → first smart deploy); add missing command families to the catalog (`ci init`, `feature-flags`, `config set/get`, `notify <event>`, `pr-description`, `ai prompt`); severity trends + "open in org" links in the org-health tree; one-click `--notify` dispatch.
 
-### 3.6 Agent-test runner (later, pairs with 4.5) — **L**
-CodeLens on agent test-spec files backed by `sf agent test run-eval` / `sf logic run test` with CI-style thresholds.
+### 3.6 Agent-test runner (later, pairs with 4.5) — **DONE (exit-code gate; numeric threshold deferred to AF-1)**
+CodeLens on agent test-spec files backed by `sf agent test run-eval` / `sf logic run test` with CI-style thresholds. Shipped: a **▶ Run agent test** CodeLens on `*.aiEvaluationDefinition-meta.xml` files (VS Code) runs `sfdt agent-test --spec <name>`, plus a Commands-tree entry and a palette command. The pass/fail is the CLI exit code (same as the CLI command); a numeric pass-rate threshold waits on the agent-test JSON schema (together-item AF-1). This closes the last Phase 5 item.
 
 ---
 

@@ -8,6 +8,11 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ### Added
 
+- **Run this test class** — a **▶ Run test class** CodeLens at the top of every Apex test class (`.cls` with `@isTest`/`testMethod`) runs `sfdt test --class-names <name>`, plus a **SFDT: Run This Test Class** palette command. The extension now also activates in any Salesforce DX project (`sfdx-project.json`).
+- **Agentforce agent tests** — a **▶ Run agent test** CodeLens on every `*.aiEvaluationDefinition-meta.xml` spec file runs `sfdt agent-test --spec <name>` (the spec is the file's API name), plus an **Agent Test (Agentforce)** entry in the Commands tree and a **SFDT: Run Agent Test** palette command (derives the spec from the active editor, else prompts). The extension now also activates when a workspace contains an agent-test spec.
+- **Keybindings** for the marquee actions: **Run Command…** (`ctrl/cmd+alt+s`), **Smart Deploy — Validate** (`ctrl/cmd+alt+d`), **Quality Analysis** (`ctrl/cmd+alt+q`), and **Refresh** (`ctrl/cmd+alt+r`).
+- **Commands-tree completeness** — added the previously-missing CLI commands: `monitor schedule`, `extension install-host`/`uninstall-host`, `skills export` (Claude/Cursor/Codex/Windsurf/`npx-skills` pack targets), and `plugin create`.
+- **Source Control integration** — the git-diff commands (**Review Diff (AI)**, **Generate PR Description**, **Manifest from Diff**, **Generate Changelog**) now appear in the Source Control view's title menu, their natural home, in addition to the Commands tree.
 - **Test Runs in the Status view** — recent CLI test runs (outcome, counts, org, coverage, timestamp) parsed from `logs/test-results/`, refreshing automatically; click a run to open its raw JSON.
 - **SFDT: Toggle Coverage Highlights** — runs `sfdt coverage --json` and bands open Apex files (gutter border, subtle background, overview-ruler stripe, inline label) by class coverage; toggle again to clear.
 - A custom `logDir` in `.sfdt/config.json` is now honoured when locating snapshots and test results.

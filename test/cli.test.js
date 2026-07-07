@@ -49,6 +49,7 @@ describe('createCli', () => {
       'mcp',
       'plugin',
       'skills',
+      'history',
       'version',
     ];
 
