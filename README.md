@@ -192,7 +192,7 @@ Full install reference — every method plus CI usage — at **[sfdt.dev/cli/ins
 | `sfdt mcp start` | Start the built-in Model Context Protocol server (stdio) so agents can drive sfdt as a tool | — |
 | `sfdt mcp cleanup` | Purge expired parked results from the MCP cache directory | — |
 | `sfdt plugin create [name]` | Scaffold a new sfdt CLI plugin project | `--description <desc>`, `--author <author>` |
-| `sfdt skills export` | Export local agent skills to IDE/agent-specific configurations | `--json` |
+| `sfdt skills export` | Export local agent skills to IDE rules files (`--target claude\|cursor\|codex\|windsurf`) or an `npx skills add`-compatible pack (`--target pack`) | `--target`, `--out`, `--json` |
 
 ## Configuration
 

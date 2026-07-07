@@ -14,6 +14,7 @@
     "bin/",
     "src/",
     "scripts/",
+    "skills/",
     "gui/dist/",
     "gui/package.json",
     "gui/vite.config.js",

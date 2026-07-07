@@ -17,8 +17,24 @@ export function getMetadataType(filePath) {
   // Bundled components are identified by their parent folder
   if (/\/lwc\//.test(filePath)) return 'LightningComponentBundle';
   if (/\/aura\//.test(filePath)) return 'AuraDefinitionBundle';
+  // Agentforce Agent Script authoring bundle: its files (`.bundle-meta.xml`,
+  // `.agent`) have no distinctive suffix, so identify it by its parent folder.
+  if (/\/aiAuthoringBundles\//.test(filePath)) return 'AiAuthoringBundle';
 
   const filename = path.basename(filePath);
+
+  // Agentforce / Einstein agent metadata (Summer '26). Suffixes per the
+  // Salesforce metadata registry (forcedotcom/source-deploy-retrieve). Checked
+  // before the generic suffixes below since these are all distinct. Bundle-type
+  // Bundle suffix is checked before the plain Planner suffix for clarity.
+  if (filename.endsWith('.bot-meta.xml')) return 'Bot';
+  if (filename.endsWith('.botVersion-meta.xml')) return 'BotVersion';
+  if (filename.endsWith('.genAiPlannerBundle-meta.xml')) return 'GenAiPlannerBundle';
+  if (filename.endsWith('.genAiPlanner-meta.xml')) return 'GenAiPlanner';
+  if (filename.endsWith('.genAiPlugin-meta.xml')) return 'GenAiPlugin';
+  if (filename.endsWith('.genAiFunction-meta.xml')) return 'GenAiFunction';
+  if (filename.endsWith('.genAiPromptTemplate-meta.xml')) return 'GenAiPromptTemplate';
+  if (filename.endsWith('.aiEvaluationDefinition-meta.xml')) return 'AiEvaluationDefinition';
 
   if (filename.endsWith('.cls') || filename.endsWith('.cls-meta.xml')) return 'ApexClass';
   if (filename.endsWith('.trigger') || filename.endsWith('.trigger-meta.xml')) return 'ApexTrigger';
@@ -67,15 +83,26 @@ export function getMemberName(filePath, metadataType) {
     return objectName ? `${objectName}.${fieldName}` : fieldName;
   }
 
-  if (metadataType === 'LightningComponentBundle' || metadataType === 'AuraDefinitionBundle') {
+  if (
+    metadataType === 'LightningComponentBundle' ||
+    metadataType === 'AuraDefinitionBundle' ||
+    metadataType === 'AiAuthoringBundle'
+  ) {
     return path.basename(path.dirname(filePath));
+  }
+
+  if (metadataType === 'BotVersion') {
+    // Path like: bots/MyBot/v1.botVersion-meta.xml → MyBot.v1
+    const botMatch = filePath.match(/bots\/([^/]+)\//);
+    const versionName = path.basename(filePath).replace(/\.botVersion-meta\.xml$/, '');
+    return botMatch ? `${botMatch[1]}.${versionName}` : versionName;
   }
 
   // Standard case: strip metadata suffixes
   return path
     .basename(filePath)
     .replace(
-      /\.(cls-meta\.xml|cls|trigger-meta\.xml|trigger|flow-meta\.xml|object-meta\.xml|field-meta\.xml|permissionset-meta\.xml|layout-meta\.xml|page-meta\.xml|component-meta\.xml|email-meta\.xml|app-meta\.xml|tab-meta\.xml|labels-meta\.xml|lwc-meta\.xml|customMetadata-meta\.xml|md-meta\.xml|externalServiceRegistration-meta\.xml|validationRule-meta\.xml|recordType-meta\.xml|workflow-meta\.xml|quickAction-meta\.xml|globalValueSet-meta\.xml|staticresource-meta\.xml|profile-meta\.xml|role-meta\.xml|group-meta\.xml|queue-meta\.xml|flexipage-meta\.xml)$/,
+      /\.(cls-meta\.xml|cls|trigger-meta\.xml|trigger|flow-meta\.xml|object-meta\.xml|field-meta\.xml|permissionset-meta\.xml|layout-meta\.xml|page-meta\.xml|component-meta\.xml|email-meta\.xml|app-meta\.xml|tab-meta\.xml|labels-meta\.xml|lwc-meta\.xml|customMetadata-meta\.xml|md-meta\.xml|externalServiceRegistration-meta\.xml|validationRule-meta\.xml|recordType-meta\.xml|workflow-meta\.xml|quickAction-meta\.xml|globalValueSet-meta\.xml|staticresource-meta\.xml|profile-meta\.xml|role-meta\.xml|group-meta\.xml|queue-meta\.xml|flexipage-meta\.xml|bot-meta\.xml|genAiPlannerBundle-meta\.xml|genAiPlanner-meta\.xml|genAiPlugin-meta\.xml|genAiFunction-meta\.xml|genAiPromptTemplate-meta\.xml|aiEvaluationDefinition-meta\.xml)$/,
       '',
     );
 }

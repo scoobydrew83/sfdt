@@ -51,6 +51,62 @@ function parseFrontmatter(content) {
   return { frontmatter, body };
 }
 
+/**
+ * Emit an `npx skills add`-compatible pack from the parsed skills.
+ * Produces `<out>/manifest.json` (vercel-labs/skills schema, as used by
+ * forcedotcom/sf-skills) plus a copy of every skill folder under `<out>/skills/`.
+ */
+async function exportPack(parsedSkills, outOption) {
+  const outDir = path.resolve(process.cwd(), outOption || 'sfdt-skills-pack');
+
+  // Enumerate every file under the package skills/ dir once, then group by folder.
+  const allFiles = (await glob('**/*', { cwd: SKILLS_DIR, nodir: true })).map((f) =>
+    f.split(path.sep).join('/'),
+  );
+
+  // Start from a clean skills/ tree so a renamed or removed skill doesn't leave a
+  // stale folder behind on re-export — keeps the pack reproducible from the source.
+  await fs.emptyDir(path.join(outDir, 'skills'));
+
+  const manifestSkills = [];
+  for (const skill of parsedSkills) {
+    const folderRel = path.dirname(skill.file).split(path.sep).join('/');
+    const prefix = `${folderRel}/`;
+    const files = allFiles
+      .filter((f) => f.startsWith(prefix))
+      .map((f) => f.slice(prefix.length))
+      // SKILL.md first, remaining files alphabetically — matches sf-skills ordering.
+      .sort((a, b) => (a === 'SKILL.md' ? -1 : b === 'SKILL.md' ? 1 : a.localeCompare(b)));
+
+    await fs.copy(path.join(SKILLS_DIR, folderRel), path.join(outDir, 'skills', folderRel));
+
+    manifestSkills.push({
+      name: skill.name,
+      path: `skills/${folderRel}/SKILL.md`,
+      folderPath: `skills/${folderRel}`,
+      category: skill.name.startsWith('sfdt') ? 'sfdt' : 'salesforce',
+      files,
+      description: skill.description,
+    });
+  }
+
+  const manifest = {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    skills: manifestSkills,
+  };
+  const manifestPath = path.join(outDir, 'manifest.json');
+  await fs.writeJson(manifestPath, manifest, { spaces: 2 });
+
+  const cwd = process.cwd();
+  return {
+    skillsCount: manifestSkills.length,
+    outDir: path.relative(cwd, outDir) || '.',
+    manifest: path.relative(cwd, manifestPath),
+    skills: manifestSkills.map((s) => s.name),
+  };
+}
+
 export function registerSkillsCommand(program) {
   const skills = program
     .command('skills')
@@ -61,14 +117,18 @@ export function registerSkillsCommand(program) {
     .description('Export local agent skills to IDE/agent-specific configurations')
     .requiredOption(
       '--target <target>',
-      'Target IDE/Agent format (claude | cursor | codex | windsurf)',
+      'Target IDE/Agent format (claude | cursor | codex | windsurf | pack)',
+    )
+    .option(
+      '--out <dir>',
+      'Output directory for --target pack (default: ./sfdt-skills-pack)',
     )
     .option('--json', 'Emit the result as JSON')
     .action(async (options) => {
       const jsonMode = !!options.json;
       try {
         const target = options.target.toLowerCase();
-        const validTargets = ['claude', 'cursor', 'codex', 'windsurf'];
+        const validTargets = ['claude', 'cursor', 'codex', 'windsurf', 'pack'];
         if (!validTargets.includes(target)) {
           throw new Error(
             `--target must be one of: ${validTargets.join(', ')}. Got: ${options.target}`,
@@ -95,6 +155,22 @@ export function registerSkillsCommand(program) {
             triggers: frontmatter.triggers || [],
             body: body.trim(),
           });
+        }
+
+        // `pack` target emits an `npx skills add`-compatible pack (manifest.json +
+        // skill folders), mirroring forcedotcom/sf-skills, rather than IDE rules files.
+        if (target === 'pack') {
+          const result = await exportPack(parsedSkills, options.out);
+          if (jsonMode) {
+            emitJson({ ok: true, target, ...result });
+          } else {
+            console.log(chalk.green(`\n✓ Exported ${result.skillsCount} skills as an npx-skills pack!`));
+            console.log(`  Output: ${chalk.dim(result.outDir)}`);
+            console.log(`  Manifest: ${chalk.dim(result.manifest)}`);
+            console.log(chalk.dim(`\n  Install with:  npx skills add ${result.outDir}`));
+            console.log('');
+          }
+          return;
         }
 
         // Compile rules markdown

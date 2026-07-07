@@ -130,7 +130,7 @@ Detect GA (drop the non-prod gate when appropriate); recognise Spring '26 `@IsTe
 #### 4.4 Unified logic tests — **M** — **DONE (sprint-4 branch: `test --logic` + AI analysis)**
 Wrap `sf logic run test` so `sfdt test` can run Apex + Flow tests in one pass (Flow tests as `FlowTesting.<name>`); include Flow-test outcomes in AI test analysis.
 
-#### 4.5 Agentforce support — **L**
+#### 4.5 Agentforce support — **L** — **DONE (sprint-4 branch: metadata-mapper agent types + `sfdt agent-test`; numeric pass-rate threshold deferred pending the agent-test JSON schema)**
 (a) Metadata-mapper coverage for `GenAiFunction`, `GenAiPlannerBundle`, `aiAgentScorerDefinitions`, Agent Script/authoring bundles so smart-deploy deltas include agents. (b) `sfdt agent-test`: wrap `sf agent test run-eval` / the Agentforce Testing REST API with pass/fail thresholds, notifier dispatch, and PR decoration (Gearset sells exactly this).
 
 #### 4.6 Code Analyzer v5 integration — **M** — **DONE (sprint-4 branch: v5 migration + `--include-fixes`)**
@@ -148,8 +148,8 @@ Run `sf code-analyzer` (PMD 7, `--include-fixes`) inside `sfdt quality`; merge f
 #### 4.8 Google Chat notifier channel — **S** — **DONE (PR #171)**
 Cheap parity with sfdx-hardis: add a `googlechat` provider to `notifier.js`/`notifier-formatters.js` (webhook-based, `webhookUrlEnv` pattern).
 
-#### 4.9 Agent-skills publishing — **M**
-Make `sfdt skills export` emit an `npx skills add`-compatible pack (mirroring `forcedotcom/sf-skills`), so coding agents get SFDT-aware workflows.
+#### 4.9 Agent-skills publishing — **M** — **DONE**
+Make `sfdt skills export` emit an `npx skills add`-compatible pack (mirroring `forcedotcom/sf-skills`), so coding agents get SFDT-aware workflows. Shipped as `sfdt skills export --target pack [--out <dir>]`: writes a root `manifest.json` (vercel-labs/skills schema — `version`, `skills[]` with `name`/`path`/`folderPath`/`category`/`files`/`description`) plus a copy of every skill folder under `<out>/skills/`. Also added `skills/` to `package.json` `files` so the export works from a global install. Publishing the pack from the repo (so `npx skills add scoobydrew83/sfdt` resolves) is a **together item** — see `docs/plans/together-items.md`.
 
 ### Chrome extension
 

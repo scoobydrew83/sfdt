@@ -17,6 +17,7 @@ This guide covers every sfdt command in depth: what it does, when to use it, all
    - [sfdt smoke](#sfdt-smoke)
 6. [Commands: Testing and Quality](#commands-testing-and-quality)
    - [sfdt test](#sfdt-test)
+   - [sfdt agent-test](#sfdt-agent-test)
    - [sfdt quality](#sfdt-quality)
 7. [Commands: Metadata and Source Control](#commands-metadata-and-source-control)
    - [sfdt manifest](#sfdt-manifest)
@@ -402,6 +403,29 @@ sfdt quality --generate-stubs --dry-run  # preview stubs without writing files
 **Code Analyzer engine:** `sfdt quality` runs **Salesforce Code Analyzer v5** (`sf code-analyzer run`, a just-in-time plugin that auto-installs on a modern `sf` CLI). It falls back to the retired v4 (`sf scanner run`) if only that is present, and otherwise reports the scan as **SKIPPED** (never a fabricated clean result). Install manually with `sf plugins install code-analyzer` if needed.
 
 **AI fix plan:** The fix plan groups issues by severity (critical, high, medium, low) and provides file locations, descriptions, and concrete code suggestions. It focuses on Salesforce-specific concerns: governor limits, CRUD/FLS enforcement, bulk-safe patterns, and test coverage gaps.
+
+
+### sfdt agent-test
+
+Runs an Agentforce agent test (`sf agent test run`) as a CI gate. Pass/fail is taken from the CLI's exit code (the reliable signal, like `sf apex run test`), so it slots into any pipeline. Optionally notifies configured channels and decorates the current PR.
+
+```bash
+sfdt agent-test --spec MyAgentEval
+sfdt agent-test --spec MyAgentEval --org uat --wait 45
+sfdt agent-test --spec MyAgentEval --notify --pr-comment
+```
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--spec <apiName>` | **Required.** Agent test API name (an `AiEvaluationDefinition`) to run |
+| `--org <alias>` | Target org (default: `config.defaultOrg`) |
+| `--wait <minutes>` | Wait timeout in minutes (default: 30; the underlying command is async and sfdt waits for the result) |
+| `--notify` | Dispatch an `agent-test-success` / `agent-test-failure` notification through configured channels |
+| `--pr-comment` | Post the pass/fail result to the current PR (via the `gh` CLI) |
+
+> A numeric pass-rate threshold (e.g. fail below 90%) is a planned follow-up — it depends on the `sf agent test` JSON result schema, which is confirmed against a real Agentforce org. For now the gate is exit-code based (any failed test case fails the run).
 
 ---
 

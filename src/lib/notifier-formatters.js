@@ -22,6 +22,8 @@ export const EVENT_CONFIGS = {
   'deploy-success': { color: '#36a64f', emoji: ':white_check_mark:', title: 'Deployment Successful' },
   'deploy-failure': { color: '#e01e5a', emoji: ':x:', title: 'Deployment Failed' },
   'test-failure': { color: '#e01e5a', emoji: ':warning:', title: 'Test Failure' },
+  'agent-test-success': { color: '#36a64f', emoji: ':white_check_mark:', title: 'Agent Tests Passed' },
+  'agent-test-failure': { color: '#e01e5a', emoji: ':x:', title: 'Agent Tests Failed' },
   'release-created': { color: '#2eb886', emoji: ':rocket:', title: 'Release Created' },
   snapshot: { color: '#36a64f', emoji: ':clipboard:', title: 'Org Health Report' },
 };
