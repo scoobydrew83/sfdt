@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   escapeSoql,
   METADATA_TYPES,
+  METADATA_TYPE_REGISTRY,
+  GRAPH_SOURCE_TYPES,
   resolveQueryFor,
   referencesQuery,
   referencedByQuery,
@@ -56,5 +58,40 @@ describe('groupByType', () => {
       { type: 'ApexClass', names: ['Alpha', 'Zeta'] },
       { type: 'Flow', names: ['Beta'] },
     ]);
+  });
+});
+
+describe('METADATA_TYPE_REGISTRY', () => {
+  it('resolves the two newly-added CLI types', () => {
+    expect(resolveQueryFor('ApexComponent', 'MyCmp')).toBe(
+      "SELECT Id FROM ApexComponent WHERE Name='MyCmp'",
+    );
+    expect(resolveQueryFor('AuraDefinitionBundle', 'MyAura')).toBe(
+      "SELECT Id FROM AuraDefinitionBundle WHERE DeveloperName='MyAura'",
+    );
+  });
+
+  it('keeps CustomField CLI-resolvable but never CustomObject', () => {
+    expect(METADATA_TYPES).toContain('CustomField');
+    expect(METADATA_TYPES).not.toContain('CustomObject');
+  });
+
+  it('exposes all 9 graph source types with labels', () => {
+    const types = GRAPH_SOURCE_TYPES.map((t) => t.type);
+    expect(types).toEqual([
+      'ApexClass', 'ApexTrigger', 'ApexPage', 'ApexComponent', 'Flow',
+      'LightningComponentBundle', 'AuraDefinitionBundle', 'CustomObject', 'CustomField',
+    ]);
+    expect(GRAPH_SOURCE_TYPES.find((t) => t.type === 'LightningComponentBundle')?.label).toBe('LWC');
+  });
+
+  it('defaults the 7 code types on and objects/fields off', () => {
+    const on = GRAPH_SOURCE_TYPES.filter((t) => t.graphDefaultOn).map((t) => t.type);
+    expect(on).toEqual([
+      'ApexClass', 'ApexTrigger', 'ApexPage', 'ApexComponent', 'Flow',
+      'LightningComponentBundle', 'AuraDefinitionBundle',
+    ]);
+    expect(GRAPH_SOURCE_TYPES.find((t) => t.type === 'CustomObject')?.graphDefaultOn).toBe(false);
+    expect(GRAPH_SOURCE_TYPES.find((t) => t.type === 'CustomField')?.graphDefaultOn).toBe(false);
   });
 });
