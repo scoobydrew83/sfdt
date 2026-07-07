@@ -144,3 +144,40 @@ jobs:
       #       --client-secret "${CWS_CLIENT_SECRET}" \
       #       --refresh-token "${CWS_REFRESH_TOKEN}" \
       #       --auto-publish
+
+  # Manual credential smoke test: builds the zip and uploads it to the Chrome
+  # Web Store as a DRAFT (no --auto-publish → nothing goes live to users).
+  # Run from Actions → "Extension CI" → Run workflow. A green run proves the
+  # CWS_* secrets in the `extension-release` environment are valid.
+  cws-verify:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: extension-release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build flow-core
+        run: npm run build:flow-core
+      - name: Build Chrome zip
+        run: npm run package:ext
+      - name: Upload draft to Chrome Web Store
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: |
+          CHROME_ZIP=$(ls extension/.output/*-chrome.zip | head -1)
+          echo "Uploading draft: ${CHROME_ZIP}"
+          npx chrome-webstore-upload-cli@3 upload \
+            --source "${CHROME_ZIP}" \
+            --extension-id "${CWS_EXTENSION_ID}" \
+            --client-id "${CWS_CLIENT_ID}" \
+            --client-secret "${CWS_CLIENT_SECRET}" \
+            --refresh-token "${CWS_REFRESH_TOKEN}"
