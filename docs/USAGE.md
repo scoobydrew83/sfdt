@@ -407,11 +407,12 @@ sfdt quality --generate-stubs --dry-run  # preview stubs without writing files
 
 ### sfdt agent-test
 
-Runs an Agentforce agent test (`sf agent test run`) as a CI gate. Pass/fail is taken from the CLI's exit code (the reliable signal, like `sf apex run test`), so it slots into any pipeline. Optionally notifies configured channels and decorates the current PR.
+Runs an Agentforce agent test (`sf agent test run`) as a CI gate. By default pass/fail is taken from the CLI's exit code (the reliable signal, like `sf apex run test`), so it slots into any pipeline. With `--threshold` it instead grades on the aggregate pass rate, letting a run tolerate some failing cases. Optionally notifies configured channels and decorates the current PR.
 
 ```bash
 sfdt agent-test --spec MyAgentEval
 sfdt agent-test --spec MyAgentEval --org uat --wait 45
+sfdt agent-test --spec MyAgentEval --threshold 80        # pass if >= 80% of cases pass
 sfdt agent-test --spec MyAgentEval --notify --pr-comment
 ```
 
@@ -422,10 +423,11 @@ sfdt agent-test --spec MyAgentEval --notify --pr-comment
 | `--spec <apiName>` | **Required.** Agent test API name (an `AiEvaluationDefinition`) to run |
 | `--org <alias>` | Target org (default: `config.defaultOrg`) |
 | `--wait <minutes>` | Wait timeout in minutes (default: 30; the underlying command is async and sfdt waits for the result) |
+| `--threshold <percent>` | Pass when the aggregate pass rate is `>=` this percent (0-100), overriding the exit-code gate. Without it, any failed test case fails the run |
 | `--notify` | Dispatch an `agent-test-success` / `agent-test-failure` notification through configured channels |
 | `--pr-comment` | Post the pass/fail result to the current PR (via the `gh` CLI) |
 
-> A numeric pass-rate threshold (e.g. fail below 90%) is a planned follow-up — it depends on the `sf agent test` JSON result schema, which is confirmed against a real Agentforce org. For now the gate is exit-code based (any failed test case fails the run).
+The pass rate is computed from the `sf agent test run --json` result (both the legacy and Agentforce Studio result shapes), mirroring how the `sf` agent plugin itself counts passing cases: a case passes when every one of its scorer/test results passes.
 
 ---
 
