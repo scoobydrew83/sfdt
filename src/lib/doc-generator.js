@@ -131,19 +131,24 @@ async function collectObjects(base) {
 
 async function collectApex(base) {
   const files = await glob('classes/*.cls', { cwd: base, absolute: true });
-  const out = [];
-  for (const file of files) {
+
+  const processFile = async (file) => {
     const name = path.basename(file).replace(/\.cls$/, '');
-    const body = await fs.readFile(file, 'utf8').catch(() => '');
-    const metaXml = await fs.readFile(`${file}-meta.xml`, 'utf8').catch(() => '');
-    out.push({
+    const [body, metaXml] = await Promise.all([
+      fs.readFile(file, 'utf8').catch(() => ''),
+      fs.readFile(`${file}-meta.xml`, 'utf8').catch(() => ''),
+    ]);
+
+    return {
       name,
       apiVersion: parseApexMeta(metaXml).apiVersion,
       isTest: /@isTest/i.test(body),
       methods: extractApexMethods(body),
       doc: extractLeadingComment(body),
-    });
-  }
+    };
+  };
+
+  const out = await Promise.all(files.map(processFile));
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
