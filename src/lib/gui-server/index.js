@@ -25,6 +25,7 @@ import { isSafeGitRef, resolveBaseRef } from '../git-utils.js';
 import { buildSourceDirArgs } from '../source-dirs.js';
 import { initCache, getDelta, updateCache } from '../pull-cache.js';
 import { parallelRetrieve } from '../parallel-retrieve.js';
+import { GRAPH_SOURCE_TYPES } from '@sfdt/flow-core';
 import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken, requireCsrfTokenFromQueryOrHeader } from './security.js';
 import { mountBridgeRoutes } from '../bridge/routes.js';
 import { constantTimeEqual } from '../bridge/token.js';
@@ -2948,9 +2949,15 @@ export function createGuiApp(config, version, port = 7654) {
     'StandardField', 'AuraDefinitionBundle', 'LightningComponentBundle',
   ]);
 
+  /** Default graph source types = flow-core's default-on set (keeps API ⇄ GUI in lockstep). */
+  const DEFAULT_GRAPH_TYPES = GRAPH_SOURCE_TYPES
+    .filter((t) => t.graphDefaultOn)
+    .map((t) => t.type)
+    .join(',');
+
   app.get('/api/dependencies', apiLimiter, async (req, res) => {
     try {
-      const { org, types = 'ApexClass,ApexTrigger,ApexComponent,Flow' } = req.query;
+      const { org, types = DEFAULT_GRAPH_TYPES } = req.query;
       if (!org || typeof org !== 'string' || !org.trim()) {
         return res.status(400).json({ error: 'org is required' });
       }
@@ -2975,12 +2982,14 @@ export function createGuiApp(config, version, port = 7654) {
         return res.json(cached.data);
       }
 
+      const DEP_ROW_LIMIT = 5000;
       const inClause = typeList.map((t) => `'${t}'`).join(',');
       const soql = [
         'SELECT MetadataComponentId, MetadataComponentName, MetadataComponentType,',
         'RefMetadataComponentId, RefMetadataComponentName, RefMetadataComponentType',
         'FROM MetadataComponentDependency',
         `WHERE MetadataComponentType IN (${inClause})`,
+        `LIMIT ${DEP_ROW_LIMIT}`,
       ].join(' ');
 
       let records = [];
@@ -3033,12 +3042,15 @@ export function createGuiApp(config, version, port = 7654) {
       }
 
       const nodes = [...nodesById.values()];
+      const truncated = records.length === DEP_ROW_LIMIT;
       const payload = {
         nodes,
         edges,
         cachedAt: new Date().toISOString(),
         nodeCount: nodes.length,
         edgeCount: edges.length,
+        truncated,
+        ...(truncated ? { limit: DEP_ROW_LIMIT } : {}),
       };
 
       depCache.set(cacheKey, { ts: Date.now(), data: payload });
