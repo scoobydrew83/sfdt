@@ -237,7 +237,7 @@ export default function Dependency() {
     for (const n of incoming.nodes ?? []) if (!nodes.has(n.id)) nodes.set(n.id, n);
     const key = (e) => `${e.source}|${e.target}`;
     const edges = new Map(base.edges.map((e) => [key(e), { source: e.source, target: e.target }]));
-    for (const e of incoming.edges ?? []) if (!edges.has(key(e))) edges.set(key(e), e);
+    for (const e of incoming.edges ?? []) if (!edges.has(key(e))) edges.set(key(e), { source: e.source, target: e.target });
     return { nodes: [...nodes.values()], edges: [...edges.values()] };
   }, []);
 
@@ -476,6 +476,11 @@ export default function Dependency() {
       });
 
     simRef.current = sim;
+
+    // Re-apply highlight for the selected node after a rebuild (e.g. after an expand).
+    if (selectedIdRef.current) {
+      applyHighlight(nodeGroup, linkSel, nodes, edges, selectedIdRef.current);
+    }
 
     return () => {
       sim.stop();
