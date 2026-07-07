@@ -140,6 +140,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     entries: [
       { id: 'quality', label: 'Quality Analysis', detail: 'Analyze Apex test quality', args: ['quality'], noOrg: true, icon: 'beaker' },
       { id: 'test', label: 'Run Tests', detail: 'Run Apex tests', args: ['test'], icon: 'beaker' },
+      { id: 'agent-test', label: 'Agent Test (Agentforce)', detail: 'Run an Agentforce agent test as a CI gate (sf agent test run) — append the AiEvaluationDefinition API name', args: ['agent-test', '--spec'], argsIncomplete: true, icon: 'hubot' },
       { id: 'coverage', label: 'Code Coverage', detail: 'Report Apex code coverage (org-wide + per-class)', args: ['coverage'], icon: 'shield' },
       { id: 'dependencies', label: 'Dependencies', detail: 'Show metadata dependencies for a component', args: ['dependencies'], icon: 'references' },
       { id: 'review', label: 'Code Review', detail: 'AI review of the current diff', args: ['review'], icon: 'comment-discussion' },

@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { COMMAND_GROUPS, flattenCommands, findCommand, docsUrlFor, type CommandEntry } from './lib/commands.js';
+import { specNameFromFile, AGENT_TEST_GLOB } from './lib/agent-test-spec.js';
 import { buildTerminalCommand } from './lib/terminal.js';
 import { runSfdtForResult, captureSfdt } from './lib/run-json.js';
 import { parseSmartDeployOutput, summaryLines, isValidationJobId, buildQuickDeployCommand } from './lib/smart-deploy-output.js';
@@ -661,6 +662,26 @@ export function activate(context: vscode.ExtensionContext): void {
       runInTerminal(['notify', 'snapshot', '--type', type]);
     }),
 
+    // Agentforce agent test. From the CodeLens the spec is known; from the
+    // palette we derive it from the active editor, else prompt. Runs in the
+    // terminal (exit-code gate; no snapshot to render natively).
+    vscode.commands.registerCommand('sfdt.agentTest', async (specArg?: string) => {
+      let spec = typeof specArg === 'string' && specArg ? specArg : undefined;
+      if (!spec) {
+        const active = vscode.window.activeTextEditor?.document.uri.fsPath;
+        spec = (active ? specNameFromFile(active) : null) ?? undefined;
+      }
+      if (!spec) {
+        spec =
+          (await vscode.window.showInputBox({
+            prompt: 'Agent test API name (AiEvaluationDefinition)',
+            placeHolder: 'e.g. SupportAgent_Eval',
+          })) || undefined;
+      }
+      if (!spec) return;
+      runInTerminal(['agent-test', '--spec', spec]);
+    }),
+
     vscode.commands.registerCommand('sfdt.smartDeployPreview', () => smartDeployPreview()),
     vscode.commands.registerCommand('sfdt.quickDeploy', () => quickDeploy()),
     vscode.commands.registerCommand('sfdt.toggleCoverage', () => toggleCoverage()),
@@ -688,6 +709,29 @@ export function activate(context: vscode.ExtensionContext): void {
         return runEntry(entry);
       }),
     )),
+  );
+
+  // CodeLens: a "▶ Run agent test" action at the top of every Agentforce
+  // agent-test spec file (AiEvaluationDefinition), wired to `sfdt.agentTest`
+  // with the spec pre-resolved from the file name.
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      { pattern: AGENT_TEST_GLOB },
+      {
+        provideCodeLenses(document) {
+          const spec = specNameFromFile(document.uri.fsPath);
+          if (!spec) return [];
+          const top = new vscode.Range(0, 0, 0, 0);
+          return [
+            new vscode.CodeLens(top, {
+              title: '▶ Run agent test',
+              command: 'sfdt.agentTest',
+              arguments: [spec],
+            }),
+          ];
+        },
+      },
+    ),
   );
 
   // Initial population.

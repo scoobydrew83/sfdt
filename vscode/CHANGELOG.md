@@ -8,6 +8,7 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ### Added
 
+- **Agentforce agent tests** — a **▶ Run agent test** CodeLens on every `*.aiEvaluationDefinition-meta.xml` spec file runs `sfdt agent-test --spec <name>` (the spec is the file's API name), plus an **Agent Test (Agentforce)** entry in the Commands tree and a **SFDT: Run Agent Test** palette command (derives the spec from the active editor, else prompts). The extension now also activates when a workspace contains an agent-test spec.
 - **Test Runs in the Status view** — recent CLI test runs (outcome, counts, org, coverage, timestamp) parsed from `logs/test-results/`, refreshing automatically; click a run to open its raw JSON.
 - **SFDT: Toggle Coverage Highlights** — runs `sfdt coverage --json` and bands open Apex files (gutter border, subtle background, overview-ruler stripe, inline label) by class coverage; toggle again to clear.
 - A custom `logDir` in `.sfdt/config.json` is now honoured when locating snapshots and test results.

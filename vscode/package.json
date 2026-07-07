@@ -22,7 +22,9 @@
   },
   "categories": ["Other", "Linters", "SCM Providers"],
   "keywords": ["salesforce", "devops", "sfdx", "deployment", "monitoring"],
-  "activationEvents": [],
+  "activationEvents": [
+    "workspaceContains:**/*.aiEvaluationDefinition-meta.xml"
+  ],
   "main": "./dist/extension.cjs",
   "scripts": {
     "build": "node esbuild.mjs",
@@ -77,6 +79,7 @@
       { "command": "sfdt.backup", "title": "SFDT: Backup Org Metadata" },
       { "command": "sfdt.preflight", "title": "SFDT: Run Preflight Checks" },
       { "command": "sfdt.quality", "title": "SFDT: Run Quality Analysis" },
+      { "command": "sfdt.agentTest", "title": "SFDT: Run Agent Test (Agentforce)", "icon": "$(hubot)" },
       { "command": "sfdt.toggleCoverage", "title": "SFDT: Toggle Coverage Highlights", "icon": "$(shield)" },
       { "command": "sfdt.clearDiagnostics", "title": "SFDT: Clear Problems" },
       { "command": "sfdt.deploy", "title": "SFDT: Deploy" },
