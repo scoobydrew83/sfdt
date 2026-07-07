@@ -53,6 +53,8 @@ logs/
 /docs/superpowers/
 conductor/
 admin/
+loops/*
+loops/launch-prep/*
 # Brand asset originals (heavy nano-banana JPGs — PNG/SVG masters are committed)
 images/*.jpg
 TODO.md
