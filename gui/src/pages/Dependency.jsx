@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api.js';
-import { GRAPH_SOURCE_TYPES } from '@sfdt/flow-core';
+import { GRAPH_SOURCE_TYPES, METADATA_TYPES } from '@sfdt/flow-core';
 import {
   forceSimulation,
   forceLink,
@@ -29,6 +29,9 @@ const TYPE_COLORS = {
 const ALL_TYPES = GRAPH_SOURCE_TYPES.map((t) => t.type);
 const TYPE_LABELS = Object.fromEntries(GRAPH_SOURCE_TYPES.map((t) => [t.type, t.label]));
 const DEFAULT_ON_TYPES = GRAPH_SOURCE_TYPES.filter((t) => t.graphDefaultOn).map((t) => t.type);
+
+// Seed types must be name-resolvable (CustomObject has no resolver — reachable only via expansion).
+const SEED_TYPES = METADATA_TYPES;
 
 function typeColor(type) {
   return TYPE_COLORS[type] ?? 'var(--fg-muted)';
@@ -149,11 +152,14 @@ export default function Dependency() {
   const [orgs, setOrgs]               = useState([]);
   const [selectedOrg, setSelectedOrg] = useState('');
   const [activeTypes, setActiveTypes] = useState(new Set(DEFAULT_ON_TYPES));
-  const [loading, setLoading]         = useState(false);
+  const [seedName, setSeedName]       = useState('');
+  const [seedType, setSeedType]       = useState(SEED_TYPES[0]);
+  const [busy, setBusy]               = useState(false);
   const [error, setError]             = useState(null);
+  const [notFound, setNotFound]       = useState(null);
   const [graphData, setGraphData]     = useState(null); // { nodes, edges }
-  const [nodeCount, setNodeCount]     = useState(0);
-  const [truncated, setTruncated]     = useState(false);
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const [nodeMeta, setNodeMeta]       = useState(() => new Map()); // id -> { references, referencedBy }
   const [selectedId, setSelectedId]   = useState(null);
   const [enrichedNodes, setEnrichedNodes] = useState([]);
 
@@ -164,6 +170,12 @@ export default function Dependency() {
   const edgesDataRef = useRef([]);
   const selectedIdRef = useRef(null);
   const zoomRef       = useRef(null);
+  const expandedIdsRef = useRef(expandedIds);
+  const nodeMetaRef    = useRef(nodeMeta);
+  const nodeClickRef   = useRef(() => {});
+
+  expandedIdsRef.current = expandedIds;
+  nodeMetaRef.current = nodeMeta;
 
   // Load orgs on mount
   useEffect(() => {
@@ -217,29 +229,84 @@ export default function Dependency() {
     });
   }, [activeTypes]);
 
-  // Load graph data from API
-  const loadGraph = useCallback(async () => {
-    if (!selectedOrg) return;
-    setLoading(true);
-    setError(null);
-    setSelectedId(null);
+  // Merge an incoming { nodes, edges } into the accumulated graph (dedupe by id / source|target).
+  const mergeGraph = useCallback((prev, incoming, centerNode) => {
+    const base = prev ?? { nodes: [], edges: [] };
+    const nodes = new Map(base.nodes.map((n) => [n.id, n]));
+    if (centerNode && !nodes.has(centerNode.id)) nodes.set(centerNode.id, centerNode);
+    for (const n of incoming.nodes ?? []) if (!nodes.has(n.id)) nodes.set(n.id, n);
+    const key = (e) => `${e.source}|${e.target}`;
+    const edges = new Map(base.edges.map((e) => [key(e), { source: e.source, target: e.target }]));
+    for (const e of incoming.edges ?? []) if (!edges.has(key(e))) edges.set(key(e), { source: e.source, target: e.target });
+    return { nodes: [...nodes.values()], edges: [...edges.values()] };
+  }, []);
 
+  const recordMeta = useCallback((id, data) => {
+    setNodeMeta((prev) => {
+      const m = new Map(prev);
+      m.set(id, { references: data.references, referencedBy: data.referencedBy });
+      return m;
+    });
+  }, []);
+
+  const addSeed = useCallback(async () => {
+    const name = seedName.trim();
+    if (!selectedOrg || !name) return;
+    setBusy(true); setError(null); setNotFound(null);
     try {
-      const types = Array.from(activeTypes).join(',');
-      const data = await api.dependencies(selectedOrg, types);
-      const nodes = data.nodes ?? [];
-      const edges = data.edges ?? [];
-      setTruncated(!!data.truncated);
-      setGraphData({ nodes, edges });
-      setNodeCount(nodes.length);
+      const r = await api.resolveDependency(selectedOrg, name, seedType);
+      if (!r.found) {
+        setNotFound(`No ${TYPE_LABELS[seedType] ?? seedType} named "${name}" in ${selectedOrg}`);
+        return;
+      }
+      const seedNode = { id: r.id, name: r.name, type: r.type };
+      const data = await api.dependencyNeighbors(selectedOrg, r.id);
+      setGraphData((prev) => mergeGraph(prev, data, seedNode));
+      setExpandedIds((prev) => new Set(prev).add(r.id));
+      recordMeta(r.id, data);
+      setSeedName('');
     } catch (err) {
-      setError(err.message ?? 'Failed to load dependencies');
-      setGraphData(null);
-      setNodeCount(0);
+      setError(err.message ?? 'Failed to add seed');
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
-  }, [selectedOrg, activeTypes]);
+  }, [selectedOrg, seedName, seedType, mergeGraph, recordMeta]);
+
+  const expandNode = useCallback(async (id) => {
+    if (!selectedOrg || expandedIdsRef.current.has(id)) return;
+    setBusy(true); setError(null);
+    try {
+      const data = await api.dependencyNeighbors(selectedOrg, id);
+      setGraphData((prev) => mergeGraph(prev, data, null));
+      setExpandedIds((prev) => new Set(prev).add(id));
+      recordMeta(id, data);
+    } catch (err) {
+      setError(err.message ?? 'Failed to expand node');
+    } finally {
+      setBusy(false);
+    }
+  }, [selectedOrg, mergeGraph, recordMeta]);
+
+  const reapplyHighlight = useCallback((focusId) => {
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+    const svg = select(svgEl);
+    applyHighlight(svg.selectAll('g.node-g'), svg.selectAll('g.links line'),
+      nodesDataRef.current, edgesDataRef.current, focusId);
+  }, []);
+
+  nodeClickRef.current = (id) => {
+    if (expandedIdsRef.current.has(id)) {
+      const next = selectedIdRef.current === id ? null : id;
+      selectedIdRef.current = next;
+      setSelectedId(next);
+      reapplyHighlight(next);
+    } else {
+      selectedIdRef.current = id;
+      setSelectedId(id);
+      expandNode(id);
+    }
+  };
 
   // ── Build / rebuild D3 simulation whenever graphData changes ───────────────
   useEffect(() => {
@@ -348,13 +415,34 @@ export default function Dependency() {
       .attr('pointer-events', 'none')
       .attr('font-family', 'var(--font-mono)');
 
-    // Click to select / deselect
+    // Unexpanded nodes get a dashed outer ring signalling "click to expand".
+    nodeGroup.filter((d) => !expandedIdsRef.current.has(d.id))
+      .append('circle')
+      .attr('r', 10)
+      .attr('fill', 'none')
+      .attr('stroke', (d) => typeColor(d.type))
+      .attr('stroke-width', 1)
+      .attr('stroke-dasharray', '2 2')
+      .attr('opacity', 0.6);
+
+    // Hub badge: a node whose expand hit the cap in either direction.
+    nodeGroup.filter((d) => {
+      const m = nodeMetaRef.current.get(d.id);
+      return m && (m.references?.hasMore || m.referencedBy?.hasMore);
+    })
+      .append('text')
+      .attr('class', 'graph-more-badge')
+      .text('+more')
+      .attr('x', 11)
+      .attr('y', -8)
+      .attr('font-size', '8px')
+      .attr('fill', 'var(--status-conflict-fg)')
+      .attr('font-family', 'var(--font-mono)');
+
+    // Click to select / expand
     nodeGroup.on('click', (event, d) => {
       event.stopPropagation();
-      const next = selectedIdRef.current === d.id ? null : d.id;
-      selectedIdRef.current = next;
-      setSelectedId(next);
-      applyHighlight(nodeGroup, linkSel, nodes, edges, next);
+      nodeClickRef.current(d.id);
     });
 
     // Double-click to unpin
@@ -388,6 +476,11 @@ export default function Dependency() {
       });
 
     simRef.current = sim;
+
+    // Re-apply highlight for the selected node after a rebuild (e.g. after an expand).
+    if (selectedIdRef.current) {
+      applyHighlight(nodeGroup, linkSel, nodes, edges, selectedIdRef.current);
+    }
 
     return () => {
       sim.stop();
@@ -452,12 +545,6 @@ export default function Dependency() {
     <div className="graph-layout">
       {/* ── Left: canvas + toolbar ─────────────────────────────────────── */}
       <div className="graph-canvas-wrap">
-        {truncated && (
-          <div className="graph-truncation-banner" role="status">
-            Showing the first 5000 dependencies. Deselect source types to narrow the graph —
-            expand-on-click is coming in a later update.
-          </div>
-        )}
         {/* Toolbar */}
         <div className="graph-toolbar">
           <select
@@ -486,44 +573,53 @@ export default function Dependency() {
             </button>
           ))}
 
+          <input
+            className="graph-seed-input"
+            placeholder="Component name…"
+            aria-label="component name"
+            value={seedName}
+            onChange={(e) => setSeedName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') addSeed(); }}
+            disabled={!selectedOrg}
+          />
+          <select
+            className="graph-select"
+            value={seedType}
+            onChange={(e) => setSeedType(e.target.value)}
+            aria-label="seed type"
+          >
+            {SEED_TYPES.map((t) => (
+              <option key={t} value={t}>{TYPE_LABELS[t] ?? t}</option>
+            ))}
+          </select>
           <button
             className="btn btn-primary"
-            style={{ marginLeft: 'auto', padding: '4px 12px', fontSize: 12 }}
-            onClick={loadGraph}
-            disabled={loading || !selectedOrg}
+            style={{ padding: '4px 12px', fontSize: 12 }}
+            onClick={addSeed}
+            disabled={busy || !selectedOrg || !seedName.trim()}
             type="button"
           >
-            {loading ? 'Loading…' : 'Load Graph'}
+            {busy ? 'Working…' : 'Add seed'}
           </button>
-
-          {nodeCount > 0 && (
-            <span className="graph-badge">{nodeCount} nodes</span>
-          )}
+          {notFound && <span className="graph-badge" role="status">{notFound}</span>}
         </div>
 
         {/* SVG area */}
         <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-          {loading && (
+          {busy && (
             <div className="graph-loading-overlay">
               <div className="spinner" style={{ width: 24, height: 24 }} />
             </div>
           )}
-
-          {error && !loading && (
+          {error && !busy && (
             <div className="graph-empty-hint">
               <span style={{ color: 'var(--status-error-fg, #f87171)' }}>{error}</span>
             </div>
           )}
-
-          {!graphData && !loading && !error && (
+          {(!graphData || !graphData.nodes.length) && !busy && !error && (
             <div className="graph-empty-hint">
-              Select an org and click Load Graph
-            </div>
-          )}
-
-          {graphData && graphData.nodes.length === 0 && !loading && (
-            <div className="graph-empty-hint">
-              No dependency data found for the selected org and types
+              Pick an org, enter a component name and type, then click <b>Add seed</b> to start
+              exploring. Click any node to expand its dependencies.
             </div>
           )}
 

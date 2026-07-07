@@ -1352,3 +1352,84 @@ describe('GET /api/notifications', () => {
     expect(JSON.stringify(res.body)).not.toContain('hooks.slack.com');
   });
 });
+
+describe('GET /api/dependencies/resolve', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('rejects an invalid org', async () => {
+    const res = await request(app).get('/api/dependencies/resolve?org=; rm&name=Foo&type=ApexClass');
+    expect(res.status).toBe(400);
+  });
+  it('rejects a non-resolvable type', async () => {
+    const res = await request(app).get('/api/dependencies/resolve?org=dev&name=Foo&type=CustomObject');
+    expect(res.status).toBe(400);
+  });
+  it('returns found:false when nothing matches', async () => {
+    const { execa: execaMock } = await import('execa');
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records: [] } }), stderr: '' });
+    const res = await request(app).get('/api/dependencies/resolve?org=dev&name=Nope&type=ApexClass');
+    expect(res.status).toBe(200);
+    expect(res.body.found).toBe(false);
+  });
+  it('returns the resolved id when a component matches', async () => {
+    const { execa: execaMock } = await import('execa');
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records: [{ Id: '01p000000000001' }] } }), stderr: '' });
+    const res = await request(app).get('/api/dependencies/resolve?org=dev&name=MyClass&type=ApexClass');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ found: true, id: '01p000000000001', type: 'ApexClass' });
+  });
+});
+
+describe('GET /api/dependencies/neighbors', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('rejects an invalid component id', async () => {
+    const res = await request(app).get('/api/dependencies/neighbors?org=dev&id=not-an-id');
+    expect(res.status).toBe(400);
+  });
+  it('merges both directions into deduped nodes/edges with hasMore flags', async () => {
+    const { execa: execaMock } = await import('execa');
+    // references (this -> others): one neighbor
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records: [
+      { RefMetadataComponentId: 'bbb', RefMetadataComponentName: 'Helper', RefMetadataComponentType: 'ApexClass' },
+    ] } }), stderr: '' });
+    // referencedBy (others -> this): one neighbor
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records: [
+      { MetadataComponentId: 'ccc', MetadataComponentName: 'Caller', MetadataComponentType: 'ApexTrigger' },
+    ] } }), stderr: '' });
+    const res = await request(app).get('/api/dependencies/neighbors?org=dev&id=01p000000000001&cap=50');
+    expect(res.status).toBe(200);
+    expect(res.body.nodes.map((n) => n.id).sort()).toEqual(['bbb', 'ccc']);
+    expect(res.body.edges).toContainEqual({ source: '01p000000000001', target: 'bbb' });
+    expect(res.body.edges).toContainEqual({ source: 'ccc', target: '01p000000000001' });
+    expect(res.body.references.hasMore).toBe(false);
+    expect(res.body.referencedBy.hasMore).toBe(false);
+  });
+  it('sets hasMore=true when a direction returns cap+1 rows', async () => {
+    const { execa: execaMock } = await import('execa');
+    const refRows = Array.from({ length: 3 }, (_, i) => ({ RefMetadataComponentId: `r${i}`, RefMetadataComponentName: `R${i}`, RefMetadataComponentType: 'ApexClass' }));
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records: refRows } }), stderr: '' }); // 3 rows, cap=2 => hasMore
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records: [] } }), stderr: '' });
+    const res = await request(app).get('/api/dependencies/neighbors?org=dev2&id=01p000000000009&cap=2');
+    expect(res.status).toBe(200);
+    expect(res.body.references.hasMore).toBe(true);
+    expect(res.body.references.shown).toBe(2);
+    expect(res.body.nodes).toHaveLength(2);
+  });
+});

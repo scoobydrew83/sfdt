@@ -50,6 +50,7 @@ export {
   resolveQueryFor,
   referencesQuery,
   referencedByQuery,
+  neighborsQuery,
   groupByType,
 } from './dependencies.js';
 export type { MetadataType, MetadataTypeInfo, GraphSourceType, DependencyGroup } from './dependencies.js';

@@ -260,6 +260,8 @@ export const api = {
   dependencies:           (org, types) => fetchJson(`/dependencies?org=${encodeURIComponent(org)}${types ? `&types=${encodeURIComponent(types)}` : ''}`),
   /** @returns {Promise<{ status: 'pass'|'warn'|'fail', missing: Array<{name:string, type:string, referencedBy:string[]}>, warnings: Array<{name:string, type:string, referencedBy:string[]}> }>} */
   dependenciesPreflight:  (manifest, org) => fetchJson(`/dependencies/preflight?manifest=${encodeURIComponent(manifest)}&org=${encodeURIComponent(org)}`),
+  resolveDependency:      (org, name, type) => fetchJson(`/dependencies/resolve?org=${encodeURIComponent(org)}&name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`),
+  dependencyNeighbors:    (org, id, cap = 50) => fetchJson(`/dependencies/neighbors?org=${encodeURIComponent(org)}&id=${encodeURIComponent(id)}&cap=${cap}`),
   /** @returns {Promise<Array<{key: string, description: string}>>} */
   pullGroups:             () => fetchJson('/pull/groups'),
   /** @returns {Promise<{ packages: Array<{name: string, path: string}> }>} */

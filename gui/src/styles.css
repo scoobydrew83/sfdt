@@ -2074,3 +2074,14 @@ select option {
   background: var(--bg-surface);
   color: var(--fg-default);
 }
+
+.graph-seed-input {
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input, var(--bg-app));
+  color: var(--fg);
+  min-width: 160px;
+}
+.graph-more-badge { pointer-events: none; }

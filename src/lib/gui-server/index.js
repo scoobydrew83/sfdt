@@ -25,7 +25,7 @@ import { isSafeGitRef, resolveBaseRef } from '../git-utils.js';
 import { buildSourceDirArgs } from '../source-dirs.js';
 import { initCache, getDelta, updateCache } from '../pull-cache.js';
 import { parallelRetrieve } from '../parallel-retrieve.js';
-import { GRAPH_SOURCE_TYPES } from '@sfdt/flow-core';
+import { GRAPH_SOURCE_TYPES, resolveQueryFor, neighborsQuery } from '@sfdt/flow-core';
 import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken, requireCsrfTokenFromQueryOrHeader } from './security.js';
 import { mountBridgeRoutes } from '../bridge/routes.js';
 import { constantTimeEqual } from '../bridge/token.js';
@@ -3055,6 +3055,119 @@ export function createGuiApp(config, version, port = 7654) {
 
       depCache.set(cacheKey, { ts: Date.now(), data: payload });
       res.json(payload);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Dependencies: seed resolution + expand-on-click neighbors (Tier 2) ──────
+
+  const DEP_ORG_RE = /^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/;
+
+  /** Run a Tooling SOQL query and return its records, or throw with an sf-extracted message. */
+  async function runToolingQuery(soql, safeOrg) {
+    try {
+      const result = await execa('sf', ['data', 'query', '--use-tooling-api', '--query', soql, '--json', '--target-org', safeOrg]);
+      return JSON.parse(result.stdout)?.result?.records ?? [];
+    } catch (execErr) {
+      let errMsg = execErr.message ?? 'sf command failed';
+      try {
+        const parsed = JSON.parse(execErr.stdout ?? execErr.stderr ?? '{}');
+        errMsg = parsed?.message ?? parsed?.result?.message ?? errMsg;
+      } catch { /* ignore */ }
+      const e = new Error(errMsg);
+      e.isSfError = true;
+      throw e;
+    }
+  }
+
+  app.get('/api/dependencies/resolve', apiLimiter, async (req, res) => {
+    try {
+      const safeOrg = String(req.query.org ?? '').trim();
+      if (!safeOrg || !DEP_ORG_RE.test(safeOrg)) {
+        return res.status(400).json({ error: 'Invalid or missing org alias' });
+      }
+      const safeType = String(req.query.type ?? '').trim();
+      if (!GRAPH_SOURCE_TYPES.some((t) => t.type === safeType)) {
+        return res.status(400).json({ error: 'Invalid metadata type' });
+      }
+      const safeName = String(req.query.name ?? '').trim();
+      if (!safeName) return res.status(400).json({ error: 'name is required' });
+
+      // CustomObject (and any non-CLI-resolvable graph type) has no resolver: reject as a seed.
+      let soql;
+      try {
+        soql = resolveQueryFor(safeType, safeName);
+      } catch {
+        return res.status(400).json({ error: `${safeType} cannot be resolved by name — use it as a neighbor instead` });
+      }
+
+      let records;
+      try {
+        records = await runToolingQuery(soql, safeOrg);
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      if (!records.length) return res.json({ found: false, name: safeName, type: safeType });
+      return res.json({ found: true, id: records[0].Id, name: safeName, type: safeType });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/dependencies/neighbors', apiLimiter, async (req, res) => {
+    try {
+      const safeOrg = String(req.query.org ?? '').trim();
+      if (!safeOrg || !DEP_ORG_RE.test(safeOrg)) {
+        return res.status(400).json({ error: 'Invalid or missing org alias' });
+      }
+      const safeId = String(req.query.id ?? '').trim();
+      if (!/^[A-Za-z0-9]{15,18}$/.test(safeId)) {
+        return res.status(400).json({ error: 'Invalid component id' });
+      }
+      let cap = parseInt(req.query.cap, 10);
+      if (!Number.isFinite(cap)) cap = 50;
+      cap = Math.max(1, Math.min(200, cap));
+
+      let refRows, refByRows;
+      try {
+        [refRows, refByRows] = await Promise.all([
+          runToolingQuery(neighborsQuery(safeId, 'references', cap), safeOrg),
+          runToolingQuery(neighborsQuery(safeId, 'referencedBy', cap), safeOrg),
+        ]);
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+
+      const nodesById = new Map();
+      const edges = [];
+      const edgeSet = new Set();
+      const addNode = (id, name, type) => { if (id && !nodesById.has(id)) nodesById.set(id, { id, name, type }); };
+      const addEdge = (source, target) => {
+        const key = `${source}|${target}`;
+        if (source && target && !edgeSet.has(key)) { edgeSet.add(key); edges.push({ source, target }); }
+      };
+
+      const refHasMore = refRows.length > cap;
+      const refByHasMore = refByRows.length > cap;
+      const refShown = refRows.slice(0, cap);
+      const refByShown = refByRows.slice(0, cap);
+
+      for (const r of refShown) {
+        addNode(r.RefMetadataComponentId, r.RefMetadataComponentName, r.RefMetadataComponentType);
+        addEdge(safeId, r.RefMetadataComponentId);
+      }
+      for (const r of refByShown) {
+        addNode(r.MetadataComponentId, r.MetadataComponentName, r.MetadataComponentType);
+        addEdge(r.MetadataComponentId, safeId);
+      }
+
+      return res.json({
+        nodes: [...nodesById.values()],
+        edges,
+        references: { hasMore: refHasMore, shown: refShown.length },
+        referencedBy: { hasMore: refByHasMore, shown: refByShown.length },
+      });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
