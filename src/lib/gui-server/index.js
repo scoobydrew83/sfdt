@@ -3168,7 +3168,7 @@ export function createGuiApp(config, version, port = 7654) {
       if (!GRAPH_SOURCE_TYPES.some((t) => t.type === type)) {
         return res.status(400).json({ error: 'Invalid metadata type' });
       }
-      let org = req.query.org ? String(req.query.org).trim() : undefined;
+      const org = req.query.org ? String(req.query.org).trim() : undefined;
       if (org && !DEP_ORG_RE.test(org)) return res.status(400).json({ error: 'Invalid org alias' });
       const config = await loadConfig();
       const report = await runGapReport(config, { name, type, org });

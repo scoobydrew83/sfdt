@@ -91,7 +91,7 @@ export function extractLwcApexRefs(js: string): InferredRef[] {
 
 // Common formula function/operator names to ignore when scanning for field refs.
 const FORMULA_KEYWORDS = new Set([
-  'IF', 'AND', 'OR', 'NOT', 'CASE', 'TEXT', 'VALUE', 'LEN', 'TRIM', 'ABS', 'ROUND',
+  'IF', 'AND', 'OR', 'NOT', 'TEXT', 'VALUE', 'LEN', 'TRIM', 'ABS', 'ROUND',
   'MIN', 'MAX', 'MOD', 'FLOOR', 'CEILING', 'SQRT', 'ISBLANK', 'ISNULL', 'BLANKVALUE',
   'NULLVALUE', 'ISPICKVAL', 'ISNUMBER', 'ISCHANGED', 'PRIORVALUE', 'TODAY', 'NOW',
   'DATE', 'DATEVALUE', 'DATETIMEVALUE', 'YEAR', 'MONTH', 'DAY', 'BEGINS', 'CONTAINS',
@@ -111,7 +111,7 @@ export function extractFormulaRefs(fieldXml: string): InferredRef[] {
   while ((m = dotted.exec(formula)) !== null) {
     const head = m[1]!;
     if (!FORMULA_KEYWORDS.has(head.toUpperCase())) {
-      const toType = head.endsWith('__r') ? 'CustomObject' : 'CustomObject';
+      const toType = 'CustomObject';
       refs.push({ toName: head, toType, kind: 'formula', evidence: `${m[1]!}.${m[2]!}`, line: 1 });
     }
   }

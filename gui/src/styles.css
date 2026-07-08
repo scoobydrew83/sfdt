@@ -2086,7 +2086,7 @@ select option {
 }
 .graph-more-badge { pointer-events: none; }
 
-.gaps-panel { position: absolute; inset: 0; overflow: auto; padding: 12px; }
+.gaps-panel { position: absolute; inset: 0; overflow: auto; padding: 12px; background: var(--bg-app); }
 .gaps-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .gaps-table th, .gaps-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .gaps-evidence { font-family: var(--font-mono); color: var(--fg-muted); }

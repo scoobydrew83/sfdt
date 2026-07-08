@@ -30,7 +30,7 @@ export function registerDependenciesCommand(program) {
         const jsonMode = !!options.json;
         try {
           const config = await loadConfig();
-          const org = options.org ?? config.defaultOrg ?? undefined; // optional for gaps
+          const org = options.org ?? undefined; // gaps is offline by default; --org explicitly opts into the Tooling diff
           const report = await runGapReport(config, { name, type: options.type, org });
           if (jsonMode) { emitJson(report); return; }
           printGapReport(report);

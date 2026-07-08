@@ -46,6 +46,11 @@ describe('extractFormulaRefs', () => {
     expect(names).not.toContain('IF');
     expect(names).not.toContain('ISBLANK');
   });
+  it('does not treat CASE() as a Case object collision', () => {
+    const xml = '<CustomField><formula>CASE(Status, "Open", "O", Case.CaseNumber)</formula></CustomField>';
+    const names = extractFormulaRefs(xml).map((r) => r.toName);
+    expect(names).toContain('Case');
+  });
   it('returns [] when there is no formula element', () => {
     expect(extractFormulaRefs('<CustomField><type>Text</type></CustomField>')).toEqual([]);
   });

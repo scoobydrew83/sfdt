@@ -55,4 +55,9 @@ describe('runGapReport diff', () => {
     expect(rep.gaps.every((g) => g.status === 'inferred')).toBe(true);
     expect(query).not.toHaveBeenCalled();
   });
+  it('degrades to "inferred" (never throws) when the org query fails', async () => {
+    vi.mocked(query).mockRejectedValue(new Error('org down'));
+    const rep = await runGapReport(cfg(), { name: 'AccountSvc', type: 'ApexClass', org: 'dev' });
+    expect(rep.gaps.every((g) => g.status === 'inferred')).toBe(true);
+  });
 });

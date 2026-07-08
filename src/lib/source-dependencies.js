@@ -88,6 +88,9 @@ export async function diffAgainstOrg(orgAlias, name, type, refs) {
   return refs.map((ref) => ({
     from: { name, type },
     ref,
+    // Deliberate lenient simplification: match by toName only (not the (toType,toName) pair) —
+    // parsed toType is best-effort/unknown for some extractors, so a stricter match would
+    // produce false "missing" results.
     status: toolingNames == null ? 'inferred' : (toolingNames.has(ref.toName) ? 'confirmed' : 'missing'),
   }));
 }

@@ -652,36 +652,39 @@ export default function Dependency() {
 
         {/* SVG area */}
         <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-          {!showGaps && (
-            <>
-              {busy && (
-                <div className="graph-loading-overlay">
-                  <div className="spinner" style={{ width: 24, height: 24 }} />
-                </div>
-              )}
-              {error && !busy && (
-                <div className="graph-empty-hint">
-                  <span style={{ color: 'var(--status-error-fg, #f87171)' }}>{error}</span>
-                </div>
-              )}
-              {(!graphData || !graphData.nodes.length) && !busy && !error && (
-                <div className="graph-empty-hint">
-                  Pick an org, enter a component name and type, then click <b>Add seed</b> to start
-                  exploring. Click any node to expand its dependencies.
-                </div>
-              )}
+          <div style={{ position: 'absolute', inset: 0, display: showGaps ? 'none' : undefined }}>
+            {busy && (
+              <div className="graph-loading-overlay">
+                <div className="spinner" style={{ width: 24, height: 24 }} />
+              </div>
+            )}
+            {error && !busy && (
+              <div className="graph-empty-hint">
+                <span style={{ color: 'var(--status-error-fg, #f87171)' }}>{error}</span>
+              </div>
+            )}
+            {(!graphData || !graphData.nodes.length) && !busy && !error && (
+              <div className="graph-empty-hint">
+                Pick an org, enter a component name and type, then click <b>Add seed</b> to start
+                exploring. Click any node to expand its dependencies.
+              </div>
+            )}
 
-              <svg
-                ref={svgRef}
-                className="graph-svg"
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-              />
-            </>
-          )}
+            <svg
+              ref={svgRef}
+              className="graph-svg"
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+            />
+          </div>
 
           {showGaps && (
             <div className="gaps-panel">
               {gapsBusy && <div className="graph-empty-hint">Parsing source…</div>}
+              {!gapsBusy && !gaps && (
+                <div className="graph-empty-hint">
+                  Enter a component name and type, then toggle Gaps to see source-parsed references.
+                </div>
+              )}
               {!gapsBusy && gaps && gaps.length === 0 && (
                 <div className="graph-empty-hint">No source-parsed references found for that component.</div>
               )}
