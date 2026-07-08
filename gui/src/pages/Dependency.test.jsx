@@ -8,6 +8,7 @@ vi.mock('../api.js', () => ({
     orgs: vi.fn().mockResolvedValue({ orgs: [{ alias: 'dev' }] }),
     resolveDependency: vi.fn(),
     dependencyNeighbors: vi.fn(),
+    dependencyGaps: vi.fn(),
   },
 }));
 
@@ -61,5 +62,17 @@ describe('Dependency page — seed + expand', () => {
     render(<Dependency />);
     await addSeed(user);
     expect(await screen.findByText(/more/i)).toBeInTheDocument();
+  });
+
+  it('shows the gaps table when the Gaps toggle is on', async () => {
+    api.dependencyGaps.mockResolvedValue({ from: { name: 'AccountSvc', type: 'ApexClass' }, gaps: [
+      { ref: { toName: 'BillingHandler', toType: 'ApexClass', kind: 'apex-dynamic', evidence: "Type.forName('BillingHandler')", line: 42 }, status: 'inferred' },
+    ] });
+    const user = userEvent.setup();
+    render(<Dependency />);
+    await user.type(await screen.findByPlaceholderText(/component name/i), 'AccountSvc');
+    await user.click(screen.getByRole('button', { name: /gaps/i }));
+    expect(await screen.findByText('BillingHandler')).toBeInTheDocument();
+    expect(screen.getByText(/apex-dynamic/i)).toBeInTheDocument();
   });
 });
