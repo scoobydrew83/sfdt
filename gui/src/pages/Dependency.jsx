@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '../api.js';
 import { GRAPH_SOURCE_TYPES, METADATA_TYPES } from '@sfdt/flow-core';
 import {
@@ -32,6 +32,9 @@ const DEFAULT_ON_TYPES = GRAPH_SOURCE_TYPES.filter((t) => t.graphDefaultOn).map(
 
 // Seed types must be name-resolvable (CustomObject has no resolver — reachable only via expansion).
 const SEED_TYPES = METADATA_TYPES;
+
+// Types C1 can source-parse; others return no gaps so we skip them.
+const GAPS_TYPES = new Set(['ApexClass', 'ApexTrigger', 'Flow', 'LightningComponentBundle', 'CustomField']);
 
 function typeColor(type) {
   return TYPE_COLORS[type] ?? 'var(--fg-muted)';
@@ -165,6 +168,10 @@ export default function Dependency() {
   const [showGaps, setShowGaps]       = useState(false);
   const [gaps, setGaps]               = useState(null);
   const [gapsBusy, setGapsBusy]       = useState(false);
+  const [showInferred, setShowInferred] = useState(false);
+  const [inferredNodes, setInferredNodes] = useState(() => new Map()); // synthetic id -> {id,name,type,inferred:true}
+  const [inferredEdges, setInferredEdges] = useState([]);              // {source,target,provenance:'inferred'}
+  const [inferredBusy, setInferredBusy]   = useState(false);
 
   const svgRef       = useRef(null);
   const simRef       = useRef(null);
@@ -201,10 +208,19 @@ export default function Dependency() {
     });
   }, []);
 
+  // Confirmed graph + (when toggled on) the inferred overlay, merged for rendering.
+  const renderData = useMemo(() => {
+    const base = graphData ?? { nodes: [], edges: [] };
+    if (!showInferred) return base;
+    const existing = new Set(base.nodes.map((n) => n.id));
+    const extraNodes = [...inferredNodes.values()].filter((n) => !existing.has(n.id));
+    return { nodes: [...base.nodes, ...extraNodes], edges: [...base.edges, ...inferredEdges] };
+  }, [graphData, showInferred, inferredNodes, inferredEdges]);
+
   // Enrich nodes with adjacency info for the detail rail
   useEffect(() => {
-    if (!graphData) { setEnrichedNodes([]); return; }
-    const { nodes, edges } = graphData;
+    if (!renderData.nodes.length) { setEnrichedNodes([]); return; }
+    const { nodes, edges } = renderData;
     // Build adjacency: deps = outgoing edges (this → target), refs = incoming edges (source → this)
     const deps = {};
     const refs = {};
@@ -216,7 +232,7 @@ export default function Dependency() {
       if (refs[tid]) refs[tid].push(sid);
     });
     setEnrichedNodes(nodes.map((n) => ({ ...n, deps: deps[n.id] ?? [], refs: refs[n.id] ?? [] })));
-  }, [graphData]);
+  }, [renderData]);
 
   // Re-filter visible nodes/edges when activeTypes changes (without re-running simulation)
   useEffect(() => {
@@ -312,6 +328,54 @@ export default function Dependency() {
     });
   }, [loadGaps]);
 
+  // ponytail: rebuilds the whole overlay (one /gaps fetch per expanded source) on each change —
+  // fine for the small expanded set; add a per-node cache keyed by id if overlay usage on large graphs gets heavy.
+  const buildInferredOverlay = useCallback(async () => {
+    if (!selectedOrg || !graphData) return;
+    setInferredBusy(true);
+    try {
+      const byId = new Map(graphData.nodes.map((n) => [n.id, n]));
+      const byTypeName = new Map(graphData.nodes.map((n) => [`${n.type}:${n.name}`, n.id]));
+      const synth = new Map();
+      const edges = [];
+      const edgeSet = new Set();
+      const sources = [...expandedIds].map((id) => byId.get(id)).filter((n) => n && GAPS_TYPES.has(n.type));
+      for (const node of sources) {
+        let data;
+        try { data = await api.dependencyGaps(selectedOrg, node.name, node.type); }
+        catch { continue; } // skip this node's overlay on error; others still render
+        for (const g of data.gaps ?? []) {
+          if (g.status !== 'missing') continue;
+          const key = `${g.ref.toType}:${g.ref.toName}`;
+          let targetId = byTypeName.get(key);
+          if (!targetId) {
+            targetId = `inferred:${key}`;
+            if (!synth.has(targetId)) synth.set(targetId, { id: targetId, name: g.ref.toName, type: g.ref.toType, inferred: true });
+          }
+          const ek = `${node.id}|${targetId}`;
+          if (!edgeSet.has(ek)) { edgeSet.add(ek); edges.push({ source: node.id, target: targetId, provenance: 'inferred' }); }
+        }
+      }
+      setInferredNodes(synth);
+      setInferredEdges(edges);
+    } finally {
+      setInferredBusy(false);
+    }
+  }, [selectedOrg, graphData, expandedIds]);
+
+  const toggleInferred = useCallback(() => setShowInferred((on) => !on), []);
+
+  // Build/refresh the overlay whenever it's on and the expanded set changes; clears on org change.
+  useEffect(() => {
+    if (showInferred) buildInferredOverlay();
+  }, [showInferred, expandedIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setShowInferred(false);
+    setInferredNodes(new Map());
+    setInferredEdges([]);
+  }, [selectedOrg]);
+
   const reapplyHighlight = useCallback((focusId) => {
     const svgEl = svgRef.current;
     if (!svgEl) return;
@@ -321,7 +385,7 @@ export default function Dependency() {
   }, []);
 
   nodeClickRef.current = (id) => {
-    if (expandedIdsRef.current.has(id)) {
+    if (id.startsWith('inferred:') || expandedIdsRef.current.has(id)) {
       const next = selectedIdRef.current === id ? null : id;
       selectedIdRef.current = next;
       setSelectedId(next);
@@ -347,9 +411,9 @@ export default function Dependency() {
     // Clear SVG
     select(svgEl).selectAll('*').remove();
 
-    if (!graphData || !graphData.nodes.length) return;
+    if (!renderData.nodes.length) return;
 
-    const { nodes: rawNodes, edges: rawEdges } = graphData;
+    const { nodes: rawNodes, edges: rawEdges } = renderData;
 
     // Deep-copy so D3 can mutate x/y without corrupting state. Seed each node's
     // position from the last simulation so an expand keeps existing nodes in place
@@ -400,9 +464,10 @@ export default function Dependency() {
       .selectAll('line')
       .data(edges)
       .join('line')
-      .attr('stroke', 'var(--fg-muted)')
-      .attr('stroke-opacity', 0.2)
+      .attr('stroke', (d) => (d.provenance === 'inferred' ? 'var(--status-conflict-solid)' : 'var(--fg-muted)'))
+      .attr('stroke-opacity', 0.25)
       .attr('stroke-width', 1)
+      .attr('stroke-dasharray', (d) => (d.provenance === 'inferred' ? '4 3' : null))
       .attr('marker-end', 'url(#dep-arrow)');
 
     // Drag behaviour
@@ -432,7 +497,7 @@ export default function Dependency() {
 
     nodeGroup.append('circle')
       .attr('r', 6)
-      .attr('fill', (d) => typeColor(d.type))
+      .attr('fill', (d) => (d.inferred ? 'var(--fg-muted)' : typeColor(d.type)))
       .attr('stroke', 'var(--bg-app)')
       .attr('stroke-width', 1.5);
 
@@ -446,7 +511,7 @@ export default function Dependency() {
       .attr('font-family', 'var(--font-mono)');
 
     // Unexpanded nodes get a dashed outer ring signalling "click to expand".
-    nodeGroup.filter((d) => !expandedIdsRef.current.has(d.id))
+    nodeGroup.filter((d) => !expandedIdsRef.current.has(d.id) && !d.inferred)
       .append('circle')
       .attr('r', 10)
       .attr('fill', 'none')
@@ -454,6 +519,16 @@ export default function Dependency() {
       .attr('stroke-width', 1)
       .attr('stroke-dasharray', '2 2')
       .attr('opacity', 0.6);
+
+    // Synthetic inferred nodes (targets the Tooling API never surfaced) get a distinct dashed ring.
+    nodeGroup.filter((d) => d.inferred)
+      .append('circle')
+      .attr('r', 10)
+      .attr('fill', 'none')
+      .attr('stroke', 'var(--status-conflict-solid)')
+      .attr('stroke-width', 1)
+      .attr('stroke-dasharray', '3 2')
+      .attr('opacity', 0.7);
 
     // Hub badge: a node whose expand hit the cap in either direction.
     nodeGroup.filter((d) => {
@@ -524,13 +599,13 @@ export default function Dependency() {
       sim.stop();
       svg.on('click', null);
     };
-  }, [graphData]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [renderData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Highlight helper ────────────────────────────────────────────────────────
   function applyHighlight(nodeGroup, linkSel, _nodes, edges, focusId) {
     if (!focusId) {
       nodeGroup.attr('opacity', 1);
-      linkSel.attr('stroke-opacity', 0.2);
+      linkSel.attr('stroke-opacity', 0.25);
       return;
     }
 
@@ -648,6 +723,17 @@ export default function Dependency() {
           >
             Gaps
           </button>
+          <button
+            className={`graph-chip${showInferred ? ' active' : ''}`}
+            onClick={toggleInferred}
+            type="button"
+            title="Overlay source-inferred edges the Tooling API misses (dashed)"
+          >
+            {inferredBusy ? 'Inferring…' : 'Show inferred'}
+          </button>
+          {showInferred && (
+            <span className="graph-legend" aria-label="edge legend">— confirmed&nbsp;&nbsp;┄&nbsp;inferred</span>
+          )}
         </div>
 
         {/* SVG area */}

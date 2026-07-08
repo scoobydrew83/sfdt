@@ -1881,6 +1881,8 @@ select.input { cursor: pointer; }
   flex-shrink: 0;
 }
 
+.graph-legend { font-size: 11px; color: var(--fg-muted); margin-left: 4px; white-space: nowrap; }
+
 .graph-badge {
   font-size: 11px;
   font-family: var(--font-mono);
