@@ -49,6 +49,8 @@ vi.mock('execa', () => ({
   execa: vi.fn().mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' }),
 }));
 
+vi.mock('../../src/lib/source-dependencies.js', () => ({ runGapReport: vi.fn() }));
+
 // ─── Imports ────────────────────────────────────────────────────────────────
 
 import request from 'supertest';
@@ -1431,5 +1433,30 @@ describe('GET /api/dependencies/neighbors', () => {
     expect(res.body.references.hasMore).toBe(true);
     expect(res.body.references.shown).toBe(2);
     expect(res.body.nodes).toHaveLength(2);
+  });
+});
+
+describe('GET /api/dependencies/gaps', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('rejects an invalid type', async () => {
+    const res = await request(app).get('/api/dependencies/gaps?name=Foo&type=Bogus');
+    expect(res.status).toBe(400);
+  });
+  it('returns a gap report offline (no org)', async () => {
+    const { runGapReport } = await import('../../src/lib/source-dependencies.js');
+    vi.mocked(runGapReport).mockResolvedValueOnce({ from: { name: 'AccountSvc', type: 'ApexClass' }, gaps: [] });
+    const res = await request(app).get('/api/dependencies/gaps?name=AccountSvc&type=ApexClass');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.gaps)).toBe(true);
+    expect(runGapReport).toHaveBeenCalledWith(expect.anything(), { name: 'AccountSvc', type: 'ApexClass', org: undefined });
   });
 });
