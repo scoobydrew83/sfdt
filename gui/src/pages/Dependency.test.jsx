@@ -97,4 +97,30 @@ describe('Dependency page — seed + expand', () => {
     await waitFor(() => expect(container.querySelector('line[stroke-dasharray]')).toBeTruthy());
     expect(api.dependencyGaps).toHaveBeenCalledWith('dev', 'AccountSvc', 'ApexClass');
   });
+
+  it('reconciles a "missing" ref onto an existing node instead of synthesizing a duplicate', async () => {
+    api.resolveDependency.mockResolvedValue({ found: true, id: 'aaa', name: 'AccountSvc', type: 'ApexClass' });
+    api.dependencyNeighbors.mockResolvedValue({
+      nodes: [{ id: 'bbb', name: 'HelperSvc', type: 'ApexClass' }],
+      edges: [{ source: 'aaa', target: 'bbb' }],
+      references: { hasMore: false, shown: 1 },
+      referencedBy: { hasMore: false, shown: 0 },
+    });
+    api.dependencyGaps.mockResolvedValue({ from: { name: 'AccountSvc', type: 'ApexClass' }, gaps: [
+      { ref: { toName: 'HelperSvc', toType: 'ApexClass', kind: 'apex-dynamic', evidence: "Type.forName('HelperSvc')", line: 1 }, status: 'missing' },
+    ] });
+    const user = userEvent.setup();
+    const { container } = render(<Dependency />);
+    // seed the graph (AccountSvc becomes an expanded node; HelperSvc is a real neighbor node)
+    await user.type(await screen.findByPlaceholderText(/component name/i), 'AccountSvc');
+    await user.click(screen.getByRole('button', { name: /add seed/i }));
+    await screen.findByText('AccountSvc');
+    await screen.findByText('HelperSvc');
+    // turn on the inferred overlay
+    await user.click(screen.getByRole('button', { name: /show inferred/i }));
+    // the missing ref resolves onto the existing HelperSvc node — a dashed edge appears,
+    // but no synthetic duplicate node is created (exactly one "HelperSvc" label renders).
+    await waitFor(() => expect(container.querySelector('line[stroke-dasharray]')).toBeTruthy());
+    expect(screen.getAllByText('HelperSvc').length).toBe(1);
+  });
 });

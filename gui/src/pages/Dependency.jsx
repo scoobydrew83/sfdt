@@ -33,6 +33,9 @@ const DEFAULT_ON_TYPES = GRAPH_SOURCE_TYPES.filter((t) => t.graphDefaultOn).map(
 // Seed types must be name-resolvable (CustomObject has no resolver — reachable only via expansion).
 const SEED_TYPES = METADATA_TYPES;
 
+// Types C1 can source-parse; others return no gaps so we skip them.
+const GAPS_TYPES = new Set(['ApexClass', 'ApexTrigger', 'Flow', 'LightningComponentBundle', 'CustomField']);
+
 function typeColor(type) {
   return TYPE_COLORS[type] ?? 'var(--fg-muted)';
 }
@@ -325,9 +328,8 @@ export default function Dependency() {
     });
   }, [loadGaps]);
 
-  // Types C1 can source-parse; others return no gaps so we skip them.
-  const GAPS_TYPES = useMemo(() => new Set(['ApexClass', 'ApexTrigger', 'Flow', 'LightningComponentBundle', 'CustomField']), []);
-
+  // ponytail: rebuilds the whole overlay (one /gaps fetch per expanded source) on each change —
+  // fine for the small expanded set; add a per-node cache keyed by id if overlay usage on large graphs gets heavy.
   const buildInferredOverlay = useCallback(async () => {
     if (!selectedOrg || !graphData) return;
     setInferredBusy(true);
@@ -359,7 +361,7 @@ export default function Dependency() {
     } finally {
       setInferredBusy(false);
     }
-  }, [selectedOrg, graphData, expandedIds, GAPS_TYPES]);
+  }, [selectedOrg, graphData, expandedIds]);
 
   const toggleInferred = useCallback(() => setShowInferred((on) => !on), []);
 
@@ -603,7 +605,7 @@ export default function Dependency() {
   function applyHighlight(nodeGroup, linkSel, _nodes, edges, focusId) {
     if (!focusId) {
       nodeGroup.attr('opacity', 1);
-      linkSel.attr('stroke-opacity', 0.2);
+      linkSel.attr('stroke-opacity', 0.25);
       return;
     }
 
