@@ -162,6 +162,9 @@ export default function Dependency() {
   const [nodeMeta, setNodeMeta]       = useState(() => new Map()); // id -> { references, referencedBy }
   const [selectedId, setSelectedId]   = useState(null);
   const [enrichedNodes, setEnrichedNodes] = useState([]);
+  const [showGaps, setShowGaps]       = useState(false);
+  const [gaps, setGaps]               = useState(null);
+  const [gapsBusy, setGapsBusy]       = useState(false);
 
   const svgRef       = useRef(null);
   const simRef       = useRef(null);
@@ -287,6 +290,27 @@ export default function Dependency() {
       setBusy(false);
     }
   }, [selectedOrg, mergeGraph, recordMeta]);
+
+  const loadGaps = useCallback(async () => {
+    const name = seedName.trim();
+    if (!name) return;
+    setGapsBusy(true);
+    try {
+      const data = await api.dependencyGaps(selectedOrg || undefined, name, seedType);
+      setGaps(data.gaps ?? []);
+    } catch (err) {
+      setError(err.message ?? 'Gap report failed');
+      setGaps([]);
+    } finally { setGapsBusy(false); }
+  }, [selectedOrg, seedName, seedType]);
+
+  const toggleGaps = useCallback(() => {
+    setShowGaps((on) => {
+      const next = !on;
+      if (next) loadGaps();
+      return next;
+    });
+  }, [loadGaps]);
 
   const reapplyHighlight = useCallback((focusId) => {
     const svgEl = svgRef.current;
@@ -616,32 +640,71 @@ export default function Dependency() {
             {busy ? 'Working…' : 'Add seed'}
           </button>
           {notFound && <span className="graph-badge" role="status">{notFound}</span>}
+          <button
+            className={`graph-chip${showGaps ? ' active' : ''}`}
+            onClick={toggleGaps}
+            type="button"
+            title="Show source-parsed references the Tooling API may miss"
+          >
+            Gaps
+          </button>
         </div>
 
         {/* SVG area */}
         <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-          {busy && (
-            <div className="graph-loading-overlay">
-              <div className="spinner" style={{ width: 24, height: 24 }} />
-            </div>
-          )}
-          {error && !busy && (
-            <div className="graph-empty-hint">
-              <span style={{ color: 'var(--status-error-fg, #f87171)' }}>{error}</span>
-            </div>
-          )}
-          {(!graphData || !graphData.nodes.length) && !busy && !error && (
-            <div className="graph-empty-hint">
-              Pick an org, enter a component name and type, then click <b>Add seed</b> to start
-              exploring. Click any node to expand its dependencies.
-            </div>
-          )}
+          <div style={{ position: 'absolute', inset: 0, display: showGaps ? 'none' : undefined }}>
+            {busy && (
+              <div className="graph-loading-overlay">
+                <div className="spinner" style={{ width: 24, height: 24 }} />
+              </div>
+            )}
+            {error && !busy && (
+              <div className="graph-empty-hint">
+                <span style={{ color: 'var(--status-error-fg, #f87171)' }}>{error}</span>
+              </div>
+            )}
+            {(!graphData || !graphData.nodes.length) && !busy && !error && (
+              <div className="graph-empty-hint">
+                Pick an org, enter a component name and type, then click <b>Add seed</b> to start
+                exploring. Click any node to expand its dependencies.
+              </div>
+            )}
 
-          <svg
-            ref={svgRef}
-            className="graph-svg"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-          />
+            <svg
+              ref={svgRef}
+              className="graph-svg"
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+            />
+          </div>
+
+          {showGaps && (
+            <div className="gaps-panel">
+              {gapsBusy && <div className="graph-empty-hint">Parsing source…</div>}
+              {!gapsBusy && !gaps && (
+                <div className="graph-empty-hint">
+                  Enter a component name and type, then toggle Gaps to see source-parsed references.
+                </div>
+              )}
+              {!gapsBusy && gaps && gaps.length === 0 && (
+                <div className="graph-empty-hint">No source-parsed references found for that component.</div>
+              )}
+              {!gapsBusy && gaps && gaps.length > 0 && (
+                <table className="gaps-table">
+                  <thead><tr><th>Kind</th><th>Target</th><th>Evidence</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {gaps.map((g, i) => (
+                      <tr key={i}>
+                        <td>{g.ref.kind}</td>
+                        <td><span className="gaps-target-type">{g.ref.toType}:</span>{g.ref.toName}</td>
+                        <td className="gaps-evidence">{g.ref.evidence} <span className="gaps-line">@{g.ref.line}</span></td>
+                        <td><span className={`gaps-status gaps-${g.status}`}>{g.status}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

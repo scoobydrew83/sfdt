@@ -200,3 +200,11 @@ export type {
   ResolvedPrompt,
   ValidationResult,
 } from './prompts.js';
+
+export {
+  extractApexRefs,
+  extractLwcApexRefs,
+  extractFormulaRefs,
+  extractFlowRefs,
+} from './dependency-parsers.js';
+export type { InferredRef, InferredRefKind } from './dependency-parsers.js';

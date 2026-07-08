@@ -26,6 +26,7 @@ import { buildSourceDirArgs } from '../source-dirs.js';
 import { initCache, getDelta, updateCache } from '../pull-cache.js';
 import { parallelRetrieve } from '../parallel-retrieve.js';
 import { GRAPH_SOURCE_TYPES, resolveQueryFor, neighborsQuery } from '@sfdt/flow-core';
+import { runGapReport } from '../source-dependencies.js';
 import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken, requireCsrfTokenFromQueryOrHeader } from './security.js';
 import { mountBridgeRoutes } from '../bridge/routes.js';
 import { constantTimeEqual } from '../bridge/token.js';
@@ -3154,6 +3155,24 @@ export function createGuiApp(config, version, port = 7654) {
         references: { hasMore: refHasMore, shown: refShown.length },
         referencedBy: { hasMore: refByHasMore, shown: refByShown.length },
       });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/dependencies/gaps', apiLimiter, async (req, res) => {
+    try {
+      const name = String(req.query.name ?? '').trim();
+      if (!name) return res.status(400).json({ error: 'name is required' });
+      const type = String(req.query.type ?? '').trim();
+      if (!GRAPH_SOURCE_TYPES.some((t) => t.type === type)) {
+        return res.status(400).json({ error: 'Invalid metadata type' });
+      }
+      const org = req.query.org ? String(req.query.org).trim() : undefined;
+      if (org && !DEP_ORG_RE.test(org)) return res.status(400).json({ error: 'Invalid org alias' });
+      const config = await loadConfig();
+      const report = await runGapReport(config, { name, type, org });
+      res.json(report);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

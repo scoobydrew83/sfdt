@@ -262,6 +262,8 @@ export const api = {
   dependenciesPreflight:  (manifest, org) => fetchJson(`/dependencies/preflight?manifest=${encodeURIComponent(manifest)}&org=${encodeURIComponent(org)}`),
   resolveDependency:      (org, name, type) => fetchJson(`/dependencies/resolve?org=${encodeURIComponent(org)}&name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`),
   dependencyNeighbors:    (org, id, cap = 50) => fetchJson(`/dependencies/neighbors?org=${encodeURIComponent(org)}&id=${encodeURIComponent(id)}&cap=${cap}`),
+  /** @returns {Promise<{ from: {name:string, type:string}, gaps: Array<{ref:{toName:string, toType:string, kind:string, evidence:string, line:number}, status:'inferred'|'confirmed'|'missing'}> }>} */
+  dependencyGaps:         (org, name, type) => fetchJson(`/dependencies/gaps?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}${org ? `&org=${encodeURIComponent(org)}` : ''}`),
   /** @returns {Promise<Array<{key: string, description: string}>>} */
   pullGroups:             () => fetchJson('/pull/groups'),
   /** @returns {Promise<{ packages: Array<{name: string, path: string}> }>} */

@@ -2085,3 +2085,13 @@ select option {
   min-width: 160px;
 }
 .graph-more-badge { pointer-events: none; }
+
+.gaps-panel { position: absolute; inset: 0; overflow: auto; padding: 12px; background: var(--bg-app); }
+.gaps-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.gaps-table th, .gaps-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.gaps-evidence { font-family: var(--font-mono); color: var(--fg-muted); }
+.gaps-line { opacity: 0.6; }
+.gaps-status { font-size: 11px; padding: 1px 6px; border-radius: 4px; }
+.gaps-missing { color: var(--status-conflict-fg); background: var(--status-conflict-bg); }
+.gaps-confirmed { color: var(--status-identical-fg); background: var(--status-identical-bg); }
+.gaps-inferred { color: var(--status-modified-fg); background: var(--status-modified-bg); }

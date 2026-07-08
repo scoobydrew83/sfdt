@@ -4,10 +4,12 @@ import { Command } from 'commander';
 vi.mock('../../src/lib/config.js', () => ({ loadConfig: vi.fn() }));
 vi.mock('../../src/lib/org-query.js', () => ({ query: vi.fn() }));
 vi.mock('../../src/lib/exit-codes.js', () => ({ resolveExitCode: vi.fn(() => 1) }));
+vi.mock('../../src/lib/source-dependencies.js', () => ({ runGapReport: vi.fn() }));
 
 import { loadConfig } from '../../src/lib/config.js';
 import { query } from '../../src/lib/org-query.js';
 import { resolveExitCode } from '../../src/lib/exit-codes.js';
+import { runGapReport } from '../../src/lib/source-dependencies.js';
 import { registerDependenciesCommand } from '../../src/commands/dependencies.js';
 
 function createProgram() {
@@ -137,5 +139,28 @@ describe('dependencies command', () => {
     expect(process.exitCode).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Dependencies failed'));
     errorSpy.mockRestore();
+  });
+});
+
+describe('sfdt dependencies --gaps', () => {
+  it('runs the gap report offline (no org required) and emits JSON', async () => {
+    loadConfig.mockResolvedValue({ _projectRoot: '/x', defaultOrg: null });
+    runGapReport.mockResolvedValue({
+      from: { name: 'AccountSvc', type: 'ApexClass' },
+      gaps: [{
+        from: {},
+        ref: { toName: 'BillingHandler', toType: 'ApexClass', kind: 'apex-dynamic', evidence: "Type.forName('BillingHandler')", line: 1 },
+        status: 'inferred',
+      }],
+    });
+    // --json emits via process.stdout.write (see emitJson in output.js), not console.log —
+    // spy on stdout, matching the --json assertions above in this file.
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    await createProgram().parseAsync(['node', 'sfdt', 'dependencies', 'AccountSvc', '--type', 'ApexClass', '--gaps', '--json']);
+
+    expect(runGapReport).toHaveBeenCalledWith(expect.anything(), { name: 'AccountSvc', type: 'ApexClass', org: undefined });
+    expect(writeSpy.mock.calls.map((c) => c[0]).join('')).toContain('BillingHandler');
+    writeSpy.mockRestore();
   });
 });
