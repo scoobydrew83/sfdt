@@ -370,7 +370,18 @@ export default function Dependency() {
     if (showInferred) buildInferredOverlay();
   }, [showInferred, expandedIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Switching orgs invalidates the whole graph: the confirmed nodes/edges, the
+  // expanded set, node metadata, and cached positions all belong to the previous
+  // org. Reset them (plus the inferred overlay) so a new org starts clean and the
+  // overlay never parses gaps against stale, other-org node names.
   useEffect(() => {
+    setGraphData(null);
+    setExpandedIds(new Set());
+    setNodeMeta(new Map());
+    setSelectedId(null);
+    selectedIdRef.current = null;
+    positionsRef.current.clear();
+    setNotFound(null);
     setShowInferred(false);
     setInferredNodes(new Map());
     setInferredEdges([]);

@@ -123,4 +123,18 @@ describe('Dependency page — seed + expand', () => {
     await waitFor(() => expect(container.querySelector('line[stroke-dasharray]')).toBeTruthy());
     expect(screen.getAllByText('HelperSvc').length).toBe(1);
   });
+
+  it('clears the graph when the org is switched', async () => {
+    api.orgs.mockResolvedValue({ orgs: [{ alias: 'dev' }, { alias: 'prod' }] });
+    api.resolveDependency.mockResolvedValue({ found: true, id: 'aaa', name: 'AccountSvc', type: 'ApexClass' });
+    api.dependencyNeighbors.mockResolvedValue({ nodes: [], edges: [], references: { hasMore: false, shown: 0 }, referencedBy: { hasMore: false, shown: 0 } });
+    const user = userEvent.setup();
+    render(<Dependency />);
+    await user.type(await screen.findByPlaceholderText(/component name/i), 'AccountSvc');
+    await user.click(screen.getByRole('button', { name: /add seed/i }));
+    expect(await screen.findByText('AccountSvc')).toBeInTheDocument();
+    // switch org (the org selector is the first combobox in the toolbar)
+    await user.selectOptions(screen.getAllByRole('combobox')[0], 'prod');
+    await waitFor(() => expect(screen.queryByText('AccountSvc')).toBeNull());
+  });
 });
