@@ -104,6 +104,14 @@ describe('checkMfa', () => {
     expect(r.status).toBe('warn');
     expect(r.findings).toEqual([{ username: 'b@x.com', name: 'B', license: undefined }]);
   });
+
+  it('degrades to warn (not error) when TwoFactorMethodsInfo is not queryable', async () => {
+    query.mockRejectedValueOnce(new Error("sObject type 'TwoFactorMethodsInfo' is not supported"));
+    const r = await checkMfa('dev');
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/unavailable/);
+    expect(r.findings).toEqual([]);
+  });
 });
 
 describe('checkMfaReadiness', () => {

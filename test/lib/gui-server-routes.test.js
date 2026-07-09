@@ -938,6 +938,27 @@ describe('GET /api/dependencies/preflight', () => {
     expect(res.body.missing).toHaveLength(0);
     expect(res.body.warnings.length).toBeGreaterThan(0);
   });
+
+  it('degrades to warn (200) when MetadataComponentDependency is not queryable, not a 500', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    const { execa: execaMock } = await import('execa');
+
+    fsMock.pathExists.mockResolvedValueOnce(true);
+    fsMock.readFile.mockResolvedValueOnce(
+      '<Package><types><members>MyClass</members><name>ApexClass</name></types></Package>',
+    );
+    // sf rejects the Tooling query (e.g. Dev Hub / Developer Edition)
+    const execErr = new Error('Command failed');
+    execErr.stdout = JSON.stringify({ name: 'INVALID_FIELD', message: 'MetadataComponentName is unknown.' });
+    vi.mocked(execaMock).mockRejectedValueOnce(execErr);
+
+    const res = await request(app).get(`/api/dependencies/preflight?manifest=manifest/release/pkg.xml&org=dev`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('warn');
+    expect(res.body.missing).toHaveLength(0);
+    expect(res.body.warnings[0].name).toBe('DEPENDENCY_API_UNAVAILABLE');
+    expect(res.body.warnings[0].referencedBy[0]).toMatch(/unavailable in this org/i);
+  });
 });
 
 // ─── Mock config.js for PATCH /api/config success tests ─────────────────────

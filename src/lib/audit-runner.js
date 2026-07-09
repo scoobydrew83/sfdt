@@ -183,7 +183,12 @@ export async function checkMfa(orgAlias) {
         : 'All active standard users have MFA registered') + truncNote,
       findings);
   } catch (err) {
-    return errored(id, title, err);
+    // TwoFactorMethodsInfo is permission-gated and unsupported in some orgs
+    // (e.g. Dev Hub / Developer Edition returns INVALID_TYPE). A rejected query
+    // means "this org can't run the check", not "the org is broken" — degrade to
+    // warn so `audit all` doesn't fail CI over a missing API, matching
+    // checkMfaReadiness which queries the same object.
+    return degraded(id, title, err, 'MFA coverage (TwoFactorMethodsInfo)');
   }
 }
 

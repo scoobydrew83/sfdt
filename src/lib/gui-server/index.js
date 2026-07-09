@@ -3250,7 +3250,21 @@ export function createGuiApp(config, version, port = 7654) {
           const errParsed = JSON.parse(execErr.stdout ?? execErr.stderr ?? '{}');
           errMsg = errParsed?.message ?? errParsed?.result?.message ?? errMsg;
         } catch { /* ignore */ }
-        return res.status(500).json({ error: errMsg });
+        // MetadataComponentDependency is a capability-gated Tooling object: some
+        // orgs (Dev Hub / Developer Edition) reject the query (INVALID_TYPE /
+        // INVALID_FIELD "…is unknown"). A rejected query means "this org can't run
+        // the dependency check", not "the manifest is bad" — degrade to warn so the
+        // Preflight page shows a tidy "unavailable" note instead of a raw 500 dump,
+        // matching the audit/monitor runners' degrade-to-warn (never error) pattern.
+        return res.status(200).json({
+          status: 'warn',
+          missing: [],
+          warnings: [{
+            name: 'DEPENDENCY_API_UNAVAILABLE',
+            type: 'system',
+            referencedBy: [`Dependency data unavailable in this org (MetadataComponentDependency not queryable): ${String(errMsg).replace(/[\r\n]+/g, ' ').slice(0, 300)}`],
+          }],
+        });
       }
 
       // For each dependency: if RefMetadataComponentName is not in the manifest,
