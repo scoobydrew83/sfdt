@@ -101,7 +101,9 @@ const FORMULA_KEYWORDS = new Set([
 
 /** Field/object references inside a custom field's <formula>. */
 export function extractFormulaRefs(fieldXml: string): InferredRef[] {
-  const fm = /<formula>([\s\S]*?)<\/formula>/i.exec(fieldXml);
+  // `[^<]*` (not `[\s\S]*?`) keeps this linear: in valid metadata XML a `<` inside
+  // formula text is entity-escaped (`&lt;`), so the body never contains a raw `<`.
+  const fm = /<formula>([^<]*)<\/formula>/i.exec(fieldXml);
   if (!fm) return [];
   const formula = fm[1]!;
   const refs: InferredRef[] = [];
@@ -128,9 +130,14 @@ export function extractFlowRefs(xml: string): InferredRef[] {
   const refs: InferredRef[] = [];
   let m: RegExpExecArray | null;
 
-  const subflow = /<subflows\b[\s\S]*?<flowName>([^<]+)<\/flowName>[\s\S]*?<\/subflows>/g;
+  // Match the whole <subflows> block first, then pull <flowName> from inside it —
+  // one lazy segment per regex (like the <actionCalls> handling below) instead of
+  // two, which keeps matching linear (avoids the polynomial-backtracking shape).
+  const subflow = /<subflows\b[\s\S]*?<\/subflows>/g;
   while ((m = subflow.exec(xml)) !== null) {
-    refs.push({ toName: m[1]!.trim(), toType: 'Flow', kind: 'flow-subflow', evidence: `subflow ${m[1]!.trim()}`, line: lineAt(xml, m.index) });
+    const nameM = /<flowName>([^<]+)<\/flowName>/.exec(m[0]!);
+    if (!nameM) continue;
+    refs.push({ toName: nameM[1]!.trim(), toType: 'Flow', kind: 'flow-subflow', evidence: `subflow ${nameM[1]!.trim()}`, line: lineAt(xml, m.index) });
   }
 
   const action = /<actionCalls\b([\s\S]*?)<\/actionCalls>/g;
