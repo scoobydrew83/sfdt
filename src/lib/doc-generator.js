@@ -18,9 +18,7 @@ import { getPrompt, interpolate } from './prompts.js';
  * unit-test without a live org or filesystem fixtures.
  */
 
-// ---------------------------------------------------------------------------
 // XML helpers (focused, not a full parser)
-// ---------------------------------------------------------------------------
 
 function tag(xml, name) {
   const m = xml.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`));
@@ -36,9 +34,7 @@ function decode(s) {
     .replace(/&amp;/g, '&');
 }
 
-// ---------------------------------------------------------------------------
 // Parsers
-// ---------------------------------------------------------------------------
 
 /** Parse a *.field-meta.xml body into a field descriptor. */
 export function parseField(xml, fallbackName) {
@@ -87,9 +83,7 @@ export function extractLwcApexImports(js) {
   return [...names];
 }
 
-// ---------------------------------------------------------------------------
 // Collection
-// ---------------------------------------------------------------------------
 
 /**
  * Walk the project's source path and collect documentable metadata.
@@ -209,9 +203,7 @@ function extractLeadingComment(body) {
   return m[1].replace(/^\s*\*\s?/gm, '').trim() || null;
 }
 
-// ---------------------------------------------------------------------------
 // Rendering (pure)
-// ---------------------------------------------------------------------------
 
 export function renderObjectMarkdown(obj) {
   const lines = [`# ${obj.label ?? obj.name}`, ''];
@@ -321,9 +313,7 @@ export function renderIndex(meta, overview) {
   return lines.join('\n');
 }
 
-// ---------------------------------------------------------------------------
 // Orchestration
-// ---------------------------------------------------------------------------
 
 /**
  * Generate documentation for a project and write it to the output directory.
@@ -403,9 +393,7 @@ export async function generateDocs(config, { ai = false, roles = null, diagrams 
   };
 }
 
-// ---------------------------------------------------------------------------
 // Multi-role AI guides
-// ---------------------------------------------------------------------------
 
 /** Built-in role focus + relevance constraints, injected as {{roleInstructions}}. */
 export const ROLE_GUIDES = {

@@ -1,10 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# =============================================================================
 # SFDT - Code Quality Analyzer
 # Basic static analysis and quality checks
-# =============================================================================
 
 # Source shared utilities
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

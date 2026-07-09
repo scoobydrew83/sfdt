@@ -1,10 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# =============================================================================
 # SFDT - Test Quality Analyzer
 # Analyzes test quality, coverage patterns, and identifies improvement areas
-# =============================================================================
 
 # Source shared utilities
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

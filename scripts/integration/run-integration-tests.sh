@@ -4,9 +4,7 @@
 # DevHub must be authenticated: sf org login jwt ...
 set -euo pipefail
 
-# ---------------------------------------------------------------------------
 # Config
-# ---------------------------------------------------------------------------
 SYNTHETIC_SPARK_DIR="${1:-./synthetic-spark}"
 
 # Resolve to absolute path so cd doesn't confuse it
@@ -30,18 +28,14 @@ done
 # Unique alias per run so parallel CI jobs don't collide
 SCRATCH_ORG_ALIAS="sfdt-integration-$(date +%s)"
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 step() {
   echo ""
   echo "=== $1 ==="
   echo ""
 }
 
-# ---------------------------------------------------------------------------
 # Cleanup — runs on any exit (success or failure)
-# ---------------------------------------------------------------------------
 TEMP_FIELD_FILE=""
 
 cleanup() {
@@ -55,10 +49,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# ---------------------------------------------------------------------------
 # 1. Create scratch org
 #    Must run from within the Salesforce project so the CLI finds sfdx-project.json
-# ---------------------------------------------------------------------------
 step "Creating scratch org: $SCRATCH_ORG_ALIAS"
 
 cd "$SYNTHETIC_SPARK_DIR"
@@ -71,9 +63,7 @@ sf org create scratch \
   --duration-days 1 \
   --wait 15
 
-# ---------------------------------------------------------------------------
 # 2a. Bootstrap .sfdt config if the fixture doesn't have one committed
-# ---------------------------------------------------------------------------
 if [[ ! -f "$SYNTHETIC_SPARK_DIR/.sfdt/config.json" ]]; then
   step "Bootstrapping .sfdt config (fixture has no committed config)"
   mkdir -p "$SYNTHETIC_SPARK_DIR/.sfdt"
@@ -135,10 +125,8 @@ if [[ ! -f "$SYNTHETIC_SPARK_DIR/.sfdt/config.json" ]]; then
   "
 fi
 
-# ---------------------------------------------------------------------------
 # 2b. Write alias into .sfdt config files (CRITICAL — must happen before any
 #     sfdt command runs, otherwise config.js throws ConfigError and exits 2)
-# ---------------------------------------------------------------------------
 step "Patching .sfdt config with scratch org alias: $SCRATCH_ORG_ALIAS"
 
 SFDT_DIR="$SYNTHETIC_SPARK_DIR" SFDT_ALIAS="$SCRATCH_ORG_ALIAS" node -e "
@@ -166,46 +154,42 @@ SFDT_DIR="$SYNTHETIC_SPARK_DIR" SFDT_ALIAS="$SCRATCH_ORG_ALIAS" node -e "
   console.log('Wrote orgs[0].alias to .sfdt/environments.json');
 "
 
-# ---------------------------------------------------------------------------
 # 3. Run sfdt commands from within the fixture project directory
-# ---------------------------------------------------------------------------
 export SFDT_NON_INTERACTIVE=true
 
-# -- sfdt pull ---------------------------------------------------------------
+# sfdt pull
 step "sfdt pull"
 sfdt pull
 
-# -- sfdt preflight ----------------------------------------------------------
+# sfdt preflight
 step "sfdt preflight"
 sfdt preflight
 
-# -- sfdt deploy -------------------------------------------------------------
+# sfdt deploy
 step "sfdt deploy"
 sfdt deploy --source-dir force-app/main/default
 
-# -- sfdt test ---------------------------------------------------------------
+# sfdt test
 # Must run after deploy so Apex classes exist in the org
 step "sfdt test"
 sfdt test
 
-# -- sfdt smoke --------------------------------------------------------------
+# sfdt smoke
 step "sfdt smoke"
 sfdt smoke
 
-# -- sfdt drift --------------------------------------------------------------
+# sfdt drift
 step "sfdt drift"
 sfdt drift
 
-# -- sfdt compare ------------------------------------------------------------
+# sfdt compare
 step "sfdt compare"
 sfdt compare
 
-# ---------------------------------------------------------------------------
 # 4. Rollback sequence
 #    v1 state  → deploy (creates backup)
 #    patch XML → deploy (creates backup of v1, now at v2)
 #    rollback  → should revert to v1
-# ---------------------------------------------------------------------------
 step "Rollback sequence — deploy v1 baseline"
 sfdt deploy --source-dir force-app/main/default
 
@@ -233,7 +217,5 @@ step "Rollback sequence — cleaning up temp field file"
 rm -f "$TEMP_FIELD_FILE"
 TEMP_FIELD_FILE=""
 
-# ---------------------------------------------------------------------------
 # Done
-# ---------------------------------------------------------------------------
 step "All integration tests passed"
