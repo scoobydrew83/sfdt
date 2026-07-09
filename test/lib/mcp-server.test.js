@@ -58,7 +58,7 @@ vi.mock('../../src/lib/mcp-parking.js', () => ({
 
 import { execa } from 'execa';
 import fs from 'fs-extra';
-import { SfdtMcpServer } from '../../src/lib/mcp-server.js';
+import { SfdtMcpServer, TOOLS } from '../../src/lib/mcp-server.js';
 import { parkIfNeeded, getParkedResult } from '../../src/lib/mcp-parking.js';
 
 describe('SfdtMcpServer', () => {
@@ -525,5 +525,63 @@ describe('SfdtMcpServer', () => {
       expect(logged).not.toContain('SENTINEL-secret-org');
       errorSpy.mockRestore();
     });
+  });
+});
+
+describe('MCP tool examples (advanced tool use)', () => {
+  // A tool is "multi-parameter" (in scope for examples) when its inputSchema has
+  // 2+ properties, or any property is an enum or an array — exactly the surfaces
+  // where JSON schema alone under-specifies parameter conventions.
+  const isInScope = (tool) => {
+    const props = tool.inputSchema?.properties ?? {};
+    const names = Object.keys(props);
+    if (names.length >= 2) return true;
+    return names.some((n) => Array.isArray(props[n].enum) || props[n].type === 'array');
+  };
+
+  it('every multi-parameter MCP tool defines a non-empty examples array', () => {
+    const inScope = TOOLS.filter(isInScope);
+    // Guard: if this drops to zero the predicate is broken, not satisfied.
+    expect(inScope.length).toBeGreaterThan(0);
+
+    for (const tool of inScope) {
+      const props = tool.inputSchema.properties;
+      const required = tool.inputSchema.required ?? [];
+
+      expect(Array.isArray(tool.examples), `${tool.name} must have an examples array`).toBe(true);
+      expect(tool.examples.length, `${tool.name} needs at least one example`).toBeGreaterThan(0);
+
+      for (const ex of tool.examples) {
+        // Non-empty, human-readable description.
+        expect(typeof ex.description, `${tool.name} example.description`).toBe('string');
+        expect(ex.description.trim().length, `${tool.name} example.description non-empty`).toBeGreaterThan(0);
+
+        // Non-empty input object — no placeholder {} examples.
+        expect(ex.input && typeof ex.input === 'object' && !Array.isArray(ex.input), `${tool.name} example.input is an object`).toBe(true);
+        const keys = Object.keys(ex.input);
+        expect(keys.length, `${tool.name} example.input non-empty`).toBeGreaterThan(0);
+
+        // Every input key is a declared property (catches typos / invented params).
+        for (const key of keys) {
+          expect(props[key], `${tool.name} example uses undeclared param "${key}"`).toBeDefined();
+        }
+
+        // Required params must be present (examples must be actually runnable).
+        for (const req of required) {
+          expect(keys, `${tool.name} example missing required param "${req}"`).toContain(req);
+        }
+
+        // Enum values must be valid; array-typed params must be arrays.
+        for (const key of keys) {
+          const schema = props[key];
+          if (Array.isArray(schema.enum)) {
+            expect(schema.enum, `${tool.name} example "${key}"=${ex.input[key]} not in enum`).toContain(ex.input[key]);
+          }
+          if (schema.type === 'array') {
+            expect(Array.isArray(ex.input[key]), `${tool.name} example "${key}" must be an array`).toBe(true);
+          }
+        }
+      }
+    }
   });
 });
