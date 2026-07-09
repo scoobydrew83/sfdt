@@ -6,6 +6,8 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-09
+
 ### Added
 
 - **Run this test class** — a **▶ Run test class** CodeLens at the top of every Apex test class (`.cls` with `@isTest`/`testMethod`) runs `sfdt test --class-names <name>`, plus a **SFDT: Run This Test Class** palette command. The extension now also activates in any Salesforce DX project (`sfdx-project.json`).
