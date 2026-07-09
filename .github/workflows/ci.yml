@@ -156,6 +156,14 @@ jobs:
       - name: Build GUI
         if: steps.version.outputs.changed == 'true'
         run: npm run build:gui
+      - name: Pin npm for OIDC trusted publishing
+        # This repo publishes via npm OIDC trusted publishing (no token) + provenance.
+        # That needs npm >= 11.5.1; the runner's bundled npm 10.x can't (ENEEDAUTH).
+        # `npm@latest` is currently the broken 12.0.0 (missing `sigstore`, so
+        # --provenance crashes), so pin the newest stable 11.x. Bump deliberately —
+        # never a floating `@latest`.
+        if: steps.version.outputs.changed == 'true'
+        run: npm install -g npm@11.18.0
       - name: Publish @sfdt/flow-core beta to npm
         if: steps.version.outputs.changed == 'true'
         run: npm publish --workspace=@sfdt/flow-core --provenance --access public --tag beta
@@ -233,6 +241,14 @@ jobs:
       - name: Build GUI
         if: steps.version.outputs.changed == 'true'
         run: npm run build:gui
+      - name: Pin npm for OIDC trusted publishing
+        # This repo publishes via npm OIDC trusted publishing (no token) + provenance.
+        # That needs npm >= 11.5.1; the runner's bundled npm 10.x can't (ENEEDAUTH).
+        # `npm@latest` is currently the broken 12.0.0 (missing `sigstore`, so
+        # --provenance crashes), so pin the newest stable 11.x. Bump deliberately —
+        # never a floating `@latest`.
+        if: steps.version.outputs.changed == 'true'
+        run: npm install -g npm@11.18.0
       - name: Publish @sfdt/flow-core to npm
         # Must publish flow-core BEFORE @sfdt/cli — the CLI depends on it as
         # a regular runtime dep. The workspace's prepack hook builds dist/
