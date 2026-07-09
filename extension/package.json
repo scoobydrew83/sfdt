@@ -1,6 +1,6 @@
 {
   "name": "@sfdt/extension",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Chrome MV3 extension for Salesforce Flow Builder and other Salesforce tools. WXT + TypeScript.",
   "private": true,
   "type": "module",

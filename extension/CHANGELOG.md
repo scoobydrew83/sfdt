@@ -4,6 +4,8 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-09
+
 ### Fixed
 - **Org Health (bridge) is now registered.** The `org-health` feature — which surfaces the CLI's audit/monitor snapshots via the local bridge or native host (the `org-health` request kind) — was built, tested, and given an icon/label but never wired into any entrypoint, so it was unreachable. It's now registered on real Salesforce pages (`content.ts`) and in the Workspace, alongside the live-query "Org Health (Live)" tool. (It also now works when only the native host is available, per the host's new read-only-kinds support.)
 
