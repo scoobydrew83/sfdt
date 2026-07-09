@@ -1,9 +1,7 @@
 #!/bin/bash
 
-# =============================================================================
 # SFDT - Shared Utilities
 # Common functions used across all project scripts
-# =============================================================================
 
 # Color codes for consistent output
 export RED='\033[0;31m'

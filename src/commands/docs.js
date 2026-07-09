@@ -9,14 +9,42 @@ import { emitJson, emitJsonError } from '../lib/output.js';
 
 const DEFAULT_ROLES = ['developer', 'admin', 'user', 'devops'];
 
-/** Resolve the --roles flag value into a role list (or null when the flag is absent). */
+/**
+ * Resolve the --roles flag value into a role list (or null when role guides
+ * are off). Precedence: explicit --roles list > bare --roles > config
+ * (`docs.roleGuides` enables guides for `docs.roles`, defaulting to all four).
+ */
 function resolveRoleOption(roleOption, config) {
-  if (roleOption == null) return null; // flag not passed
   if (typeof roleOption === 'string') {
     return roleOption.split(',').map((r) => r.trim()).filter(Boolean);
   }
-  // flag passed without a value (boolean true) → fall back to config, then default
-  return config.docs?.roles?.length ? config.docs.roles : DEFAULT_ROLES;
+  // Bare --roles (boolean true), or flag absent with docs.roleGuides enabled:
+  // fall back to config.docs.roles, then the built-in default list. The config
+  // path additionally requires features.ai — role guides are AI-authored, and a
+  // config-driven default must not turn a working `docs generate` into an
+  // AI-unavailable error (an explicit --roles flag still may).
+  if (roleOption === true || (roleOption == null && config.features?.ai && config.docs?.roleGuides)) {
+    return config.docs?.roles?.length ? config.docs.roles : DEFAULT_ROLES;
+  }
+  return null;
+}
+
+/**
+ * Resolve the effective AI toggle. --ai / --no-ai wins both ways; with no
+ * flag, AI is on when `features.ai` is enabled and `docs.ai` is not false.
+ */
+function resolveAiOption(aiFlag, config) {
+  if (aiFlag !== undefined) return !!aiFlag;
+  return !!(config.features?.ai && config.docs?.ai !== false);
+}
+
+/**
+ * Resolve the ER-diagram toggle. --no-diagrams wins; otherwise the standalone
+ * diagram page is generated when `docs.diagrams` is enabled in config.
+ */
+function resolveDiagramOption(diagramFlag, config) {
+  if (diagramFlag === false) return false;
+  return config.docs?.diagrams === true;
 }
 
 async function executeGenerate(options) {
@@ -28,7 +56,8 @@ async function executeGenerate(options) {
     let result;
     try {
       result = await generateDocs(config, {
-        ai: !!options.ai,
+        ai: resolveAiOption(options.ai, config),
+        diagrams: resolveDiagramOption(options.diagrams, config),
         roles,
         onProgress: spinner ? (msg) => { spinner.text = msg; } : undefined,
       });
@@ -46,6 +75,9 @@ async function executeGenerate(options) {
       console.log(`  Flows:   ${result.counts.flows}`);
       console.log(`  LWC:     ${result.counts.lwc}`);
       console.log(`  AI overview: ${result.aiUsed ? 'yes' : 'no'}`);
+      if (result.diagram) {
+        console.log(`  ER diagram: ${result.diagram}`);
+      }
       if (result.guides) {
         console.log(`  Role guides: ${result.guides.written} written for [${result.guides.roles.join(', ')}]`);
         if (result.guides.skipped.length) {
@@ -100,8 +132,10 @@ export function registerDocsCommand(program) {
   docs
     .command('generate', { isDefault: true })
     .description('Generate MkDocs-compatible markdown documentation for the project')
-    .option('--ai', 'Enrich the index with an AI-written project overview')
-    .option('--roles [list]', 'Also generate per-component Developer/Admin/User/DevOps guides (AI); optional comma list to subset, e.g. --roles developer,admin')
+    .option('--ai', 'Enrich the index with an AI-written project overview (default: on when config features.ai and docs.ai allow)')
+    .option('--no-ai', 'Skip the AI overview even when enabled in config')
+    .option('--roles [list]', 'Also generate per-component Developer/Admin/User/DevOps guides (AI); optional comma list to subset, e.g. --roles developer,admin (default: config docs.roleGuides + docs.roles)')
+    .option('--no-diagrams', 'Skip the standalone ER-diagram page even when docs.diagrams is enabled in config')
     .option('--json', 'Emit structured JSON to stdout')
     .action((options) => executeGenerate(options));
 

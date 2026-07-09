@@ -24,6 +24,7 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs-extra';
 import { execa } from 'execa';
+import { writeHostConfig } from '../src/host-config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HOST_NAME = 'com.sfdt.host';
@@ -182,7 +183,10 @@ async function installOne({ platform, browser, hostPath, extensionId, templateSt
  * @param {string} [opts.browser='chrome'] — 'chrome' | 'edge' | 'brave' |
  *   'chromium' | 'vivaldi' | 'all'.
  * @param {string} [opts.platform=process.platform] — Override for tests.
- * @returns {Promise<{ok:true, hostPath:string, results:Array}|{ok:false, error:string}>}
+ * @param {string} [opts.projectRoot] — Salesforce project root to record in the
+ *   host config file, so the host's read-only kinds can find `logs/` and
+ *   `.sfdt/config.json`. Optional; the manifest still installs without it.
+ * @returns {Promise<{ok:true, hostPath:string, results:Array, projectRoot?:string}|{ok:false, error:string}>}
  */
 export async function installNativeHost(opts) {
   const extensionId = opts.extensionId;
@@ -222,7 +226,18 @@ export async function installNativeHost(opts) {
   if (!anyOk) {
     return { ok: false, error: 'No browser manifest could be installed', results };
   }
-  return { ok: true, hostPath, platform, results };
+
+  // Record the project root so the host's read-only kinds can find logs/ and
+  // .sfdt/config.json. Non-fatal: the manifest install already succeeded.
+  let hostConfigFile = null;
+  if (opts.projectRoot) {
+    try {
+      ({ file: hostConfigFile } = await writeHostConfig({ projectRoot: opts.projectRoot }));
+    } catch {
+      // Best-effort — the host falls back to SFDT_PROJECT_ROOT / errors clearly.
+    }
+  }
+  return { ok: true, hostPath, platform, results, projectRoot: opts.projectRoot ?? null, hostConfigFile };
 }
 
 /**

@@ -9,6 +9,7 @@ import { loadConfig } from '../lib/config.js';
 import { query } from '../lib/org-query.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
+import { runGapReport } from '../lib/source-dependencies.js';
 
 /**
  * `sfdt dependencies <name>` — show what a metadata component references and what
@@ -20,10 +21,26 @@ export function registerDependenciesCommand(program) {
   program
     .command('dependencies <name>')
     .description('Show metadata dependencies for a component (references + referenced-by)')
-    .option('--type <MetadataType>', 'Metadata type to resolve (ApexClass, ApexTrigger, Flow, …)', 'ApexClass')
+    .option('--type <MetadataType>', 'Metadata type to resolve (ApexClass, ApexTrigger, ApexPage, ApexComponent, Flow, LightningComponentBundle, AuraDefinitionBundle, CustomField)', 'ApexClass')
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
     .option('--json', 'Emit structured JSON to stdout')
+    .option('--gaps', 'Report source-parsed references the Tooling API may miss (offline; pass --org to diff)')
     .action(async (name, options) => {
+      if (options.gaps) {
+        const jsonMode = !!options.json;
+        try {
+          const config = await loadConfig();
+          const org = options.org ?? undefined; // gaps is offline by default; --org explicitly opts into the Tooling diff
+          const report = await runGapReport(config, { name, type: options.type, org });
+          if (jsonMode) { emitJson(report); return; }
+          printGapReport(report);
+        } catch (err) {
+          if (jsonMode) emitJsonError(err);
+          else { console.error(chalk.red(`Gap report failed: ${err.message}`)); process.exitCode = resolveExitCode(err); }
+        }
+        return;
+      }
+
       const jsonMode = !!options.json;
       try {
         const config = await loadConfig();
@@ -74,6 +91,18 @@ export function registerDependenciesCommand(program) {
         }
       }
     });
+}
+
+function printGapReport(report) {
+  const { from, org, gaps } = report;
+  console.log('');
+  const title = org ? `Inferred references for ${from.type} ${from.name} (diffed against ${org})` : `Inferred references for ${from.type} ${from.name} (local source)`;
+  console.log(chalk.bold.cyan(`  ${title}`));
+  if (!gaps.length) { console.log(chalk.gray('    (no source-parsed references found)')); return; }
+  for (const { ref, status } of gaps) {
+    const tag = status === 'missing' ? chalk.red('MISSING') : status === 'confirmed' ? chalk.green('confirmed') : chalk.yellow('inferred');
+    console.log(`    [${tag}] ${ref.kind}  ${ref.toType}:${ref.toName}  ${chalk.gray(`(${ref.evidence} @${ref.line})`)}`);
+  }
 }
 
 function printGroups(title, groups) {

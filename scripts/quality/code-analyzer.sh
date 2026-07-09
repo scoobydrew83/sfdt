@@ -1,10 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# =============================================================================
 # SFDT - Code Quality Analyzer
 # Basic static analysis and quality checks
-# =============================================================================
 
 # Source shared utilities
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -146,26 +144,57 @@ else
     echo "  Significant quality issues found"
 fi
 
-# Emit structured JSON to stdout for GUI result parsing
-# Try sf scanner (Salesforce Code Analyzer) if installed; fall back to a stub
-_SCANNER_PLUGIN=""
+# Emit structured JSON to stdout for GUI result parsing.
+# Try sf scanner (Salesforce Code Analyzer) if installed. When it is NOT
+# installed (or the run fails), never fabricate a clean scan result — emit an
+# unmistakably labelled skipped marker (status "skipped" + reason) so that no
+# downstream consumer can mistake the absence of a scan for a passing one.
+# "result": [] plus "_sfdt_unavailable" are kept for existing consumers
+# (gui-server parseQualityLines); "status"/"reason" are additive.
+# Prefer Salesforce Code Analyzer v5 (`sf code-analyzer run`, a just-in-time
+# plugin on a modern sf CLI). Fall back to the retired v4 (`sf scanner run`)
+# when only that is present, and otherwise emit the skipped marker — never
+# fabricate a clean scan. Set SFDT_ANALYZER_INCLUDE_FIXES=true to request
+# actionable fixes/suggestions in the output (v5 only).
+_INCLUDE_FIXES=()
+if [[ "${SFDT_ANALYZER_INCLUDE_FIXES:-}" == "true" ]]; then
+    _INCLUDE_FIXES=(--include-fixes --include-suggestions)
+fi
+
+_SCANNER_V4=""
 if command -v sf &>/dev/null; then
-    _SCANNER_PLUGIN=$(sf plugins --json 2>/dev/null | \
+    _SCANNER_V4=$(sf plugins --json 2>/dev/null | \
         jq -r '.[] | select(.name == "@salesforce/sfdx-scanner") | .name' 2>/dev/null || true)
 fi
 
-if [[ -n "$_SCANNER_PLUGIN" ]]; then
-    log_info "Running Salesforce Code Analyzer (sf scanner)..."
+if command -v sf &>/dev/null && sf code-analyzer --help &>/dev/null; then
+    log_info "Running Salesforce Code Analyzer v5 (sf code-analyzer run)..."
+    _ANALYZER_TMP=$(mktemp -t sfdt-analyzer-XXXXXX.json)
+    # --severity-threshold is deliberately omitted: sfdt applies its own
+    # thresholds, and a non-zero analyzer exit must not abort this script.
+    # v5 writes JSON to --output-file (by extension); cat it to stdout so the
+    # existing stdout-JSON contract (parseQualityLines) is preserved.
+    if sf code-analyzer run \
+        --workspace "$FORCE_APP_DIR" \
+        "${_INCLUDE_FIXES[@]}" \
+        --output-file "$_ANALYZER_TMP" &>/dev/null && [[ -s "$_ANALYZER_TMP" ]]; then
+        cat "$_ANALYZER_TMP"
+    else
+        printf '{"status":"skipped","reason":"sf code-analyzer run failed","result":[],"_sfdt_unavailable":"sf code-analyzer run failed — no violation data available for this run"}\n'
+    fi
+    rm -f "$_ANALYZER_TMP"
+elif [[ -n "$_SCANNER_V4" ]]; then
+    log_info "Running Salesforce Code Analyzer v4 (legacy sf scanner run)..."
     sf scanner run \
         --format json \
         --target "$FORCE_APP_DIR" \
         --engine pmd,eslint \
         2>/dev/null || \
-        echo '{"status":0,"result":[]}'
+        printf '{"status":"skipped","reason":"sf scanner run failed","result":[],"_sfdt_unavailable":"sf scanner run failed — no violation data available for this run"}\n'
 else
-    log_warning "sf scanner not installed — static violation analysis unavailable."
-    log_warning "Install with:  sf plugins install @salesforce/sfdx-scanner"
-    printf '{"status":0,"result":[],"_sfdt_unavailable":"sf scanner plugin not installed. Run: sf plugins install @salesforce/sfdx-scanner"}\n'
+    log_warning "Salesforce Code Analyzer not available — static violation analysis SKIPPED (not run)."
+    log_warning "It auto-installs with a modern sf CLI, or run:  sf plugins install code-analyzer"
+    printf '{"status":"skipped","reason":"sf code-analyzer not installed","result":[],"_sfdt_unavailable":"sf code-analyzer not available. It auto-installs with a modern sf CLI, or run: sf plugins install code-analyzer"}\n'
 fi
 
 # Exit with appropriate code

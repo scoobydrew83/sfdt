@@ -22,8 +22,21 @@ export interface CommandEntry {
   detail: string;
   /** argv passed to the sfdt CLI. Omitted for non-CLI actions (see `action`). */
   args?: string[];
+  /**
+   * When true, `args` is a prefix the user must complete (required positional
+   * arguments, e.g. `config get <key>`). The extension types the command into
+   * the integrated terminal without executing it so the user appends the rest.
+   */
+  argsIncomplete?: boolean;
   /** When true, the command mutates the org/repo and should confirm first. */
   destructive?: boolean;
+  /**
+   * When true, the CLI command accepts no `--org` flag, so the extension must
+   * NOT append the configured `sfdt.defaultOrg` (Commander rejects unknown
+   * options with exit 1). Applies to project-local commands like `doctor`,
+   * `init`, and `feature-flags`.
+   */
+  noOrg?: boolean;
   /** When set, refresh the matching snapshot view after the command completes. */
   refreshes?: 'audit' | 'monitor' | 'scan' | 'drift';
   /** Non-terminal action handled by the extension (e.g. open the dashboard). */
@@ -55,7 +68,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       { id: 'deploy-smart', label: 'Smart Deploy (validate)', detail: 'Delta validate-only deploy with smart test selection', args: ['deploy', '--smart', '--dry-run'], icon: 'cloud-upload' },
       { id: 'retrofit', label: 'Retrofit', detail: 'Retrieve from a source org, commit, and smart-deploy to a target', args: ['retrofit'], icon: 'sync' },
       { id: 'pr-comment', label: 'PR Comment (monitor)', detail: 'Post the latest monitor snapshot to the current PR', args: ['pr', 'comment', '--type', 'monitor'], icon: 'comment' },
-      { id: 'preflight', label: 'Preflight', detail: 'Run pre-deployment validation checks', args: ['preflight'], icon: 'checklist' },
+      { id: 'preflight', label: 'Preflight', detail: 'Run pre-deployment validation checks', args: ['preflight'], noOrg: true, icon: 'checklist' },
       { id: 'rollback', label: 'Rollback', detail: 'Roll back the last deployment', args: ['rollback'], destructive: true, icon: 'discard' },
       { id: 'release', label: 'Release', detail: 'Build a release (manifest + notes)', args: ['release'], icon: 'tag' },
       { id: 'manifest', label: 'Manifest', detail: 'Generate package.xml from a git diff', args: ['manifest'], icon: 'list-tree' },
@@ -109,13 +122,15 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           { id: 'monitor-deploy-history', label: 'Deployment History', detail: 'Recent deployment success/failure', args: ['monitor', 'deploy-history'], refreshes: 'monitor' },
           { id: 'monitor-deprecated-api', label: 'Legacy API Usage', detail: 'Traffic on deprecated API versions', args: ['monitor', 'deprecated-api'], refreshes: 'monitor' },
           { id: 'monitor-flow-errors', label: 'Paused Flows', detail: 'Paused (stuck) flow interviews', args: ['monitor', 'flow-errors'], refreshes: 'monitor' },
+          { id: 'monitor-schedule', label: 'Schedule (CI workflow)', detail: 'Generate a scheduled org-monitoring CI workflow', args: ['monitor', 'schedule'] },
         ],
       },
       { id: 'notify-monitor', label: 'Send Org Health to Notifications', detail: 'Push the latest monitor snapshot to configured channels', args: ['notify', 'snapshot', '--type', 'monitor'], icon: 'bell' },
+      { id: 'notify', label: 'Send Notification (event)', detail: 'Send a lifecycle event to configured channels: deploy-success | deploy-failure | test-failure | release-created | snapshot', args: ['notify'], argsIncomplete: true, icon: 'bell' },
       { id: 'backup', label: 'Backup Metadata', detail: 'Retrieve a full metadata backup', args: ['monitor', 'backup'], destructive: true, icon: 'archive' },
       { id: 'scan', label: 'Scan Inventory', detail: 'Fetch the org metadata inventory', args: ['scan'], refreshes: 'scan', icon: 'search' },
       { id: 'drift', label: 'Detect Drift', detail: 'Compare local source against the org', args: ['drift'], refreshes: 'drift', icon: 'git-compare' },
-      { id: 'doctor', label: 'Doctor', detail: 'Diagnose the sfdt/sf setup', args: ['doctor'], icon: 'verified' },
+      { id: 'doctor', label: 'Doctor', detail: 'Diagnose the browser-extension bridge stack (expects `sfdt ui` to be running)', args: ['doctor'], noOrg: true, icon: 'verified' },
     ],
   },
   {
@@ -124,8 +139,9 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     icon: 'beaker',
     docsUrl: DOCS.testing,
     entries: [
-      { id: 'quality', label: 'Quality Analysis', detail: 'Analyze Apex test quality', args: ['quality'], icon: 'beaker' },
+      { id: 'quality', label: 'Quality Analysis', detail: 'Analyze Apex test quality', args: ['quality'], noOrg: true, icon: 'beaker' },
       { id: 'test', label: 'Run Tests', detail: 'Run Apex tests', args: ['test'], icon: 'beaker' },
+      { id: 'agent-test', label: 'Agent Test (Agentforce)', detail: 'Run an Agentforce agent test as a CI gate (sf agent test run) — append the AiEvaluationDefinition API name', args: ['agent-test', '--spec'], argsIncomplete: true, icon: 'hubot' },
       { id: 'coverage', label: 'Code Coverage', detail: 'Report Apex code coverage (org-wide + per-class)', args: ['coverage'], icon: 'shield' },
       { id: 'dependencies', label: 'Dependencies', detail: 'Show metadata dependencies for a component', args: ['dependencies'], icon: 'references' },
       { id: 'review', label: 'Code Review', detail: 'AI review of the current diff', args: ['review'], icon: 'comment-discussion' },
@@ -153,6 +169,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       },
       { id: 'explain', label: 'Explain', detail: 'Explain a class or flow (AI)', args: ['explain'], icon: 'lightbulb' },
       { id: 'compare', label: 'Compare', detail: 'Diff two orgs or org vs local', args: ['compare'], icon: 'diff' },
+      { id: 'ai-prompt', label: 'AI Prompt', detail: 'Run a free-form prompt through the configured AI provider', args: ['ai', 'prompt'], argsIncomplete: true, icon: 'sparkle' },
     ],
   },
   {
@@ -188,8 +205,36 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     icon: 'tools',
     docsUrl: DOCS.configUtils,
     entries: [
-      { id: 'init', label: 'Initialize Project', detail: 'Create .sfdt config (sfdt init)', args: ['init'], icon: 'rocket' },
-      { id: 'config', label: 'Show Config', detail: 'Print the resolved configuration', args: ['config'], icon: 'settings-gear' },
+      { id: 'init', label: 'Initialize Project', detail: 'Create .sfdt config (sfdt init)', args: ['init'], noOrg: true, icon: 'rocket' },
+      {
+        id: 'config', label: 'Config', detail: 'Read and write .sfdt config values', icon: 'settings-gear',
+        children: [
+          { id: 'config-get', label: 'Get', detail: 'Print a config value by dot-notation key (e.g. defaultOrg)', args: ['config', 'get'], argsIncomplete: true },
+          { id: 'config-set', label: 'Set', detail: 'Set a config value by dot-notation key (e.g. deployment.coverageThreshold 80)', args: ['config', 'set'], argsIncomplete: true },
+        ],
+      },
+      {
+        id: 'feature-flags', label: 'Feature Flags', detail: 'Kill-switch for sfdt feature ids (.sfdt/feature-flags.json)', icon: 'symbol-boolean',
+        children: [
+          { id: 'feature-flags-list', label: 'List', detail: 'List currently disabled feature ids', args: ['feature-flags', 'list'], noOrg: true },
+          { id: 'feature-flags-disable', label: 'Disable', detail: 'Add a feature id to the disabled list', args: ['feature-flags', 'disable'], argsIncomplete: true },
+          { id: 'feature-flags-enable', label: 'Enable', detail: 'Remove a feature id from the disabled list', args: ['feature-flags', 'enable'], argsIncomplete: true },
+          { id: 'feature-flags-clear', label: 'Clear', detail: 'Re-enable everything (empties the disabled list)', args: ['feature-flags', 'clear'], noOrg: true },
+        ],
+      },
+      {
+        id: 'ci', label: 'CI Templates', detail: 'Generate ready-to-use CI/CD pipeline workflows', icon: 'circuit-board',
+        children: [
+          { id: 'ci-init-github-monitor', label: 'GitHub · Monitor', detail: 'Scheduled org-monitoring workflow for GitHub Actions', args: ['ci', 'init', '--provider', 'github', '--type', 'monitor'] },
+          { id: 'ci-init-github-deploy', label: 'GitHub · Deploy', detail: 'PR smart-deploy workflow for GitHub Actions', args: ['ci', 'init', '--provider', 'github', '--type', 'deploy'] },
+          { id: 'ci-init-gitlab-monitor', label: 'GitLab · Monitor', detail: 'Scheduled org-monitoring pipeline for GitLab CI', args: ['ci', 'init', '--provider', 'gitlab', '--type', 'monitor'] },
+          { id: 'ci-init-gitlab-deploy', label: 'GitLab · Deploy', detail: 'MR smart-deploy pipeline for GitLab CI', args: ['ci', 'init', '--provider', 'gitlab', '--type', 'deploy'] },
+          { id: 'ci-init-azure-monitor', label: 'Azure · Monitor', detail: 'Scheduled org-monitoring pipeline for Azure DevOps', args: ['ci', 'init', '--provider', 'azure', '--type', 'monitor'] },
+          { id: 'ci-init-azure-deploy', label: 'Azure · Deploy', detail: 'PR smart-deploy pipeline for Azure DevOps', args: ['ci', 'init', '--provider', 'azure', '--type', 'deploy'] },
+          { id: 'ci-init-bitbucket-monitor', label: 'Bitbucket · Monitor', detail: 'Scheduled org-monitoring pipeline for Bitbucket Pipelines', args: ['ci', 'init', '--provider', 'bitbucket', '--type', 'monitor'] },
+          { id: 'ci-init-bitbucket-deploy', label: 'Bitbucket · Deploy', detail: 'PR smart-deploy pipeline for Bitbucket Pipelines', args: ['ci', 'init', '--provider', 'bitbucket', '--type', 'deploy'] },
+        ],
+      },
       { id: 'pull', label: 'Pull Metadata', detail: 'Retrieve metadata into the project', args: ['pull'], icon: 'cloud-download' },
       { id: 'dashboard', label: 'Open Dashboard', detail: 'Open the embedded sfdt dashboard', action: 'dashboard', icon: 'dashboard', docsUrl: 'https://sfdt.dev/cli/dashboard' },
       { id: 'mcp', label: 'Start MCP Server', detail: 'Start the stdio MCP server', args: ['mcp', 'start'], icon: 'server-process', docsUrl: 'https://sfdt.dev/cli/mcp' },
@@ -198,8 +243,21 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         children: [
           { id: 'extension-status', label: 'Status', detail: 'Show native-host status', args: ['extension', 'status'] },
           { id: 'extension-stats', label: 'Stats', detail: 'Show extension telemetry', args: ['extension', 'stats'] },
+          { id: 'extension-install-host', label: 'Install Host', detail: 'Register the native messaging host — append --extension-id <id>', args: ['extension', 'install-host', '--extension-id'], argsIncomplete: true, noOrg: true },
+          { id: 'extension-uninstall-host', label: 'Uninstall Host', detail: 'Remove the native messaging host manifest', args: ['extension', 'uninstall-host'], noOrg: true },
         ],
       },
+      {
+        id: 'skills', label: 'Agent Skills', detail: 'Export SFDT agent skills to IDE/agent configs', icon: 'lightbulb-sparkle',
+        children: [
+          { id: 'skills-claude', label: 'Export → Claude', detail: 'Write Claude rules files', args: ['skills', 'export', '--target', 'claude'], noOrg: true },
+          { id: 'skills-cursor', label: 'Export → Cursor', detail: 'Write .cursorrules', args: ['skills', 'export', '--target', 'cursor'], noOrg: true },
+          { id: 'skills-codex', label: 'Export → Codex', detail: 'Write .codexrules', args: ['skills', 'export', '--target', 'codex'], noOrg: true },
+          { id: 'skills-windsurf', label: 'Export → Windsurf', detail: 'Write .windsurfrules', args: ['skills', 'export', '--target', 'windsurf'], noOrg: true },
+          { id: 'skills-pack', label: 'Export → npx-skills pack', detail: 'Emit an `npx skills add`-compatible pack', args: ['skills', 'export', '--target', 'pack'], noOrg: true },
+        ],
+      },
+      { id: 'plugin-create', label: 'Create Plugin', detail: 'Scaffold a new sfdt CLI plugin — append a name', args: ['plugin', 'create'], argsIncomplete: true, noOrg: true, icon: 'plug' },
       { id: 'update', label: 'Check for Updates', detail: 'Check for a newer sfdt CLI', args: ['update'], icon: 'sync' },
     ],
   },

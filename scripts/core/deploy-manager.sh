@@ -1,10 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# =============================================================================
 # SFDT - Smart Deployment Manager
-# Features: Environment-aware deployment, rollback capabilities, validation
-# =============================================================================
 
 # Source shared utilities
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

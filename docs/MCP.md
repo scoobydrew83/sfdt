@@ -131,9 +131,77 @@ Generates MkDocs-compatible documentation (custom objects + fields, Apex classes
 * **Arguments:**
   * `action` (enum, optional): `generate` (default) | `diagram`.
 
+#### `sfdt_coverage`
+Reports Apex code coverage for an org — org-wide percentage plus per-class coverage. Read-only.
+* **Arguments:**
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+#### `sfdt_scan`
+Fetches the complete metadata inventory of an org (all component types and members). Read-only.
+* **Arguments:**
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+#### `sfdt_dependencies`
+Shows a component's metadata dependencies — what it references and what references it. Read-only.
+* **Arguments:**
+  * `name` (string, **required**): component name (e.g. an Apex class or field API name).
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+#### `sfdt_flow_scan`
+Analyzes a Salesforce org's Flows for quality issues and anti-patterns (via `@sfdt/flow-core`) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Read-only.
+* **Arguments:**
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+#### `sfdt_history`
+Shows recent sfdt run history (audit/monitor/quality/test/deploy/agent-test) from the local SQLite run index — trend outcomes over time. Read-only.
+* **Arguments:**
+  * `type` (string, optional): filter to one run type.
+  * `limit` (number, optional): max rows (default 30).
+
+#### `sfdt_test`
+Runs Apex tests via the enhanced test runner, optionally limited to specific classes. Consumes org test resources; not metadata-mutating.
+* **Arguments:**
+  * `classNames` (string[], optional): only run these Apex test classes.
+
+#### `sfdt_data_export`
+Exports a configured data set from the org to local files. Read-only with respect to the org.
+* **Arguments:**
+  * `set` (string, **required**): data set name.
+  * `org` (string, optional): org alias.
+
 ---
 
-### 4. Context Budget Governance & Parking
+### 4. Release, Scratch Orgs & Data (Safety Guarded)
+
+These mutate the repo or org and require `confirmExecution: true` (except the read-only `status`/`export` paths).
+
+#### `sfdt_release`
+Builds a release (manifest + release notes). **Requires `confirmExecution`.**
+* **Arguments:** `version`, `package`, `name`, `confirmExecution` (**required**).
+
+#### `sfdt_scratch_create`
+Creates a scratch org. **Requires `confirmExecution`.**
+* **Arguments:** `alias`, `days`, `confirmExecution` (**required**).
+
+#### `sfdt_scratch_delete`
+Deletes a scratch org by alias/username. **Requires `confirmExecution`.**
+* **Arguments:** `target` (**required**), `confirmExecution` (**required**).
+
+#### `sfdt_scratch_pool`
+Inspects (`status`, read-only) or tops up (`fill`, requires `confirmExecution`) the scratch-org pool.
+* **Arguments:** `action` (`status` | `fill`, **required**), `size`, `confirmExecution` (required for `fill`).
+
+#### `sfdt_data_import`
+Imports a data set into the org. **Requires `confirmExecution`.**
+* **Arguments:** `set` (**required**), `org`, `confirmExecution` (**required**).
+
+#### `sfdt_data_delete`
+Bulk-deletes a data set in the org. Destructive — **requires `confirmExecution`.**
+* **Arguments:** `set` (**required**), `org`, `confirmExecution` (**required**).
+
+---
+
+### 5. Context Budget Governance & Parking
 
 When a tool result exceeds `mcp.parking.thresholdBytes`, the server writes the full payload to `.sfdt/cache/parked/<uuid>.json` and returns a lightweight envelope instead:
 

@@ -223,6 +223,9 @@ export function registerDeployCommand(program) {
     .option('--max-turns <n>', 'Max auto-fix iterations (overrides ai.agent.maxTurns)')
     .option('--pr-comment', 'Post the smart-deploy delta + outcome to the current PR (via gh)')
     .option('--agent', 'Non-interactive agent mode (no AI prompts block on input)')
+    .option('--tag', 'Tag the release in git (v<version>) after a successful deploy (standard manifest deploy only)')
+    .option('--create-pr', 'Create a PR from the current branch to the default branch (via gh) after a successful deploy (standard manifest deploy only)')
+    .option('--notify', 'Send the deploy success/failure notification (via sfdt notify) (standard manifest deploy only)')
     .action(async (options) => {
       try {
         const config = await loadConfig();
@@ -230,6 +233,14 @@ export function registerDeployCommand(program) {
         const orgAlias = options.org || config.defaultOrg;
 
         if (options.smart) {
+          const inertFlags = [
+            options.tag && '--tag',
+            options.createPr && '--create-pr',
+            options.notify && '--notify',
+          ].filter(Boolean);
+          if (inertFlags.length) {
+            print.warning(`${inertFlags.join(', ')} only appl${inertFlags.length === 1 ? 'ies' : 'y'} to the standard manifest deploy — ignored with --smart.`);
+          }
           await runSmartDeploy(config, options);
           return;
         }
@@ -254,6 +265,21 @@ export function registerDeployCommand(program) {
             throw new Error('--source-dir must be a relative path within the project');
           }
           extraEnv.SFDT_DEPLOY_SOURCE_DIR = options.sourceDir;
+        }
+        // --tag/--create-pr/--notify are only wired into deployment-assistant.sh's
+        // manifest flow; deploy-manager.sh (--managed) and the source-dir flow
+        // never read them — warn instead of silently dropping the request.
+        const postDeployFlags = [
+          options.tag && '--tag',
+          options.createPr && '--create-pr',
+          options.notify && '--notify',
+        ].filter(Boolean);
+        if (postDeployFlags.length && (options.managed || options.sourceDir)) {
+          print.warning(`${postDeployFlags.join(', ')} ignored with ${options.managed ? '--managed' : '--source-dir'} — only the standard manifest deploy supports post-deploy tag/PR/notify.`);
+        } else {
+          if (options.tag) extraEnv.SFDT_TAG_RELEASE = 'true';
+          if (options.createPr) extraEnv.SFDT_CREATE_PR = 'true';
+          if (options.notify) extraEnv.SFDT_NOTIFY_SLACK = 'true';
         }
 
         const deployStart = Date.now();

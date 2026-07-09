@@ -179,12 +179,12 @@ describe('generateDocs', () => {
     expect(res.files).toContain('index.md');
   });
 
-  it('respects config.docs.ai=false even when ai option is set', async () => {
+  it('lets an explicit ai option win over config.docs.ai=false (command resolves flags > config)', async () => {
     isAiAvailable.mockResolvedValue(true);
-    runAiPrompt.mockResolvedValue({ stdout: 'unused' });
+    runAiPrompt.mockResolvedValue({ stdout: 'AI overview text' });
     const res = await generateDocs({ ...config, docs: { ai: false } }, { ai: true });
-    expect(res.aiUsed).toBe(false);
-    expect(runAiPrompt).not.toHaveBeenCalled();
+    expect(runAiPrompt).toHaveBeenCalled();
+    expect(res.aiUsed).toBe(true);
   });
 });
 

@@ -5,6 +5,11 @@ import { ORG_HEALTH_THRESHOLDS } from '@sfdt/flow-core';
 import { query, safeParse, toSoqlDate } from './org-query.js';
 import { fetchOrgInventory } from './org-inventory.js';
 import { parallelRetrieve } from './parallel-retrieve.js';
+import { expectedGaApiVersion, detectOrgRelease } from './org-release.js';
+
+// Re-exported for back-compat: `expectedGaApiVersion` moved to org-release.js
+// (shared with compare/retrofit) but was previously imported from here.
+export { expectedGaApiVersion };
 
 /**
  * Org monitoring & backup runner.
@@ -48,7 +53,7 @@ export async function checkLimits(orgAlias, { warnThreshold = MONITOR_DEFAULTS.l
   try {
     const result = await execa('sf', ['org', 'list', 'limits', '--target-org', orgAlias, '--json']);
     const rows = safeParse(result.stdout)?.result ?? [];
-    const findings = rows
+    const thresholdFindings = rows
       .map((r) => {
         const max = r.max ?? 0;
         const remaining = r.remaining ?? 0;
@@ -58,10 +63,38 @@ export async function checkLimits(orgAlias, { warnThreshold = MONITOR_DEFAULTS.l
       })
       .filter((f) => f.max > 0 && f.ratio >= warnThreshold)
       .sort((a, b) => b.ratio - a.ratio);
-    return result_(id, title, findings.length ? 'warn' : 'ok',
-      findings.length
-        ? `${findings.length} limit(s) at or above ${Math.round(warnThreshold * 100)}% usage`
-        : 'All org limits have headroom',
+    const findings = [...thresholdFindings];
+
+    // Summer '26 elastic async Apex (Beta): when the limits payload carries the
+    // elastic keys, report usage and warn when the org is running in the elastic
+    // overflow band (usage above the standard daily async limit). Orgs without
+    // the beta simply don't return these keys — silently skip them.
+    const byName = new Map(rows.map((r) => [r.name, r]));
+    const elastic = byName.get('DailyAsyncApexElasticExecutions');
+    const processed = byName.get('DailyAsyncApexProcessed');
+    let overflow = false;
+    if (elastic || processed) {
+      const standardMax = byName.get('DailyAsyncApexExecutions')?.max ?? 0;
+      const src = processed ?? elastic;
+      const used = (src.max ?? 0) - (src.remaining ?? 0);
+      overflow = standardMax > 0 && used > standardMax;
+      findings.push({
+        name: 'DailyAsyncApexElastic (Beta)',
+        used,
+        standardLimit: standardMax,
+        elasticLimit: elastic?.max ?? null,
+        overflow,
+        detail: overflow
+          ? `Async Apex usage (${used}) exceeds the standard daily limit (${standardMax}) — running in the elastic overflow band`
+          : 'Elastic async Apex available; usage within the standard daily limit',
+      });
+    }
+
+    const overflowNote = overflow ? '; async Apex is in the elastic overflow band (Beta)' : '';
+    return result_(id, title, thresholdFindings.length || overflow ? 'warn' : 'ok',
+      (thresholdFindings.length
+        ? `${thresholdFindings.length} limit(s) at or above ${Math.round(warnThreshold * 100)}% usage`
+        : 'All org limits have headroom') + overflowNote,
       findings);
   } catch (err) {
     return errored(id, title, err);
@@ -123,7 +156,8 @@ export async function checkHealth(orgAlias, { minScore = MONITOR_DEFAULTS.health
 }
 
 /**
- * Org info / instance — informational, with a trial/expiration warning.
+ * Org info / instance — informational, with a trial/expiration warning. Also
+ * reports the org's release version (and preview status) when determinable.
  */
 export async function checkOrgInfo(orgAlias, { trialWarnDays = MONITOR_DEFAULTS.orgInfoTrialWarnDays } = {}) {
   const id = 'org-info';
@@ -135,15 +169,22 @@ export async function checkOrgInfo(orgAlias, { trialWarnDays = MONITOR_DEFAULTS.
     );
     const org = rows[0];
     if (!org) return result_(id, title, 'warn', 'Organization record unavailable', []);
+    const releaseInfo = await detectOrgRelease(orgAlias);
     const finding = {
       name: org.Name,
       instance: org.InstanceName,
       type: org.OrganizationType,
       sandbox: org.IsSandbox,
       trialExpires: org.TrialExpirationDate ?? null,
+      release: releaseInfo?.release ?? null,
+      releaseApiVersion: releaseInfo?.apiVersion ?? null,
+      preview: releaseInfo?.preview ?? null,
     };
+    const releaseNote = releaseInfo
+      ? ` — ${releaseInfo.release}${releaseInfo.preview ? ' (preview instance)' : ''}`
+      : '';
     let status = 'ok';
-    let summary = `${org.OrganizationType} on ${org.InstanceName}${org.IsSandbox ? ' (sandbox)' : ''}`;
+    let summary = `${org.OrganizationType} on ${org.InstanceName}${org.IsSandbox ? ' (sandbox)' : ''}${releaseNote}`;
     if (org.TrialExpirationDate) {
       const daysLeft = Math.ceil((new Date(org.TrialExpirationDate).getTime() - Date.now()) / DAY_MS);
       finding.daysLeft = daysLeft;

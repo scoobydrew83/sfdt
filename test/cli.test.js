@@ -22,6 +22,7 @@ describe('createCli', () => {
       'deploy',
       'release',
       'test',
+      'agent-test',
       'pull',
       'quality',
       'preflight',
@@ -48,6 +49,7 @@ describe('createCli', () => {
       'mcp',
       'plugin',
       'skills',
+      'history',
       'version',
     ];
 

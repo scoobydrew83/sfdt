@@ -3,7 +3,7 @@
  *
  * Resolves notification channels from config, routes messages by event type and
  * (for snapshots) by per-channel severity threshold, and sends via the right
- * formatter. Slack / Teams / webhook use native fetch; email lazy-loads
+ * formatter. Slack / Teams / Google Chat / webhook use native fetch; email lazy-loads
  * nodemailer so the dependency is only required when an email channel is used.
  *
  * Channel secrets (webhook URLs, SMTP credentials) are referenced by env-var
@@ -18,6 +18,7 @@ import {
   buildSnapshotMessage,
   renderSlack,
   renderTeams,
+  renderGoogleChat,
   renderWebhook,
   renderLoki,
   renderEmail,
@@ -155,6 +156,7 @@ async function sendToChannel(ch, message, { kind, snapshot, org } = {}) {
     let body;
     if (ch.type === 'slack') body = renderSlack(message);
     else if (ch.type === 'teams') body = renderTeams(message);
+    else if (ch.type === 'googlechat') body = renderGoogleChat(message);
     else if (ch.type === 'webhook') {
       // Both webhook shapes go to an external sink, so redact either way.
       body = ch.format === 'loki'

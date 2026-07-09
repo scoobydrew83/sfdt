@@ -165,6 +165,30 @@ describe('getMetadataType', () => {
   });
 });
 
+describe('getMetadataType — Agentforce agent metadata (Summer \'26)', () => {
+  const base = 'force-app/main/default';
+  const cases = [
+    [`${base}/bots/SupportAgent/SupportAgent.bot-meta.xml`, 'Bot'],
+    [`${base}/bots/SupportAgent/v1.botVersion-meta.xml`, 'BotVersion'],
+    [`${base}/genAiPlanners/MyPlanner.genAiPlanner-meta.xml`, 'GenAiPlanner'],
+    [`${base}/genAiPlannerBundles/MyBundle/MyBundle.genAiPlannerBundle-meta.xml`, 'GenAiPlannerBundle'],
+    [`${base}/genAiPlugins/MyTopic.genAiPlugin-meta.xml`, 'GenAiPlugin'],
+    [`${base}/genAiFunctions/MyAction/MyAction.genAiFunction-meta.xml`, 'GenAiFunction'],
+    [`${base}/genAiPromptTemplates/MyTemplate.genAiPromptTemplate-meta.xml`, 'GenAiPromptTemplate'],
+    [`${base}/aiEvaluationDefinitions/MyEval.aiEvaluationDefinition-meta.xml`, 'AiEvaluationDefinition'],
+    [`${base}/aiAuthoringBundles/MyAgent/MyAgent.bundle-meta.xml`, 'AiAuthoringBundle'],
+    [`${base}/aiAuthoringBundles/MyAgent/MyAgent.agent`, 'AiAuthoringBundle'],
+  ];
+  it.each(cases)('%s → %s', (filePath, expected) => {
+    expect(getMetadataType(filePath)).toBe(expected);
+  });
+
+  it('does not confuse GenAiPlanner with GenAiPlannerBundle', () => {
+    expect(getMetadataType(`${base}/genAiPlanners/P.genAiPlanner-meta.xml`)).toBe('GenAiPlanner');
+    expect(getMetadataType(`${base}/genAiPlannerBundles/B/B.genAiPlannerBundle-meta.xml`)).toBe('GenAiPlannerBundle');
+  });
+});
+
 describe('getMemberName', () => {
   it('strips suffixes for standard types', () => {
     expect(
@@ -217,6 +241,30 @@ describe('getMemberName', () => {
 
   it('strips .permissionset-meta.xml suffix', () => {
     expect(getMemberName('permissionsets/MyPerm.permissionset-meta.xml', 'PermissionSet')).toBe('MyPerm');
+  });
+
+  it('strips agent metadata suffixes to the component name', () => {
+    const b = 'force-app/main/default';
+    expect(getMemberName(`${b}/bots/SupportAgent/SupportAgent.bot-meta.xml`, 'Bot')).toBe('SupportAgent');
+    expect(getMemberName(`${b}/genAiPlanners/P.genAiPlanner-meta.xml`, 'GenAiPlanner')).toBe('P');
+    expect(getMemberName(`${b}/genAiPlannerBundles/B/B.genAiPlannerBundle-meta.xml`, 'GenAiPlannerBundle')).toBe('B');
+    expect(getMemberName(`${b}/genAiPlugins/T.genAiPlugin-meta.xml`, 'GenAiPlugin')).toBe('T');
+    expect(getMemberName(`${b}/genAiFunctions/F/F.genAiFunction-meta.xml`, 'GenAiFunction')).toBe('F');
+    expect(getMemberName(`${b}/aiEvaluationDefinitions/E.aiEvaluationDefinition-meta.xml`, 'AiEvaluationDefinition')).toBe('E');
+  });
+
+  it('returns Bot.Version for BotVersion', () => {
+    expect(
+      getMemberName('force-app/main/default/bots/SupportAgent/v1.botVersion-meta.xml', 'BotVersion'),
+    ).toBe('SupportAgent.v1');
+    // graceful fallback when no bots/<name>/ segment is present
+    expect(getMemberName('v1.botVersion-meta.xml', 'BotVersion')).toBe('v1');
+  });
+
+  it('returns the bundle folder name for AiAuthoringBundle', () => {
+    expect(
+      getMemberName('force-app/main/default/aiAuthoringBundles/MyAgent/MyAgent.agent', 'AiAuthoringBundle'),
+    ).toBe('MyAgent');
   });
 });
 

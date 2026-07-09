@@ -12,6 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@sfdt/flow-core": "^0.9.0"
+    "@sfdt/flow-core": "^0.9.0",
+    "execa": "^9.5.2",
+    "fs-extra": "^11.3.0"
   }
 }

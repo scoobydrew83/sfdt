@@ -2,9 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   escapeSoql,
   METADATA_TYPES,
+  METADATA_TYPE_REGISTRY,
+  GRAPH_SOURCE_TYPES,
   resolveQueryFor,
   referencesQuery,
   referencedByQuery,
+  neighborsQuery,
   groupByType,
 } from '../src/dependencies.js';
 
@@ -41,6 +44,24 @@ describe('reference queries', () => {
   });
 });
 
+describe('neighborsQuery', () => {
+  it('references direction selects the ref Id and applies LIMIT cap+1', () => {
+    const q = neighborsQuery('01p000000000001', 'references', 50);
+    expect(q).toContain('RefMetadataComponentId');
+    expect(q).toContain("MetadataComponentId = '01p000000000001'");
+    expect(q).toContain('LIMIT 51');
+  });
+  it('referencedBy direction selects the source Id and applies LIMIT cap+1', () => {
+    const q = neighborsQuery('01p000000000001', 'referencedBy', 10);
+    expect(q).toMatch(/SELECT MetadataComponentId,/);
+    expect(q).toContain("RefMetadataComponentId = '01p000000000001'");
+    expect(q).toContain('LIMIT 11');
+  });
+  it('escapes the id', () => {
+    expect(neighborsQuery("x'y", 'references', 5)).toContain("MetadataComponentId = 'x\\'y'");
+  });
+});
+
 describe('groupByType', () => {
   it('collapses rows into per-type groups sorted by type then name', () => {
     const groups = groupByType(
@@ -56,5 +77,40 @@ describe('groupByType', () => {
       { type: 'ApexClass', names: ['Alpha', 'Zeta'] },
       { type: 'Flow', names: ['Beta'] },
     ]);
+  });
+});
+
+describe('METADATA_TYPE_REGISTRY', () => {
+  it('resolves the two newly-added CLI types', () => {
+    expect(resolveQueryFor('ApexComponent', 'MyCmp')).toBe(
+      "SELECT Id FROM ApexComponent WHERE Name='MyCmp'",
+    );
+    expect(resolveQueryFor('AuraDefinitionBundle', 'MyAura')).toBe(
+      "SELECT Id FROM AuraDefinitionBundle WHERE DeveloperName='MyAura'",
+    );
+  });
+
+  it('keeps CustomField CLI-resolvable but never CustomObject', () => {
+    expect(METADATA_TYPES).toContain('CustomField');
+    expect(METADATA_TYPES).not.toContain('CustomObject');
+  });
+
+  it('exposes all 9 graph source types with labels', () => {
+    const types = GRAPH_SOURCE_TYPES.map((t) => t.type);
+    expect(types).toEqual([
+      'ApexClass', 'ApexTrigger', 'ApexPage', 'ApexComponent', 'Flow',
+      'LightningComponentBundle', 'AuraDefinitionBundle', 'CustomObject', 'CustomField',
+    ]);
+    expect(GRAPH_SOURCE_TYPES.find((t) => t.type === 'LightningComponentBundle')?.label).toBe('LWC');
+  });
+
+  it('defaults the 7 code types on and objects/fields off', () => {
+    const on = GRAPH_SOURCE_TYPES.filter((t) => t.graphDefaultOn).map((t) => t.type);
+    expect(on).toEqual([
+      'ApexClass', 'ApexTrigger', 'ApexPage', 'ApexComponent', 'Flow',
+      'LightningComponentBundle', 'AuraDefinitionBundle',
+    ]);
+    expect(GRAPH_SOURCE_TYPES.find((t) => t.type === 'CustomObject')?.graphDefaultOn).toBe(false);
+    expect(GRAPH_SOURCE_TYPES.find((t) => t.type === 'CustomField')?.graphDefaultOn).toBe(false);
   });
 });

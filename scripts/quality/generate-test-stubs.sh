@@ -1,11 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# =============================================================================
 # SFDT - Generate Test Stubs
 # Generates minimal @IsTest stub .cls + -meta.xml pairs for Apex classes
 # that don't have a corresponding test class.
-# =============================================================================
 
 # Source shared utilities
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

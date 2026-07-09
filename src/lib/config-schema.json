@@ -12,6 +12,14 @@
     "logDir": { "type": "string" },
     "logRetention": { "type": "integer", "minimum": 1 },
     "manifestLayout": { "type": "string", "enum": ["flat", "subpath"] },
+    "defaultBranch": { "type": "string" },
+    "smokeTests": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "testClasses": { "type": "array", "items": { "type": "string" } }
+      }
+    },
     "plugins": { "type": "array", "items": { "type": "string" } },
     "features": {
       "type": "object",
@@ -66,7 +74,7 @@
             "additionalProperties": false,
             "required": ["type"],
             "properties": {
-              "type": { "type": "string", "enum": ["slack", "teams", "email", "webhook"] },
+              "type": { "type": "string", "enum": ["slack", "teams", "email", "webhook", "googlechat"] },
               "name": { "type": "string" },
               "webhookUrl": { "type": "string" },
               "webhookUrlEnv": { "type": "string" },
@@ -100,6 +108,7 @@
       "properties": {
         "coverageThreshold": { "type": "number", "minimum": 0, "maximum": 100 },
         "backupBeforeRollback": { "type": "boolean" },
+        "keyClasses": { "type": "array", "items": { "type": "string" } },
         "preflight": {
           "type": "object",
           "additionalProperties": false,
@@ -188,7 +197,8 @@
         "inactiveUserDays": { "type": "integer", "minimum": 1 },
         "minApiVersion": { "type": "number", "minimum": 1 },
         "fieldDescriptionMaxMissing": { "type": "integer", "minimum": 0 },
-        "connectedAppFlagPermissive": { "type": "boolean" }
+        "connectedAppFlagPermissive": { "type": "boolean" },
+        "soapLoginLookbackDays": { "type": "integer", "minimum": 1 }
       }
     },
     "monitoring": {

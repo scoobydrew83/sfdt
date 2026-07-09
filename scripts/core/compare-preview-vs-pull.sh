@@ -22,15 +22,12 @@ if ! command -v jq &> /dev/null; then
     exit 1
 fi
 
-# Step 1: Get current git status before any operations
 echo -e "\n${YELLOW}Step 1: Capturing current state...${NC}"
 git status --porcelain > before_state.txt
 
-# Step 2: Run preview and capture results
 echo -e "\n${YELLOW}Step 2: Running preview...${NC}"
 sf project retrieve preview --json > preview_results.json
 
-# Step 3: Extract preview information
 echo -e "\n${YELLOW}Step 3: Analyzing preview results...${NC}"
 echo "Preview Results:" > comparison_report.txt
 echo "===============" >> comparison_report.txt
@@ -51,7 +48,6 @@ else
     echo "No items to retrieve" >> comparison_report.txt
 fi
 
-# Step 4: Ask user if they want to proceed with pull
 echo -e "\n${BLUE}Preview completed. Do you want to proceed with the pull? (y/n)${NC}"
 read -p "Enter your choice: " choice
 
@@ -59,11 +55,9 @@ if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
     echo -e "\n${YELLOW}Step 4: Running pull...${NC}"
     sf project retrieve start --ignore-conflicts
 
-    # Step 5: Capture post-pull state
     echo -e "\n${YELLOW}Step 5: Capturing post-pull state...${NC}"
     git status --porcelain > after_state.txt
 
-    # Step 6: Compare states
     echo -e "\n${YELLOW}Step 6: Comparing preview vs actual results...${NC}"
     echo "" >> comparison_report.txt
     echo "Actual Pull Results:" >> comparison_report.txt
@@ -73,7 +67,6 @@ if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
     echo "Files actually modified/created:" >> comparison_report.txt
     git diff --name-only HEAD >> comparison_report.txt
 
-    # Step 7: Show comparison
     echo -e "\n${GREEN}Comparison complete!${NC}"
     echo -e "${BLUE}Check comparison_report.txt for detailed results${NC}"
 

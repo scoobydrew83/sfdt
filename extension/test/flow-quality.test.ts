@@ -6,9 +6,20 @@ vi.mock('@sfdt/flow-core', async (importActual) => ({
   ...(await importActual()),
   runFlowQuality: vi.fn(() => ({
     summary: { overallScore: 88, rating: 'Good', severityCounts: { high: 1 }, categoryCounts: {} },
-    issueFamilies: [{}, {}],
+    issueFamilies: [
+      {
+        scoreFamily: 'faultPaths',
+        title: 'Missing fault paths',
+        severity: 'high',
+        category: 'reliability',
+        scoreImpact: 12,
+        instanceCount: 1,
+        affectedItems: [{ type: 'element', label: 'Create Account', apiName: 'Create_Account' }],
+        findings: [{ recommendation: 'Add a fault connector.' }],
+      },
+    ],
     findings: [],
-    dependencies: [],
+    dependencies: [{ type: 'ApexAction', name: 'MyController', count: 1 }],
     meta: {},
   })),
 }));
@@ -41,6 +52,11 @@ describe('flow-quality feature (Direct)', () => {
     expect(vi.mocked(runFlowQuality)).toHaveBeenCalledWith({ label: 'My Flow' }, { flowApiName: 'My_Flow' });
     expect(document.body.textContent).toContain('Good');
     expect(document.body.textContent).toContain('high: 1');
+    // Full report: issue family, affected element, recommendation, and dependency.
+    expect(document.body.textContent).toContain('Missing fault paths');
+    expect(document.body.textContent).toContain('Create Account');
+    expect(document.body.textContent).toContain('Add a fault connector.');
+    expect(document.body.textContent).toContain('MyController');
   });
 
   it('requires a Flow name and never calls the API when empty', async () => {
@@ -62,5 +78,35 @@ describe('flow-quality feature (Direct)', () => {
     (document.querySelector('input[type="text"]') as HTMLInputElement).value = 'Nope';
     scanBtn().click();
     await vi.waitFor(() => expect(document.body.textContent).toContain('Flow not found'));
+  });
+
+  it('cross-links a dependency to the Dependency Explorer with the mapped type', async () => {
+    const onExploreDependency = vi.fn();
+    const api = {
+      getFlowMetadata: vi.fn(async () => ({ Metadata: {} })),
+    } as unknown as SalesforceApiClient;
+    const feature = createFlowQualityFeature({ api, onExploreDependency });
+    await feature.onActivate?.();
+    (document.querySelector('input[type="text"]') as HTMLInputElement).value = 'My_Flow';
+    scanBtn().click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('MyController'));
+
+    const explore = [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('Explore'));
+    expect(explore).toBeTruthy();
+    explore!.click();
+    // flow-core 'ApexAction' maps to the MetadataComponent type 'ApexClass'.
+    expect(onExploreDependency).toHaveBeenCalledWith({ type: 'ApexClass', name: 'MyController' });
+  });
+
+  it('shows no Explore button when no cross-link is wired', async () => {
+    const api = {
+      getFlowMetadata: vi.fn(async () => ({ Metadata: {} })),
+    } as unknown as SalesforceApiClient;
+    const feature = createFlowQualityFeature({ api });
+    await feature.onActivate?.();
+    (document.querySelector('input[type="text"]') as HTMLInputElement).value = 'My_Flow';
+    scanBtn().click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('MyController'));
+    expect([...document.querySelectorAll('button')].some((b) => b.textContent?.includes('Explore'))).toBe(false);
   });
 });

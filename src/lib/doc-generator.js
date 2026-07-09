@@ -18,9 +18,7 @@ import { getPrompt, interpolate } from './prompts.js';
  * unit-test without a live org or filesystem fixtures.
  */
 
-// ---------------------------------------------------------------------------
 // XML helpers (focused, not a full parser)
-// ---------------------------------------------------------------------------
 
 function tag(xml, name) {
   const m = xml.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`));
@@ -36,9 +34,7 @@ function decode(s) {
     .replace(/&amp;/g, '&');
 }
 
-// ---------------------------------------------------------------------------
 // Parsers
-// ---------------------------------------------------------------------------
 
 /** Parse a *.field-meta.xml body into a field descriptor. */
 export function parseField(xml, fallbackName) {
@@ -87,9 +83,7 @@ export function extractLwcApexImports(js) {
   return [...names];
 }
 
-// ---------------------------------------------------------------------------
 // Collection
-// ---------------------------------------------------------------------------
 
 /**
  * Walk the project's source path and collect documentable metadata.
@@ -131,19 +125,24 @@ async function collectObjects(base) {
 
 async function collectApex(base) {
   const files = await glob('classes/*.cls', { cwd: base, absolute: true });
-  const out = [];
-  for (const file of files) {
+
+  const processFile = async (file) => {
     const name = path.basename(file).replace(/\.cls$/, '');
-    const body = await fs.readFile(file, 'utf8').catch(() => '');
-    const metaXml = await fs.readFile(`${file}-meta.xml`, 'utf8').catch(() => '');
-    out.push({
+    const [body, metaXml] = await Promise.all([
+      fs.readFile(file, 'utf8').catch(() => ''),
+      fs.readFile(`${file}-meta.xml`, 'utf8').catch(() => ''),
+    ]);
+
+    return {
       name,
       apiVersion: parseApexMeta(metaXml).apiVersion,
       isTest: /@isTest/i.test(body),
       methods: extractApexMethods(body),
       doc: extractLeadingComment(body),
-    });
-  }
+    };
+  };
+
+  const out = await Promise.all(files.map(processFile));
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -204,9 +203,7 @@ function extractLeadingComment(body) {
   return m[1].replace(/^\s*\*\s?/gm, '').trim() || null;
 }
 
-// ---------------------------------------------------------------------------
 // Rendering (pure)
-// ---------------------------------------------------------------------------
 
 export function renderObjectMarkdown(obj) {
   const lines = [`# ${obj.label ?? obj.name}`, ''];
@@ -316,22 +313,25 @@ export function renderIndex(meta, overview) {
   return lines.join('\n');
 }
 
-// ---------------------------------------------------------------------------
 // Orchestration
-// ---------------------------------------------------------------------------
 
 /**
  * Generate documentation for a project and write it to the output directory.
  *
  * @param {object} config
  * @param {object} [options]
- * @param {boolean} [options.ai] - enrich the index with an AI overview.
+ * @param {boolean} [options.ai] - enrich the index with an AI overview. The
+ *   caller (the `docs generate` command) resolves the effective value from
+ *   the --ai/--no-ai flags and config (`features.ai` + `docs.ai`); the
+ *   legacy `docs.ai === false` kill-switch is still honoured here.
  * @param {string[]|null} [options.roles] - when set, also generate per-component
  *   role guides (AI) for these roles; null/empty skips role guides.
+ * @param {boolean} [options.diagrams] - also write a standalone Mermaid ER
+ *   diagram page (`diagrams/erd.md`), the same output as `docs diagram`.
  * @param {(msg: string) => void} [options.onProgress] - optional progress callback.
- * @returns {Promise<{outputDir, files, counts, aiUsed, guides}>}
+ * @returns {Promise<{outputDir, files, counts, aiUsed, guides, diagram}>}
  */
-export async function generateDocs(config, { ai = false, roles = null, onProgress } = {}) {
+export async function generateDocs(config, { ai = false, roles = null, diagrams = false, onProgress } = {}) {
   const root = config._projectRoot ?? process.cwd();
   const outDir = path.isAbsolute(config.docs?.outputDir ?? 'docs')
     ? config.docs.outputDir
@@ -341,7 +341,9 @@ export async function generateDocs(config, { ai = false, roles = null, onProgres
 
   let overview = null;
   let aiUsed = false;
-  const wantAi = ai && (config.docs?.ai ?? true);
+  // Effective on/off is decided by the command (flags > config) — an explicit
+  // --ai must win over `docs.ai: false`, so no second gate here.
+  const wantAi = !!ai;
   if (wantAi && (await isAiAvailable(config))) {
     overview = await buildAiOverview(meta, config);
     aiUsed = !!overview;
@@ -371,7 +373,15 @@ export async function generateDocs(config, { ai = false, roles = null, onProgres
     guides = await generateRoleGuides(meta, config, { roles, write, root, onProgress });
   }
 
-  await write('mkdocs.yml', renderMkDocsConfig(config, meta));
+  // Optional standalone ER-diagram page — same Mermaid output as `docs diagram`,
+  // gated on config.docs.diagrams (resolved by the command into `diagrams`).
+  let diagram = null;
+  if (diagrams) {
+    diagram = path.join('diagrams', 'erd.md');
+    await write(diagram, buildErdMermaid(meta.objects));
+  }
+
+  await write('mkdocs.yml', renderMkDocsConfig(config, meta, { diagram }));
 
   return {
     outputDir: outDir,
@@ -379,12 +389,11 @@ export async function generateDocs(config, { ai = false, roles = null, onProgres
     counts: { objects: meta.objects.length, apex: meta.apex.length, flows: meta.flows.length, lwc: meta.lwc.length },
     aiUsed,
     guides,
+    diagram,
   };
 }
 
-// ---------------------------------------------------------------------------
 // Multi-role AI guides
-// ---------------------------------------------------------------------------
 
 /** Built-in role focus + relevance constraints, injected as {{roleInstructions}}. */
 export const ROLE_GUIDES = {
@@ -587,11 +596,12 @@ async function buildAiOverview(meta, config) {
   }
 }
 
-export function renderMkDocsConfig(config, meta) {
+export function renderMkDocsConfig(config, meta, { diagram = null } = {}) {
   const name = config.projectName || 'Salesforce Project';
   const nav = [
     'nav:',
     '  - Home: index.md',
+    ...(diagram ? [`  - ER Diagram: ${diagram}`] : []),
     ...(meta.objects.length ? ['  - Objects:', ...meta.objects.map((o) => `      - ${o.name}: objects/${o.name}.md`)] : []),
     ...(meta.apex.length ? ['  - Apex:', ...meta.apex.map((a) => `      - ${a.name}: apex/${a.name}.md`)] : []),
     ...(meta.flows.length ? ['  - Flows:', ...meta.flows.map((f) => `      - ${f.name}: flows/${f.name}.md`)] : []),

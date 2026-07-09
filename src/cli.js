@@ -7,6 +7,7 @@ import { registerInitCommand } from './commands/init.js';
 import { registerDeployCommand } from './commands/deploy.js';
 import { registerReleaseCommand } from './commands/release.js';
 import { registerTestCommand } from './commands/test.js';
+import { registerAgentTestCommand } from './commands/agent-test.js';
 import { registerPullCommand } from './commands/pull.js';
 import { registerQualityCommand } from './commands/quality.js';
 import { registerPreflightCommand } from './commands/preflight.js';
@@ -43,6 +44,7 @@ import { registerSkillsCommand } from './commands/skills.js';
 import { registerCiCommand } from './commands/ci.js';
 import { registerPrCommand } from './commands/pr.js';
 import { registerRetrofitCommand } from './commands/retrofit.js';
+import { registerHistoryCommand } from './commands/history.js';
 import { formatSplash } from './lib/output.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -75,6 +77,7 @@ export function createCli() {
   registerDeployCommand(program);
   registerReleaseCommand(program);
   registerTestCommand(program);
+  registerAgentTestCommand(program);
   registerPullCommand(program);
   registerQualityCommand(program);
   registerPreflightCommand(program);
@@ -111,6 +114,7 @@ export function createCli() {
   registerCiCommand(program);
   registerPrCommand(program);
   registerRetrofitCommand(program);
+  registerHistoryCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program

@@ -58,7 +58,7 @@ vi.mock('../../src/lib/mcp-parking.js', () => ({
 
 import { execa } from 'execa';
 import fs from 'fs-extra';
-import { SfdtMcpServer } from '../../src/lib/mcp-server.js';
+import { SfdtMcpServer, TOOLS } from '../../src/lib/mcp-server.js';
 import { parkIfNeeded, getParkedResult } from '../../src/lib/mcp-parking.js';
 
 describe('SfdtMcpServer', () => {
@@ -120,6 +120,71 @@ describe('SfdtMcpServer', () => {
         expect.anything()
       );
       expect(result.content[0].text).toContain('driftStatus');
+    });
+
+    it('executes sfdt_coverage (read-only, --json, optional org)', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ orgWide: 82 }), stderr: '' });
+
+      const result = await callTool('sfdt_coverage', { org: 'prod' });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['coverage', '--json', '--org', 'prod']),
+        expect.anything()
+      );
+      expect(result.content[0].text).toContain('orgWide');
+    });
+
+    it('executes sfdt_scan (read-only metadata inventory)', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ types: [] }), stderr: '' });
+
+      await callTool('sfdt_scan', {});
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['scan', '--json']),
+        expect.anything()
+      );
+    });
+
+    it('executes sfdt_dependencies with the required component name', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ references: [] }), stderr: '' });
+
+      await callTool('sfdt_dependencies', { name: 'MyClass', org: 'dev' });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['dependencies', 'MyClass', '--json', '--org', 'dev']),
+        expect.anything()
+      );
+    });
+
+    it('executes sfdt_flow_scan and threads the optional org (flow scan queries the org)', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ flows: [] }), stderr: '' });
+
+      await callTool('sfdt_flow_scan', { org: 'dev' });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['flow', 'scan', '--json', '--org', 'dev']),
+        expect.anything()
+      );
+    });
+
+    it('executes sfdt_flow_scan without org (falls back to config defaultOrg)', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ flows: [] }), stderr: '' });
+
+      await callTool('sfdt_flow_scan', {});
+      const call = execa.mock.calls.at(-1);
+      expect(call[1]).toContain('flow');
+      expect(call[1]).not.toContain('--org');
+    });
+
+    it('executes sfdt_history and threads type + limit', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { runs: [], count: 0 } }), stderr: '' });
+
+      await callTool('sfdt_history', { type: 'audit', limit: 10 });
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['history', '--json', '--type', 'audit', '--limit', '10']),
+        expect.anything()
+      );
     });
 
     it('executes sfdt_validate as a dry-run deploy (passes --dry-run)', async () => {
@@ -279,6 +344,56 @@ describe('SfdtMcpServer', () => {
       expect(result.content[0].text).toContain('deployed');
     });
 
+    it('gates the mutating tools behind confirmExecution', async () => {
+      for (const [name, args] of [
+        ['sfdt_release', {}],
+        ['sfdt_scratch_create', {}],
+        ['sfdt_scratch_delete', { target: 'sc1' }],
+        ['sfdt_scratch_pool', { action: 'fill' }],
+        ['sfdt_data_import', { set: 'accounts' }],
+        ['sfdt_data_delete', { set: 'accounts' }],
+      ]) {
+        const result = await callTool(name, args);
+        expect(result.isError, name).toBe(true);
+        expect(result.content[0].text, name).toContain('confirmExecution');
+      }
+    });
+
+    it('runs sfdt_release when confirmed', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'released', stderr: '' });
+      await callTool('sfdt_release', { version: '1.2.0', package: 'all', confirmExecution: true });
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['release', '1.2.0', '--package', 'all']), expect.anything());
+    });
+
+    it('runs sfdt_scratch_create/delete with --json/--yes when confirmed', async () => {
+      execa.mockResolvedValue({ exitCode: 0, stdout: JSON.stringify({ result: { ok: true } }), stderr: '' });
+      await callTool('sfdt_scratch_create', { alias: 'dev1', days: 7, confirmExecution: true });
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['scratch', 'create', '--json', '--alias', 'dev1', '--days', '7']), expect.anything());
+      await callTool('sfdt_scratch_delete', { target: 'dev1', confirmExecution: true });
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['scratch', 'delete', 'dev1', '--yes', '--json']), expect.anything());
+    });
+
+    it('sfdt_scratch_pool status is read-only (no confirmExecution needed)', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { size: 3 } }), stderr: '' });
+      const result = await callTool('sfdt_scratch_pool', { action: 'status' });
+      expect(result.isError).toBeFalsy();
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['scratch', 'pool', 'status', '--json']), expect.anything());
+    });
+
+    it('sfdt_data_export is read-only; import/delete pass --json/--yes when confirmed', async () => {
+      execa.mockResolvedValue({ exitCode: 0, stdout: JSON.stringify({ result: { ok: true } }), stderr: '' });
+      await callTool('sfdt_data_export', { set: 'accounts', org: 'dev' });
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['data', 'export', 'accounts', '--json', '--org', 'dev']), expect.anything());
+      await callTool('sfdt_data_delete', { set: 'accounts', confirmExecution: true });
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['data', 'delete', 'accounts', '--yes', '--json']), expect.anything());
+    });
+
+    it('runs sfdt_test with --class-names', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'tests passed', stderr: '' });
+      await callTool('sfdt_test', { classNames: ['A_Test', 'B_Test'] });
+      expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['test', '--class-names', 'A_Test,B_Test']), expect.anything());
+    });
+
     it('executes sfdt_quick_deploy tool and throws if confirmExecution is not true', async () => {
       const result = await callTool('sfdt_quick_deploy', { targetOrg: 'dev', validationJobId: '0Af123' });
       expect(result.isError).toBe(true);
@@ -410,5 +525,63 @@ describe('SfdtMcpServer', () => {
       expect(logged).not.toContain('SENTINEL-secret-org');
       errorSpy.mockRestore();
     });
+  });
+});
+
+describe('MCP tool examples (advanced tool use)', () => {
+  // A tool is "multi-parameter" (in scope for examples) when its inputSchema has
+  // 2+ properties, or any property is an enum or an array — exactly the surfaces
+  // where JSON schema alone under-specifies parameter conventions.
+  const isInScope = (tool) => {
+    const props = tool.inputSchema?.properties ?? {};
+    const names = Object.keys(props);
+    if (names.length >= 2) return true;
+    return names.some((n) => Array.isArray(props[n].enum) || props[n].type === 'array');
+  };
+
+  it('every multi-parameter MCP tool defines a non-empty examples array', () => {
+    const inScope = TOOLS.filter(isInScope);
+    // Guard: if this drops to zero the predicate is broken, not satisfied.
+    expect(inScope.length).toBeGreaterThan(0);
+
+    for (const tool of inScope) {
+      const props = tool.inputSchema.properties;
+      const required = tool.inputSchema.required ?? [];
+
+      expect(Array.isArray(tool.examples), `${tool.name} must have an examples array`).toBe(true);
+      expect(tool.examples.length, `${tool.name} needs at least one example`).toBeGreaterThan(0);
+
+      for (const ex of tool.examples) {
+        // Non-empty, human-readable description.
+        expect(typeof ex.description, `${tool.name} example.description`).toBe('string');
+        expect(ex.description.trim().length, `${tool.name} example.description non-empty`).toBeGreaterThan(0);
+
+        // Non-empty input object — no placeholder {} examples.
+        expect(ex.input && typeof ex.input === 'object' && !Array.isArray(ex.input), `${tool.name} example.input is an object`).toBe(true);
+        const keys = Object.keys(ex.input);
+        expect(keys.length, `${tool.name} example.input non-empty`).toBeGreaterThan(0);
+
+        // Every input key is a declared property (catches typos / invented params).
+        for (const key of keys) {
+          expect(props[key], `${tool.name} example uses undeclared param "${key}"`).toBeDefined();
+        }
+
+        // Required params must be present (examples must be actually runnable).
+        for (const req of required) {
+          expect(keys, `${tool.name} example missing required param "${req}"`).toContain(req);
+        }
+
+        // Enum values must be valid; array-typed params must be arrays.
+        for (const key of keys) {
+          const schema = props[key];
+          if (Array.isArray(schema.enum)) {
+            expect(schema.enum, `${tool.name} example "${key}"=${ex.input[key]} not in enum`).toContain(ex.input[key]);
+          }
+          if (schema.type === 'array') {
+            expect(Array.isArray(ex.input[key]), `${tool.name} example "${key}" must be an array`).toBe(true);
+          }
+        }
+      }
+    }
   });
 });

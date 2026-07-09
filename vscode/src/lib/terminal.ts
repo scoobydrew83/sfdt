@@ -4,7 +4,7 @@
  * The terminal itself (creation, sendText) lives in the extension wiring layer.
  */
 
-import { buildArgs } from './cli.js';
+import { buildArgs } from './run-json.js';
 
 /** Quote a single argv token for a POSIX-ish shell if it needs it. */
 export function shellQuote(token: string): string {

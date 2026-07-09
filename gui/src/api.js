@@ -260,6 +260,10 @@ export const api = {
   dependencies:           (org, types) => fetchJson(`/dependencies?org=${encodeURIComponent(org)}${types ? `&types=${encodeURIComponent(types)}` : ''}`),
   /** @returns {Promise<{ status: 'pass'|'warn'|'fail', missing: Array<{name:string, type:string, referencedBy:string[]}>, warnings: Array<{name:string, type:string, referencedBy:string[]}> }>} */
   dependenciesPreflight:  (manifest, org) => fetchJson(`/dependencies/preflight?manifest=${encodeURIComponent(manifest)}&org=${encodeURIComponent(org)}`),
+  resolveDependency:      (org, name, type) => fetchJson(`/dependencies/resolve?org=${encodeURIComponent(org)}&name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`),
+  dependencyNeighbors:    (org, id, cap = 50) => fetchJson(`/dependencies/neighbors?org=${encodeURIComponent(org)}&id=${encodeURIComponent(id)}&cap=${cap}`),
+  /** @returns {Promise<{ from: {name:string, type:string}, gaps: Array<{ref:{toName:string, toType:string, kind:string, evidence:string, line:number}, status:'inferred'|'confirmed'|'missing'}> }>} */
+  dependencyGaps:         (org, name, type) => fetchJson(`/dependencies/gaps?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}${org ? `&org=${encodeURIComponent(org)}` : ''}`),
   /** @returns {Promise<Array<{key: string, description: string}>>} */
   pullGroups:             () => fetchJson('/pull/groups'),
   /** @returns {Promise<{ packages: Array<{name: string, path: string}> }>} */
@@ -346,6 +350,10 @@ export function ssePost(path, body) {
 export const stream = {
   deploy:           (opts) => ssePost('/release/deploy', opts),
   commandRun:       (command, extraParams = {}) => ssePost('/command/run', { command, ...extraParams }),
+  /** Run `sfdt audit all` server-side; the audit snapshot (GET /api/audit) refreshes on completion. */
+  auditRun:         (opts = {}) => ssePost('/audit/run', opts),
+  /** Run `sfdt monitor all` server-side; the monitor snapshot (GET /api/monitor) refreshes on completion. */
+  monitorRun:       (opts = {}) => ssePost('/monitor/run', opts),
   pull:             (opts = {}) => ssePost('/pull', opts),
   update:           () => ssePost('/update/stream', {}),
   changelogGenerate:(pkg)  => ssePost('/changelog/generate', pkg ? { package: pkg } : {}),

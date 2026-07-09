@@ -59,26 +59,59 @@
 - `sfdt extension stats` CLI for telemetry visibility
 - `sfdt doctor --extension` end-to-end health check (bridge / native host / kill-switch / telemetry)
 
+### Since v0.14.0 (previously unlisted here)
+- **`sfdt plugin create`** — scaffolds a new `sfdt-plugin-*` package with example `register(program)` wiring, test, and README
+- **MCP server shipped** — `sfdt mcp start` exposes 21 tools (`sfdt_deploy`, `sfdt_audit`, `sfdt_monitor`, `sfdt_retrofit`, `sfdt_coverage`, `sfdt_scan`, `sfdt_dependencies`, `sfdt_flow_scan`, …) with `confirmExecution` gating on mutating operations
+- **Generic `http` AI provider** — any OpenAI-compatible `/chat/completions` gateway (Ollama, OpenRouter, MiniMax); secrets referenced by env-var name only
+- **New install methods** — `install.sh`, Homebrew tap (auto-bumped by the publish job once `HOMEBREW_TAP_TOKEN` is set), public GHCR Docker image (built from the published npm package on Node 22)
+- **VS Code extension live** — `sfdt.sfdt-devtools` on the Marketplace + Open VSX (v0.3.x): command catalog, org-health/status trees, embedded GUI dashboard webview
+- **`RunRelevantTests` (Spring '26 beta)** selectable in Release Hub, interactive deploy, and MCP; smart-deploy opt-in via `deployment.smart.useRelevantTests`
+- **Smart deploy, retrofit, PR decoration, CI templates, notifications** — see CHANGELOG for the full v0.14–v0.15 cycle
+
+### Gap-remediation & Summer '26 sprints (PRs #171 / #172 / #174 / #175, 2026-07)
+- **Bug fixes** — `sfdt smoke` config wiring, deploy manifest detection widened beyond `rl-*`, deploy `--tag/--create-pr/--notify`, live `docs.roleGuides/docs.ai/docs.diagrams` config keys, skipped-scan labelling, dead script tunables wired, credential-redaction sweep
+- **Google Chat notifier channel**; direct notifier-formatter and bridge-middleware tests
+- **VS Code extension uplift** — native `--json` result rendering, Problems-pane diagnostics, Smart Deploy validate/execute + Quick Deploy, Test Runs view, coverage highlights, Get Started walkthrough, catalog completeness, single consolidated CLI-spawn path
+- **API v67 readiness** — `sfdt quality --api67` (Summer '26 user-mode-by-default); `--test-hints` for `@IsTest(testFor=…)` gaps; annotation-aware smart-deploy test selection
+- **New org-health checks** — MFA readiness, SOAP `login()` retirement, Connected-Apps migration note, elastic async limits, release version/preview in `monitor org-info` (PR #174)
+- **GUI run-from-dashboard** — Audit/Monitor "Run now" + Scratch/Data/Docs actions with in-app confirmations (PR #174)
+- **Cross-org release-version warning** (PR #175) — `compare`/`retrofit` warn when the two orgs run different Salesforce releases (shared `src/lib/org-release.js`)
+
 ---
 
 ## Next Session
 
-Consolidated, actionable queue from the v0.14.0 release cycle (2026-06-26):
+Live status + full queue: [docs/plans/2026-07-03-gap-remediation-and-release-research.md](docs/plans/2026-07-03-gap-remediation-and-release-research.md) (see its **Status** section). Snapshot as of 2026-07-05:
 
-- **`sfdt plugin create`** — plugin registry & scaffolding to bootstrap a new `sfdt-plugin-*` package with example `register(program)` wiring. *(Was in progress — top of the queue.)*
-- **Triage the 3 parked specs** in `docs/superpowers/specs/` — for each, decide build / defer / discard:
-  - `2026-05-07-sfdt-mcp-parking-and-skills-design.md` — feeds the "Expose sfdt as MCP Server" planned item below
-  - `2026-05-09-remaining-items-design.md`
-  - `2026-05-09-scan-page-design.md`
-- **~~Automate the Homebrew tap bump~~** — ✅ Done (PR #167): the CLI `publish` job computes the new tarball `sha256` and pushes `url`+`sha256` to the `scoobydrew83/homebrew-sfdt` tap. Activates once the `HOMEBREW_TAP_TOKEN` secret (fine-grained PAT, `contents:write` on the tap) is added; skips cleanly until then. The tap is now the single source of truth — the in-repo `Formula/sfdt.rb` mirror is redundant and slated for removal.
-- **Fix the always-failing `integration` CI job** — it red-X's every release PR (DevHub org-auth; no org secrets available in PR context). Either wire the auth, restrict it to non-PR runs, or mark it non-required so release PRs stop showing a false failure.
-- **Refresh the "Shipped" section below** — it predates v0.14.0. Not yet reflected: the generic **`http` AI provider** (OpenAI-compatible: Ollama / OpenRouter / MiniMax), the new **install methods** (`install.sh`, Homebrew tap, **public GHCR Docker image**), and the **VS Code extension** (`sfdt.sfdt-devtools`, live on Marketplace + Open VSX at 0.1.1). The Docker line still says "Node 20" (now built from the published npm package on Node 22).
+- ✅ **Sprint 1 shipped** (PR #171 → develop): smoke config wiring, deploy `--tag/--create-pr/--notify`, live `docs.*` config keys, skipped-scan labelling, Google Chat channel, credential-redaction sweep, formatter/middleware tests.
+- ✅ **Sprint 2 shipped** (PR #172 → develop): VS Code native results, Problems-pane diagnostics, Smart Deploy preview/execute + Quick Deploy, onboarding walkthrough, catalog completeness.
+- ✅ **Sprint 3 shipped** (PR #174 → develop): `quality --api67`, annotation-aware smart-deploy tests + `quality --test-hints`, GUI run-from-dashboard, new audit/monitor checks (MFA readiness, SOAP login retirement, elastic async limits, release version/preview), VS Code Test Runs view + coverage highlights.
+- ✅ **4.7 tail shipped** (PR #175 → develop): cross-org release-version warning for `compare`/`retrofit` (shared `src/lib/org-release.js`).
+- **Up next:** remove the temporary `show_full_output` debug flag on the claude-review workflow; fix the always-failing `integration` CI job (DevHub org-auth; no org secrets in PR context); then Sprint 4/5 below. *(A follow-up PR carries doc reconciliation + a verified RunRelevantTests-still-Beta note.)*
+- **sfdt-site docs pass** covering all three sprints (needs the `scoobydrew83/sfdt-site` repo added to the session).
 
 ---
 
 ## Planned
 
-- **Expose sfdt as MCP Server** — surface sfdt commands as formal MCP tools callable by AI agents (Claude, Copilot, etc.), extending the current skills-library approach to first-class tool invocation
+Remaining Sprint 4/5 queue from the 2026-07-03 audit + Summer '26 / Spring '26 release research (details + sequencing in [the plan](docs/plans/2026-07-03-gap-remediation-and-release-research.md)). Items shipped in PRs #171/#172/#174 (API v67 check, RunRelevantTests follow-through, the new audit/monitor checks, Google Chat channel, all VS Code native-surface work, GUI run-from-dashboard) have moved to **Shipped** above.
+
+### CLI
+- **Unified logic tests** — wrap `sf logic run test` so `sfdt test` runs Apex + Flow tests in one pass
+- **Agentforce support** — Agent metadata (`GenAiFunction`, `GenAiPlannerBundle`, scorers, Agent Script) in smart-deploy deltas; `sfdt agent-test` quality gate over `sf agent test run-eval` / the Testing API
+- **Code Analyzer v5 integration** in `sfdt quality` (PMD 7, `--include-fixes` feeding the AI fix loop)
+- **Agent-skills pack** compatible with `npx skills add`
+- **MCP coverage expansion** — ✅ read-only tools added for coverage/scan/dependencies/flow (test results already via `sfdt_logs`); gated mutating tools (release/scratch/data) still to do
+- **Release Manager channel awareness** — *blocked:* the Summer '26 Release Manager Beta exposes no stable queryable public field for the channel; revisit when Salesforce ships a documented API (release version/preview already reported by `monitor org-info`)
+
+### Chrome extension
+- **Summer '26 setup deep links** — Field Access Summary, enhanced profile UI, Security Center Essentials, Release Manager
+- **Org release badge** — ✅ Workspace top-bar shows the org's release + `(preview instance)` (via `/services/data`, shared `@sfdt/flow-core` release logic); Release Manager *channel* still blocked (no queryable API, see above)
+- **Flow Scanner surface** powered by `@sfdt/flow-core` — ✅ the `flow-quality` feature is now a full Flow Scanner (issue families + affected elements + recommendations + dependencies) and runs on real Setup/Flow pages, not just the builder canvas (Inspector Reloaded 2.0 parity)
+
+### GUI / host / pipeline
+- **Native messaging host: read-only kinds** — ✅ drift/scan/compare/quality/org-health implemented (quality in-process via flow-core; the rest spawn the CLI / read `logs/` snapshots, reshaped to the bridge contract). Mutating kinds (deploy/rollback/ai) stay bridge-only. The host resolves the project from a config file written by `sfdt extension install-host` (or `SFDT_PROJECT_ROOT`)
+- **Chrome Web Store publish job** — un-comment behind a secrets-present guard (same pattern as the Homebrew tap job)
 
 ---
 

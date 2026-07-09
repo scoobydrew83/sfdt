@@ -1,8 +1,6 @@
 #!/bin/bash
 
-# =============================================================================
 # Test Configuration Manager
-# =============================================================================
 
 # Configuration - check SFDT_CONFIG_DIR first
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

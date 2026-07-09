@@ -12,7 +12,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ENTRYPOINT = path.resolve(__dirname, '..', '..', 'bin', 'sfdt.js');
 
-const TOOLS = [
+// Tool Use Examples (Anthropic advanced tool use): each in-scope tool — one with
+// 2+ inputSchema properties or any enum/array property — carries realistic example
+// invocations so agents get the parameter conventions the JSON schema alone can't
+// express. Single simple-parameter tools (preflight, drift, rollback, docs,
+// coverage, scan, flow_scan, get_parked_result) are intentionally left without
+// examples: the schema is self-evident and examples would add tokens for no gain.
+export const TOOLS = [
   {
     name: 'sfdt_preflight',
     description: 'Run sfdt pre-deployment validation checks (git clean state, branch naming rules, Apex test runs, coverage threshold checks, etc.). Useful before validation or deployment.',
@@ -43,7 +49,11 @@ const TOOLS = [
         target: { type: 'string', description: 'Target org alias.' }
       },
       required: ['source', 'target']
-    }
+    },
+    examples: [
+      { description: 'Diff local source against the dev sandbox', input: { source: 'local', target: 'dev' } },
+      { description: 'Compare two orgs directly (staging vs production)', input: { source: 'staging', target: 'prod' } }
+    ]
   },
   {
     name: 'sfdt_quality',
@@ -54,7 +64,11 @@ const TOOLS = [
         generateStubs: { type: 'boolean', description: 'Generate mock Apex test class boilerplate stubs.' },
         fixPlan: { type: 'boolean', description: 'Create an AI-powered plan to resolve code coverage gaps.' }
       }
-    }
+    },
+    examples: [
+      { description: 'Generate an AI fix-plan for coverage gaps', input: { fixPlan: true } },
+      { description: 'Scaffold missing Apex test-class boilerplate stubs', input: { generateStubs: true } }
+    ]
   },
   {
     name: 'sfdt_logs',
@@ -65,7 +79,11 @@ const TOOLS = [
         type: { type: 'string', enum: ['preflight', 'drift', 'deploy', 'rollback', 'quality'], description: 'Type of log to retrieve.' }
       },
       required: ['type']
-    }
+    },
+    examples: [
+      { description: 'Fetch the latest preflight log', input: { type: 'preflight' } },
+      { description: 'Fetch the most recent deploy result', input: { type: 'deploy' } }
+    ]
   },
   {
     name: 'sfdt_manifest_from_git',
@@ -78,7 +96,11 @@ const TOOLS = [
         package: { type: 'string', description: 'Target subdirectory/package name or "all".' },
         name: { type: 'string', description: 'Semantic release version/label.' }
       }
-    }
+    },
+    examples: [
+      { description: 'Manifest for everything changed between main and the working tree', input: { base: 'main', head: 'HEAD', package: 'all' } },
+      { description: 'Manifest for one package between two tags, labelled for release', input: { base: 'v0.15.1', head: 'v0.15.2', package: 'core', name: '0.15.2' } }
+    ]
   },
   {
     name: 'sfdt_validate',
@@ -92,7 +114,11 @@ const TOOLS = [
         testClasses: { type: 'array', items: { type: 'string' }, description: 'Specific test classes to run.' }
       },
       required: ['targetOrg']
-    }
+    },
+    examples: [
+      { description: 'Validate the default manifest against staging with local tests', input: { targetOrg: 'staging', manifest: 'manifest/package.xml', testLevel: 'RunLocalTests' } },
+      { description: 'Validate running only two named test classes', input: { targetOrg: 'staging', testLevel: 'RunSpecifiedTests', testClasses: ['AccountServiceTest', 'ContactTriggerTest'] } }
+    ]
   },
   {
     name: 'sfdt_deploy',
@@ -112,7 +138,11 @@ const TOOLS = [
         confirmExecution: { type: 'boolean', description: 'Must be set to true to acknowledge safety and execute (not required when dryRun=true).' }
       },
       required: ['targetOrg']
-    }
+    },
+    examples: [
+      { description: 'Smart delta dry-run of git-changed metadata to staging (safe, no confirm needed)', input: { targetOrg: 'staging', smart: true, dryRun: true, deltaBase: 'main', deltaHead: 'HEAD' } },
+      { description: 'Confirmed manifest deploy to production running local tests', input: { targetOrg: 'prod', manifest: 'manifest/package.xml', testLevel: 'RunLocalTests', confirmExecution: true } }
+    ]
   },
   {
     name: 'sfdt_quick_deploy',
@@ -125,7 +155,10 @@ const TOOLS = [
         confirmExecution: { type: 'boolean', description: 'Must be set to true to acknowledge safety and execute.' }
       },
       required: ['validationJobId', 'targetOrg', 'confirmExecution']
-    }
+    },
+    examples: [
+      { description: 'Promote a previously validated job to production', input: { validationJobId: '0Af5g00000AbCdEEAV', targetOrg: 'prod', confirmExecution: true } }
+    ]
   },
   {
     name: 'sfdt_rollback',
@@ -151,7 +184,11 @@ const TOOLS = [
           description: 'Run a single named check, or "all" (default).'
         }
       }
-    }
+    },
+    examples: [
+      { description: 'Run all read-only org-health checks on production', input: { org: 'prod', check: 'all' } },
+      { description: 'Check only MFA coverage', input: { org: 'prod', check: 'mfa' } }
+    ]
   },
   {
     name: 'sfdt_monitor',
@@ -167,7 +204,11 @@ const TOOLS = [
         },
         backup: { type: 'boolean', description: 'When running "all", also perform a metadata backup.' }
       }
-    }
+    },
+    examples: [
+      { description: 'Run all monitoring checks plus a metadata backup', input: { org: 'prod', check: 'all', backup: true } },
+      { description: 'Check org limit consumption only', input: { check: 'limits' } }
+    ]
   },
   {
     name: 'sfdt_retrofit',
@@ -182,7 +223,11 @@ const TOOLS = [
         confirmExecution: { type: 'boolean', description: 'Required when execute=true to acknowledge a real deployment.' }
       },
       required: ['source', 'target']
-    }
+    },
+    examples: [
+      { description: 'Validate-only retrofit of admin changes from prod into a sandbox', input: { source: 'prod', target: 'dev', metadata: 'Profile,CustomField,ValidationRule' } },
+      { description: 'Execute a real retrofit deploy from prod to staging', input: { source: 'prod', target: 'staging', execute: true, confirmExecution: true } }
+    ]
   },
   {
     name: 'sfdt_pr_comment',
@@ -193,17 +238,25 @@ const TOOLS = [
         type: { type: 'string', enum: ['audit', 'monitor'], description: 'Which snapshot to post (default: monitor).' },
         pr: { type: 'string', description: 'PR number or URL (defaults to the current branch PR).' }
       }
-    }
+    },
+    examples: [
+      { description: 'Post the latest monitor snapshot to the current PR', input: { type: 'monitor' } },
+      { description: 'Post the audit snapshot to a specific PR number', input: { type: 'audit', pr: '142' } }
+    ]
   },
   {
     name: 'sfdt_notify',
-    description: 'Send the latest audit or monitor snapshot to configured notification channels (Slack/Teams/email/webhook), applying each channel\'s event filter and severity threshold. Run an audit/monitor first so a snapshot exists.',
+    description: 'Send the latest audit or monitor snapshot to configured notification channels (Slack/Teams/Google Chat/email/webhook), applying each channel\'s event filter and severity threshold. Run an audit/monitor first so a snapshot exists.',
     inputSchema: {
       type: 'object',
       properties: {
         type: { type: 'string', enum: ['audit', 'monitor'], description: 'Which snapshot to send (default: monitor).' }
       }
-    }
+    },
+    examples: [
+      { description: 'Send the latest monitor snapshot to configured channels', input: { type: 'monitor' } },
+      { description: 'Send the audit snapshot instead', input: { type: 'audit' } }
+    ]
   },
   {
     name: 'sfdt_docs',
@@ -214,6 +267,193 @@ const TOOLS = [
         ai: { type: 'boolean', description: 'Enrich the index with an AI-written project overview.' }
       }
     }
+  },
+  {
+    name: 'sfdt_coverage',
+    description: 'Report Apex code coverage for a Salesforce org — org-wide percentage plus per-class coverage. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    }
+  },
+  {
+    name: 'sfdt_scan',
+    description: 'Fetch the complete metadata inventory of a Salesforce org (all component types and members). Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    }
+  },
+  {
+    name: 'sfdt_dependencies',
+    description: 'Show the metadata dependencies of a component — what it references and what references it. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Metadata component name (e.g. an Apex class or field API name).' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['name']
+    },
+    examples: [
+      { description: 'Show what references the AccountService Apex class in dev', input: { name: 'AccountService', org: 'dev' } },
+      { description: 'Dependencies of a custom field (defaults to config org)', input: { name: 'Account.Region__c' } }
+    ]
+  },
+  {
+    name: 'sfdt_flow_scan',
+    description: 'Analyze a Salesforce org\'s Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    }
+  },
+  {
+    name: 'sfdt_release',
+    description: 'Build a release: generate the release manifest (package.xml) and release notes for a package. Writes release artifacts to the repo. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        version: { type: 'string', description: 'Release version/label (semver, free-form, or "today").' },
+        package: { type: 'string', description: 'Package directory: a short name or "all" (default).' },
+        name: { type: 'string', description: 'Release label override.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to acknowledge writing release artifacts.' }
+      },
+      required: ['confirmExecution']
+    },
+    examples: [
+      { description: 'Build a release for all packages with a semver label', input: { version: '0.15.2', package: 'all', confirmExecution: true } },
+      { description: "Build today's release for a single package", input: { version: 'today', package: 'core', confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_scratch_create',
+    description: 'Create a Salesforce scratch org. Mutating (consumes a DevHub scratch-org allocation) — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        alias: { type: 'string', description: 'Alias for the new scratch org.' },
+        days: { type: 'number', description: 'Duration in days (1-30).' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to create the scratch org.' }
+      },
+      required: ['confirmExecution']
+    },
+    examples: [
+      { description: 'Create a 7-day scratch org aliased dev1', input: { alias: 'dev1', days: 7, confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_scratch_delete',
+    description: 'Delete a scratch org by alias or username. Destructive — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        target: { type: 'string', description: 'Scratch org alias or username to delete.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to delete the scratch org.' }
+      },
+      required: ['target', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Delete the dev1 scratch org', input: { target: 'dev1', confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_scratch_pool',
+    description: 'Inspect or top up the scratch-org pool. action="status" is read-only; action="fill" creates orgs to reach the target size and requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['status', 'fill'], description: 'status (read-only) or fill (mutating).' },
+        size: { type: 'number', description: 'Desired pool size for fill (overrides config).' },
+        confirmExecution: { type: 'boolean', description: 'Required when action="fill".' }
+      },
+      required: ['action']
+    },
+    examples: [
+      { description: 'Check current scratch-org pool status (read-only)', input: { action: 'status' } },
+      { description: 'Fill the pool up to five orgs', input: { action: 'fill', size: 5, confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_data_export',
+    description: 'Export a configured data set from the org to local files. Reads from the org and writes local data files (read-only with respect to the org).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        set: { type: 'string', description: 'Data set name (from config).' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['set']
+    },
+    examples: [
+      { description: 'Export the accounts data set from the dev org', input: { set: 'accounts', org: 'dev' } }
+    ]
+  },
+  {
+    name: 'sfdt_data_import',
+    description: 'Import a configured data set into the org. Mutating (writes records) — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        set: { type: 'string', description: 'Data set name (from config).' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to write records to the org.' }
+      },
+      required: ['set', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Import the accounts data set into the dev org', input: { set: 'accounts', org: 'dev', confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_data_delete',
+    description: 'Bulk-delete a configured data set in the org. Destructive — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        set: { type: 'string', description: 'Data set name (from config).' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to delete records in the org.' }
+      },
+      required: ['set', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Bulk-delete the accounts data set in the dev1 scratch org', input: { set: 'accounts', org: 'dev1', confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_test',
+    description: 'Run Apex tests via the enhanced test runner. Optionally limit to specific test classes. Consumes org test resources; not metadata-mutating.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        classNames: { type: 'array', items: { type: 'string' }, description: 'Only run these Apex test classes (defaults to the configured set).' }
+      }
+    },
+    examples: [
+      { description: 'Run two specific Apex test classes', input: { classNames: ['AccountServiceTest', 'ContactTriggerTest'] } }
+    ]
+  },
+  {
+    name: 'sfdt_history',
+    description: 'Show recent sfdt run history (audit, monitor, quality, test, deploy, agent-test, …) from the local run index — trend org-health, test, and deploy outcomes over time. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: 'Filter to one run type (e.g. audit | monitor | quality | test-run | deploy | agent-test).' },
+        limit: { type: 'number', description: 'Maximum rows to return (default 30).' }
+      }
+    },
+    examples: [
+      { description: 'Show the last 10 audit runs', input: { type: 'audit', limit: 10 } },
+      { description: 'Show recent deploy history', input: { type: 'deploy', limit: 30 } }
+    ]
   },
   {
     name: 'sfdt_get_parked_result',
@@ -354,6 +594,121 @@ export class SfdtMcpServer {
         const cmdArgs = ['drift', '--json'];
         if (args.org) cmdArgs.push('--org', args.org);
 
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_coverage': {
+        const cmdArgs = ['coverage', '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_scan': {
+        const cmdArgs = ['scan', '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_dependencies': {
+        const cmdArgs = ['dependencies', args.name, '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_flow_scan': {
+        const cmdArgs = ['flow', 'scan', '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_release': {
+        if (!args.confirmExecution) {
+          throw new Error('Building a release writes release artifacts to the repo. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['release'];
+        if (args.version) cliArgs.push(String(args.version));
+        if (args.package) cliArgs.push('--package', args.package);
+        if (args.name) cliArgs.push('--name', args.name);
+        const { exitCode, stdout, stderr } = await this.#runCliCommand(cliArgs);
+        return { exitCode, stdout, stderr };
+      }
+
+      case 'sfdt_scratch_create': {
+        if (!args.confirmExecution) {
+          throw new Error('Creating a scratch org consumes a DevHub allocation. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['scratch', 'create', '--json'];
+        if (args.alias) cliArgs.push('--alias', args.alias);
+        if (args.days != null) cliArgs.push('--days', String(args.days));
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_scratch_delete': {
+        if (!args.confirmExecution) {
+          throw new Error('Deleting a scratch org is destructive. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['scratch', 'delete', args.target, '--yes', '--json'];
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_scratch_pool': {
+        const action = args.action === 'fill' ? 'fill' : 'status';
+        if (action === 'fill' && !args.confirmExecution) {
+          throw new Error('Filling the scratch pool creates scratch orgs. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['scratch', 'pool', action, '--json'];
+        if (action === 'fill' && args.size != null) cliArgs.push('--size', String(args.size));
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_data_export': {
+        const cliArgs = ['data', 'export', args.set, '--json'];
+        if (args.org) cliArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_data_import': {
+        if (!args.confirmExecution) {
+          throw new Error('Importing a data set writes records to the org. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['data', 'import', args.set, '--json'];
+        if (args.org) cliArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_data_delete': {
+        if (!args.confirmExecution) {
+          throw new Error('Deleting a data set is destructive. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['data', 'delete', args.set, '--yes', '--json'];
+        if (args.org) cliArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_test': {
+        const cliArgs = ['test'];
+        if (Array.isArray(args.classNames) && args.classNames.length > 0) {
+          cliArgs.push('--class-names', args.classNames.join(','));
+        }
+        const { exitCode, stdout, stderr } = await this.#runCliCommand(cliArgs);
+        return { exitCode, stdout, stderr };
+      }
+
+      case 'sfdt_history': {
+        const cmdArgs = ['history', '--json'];
+        if (args.type) cmdArgs.push('--type', args.type);
+        if (args.limit != null) cmdArgs.push('--limit', String(args.limit));
         const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);
       }

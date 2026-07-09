@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '../api.js';
+import { GRAPH_SOURCE_TYPES, METADATA_TYPES } from '@sfdt/flow-core';
 import {
   forceSimulation,
   forceLink,
@@ -11,15 +12,29 @@ import { select } from 'd3-selection';
 import { zoom as d3Zoom, zoomIdentity as d3ZoomIdentity } from 'd3-zoom';
 import { drag as d3Drag } from 'd3-drag';
 
-// ─── Color map by metadata type ──────────────────────────────────────────────
+// ─── Color map by metadata type (GUI-only; flow-core stays styling-free) ─────
 const TYPE_COLORS = {
-  ApexClass:     'var(--brand-500)',
-  ApexTrigger:   'var(--status-modified-solid)',
-  ApexComponent: 'var(--status-source-solid)',
-  Flow:          'var(--status-identical-solid)',
+  ApexClass:                'var(--brand-500)',
+  ApexTrigger:              'var(--status-modified-solid)',
+  ApexPage:                 'var(--accent-500)',
+  ApexComponent:            'var(--status-source-solid)',
+  Flow:                     'var(--status-identical-solid)',
+  LightningComponentBundle: 'var(--brand-300)',
+  AuraDefinitionBundle:     'var(--accent-600)',
+  CustomObject:             'var(--status-conflict-solid)',
+  CustomField:              'var(--status-target-solid)',
 };
 
-const ALL_TYPES = ['ApexClass', 'ApexTrigger', 'ApexComponent', 'Flow'];
+// Selectable source types + labels come from flow-core so CLI/GUI never drift.
+const ALL_TYPES = GRAPH_SOURCE_TYPES.map((t) => t.type);
+const TYPE_LABELS = Object.fromEntries(GRAPH_SOURCE_TYPES.map((t) => [t.type, t.label]));
+const DEFAULT_ON_TYPES = GRAPH_SOURCE_TYPES.filter((t) => t.graphDefaultOn).map((t) => t.type);
+
+// Seed types must be name-resolvable (CustomObject has no resolver — reachable only via expansion).
+const SEED_TYPES = METADATA_TYPES;
+
+// Types C1 can source-parse; others return no gaps so we skip them.
+const GAPS_TYPES = new Set(['ApexClass', 'ApexTrigger', 'Flow', 'LightningComponentBundle', 'CustomField']);
 
 function typeColor(type) {
   return TYPE_COLORS[type] ?? 'var(--fg-muted)';
@@ -139,13 +154,24 @@ function DetailRail({ selected, nodes, onSelectNode, onClear }) {
 export default function Dependency() {
   const [orgs, setOrgs]               = useState([]);
   const [selectedOrg, setSelectedOrg] = useState('');
-  const [activeTypes, setActiveTypes] = useState(new Set(ALL_TYPES));
-  const [loading, setLoading]         = useState(false);
+  const [activeTypes, setActiveTypes] = useState(new Set(DEFAULT_ON_TYPES));
+  const [seedName, setSeedName]       = useState('');
+  const [seedType, setSeedType]       = useState(SEED_TYPES[0]);
+  const [busy, setBusy]               = useState(false);
   const [error, setError]             = useState(null);
+  const [notFound, setNotFound]       = useState(null);
   const [graphData, setGraphData]     = useState(null); // { nodes, edges }
-  const [nodeCount, setNodeCount]     = useState(0);
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const [nodeMeta, setNodeMeta]       = useState(() => new Map()); // id -> { references, referencedBy }
   const [selectedId, setSelectedId]   = useState(null);
   const [enrichedNodes, setEnrichedNodes] = useState([]);
+  const [showGaps, setShowGaps]       = useState(false);
+  const [gaps, setGaps]               = useState(null);
+  const [gapsBusy, setGapsBusy]       = useState(false);
+  const [showInferred, setShowInferred] = useState(false);
+  const [inferredNodes, setInferredNodes] = useState(() => new Map()); // synthetic id -> {id,name,type,inferred:true}
+  const [inferredEdges, setInferredEdges] = useState([]);              // {source,target,provenance:'inferred'}
+  const [inferredBusy, setInferredBusy]   = useState(false);
 
   const svgRef       = useRef(null);
   const simRef       = useRef(null);
@@ -154,6 +180,13 @@ export default function Dependency() {
   const edgesDataRef = useRef([]);
   const selectedIdRef = useRef(null);
   const zoomRef       = useRef(null);
+  const positionsRef  = useRef(new Map()); // id -> {x,y,fx,fy}: preserved across rebuilds so expand doesn't reshuffle
+  const expandedIdsRef = useRef(expandedIds);
+  const nodeMetaRef    = useRef(nodeMeta);
+  const nodeClickRef   = useRef(() => {});
+
+  expandedIdsRef.current = expandedIds;
+  nodeMetaRef.current = nodeMeta;
 
   // Load orgs on mount
   useEffect(() => {
@@ -175,10 +208,19 @@ export default function Dependency() {
     });
   }, []);
 
+  // Confirmed graph + (when toggled on) the inferred overlay, merged for rendering.
+  const renderData = useMemo(() => {
+    const base = graphData ?? { nodes: [], edges: [] };
+    if (!showInferred) return base;
+    const existing = new Set(base.nodes.map((n) => n.id));
+    const extraNodes = [...inferredNodes.values()].filter((n) => !existing.has(n.id));
+    return { nodes: [...base.nodes, ...extraNodes], edges: [...base.edges, ...inferredEdges] };
+  }, [graphData, showInferred, inferredNodes, inferredEdges]);
+
   // Enrich nodes with adjacency info for the detail rail
   useEffect(() => {
-    if (!graphData) { setEnrichedNodes([]); return; }
-    const { nodes, edges } = graphData;
+    if (!renderData.nodes.length) { setEnrichedNodes([]); return; }
+    const { nodes, edges } = renderData;
     // Build adjacency: deps = outgoing edges (this → target), refs = incoming edges (source → this)
     const deps = {};
     const refs = {};
@@ -190,7 +232,7 @@ export default function Dependency() {
       if (refs[tid]) refs[tid].push(sid);
     });
     setEnrichedNodes(nodes.map((n) => ({ ...n, deps: deps[n.id] ?? [], refs: refs[n.id] ?? [] })));
-  }, [graphData]);
+  }, [renderData]);
 
   // Re-filter visible nodes/edges when activeTypes changes (without re-running simulation)
   useEffect(() => {
@@ -207,28 +249,164 @@ export default function Dependency() {
     });
   }, [activeTypes]);
 
-  // Load graph data from API
-  const loadGraph = useCallback(async () => {
-    if (!selectedOrg) return;
-    setLoading(true);
-    setError(null);
-    setSelectedId(null);
+  // Merge an incoming { nodes, edges } into the accumulated graph (dedupe by id / source|target).
+  const mergeGraph = useCallback((prev, incoming, centerNode) => {
+    const base = prev ?? { nodes: [], edges: [] };
+    const nodes = new Map(base.nodes.map((n) => [n.id, n]));
+    if (centerNode && !nodes.has(centerNode.id)) nodes.set(centerNode.id, centerNode);
+    for (const n of incoming.nodes ?? []) if (!nodes.has(n.id)) nodes.set(n.id, n);
+    const key = (e) => `${e.source}|${e.target}`;
+    const edges = new Map(base.edges.map((e) => [key(e), { source: e.source, target: e.target }]));
+    for (const e of incoming.edges ?? []) if (!edges.has(key(e))) edges.set(key(e), { source: e.source, target: e.target });
+    return { nodes: [...nodes.values()], edges: [...edges.values()] };
+  }, []);
 
+  const recordMeta = useCallback((id, data) => {
+    setNodeMeta((prev) => {
+      const m = new Map(prev);
+      m.set(id, { references: data.references, referencedBy: data.referencedBy });
+      return m;
+    });
+  }, []);
+
+  const addSeed = useCallback(async () => {
+    const name = seedName.trim();
+    if (!selectedOrg || !name) return;
+    setBusy(true); setError(null); setNotFound(null);
     try {
-      const types = Array.from(activeTypes).join(',');
-      const data = await api.dependencies(selectedOrg, types);
-      const nodes = data.nodes ?? [];
-      const edges = data.edges ?? [];
-      setGraphData({ nodes, edges });
-      setNodeCount(nodes.length);
+      const r = await api.resolveDependency(selectedOrg, name, seedType);
+      if (!r.found) {
+        setNotFound(`No ${TYPE_LABELS[seedType] ?? seedType} named "${name}" in ${selectedOrg}`);
+        return;
+      }
+      const seedNode = { id: r.id, name: r.name, type: r.type };
+      const data = await api.dependencyNeighbors(selectedOrg, r.id);
+      setGraphData((prev) => mergeGraph(prev, data, seedNode));
+      setExpandedIds((prev) => new Set(prev).add(r.id));
+      recordMeta(r.id, data);
+      setSeedName('');
     } catch (err) {
-      setError(err.message ?? 'Failed to load dependencies');
-      setGraphData(null);
-      setNodeCount(0);
+      setError(err.message ?? 'Failed to add seed');
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
-  }, [selectedOrg, activeTypes]);
+  }, [selectedOrg, seedName, seedType, mergeGraph, recordMeta]);
+
+  const expandNode = useCallback(async (id) => {
+    if (!selectedOrg || expandedIdsRef.current.has(id)) return;
+    setBusy(true); setError(null);
+    try {
+      const data = await api.dependencyNeighbors(selectedOrg, id);
+      setGraphData((prev) => mergeGraph(prev, data, null));
+      setExpandedIds((prev) => new Set(prev).add(id));
+      recordMeta(id, data);
+    } catch (err) {
+      setError(err.message ?? 'Failed to expand node');
+    } finally {
+      setBusy(false);
+    }
+  }, [selectedOrg, mergeGraph, recordMeta]);
+
+  const loadGaps = useCallback(async () => {
+    const name = seedName.trim();
+    if (!name) return;
+    setGapsBusy(true);
+    try {
+      const data = await api.dependencyGaps(selectedOrg || undefined, name, seedType);
+      setGaps(data.gaps ?? []);
+    } catch (err) {
+      setError(err.message ?? 'Gap report failed');
+      setGaps([]);
+    } finally { setGapsBusy(false); }
+  }, [selectedOrg, seedName, seedType]);
+
+  const toggleGaps = useCallback(() => {
+    setShowGaps((on) => {
+      const next = !on;
+      if (next) loadGaps();
+      return next;
+    });
+  }, [loadGaps]);
+
+  // ponytail: rebuilds the whole overlay (one /gaps fetch per expanded source) on each change —
+  // fine for the small expanded set; add a per-node cache keyed by id if overlay usage on large graphs gets heavy.
+  const buildInferredOverlay = useCallback(async () => {
+    if (!selectedOrg || !graphData) return;
+    setInferredBusy(true);
+    try {
+      const byId = new Map(graphData.nodes.map((n) => [n.id, n]));
+      const byTypeName = new Map(graphData.nodes.map((n) => [`${n.type}:${n.name}`, n.id]));
+      const synth = new Map();
+      const edges = [];
+      const edgeSet = new Set();
+      const sources = [...expandedIds].map((id) => byId.get(id)).filter((n) => n && GAPS_TYPES.has(n.type));
+      for (const node of sources) {
+        let data;
+        try { data = await api.dependencyGaps(selectedOrg, node.name, node.type); }
+        catch { continue; } // skip this node's overlay on error; others still render
+        for (const g of data.gaps ?? []) {
+          if (g.status !== 'missing') continue;
+          const key = `${g.ref.toType}:${g.ref.toName}`;
+          let targetId = byTypeName.get(key);
+          if (!targetId) {
+            targetId = `inferred:${key}`;
+            if (!synth.has(targetId)) synth.set(targetId, { id: targetId, name: g.ref.toName, type: g.ref.toType, inferred: true });
+          }
+          const ek = `${node.id}|${targetId}`;
+          if (!edgeSet.has(ek)) { edgeSet.add(ek); edges.push({ source: node.id, target: targetId, provenance: 'inferred' }); }
+        }
+      }
+      setInferredNodes(synth);
+      setInferredEdges(edges);
+    } finally {
+      setInferredBusy(false);
+    }
+  }, [selectedOrg, graphData, expandedIds]);
+
+  const toggleInferred = useCallback(() => setShowInferred((on) => !on), []);
+
+  // Build/refresh the overlay whenever it's on and the expanded set changes; clears on org change.
+  useEffect(() => {
+    if (showInferred) buildInferredOverlay();
+  }, [showInferred, expandedIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Switching orgs invalidates the whole graph: the confirmed nodes/edges, the
+  // expanded set, node metadata, and cached positions all belong to the previous
+  // org. Reset them (plus the inferred overlay) so a new org starts clean and the
+  // overlay never parses gaps against stale, other-org node names.
+  useEffect(() => {
+    setGraphData(null);
+    setExpandedIds(new Set());
+    setNodeMeta(new Map());
+    setSelectedId(null);
+    selectedIdRef.current = null;
+    positionsRef.current.clear();
+    setNotFound(null);
+    setShowInferred(false);
+    setInferredNodes(new Map());
+    setInferredEdges([]);
+  }, [selectedOrg]);
+
+  const reapplyHighlight = useCallback((focusId) => {
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+    const svg = select(svgEl);
+    applyHighlight(svg.selectAll('g.node-g'), svg.selectAll('g.links line'),
+      nodesDataRef.current, edgesDataRef.current, focusId);
+  }, []);
+
+  nodeClickRef.current = (id) => {
+    if (id.startsWith('inferred:') || expandedIdsRef.current.has(id)) {
+      const next = selectedIdRef.current === id ? null : id;
+      selectedIdRef.current = next;
+      setSelectedId(next);
+      reapplyHighlight(next);
+    } else {
+      selectedIdRef.current = id;
+      setSelectedId(id);
+      expandNode(id);
+    }
+  };
 
   // ── Build / rebuild D3 simulation whenever graphData changes ───────────────
   useEffect(() => {
@@ -244,12 +422,17 @@ export default function Dependency() {
     // Clear SVG
     select(svgEl).selectAll('*').remove();
 
-    if (!graphData || !graphData.nodes.length) return;
+    if (!renderData.nodes.length) return;
 
-    const { nodes: rawNodes, edges: rawEdges } = graphData;
+    const { nodes: rawNodes, edges: rawEdges } = renderData;
 
-    // Deep-copy so D3 can mutate x/y without corrupting state
-    const nodes = rawNodes.map((n) => ({ ...n }));
+    // Deep-copy so D3 can mutate x/y without corrupting state. Seed each node's
+    // position from the last simulation so an expand keeps existing nodes in place
+    // (new nodes have no stored position and get laid out fresh).
+    const nodes = rawNodes.map((n) => {
+      const p = positionsRef.current.get(n.id);
+      return p ? { ...n, x: p.x, y: p.y, fx: p.fx, fy: p.fy } : { ...n };
+    });
     const edges = rawEdges.map((e) => ({ ...e }));
 
     nodesDataRef.current = nodes;
@@ -292,9 +475,10 @@ export default function Dependency() {
       .selectAll('line')
       .data(edges)
       .join('line')
-      .attr('stroke', 'var(--fg-muted)')
-      .attr('stroke-opacity', 0.2)
+      .attr('stroke', (d) => (d.provenance === 'inferred' ? 'var(--status-conflict-solid)' : 'var(--fg-muted)'))
+      .attr('stroke-opacity', 0.25)
       .attr('stroke-width', 1)
+      .attr('stroke-dasharray', (d) => (d.provenance === 'inferred' ? '4 3' : null))
       .attr('marker-end', 'url(#dep-arrow)');
 
     // Drag behaviour
@@ -324,7 +508,7 @@ export default function Dependency() {
 
     nodeGroup.append('circle')
       .attr('r', 6)
-      .attr('fill', (d) => typeColor(d.type))
+      .attr('fill', (d) => (d.inferred ? 'var(--fg-muted)' : typeColor(d.type)))
       .attr('stroke', 'var(--bg-app)')
       .attr('stroke-width', 1.5);
 
@@ -337,13 +521,44 @@ export default function Dependency() {
       .attr('pointer-events', 'none')
       .attr('font-family', 'var(--font-mono)');
 
-    // Click to select / deselect
+    // Unexpanded nodes get a dashed outer ring signalling "click to expand".
+    nodeGroup.filter((d) => !expandedIdsRef.current.has(d.id) && !d.inferred)
+      .append('circle')
+      .attr('r', 10)
+      .attr('fill', 'none')
+      .attr('stroke', (d) => typeColor(d.type))
+      .attr('stroke-width', 1)
+      .attr('stroke-dasharray', '2 2')
+      .attr('opacity', 0.6);
+
+    // Synthetic inferred nodes (targets the Tooling API never surfaced) get a distinct dashed ring.
+    nodeGroup.filter((d) => d.inferred)
+      .append('circle')
+      .attr('r', 10)
+      .attr('fill', 'none')
+      .attr('stroke', 'var(--status-conflict-solid)')
+      .attr('stroke-width', 1)
+      .attr('stroke-dasharray', '3 2')
+      .attr('opacity', 0.7);
+
+    // Hub badge: a node whose expand hit the cap in either direction.
+    nodeGroup.filter((d) => {
+      const m = nodeMetaRef.current.get(d.id);
+      return m && (m.references?.hasMore || m.referencedBy?.hasMore);
+    })
+      .append('text')
+      .attr('class', 'graph-more-badge')
+      .text('+more')
+      .attr('x', 11)
+      .attr('y', -8)
+      .attr('font-size', '8px')
+      .attr('fill', 'var(--status-conflict-fg)')
+      .attr('font-family', 'var(--font-mono)');
+
+    // Click to select / expand
     nodeGroup.on('click', (event, d) => {
       event.stopPropagation();
-      const next = selectedIdRef.current === d.id ? null : d.id;
-      selectedIdRef.current = next;
-      setSelectedId(next);
-      applyHighlight(nodeGroup, linkSel, nodes, edges, next);
+      nodeClickRef.current(d.id);
     });
 
     // Double-click to unpin
@@ -360,12 +575,16 @@ export default function Dependency() {
       applyHighlight(nodeGroup, linkSel, nodes, edges, null);
     });
 
-    // Simulation
+    // Simulation. If most nodes already have positions (an expand, not a first
+    // seed), start with a low alpha so settled nodes barely move and only the new
+    // ones find a spot, instead of re-energising the whole layout.
+    const hasPriorPositions = nodes.some((n) => n.x != null);
     const sim = forceSimulation(nodes)
       .force('link', forceLink(edges).id((d) => d.id).distance(60))
       .force('charge', forceManyBody().strength(-120))
       .force('center', forceCenter(width / 2, height / 2))
       .force('collide', forceCollide(14))
+      .alpha(hasPriorPositions ? 0.3 : 1)
       .on('tick', () => {
         linkSel
           .attr('x1', (d) => d.source.x)
@@ -374,21 +593,30 @@ export default function Dependency() {
           .attr('y2', (d) => d.target.y);
 
         nodeGroup.attr('transform', (d) => `translate(${d.x},${d.y})`);
+        // Remember positions (incl. drag pins) for the next rebuild.
+        for (const d of nodes) {
+          positionsRef.current.set(d.id, { x: d.x, y: d.y, fx: d.fx ?? null, fy: d.fy ?? null });
+        }
       });
 
     simRef.current = sim;
+
+    // Re-apply highlight for the selected node after a rebuild (e.g. after an expand).
+    if (selectedIdRef.current) {
+      applyHighlight(nodeGroup, linkSel, nodes, edges, selectedIdRef.current);
+    }
 
     return () => {
       sim.stop();
       svg.on('click', null);
     };
-  }, [graphData]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [renderData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Highlight helper ────────────────────────────────────────────────────────
   function applyHighlight(nodeGroup, linkSel, _nodes, edges, focusId) {
     if (!focusId) {
       nodeGroup.attr('opacity', 1);
-      linkSel.attr('stroke-opacity', 0.2);
+      linkSel.attr('stroke-opacity', 0.25);
       return;
     }
 
@@ -465,56 +693,115 @@ export default function Dependency() {
               type="button"
             >
               <span className="graph-chip-dot" style={{ background: typeColor(t) }} />
-              {t}
+              {TYPE_LABELS[t] ?? t}
             </button>
           ))}
 
+          <input
+            className="graph-seed-input"
+            placeholder="Component name…"
+            aria-label="component name"
+            value={seedName}
+            onChange={(e) => setSeedName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') addSeed(); }}
+            disabled={!selectedOrg}
+          />
+          <select
+            className="graph-select"
+            value={seedType}
+            onChange={(e) => setSeedType(e.target.value)}
+            aria-label="seed type"
+          >
+            {SEED_TYPES.map((t) => (
+              <option key={t} value={t}>{TYPE_LABELS[t] ?? t}</option>
+            ))}
+          </select>
           <button
             className="btn btn-primary"
-            style={{ marginLeft: 'auto', padding: '4px 12px', fontSize: 12 }}
-            onClick={loadGraph}
-            disabled={loading || !selectedOrg}
+            style={{ padding: '4px 12px', fontSize: 12 }}
+            onClick={addSeed}
+            disabled={busy || !selectedOrg || !seedName.trim()}
             type="button"
           >
-            {loading ? 'Loading…' : 'Load Graph'}
+            {busy ? 'Working…' : 'Add seed'}
           </button>
-
-          {nodeCount > 0 && (
-            <span className="graph-badge">{nodeCount} nodes</span>
+          {notFound && <span className="graph-badge" role="status">{notFound}</span>}
+          <button
+            className={`graph-chip${showGaps ? ' active' : ''}`}
+            onClick={toggleGaps}
+            type="button"
+            title="Show source-parsed references the Tooling API may miss"
+          >
+            Gaps
+          </button>
+          <button
+            className={`graph-chip${showInferred ? ' active' : ''}`}
+            onClick={toggleInferred}
+            type="button"
+            title="Overlay source-inferred edges the Tooling API misses (dashed)"
+          >
+            {inferredBusy ? 'Inferring…' : 'Show inferred'}
+          </button>
+          {showInferred && (
+            <span className="graph-legend" aria-label="edge legend">— confirmed&nbsp;&nbsp;┄&nbsp;inferred</span>
           )}
         </div>
 
         {/* SVG area */}
         <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-          {loading && (
-            <div className="graph-loading-overlay">
-              <div className="spinner" style={{ width: 24, height: 24 }} />
+          <div style={{ position: 'absolute', inset: 0, display: showGaps ? 'none' : undefined }}>
+            {busy && (
+              <div className="graph-loading-overlay">
+                <div className="spinner" style={{ width: 24, height: 24 }} />
+              </div>
+            )}
+            {error && !busy && (
+              <div className="graph-empty-hint">
+                <span style={{ color: 'var(--status-error-fg, #f87171)' }}>{error}</span>
+              </div>
+            )}
+            {(!graphData || !graphData.nodes.length) && !busy && !error && (
+              <div className="graph-empty-hint">
+                Pick an org, enter a component name and type, then click <b>Add seed</b> to start
+                exploring. Click any node to expand its dependencies.
+              </div>
+            )}
+
+            <svg
+              ref={svgRef}
+              className="graph-svg"
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+            />
+          </div>
+
+          {showGaps && (
+            <div className="gaps-panel">
+              {gapsBusy && <div className="graph-empty-hint">Parsing source…</div>}
+              {!gapsBusy && !gaps && (
+                <div className="graph-empty-hint">
+                  Enter a component name and type, then toggle Gaps to see source-parsed references.
+                </div>
+              )}
+              {!gapsBusy && gaps && gaps.length === 0 && (
+                <div className="graph-empty-hint">No source-parsed references found for that component.</div>
+              )}
+              {!gapsBusy && gaps && gaps.length > 0 && (
+                <table className="gaps-table">
+                  <thead><tr><th>Kind</th><th>Target</th><th>Evidence</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {gaps.map((g, i) => (
+                      <tr key={i}>
+                        <td>{g.ref.kind}</td>
+                        <td><span className="gaps-target-type">{g.ref.toType}:</span>{g.ref.toName}</td>
+                        <td className="gaps-evidence">{g.ref.evidence} <span className="gaps-line">@{g.ref.line}</span></td>
+                        <td><span className={`gaps-status gaps-${g.status}`}>{g.status}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           )}
-
-          {error && !loading && (
-            <div className="graph-empty-hint">
-              <span style={{ color: 'var(--status-error-fg, #f87171)' }}>{error}</span>
-            </div>
-          )}
-
-          {!graphData && !loading && !error && (
-            <div className="graph-empty-hint">
-              Select an org and click Load Graph
-            </div>
-          )}
-
-          {graphData && graphData.nodes.length === 0 && !loading && (
-            <div className="graph-empty-hint">
-              No dependency data found for the selected org and types
-            </div>
-          )}
-
-          <svg
-            ref={svgRef}
-            className="graph-svg"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-          />
         </div>
       </div>
 

@@ -25,6 +25,8 @@ import CoveragePage from './pages/Coverage.jsx';
 import ScratchPage from './pages/Scratch.jsx';
 import DataPage from './pages/Data.jsx';
 import DocsPage from './pages/Docs.jsx';
+import AgentTestPage from './pages/AgentTest.jsx';
+import RetrofitPage from './pages/Retrofit.jsx';
 import {
   IconHome, IconList, IconCheck, IconRefresh, IconCompare,
   IconSun, IconMoon, IconFileText, IconActivity, IconCloudDown,
@@ -53,6 +55,7 @@ const NAV_GROUPS = [
     label: 'Release',
     items: [
       { id: 'release',   label: 'Release Hub', Icon: IconRocket },
+      { id: 'retrofit',  label: 'Retrofit',    Icon: IconRefresh },
     ],
   },
   {
@@ -63,6 +66,7 @@ const NAV_GROUPS = [
       { id: 'preflight', label: 'Preflight', Icon: IconCheck },
       { id: 'manifests', label: 'Manifests', Icon: IconFileText },
       { id: 'quality',   label: 'Quality',   Icon: IconActivity },
+      { id: 'agent-test', label: 'Agent Test', Icon: IconCheck },
       { id: 'pull',      label: 'Pull',      Icon: IconCloudDown },
       { id: 'review',     label: 'Review',           Icon: IconCode },
       { id: 'explain',    label: 'Explain',           Icon: IconSearch },
@@ -94,8 +98,10 @@ const PAGE_LABELS = {
   scan:      'Scan',
   manifests: 'Manifests',
   quality:   'Quality',
+  'agent-test': 'Agent Test',
   pull:      'Pull',
   release:   'Release Hub',
+  retrofit:  'Retrofit',
   review:    'Review',
   explain:   'Explain',
   flows:      'Flow Intelligence',
@@ -187,8 +193,10 @@ export default function App() {
       case 'scan':      return <ScanPage />;
       case 'manifests': return <ManifestsPage />;
       case 'quality':   return <QualityPage />;
+      case 'agent-test': return <AgentTestPage />;
       case 'pull':      return <PullPage />;
       case 'release':   return <ReleaseHubPage />;
+      case 'retrofit':  return <RetrofitPage />;
       case 'review':    return <ReviewPage />;
       case 'explain':   return <ExplainPage />;
       case 'flows':      return <FlowsPage />;

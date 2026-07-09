@@ -49,6 +49,8 @@ vi.mock('execa', () => ({
   execa: vi.fn().mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' }),
 }));
 
+vi.mock('../../src/lib/source-dependencies.js', () => ({ runGapReport: vi.fn() }));
+
 // ─── Imports ────────────────────────────────────────────────────────────────
 
 import request from 'supertest';
@@ -798,6 +800,39 @@ describe('GET /api/dependencies', () => {
     expect(res.status).toBe(200);
     expect(res.body.edgeCount).toBe(1); // deduplicated
   });
+
+  it('appends LIMIT and reports truncated=false under the cap', async () => {
+    const { execa: execaMock } = await import('execa');
+    const sfResponse = JSON.stringify({
+      result: { records: [{
+        MetadataComponentId: 'aaa', MetadataComponentName: 'C', MetadataComponentType: 'ApexClass',
+        RefMetadataComponentId: 'bbb', RefMetadataComponentName: 'H', RefMetadataComponentType: 'ApexClass',
+      }] },
+    });
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: sfResponse, stderr: '' });
+
+    const res = await request(app).get('/api/dependencies?org=limitcap');
+    expect(res.status).toBe(200);
+    expect(res.body.truncated).toBe(false);
+    // the SOQL passed to sf must contain a LIMIT clause
+    const call = vi.mocked(execaMock).mock.calls.at(-1);
+    const soql = call[1][call[1].indexOf('--query') + 1];
+    expect(soql).toMatch(/LIMIT 5000/);
+  });
+
+  it('sets truncated=true when the record count hits the cap', async () => {
+    const { execa: execaMock } = await import('execa');
+    const records = Array.from({ length: 5000 }, (_, i) => ({
+      MetadataComponentId: `s${i}`, MetadataComponentName: `C${i}`, MetadataComponentType: 'ApexClass',
+      RefMetadataComponentId: `r${i}`, RefMetadataComponentName: `H${i}`, RefMetadataComponentType: 'ApexClass',
+    }));
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records } }), stderr: '' });
+
+    const res = await request(app).get('/api/dependencies?org=trunc');
+    expect(res.status).toBe(200);
+    expect(res.body.truncated).toBe(true);
+    expect(res.body.limit).toBe(5000);
+  });
 });
 
 describe('GET /api/dependencies/preflight', () => {
@@ -902,6 +937,27 @@ describe('GET /api/dependencies/preflight', () => {
     expect(res.body.status).toBe('warn');
     expect(res.body.missing).toHaveLength(0);
     expect(res.body.warnings.length).toBeGreaterThan(0);
+  });
+
+  it('degrades to warn (200) when MetadataComponentDependency is not queryable, not a 500', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    const { execa: execaMock } = await import('execa');
+
+    fsMock.pathExists.mockResolvedValueOnce(true);
+    fsMock.readFile.mockResolvedValueOnce(
+      '<Package><types><members>MyClass</members><name>ApexClass</name></types></Package>',
+    );
+    // sf rejects the Tooling query (e.g. Dev Hub / Developer Edition)
+    const execErr = new Error('Command failed');
+    execErr.stdout = JSON.stringify({ name: 'INVALID_FIELD', message: 'MetadataComponentName is unknown.' });
+    vi.mocked(execaMock).mockRejectedValueOnce(execErr);
+
+    const res = await request(app).get(`/api/dependencies/preflight?manifest=manifest/release/pkg.xml&org=dev`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('warn');
+    expect(res.body.missing).toHaveLength(0);
+    expect(res.body.warnings[0].name).toBe('DEPENDENCY_API_UNAVAILABLE');
+    expect(res.body.warnings[0].referencedBy[0]).toMatch(/unavailable in this org/i);
   });
 });
 
@@ -1317,5 +1373,111 @@ describe('GET /api/notifications', () => {
     expect(team.target).toBe(true);
     // The webhook URL must never be exposed.
     expect(JSON.stringify(res.body)).not.toContain('hooks.slack.com');
+  });
+});
+
+describe('GET /api/dependencies/resolve', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('rejects an invalid org', async () => {
+    const res = await request(app).get('/api/dependencies/resolve?org=; rm&name=Foo&type=ApexClass');
+    expect(res.status).toBe(400);
+  });
+  it('rejects a non-resolvable type', async () => {
+    const res = await request(app).get('/api/dependencies/resolve?org=dev&name=Foo&type=CustomObject');
+    expect(res.status).toBe(400);
+  });
+  it('returns found:false when nothing matches', async () => {
+    const { execa: execaMock } = await import('execa');
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records: [] } }), stderr: '' });
+    const res = await request(app).get('/api/dependencies/resolve?org=dev&name=Nope&type=ApexClass');
+    expect(res.status).toBe(200);
+    expect(res.body.found).toBe(false);
+  });
+  it('returns the resolved id when a component matches', async () => {
+    const { execa: execaMock } = await import('execa');
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records: [{ Id: '01p000000000001' }] } }), stderr: '' });
+    const res = await request(app).get('/api/dependencies/resolve?org=dev&name=MyClass&type=ApexClass');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ found: true, id: '01p000000000001', type: 'ApexClass' });
+  });
+});
+
+describe('GET /api/dependencies/neighbors', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('rejects an invalid component id', async () => {
+    const res = await request(app).get('/api/dependencies/neighbors?org=dev&id=not-an-id');
+    expect(res.status).toBe(400);
+  });
+  it('merges both directions into deduped nodes/edges with hasMore flags', async () => {
+    const { execa: execaMock } = await import('execa');
+    // references (this -> others): one neighbor
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records: [
+      { RefMetadataComponentId: 'bbb', RefMetadataComponentName: 'Helper', RefMetadataComponentType: 'ApexClass' },
+    ] } }), stderr: '' });
+    // referencedBy (others -> this): one neighbor
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records: [
+      { MetadataComponentId: 'ccc', MetadataComponentName: 'Caller', MetadataComponentType: 'ApexTrigger' },
+    ] } }), stderr: '' });
+    const res = await request(app).get('/api/dependencies/neighbors?org=dev&id=01p000000000001&cap=50');
+    expect(res.status).toBe(200);
+    expect(res.body.nodes.map((n) => n.id).sort()).toEqual(['bbb', 'ccc']);
+    expect(res.body.edges).toContainEqual({ source: '01p000000000001', target: 'bbb' });
+    expect(res.body.edges).toContainEqual({ source: 'ccc', target: '01p000000000001' });
+    expect(res.body.references.hasMore).toBe(false);
+    expect(res.body.referencedBy.hasMore).toBe(false);
+  });
+  it('sets hasMore=true when a direction returns cap+1 rows', async () => {
+    const { execa: execaMock } = await import('execa');
+    const refRows = Array.from({ length: 3 }, (_, i) => ({ RefMetadataComponentId: `r${i}`, RefMetadataComponentName: `R${i}`, RefMetadataComponentType: 'ApexClass' }));
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records: refRows } }), stderr: '' }); // 3 rows, cap=2 => hasMore
+    vi.mocked(execaMock).mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify({ result: { records: [] } }), stderr: '' });
+    const res = await request(app).get('/api/dependencies/neighbors?org=dev2&id=01p000000000009&cap=2');
+    expect(res.status).toBe(200);
+    expect(res.body.references.hasMore).toBe(true);
+    expect(res.body.references.shown).toBe(2);
+    expect(res.body.nodes).toHaveLength(2);
+  });
+});
+
+describe('GET /api/dependencies/gaps', () => {
+  let app;
+
+  beforeAll(() => {
+    app = createGuiApp(MOCK_CONFIG, VERSION, PORT);
+  });
+
+  afterAll(async () => {
+    await app.cleanup?.();
+  });
+
+  it('rejects an invalid type', async () => {
+    const res = await request(app).get('/api/dependencies/gaps?name=Foo&type=Bogus');
+    expect(res.status).toBe(400);
+  });
+  it('returns a gap report offline (no org)', async () => {
+    const { runGapReport } = await import('../../src/lib/source-dependencies.js');
+    vi.mocked(runGapReport).mockResolvedValueOnce({ from: { name: 'AccountSvc', type: 'ApexClass' }, gaps: [] });
+    const res = await request(app).get('/api/dependencies/gaps?name=AccountSvc&type=ApexClass');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.gaps)).toBe(true);
+    expect(runGapReport).toHaveBeenCalledWith(expect.anything(), { name: 'AccountSvc', type: 'ApexClass', org: undefined });
   });
 });

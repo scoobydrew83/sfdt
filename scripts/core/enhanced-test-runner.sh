@@ -1,9 +1,6 @@
 #!/bin/bash
 
-# =============================================================================
 # SFDT - Enhanced Test Runner v2.0
-# Features: Parallel execution, performance testing, quality gates
-# =============================================================================
 set -euo pipefail
 
 # Source shared utilities

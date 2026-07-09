@@ -18,12 +18,15 @@ import { createCanvasSearchFeature } from '../features/canvas-search.js';
 import { createComparisonExporterFeature } from '../features/comparison-exporter.js';
 import { createFlowDeployFeature } from '../features/flow-deploy.js';
 import { createFlowHealthCheckFeature } from '../features/flow-health-check.js';
+import { createFlowQualityFeature } from '../features/flow-quality.js';
+import { createDependencyExplorerFeature } from '../features/dependency-explorer.js';
 import { createFlowListSearchFeature } from '../features/flow-list-search.js';
 import { createFlowTriggerExplorerEnhancerFeature } from '../features/flow-trigger-explorer-enhancer.js';
 import { createFlowVersionManagerFeature } from '../features/flow-version-manager.js';
 import { createMissingDescriptionFlagsFeature } from '../features/missing-description-flags.js';
 import { createOrgLimitsFeature } from '../features/org-limits.js';
 import { createOrgHealthLiveFeature } from '../features/org-health-live.js';
+import { createOrgHealthFeature } from '../features/org-health.js';
 import { createCodeCoverageFeature } from '../features/code-coverage.js';
 import { createRestExploreFeature } from '../features/rest-explore.js';
 import { createScheduledFlowExplorerFeature } from '../features/scheduled-flow-explorer.js';
@@ -43,6 +46,7 @@ import { createApexAnonymousFeature } from '../features/apex-anonymous.js';
 import { createDebugLogViewerFeature } from '../features/debug-log-viewer.js';
 import { createSavedSoqlFeature } from '../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../features/org-switcher.js';
+import { createOrgReleaseBadgeFeature } from '../features/org-release-badge.js';
 
 const SALESFORCE_HOST_PATTERN =
   /^https:\/\/[^/]+\.(salesforce\.com|salesforce-setup\.com|my\.salesforce\.com|lightning\.force\.com)\//i;
@@ -72,9 +76,24 @@ export default defineContentScript({
     const router = createSpaRouter();
 
     registry.register(createSetupTabsFeature());
+    // Non-interactive pill in the Setup tab strip: org release + preview flag
+    // (derived via flow-core, same as CLI `monitor org-info`).
+    registry.register(createOrgReleaseBadgeFeature());
     registry.register(createCanvasSearchFeature());
     registry.register(createFlowListSearchFeature());
     registry.register(createFlowHealthCheckFeature());
+    // Dependency Explorer + Flow Scanner. The Scanner's dependency rows cross-link
+    // into the Explorer (openFor pre-fills + searches), so both are registered
+    // here — on real Setup/Flow pages — not just in the Workspace app.
+    const depExplorer = createDependencyExplorerFeature();
+    registry.register(depExplorer);
+    // Flow Scanner: name/list-driven full quality report (issue families +
+    // dependencies) across Setup/Flow contexts, not just the builder canvas.
+    registry.register(
+      createFlowQualityFeature({
+        onExploreDependency: (dep) => void depExplorer.openFor(dep.type, dep.name),
+      }),
+    );
     registry.register(createMissingDescriptionFlagsFeature());
     registry.register(createFlowVersionManagerFeature());
     registry.register(createAiAssistantFeature());
@@ -91,6 +110,10 @@ export default defineContentScript({
     // getSalesforceApi(), same as SOQL Runner) rather than reading static CLI
     // snapshots — so they show live, org-specific data on the current page.
     registry.register(createOrgHealthLiveFeature());
+    // Org Health (bridge): the CLI's audit/monitor snapshots via the local
+    // bridge or native host (the `org-health` request kind). Distinct from the
+    // live-query tool above; surfaces the governance snapshots the CLI produces.
+    registry.register(createOrgHealthFeature());
     registry.register(createCodeCoverageFeature());
     registry.register(createRestExploreFeature());
     registry.register(createInspectRecordFeature());

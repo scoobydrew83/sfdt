@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import * as fs from 'node:fs';
 import path from 'node:path';
 import type { Snapshot, ScanSnapshot, DriftSnapshot } from './snapshots.js';
 
@@ -12,9 +13,29 @@ export async function readJsonIfExists<T>(filePath: string): Promise<T | null> {
   }
 }
 
-/** Resolve the sfdt logs directory for a workspace root. */
+/**
+ * Resolve the sfdt logs directory for a workspace root, honouring an optional
+ * `logDir` in `.sfdt/config.json` (the CLI honours it via SFDT_LOG_DIR and the
+ * GUI reads it too — a custom logDir would otherwise leave every snapshot
+ * view permanently empty). Sync read, cached per root: called from tree
+ * refresh paths that are already debounced.
+ */
+const logDirCache = new Map<string, { at: number; dir: string }>();
 export function logsDir(projectRoot: string): string {
-  return path.join(projectRoot, 'logs');
+  const cached = logDirCache.get(projectRoot);
+  if (cached && Date.now() - cached.at < 30_000) return cached.dir;
+  let dir = path.join(projectRoot, 'logs');
+  try {
+    const raw = fs.readFileSync(path.join(projectRoot, '.sfdt', 'config.json'), 'utf8');
+    const logDir: unknown = JSON.parse(raw).logDir;
+    if (typeof logDir === 'string' && logDir.trim()) {
+      dir = path.isAbsolute(logDir) ? logDir : path.join(projectRoot, logDir);
+    }
+  } catch {
+    /* no config / unparseable — default logs/ */
+  }
+  logDirCache.set(projectRoot, { at: Date.now(), dir });
+  return dir;
 }
 
 /** Read the latest audit and monitor snapshots from a workspace's logs dir. */
@@ -27,6 +48,15 @@ export async function readSnapshots(
     readJsonIfExists<Snapshot>(path.join(dir, 'monitor-latest.json')),
   ]);
   return { audit, monitor };
+}
+
+/**
+ * Read the latest quality log envelope (`logs/quality-latest.json`) — the
+ * snapshot dashboard quality runs write and the MCP server reads. Returned
+ * untyped: `qualityFromSnapshot` (lib/diagnostics) validates the shape.
+ */
+export async function readQualityLog(projectRoot: string): Promise<unknown> {
+  return readJsonIfExists<unknown>(path.join(logsDir(projectRoot), 'quality-latest.json'));
 }
 
 /** Read the latest scan + drift snapshots (Org Health's secondary sections). */

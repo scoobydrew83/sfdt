@@ -25,6 +25,13 @@ export class SalesforceMcpClient {
     const command = mcpCfg.command ?? 'sf';
     const args = mcpCfg.args ?? ['mcp', 'start'];
 
+    // Stateless-safe (MCP 2026-07-28 RC): stdio transport has no session-id
+    // header, load balancer, or server-instance affinity, so the stateless-core
+    // changes don't apply here. The persistent #client below is reused across
+    // calls, which is correct for a single stdio process. If this ever migrates
+    // to Streamable HTTP, do NOT persist an Mcp-Session-Id or assume the same
+    // server instance answers follow-up calls — treat every request as routable
+    // to any instance.
     const transport = new StdioClientTransport({ command, args });
     const client = new Client({ name: 'sfdt', version: '1.0.0' });
     await Promise.race([

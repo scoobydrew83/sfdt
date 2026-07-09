@@ -21,6 +21,8 @@ import {
   checkAuditTrail,
   checkLicenses,
   checkMfa,
+  checkMfaReadiness,
+  checkSoapLogins,
   checkUnusedApex,
   checkInactiveUsers,
   checkApiVersions,
@@ -45,6 +47,7 @@ describe('AUDIT_DEFAULTS', () => {
       licenseWarnThreshold: 0.75,
       inactiveUserDays: 90,
       minApiVersion: 45,
+      soapLoginLookbackDays: 30,
     });
   });
 });
@@ -100,6 +103,118 @@ describe('checkMfa', () => {
     const r = await checkMfa('dev');
     expect(r.status).toBe('warn');
     expect(r.findings).toEqual([{ username: 'b@x.com', name: 'B', license: undefined }]);
+  });
+
+  it('degrades to warn (not error) when TwoFactorMethodsInfo is not queryable', async () => {
+    query.mockRejectedValueOnce(new Error("sObject type 'TwoFactorMethodsInfo' is not supported"));
+    const r = await checkMfa('dev');
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/unavailable/);
+    expect(r.findings).toEqual([]);
+  });
+});
+
+describe('checkMfaReadiness', () => {
+  it('is ok when every active user has a phishing-resistant method', async () => {
+    query
+      .mockResolvedValueOnce([
+        { UserId: 'u1', HasTotp: false, HasU2F: true, HasBuiltInAuthenticator: false, HasSalesforceAuthenticator: false },
+        { UserId: 'u2', HasTotp: false, HasU2F: false, HasSecurityKey: true, HasBuiltInAuthenticator: false, HasSalesforceAuthenticator: false },
+      ])
+      .mockResolvedValueOnce([
+        { Id: 'u1', Username: 'a@x.com', Name: 'A' },
+        { Id: 'u2', Username: 'b@x.com', Name: 'B' },
+      ]);
+    const r = await checkMfaReadiness('dev');
+    expect(r.status).toBe('ok');
+    expect(r.findings).toHaveLength(0);
+    expect(r.summary).toMatch(/July 2026/);
+  });
+
+  it('flags unregistered users and TOTP-only users with distinct details', async () => {
+    query
+      .mockResolvedValueOnce([
+        { UserId: 'u1', HasTotp: true, HasU2F: false, HasBuiltInAuthenticator: false, HasSalesforceAuthenticator: false },
+        { UserId: 'u3', HasTotp: false, HasU2F: true, HasBuiltInAuthenticator: false, HasSalesforceAuthenticator: false },
+      ])
+      .mockResolvedValueOnce([
+        { Id: 'u1', Username: 'totp@x.com', Name: 'Totp Only' },
+        { Id: 'u2', Username: 'none@x.com', Name: 'No Mfa' },
+        { Id: 'u3', Username: 'key@x.com', Name: 'Key User' },
+      ]);
+    const r = await checkMfaReadiness('dev');
+    expect(r.status).toBe('warn');
+    expect(r.findings).toHaveLength(2);
+    expect(r.findings.find((f) => f.username === 'none@x.com').detail).toMatch(/No MFA method/);
+    expect(r.findings.find((f) => f.username === 'totp@x.com').detail).toMatch(/non-phishing-resistant/);
+    expect(r.summary).toMatch(/phishing-resistant MFA enforcement \(July 2026\)/);
+  });
+
+  it('aggregates multiple method rows per user', async () => {
+    query
+      .mockResolvedValueOnce([
+        { UserId: 'u1', HasTotp: true, HasU2F: false, HasBuiltInAuthenticator: false, HasSalesforceAuthenticator: false },
+        { UserId: 'u1', HasTotp: false, HasU2F: true, HasBuiltInAuthenticator: false, HasSalesforceAuthenticator: false },
+      ])
+      .mockResolvedValueOnce([{ Id: 'u1', Username: 'a@x.com', Name: 'A' }]);
+    const r = await checkMfaReadiness('dev');
+    expect(r.status).toBe('ok');
+  });
+
+  it('degrades to warn (not error) when TwoFactorMethodsInfo is not queryable', async () => {
+    query.mockRejectedValueOnce(new Error("sObject type 'TwoFactorMethodsInfo' is not supported"));
+    const r = await checkMfaReadiness('dev');
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/unavailable/);
+    expect(r.findings).toEqual([]);
+  });
+});
+
+describe('checkSoapLogins', () => {
+  it('flags SOAP login() traffic in the retiring 31.0-64.0 band, aggregated per client', async () => {
+    query.mockResolvedValueOnce([
+      { UserId: 'u1', LoginTime: '2026-06-20T00:00:00Z', ApiType: 'SOAP Partner', ApiVersion: '54.0', Application: 'DataLoader' },
+      { UserId: 'u1', LoginTime: '2026-06-21T00:00:00Z', ApiType: 'SOAP Partner', ApiVersion: '54.0', Application: 'DataLoader' },
+      { UserId: 'u2', LoginTime: '2026-06-19T00:00:00Z', ApiType: 'SOAP Enterprise', ApiVersion: '31.0', Application: 'LegacyBot' },
+    ]);
+    const r = await checkSoapLogins('dev', { lookbackDays: 30 });
+    expect(r.status).toBe('warn');
+    expect(r.findings).toHaveLength(2);
+    const dl = r.findings.find((f) => f.application === 'DataLoader');
+    expect(dl).toMatchObject({ userId: 'u1', apiVersion: 54, logins: 2, lastLogin: '2026-06-21T00:00:00Z' });
+    expect(r.summary).toMatch(/SOAP login\(\)/);
+    expect(r.summary).toMatch(/31\.0–64\.0/);
+  });
+
+  it('ignores SOAP logins outside the retirement band', async () => {
+    query.mockResolvedValueOnce([
+      { UserId: 'u1', LoginTime: '2026-06-20T00:00:00Z', ApiType: 'SOAP Partner', ApiVersion: '65.0', Application: 'Modern' },
+      { UserId: 'u2', LoginTime: '2026-06-20T00:00:00Z', ApiType: 'SOAP Partner', ApiVersion: '30.0', Application: 'Ancient' },
+    ]);
+    const r = await checkSoapLogins('dev');
+    expect(r.status).toBe('ok');
+    expect(r.findings).toHaveLength(0);
+    expect(r.summary).toMatch(/No SOAP login\(\)/);
+  });
+
+  it('is ok when there is no SOAP traffic at all', async () => {
+    query.mockResolvedValueOnce([]);
+    const r = await checkSoapLogins('dev');
+    expect(r.status).toBe('ok');
+  });
+
+  it('degrades to warn (not error) when LoginHistory is not accessible', async () => {
+    query.mockRejectedValueOnce(new Error('INSUFFICIENT_ACCESS: LoginHistory'));
+    const r = await checkSoapLogins('dev');
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/unavailable/);
+  });
+
+  it('degrades to warn on a non-numeric configured lookback', async () => {
+    const r = await checkSoapLogins('dev', { lookbackDays: 'soon' });
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/must be a number/);
+    expect(query).not.toHaveBeenCalled();
   });
 });
 
@@ -201,6 +316,30 @@ describe('checkConnectedApps', () => {
     const r = await checkConnectedApps('dev', { flagPermissive: false });
     expect(r.status).toBe('ok');
     expect(r.findings).toHaveLength(0);
+  });
+
+  it('recommends External Client Apps migration whenever connected apps exist (additive, status unchanged)', async () => {
+    query.mockResolvedValueOnce([
+      { Name: 'Open App', OptionsAllowAdminApprovedUsersOnly: false },
+      { Name: 'Locked App', OptionsAllowAdminApprovedUsersOnly: true },
+    ]);
+    const r = await checkConnectedApps('dev', { flagPermissive: true });
+    expect(r.status).toBe('warn'); // banding unchanged
+    expect(r.summary).toMatch(/External Client Apps/);
+    expect(r.findings[0].recommendation).toMatch(/External Client App/);
+
+    // Locked-only org: status stays ok, note still present.
+    query.mockResolvedValueOnce([{ Name: 'Locked App', OptionsAllowAdminApprovedUsersOnly: true }]);
+    const r2 = await checkConnectedApps('dev', { flagPermissive: true });
+    expect(r2.status).toBe('ok');
+    expect(r2.summary).toMatch(/External Client Apps/);
+  });
+
+  it('omits the migration note when the org has no connected apps', async () => {
+    query.mockResolvedValueOnce([]);
+    const r = await checkConnectedApps('dev', { flagPermissive: true });
+    expect(r.status).toBe('ok');
+    expect(r.summary).not.toMatch(/External Client Apps/);
   });
 
   it('degrades to warn (not error) when the query is rejected', async () => {

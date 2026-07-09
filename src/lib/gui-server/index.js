@@ -25,10 +25,13 @@ import { isSafeGitRef, resolveBaseRef } from '../git-utils.js';
 import { buildSourceDirArgs } from '../source-dirs.js';
 import { initCache, getDelta, updateCache } from '../pull-cache.js';
 import { parallelRetrieve } from '../parallel-retrieve.js';
+import { GRAPH_SOURCE_TYPES, resolveQueryFor, neighborsQuery } from '@sfdt/flow-core';
+import { runGapReport } from '../source-dependencies.js';
 import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken, requireCsrfTokenFromQueryOrHeader } from './security.js';
 import { mountBridgeRoutes } from '../bridge/routes.js';
 import { constantTimeEqual } from '../bridge/token.js';
 import { stripAnsi, tryReadJson, safeReaddir, buildPlaceholderHtml } from './shared.js';
+import { isCliRunCommand, buildCliRunArgv } from './cli-run.js';
 import {
   parseTestRunLines, parseQualityLines,
   readTestRuns, readPreflight, readQuality, readDrift, readCompare, readScan,
@@ -790,6 +793,85 @@ export function createGuiApp(config, version, port = 7654) {
     }
   });
 
+  // ── Native-CLI runner (SSE) ─────────────────────────────────────────────────
+  // Runs the sfdt CLI entrypoint itself (same convention as runSfdtJson and
+  // mcp-server.js) for commands that are native Node runners rather than
+  // shell scripts (audit, monitor, scratch, data, docs), streaming stdout +
+  // stderr over SSE with the same event shapes as /api/command/run. The
+  // commands write their own snapshots/artifacts (e.g. logs/audit-latest.json),
+  // so the existing GET endpoints serve fresh data after a run completes.
+  const streamCliOverSse = async (req, res, argv) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    let child;
+    req.on('close', () => { if (child && !child.killed) child.kill(); });
+
+    try {
+      child = execa(process.argv[0], [process.argv[1], ...argv], {
+        cwd: config._projectRoot ?? process.cwd(),
+        env: { ...process.env, SFDT_NON_INTERACTIVE: 'true' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const streamLines = (readable) => {
+        const rl = createInterface({ input: readable, crlfDelay: Infinity });
+        rl.on('line', (rawLine) => {
+          // Redact at ingest so secrets never reach the SSE stream.
+          const stripped = stripAnsi(redactSensitiveData(rawLine));
+          if (!res.writableEnded && !stripped.startsWith('SFDT_LOG:')) {
+            res.write('data: ' + JSON.stringify({ type: 'log', line: stripped, ts: new Date().toISOString() }) + '\n\n');
+          }
+        });
+        return rl;
+      };
+
+      const rlOut = streamLines(child.stdout);
+      const rlErr = streamLines(child.stderr);
+
+      let exitCode = 0;
+      try {
+        await child;
+      } catch (execErr) {
+        exitCode = execErr.exitCode ?? 1;
+      } finally {
+        rlOut.close();
+        rlErr.close();
+      }
+
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'result', exitCode }) + '\n\n');
+        res.end();
+      }
+    } catch (err) {
+      if (!res.writableEnded) {
+        res.write('data: ' + JSON.stringify({ type: 'error', message: err.message }) + '\n\n');
+        res.end();
+      }
+    }
+  };
+
+  // ── Audit / Monitor: run from the dashboard (SSE) ───────────────────────────
+  // POST /api/audit/run and /api/monitor/run run `sfdt audit all` /
+  // `sfdt monitor all` (optionally against the session org or a validated
+  // body.targetOrg) so the snapshot file updates and GET /api/audit /
+  // GET /api/monitor return fresh data.
+  for (const snapshotCommand of ['audit', 'monitor']) {
+    app.get(`/api/${snapshotCommand}/run`, apiLimiter, (_req, res) => {
+      res.status(405).json({ error: `Use POST /api/${snapshotCommand}/run` });
+    });
+
+    app.post(`/api/${snapshotCommand}/run`, apiLimiter, async (req, res) => {
+      if (!requireCsrfToken(req, res, csrfToken)) return;
+      const built = buildCliRunArgv(snapshotCommand, req.body ?? {}, sessionOrg ?? '');
+      if (built.error) return res.status(400).json({ error: built.error });
+      await streamCliOverSse(req, res, built.argv);
+    });
+  }
+
   // ── Generic command runner (SSE) ───────────────────────────────────────────
 
   app.get('/api/command/run', apiLimiter, (_req, res) => {
@@ -805,6 +887,18 @@ export function createGuiApp(config, version, port = 7654) {
     }
     const cmd = COMMANDS[command];
     if (!cmd) {
+      // Native-CLI allowlist (scratch/data/docs actions + audit/monitor):
+      // fixed argv templates with strictly validated user values — see
+      // ./cli-run.js. Mutating operations are recorded in the audit trail;
+      // the GUI confirms them with the user before calling this endpoint.
+      if (isCliRunCommand(command)) {
+        const built = buildCliRunArgv(command, req.body ?? {}, sessionOrg ?? '');
+        if (built.error) return res.status(400).json({ error: built.error });
+        if (built.mutating) {
+          await logAuditEvent('command-run', { command, argv: built.argv }, { actor: 'GUI Operator', ip: req.ip });
+        }
+        return streamCliOverSse(req, res, built.argv);
+      }
       return res.status(400).json({ error: 'Unknown command' });
     }
 
@@ -2856,9 +2950,15 @@ export function createGuiApp(config, version, port = 7654) {
     'StandardField', 'AuraDefinitionBundle', 'LightningComponentBundle',
   ]);
 
+  /** Default graph source types = flow-core's default-on set (keeps API ⇄ GUI in lockstep). */
+  const DEFAULT_GRAPH_TYPES = GRAPH_SOURCE_TYPES
+    .filter((t) => t.graphDefaultOn)
+    .map((t) => t.type)
+    .join(',');
+
   app.get('/api/dependencies', apiLimiter, async (req, res) => {
     try {
-      const { org, types = 'ApexClass,ApexTrigger,ApexComponent,Flow' } = req.query;
+      const { org, types = DEFAULT_GRAPH_TYPES } = req.query;
       if (!org || typeof org !== 'string' || !org.trim()) {
         return res.status(400).json({ error: 'org is required' });
       }
@@ -2883,33 +2983,21 @@ export function createGuiApp(config, version, port = 7654) {
         return res.json(cached.data);
       }
 
+      const DEP_ROW_LIMIT = 5000;
       const inClause = typeList.map((t) => `'${t}'`).join(',');
       const soql = [
         'SELECT MetadataComponentId, MetadataComponentName, MetadataComponentType,',
         'RefMetadataComponentId, RefMetadataComponentName, RefMetadataComponentType',
         'FROM MetadataComponentDependency',
         `WHERE MetadataComponentType IN (${inClause})`,
+        `LIMIT ${DEP_ROW_LIMIT}`,
       ].join(' ');
 
       let records = [];
       try {
-        const result = await execa('sf', [
-          'data', 'query',
-          '--use-tooling-api',
-          '--query', soql,
-          '--json',
-          '--target-org', safeOrg,
-        ]);
-        const parsed = JSON.parse(result.stdout);
-        records = parsed?.result?.records ?? [];
-      } catch (execErr) {
-        // Extract error message from sf CLI JSON output when possible
-        let errMsg = execErr.message ?? 'sf command failed';
-        try {
-          const errParsed = JSON.parse(execErr.stdout ?? execErr.stderr ?? '{}');
-          errMsg = errParsed?.message ?? errParsed?.result?.message ?? errMsg;
-        } catch { /* ignore */ }
-        return res.status(500).json({ error: errMsg });
+        records = await runToolingQuery(soql, safeOrg);
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
       }
 
       // Build graph — deduplicate nodes by id
@@ -2941,16 +3029,150 @@ export function createGuiApp(config, version, port = 7654) {
       }
 
       const nodes = [...nodesById.values()];
+      const truncated = records.length === DEP_ROW_LIMIT;
       const payload = {
         nodes,
         edges,
         cachedAt: new Date().toISOString(),
         nodeCount: nodes.length,
         edgeCount: edges.length,
+        truncated,
+        ...(truncated ? { limit: DEP_ROW_LIMIT } : {}),
       };
 
       depCache.set(cacheKey, { ts: Date.now(), data: payload });
       res.json(payload);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Dependencies: seed resolution + expand-on-click neighbors (Tier 2) ──────
+
+  const DEP_ORG_RE = /^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/;
+
+  /** Run a Tooling SOQL query and return its records, or throw with an sf-extracted message. */
+  async function runToolingQuery(soql, safeOrg) {
+    try {
+      const result = await execa('sf', ['data', 'query', '--use-tooling-api', '--query', soql, '--json', '--target-org', safeOrg]);
+      return JSON.parse(result.stdout)?.result?.records ?? [];
+    } catch (execErr) {
+      let errMsg = execErr.message ?? 'sf command failed';
+      try {
+        const parsed = JSON.parse(execErr.stdout ?? execErr.stderr ?? '{}');
+        errMsg = parsed?.message ?? parsed?.result?.message ?? errMsg;
+      } catch { /* ignore */ }
+      const e = new Error(errMsg);
+      e.isSfError = true;
+      throw e;
+    }
+  }
+
+  app.get('/api/dependencies/resolve', apiLimiter, async (req, res) => {
+    try {
+      const safeOrg = String(req.query.org ?? '').trim();
+      if (!safeOrg || !DEP_ORG_RE.test(safeOrg)) {
+        return res.status(400).json({ error: 'Invalid or missing org alias' });
+      }
+      const safeType = String(req.query.type ?? '').trim();
+      if (!GRAPH_SOURCE_TYPES.some((t) => t.type === safeType)) {
+        return res.status(400).json({ error: 'Invalid metadata type' });
+      }
+      const safeName = String(req.query.name ?? '').trim();
+      if (!safeName) return res.status(400).json({ error: 'name is required' });
+
+      // CustomObject (and any non-CLI-resolvable graph type) has no resolver: reject as a seed.
+      let soql;
+      try {
+        soql = resolveQueryFor(safeType, safeName);
+      } catch {
+        return res.status(400).json({ error: `${safeType} cannot be resolved by name — use it as a neighbor instead` });
+      }
+
+      let records;
+      try {
+        records = await runToolingQuery(soql, safeOrg);
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      if (!records.length) return res.json({ found: false, name: safeName, type: safeType });
+      return res.json({ found: true, id: records[0].Id, name: safeName, type: safeType });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/dependencies/neighbors', apiLimiter, async (req, res) => {
+    try {
+      const safeOrg = String(req.query.org ?? '').trim();
+      if (!safeOrg || !DEP_ORG_RE.test(safeOrg)) {
+        return res.status(400).json({ error: 'Invalid or missing org alias' });
+      }
+      const safeId = String(req.query.id ?? '').trim();
+      if (!/^[A-Za-z0-9]{15,18}$/.test(safeId)) {
+        return res.status(400).json({ error: 'Invalid component id' });
+      }
+      let cap = parseInt(req.query.cap, 10);
+      if (!Number.isFinite(cap)) cap = 50;
+      cap = Math.max(1, Math.min(200, cap));
+
+      let refRows, refByRows;
+      try {
+        [refRows, refByRows] = await Promise.all([
+          runToolingQuery(neighborsQuery(safeId, 'references', cap), safeOrg),
+          runToolingQuery(neighborsQuery(safeId, 'referencedBy', cap), safeOrg),
+        ]);
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+
+      const nodesById = new Map();
+      const edges = [];
+      const edgeSet = new Set();
+      const addNode = (id, name, type) => { if (id && !nodesById.has(id)) nodesById.set(id, { id, name, type }); };
+      const addEdge = (source, target) => {
+        const key = `${source}|${target}`;
+        if (source && target && !edgeSet.has(key)) { edgeSet.add(key); edges.push({ source, target }); }
+      };
+
+      const refHasMore = refRows.length > cap;
+      const refByHasMore = refByRows.length > cap;
+      const refShown = refRows.slice(0, cap);
+      const refByShown = refByRows.slice(0, cap);
+
+      for (const r of refShown) {
+        addNode(r.RefMetadataComponentId, r.RefMetadataComponentName, r.RefMetadataComponentType);
+        addEdge(safeId, r.RefMetadataComponentId);
+      }
+      for (const r of refByShown) {
+        addNode(r.MetadataComponentId, r.MetadataComponentName, r.MetadataComponentType);
+        addEdge(r.MetadataComponentId, safeId);
+      }
+
+      return res.json({
+        nodes: [...nodesById.values()],
+        edges,
+        references: { hasMore: refHasMore, shown: refShown.length },
+        referencedBy: { hasMore: refByHasMore, shown: refByShown.length },
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/dependencies/gaps', apiLimiter, async (req, res) => {
+    try {
+      const name = String(req.query.name ?? '').trim();
+      if (!name) return res.status(400).json({ error: 'name is required' });
+      const type = String(req.query.type ?? '').trim();
+      if (!GRAPH_SOURCE_TYPES.some((t) => t.type === type)) {
+        return res.status(400).json({ error: 'Invalid metadata type' });
+      }
+      const org = req.query.org ? String(req.query.org).trim() : undefined;
+      if (org && !DEP_ORG_RE.test(org)) return res.status(400).json({ error: 'Invalid org alias' });
+      const config = await loadConfig();
+      const report = await runGapReport(config, { name, type, org });
+      res.json(report);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -3028,7 +3250,21 @@ export function createGuiApp(config, version, port = 7654) {
           const errParsed = JSON.parse(execErr.stdout ?? execErr.stderr ?? '{}');
           errMsg = errParsed?.message ?? errParsed?.result?.message ?? errMsg;
         } catch { /* ignore */ }
-        return res.status(500).json({ error: errMsg });
+        // MetadataComponentDependency is a capability-gated Tooling object: some
+        // orgs (Dev Hub / Developer Edition) reject the query (INVALID_TYPE /
+        // INVALID_FIELD "…is unknown"). A rejected query means "this org can't run
+        // the dependency check", not "the manifest is bad" — degrade to warn so the
+        // Preflight page shows a tidy "unavailable" note instead of a raw 500 dump,
+        // matching the audit/monitor runners' degrade-to-warn (never error) pattern.
+        return res.status(200).json({
+          status: 'warn',
+          missing: [],
+          warnings: [{
+            name: 'DEPENDENCY_API_UNAVAILABLE',
+            type: 'system',
+            referencedBy: [`Dependency data unavailable in this org (MetadataComponentDependency not queryable): ${String(errMsg).replace(/[\r\n]+/g, ' ').slice(0, 300)}`],
+          }],
+        });
       }
 
       // For each dependency: if RefMetadataComponentName is not in the manifest,

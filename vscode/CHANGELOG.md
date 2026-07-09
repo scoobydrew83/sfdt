@@ -6,6 +6,34 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-09
+
+### Added
+
+- **Run this test class** — a **▶ Run test class** CodeLens at the top of every Apex test class (`.cls` with `@isTest`/`testMethod`) runs `sfdt test --class-names <name>`, plus a **SFDT: Run This Test Class** palette command. The extension now also activates in any Salesforce DX project (`sfdx-project.json`).
+- **Agentforce agent tests** — a **▶ Run agent test** CodeLens on every `*.aiEvaluationDefinition-meta.xml` spec file runs `sfdt agent-test --spec <name>` (the spec is the file's API name), plus an **Agent Test (Agentforce)** entry in the Commands tree and a **SFDT: Run Agent Test** palette command (derives the spec from the active editor, else prompts). The extension now also activates when a workspace contains an agent-test spec.
+- **Keybindings** for the marquee actions: **Run Command…** (`ctrl/cmd+alt+s`), **Smart Deploy — Validate** (`ctrl/cmd+alt+d`), **Quality Analysis** (`ctrl/cmd+alt+q`), and **Refresh** (`ctrl/cmd+alt+r`).
+- **Commands-tree completeness** — added the previously-missing CLI commands: `monitor schedule`, `extension install-host`/`uninstall-host`, `skills export` (Claude/Cursor/Codex/Windsurf/`npx-skills` pack targets), and `plugin create`.
+- **Source Control integration** — the git-diff commands (**Review Diff (AI)**, **Generate PR Description**, **Manifest from Diff**, **Generate Changelog**) now appear in the Source Control view's title menu, their natural home, in addition to the Commands tree.
+- **Test Runs in the Status view** — recent CLI test runs (outcome, counts, org, coverage, timestamp) parsed from `logs/test-results/`, refreshing automatically; click a run to open its raw JSON.
+- **SFDT: Toggle Coverage Highlights** — runs `sfdt coverage --json` and bands open Apex files (gutter border, subtle background, overview-ruler stripe, inline label) by class coverage; toggle again to clear.
+- A custom `logDir` in `.sfdt/config.json` is now honoured when locating snapshots and test results.
+- **Native result rendering.** Audit, monitor, coverage, quality, and preflight now run with captured `--json` output under a progress notification — from every entry point (palette shortcuts, the Commands tree, and command search) — refreshing the SFDT trees and rendering a readable summary to the new **SFDT Results** output channel, with a "Run in Terminal" fallback on any failure. Interactive commands (deploy picker, init) keep the terminal.
+- **Problems-pane diagnostics.** Quality violations from the CLI's snapshot map to native VS Code diagnostics (severity 1 → Error, 2 → Warning, 3+ → Info) that open the offending file; a skipped scan (scanner not installed) produces no false-clean diagnostics. **SFDT: Clear Diagnostics** empties the collection.
+- **Smart Deploy — Validate & Review** (`sfdt.smartDeployPreview`): captures `deploy --smart --dry-run`, shows the parsed delta (components, test level, overwrite protections), then offers Deploy now / Re-validate / Cancel behind a modal, org-named confirmation that warns extra-loudly for production orgs.
+- **Quick Deploy** (`sfdt.quickDeploy`): promote a validated deployment by `0Af…` job ID via `sf project deploy quick` in the integrated terminal, with org picker and modal confirmation.
+- **"Get started with SFDT" walkthrough** (check CLI → init → first audit → smart-deploy validate → open dashboard) and new catalog entries for `ci init`, `feature-flags`, `config get/set`, `notify <event>`, `pr-description`, and `ai prompt`.
+- **Org-health tree**: per-check tooltips with summaries and a "Send snapshot to channels" action (`notify snapshot --type audit|monitor`).
+
+### Changed
+
+- Internal: the two parallel CLI spawn implementations were consolidated into `run-json.ts` (timeout, cancellation, Windows shell, process-group kill); `cli.ts` was removed.
+
+### Fixed
+
+- Commands that accept no `--org` flag (`config`, `feature-flags`, `ai prompt`, `init`, …) no longer get a default org injected into their terminal command line.
+- CLI spawning works on Windows (`sfdt.cmd` shim requires a shell since Node's 2024 security patch).
+
 ## [0.3.1] - 2026-07-02
 
 ### Fixed

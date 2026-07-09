@@ -3,6 +3,7 @@ import os from 'os';
 import fs from 'fs-extra';
 import { resolveBaseRef, diffNameStatus, isSafeGitRef } from './git-utils.js';
 import { parseDiffToMetadata, renderPackageXml, countMembers } from './metadata-mapper.js';
+import { sanitizeApexSource } from './api-readiness.js';
 
 /**
  * Smart-deploy planning: compute a changed-metadata delta from git, apply
@@ -13,6 +14,22 @@ import { parseDiffToMetadata, renderPackageXml, countMembers } from './metadata-
  */
 
 export const DEFAULT_IMPACTING_TYPES = ['ApexClass', 'ApexTrigger', 'Flow'];
+
+/** API version that introduced RunRelevantTests as a beta (Spring '26). */
+export const RELEVANT_TESTS_BETA_API = 66;
+/**
+ * API version at which RunRelevantTests is treated as GA. Verified 2026-07:
+ * still Beta as of Summer '26 (API 67, now GA as a platform) — the Summer '26
+ * release notes carry no RunRelevantTests GA announcement, so the platform
+ * release GA'ing does NOT mean this feature did. Spring '27 (API 68) is the
+ * earliest release it could GA, so that remains the projected value — adjust
+ * (likely down to 67) only once Salesforce publishes an actual GA note. GA
+ * detection is what drops the non-prod gate: an opted-in project
+ * (`deployment.smart.useRelevantTests`) whose `sourceApiVersion` is at or past
+ * this version may use RunRelevantTests on production deploys too (below it,
+ * prod always falls back to RunLocalTests).
+ */
+export const RELEVANT_TESTS_GA_API = 68;
 
 function diffPathsForConfig(config) {
   const sourcePath = config.defaultSourcePath || 'force-app/main/default';
@@ -87,15 +104,175 @@ function isTestClassName(name) {
   return /(^test|test$)/i.test(name);
 }
 
+/** `@IsTest` outside comments/strings — always test against sanitized source. */
+const IS_TEST_RE = /@IsTest\b/i;
+/** `@IsTest(...)` with the `d` flag so arg offsets can be sliced from the original source. */
+const IS_TEST_ARGS_RE = /@IsTest\s*\(([^)]*)\)/dgi;
+
+/**
+ * Select test classes from `@IsTest` annotation metadata (Spring '26):
+ *
+ * - `@IsTest(testFor='ApexClass:Foo')` — the test declares which components it
+ *   covers; it is selected when any declared target appears in the additive
+ *   delta. Multi-target values (comma/space-separated) and bare class names
+ *   (treated as `ApexClass:<name>`) are parsed defensively.
+ * - `@IsTest(critical=true)` — Salesforce always runs critical tests under
+ *   RunRelevantTests; mirroring that locally keeps validate parity, so every
+ *   critical test class is always selected.
+ *
+ * Pure function: `deltaComponents` is an additive metadata map
+ * (`{ type: [members] }`), `testClassSources` maps test class name → Apex
+ * source. Returns a sorted, deduped list of test class names.
+ *
+ * Sources are sanitized (comments and string literals blanked via
+ * `sanitizeApexSource`, which preserves offsets) before matching, so a
+ * commented-out `@IsTest(critical=true)` in a non-test helper class can
+ * never be selected and passed to `sf project deploy --tests` (the org
+ * rejects non-test classes there, hard-failing the deploy). Annotation
+ * *positions* are found in the sanitized text; the argument text is sliced
+ * from the original source at the same offsets so `testFor='...'` string
+ * values survive the sanitization.
+ */
+export function selectAnnotatedTests(deltaComponents, testClassSources) {
+  const targets = new Set();
+  for (const [type, members] of Object.entries(deltaComponents || {})) {
+    for (const member of members || []) targets.add(`${type}:${member}`.toLowerCase());
+  }
+  const selected = new Set();
+  for (const [className, source] of Object.entries(testClassSources || {})) {
+    if (typeof source !== 'string') continue;
+    const sanitized = sanitizeApexSource(source);
+    if (!IS_TEST_RE.test(sanitized)) continue;
+    for (const annotation of sanitized.matchAll(IS_TEST_ARGS_RE)) {
+      const args = source.slice(...annotation.indices[1]);
+      if (/\bcritical\s*=\s*true\b/i.test(args)) selected.add(className);
+      for (const tf of args.matchAll(/testFor\s*=\s*(?:'([^']*)'|"([^"]*)")/gi)) {
+        const value = tf[1] ?? tf[2] ?? '';
+        for (const raw of value.split(/[,\s]+/)) {
+          const token = raw.trim();
+          if (!token) continue;
+          const key = (token.includes(':') ? token : `ApexClass:${token}`).toLowerCase();
+          if (targets.has(key)) selected.add(className);
+        }
+      }
+    }
+  }
+  return [...selected].sort();
+}
+
+/**
+ * Scan the project's package directories for Apex test classes (`.cls` files
+ * containing `@IsTest` outside comments/strings) and return
+ * `{ className: source }` for use with `selectAnnotatedTests` /
+ * `checkTestForHints`. Best-effort: unreadable directories/files are skipped.
+ */
+export async function scanTestClassSources(projectRoot, config) {
+  const roots =
+    config.packageDirectories?.length > 0
+      ? [...new Set(config.packageDirectories.map((p) => p.path))]
+      : [config.defaultSourcePath || 'force-app/main/default'];
+  const sources = {};
+  async function walk(dir) {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return; // unreadable dir — skip, selection degrades to the name heuristic
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(full);
+      } else if (entry.isFile() && entry.name.endsWith('.cls')) {
+        try {
+          const src = await fs.readFile(full, 'utf-8');
+          if (IS_TEST_RE.test(sanitizeApexSource(src))) sources[path.basename(entry.name, '.cls')] = src;
+        } catch {
+          // unreadable file — skip
+        }
+      }
+    }
+  }
+  for (const root of roots) {
+    const abs = path.isAbsolute(root) ? root : path.join(projectRoot, root);
+    if (await fs.pathExists(abs)) await walk(abs);
+  }
+  return sources;
+}
+
+/**
+ * Quality check: flag Apex test classes carrying no RunRelevantTests hint —
+ * neither `@IsTest(testFor='...')` (relevance mapping) nor
+ * `@IsTest(critical=true)` (always run, so no mapping needed) on any of the
+ * class's annotations. Hint-less tests are invisible to RunRelevantTests
+ * selection and to smart-deploy's annotation-aware widening.
+ *
+ * Pure function over `{ className: source }` (see `scanTestClassSources`).
+ * Returns the normalised check shape `{ id, title, status, summary,
+ * findings }`; status is `ok` or `warn` (never `error` — an unhinted test is
+ * advisory, not a failure).
+ */
+export function checkTestForHints(testClassSources) {
+  const findings = [];
+  let total = 0;
+  for (const [className, source] of Object.entries(testClassSources || {})) {
+    if (typeof source !== 'string') continue;
+    const sanitized = sanitizeApexSource(source);
+    if (!IS_TEST_RE.test(sanitized)) continue;
+    total += 1;
+    let hinted = false;
+    for (const annotation of sanitized.matchAll(IS_TEST_ARGS_RE)) {
+      const args = source.slice(...annotation.indices[1]);
+      if (/\btestFor\s*=/i.test(args) || /\bcritical\s*=\s*true\b/i.test(args)) {
+        hinted = true;
+        break;
+      }
+    }
+    if (!hinted) {
+      findings.push({
+        name: className,
+        detail:
+          "No @IsTest(testFor='...') or @IsTest(critical=true) hint — RunRelevantTests cannot map this test to the components it covers",
+      });
+    }
+  }
+  findings.sort((a, b) => a.name.localeCompare(b.name));
+  const summary =
+    total === 0
+      ? 'No Apex test classes found'
+      : findings.length === 0
+        ? `All ${total} test class(es) declare testFor/critical hints`
+        : `${findings.length} of ${total} test class(es) lack @IsTest(testFor='...') hints`;
+  return {
+    id: 'test-for-hints',
+    title: 'Test classes without testFor hints',
+    status: findings.length > 0 ? 'warn' : 'ok',
+    summary,
+    findings,
+  };
+}
+
+/**
+ * Convenience wrapper for command wiring (`sfdt quality`): scan the project's
+ * package directories and run `checkTestForHints` over what was found.
+ */
+export async function runTestForHintsCheck(projectRoot, config) {
+  return checkTestForHints(await scanTestClassSources(projectRoot, config));
+}
+
 /**
  * Choose the test level for a delta deploy.
  *
- * - Production (or downgrade disabled) → RunLocalTests, never skipped.
+ * - Production (or downgrade disabled) → RunLocalTests, never skipped —
+ *   except when `useRelevantTests` is opted in AND `relevantTestsGa` says the
+ *   feature is GA (see `RELEVANT_TESTS_GA_API`), in which case Salesforce's
+ *   own server-side selection (RunRelevantTests) is allowed on production.
  * - No impacting metadata changed → NoTestRun.
  * - Only Apex *test* classes changed → RunSpecifiedTests (those tests).
  * - Any other impacting change (non-test Apex, triggers, flows) → RunLocalTests,
  *   because we can't reliably map arbitrary changes to covering tests —
- *   or RunRelevantTests (Spring '26 beta) when `useRelevantTests` is opted in.
+ *   or RunRelevantTests when `useRelevantTests` is opted in.
  */
 export function selectTestLevel(
   additive,
@@ -104,9 +281,13 @@ export function selectTestLevel(
     downgradeTestsOnNonProd = true,
     isProd = false,
     useRelevantTests = false,
+    relevantTestsGa = false,
   } = {},
 ) {
   if (isProd || !downgradeTestsOnNonProd) {
+    if (useRelevantTests && relevantTestsGa) {
+      return { testLevel: 'RunRelevantTests', tests: [], reason: 'relevant tests (GA)' };
+    }
     return { testLevel: 'RunLocalTests', tests: [], reason: isProd ? 'production deploy' : 'test downgrade disabled' };
   }
   const impacted = Object.keys(additive).filter((t) => impactingTypes.includes(t));
@@ -121,7 +302,11 @@ export function selectTestLevel(
     return { testLevel: 'RunSpecifiedTests', tests: testClasses, reason: 'only Apex test classes changed' };
   }
   if (useRelevantTests) {
-    return { testLevel: 'RunRelevantTests', tests: [], reason: 'relevant tests (beta)' };
+    return {
+      testLevel: 'RunRelevantTests',
+      tests: [],
+      reason: relevantTestsGa ? 'relevant tests (GA)' : 'relevant tests (beta)',
+    };
   }
   return { testLevel: 'RunLocalTests', tests: [], reason: `impacting types changed: ${impacted.join(', ')}` };
 }
@@ -177,14 +362,36 @@ export async function prepareSmartDeploy({
 
   const impactingTypes = smart.impactingTypes || DEFAULT_IMPACTING_TYPES;
   const downgradeTestsOnNonProd = smart.downgradeTestsOnNonProd !== false;
-  // RunRelevantTests requires API 66+ (Spring '26 beta); below that, fall back silently.
-  const useRelevantTests = smart.useRelevantTests === true && parseFloat(apiVersion) >= 66;
-  const { testLevel, tests, reason } = selectTestLevel(additive, {
+  // RunRelevantTests requires API 66+ (Spring '26 beta); below that, fall back
+  // silently. GA detection is API-version based: at RELEVANT_TESTS_GA_API and
+  // later the non-prod gate is dropped inside selectTestLevel.
+  const apiNumber = parseFloat(apiVersion);
+  const useRelevantTests = smart.useRelevantTests === true && apiNumber >= RELEVANT_TESTS_BETA_API;
+  const relevantTestsGa = apiNumber >= RELEVANT_TESTS_GA_API;
+  const selection = selectTestLevel(additive, {
     impactingTypes,
     downgradeTestsOnNonProd,
     isProd,
     useRelevantTests,
+    relevantTestsGa,
   });
+  const { testLevel, reason } = selection;
+  let { tests } = selection;
+
+  // testFor-aware selection (Spring '26 @IsTest annotations): when we already
+  // committed to RunSpecifiedTests, widen the run with test classes that
+  // declare coverage of a changed component (`testFor`) plus every
+  // `critical=true` test (Salesforce always runs those — mirroring that keeps
+  // validate parity). Best-effort: a scan failure falls back to the heuristic.
+  if (testLevel === 'RunSpecifiedTests') {
+    try {
+      const testSources = await scanTestClassSources(projectRoot, config);
+      const annotated = selectAnnotatedTests(additive, testSources);
+      tests = [...new Set([...tests, ...annotated])];
+    } catch {
+      // keep the name-heuristic selection
+    }
+  }
 
   return {
     tmpDir: dir,

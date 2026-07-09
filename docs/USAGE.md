@@ -17,6 +17,7 @@ This guide covers every sfdt command in depth: what it does, when to use it, all
    - [sfdt smoke](#sfdt-smoke)
 6. [Commands: Testing and Quality](#commands-testing-and-quality)
    - [sfdt test](#sfdt-test)
+   - [sfdt agent-test](#sfdt-agent-test)
    - [sfdt quality](#sfdt-quality)
 7. [Commands: Metadata and Source Control](#commands-metadata-and-source-control)
    - [sfdt manifest](#sfdt-manifest)
@@ -210,11 +211,14 @@ sfdt deploy --source-dir force-app/feature-a   # deploy a folder directly (no ma
 | `--skip-preflight` | Skip the preflight validation step and go straight to deployment |
 | `--dry-run` | Show what would be executed without making changes |
 | `--source-dir <path>` | Deploy a source directory directly instead of a manifest (relative to project root). Bypasses manifest selection and deploys the folder with `sf project deploy start --source-dir`. |
+| `--tag` | Tag the release in git (`v<version>`) after a successful deploy. In an interactive terminal this pre-selects "tag after deployment" (skipping the prompt); in non-interactive/CI runs the tag is created and pushed automatically. Standard manifest deploy only — ignored (with a warning) under `--smart`, `--managed`, and `--source-dir`. |
+| `--create-pr` | Create a pull request from the current branch to the default branch (`defaultBranch` config, default `main`) via the `gh` CLI after a successful deploy. Works in interactive and non-interactive runs. Standard manifest deploy only — ignored (with a warning) under `--smart`, `--managed`, and `--source-dir`. |
+| `--notify` | Send the deploy success/failure notification through `sfdt notify`. Works in interactive and non-interactive runs. Standard manifest deploy only — ignored (with a warning) under `--smart`, `--managed`, and `--source-dir`. |
 
 **What happens:**
 
 1. Preflight runs (`new/preflight.sh`) unless `--skip-preflight` is set. If preflight fails, the deploy is aborted.
-2. The deployment script runs (`core/deployment-assistant.sh` or `core/deploy-manager.sh`).
+2. The deployment script runs (`core/deployment-assistant.sh` or `core/deploy-manager.sh`). The interactive picker offers any `.xml` manifest found in your manifest directory (`manifestDir`, default `manifest/release/`) — generated `rl-*-package.xml` releases are listed first, but plain `package.xml` files and `preview-package.xml` work too. Companion `*-destructiveChanges.xml` files and the `deploy/`/`deployed/` subfolders are excluded.
 3. Output is streamed directly to your terminal with full TTY passthrough (spinner, colors, interactive prompts from the script).
 
 Use `--managed` when deploying a second-generation managed package where the deploy-manager script handles namespace and version locking.
@@ -223,7 +227,7 @@ Use `--source-dir` for targeted deploys of a single package directory without ge
 
 #### sfdt deploy --smart
 
-Smart delta deploy. `sfdt deploy --smart` computes a git delta (reusing the same manifest engine as `sfdt manifest`), applies `package-no-overwrite.xml` protection, auto-selects the minimal safe test level (`NoTestRun` / `RunSpecifiedTests` / `RunLocalTests` — never downgraded in production), and runs a self-contained, non-interactive `sf project deploy validate|start`. Unlike the interactive deploy path, it has no archive/commit side effects.
+Smart delta deploy. `sfdt deploy --smart` computes a git delta (reusing the same manifest engine as `sfdt manifest`), applies `package-no-overwrite.xml` protection, auto-selects the minimal safe test level (`NoTestRun` / `RunSpecifiedTests` / `RunLocalTests` — never downgraded in production), and runs a self-contained, non-interactive `sf project deploy validate|start`. When `RunSpecifiedTests` is chosen, the selection is widened by the Spring '26 `@IsTest` annotations: test classes whose `@IsTest(testFor='Type:Name')` targets a changed component, and every `@IsTest(critical=true)` class, are included automatically (sources are comment/string-sanitized before scanning, so commented-out annotations don't count). Unlike the interactive deploy path, it has no archive/commit side effects.
 
 ```bash
 sfdt deploy --smart                              # validate the delta against the default org
@@ -336,6 +340,8 @@ Runs Apex tests against the configured org using the enhanced test runner. If te
 sfdt test
 sfdt test --analyze
 sfdt test --legacy
+sfdt test --logic                                   # Apex + Flow tests in one pass
+sfdt test --logic --tests FooTest,FlowTesting.MyFlow --code-coverage
 ```
 
 **Options:**
@@ -344,6 +350,15 @@ sfdt test --legacy
 |---|---|
 | `--legacy` | Use `run-tests.sh` instead of the enhanced runner |
 | `--analyze` | Run the test analyzer (`quality/test-analyzer.sh`) after tests complete, regardless of pass/fail |
+| `--logic` | Run Apex **and** Flow tests together via `sf logic run test` (Salesforce Spring '26 beta). Requires the org **"View All Data"** permission. Waits for async results (`--wait`, default 30 min). |
+| `--org <alias>` | Target org for `--logic` (default: `config.defaultOrg`) |
+| `--test-level <level>` | For `--logic`: `RunLocalTests` \| `RunAllTestsInOrg` \| `RunSpecifiedTests` |
+| `--tests <list>` | For `--logic`: comma-separated test names — Apex classes and Flow tests as `FlowTesting.<name>` |
+| `--category <cat>` | For `--logic`: restrict to `Apex` or `Flow` |
+| `--code-coverage` | For `--logic`: retrieve code coverage results |
+| `--wait <minutes>` | For `--logic`: streaming wait timeout (default 30) |
+
+> `--logic` is a thin pass-through to `sf logic run test`. On failure (with `features.ai` enabled) sfdt offers the same AI failure analysis as the Apex runner, feeding it the captured logic-test output.
 
 **AI behavior on failure:** If tests fail and `features.ai` is `true` and the configured AI provider is available, sfdt prompts:
 
@@ -365,6 +380,8 @@ Runs static code quality analysis and optionally generates an AI fix plan. Can a
 
 ```bash
 sfdt quality                    # code analyzer only (default)
+sfdt quality --api67            # API v67 (Summer '26) user-mode readiness scan only
+sfdt quality --test-hints       # flag @IsTest classes lacking @IsTest(testFor=...) hints
 sfdt quality --tests            # test analyzer only
 sfdt quality --all              # both analyzers
 sfdt quality --fix-plan         # run analyzer + AI fix plan
@@ -379,10 +396,38 @@ sfdt quality --generate-stubs --dry-run  # preview stubs without writing files
 | `--tests` | Run `quality/test-analyzer.sh` only |
 | `--all` | Run both `quality/code-analyzer.sh` and `quality/test-analyzer.sh` |
 | `--fix-plan` | After analysis, send the output to AI for a prioritized, file-specific fix plan |
+| `--include-fixes` | Ask **Code Analyzer v5** for actionable fixes/suggestions in the scan output (`--include-fixes --include-suggestions`); the richer output feeds `--fix-plan` |
 | `--generate-stubs` | Generate `@IsTest` stub classes for Apex classes that have no test class |
 | `--dry-run` | Preview `--generate-stubs` output without writing any files |
 
+**Code Analyzer engine:** `sfdt quality` runs **Salesforce Code Analyzer v5** (`sf code-analyzer run`, a just-in-time plugin that auto-installs on a modern `sf` CLI). It falls back to the retired v4 (`sf scanner run`) if only that is present, and otherwise reports the scan as **SKIPPED** (never a fabricated clean result). Install manually with `sf plugins install code-analyzer` if needed.
+
 **AI fix plan:** The fix plan groups issues by severity (critical, high, medium, low) and provides file locations, descriptions, and concrete code suggestions. It focuses on Salesforce-specific concerns: governor limits, CRUD/FLS enforcement, bulk-safe patterns, and test coverage gaps.
+
+
+### sfdt agent-test
+
+Runs an Agentforce agent test (`sf agent test run`) as a CI gate. By default pass/fail is taken from the CLI's exit code (the reliable signal, like `sf apex run test`), so it slots into any pipeline. With `--threshold` it instead grades on the aggregate pass rate, letting a run tolerate some failing cases. Optionally notifies configured channels and decorates the current PR.
+
+```bash
+sfdt agent-test --spec MyAgentEval
+sfdt agent-test --spec MyAgentEval --org uat --wait 45
+sfdt agent-test --spec MyAgentEval --threshold 80        # pass if >= 80% of cases pass
+sfdt agent-test --spec MyAgentEval --notify --pr-comment
+```
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--spec <apiName>` | **Required.** Agent test API name (an `AiEvaluationDefinition`) to run |
+| `--org <alias>` | Target org (default: `config.defaultOrg`) |
+| `--wait <minutes>` | Wait timeout in minutes (default: 30; the underlying command is async and sfdt waits for the result) |
+| `--threshold <percent>` | Pass when the aggregate pass rate is `>=` this percent (0-100), overriding the exit-code gate. Without it, any failed test case fails the run |
+| `--notify` | Dispatch an `agent-test-success` / `agent-test-failure` notification through configured channels |
+| `--pr-comment` | Post the pass/fail result to the current PR (via the `gh` CLI) |
+
+The pass rate is computed from the `sf agent test run --json` result (both the legacy and Agentforce Studio result shapes), mirroring how the `sf` agent plugin itself counts passing cases: a case passes when every one of its scorer/test results passes.
 
 ---
 
@@ -778,7 +823,7 @@ Values are coerced automatically: `"true"` / `"false"` become booleans, numeric 
 
 ### sfdt notify
 
-Provider-agnostic, multi-channel notifier. Dispatches a deployment lifecycle event — or the latest org-health snapshot — to one or more channels: **Slack**, **MS Teams**, **generic webhook**, **Grafana Loki**, and **email** (via a lazy-loaded `nodemailer`).
+Provider-agnostic, multi-channel notifier. Dispatches a deployment lifecycle event — or the latest org-health snapshot — to one or more channels: **Slack**, **MS Teams**, **Google Chat**, **generic webhook**, **Grafana Loki**, and **email** (via a lazy-loaded `nodemailer`).
 
 ```bash
 sfdt notify deploy-success

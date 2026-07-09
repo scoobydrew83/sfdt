@@ -45,12 +45,15 @@ export type { ClassCoverageBand, RawClassCoverageRow, ClassCoverageRow } from '.
 export {
   escapeSoql,
   METADATA_TYPES,
+  METADATA_TYPE_REGISTRY,
+  GRAPH_SOURCE_TYPES,
   resolveQueryFor,
   referencesQuery,
   referencedByQuery,
+  neighborsQuery,
   groupByType,
 } from './dependencies.js';
-export type { MetadataType, DependencyGroup } from './dependencies.js';
+export type { MetadataType, MetadataTypeInfo, GraphSourceType, DependencyGroup } from './dependencies.js';
 
 export {
   ApiNameLibrary,
@@ -134,6 +137,9 @@ export type { RulesConfig } from './rules.js';
 export { runFlowQuality, parseApiVersion, DEFAULT_RULES_CONFIG } from './flow-quality.js';
 export type { FlowQualityOptions, FlowQualityReport } from './flow-quality.js';
 
+export { expectedGaApiVersion, releaseFromVersionList } from './org-release.js';
+export type { OrgApiVersionEntry, OrgReleaseInfo } from './org-release.js';
+
 export { detectTriggerConflicts } from './trigger-conflicts.js';
 export type {
   FlowConflictCandidate,
@@ -194,3 +200,11 @@ export type {
   ResolvedPrompt,
   ValidationResult,
 } from './prompts.js';
+
+export {
+  extractApexRefs,
+  extractLwcApexRefs,
+  extractFormulaRefs,
+  extractFlowRefs,
+} from './dependency-parsers.js';
+export type { InferredRef, InferredRefKind } from './dependency-parsers.js';
