@@ -158,15 +158,15 @@ jobs:
         run: npm run build:gui
       - name: Publish @sfdt/flow-core beta to npm
         if: steps.version.outputs.changed == 'true'
-        run: npx npm@latest publish --workspace=@sfdt/flow-core --provenance --access public --tag beta
+        run: npm publish --workspace=@sfdt/flow-core --provenance --access public --tag beta
       - name: Publish @sfdt/cli beta to npm
         if: steps.version.outputs.changed == 'true'
-        run: npx npm@latest publish --provenance --access public --tag beta
+        run: npm publish --provenance --access public --tag beta
       - name: Publish @sfdt/plugin beta to npm
         # Thin sf-CLI wrapper; published AFTER the CLI so its @sfdt/cli dep
         # resolves. prepack builds dist/ + oclif.manifest.json.
         if: steps.version.outputs.changed == 'true'
-        run: npx npm@latest publish --workspace=@sfdt/plugin --provenance --access public --tag beta
+        run: npm publish --workspace=@sfdt/plugin --provenance --access public --tag beta
       - name: Create GitHub Pre-Release
         if: steps.version.outputs.changed == 'true'
         env:
@@ -198,17 +198,21 @@ jobs:
         run: |
           CURR_VERSION=$(node -p "require('./package.json').version")
           PREV_VERSION=$(git show HEAD~1:package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" 2>/dev/null || echo "0.0.0")
-          echo "Current: v${CURR_VERSION}, Previous: v${PREV_VERSION}"
+          # What's on npm now — lets a failed publish self-heal on the next push
+          # to main instead of only firing on a HEAD~1 version diff (a broken
+          # publish tool once left the tag pushed but nothing on npm).
+          NPM_VERSION=$(npm view @sfdt/cli version 2>/dev/null || echo "none")
+          echo "package.json: v${CURR_VERSION} · previous commit: v${PREV_VERSION} · npm latest: v${NPM_VERSION}"
           # Refuse to publish a prerelease version as latest from main
           if [[ "${CURR_VERSION}" == *"-"* ]]; then
             echo "ERROR: prerelease version ${CURR_VERSION} must not be published from main (use develop instead)"
             exit 1
           fi
-          if [ "${CURR_VERSION}" != "${PREV_VERSION}" ]; then
-            echo "Version bump detected: v${PREV_VERSION} → v${CURR_VERSION}"
+          if [ "${CURR_VERSION}" != "${PREV_VERSION}" ] || [ "${CURR_VERSION}" != "${NPM_VERSION}" ]; then
+            echo "Publish needed: package.json v${CURR_VERSION} is not yet the npm latest (v${NPM_VERSION})."
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "No version change (${CURR_VERSION})"
+            echo "Already published v${CURR_VERSION} to npm — nothing to do."
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
           echo "version=${CURR_VERSION}" >> "$GITHUB_OUTPUT"
@@ -236,7 +240,7 @@ jobs:
         # published version" error from npm is acceptable on republish.
         if: steps.version.outputs.changed == 'true'
         run: |
-          npx npm@latest publish --workspace=@sfdt/flow-core --provenance --access public || {
+          npm publish --workspace=@sfdt/flow-core --provenance --access public || {
             EXIT=$?
             if npm view @sfdt/flow-core@$(node -p "require('./packages/flow-core/package.json').version") >/dev/null 2>&1; then
               echo "flow-core version already published — continuing"
@@ -246,14 +250,24 @@ jobs:
           }
       - name: Publish @sfdt/cli to npm
         if: steps.version.outputs.changed == 'true'
-        run: npx npm@latest publish --provenance --access public
+        # Idempotent (like flow-core/plugin): if publish fails but the version is
+        # already on npm, keep going — supports the self-healing re-run above.
+        run: |
+          npm publish --provenance --access public || {
+            EXIT=$?
+            if npm view @sfdt/cli@$(node -p "require('./package.json').version") >/dev/null 2>&1; then
+              echo "cli version already published — continuing"
+            else
+              exit $EXIT
+            fi
+          }
       - name: Publish @sfdt/plugin to npm
         # Thin sf-CLI wrapper. Publish AFTER @sfdt/cli so its `@sfdt/cli`
         # dependency resolves on the registry. prepack builds dist/ +
         # oclif.manifest.json. Idempotent: republishing the same version is OK.
         if: steps.version.outputs.changed == 'true'
         run: |
-          npx npm@latest publish --workspace=@sfdt/plugin --provenance --access public || {
+          npm publish --workspace=@sfdt/plugin --provenance --access public || {
             EXIT=$?
             if npm view @sfdt/plugin@$(node -p "require('./packages/plugin/package.json').version") >/dev/null 2>&1; then
               echo "plugin version already published — continuing"
