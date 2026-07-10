@@ -342,6 +342,21 @@ describe('sfdt doctor command wiring', () => {
     logSpy.mockRestore();
   });
 
+  it('prints both section headers in pretty mode when both groups run by default', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetchOk({ ok: true, data: { serverVersion: 'X', protocolVersion: 'Y' } });
+    try {
+      await createProgram().parseAsync(['node', 'sfdt', 'doctor']);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('Environment diagnostic');
+    expect(out).toContain('Extension stack diagnostic');
+    logSpy.mockRestore();
+  });
+
   it('runs both groups by default and tags results with their group', async () => {
     // emitJson writes via process.stdout.write (see output.js), not console.log —
     // spy on stdout to match every other --json test in this file.

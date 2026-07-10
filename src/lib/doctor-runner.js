@@ -100,7 +100,7 @@ export async function checkOrg(orgAlias, timeoutMs = 5000) {
   });
   let info;
   try {
-    info = await Promise.race([checkOrgInfo(orgAlias), timeout]);
+    info = await Promise.race([checkOrgInfo(orgAlias, { timeoutMs }), timeout]);
   } catch (err) {
     return coreResult('org', 'warn', `Could not reach org "${orgAlias}": ${err.message}`);
   } finally {

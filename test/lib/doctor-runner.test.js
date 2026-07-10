@@ -139,6 +139,11 @@ describe('checkOrg', () => {
     expect(r.status).toBe('ok');
     expect(r.detail).toContain('NA123');
   });
+  it('forwards timeoutMs to checkOrgInfo so the sf subprocess is bounded too', async () => {
+    checkOrgInfoSpy.mockResolvedValue({ status: 'ok', summary: 'Production on NA123' });
+    await checkOrg('myOrg', 1234);
+    expect(checkOrgInfoSpy).toHaveBeenCalledWith('myOrg', { timeoutMs: 1234 });
+  });
   it('downgrades a checkOrgInfo error to warn (never fail)', async () => {
     checkOrgInfoSpy.mockResolvedValue({ status: 'error', summary: 'No authorized org' });
     expect((await checkOrg('myOrg', 1000)).status).toBe('warn');

@@ -48,6 +48,23 @@ describe('org-query query()', () => {
     expect(await query('dev', 'SELECT Id FROM Account')).toEqual([]);
   });
 
+  it('passes { timeout } to execa when timeoutMs is set', async () => {
+    execa.mockResolvedValueOnce({ stdout: JSON.stringify({ result: { records: [] } }) });
+    await query('dev', 'SELECT Id FROM Account', { timeoutMs: 5000 });
+    expect(execa).toHaveBeenCalledWith(
+      'sf',
+      expect.arrayContaining(['data', 'query']),
+      { timeout: 5000 },
+    );
+  });
+
+  it('passes no options to execa when timeoutMs is not set (backward-compatible)', async () => {
+    execa.mockResolvedValueOnce({ stdout: JSON.stringify({ result: { records: [] } }) });
+    await query('dev', 'SELECT Id FROM Account');
+    expect(execa).toHaveBeenCalledWith('sf', expect.arrayContaining(['data', 'query']));
+    expect(execa.mock.calls[0]).toHaveLength(2);
+  });
+
   it('surfaces the structured sf error message on failure', async () => {
     const err = new Error('Command failed');
     err.stdout = JSON.stringify({ status: 1, message: 'No such column Foo on Account' });

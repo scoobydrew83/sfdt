@@ -176,7 +176,7 @@ export function registerDoctorCommand(program) {
     .option('--core', 'Run only the environment checks (sf, node, git, config, AI, org)')
     .option('--extension', 'Run only the extension-stack checks (bridge, native host, feature flags, telemetry)')
     .option('--org <alias>', 'Org alias for the connectivity check (default: config defaultOrg)')
-    .option('--port <port>', `Localhost port the bridge listens on (default: ${DEFAULT_UI_PORT})`, String(DEFAULT_UI_PORT))
+    .option('--port <port>', 'Localhost port the bridge listens on', String(DEFAULT_UI_PORT))
     .option('--json', 'Emit the result as JSON')
     .action(async (options) => {
       try {
