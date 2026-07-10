@@ -185,7 +185,7 @@ Full install reference — every method plus CI usage — at **[sfdt.dev/cli/ins
 | `sfdt feature-flags disable <id>` | Add a feature id to the kill-switch | `--json` |
 | `sfdt feature-flags enable <id>` | Remove a feature id from the kill-switch | `--json` |
 | `sfdt feature-flags clear` | Re-enable everything | `--remove`, `--json` |
-| `sfdt doctor --extension` | Diagnose the extension stack (bridge reachable, native host, kill-switch file, telemetry) | `--port <n>`, `--json` |
+| `sfdt doctor` | Diagnose the extension stack (bridge reachable, native host, kill-switch file, telemetry) | `--extension`, `--port <n>`, `--json` |
 
 ### Agent & extensibility
 

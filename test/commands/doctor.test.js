@@ -61,7 +61,7 @@ describe('runExtensionDoctor', () => {
     });
     const { results, ok } = await runExtensionDoctor({ port: 7654, fetchImpl });
     const bridge = results.find((r) => r.name === 'sfdt ui bridge');
-    expect(bridge.status).toBe('pass');
+    expect(bridge.status).toBe('ok');
     expect(bridge.detail).toContain('0.8.1');
     expect(bridge.detail).toContain('1.2');
     expect(ok).toBe(true);
@@ -96,7 +96,7 @@ describe('runExtensionDoctor', () => {
       fetchImpl: mockFetchOk({ ok: true, data: {} }),
     });
     const ff = results.find((r) => r.name === 'feature-flags.json');
-    expect(ff.status).toBe('pass');
+    expect(ff.status).toBe('ok');
     expect(ff.detail).toContain('Not present');
   });
 
@@ -153,7 +153,7 @@ describe('runExtensionDoctor', () => {
       fetchImpl: mockFetchOk({ ok: true, data: {} }),
     });
     const ff = results.find((r) => r.name === 'feature-flags.json');
-    expect(ff.status).toBe('pass');
+    expect(ff.status).toBe('ok');
     expect(ff.detail).toContain('canvas-search');
   });
 
@@ -178,7 +178,7 @@ describe('runExtensionDoctor', () => {
       fetchImpl: mockFetchOk({ ok: true, data: {} }),
     });
     const host = results.find((r) => r.name === 'native messaging host');
-    expect(host.status).toBe('pass');
+    expect(host.status).toBe('ok');
     expect(host.detail).toContain('chrome');
   });
 
@@ -224,7 +224,7 @@ describe('runExtensionDoctor', () => {
       fetchImpl: mockFetchOk({ ok: true, data: {} }),
     });
     const tel = results.find((r) => r.name === 'telemetry-snapshot.json');
-    expect(tel.status).toBe('pass');
+    expect(tel.status).toBe('ok');
     expect(tel.detail).toContain('2026-05');
   });
 });
@@ -314,7 +314,7 @@ describe('sfdt doctor command wiring', () => {
     errSpy.mockRestore();
   });
 
-  it('warns and defaults to --extension when no diagnostic group is selected', async () => {
+  it('runs the extension checks even when --extension is omitted', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const originalFetch = globalThis.fetch;
     globalThis.fetch = mockFetchOk({
@@ -327,7 +327,9 @@ describe('sfdt doctor command wiring', () => {
       globalThis.fetch = originalFetch;
     }
     const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(out).toContain('defaulting to --extension');
+    // The extension checks run by default; no apologetic "defaulting" preamble.
+    expect(out).toContain('Extension stack diagnostic');
+    expect(out).not.toContain('defaulting to --extension');
     logSpy.mockRestore();
   });
 });

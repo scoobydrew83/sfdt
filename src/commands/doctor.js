@@ -24,11 +24,10 @@ import { nativeHostStatus } from '../../host/installers/install-host.js';
 import { getConfigDir } from '../lib/config.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
-
-const DEFAULT_PORT = 7654;
+import { DEFAULT_UI_PORT } from '../lib/ui-port.js';
 
 function symbol(status) {
-  if (status === 'pass') return chalk.green('✓');
+  if (status === 'ok') return chalk.green('✓');
   if (status === 'warn') return chalk.yellow('•');
   return chalk.red('✗');
 }
@@ -55,7 +54,7 @@ async function checkBridgePing(port, fetchImpl) {
     const data = body?.data ?? {};
     return {
       name: 'sfdt ui bridge',
-      status: 'pass',
+      status: 'ok',
       detail: `OK on port ${port} — sfdt v${data.serverVersion ?? '?'}, protocol ${data.protocolVersion ?? '<missing>'}`,
       data,
     };
@@ -63,7 +62,7 @@ async function checkBridgePing(port, fetchImpl) {
     return {
       name: 'sfdt ui bridge',
       status: 'fail',
-      detail: `Could not reach ${url}: ${err.message ?? err}. Run \`sfdt ui\` from your project root.`,
+      detail: `Could not reach ${url}: ${err.message ?? err}. Run \`sfdt ui\` from your project root (or pass --port if it runs on a non-default port).`,
     };
   }
 }
@@ -81,7 +80,7 @@ async function checkNativeHost() {
     }
     return {
       name: 'native messaging host',
-      status: 'pass',
+      status: 'ok',
       detail: `Installed for: ${installed.map((b) => b.browser).join(', ')}`,
     };
   } catch (err) {
@@ -98,7 +97,7 @@ async function checkFeatureFlags() {
   if (!(await fs.pathExists(file))) {
     return {
       name: 'feature-flags.json',
-      status: 'pass',
+      status: 'ok',
       detail: `Not present (default — all features enabled). Path: ${file}`,
     };
   }
@@ -113,7 +112,7 @@ async function checkFeatureFlags() {
     }
     return {
       name: 'feature-flags.json',
-      status: 'pass',
+      status: 'ok',
       detail:
         flags.disabled.length === 0
           ? 'Present, no features disabled.'
@@ -142,7 +141,7 @@ async function checkTelemetrySnapshot() {
     const featureCount = Object.keys(snap.counters ?? {}).length;
     return {
       name: 'telemetry-snapshot.json',
-      status: 'pass',
+      status: 'ok',
       detail: `Present for ${snap.monthKey ?? '?'} (${featureCount} feature${featureCount === 1 ? '' : 's'}, written ${snap.writtenAt ?? '?'})`,
     };
   } catch (err) {
@@ -154,7 +153,7 @@ async function checkTelemetrySnapshot() {
   }
 }
 
-export async function runExtensionDoctor({ port = DEFAULT_PORT, fetchImpl = globalThis.fetch } = {}) {
+export async function runExtensionDoctor({ port = DEFAULT_UI_PORT, fetchImpl = globalThis.fetch } = {}) {
   const results = await Promise.all([
     checkBridgePing(port, fetchImpl),
     checkNativeHost(),
@@ -168,17 +167,15 @@ export async function runExtensionDoctor({ port = DEFAULT_PORT, fetchImpl = glob
 export function registerDoctorCommand(program) {
   program
     .command('doctor')
-    .description('Diagnose the local sfdt install (use --extension to check the extension bridge stack)')
-    .option('--extension', 'Run extension-stack checks (bridge ping, native host, feature flags, telemetry)')
-    .option('--port <port>', `Localhost port the bridge listens on (default: ${DEFAULT_PORT})`, String(DEFAULT_PORT))
+    .description('Diagnose the local sfdt extension stack (bridge, native host, feature flags, telemetry)')
+    .option('--extension', 'Run extension-stack checks (currently the only diagnostic group; on by default)')
+    .option('--port <port>', `Localhost port the bridge listens on (default: ${DEFAULT_UI_PORT})`, String(DEFAULT_UI_PORT))
     .option('--json', 'Emit the result as JSON')
     .action(async (options) => {
       try {
-        if (!options.extension) {
-          // For now `sfdt doctor` defaults to --extension. Reserved for future
-          // top-level checks (config validity, sf CLI version, git status).
-          console.log(chalk.dim('No diagnostic group selected; defaulting to --extension.'));
-        }
+        // `--extension` is the only diagnostic group today, so it runs whether or
+        // not the flag is passed. Reserved for future top-level checks (config
+        // validity, sf CLI version, git status) — see the module header.
         const parsedPort = Number(options.port);
         if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
           throw new Error(`--port must be an integer in [1, 65535]. Got: ${options.port}`);

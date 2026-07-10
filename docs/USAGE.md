@@ -1214,10 +1214,13 @@ sfdt extension stats --limit 20
 
 End-to-end diagnostic for the extension stack. Checks that the bridge is reachable, the native host is registered, the kill-switch config is readable, and the telemetry snapshot exists.
 
+The extension checks are the only diagnostic group today, so they run whether or
+not `--extension` is passed (the flag is reserved for when other groups exist).
+
 ```bash
-sfdt doctor --extension                # pretty output
-sfdt doctor --extension --json         # CI-friendly structured output
-sfdt doctor --extension --port 8080    # bridge runs on a non-default port
+sfdt doctor                   # pretty output (runs the extension checks)
+sfdt doctor --json            # CI-friendly structured output
+sfdt doctor --port 8080       # bridge runs on a non-default port
 ```
 
 Exits non-zero if any check fails — wire this into CI to detect a broken extension installation early.
