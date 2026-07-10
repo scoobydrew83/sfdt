@@ -52,4 +52,4 @@ Thank you for your interest in contributing to the Salesforce DevTools CLI! This
 4.  Open a PR with a clear description of the changes.
 
 ---
-*By contributing, you agree that your contributions will be licensed under the MIT License.*
+*By contributing, you agree that your contributions will be licensed under the Apache License, Version 2.0.*

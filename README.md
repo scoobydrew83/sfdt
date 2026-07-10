@@ -524,4 +524,4 @@ To report a vulnerability, use [GitHub's private security advisory feature](http
 
 ## License
 
-[MIT](LICENSE)
+[Apache-2.0](LICENSE)

@@ -6,7 +6,7 @@
   "private": true,
   "type": "module",
   "publisher": "sfdt",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "icon": "media/icon.png",
   "repository": {
     "type": "git",
