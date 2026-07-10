@@ -1,13 +1,16 @@
 // `sfdt doctor` — diagnose the local sfdt installation.
 //
-// Initial scope: --extension. Runs every check needed to answer "why isn't
-// the Chrome extension talking to my sfdt?" so users don't have to walk
-// through three pages of docs to triage:
+// Two diagnostic groups, both run by default (`--core` / `--extension` narrow
+// to one). `--extension` answers "why isn't the Chrome extension talking to
+// my sfdt?" so users don't have to walk through three pages of docs to triage:
 //
 //   1. sfdt ui reachable on the configured localhost port (GET /api/bridge/ping)
 //   2. Native host installed for at least one browser (fallback transport)
 //   3. .sfdt/feature-flags.json well-formed if present (no JSON errors)
 //   4. .sfdt/telemetry-snapshot.json present (operator visibility)
+//
+// `--core` (see ../lib/doctor-runner.js) covers the base environment: sf CLI,
+// node, git, config validity, AI provider, org connectivity.
 //
 // All checks are read-only. Returns an exit code of 1 if any FAIL-severity
 // check fails — WARN-severity checks (snapshot absent, no native host) leave
@@ -25,6 +28,8 @@ import { getConfigDir } from '../lib/config.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
 import { DEFAULT_UI_PORT } from '../lib/ui-port.js';
+import { runCoreDoctor } from '../lib/doctor-runner.js';
+import { maxStatus } from '../lib/check-status.js';
 
 function symbol(status) {
   if (status === 'ok') return chalk.green('✓');
@@ -167,30 +172,51 @@ export async function runExtensionDoctor({ port = DEFAULT_UI_PORT, fetchImpl = g
 export function registerDoctorCommand(program) {
   program
     .command('doctor')
-    .description('Diagnose the local sfdt extension stack (bridge, native host, feature flags, telemetry)')
-    .option('--extension', 'Run extension-stack checks (currently the only diagnostic group; on by default)')
+    .description('Diagnose the local sfdt environment and extension stack')
+    .option('--core', 'Run only the environment checks (sf, node, git, config, AI, org)')
+    .option('--extension', 'Run only the extension-stack checks (bridge, native host, feature flags, telemetry)')
+    .option('--org <alias>', 'Org alias for the connectivity check (default: config defaultOrg)')
     .option('--port <port>', `Localhost port the bridge listens on (default: ${DEFAULT_UI_PORT})`, String(DEFAULT_UI_PORT))
     .option('--json', 'Emit the result as JSON')
     .action(async (options) => {
       try {
-        // `--extension` is the only diagnostic group today, so it runs whether or
-        // not the flag is passed. Reserved for future top-level checks (config
-        // validity, sf CLI version, git status) — see the module header.
         const parsedPort = Number(options.port);
         if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
           throw new Error(`--port must be an integer in [1, 65535]. Got: ${options.port}`);
         }
-        const port = parsedPort;
-        const { results, ok } = await runExtensionDoctor({ port });
+        // No flag, or both flags → run everything.
+        const runCore = options.core || !options.extension;
+        const runExt = options.extension || !options.core;
+
+        const results = [];
+        if (runCore) {
+          const core = await runCoreDoctor({ org: options.org });
+          results.push(...core.results.map((r) => ({ ...r, group: 'core' })));
+        }
+        if (runExt) {
+          const ext = await runExtensionDoctor({ port: parsedPort });
+          results.push(...ext.results.map((r) => ({ ...r, group: 'extension' })));
+        }
+        const ok = maxStatus(results) !== 'fail';
+
         if (options.json) {
           emitJson({ ok, results });
           if (!ok) process.exitCode = 1;
           return;
         }
-        console.log(chalk.bold('\nExtension stack diagnostic\n'));
-        for (const r of results) {
-          console.log(`  ${symbol(r.status)} ${chalk.bold(r.name)}`);
-          console.log(`    ${chalk.dim(r.detail)}`);
+
+        const sections = [
+          { group: 'core', title: 'Environment' },
+          { group: 'extension', title: 'Extension stack' },
+        ];
+        for (const { group, title } of sections) {
+          const groupResults = results.filter((r) => r.group === group);
+          if (groupResults.length === 0) continue;
+          console.log(chalk.bold(`\n${title} diagnostic\n`));
+          for (const r of groupResults) {
+            console.log(`  ${symbol(r.status)} ${chalk.bold(r.name)}`);
+            console.log(`    ${chalk.dim(r.detail)}`);
+          }
         }
         console.log('');
         if (!ok) {

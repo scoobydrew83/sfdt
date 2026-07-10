@@ -16,9 +16,14 @@ vi.mock('../../host/installers/install-host.js', () => ({
   nativeHostStatus: vi.fn(),
 }));
 
+vi.mock('../../src/lib/doctor-runner.js', () => ({
+  runCoreDoctor: vi.fn(),
+}));
+
 import fs from 'fs-extra';
 import { getConfigDir } from '../../src/lib/config.js';
 import { nativeHostStatus } from '../../host/installers/install-host.js';
+import { runCoreDoctor } from '../../src/lib/doctor-runner.js';
 import {
   registerDoctorCommand,
   runExtensionDoctor,
@@ -51,6 +56,10 @@ beforeEach(() => {
   getConfigDir.mockReturnValue('/project/.sfdt');
   fs.pathExists.mockResolvedValue(false);
   nativeHostStatus.mockResolvedValue({ platform: 'darwin', browsers: [] });
+  runCoreDoctor.mockResolvedValue({
+    ok: true,
+    results: [{ name: 'sf CLI', status: 'ok', detail: 'Present' }],
+  });
 });
 
 describe('runExtensionDoctor', () => {
@@ -331,5 +340,42 @@ describe('sfdt doctor command wiring', () => {
     expect(out).toContain('Extension stack diagnostic');
     expect(out).not.toContain('defaulting to --extension');
     logSpy.mockRestore();
+  });
+
+  it('runs both groups by default and tags results with their group', async () => {
+    // emitJson writes via process.stdout.write (see output.js), not console.log —
+    // spy on stdout to match every other --json test in this file.
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetchOk({ ok: true, data: { serverVersion: 'X', protocolVersion: 'Y' } });
+    try {
+      await createProgram().parseAsync(['node', 'sfdt', 'doctor', '--json']);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    const printed = JSON.parse(writeSpy.mock.calls.map((c) => String(c[0])).join(''));
+    const groups = new Set(printed.result.results.map((r) => r.group));
+    expect(groups).toEqual(new Set(['core', 'extension']));
+    writeSpy.mockRestore();
+  });
+
+  it('runs only core checks with --core', async () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'doctor', '--core', '--json']);
+    const printed = JSON.parse(writeSpy.mock.calls.map((c) => String(c[0])).join(''));
+    expect(printed.result.results.every((r) => r.group === 'core')).toBe(true);
+    writeSpy.mockRestore();
+  });
+
+  it('exits 1 when any merged result fails', async () => {
+    runCoreDoctor.mockResolvedValue({ ok: false, results: [{ name: 'sf CLI', status: 'fail', detail: 'absent' }] });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetchOk({ ok: true, data: {} });
+    try {
+      await createProgram().parseAsync(['node', 'sfdt', 'doctor', '--json']);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(process.exitCode).toBe(1);
   });
 });
