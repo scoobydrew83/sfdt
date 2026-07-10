@@ -21,7 +21,10 @@ vi.mock('../../src/lib/ai.js', () => ({
   aiUnavailableMessage: () => 'Claude Code CLI not installed',
 }));
 
-import { checkSf, checkNode, checkGit, checkConfig, checkAi } from '../../src/lib/doctor-runner.js';
+const checkOrgInfoSpy = vi.hoisted(() => vi.fn());
+vi.mock('../../src/lib/monitor-runner.js', () => ({ checkOrgInfo: checkOrgInfoSpy }));
+
+import { checkSf, checkNode, checkGit, checkConfig, checkAi, checkOrg } from '../../src/lib/doctor-runner.js';
 
 beforeEach(() => vi.resetAllMocks());
 
@@ -119,5 +122,29 @@ describe('checkAi', () => {
     const r = await checkAi({ features: { ai: true } });
     expect(r.status).toBe('warn');
     expect(r.detail).toMatch(/not installed/);
+  });
+});
+
+describe('checkOrg', () => {
+  it('warn when no org alias is available', async () => {
+    const r = await checkOrg(undefined, 1000);
+    expect(r.status).toBe('warn');
+    expect(r.detail).toMatch(/no default org|--org/i);
+  });
+  it('ok when checkOrgInfo reports ok', async () => {
+    checkOrgInfoSpy.mockResolvedValue({ status: 'ok', summary: 'Production on NA123' });
+    const r = await checkOrg('myOrg', 1000);
+    expect(r.status).toBe('ok');
+    expect(r.detail).toContain('NA123');
+  });
+  it('downgrades a checkOrgInfo error to warn (never fail)', async () => {
+    checkOrgInfoSpy.mockResolvedValue({ status: 'error', summary: 'No authorized org' });
+    expect((await checkOrg('myOrg', 1000)).status).toBe('warn');
+  });
+  it('warn on timeout when checkOrgInfo hangs', async () => {
+    checkOrgInfoSpy.mockImplementation(() => new Promise(() => {})); // never resolves
+    const r = await checkOrg('myOrg', 20);
+    expect(r.status).toBe('warn');
+    expect(r.detail).toMatch(/timed out/i);
   });
 });

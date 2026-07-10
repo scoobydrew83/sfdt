@@ -4,6 +4,7 @@ import fs from 'fs-extra';
 import { isToolAvailable } from './tool-check.js';
 import { getConfigDir, validateConfig } from './config.js';
 import { isAiAvailable, aiUnavailableMessage } from './ai.js';
+import { checkOrgInfo } from './monitor-runner.js';
 
 const NODE_FLOOR = [22, 15, 0]; // package.json engines: >=22.15.0
 
@@ -85,4 +86,27 @@ export async function checkAi(config) {
     return coreResult('AI provider', 'ok', 'Configured provider is available.');
   }
   return coreResult('AI provider', 'warn', aiUnavailableMessage(config));
+}
+
+export async function checkOrg(orgAlias, timeoutMs = 5000) {
+  if (!orgAlias) {
+    return coreResult('org', 'warn', 'No default org configured — set config.defaultOrg or pass --org <alias> to check connectivity.');
+  }
+  const timeout = new Promise((resolve) => {
+    setTimeout(() => resolve({ __timedOut: true }), timeoutMs);
+  });
+  let info;
+  try {
+    info = await Promise.race([checkOrgInfo(orgAlias), timeout]);
+  } catch (err) {
+    return coreResult('org', 'warn', `Could not reach org "${orgAlias}": ${err.message}`);
+  }
+  if (info?.__timedOut) {
+    return coreResult('org', 'warn', `Org "${orgAlias}" check timed out after ${timeoutMs}ms.`);
+  }
+  if (info?.status === 'ok') {
+    return coreResult('org', 'ok', `Reachable — ${info.summary}`);
+  }
+  // Any non-ok (warn/error/fail) is reported as warn: this check never fails the run.
+  return coreResult('org', 'warn', `Org "${orgAlias}": ${info?.summary ?? 'not reachable'}`);
 }
