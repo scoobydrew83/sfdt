@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-07-09
+
+### Security
+
+- **flow-core source parsers are now linear-time.** The dependency source-parser regexes were rewritten to avoid catastrophic backtracking flagged by CodeQL (ReDoS), so `sfdt dependencies --gaps` and the inferred-edge overlay can't be stalled by adversarial source input. Ships in `@sfdt/flow-core` 0.9.6.
+
+### Changed
+
+- **Relicensed from MIT to Apache-2.0.** All packages (`@sfdt/cli`, `@sfdt/flow-core`, `@sfdt/plugin`, `sfdt-devtools`) now carry the Apache-2.0 license for its explicit patent grant and defensive-termination clause.
+- Bumped `@sfdt/flow-core` to 0.9.6 (linear-time source-parser regexes; see Security).
+
+### Fixed
+
+- **CI publish reliability.** Pinned `npm@11.18.0` for OIDC trusted publishing (fixes `ENEEDAUTH`) and made the publish gate self-healing so a version already bumped but not yet on npm still publishes on the next run.
+
+### Dependencies
+
+- Bumped `@types/node` to 25.9.4 (dev).
+
 ## [0.16.0] - 2026-07-09
 
 ### Added
