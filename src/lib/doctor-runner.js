@@ -2,9 +2,10 @@ import path from 'path';
 import { execa } from 'execa';
 import fs from 'fs-extra';
 import { isToolAvailable } from './tool-check.js';
-import { getConfigDir, validateConfig } from './config.js';
+import { getConfigDir, validateConfig, loadConfig } from './config.js';
 import { isAiAvailable, aiUnavailableMessage } from './ai.js';
 import { checkOrgInfo } from './monitor-runner.js';
+import { maxStatus } from './check-status.js';
 
 const NODE_FLOOR = [22, 15, 0]; // package.json engines: >=22.15.0
 
@@ -113,4 +114,25 @@ export async function checkOrg(orgAlias, timeoutMs = 5000) {
   }
   // Any non-ok (warn/error/fail) is reported as warn: this check never fails the run.
   return coreResult('org', 'warn', `Org "${orgAlias}": ${info?.summary ?? 'not reachable'}`);
+}
+
+export async function runCoreDoctor({ org, timeoutMs = 5000 } = {}) {
+  let config = null;
+  let loadError = null;
+  try {
+    config = await loadConfig();
+  } catch (err) {
+    loadError = err;
+  }
+  const orgAlias = org ?? config?.defaultOrg;
+  const results = await Promise.all([
+    checkSf(),
+    checkNode(),
+    checkGit(),
+    checkConfig(config, loadError),
+    checkAi(config),
+    checkOrg(orgAlias, timeoutMs),
+  ]);
+  const ok = maxStatus(results) !== 'fail';
+  return { results, ok };
 }

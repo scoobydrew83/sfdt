@@ -9,12 +9,14 @@ vi.mock('execa', () => ({ execa: execaSpy }));
 const pathExistsSpy = vi.hoisted(() => vi.fn());
 const getConfigDirSpy = vi.hoisted(() => vi.fn());
 const validateConfigSpy = vi.hoisted(() => vi.fn());
+const loadConfigSpy = vi.hoisted(() => vi.fn());
 const isAiAvailableSpy = vi.hoisted(() => vi.fn());
 
 vi.mock('fs-extra', () => ({ default: { pathExists: pathExistsSpy } }));
 vi.mock('../../src/lib/config.js', () => ({
   getConfigDir: getConfigDirSpy,
   validateConfig: validateConfigSpy,
+  loadConfig: loadConfigSpy,
 }));
 vi.mock('../../src/lib/ai.js', () => ({
   isAiAvailable: isAiAvailableSpy,
@@ -24,7 +26,7 @@ vi.mock('../../src/lib/ai.js', () => ({
 const checkOrgInfoSpy = vi.hoisted(() => vi.fn());
 vi.mock('../../src/lib/monitor-runner.js', () => ({ checkOrgInfo: checkOrgInfoSpy }));
 
-import { checkSf, checkNode, checkGit, checkConfig, checkAi, checkOrg } from '../../src/lib/doctor-runner.js';
+import { checkSf, checkNode, checkGit, checkConfig, checkAi, checkOrg, runCoreDoctor } from '../../src/lib/doctor-runner.js';
 
 beforeEach(() => vi.resetAllMocks());
 
@@ -156,5 +158,34 @@ describe('checkOrg', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('runCoreDoctor', () => {
+  it('returns six results and ok=false when any check fails', async () => {
+    loadConfigSpy.mockResolvedValue({ defaultOrg: 'myOrg', features: { ai: false } });
+    getConfigDirSpy.mockReturnValue('/proj/.sfdt');
+    pathExistsSpy.mockResolvedValue(true);
+    validateConfigSpy.mockReturnValue(undefined);
+    isToolAvailableSpy.mockResolvedValue({ available: false, version: null }); // sf+git fail
+    execaSpy.mockResolvedValue({ exitCode: 0, stdout: 'true', stderr: '' });
+    checkOrgInfoSpy.mockResolvedValue({ status: 'ok', summary: 'Prod' });
+
+    const { results, ok } = await runCoreDoctor({ timeoutMs: 50 });
+    expect(results).toHaveLength(6);
+    expect(ok).toBe(false); // sf absent → fail
+  });
+
+  it('ok=true when nothing fails (warns allowed)', async () => {
+    loadConfigSpy.mockResolvedValue({ defaultOrg: 'myOrg', features: { ai: false } });
+    getConfigDirSpy.mockReturnValue('/proj/.sfdt');
+    pathExistsSpy.mockResolvedValue(true);
+    validateConfigSpy.mockReturnValue(undefined);
+    isToolAvailableSpy.mockResolvedValue({ available: true, version: 'x/1.2.3' });
+    execaSpy.mockResolvedValue({ exitCode: 0, stdout: 'true', stderr: '' });
+    checkOrgInfoSpy.mockResolvedValue({ status: 'ok', summary: 'Prod' });
+
+    const { ok } = await runCoreDoctor({ timeoutMs: 50 });
+    expect(ok).toBe(true);
   });
 });
