@@ -92,14 +92,18 @@ export async function checkOrg(orgAlias, timeoutMs = 5000) {
   if (!orgAlias) {
     return coreResult('org', 'warn', 'No default org configured — set config.defaultOrg or pass --org <alias> to check connectivity.');
   }
+  let timer;
   const timeout = new Promise((resolve) => {
-    setTimeout(() => resolve({ __timedOut: true }), timeoutMs);
+    timer = setTimeout(() => resolve({ __timedOut: true }), timeoutMs);
+    timer.unref?.();
   });
   let info;
   try {
     info = await Promise.race([checkOrgInfo(orgAlias), timeout]);
   } catch (err) {
     return coreResult('org', 'warn', `Could not reach org "${orgAlias}": ${err.message}`);
+  } finally {
+    clearTimeout(timer);
   }
   if (info?.__timedOut) {
     return coreResult('org', 'warn', `Org "${orgAlias}" check timed out after ${timeoutMs}ms.`);

@@ -147,4 +147,14 @@ describe('checkOrg', () => {
     expect(r.status).toBe('warn');
     expect(r.detail).toMatch(/timed out/i);
   });
+  it('clears the timeout timer when checkOrgInfo resolves first (no dangling handle)', async () => {
+    vi.useFakeTimers();
+    try {
+      checkOrgInfoSpy.mockResolvedValue({ status: 'ok', summary: 'Prod' });
+      await checkOrg('myOrg', 5000);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
