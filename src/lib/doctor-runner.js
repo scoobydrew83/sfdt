@@ -1,5 +1,9 @@
+import path from 'path';
 import { execa } from 'execa';
+import fs from 'fs-extra';
 import { isToolAvailable } from './tool-check.js';
+import { getConfigDir, validateConfig } from './config.js';
+import { isAiAvailable, aiUnavailableMessage } from './ai.js';
 
 const NODE_FLOOR = [22, 15, 0]; // package.json engines: >=22.15.0
 
@@ -46,4 +50,39 @@ export async function checkGit() {
     return coreResult('git', 'ok', `Present (${version}) and inside a work tree.`);
   }
   return coreResult('git', 'warn', `Present (${version}) but the current directory is not a git repository.`);
+}
+
+export async function checkConfig(config, loadError) {
+  let configDir;
+  try {
+    configDir = getConfigDir();
+  } catch {
+    return coreResult('config', 'warn', 'No .sfdt/ project found here — run `sfdt init` in your project root.');
+  }
+  const configPath = path.join(configDir, 'config.json'); // CONFIG_FILES.config in config.js
+  if (!(await fs.pathExists(configPath))) {
+    return coreResult('config', 'warn', `Not initialized (${configPath} absent) — run \`sfdt init\`.`);
+  }
+  if (loadError) {
+    return coreResult('config', 'fail', `${configPath} present but failed to load: ${loadError.message}`);
+  }
+  try {
+    validateConfig(config);
+  } catch (err) {
+    return coreResult('config', 'fail', `${configPath} is invalid: ${err.message}`);
+  }
+  return coreResult('config', 'ok', `Valid (${configPath}).`);
+}
+
+export async function checkAi(config) {
+  if (!config) {
+    return coreResult('AI provider', 'warn', 'Skipped — config could not be loaded.');
+  }
+  if (!config.features?.ai) {
+    return coreResult('AI provider', 'warn', 'AI features are disabled (features.ai = false).');
+  }
+  if (await isAiAvailable(config)) {
+    return coreResult('AI provider', 'ok', 'Configured provider is available.');
+  }
+  return coreResult('AI provider', 'warn', aiUnavailableMessage(config));
 }

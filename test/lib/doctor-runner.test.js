@@ -6,7 +6,22 @@ vi.mock('../../src/lib/tool-check.js', () => ({ isToolAvailable: isToolAvailable
 const execaSpy = vi.hoisted(() => vi.fn());
 vi.mock('execa', () => ({ execa: execaSpy }));
 
-import { checkSf, checkNode, checkGit } from '../../src/lib/doctor-runner.js';
+const pathExistsSpy = vi.hoisted(() => vi.fn());
+const getConfigDirSpy = vi.hoisted(() => vi.fn());
+const validateConfigSpy = vi.hoisted(() => vi.fn());
+const isAiAvailableSpy = vi.hoisted(() => vi.fn());
+
+vi.mock('fs-extra', () => ({ default: { pathExists: pathExistsSpy } }));
+vi.mock('../../src/lib/config.js', () => ({
+  getConfigDir: getConfigDirSpy,
+  validateConfig: validateConfigSpy,
+}));
+vi.mock('../../src/lib/ai.js', () => ({
+  isAiAvailable: isAiAvailableSpy,
+  aiUnavailableMessage: () => 'Claude Code CLI not installed',
+}));
+
+import { checkSf, checkNode, checkGit, checkConfig, checkAi } from '../../src/lib/doctor-runner.js';
 
 beforeEach(() => vi.resetAllMocks());
 
@@ -51,5 +66,58 @@ describe('checkGit', () => {
   it('fail when git is absent', async () => {
     isToolAvailableSpy.mockResolvedValue({ available: false, version: null });
     expect((await checkGit()).status).toBe('fail');
+  });
+});
+
+describe('checkConfig', () => {
+  it('warn when no .sfdt/ project is found', async () => {
+    getConfigDirSpy.mockImplementation(() => { throw new Error('no project'); });
+    const r = await checkConfig(null, new Error('no project'));
+    expect(r.status).toBe('warn');
+    expect(r.detail).toMatch(/sfdt init/);
+  });
+  it('warn when config.json is absent (not initialized)', async () => {
+    getConfigDirSpy.mockReturnValue('/proj/.sfdt');
+    pathExistsSpy.mockResolvedValue(false);
+    expect((await checkConfig(null, new Error('not found'))).status).toBe('warn');
+  });
+  it('fail when config.json exists but failed to load', async () => {
+    getConfigDirSpy.mockReturnValue('/proj/.sfdt');
+    pathExistsSpy.mockResolvedValue(true);
+    const r = await checkConfig(null, new Error('Failed to parse config.json'));
+    expect(r.status).toBe('fail');
+  });
+  it('fail when config loaded but is schema-invalid', async () => {
+    getConfigDirSpy.mockReturnValue('/proj/.sfdt');
+    pathExistsSpy.mockResolvedValue(true);
+    validateConfigSpy.mockImplementation(() => { throw new Error('unknown key "foo"'); });
+    expect((await checkConfig({ any: 'thing' }, null)).status).toBe('fail');
+  });
+  it('ok when config is present and valid', async () => {
+    getConfigDirSpy.mockReturnValue('/proj/.sfdt');
+    pathExistsSpy.mockResolvedValue(true);
+    validateConfigSpy.mockReturnValue(undefined);
+    expect((await checkConfig({ any: 'thing' }, null)).status).toBe('ok');
+  });
+});
+
+describe('checkAi', () => {
+  it('warn when AI features are disabled', async () => {
+    const r = await checkAi({ features: { ai: false } });
+    expect(r.status).toBe('warn');
+    expect(r.detail).toMatch(/disabled/i);
+  });
+  it('warn when config is unavailable', async () => {
+    expect((await checkAi(null)).status).toBe('warn');
+  });
+  it('ok when AI is enabled and the provider is available', async () => {
+    isAiAvailableSpy.mockResolvedValue(true);
+    expect((await checkAi({ features: { ai: true } })).status).toBe('ok');
+  });
+  it('warn with the provider message when AI is enabled but unavailable', async () => {
+    isAiAvailableSpy.mockResolvedValue(false);
+    const r = await checkAi({ features: { ai: true } });
+    expect(r.status).toBe('warn');
+    expect(r.detail).toMatch(/not installed/);
   });
 });
