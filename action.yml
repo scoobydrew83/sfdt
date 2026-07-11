@@ -1,0 +1,141 @@
+# SFDT for Salesforce — composite GitHub Action.
+#
+# Runs any sfdt CLI command in a workflow step, with optional org
+# authentication handled for you:
+#
+#   - uses: scoobydrew83/sfdt@v0
+#     with:
+#       command: deploy --smart --org ci --delta-base "origin/main" --dry-run
+#       auth-method: sfdx-url
+#       sfdx-auth-url: ${{ secrets.SFDX_AUTH_URL }}
+#       org-alias: ci
+#
+# Pinning the action tag pins the CLI: cli-version defaults to "auto", which
+# resolves the version shipped in this repository at the pinned ref. Secrets
+# must be passed as expressions (never literals); do not pass untrusted input
+# to `command` — it is executed as a shell command line.
+name: SFDT for Salesforce
+description: >-
+  Salesforce DX DevOps toolkit — smart delta deploys, org monitoring and
+  auditing, quality analysis, and release management via the sfdt CLI.
+author: sfdt
+branding:
+  icon: cloud
+  color: blue
+
+inputs:
+  command:
+    description: >-
+      The sfdt command line to run (everything after "sfdt"), e.g.
+      "deploy --smart --org ci --dry-run" or "monitor all --org ci --json".
+    required: true
+  cli-version:
+    description: >-
+      @sfdt/cli version to install. "auto" (default) uses the version shipped
+      at the action ref you pinned; "latest" or an exact semver also work.
+    required: false
+    default: auto
+  auth-method:
+    description: >-
+      Org authentication handled by the action: "none" (default — the job is
+      already authenticated), "sfdx-url", or "jwt".
+    required: false
+    default: none
+  sfdx-auth-url:
+    description: Sfdx auth URL for auth-method sfdx-url (pass a secret).
+    required: false
+  consumer-key:
+    description: Connected app consumer key (client id) for auth-method jwt (pass a secret).
+    required: false
+  jwt-secret-key:
+    description: Contents of the JWT signing private key for auth-method jwt (pass a secret), not a file path.
+    required: false
+  username:
+    description: Username to authenticate as for auth-method jwt.
+    required: false
+  instance-url:
+    description: Login URL for auth-method jwt.
+    required: false
+    default: https://login.salesforce.com
+  org-alias:
+    description: Alias assigned to the authenticated org (also set as the default org).
+    required: false
+    default: ci-org
+  node-version:
+    description: Node.js version to set up.
+    required: false
+    default: '20'
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        AUTH_METHOD: ${{ inputs.auth-method }}
+      run: |
+        case "$AUTH_METHOD" in
+          none|sfdx-url|jwt) ;;
+          *) echo "auth-method must be one of: none, sfdx-url, jwt (got: $AUTH_METHOD)" >&2; exit 1 ;;
+        esac
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install Salesforce CLI
+      shell: bash
+      run: command -v sf >/dev/null 2>&1 || npm install --global @salesforce/cli
+
+    - name: Install sfdt CLI
+      shell: bash
+      env:
+        CLI_VERSION: ${{ inputs.cli-version }}
+      run: |
+        VERSION="$CLI_VERSION"
+        if [ "$VERSION" = "auto" ]; then
+          VERSION=$(node -p "require(process.env.GITHUB_ACTION_PATH + '/package.json').version")
+        fi
+        if [ "$VERSION" != "latest" ] && command -v sfdt >/dev/null 2>&1 && [ "$(sfdt --version 2>/dev/null)" = "$VERSION" ]; then
+          echo "@sfdt/cli@${VERSION} already installed — skipping."
+        else
+          npm install --global "@sfdt/cli@${VERSION}"
+        fi
+
+    - name: Authenticate (sfdx auth URL)
+      if: inputs.auth-method == 'sfdx-url'
+      shell: bash
+      env:
+        SFDX_AUTH_URL: ${{ inputs.sfdx-auth-url }}
+        ORG_ALIAS: ${{ inputs.org-alias }}
+      run: |
+        if [ -z "$SFDX_AUTH_URL" ]; then
+          echo "auth-method sfdx-url requires the sfdx-auth-url input (pass a secret)" >&2
+          exit 1
+        fi
+        echo "$SFDX_AUTH_URL" | sf org login sfdx-url --sfdx-url-stdin --alias "$ORG_ALIAS" --set-default
+
+    - name: Authenticate (JWT)
+      if: inputs.auth-method == 'jwt'
+      shell: bash
+      env:
+        SFDX_CONSUMER_KEY: ${{ inputs.consumer-key }}
+        SFDX_JWT_SECRET_KEY: ${{ inputs.jwt-secret-key }}
+        SFDX_USERNAME: ${{ inputs.username }}
+        SFDX_INSTANCE_URL: ${{ inputs.instance-url }}
+        ORG_ALIAS: ${{ inputs.org-alias }}
+      run: |
+        if [ -z "$SFDX_CONSUMER_KEY" ] || [ -z "$SFDX_JWT_SECRET_KEY" ] || [ -z "$SFDX_USERNAME" ]; then
+          echo "auth-method jwt requires the consumer-key, jwt-secret-key, and username inputs (pass secrets)" >&2
+          exit 1
+        fi
+        KEY_FILE="${RUNNER_TEMP}/server.key"
+        trap 'rm -f "$KEY_FILE"' EXIT
+        printf '%s\n' "$SFDX_JWT_SECRET_KEY" > "$KEY_FILE"
+        sf org login jwt --client-id "$SFDX_CONSUMER_KEY" --jwt-key-file "$KEY_FILE" --username "$SFDX_USERNAME" --instance-url "${SFDX_INSTANCE_URL:-https://login.salesforce.com}" --alias "$ORG_ALIAS" --set-default
+
+    - name: Run sfdt
+      shell: bash
+      env:
+        SFDT_COMMAND: ${{ inputs.command }}
+      run: eval "sfdt ${SFDT_COMMAND}"

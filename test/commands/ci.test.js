@@ -216,6 +216,33 @@ describe('generateCi — docker runner', () => {
   });
 });
 
+describe('generateCi — action runner (github)', () => {
+  it.each(['monitor', 'deploy', 'release'])('%s renders a uses: step instead of npx installs', async (type) => {
+    const r = await generateCi({ provider: 'github', type, runner: 'action', org: 'uat' });
+    expect(r.runner).toBe('action');
+    expect(r.content).toContain('uses: scoobydrew83/sfdt@v0');
+    expect(r.content).not.toContain('npx --yes @sfdt/cli@latest');
+    expect(r.content).not.toContain('npm install --global @salesforce/cli');
+    expect(r.content).not.toMatch(/\{\{\w+\}\}/);
+    expect(() => yaml.load(r.content)).not.toThrow();
+  });
+
+  it('passes auth via with: inputs, matched to the auth method', async () => {
+    const url = await generateCi({ provider: 'github', type: 'deploy', runner: 'action', org: 'uat' });
+    expect(url.content).toContain('auth-method: sfdx-url');
+    expect(url.content).toContain('sfdx-auth-url: ${{ secrets.SFDX_AUTH_URL }}');
+    const jwt = await generateCi({ provider: 'github', type: 'release', runner: 'action', auth: 'jwt', org: 'prod' });
+    expect(jwt.content).toContain('auth-method: jwt');
+    expect(jwt.content).toContain('jwt-secret-key: ${{ secrets.SFDX_JWT_SECRET_KEY }}');
+    expect(jwt.content).not.toContain('sf org login');
+  });
+
+  it('is rejected for non-github providers and for the scratch type', async () => {
+    await expect(generateCi({ provider: 'gitlab', type: 'deploy', runner: 'action' })).rejects.toThrow('only supported for github');
+    await expect(generateCi({ provider: 'github', type: 'scratch', runner: 'action' })).rejects.toThrow('supports types');
+  });
+});
+
 describe('generateCi — scratch type', () => {
   it('authenticates the Dev Hub and always deletes the scratch org', async () => {
     const r = await generateCi({ provider: 'github', type: 'scratch', org: 'devhub' });

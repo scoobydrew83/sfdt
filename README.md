@@ -42,7 +42,7 @@ extension and the [VS Code extension](https://marketplace.visualstudio.com/items
 - **Local web dashboard** for test results, preflight, drift monitoring, and org comparison (`sfdt ui`)
 - **Smart delta deployments** — minimal git-delta package with overwrite protection, automatic test-level selection, optional AI / coding-agent auto-fix (`sfdt deploy --smart`)
 - **Native org health & operations suite** — diagnose (`sfdt audit`), monitor/backup (`sfdt monitor`), dependency analysis (`sfdt dependencies`), and Apex coverage gating (`sfdt coverage`)
-- **CI/CD pipeline templates** for GitHub, GitLab, Azure, and Bitbucket (`sfdt ci init`); PR decoration (`sfdt pr comment`) and cross-org retrofit (`sfdt retrofit`)
+- **CI/CD pipeline templates** for GitHub, GitLab, Azure, and Bitbucket (`sfdt ci init` — monitor, PR validation, approval-gated release, scratch-org CI), plus a published **GitHub Action** (`uses: scoobydrew83/sfdt@v0`); PR decoration (`sfdt pr comment`) and cross-org retrofit (`sfdt retrofit`)
 - **Multi-channel notifications** — Slack, MS Teams, Google Chat, email, webhook, and Grafana Loki, with optional AI executive-summary digests (`sfdt notify`)
 - **Plugin architecture** — extend sfdt with `sfdt-plugin-*` npm packages or local `.sfdt/plugins/` scripts, plus a **Salesforce CLI plugin** exposing every command as `sf sfdt <command>` (`sf plugins install @sfdt/plugin`)
 - Works with **any** Salesforce DX project — no project-specific values hardcoded
@@ -132,7 +132,7 @@ Full install reference — every method plus CI usage — at **[sfdt.dev/cli/ins
 | `sfdt pr comment` | Post the latest audit/monitor snapshot (or `--body`/`--file`) to the current PR via `gh` | `--type <audit\|monitor>`, `--body <md>`, `--file <path>`, `--pr <n>` |
 | `sfdt retrofit` | Retrieve a metadata set from a source org, commit, then smart-deploy to a target (validate-only unless `--execute`) | `--source <alias>`, `--target <alias>`, `--execute` |
 | `sfdt agent-test` | Run an Agentforce agent test (`sf agent test run`) as a CI gate; pass/fail comes from the exit code | `--spec <name>`, `--org <alias>`, `--wait <min>`, `--pass-rate <pct>`, `--notify`, `--pr-comment` |
-| `sfdt ci init` | Generate a CI/CD pipeline (scheduled monitor or PR smart-deploy) for a provider | `--provider <github\|gitlab\|azure\|bitbucket>`, `--type <monitor\|deploy>` |
+| `sfdt ci init` | Generate a CI/CD pipeline (scheduled monitor, PR smart-deploy, approval-gated release, or scratch-org CI) for a provider | `--provider <github\|gitlab\|azure\|bitbucket>`, `--type <monitor\|deploy\|release\|scratch>`, `--auth <sfdx-url\|jwt>`, `--runner <npx\|docker\|action>` |
 
 ### Org Health & Operations
 
@@ -391,6 +391,42 @@ List plugin package names in `config.plugins` to load them in a specific order:
 ```json
 { "plugins": ["sfdt-plugin-my-thing", "@myorg/sfdt-plugin-audit"] }
 ```
+
+## GitHub Action
+
+The repository doubles as a composite GitHub Action: run any sfdt command as a
+single `uses:` step, with org authentication handled for you. Pinning the
+action tag pins the CLI version (`cli-version: auto` installs the version
+shipped at that ref — no unpinned `@latest`).
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+- name: Smart delta validation
+  uses: scoobydrew83/sfdt@v0
+  with:
+    command: deploy --smart --org ci --delta-base "origin/${{ github.event.pull_request.base.ref }}" --dry-run
+    auth-method: sfdx-url
+    sfdx-auth-url: ${{ secrets.SFDX_AUTH_URL }}
+    org-alias: ci
+```
+
+JWT bearer flow instead of an auth URL:
+
+```yaml
+    auth-method: jwt
+    consumer-key: ${{ secrets.SFDX_CONSUMER_KEY }}
+    jwt-secret-key: ${{ secrets.SFDX_JWT_SECRET_KEY }}
+    username: ${{ secrets.SFDX_USERNAME }}
+```
+
+`sfdt ci init --provider github --runner action` generates complete workflows
+built on the action (monitor, deploy, release). The floating `v0` tag tracks
+the newest stable release; pin an exact tag (e.g. `@v0.16.2`) or a commit SHA
+if you prefer immutable references. Always pass secrets as `${{ secrets.X }}`
+expressions, and never feed untrusted input to `command` — it runs as a shell
+command line.
 
 ## Docker
 

@@ -367,7 +367,7 @@ describe('validateConfig — AJV schema fields', () => {
       validateConfig({
         defaultOrg: 'dev',
         features: {},
-        ci: { authMethod: 'jwt', environment: 'uat', runner: 'docker' },
+        ci: { authMethod: 'jwt', environment: 'uat', runner: 'action' },
       }),
     ).not.toThrow();
   });

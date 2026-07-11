@@ -247,7 +247,7 @@
       "properties": {
         "authMethod": { "enum": ["sfdx-url", "jwt"] },
         "environment": { "type": "string" },
-        "runner": { "enum": ["npx", "docker"] }
+        "runner": { "enum": ["npx", "docker", "action"] }
       }
     }
   }

@@ -9,12 +9,18 @@ const __dirname = path.dirname(__filename);
 const PARTIALS_DIR = path.resolve(__dirname, '..', '..', 'scripts', 'ci', 'partials');
 
 export const AUTH_METHODS = ['sfdx-url', 'jwt'];
-export const RUNNERS = ['npx', 'docker'];
+export const RUNNERS = ['npx', 'docker', 'action'];
 // Providers whose jobs run in a user-chosen container image, where the official
 // sfdt image (sf CLI + sfdt preinstalled) can replace the per-run npm installs.
 export const DOCKER_RUNNER_PROVIDERS = ['gitlab', 'bitbucket'];
 export const DOCKER_IMAGE = 'ghcr.io/scoobydrew83/sfdt:latest';
 export const NPX_CLI = 'npx --yes @sfdt/cli@latest';
+// The published composite action (GitHub only). The floating major tag tracks
+// stable releases; pinning an exact tag also pins the CLI (cli-version: auto).
+export const ACTION_REF = 'scoobydrew83/sfdt@v0';
+// Scratch pipelines drive raw `sf` commands with their own cleanup semantics,
+// which the single-command action deliberately does not wrap.
+export const ACTION_RUNNER_TYPES = ['monitor', 'deploy', 'release'];
 
 // Comment lines substituted into each template's "required secrets" header
 // block via the {{authSecretsDoc}} placeholder. {{org}} is interpolated later.

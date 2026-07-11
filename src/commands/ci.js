@@ -11,6 +11,8 @@ import {
   DOCKER_RUNNER_PROVIDERS,
   DOCKER_IMAGE,
   NPX_CLI,
+  ACTION_REF,
+  ACTION_RUNNER_TYPES,
   authSecretsDoc,
   authSecretNames,
   injectBlock,
@@ -53,11 +55,6 @@ export async function generateCi(options) {
     throw new Error(`--type must be one of: ${TYPES.join(', ')}`);
   }
 
-  const templatePath = path.join(CI_DIR, `${provider}-${type}.yml`);
-  if (!(await fs.pathExists(templatePath))) {
-    throw new Error(`No CI template for ${provider}/${type} at ${templatePath}`);
-  }
-
   // Project config enriches the defaults; tolerate its absence (pre-`sfdt init`).
   let config = null;
   try {
@@ -85,6 +82,25 @@ export async function generateCi(options) {
         '(github/azure hosted runners use setup-node + npx; the sfdt image is documented in the template header)'
     );
   }
+  if (runner === 'action') {
+    if (provider !== 'github') {
+      throw new Error(`--runner action is only supported for github (the composite action ${ACTION_REF})`);
+    }
+    if (!ACTION_RUNNER_TYPES.includes(type)) {
+      throw new Error(
+        `--runner action supports types: ${ACTION_RUNNER_TYPES.join(', ')} ` +
+          '(scratch pipelines drive raw sf commands with their own cleanup steps — use the default runner)'
+      );
+    }
+  }
+
+  // Action-runner workflows are a separate template variant: one `uses:` step
+  // replaces the setup/install/auth steps.
+  const templateFile = runner === 'action' ? `${provider}-${type}.action.yml` : `${provider}-${type}.yml`;
+  const templatePath = path.join(CI_DIR, templateFile);
+  if (!(await fs.pathExists(templatePath))) {
+    throw new Error(`No CI template for ${provider}/${type} at ${templatePath}`);
+  }
 
   const nodeVersion = options.node || '20';
   const branch = options.branch || config?.defaultBranch || 'main';
@@ -98,8 +114,14 @@ export async function generateCi(options) {
 
   // Block placeholders first (indentation-aware), scalar placeholders second —
   // partials may themselves contain scalars like {{org}}.
-  template = injectBlock(template, 'authSteps', await loadPartial(`${provider}-auth-${auth}`));
+  if (template.includes('{{authSteps}}')) {
+    template = injectBlock(template, 'authSteps', await loadPartial(`${provider}-auth-${auth}`));
+  }
   template = injectBlock(template, 'authSecretsDoc', authSecretsDoc(auth));
+  if (template.includes('{{authInputs}}')) {
+    // Action-runner templates pass secrets as `with:` inputs instead of steps.
+    template = injectBlock(template, 'authInputs', await loadPartial(`action-auth-${auth}`));
+  }
   if (template.includes('{{qualitySteps}}')) {
     template = injectBlock(template, 'qualitySteps', await loadPartial(`${provider}-quality`));
   }
@@ -129,6 +151,8 @@ export async function generateCi(options) {
     scratchDef,
     image: runner === 'docker' ? DOCKER_IMAGE : `node:${nodeVersion}`,
     cli: runner === 'docker' ? 'sfdt' : NPX_CLI,
+    actionRef: ACTION_REF,
+    authMethod: auth,
     // Scratch templates authenticate the Dev Hub, everything else a target org.
     setDefaultFlag: type === 'scratch' ? '--set-default-dev-hub' : '--set-default',
   });
@@ -188,7 +212,7 @@ export function registerCiCommand(program) {
     .requiredOption('--provider <name>', `CI provider: ${PROVIDERS.join(' | ')}`)
     .option('--type <type>', `Workflow type: ${TYPES.join(' | ')}`, 'monitor')
     .option('--auth <method>', `Org authentication: ${AUTH_METHODS.join(' | ')} (default: config ci.authMethod or sfdx-url)`)
-    .option('--runner <name>', `CLI runner for gitlab/bitbucket jobs: ${RUNNERS.join(' | ')} (docker uses the official sfdt image)`)
+    .option('--runner <name>', `CLI runner: ${RUNNERS.join(' | ')} (docker = official sfdt image, gitlab/bitbucket; action = the ${ACTION_REF} composite action, github)`)
     .option('--cron <expr>', 'Cron schedule for monitoring workflows', '0 6 * * *')
     .option('--org <alias>', 'Target org alias (Dev Hub alias for --type scratch; defaults to config.defaultOrg)')
     .option('--branch <name>', 'Protected branch that triggers a release workflow (defaults to config.defaultBranch or main)')
