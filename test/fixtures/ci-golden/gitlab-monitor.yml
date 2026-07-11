@@ -1,0 +1,12 @@
+sfdt-monitor:
+  image: node:20
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  script:
+    - npm install --global @salesforce/cli
+    - echo "$SFDX_AUTH_URL" | sf org login sfdx-url --sfdx-url-stdin --alias golden-org --set-default
+    - npx --yes @sfdt/cli@latest monitor all --org golden-org --backup --notify --json
+  artifacts:
+    when: always
+    paths:
+      - logs/monitor-latest.json

@@ -1,0 +1,3 @@
+- printf '%s\n' "$SFDX_JWT_SECRET_KEY" > server.key
+- sf org login jwt --client-id "$SFDX_CONSUMER_KEY" --jwt-key-file server.key --username "$SFDX_USERNAME" --instance-url "${SFDX_INSTANCE_URL:-https://login.salesforce.com}" --alias {{org}} {{setDefaultFlag}}
+- rm -f server.key

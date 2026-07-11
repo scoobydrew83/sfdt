@@ -1,0 +1,12 @@
+pipelines:
+  custom:
+    sfdt-monitor:
+      - step:
+          name: SFDT Org Monitoring
+          image: node:20
+          script:
+            - npm install --global @salesforce/cli
+            - echo "$SFDX_AUTH_URL" | sf org login sfdx-url --sfdx-url-stdin --alias golden-org --set-default
+            - npx --yes @sfdt/cli@latest monitor all --org golden-org --backup --notify --json
+          artifacts:
+            - logs/monitor-latest.json

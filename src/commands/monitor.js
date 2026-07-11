@@ -201,6 +201,8 @@ export function registerMonitorCommand(program) {
     .command('schedule')
     .description('Generate a scheduled org-monitoring CI workflow (alias for "ci init --type monitor")')
     .requiredOption('--provider <name>', 'CI provider: github | gitlab | azure | bitbucket')
+    .option('--auth <method>', 'Org authentication: sfdx-url | jwt (default: config ci.authMethod or sfdx-url)')
+    .option('--runner <name>', 'CLI runner for gitlab/bitbucket jobs: npx | docker')
     .option('--cron <expr>', 'Cron schedule', '0 6 * * *')
     .option('--org <alias>', 'Target org alias (defaults to config.defaultOrg)')
     .option('--node <version>', 'Node.js version for the CI runner', '20')

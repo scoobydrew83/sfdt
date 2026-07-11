@@ -3,15 +3,17 @@
 # (CI/CD > Schedules) with cron '{{cron}}'.
 #
 # Required CI/CD variables (Settings > CI/CD > Variables, masked):
-#   SFDX_AUTH_URL, SLACK_WEBHOOK_URL (optional), TEAMS_WEBHOOK_URL (optional)
+{{authSecretsDoc}}
+#   SLACK_WEBHOOK_URL    (optional) Slack incoming webhook
+#   TEAMS_WEBHOOK_URL    (optional) Microsoft Teams incoming webhook
 sfdt-monitor:
-  image: node:{{nodeVersion}}
+  image: {{image}}
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
   script:
-    - npm install --global @salesforce/cli
-    - echo "$SFDX_AUTH_URL" | sf org login sfdx-url --sfdx-url-stdin --alias {{org}} --set-default
-    - npx --yes @sfdt/cli@latest monitor all --org {{org}} --backup --notify --json
+    {{cliSetup}}
+    {{authSteps}}
+    - {{cli}} monitor all --org {{org}} --backup --notify --json
   artifacts:
     when: always
     paths:

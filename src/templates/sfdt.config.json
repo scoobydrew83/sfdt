@@ -118,5 +118,10 @@
     "definitionFile": "config/project-scratch-def.json",
     "durationDays": 7,
     "poolSize": 0
+  },
+  "ci": {
+    "authMethod": "sfdx-url",
+    "environment": "production",
+    "runner": "npx"
   }
 }

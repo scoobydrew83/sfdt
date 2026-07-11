@@ -1,0 +1,22 @@
+schedules:
+  - cron: '0 6 * * *'
+    displayName: SFDT Org Monitoring
+    branches:
+      include:
+        - main
+    always: true
+pool:
+  vmImage: ubuntu-latest
+steps:
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '20'
+  - script: npm install --global @salesforce/cli
+    displayName: Install Salesforce CLI
+  - script: echo "$(SFDX_AUTH_URL)" | sf org login sfdx-url --sfdx-url-stdin --alias golden-org --set-default
+    displayName: Authenticate to golden-org
+  - script: npx --yes @sfdt/cli@latest monitor all --org golden-org --backup --notify --json
+    displayName: Run org monitoring
+    env:
+      SLACK_WEBHOOK_URL: $(SLACK_WEBHOOK_URL)
+      TEAMS_WEBHOOK_URL: $(TEAMS_WEBHOOK_URL)
