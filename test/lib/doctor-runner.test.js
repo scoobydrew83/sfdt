@@ -55,6 +55,19 @@ describe('checkNode', () => {
     // The test process runs node >=22.15.0 (repo engines), so this is ok here.
     expect((await checkNode()).status).toBe('ok');
   });
+  it('ok for an explicit version at/above the floor', async () => {
+    expect((await checkNode('22.15.0')).status).toBe('ok');
+    expect((await checkNode('24.0.0')).status).toBe('ok');
+  });
+  it('warn when the node version is below the floor', async () => {
+    const r = await checkNode('18.20.0');
+    expect(r.status).toBe('warn');
+    expect(r.detail).toMatch(/below the supported floor/);
+  });
+  it('warn (not silently ok) when a version segment is unparseable', async () => {
+    // Guards the NaN fall-through: "22.x.0" must not be treated as satisfying.
+    expect((await checkNode('22.x.0')).status).toBe('warn');
+  });
 });
 
 describe('checkGit', () => {
