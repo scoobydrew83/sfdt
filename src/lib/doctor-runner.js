@@ -16,7 +16,9 @@ function coreResult(name, status, detail) {
 function satisfiesFloor(versionString, floor) {
   const parts = String(versionString).replace(/^v/, '').split('.').map((n) => parseInt(n, 10));
   for (let i = 0; i < floor.length; i++) {
-    const got = parts[i] ?? 0;
+    // A missing or unparseable segment counts as 0 (conservatively "below") so a
+    // malformed version like "22.x.0" can never silently fall through as satisfied.
+    const got = Number.isInteger(parts[i]) ? parts[i] : 0;
     if (got > floor[i]) return true;
     if (got < floor[i]) return false;
   }
@@ -34,8 +36,8 @@ export async function checkSf() {
   return coreResult('sf CLI', 'ok', `Present — ${version}`);
 }
 
-export async function checkNode() {
-  const current = process.versions.node;
+export async function checkNode(nodeVersion = process.versions.node) {
+  const current = nodeVersion;
   if (satisfiesFloor(current, NODE_FLOOR)) {
     return coreResult('node', 'ok', `v${current} (satisfies >=${NODE_FLOOR.join('.')})`);
   }
