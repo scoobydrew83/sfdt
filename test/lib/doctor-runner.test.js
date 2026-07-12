@@ -152,10 +152,13 @@ describe('checkOrg', () => {
     expect(r.status).toBe('ok');
     expect(r.detail).toContain('NA123');
   });
-  it('forwards timeoutMs to checkOrgInfo so the sf subprocess is bounded too', async () => {
+  it('gives checkOrgInfo half the budget so its two sequential sf calls total <= timeoutMs', async () => {
+    // checkOrgInfo runs query + detectOrgRelease back-to-back, each bounded by the timeout it
+    // receives; halving keeps the combined wall-clock within timeoutMs and prevents an orphaned
+    // subprocess from lingering after doctor prints (bin/sfdt.js never calls process.exit()).
     checkOrgInfoSpy.mockResolvedValue({ status: 'ok', summary: 'Production on NA123' });
     await checkOrg('myOrg', 1234);
-    expect(checkOrgInfoSpy).toHaveBeenCalledWith('myOrg', { timeoutMs: 1234 });
+    expect(checkOrgInfoSpy).toHaveBeenCalledWith('myOrg', { timeoutMs: 617 });
   });
   it('downgrades a checkOrgInfo error to warn (never fail)', async () => {
     checkOrgInfoSpy.mockResolvedValue({ status: 'error', summary: 'No authorized org' });

@@ -102,7 +102,13 @@ export async function checkOrg(orgAlias, timeoutMs = 5000) {
   });
   let info;
   try {
-    info = await Promise.race([checkOrgInfo(orgAlias, { timeoutMs }), timeout]);
+    // checkOrgInfo makes two SEQUENTIAL sf calls (query + detectOrgRelease), each bounded by the
+    // timeout we pass. Give each half the budget so their total wall-clock stays ≤ timeoutMs and
+    // execa kills the loser's child before the outer race resolves — otherwise doctor prints its
+    // result and then lingers (up to timeoutMs) on an orphaned subprocess, since bin/sfdt.js never
+    // calls process.exit(). ponytail: split-budget, not an AbortController thread through org-query.
+    const perCallTimeoutMs = Math.max(1, Math.floor(timeoutMs / 2));
+    info = await Promise.race([checkOrgInfo(orgAlias, { timeoutMs: perCallTimeoutMs }), timeout]);
   } catch (err) {
     return coreResult('org', 'warn', `Could not reach org "${orgAlias}": ${err.message}`);
   } finally {
