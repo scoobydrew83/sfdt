@@ -342,6 +342,7 @@ sfdt test --analyze
 sfdt test --legacy
 sfdt test --logic                                   # Apex + Flow tests in one pass
 sfdt test --logic --tests FooTest,FlowTesting.MyFlow --code-coverage
+sfdt test --lwc                                      # local LWC (Jest) unit tests
 ```
 
 **Options:**
@@ -357,6 +358,7 @@ sfdt test --logic --tests FooTest,FlowTesting.MyFlow --code-coverage
 | `--category <cat>` | For `--logic`: restrict to `Apex` or `Flow` |
 | `--code-coverage` | For `--logic`: retrieve code coverage results |
 | `--wait <minutes>` | For `--logic`: streaming wait timeout (default 30) |
+| `--lwc` | Run the project's local LWC (Jest) unit tests. Detects a wired-up Jest runner (`@salesforce/sfdx-lwc-jest` dependency or a `test:unit` script) plus `__tests__` directories, then runs `npm run test:unit` or the `sfdx-lwc-jest` binary |
 
 > `--logic` is a thin pass-through to `sf logic run test`. On failure (with `features.ai` enabled) sfdt offers the same AI failure analysis as the Apex runner, feeding it the captured logic-test output.
 
@@ -397,6 +399,7 @@ sfdt quality --generate-stubs --dry-run  # preview stubs without writing files
 | `--all` | Run both `quality/code-analyzer.sh` and `quality/test-analyzer.sh` |
 | `--fix-plan` | After analysis, send the output to AI for a prioritized, file-specific fix plan |
 | `--include-fixes` | Ask **Code Analyzer v5** for actionable fixes/suggestions in the scan output (`--include-fixes --include-suggestions`); the richer output feeds `--fix-plan` |
+| `--output-file <path>` | Also write the Code Analyzer v5 results to a file; the format follows the extension (e.g. `.sarif` for GitHub code-scanning upload). Requires v5 — v4 logs a warning and skips |
 | `--generate-stubs` | Generate `@IsTest` stub classes for Apex classes that have no test class |
 | `--dry-run` | Preview `--generate-stubs` output without writing any files |
 

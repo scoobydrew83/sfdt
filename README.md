@@ -120,7 +120,7 @@ Full install reference — every method plus CI usage — at **[sfdt.dev/cli/ins
 | `sfdt deploy` | Deploy to a Salesforce org | `--managed`, `--skip-preflight`, `--dry-run`, `--source-dir <path>` |
 | `sfdt deploy --smart` | Smart git-delta deploy: minimal package, overwrite protection, auto test-level | `--delta-base <ref>`, `--delta-head <ref>`, `--prod`, `--pr-comment`, `--ai-fix`, `--agent` |
 | `sfdt release` | Generate release manifest + optional AI release notes | `--package <name\|all>`, `--name <label>` |
-| `sfdt test` | Run Apex tests with the enhanced test runner; `--logic` runs unified Apex + Flow tests via `sf logic run test` | `--legacy`, `--analyze`, `--logic`, `--class-names <list>`, `--dry-run` |
+| `sfdt test` | Run Apex tests with the enhanced test runner; `--logic` runs unified Apex + Flow tests via `sf logic run test`; `--lwc` runs the project's local LWC (Jest) unit tests | `--legacy`, `--analyze`, `--logic`, `--lwc`, `--class-names <list>`, `--dry-run` |
 | `sfdt pull` | Pull metadata from the configured org | `--dry-run` |
 | `sfdt preflight` | Run pre-deployment validation checks | `--strict`, `--dry-run` |
 | `sfdt rollback` | Roll back a deployment to a target org | `--org <alias>`, `--dry-run`, `--json` |
@@ -164,7 +164,7 @@ Full install reference — every method plus CI usage — at **[sfdt.dev/cli/ins
 | `sfdt pr-description` | Generate a PR description or Slack message | `--base <ref>`, `--head <ref>`, `--format github\|slack\|markdown`, `--output <path>`, `--commit-limit <n>` |
 | `sfdt review` | AI code review of current branch changes | `--base <branch>` |
 | `sfdt changelog` | Manage changelog files (global or per-package) | subcommands: `generate`, `release <version>`, `check`; `--package <name>` scopes to a specific package |
-| `sfdt quality` | Code & test quality analysis | `--tests`, `--all`, `--fix-plan`, `--generate-stubs`, `--dry-run` |
+| `sfdt quality` | Code & test quality analysis; `--output-file <path>` also writes results to a file (format by extension, e.g. `.sarif` for code-scanning upload) | `--tests`, `--all`, `--fix-plan`, `--generate-stubs`, `--include-fixes`, `--output-file <path>`, `--dry-run` |
 | `sfdt ai prompt <text>` | Run a prompt through the configured AI provider and print the result | — |
 
 ### Platform (Phase 4)

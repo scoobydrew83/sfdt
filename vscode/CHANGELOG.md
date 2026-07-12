@@ -6,6 +6,12 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-12
+
+### Added
+
+- **Commands-tree catalog entries for the new CLI surfaces** — the `sfdt test --lwc` runner, `deploy --smart --notify`, and `quality --output-file` (SARIF) now appear in the Commands tree, keeping the extension's catalog in step with CLI 0.17.0.
+
 ## [0.4.0] - 2026-07-09
 
 ### Added
