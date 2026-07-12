@@ -1,0 +1,63 @@
+---
+title: Agent Skills
+description: Ten bundled agent skills that teach AI coding assistants Salesforce DX workflows — install them into Claude Code, Cursor, Codex, or Windsurf with one command.
+---
+
+# Agent Skills
+
+`@sfdt/cli` ships an **agent skills pack** — ten curated instruction sets that
+teach AI coding assistants (Claude Code, Cursor, Codex, Windsurf) how to work
+on Salesforce DX projects: reviewing Apex and Flows, deploying safely, writing
+tests, running static analysis, and driving the sfdt CLI itself.
+
+Skills follow the [Agent Skills](https://code.claude.com/docs/en/skills)
+format: a `SKILL.md` with `name` + `description` frontmatter (which drives
+automatic triggering) plus optional bundled references. All skills are
+Apache-2.0 licensed.
+
+## Install into your project
+
+From any project where `@sfdt/cli` is installed:
+
+```bash
+# Claude Code — installs native project skills under .claude/skills/<name>/
+sfdt skills export --target claude
+
+# Cursor / Codex / Windsurf — flattened rules files
+sfdt skills export --target cursor     # .cursorrules
+sfdt skills export --target codex      # .codexrules
+sfdt skills export --target windsurf   # .windsurfrules
+
+# Portable pack (manifest.json + skill folders, npx-skills compatible)
+sfdt skills export --target pack --out ./sfdt-skills-pack
+```
+
+With the `claude` target, Claude Code discovers the skills automatically — no
+configuration needed. Each skill activates when its trigger contexts match
+what you're working on.
+
+## The skills
+
+| Skill | What it teaches |
+|-------|-----------------|
+| `sfdt-cli` | Using **and extending** the sfdt CLI — all commands, config system, `SFDT_` env vars, development guide |
+| `sf-apex-review` | Production-grade Apex review: SOQL/DML in loops, CRUD/FLS, bulkification, batch idempotency, severity-tiered output with a deploy verdict |
+| `sf-flow-review` | Flow metadata review: fault paths, bulk safety, hardcoded IDs, auto-layout, Flow-vs-Apex decisions |
+| `sf-test` | Apex testing: running tests, coverage analysis, test-class standards, coverage-gap hunting, TestDataFactory pattern |
+| `sf-deploy` | `sf project deploy` workflows: validate + quick deploy, destructive changes, test levels, troubleshooting |
+| `sf-data` | SOQL best practices, bulk import/export, tree data seeding, governor limits |
+| `sf-pmd-scan` | Salesforce Code Analyzer v5: scans, custom PMD rulesets, CI quality gates |
+| `sf-org-audit` | Whole-project health audit with a structured remediation report |
+| `sf-scratch-org` | Scratch org lifecycle: create, push/pull, conflicts, users, limits |
+| `sf-lwc` | Lightning Web Components: wire adapters, events, SLDS, template rules, anti-patterns |
+
+The Salesforce skills work in **any** SFDX project — they don't require sfdt
+to be configured, but they know to prefer sfdt's native commands (smart
+deploys, flow analysis, org audits) when a `.sfdt/` directory is present.
+
+## Keeping skills current
+
+The `sfdt-cli` skill is guarded by a CI test that fails whenever a CLI command
+is added or renamed without updating the skill — so the documented command
+surface can't silently drift. Each skill also carries committed eval prompts
+(`evals/evals.json`) used to benchmark revisions.

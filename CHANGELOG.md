@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`skills export --target claude` now installs native Claude Code project skills.** Each bundled skill is copied to `.claude/skills/<name>/` (the real Claude Code convention, discovered automatically with frontmatter-driven triggering) instead of only writing flattened rules files; the legacy `.clauderules` / `.claudecode.json` outputs are still written for older tooling.
+- **Skill eval prompt seeds.** Every bundled skill now carries committed `evals/evals.json` test prompts (skill-creator schema) so revisions can be benchmarked; eval files are filtered out of all exports (packs, manifests, `.claude/skills` installs).
+- **Skills drift guard.** A new content-invariant test (`test/commands/skills-content.test.js`) fails CI when a CLI command is added or renamed without updating the `sfdt-cli` skill, and enforces frontmatter (name/description/license) and eval-seed presence for every skill.
+- **Skills publishing guide.** `docs/skills-publishing.md` documents distributing the pack to skill libraries (standalone `npx skills` repo, claude.ai `.skill` uploads) with a per-release checklist; `docs/sfdt-site-drafts/skills.mdx` is a ready-to-copy docs-site page.
+
+### Changed
+
+- **Bundled skills audited and refreshed** (see `docs/skills-audit-2026-07-12.md`): the `sfdt-cli` skill now documents all 42 commands (was ~18) including `deploy --smart` and the multi-provider AI system; fixed wrong CLI syntax in `sf-data` (`sf data import bulk`), `sf-pmd-scan` (Code Analyzer v5 `--config-file`/`--target`), and `sf-flow-review` (scanner flags, contradictory `$Label` guidance); removed project-specific leftovers; descriptions made more assertive about trigger contexts; every skill now declares `license: Apache-2.0`.
+
 ## [0.16.1] - 2026-07-09
 
 ### Security

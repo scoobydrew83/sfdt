@@ -1,0 +1,23 @@
+{
+  "skill_name": "sf-flow-review",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "review Case_Escalation_Flow.flow-meta.xml — support says users sometimes get an 'unhandled fault' error banner when they close cases",
+      "expected_output": "Finds missing faultConnector on DML elements as the likely cause; full checklist pass with CRITICAL/HIGH/MEDIUM findings and the standard output format",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "we have like 6 record-triggered flows on Opportunity and updates feel slow, plus two of them seem to fight over the Stage field. can you untangle this?",
+      "expected_output": "Reviews trigger order/timing collisions (same object + event), recommends consolidation or orchestration; suggests sfdt flow conflicts / a scanner when available",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "admin built a flow with 45 elements and 4 loops that scores leads. should this stay a flow or become apex? she really doesn't want to lose the ability to tweak it",
+      "expected_output": "Applies the Flow vs Apex decision guide (element count, loops, performance) with a balanced recommendation acknowledging admin maintainability",
+      "files": []
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "skill_name": "sfdt-cli",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "set up sfdt in this salesforce project and wire up a PR pipeline that only deploys what changed, validating against the uat org",
+      "expected_output": "sfdt init, then sfdt ci init --provider github --type deploy (smart delta deploy with --dry-run validation); explains the .sfdt/ config it created",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I want a scheduled weekly org health report for prod posted to our slack channel. we already have sfdt configured",
+      "expected_output": "Configures notifications channels (webhookUrlEnv env-var name, not inline secret), uses sfdt monitor all --notify / sfdt ci init --type monitor for the schedule",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "sfdt should be able to show me which flows would collide on the same record before I deploy — does it do that? if not, add it",
+      "expected_output": "Points to the existing sfdt flow conflicts command rather than reimplementing; if extending, follows references/development.md (thin command, lib logic, config template + schema in lockstep)",
+      "files": []
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 ---
 name: sf-apex-review
+license: Apache-2.0
 description: Production-grade Apex code review for this Salesforce project. Catches SOQL/DML in loops, CRUD/FLS gaps, missing bulkification, hardcoded IDs, empty catches, stale API versions, deprecated testMethod, Trigger.oldMap omissions, Datetime/Date type mismatches, unbounded @AuraEnabled queries, null relationship traversals, Database.Stateful waste, global vs public misuse, constant expressions inside loops, and missing batch idempotency guards. Use whenever reviewing or writing any .cls or .trigger file, or when asked to audit, review, check, or security-scan any Apex code — even if the user does not explicitly say "apex review".
 triggers:
   - apex review
@@ -131,7 +132,7 @@ if (!alreadyProcessed.contains(invoice.Id)) {
 - No bulk test (200+ records) — the governor limit batch size
 - Missing negative/error path tests
 - No `@testSetup` when setup data is shared
-- Test methods with no meaningful assertions (`System.assert(true)`, asserting non-null only)
+- Test methods with no meaningful assertions (`System.assert(true)`, asserting non-null only); prefer the modern `Assert` class (`Assert.areEqual`, `Assert.isTrue`) with a failure message in new code
 - Hardcoded org-specific IDs (Record Type IDs, User IDs) — these break in scratch orgs and sandboxes; use `Schema.SObjectType.Obj__c.getRecordTypeInfosByDeveloperName().get('DeveloperName').getRecordTypeId()`
 
 **SOQL Results Not Cached in Static Variables**

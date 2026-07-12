@@ -1,0 +1,23 @@
+{
+  "skill_name": "sf-lwc",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "build me a component for the account record page that lists the account's open cases in a table with a refresh button. should look native, our org is very SLDS-strict",
+      "expected_output": "Complete bundle (html/js/js-meta.xml) with @wire Apex, lightning-datatable or SLDS markup, lightning__RecordPage target, error toast handling",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "my child component fires a CustomEvent('rowSelected') but the parent's onrowselected handler never runs, been stuck on this for an hour",
+      "expected_output": "Explains lowercase event-name rule (rowselected or better a short verb like select), listener naming on+event, bubbles/composed guidance",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "code review this lwc js file — I used if:true in the template and querySelector to hide a div, works fine locally but reviewer flagged it",
+      "expected_output": "Flags deprecated if:true (use lwc:if) and direct DOM manipulation (use reactive property + conditional template); notes @track is rarely needed",
+      "files": []
+    }
+  ]
+}

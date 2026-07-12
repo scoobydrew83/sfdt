@@ -1,6 +1,7 @@
 ---
 name: sf-scratch-org
-description: Create and manage Salesforce scratch orgs — create, push source, pull changes, run tests, open browser, manage lifecycle. Activates when discussing scratch orgs, dev orgs, or local development setup.
+license: Apache-2.0
+description: Create and manage Salesforce scratch orgs — create, push source, pull changes, assign permsets, seed data, and manage lifecycle. Use whenever the user mentions scratch orgs, Dev Hub, spinning up a dev/test environment, source push/pull conflicts, or setting up local Salesforce DX development — even if they just say "give me a fresh org".
 triggers:
   - scratch org
   - create org
@@ -13,6 +14,8 @@ triggers:
 # Scratch Org Management Skill
 
 You manage the full scratch org lifecycle for this Salesforce DX project.
+
+If the project uses the sfdt CLI (`.sfdt/` directory present), `sfdt scratch create|delete|list` wraps the commands below with the project's configured definition file, and `sfdt scratch pool` maintains a pool of pre-created orgs so developers don't wait on org creation. Prefer those; use the raw `sf` commands for one-offs.
 
 ## Prerequisites Check
 
@@ -176,7 +179,7 @@ sf project retrieve start --target-org dev-scratch --ignore-conflicts
 
 ## Scratch Org Limits
 
-- Default: 6 active scratch orgs per Dev Hub
+- Active-org and daily-creation allocations vary by Dev Hub edition (e.g. Developer Edition allows far fewer than Enterprise/Unlimited)
+- Check the actual allocation: `sf limits api display --target-org <devHubAlias>` (look for `ActiveScratchOrgs` and `DailyScratchOrgs`)
 - Max scratch org duration: 30 days
 - Always delete expired/unused orgs: `sf org delete scratch`
-- Check remaining allocation: `sf limits api display --target-org <devHubAlias>`

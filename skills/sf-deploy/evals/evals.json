@@ -1,0 +1,23 @@
+{
+  "skill_name": "sf-deploy",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I changed 3 apex classes and a flow, get them into the QA sandbox (alias qa2) but don't run the whole test suite, it takes 40 min",
+      "expected_output": "Confirms target org and scope, uses sf project deploy start with the specific paths and an appropriate non-prod test level (or sfdt deploy --smart when .sfdt/ exists)",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "prod deploy is friday. we validated everything yesterday and got a job id back — how do I promote that validation without re-running all the tests?",
+      "expected_output": "Quick Deploy: sf project deploy quick --job-id <id> against the validated deploy; notes the validation expiry window",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "we're deleting the old Region__c field and two obsolete classes as part of this release. how do I structure the deploy so nothing breaks?",
+      "expected_output": "Destructive changes flow: package.xml + destructiveChangesPost.xml (or Pre), deploy ordering considerations, validate first",
+      "files": []
+    }
+  ]
+}

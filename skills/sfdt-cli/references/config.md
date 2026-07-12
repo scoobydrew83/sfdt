@@ -25,19 +25,37 @@ Created by `sfdt init` in the project root as `.sfdt/`:
     "notifications": false,
     "releaseManagement": true
   },
+  "ai": {
+    "provider": "claude",
+    "baseURL": "",
+    "model": "",
+    "apiKeyEnv": ""
+  },
   "deployment": {
-    "coverageThreshold": 75
+    "coverageThreshold": 75,
+    "smart": {}
   },
   "manifestDir": "manifest/release",
   "notifications": {
-    "slack": {
-      "webhookUrl": "https://hooks.slack.com/..."
-    }
+    "enabled": true,
+    "channels": [
+      {
+        "type": "slack",
+        "webhookUrlEnv": "SLACK_WEBHOOK_URL",
+        "events": ["deploy-failure", "snapshot"],
+        "severityThreshold": "warn"
+      }
+    ]
   }
 }
 ```
 
-**Required keys** (validated at load): `defaultOrg`, `features`
+Notes:
+- `ai.provider` is one of `claude` | `gemini` | `openai` | `http`. For `http`, set `ai.baseURL`, `ai.model`, and `ai.apiKeyEnv` — the **name** of the env var holding the API key; the key itself is never stored in config.
+- Notification channel secrets are likewise referenced by env-var name (`webhookUrlEnv`, SMTP `*Env`). The legacy `notifications.slack.webhookUrl` shape still works for back-compat.
+- The full shape (including `audit`, `monitoring`, `docs`, and `deployment.smart` blocks) lives in `src/templates/sfdt.config.json` — the canonical source of truth for keys and defaults.
+
+**Required keys** (validated at load): `defaultOrg`, `features`. Config is validated by AJV against `src/lib/config-schema.json` with `additionalProperties: false` — an unknown key fails `validateConfig()` at load time.
 
 ### environments.json
 
@@ -133,6 +151,8 @@ These are injected by `loadConfig()` and available to commands:
 | `SFDT_PACKAGE_DIRS` | `config.packageDirectories` | JSON array of all package paths |
 | `SFDT_MANIFEST_LAYOUT` | `config.manifestLayout` | `'flat'` (`'flat'` or `'subpath'`) |
 | `SFDT_CHANGELOG_DIR` | `config.changelogDir` | `'changelogs'` |
+| `SFDT_PARALLEL_DELAY` | `config.testConfig.parallelDelay` | script default `1` (seconds between parallel batches; exported env wins) |
+| `SFDT_DEFAULT_BRANCH` | `config.defaultBranch` | `'main'` (exported env wins) |
 
 ### Per-invocation env vars
 
@@ -146,12 +166,22 @@ Set by individual commands via `env:` option in `runScript()` calls — not part
 | `SFDT_RELEASE_NAME` | release, manifest | Full release label (semver, free-form, or date) |
 | `SFDT_CHANGELOG_FILE` | release, changelog | Resolved changelog file path |
 | `SFDT_DEPLOY_SOURCE_DIR` | deploy | Source directory path for folder-mode deploys; empty string for manifest-mode |
+| `SFDT_SMOKE_TESTS` | smoke | Comma-joined `config.smokeTests.testClasses` |
+| `SFDT_ANALYZER_INCLUDE_FIXES` | quality `--include-fixes` | `'true'` → Code Analyzer adds `--include-fixes --include-suggestions` |
+| `SFDT_TAG_RELEASE` / `SFDT_CREATE_PR` / `SFDT_NOTIFY_SLACK` | deploy `--tag`/`--create-pr`/`--notify` | Post-deploy tagging, PR creation, notifications |
+| `SFDT_DESTRUCTIVE_TIMING` | deploy | `'pre'` \| `'post'` (default) \| `'none'` \| `'only'` — when destructive changes apply |
+| `SFDT_VALIDATION_JOB_ID` | deploy | A validation Id (`0Af…`) for Quick Deploy — promotes a prior validation via `sf project deploy quick` |
 
 ## Adding new config fields
 
-When extending sfdt with new config:
+When extending sfdt with new config, three places move in lockstep:
 
-1. Add the field to the appropriate `.sfdt/*.json` file
-2. Add the env var mapping to `buildScriptEnv()` in `src/lib/script-runner.js`
-3. Update the SFDT_ env var table in the project CLAUDE.md
-4. If the field should be prompted during init, update `src/commands/init.js`
+1. Add the key (with default) to `src/templates/sfdt.config.json` — the canonical template `sfdt init` reads
+2. Add it to `src/lib/config-schema.json` — AJV validates with `additionalProperties: false`, so a key missing from the schema fails `validateConfig()` at runtime
+3. Read it in the consuming code
+
+Then, if applicable:
+
+4. Add the env var mapping to `buildScriptEnv()` in `src/lib/script-runner.js`
+5. Update the SFDT_ env var table in the project CLAUDE.md (and this file)
+6. If the field should be prompted during init, update `src/commands/init.js`

@@ -1,6 +1,7 @@
 ---
 name: sf-deploy
-description: Salesforce CLI deployment skill for this project — deploy metadata to sandbox or scratch org, retrieve metadata, run tests, cancel stuck deploys. Activates when discussing deploy, retrieve, push, or sf project commands.
+license: Apache-2.0
+description: Salesforce CLI deployment skill for this project — deploy metadata to any org, retrieve metadata, validate, quick-deploy, and cancel stuck deploys. Use whenever the user wants to deploy, push, retrieve, validate, or promote Salesforce metadata, mentions package.xml or destructive changes, or asks "how do I get this to the sandbox/production" — even if they don't say "deploy".
 triggers:
   - deploy
   - retrieve
@@ -13,6 +14,17 @@ triggers:
 # Salesforce Deployment Skill
 
 You assist with all Salesforce CLI (sf) deployment operations for this project. Always use the modern `sf` CLI (not deprecated `sfdx`).
+
+If the project uses the sfdt CLI (`.sfdt/` directory present), prefer its deployment flow — it adds preflight checks, delta computation, smart test selection, and rollback:
+
+```bash
+sfdt preflight              # pre-deploy validation gates
+sfdt deploy --smart         # delta deploy: only changed metadata, minimal safe test level
+sfdt deploy --smart --dry-run   # validate-only
+sfdt rollback               # roll back a deployment
+```
+
+Use the raw `sf` commands below when sfdt is not configured or for one-off operations.
 
 ## Before Deploying — Always Confirm
 
@@ -109,18 +121,17 @@ sf project retrieve start --target-org <scratchAlias>
 
 ## Destructive Changes
 
-```bash
-# Create a destructive package
-sf project generate manifest \
-  --source-dir force-app \
-  --output-dir manifest
+A destructive deploy needs two files: a (possibly empty) `package.xml` and a `destructiveChangesPre.xml` or `destructiveChangesPost.xml` listing the members to delete (same XML format as package.xml).
 
-# Deploy with destructive changes
+```bash
+# Deploy with destructive changes applied after the deploy
 sf project deploy start \
   --manifest manifest/package.xml \
   --post-destructive-changes manifest/destructiveChangesPost.xml \
   --target-org <alias>
 ```
+
+With sfdt: `sfdt manifest --destructive <path>` generates the destructive manifest from the git diff (deleted files).
 
 ## Test Levels Explained
 
@@ -135,7 +146,7 @@ sf project deploy start \
 
 Before deploying to Production:
 - [ ] Validate first with `--dry-run` or `deploy validate`
-- [ ] Test coverage >= 75% (project target: 90%)
+- [ ] Test coverage >= 75% (or the project's configured threshold — `.sfdt/config.json` → `deployment.coverageThreshold`)
 - [ ] Run local tests pass cleanly
 - [ ] No pending scratch org-only config (permsets, test data)
 - [ ] Review destructive changes manifest if deleting metadata
