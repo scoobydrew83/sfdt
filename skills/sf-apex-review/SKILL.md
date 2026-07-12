@@ -131,7 +131,7 @@ if (!alreadyProcessed.contains(invoice.Id)) {
 - No bulk test (200+ records) — the governor limit batch size
 - Missing negative/error path tests
 - No `@testSetup` when setup data is shared
-- Test methods with no meaningful assertions (`System.assert(true)`, asserting non-null only)
+- Test methods with no meaningful assertions (`System.assert(true)`, asserting non-null only); prefer the modern `Assert` class (`Assert.areEqual`, `Assert.isTrue`) with a failure message in new code
 - Hardcoded org-specific IDs (Record Type IDs, User IDs) — these break in scratch orgs and sandboxes; use `Schema.SObjectType.Obj__c.getRecordTypeInfosByDeveloperName().get('DeveloperName').getRecordTypeId()`
 
 **SOQL Results Not Cached in Static Variables**

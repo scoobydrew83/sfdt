@@ -1,6 +1,6 @@
 ---
 name: sf-org-audit
-description: Full health audit of this Salesforce project — summarizes Apex class count, test coverage gaps, trigger patterns, flow inventory, LWC count, CI/CD status, and generates a prioritized remediation report. Run this for a top-level health check.
+description: Full health audit of this Salesforce project — summarizes Apex class count, test coverage gaps, trigger patterns, flow inventory, LWC count, CI/CD status, and generates a prioritized remediation report. Use whenever the user asks for a health check, audit, project analysis, technical-debt assessment, or "how bad is this org/codebase" — anything that calls for a whole-project view rather than a single-file review.
 triggers:
   - org audit
   - project audit
@@ -73,8 +73,8 @@ grep -rn "catch.*{" force-app --include="*.cls" -A 1 | grep -B 1 "^--$\|^}"
 # Logic in triggers (high — triggers should be 1-3 lines)
 wc -l force-app/main/default/triggers/*.trigger 2>/dev/null | sort -rn | head -10
 
-# Test classes without assertions (medium)
-grep -rL "System.assert\|System.assertEquals\|System.assertNotEquals" \
+# Test classes without assertions (medium) — covers legacy System.assert* and modern Assert class
+grep -rL "System.assert\|Assert\." \
   $(grep -rl "@isTest" force-app --include="*.cls") 2>/dev/null
 
 # Missing @testSetup (medium)

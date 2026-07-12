@@ -1,6 +1,6 @@
 ---
 name: sf-flow-review
-description: Review Salesforce Flow metadata for best practices — fault paths, bulk safety, element naming, auto-layout, duplicate automation, and Flow vs Apex decision guidance. Activates when discussing flows, flow-meta.xml files, or automation.
+description: Review Salesforce Flow metadata for best practices — fault paths, bulk safety, element naming, auto-layout, duplicate automation, and Flow vs Apex decision guidance. Use whenever reviewing, writing, or debugging any .flow-meta.xml file, or when the user asks about flows, record-triggered automation, process builder migration, or "why is my flow failing" — even if they don't say "review".
 triggers:
   - flow review
   - review flow
@@ -46,7 +46,7 @@ Record-Triggered flows fire on every record in a transaction. Avoid:
 - Multiple Get Records on the same object — consolidate with filters
 
 #### Hardcoded IDs in Flows
-Any `{!$Label.*}` or literal ID values (`00Q...`, `005...`) in text templates or assignments — use Custom Metadata or Custom Labels instead.
+Literal record ID values (`00Q...`, `005...`, or any 15/18-character ID) in decision criteria, assignments, or text templates break on sandbox refresh and between environments. Replace with Custom Metadata, Custom Labels (`{!$Label.x}`), or a Get Records lookup by DeveloperName.
 
 ### HIGH Priority
 
@@ -95,22 +95,29 @@ Check that flows have exactly ONE active version. Multiple versions waste org li
 #### Schedule-Triggered Flows
 Verify batch size is considered — schedule flows process records in batches of 200.
 
-## Running Lightning Flow Scanner
+## Automated Scanners
 
-If the sf CLI plugin is installed:
+If the project uses the sfdt CLI (`.sfdt/` directory present), it has native flow analysis built in — prefer it:
+```bash
+# Health analysis of every Flow with an active version (writes logs/flow-scan-latest.json)
+sfdt flow scan --org <alias> --json
+
+# Find record-triggered flows that collide on the same object + timing + event
+sfdt flow conflicts --org <alias> --json
+```
+
+Alternatively, the Lightning Flow Scanner sf plugin:
 ```bash
 # Install flow scanner plugin
 sf plugins install lightning-flow-scanner
 
-# Scan all flows
-sf flow scan \
-  --directory force-app/main/default/flows \
-  --format json \
-  --output flow-scan-results.json
+# Scan all flows in the default directory (JSON output for parsing)
+sf flow scan --json
 
-# Scan specific flow
+# Scan specific flows and fail CI on errors
 sf flow scan \
-  --directory force-app/main/default/flows/MyFlow.flow-meta.xml
+  --files force-app/main/default/flows/MyFlow.flow-meta.xml \
+  --failon error
 ```
 
 ## Flow Metadata Quick Reference

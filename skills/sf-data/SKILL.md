@@ -1,6 +1,6 @@
 ---
 name: sf-data
-description: SOQL query writing, data export/import, upsert operations, and data management for this Salesforce project. Activates when writing SOQL, managing data, or running data operations with SF CLI.
+description: SOQL query writing, data export/import, bulk upsert/delete, and data management for this Salesforce project. Use whenever writing or reviewing any SOQL query, loading or extracting org data, seeding sandboxes, running anonymous Apex for data fixes, or when the user mentions CSV loads, tree exports, aggregate queries, or governor limits on queries.
 triggers:
   - soql
   - SELECT
@@ -99,28 +99,36 @@ sf data query \
 
 ### Insert / Update / Upsert records
 ```bash
-# Insert from CSV
-sf data import legacy \
-  --sobject-type Account \
+# Bulk insert from CSV (Bulk API 2.0)
+sf data import bulk \
+  --sobject Account \
   --file data/accounts.csv \
-  --target-org <alias>
+  --target-org <alias> \
+  --wait 10
 
 # Upsert using external ID
 sf data upsert bulk \
-  --sobject-type Account \
+  --sobject Account \
   --file data/accounts.csv \
   --external-id External_Id__c \
   --target-org <alias> \
   --wait 10
 
-# Delete records
+# Delete records (CSV of record IDs)
 sf data delete bulk \
-  --sobject-type Account \
+  --sobject Account \
   --file data/accounts-to-delete.csv \
   --target-org <alias>
+
+# Single record operations
+sf data create record --sobject Account --values "Name='Test Co'" --target-org <alias>
+sf data update record --sobject Account --record-id <id> --values "Phone='555-0100'" --target-org <alias>
 ```
 
 ### Export / Import with relationships (tree format)
+
+If the project uses the sfdt CLI (`.sfdt/` directory present), `sfdt data export` / `sfdt data import` wrap these tree commands with named, reusable data-set definitions — prefer them for repeatable sandbox/scratch seeding.
+
 ```bash
 # Export with related records
 sf data export tree \

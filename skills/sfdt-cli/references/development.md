@@ -67,10 +67,13 @@ register<Name>Command(program);
 
 ```
 scripts/
-  core/       # deploy, test, release, pull
-  new/        # preflight, rollback, smoke, drift
-  quality/    # code-analyzer, test-analyzer
-  utils/      # shared helper functions
+  core/         # deploy, test, release, pull
+  ops/          # preflight, rollback, smoke, drift
+  quality/      # code-analyzer, test-analyzer
+  ci/           # CI pipeline templates (interpolated by `sfdt ci init`)
+  integration/  # integration helpers
+  lib/          # shared shell libraries (e.g. metadata-parser.sh)
+  utils/        # shared helper functions
 ```
 
 ### Rules
@@ -100,6 +103,10 @@ fi
 ### Step 1 — Add to the template (required first)
 
 `src/templates/sfdt.config.json` is the source of truth. `sfdt init` reads it directly via `fs.readJson`. Add the key with its default value here.
+
+### Step 1b — Add to the schema (required, same commit)
+
+Config is validated by AJV against `src/lib/config-schema.json` with `additionalProperties: false` on every object. A key that ships in the template (or is read by code) but is missing from the schema fails `validateConfig()` at runtime with `Invalid configuration: "<path>" contains unknown key "<key>"`. Template, schema, and consuming code move in lockstep.
 
 ### Step 2 — Add a default in config.js (if needed)
 
@@ -189,6 +196,7 @@ Before marking any CLI change complete:
 - [ ] Command registered in `src/cli.js`
 - [ ] Shell script de-parameterized (no positional args)
 - [ ] Config key added to `src/templates/sfdt.config.json` if applicable
+- [ ] Config key added to `src/lib/config-schema.json` (AJV rejects unknown keys)
 - [ ] `buildScriptEnv()` updated if new `SFDT_` var added
 - [ ] CLAUDE.md env var table updated if new `SFDT_` var added
 - [ ] Tests written or updated
@@ -196,6 +204,7 @@ Before marking any CLI change complete:
 - [ ] `npm run lint` clean
 - [ ] `references/commands.md` updated if new/changed command
 - [ ] `references/config.md` updated if new config key
+- [ ] Docs site (`sfdt-site` repo → https://sfdt.dev/) updated for any user-facing change
 
 ---
 
