@@ -1,0 +1,23 @@
+{
+  "skill_name": "sf-pmd-scan",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "run static analysis on our apex and tell me what to fix first — we've never scanned this codebase and I'm bracing for the worst",
+      "expected_output": "Installs/verifies Code Analyzer v5, runs a full scan (or sfdt quality when .sfdt/ exists), parses by severity and frequency, produces the prioritized summary format",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "add a code quality gate to our github actions so PRs fail on any critical PMD violation and more than 5 highs",
+      "expected_output": "Uses the official forcedotcom/run-code-analyzer@v2 action with num-sev1/num-sev2 outputs for the gate, not a hand-rolled shell step",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "our team wants to relax ExcessiveClassLength to 1000 lines and drop the FieldDeclarationsShouldBeAtStart rule but keep everything else strict. how do I set that up with code analyzer v5?",
+      "expected_output": "Custom PMD ruleset XML wired in via code-analyzer.yml custom_rulesets + --config-file (not a per-run ruleset flag)",
+      "files": []
+    }
+  ]
+}

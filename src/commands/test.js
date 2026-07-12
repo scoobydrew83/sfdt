@@ -8,6 +8,7 @@ import { getPrompt } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { ExitCode, resolveExitCode } from '../lib/exit-codes.js';
 import { buildLogicTestArgs } from '../lib/logic-test.js';
+import { detectLwcTests, buildLwcTestArgs } from '../lib/lwc-test.js';
 
 /**
  * On a test failure, offer AI failure analysis (when `features.ai` is on and a
@@ -90,6 +91,34 @@ async function runLogicTests(config, options) {
   }
 }
 
+/**
+ * Run the project's LWC (Jest) unit tests locally — a thin wrapper over the
+ * runner package.json already wires up (npm run test:unit, or the sfdx-lwc-jest
+ * binary). Detection lives in `src/lib/lwc-test.js`.
+ */
+async function runLwcTests(config, options) {
+  const lwc = await detectLwcTests(config._projectRoot, config.packageDirectories);
+  if (!lwc.detected) {
+    throw new Error(
+      `LWC tests not detected: ${lwc.reason}. ` +
+        'Install @salesforce/sfdx-lwc-jest and add a "test:unit" script to package.json, then add __tests__ next to your components.',
+    );
+  }
+  const { command, args } = buildLwcTestArgs(lwc.runner);
+  print.header('Running LWC (Jest) tests');
+  if (options.dryRun) {
+    print.info(`Would run: ${command} ${args.join(' ')}`);
+    return;
+  }
+  try {
+    await execa(command, args, { cwd: config._projectRoot, stdio: 'inherit' });
+    print.success('All LWC tests passed.');
+  } catch (err) {
+    print.error('LWC tests failed.');
+    process.exitCode = resolveExitCode(err);
+  }
+}
+
 export function registerTestCommand(program) {
   program
     .command('test')
@@ -99,6 +128,7 @@ export function registerTestCommand(program) {
     .option('--dry-run', 'Show what would be executed without running')
     .option('--class-names <list>', 'Run only these Apex test classes (comma-separated); overrides the configured test classes for this run')
     .option('--logic', 'Run Apex + Flow tests together via `sf logic run test` (Spring \'26 beta; needs "View All Data")')
+    .option('--lwc', 'Run the project\'s LWC (Jest) unit tests locally (npm run test:unit or sfdx-lwc-jest)')
     .option('--org <alias>', 'Target org for --logic (default: config.defaultOrg)')
     .option('--test-level <level>', 'For --logic: RunLocalTests | RunAllTestsInOrg | RunSpecifiedTests')
     .option('--tests <list>', 'For --logic: comma-separated test names (Apex classes and FlowTesting.<name>)')
@@ -112,6 +142,11 @@ export function registerTestCommand(program) {
 
         if (options.logic) {
           await runLogicTests(config, options);
+          return;
+        }
+
+        if (options.lwc) {
+          await runLwcTests(config, options);
           return;
         }
 

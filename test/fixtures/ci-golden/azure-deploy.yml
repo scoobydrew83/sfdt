@@ -1,0 +1,19 @@
+trigger: none
+pr:
+  branches:
+    include:
+      - '*'
+pool:
+  vmImage: ubuntu-latest
+steps:
+  - checkout: self
+    fetchDepth: 0
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '22'
+  - script: npm install --global @salesforce/cli
+    displayName: Install Salesforce CLI
+  - script: echo "$(SFDX_AUTH_URL)" | sf org login sfdx-url --sfdx-url-stdin --alias golden-org --set-default
+    displayName: Authenticate to golden-org
+  - script: npx --yes @sfdt/cli@latest deploy --smart --org golden-org --delta-base "origin/$(System.PullRequest.TargetBranch)" --dry-run
+    displayName: Smart delta validation

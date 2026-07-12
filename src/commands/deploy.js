@@ -11,6 +11,7 @@ import { isAiAvailable, runAiPrompt } from '../lib/ai.js';
 import { getPrompt } from '../lib/prompts.js';
 import { runFixLoop } from '../lib/agent-loop.js';
 import { postPrComment } from '../lib/github-pr.js';
+import { dispatch, notificationsConfigured } from '../lib/notifier.js';
 
 async function runPreflight(config, { dryRun } = {}) {
   print.info('Running preflight checks...');
@@ -156,6 +157,28 @@ async function runSmartDeploy(config, options) {
       process.exitCode = resolveExitCode(deployErr);
     }
 
+    // Optional lifecycle notification: push the outcome through the same
+    // channels as `sfdt notify deploy-success|deploy-failure`.
+    if (options.notify) {
+      if (!notificationsConfigured(config)) {
+        print.warning('--notify requested but no notification channels are configured — see `sfdt notify --help`.');
+      } else {
+        const event = deployOk ? 'deploy-success' : 'deploy-failure';
+        const verb = options.dryRun ? 'Validation (check-only)' : 'Smart deploy';
+        const ctx = {
+          org,
+          projectName: config.projectName,
+          message: `${verb} of delta ${base}...${head}: ${prep.addCount} additive, ${prep.delCount} destructive component(s), test level ${prep.testLevel}.`,
+        };
+        const results = await dispatch(event, ctx, config).catch((e) => {
+          print.warning(`Notification dispatch failed: ${e.message}`);
+          return [];
+        });
+        const sent = results.filter((r) => r.ok).map((r) => r.channel);
+        if (sent.length) print.info(`Sent ${event} notification to: ${sent.join(', ')}`);
+      }
+    }
+
     // Optional PR decoration: post the delta + outcome to the current PR.
     if (options.prComment) {
       const verb = options.dryRun ? 'Validation' : 'Deploy';
@@ -225,7 +248,7 @@ export function registerDeployCommand(program) {
     .option('--agent', 'Non-interactive agent mode (no AI prompts block on input)')
     .option('--tag', 'Tag the release in git (v<version>) after a successful deploy (standard manifest deploy only)')
     .option('--create-pr', 'Create a PR from the current branch to the default branch (via gh) after a successful deploy (standard manifest deploy only)')
-    .option('--notify', 'Send the deploy success/failure notification (via sfdt notify) (standard manifest deploy only)')
+    .option('--notify', 'Send the deploy success/failure notification through the configured channels (smart and standard manifest deploys)')
     .action(async (options) => {
       try {
         const config = await loadConfig();
@@ -236,7 +259,6 @@ export function registerDeployCommand(program) {
           const inertFlags = [
             options.tag && '--tag',
             options.createPr && '--create-pr',
-            options.notify && '--notify',
           ].filter(Boolean);
           if (inertFlags.length) {
             print.warning(`${inertFlags.join(', ')} only appl${inertFlags.length === 1 ? 'ies' : 'y'} to the standard manifest deploy — ignored with --smart.`);

@@ -15,10 +15,16 @@ export { expectedGaApiVersion };
  * preview release. Returns null on any failure — release info is informational
  * and must degrade gracefully (older sf CLIs lack `sf api request`, orgs may be
  * unreachable, etc.).
+ *
+ * @param {string} orgAlias
+ * @param {object} [options]
+ * @param {number} [options.timeoutMs] - Optional execa subprocess timeout;
+ *   unset preserves prior (no-timeout) behavior.
  */
-export async function detectOrgRelease(orgAlias) {
+export async function detectOrgRelease(orgAlias, { timeoutMs } = {}) {
   try {
-    const resp = await execa('sf', ['api', 'request', 'rest', '/services/data', '--target-org', orgAlias]);
+    const args = ['api', 'request', 'rest', '/services/data', '--target-org', orgAlias];
+    const resp = timeoutMs ? await execa('sf', args, { timeout: timeoutMs }) : await execa('sf', args);
     return releaseFromVersionList(safeParse(resp.stdout));
   } catch {
     return null;

@@ -4,22 +4,21 @@ import { fileURLToPath } from 'url';
 import { loadConfig } from '../lib/config.js';
 import { print, printSplash } from '../lib/output.js';
 import { startGuiServer } from '../lib/gui-server/index.js';
+import { DEFAULT_UI_PORT } from '../lib/ui-port.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
   readFileSync(path.resolve(__dirname, '..', '..', 'package.json'), 'utf-8'),
 );
 
-const DEFAULT_PORT = 7654;
-
 export function registerUiCommand(program) {
   program
     .command('ui')
     .description('Launch the local SFDT web dashboard (test results, drift, preflight)')
-    .option('-p, --port <number>', 'Port to listen on', String(DEFAULT_PORT))
+    .option('-p, --port <number>', 'Port to listen on', String(DEFAULT_UI_PORT))
     .option('--no-open', 'Do not automatically open the browser')
     .action(async (options) => {
-      const port = parseInt(options.port, 10) || DEFAULT_PORT;
+      const port = parseInt(options.port, 10) || DEFAULT_UI_PORT;
 
       let config;
       try {

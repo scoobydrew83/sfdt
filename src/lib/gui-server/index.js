@@ -24,6 +24,7 @@ import { fetchOrgInventory, fetchInventory } from '../org-inventory.js';
 import { isSafeGitRef, resolveBaseRef } from '../git-utils.js';
 import { buildSourceDirArgs } from '../source-dirs.js';
 import { initCache, getDelta, updateCache } from '../pull-cache.js';
+import { DEFAULT_UI_PORT } from '../ui-port.js';
 import { parallelRetrieve } from '../parallel-retrieve.js';
 import { GRAPH_SOURCE_TYPES, resolveQueryFor, neighborsQuery } from '@sfdt/flow-core';
 import { runGapReport } from '../source-dependencies.js';
@@ -98,7 +99,7 @@ const COMMANDS = {
  * @param {string} version - CLI version string
  * @returns {import('express').Application}
  */
-export function createGuiApp(config, version, port = 7654) {
+export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
   let updateInProgress = false;
   let sessionOrg = null;
   const csrfToken = createCsrfToken();

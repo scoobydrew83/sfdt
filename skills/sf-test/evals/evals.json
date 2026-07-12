@@ -1,0 +1,23 @@
+{
+  "skill_name": "sf-test",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "write a test class for InvoiceService.cls — it has a processInvoices(List<Invoice__c>) method with null guards and a catch block that logs errors. we need bulk coverage too",
+      "expected_output": "Test class with @testSetup, happy path, 200-record bulk test, negative/null cases, exception path; meaningful Assert.areEqual assertions with messages",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "deployment to prod failed at 72% coverage. figure out which classes are dragging us down and write tests for the worst one, org alias is uat",
+      "expected_output": "Runs tests with --code-coverage (or sfdt coverage), identifies lowest classes vs the configured threshold, reads uncovered branches, generates targeted test methods",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "reviewer says my tests are 'assertion-free theatre'. they all do System.assert(true) at the end so coverage passes. can you fix TestOrderHelper.cls properly",
+      "expected_output": "Replaces meaningless assertions with real state verification per method, flags the anti-pattern list, keeps coverage while adding actual verification",
+      "files": []
+    }
+  ]
+}

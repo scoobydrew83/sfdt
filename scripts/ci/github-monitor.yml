@@ -3,7 +3,7 @@
 # the snapshot to configured notification channels.
 #
 # Required repository secrets (Settings > Secrets and variables > Actions):
-#   SFDX_AUTH_URL        sfdx auth URL for {{org}} (sf org auth show-sfdx-auth-url; on sf CLI < 2.136 use sf org display --verbose --json)
+{{authSecretsDoc}}
 #   SLACK_WEBHOOK_URL    (optional) Slack incoming webhook
 #   TEAMS_WEBHOOK_URL    (optional) Microsoft Teams incoming webhook
 name: SFDT Org Monitoring
@@ -21,10 +21,7 @@ jobs:
           node-version: '{{nodeVersion}}'
       - name: Install Salesforce CLI
         run: npm install --global @salesforce/cli
-      - name: Authenticate to {{org}}
-        run: echo "$SFDX_AUTH_URL" | sf org login sfdx-url --sfdx-url-stdin --alias {{org}} --set-default
-        env:
-          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+      {{authSteps}}
       - name: Run org monitoring
         run: npx --yes @sfdt/cli@latest monitor all --org {{org}} --backup --notify --json
         env:

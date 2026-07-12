@@ -342,6 +342,7 @@ sfdt test --analyze
 sfdt test --legacy
 sfdt test --logic                                   # Apex + Flow tests in one pass
 sfdt test --logic --tests FooTest,FlowTesting.MyFlow --code-coverage
+sfdt test --lwc                                      # local LWC (Jest) unit tests
 ```
 
 **Options:**
@@ -357,6 +358,7 @@ sfdt test --logic --tests FooTest,FlowTesting.MyFlow --code-coverage
 | `--category <cat>` | For `--logic`: restrict to `Apex` or `Flow` |
 | `--code-coverage` | For `--logic`: retrieve code coverage results |
 | `--wait <minutes>` | For `--logic`: streaming wait timeout (default 30) |
+| `--lwc` | Run the project's local LWC (Jest) unit tests. Detects a wired-up Jest runner (`@salesforce/sfdx-lwc-jest` dependency or a `test:unit` script) plus `__tests__` directories, then runs `npm run test:unit` or the `sfdx-lwc-jest` binary |
 
 > `--logic` is a thin pass-through to `sf logic run test`. On failure (with `features.ai` enabled) sfdt offers the same AI failure analysis as the Apex runner, feeding it the captured logic-test output.
 
@@ -397,6 +399,7 @@ sfdt quality --generate-stubs --dry-run  # preview stubs without writing files
 | `--all` | Run both `quality/code-analyzer.sh` and `quality/test-analyzer.sh` |
 | `--fix-plan` | After analysis, send the output to AI for a prioritized, file-specific fix plan |
 | `--include-fixes` | Ask **Code Analyzer v5** for actionable fixes/suggestions in the scan output (`--include-fixes --include-suggestions`); the richer output feeds `--fix-plan` |
+| `--output-file <path>` | Also write the Code Analyzer v5 results to a file; the format follows the extension (e.g. `.sarif` for GitHub code-scanning upload). Requires v5 — v4 logs a warning and skips |
 | `--generate-stubs` | Generate `@IsTest` stub classes for Apex classes that have no test class |
 | `--dry-run` | Preview `--generate-stubs` output without writing any files |
 
@@ -1212,15 +1215,23 @@ sfdt extension stats --limit 20
 
 ### sfdt doctor
 
-End-to-end diagnostic for the extension stack. Checks that the bridge is reachable, the native host is registered, the kill-switch config is readable, and the telemetry snapshot exists.
+End-to-end local diagnostic. The **environment** group checks that `sf`, `node`,
+and `git` are present, that `.sfdt/` config is valid, that the configured AI
+provider is reachable (when enabled), and that the default org is reachable
+(always run, but warn-only — it never fails the command and is bounded by a
+timeout). The **extension** group checks the bridge, native host, kill-switch
+file, and telemetry snapshot. With no flag both groups run.
 
 ```bash
-sfdt doctor --extension                # pretty output
-sfdt doctor --extension --json         # CI-friendly structured output
-sfdt doctor --extension --port 8080    # bridge runs on a non-default port
+sfdt doctor                 # environment + extension groups
+sfdt doctor --core          # environment checks only
+sfdt doctor --extension     # extension checks only
+sfdt doctor --org myAlias   # check a specific org's connectivity
+sfdt doctor --json          # CI-friendly structured output
+sfdt doctor --port 8080     # bridge runs on a non-default port
 ```
 
-Exits non-zero if any check fails — wire this into CI to detect a broken extension installation early.
+Exits non-zero if any check fails (org connectivity never fails) — wire this into CI to detect a broken install early.
 
 ### sfdt feature-flags
 

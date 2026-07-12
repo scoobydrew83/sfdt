@@ -2,7 +2,7 @@
   "name": "sfdt-devtools",
   "displayName": "SFDT for Salesforce",
   "description": "A full command center for the sfdt CLI in VS Code: a grouped Commands tree for every sfdt command, a live Status panel (org, branch, versions), the Org Health view, an org picker, the embedded dashboard, and per-org window theming.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "publisher": "sfdt",

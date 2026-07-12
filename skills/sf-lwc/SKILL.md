@@ -1,6 +1,7 @@
 ---
 name: sf-lwc
-description: Lightning Web Component development guidance — component structure, wire adapters, event patterns, SLDS styling, accessibility, and common pitfalls. Activates when working on LWC files (.js-meta.xml, .html, .js for LWC).
+license: Apache-2.0
+description: Lightning Web Component development guidance — component structure, wire adapters, event patterns, SLDS styling, accessibility, and common pitfalls. Use whenever creating, editing, or reviewing any file in an lwc/ bundle (.html template, .js controller, .js-meta.xml), or when the user mentions Lightning components, wire adapters, App Builder properties, or component events — even if they just say "build me a component".
 triggers:
   - lwc
   - lightning web component
@@ -33,6 +34,7 @@ force-app/main/default/lwc/
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- Match the project's sourceApiVersion in sfdx-project.json -->
     <apiVersion>63.0</apiVersion>
     <isExposed>true</isExposed>
     <!-- Where the component can be used -->
@@ -53,9 +55,12 @@ force-app/main/default/lwc/
 
 ## JavaScript Controller Patterns
 
-### Basic component with @api, @track, @wire
+### Basic component with @api and @wire
+
+All fields are reactive by default — `@track` is only needed when you mutate the *contents* of an object or array in place (and even then, prefer reassigning a new object/array instead).
+
 ```javascript
-import { LightningElement, api, wire, track } from 'lwc';
+import { LightningElement, api, wire } from 'lwc';
 import { getRecord, getFieldValue } from 'lightning/uiRecordApi';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import getContacts from '@salesforce/apex/ContactController.getContacts';
@@ -63,7 +68,7 @@ import NAME_FIELD from '@salesforce/schema/Account.Name';
 
 export default class MyComponent extends LightningElement {
     @api recordId;          // Passed from parent or page
-    @track contacts = [];   // Reactive internal state
+    contacts = [];          // Reactive by default — no @track needed for reassignment
 
     error;
     isLoading = false;

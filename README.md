@@ -42,7 +42,7 @@ extension and the [VS Code extension](https://marketplace.visualstudio.com/items
 - **Local web dashboard** for test results, preflight, drift monitoring, and org comparison (`sfdt ui`)
 - **Smart delta deployments** — minimal git-delta package with overwrite protection, automatic test-level selection, optional AI / coding-agent auto-fix (`sfdt deploy --smart`)
 - **Native org health & operations suite** — diagnose (`sfdt audit`), monitor/backup (`sfdt monitor`), dependency analysis (`sfdt dependencies`), and Apex coverage gating (`sfdt coverage`)
-- **CI/CD pipeline templates** for GitHub, GitLab, Azure, and Bitbucket (`sfdt ci init`); PR decoration (`sfdt pr comment`) and cross-org retrofit (`sfdt retrofit`)
+- **CI/CD pipeline templates** for GitHub, GitLab, Azure, and Bitbucket (`sfdt ci init` — monitor, PR validation, approval-gated release, scratch-org CI), plus a published **GitHub Action** (`uses: scoobydrew83/sfdt@v0`); PR decoration (`sfdt pr comment`) and cross-org retrofit (`sfdt retrofit`)
 - **Multi-channel notifications** — Slack, MS Teams, Google Chat, email, webhook, and Grafana Loki, with optional AI executive-summary digests (`sfdt notify`)
 - **Plugin architecture** — extend sfdt with `sfdt-plugin-*` npm packages or local `.sfdt/plugins/` scripts, plus a **Salesforce CLI plugin** exposing every command as `sf sfdt <command>` (`sf plugins install @sfdt/plugin`)
 - Works with **any** Salesforce DX project — no project-specific values hardcoded
@@ -120,7 +120,7 @@ Full install reference — every method plus CI usage — at **[sfdt.dev/cli/ins
 | `sfdt deploy` | Deploy to a Salesforce org | `--managed`, `--skip-preflight`, `--dry-run`, `--source-dir <path>` |
 | `sfdt deploy --smart` | Smart git-delta deploy: minimal package, overwrite protection, auto test-level | `--delta-base <ref>`, `--delta-head <ref>`, `--prod`, `--pr-comment`, `--ai-fix`, `--agent` |
 | `sfdt release` | Generate release manifest + optional AI release notes | `--package <name\|all>`, `--name <label>` |
-| `sfdt test` | Run Apex tests with the enhanced test runner; `--logic` runs unified Apex + Flow tests via `sf logic run test` | `--legacy`, `--analyze`, `--logic`, `--class-names <list>`, `--dry-run` |
+| `sfdt test` | Run Apex tests with the enhanced test runner; `--logic` runs unified Apex + Flow tests via `sf logic run test`; `--lwc` runs the project's local LWC (Jest) unit tests | `--legacy`, `--analyze`, `--logic`, `--lwc`, `--class-names <list>`, `--dry-run` |
 | `sfdt pull` | Pull metadata from the configured org | `--dry-run` |
 | `sfdt preflight` | Run pre-deployment validation checks | `--strict`, `--dry-run` |
 | `sfdt rollback` | Roll back a deployment to a target org | `--org <alias>`, `--dry-run`, `--json` |
@@ -132,7 +132,7 @@ Full install reference — every method plus CI usage — at **[sfdt.dev/cli/ins
 | `sfdt pr comment` | Post the latest audit/monitor snapshot (or `--body`/`--file`) to the current PR via `gh` | `--type <audit\|monitor>`, `--body <md>`, `--file <path>`, `--pr <n>` |
 | `sfdt retrofit` | Retrieve a metadata set from a source org, commit, then smart-deploy to a target (validate-only unless `--execute`) | `--source <alias>`, `--target <alias>`, `--execute` |
 | `sfdt agent-test` | Run an Agentforce agent test (`sf agent test run`) as a CI gate; pass/fail comes from the exit code | `--spec <name>`, `--org <alias>`, `--wait <min>`, `--pass-rate <pct>`, `--notify`, `--pr-comment` |
-| `sfdt ci init` | Generate a CI/CD pipeline (scheduled monitor or PR smart-deploy) for a provider | `--provider <github\|gitlab\|azure\|bitbucket>`, `--type <monitor\|deploy>` |
+| `sfdt ci init` | Generate a CI/CD pipeline (scheduled monitor, PR smart-deploy, approval-gated release, or scratch-org CI) for a provider | `--provider <github\|gitlab\|azure\|bitbucket>`, `--type <monitor\|deploy\|release\|scratch>`, `--auth <sfdx-url\|jwt>`, `--runner <npx\|docker\|action>` |
 
 ### Org Health & Operations
 
@@ -164,7 +164,7 @@ Full install reference — every method plus CI usage — at **[sfdt.dev/cli/ins
 | `sfdt pr-description` | Generate a PR description or Slack message | `--base <ref>`, `--head <ref>`, `--format github\|slack\|markdown`, `--output <path>`, `--commit-limit <n>` |
 | `sfdt review` | AI code review of current branch changes | `--base <branch>` |
 | `sfdt changelog` | Manage changelog files (global or per-package) | subcommands: `generate`, `release <version>`, `check`; `--package <name>` scopes to a specific package |
-| `sfdt quality` | Code & test quality analysis | `--tests`, `--all`, `--fix-plan`, `--generate-stubs`, `--dry-run` |
+| `sfdt quality` | Code & test quality analysis; `--output-file <path>` also writes results to a file (format by extension, e.g. `.sarif` for code-scanning upload) | `--tests`, `--all`, `--fix-plan`, `--generate-stubs`, `--include-fixes`, `--output-file <path>`, `--dry-run` |
 | `sfdt ai prompt <text>` | Run a prompt through the configured AI provider and print the result | — |
 
 ### Platform (Phase 4)
@@ -185,7 +185,7 @@ Full install reference — every method plus CI usage — at **[sfdt.dev/cli/ins
 | `sfdt feature-flags disable <id>` | Add a feature id to the kill-switch | `--json` |
 | `sfdt feature-flags enable <id>` | Remove a feature id from the kill-switch | `--json` |
 | `sfdt feature-flags clear` | Re-enable everything | `--remove`, `--json` |
-| `sfdt doctor --extension` | Diagnose the extension stack (bridge reachable, native host, kill-switch file, telemetry) | `--port <n>`, `--json` |
+| `sfdt doctor` | Diagnose the local environment (sf, node, git, config, AI, org) and the extension stack | `--core`, `--extension`, `--org <alias>`, `--port <n>`, `--json` |
 
 ### Agent & extensibility
 
@@ -392,9 +392,45 @@ List plugin package names in `config.plugins` to load them in a specific order:
 { "plugins": ["sfdt-plugin-my-thing", "@myorg/sfdt-plugin-audit"] }
 ```
 
+## GitHub Action
+
+The repository doubles as a composite GitHub Action: run any sfdt command as a
+single `uses:` step, with org authentication handled for you. Pinning the
+action tag pins the CLI version (`cli-version: auto` installs the version
+shipped at that ref — no unpinned `@latest`).
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+- name: Smart delta validation
+  uses: scoobydrew83/sfdt@v0
+  with:
+    command: deploy --smart --org ci --delta-base "origin/${{ github.event.pull_request.base.ref }}" --dry-run
+    auth-method: sfdx-url
+    sfdx-auth-url: ${{ secrets.SFDX_AUTH_URL }}
+    org-alias: ci
+```
+
+JWT bearer flow instead of an auth URL:
+
+```yaml
+    auth-method: jwt
+    consumer-key: ${{ secrets.SFDX_CONSUMER_KEY }}
+    jwt-secret-key: ${{ secrets.SFDX_JWT_SECRET_KEY }}
+    username: ${{ secrets.SFDX_USERNAME }}
+```
+
+`sfdt ci init --provider github --runner action` generates complete workflows
+built on the action (monitor, deploy, release). The floating `v0` tag tracks
+the newest stable release; pin an exact tag (e.g. `@v0.16.2`) or a commit SHA
+if you prefer immutable references. Always pass secrets as `${{ secrets.X }}`
+expressions, and never feed untrusted input to `command` — it runs as a shell
+command line.
+
 ## Docker
 
-An official Docker image is available for CI/CD pipelines. It ships Node 20, Salesforce CLI, git, bash, and jq.
+An official Docker image is available for CI/CD pipelines. It ships Node 22, Salesforce CLI, git, bash, and jq.
 
 **Build from source:**
 

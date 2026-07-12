@@ -1,6 +1,7 @@
 ---
 name: sf-pmd-scan
-description: Run Salesforce Code Analyzer (PMD + ESLint + Graph Engine) against this project, parse results, prioritize findings, and generate fix recommendations. Activates when asked about static analysis, PMD, code scanner, or code quality audit.
+license: Apache-2.0
+description: Run Salesforce Code Analyzer v5 (PMD + ESLint + Graph Engine) against this project, parse results, prioritize findings, and generate fix recommendations. Use whenever the user asks about static analysis, PMD, linting, code scanning, code quality gates, or CI quality checks for Apex/LWC — even if they just say "scan my code" or "is my code clean".
 triggers:
   - pmd
   - code analyzer
@@ -14,6 +15,8 @@ triggers:
 # Salesforce Code Analyzer / PMD Scan Skill
 
 Run comprehensive static analysis against this project using Salesforce Code Analyzer v5.
+
+> If the project uses the sfdt CLI (`.sfdt/` directory present), prefer `sfdt quality` — it wraps Code Analyzer with project config, and `sfdt quality --include-fixes --fix-plan` adds analyzer fix suggestions plus an AI-generated remediation plan. Use the raw commands below when sfdt is not configured or you need custom selectors.
 
 ## Setup (if not installed)
 
@@ -68,11 +71,11 @@ sf code-analyzer run \
 
 ### Scan only changed files (for PR reviews)
 ```bash
-# Get changed files from git
+# Get changed files from git; --target selects files within the workspace
 CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E '\.(cls|trigger|js)$' | tr '\n' ',')
 sf code-analyzer run \
   --workspace . \
-  --path-filter "$CHANGED" \
+  --target "$CHANGED" \
   --output-file docs/scans/changed-results.json
 ```
 
@@ -107,7 +110,7 @@ This project can use a custom ruleset at `config/pmd-ruleset.xml`:
          xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0
                              https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
 
-    <description>TWU-556 / SF-Rebuild Custom Salesforce Ruleset</description>
+    <description>Project custom Salesforce ruleset</description>
 
     <!-- Always enforce these -->
     <rule ref="category/apex/security.xml"/>
@@ -137,12 +140,21 @@ This project can use a custom ruleset at `config/pmd-ruleset.xml`:
 </ruleset>
 ```
 
-Run with custom ruleset:
+Wire the ruleset in via the Code Analyzer v5 config file (there is no per-run ruleset flag in v5). Create `code-analyzer.yml` at the project root:
+
+```yaml
+engines:
+  pmd:
+    custom_rulesets:
+      - config/pmd-ruleset.xml
+```
+
+Then run with the config file:
 ```bash
 sf code-analyzer run \
+  --config-file code-analyzer.yml \
   --workspace . \
   --rule-selector "engine=pmd" \
-  --pmd-ruleset config/pmd-ruleset.xml \
   --output-file docs/scans/custom-results.json
 ```
 

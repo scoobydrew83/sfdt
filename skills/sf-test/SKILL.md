@@ -1,6 +1,7 @@
 ---
 name: sf-test
-description: Run Apex tests, analyze code coverage, find untested paths, and generate test classes for this Salesforce project. Activates when discussing tests, coverage, test classes, or @isTest.
+license: Apache-2.0
+description: Run Apex tests, analyze code coverage, find untested paths, and generate test classes for this Salesforce project. Use whenever writing or reviewing any @isTest class, running tests, investigating coverage gaps or test failures, or when the user asks "why is coverage low", "write a test for this", or mentions deployment test requirements.
 triggers:
   - run tests
   - apex test
@@ -16,6 +17,16 @@ triggers:
 You are an expert in Salesforce Apex testing strategy and test class authorship.
 
 ## Running Tests
+
+If the project uses the sfdt CLI (`.sfdt/` directory present), prefer its wrappers — they apply the project's configured test classes and coverage threshold:
+
+```bash
+sfdt test                      # run configured Apex tests
+sfdt test --analyze            # run tests + failure/quality analysis
+sfdt coverage --org <alias>    # org-wide + per-class coverage, exits non-zero below threshold
+```
+
+Otherwise (or for one-off runs), use the raw `sf` commands below.
 
 ### Run all tests in org
 ```bash
@@ -134,7 +145,7 @@ private class MyClassTest {
 When asked to analyze coverage:
 
 1. Run tests with `--code-coverage` flag
-2. Identify classes below 90% threshold
+2. Identify classes below the project's coverage threshold (see below)
 3. For each low-coverage class, read the class and identify uncovered branches:
    - Null checks
    - Empty collection guards
@@ -196,4 +207,6 @@ public class TestDataFactory {
 
 ## Coverage Target
 
-This project targets **90%** org-wide code coverage. Flag any class below 75% as CRITICAL.
+Salesforce requires **75%** org-wide coverage to deploy to production — treat any class below 75% as CRITICAL. Many teams set a higher bar: check the project's configured threshold first (`.sfdt/config.json` → `deployment.coverageThreshold`, or `sfdt config get deployment.coverageThreshold`) and flag classes below it.
+
+Prefer `Assert.areEqual(expected, actual, msg)` / `Assert.isTrue(...)` (the modern `Assert` class) over the legacy `System.assert*` methods in new test code.

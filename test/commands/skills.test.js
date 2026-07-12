@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Command } from 'commander';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -98,18 +98,34 @@ describe('skills export command', () => {
     expect(content).toContain('Some body text for Flow review.');
   });
 
-  it('generates and writes both .clauderules and .claudecode.json for target "claude"', async () => {
+  it('copies skill folders into .claude/skills/ plus legacy files for target "claude"', async () => {
+    // Use SKILLS_DIR-relative paths so folderRel resolves to clean skill names.
+    glob.mockResolvedValue([
+      path.join(SKILLS_DIR, 'sf-apex-review', 'SKILL.md'),
+      path.join(SKILLS_DIR, 'sf-flow-review', 'SKILL.md'),
+    ]);
+
     await createProgram().parseAsync(['node', 'sfdt', 'skills', 'export', '--target', 'claude']);
 
+    // Primary output: one folder copy per skill into .claude/skills/<name>
+    expect(fs.copy).toHaveBeenCalledTimes(2);
+    expect(fs.copy).toHaveBeenCalledWith(
+      path.join(SKILLS_DIR, 'sf-apex-review'),
+      expect.stringContaining(path.join('.claude', 'skills', 'sf-apex-review')),
+      expect.objectContaining({ filter: expect.any(Function) }),
+    );
+
+    // Eval seeds are filtered out of the copy
+    const filter = fs.copy.mock.calls[0][2].filter;
+    expect(filter(path.join(SKILLS_DIR, 'sf-apex-review', 'evals', 'evals.json'))).toBe(false);
+    expect(filter(path.join(SKILLS_DIR, 'sf-apex-review', 'SKILL.md'))).toBe(true);
+
+    // Legacy compatibility files still written
     expect(fs.writeFile).toHaveBeenCalledTimes(1);
+    expect(fs.writeFile.mock.calls[0][0]).toContain('.clauderules');
     expect(fs.writeJson).toHaveBeenCalledTimes(1);
-
-    const writeCall = fs.writeFile.mock.calls[0];
-    expect(writeCall[0]).toContain('.clauderules');
-
-    const jsonCall = fs.writeJson.mock.calls[0];
-    expect(jsonCall[0]).toContain('.claudecode.json');
-    expect(jsonCall[1].customInstructions).toContain('sf-apex-review');
+    expect(fs.writeJson.mock.calls[0][0]).toContain('.claudecode.json');
+    expect(fs.writeJson.mock.calls[0][1].customInstructions).toContain('sf-apex-review');
   });
 
   it('emits results as JSON when --json option is passed', async () => {
@@ -149,7 +165,13 @@ describe('skills export --target pack', () => {
           path.join(SKILLS_DIR, 'sfdt-cli', 'SKILL.md'),
         ];
       }
-      return ['sf-deploy/SKILL.md', 'sfdt-cli/SKILL.md', 'sfdt-cli/references/commands.md'];
+      // Includes an eval seed to prove it's filtered out of manifests/packs.
+      return [
+        'sf-deploy/SKILL.md',
+        'sf-deploy/evals/evals.json',
+        'sfdt-cli/SKILL.md',
+        'sfdt-cli/references/commands.md',
+      ];
     });
 
     fs.readFile.mockImplementation(async (file) => {
@@ -175,7 +197,13 @@ describe('skills export --target pack', () => {
     expect(fs.copy).toHaveBeenCalledWith(
       path.join(SKILLS_DIR, 'sf-deploy'),
       expect.stringContaining(path.join('out-pack', 'skills', 'sf-deploy')),
+      expect.objectContaining({ filter: expect.any(Function) }),
     );
+
+    // Eval seeds are excluded from the pack copy
+    const filter = fs.copy.mock.calls[0][2].filter;
+    expect(filter(path.join(SKILLS_DIR, 'sf-deploy', 'evals', 'evals.json'))).toBe(false);
+    expect(filter(path.join(SKILLS_DIR, 'sf-deploy', 'SKILL.md'))).toBe(true);
 
     expect(fs.writeJson).toHaveBeenCalledTimes(1);
     const [manifestPath, manifest] = fs.writeJson.mock.calls[0];

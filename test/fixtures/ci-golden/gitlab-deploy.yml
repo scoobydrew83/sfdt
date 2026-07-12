@@ -1,0 +1,10 @@
+sfdt-smart-deploy:
+  image: node:22
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  variables:
+    GIT_DEPTH: 0
+  script:
+    - npm install --global @salesforce/cli
+    - echo "$SFDX_AUTH_URL" | sf org login sfdx-url --sfdx-url-stdin --alias golden-org --set-default
+    - npx --yes @sfdt/cli@latest deploy --smart --org golden-org --delta-base "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" --dry-run

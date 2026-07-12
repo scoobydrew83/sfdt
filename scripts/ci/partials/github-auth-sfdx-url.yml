@@ -1,0 +1,4 @@
+- name: Authenticate to {{org}}
+  run: echo "$SFDX_AUTH_URL" | sf org login sfdx-url --sfdx-url-stdin --alias {{org}} {{setDefaultFlag}}
+  env:
+    SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}

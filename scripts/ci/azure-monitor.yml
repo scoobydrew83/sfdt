@@ -2,7 +2,9 @@
 # A standalone Azure Pipelines definition for scheduled org monitoring.
 #
 # Required pipeline variables (Pipelines > Library / pipeline variables, secret):
-#   SFDX_AUTH_URL, SLACK_WEBHOOK_URL (optional), TEAMS_WEBHOOK_URL (optional)
+{{authSecretsDoc}}
+#   SLACK_WEBHOOK_URL    (optional) Slack incoming webhook
+#   TEAMS_WEBHOOK_URL    (optional) Microsoft Teams incoming webhook
 schedules:
   - cron: '{{cron}}'
     displayName: SFDT Org Monitoring
@@ -18,8 +20,7 @@ steps:
       versionSpec: '{{nodeVersion}}'
   - script: npm install --global @salesforce/cli
     displayName: Install Salesforce CLI
-  - script: echo "$(SFDX_AUTH_URL)" | sf org login sfdx-url --sfdx-url-stdin --alias {{org}} --set-default
-    displayName: Authenticate to {{org}}
+  {{authSteps}}
   - script: npx --yes @sfdt/cli@latest monitor all --org {{org}} --backup --notify --json
     displayName: Run org monitoring
     env:

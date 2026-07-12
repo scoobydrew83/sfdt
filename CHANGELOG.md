@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-12
+
+### Added
+
+- **`sfdt doctor` — diagnose the local environment and extension stack.** Runs two check groups: a core/environment group (`sf` CLI, Node version floor, `git`, `.sfdt` config validity, AI-provider availability, and a warn-only, timeout-bounded org-connectivity probe) and an extension-stack group (bridge, native host, feature flags, telemetry snapshot). Flags: `--core`, `--extension`, `--org <alias>`, `--port <port>`, and `--json`. The org check never fails the run (any non-ok result is a warn), so `doctor` is CI-safe.
+- **`sfdt test --lwc` — run the project's LWC (Jest) unit tests locally.** Detects a wired-up Jest runner (`@salesforce/sfdx-lwc-jest` dependency or a `test:unit` script) plus `__tests__` directories under the package paths, then runs `npm run test:unit` or the `sfdx-lwc-jest` binary. Emits an actionable message when no LWC test setup is detected.
+- **`sfdt quality --output-file <path>` — write Code Analyzer results to a file.** The output format follows the file extension (e.g. `.sarif`), so quality scans can feed GitHub code-scanning uploads. Pairs with `--include-fixes` to request actionable fixes/suggestions from Code Analyzer v5 (v4 logs a warning and skips the extra file).
+- **`skills export --target claude` now installs native Claude Code project skills.** Each bundled skill is copied to `.claude/skills/<name>/` (the real Claude Code convention, discovered automatically with frontmatter-driven triggering) instead of only writing flattened rules files; the legacy `.clauderules` / `.claudecode.json` outputs are still written for older tooling.
+- **Skill eval prompt seeds.** Every bundled skill now carries committed `evals/evals.json` test prompts (skill-creator schema) so revisions can be benchmarked; eval files are filtered out of all exports (packs, manifests, `.claude/skills` installs).
+- **Skills drift guard.** A new content-invariant test (`test/commands/skills-content.test.js`) fails CI when a CLI command is added or renamed without updating the `sfdt-cli` skill, and enforces frontmatter (name/description/license) and eval-seed presence for every skill.
+- **Skills publishing guide.** `docs/skills-publishing.md` documents distributing the pack to skill libraries (standalone `npx skills` repo, claude.ai `.skill` uploads) with a per-release checklist; `docs/sfdt-site-drafts/skills.mdx` is a ready-to-copy docs-site page.
+
+### Changed
+
+- **`deploy --smart --notify` dispatches deploy notifications.** After a smart deploy, a `deploy-success` or `deploy-failure` event is pushed through the notifier (Slack/Teams/Google Chat/webhook/Loki/email) per the `notifications` config — matching the standard manifest deploy path.
+- **Bundled skills audited and refreshed** (see `docs/skills-audit-2026-07-12.md`): the `sfdt-cli` skill now documents all 42 commands (was ~18) including `deploy --smart` and the multi-provider AI system; fixed wrong CLI syntax in `sf-data` (`sf data import bulk`), `sf-pmd-scan` (Code Analyzer v5 `--config-file`/`--target`), and `sf-flow-review` (scanner flags, contradictory `$Label` guidance); removed project-specific leftovers; descriptions made more assertive about trigger contexts; every skill now declares `license: Apache-2.0`.
+
 ## [0.16.1] - 2026-07-09
 
 ### Security
