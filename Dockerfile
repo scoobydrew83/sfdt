@@ -10,6 +10,11 @@
 # Usage (run against a mounted Salesforce DX project):
 #   docker run --rm -v "$(pwd):/project" ghcr.io/scoobydrew83/sfdt --help
 #   docker run --rm -v "$(pwd):/project" ghcr.io/scoobydrew83/sfdt deploy
+#   docker run --rm -v "$(pwd):/project" ghcr.io/scoobydrew83/sfdt ci init --provider gitlab --type release --print
+#
+# This image also serves as a CI job image: `sfdt ci init --runner docker`
+# generates GitLab/Bitbucket pipelines that run on it directly (sf CLI and
+# sfdt preinstalled — no per-run npm installs).
 #
 # Build a specific version locally:
 #   docker build --build-arg VERSION=0.14.0 -t sfdt .

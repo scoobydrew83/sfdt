@@ -236,6 +236,17 @@ jobs:
           git push origin ":refs/tags/v${RELEASE_VERSION}" 2>/dev/null || true
           git tag -a "v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
           git push origin "v${RELEASE_VERSION}"
+      - name: Update floating major tag
+        # Consumers of the root composite action reference `scoobydrew83/sfdt@v0`
+        # (later `@v1`, …) — keep that tag pointing at the newest stable release.
+        # Stable releases only; beta publishes never move it.
+        if: steps.version.outputs.changed == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          MAJOR="v${RELEASE_VERSION%%.*}"
+          git tag -f "$MAJOR" "v${RELEASE_VERSION}"
+          git push -f origin "$MAJOR"
       - run: npm ci
         if: steps.version.outputs.changed == 'true'
       - name: Build GUI

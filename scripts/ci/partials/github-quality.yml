@@ -1,0 +1,8 @@
+- name: Code quality scan
+  run: npx --yes @sfdt/cli@latest quality --output-file sfdt-quality.sarif
+  continue-on-error: true
+- name: Upload code scanning results
+  if: always() && hashFiles('sfdt-quality.sarif') != ''
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: sfdt-quality.sarif

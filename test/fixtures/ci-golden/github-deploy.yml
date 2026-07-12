@@ -1,0 +1,23 @@
+name: SFDT Smart Deploy
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch: {}
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Salesforce CLI
+        run: npm install --global @salesforce/cli
+      - name: Authenticate to golden-org
+        run: echo "$SFDX_AUTH_URL" | sf org login sfdx-url --sfdx-url-stdin --alias golden-org --set-default
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+      - name: Smart delta validation
+        run: npx --yes @sfdt/cli@latest deploy --smart --org golden-org --delta-base "origin/${{ github.event.pull_request.base.ref }}" --dry-run

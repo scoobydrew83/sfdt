@@ -1,0 +1,10 @@
+- name: Authenticate to {{org}}
+  run: |
+    trap 'rm -f server.key' EXIT
+    printf '%s\n' "$SFDX_JWT_SECRET_KEY" > server.key
+    sf org login jwt --client-id "$SFDX_CONSUMER_KEY" --jwt-key-file server.key --username "$SFDX_USERNAME" --instance-url "${SFDX_INSTANCE_URL:-https://login.salesforce.com}" --alias {{org}} {{setDefaultFlag}}
+  env:
+    SFDX_CONSUMER_KEY: ${{ secrets.SFDX_CONSUMER_KEY }}
+    SFDX_JWT_SECRET_KEY: ${{ secrets.SFDX_JWT_SECRET_KEY }}
+    SFDX_USERNAME: ${{ secrets.SFDX_USERNAME }}
+    SFDX_INSTANCE_URL: ${{ secrets.SFDX_INSTANCE_URL }}

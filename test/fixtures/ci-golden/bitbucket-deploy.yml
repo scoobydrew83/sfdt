@@ -1,0 +1,12 @@
+pipelines:
+  pull-requests:
+    '**':
+      - step:
+          name: SFDT Smart Deploy
+          image: node:22
+          clone:
+            depth: full
+          script:
+            - npm install --global @salesforce/cli
+            - echo "$SFDX_AUTH_URL" | sf org login sfdx-url --sfdx-url-stdin --alias golden-org --set-default
+            - npx --yes @sfdt/cli@latest deploy --smart --org golden-org --delta-base "origin/$BITBUCKET_PR_DESTINATION_BRANCH" --dry-run

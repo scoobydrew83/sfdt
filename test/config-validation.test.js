@@ -362,6 +362,36 @@ describe('validateConfig — AJV schema fields', () => {
     ).toThrow();
   });
 
+  it('accepts the ci block with valid values', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        ci: { authMethod: 'jwt', environment: 'uat', runner: 'action' },
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects an unknown key under ci', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        ci: { madeUpKey: true },
+      }),
+    ).toThrow();
+  });
+
+  it('rejects an invalid ci.authMethod value', () => {
+    expect(() =>
+      validateConfig({
+        defaultOrg: 'dev',
+        features: {},
+        ci: { authMethod: 'oauth' },
+      }),
+    ).toThrow();
+  });
+
   it('accepts valid full config from template', () => {
     expect(() =>
       validateConfig({

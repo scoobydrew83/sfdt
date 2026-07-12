@@ -1,0 +1,2 @@
+- name: Run LWC tests
+  run: npx --yes @sfdt/cli@latest test --lwc

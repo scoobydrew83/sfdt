@@ -55,12 +55,18 @@ describe('COMMAND_GROUPS', () => {
 
   it('covers the ci init provider/type matrix', () => {
     for (const provider of ['github', 'gitlab', 'azure', 'bitbucket']) {
-      for (const type of ['monitor', 'deploy']) {
+      for (const type of ['monitor', 'deploy', 'release', 'scratch']) {
         expect(findCommand(`ci-init-${provider}-${type}`)?.args).toEqual([
           'ci', 'init', '--provider', provider, '--type', type,
         ]);
       }
     }
+  });
+
+  it('surfaces the LWC test runner without an org flag', () => {
+    const lwc = findCommand('test-lwc');
+    expect(lwc?.args).toEqual(['test', '--lwc']);
+    expect(lwc?.noOrg).toBe(true);
   });
 
   it('covers the feature-flags family', () => {

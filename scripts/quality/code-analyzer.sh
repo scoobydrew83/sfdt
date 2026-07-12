@@ -161,6 +161,15 @@ if [[ "${SFDT_ANALYZER_INCLUDE_FIXES:-}" == "true" ]]; then
     _INCLUDE_FIXES=(--include-fixes --include-suggestions)
 fi
 
+# SFDT_ANALYZER_OUTPUT_FILE: also write the results to this file; v5 infers the
+# format from the extension (e.g. .sarif) and --output-file is repeatable, so
+# the stdout-JSON contract below is unaffected. v5 only — v4 emits one format
+# per run and is not worth a second scan.
+_EXTRA_OUT=()
+if [[ -n "${SFDT_ANALYZER_OUTPUT_FILE:-}" ]]; then
+    _EXTRA_OUT=(--output-file "$SFDT_ANALYZER_OUTPUT_FILE")
+fi
+
 _SCANNER_V4=""
 if command -v sf &>/dev/null; then
     _SCANNER_V4=$(sf plugins --json 2>/dev/null | \
@@ -177,6 +186,7 @@ if command -v sf &>/dev/null && sf code-analyzer --help &>/dev/null; then
     if sf code-analyzer run \
         --workspace "$FORCE_APP_DIR" \
         "${_INCLUDE_FIXES[@]}" \
+        "${_EXTRA_OUT[@]}" \
         --output-file "$_ANALYZER_TMP" &>/dev/null && [[ -s "$_ANALYZER_TMP" ]]; then
         cat "$_ANALYZER_TMP"
     else
@@ -185,6 +195,9 @@ if command -v sf &>/dev/null && sf code-analyzer --help &>/dev/null; then
     rm -f "$_ANALYZER_TMP"
 elif [[ -n "$_SCANNER_V4" ]]; then
     log_info "Running Salesforce Code Analyzer v4 (legacy sf scanner run)..."
+    if [[ -n "${SFDT_ANALYZER_OUTPUT_FILE:-}" ]]; then
+        log_warning "SFDT_ANALYZER_OUTPUT_FILE requires Code Analyzer v5 — no extra output file written."
+    fi
     sf scanner run \
         --format json \
         --target "$FORCE_APP_DIR" \

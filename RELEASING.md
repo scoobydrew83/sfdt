@@ -84,6 +84,7 @@ When you bump the protocol:
      # Update url + sha256 in the TAP repo's Formula/sfdt.rb, commit, push.
      ```
      The **tap repo is the single source of truth** for the formula — treat it as a publish target like npm/GHCR, not a parallel project. (The tap must be a separate `homebrew-*` repo; that's Homebrew's requirement for the `brew tap scoobydrew83/sfdt` UX, not something to "fix" by folding it into this repo.) The in-repo `Formula/sfdt.rb` mirror is **redundant** — it can't carry a correct `sha256` until after publish — and is slated for removal; do not spend effort keeping it in sync.
+   - **GitHub Action (automatic).** The root `action.yml` makes this repo a composite action; the `publish` job's "Update floating major tag" step force-moves `v<major>` (`v0` today) to the release tag, so `uses: scoobydrew83/sfdt@v0` always resolves to the newest stable release (beta publishes never move it). Nothing to do per release. **First release with `action.yml` only:** list the action on the GitHub Marketplace manually — open the Release in the web UI, edit it, and tick **"Publish this Action to the GitHub Marketplace"** (requires the root `action.yml` with `branding:`; the listing then updates automatically on subsequent releases).
 
 > **Note:** publish itself is CI-driven now — `.github/workflows/ci.yml` publishes `@sfdt/flow-core` then `@sfdt/cli` (with `--provenance`) on a version-bump push to `main`, and the beta channel publishes from `develop` on a pre-release version. The manual `npm publish` in step 5 is the fallback, not the normal path.
 

@@ -84,6 +84,18 @@ describe('quality command', () => {
     );
   });
 
+  it('passes SFDT_ANALYZER_OUTPUT_FILE with --output-file (code-analyzer only)', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: 'ok' });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--output-file', 'results.sarif']);
+
+    expect(runScript).toHaveBeenCalledWith(
+      'quality/code-analyzer.sh',
+      expect.any(Object),
+      expect.objectContaining({ env: { SFDT_ANALYZER_OUTPUT_FILE: 'results.sarif' } }),
+    );
+  });
+
   it('runs only test-analyzer with --tests', async () => {
     runScript.mockResolvedValue({ exitCode: 0, stdout: 'ok' });
 

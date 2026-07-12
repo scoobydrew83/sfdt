@@ -1,0 +1,2 @@
+- script: echo "$(SFDX_AUTH_URL)" | sf org login sfdx-url --sfdx-url-stdin --alias {{org}} {{setDefaultFlag}}
+  displayName: Authenticate to {{org}}

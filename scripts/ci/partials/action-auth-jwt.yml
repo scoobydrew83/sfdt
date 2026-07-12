@@ -1,0 +1,4 @@
+consumer-key: ${{ secrets.SFDX_CONSUMER_KEY }}
+jwt-secret-key: ${{ secrets.SFDX_JWT_SECRET_KEY }}
+username: ${{ secrets.SFDX_USERNAME }}
+instance-url: ${{ secrets.SFDX_INSTANCE_URL }}
