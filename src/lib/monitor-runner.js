@@ -159,17 +159,18 @@ export async function checkHealth(orgAlias, { minScore = MONITOR_DEFAULTS.health
  * Org info / instance — informational, with a trial/expiration warning. Also
  * reports the org's release version (and preview status) when determinable.
  */
-export async function checkOrgInfo(orgAlias, { trialWarnDays = MONITOR_DEFAULTS.orgInfoTrialWarnDays } = {}) {
+export async function checkOrgInfo(orgAlias, { trialWarnDays = MONITOR_DEFAULTS.orgInfoTrialWarnDays, timeoutMs } = {}) {
   const id = 'org-info';
   const title = 'Org info';
   try {
     const rows = await query(
       orgAlias,
       `SELECT Name, InstanceName, OrganizationType, IsSandbox, TrialExpirationDate FROM Organization LIMIT 1`,
+      { timeoutMs },
     );
     const org = rows[0];
     if (!org) return result_(id, title, 'warn', 'Organization record unavailable', []);
-    const releaseInfo = await detectOrgRelease(orgAlias);
+    const releaseInfo = await detectOrgRelease(orgAlias, { timeoutMs });
     const finding = {
       name: org.Name,
       instance: org.InstanceName,

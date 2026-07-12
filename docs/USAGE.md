@@ -1212,15 +1212,23 @@ sfdt extension stats --limit 20
 
 ### sfdt doctor
 
-End-to-end diagnostic for the extension stack. Checks that the bridge is reachable, the native host is registered, the kill-switch config is readable, and the telemetry snapshot exists.
+End-to-end local diagnostic. The **environment** group checks that `sf`, `node`,
+and `git` are present, that `.sfdt/` config is valid, that the configured AI
+provider is reachable (when enabled), and that the default org is reachable
+(always run, but warn-only — it never fails the command and is bounded by a
+timeout). The **extension** group checks the bridge, native host, kill-switch
+file, and telemetry snapshot. With no flag both groups run.
 
 ```bash
-sfdt doctor --extension                # pretty output
-sfdt doctor --extension --json         # CI-friendly structured output
-sfdt doctor --extension --port 8080    # bridge runs on a non-default port
+sfdt doctor                 # environment + extension groups
+sfdt doctor --core          # environment checks only
+sfdt doctor --extension     # extension checks only
+sfdt doctor --org myAlias   # check a specific org's connectivity
+sfdt doctor --json          # CI-friendly structured output
+sfdt doctor --port 8080     # bridge runs on a non-default port
 ```
 
-Exits non-zero if any check fails — wire this into CI to detect a broken extension installation early.
+Exits non-zero if any check fails (org connectivity never fails) — wire this into CI to detect a broken install early.
 
 ### sfdt feature-flags
 

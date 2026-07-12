@@ -22,9 +22,11 @@ import { execa } from 'execa';
  * @param {object} [options]
  * @param {boolean} [options.tooling]
  * @param {boolean} [options.all]
+ * @param {number} [options.timeoutMs] - Optional execa subprocess timeout; when
+ *   unset, execa runs with no timeout (identical to prior behavior).
  * @returns {Promise<object|null>} The parsed sf `result` object (or null).
  */
-async function _execQuery(orgAlias, soql, { tooling = false, all = false } = {}) {
+async function _execQuery(orgAlias, soql, { tooling = false, all = false, timeoutMs } = {}) {
   if (!orgAlias) {
     throw new Error('No org specified — pass --org <alias> or set defaultOrg in .sfdt/config.json');
   }
@@ -34,7 +36,7 @@ async function _execQuery(orgAlias, soql, { tooling = false, all = false } = {})
 
   let result;
   try {
-    result = await execa('sf', args);
+    result = timeoutMs ? await execa('sf', args, { timeout: timeoutMs }) : await execa('sf', args);
   } catch (err) {
     // sf usually writes its JSON error envelope to stdout, but some commands
     // route it to stderr — check both for the structured message. Only commit

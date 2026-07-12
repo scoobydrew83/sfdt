@@ -13,10 +13,14 @@ describe('createCli', () => {
     expect(program.version()).toMatch(/^\d+\.\d+\.\d+/);
   });
 
-  it('registers all expected commands', () => {
+  it('registers exactly the expected commands', () => {
     const program = createCli();
     const commandNames = program.commands.map((cmd) => cmd.name());
 
+    // Exact-set (not toContain) so both drift directions fail: a new command file
+    // left unwired in src/cli.js, or a command silently dropped. `help` is
+    // Commander's built-in (addHelpCommand) and is materialized lazily, so it
+    // does not appear in program.commands here — it's intentionally not listed.
     const expected = [
       'init',
       'deploy',
@@ -42,6 +46,13 @@ describe('createCli', () => {
       'config',
       'ai',
       'scan',
+      'dependencies',
+      'coverage',
+      'audit',
+      'monitor',
+      'docs',
+      'data',
+      'scratch',
       'flow',
       'extension',
       'feature-flags',
@@ -49,13 +60,14 @@ describe('createCli', () => {
       'mcp',
       'plugin',
       'skills',
+      'ci',
+      'pr',
+      'retrofit',
       'history',
       'version',
     ];
 
-    for (const name of expected) {
-      expect(commandNames).toContain(name);
-    }
+    expect([...commandNames].sort()).toEqual([...expected].sort());
   });
 
   it('does not register duplicate commands', () => {

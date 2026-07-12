@@ -16,9 +16,14 @@ vi.mock('../../host/installers/install-host.js', () => ({
   nativeHostStatus: vi.fn(),
 }));
 
+vi.mock('../../src/lib/doctor-runner.js', () => ({
+  runCoreDoctor: vi.fn(),
+}));
+
 import fs from 'fs-extra';
 import { getConfigDir } from '../../src/lib/config.js';
 import { nativeHostStatus } from '../../host/installers/install-host.js';
+import { runCoreDoctor } from '../../src/lib/doctor-runner.js';
 import {
   registerDoctorCommand,
   runExtensionDoctor,
@@ -51,6 +56,10 @@ beforeEach(() => {
   getConfigDir.mockReturnValue('/project/.sfdt');
   fs.pathExists.mockResolvedValue(false);
   nativeHostStatus.mockResolvedValue({ platform: 'darwin', browsers: [] });
+  runCoreDoctor.mockResolvedValue({
+    ok: true,
+    results: [{ name: 'sf CLI', status: 'ok', detail: 'Present' }],
+  });
 });
 
 describe('runExtensionDoctor', () => {
@@ -61,7 +70,7 @@ describe('runExtensionDoctor', () => {
     });
     const { results, ok } = await runExtensionDoctor({ port: 7654, fetchImpl });
     const bridge = results.find((r) => r.name === 'sfdt ui bridge');
-    expect(bridge.status).toBe('pass');
+    expect(bridge.status).toBe('ok');
     expect(bridge.detail).toContain('0.8.1');
     expect(bridge.detail).toContain('1.2');
     expect(ok).toBe(true);
@@ -96,7 +105,7 @@ describe('runExtensionDoctor', () => {
       fetchImpl: mockFetchOk({ ok: true, data: {} }),
     });
     const ff = results.find((r) => r.name === 'feature-flags.json');
-    expect(ff.status).toBe('pass');
+    expect(ff.status).toBe('ok');
     expect(ff.detail).toContain('Not present');
   });
 
@@ -153,7 +162,7 @@ describe('runExtensionDoctor', () => {
       fetchImpl: mockFetchOk({ ok: true, data: {} }),
     });
     const ff = results.find((r) => r.name === 'feature-flags.json');
-    expect(ff.status).toBe('pass');
+    expect(ff.status).toBe('ok');
     expect(ff.detail).toContain('canvas-search');
   });
 
@@ -178,7 +187,7 @@ describe('runExtensionDoctor', () => {
       fetchImpl: mockFetchOk({ ok: true, data: {} }),
     });
     const host = results.find((r) => r.name === 'native messaging host');
-    expect(host.status).toBe('pass');
+    expect(host.status).toBe('ok');
     expect(host.detail).toContain('chrome');
   });
 
@@ -224,7 +233,7 @@ describe('runExtensionDoctor', () => {
       fetchImpl: mockFetchOk({ ok: true, data: {} }),
     });
     const tel = results.find((r) => r.name === 'telemetry-snapshot.json');
-    expect(tel.status).toBe('pass');
+    expect(tel.status).toBe('ok');
     expect(tel.detail).toContain('2026-05');
   });
 });
@@ -314,7 +323,7 @@ describe('sfdt doctor command wiring', () => {
     errSpy.mockRestore();
   });
 
-  it('warns and defaults to --extension when no diagnostic group is selected', async () => {
+  it('runs the extension checks even when --extension is omitted', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const originalFetch = globalThis.fetch;
     globalThis.fetch = mockFetchOk({
@@ -327,7 +336,61 @@ describe('sfdt doctor command wiring', () => {
       globalThis.fetch = originalFetch;
     }
     const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(out).toContain('defaulting to --extension');
+    // The extension checks run by default; no apologetic "defaulting" preamble.
+    expect(out).toContain('Extension stack diagnostic');
+    expect(out).not.toContain('defaulting to --extension');
     logSpy.mockRestore();
+  });
+
+  it('prints both section headers in pretty mode when both groups run by default', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetchOk({ ok: true, data: { serverVersion: 'X', protocolVersion: 'Y' } });
+    try {
+      await createProgram().parseAsync(['node', 'sfdt', 'doctor']);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('Environment diagnostic');
+    expect(out).toContain('Extension stack diagnostic');
+    logSpy.mockRestore();
+  });
+
+  it('runs both groups by default and tags results with their group', async () => {
+    // emitJson writes via process.stdout.write (see output.js), not console.log —
+    // spy on stdout to match every other --json test in this file.
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetchOk({ ok: true, data: { serverVersion: 'X', protocolVersion: 'Y' } });
+    try {
+      await createProgram().parseAsync(['node', 'sfdt', 'doctor', '--json']);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    const printed = JSON.parse(writeSpy.mock.calls.map((c) => String(c[0])).join(''));
+    const groups = new Set(printed.result.results.map((r) => r.group));
+    expect(groups).toEqual(new Set(['core', 'extension']));
+    writeSpy.mockRestore();
+  });
+
+  it('runs only core checks with --core', async () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'doctor', '--core', '--json']);
+    const printed = JSON.parse(writeSpy.mock.calls.map((c) => String(c[0])).join(''));
+    expect(printed.result.results.every((r) => r.group === 'core')).toBe(true);
+    writeSpy.mockRestore();
+  });
+
+  it('exits 1 when any merged result fails', async () => {
+    runCoreDoctor.mockResolvedValue({ ok: false, results: [{ name: 'sf CLI', status: 'fail', detail: 'absent' }] });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetchOk({ ok: true, data: {} });
+    try {
+      await createProgram().parseAsync(['node', 'sfdt', 'doctor', '--json']);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(process.exitCode).toBe(1);
   });
 });

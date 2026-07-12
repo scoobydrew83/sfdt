@@ -1,13 +1,16 @@
 // `sfdt doctor` — diagnose the local sfdt installation.
 //
-// Initial scope: --extension. Runs every check needed to answer "why isn't
-// the Chrome extension talking to my sfdt?" so users don't have to walk
-// through three pages of docs to triage:
+// Two diagnostic groups, both run by default (`--core` / `--extension` narrow
+// to one). `--extension` answers "why isn't the Chrome extension talking to
+// my sfdt?" so users don't have to walk through three pages of docs to triage:
 //
 //   1. sfdt ui reachable on the configured localhost port (GET /api/bridge/ping)
 //   2. Native host installed for at least one browser (fallback transport)
 //   3. .sfdt/feature-flags.json well-formed if present (no JSON errors)
 //   4. .sfdt/telemetry-snapshot.json present (operator visibility)
+//
+// `--core` (see ../lib/doctor-runner.js) covers the base environment: sf CLI,
+// node, git, config validity, AI provider, org connectivity.
 //
 // All checks are read-only. Returns an exit code of 1 if any FAIL-severity
 // check fails — WARN-severity checks (snapshot absent, no native host) leave
@@ -24,11 +27,12 @@ import { nativeHostStatus } from '../../host/installers/install-host.js';
 import { getConfigDir } from '../lib/config.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
-
-const DEFAULT_PORT = 7654;
+import { DEFAULT_UI_PORT } from '../lib/ui-port.js';
+import { runCoreDoctor } from '../lib/doctor-runner.js';
+import { maxStatus } from '../lib/check-status.js';
 
 function symbol(status) {
-  if (status === 'pass') return chalk.green('✓');
+  if (status === 'ok') return chalk.green('✓');
   if (status === 'warn') return chalk.yellow('•');
   return chalk.red('✗');
 }
@@ -55,7 +59,7 @@ async function checkBridgePing(port, fetchImpl) {
     const data = body?.data ?? {};
     return {
       name: 'sfdt ui bridge',
-      status: 'pass',
+      status: 'ok',
       detail: `OK on port ${port} — sfdt v${data.serverVersion ?? '?'}, protocol ${data.protocolVersion ?? '<missing>'}`,
       data,
     };
@@ -63,7 +67,7 @@ async function checkBridgePing(port, fetchImpl) {
     return {
       name: 'sfdt ui bridge',
       status: 'fail',
-      detail: `Could not reach ${url}: ${err.message ?? err}. Run \`sfdt ui\` from your project root.`,
+      detail: `Could not reach ${url}: ${err.message ?? err}. Run \`sfdt ui\` from your project root (or pass --port if it runs on a non-default port).`,
     };
   }
 }
@@ -81,7 +85,7 @@ async function checkNativeHost() {
     }
     return {
       name: 'native messaging host',
-      status: 'pass',
+      status: 'ok',
       detail: `Installed for: ${installed.map((b) => b.browser).join(', ')}`,
     };
   } catch (err) {
@@ -98,7 +102,7 @@ async function checkFeatureFlags() {
   if (!(await fs.pathExists(file))) {
     return {
       name: 'feature-flags.json',
-      status: 'pass',
+      status: 'ok',
       detail: `Not present (default — all features enabled). Path: ${file}`,
     };
   }
@@ -113,7 +117,7 @@ async function checkFeatureFlags() {
     }
     return {
       name: 'feature-flags.json',
-      status: 'pass',
+      status: 'ok',
       detail:
         flags.disabled.length === 0
           ? 'Present, no features disabled.'
@@ -142,7 +146,7 @@ async function checkTelemetrySnapshot() {
     const featureCount = Object.keys(snap.counters ?? {}).length;
     return {
       name: 'telemetry-snapshot.json',
-      status: 'pass',
+      status: 'ok',
       detail: `Present for ${snap.monthKey ?? '?'} (${featureCount} feature${featureCount === 1 ? '' : 's'}, written ${snap.writtenAt ?? '?'})`,
     };
   } catch (err) {
@@ -154,7 +158,7 @@ async function checkTelemetrySnapshot() {
   }
 }
 
-export async function runExtensionDoctor({ port = DEFAULT_PORT, fetchImpl = globalThis.fetch } = {}) {
+export async function runExtensionDoctor({ port = DEFAULT_UI_PORT, fetchImpl = globalThis.fetch } = {}) {
   const results = await Promise.all([
     checkBridgePing(port, fetchImpl),
     checkNativeHost(),
@@ -168,32 +172,51 @@ export async function runExtensionDoctor({ port = DEFAULT_PORT, fetchImpl = glob
 export function registerDoctorCommand(program) {
   program
     .command('doctor')
-    .description('Diagnose the local sfdt install (use --extension to check the extension bridge stack)')
-    .option('--extension', 'Run extension-stack checks (bridge ping, native host, feature flags, telemetry)')
-    .option('--port <port>', `Localhost port the bridge listens on (default: ${DEFAULT_PORT})`, String(DEFAULT_PORT))
+    .description('Diagnose the local sfdt environment and extension stack')
+    .option('--core', 'Run only the environment checks (sf, node, git, config, AI, org)')
+    .option('--extension', 'Run only the extension-stack checks (bridge, native host, feature flags, telemetry)')
+    .option('--org <alias>', 'Org alias for the connectivity check (default: config defaultOrg)')
+    .option('--port <port>', 'Localhost port the bridge listens on', String(DEFAULT_UI_PORT))
     .option('--json', 'Emit the result as JSON')
     .action(async (options) => {
       try {
-        if (!options.extension) {
-          // For now `sfdt doctor` defaults to --extension. Reserved for future
-          // top-level checks (config validity, sf CLI version, git status).
-          console.log(chalk.dim('No diagnostic group selected; defaulting to --extension.'));
-        }
         const parsedPort = Number(options.port);
         if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
           throw new Error(`--port must be an integer in [1, 65535]. Got: ${options.port}`);
         }
-        const port = parsedPort;
-        const { results, ok } = await runExtensionDoctor({ port });
+        // No flag, or both flags → run everything.
+        const runCore = options.core || !options.extension;
+        const runExt = options.extension || !options.core;
+
+        const results = [];
+        if (runCore) {
+          const core = await runCoreDoctor({ org: options.org });
+          results.push(...core.results.map((r) => ({ ...r, group: 'core' })));
+        }
+        if (runExt) {
+          const ext = await runExtensionDoctor({ port: parsedPort });
+          results.push(...ext.results.map((r) => ({ ...r, group: 'extension' })));
+        }
+        const ok = maxStatus(results) !== 'fail';
+
         if (options.json) {
           emitJson({ ok, results });
           if (!ok) process.exitCode = 1;
           return;
         }
-        console.log(chalk.bold('\nExtension stack diagnostic\n'));
-        for (const r of results) {
-          console.log(`  ${symbol(r.status)} ${chalk.bold(r.name)}`);
-          console.log(`    ${chalk.dim(r.detail)}`);
+
+        const sections = [
+          { group: 'core', title: 'Environment' },
+          { group: 'extension', title: 'Extension stack' },
+        ];
+        for (const { group, title } of sections) {
+          const groupResults = results.filter((r) => r.group === group);
+          if (groupResults.length === 0) continue;
+          console.log(chalk.bold(`\n${title} diagnostic\n`));
+          for (const r of groupResults) {
+            console.log(`  ${symbol(r.status)} ${chalk.bold(r.name)}`);
+            console.log(`    ${chalk.dim(r.detail)}`);
+          }
         }
         console.log('');
         if (!ok) {
