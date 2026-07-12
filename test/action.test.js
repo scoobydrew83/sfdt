@@ -52,10 +52,15 @@ describe('root composite action (action.yml)', () => {
     }
   });
 
-  it('resolves cli-version auto from the action checkout', () => {
+  it('resolves cli-version auto with fallbacks for local uses: ./ invocations', () => {
     const install = action.runs.steps.find((s) => s.name === 'Install sfdt CLI');
-    expect(install.run).toContain('GITHUB_ACTION_PATH');
-    expect(install.run).toContain("require(process.env.GITHUB_ACTION_PATH + '/package.json').version");
+    // github.action_path is unreliable for local actions (actions/runner#716):
+    // the resolution must chain through the env var and the workspace, and must
+    // never concatenate a possibly-undefined env value into require().
+    expect(install.run).toContain('${{ github.action_path }}');
+    expect(install.run).toContain('GITHUB_ACTION_PATH:-');
+    expect(install.run).toContain('GITHUB_WORKSPACE');
+    expect(install.run).not.toContain('process.env.GITHUB_ACTION_PATH +');
   });
 
   it('cleans up the JWT key file and falls back to the default login URL', () => {

@@ -94,8 +94,21 @@ runs:
       run: |
         VERSION="$CLI_VERSION"
         if [ "$VERSION" = "auto" ]; then
-          VERSION=$(node -p "require(process.env.GITHUB_ACTION_PATH + '/package.json').version")
+          # Locate this action's own checkout to pin the CLI to the pinned ref.
+          # github.action_path is reliable for remote refs (owner/repo@tag) but
+          # empty or wrong for local `uses: ./` invocations (actions/runner
+          # #716/#2185/#2473), where the action IS the workspace — hence the chain.
+          ACTION_DIR="${{ github.action_path }}"
+          [ -n "$ACTION_DIR" ] && [ -f "$ACTION_DIR/package.json" ] || ACTION_DIR="${GITHUB_ACTION_PATH:-}"
+          [ -n "$ACTION_DIR" ] && [ -f "$ACTION_DIR/package.json" ] || ACTION_DIR="${GITHUB_WORKSPACE:-}"
+          if [ -n "$ACTION_DIR" ] && [ -f "$ACTION_DIR/package.json" ]; then
+            VERSION=$(node -p "require('$ACTION_DIR/package.json').version")
+          else
+            echo "::warning::cli-version auto could not locate the action's package.json — using latest"
+            VERSION=latest
+          fi
         fi
+        echo "Resolved @sfdt/cli version: $VERSION"
         if [ "$VERSION" != "latest" ] && command -v sfdt >/dev/null 2>&1 && [ "$(sfdt --version 2>/dev/null)" = "$VERSION" ]; then
           echo "@sfdt/cli@${VERSION} already installed — skipping."
         else
