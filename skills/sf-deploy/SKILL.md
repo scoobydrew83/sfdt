@@ -1,5 +1,6 @@
 ---
 name: sf-deploy
+license: Apache-2.0
 description: Salesforce CLI deployment skill for this project — deploy metadata to any org, retrieve metadata, validate, quick-deploy, and cancel stuck deploys. Use whenever the user wants to deploy, push, retrieve, validate, or promote Salesforce metadata, mentions package.xml or destructive changes, or asks "how do I get this to the sandbox/production" — even if they don't say "deploy".
 triggers:
   - deploy

@@ -1,0 +1,23 @@
+{
+  "skill_name": "sf-scratch-org",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "new dev starting monday — spin up a scratch org for them with our source, the Sales_User permset, and the sample data plan in data/sample-data-plan.json",
+      "expected_output": "Create from the project definition file, deploy source, assign permset, import tree data, open org; sensible alias and duration",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "sf org create scratch is failing with a limit error and I can't make new orgs anymore, what do I do",
+      "expected_output": "Checks ActiveScratchOrgs/DailyScratchOrgs via sf limits api display on the Dev Hub, lists and deletes expired/unused orgs",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I changed a validation rule and a page layout in the scratch org UI, and also edited two classes locally — now push says there are conflicts. help me not lose either side",
+      "expected_output": "Uses deploy/retrieve preview to inspect both sides, then targeted retrieve of the declarative changes before pushing local code; explains --ignore-conflicts direction semantics",
+      "files": []
+    }
+  ]
+}

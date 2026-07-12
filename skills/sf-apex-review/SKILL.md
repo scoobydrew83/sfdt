@@ -1,5 +1,6 @@
 ---
 name: sf-apex-review
+license: Apache-2.0
 description: Production-grade Apex code review for this Salesforce project. Catches SOQL/DML in loops, CRUD/FLS gaps, missing bulkification, hardcoded IDs, empty catches, stale API versions, deprecated testMethod, Trigger.oldMap omissions, Datetime/Date type mismatches, unbounded @AuraEnabled queries, null relationship traversals, Database.Stateful waste, global vs public misuse, constant expressions inside loops, and missing batch idempotency guards. Use whenever reviewing or writing any .cls or .trigger file, or when asked to audit, review, check, or security-scan any Apex code — even if the user does not explicitly say "apex review".
 triggers:
   - apex review

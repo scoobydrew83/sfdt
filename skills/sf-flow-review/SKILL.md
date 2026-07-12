@@ -1,5 +1,6 @@
 ---
 name: sf-flow-review
+license: Apache-2.0
 description: Review Salesforce Flow metadata for best practices — fault paths, bulk safety, element naming, auto-layout, duplicate automation, and Flow vs Apex decision guidance. Use whenever reviewing, writing, or debugging any .flow-meta.xml file, or when the user asks about flows, record-triggered automation, process builder migration, or "why is my flow failing" — even if they don't say "review".
 triggers:
   - flow review

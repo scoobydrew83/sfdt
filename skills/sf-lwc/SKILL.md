@@ -1,5 +1,6 @@
 ---
 name: sf-lwc
+license: Apache-2.0
 description: Lightning Web Component development guidance — component structure, wire adapters, event patterns, SLDS styling, accessibility, and common pitfalls. Use whenever creating, editing, or reviewing any file in an lwc/ bundle (.html template, .js controller, .js-meta.xml), or when the user mentions Lightning components, wire adapters, App Builder properties, or component events — even if they just say "build me a component".
 triggers:
   - lwc

@@ -51,6 +51,12 @@ function parseFrontmatter(content) {
   return { frontmatter, body };
 }
 
+// Eval prompt seeds (skills/<name>/evals/) are authoring/benchmarking assets —
+// they must not ship in exported packs or installed .claude/skills folders.
+function isEvalFile(relOrAbsPath) {
+  return relOrAbsPath.split(/[\\/]/).includes('evals');
+}
+
 /**
  * Emit an `npx skills add`-compatible pack from the parsed skills.
  * Produces `<out>/manifest.json` (vercel-labs/skills schema, as used by
@@ -60,9 +66,9 @@ async function exportPack(parsedSkills, outOption) {
   const outDir = path.resolve(process.cwd(), outOption || 'sfdt-skills-pack');
 
   // Enumerate every file under the package skills/ dir once, then group by folder.
-  const allFiles = (await glob('**/*', { cwd: SKILLS_DIR, nodir: true })).map((f) =>
-    f.split(path.sep).join('/'),
-  );
+  const allFiles = (await glob('**/*', { cwd: SKILLS_DIR, nodir: true }))
+    .map((f) => f.split(path.sep).join('/'))
+    .filter((f) => !isEvalFile(f));
 
   // Start from a clean skills/ tree so a renamed or removed skill doesn't leave a
   // stale folder behind on re-export — keeps the pack reproducible from the source.
@@ -78,7 +84,9 @@ async function exportPack(parsedSkills, outOption) {
       // SKILL.md first, remaining files alphabetically — matches sf-skills ordering.
       .sort((a, b) => (a === 'SKILL.md' ? -1 : b === 'SKILL.md' ? 1 : a.localeCompare(b)));
 
-    await fs.copy(path.join(SKILLS_DIR, folderRel), path.join(outDir, 'skills', folderRel));
+    await fs.copy(path.join(SKILLS_DIR, folderRel), path.join(outDir, 'skills', folderRel), {
+      filter: (src) => !isEvalFile(path.relative(SKILLS_DIR, src)),
+    });
 
     manifestSkills.push({
       name: skill.name,
@@ -207,7 +215,19 @@ export function registerSkillsCommand(program) {
           await fs.writeFile(outFile, rulesMarkdown, 'utf-8');
           filesWritten.push(outFile);
         } else if (target === 'claude') {
-          // Write both .clauderules and .claudecode.json for double compatibility
+          // Primary: the real Claude Code convention — project skills live as
+          // folders under .claude/skills/<name>/ and are discovered natively
+          // (name + description frontmatter drive triggering).
+          for (const skill of parsedSkills) {
+            const folderRel = path.dirname(skill.file).split(path.sep).join('/');
+            const dest = path.join(cwd, '.claude', 'skills', folderRel);
+            await fs.copy(path.join(SKILLS_DIR, folderRel), dest, {
+              filter: (src) => !isEvalFile(path.relative(SKILLS_DIR, src)),
+            });
+            filesWritten.push(dest);
+          }
+
+          // Legacy compatibility files kept for older tooling that read them
           const clauderules = path.join(cwd, '.clauderules');
           await fs.writeFile(clauderules, rulesMarkdown, 'utf-8');
           filesWritten.push(clauderules);

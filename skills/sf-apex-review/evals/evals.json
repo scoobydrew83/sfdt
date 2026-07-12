@@ -1,0 +1,23 @@
+{
+  "skill_name": "sf-apex-review",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "can you review OpportunityTriggerHandler.cls before I merge? it's in force-app/main/default/classes. my tech lead keeps complaining about our trigger patterns and I want this one to be clean",
+      "expected_output": "Structured review that also reads the trigger, test class, and -meta.xml; findings grouped CRITICAL/HIGH/MEDIUM/LOW with a summary table and a Deploy Safe verdict",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "we had a prod incident last night — the nightly batch job double-credited a bunch of member accounts when someone re-ran it manually. here's the batch class, can you check if it's safe to re-run and what else might be wrong with it",
+      "expected_output": "Identifies missing batch idempotency guard as the root issue, checks finish() visibility, Database.insert error handling, and Database.Stateful usage; concrete fix code",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "is this safe to deploy? MyAuraController.cls has a few @AuraEnabled methods the new LWC calls",
+      "expected_output": "Checks CRUD/FLS (WITH USER_MODE / SECURITY_ENFORCED), unbounded queries, input validation on parameters, AuraHandledException wrapping; explicit YES/NO deploy verdict",
+      "files": []
+    }
+  ]
+}

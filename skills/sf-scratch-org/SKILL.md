@@ -1,5 +1,6 @@
 ---
 name: sf-scratch-org
+license: Apache-2.0
 description: Create and manage Salesforce scratch orgs — create, push source, pull changes, assign permsets, seed data, and manage lifecycle. Use whenever the user mentions scratch orgs, Dev Hub, spinning up a dev/test environment, source push/pull conflicts, or setting up local Salesforce DX development — even if they just say "give me a fresh org".
 triggers:
   - scratch org

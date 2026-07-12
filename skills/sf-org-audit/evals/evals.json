@@ -1,0 +1,17 @@
+{
+  "skill_name": "sf-org-audit",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "just inherited this salesforce codebase from an agency, no docs, no handover. give me a full health check so I know how much technical debt I'm sitting on",
+      "expected_output": "Runs all static phases (structure discovery, anti-patterns, flow analysis, CI/CD, security) and produces the structured JSON audit report with prioritized actions",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "boss wants a one-pager on the state of our org before the budget meeting — connected org alias is prod-readonly. what can you pull together?",
+      "expected_output": "Uses the fast path (sfdt audit all / monitor all with --json when available) plus source-tree stats; summarizes into overall health + immediate/short/long-term actions",
+      "files": []
+    }
+  ]
+}

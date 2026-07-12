@@ -1,5 +1,6 @@
 ---
 name: sf-org-audit
+license: Apache-2.0
 description: Full health audit of this Salesforce project — summarizes Apex class count, test coverage gaps, trigger patterns, flow inventory, LWC count, CI/CD status, and generates a prioritized remediation report. Use whenever the user asks for a health check, audit, project analysis, technical-debt assessment, or "how bad is this org/codebase" — anything that calls for a whole-project view rather than a single-file review.
 triggers:
   - org audit

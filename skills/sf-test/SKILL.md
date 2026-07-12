@@ -1,5 +1,6 @@
 ---
 name: sf-test
+license: Apache-2.0
 description: Run Apex tests, analyze code coverage, find untested paths, and generate test classes for this Salesforce project. Use whenever writing or reviewing any @isTest class, running tests, investigating coverage gaps or test failures, or when the user asks "why is coverage low", "write a test for this", or mentions deployment test requirements.
 triggers:
   - run tests

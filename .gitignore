@@ -35,9 +35,11 @@ npm-debug.log*
 # Package tarballs
 *.tgz
 
-# Skill eval workspaces
+# Skill eval workspaces and results — the evals.json prompt seeds ARE tracked
 sfdt-cli-workspace/
-skills/*/evals/
+skills/*-workspace/
+skills/*/evals/*
+!skills/*/evals/evals.json
 
 # Git worktrees
 .worktrees/

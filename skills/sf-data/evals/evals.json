@@ -1,0 +1,23 @@
+{
+  "skill_name": "sf-data",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "i need to pull all accounts created in the last 90 days with their primary contacts into a csv for the marketing team, org alias is uat-full. what's the fastest way",
+      "expected_output": "A parent-child SOQL tree/CSV export using sf data query --result-format csv (or export tree for relationships), with correct date literal LAST_N_DAYS:90",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "our sandbox refresh wiped the test data again. I have accounts.csv (about 8k rows) with an External_Id__c column — load it into the partial sandbox without creating dupes",
+      "expected_output": "sf data upsert bulk --sobject Account --external-id External_Id__c with --wait; mentions verifying results / failed records",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "why does this apex keep hitting 'Too many SOQL queries: 101' — it queries contacts for each account in the trigger loop",
+      "expected_output": "Explains the governor limit, shows the bulkified map-based pattern querying once outside the loop",
+      "files": []
+    }
+  ]
+}

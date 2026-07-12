@@ -1,5 +1,6 @@
 ---
 name: sfdt-cli
+license: Apache-2.0
 description: "Guide for using AND contributing to the @sfdt/cli (Salesforce DevTools) CLI. Use when: (1) the user mentions sfdt commands, deployment, testing, Apex coverage, org drift, org health audits/monitoring, docs generation, or release manifests; (2) you see a .sfdt/ directory or sfdx-project.json and the user wants CLI-driven workflows; (3) the user says sfdt should/could support something, wants to add a command, extend config, or suggests sfdt can help with a task — this means implementing the feature in the CLI itself."
 triggers:
   - sfdt

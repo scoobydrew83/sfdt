@@ -1,5 +1,6 @@
 ---
 name: sf-pmd-scan
+license: Apache-2.0
 description: Run Salesforce Code Analyzer v5 (PMD + ESLint + Graph Engine) against this project, parse results, prioritize findings, and generate fix recommendations. Use whenever the user asks about static analysis, PMD, linting, code scanning, code quality gates, or CI quality checks for Apex/LWC — even if they just say "scan my code" or "is my code clean".
 triggers:
   - pmd

@@ -1,5 +1,6 @@
 ---
 name: sf-data
+license: Apache-2.0
 description: SOQL query writing, data export/import, bulk upsert/delete, and data management for this Salesforce project. Use whenever writing or reviewing any SOQL query, loading or extracting org data, seeding sandboxes, running anonymous Apex for data fixes, or when the user mentions CSV loads, tree exports, aggregate queries, or governor limits on queries.
 triggers:
   - soql
