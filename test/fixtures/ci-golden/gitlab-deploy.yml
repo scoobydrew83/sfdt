@@ -1,5 +1,5 @@
 sfdt-smart-deploy:
-  image: node:20
+  image: node:22
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   variables:

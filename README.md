@@ -430,7 +430,7 @@ command line.
 
 ## Docker
 
-An official Docker image is available for CI/CD pipelines. It ships Node 20, Salesforce CLI, git, bash, and jq.
+An official Docker image is available for CI/CD pipelines. It ships Node 22, Salesforce CLI, git, bash, and jq.
 
 **Build from source:**
 

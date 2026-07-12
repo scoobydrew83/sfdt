@@ -3,7 +3,7 @@ pipelines:
     '**':
       - step:
           name: SFDT Smart Deploy
-          image: node:20
+          image: node:22
           clone:
             depth: full
           script:

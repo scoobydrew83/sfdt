@@ -3,7 +3,7 @@ pipelines:
     sfdt-monitor:
       - step:
           name: SFDT Org Monitoring
-          image: node:20
+          image: node:22
           script:
             - npm install --global @salesforce/cli
             - echo "$SFDX_AUTH_URL" | sf org login sfdx-url --sfdx-url-stdin --alias golden-org --set-default

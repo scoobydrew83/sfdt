@@ -205,7 +205,7 @@ export function registerMonitorCommand(program) {
     .option('--runner <name>', 'CLI runner: npx | docker (gitlab/bitbucket) | action (github)')
     .option('--cron <expr>', 'Cron schedule', '0 6 * * *')
     .option('--org <alias>', 'Target org alias (defaults to config.defaultOrg)')
-    .option('--node <version>', 'Node.js version for the CI runner', '20')
+    .option('--node <version>', 'Node.js version for the CI runner (@sfdt/cli requires >= 22.15)', '22')
     .option('--out <path>', 'Output file path (defaults to the provider convention)')
     .option('--print', 'Print to stdout instead of writing a file')
     .option('--force', 'Overwrite an existing file')

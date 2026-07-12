@@ -102,7 +102,8 @@ export async function generateCi(options) {
     throw new Error(`No CI template for ${provider}/${type} at ${templatePath}`);
   }
 
-  const nodeVersion = options.node || '20';
+  // @sfdt/cli needs Node >= 22.15 (node:sqlite) — 22 is the floor, not a preference.
+  const nodeVersion = options.node || '22';
   const branch = options.branch || config?.defaultBranch || 'main';
   const environment = options.environment || config?.ci?.environment || 'production';
   // Release deltas resolve the last tag at runtime; {{deltaBase}} is only the
@@ -219,7 +220,7 @@ export function registerCiCommand(program) {
     .option('--environment <name>', 'Approval environment for a release workflow (default: config ci.environment or production)')
     .option('--delta-base <ref>', 'Base git ref for smart-deploy delta (release: fallback when no tag exists; default HEAD~1)')
     .option('--definition-file <path>', 'Scratch org definition file for --type scratch (defaults to config scratch.definitionFile)')
-    .option('--node <version>', 'Node.js version for the CI runner', '20')
+    .option('--node <version>', 'Node.js version for the CI runner (@sfdt/cli requires >= 22.15)', '22')
     .option('--out <path>', 'Output file path (defaults to the provider convention)')
     .option('--print', 'Print to stdout instead of writing a file')
     .option('--force', 'Overwrite an existing file')

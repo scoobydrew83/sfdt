@@ -62,9 +62,9 @@ inputs:
     required: false
     default: ci-org
   node-version:
-    description: Node.js version to set up.
+    description: Node.js version to set up (@sfdt/cli requires >= 22.15).
     required: false
-    default: '20'
+    default: '22'
 
 runs:
   using: composite
@@ -92,6 +92,11 @@ runs:
       env:
         CLI_VERSION: ${{ inputs.cli-version }}
       run: |
+        NODE_MAJOR=$(node -p "process.versions.node.split('.')[0]")
+        if [ "$NODE_MAJOR" -lt 22 ]; then
+          echo "::error::@sfdt/cli requires Node.js >= 22.15 (node:sqlite) — set the node-version input to 22 or newer (got $(node --version))"
+          exit 1
+        fi
         VERSION="$CLI_VERSION"
         if [ "$VERSION" = "auto" ]; then
           # Locate this action's own checkout to pin the CLI to the pinned ref.
