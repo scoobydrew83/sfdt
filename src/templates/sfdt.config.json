@@ -95,6 +95,11 @@
     "connectedAppFlagPermissive": true,
     "soapLoginLookbackDays": 30
   },
+  "quality": {
+    "analyzer": {
+      "allowLegacyV4": false
+    }
+  },
   "monitoring": {
     "backupDir": "monitoring-backup",
     "limitWarnThreshold": 0.75,

@@ -7,7 +7,7 @@ import { gatherLatestTestResults, frameProvidedContext } from '../lib/ai-context
 import { getPrompt } from '../lib/prompts.js';
 import { print } from '../lib/output.js';
 import { ExitCode, resolveExitCode } from '../lib/exit-codes.js';
-import { buildLogicTestArgs } from '../lib/logic-test.js';
+import { buildLogicTestArgs, detectZeroTests } from '../lib/logic-test.js';
 import { detectLwcTests, buildLwcTestArgs } from '../lib/lwc-test.js';
 
 /**
@@ -73,16 +73,25 @@ async function runLogicTests(config, options) {
     return;
   }
 
-  // Capture the run output when AI analysis is possible, so a failure can be
-  // fed to the AI (logic results aren't written to the standard result dir);
-  // otherwise stream straight to the terminal.
-  const canAnalyze = !!config.features?.ai;
+  // Stream live AND capture (execa 9 multi-destination stdio): the capture
+  // feeds the zero-test guard and, on failure, the AI analysis (logic results
+  // aren't written to the standard result dir).
+  const capture = { stdout: ['inherit', 'pipe'], stderr: ['inherit', 'pipe'], all: true };
   try {
-    const res = await execa('sf', args, canAnalyze ? { all: true } : { stdio: 'inherit' });
-    if (canAnalyze && res.all) console.log(res.all);
+    const res = await execa('sf', args, capture);
+    if (!options.allowZeroTests && detectZeroTests(res.all)) {
+      print.error(
+        `Zero tests were run on ${org}` +
+          (options.tests ? ` (tests: ${options.tests})` : '') +
+          (options.category ? ` (category: ${options.category})` : '') +
+          ' — a pass that verified nothing. Check test names (Flow tests need the FlowTesting.<name> prefix) and that the org grants "View All Data".',
+      );
+      print.info('Pass --allow-zero-tests if an empty run is expected.');
+      process.exitCode = 1;
+      return;
+    }
     print.success('All logic tests passed.');
   } catch (err) {
-    if (canAnalyze && err.all) console.log(err.all);
     print.error('Logic tests failed.');
     print.info('Note: `sf logic run test` is Beta and requires the "View All Data" org permission.');
     const output = String(err.all || err.stderr || err.stdout || err.message || '').slice(0, 12000);
@@ -134,7 +143,8 @@ export function registerTestCommand(program) {
     .option('--tests <list>', 'For --logic: comma-separated test names (Apex classes and FlowTesting.<name>)')
     .option('--category <cat>', 'For --logic: restrict to Apex or Flow')
     .option('--code-coverage', 'For --logic: retrieve code coverage results')
-    .option('--wait <minutes>', 'For --logic: streaming wait timeout in minutes (default: 30)')
+    .option('--wait <minutes>', 'For --logic: streaming wait timeout in whole minutes, >= 1 (default: 30)')
+    .option('--allow-zero-tests', 'For --logic: exit 0 even when Salesforce runs zero tests (default: zero tests fail the run)')
     .action(async (options) => {
       try {
         const config = await loadConfig();

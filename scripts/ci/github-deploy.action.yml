@@ -28,7 +28,7 @@ jobs:
         uses: {{actionRef}}
         continue-on-error: true
         with:
-          command: quality --output-file sfdt-quality.sarif
+          args-json: '["quality","--output-file","sfdt-quality.sarif"]'
           node-version: '{{nodeVersion}}'
       - name: Upload code scanning results
         if: always() && hashFiles('sfdt-quality.sarif') != ''
@@ -38,7 +38,7 @@ jobs:
       - name: Smart delta validation
         uses: {{actionRef}}
         with:
-          command: deploy --smart --org {{org}} --delta-base "origin/${{ github.event.pull_request.base.ref }}" --dry-run
+          args-json: '["deploy","--smart","--org","{{org}}","--delta-base","origin/${{ github.event.pull_request.base.ref }}","--dry-run"]'
           auth-method: {{authMethod}}
           org-alias: {{org}}
           node-version: '{{nodeVersion}}'

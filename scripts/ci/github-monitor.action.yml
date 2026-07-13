@@ -22,7 +22,7 @@ jobs:
       - name: Run org monitoring
         uses: {{actionRef}}
         with:
-          command: monitor all --org {{org}} --backup --notify --json
+          args-json: '["monitor","all","--org","{{org}}","--backup","--notify","--json"]'
           auth-method: {{authMethod}}
           org-alias: {{org}}
           node-version: '{{nodeVersion}}'

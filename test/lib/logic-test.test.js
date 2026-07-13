@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildLogicTestArgs, LOGIC_TEST_LEVELS, LOGIC_TEST_CATEGORIES } from '../../src/lib/logic-test.js';
+import {
+  buildLogicTestArgs,
+  detectZeroTests,
+  LOGIC_TEST_LEVELS,
+  LOGIC_TEST_CATEGORIES,
+} from '../../src/lib/logic-test.js';
 
 describe('buildLogicTestArgs', () => {
   it('builds a minimal run with the required org and a default 30-minute wait', () => {
@@ -13,11 +18,17 @@ describe('buildLogicTestArgs', () => {
     expect(() => buildLogicTestArgs({}, '')).toThrow(/No org specified/);
   });
 
-  it('honours an explicit --wait (including 0)', () => {
+  it('honours an explicit valid --wait', () => {
     expect(buildLogicTestArgs({ wait: '5' }, 'dev')).toContain('5');
-    // 0 is a legitimate caller-provided value, not "unset".
-    const args = buildLogicTestArgs({ wait: 0 }, 'dev');
-    expect(args[args.indexOf('--wait') + 1]).toBe('0');
+    const args = buildLogicTestArgs({ wait: 120 }, 'dev');
+    expect(args[args.indexOf('--wait') + 1]).toBe('120');
+  });
+
+  it('rejects non-integer, zero, and negative --wait values', () => {
+    for (const wait of ['0', 0, '-5', '2.5', 'abc', '10m', ' 5']) {
+      expect(() => buildLogicTestArgs({ wait }, 'dev'), `wait=${JSON.stringify(wait)}`)
+        .toThrow(/Invalid --wait/);
+    }
   });
 
   it('appends test level, tests, category, and code-coverage when provided', () => {
@@ -52,5 +63,26 @@ describe('buildLogicTestArgs', () => {
     for (const cat of LOGIC_TEST_CATEGORIES) {
       expect(() => buildLogicTestArgs({ category: cat }, 'dev')).not.toThrow();
     }
+  });
+});
+
+describe('detectZeroTests', () => {
+  it('flags the human summary table and JSON summary when zero tests ran', () => {
+    expect(detectZeroTests('=== Test Summary\nTests Ran        0\nPassing          0')).toBe(true);
+    expect(detectZeroTests('Tests Ran: 0')).toBe(true);
+    expect(detectZeroTests('Tests Ran | 0 |')).toBe(true);
+    expect(detectZeroTests('{"summary":{"testsRan": 0,"passing":0}}')).toBe(true);
+  });
+
+  it('does not flag runs that executed tests', () => {
+    expect(detectZeroTests('Tests Ran        10\nPassing          10')).toBe(false);
+    expect(detectZeroTests('Tests Ran: 20')).toBe(false);
+    expect(detectZeroTests('{"summary":{"testsRan": 105}}')).toBe(false);
+  });
+
+  it('returns false for empty or unrecognized output (never a false failure)', () => {
+    expect(detectZeroTests('')).toBe(false);
+    expect(detectZeroTests(undefined)).toBe(false);
+    expect(detectZeroTests('Run completed.')).toBe(false);
   });
 });

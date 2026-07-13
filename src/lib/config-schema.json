@@ -201,6 +201,19 @@
         "soapLoginLookbackDays": { "type": "integer", "minimum": 1 }
       }
     },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "analyzer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allowLegacyV4": { "type": "boolean" }
+          }
+        }
+      }
+    },
     "monitoring": {
       "type": "object",
       "additionalProperties": false,

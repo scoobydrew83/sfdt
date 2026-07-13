@@ -38,6 +38,11 @@ export function buildLogicTestArgs(opts = {}, org) {
   // `sf logic run test` is async by default (returns a run id); wait for
   // results so `sfdt test --logic` is usable in CI without a separate poll.
   const wait = opts.wait != null && opts.wait !== '' ? String(opts.wait) : '30';
+  if (!/^\d+$/.test(wait) || Number.parseInt(wait, 10) < 1) {
+    throw new Error(
+      `Invalid --wait "${opts.wait}" — must be a whole number of minutes, 1 or greater`,
+    );
+  }
   const args = ['logic', 'run', 'test', '--target-org', org, '--wait', wait];
 
   if (opts.testLevel) args.push('--test-level', opts.testLevel);
@@ -47,4 +52,17 @@ export function buildLogicTestArgs(opts = {}, org) {
   if (opts.category) args.push('--test-category', opts.category);
   if (opts.codeCoverage) args.push('--code-coverage');
   return args;
+}
+
+/**
+ * Detect a run where Salesforce executed zero tests — a "pass" that verified
+ * nothing (typo'd test names, missing FlowTesting.<name> prefix, or a
+ * permissions gap). Matches the human table ("Tests Ran … 0") and the JSON
+ * summary shape; unknown output formats return false (never a false failure).
+ */
+export function detectZeroTests(output) {
+  if (!output) return false;
+  // ponytail: text heuristic against the beta runner's output; replace with a
+  // parsed result model if/when unified result normalization (blueprint I-4) lands.
+  return /Tests Ran\D{0,20}0\b/i.test(output) || /"testsRan"\s*:\s*0\b/.test(output);
 }

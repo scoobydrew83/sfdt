@@ -18,6 +18,7 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
+import { fileURLToPath } from 'url';
 // host/ is bundled inside the published @sfdt/cli tarball (see "files" in
 // package.json), and @sfdt/host itself is `"private": true` because it is
 // not a separately consumable npm package — it only makes sense as part of
@@ -40,6 +41,16 @@ import { resolveExitCode } from '../lib/exit-codes.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
 
 const BROWSER_CHOICES = ['chrome', 'edge', 'brave', 'chromium', 'vivaldi', 'all'];
+
+/** The installed @sfdt/cli version, for the host-config record (best-effort). */
+async function cliVersion() {
+  try {
+    const pkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json');
+    return (await fs.readJson(pkgPath)).version ?? null;
+  } catch {
+    return null;
+  }
+}
 
 // Chrome assigns extension IDs as exactly 32 chars from [a-p]
 // (a base-16 mapping of the public-key SHA-256 hash). Validate at parse time
@@ -83,13 +94,21 @@ export function registerExtensionCommand(program) {
             `--extension-id must be 32 lowercase letters a–p (Chrome extension IDs are base-16 → a-p). Got: ${options.extensionId}`,
           );
         }
-        // Record the project root so the host can find logs/ + .sfdt/config.json.
+        // Record the project context so the host can find logs/ + .sfdt/config.json.
         // Explicit flag wins; otherwise discover the current project (best-effort —
-        // install-host may be run outside a project, which is still valid).
+        // install-host may be run outside a project, which is still valid). When
+        // config loads, pass its resolved configDir/logDir so a custom
+        // config.logDir is persisted; with only --project-root the installer
+        // derives the defaults (<root>/.sfdt, <root>/logs).
         let projectRoot = options.projectRoot;
+        let configDir;
+        let logDir;
         if (!projectRoot) {
           try {
-            projectRoot = (await loadConfig())._projectRoot;
+            const config = await loadConfig();
+            projectRoot = config._projectRoot;
+            configDir = config._configDir;
+            logDir = config.logDir;
           } catch {
             projectRoot = undefined;
           }
@@ -98,6 +117,9 @@ export function registerExtensionCommand(program) {
           extensionId: options.extensionId,
           browser: options.browser,
           projectRoot,
+          configDir,
+          logDir,
+          cliVersion: await cliVersion(),
         });
         if (!result.ok) {
           if (jsonMode) {

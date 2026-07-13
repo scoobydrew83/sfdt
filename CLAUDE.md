@@ -93,6 +93,7 @@ Dockerfile      Official Docker image definition
 | `SFDT_SMOKE_TESTS` | Per-invocation: comma-joined `config.smokeTests.testClasses`, set by `smoke.js` (a user-exported env value wins) |
 | `SFDT_ANALYZER_INCLUDE_FIXES` | Per-invocation: `"true"` from `quality --include-fixes`; `scripts/quality/code-analyzer.sh` adds `--include-fixes --include-suggestions` to the Code Analyzer v5 run |
 | `SFDT_ANALYZER_OUTPUT_FILE` | Per-invocation: from `quality --output-file <path>`; `scripts/quality/code-analyzer.sh` adds a second `--output-file` to the Code Analyzer v5 run (format inferred from the extension, e.g. `.sarif`); v4 logs a warning and skips |
+| `SFDT_ANALYZER_ALLOW_LEGACY` | Per-invocation: `"true"` from `quality --allow-legacy-analyzer` or config `quality.analyzer.allowLegacyV4`; permits the legacy Code Analyzer v4 (`sf scanner run`) when v5 is unavailable. Without it, a v4-only environment emits the `skipped` marker (v5 required — J-1 policy; skip is never rendered as a pass). v4 support is removed at 1.0 |
 | `SFDT_TAG_RELEASE` / `SFDT_CREATE_PR` / `SFDT_NOTIFY_SLACK` | Per-invocation: `"true"` from `deploy --tag/--create-pr/--notify` (or the GUI Release Hub toggles); drive post-deploy tagging, PR creation, and notifications in `deployment-assistant.sh` |
 | `SFDT_PACKAGE_DIRS` | JSON array of all package paths from `config.packageDirectories`, e.g. `["force-app/main/default","force-app/feature-a"]` |
 | `SFDT_MANIFEST_LAYOUT` | `config.manifestLayout` (`"flat"` or `"subpath"`); default `"flat"` |
