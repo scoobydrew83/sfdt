@@ -16,8 +16,8 @@
 # to `command` — it is executed as a shell command line.
 name: SFDT for Salesforce
 description: >-
-  Salesforce DX DevOps toolkit — smart delta deploys, org monitoring and
-  auditing, quality analysis, and release management via the sfdt CLI.
+  Run any sfdt command in one step — smart delta deploys, org monitoring,
+  quality analysis, and Salesforce release management.
 author: sfdt
 branding:
   icon: cloud
