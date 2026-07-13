@@ -158,7 +158,7 @@ describe('installNativeHost — darwin', () => {
     expect(parsed.allowed_origins).toEqual([`chrome-extension://${VALID_EXTENSION_ID}/`]);
   });
 
-  it('records the project root in the host config when projectRoot is passed', async () => {
+  it('records the full project context (defaults) when only projectRoot is passed', async () => {
     const r = await installNativeHost({
       extensionId: VALID_EXTENSION_ID,
       hostPath: HOST_PATH,
@@ -169,8 +169,47 @@ describe('installNativeHost — darwin', () => {
     expect(r.ok).toBe(true);
     expect(r.projectRoot).toBe('/work/my-sf-project');
     expect(r.hostConfigFile).toMatch(/sfdt-host\.json$/);
-    const written = fsState.get(r.hostConfigFile);
-    expect(JSON.parse(written)).toMatchObject({ projectRoot: '/work/my-sf-project' });
+    const written = JSON.parse(fsState.get(r.hostConfigFile));
+    expect(written).toMatchObject({
+      schemaVersion: 1,
+      projectRoot: '/work/my-sf-project',
+      configDir: '/work/my-sf-project/.sfdt',
+      logDir: '/work/my-sf-project/logs',
+    });
+    expect(written.installedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('persists a custom relative logDir resolved to an absolute path', async () => {
+    const r = await installNativeHost({
+      extensionId: VALID_EXTENSION_ID,
+      hostPath: HOST_PATH,
+      platform: 'darwin',
+      browser: 'chrome',
+      projectRoot: '/work/my-sf-project',
+      logDir: 'artifacts/sfdt-logs',
+      configDir: '/work/my-sf-project/.sfdt',
+      cliVersion: '0.17.0',
+    });
+    expect(r.ok).toBe(true);
+    expect(JSON.parse(fsState.get(r.hostConfigFile))).toMatchObject({
+      logDir: '/work/my-sf-project/artifacts/sfdt-logs',
+      cliVersion: '0.17.0',
+    });
+  });
+
+  it('persists a custom absolute logDir unchanged', async () => {
+    const r = await installNativeHost({
+      extensionId: VALID_EXTENSION_ID,
+      hostPath: HOST_PATH,
+      platform: 'darwin',
+      browser: 'chrome',
+      projectRoot: '/work/my-sf-project',
+      logDir: '/var/log/sfdt',
+    });
+    expect(r.ok).toBe(true);
+    expect(JSON.parse(fsState.get(r.hostConfigFile))).toMatchObject({
+      logDir: '/var/log/sfdt',
+    });
   });
 
   it('installs without a host config when no projectRoot is given', async () => {

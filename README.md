@@ -406,11 +406,16 @@ shipped at that ref — no unpinned `@latest`).
 - name: Smart delta validation
   uses: scoobydrew83/sfdt@v0
   with:
-    command: deploy --smart --org ci --delta-base "origin/${{ github.event.pull_request.base.ref }}" --dry-run
+    args-json: '["deploy","--smart","--org","ci","--delta-base","origin/${{ github.event.pull_request.base.ref }}","--dry-run"]'
     auth-method: sfdx-url
     sfdx-auth-url: ${{ secrets.SFDX_AUTH_URL }}
     org-alias: ci
 ```
+
+`args-json` (a JSON array of arguments) is executed with no shell, so values can
+never be interpreted as shell syntax. The legacy `command` string input still
+works for shell-neutral strings but is deprecated; strings needing quoting or
+expansion additionally require `allow-shell-command: 'true'` (trusted input only).
 
 JWT bearer flow instead of an auth URL:
 

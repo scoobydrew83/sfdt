@@ -30,15 +30,40 @@ describe('root composite action (action.yml)', () => {
   it('declares the expected input surface', () => {
     const inputs = Object.keys(action.inputs);
     for (const name of [
-      'command', 'cli-version', 'auth-method',
+      'args-json', 'command', 'allow-shell-command', 'cli-version', 'auth-method',
       'sfdx-auth-url', 'consumer-key', 'jwt-secret-key', 'username', 'instance-url',
       'org-alias', 'node-version',
     ]) {
       expect(inputs, `missing input ${name}`).toContain(name);
     }
-    expect(action.inputs.command.required).toBe(true);
+    // Exactly one of args-json/command is required — enforced at runtime by
+    // the Validate step, so neither is required at the manifest level.
+    expect(action.inputs.command.required).toBe(false);
+    expect(action.inputs['args-json'].required).toBe(false);
+    expect(action.inputs['allow-shell-command'].default).toBe('false');
     expect(action.inputs['cli-version'].default).toBe('auto');
     expect(action.inputs['auth-method'].default).toBe('none');
+  });
+
+  it('never evals the command input without the explicit shell opt-in', () => {
+    const run = action.runs.steps.find((s) => s.name === 'Run sfdt');
+    // eval appears only inside the allow-shell-command branch…
+    const evalIdx = run.run.indexOf('eval "sfdt');
+    const guardIdx = run.run.indexOf('SFDT_ALLOW_SHELL" = "true"');
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(evalIdx).toBeGreaterThan(guardIdx);
+    // …the default string path rejects metacharacters and newlines…
+    expect(run.run).toContain("[^A-Za-z0-9 _@%+=:,./-]");
+    expect(run.run).toContain("*$'\\n'*");
+    // …and the args-json path validates a string array before use.
+    expect(run.run).toContain('type=="array"');
+    expect(run.run).toContain('all(.[]; type=="string")');
+  });
+
+  it('validates that exactly one of args-json/command is passed', () => {
+    const validate = action.runs.steps.find((s) => s.name === 'Validate inputs');
+    expect(validate.run).toContain('one of args-json or command is required');
+    expect(validate.run).toContain('mutually exclusive');
   });
 
   it('never interpolates secret inputs into run bodies (env-only)', () => {

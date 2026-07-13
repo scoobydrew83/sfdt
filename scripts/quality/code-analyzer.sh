@@ -193,8 +193,12 @@ if command -v sf &>/dev/null && sf code-analyzer --help &>/dev/null; then
         printf '{"status":"skipped","reason":"sf code-analyzer run failed","result":[],"_sfdt_unavailable":"sf code-analyzer run failed — no violation data available for this run"}\n'
     fi
     rm -f "$_ANALYZER_TMP"
-elif [[ -n "$_SCANNER_V4" ]]; then
-    log_info "Running Salesforce Code Analyzer v4 (legacy sf scanner run)..."
+elif [[ -n "$_SCANNER_V4" && "${SFDT_ANALYZER_ALLOW_LEGACY:-}" == "true" ]]; then
+    # Legacy v4 runs only on explicit opt-in (quality --allow-legacy-analyzer or
+    # config quality.analyzer.allowLegacyV4). Its results are NON-AUTHORITATIVE:
+    # rule coverage and severities differ from v5, and SARIF/fixes/suggestions
+    # are unavailable. v4 support is removed at 1.0.
+    log_warning "Running LEGACY Salesforce Code Analyzer v4 (sf scanner run) — results are non-authoritative; upgrade to v5 (sf plugins install code-analyzer)."
     if [[ -n "${SFDT_ANALYZER_OUTPUT_FILE:-}" ]]; then
         log_warning "SFDT_ANALYZER_OUTPUT_FILE requires Code Analyzer v5 — no extra output file written."
     fi
@@ -204,6 +208,10 @@ elif [[ -n "$_SCANNER_V4" ]]; then
         --engine pmd,eslint \
         2>/dev/null || \
         printf '{"status":"skipped","reason":"sf scanner run failed","result":[],"_sfdt_unavailable":"sf scanner run failed — no violation data available for this run"}\n'
+elif [[ -n "$_SCANNER_V4" ]]; then
+    log_warning "Code Analyzer v5 not available; legacy v4 detected but NOT run (v5 is required for authoritative scans)."
+    log_warning "Install v5 with:  sf plugins install code-analyzer   — or rerun with --allow-legacy-analyzer to accept a non-authoritative v4 scan."
+    printf '{"status":"skipped","reason":"v5 required; legacy v4 present but not enabled","result":[],"_sfdt_unavailable":"Code Analyzer v5 not installed. Legacy v4 was detected but is opt-in only (--allow-legacy-analyzer, non-authoritative). Install v5: sf plugins install code-analyzer"}\n'
 else
     log_warning "Salesforce Code Analyzer not available — static violation analysis SKIPPED (not run)."
     log_warning "It auto-installs with a modern sf CLI, or run:  sf plugins install code-analyzer"

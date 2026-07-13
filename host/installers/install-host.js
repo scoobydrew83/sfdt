@@ -227,12 +227,27 @@ export async function installNativeHost(opts) {
     return { ok: false, error: 'No browser manifest could be installed', results };
   }
 
-  // Record the project root so the host's read-only kinds can find logs/ and
-  // .sfdt/config.json. Non-fatal: the manifest install already succeeded.
+  // Record the project context so the host's read-only kinds can find logs/
+  // and .sfdt/config.json. The resolved logDir is persisted (not re-derived at
+  // runtime) so a custom config.logDir survives the host being launched by the
+  // browser, outside any project. Non-fatal: the manifest install already
+  // succeeded.
   let hostConfigFile = null;
   if (opts.projectRoot) {
+    const root = opts.projectRoot;
+    const abs = (p, fallback) => {
+      const v = p ?? fallback;
+      return path.isAbsolute(v) ? v : path.join(root, v);
+    };
     try {
-      ({ file: hostConfigFile } = await writeHostConfig({ projectRoot: opts.projectRoot }));
+      ({ file: hostConfigFile } = await writeHostConfig({
+        schemaVersion: 1,
+        projectRoot: root,
+        configDir: abs(opts.configDir, '.sfdt'),
+        logDir: abs(opts.logDir, 'logs'),
+        cliVersion: opts.cliVersion ?? null,
+        installedAt: new Date().toISOString(),
+      }));
     } catch {
       // Best-effort — the host falls back to SFDT_PROJECT_ROOT / errors clearly.
     }

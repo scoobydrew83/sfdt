@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`sfdt test --logic --allow-zero-tests`** — a "passing" unified logic run that executed **zero tests** now exits non-zero (it verified nothing — typo'd test names, missing `FlowTesting.` prefix, or a permissions gap); pass the flag when an empty run is expected. Logic run output now streams live *and* is captured for the guard/AI analysis.
+- **`sfdt quality --allow-legacy-analyzer`** (and config `quality.analyzer.allowLegacyV4`) — Code Analyzer v4 no longer runs as a silent fallback. v5 is required for authoritative scans; a v4-only environment emits the `skipped` marker unless legacy mode is explicitly enabled, and legacy results are labeled non-authoritative. v4 support will be removed at 1.0.
+- **GitHub Action `args-json` input** — the preferred way to pass sfdt arguments (a JSON array, executed with no shell, immune to shell injection). New `allow-shell-command` input gates the legacy eval behavior.
+
+### Changed
+
+- **GitHub Action `command` input is deprecated and hardened.** Without `allow-shell-command: 'true'` it now accepts only shell-neutral characters and is word-split without a shell — strings with quotes, `$`, `;`, newlines, etc. are rejected with a migration hint instead of being eval'd. The generated GitHub CI templates (`sfdt ci init --runner action`) now emit `args-json`.
+- **`sfdt test --logic --wait` is validated** — must be a whole number of minutes ≥ 1 (previously any string was passed through to `sf logic run test`).
+- **`sfdt extension install-host` persists the full project context** — the host config now records `schemaVersion`, `projectRoot`, `configDir`, the **resolved absolute `logDir`** (custom `config.logDir` values survive browser-launched host sessions), `cliVersion`, and `installedAt`. Old host configs (projectRoot-only) keep working unchanged.
+
 ## [0.17.0] - 2026-07-12
 
 ### Added
