@@ -2,6 +2,7 @@
   "name": "@sfdt/host",
   "version": "0.11.0",
   "description": "Native messaging host that bridges the @sfdt/extension Chrome extension to the sfdt CLI when the sfdt ui localhost server is unavailable.",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "bin": {

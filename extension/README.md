@@ -177,4 +177,4 @@ Architecture overview lives in the root [docs/ARCHITECTURE.md](../docs/ARCHITECT
 
 ## License
 
-MIT — see [../LICENSE](../LICENSE).
+Apache-2.0 — see [../LICENSE](../LICENSE).

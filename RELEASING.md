@@ -114,20 +114,11 @@ The Web Store re-review process is slower than npm publish, so we bump the exten
 5. Upload to the Chrome Web Store dashboard. The listing references this README + `extension/PRIVACY.md` for reviewers.
 6. After the Store accepts the new version, tag: `git tag extension-vX.Y.Z && git push --tags`.
 
-### Releasing `@sfdt/flow-core` (when we publish it)
+### Releasing `@sfdt/flow-core`
 
-Flow-core is currently `"private": true` and consumed only as a workspace dependency. When we publish:
-
-1. Remove `"private": true` from `packages/flow-core/package.json`.
-2. Set `version` to `0.x.0` for the first publish; track its own changelog under `packages/flow-core/CHANGELOG.md`.
-3. Publish from `main`:
-   ```bash
-   cd packages/flow-core
-   npm publish --access public
-   ```
-4. Update root `package.json` (and `extension/package.json`) to depend on the published version instead of workspace `*` **only** when we have an external consumer — until then, workspace `*` is fine.
-
-The trigger for publishing flow-core is "a second consumer appears" — a Firefox build, a VS Code extension, an MCP server wrapper, or someone outside this repo wanting to build on the scoring engine.
+Flow-core is **public on npm** and publishes as a coupled sub-step of every CLI release — the
+`ci.yml` publish job publishes it **before** `@sfdt/cli` (the CLI's dependency must resolve
+first). It has no standalone release trigger; its version bumps with the CLI's release commit.
 
 ### Releasing `@sfdt/host`
 
@@ -142,7 +133,7 @@ Before any release PR is merged:
 - [ ] `npm test` clean (CLI + extension + flow-core + host + gui via the root workspace config).
 - [ ] `npm run lint` clean.
 - [ ] `npm run build:gui` and `npm run build:ext` both succeed.
-- [ ] If anything in `packages/flow-core/src/bridge-contract.ts` changed, the `/pre-release-cli-test` skill has been run (verifies all 21 CLI commands' `--help` smoke).
+- [ ] If anything in `packages/flow-core/src/bridge-contract.ts` changed, the `/pre-release-cli-test` skill has been run (verifies every registered CLI command's `--help` smoke — the list is derived from the Commander tree, never hardcoded).
 - [ ] If anything in `gui/` changed, the `/pre-release-ui-test` skill has been run.
 - [ ] If you're releasing the VS Code extension, `npm run test:vscode` + `npm run build:vscode` pass, the `.vsix` packages cleanly, and the `VSCE_PAT` secret is configured (or you'll upload the `.vsix` manually).
 - [ ] After a CLI release: verify the CI `docker` job pushed the GHCR image (public on first release), and the "Bump Homebrew tap" step updated the tap's `Formula/sfdt.rb` (requires the `HOMEBREW_TAP_TOKEN` secret — bump manually if it skipped).

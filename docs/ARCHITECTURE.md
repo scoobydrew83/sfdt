@@ -74,7 +74,7 @@ SFDT uses a hybrid architecture: a Node.js CLI layer (Commander.js) handles argu
 - **Org inventory** (`org-inventory.js`) fetches a metadata member inventory from a Salesforce org via `sf org list metadata` or from local source files via glob. Results are returned as `Map<type, Set<member>>`.
 - **Org diff** (`org-diff.js`) compares two inventory maps and returns a flat array of `{ type, member, status }` objects where `status` is `source-only`, `target-only`, or `both`.
 - **Command runner (SSE)** — the GUI server exposes `GET /api/command/run?command=<name>` which streams shell script output as Server-Sent Events. This lets the dashboard run preflight, drift, and smoke scripts without a separate terminal session.
-- **No transpilation** required. The package is pure ESM (`"type": "module"` in package.json), targeting Node.js 18+.
+- **No transpilation** required. The package is pure ESM (`"type": "module"` in package.json), targeting Node.js >=22.15.0 (the `engines` floor in package.json).
 
 ## Package Structure
 
@@ -182,8 +182,10 @@ Specifies Apex test suites, test levels, and auto-detected test/Apex classes for
 
 ## Future Roadmap
 
-- **sf CLI plugin integration** — Package sfdt as a native `sf` plugin.
+(See `ROADMAP.md` at the repo root for current status. Items previously listed here have
+shipped: the sf CLI plugin (`packages/plugin`, `sf sfdt <command>`), the plugin system
+(`src/lib/plugin-loader.js` — `config.plugins[]`, `sfdt-plugin-*` auto-discovery,
+`.sfdt/plugins/*.js`), and the web dashboard (`sfdt ui`).)
+
 - **Windows support** — Port shell scripts to Node.js or cross-platform shell.
-- **Plugin system** — Allow 3rd-party packages to register sfdt commands.
-- **Dashboard generation** — HTML reports for test and deployment history.
 - **Interactive TUI mode** — A terminal UI for monitoring long-running operations.
