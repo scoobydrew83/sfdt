@@ -145,6 +145,9 @@ jobs:
         run: |
           TAG="pr-${PR_NUMBER}"
           TAGS=$(npm view @sfdt/cli dist-tags --json 2>/dev/null || echo '{}')
+          # node reads these via process.env — they must be exported, or
+          # JSON.parse(undefined) throws and the job fails on every PR close.
+          export TAG TAGS
           EXISTS=$(node -e "
             const t = JSON.parse(process.env.TAGS);
             const tag = process.env.TAG;
