@@ -444,4 +444,13 @@ export const COMMAND_POLICY = {
     surfaces: { gui: false, vscode: false, chrome: false },
     mcpTools: {},
   },
+  versions: {
+    mutating: false,
+    requiresProject: true,
+    requiresOrg: false, // org side is optional; local scan always works
+    supportsJson: true,
+    docsCategory: 'org-health',
+    surfaces: { gui: false, vscode: true, chrome: true }, // chrome = the org-side api-version-audit feature
+    mcpTools: { sfdt_api_versions: { mutating: false } },
+  },
 };

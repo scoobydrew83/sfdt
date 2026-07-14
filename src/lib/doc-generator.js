@@ -18,9 +18,11 @@ import { getPrompt, interpolate } from './prompts.js';
  * unit-test without a live org or filesystem fixtures.
  */
 
-// XML helpers (focused, not a full parser)
+// XML helpers (focused, not a full parser). `tag` is exported for other
+// meta-XML readers (src/lib/api-versions.js) — apiVersion and friends are flat
+// text nodes, so a focused regex beats a parser dependency.
 
-function tag(xml, name) {
+export function tag(xml, name) {
   const m = xml.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`));
   return m ? decode(m[1].trim()) : null;
 }
@@ -158,6 +160,7 @@ async function collectFlows(base) {
       status: tag(xml, 'status'),
       processType: tag(xml, 'processType'),
       description: tag(xml, 'description'),
+      apiVersion: tag(xml, 'apiVersion'),
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));

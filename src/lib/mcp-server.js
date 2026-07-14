@@ -462,6 +462,21 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_api_versions',
+    description: 'Audit Salesforce API versions across local source and the org — per-type version distributions (Apex classes/triggers, Flows, LWC, Aura), sourceApiVersion, the org\'s max API version, and below-floor/behind-ceiling outliers. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Target org alias (default: config defaultOrg).' },
+        localOnly: { type: 'boolean', description: 'Skip the org side even when an org is configured.' }
+      }
+    },
+    examples: [
+      { description: 'Full local + org API-version report', input: { org: 'dev' } },
+      { description: 'Offline scan of local source only', input: { localOnly: true } }
+    ]
+  },
+  {
     name: 'sfdt_get_parked_result',
     description: 'Retrieve the full payload of a previously parked tool result.',
     inputSchema: {
@@ -715,6 +730,14 @@ export class SfdtMcpServer {
         const cmdArgs = ['history', '--json'];
         if (args.type) cmdArgs.push('--type', args.type);
         if (args.limit != null) cmdArgs.push('--limit', String(args.limit));
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_api_versions': {
+        const cmdArgs = ['versions', '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        if (args.localOnly) cmdArgs.push('--local-only');
         const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);
       }

@@ -64,6 +64,19 @@
       "bridgeRequired": false
     },
     {
+      "id": "api-version-audit",
+      "name": "API Version Audit",
+      "contexts": [
+        "setup_flows",
+        "flow_trigger_explorer",
+        "setup_other"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
       "id": "canvas-search",
       "name": "Search & Highlight",
       "contexts": [

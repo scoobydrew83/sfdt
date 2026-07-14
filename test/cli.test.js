@@ -64,6 +64,7 @@ describe('createCli', () => {
       'pr',
       'retrofit',
       'history',
+      'versions',
       'version',
     ];
 

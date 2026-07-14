@@ -278,6 +278,15 @@
       "group": null
     },
     {
+      "id": "versions",
+      "label": "API Versions Report",
+      "detail": "Local + org API-version audit (Apex, Flow, LWC, Aura vs the org max)",
+      "args": [
+        "versions"
+      ],
+      "group": null
+    },
+    {
       "id": "audit-all",
       "label": "All Checks",
       "detail": "Run every audit check",
@@ -340,7 +349,7 @@
     {
       "id": "audit-api-versions",
       "label": "API Versions",
-      "detail": "Deprecated metadata API versions",
+      "detail": "Deprecated API versions + org ceiling (Apex, triggers, Flows)",
       "args": [
         "audit",
         "api-versions"

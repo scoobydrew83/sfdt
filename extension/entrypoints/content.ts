@@ -47,6 +47,7 @@ import { createDebugLogViewerFeature } from '../features/debug-log-viewer.js';
 import { createSavedSoqlFeature } from '../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../features/org-switcher.js';
 import { createOrgReleaseBadgeFeature } from '../features/org-release-badge.js';
+import { createApiVersionAuditFeature } from '../features/api-version-audit.js';
 
 const SALESFORCE_HOST_PATTERN =
   /^https:\/\/[^/]+\.(salesforce\.com|salesforce-setup\.com|my\.salesforce\.com|lightning\.force\.com)\//i;
@@ -79,6 +80,9 @@ export default defineContentScript({
     // Non-interactive pill in the Setup tab strip: org release + preview flag
     // (derived via flow-core, same as CLI `monitor org-info`).
     registry.register(createOrgReleaseBadgeFeature());
+    // Click-to-open pill next to the badge: org max API version + per-type
+    // ApiVersion histograms, banded via flow-core's minApiVersionFloor.
+    registry.register(createApiVersionAuditFeature());
     registry.register(createCanvasSearchFeature());
     registry.register(createFlowListSearchFeature());
     registry.register(createFlowHealthCheckFeature());

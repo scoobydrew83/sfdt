@@ -13,7 +13,14 @@ vi.mock('../../src/lib/org-query.js', () => ({
   toSoqlDate: (d) => new Date(d).toISOString().replace(/\.\d{3}Z$/, 'Z'),
 }));
 
+// checkApiVersions dynamically imports org-release.js for the best-effort org
+// ceiling — mock it so tests never spawn a real `sf` subprocess.
+vi.mock('../../src/lib/org-release.js', () => ({
+  detectOrgRelease: vi.fn().mockResolvedValue(null),
+}));
+
 import { query } from '../../src/lib/org-query.js';
+import { detectOrgRelease } from '../../src/lib/org-release.js';
 import {
   runAudit,
   CHECK_IDS,
@@ -255,14 +262,68 @@ describe('checkInactiveUsers', () => {
 });
 
 describe('checkApiVersions', () => {
-  it('aggregates deprecated classes and triggers', async () => {
+  it('aggregates deprecated classes, triggers, and flows with below-floor reasons', async () => {
+    detectOrgRelease.mockResolvedValueOnce(null);
     query
       .mockResolvedValueOnce([{ Name: 'OldClass', ApiVersion: 30 }]) // ApexClass
-      .mockResolvedValueOnce([{ Name: 'OldTrigger', ApiVersion: 28 }]); // ApexTrigger
+      .mockResolvedValueOnce([{ Name: 'OldTrigger', ApiVersion: 28 }]) // ApexTrigger
+      .mockResolvedValueOnce([{ Definition: { DeveloperName: 'Old_Flow' }, ApiVersion: 33 }]); // Flow
     const r = await checkApiVersions('dev', { minApiVersion: 45 });
     expect(r.status).toBe('warn');
-    expect(r.findings).toHaveLength(2);
-    expect(r.findings.map((f) => f.type)).toEqual(['ApexClass', 'ApexTrigger']);
+    expect(r.findings).toHaveLength(3);
+    expect(r.findings.map((f) => f.type)).toEqual(['ApexClass', 'ApexTrigger', 'Flow']);
+    expect(r.findings.every((f) => f.reason === 'below-floor')).toBe(true);
+    expect(r.summary).toContain('below API v45');
+  });
+
+  it('adds the org ceiling to the summary when detectable', async () => {
+    detectOrgRelease.mockResolvedValueOnce({ release: "Summer '26", apiVersion: 67, preview: false });
+    query.mockResolvedValue([]);
+    const r = await checkApiVersions('dev', { minApiVersion: 45 });
+    expect(r.status).toBe('ok');
+    expect(r.summary).toContain("org max: v67, Summer '26");
+  });
+
+  it('raises the floor to ceiling - warnBehind and tags behind-ceiling findings', async () => {
+    detectOrgRelease.mockResolvedValueOnce({ release: "Summer '26", apiVersion: 67, preview: false });
+    query
+      .mockResolvedValueOnce([{ Name: 'Lagging', ApiVersion: 58 }]) // ApexClass: >= minApi, < 67-5=62
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const r = await checkApiVersions('dev', { minApiVersion: 45, warnBehind: 5 });
+    expect(r.status).toBe('warn');
+    expect(r.findings[0]).toMatchObject({ name: 'Lagging', reason: 'behind-ceiling' });
+    expect(r.summary).toContain('below API v62');
+    // the effective floor reached the queries too
+    expect(query.mock.calls[0][1]).toContain('ApiVersion < 62');
+  });
+
+  it('warnBehind without a detectable ceiling falls back to the plain floor', async () => {
+    detectOrgRelease.mockResolvedValueOnce(null);
+    query.mockResolvedValue([]);
+    const r = await checkApiVersions('dev', { minApiVersion: 45, warnBehind: 5 });
+    expect(r.status).toBe('ok');
+    expect(query.mock.calls[0][1]).toContain('ApiVersion < 45');
+  });
+
+  it('degrades to an Apex-only result when the Flow query is rejected', async () => {
+    detectOrgRelease.mockResolvedValueOnce(null);
+    query
+      .mockResolvedValueOnce([{ Name: 'OldClass', ApiVersion: 30 }])
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('sObject type Flow is not supported'));
+    const r = await checkApiVersions('dev', { minApiVersion: 45 });
+    expect(r.status).toBe('warn'); // never errors the whole check
+    expect(r.findings).toHaveLength(1);
+    expect(r.summary).toContain('Flow versions not queryable');
+  });
+
+  it('a detectOrgRelease failure never affects the result', async () => {
+    detectOrgRelease.mockRejectedValueOnce(new Error('no sf api request on this CLI'));
+    query.mockResolvedValue([]);
+    const r = await checkApiVersions('dev', { minApiVersion: 45 });
+    expect(r.status).toBe('ok');
+    expect(r.summary).not.toContain('org max');
   });
 });
 

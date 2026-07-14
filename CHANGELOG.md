@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`sfdt versions` — cross-surface API-version audit.** Scans local source meta files (Apex classes/triggers, Flows, LWC, Aura + `sourceApiVersion`) and, when an org resolves, the org side (per-type Tooling distributions + the org's max API version/release), then reports per-type histograms and below-floor/behind-ceiling outliers. `--local-only` works fully offline; `--json` emits the standard envelope; MCP exposes read-only `sfdt_api_versions`; the VS Code command tree gains an "API Versions Report" entry.
+- **`sfdt audit api-versions` extended** — now covers active **Flows** (degrading gracefully on orgs that reject the Tooling query), reports the org's max API version in the summary ("3 below v45 (org max: v67, Summer '26)"), and a new `audit.apiVersionWarnBehind` config (default 0 = off) additionally warns on components more than N versions behind the org ceiling, with findings tagged `below-floor` vs `behind-ceiling`.
+- **Chrome extension: `api-version-audit` feature (40th feature)** — a Setup pill ("API v67 · 2 behind", amber when anything is below the shared flow-core floor) that expands to per-type version histograms with an org-max footer. Org-side only, no bridge required, opt-in like every feature.
+
+### Fixed
+
+- **`detectOrgRelease` always returned null when `sf` colorizes output** — `sf api request rest` emits ANSI color codes even without a TTY, breaking the JSON parse. Color is now forced off, which also restores the release-mismatch warnings in `compare`/`retrofit` and the org-release context in `monitor org-info` on affected environments.
+
 - **Surface catalog framework** (`generated/` + `schemas/` + `tools/`) — machine-generated, checked-in inventories of every public surface: CLI commands (Commander tree + a new `src/lib/command-policy.js` security/exposure policy), Chrome features (parity-tested `extension/lib/feature-manifests.json`), GUI pages (new single `gui/src/routes.js` registry), VS Code commands, MCP tools, bridge kinds, CI capabilities, package versions, and a cross-surface parity matrix. `npm run generate:catalogs` regenerates; `npm run check:all-contracts` (now in CI) fails on catalog drift, stale license strings, unsupported Node claims, and unsafe auth-docs guidance. Counts on the docs site stop being hand-maintained.
 
 - **`sfdt test --logic --allow-zero-tests`** — a "passing" unified logic run that executed **zero tests** now exits non-zero (it verified nothing — typo'd test names, missing `FlowTesting.` prefix, or a permissions gap); pass the flag when an empty run is expected. Logic run output now streams live *and* is captured for the guard/AI analysis.
