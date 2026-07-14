@@ -206,12 +206,17 @@ export function createApiVersionAuditFeature(options: ApiVersionAuditOptions = {
   // SPA navigations (each nav rebuilds the tab bar, so we re-inject the pill).
   let cached: AuditData | null = null;
   let escListener: ((e: KeyboardEvent) => void) | null = null;
+  let outsideListener: ((e: MouseEvent) => void) | null = null;
 
   function closePanel(): void {
     for (const el of doc.querySelectorAll(`.${PANEL_CLASS}`)) el.remove();
     if (escListener) {
       doc.removeEventListener('keydown', escListener);
       escListener = null;
+    }
+    if (outsideListener) {
+      doc.removeEventListener('click', outsideListener);
+      outsideListener = null;
     }
   }
 
@@ -226,6 +231,13 @@ export function createApiVersionAuditFeature(options: ApiVersionAuditOptions = {
       if (e.key === 'Escape') closePanel();
     };
     doc.addEventListener('keydown', escListener);
+    // Close on click outside the pill/panel — matches the dropdown pattern in
+    // rest-explore/soql-runner; without it the absolute panel floats over
+    // subsequent content after an SPA nav (which rebuilds the tab bar).
+    outsideListener = (e: MouseEvent) => {
+      if (!host.contains(e.target as Node)) closePanel();
+    };
+    doc.addEventListener('click', outsideListener);
   }
 
   function buildPill(data: AuditData): HTMLLIElement {
@@ -251,7 +263,12 @@ export function createApiVersionAuditFeature(options: ApiVersionAuditOptions = {
     ].join('; ');
     pill.textContent = text;
     pill.title = title;
-    pill.addEventListener('click', () => togglePanel(li, data));
+    // stopPropagation so this opening click doesn't immediately reach the
+    // outside-click listener togglePanel registers on the document.
+    pill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      togglePanel(li, data);
+    });
 
     li.appendChild(pill);
     return li;

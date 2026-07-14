@@ -234,7 +234,10 @@ export async function installNativeHost(opts) {
   // succeeded.
   let hostConfigFile = null;
   if (opts.projectRoot) {
-    const root = opts.projectRoot;
+    // Normalize projectRoot to absolute — it's persisted verbatim and used as
+    // the base for relative configDir/logDir, so a relative input would poison
+    // both the stored root and the derived paths.
+    const root = path.resolve(opts.projectRoot);
     const abs = (p, fallback) => {
       const v = p ?? fallback;
       return path.isAbsolute(v) ? v : path.join(root, v);

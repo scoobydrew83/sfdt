@@ -175,6 +175,22 @@ describe('api-version-audit feature', () => {
     expect(document.querySelector(`.${PANEL_CLASS}`)).toBeNull();
   });
 
+  it('closes the panel on a click outside the pill', async () => {
+    await saveSettings(SettingsSchema.parse({}));
+    const feature = createApiVersionAuditFeature({ waitTimeoutMs: 0, api: fakeApi() });
+    await feature.init?.();
+    const pill = document.querySelector<HTMLElement>(`.${AUDIT_CLASS} span`)!;
+
+    pill.click();
+    expect(document.querySelector(`.${PANEL_CLASS}`)).not.toBeNull();
+
+    // A click elsewhere on the page dismisses the floating panel.
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    outside.click();
+    expect(document.querySelector(`.${PANEL_CLASS}`)).toBeNull();
+  });
+
   it('marks preview releases in the footer and closes on Escape', async () => {
     await saveSettings(SettingsSchema.parse({}));
     const feature = createApiVersionAuditFeature({

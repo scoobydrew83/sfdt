@@ -91,7 +91,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     docsUrl: DOCS.orgHealth,
     entries: [
       { id: 'versions', label: 'API Versions Report', detail: 'Local + org API-version audit (Apex, Flow, LWC, Aura vs the org max)', args: ['versions'], icon: 'versions' },
-      { id: 'history', label: 'Run History', detail: 'Recent sfdt runs (audit, monitor, quality, test, deploy) from the local index', args: ['history'], icon: 'history' },
+      { id: 'history', label: 'Run History', detail: 'Recent sfdt runs (audit, monitor, quality, test, deploy) from the local index', args: ['history'], icon: 'history', noOrg: true },
       {
         id: 'audit', label: 'Org Audit', detail: 'Diagnose org health (read-only)', args: ['audit', 'all'], refreshes: 'audit', icon: 'shield',
         children: [

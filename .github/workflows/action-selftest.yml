@@ -17,10 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run with args-json (preferred path, cli-version auto)
+      # cli-version: latest (a published version) — 'auto' resolves to the
+      # in-repo package.json version, which on a release PR isn't on npm yet;
+      # auto-resolution is covered by test/action.test.js.
+      - name: Run with args-json (preferred path)
         uses: ./
         with:
           args-json: '["--version"]'
+          cli-version: latest
       - name: Run with legacy command string (word-split, no shell)
         uses: ./
         with:

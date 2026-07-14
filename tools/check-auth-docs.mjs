@@ -28,7 +28,8 @@ const PATTERNS = [
     allow: new Set(['src/lib/ci-templates.js', 'CHANGELOG.md']),
   },
   {
-    re: /hooks\.slack\.com\/services\/T[A-Z0-9]{6,}/g,
+    // Anchor to the URL scheme so the host can't be prefixed (evilhooks.slack.com…).
+    re: /https?:\/\/hooks\.slack\.com\/services\/T[A-Z0-9]{6,}/g,
     reason: 'inline Slack webhook URL — reference the env var NAME instead',
     allow: new Set(),
   },
