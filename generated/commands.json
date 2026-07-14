@@ -4105,6 +4105,27 @@
           "description": "Skip the org side even when an org is configured"
         },
         {
+          "flags": "--advise",
+          "name": "advise",
+          "required": false,
+          "default": null,
+          "description": "AI upgrade advice for local components below the target version (requires features.ai; grounded by the curated per-version registry)"
+        },
+        {
+          "flags": "--target <version>",
+          "name": "target",
+          "required": false,
+          "default": null,
+          "description": "For --advise: target API version (default: the org max, or the registry max offline)"
+        },
+        {
+          "flags": "--type <family>",
+          "name": "type",
+          "required": false,
+          "default": null,
+          "description": "For --advise: restrict to one family — apex | flow | lwc"
+        },
+        {
           "flags": "--json",
           "name": "json",
           "required": false,

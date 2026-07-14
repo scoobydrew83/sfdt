@@ -7,8 +7,15 @@ vi.mock('../../src/lib/api-versions.js', () => ({
   fetchOrgApiVersions: vi.fn(),
   buildReport: vi.fn(),
 }));
+vi.mock('../../src/lib/ai.js', () => ({
+  isAiAvailable: vi.fn(),
+  aiUnavailableMessage: vi.fn(() => 'AI unavailable: enable features.ai'),
+  runAiPrompt: vi.fn(),
+  providerSupportsAgenticTools: vi.fn(() => true),
+}));
 
 import { loadConfig } from '../../src/lib/config.js';
+import { isAiAvailable, runAiPrompt, providerSupportsAgenticTools } from '../../src/lib/ai.js';
 import { scanLocalApiVersions, fetchOrgApiVersions, buildReport } from '../../src/lib/api-versions.js';
 import { registerVersionsCommand } from '../../src/commands/versions.js';
 
@@ -83,6 +90,93 @@ describe('versions command', () => {
     });
     await createProgram().parseAsync(['node', 'sfdt', 'versions']);
     expect(buildReport).toHaveBeenCalledWith(LOCAL, null, { minApiVersion: 50, warnBehind: 3 });
+  });
+
+  it('--advise fails clearly when AI is unavailable (the user asked for it)', async () => {
+    loadConfig.mockResolvedValue({ _projectRoot: '/p', defaultOrg: null, audit: {}, features: { ai: false } });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await createProgram().parseAsync(['node', 'sfdt', 'versions', '--local-only', '--advise']);
+
+    expect(errSpy.mock.calls.join('\n')).toContain('AI unavailable');
+    expect(process.exitCode).toBeGreaterThan(0);
+    expect(runAiPrompt).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it('--advise grounds the prompt in the registry and runs read-only', async () => {
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/p', _configDir: '/p/.sfdt', defaultOrg: null,
+      audit: {}, features: { ai: true },
+    });
+    isAiAvailable.mockResolvedValue(true);
+    scanLocalApiVersions.mockResolvedValue({
+      components: [{ type: 'ApexClass', name: 'Old', apiVersion: 58, file: 'x' }],
+      sourceApiVersion: '66.0',
+    });
+    runAiPrompt.mockResolvedValue({ stdout: 'THE ADVICE', exitCode: 0 });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await createProgram().parseAsync(['node', 'sfdt', 'versions', '--local-only', '--advise', '--target', '60']);
+
+    const [prompt, opts] = runAiPrompt.mock.calls[0];
+    // grounding rules + both JSON payloads present
+    expect(prompt).toContain('ONLY from the REGISTRY JSON');
+    expect(prompt).toContain('unknown — not in registry');
+    expect(prompt).toContain('"ApexClass"');
+    expect(prompt).toContain("Spring '24"); // v60 registry entry made it into the slice
+    // read-only tool sandbox for agentic providers
+    expect(opts.allowedTools).toEqual(['Read', 'Grep', 'Glob']);
+    expect(logSpy.mock.calls.join('\n')).toContain('THE ADVICE');
+    expect(process.exitCode).toBeUndefined();
+    logSpy.mockRestore();
+  });
+
+  it('--advise with the http provider sends no tools (pre-gathered context only)', async () => {
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/p', _configDir: '/p/.sfdt', defaultOrg: null,
+      audit: {}, features: { ai: true },
+    });
+    isAiAvailable.mockResolvedValue(true);
+    providerSupportsAgenticTools.mockReturnValue(false);
+    scanLocalApiVersions.mockResolvedValue({
+      components: [{ type: 'Flow', name: 'F', apiVersion: 50, file: 'y' }],
+      sourceApiVersion: null,
+    });
+    runAiPrompt.mockResolvedValue({ stdout: 'ok', exitCode: 0 });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await createProgram().parseAsync(['node', 'sfdt', 'versions', '--local-only', '--advise']);
+
+    expect(runAiPrompt.mock.calls[0][1].allowedTools).toEqual([]);
+    logSpy.mockRestore();
+  });
+
+  it('--advise reports nothing-to-do when everything is at or above the target', async () => {
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/p', _configDir: '/p/.sfdt', defaultOrg: null,
+      audit: {}, features: { ai: true },
+    });
+    isAiAvailable.mockResolvedValue(true);
+    scanLocalApiVersions.mockResolvedValue({
+      components: [{ type: 'ApexClass', name: 'Fresh', apiVersion: 67, file: 'z' }],
+      sourceApiVersion: '67.0',
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await createProgram().parseAsync(['node', 'sfdt', 'versions', '--local-only', '--advise', '--target', '60']);
+
+    expect(runAiPrompt).not.toHaveBeenCalled();
+    expect(logSpy.mock.calls.join('\n')).toContain('Nothing to advise');
+    logSpy.mockRestore();
+  });
+
+  it('rejects an invalid --type family', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'versions', '--local-only', '--type', 'trigger']);
+    expect(errSpy.mock.calls.join('\n')).toContain('--type must be one of');
+    expect(process.exitCode).toBeGreaterThan(0);
+    errSpy.mockRestore();
   });
 
   it('emits the JSON error envelope with a nonzero exit on failure', async () => {
