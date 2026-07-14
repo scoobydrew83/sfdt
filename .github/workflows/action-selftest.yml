@@ -67,6 +67,7 @@ jobs:
         with:
           command: --version && sfdt --help
           allow-shell-command: 'true'
+          cli-version: latest   # 'auto' 404s on a release PR (unpublished version)
       - name: Assert every rejection actually failed
         if: >
           steps.bad-auth.outcome != 'failure' ||
