@@ -186,6 +186,14 @@ sfdt drift
 step "sfdt compare"
 sfdt compare
 
+# sfdt versions — local + org API-version audit (read-only)
+step "sfdt versions"
+sfdt versions --org "$SCRATCH_ORG_ALIAS"
+
+# sfdt audit — org-health checks incl. the extended api-versions check (read-only)
+step "sfdt audit api-versions"
+sfdt audit api-versions --org "$SCRATCH_ORG_ALIAS"
+
 # 4. Rollback sequence
 #    v1 state  → deploy (creates backup)
 #    patch XML → deploy (creates backup of v1, now at v2)

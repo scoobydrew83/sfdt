@@ -61,57 +61,82 @@ jobs:
       - name: Build GUI
         run: npm run build --workspace=gui
 
-  # integration:
-  #   needs: [test, gui-build]
-  #   runs-on: ubuntu-latest
-  #   if: github.event_name != 'pull_request'
-  #   permissions:
-  #     contents: read
-  #   env:
-  #     SF_JWT_KEY: ${{ secrets.SF_DEVHUB_JWT_KEY }}
-  #     SF_CLIENT_ID: ${{ secrets.SF_DEVHUB_CLIENT_ID }}
-  #     SF_USERNAME: ${{ secrets.SF_DEVHUB_USERNAME }}
-  #     SF_CONTAINER_MODE: true
-  #   strategy:
-  #     matrix:
-  #       node-version: [22]
-  #   steps:
-  #     - uses: actions/checkout@v7
-  #     - name: Use Node.js ${{ matrix.node-version }}
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: ${{ matrix.node-version }}
-  #         cache: npm
-  #     - run: npm ci
-  #     - name: Build @sfdt/flow-core (CLI runtime dep)
-  #       run: npm run build:flow-core
-  #     - name: Pack @sfdt/flow-core and @sfdt/cli
-  #       # @sfdt/cli declares @sfdt/flow-core@^0.9.0 as a runtime dep. On a
-  #       # commit where flow-core is not yet on the public npm registry, the
-  #       # CLI tarball install would 404. Packing flow-core alongside and
-  #       # installing both at once keeps the integration job self-contained.
-  #       run: |
-  #         npm pack --workspace=@sfdt/flow-core
-  #         npm pack
-  #     - name: Install Salesforce CLI
-  #       run: npm install -g @salesforce/cli
-  #     - name: Checkout synthetic-spark fixture
-  #       uses: actions/checkout@v7
-  #       with:
-  #         repository: scoobydrew83/synthetic-spark
-  #         path: synthetic-spark
-  #     - name: Install sfdt globally from packed tarballs
-  #       # Install flow-core first so npm's local cache satisfies @sfdt/cli's
-  #       # runtime dep without hitting the registry. Explicit filenames so the
-  #       # glob doesn't double-list flow-core.
-  #       run: npm install -g sfdt-flow-core-*.tgz sfdt-cli-*.tgz
-  #     - name: Authenticate DevHub
-  #       run: |
-  #         echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
-  #         sf org login sfdx-url --sfdx-url-file auth_url.txt --set-default-dev-hub
-  #         rm auth_url.txt
-  #     - name: Run integration tests
-  #       run: ./scripts/integration/run-integration-tests.sh ./synthetic-spark
+  # Gate: skip the live integration smoke gracefully when the DevHub auth
+  # secret isn't configured, so the job is a no-op (not a failure) until a
+  # maintainer adds SFDX_AUTH_URL + SF_DEVHUB_USERNAME. Never runs on
+  # pull_request (secrets are not exposed to fork PRs and must not run there).
+  integration-gate:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+        run: |
+          if [ -n "$SFDX_AUTH_URL" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Live integration smoke skipped — set the SFDX_AUTH_URL and SF_DEVHUB_USERNAME secrets (and the 'integration' environment) to enable it."
+          fi
+
+  # Tier 2 live smoke against a real Dev Hub: create a scratch org, run the
+  # deploy/test/audit/versions/drift/rollback cycle against it, always delete.
+  # Behind the protected 'integration' environment and gated on secrets being
+  # present, on develop only.
+  integration:
+    needs: [test, gui-build, integration-gate]
+    if: needs.integration-gate.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    environment: integration
+    permissions:
+      contents: read
+    env:
+      SF_USERNAME: ${{ secrets.SF_DEVHUB_USERNAME }}
+      SF_CONTAINER_MODE: 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build @sfdt/flow-core (CLI runtime dep)
+        run: npm run build:flow-core
+      - name: Pack @sfdt/flow-core and @sfdt/cli
+        # @sfdt/cli declares @sfdt/flow-core@^0.9.0 as a runtime dep. On a commit
+        # where flow-core is not yet on the public npm registry, the CLI tarball
+        # install would 404. Packing flow-core alongside and installing both at
+        # once keeps the integration job self-contained.
+        run: |
+          npm pack --workspace=@sfdt/flow-core
+          npm pack
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli
+      - name: Install sfdt globally from packed tarballs
+        # Install flow-core first so npm's local cache satisfies @sfdt/cli's
+        # runtime dep without hitting the registry. Explicit filenames so the
+        # glob doesn't double-list flow-core.
+        run: npm install -g sfdt-flow-core-*.tgz sfdt-cli-*.tgz
+      - name: Checkout synthetic-spark fixture
+        uses: actions/checkout@v7
+        with:
+          repository: scoobydrew83/synthetic-spark
+          path: synthetic-spark
+      - name: Authenticate Dev Hub
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+        run: |
+          printf '%s' "$SFDX_AUTH_URL" > auth_url.txt
+          sf org login sfdx-url --sfdx-url-file auth_url.txt --set-default-dev-hub
+          rm -f auth_url.txt
+      - name: Run integration smoke (scratch org create → cycle → always-delete)
+        run: ./scripts/integration/run-integration-tests.sh ./synthetic-spark
 
   publish-beta:
     needs: [test, gui-build]
