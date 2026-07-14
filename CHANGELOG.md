@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-14
+
 ### Added
 
 - **API-version registry expanded (v60–v63).** Continuing the audit backwards, versioned facts added for Spring '24 → Spring '25: v60 (four versioned Apex breaking changes incl. List/Iterable no longer compiling and test-savepoint release), v61 (private-method-override removal, FormulaEval gated at class api ≥ 61), v62 (DataWeave 2.8, Set-mutation-during-iteration throws, three versioned Flow sharing/null changes, four versioned LWC changes incl. class object binding), v63 (master-detail reparenting throws, JSON exception serialization removed, three versioned Flow changes, and a citable "no LWC versioned changes — a clean upgrade target"). Apex facts sourced verbatim from the canonical Versioned Behavior Changes doc; v60/v61 Flow/LWC left as honest gaps (the source pages render client-side and couldn't be verified).
@@ -32,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **GitHub Action `command` input is deprecated and hardened.** Without `allow-shell-command: 'true'` it now accepts only shell-neutral characters and is word-split without a shell — strings with quotes, `$`, `;`, newlines, etc. are rejected with a migration hint instead of being eval'd. The generated GitHub CI templates (`sfdt ci init --runner action`) now emit `args-json`.
 - **`sfdt test --logic --wait` is validated** — must be a whole number of minutes ≥ 1 (previously any string was passed through to `sf logic run test`).
 - **`sfdt extension install-host` persists the full project context** — the host config now records `schemaVersion`, `projectRoot`, `configDir`, the **resolved absolute `logDir`** (custom `config.logDir` values survive browser-launched host sessions), `cliVersion`, and `installedAt`. Old host configs (projectRoot-only) keep working unchanged.
+- Bumped `@sfdt/flow-core` to 0.9.7 — exports `KNOWN_KINDS` from the bridge contract (consumed by the new surface catalog generator); backward-compatible.
 
 ## [0.17.0] - 2026-07-12
 
