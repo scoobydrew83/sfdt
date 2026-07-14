@@ -287,6 +287,15 @@
       "group": null
     },
     {
+      "id": "history",
+      "label": "Run History",
+      "detail": "Recent sfdt runs (audit, monitor, quality, test, deploy) from the local index",
+      "args": [
+        "history"
+      ],
+      "group": null
+    },
+    {
       "id": "audit-all",
       "label": "All Checks",
       "detail": "Run every audit check",
