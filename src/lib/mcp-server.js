@@ -3,6 +3,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { loadConfig } from './config.js';
 import { parkIfNeeded, getParkedResult } from './mcp-parking.js';
+import { CHECK_IDS as AUDIT_CHECK_IDS } from './audit-runner.js';
+import { CHECK_IDS as MONITOR_CHECK_IDS } from './monitor-runner.js';
 import { execa } from 'execa';
 import path from 'path';
 import fs from 'fs-extra';
@@ -180,7 +182,9 @@ export const TOOLS = [
         org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
         check: {
           type: 'string',
-          enum: ['all', 'audittrail', 'licenses', 'mfa', 'unused-apex', 'inactive-users', 'api-versions', 'inactive-flows', 'unused-permsets', 'connected-apps', 'field-descriptions', 'apex-unreferenced', 'lint-access', 'inactive-validations', 'inactive-workflows', 'lint-access-fields'],
+          // Derived from the audit runner's CHECKS map — a new check is
+          // exposed here automatically (drift guarded by command-policy.test.js).
+          enum: ['all', ...AUDIT_CHECK_IDS],
           description: 'Run a single named check, or "all" (default).'
         }
       }
@@ -199,7 +203,9 @@ export const TOOLS = [
         org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
         check: {
           type: 'string',
-          enum: ['all', 'limits', 'errors', 'health', 'org-info', 'deploy-history', 'deprecated-api', 'flow-errors', 'backup'],
+          // Derived from the monitor runner's CHECKS map; 'backup' is the
+          // separate full-metadata-backup path, not a CHECKS entry.
+          enum: ['all', ...MONITOR_CHECK_IDS, 'backup'],
           description: 'Run a single named check, "backup" for a metadata backup, or "all" (default).'
         },
         backup: { type: 'boolean', description: 'When running "all", also perform a metadata backup.' }

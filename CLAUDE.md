@@ -108,6 +108,17 @@ Dockerfile      Official Docker image definition
 
 When adding a new env var, update both `buildScriptEnv()` in `script-runner.js` and this table.
 
+### Surface Catalogs — CRITICAL RULE
+
+`generated/` holds machine-generated catalogs of every public surface (commands, chrome features, GUI pages, VS Code commands, MCP tools, bridge kinds, CI capabilities, packages, parity matrix, summary). **Code is authoritative; the catalogs are derived and checked in.** CI fails on drift (`npm run check:all-contracts`). Never edit `generated/*` by hand. When you change a public surface, run `npm run generate:catalogs` and commit the diff. Specifically:
+
+- **New/changed CLI command or flag** → add/update its `src/lib/command-policy.js` entry (mutating/requiresOrg/surfaces/mcpTools — enforced by `test/command-policy.test.js`), then regenerate.
+- **New MCP tool** → map it in a command's `mcpTools` (or `MCP_INTERNAL_TOOLS`); a mutating tool MUST declare `confirmExecution`. The `sfdt_audit`/`sfdt_monitor` check enums derive from the runners' `CHECK_IDS` — never hardcode them.
+- **New Chrome feature** → it must appear in `extension/lib/feature-manifests.json`; regenerate with `SFDT_WRITE_MANIFESTS=1 npm run test:extension -- feature-manifests` (parity-tested against the real registrations), then regenerate catalogs.
+- **New GUI page** → add one entry to `gui/src/routes.js` (the single registry; App.jsx derives nav/labels/rendering from it) plus its ICONS/PAGES map entries, then regenerate.
+- **CI provider/type/auth/runner change** → `src/lib/ci-capabilities.js` is the only place lists live.
+- **License or Node-floor change** → update `tools/license-policy.json` / `package.json` engines; `check:licenses`/`check:node` enforce every other statement of them.
+
 ### Config Template
 
 `src/templates/sfdt.config.json` is the canonical source of truth for the shape and defaults of `.sfdt/config.json`. `sfdt init` reads this template via `fs.readJson` and deep-merges user-provided answers on top. When adding new config keys, add them to the template first — `init.js` will pick them up automatically.

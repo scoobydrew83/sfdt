@@ -1,0 +1,505 @@
+{
+  "features": [
+    {
+      "id": "ai-assistant",
+      "name": "Flow Metadata & AI Assistant",
+      "contexts": [
+        "flow_builder"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "apex-anonymous",
+      "name": "Execute Anonymous Apex",
+      "contexts": [
+        "workspace",
+        "setup_other",
+        "setup_flows"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "apex-coverage",
+      "name": "Apex Code Coverage",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "apex-test-runner",
+      "name": "Apex Test Runner",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "api-name-generator",
+      "name": "API Name Generator",
+      "contexts": [
+        "flow_builder"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "canvas-search",
+      "name": "Search & Highlight",
+      "contexts": [
+        "flow_builder"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "comparison-exporter",
+      "name": "Comparison Exporter",
+      "contexts": [
+        "compare_flows"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "data-import",
+      "name": "Data Import Wizard",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer",
+        "record_page"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "debug-log-viewer",
+      "name": "Debug Logs",
+      "contexts": [
+        "workspace",
+        "setup_other",
+        "setup_flows"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "dependency-explorer",
+      "name": "Dependency Explorer",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "drift-check",
+      "name": "Drift Check",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": true
+    },
+    {
+      "id": "event-monitor",
+      "name": "Event Streaming Monitor",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer",
+        "record_page"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "export-for-prompt",
+      "name": "Export for Prompt",
+      "contexts": [
+        "record_page",
+        "setup_other"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "field-creator",
+      "name": "Bulk Field Creator",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer",
+        "record_page"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "flow-deploy",
+      "name": "Deploy or Rollback…",
+      "contexts": [
+        "flow_builder"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": true
+    },
+    {
+      "id": "flow-health-check",
+      "name": "Run Health Check",
+      "contexts": [
+        "flow_builder"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "flow-list-search",
+      "name": "Flow List Search",
+      "contexts": [
+        "setup_flows"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "flow-quality",
+      "name": "Flow Scanner",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "flow-trigger-explorer-enhancer",
+      "name": "Flow Trigger Explorer Enhancer",
+      "contexts": [
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "flow-version-manager",
+      "name": "Flow Version Manager",
+      "contexts": [
+        "flow_details"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "inspect-record",
+      "name": "Inspect Record",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer",
+        "record_page"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "metadata-retrieve",
+      "name": "Metadata Retrieve & Deploy",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer",
+        "record_page"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "metadata-scan",
+      "name": "Metadata Scan",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": true
+    },
+    {
+      "id": "missing-descriptions",
+      "name": "Show Missing Description Flags",
+      "contexts": [
+        "flow_builder"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "org-compare",
+      "name": "Org Compare",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": true
+    },
+    {
+      "id": "org-health",
+      "name": "Org Health",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": true
+    },
+    {
+      "id": "org-health-live",
+      "name": "Org Health (Live)",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "org-limits",
+      "name": "Org Limits",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "org-release-badge",
+      "name": "Org Release Badge",
+      "contexts": [
+        "setup_flows",
+        "flow_trigger_explorer",
+        "setup_other"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": false,
+      "bridgeRequired": false
+    },
+    {
+      "id": "org-switcher",
+      "name": "Switch Org",
+      "contexts": [
+        "workspace"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "rest-explore",
+      "name": "REST API Explorer",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "saved-soql",
+      "name": "Saved SOQL",
+      "contexts": [
+        "workspace"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "scheduled-flow-explorer",
+      "name": "Scheduled Flow Explorer",
+      "contexts": [
+        "setup_flows",
+        "setup_other"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "setup-tabs",
+      "name": "Setup Tabs",
+      "contexts": [
+        "setup_flows",
+        "flow_trigger_explorer",
+        "setup_other"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "show-api-names",
+      "name": "Show API Names",
+      "contexts": [
+        "record_page"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "soap-explore",
+      "name": "SOAP API Explorer",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer",
+        "record_page"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "soql-runner",
+      "name": "SOQL Query Runner",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "subflow-graph",
+      "name": "Subflow Caller Graph",
+      "contexts": [
+        "setup_flows",
+        "setup_other"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "trigger-conflicts",
+      "name": "Trigger Conflicts",
+      "contexts": [
+        "setup_flows",
+        "flow_trigger_explorer",
+        "setup_other"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    }
+  ]
+}

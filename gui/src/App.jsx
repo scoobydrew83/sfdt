@@ -34,85 +34,84 @@ import {
 } from './Icons.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 import ChatDrawer from './components/ChatDrawer.jsx';
+import { GUI_ROUTES } from './routes.js';
 
 export const ChatContext = createContext(null);
 
-// Grouped nav structure: each group has a label and items
-const NAV_GROUPS = [
-  {
-    label: 'Observe',
-    items: [
-      { id: 'dashboard', label: 'Dashboard', Icon: IconHome },
-      { id: 'drift',     label: 'Drift',     Icon: IconRefresh },
-      { id: 'audit',     label: 'Org Audit', Icon: IconCheck },
-      { id: 'monitor',   label: 'Org Monitor', Icon: IconActivity },
-      { id: 'tests',     label: 'Test Runs', Icon: IconList },
-      { id: 'coverage',  label: 'Coverage',  Icon: IconActivity },
-      { id: 'logs',      label: 'Logs',      Icon: IconClock },
-    ],
-  },
-  {
-    label: 'Release',
-    items: [
-      { id: 'release',   label: 'Release Hub', Icon: IconRocket },
-      { id: 'retrofit',  label: 'Retrofit',    Icon: IconRefresh },
-    ],
-  },
-  {
-    label: 'Analyze',
-    items: [
-      { id: 'compare',   label: 'Compare',   Icon: IconCompare },
-      { id: 'scan',      label: 'Scan',       Icon: IconList },
-      { id: 'preflight', label: 'Preflight', Icon: IconCheck },
-      { id: 'manifests', label: 'Manifests', Icon: IconFileText },
-      { id: 'quality',   label: 'Quality',   Icon: IconActivity },
-      { id: 'agent-test', label: 'Agent Test', Icon: IconCheck },
-      { id: 'pull',      label: 'Pull',      Icon: IconCloudDown },
-      { id: 'review',     label: 'Review',           Icon: IconCode },
-      { id: 'explain',    label: 'Explain',           Icon: IconSearch },
-      { id: 'flows',      label: 'Flow Intelligence', Icon: IconGraph },
-      { id: 'dependency', label: 'Dependency Graph',  Icon: IconGraph },
-      { id: 'scratch',    label: 'Scratch Orgs',      Icon: IconCloudDown },
-      { id: 'data',       label: 'Data Sets',         Icon: IconList },
-      { id: 'docs',       label: 'Documentation',     Icon: IconFileText },
-    ],
-  },
-  {
-    label: 'Config',
-    items: [
-      { id: 'notifications', label: 'Notifications', Icon: IconActivity },
-      { id: 'settings',  label: 'Settings',  Icon: IconSettings },
-    ],
-  },
-];
-
-const PAGE_LABELS = {
-  dashboard: 'Dashboard',
-  tests:     'Test Runs',
-  coverage:  'Coverage',
-  preflight: 'Preflight',
-  drift:     'Drift',
-  audit:     'Org Audit',
-  monitor:   'Org Monitor',
-  compare:   'Compare',
-  scan:      'Scan',
-  manifests: 'Manifests',
-  quality:   'Quality',
-  'agent-test': 'Agent Test',
-  pull:      'Pull',
-  release:   'Release Hub',
-  retrofit:  'Retrofit',
-  review:    'Review',
-  explain:   'Explain',
-  flows:      'Flow Intelligence',
-  logs:       'Log History',
-  dependency: 'Dependency Graph',
-  notifications: 'Notifications',
-  scratch:    'Scratch Orgs',
-  data:       'Data Sets',
-  docs:       'Documentation',
-  settings:   'Settings',
+// Per-page icon and component maps. GUI_ROUTES (routes.js) is the single
+// source of truth for ids/labels/groups — these maps only bind each id to
+// its JSX pieces. Adding a page = one GUI_ROUTES entry + one entry in each.
+const ICONS = {
+  dashboard: IconHome,
+  drift: IconRefresh,
+  audit: IconCheck,
+  monitor: IconActivity,
+  tests: IconList,
+  coverage: IconActivity,
+  logs: IconClock,
+  release: IconRocket,
+  retrofit: IconRefresh,
+  compare: IconCompare,
+  scan: IconList,
+  preflight: IconCheck,
+  manifests: IconFileText,
+  quality: IconActivity,
+  'agent-test': IconCheck,
+  pull: IconCloudDown,
+  review: IconCode,
+  explain: IconSearch,
+  flows: IconGraph,
+  dependency: IconGraph,
+  scratch: IconCloudDown,
+  data: IconList,
+  docs: IconFileText,
+  notifications: IconActivity,
+  settings: IconSettings,
 };
+
+const PAGES = {
+  dashboard: Dashboard,
+  drift: DriftPage,
+  audit: AuditPage,
+  monitor: MonitorPage,
+  tests: TestRuns,
+  coverage: CoveragePage,
+  logs: LogsPage,
+  release: ReleaseHubPage,
+  retrofit: RetrofitPage,
+  compare: ComparePage,
+  scan: ScanPage,
+  preflight: PreflightPage,
+  manifests: ManifestsPage,
+  quality: QualityPage,
+  'agent-test': AgentTestPage,
+  pull: PullPage,
+  review: ReviewPage,
+  explain: ExplainPage,
+  flows: FlowsPage,
+  dependency: DependencyPage,
+  scratch: ScratchPage,
+  data: DataPage,
+  docs: DocsPage,
+  notifications: NotificationsPage,
+  settings: SettingsPage,
+};
+
+// Fail fast at module load: every route must have an icon and a component.
+for (const { id } of GUI_ROUTES) {
+  if (!ICONS[id]) throw new Error(`GUI route "${id}" has no entry in ICONS (App.jsx)`);
+  if (!PAGES[id]) throw new Error(`GUI route "${id}" has no entry in PAGES (App.jsx)`);
+}
+
+// Grouped nav structure derived from GUI_ROUTES: each group has a label and items
+const NAV_GROUPS = GUI_ROUTES.reduce((groups, { id, label, group }) => {
+  if (groups.at(-1)?.label !== group) groups.push({ label: group, items: [] });
+  groups.at(-1).items.push({ id, label, Icon: ICONS[id] });
+  return groups;
+}, []);
+
+const PAGE_LABELS = Object.fromEntries(
+  GUI_ROUTES.map(({ id, label, pageLabel }) => [id, pageLabel ?? label]));
 
 export default function App() {
   const [page, setPage]           = useState('dashboard');
@@ -181,34 +180,8 @@ export default function App() {
   };
 
   const renderPage = () => {
-    switch (page) {
-      case 'dashboard': return <Dashboard project={project} />;
-      case 'tests':     return <TestRuns />;
-      case 'coverage':  return <CoveragePage />;
-      case 'preflight': return <PreflightPage />;
-      case 'drift':     return <DriftPage />;
-      case 'audit':     return <AuditPage />;
-      case 'monitor':   return <MonitorPage />;
-      case 'compare':   return <ComparePage />;
-      case 'scan':      return <ScanPage />;
-      case 'manifests': return <ManifestsPage />;
-      case 'quality':   return <QualityPage />;
-      case 'agent-test': return <AgentTestPage />;
-      case 'pull':      return <PullPage />;
-      case 'release':   return <ReleaseHubPage />;
-      case 'retrofit':  return <RetrofitPage />;
-      case 'review':    return <ReviewPage />;
-      case 'explain':   return <ExplainPage />;
-      case 'flows':      return <FlowsPage />;
-      case 'logs':       return <LogsPage />;
-      case 'dependency': return <DependencyPage />;
-      case 'notifications': return <NotificationsPage />;
-      case 'scratch':    return <ScratchPage />;
-      case 'data':       return <DataPage />;
-      case 'docs':       return <DocsPage />;
-      case 'settings':   return <SettingsPage />;
-      default:          return <Dashboard project={project} />;
-    }
+    const Page = PAGES[page] ?? Dashboard; // unknown page falls back to Dashboard
+    return Page === Dashboard ? <Dashboard project={project} /> : <Page />;
   };
 
   const chatContextValue = useMemo(() => ({ openChat, setPageContext }), [openChat, setPageContext]);

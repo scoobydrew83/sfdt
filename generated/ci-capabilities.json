@@ -1,0 +1,40 @@
+{
+  "providers": [
+    "github",
+    "gitlab",
+    "azure",
+    "bitbucket"
+  ],
+  "types": [
+    "monitor",
+    "deploy",
+    "release",
+    "scratch"
+  ],
+  "authMethods": [
+    "sfdx-url",
+    "jwt"
+  ],
+  "runners": {
+    "github": [
+      "npx",
+      "action"
+    ],
+    "gitlab": [
+      "npx",
+      "docker"
+    ],
+    "azure": [
+      "npx"
+    ],
+    "bitbucket": [
+      "npx",
+      "docker"
+    ]
+  },
+  "actionRunnerTypes": [
+    "monitor",
+    "deploy",
+    "release"
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "packages": [
+    {
+      "path": "package.json",
+      "name": "@sfdt/cli",
+      "version": "0.17.0",
+      "license": "Apache-2.0",
+      "private": false,
+      "engines": {
+        "node": ">=22.15.0"
+      }
+    },
+    {
+      "path": "extension/package.json",
+      "name": "@sfdt/extension",
+      "version": "0.6.0",
+      "license": "Apache-2.0",
+      "private": true,
+      "engines": null
+    },
+    {
+      "path": "gui/package.json",
+      "name": "@sfdt/gui",
+      "version": "0.1.0",
+      "license": "Apache-2.0",
+      "private": true,
+      "engines": null
+    },
+    {
+      "path": "host/package.json",
+      "name": "@sfdt/host",
+      "version": "0.11.0",
+      "license": "Apache-2.0",
+      "private": true,
+      "engines": null
+    },
+    {
+      "path": "vscode/package.json",
+      "name": "sfdt-devtools",
+      "version": "0.4.1",
+      "license": "Apache-2.0",
+      "private": true,
+      "engines": {
+        "vscode": "^1.80.0"
+      }
+    },
+    {
+      "path": "packages/flow-core/package.json",
+      "name": "@sfdt/flow-core",
+      "version": "0.9.6",
+      "license": "Apache-2.0",
+      "private": false,
+      "engines": null
+    },
+    {
+      "path": "packages/plugin/package.json",
+      "name": "@sfdt/plugin",
+      "version": "0.17.0",
+      "license": "Apache-2.0",
+      "private": false,
+      "engines": {
+        "node": ">=22.15.0"
+      }
+    }
+  ]
+}

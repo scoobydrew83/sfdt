@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sfdt command catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["commands"],
+  "properties": {
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/command" }
+    }
+  },
+  "definitions": {
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "path", "description", "aliases", "hidden", "arguments", "options",
+        "subcommands", "mutating", "requiresProject", "requiresOrg", "supportsJson",
+        "docsCategory", "surfaces", "mcpTools", "source"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "path": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "description": { "type": "string" },
+        "aliases": { "type": "array", "items": { "type": "string" } },
+        "hidden": { "type": "boolean" },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "required", "variadic", "description"],
+            "properties": {
+              "name": { "type": "string" },
+              "required": { "type": "boolean" },
+              "variadic": { "type": "boolean" },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["flags", "name", "required", "default", "description"],
+            "properties": {
+              "flags": { "type": "string" },
+              "name": { "type": "string" },
+              "required": { "type": "boolean" },
+              "default": {},
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "subcommands": { "type": "array", "items": { "$ref": "#/definitions/subcommand" } },
+        "mutating": { "type": "boolean" },
+        "sideEffects": { "type": "string" },
+        "requiresProject": { "type": "boolean" },
+        "requiresOrg": { "type": "boolean" },
+        "supportsJson": { "type": "boolean" },
+        "docsCategory": {
+          "enum": ["core", "metadata", "testing-quality", "ai", "org-health", "config-utils", "platform-bridge"]
+        },
+        "surfaces": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cli", "sfPlugin", "gui", "vscode", "chrome"],
+          "properties": {
+            "cli": { "const": true },
+            "sfPlugin": { "const": true },
+            "gui": { "type": "boolean" },
+            "vscode": { "type": "boolean" },
+            "chrome": { "type": "boolean" }
+          }
+        },
+        "mcpTools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "mutating"],
+            "properties": {
+              "name": { "type": "string", "pattern": "^sfdt_" },
+              "mutating": { "type": "boolean" }
+            }
+          }
+        },
+        "source": { "type": "string", "pattern": "^src/" }
+      }
+    },
+    "subcommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "description", "aliases", "hidden", "arguments", "options", "subcommands"],
+      "properties": {
+        "id": { "type": "string" },
+        "path": { "type": "array", "items": { "type": "string" } },
+        "description": { "type": "string" },
+        "aliases": { "type": "array", "items": { "type": "string" } },
+        "hidden": { "type": "boolean" },
+        "arguments": { "type": "array" },
+        "options": { "type": "array" },
+        "subcommands": { "type": "array", "items": { "$ref": "#/definitions/subcommand" } }
+      }
+    }
+  }
+}

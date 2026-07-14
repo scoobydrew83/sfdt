@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Surface catalog framework** (`generated/` + `schemas/` + `tools/`) — machine-generated, checked-in inventories of every public surface: CLI commands (Commander tree + a new `src/lib/command-policy.js` security/exposure policy), Chrome features (parity-tested `extension/lib/feature-manifests.json`), GUI pages (new single `gui/src/routes.js` registry), VS Code commands, MCP tools, bridge kinds, CI capabilities, package versions, and a cross-surface parity matrix. `npm run generate:catalogs` regenerates; `npm run check:all-contracts` (now in CI) fails on catalog drift, stale license strings, unsupported Node claims, and unsafe auth-docs guidance. Counts on the docs site stop being hand-maintained.
+
 - **`sfdt test --logic --allow-zero-tests`** — a "passing" unified logic run that executed **zero tests** now exits non-zero (it verified nothing — typo'd test names, missing `FlowTesting.` prefix, or a permissions gap); pass the flag when an empty run is expected. Logic run output now streams live *and* is captured for the guard/AI analysis.
 - **`sfdt quality --allow-legacy-analyzer`** (and config `quality.analyzer.allowLegacyV4`) — Code Analyzer v4 no longer runs as a silent fallback. v5 is required for authoritative scans; a v4-only environment emits the `skipped` marker unless legacy mode is explicitly enabled, and legacy results are labeled non-authoritative. v4 support will be removed at 1.0.
 - **GitHub Action `args-json` input** — the preferred way to pass sfdt arguments (a JSON array, executed with no shell, immune to shell injection). New `allow-shell-command` input gates the legacy eval behavior.
