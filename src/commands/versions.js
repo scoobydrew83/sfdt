@@ -14,6 +14,54 @@ import { AUDIT_DEFAULTS } from '../lib/audit-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
 
+/**
+ * `--advise`: AI upgrade advice for local components below the target
+ * version, grounded by the curated per-version registry. Read-only advisory:
+ * no writes, no agent loop; the http provider gets fully pre-gathered
+ * context, agentic providers may additionally Read/Grep/Glob component
+ * source. Returns the advice text, or null when nothing needs advising.
+ * Throws when AI is unavailable (the user explicitly asked for it).
+ */
+async function runAdvise(config, report, local, options) {
+  const { isAiAvailable, aiUnavailableMessage, runAiPrompt, providerSupportsAgenticTools } =
+    await import('../lib/ai.js');
+  if (!config?.features?.ai || !(await isAiAvailable(config))) {
+    throw new Error(aiUnavailableMessage(config));
+  }
+  const { loadRegistry, selectComponents, buildAdvisorContext } = await import(
+    '../lib/api-version-advisor.js'
+  );
+  const { getPrompt, interpolate } = await import('../lib/prompts.js');
+
+  const registry = await loadRegistry();
+  const target = options.target
+    ? Number.parseInt(options.target, 10)
+    : report.org?.ceiling ?? registry.maxVersion;
+  if (!Number.isFinite(target)) throw new Error(`Invalid --target "${options.target}"`);
+
+  const components = selectComponents(local.components, target, options.type ?? null);
+  if (!components.length) return { target, advice: null };
+
+  const vars = buildAdvisorContext({
+    components,
+    registry,
+    targetVersion: target,
+    sourceApiVersion: local.sourceApiVersion,
+  });
+  const prompt = interpolate(await getPrompt('api-upgrade-advisor', config._configDir), vars);
+  const res = await runAiPrompt(prompt, {
+    config,
+    // Read-only: agentic providers may inspect component source; never write.
+    allowedTools: providerSupportsAgenticTools(config) ? ['Read', 'Grep', 'Glob'] : [],
+    cwd: config._projectRoot,
+    aiEnabled: true,
+    interactive: false,
+  });
+  const text = typeof res?.stdout === 'string' ? res.stdout.trim() : '';
+  if (!text) throw new Error('The AI provider returned no advice output.');
+  return { target, advice: text, componentCount: components.length };
+}
+
 /** Band a histogram row: red below the hard floor, yellow behind the ceiling. */
 function bandRow({ version, count }, { minApiVersion, effectiveFloor }) {
   const label = version === 'unspecified' ? 'unspecified' : `v${version}`;
@@ -49,6 +97,9 @@ export function registerVersionsCommand(program) {
     .description('Audit Salesforce API versions across local source and the org (Apex, Flow, LWC, Aura vs the org max)')
     .option('--org <alias>', 'Target org (default: config.defaultOrg)')
     .option('--local-only', 'Skip the org side even when an org is configured')
+    .option('--advise', 'AI upgrade advice for local components below the target version (requires features.ai; grounded by the curated per-version registry)')
+    .option('--target <version>', 'For --advise: target API version (default: the org max, or the registry max offline)')
+    .option('--type <family>', 'For --advise: restrict to one family — apex | flow | lwc')
     .option('--json', 'Emit the full report as JSON')
     .action(async (options) => {
       const jsonMode = !!options.json;
@@ -75,8 +126,13 @@ export function registerVersionsCommand(program) {
 
         const report = buildReport(local, org, thresholds);
 
+        if (options.type && !['apex', 'flow', 'lwc'].includes(options.type)) {
+          throw new Error(`--type must be one of: apex, flow, lwc (got: ${options.type})`);
+        }
+        const advise = options.advise ? await runAdvise(config, report, local, options) : null;
+
         if (jsonMode) {
-          emitJson(report);
+          emitJson(advise ? { ...report, advise } : report);
           return;
         }
 
@@ -105,6 +161,15 @@ export function registerVersionsCommand(program) {
         printSide('Local source', report.local, report.thresholds);
         if (report.org) printSide(`Org (${orgAlias})`, report.org, report.thresholds);
         else console.log(chalk.dim('\nOrg side skipped — pass --org <alias> (or set defaultOrg) for the org comparison.'));
+
+        if (advise) {
+          if (advise.advice) {
+            console.log(chalk.bold(`\nUpgrade advice → v${advise.target}`) + chalk.dim(` (${advise.componentCount} component(s), grounded by the curated version registry)`));
+            console.log(`\n${advise.advice}`);
+          } else {
+            console.log(chalk.green(`\nNothing to advise — every local component is already at or above v${advise.target}.`));
+          }
+        }
         console.log('');
         // ponytail: exit 0 always — informational report; add --strict if CI wants gating.
       } catch (err) {
