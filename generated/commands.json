@@ -1,0 +1,4110 @@
+{
+  "commands": [
+    {
+      "id": "init",
+      "path": [
+        "init"
+      ],
+      "description": "Initialize sfdt configuration for a Salesforce DX project",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [],
+      "mutating": true,
+      "requiresProject": false,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "core",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/init.js"
+    },
+    {
+      "id": "deploy",
+      "path": [
+        "deploy"
+      ],
+      "description": "Deploy to a Salesforce org (interactive manifest flow, or --smart delta deploy)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--managed",
+          "name": "managed",
+          "required": false,
+          "default": null,
+          "description": "Use deploy-manager.sh instead of deployment-assistant.sh"
+        },
+        {
+          "flags": "--skip-preflight",
+          "name": "skipPreflight",
+          "required": false,
+          "default": null,
+          "description": "Skip pre-deployment preflight checks"
+        },
+        {
+          "flags": "--dry-run",
+          "name": "dryRun",
+          "required": false,
+          "default": null,
+          "description": "Show what would be executed (smart mode: validate-only)"
+        },
+        {
+          "flags": "--org <alias>",
+          "name": "org",
+          "required": false,
+          "default": null,
+          "description": "Target org alias for deployment"
+        },
+        {
+          "flags": "--source-dir <path>",
+          "name": "sourceDir",
+          "required": false,
+          "default": null,
+          "description": "Deploy a source directory instead of a manifest (relative to project root)"
+        },
+        {
+          "flags": "--smart",
+          "name": "smart",
+          "required": false,
+          "default": null,
+          "description": "Smart delta deploy: only changed metadata, with smart test selection"
+        },
+        {
+          "flags": "--delta-base <ref>",
+          "name": "deltaBase",
+          "required": false,
+          "default": null,
+          "description": "Base git ref for the smart delta (default: config or \"main\")"
+        },
+        {
+          "flags": "--delta-head <ref>",
+          "name": "deltaHead",
+          "required": false,
+          "default": "HEAD",
+          "description": "Head git ref for the smart delta"
+        },
+        {
+          "flags": "--overwrite-manifest <path>",
+          "name": "overwriteManifest",
+          "required": false,
+          "default": null,
+          "description": "Path to package-no-overwrite.xml (overrides config)"
+        },
+        {
+          "flags": "--prod",
+          "name": "prod",
+          "required": false,
+          "default": null,
+          "description": "Treat the target org as production (never downgrade tests)"
+        },
+        {
+          "flags": "--ai-deps",
+          "name": "aiDeps",
+          "required": false,
+          "default": null,
+          "description": "Run AI dependency cleanup on the computed delta before deploying"
+        },
+        {
+          "flags": "--ai-fix",
+          "name": "aiFix",
+          "required": false,
+          "default": null,
+          "description": "On failure, run AI deploy-error analysis, or the bounded auto-fix loop when ai.agent is enabled (CLI providers only)"
+        },
+        {
+          "flags": "--max-turns <n>",
+          "name": "maxTurns",
+          "required": false,
+          "default": null,
+          "description": "Max auto-fix iterations (overrides ai.agent.maxTurns)"
+        },
+        {
+          "flags": "--pr-comment",
+          "name": "prComment",
+          "required": false,
+          "default": null,
+          "description": "Post the smart-deploy delta + outcome to the current PR (via gh)"
+        },
+        {
+          "flags": "--agent",
+          "name": "agent",
+          "required": false,
+          "default": null,
+          "description": "Non-interactive agent mode (no AI prompts block on input)"
+        },
+        {
+          "flags": "--tag",
+          "name": "tag",
+          "required": false,
+          "default": null,
+          "description": "Tag the release in git (v<version>) after a successful deploy (standard manifest deploy only)"
+        },
+        {
+          "flags": "--create-pr",
+          "name": "createPr",
+          "required": false,
+          "default": null,
+          "description": "Create a PR from the current branch to the default branch (via gh) after a successful deploy (standard manifest deploy only)"
+        },
+        {
+          "flags": "--notify",
+          "name": "notify",
+          "required": false,
+          "default": null,
+          "description": "Send the deploy success/failure notification through the configured channels (smart and standard manifest deploys)"
+        }
+      ],
+      "subcommands": [],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": false,
+      "docsCategory": "core",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_deploy",
+          "mutating": true
+        },
+        {
+          "name": "sfdt_quick_deploy",
+          "mutating": true
+        },
+        {
+          "name": "sfdt_validate",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/deploy.js"
+    },
+    {
+      "id": "release",
+      "path": [
+        "release"
+      ],
+      "description": "Generate a release manifest and optionally AI-powered release notes",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [
+        {
+          "name": "version",
+          "required": false,
+          "variadic": false,
+          "description": ""
+        }
+      ],
+      "options": [
+        {
+          "flags": "--package <name|all>",
+          "name": "package",
+          "required": false,
+          "default": "all",
+          "description": "Package directory to generate manifest for: a short name or \"all\""
+        },
+        {
+          "flags": "--name <label>",
+          "name": "name",
+          "required": false,
+          "default": null,
+          "description": "Release label (semver, free-form, or \"today\")"
+        }
+      ],
+      "subcommands": [],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": false,
+      "docsCategory": "core",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_release",
+          "mutating": true
+        }
+      ],
+      "source": "src/commands/release.js"
+    },
+    {
+      "id": "test",
+      "path": [
+        "test"
+      ],
+      "description": "Run Apex tests with the enhanced test runner (or --logic for unified Apex + Flow tests)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--legacy",
+          "name": "legacy",
+          "required": false,
+          "default": null,
+          "description": "Use run-tests.sh instead of enhanced-test-runner.sh"
+        },
+        {
+          "flags": "--analyze",
+          "name": "analyze",
+          "required": false,
+          "default": null,
+          "description": "Run test-analyzer after tests complete"
+        },
+        {
+          "flags": "--dry-run",
+          "name": "dryRun",
+          "required": false,
+          "default": null,
+          "description": "Show what would be executed without running"
+        },
+        {
+          "flags": "--class-names <list>",
+          "name": "classNames",
+          "required": false,
+          "default": null,
+          "description": "Run only these Apex test classes (comma-separated); overrides the configured test classes for this run"
+        },
+        {
+          "flags": "--logic",
+          "name": "logic",
+          "required": false,
+          "default": null,
+          "description": "Run Apex + Flow tests together via `sf logic run test` (Spring '26 beta; needs \"View All Data\")"
+        },
+        {
+          "flags": "--lwc",
+          "name": "lwc",
+          "required": false,
+          "default": null,
+          "description": "Run the project's LWC (Jest) unit tests locally (npm run test:unit or sfdx-lwc-jest)"
+        },
+        {
+          "flags": "--org <alias>",
+          "name": "org",
+          "required": false,
+          "default": null,
+          "description": "Target org for --logic (default: config.defaultOrg)"
+        },
+        {
+          "flags": "--test-level <level>",
+          "name": "testLevel",
+          "required": false,
+          "default": null,
+          "description": "For --logic: RunLocalTests | RunAllTestsInOrg | RunSpecifiedTests"
+        },
+        {
+          "flags": "--tests <list>",
+          "name": "tests",
+          "required": false,
+          "default": null,
+          "description": "For --logic: comma-separated test names (Apex classes and FlowTesting.<name>)"
+        },
+        {
+          "flags": "--category <cat>",
+          "name": "category",
+          "required": false,
+          "default": null,
+          "description": "For --logic: restrict to Apex or Flow"
+        },
+        {
+          "flags": "--code-coverage",
+          "name": "codeCoverage",
+          "required": false,
+          "default": null,
+          "description": "For --logic: retrieve code coverage results"
+        },
+        {
+          "flags": "--wait <minutes>",
+          "name": "wait",
+          "required": false,
+          "default": null,
+          "description": "For --logic: streaming wait timeout in whole minutes, >= 1 (default: 30)"
+        },
+        {
+          "flags": "--allow-zero-tests",
+          "name": "allowZeroTests",
+          "required": false,
+          "default": null,
+          "description": "For --logic: exit 0 even when Salesforce runs zero tests (default: zero tests fail the run)"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": false,
+      "docsCategory": "testing-quality",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_test",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/test.js"
+    },
+    {
+      "id": "agent-test",
+      "path": [
+        "agent-test"
+      ],
+      "description": "Run an Agentforce agent test as a CI gate (via `sf agent test run`), with pass/fail exit code, optional notification, and PR decoration",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--spec <apiName>",
+          "name": "spec",
+          "required": true,
+          "default": null,
+          "description": "Agent test API name (AiEvaluationDefinition) to run"
+        },
+        {
+          "flags": "--org <alias>",
+          "name": "org",
+          "required": false,
+          "default": null,
+          "description": "Target org (default: config.defaultOrg)"
+        },
+        {
+          "flags": "--wait <minutes>",
+          "name": "wait",
+          "required": false,
+          "default": null,
+          "description": "Wait timeout in minutes (default: 30)"
+        },
+        {
+          "flags": "--threshold <percent>",
+          "name": "threshold",
+          "required": false,
+          "default": null,
+          "description": "Pass if the aggregate pass rate is >= this percent (0-100), rather than requiring every test to pass"
+        },
+        {
+          "flags": "--notify",
+          "name": "notify",
+          "required": false,
+          "default": null,
+          "description": "Dispatch an agent-test-success/failure notification via configured channels"
+        },
+        {
+          "flags": "--pr-comment",
+          "name": "prComment",
+          "required": false,
+          "default": null,
+          "description": "Post the pass/fail result to the current PR (via gh)"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": false,
+      "docsCategory": "testing-quality",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/agent-test.js"
+    },
+    {
+      "id": "pull",
+      "path": [
+        "pull"
+      ],
+      "description": "Pull metadata changes from the default org",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--dry-run",
+          "name": "dryRun",
+          "required": false,
+          "default": null,
+          "description": "show what would be retrieved without retrieving"
+        },
+        {
+          "flags": "--full",
+          "name": "full",
+          "required": false,
+          "default": null,
+          "description": "force full retrieve and rebuild cache"
+        },
+        {
+          "flags": "--status",
+          "name": "status",
+          "required": false,
+          "default": null,
+          "description": "show cache status and exit"
+        }
+      ],
+      "subcommands": [],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": false,
+      "docsCategory": "metadata",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/pull.js"
+    },
+    {
+      "id": "quality",
+      "path": [
+        "quality"
+      ],
+      "description": "Run code quality analysis and optionally generate an AI fix plan",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--tests",
+          "name": "tests",
+          "required": false,
+          "default": null,
+          "description": "Run test-analyzer only"
+        },
+        {
+          "flags": "--all",
+          "name": "all",
+          "required": false,
+          "default": null,
+          "description": "Run both code-analyzer and test-analyzer"
+        },
+        {
+          "flags": "--fix-plan",
+          "name": "fixPlan",
+          "required": false,
+          "default": null,
+          "description": "Generate an AI-powered fix plan from quality output"
+        },
+        {
+          "flags": "--generate-stubs",
+          "name": "generateStubs",
+          "required": false,
+          "default": null,
+          "description": "Generate @IsTest stub classes for untested Apex classes"
+        },
+        {
+          "flags": "--include-fixes",
+          "name": "includeFixes",
+          "required": false,
+          "default": null,
+          "description": "Ask Code Analyzer v5 for actionable fixes/suggestions in the scan output (feeds the AI fix plan)"
+        },
+        {
+          "flags": "--output-file <path>",
+          "name": "outputFile",
+          "required": false,
+          "default": null,
+          "description": "Also write the Code Analyzer v5 results to a file; the format follows the extension (e.g. .sarif for code-scanning upload)"
+        },
+        {
+          "flags": "--allow-legacy-analyzer",
+          "name": "allowLegacyAnalyzer",
+          "required": false,
+          "default": null,
+          "description": "Permit the legacy Code Analyzer v4 (sf scanner run) when v5 is unavailable — results are non-authoritative (also: config quality.analyzer.allowLegacyV4)"
+        },
+        {
+          "flags": "--dry-run",
+          "name": "dryRun",
+          "required": false,
+          "default": null,
+          "description": "Preview --generate-stubs output without writing files"
+        },
+        {
+          "flags": "--agent",
+          "name": "agent",
+          "required": false,
+          "default": null,
+          "description": "Non-interactive agent mode (do not block waiting on the AI fix-plan session)"
+        },
+        {
+          "flags": "--api67",
+          "name": "api67",
+          "required": false,
+          "default": null,
+          "description": "Run only the API v67 (Summer '26) user-mode readiness scan of local Apex sources"
+        },
+        {
+          "flags": "--test-hints",
+          "name": "testHints",
+          "required": false,
+          "default": null,
+          "description": "Run only the RunRelevantTests hint check: flag @IsTest classes with no @IsTest(testFor=...) annotation (Spring '26)"
+        },
+        {
+          "flags": "--json",
+          "name": "json",
+          "required": false,
+          "default": null,
+          "description": "Emit structured JSON to stdout (only honoured with --api67 / --test-hints)"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": true,
+      "docsCategory": "testing-quality",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_quality",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/quality.js"
+    },
+    {
+      "id": "preflight",
+      "path": [
+        "preflight"
+      ],
+      "description": "Run pre-deployment validation checks",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--strict",
+          "name": "strict",
+          "required": false,
+          "default": null,
+          "description": "Fail on any warning"
+        },
+        {
+          "flags": "--dry-run",
+          "name": "dryRun",
+          "required": false,
+          "default": null,
+          "description": "Show what would be executed without running"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "core",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_preflight",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/preflight.js"
+    },
+    {
+      "id": "rollback",
+      "path": [
+        "rollback"
+      ],
+      "description": "Roll back a deployment to a target org",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--org <alias>",
+          "name": "org",
+          "required": false,
+          "default": null,
+          "description": "Target org alias for rollback"
+        },
+        {
+          "flags": "--dry-run",
+          "name": "dryRun",
+          "required": false,
+          "default": null,
+          "description": "Show what would be executed without running"
+        },
+        {
+          "flags": "--json",
+          "name": "json",
+          "required": false,
+          "default": null,
+          "description": "Emit structured JSON to stdout (CI mode)"
+        }
+      ],
+      "subcommands": [],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "core",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_rollback",
+          "mutating": true
+        }
+      ],
+      "source": "src/commands/rollback.js"
+    },
+    {
+      "id": "smoke",
+      "path": [
+        "smoke"
+      ],
+      "description": "Run post-deployment smoke tests against a target org",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--org <alias>",
+          "name": "org",
+          "required": false,
+          "default": null,
+          "description": "Target org alias for smoke tests"
+        },
+        {
+          "flags": "--dry-run",
+          "name": "dryRun",
+          "required": false,
+          "default": null,
+          "description": "Show what would be executed without running"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": false,
+      "docsCategory": "core",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/smoke.js"
+    },
+    {
+      "id": "review",
+      "path": [
+        "review"
+      ],
+      "description": "AI-powered Salesforce code review of current branch changes",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--base <branch>",
+          "name": "base",
+          "required": false,
+          "default": "main",
+          "description": "Base branch to diff against"
+        },
+        {
+          "flags": "--agent",
+          "name": "agent",
+          "required": false,
+          "default": null,
+          "description": "Non-interactive agent mode (do not block waiting on the AI session)"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "ai",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/review.js"
+    },
+    {
+      "id": "notify",
+      "path": [
+        "notify"
+      ],
+      "description": "Send a notification (events: deploy-success, deploy-failure, test-failure, release-created, snapshot)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [
+        {
+          "name": "event",
+          "required": true,
+          "variadic": false,
+          "description": ""
+        }
+      ],
+      "options": [
+        {
+          "flags": "--version <ver>",
+          "name": "version",
+          "required": false,
+          "default": null,
+          "description": "Version label"
+        },
+        {
+          "flags": "--org <alias>",
+          "name": "org",
+          "required": false,
+          "default": null,
+          "description": "Org alias"
+        },
+        {
+          "flags": "--message <msg>",
+          "name": "message",
+          "required": false,
+          "default": null,
+          "description": "Custom message"
+        },
+        {
+          "flags": "--type <type>",
+          "name": "type",
+          "required": false,
+          "default": "monitor",
+          "description": "For the \"snapshot\" event: audit | monitor"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "sideEffects": "sends notifications to configured channels",
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "org-health",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_notify",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/notify.js"
+    },
+    {
+      "id": "drift",
+      "path": [
+        "drift"
+      ],
+      "description": "Detect metadata drift between local source and a target org",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--org <alias>",
+          "name": "org",
+          "required": false,
+          "default": null,
+          "description": "Target org alias to check for drift"
+        },
+        {
+          "flags": "--json",
+          "name": "json",
+          "required": false,
+          "default": null,
+          "description": "Emit structured JSON to stdout (CI mode)"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "metadata",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_drift",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/drift.js"
+    },
+    {
+      "id": "changelog",
+      "path": [
+        "changelog"
+      ],
+      "description": "Manage project CHANGELOG",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "changelog generate",
+          "path": [
+            "changelog",
+            "generate"
+          ],
+          "description": "Use AI to generate [Unreleased] entries from git history",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--limit <number>",
+              "name": "limit",
+              "required": false,
+              "default": "20",
+              "description": "Number of commits to analyze"
+            },
+            {
+              "flags": "--package <name>",
+              "name": "package",
+              "required": false,
+              "default": null,
+              "description": "Scope changelog to a specific package directory"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "changelog release",
+          "path": [
+            "changelog",
+            "release"
+          ],
+          "description": "Move [Unreleased] changes to a new version section",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "version",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--package <name>",
+              "name": "package",
+              "required": false,
+              "default": null,
+              "description": "Target a specific package changelog"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "changelog check",
+          "path": [
+            "changelog",
+            "check"
+          ],
+          "description": "Verify [Unreleased] content against git changes",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--package <name>",
+              "name": "package",
+              "required": false,
+              "default": null,
+              "description": "Check a specific package changelog"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "testing-quality",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/changelog.js"
+    },
+    {
+      "id": "manifest",
+      "path": [
+        "manifest"
+      ],
+      "description": "Smart package.xml generator from git diffs (with optional AI dependency cleanup)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--base <ref>",
+          "name": "base",
+          "required": false,
+          "default": "main",
+          "description": "Base git ref to diff from"
+        },
+        {
+          "flags": "--head <ref>",
+          "name": "head",
+          "required": false,
+          "default": "HEAD",
+          "description": "Head git ref to diff to"
+        },
+        {
+          "flags": "--output <path>",
+          "name": "output",
+          "required": false,
+          "default": null,
+          "description": "Output path for package.xml (defaults to <manifestDir>/preview-package.xml)"
+        },
+        {
+          "flags": "--destructive <path>",
+          "name": "destructive",
+          "required": false,
+          "default": null,
+          "description": "Write destructive changes to this path (otherwise skipped)"
+        },
+        {
+          "flags": "--ai-cleanup",
+          "name": "aiCleanup",
+          "required": false,
+          "default": null,
+          "description": "Run AI dependency analysis on the generated manifest"
+        },
+        {
+          "flags": "--no-ai-cleanup",
+          "name": "aiCleanup",
+          "required": false,
+          "default": null,
+          "description": "Skip AI dependency analysis even when AI is enabled"
+        },
+        {
+          "flags": "--print",
+          "name": "print",
+          "required": false,
+          "default": null,
+          "description": "Print the generated package.xml to stdout instead of writing a file"
+        },
+        {
+          "flags": "--package <name|all>",
+          "name": "package",
+          "required": false,
+          "default": "all",
+          "description": "Package directory to diff: a short name matching packageDirectories or \"all\""
+        },
+        {
+          "flags": "--name <label>",
+          "name": "name",
+          "required": false,
+          "default": null,
+          "description": "Release label for output filename (semver, free-form, or \"today\")"
+        },
+        {
+          "flags": "--version <label>",
+          "name": "version",
+          "required": false,
+          "default": null,
+          "description": "Alias for --name (backward compat)"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "metadata",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_manifest_from_git",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/manifest.js"
+    },
+    {
+      "id": "explain",
+      "path": [
+        "explain"
+      ],
+      "description": "AI-powered analysis of a Salesforce deployment error log",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [
+        {
+          "name": "file",
+          "required": false,
+          "variadic": false,
+          "description": ""
+        }
+      ],
+      "options": [
+        {
+          "flags": "--from-stdin",
+          "name": "fromStdin",
+          "required": false,
+          "default": null,
+          "description": "Read the deployment log from stdin"
+        },
+        {
+          "flags": "--latest",
+          "name": "latest",
+          "required": false,
+          "default": null,
+          "description": "Use the most recent log in the configured log directory (default)"
+        },
+        {
+          "flags": "--agent",
+          "name": "agent",
+          "required": false,
+          "default": null,
+          "description": "Non-interactive agent mode (do not block waiting on the AI session)"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "ai",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/explain.js"
+    },
+    {
+      "id": "pr-description",
+      "path": [
+        "pr-description"
+      ],
+      "description": "Generate a PR description or Slack message from deployment changes",
+      "aliases": [
+        "pr-desc"
+      ],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--base <ref>",
+          "name": "base",
+          "required": false,
+          "default": "main",
+          "description": "Base branch to diff against"
+        },
+        {
+          "flags": "--head <ref>",
+          "name": "head",
+          "required": false,
+          "default": "HEAD",
+          "description": "Head ref"
+        },
+        {
+          "flags": "--format <fmt>",
+          "name": "format",
+          "required": false,
+          "default": "github",
+          "description": "Output format: github|slack|markdown"
+        },
+        {
+          "flags": "--output <path>",
+          "name": "output",
+          "required": false,
+          "default": null,
+          "description": "Write result to this file instead of stdout"
+        },
+        {
+          "flags": "--commit-limit <n>",
+          "name": "commitLimit",
+          "required": false,
+          "default": "30",
+          "description": "Max commits to include in the context sent to AI"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "ai",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/prDescription.js"
+    },
+    {
+      "id": "ui",
+      "path": [
+        "ui"
+      ],
+      "description": "Launch the local SFDT web dashboard (test results, drift, preflight)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "-p, --port <number>",
+          "name": "port",
+          "required": false,
+          "default": "7654",
+          "description": "Port to listen on"
+        },
+        {
+          "flags": "--no-open",
+          "name": "open",
+          "required": false,
+          "default": null,
+          "description": "Do not automatically open the browser"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "platform-bridge",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/ui.js"
+    },
+    {
+      "id": "compare",
+      "path": [
+        "compare"
+      ],
+      "description": "Compare metadata between two orgs or an org and local source",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--source <alias|local>",
+          "name": "source",
+          "required": false,
+          "default": "local",
+          "description": "Source org alias or \"local\""
+        },
+        {
+          "flags": "--target <alias>",
+          "name": "target",
+          "required": false,
+          "default": null,
+          "description": "Target org alias (default: config.defaultOrg)"
+        },
+        {
+          "flags": "--output <file>",
+          "name": "output",
+          "required": false,
+          "default": null,
+          "description": "Write a package.xml of source-only items to this file"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": false,
+      "docsCategory": "metadata",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_compare",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/compare.js"
+    },
+    {
+      "id": "completion",
+      "path": [
+        "completion"
+      ],
+      "description": "Output shell completion script (bash, zsh, or fish)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [
+        {
+          "name": "shell",
+          "required": false,
+          "variadic": false,
+          "description": ""
+        }
+      ],
+      "options": [],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": false,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "config-utils",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/completion.js"
+    },
+    {
+      "id": "update",
+      "path": [
+        "update"
+      ],
+      "description": "Update sfdt to the latest version from npm",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--force",
+          "name": "force",
+          "required": false,
+          "default": null,
+          "description": "Skip confirmation prompt"
+        }
+      ],
+      "subcommands": [],
+      "mutating": true,
+      "requiresProject": false,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "config-utils",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/update.js"
+    },
+    {
+      "id": "config",
+      "path": [
+        "config"
+      ],
+      "description": "Read and write .sfdt config values",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "config set",
+          "path": [
+            "config",
+            "set"
+          ],
+          "description": "Set a config value using dot notation (e.g. deployment.coverageThreshold)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "key",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            },
+            {
+              "name": "value",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [],
+          "subcommands": []
+        },
+        {
+          "id": "config get",
+          "path": [
+            "config",
+            "get"
+          ],
+          "description": "Print a config value using dot notation (e.g. defaultOrg)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "key",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "config-utils",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/config.js"
+    },
+    {
+      "id": "ai",
+      "path": [
+        "ai"
+      ],
+      "description": "AI utilities",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "ai prompt",
+          "path": [
+            "ai",
+            "prompt"
+          ],
+          "description": "Run a prompt through the configured AI provider and print the result",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "text",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [],
+          "subcommands": []
+        }
+      ],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "ai",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/ai.js"
+    },
+    {
+      "id": "scan",
+      "path": [
+        "scan"
+      ],
+      "description": "Fetch complete metadata inventory from an org",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--org <alias>",
+          "name": "org",
+          "required": false,
+          "default": null,
+          "description": "Org alias (defaults to config.defaultOrg)"
+        },
+        {
+          "flags": "--output <file>",
+          "name": "output",
+          "required": false,
+          "default": null,
+          "description": "Write JSON to this path (ignored if --json is passed) (default: logs/scan-latest.json)"
+        },
+        {
+          "flags": "--format <fmt>",
+          "name": "format",
+          "required": false,
+          "default": "json",
+          "description": "Output format: json | table (ignored if --json is passed) (default: json)"
+        },
+        {
+          "flags": "--json",
+          "name": "json",
+          "required": false,
+          "default": null,
+          "description": "Emit structured JSON to stdout and exit without writing a file"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "metadata",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_scan",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/scan.js"
+    },
+    {
+      "id": "dependencies",
+      "path": [
+        "dependencies"
+      ],
+      "description": "Show metadata dependencies for a component (references + referenced-by)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [
+        {
+          "name": "name",
+          "required": true,
+          "variadic": false,
+          "description": ""
+        }
+      ],
+      "options": [
+        {
+          "flags": "--type <MetadataType>",
+          "name": "type",
+          "required": false,
+          "default": "ApexClass",
+          "description": "Metadata type to resolve (ApexClass, ApexTrigger, ApexPage, ApexComponent, Flow, LightningComponentBundle, AuraDefinitionBundle, CustomField)"
+        },
+        {
+          "flags": "--org <alias>",
+          "name": "org",
+          "required": false,
+          "default": null,
+          "description": "Org alias (defaults to config.defaultOrg)"
+        },
+        {
+          "flags": "--json",
+          "name": "json",
+          "required": false,
+          "default": null,
+          "description": "Emit structured JSON to stdout"
+        },
+        {
+          "flags": "--gaps",
+          "name": "gaps",
+          "required": false,
+          "default": null,
+          "description": "Report source-parsed references the Tooling API may miss (offline; pass --org to diff)"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "metadata",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_dependencies",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/dependencies.js"
+    },
+    {
+      "id": "coverage",
+      "path": [
+        "coverage"
+      ],
+      "description": "Report Apex code coverage (org-wide + per-class)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--org <alias>",
+          "name": "org",
+          "required": false,
+          "default": null,
+          "description": "Org alias (defaults to config.defaultOrg)"
+        },
+        {
+          "flags": "--threshold <pct>",
+          "name": "threshold",
+          "required": false,
+          "default": "75",
+          "description": "Fail (exit non-zero) if org-wide coverage is below this percent"
+        },
+        {
+          "flags": "--json",
+          "name": "json",
+          "required": false,
+          "default": null,
+          "description": "Emit structured JSON to stdout"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "testing-quality",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_coverage",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/coverage.js"
+    },
+    {
+      "id": "audit",
+      "path": [
+        "audit"
+      ],
+      "description": "Diagnose org health — audit trail, licenses, MFA coverage & enforcement readiness, SOAP login() retirement, unused/unreferenced Apex, inactive users/flows/validations/workflows, API versions, permission sets, connected apps, field descriptions, object & field access",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "audit all",
+          "path": [
+            "audit",
+            "all"
+          ],
+          "description": "Run every audit check and write a snapshot",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            },
+            {
+              "flags": "--notify",
+              "name": "notify",
+              "required": false,
+              "default": null,
+              "description": "Send the snapshot to configured notification channels"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit audittrail",
+          "path": [
+            "audit",
+            "audittrail"
+          ],
+          "description": "Run only the \"audittrail\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit licenses",
+          "path": [
+            "audit",
+            "licenses"
+          ],
+          "description": "Run only the \"licenses\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit mfa",
+          "path": [
+            "audit",
+            "mfa"
+          ],
+          "description": "Run only the \"mfa\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit mfa-readiness",
+          "path": [
+            "audit",
+            "mfa-readiness"
+          ],
+          "description": "Run only the \"mfa-readiness\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit soap-logins",
+          "path": [
+            "audit",
+            "soap-logins"
+          ],
+          "description": "Run only the \"soap-logins\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit unused-apex",
+          "path": [
+            "audit",
+            "unused-apex"
+          ],
+          "description": "Run only the \"unused-apex\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit inactive-users",
+          "path": [
+            "audit",
+            "inactive-users"
+          ],
+          "description": "Run only the \"inactive-users\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit api-versions",
+          "path": [
+            "audit",
+            "api-versions"
+          ],
+          "description": "Run only the \"api-versions\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit inactive-flows",
+          "path": [
+            "audit",
+            "inactive-flows"
+          ],
+          "description": "Run only the \"inactive-flows\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit unused-permsets",
+          "path": [
+            "audit",
+            "unused-permsets"
+          ],
+          "description": "Run only the \"unused-permsets\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit connected-apps",
+          "path": [
+            "audit",
+            "connected-apps"
+          ],
+          "description": "Run only the \"connected-apps\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit field-descriptions",
+          "path": [
+            "audit",
+            "field-descriptions"
+          ],
+          "description": "Run only the \"field-descriptions\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit apex-unreferenced",
+          "path": [
+            "audit",
+            "apex-unreferenced"
+          ],
+          "description": "Run only the \"apex-unreferenced\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit lint-access",
+          "path": [
+            "audit",
+            "lint-access"
+          ],
+          "description": "Run only the \"lint-access\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit inactive-validations",
+          "path": [
+            "audit",
+            "inactive-validations"
+          ],
+          "description": "Run only the \"inactive-validations\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit inactive-workflows",
+          "path": [
+            "audit",
+            "inactive-workflows"
+          ],
+          "description": "Run only the \"inactive-workflows\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "audit lint-access-fields",
+          "path": [
+            "audit",
+            "lint-access-fields"
+          ],
+          "description": "Run only the \"lint-access-fields\" audit check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "org-health",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_audit",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/audit.js"
+    },
+    {
+      "id": "monitor",
+      "path": [
+        "monitor"
+      ],
+      "description": "Monitor org health — limits (incl. elastic async Apex), Apex failures, security score, org info & release version, deployment history, legacy API usage, paused flows, and metadata backup",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "monitor all",
+          "path": [
+            "monitor",
+            "all"
+          ],
+          "description": "Run every monitoring check (add --backup to include a metadata backup)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--backup",
+              "name": "backup",
+              "required": false,
+              "default": null,
+              "description": "Also run a full metadata backup"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            },
+            {
+              "flags": "--notify",
+              "name": "notify",
+              "required": false,
+              "default": null,
+              "description": "Send the snapshot to configured notification channels"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "monitor limits",
+          "path": [
+            "monitor",
+            "limits"
+          ],
+          "description": "Run only the \"limits\" monitoring check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "monitor errors",
+          "path": [
+            "monitor",
+            "errors"
+          ],
+          "description": "Run only the \"errors\" monitoring check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "monitor health",
+          "path": [
+            "monitor",
+            "health"
+          ],
+          "description": "Run only the \"health\" monitoring check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "monitor org-info",
+          "path": [
+            "monitor",
+            "org-info"
+          ],
+          "description": "Run only the \"org-info\" monitoring check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "monitor deploy-history",
+          "path": [
+            "monitor",
+            "deploy-history"
+          ],
+          "description": "Run only the \"deploy-history\" monitoring check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "monitor deprecated-api",
+          "path": [
+            "monitor",
+            "deprecated-api"
+          ],
+          "description": "Run only the \"deprecated-api\" monitoring check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "monitor flow-errors",
+          "path": [
+            "monitor",
+            "flow-errors"
+          ],
+          "description": "Run only the \"flow-errors\" monitoring check",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "monitor backup",
+          "path": [
+            "monitor",
+            "backup"
+          ],
+          "description": "Retrieve a full metadata backup into the configured backup directory",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "monitor schedule",
+          "path": [
+            "monitor",
+            "schedule"
+          ],
+          "description": "Generate a scheduled org-monitoring CI workflow (alias for \"ci init --type monitor\")",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--provider <name>",
+              "name": "provider",
+              "required": true,
+              "default": null,
+              "description": "CI provider: github | gitlab | azure | bitbucket"
+            },
+            {
+              "flags": "--auth <method>",
+              "name": "auth",
+              "required": false,
+              "default": null,
+              "description": "Org authentication: sfdx-url | jwt (default: config ci.authMethod or sfdx-url)"
+            },
+            {
+              "flags": "--runner <name>",
+              "name": "runner",
+              "required": false,
+              "default": null,
+              "description": "CLI runner: npx | docker (gitlab/bitbucket) | action (github)"
+            },
+            {
+              "flags": "--cron <expr>",
+              "name": "cron",
+              "required": false,
+              "default": "0 6 * * *",
+              "description": "Cron schedule"
+            },
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Target org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--node <version>",
+              "name": "node",
+              "required": false,
+              "default": "22",
+              "description": "Node.js version for the CI runner (@sfdt/cli requires >= 22.15)"
+            },
+            {
+              "flags": "--out <path>",
+              "name": "out",
+              "required": false,
+              "default": null,
+              "description": "Output file path (defaults to the provider convention)"
+            },
+            {
+              "flags": "--print",
+              "name": "print",
+              "required": false,
+              "default": null,
+              "description": "Print to stdout instead of writing a file"
+            },
+            {
+              "flags": "--force",
+              "name": "force",
+              "required": false,
+              "default": null,
+              "description": "Overwrite an existing file"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the result as JSON"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "org-health",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_monitor",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/monitor.js"
+    },
+    {
+      "id": "docs",
+      "path": [
+        "docs"
+      ],
+      "description": "Generate project documentation (objects, Apex, flows) with optional AI overview and diagrams",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "docs generate",
+          "path": [
+            "docs",
+            "generate"
+          ],
+          "description": "Generate MkDocs-compatible markdown documentation for the project",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--ai",
+              "name": "ai",
+              "required": false,
+              "default": null,
+              "description": "Enrich the index with an AI-written project overview (default: on when config features.ai and docs.ai allow)"
+            },
+            {
+              "flags": "--no-ai",
+              "name": "ai",
+              "required": false,
+              "default": null,
+              "description": "Skip the AI overview even when enabled in config"
+            },
+            {
+              "flags": "--roles [list]",
+              "name": "roles",
+              "required": false,
+              "default": null,
+              "description": "Also generate per-component Developer/Admin/User/DevOps guides (AI); optional comma list to subset, e.g. --roles developer,admin (default: config docs.roleGuides + docs.roles)"
+            },
+            {
+              "flags": "--no-diagrams",
+              "name": "diagrams",
+              "required": false,
+              "default": null,
+              "description": "Skip the standalone ER-diagram page even when docs.diagrams is enabled in config"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "docs diagram",
+          "path": [
+            "docs",
+            "diagram"
+          ],
+          "description": "Print (or write) a Mermaid ER diagram of the data model",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--output <file>",
+              "name": "output",
+              "required": false,
+              "default": null,
+              "description": "Write the diagram to this path instead of stdout"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": true,
+      "docsCategory": "org-health",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_docs",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/docs.js"
+    },
+    {
+      "id": "data",
+      "path": [
+        "data"
+      ],
+      "description": "Import/export org data sets (native sf tree commands) for sandbox & scratch seeding",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "data list",
+          "path": [
+            "data",
+            "list"
+          ],
+          "description": "List configured data sets",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "data export",
+          "path": [
+            "data",
+            "export"
+          ],
+          "description": "Export records for a data set from an org (sf data export tree)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "set",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "data import",
+          "path": [
+            "data",
+            "import"
+          ],
+          "description": "Import a previously-exported data set into an org (sf data import tree)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "set",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "data delete",
+          "path": [
+            "data",
+            "delete"
+          ],
+          "description": "Bulk-delete the records targeted by a data set",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "set",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            },
+            {
+              "flags": "-y, --yes",
+              "name": "yes",
+              "required": false,
+              "default": null,
+              "description": "Skip the confirmation prompt (required for non-interactive use)"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "org-health",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_data_export",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_data_import",
+          "mutating": true
+        },
+        {
+          "name": "sfdt_data_delete",
+          "mutating": true
+        }
+      ],
+      "source": "src/commands/data.js"
+    },
+    {
+      "id": "scratch",
+      "path": [
+        "scratch"
+      ],
+      "description": "Create, delete, list, and pool Salesforce scratch orgs",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "scratch create",
+          "path": [
+            "scratch",
+            "create"
+          ],
+          "description": "Create a scratch org from the configured definition file",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--alias <alias>",
+              "name": "alias",
+              "required": false,
+              "default": null,
+              "description": "Alias for the new scratch org"
+            },
+            {
+              "flags": "--days <n>",
+              "name": "days",
+              "required": false,
+              "default": null,
+              "description": "Duration in days (1-30)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "scratch delete",
+          "path": [
+            "scratch",
+            "delete"
+          ],
+          "description": "Delete a scratch org by alias or username",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "target",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            },
+            {
+              "flags": "-y, --yes",
+              "name": "yes",
+              "required": false,
+              "default": null,
+              "description": "Skip the confirmation prompt (required for non-interactive use)"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "scratch list",
+          "path": [
+            "scratch",
+            "list"
+          ],
+          "description": "List active scratch orgs",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "scratch pool",
+          "path": [
+            "scratch",
+            "pool"
+          ],
+          "description": "Manage a pool of pre-created scratch orgs",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [],
+          "subcommands": [
+            {
+              "id": "scratch pool status",
+              "path": [
+                "scratch",
+                "pool",
+                "status"
+              ],
+              "description": "Show the current scratch org pool state",
+              "aliases": [],
+              "hidden": false,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--json",
+                  "name": "json",
+                  "required": false,
+                  "default": null,
+                  "description": "Emit structured JSON to stdout"
+                }
+              ],
+              "subcommands": []
+            },
+            {
+              "id": "scratch pool fill",
+              "path": [
+                "scratch",
+                "pool",
+                "fill"
+              ],
+              "description": "Create scratch orgs until the pool reaches the configured size",
+              "aliases": [],
+              "hidden": false,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--size <n>",
+                  "name": "size",
+                  "required": false,
+                  "default": null,
+                  "description": "Desired pool size (overrides config.scratch.poolSize)"
+                },
+                {
+                  "flags": "--json",
+                  "name": "json",
+                  "required": false,
+                  "default": null,
+                  "description": "Emit structured JSON to stdout"
+                }
+              ],
+              "subcommands": []
+            }
+          ]
+        }
+      ],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": true,
+      "docsCategory": "org-health",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_scratch_create",
+          "mutating": true
+        },
+        {
+          "name": "sfdt_scratch_delete",
+          "mutating": true
+        },
+        {
+          "name": "sfdt_scratch_pool",
+          "mutating": true
+        }
+      ],
+      "source": "src/commands/scratch.js"
+    },
+    {
+      "id": "flow",
+      "path": [
+        "flow"
+      ],
+      "description": "Flow-specific analyses (CLI uses @sfdt/flow-core, matching the Chrome extension)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "flow scan",
+          "path": [
+            "flow",
+            "scan"
+          ],
+          "description": "Run flow-core health analysis on every Flow with an active version",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--output <file>",
+              "name": "output",
+              "required": false,
+              "default": null,
+              "description": "Write report to this path (default: logs/flow-scan-latest.json)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the report to stdout instead of writing a file"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "flow conflicts",
+          "path": [
+            "flow",
+            "conflicts"
+          ],
+          "description": "List record-triggered Flow groups that fire on the same object + timing + event",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--output <file>",
+              "name": "output",
+              "required": false,
+              "default": null,
+              "description": "Write report to this path (default: logs/flow-conflicts-latest.json)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the report to stdout instead of writing a file"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "metadata",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_flow_scan",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/flow.js"
+    },
+    {
+      "id": "extension",
+      "path": [
+        "extension"
+      ],
+      "description": "Manage the Chrome extension bridge (native messaging host)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "extension install-host",
+          "path": [
+            "extension",
+            "install-host"
+          ],
+          "description": "Install the Chrome native messaging host manifest for the SFDT SF Helper extension",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--extension-id <id>",
+              "name": "extensionId",
+              "required": true,
+              "default": null,
+              "description": "The Chrome extension ID (32 lowercase letters a–p; find it at chrome://extensions with Developer Mode on)"
+            },
+            {
+              "flags": "--browser <browser>",
+              "name": "browser",
+              "required": false,
+              "default": "chrome",
+              "description": "Browser to register with — one of chrome, edge, brave, chromium, vivaldi, all (default: chrome)"
+            },
+            {
+              "flags": "--project-root <path>",
+              "name": "projectRoot",
+              "required": false,
+              "default": null,
+              "description": "Salesforce project root to record for the host (default: the current project). The host reads this to serve the read-only kinds (drift/scan/compare/org-health)."
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the result as JSON"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "extension uninstall-host",
+          "path": [
+            "extension",
+            "uninstall-host"
+          ],
+          "description": "Remove the native messaging host manifest from one or all browsers",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--browser <browser>",
+              "name": "browser",
+              "required": false,
+              "default": "all",
+              "description": "Browser to remove — one of chrome, edge, brave, chromium, vivaldi, all (default: all)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the result as JSON"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "extension stats",
+          "path": [
+            "extension",
+            "stats"
+          ],
+          "description": "Show the latest telemetry snapshot the extension pushed to .sfdt/telemetry-snapshot.json",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the result as JSON"
+            },
+            {
+              "flags": "--limit <n>",
+              "name": "limit",
+              "required": false,
+              "default": "10",
+              "description": "Cap the number of features shown (default: 10)"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "extension status",
+          "path": [
+            "extension",
+            "status"
+          ],
+          "description": "Report which browsers have the native host manifest installed",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the result as JSON"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": false,
+      "requiresOrg": false,
+      "supportsJson": true,
+      "docsCategory": "platform-bridge",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": true
+      },
+      "mcpTools": [],
+      "source": "src/commands/extension.js"
+    },
+    {
+      "id": "feature-flags",
+      "path": [
+        "feature-flags"
+      ],
+      "description": "Manage the extension kill-switch (.sfdt/feature-flags.json). Disabled features are skipped at extension boot.",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "feature-flags list",
+          "path": [
+            "feature-flags",
+            "list"
+          ],
+          "description": "List currently disabled feature ids",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the result as JSON"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "feature-flags disable",
+          "path": [
+            "feature-flags",
+            "disable"
+          ],
+          "description": "Add a feature id to the disabled list (creates the file if missing)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "featureId",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the result as JSON"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "feature-flags enable",
+          "path": [
+            "feature-flags",
+            "enable"
+          ],
+          "description": "Remove a feature id from the disabled list",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "featureId",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the result as JSON"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "feature-flags clear",
+          "path": [
+            "feature-flags",
+            "clear"
+          ],
+          "description": "Re-enable everything (empties the disabled list; leaves the file in place)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--remove",
+              "name": "remove",
+              "required": false,
+              "default": null,
+              "description": "Delete the file entirely instead of writing { disabled: [] }"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the result as JSON"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": true,
+      "docsCategory": "platform-bridge",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": true
+      },
+      "mcpTools": [],
+      "source": "src/commands/feature-flags.js"
+    },
+    {
+      "id": "doctor",
+      "path": [
+        "doctor"
+      ],
+      "description": "Diagnose the local sfdt environment and extension stack",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--core",
+          "name": "core",
+          "required": false,
+          "default": null,
+          "description": "Run only the environment checks (sf, node, git, config, AI, org)"
+        },
+        {
+          "flags": "--extension",
+          "name": "extension",
+          "required": false,
+          "default": null,
+          "description": "Run only the extension-stack checks (bridge, native host, feature flags, telemetry)"
+        },
+        {
+          "flags": "--org <alias>",
+          "name": "org",
+          "required": false,
+          "default": null,
+          "description": "Org alias for the connectivity check (default: config defaultOrg)"
+        },
+        {
+          "flags": "--port <port>",
+          "name": "port",
+          "required": false,
+          "default": "7654",
+          "description": "Localhost port the bridge listens on"
+        },
+        {
+          "flags": "--json",
+          "name": "json",
+          "required": false,
+          "default": null,
+          "description": "Emit the result as JSON"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": false,
+      "requiresOrg": false,
+      "supportsJson": true,
+      "docsCategory": "platform-bridge",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/doctor.js"
+    },
+    {
+      "id": "mcp",
+      "path": [
+        "mcp"
+      ],
+      "description": "Manage the Model Context Protocol (MCP) server",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "mcp start",
+          "path": [
+            "mcp",
+            "start"
+          ],
+          "description": "Start the sfdt MCP server in stdio mode",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [],
+          "subcommands": []
+        },
+        {
+          "id": "mcp cleanup",
+          "path": [
+            "mcp",
+            "cleanup"
+          ],
+          "description": "Purge expired parked results from the cache directory",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [],
+          "subcommands": []
+        }
+      ],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "platform-bridge",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/mcp.js"
+    },
+    {
+      "id": "plugin",
+      "path": [
+        "plugin"
+      ],
+      "description": "Manage sfdt CLI plugins",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "plugin create",
+          "path": [
+            "plugin",
+            "create"
+          ],
+          "description": "Scaffold a new sfdt CLI plugin project",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "name",
+              "required": false,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "-d, --description <desc>",
+              "name": "description",
+              "required": false,
+              "default": null,
+              "description": "Plugin description"
+            },
+            {
+              "flags": "-a, --author <author>",
+              "name": "author",
+              "required": false,
+              "default": null,
+              "description": "Plugin author"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "platform-bridge",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/plugin.js"
+    },
+    {
+      "id": "skills",
+      "path": [
+        "skills"
+      ],
+      "description": "Manage sfdt agent skills",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "skills export",
+          "path": [
+            "skills",
+            "export"
+          ],
+          "description": "Export local agent skills to IDE/agent-specific configurations",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--target <target>",
+              "name": "target",
+              "required": true,
+              "default": null,
+              "description": "Target IDE/Agent format (claude | cursor | codex | windsurf | pack)"
+            },
+            {
+              "flags": "--out <dir>",
+              "name": "out",
+              "required": false,
+              "default": null,
+              "description": "Output directory for --target pack (default: ./sfdt-skills-pack)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the result as JSON"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": false,
+      "requiresOrg": false,
+      "supportsJson": true,
+      "docsCategory": "platform-bridge",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/skills.js"
+    },
+    {
+      "id": "ci",
+      "path": [
+        "ci"
+      ],
+      "description": "Generate CI/CD pipeline templates (monitoring, smart deploy, release, scratch-org CI)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "ci init",
+          "path": [
+            "ci",
+            "init"
+          ],
+          "description": "Generate a ready-to-use CI workflow for a provider",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--provider <name>",
+              "name": "provider",
+              "required": true,
+              "default": null,
+              "description": "CI provider: github | gitlab | azure | bitbucket"
+            },
+            {
+              "flags": "--type <type>",
+              "name": "type",
+              "required": false,
+              "default": "monitor",
+              "description": "Workflow type: monitor | deploy | release | scratch"
+            },
+            {
+              "flags": "--auth <method>",
+              "name": "auth",
+              "required": false,
+              "default": null,
+              "description": "Org authentication: sfdx-url | jwt (default: config ci.authMethod or sfdx-url)"
+            },
+            {
+              "flags": "--runner <name>",
+              "name": "runner",
+              "required": false,
+              "default": null,
+              "description": "CLI runner: npx | docker | action (docker = official sfdt image, gitlab/bitbucket; action = the scoobydrew83/sfdt@v0 composite action, github)"
+            },
+            {
+              "flags": "--cron <expr>",
+              "name": "cron",
+              "required": false,
+              "default": "0 6 * * *",
+              "description": "Cron schedule for monitoring workflows"
+            },
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Target org alias (Dev Hub alias for --type scratch; defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--branch <name>",
+              "name": "branch",
+              "required": false,
+              "default": null,
+              "description": "Protected branch that triggers a release workflow (defaults to config.defaultBranch or main)"
+            },
+            {
+              "flags": "--environment <name>",
+              "name": "environment",
+              "required": false,
+              "default": null,
+              "description": "Approval environment for a release workflow (default: config ci.environment or production)"
+            },
+            {
+              "flags": "--delta-base <ref>",
+              "name": "deltaBase",
+              "required": false,
+              "default": null,
+              "description": "Base git ref for smart-deploy delta (release: fallback when no tag exists; default HEAD~1)"
+            },
+            {
+              "flags": "--definition-file <path>",
+              "name": "definitionFile",
+              "required": false,
+              "default": null,
+              "description": "Scratch org definition file for --type scratch (defaults to config scratch.definitionFile)"
+            },
+            {
+              "flags": "--node <version>",
+              "name": "node",
+              "required": false,
+              "default": "22",
+              "description": "Node.js version for the CI runner (@sfdt/cli requires >= 22.15)"
+            },
+            {
+              "flags": "--out <path>",
+              "name": "out",
+              "required": false,
+              "default": null,
+              "description": "Output file path (defaults to the provider convention)"
+            },
+            {
+              "flags": "--print",
+              "name": "print",
+              "required": false,
+              "default": null,
+              "description": "Print to stdout instead of writing a file"
+            },
+            {
+              "flags": "--force",
+              "name": "force",
+              "required": false,
+              "default": null,
+              "description": "Overwrite an existing file"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the result as JSON"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": true,
+      "docsCategory": "core",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/commands/ci.js"
+    },
+    {
+      "id": "pr",
+      "path": [
+        "pr"
+      ],
+      "description": "Pull-request helpers (post deploy/monitor/audit results as comments)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "pr comment",
+          "path": [
+            "pr",
+            "comment"
+          ],
+          "description": "Post a comment to the current PR (snapshot summary, a file, or inline text)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--type <type>",
+              "name": "type",
+              "required": false,
+              "default": "monitor",
+              "description": "Render the latest snapshot: audit | monitor"
+            },
+            {
+              "flags": "--body <text>",
+              "name": "body",
+              "required": false,
+              "default": null,
+              "description": "Post this inline text instead of a snapshot"
+            },
+            {
+              "flags": "--file <path>",
+              "name": "file",
+              "required": false,
+              "default": null,
+              "description": "Post the contents of this file (relative to project root)"
+            },
+            {
+              "flags": "--pr <id>",
+              "name": "pr",
+              "required": false,
+              "default": null,
+              "description": "Target PR number or URL (defaults to the current branch PR)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit the result as JSON"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": false,
+      "sideEffects": "posts a comment on the current pull request",
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": true,
+      "docsCategory": "core",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_pr_comment",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/pr.js"
+    },
+    {
+      "id": "retrofit",
+      "path": [
+        "retrofit"
+      ],
+      "description": "Retrofit metadata from a source org: retrieve → commit → smart-deploy to a target org",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--source <alias>",
+          "name": "source",
+          "required": true,
+          "default": null,
+          "description": "Org to retrieve changes FROM"
+        },
+        {
+          "flags": "--target <alias>",
+          "name": "target",
+          "required": false,
+          "default": null,
+          "description": "Org to deploy changes TO (omit with --no-deploy)"
+        },
+        {
+          "flags": "--metadata <types>",
+          "name": "metadata",
+          "required": false,
+          "default": null,
+          "description": "Comma-separated metadata types to retrieve (defaults to a common admin-changed set)"
+        },
+        {
+          "flags": "--commit-msg <msg>",
+          "name": "commitMsg",
+          "required": false,
+          "default": null,
+          "description": "Commit message for the retrofit commit"
+        },
+        {
+          "flags": "--no-commit",
+          "name": "commit",
+          "required": false,
+          "default": null,
+          "description": "Retrieve only; leave changes uncommitted for review"
+        },
+        {
+          "flags": "--no-deploy",
+          "name": "deploy",
+          "required": false,
+          "default": null,
+          "description": "Retrieve and commit, but do not deploy to a target"
+        },
+        {
+          "flags": "--execute",
+          "name": "execute",
+          "required": false,
+          "default": null,
+          "description": "Perform a real deploy to the target (default is validate-only)"
+        },
+        {
+          "flags": "--skip-preflight",
+          "name": "skipPreflight",
+          "required": false,
+          "default": null,
+          "description": "Skip preflight checks before deploying"
+        },
+        {
+          "flags": "--json",
+          "name": "json",
+          "required": false,
+          "default": null,
+          "description": "Emit the result as JSON"
+        }
+      ],
+      "subcommands": [],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "metadata",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_retrofit",
+          "mutating": true
+        }
+      ],
+      "source": "src/commands/retrofit.js"
+    },
+    {
+      "id": "history",
+      "path": [
+        "history"
+      ],
+      "description": "Show recent sfdt run history (audit, monitor, quality, test, deploy, agent-test, …) from the local run index",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--type <type>",
+          "name": "type",
+          "required": false,
+          "default": null,
+          "description": "Filter to one run type (e.g. audit | monitor | quality | test-run | deploy | agent-test)"
+        },
+        {
+          "flags": "--limit <n>",
+          "name": "limit",
+          "required": false,
+          "default": "30",
+          "description": "Maximum rows to show (default: 30)"
+        },
+        {
+          "flags": "--json",
+          "name": "json",
+          "required": false,
+          "default": null,
+          "description": "Emit the result as JSON"
+        }
+      ],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": true,
+      "docsCategory": "org-health",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_history",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/history.js"
+    },
+    {
+      "id": "version",
+      "path": [
+        "version"
+      ],
+      "description": "Print the sfdt version",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [],
+      "mutating": false,
+      "requiresProject": false,
+      "requiresOrg": false,
+      "supportsJson": false,
+      "docsCategory": "config-utils",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "source": "src/cli.js"
+    }
+  ]
+}

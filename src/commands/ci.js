@@ -6,19 +6,23 @@ import { print } from '../lib/output.js';
 import { interpolate } from '../lib/prompts.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import {
-  AUTH_METHODS,
-  RUNNERS,
-  DOCKER_RUNNER_PROVIDERS,
   DOCKER_IMAGE,
   NPX_CLI,
   ACTION_REF,
-  ACTION_RUNNER_TYPES,
   authSecretsDoc,
   authSecretNames,
   injectBlock,
   loadPartial,
   commentBlock,
 } from '../lib/ci-templates.js';
+import {
+  CI_PROVIDERS,
+  CI_TYPES,
+  AUTH_METHODS,
+  RUNNERS,
+  DOCKER_RUNNER_PROVIDERS,
+  ACTION_RUNNER_TYPES,
+} from '../lib/ci-capabilities.js';
 import { detectLwcTests } from '../lib/lwc-test.js';
 
 // CI templates ship inside the package — resolve from the module location, never
@@ -27,8 +31,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const CI_DIR = path.resolve(__dirname, '..', '..', 'scripts', 'ci');
 
-const PROVIDERS = ['github', 'gitlab', 'azure', 'bitbucket'];
-const TYPES = ['monitor', 'deploy', 'release', 'scratch'];
+const PROVIDERS = CI_PROVIDERS;
+const TYPES = CI_TYPES;
 
 // Where the generated file lands by default. GitHub's workflows dir holds many
 // files so we write there directly; the other providers use a single top-level

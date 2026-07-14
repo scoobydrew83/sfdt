@@ -1,0 +1,1252 @@
+{
+  "contributedCommands": [
+    {
+      "command": "sfdt.refresh",
+      "title": "SFDT: Refresh",
+      "icon": "$(refresh)"
+    },
+    {
+      "command": "sfdt.searchCommands",
+      "title": "SFDT: Run Command…",
+      "icon": "$(search)"
+    },
+    {
+      "command": "sfdt.openDashboard",
+      "title": "SFDT: Open Dashboard",
+      "icon": "$(dashboard)"
+    },
+    {
+      "command": "sfdt.pickOrg",
+      "title": "SFDT: Select Org",
+      "icon": "$(account)"
+    },
+    {
+      "command": "sfdt.setOrg",
+      "title": "SFDT: Set Default Org",
+      "icon": null
+    },
+    {
+      "command": "sfdt.init",
+      "title": "SFDT: Initialize Project",
+      "icon": null
+    },
+    {
+      "command": "sfdt.runEntry",
+      "title": "SFDT: Run",
+      "icon": "$(play)"
+    },
+    {
+      "command": "sfdt.runArgs",
+      "title": "SFDT: Run Command (args)",
+      "icon": null
+    },
+    {
+      "command": "sfdt.copyCommand",
+      "title": "SFDT: Copy Command",
+      "icon": "$(copy)"
+    },
+    {
+      "command": "sfdt.openCommandDocs",
+      "title": "SFDT: Open Docs",
+      "icon": "$(book)"
+    },
+    {
+      "command": "sfdt.audit",
+      "title": "SFDT: Run Org Audit",
+      "icon": null
+    },
+    {
+      "command": "sfdt.monitor",
+      "title": "SFDT: Run Org Monitor",
+      "icon": null
+    },
+    {
+      "command": "sfdt.backup",
+      "title": "SFDT: Backup Org Metadata",
+      "icon": null
+    },
+    {
+      "command": "sfdt.preflight",
+      "title": "SFDT: Run Preflight Checks",
+      "icon": null
+    },
+    {
+      "command": "sfdt.quality",
+      "title": "SFDT: Run Quality Analysis",
+      "icon": null
+    },
+    {
+      "command": "sfdt.agentTest",
+      "title": "SFDT: Run Agent Test (Agentforce)",
+      "icon": "$(hubot)"
+    },
+    {
+      "command": "sfdt.runTestClass",
+      "title": "SFDT: Run This Test Class",
+      "icon": "$(beaker)"
+    },
+    {
+      "command": "sfdt.toggleCoverage",
+      "title": "SFDT: Toggle Coverage Highlights",
+      "icon": "$(shield)"
+    },
+    {
+      "command": "sfdt.clearDiagnostics",
+      "title": "SFDT: Clear Problems",
+      "icon": null
+    },
+    {
+      "command": "sfdt.deploy",
+      "title": "SFDT: Deploy",
+      "icon": null
+    },
+    {
+      "command": "sfdt.smartDeployPreview",
+      "title": "SFDT: Smart Deploy — Validate & Review",
+      "icon": "$(rocket)"
+    },
+    {
+      "command": "sfdt.quickDeploy",
+      "title": "SFDT: Quick Deploy (validated job ID)",
+      "icon": "$(zap)"
+    },
+    {
+      "command": "sfdt.docs",
+      "title": "SFDT: Generate Documentation",
+      "icon": null
+    },
+    {
+      "command": "sfdt.doctor",
+      "title": "SFDT: Run Doctor (browser-extension bridge)",
+      "icon": "$(verified)"
+    },
+    {
+      "command": "sfdt.review",
+      "title": "SFDT: Review Diff (AI)",
+      "icon": "$(comment-discussion)"
+    },
+    {
+      "command": "sfdt.pr-description",
+      "title": "SFDT: Generate PR Description",
+      "icon": "$(git-pull-request)"
+    },
+    {
+      "command": "sfdt.manifest",
+      "title": "SFDT: Manifest from Diff",
+      "icon": "$(list-tree)"
+    },
+    {
+      "command": "sfdt.changelog",
+      "title": "SFDT: Generate Changelog",
+      "icon": "$(history)"
+    },
+    {
+      "command": "sfdt.checkCli",
+      "title": "SFDT: Check CLI Installation",
+      "icon": "$(verified)"
+    },
+    {
+      "command": "sfdt.notifySnapshot",
+      "title": "SFDT: Send Snapshot to Channels",
+      "icon": "$(bell)"
+    }
+  ],
+  "cliCommandCatalog": [
+    {
+      "id": "deploy",
+      "label": "Deploy",
+      "detail": "Deploy metadata to the org",
+      "args": [
+        "deploy"
+      ],
+      "group": null
+    },
+    {
+      "id": "deploy-smart",
+      "label": "Smart Deploy (validate)",
+      "detail": "Delta validate-only deploy with smart test selection",
+      "args": [
+        "deploy",
+        "--smart",
+        "--dry-run"
+      ],
+      "group": null
+    },
+    {
+      "id": "retrofit",
+      "label": "Retrofit",
+      "detail": "Retrieve from a source org, commit, and smart-deploy to a target",
+      "args": [
+        "retrofit"
+      ],
+      "group": null
+    },
+    {
+      "id": "pr-comment",
+      "label": "PR Comment (monitor)",
+      "detail": "Post the latest monitor snapshot to the current PR",
+      "args": [
+        "pr",
+        "comment",
+        "--type",
+        "monitor"
+      ],
+      "group": null
+    },
+    {
+      "id": "preflight",
+      "label": "Preflight",
+      "detail": "Run pre-deployment validation checks",
+      "args": [
+        "preflight"
+      ],
+      "group": null
+    },
+    {
+      "id": "rollback",
+      "label": "Rollback",
+      "detail": "Roll back the last deployment",
+      "args": [
+        "rollback"
+      ],
+      "group": null
+    },
+    {
+      "id": "release",
+      "label": "Release",
+      "detail": "Build a release (manifest + notes)",
+      "args": [
+        "release"
+      ],
+      "group": null
+    },
+    {
+      "id": "manifest",
+      "label": "Manifest",
+      "detail": "Generate package.xml from a git diff",
+      "args": [
+        "manifest"
+      ],
+      "group": null
+    },
+    {
+      "id": "pr-description",
+      "label": "PR Description",
+      "detail": "Generate a pull-request description",
+      "args": [
+        "pr-description"
+      ],
+      "group": null
+    },
+    {
+      "id": "changelog-generate",
+      "label": "Generate",
+      "detail": "Generate changelog entries from git",
+      "args": [
+        "changelog",
+        "generate"
+      ],
+      "group": null
+    },
+    {
+      "id": "changelog-release",
+      "label": "Release",
+      "detail": "Cut a changelog release section",
+      "args": [
+        "changelog",
+        "release"
+      ],
+      "group": null
+    },
+    {
+      "id": "changelog-check",
+      "label": "Check",
+      "detail": "Verify the changelog is current",
+      "args": [
+        "changelog",
+        "check"
+      ],
+      "group": null
+    },
+    {
+      "id": "smoke",
+      "label": "Smoke Test",
+      "detail": "Run post-deploy smoke checks",
+      "args": [
+        "smoke"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-all",
+      "label": "All Checks",
+      "detail": "Run every audit check",
+      "args": [
+        "audit",
+        "all"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-audittrail",
+      "label": "Setup Audit Trail",
+      "detail": "Suspicious setup activity",
+      "args": [
+        "audit",
+        "audittrail"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-licenses",
+      "label": "License Usage",
+      "detail": "Licenses near their limit",
+      "args": [
+        "audit",
+        "licenses"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-mfa",
+      "label": "MFA Coverage",
+      "detail": "Users without MFA",
+      "args": [
+        "audit",
+        "mfa"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-unused-apex",
+      "label": "Unused Apex",
+      "detail": "Apex classes with no coverage",
+      "args": [
+        "audit",
+        "unused-apex"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-inactive-users",
+      "label": "Inactive Users",
+      "detail": "Users with no recent login",
+      "args": [
+        "audit",
+        "inactive-users"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-api-versions",
+      "label": "API Versions",
+      "detail": "Deprecated metadata API versions",
+      "args": [
+        "audit",
+        "api-versions"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-inactive-flows",
+      "label": "Inactive Flows",
+      "detail": "Flows with no active version",
+      "args": [
+        "audit",
+        "inactive-flows"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-unused-permsets",
+      "label": "Unused Permission Sets",
+      "detail": "Permission sets with no assignment",
+      "args": [
+        "audit",
+        "unused-permsets"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-connected-apps",
+      "label": "Connected Apps",
+      "detail": "Connected apps permitting all users",
+      "args": [
+        "audit",
+        "connected-apps"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-field-descriptions",
+      "label": "Field Descriptions",
+      "detail": "Custom fields missing descriptions",
+      "args": [
+        "audit",
+        "field-descriptions"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-apex-unreferenced",
+      "label": "Unreferenced Apex",
+      "detail": "Apex with no inbound dependencies",
+      "args": [
+        "audit",
+        "apex-unreferenced"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-lint-access",
+      "label": "Object Access",
+      "detail": "Custom objects with no Read access",
+      "args": [
+        "audit",
+        "lint-access"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-lint-access-fields",
+      "label": "Field Access",
+      "detail": "Custom fields with no Read access",
+      "args": [
+        "audit",
+        "lint-access-fields"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-inactive-validations",
+      "label": "Inactive Validation Rules",
+      "detail": "Validation rules that are not active",
+      "args": [
+        "audit",
+        "inactive-validations"
+      ],
+      "group": null
+    },
+    {
+      "id": "audit-inactive-workflows",
+      "label": "Inactive Workflow Rules",
+      "detail": "Workflow rules that are not active",
+      "args": [
+        "audit",
+        "inactive-workflows"
+      ],
+      "group": null
+    },
+    {
+      "id": "monitor-all",
+      "label": "All Checks",
+      "detail": "Run every monitoring check",
+      "args": [
+        "monitor",
+        "all"
+      ],
+      "group": null
+    },
+    {
+      "id": "monitor-limits",
+      "label": "Org Limits",
+      "detail": "Org limits near threshold",
+      "args": [
+        "monitor",
+        "limits"
+      ],
+      "group": null
+    },
+    {
+      "id": "monitor-errors",
+      "label": "Apex Job Failures",
+      "detail": "Recent failed async Apex jobs",
+      "args": [
+        "monitor",
+        "errors"
+      ],
+      "group": null
+    },
+    {
+      "id": "monitor-health",
+      "label": "Security Health Score",
+      "detail": "Security Health Check score",
+      "args": [
+        "monitor",
+        "health"
+      ],
+      "group": null
+    },
+    {
+      "id": "monitor-org-info",
+      "label": "Org Info",
+      "detail": "Instance, edition, trial expiry",
+      "args": [
+        "monitor",
+        "org-info"
+      ],
+      "group": null
+    },
+    {
+      "id": "monitor-deploy-history",
+      "label": "Deployment History",
+      "detail": "Recent deployment success/failure",
+      "args": [
+        "monitor",
+        "deploy-history"
+      ],
+      "group": null
+    },
+    {
+      "id": "monitor-deprecated-api",
+      "label": "Legacy API Usage",
+      "detail": "Traffic on deprecated API versions",
+      "args": [
+        "monitor",
+        "deprecated-api"
+      ],
+      "group": null
+    },
+    {
+      "id": "monitor-flow-errors",
+      "label": "Paused Flows",
+      "detail": "Paused (stuck) flow interviews",
+      "args": [
+        "monitor",
+        "flow-errors"
+      ],
+      "group": null
+    },
+    {
+      "id": "monitor-schedule",
+      "label": "Schedule (CI workflow)",
+      "detail": "Generate a scheduled org-monitoring CI workflow",
+      "args": [
+        "monitor",
+        "schedule"
+      ],
+      "group": null
+    },
+    {
+      "id": "notify-monitor",
+      "label": "Send Org Health to Notifications",
+      "detail": "Push the latest monitor snapshot to configured channels",
+      "args": [
+        "notify",
+        "snapshot",
+        "--type",
+        "monitor"
+      ],
+      "group": null
+    },
+    {
+      "id": "notify",
+      "label": "Send Notification (event)",
+      "detail": "Send a lifecycle event to configured channels: deploy-success | deploy-failure | test-failure | release-created | snapshot",
+      "args": [
+        "notify"
+      ],
+      "group": null
+    },
+    {
+      "id": "backup",
+      "label": "Backup Metadata",
+      "detail": "Retrieve a full metadata backup",
+      "args": [
+        "monitor",
+        "backup"
+      ],
+      "group": null
+    },
+    {
+      "id": "scan",
+      "label": "Scan Inventory",
+      "detail": "Fetch the org metadata inventory",
+      "args": [
+        "scan"
+      ],
+      "group": null
+    },
+    {
+      "id": "drift",
+      "label": "Detect Drift",
+      "detail": "Compare local source against the org",
+      "args": [
+        "drift"
+      ],
+      "group": null
+    },
+    {
+      "id": "doctor",
+      "label": "Doctor",
+      "detail": "Diagnose the browser-extension bridge stack (expects `sfdt ui` to be running)",
+      "args": [
+        "doctor"
+      ],
+      "group": null
+    },
+    {
+      "id": "quality",
+      "label": "Quality Analysis",
+      "detail": "Analyze Apex test quality",
+      "args": [
+        "quality"
+      ],
+      "group": null
+    },
+    {
+      "id": "test",
+      "label": "Run Tests",
+      "detail": "Run Apex tests",
+      "args": [
+        "test"
+      ],
+      "group": null
+    },
+    {
+      "id": "test-lwc",
+      "label": "Run LWC Tests",
+      "detail": "Run the project's LWC (Jest) unit tests locally",
+      "args": [
+        "test",
+        "--lwc"
+      ],
+      "group": null
+    },
+    {
+      "id": "agent-test",
+      "label": "Agent Test (Agentforce)",
+      "detail": "Run an Agentforce agent test as a CI gate (sf agent test run) — append the AiEvaluationDefinition API name",
+      "args": [
+        "agent-test",
+        "--spec"
+      ],
+      "group": null
+    },
+    {
+      "id": "coverage",
+      "label": "Code Coverage",
+      "detail": "Report Apex code coverage (org-wide + per-class)",
+      "args": [
+        "coverage"
+      ],
+      "group": null
+    },
+    {
+      "id": "dependencies",
+      "label": "Dependencies",
+      "detail": "Show metadata dependencies for a component",
+      "args": [
+        "dependencies"
+      ],
+      "group": null
+    },
+    {
+      "id": "review",
+      "label": "Code Review",
+      "detail": "AI review of the current diff",
+      "args": [
+        "review"
+      ],
+      "group": null
+    },
+    {
+      "id": "flow-scan",
+      "label": "Scan",
+      "detail": "Score Flow health",
+      "args": [
+        "flow",
+        "scan"
+      ],
+      "group": null
+    },
+    {
+      "id": "flow-conflicts",
+      "label": "Conflicts",
+      "detail": "Find conflicting Flows per object",
+      "args": [
+        "flow",
+        "conflicts"
+      ],
+      "group": null
+    },
+    {
+      "id": "docs-generate",
+      "label": "Generate",
+      "detail": "Build the MkDocs documentation site",
+      "args": [
+        "docs",
+        "generate"
+      ],
+      "group": null
+    },
+    {
+      "id": "docs-diagram",
+      "label": "ER Diagram",
+      "detail": "Build a Mermaid ER diagram",
+      "args": [
+        "docs",
+        "diagram"
+      ],
+      "group": null
+    },
+    {
+      "id": "explain",
+      "label": "Explain",
+      "detail": "Explain a class or flow (AI)",
+      "args": [
+        "explain"
+      ],
+      "group": null
+    },
+    {
+      "id": "compare",
+      "label": "Compare",
+      "detail": "Diff two orgs or org vs local",
+      "args": [
+        "compare"
+      ],
+      "group": null
+    },
+    {
+      "id": "ai-prompt",
+      "label": "AI Prompt",
+      "detail": "Run a free-form prompt through the configured AI provider",
+      "args": [
+        "ai",
+        "prompt"
+      ],
+      "group": null
+    },
+    {
+      "id": "data-list",
+      "label": "List",
+      "detail": "List configured data sets",
+      "args": [
+        "data",
+        "list"
+      ],
+      "group": null
+    },
+    {
+      "id": "data-export",
+      "label": "Export",
+      "detail": "Export a data set from the org",
+      "args": [
+        "data",
+        "export"
+      ],
+      "group": null
+    },
+    {
+      "id": "data-import",
+      "label": "Import",
+      "detail": "Import a data set into the org",
+      "args": [
+        "data",
+        "import"
+      ],
+      "group": null
+    },
+    {
+      "id": "data-delete",
+      "label": "Delete",
+      "detail": "Bulk-delete a data set in the org",
+      "args": [
+        "data",
+        "delete"
+      ],
+      "group": null
+    },
+    {
+      "id": "scratch-create",
+      "label": "Create",
+      "detail": "Create a scratch org",
+      "args": [
+        "scratch",
+        "create"
+      ],
+      "group": null
+    },
+    {
+      "id": "scratch-list",
+      "label": "List",
+      "detail": "List scratch orgs",
+      "args": [
+        "scratch",
+        "list"
+      ],
+      "group": null
+    },
+    {
+      "id": "scratch-delete",
+      "label": "Delete",
+      "detail": "Delete a scratch org",
+      "args": [
+        "scratch",
+        "delete"
+      ],
+      "group": null
+    },
+    {
+      "id": "scratch-pool-status",
+      "label": "Pool: Status",
+      "detail": "Show the scratch-org pool",
+      "args": [
+        "scratch",
+        "pool",
+        "status"
+      ],
+      "group": null
+    },
+    {
+      "id": "scratch-pool-fill",
+      "label": "Pool: Fill",
+      "detail": "Top up the scratch-org pool",
+      "args": [
+        "scratch",
+        "pool",
+        "fill"
+      ],
+      "group": null
+    },
+    {
+      "id": "init",
+      "label": "Initialize Project",
+      "detail": "Create .sfdt config (sfdt init)",
+      "args": [
+        "init"
+      ],
+      "group": null
+    },
+    {
+      "id": "config-get",
+      "label": "Get",
+      "detail": "Print a config value by dot-notation key (e.g. defaultOrg)",
+      "args": [
+        "config",
+        "get"
+      ],
+      "group": null
+    },
+    {
+      "id": "config-set",
+      "label": "Set",
+      "detail": "Set a config value by dot-notation key (e.g. deployment.coverageThreshold 80)",
+      "args": [
+        "config",
+        "set"
+      ],
+      "group": null
+    },
+    {
+      "id": "feature-flags-list",
+      "label": "List",
+      "detail": "List currently disabled feature ids",
+      "args": [
+        "feature-flags",
+        "list"
+      ],
+      "group": null
+    },
+    {
+      "id": "feature-flags-disable",
+      "label": "Disable",
+      "detail": "Add a feature id to the disabled list",
+      "args": [
+        "feature-flags",
+        "disable"
+      ],
+      "group": null
+    },
+    {
+      "id": "feature-flags-enable",
+      "label": "Enable",
+      "detail": "Remove a feature id from the disabled list",
+      "args": [
+        "feature-flags",
+        "enable"
+      ],
+      "group": null
+    },
+    {
+      "id": "feature-flags-clear",
+      "label": "Clear",
+      "detail": "Re-enable everything (empties the disabled list)",
+      "args": [
+        "feature-flags",
+        "clear"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-github-monitor",
+      "label": "GitHub · Monitor",
+      "detail": "Scheduled org-monitoring workflow for GitHub Actions",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "github",
+        "--type",
+        "monitor"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-github-deploy",
+      "label": "GitHub · Deploy",
+      "detail": "PR smart-deploy workflow for GitHub Actions",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "github",
+        "--type",
+        "deploy"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-gitlab-monitor",
+      "label": "GitLab · Monitor",
+      "detail": "Scheduled org-monitoring pipeline for GitLab CI",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "gitlab",
+        "--type",
+        "monitor"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-gitlab-deploy",
+      "label": "GitLab · Deploy",
+      "detail": "MR smart-deploy pipeline for GitLab CI",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "gitlab",
+        "--type",
+        "deploy"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-azure-monitor",
+      "label": "Azure · Monitor",
+      "detail": "Scheduled org-monitoring pipeline for Azure DevOps",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "azure",
+        "--type",
+        "monitor"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-azure-deploy",
+      "label": "Azure · Deploy",
+      "detail": "PR smart-deploy pipeline for Azure DevOps",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "azure",
+        "--type",
+        "deploy"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-bitbucket-monitor",
+      "label": "Bitbucket · Monitor",
+      "detail": "Scheduled org-monitoring pipeline for Bitbucket Pipelines",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "bitbucket",
+        "--type",
+        "monitor"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-bitbucket-deploy",
+      "label": "Bitbucket · Deploy",
+      "detail": "PR smart-deploy pipeline for Bitbucket Pipelines",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "bitbucket",
+        "--type",
+        "deploy"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-github-release",
+      "label": "GitHub · Release",
+      "detail": "Approval-gated release deploy workflow for GitHub Actions",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "github",
+        "--type",
+        "release"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-gitlab-release",
+      "label": "GitLab · Release",
+      "detail": "Manual, environment-bound release deploy job for GitLab CI",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "gitlab",
+        "--type",
+        "release"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-azure-release",
+      "label": "Azure · Release",
+      "detail": "Environment-gated release deploy pipeline for Azure DevOps",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "azure",
+        "--type",
+        "release"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-bitbucket-release",
+      "label": "Bitbucket · Release",
+      "detail": "Release deploy pipeline bound to a deployment environment for Bitbucket Pipelines",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "bitbucket",
+        "--type",
+        "release"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-github-scratch",
+      "label": "GitHub · Scratch CI",
+      "detail": "PR scratch-org create/deploy/test/delete workflow for GitHub Actions",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "github",
+        "--type",
+        "scratch"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-gitlab-scratch",
+      "label": "GitLab · Scratch CI",
+      "detail": "MR scratch-org create/deploy/test/delete job for GitLab CI",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "gitlab",
+        "--type",
+        "scratch"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-azure-scratch",
+      "label": "Azure · Scratch CI",
+      "detail": "PR scratch-org create/deploy/test/delete pipeline for Azure DevOps",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "azure",
+        "--type",
+        "scratch"
+      ],
+      "group": null
+    },
+    {
+      "id": "ci-init-bitbucket-scratch",
+      "label": "Bitbucket · Scratch CI",
+      "detail": "PR scratch-org create/deploy/test/delete pipeline for Bitbucket Pipelines",
+      "args": [
+        "ci",
+        "init",
+        "--provider",
+        "bitbucket",
+        "--type",
+        "scratch"
+      ],
+      "group": null
+    },
+    {
+      "id": "pull",
+      "label": "Pull Metadata",
+      "detail": "Retrieve metadata into the project",
+      "args": [
+        "pull"
+      ],
+      "group": null
+    },
+    {
+      "id": "dashboard",
+      "label": "Open Dashboard",
+      "detail": "Open the embedded sfdt dashboard",
+      "group": null
+    },
+    {
+      "id": "mcp",
+      "label": "Start MCP Server",
+      "detail": "Start the stdio MCP server",
+      "args": [
+        "mcp",
+        "start"
+      ],
+      "group": null
+    },
+    {
+      "id": "extension-status",
+      "label": "Status",
+      "detail": "Show native-host status",
+      "args": [
+        "extension",
+        "status"
+      ],
+      "group": null
+    },
+    {
+      "id": "extension-stats",
+      "label": "Stats",
+      "detail": "Show extension telemetry",
+      "args": [
+        "extension",
+        "stats"
+      ],
+      "group": null
+    },
+    {
+      "id": "extension-install-host",
+      "label": "Install Host",
+      "detail": "Register the native messaging host — append --extension-id <id>",
+      "args": [
+        "extension",
+        "install-host",
+        "--extension-id"
+      ],
+      "group": null
+    },
+    {
+      "id": "extension-uninstall-host",
+      "label": "Uninstall Host",
+      "detail": "Remove the native messaging host manifest",
+      "args": [
+        "extension",
+        "uninstall-host"
+      ],
+      "group": null
+    },
+    {
+      "id": "skills-claude",
+      "label": "Export → Claude",
+      "detail": "Write Claude rules files",
+      "args": [
+        "skills",
+        "export",
+        "--target",
+        "claude"
+      ],
+      "group": null
+    },
+    {
+      "id": "skills-cursor",
+      "label": "Export → Cursor",
+      "detail": "Write .cursorrules",
+      "args": [
+        "skills",
+        "export",
+        "--target",
+        "cursor"
+      ],
+      "group": null
+    },
+    {
+      "id": "skills-codex",
+      "label": "Export → Codex",
+      "detail": "Write .codexrules",
+      "args": [
+        "skills",
+        "export",
+        "--target",
+        "codex"
+      ],
+      "group": null
+    },
+    {
+      "id": "skills-windsurf",
+      "label": "Export → Windsurf",
+      "detail": "Write .windsurfrules",
+      "args": [
+        "skills",
+        "export",
+        "--target",
+        "windsurf"
+      ],
+      "group": null
+    },
+    {
+      "id": "skills-pack",
+      "label": "Export → npx-skills pack",
+      "detail": "Emit an `npx skills add`-compatible pack",
+      "args": [
+        "skills",
+        "export",
+        "--target",
+        "pack"
+      ],
+      "group": null
+    },
+    {
+      "id": "plugin-create",
+      "label": "Create Plugin",
+      "detail": "Scaffold a new sfdt CLI plugin — append a name",
+      "args": [
+        "plugin",
+        "create"
+      ],
+      "group": null
+    },
+    {
+      "id": "update",
+      "label": "Check for Updates",
+      "detail": "Check for a newer sfdt CLI",
+      "args": [
+        "update"
+      ],
+      "group": null
+    }
+  ]
+}

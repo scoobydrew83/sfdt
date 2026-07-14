@@ -365,7 +365,7 @@ function isValidDeveloperName(v: unknown): v is string {
   return typeof v === 'string' && v.length > 0 && DEVELOPER_NAME_RE.test(v);
 }
 
-const KNOWN_KINDS: readonly SfdtRequestKind[] = [
+export const KNOWN_KINDS: readonly SfdtRequestKind[] = [
   'ping',
   'version',
   'deploy',

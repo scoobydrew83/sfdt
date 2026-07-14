@@ -1,0 +1,60 @@
+{
+  "protocolVersion": "1.2",
+  "kinds": [
+    {
+      "kind": "ping",
+      "mutating": false,
+      "nativeHost": true
+    },
+    {
+      "kind": "version",
+      "mutating": false,
+      "nativeHost": true
+    },
+    {
+      "kind": "deploy",
+      "mutating": true,
+      "nativeHost": false
+    },
+    {
+      "kind": "rollback",
+      "mutating": true,
+      "nativeHost": false
+    },
+    {
+      "kind": "quality",
+      "mutating": false,
+      "nativeHost": true
+    },
+    {
+      "kind": "ai",
+      "mutating": false,
+      "nativeHost": false
+    },
+    {
+      "kind": "drift",
+      "mutating": false,
+      "nativeHost": true
+    },
+    {
+      "kind": "scan",
+      "mutating": false,
+      "nativeHost": true
+    },
+    {
+      "kind": "compare",
+      "mutating": false,
+      "nativeHost": true
+    },
+    {
+      "kind": "org-health",
+      "mutating": false,
+      "nativeHost": true
+    },
+    {
+      "kind": "telemetry.snapshot",
+      "mutating": false,
+      "nativeHost": true
+    }
+  ]
+}

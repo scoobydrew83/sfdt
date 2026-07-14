@@ -1,0 +1,17 @@
+{
+  "canonical": "Apache-2.0",
+  "canonicalLicenseText": "Apache License",
+  "packages": [
+    "package.json",
+    "extension/package.json",
+    "gui/package.json",
+    "host/package.json",
+    "vscode/package.json",
+    "packages/flow-core/package.json",
+    "packages/plugin/package.json"
+  ],
+  "licenseFiles": ["LICENSE", "vscode/LICENSE"],
+  "proseRoots": ["README.md", "RELEASING.md", "ROADMAP.md", "CONTRIBUTING.md", "docs", "extension/README.md", "extension/PRIVACY.md", "vscode/README.md", "packages"],
+  "forbiddenPhrases": ["MIT License", "License: MIT", "licensed under MIT", "MIT — see"],
+  "allowlist": ["CHANGELOG.md", "docs/skills-audit-2026-07-12.md"]
+}

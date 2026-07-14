@@ -1,0 +1,316 @@
+{
+  "tools": [
+    {
+      "name": "sfdt_preflight",
+      "description": "Run sfdt pre-deployment validation checks (git clean state, branch naming rules, Apex test runs, coverage threshold checks, etc.). Useful before validation or deployment.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "strict"
+      ]
+    },
+    {
+      "name": "sfdt_drift",
+      "description": "Run metadata drift detection between a target Salesforce org and local source directories.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_compare",
+      "description": "Compare metadata between two orgs, or between local source and an org. Returns compare results.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "source",
+        "target"
+      ]
+    },
+    {
+      "name": "sfdt_quality",
+      "description": "Analyze Apex test quality, generate IsTest boilerplate stubs, or generate a fix-plan for coverage gaps.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "generateStubs",
+        "fixPlan"
+      ]
+    },
+    {
+      "name": "sfdt_logs",
+      "description": "Retrieve the latest structured or raw execution logs for DevOps actions.",
+      "confirmExecution": false,
+      "internal": true,
+      "inputProperties": [
+        "type"
+      ]
+    },
+    {
+      "name": "sfdt_manifest_from_git",
+      "description": "Generate package.xml and destructiveChanges.xml manifests using Git diff analysis.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "base",
+        "head",
+        "package",
+        "name"
+      ]
+    },
+    {
+      "name": "sfdt_validate",
+      "description": "Perform a deployment validation dry-run on Salesforce without committing changes.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "manifest",
+        "targetOrg",
+        "testLevel",
+        "testClasses"
+      ]
+    },
+    {
+      "name": "sfdt_deploy",
+      "description": "Perform a metadata deployment to a target Salesforce org. Supports a smart delta mode (only git-changed metadata with smart test selection). Potentially destructive.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "manifest",
+        "targetOrg",
+        "testLevel",
+        "testClasses",
+        "destructiveTiming",
+        "smart",
+        "deltaBase",
+        "deltaHead",
+        "dryRun",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_quick_deploy",
+      "description": "Quick deploy a previously validated metadata validation job using validation job ID.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "validationJobId",
+        "targetOrg",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_rollback",
+      "description": "Roll back the last successful deployment using org backup snapshots.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_audit",
+      "description": "Run read-only org health diagnostics (suspicious setup audit trail, license usage, MFA coverage, unused Apex classes, inactive users, deprecated API versions, inactive flows, unused permission sets, connected apps, missing field descriptions, unreferenced Apex, object access lint). Returns a normalised snapshot of check results.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "org",
+        "check"
+      ]
+    },
+    {
+      "name": "sfdt_monitor",
+      "description": "Run org monitoring checks (org limit consumption, recent Apex job failures, security health-check score, org info, recent deployment health, legacy API usage, paused flow interviews) and optionally a full metadata backup. Returns a normalised snapshot of check results.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "org",
+        "check",
+        "backup"
+      ]
+    },
+    {
+      "name": "sfdt_retrofit",
+      "description": "Retrofit metadata from a source org to a target org: retrieve specified metadata types, commit, then smart-deploy. Validate-only unless execute=true.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "source",
+        "target",
+        "metadata",
+        "execute",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_pr_comment",
+      "description": "Post the latest audit or monitor snapshot to the current pull request as a markdown comment (via the gh CLI).",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "type",
+        "pr"
+      ]
+    },
+    {
+      "name": "sfdt_notify",
+      "description": "Send the latest audit or monitor snapshot to configured notification channels (Slack/Teams/Google Chat/email/webhook), applying each channel's event filter and severity threshold. Run an audit/monitor first so a snapshot exists.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "type"
+      ]
+    },
+    {
+      "name": "sfdt_docs",
+      "description": "Generate MkDocs-compatible project documentation (custom objects + fields, Apex classes, Flows) with an optional AI overview and a Mermaid ER diagram of the data model.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "ai"
+      ]
+    },
+    {
+      "name": "sfdt_coverage",
+      "description": "Report Apex code coverage for a Salesforce org — org-wide percentage plus per-class coverage. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_scan",
+      "description": "Fetch the complete metadata inventory of a Salesforce org (all component types and members). Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_dependencies",
+      "description": "Show the metadata dependencies of a component — what it references and what references it. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "name",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_flow_scan",
+      "description": "Analyze a Salesforce org's Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_release",
+      "description": "Build a release: generate the release manifest (package.xml) and release notes for a package. Writes release artifacts to the repo. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "version",
+        "package",
+        "name",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_scratch_create",
+      "description": "Create a Salesforce scratch org. Mutating (consumes a DevHub scratch-org allocation) — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "alias",
+        "days",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_scratch_delete",
+      "description": "Delete a scratch org by alias or username. Destructive — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "target",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_scratch_pool",
+      "description": "Inspect or top up the scratch-org pool. action=\"status\" is read-only; action=\"fill\" creates orgs to reach the target size and requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "action",
+        "size",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_data_export",
+      "description": "Export a configured data set from the org to local files. Reads from the org and writes local data files (read-only with respect to the org).",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "set",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_data_import",
+      "description": "Import a configured data set into the org. Mutating (writes records) — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "set",
+        "org",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_data_delete",
+      "description": "Bulk-delete a configured data set in the org. Destructive — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "set",
+        "org",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_test",
+      "description": "Run Apex tests via the enhanced test runner. Optionally limit to specific test classes. Consumes org test resources; not metadata-mutating.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "classNames"
+      ]
+    },
+    {
+      "name": "sfdt_history",
+      "description": "Show recent sfdt run history (audit, monitor, quality, test, deploy, agent-test, …) from the local run index — trend org-health, test, and deploy outcomes over time. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "type",
+        "limit"
+      ]
+    },
+    {
+      "name": "sfdt_get_parked_result",
+      "description": "Retrieve the full payload of a previously parked tool result.",
+      "confirmExecution": false,
+      "internal": true,
+      "inputProperties": [
+        "ref"
+      ]
+    }
+  ]
+}

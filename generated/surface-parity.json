@@ -1,0 +1,574 @@
+{
+  "commands": [
+    {
+      "id": "init",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "deploy",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_deploy",
+        "sfdt_quick_deploy",
+        "sfdt_validate"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "release",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_release"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "test",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_test"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "agent-test",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "pull",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "quality",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_quality"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "preflight",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_preflight"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "rollback",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_rollback"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "smoke",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "review",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "notify",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_notify"
+      ],
+      "sideEffects": "sends notifications to configured channels"
+    },
+    {
+      "id": "drift",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        "sfdt_drift"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "changelog",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "manifest",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_manifest_from_git"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "explain",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "pr-description",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "ui",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "compare",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        "sfdt_compare"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "completion",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "update",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "config",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "ai",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "scan",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        "sfdt_scan"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "dependencies",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_dependencies"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "coverage",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_coverage"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "audit",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        "sfdt_audit"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "monitor",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        "sfdt_monitor"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "docs",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_docs"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "data",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_data_export",
+        "sfdt_data_import",
+        "sfdt_data_delete"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "scratch",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_scratch_create",
+        "sfdt_scratch_delete",
+        "sfdt_scratch_pool"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "flow",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        "sfdt_flow_scan"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "extension",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": true
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "feature-flags",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": true
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "doctor",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "mcp",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "plugin",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "skills",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "ci",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    },
+    {
+      "id": "pr",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_pr_comment"
+      ],
+      "sideEffects": "posts a comment on the current pull request"
+    },
+    {
+      "id": "retrofit",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_retrofit"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "history",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_history"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "version",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": false,
+        "chrome": false
+      },
+      "mcpTools": [],
+      "sideEffects": null
+    }
+  ],
+  "mcpInternalTools": [
+    "sfdt_logs",
+    "sfdt_get_parked_result"
+  ]
+}
