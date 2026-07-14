@@ -152,7 +152,7 @@
         "cli": true,
         "sfPlugin": true,
         "gui": true,
-        "vscode": false,
+        "vscode": true,
         "chrome": false
       },
       "mcpTools": [
@@ -268,7 +268,7 @@
         "cli": true,
         "sfPlugin": true,
         "gui": false,
-        "vscode": false,
+        "vscode": true,
         "chrome": false
       },
       "mcpTools": [],
@@ -280,7 +280,7 @@
         "cli": true,
         "sfPlugin": true,
         "gui": true,
-        "vscode": false,
+        "vscode": true,
         "chrome": false
       },
       "mcpTools": [],
@@ -292,7 +292,7 @@
         "cli": true,
         "sfPlugin": true,
         "gui": true,
-        "vscode": false,
+        "vscode": true,
         "chrome": false
       },
       "mcpTools": [],
@@ -388,7 +388,7 @@
         "cli": true,
         "sfPlugin": true,
         "gui": true,
-        "vscode": false,
+        "vscode": true,
         "chrome": false
       },
       "mcpTools": [
@@ -404,7 +404,7 @@
         "cli": true,
         "sfPlugin": true,
         "gui": true,
-        "vscode": false,
+        "vscode": true,
         "chrome": false
       },
       "mcpTools": [
@@ -434,7 +434,7 @@
         "cli": true,
         "sfPlugin": true,
         "gui": false,
-        "vscode": false,
+        "vscode": true,
         "chrome": true
       },
       "mcpTools": [],
@@ -446,7 +446,7 @@
         "cli": true,
         "sfPlugin": true,
         "gui": false,
-        "vscode": false,
+        "vscode": true,
         "chrome": true
       },
       "mcpTools": [],
@@ -470,7 +470,7 @@
         "cli": true,
         "sfPlugin": true,
         "gui": false,
-        "vscode": false,
+        "vscode": true,
         "chrome": false
       },
       "mcpTools": [],
@@ -482,7 +482,7 @@
         "cli": true,
         "sfPlugin": true,
         "gui": false,
-        "vscode": false,
+        "vscode": true,
         "chrome": false
       },
       "mcpTools": [],
@@ -494,7 +494,7 @@
         "cli": true,
         "sfPlugin": true,
         "gui": false,
-        "vscode": false,
+        "vscode": true,
         "chrome": false
       },
       "mcpTools": [],
@@ -532,7 +532,7 @@
         "cli": true,
         "sfPlugin": true,
         "gui": true,
-        "vscode": false,
+        "vscode": true,
         "chrome": false
       },
       "mcpTools": [

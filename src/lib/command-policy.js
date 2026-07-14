@@ -153,7 +153,7 @@ export const COMMAND_POLICY = {
     requiresOrg: false,
     supportsJson: false,
     docsCategory: 'org-health',
-    surfaces: { gui: true, vscode: false, chrome: false },
+    surfaces: { gui: true, vscode: true, chrome: false },
     mcpTools: { sfdt_notify: { mutating: false } },
   },
   drift: {
@@ -234,7 +234,7 @@ export const COMMAND_POLICY = {
     requiresOrg: false,
     supportsJson: false,
     docsCategory: 'config-utils',
-    surfaces: { gui: false, vscode: false, chrome: false },
+    surfaces: { gui: false, vscode: true, chrome: false },
     mcpTools: {},
   },
   config: {
@@ -243,7 +243,7 @@ export const COMMAND_POLICY = {
     requiresOrg: false,
     supportsJson: false,
     docsCategory: 'config-utils',
-    surfaces: { gui: true, vscode: false, chrome: false },
+    surfaces: { gui: true, vscode: true, chrome: false },
     mcpTools: {},
   },
   ai: {
@@ -252,7 +252,7 @@ export const COMMAND_POLICY = {
     requiresOrg: false,
     supportsJson: false,
     docsCategory: 'ai',
-    surfaces: { gui: true, vscode: false, chrome: false },
+    surfaces: { gui: true, vscode: true, chrome: false },
     mcpTools: {},
   },
   scan: {
@@ -315,7 +315,7 @@ export const COMMAND_POLICY = {
     requiresOrg: true,
     supportsJson: true,
     docsCategory: 'org-health',
-    surfaces: { gui: true, vscode: false, chrome: false },
+    surfaces: { gui: true, vscode: true, chrome: false },
     mcpTools: {
       sfdt_data_export: { mutating: false },
       sfdt_data_import: { mutating: true },
@@ -328,7 +328,7 @@ export const COMMAND_POLICY = {
     requiresOrg: false, // uses the Dev Hub, not a target org
     supportsJson: true,
     docsCategory: 'org-health',
-    surfaces: { gui: true, vscode: false, chrome: false },
+    surfaces: { gui: true, vscode: true, chrome: false },
     mcpTools: {
       sfdt_scratch_create: { mutating: true },
       sfdt_scratch_delete: { mutating: true },
@@ -350,7 +350,7 @@ export const COMMAND_POLICY = {
     requiresOrg: false,
     supportsJson: true,
     docsCategory: 'platform-bridge',
-    surfaces: { gui: false, vscode: false, chrome: true },
+    surfaces: { gui: false, vscode: true, chrome: true },
     mcpTools: {},
   },
   'feature-flags': {
@@ -359,7 +359,7 @@ export const COMMAND_POLICY = {
     requiresOrg: false,
     supportsJson: true,
     docsCategory: 'platform-bridge',
-    surfaces: { gui: false, vscode: false, chrome: true },
+    surfaces: { gui: false, vscode: true, chrome: true },
     mcpTools: {},
   },
   doctor: {
@@ -377,7 +377,7 @@ export const COMMAND_POLICY = {
     requiresOrg: false,
     supportsJson: false,
     docsCategory: 'platform-bridge',
-    surfaces: { gui: false, vscode: false, chrome: false },
+    surfaces: { gui: false, vscode: true, chrome: false },
     mcpTools: {},
   },
   plugin: {
@@ -386,7 +386,7 @@ export const COMMAND_POLICY = {
     requiresOrg: false,
     supportsJson: false,
     docsCategory: 'platform-bridge',
-    surfaces: { gui: false, vscode: false, chrome: false },
+    surfaces: { gui: false, vscode: true, chrome: false },
     mcpTools: {},
   },
   skills: {
@@ -395,7 +395,7 @@ export const COMMAND_POLICY = {
     requiresOrg: false,
     supportsJson: true,
     docsCategory: 'platform-bridge',
-    surfaces: { gui: false, vscode: false, chrome: false },
+    surfaces: { gui: false, vscode: true, chrome: false },
     mcpTools: {},
   },
   ci: {
@@ -423,7 +423,7 @@ export const COMMAND_POLICY = {
     requiresOrg: true,
     supportsJson: true,
     docsCategory: 'metadata',
-    surfaces: { gui: true, vscode: false, chrome: false },
+    surfaces: { gui: true, vscode: true, chrome: false },
     mcpTools: { sfdt_retrofit: { mutating: true } },
   },
   history: {

@@ -18,10 +18,102 @@
     "57": { "release": "Spring '23", "apex": { "changes": ["User-mode database operations GA", "DataWeave in Apex (beta; GA Winter '24)"], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": ["Template directives lwc:if / lwc:elseif / lwc:else replace if:true / if:false (release-wide — predates component-level api versioning)"], "breaking": [] }, "featuresUnlocked": ["Modern LWC conditional templates", "User-mode Apex security GA"], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_apex_User_Mode_GA.htm&release=242&type=5", "https://developer.salesforce.com/blogs/2023/01/lwc-enhancements-for-developers-learn-moar-spring-23"] },
     "58": { "release": "Summer '23", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": ["Reactive screen components (beta; GA Winter '24)"], "breaking": [] }, "lwc": { "changes": ["lwc:spread directive — spread an object's properties onto a child component"], "breaking": [] }, "featuresUnlocked": [], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_automate_flow_reactive_screens_beta.htm&release=244&type=5"] },
     "59": { "release": "Winter '24", "apex": { "changes": ["DataWeave in Apex GA"], "breaking": [] }, "flow": { "changes": ["Reactive screen components GA"], "breaking": [] }, "lwc": { "changes": ["Component-level API versioning begins — LWC apiVersion now selects versioned framework behavior"], "breaking": [] }, "featuresUnlocked": ["Reactive flow screens", "DataWeave transforms callable from Apex (GA)"], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_apex_DataWeaveInApex_GA.htm&release=246&type=5", "https://admin.salesforce.com/blog/2023/flow-reactive-screen-components-ga-learn-moar-winter-24"] },
-    "60": { "release": "Spring '24", "apex": { "changes": ["Null coalescing operator (??) introduced (release-tied compiler feature — official docs state no minimum class apiVersion; do not present it as unlocked by a class version bump)"], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": [], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_apex_NullCoalescingOper.htm&release=248&type=5"] },
-    "61": { "release": "Summer '24", "apex": { "changes": ["FormulaEval namespace — dynamic formula evaluation in Apex (beta; available from API 61.0)"], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": [], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_apex_formulaLimits.htm&release=250&type=5"] },
-    "62": { "release": "Winter '25", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": [], "sources": ["Salesforce Release Notes — Winter '25"] },
-    "63": { "release": "Spring '25", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": [], "sources": ["Salesforce Release Notes — Spring '25"] },
+    "60": {
+      "release": "Spring '24",
+      "apex": {
+        "changes": ["Null coalescing operator (??) introduced (release-tied compiler feature — official docs state no minimum class apiVersion; do not present it as unlocked by a class version bump)"],
+        "breaking": [
+          "At apex apiVersion >= 60: a List that implements Iterable no longer compiles (compilation fails) — code treating a List as an Iterable must change",
+          "At apex apiVersion >= 60: all Apex test savepoints are released when Test.startTest() and Test.stopTest() are called",
+          "At apex apiVersion >= 60: Database.rollback(savepoint) and Database.setSavepoint() no longer increment the DML row usage limit",
+          "At apex apiVersion >= 60: Type.forName() with an invalid namespace returns null (previously unpredictable)"
+        ]
+      },
+      "flow": { "changes": [], "breaking": [] },
+      "lwc": { "changes": [], "breaking": [] },
+      "featuresUnlocked": ["Null coalescing operator (??) (release-wide)"],
+      "sources": [
+        "https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/versioned_behavior_changes.htm",
+        "https://help.salesforce.com/s/articleView?id=release-notes.rn_apex_NullCoalescingOper.htm&release=248&type=5"
+      ]
+    },
+    "61": {
+      "release": "Summer '24",
+      "apex": {
+        "changes": [
+          "FormulaEval namespace — dynamic formula evaluation in Apex (beta; requires class/package apiVersion >= 61.0). Formula.builder() constructs and evaluates formulas at runtime over SObjects and Apex classes",
+          "At apex apiVersion >= 61: SObjectType.getDescribe() can return info on a specific Data Cloud object (DMO) — note FLS is not enforced on DMO descriptions"
+        ],
+        "breaking": [
+          "At apex apiVersion >= 61: a private superclass method is no longer overridden by a same-signature instance method in a subclass (accidental override removed)"
+        ]
+      },
+      "flow": { "changes": [], "breaking": [] },
+      "lwc": { "changes": [], "breaking": [] },
+      "featuresUnlocked": ["Dynamic formula evaluation in Apex (beta) — gated at class apiVersion >= 61.0"],
+      "sources": [
+        "https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/versioned_behavior_changes.htm",
+        "https://developer.salesforce.com/docs/atlas.en-us.apexref.meta/apexref/apex_namespace_formulaeval.htm"
+      ]
+    },
+    "62": {
+      "release": "Winter '25",
+      "apex": {
+        "changes": ["At apex apiVersion >= 62: DataWeave scripts use DataWeave 2.8 syntax (v61 and earlier use 2.5)"],
+        "breaking": ["At apex apiVersion >= 62: modifying elements of a Set while iterating it in a for/foreach loop now throws (previously sometimes allowed with unexpected results)"]
+      },
+      "flow": {
+        "changes": [],
+        "breaking": [
+          "At flow apiVersion >= 62: an autolaunched flow launched in default context by a 'with sharing' Apex class now ENFORCES that user's sharing rules — can return fewer rows or fail on permissions (previously ran in system context)",
+          "At flow apiVersion >= 62: a screen-action output not set via an Assignment is correctly set to null; conditionally hidden screen-component collection outputs are also correctly nulled"
+        ]
+      },
+      "lwc": {
+        "changes": [
+          "At LWC component apiVersion >= 62: class attribute accepts arrays/objects (class object binding); this.hostElement exposes the parent element; this.style returns the host CSSStyleDeclaration"
+        ],
+        "breaking": [
+          "At LWC component apiVersion >= 62: booleans/numbers/functions in class are removed rather than stringified — breaks code relying on old string coercion",
+          "At LWC component apiVersion >= 62: this.hostElement / this.style no longer start undefined — breaks code that depended on the previous undefined initial value",
+          "At LWC component apiVersion >= 62: stricter import/export rules — bare imports, 'export * as', and re-exports from 'lwc' are rejected"
+        ]
+      },
+      "featuresUnlocked": ["Class object binding, host element/style access in LWC (all gated at component apiVersion >= 62)", "Dynamic formula evaluation GA and Zip compression in Apex (release-wide)"],
+      "sources": [
+        "https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/versioned_behavior_changes.htm",
+        "https://help.salesforce.com/s/articleView?id=platform.automate_flow_versioned_updates_62.htm&type=5",
+        "https://help.salesforce.com/s/articleView?id=release-notes.rn_lwc_versioning.htm&release=252&type=5"
+      ]
+    },
+    "63": {
+      "release": "Spring '25",
+      "apex": {
+        "changes": ["At apex apiVersion >= 63: DataWeave scripts use DataWeave 2.9 syntax"],
+        "breaking": [
+          "At apex apiVersion >= 63: reparenting a master-detail child in Apex throws System.DmlException if the master-detail definition doesn't allow reparenting (previously could succeed depending on field-set order)",
+          "At apex apiVersion >= 63: JSON serialization of custom exception types and most built-in exceptions is no longer supported (throws 'Type unsupported in JSON') — previously serialized incompletely"
+        ]
+      },
+      "flow": {
+        "changes": [],
+        "breaking": [
+          "At flow apiVersion >= 63: a reactive Data Table clears when its source-collection screen-action output isn't reassigned on re-run (previously kept prior records)",
+          "At flow apiVersion >= 63: a same-API-name variable in a referenced (sub)flow no longer inherits the parent flow's value — the subflow uses its own",
+          "At flow apiVersion >= 63: screen-component validation errors appear on blur (focus change), not only on navigation/finish"
+        ]
+      },
+      "lwc": {
+        "changes": ["LWC API version 63.0 has NO version-specific changes (official) — a clean upgrade target, especially since component versioning is now required"],
+        "breaking": []
+      },
+      "featuresUnlocked": ["v63 is a low-risk LWC upgrade target (no versioned LWC changes); component versioning is now required (release-wide)"],
+      "sources": [
+        "https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/versioned_behavior_changes.htm",
+        "https://help.salesforce.com/s/articleView?id=platform.automate_flow_versioned_updates_63.htm&type=5",
+        "https://help.salesforce.com/s/articleView?id=release-notes.rn_lwc_versioning.htm&release=254&type=5"
+      ]
+    },
     "64": {
       "release": "Summer '25",
       "apex": {
