@@ -28,7 +28,7 @@ window that reports the chosen org's URL, so the existing tools run unchanged.
 
 ---
 
-## Features (36)
+## Features (40)
 
 Every feature is opt-in (toggle off in the options page), and any feature can be remotely disabled without a Web Store re-review via `sfdt feature-flags disable <id>`.
 
@@ -65,6 +65,7 @@ Every feature is opt-in (toggle off in the options page), and any feature can be
 | `org-switcher` | Switch the Workspace between logged-in orgs | Workspace |
 | `org-health` | Side panel surfacing the CLI's audit/monitor snapshots (status dots, findings, Copy JSON) via the bridge's `org-health` request | Setup + Flow Builder |
 | `org-health-live` | Runs org-health checks live against the org (Apex coverage, inactive users, licenses, API versions, limits) — no CLI snapshot needed | Workspace |
+| `api-version-audit` | Setup tab-strip pill showing the org's max API version + release; expands to per-type API-version histograms (Apex classes/triggers, active Flows) with components below the flow-core floor banded amber — read live from the org, no bridge | Setup + Trigger Explorer |
 | `code-coverage` | Apex code coverage: org-wide % + per-class bands (worst-covered first, 75% deploy line flagged), read live from the org | Workspace |
 | `dependency-explorer` | "What references this / what does this reference" via `MetadataComponentDependency` (Apex/Flow/field/page/LWC) | Workspace |
 | `apex-test-runner` | Run Apex tests asynchronously and view pass/fail results | Workspace |
