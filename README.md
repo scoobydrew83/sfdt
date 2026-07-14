@@ -57,7 +57,7 @@ For in-depth command walkthroughs and workflow examples, see [docs/USAGE.md](doc
 |---|---|---|
 | **`@sfdt/cli`** (`/src`, `/bin`, `/scripts`) | The npm CLI documented below. | Published to npm |
 | **`@sfdt/extension`** (`/extension`) | Chrome extension for Salesforce Flow Builder + Setup productivity. Talks to the CLI via the local bridge for deploy / rollback / quality / AI features. See [extension/README.md](extension/README.md) and [extension/PRIVACY.md](extension/PRIVACY.md). | Pre-Web-Store |
-| **`sfdt-devtools`** (`/vscode`) | VS Code extension — a thin UI over the CLI (Org Health sidebar, command palette, embedded dashboard). See [vscode/README.md](vscode/README.md). | [Published to the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools) |
+| **`sfdt-devtools`** (`/vscode`) | VS Code extension — a CLI-backed command center (Org Health sidebar, command palette, CodeLens, diagnostics, embedded dashboard); it drives the `sfdt` binary and reimplements no logic. See [vscode/README.md](vscode/README.md). | [Published to the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools) |
 | **`@sfdt/host`** (`/host`) | Native messaging host used as the extension's fallback transport when `sfdt ui` isn't running. Installed with `sfdt extension install-host`. | Bundled with CLI |
 | **`@sfdt/flow-core`** (`/packages/flow-core`) | Shared TypeScript library — Flow normalization, rules engine, scoring, and the versioned bridge contract. Consumed by both CLI and extension. | Published to npm (publishes alongside the CLI) |
 
@@ -110,91 +110,33 @@ npm run build:gui   # build the local web dashboard
 
 Full install reference — every method plus CI usage — at **[sfdt.dev/cli/installation](https://sfdt.dev/cli/installation)**.
 
-## Commands Reference
+## Commands
 
-### Core
+The full command reference — every command, flag, and default, generated from the CLI's own
+command registry so it can never drift — lives at
+**[sfdt.dev/cli/commands](https://sfdt.dev/cli/commands)**. Locally, `sfdt --help` (and
+`sfdt <command> --help`) is always current. The machine-readable inventory is
+[`generated/commands.json`](generated/commands.json).
 
-| Command | Description | Key Options |
-|---|---|---|
-| `sfdt init` | Initialize `.sfdt/` config (interactive) | — |
-| `sfdt deploy` | Deploy to a Salesforce org | `--managed`, `--skip-preflight`, `--dry-run`, `--source-dir <path>` |
-| `sfdt deploy --smart` | Smart git-delta deploy: minimal package, overwrite protection, auto test-level | `--delta-base <ref>`, `--delta-head <ref>`, `--prod`, `--pr-comment`, `--ai-fix`, `--agent` |
-| `sfdt release` | Generate release manifest + optional AI release notes | `--package <name\|all>`, `--name <label>` |
-| `sfdt test` | Run Apex tests with the enhanced test runner; `--logic` runs unified Apex + Flow tests via `sf logic run test`; `--lwc` runs the project's local LWC (Jest) unit tests | `--legacy`, `--analyze`, `--logic`, `--lwc`, `--class-names <list>`, `--dry-run` |
-| `sfdt pull` | Pull metadata from the configured org | `--dry-run` |
-| `sfdt preflight` | Run pre-deployment validation checks | `--strict`, `--dry-run` |
-| `sfdt rollback` | Roll back a deployment to a target org | `--org <alias>`, `--dry-run`, `--json` |
-| `sfdt smoke` | Post-deploy smoke tests | `--org <alias>`, `--dry-run` |
-| `sfdt drift` | Detect metadata drift between local source and an org | `--org <alias>`, `--json` |
-| `sfdt compare` | Compare metadata between two orgs or local source vs an org | `--source <alias\|local>`, `--target <alias>`, `--output <file>` |
-| `sfdt scan` | Fetch complete metadata inventory from an org | `--org <alias>`, `--output <file>`, `--format json\|table` |
-| `sfdt notify` | Multi-channel notifications (Slack, Teams, Google Chat, email, webhook, Loki); `notify snapshot --type audit\|monitor` pushes the latest org-health snapshot | `--org <alias>`, `--version <ver>`, `--message <msg>`, `--type <audit\|monitor>` |
-| `sfdt pr comment` | Post the latest audit/monitor snapshot (or `--body`/`--file`) to the current PR via `gh` | `--type <audit\|monitor>`, `--body <md>`, `--file <path>`, `--pr <n>` |
-| `sfdt retrofit` | Retrieve a metadata set from a source org, commit, then smart-deploy to a target (validate-only unless `--execute`) | `--source <alias>`, `--target <alias>`, `--execute` |
-| `sfdt agent-test` | Run an Agentforce agent test (`sf agent test run`) as a CI gate; pass/fail comes from the exit code | `--spec <name>`, `--org <alias>`, `--wait <min>`, `--pass-rate <pct>`, `--notify`, `--pr-comment` |
-| `sfdt ci init` | Generate a CI/CD pipeline (scheduled monitor, PR smart-deploy, approval-gated release, or scratch-org CI) for a provider | `--provider <github\|gitlab\|azure\|bitbucket>`, `--type <monitor\|deploy\|release\|scratch>`, `--auth <sfdx-url\|jwt>`, `--runner <npx\|docker\|action>` |
+By area:
 
-### Org Health & Operations
-
-| Command | Description | Key Options |
-|---|---|---|
-| `sfdt audit [check\|all]` | Diagnose org health (~15 checks): audit trail, licenses, MFA, unused Apex/perm-sets, inactive users/flows, inactive validation & workflow rules, connected apps, field descriptions, object- & field-level access lint, API versions | `--org <alias>`, `--json`, `--notify` |
-| `sfdt monitor [check\|all]` | Monitor org (~7 checks): limits, Apex job errors, health score, org info, deploy history, deprecated API, flow errors; `all --backup` to include a metadata backup | `--org <alias>`, `--backup`, `--json`, `--notify` |
-| `sfdt monitor schedule` | Alias for `ci init --type monitor` — scaffold a scheduled monitoring pipeline | `--provider <github\|gitlab\|azure\|bitbucket>` |
-| `sfdt dependencies <name>` | "What references this / what does this reference" via MetadataComponentDependency; `--gaps` adds a source-parsed report of inferred edges the Tooling API misses (offline; `--org` diffs to mark MISSING vs confirmed) | `--type <apex\|flow\|field\|page\|lwc>`, `--gaps`, `--org <alias>`, `--json` |
-| `sfdt history` | Durable, queryable index of past runs (audit/monitor/coverage/deploy/test/rollback) for trending outcomes over time | `--type <type>`, `--limit <n>`, `--json` |
-| `sfdt coverage` | Org-wide + per-class Apex coverage with a CI gate | `--threshold <pct>`, `--org <alias>`, `--json` |
-| `sfdt monitor backup` | Retrieve a full metadata backup into the configured backup directory | `--org <alias>`, `--json` |
-| `sfdt docs generate` | Generate MkDocs-compatible docs (objects, Apex, flows, LWC) with optional AI overview and per-component Developer/Admin/User/DevOps guides | `--ai`, `--roles [list]`, `--json` |
-| `sfdt docs diagram` | Print/write a Mermaid ER diagram of the data model | `--output <file>`, `--json` |
-| `sfdt data <list\|export\|import\|delete> [set]` | Manage data sets via native `sf data tree` for sandbox/scratch seeding | `--org <alias>`, `--json`, `--yes` (delete: skip confirmation; required non-interactively) |
-| `sfdt scratch <create\|delete\|list\|pool>` | Create/delete/list scratch orgs and manage a pre-created pool | `--alias`, `--days <n>`, `--size <n>`, `--json`, `--yes` (delete: skip confirmation; required non-interactively) |
-| `sfdt config get <key>` | Print a config value using dot notation (e.g. `defaultOrg`) | — |
-| `sfdt config set <key> <value>` | Set a config value using dot notation (e.g. `deployment.coverageThreshold`) | — |
-| `sfdt completion <shell>` | Print shell completion script (`bash`, `zsh`, `fish`) | — |
-| `sfdt version` | Print the current sfdt version | — |
-| `sfdt update` | Update sfdt to the latest version from npm | `--force` |
-
-### AI & Intelligence (Phase 3)
-
-| Command | Description | Key Options |
-|---|---|---|
-| `sfdt manifest` | Build `package.xml` from git diffs | `--base <ref>`, `--head <ref>`, `--package <name\|all>`, `--name <label>`, `--output <path>`, `--destructive <path>`, `--ai-cleanup`, `--print` |
-| `sfdt explain [file]` | Analyze a deployment error log with AI + heuristics | `--from-stdin`, `--latest` |
-| `sfdt pr-description` | Generate a PR description or Slack message | `--base <ref>`, `--head <ref>`, `--format github\|slack\|markdown`, `--output <path>`, `--commit-limit <n>` |
-| `sfdt review` | AI code review of current branch changes | `--base <branch>` |
-| `sfdt changelog` | Manage changelog files (global or per-package) | subcommands: `generate`, `release <version>`, `check`; `--package <name>` scopes to a specific package |
-| `sfdt quality` | Code & test quality analysis; `--output-file <path>` also writes results to a file (format by extension, e.g. `.sarif` for code-scanning upload) | `--tests`, `--all`, `--fix-plan`, `--generate-stubs`, `--include-fixes`, `--output-file <path>`, `--dry-run` |
-| `sfdt ai prompt <text>` | Run a prompt through the configured AI provider and print the result | — |
-
-### Platform (Phase 4)
-
-| Command | Description | Key Options |
-|---|---|---|
-| `sfdt ui` | Launch local Salesforce Lightning Design System dashboard | `--port <n>` (default 7654), `--no-open` |
-
-### Extension & bridge
-
-| Command | Description | Key Options |
-|---|---|---|
-| `sfdt extension install-host` | Register the Chrome native messaging host so the extension can fall back to native transport when `sfdt ui` isn't running | `--extension-id <id>`, `--browser <chrome\|edge\|brave\|chromium\|vivaldi\|all>` |
-| `sfdt extension uninstall-host` | Remove the native host manifest | `--browser <browser>` |
-| `sfdt extension status` | Report which browsers have the native host installed | `--json` |
-| `sfdt extension stats` | Show the latest telemetry snapshot the extension pushed to `.sfdt/telemetry-snapshot.json` | `--json`, `--limit <n>` |
-| `sfdt feature-flags list` | List remotely-disabled features from `.sfdt/feature-flags.json` | `--json` |
-| `sfdt feature-flags disable <id>` | Add a feature id to the kill-switch | `--json` |
-| `sfdt feature-flags enable <id>` | Remove a feature id from the kill-switch | `--json` |
-| `sfdt feature-flags clear` | Re-enable everything | `--remove`, `--json` |
-| `sfdt doctor` | Diagnose the local environment (sf, node, git, config, AI, org) and the extension stack | `--core`, `--extension`, `--org <alias>`, `--port <n>`, `--json` |
-
-### Agent & extensibility
-
-| Command | Description | Key Options |
-|---|---|---|
-| `sfdt mcp start` | Start the built-in Model Context Protocol server (stdio) so agents can drive sfdt as a tool | — |
-| `sfdt mcp cleanup` | Purge expired parked results from the MCP cache directory | — |
-| `sfdt plugin create [name]` | Scaffold a new sfdt CLI plugin project | `--description <desc>`, `--author <author>` |
-| `sfdt skills export` | Export local agent skills to IDE rules files (`--target claude\|cursor\|codex\|windsurf`) or an `npx skills add`-compatible pack (`--target pack`) | `--target`, `--out`, `--json` |
+- **Deploy & release** — smart git-delta deploys with overwrite protection and automatic
+  test-level selection, preflight validation, rollback with pre-rollback backup, smoke tests,
+  release manifests + AI release notes, CI pipeline generation for four providers, and
+  PR decoration.
+- **Metadata & source** — incremental pull with a SQLite delta cache, drift detection,
+  org-to-org compare, full inventory scans, `package.xml` from git diffs, dependency tracing
+  (including source-parsed gaps the Tooling API misses), and cross-org retrofit.
+- **Testing & quality** — the enhanced Apex runner, unified Apex + Flow logic tests, local LWC
+  (Jest) tests, Agentforce agent tests as CI gates, Code Analyzer v5 scans (SARIF output for
+  code scanning), coverage gates, and changelog management.
+- **AI** — code review, deployment-error analysis, PR descriptions, fix plans, and ad-hoc
+  prompts across Claude / Gemini / Codex CLI providers or any OpenAI-compatible endpoint.
+- **Org health** — `audit` and `monitor` check suites with multi-channel notifications,
+  metadata backup, run history trending, and generated org documentation with ER diagrams.
+- **Platform** — the local web dashboard (`sfdt ui`), MCP server for agents, Chrome-extension
+  bridge + native messaging host management, feature kill-switch, environment doctor, shell
+  completion, and a plugin scaffold.
 
 ## Configuration
 
