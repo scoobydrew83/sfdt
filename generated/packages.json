@@ -3,7 +3,7 @@
     {
       "path": "package.json",
       "name": "@sfdt/cli",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "license": "Apache-2.0",
       "private": false,
       "engines": {
@@ -47,7 +47,7 @@
     {
       "path": "packages/flow-core/package.json",
       "name": "@sfdt/flow-core",
-      "version": "0.9.6",
+      "version": "0.9.7",
       "license": "Apache-2.0",
       "private": false,
       "engines": null
@@ -55,7 +55,7 @@
     {
       "path": "packages/plugin/package.json",
       "name": "@sfdt/plugin",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "license": "Apache-2.0",
       "private": false,
       "engines": {
