@@ -6,6 +6,19 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-14
+
+### Added
+
+- **API Versions Report** — a new Commands-tree entry (and palette command) that runs `sfdt versions`, auditing the API versions of local source (Apex, Flow, LWC, Aura) and the org side against the org's max API version. Requires `@sfdt/cli` 0.18.0.
+- **Run History** — a new Commands-tree entry that runs `sfdt history`, showing recent audit / monitor / quality / test / deploy runs from the local index.
+
+### Fixed
+
+- **Surface parity** — twelve CLI commands (`retrofit`, `notify`, `ai`, `data`, `scratch`, `config`, `feature-flags`, `mcp`, `extension`, `skills`, `plugin`, `update`) that were already invocable are now correctly reflected as VS Code-exposed in the command catalog, and the extended `audit api-versions` entry describes its Flow coverage and org-ceiling context.
+- **Run History no longer passes `--org`** — the new entry is marked `noOrg`, so it doesn't append `--org <defaultOrg>` (which `sfdt history` rejects); it would otherwise exit 1 for any user with a default org configured.
+- **Relicensed MIT → Apache-2.0** — `vscode/LICENSE` (which ships in the `.vsix`) now carries the Apache-2.0 text, matching the repository and the manifest's declared license.
+
 ## [0.4.1] - 2026-07-12
 
 ### Added
