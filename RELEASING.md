@@ -89,7 +89,7 @@ push to `main` over doing any of this by hand.
 All on the release ref, before the release PR merges:
 
 - [ ] `npm test` and `npm run lint` clean (root workspace covers CLI + flow-core + host; run `npm run test:all` when extension/vscode/plugin changed too).
-- [ ] `npm run generate:catalogs` regenerated **from the release ref** and committed. The `generated/` catalogs (Commander command tree, Chrome features, GUI pages, MCP tools, parity matrix) are what the docs site and skills consume — never quote a hand-counted command number anywhere.
+- [ ] `npm run generate:catalogs` regenerated **from the release ref, AFTER the version bump** and committed. `generated/catalog-version.json` and `generated/packages.json` embed the package versions — bumping `package.json` without regenerating makes `check:catalogs` drift and fails the release CI. Run it as the last step before committing. The `generated/` catalogs (Commander command tree, Chrome features, GUI pages, MCP tools, parity matrix) are what the docs site and skills consume — never quote a hand-counted command number anywhere.
 - [ ] `npm run check:all-contracts` clean — catalog drift + license-string + Node-version-claim + auth-docs consistency (also enforced in CI).
 - [ ] **API-version registry current** — when Salesforce has shipped a new GA release since the last sfdt release, curate it in `src/lib/data/api-version-registry.json` (facts only from the official release notes; empty change lists are fine, wrong facts are not). `test/lib/api-version-registry.test.js` fails automatically when the registry falls behind the GA version.
 - [ ] `npm run build:gui`, `npm run build:ext`, `npm run build:plugin` succeed.
