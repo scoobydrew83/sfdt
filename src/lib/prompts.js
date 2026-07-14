@@ -542,7 +542,7 @@ GROUNDING RULES (non-negotiable):
 TASK: The project targets API version {{targetVersion}} (sfdx-project.json sourceApiVersion: {{sourceApiVersion}}). For the components below (grouped by type), advise on upgrading their apiVersion to v{{targetVersion}}.
 
 For each component type present (not each component — group them by current version band), produce:
-- **Value**: what upgrading unlocks, citing registry versions (e.g. "v60 unlocks the ?? operator").
+- **Value**: what upgrading unlocks, citing registry versions. Respect the registry's versioned-vs-release-wide distinction: only facts gated "at api >= N" are unlocked by bumping the component's version (e.g. "@IsTest(testFor=...) at apex api >= 66"); facts marked "release-wide" or "release-tied" are available regardless and must NOT be presented as upgrade value.
 - **Risks / breaking changes in the path**: every registry "breaking" entry between the component's current version and the target applies — call each out with the affected version.
 - **Effort**: S / M / L with one sentence of justification (S = version bump + regression test; M = code edits required; L = behavioral audit required).
 - **Suggested code changes**: concrete and minimal, only where a registry breaking change demands one.
