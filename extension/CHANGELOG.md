@@ -4,6 +4,15 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-14
+
+### Added
+- **API Version Audit** (`api-version-audit`) — an org-side pill in the Setup tab strip showing the org's max API version and release (e.g. `API v67 · 3 behind`). Click it to expand a panel of per-type API-version histograms — Apex classes, Apex triggers, and active Flows — with a bar per version and an org-max footer. Components below the shared `@sfdt/flow-core` API-version floor are banded amber (the same threshold the CLI's org-health checks use), and the pill itself turns amber when any component is behind. Runs entirely org-side against the Tooling API using your existing session — no bridge required.
+
+### Fixed
+- **`api-version-audit` panel now closes on click-outside.** It previously only closed on Escape, so the absolute panel could float over subsequent content after an SPA navigation; it now also dismisses on any click outside the pill/panel (matching the `rest-explore`/`soql-runner` dropdown pattern).
+- **Relicensed MIT → Apache-2.0.** The README license line was corrected to Apache-2.0 to match the repository `LICENSE` and the extension's `package.json`.
+
 ## [0.6.0] - 2026-07-09
 
 ### Fixed
