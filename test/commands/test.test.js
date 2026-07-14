@@ -213,10 +213,30 @@ describe('test command', () => {
           'logic', 'run', 'test', '--target-org', 'qa', '--wait', '30',
           '--test-level', 'RunSpecifiedTests', '--tests', 'FooTest,FlowTesting.MyFlow', '--code-coverage',
         ],
-        // AI is enabled in the default test config → capture mode (all: true)
-        // so a failure can be fed to the AI; the argv is what matters here.
-        { all: true },
+        // Always stream + capture (execa multi-destination stdio): the capture
+        // feeds the zero-test guard and, on failure, the AI analysis.
+        { stdout: ['inherit', 'pipe'], stderr: ['inherit', 'pipe'], all: true },
       );
+      expect(print.success).toHaveBeenCalled();
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it('fails a "passing" run that executed zero tests', async () => {
+      execa.mockResolvedValue({ exitCode: 0, all: 'Test Summary\nTests Ran        0' });
+
+      await createProgram().parseAsync(['node', 'sfdt', 'test', '--logic', '--tests', 'NopeTest']);
+
+      expect(print.error).toHaveBeenCalledWith(expect.stringContaining('Zero tests were run'));
+      expect(print.error).toHaveBeenCalledWith(expect.stringContaining('NopeTest'));
+      expect(print.success).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('allows a zero-test run with --allow-zero-tests', async () => {
+      execa.mockResolvedValue({ exitCode: 0, all: 'Tests Ran        0' });
+
+      await createProgram().parseAsync(['node', 'sfdt', 'test', '--logic', '--allow-zero-tests']);
+
       expect(print.success).toHaveBeenCalled();
       expect(process.exitCode).toBeUndefined();
     });
@@ -262,8 +282,12 @@ describe('test command', () => {
 
       await createProgram().parseAsync(['node', 'sfdt', 'test', '--logic']);
 
-      // capture mode → execa called with { all: true }, not stdio inherit
-      expect(execa).toHaveBeenCalledWith('sf', expect.any(Array), { all: true });
+      // stream + capture mode — the capture feeds the AI analysis
+      expect(execa).toHaveBeenCalledWith(
+        'sf',
+        expect.any(Array),
+        expect.objectContaining({ all: true }),
+      );
       // the captured run output is injected as context for every provider
       expect(gatherLatestTestResults).not.toHaveBeenCalled();
       expect(runAiPrompt).toHaveBeenCalledWith(
@@ -273,13 +297,19 @@ describe('test command', () => {
       expect(process.exitCode).toBe(1);
     });
 
-    it('streams (no capture) and skips AI when features.ai is off', async () => {
+    it('still captures output but skips AI when features.ai is off', async () => {
       loadConfig.mockResolvedValue({ _projectRoot: '/project', defaultOrg: 'dev', features: { ai: false } });
       execa.mockRejectedValue(Object.assign(new Error('failed'), { exitCode: 1 }));
 
       await createProgram().parseAsync(['node', 'sfdt', 'test', '--logic']);
 
-      expect(execa).toHaveBeenCalledWith('sf', expect.any(Array), { stdio: 'inherit' });
+      // capture is unconditional now (zero-test guard needs the output);
+      // 'inherit' in the stdio arrays keeps the live streaming behavior.
+      expect(execa).toHaveBeenCalledWith(
+        'sf',
+        expect.any(Array),
+        expect.objectContaining({ stdout: ['inherit', 'pipe'], all: true }),
+      );
       expect(inquirer.prompt).not.toHaveBeenCalled();
       expect(runAiPrompt).not.toHaveBeenCalled();
       expect(process.exitCode).toBe(1);

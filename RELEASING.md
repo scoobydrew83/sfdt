@@ -1,169 +1,235 @@
 # Releasing sfdt
 
-This monorepo contains five workspaces with different release cadences:
+Five workspaces, different cadences:
 
-| Workspace | Distribution | Versioning | Cadence |
-|---|---|---|---|
-| `@sfdt/cli` | npm (`@sfdt/cli`); also drives the **Homebrew tap** and the **GHCR Docker image** | Independent semver | Whenever a meaningful CLI change lands. Most releases come from here. |
-| `@sfdt/extension` | Chrome Web Store (zip from `npm run package:ext`) | Independent semver, tracked in `extension/package.json` | Reviewed by the Web Store — slower than CLI. Bump when Web Store-bound behavior changes, not for every CLI release. |
-| `sfdt-devtools` (`/vscode`) | VS Code Marketplace as **`sfdt.sfdt-devtools`** (+ optional Open VSX) | Independent semver, tracked in `vscode/package.json` (tag `vscode-v*`) | Bump when the extension's behavior or its README/listing changes. Versions independently of the CLI. |
-| `@sfdt/host` | Bundled inside `@sfdt/cli` (installed via `sfdt extension install-host`) | Lock-step with `@sfdt/cli` | Always shipped alongside the CLI. |
-| `@sfdt/flow-core` | npm (`@sfdt/flow-core`), published by the CLI's `ci.yml` job as a coupled sub-step of a CLI release | Independent semver; CLI + extension depend on `^0.9.0` | When the **bridge contract** or **scoring rules** change. The contract changing is the load-bearing event. |
+| Workspace | Distribution | Versioning |
+|---|---|---|
+| `@sfdt/cli` | npm; also drives the Homebrew tap, the GHCR Docker image, and the composite GitHub Action's floating tag | Independent semver (`package.json`, tag `vX.Y.Z`). Most releases come from here. |
+| `@sfdt/flow-core` | npm, published by `ci.yml` as a coupled sub-step of every CLI release (**before** the CLI — the CLI's runtime dep must resolve first). No standalone trigger. | Bumps with the CLI's release commit. |
+| `@sfdt/plugin` | npm (`sf plugins install @sfdt/plugin`), published by `ci.yml` **after** the CLI so its `@sfdt/cli` dep resolves | Bumps with the CLI's release commit. |
+| `@sfdt/extension` | Chrome Web Store, auto-uploaded by `extension.yml` (tag `ext-vX.Y.Z`) | Independent semver in `extension/package.json`. Web Store review is slow — bump on its own schedule. |
+| `sfdt-devtools` (`/vscode`) | VS Code Marketplace as `sfdt.sfdt-devtools` (+ Open VSX), via `vscode-release.yml` (tag `vscode-vX.Y.Z`) | Independent semver in `vscode/package.json`. |
 
-The release policy below codifies how those cadences interact.
-
----
+`@sfdt/host` has no independent release — it ships inside `@sfdt/cli`.
 
 ## Wire-protocol version (`PROTOCOL_VERSION`)
 
-This is the single most important versioning decision in the monorepo. It lives in [`packages/flow-core/src/bridge-contract.ts`](packages/flow-core/src/bridge-contract.ts) and is exchanged on `/api/bridge/ping`. The extension and CLI compare it via `negotiateProtocolVersion`:
+Lives in `packages/flow-core/src/bridge-contract.ts`, exchanged on `/api/bridge/ping`.
+Same major+minor → ok; same major, different minor → warn; different major → refuse to talk.
 
-- **Same major + same minor** → ok.
-- **Same major + different minor** → warn (backward-compatible).
-- **Different major** → refuse to talk.
+- Bump **MINOR** for additive changes: new `SfdtRequestKind`, new optional response field, new error code.
+- Bump **MAJOR** for breaking ones: removed kind, renamed required field, changed field type, removed legacy fallback.
+- A protocol bump is separate from any package version; patch releases don't touch it.
 
-### Bump rules
+When bumping:
 
-| Change | Bump |
-|---|---|
-| New `SfdtRequestKind` | MINOR (e.g. `1.1` → `1.2`) |
-| New optional field on an existing response | MINOR |
-| New error code | MINOR |
-| Removed `SfdtRequestKind` | MAJOR (`1.x` → `2.0`) |
-| Renamed required field | MAJOR |
-| Changed field type | MAJOR |
-| Removed legacy fallback (e.g. `flowId` → `flowApiName`) | MAJOR |
+1. Edit `PROTOCOL_VERSION` in `bridge-contract.ts` and add a line to its changelog comment block.
+2. Update the tests in `test/lib/bridge-routes.test.js`, `extension/test/sfdt-bridge.test.ts`, and `packages/flow-core/test/protocol-version.test.ts`.
+3. `npm run build:flow-core`.
 
-A protocol bump is **separate from** the CLI / extension / flow-core release version. Patch-level CLI releases don't touch it; a major contract break is rare.
+**Never ship a breaking (major) protocol change in the CLI before the matching extension has cleared Web Store review** — see the rollback playbook (§6).
 
-When you bump the protocol:
-1. Edit `PROTOCOL_VERSION` in `bridge-contract.ts`.
-2. Add a line to the bump-changelog comment block in that file.
-3. Update tests in `test/lib/bridge-routes.test.js`, `extension/test/sfdt-bridge.test.ts`, and `packages/flow-core/test/protocol-version.test.ts`.
-4. Rebuild flow-core: `npm run build:flow-core`.
+## 1. The normal path: CI-first
 
----
+**You do not run `npm publish`.** `.github/workflows/ci.yml` publishes; your job is to land a
+version-bump commit on the right branch and let CI do the rest.
 
-## Release flows by workspace
+### Stable release (push to `main`)
 
-### Releasing `@sfdt/cli` (the common case)
+Triggers when `package.json#version` changed — or when the version isn't yet npm's `latest`,
+so a previously failed publish **self-heals** on the next push to `main`. The `publish` job, in order:
 
-1. **Pre-flight.**
+1. Tags `vX.Y.Z` and force-moves the floating major tag (`v0` today) so `uses: scoobydrew83/sfdt@v0` resolves to the newest stable. Betas never move it.
+2. Builds the GUI; pins npm 11.x (OIDC trusted publishing + `--provenance`; no token).
+3. Publishes **`@sfdt/flow-core` → `@sfdt/cli` → `@sfdt/plugin`**, in that order. Each step is idempotent — republishing an already-published version is tolerated, which is what makes the self-healing re-run safe.
+4. Creates the GitHub Release (`--generate-notes`).
+5. Bumps the Homebrew tap (`scoobydrew83/homebrew-sfdt`, `Formula/sfdt.rb` url + sha256). Needs the `HOMEBREW_TAP_TOKEN` fine-grained PAT and runs `continue-on-error` — a failure is a yellow step, not a red run. Check it; bump the tap manually if it skipped. The tap repo is the single source of truth for the formula.
+6. The downstream `docker` job calls the reusable `docker-publish.yml` via `workflow_call` in the **same run** (a `GITHUB_TOKEN`-created Release doesn't fire downstream workflows), pushing `ghcr.io/scoobydrew83/sfdt:X.Y.Z` + `:latest`. Re-publish a version on demand via `workflow_dispatch` with the version input.
+
+A prerelease version (`X.Y.Z-*`) on `main` **fails the job** by design — prereleases publish from `develop`.
+
+### Beta release (push to `develop`)
+
+A version change to a prerelease (`X.Y.Z-beta.N`) triggers `publish-beta`: tag, publish
+flow-core/CLI/plugin under the `beta` dist-tag, GitHub Pre-Release. No Docker, no Homebrew,
+no floating-tag move.
+
+### PR beta channel
+
+Label a PR `publish-beta` (`pr-publish.yml`; write-permission actors only): publishes
+`X.Y.Z-pr.<N>.<n>` under dist-tag `pr-<N>` and comments install instructions on the PR.
+The dist-tag is removed and the versions deprecated automatically when the PR closes.
+
+### Extension and VS Code (push to `main`)
+
+- `extension/package.json#version` changed → `extension.yml` tags `ext-vX.Y.Z`, attaches the zip to a GitHub Release, and uploads to the Chrome Web Store with `--auto-publish` (`CWS_*` secrets in the `extension-release` environment; validate them anytime with the manual `cws-verify` dispatch job — it uploads a **draft** only).
+- `vscode/package.json#version` changed → `vscode-release.yml` runs `vsce publish` (+ `ovsx publish` when `OVSX_PAT` is set), tags `vscode-vX.Y.Z`, attaches the `.vsix`. Needs `VSCE_PAT`.
+
+### Manual npm publish — RECOVERY ONLY
+
+Only if CI is down or a publish job is unrecoverable. Replicate the job's exact order:
+
+```bash
+git checkout main && git pull && npm ci
+npm run build:gui
+npm publish --workspace=@sfdt/flow-core --provenance --access public
+npm publish --provenance --access public                      # @sfdt/cli
+npm publish --workspace=@sfdt/plugin --provenance --access public
+git tag vX.Y.Z && git push --tags
+git tag -f v0 vX.Y.Z && git push -f origin v0                 # floating action tag
+gh release create vX.Y.Z --generate-notes
+```
+
+Then bump the Homebrew tap manually (`shasum -a 256` of the npm tarball → update the tap repo)
+and dispatch `docker-publish.yml` with the version. Prefer letting CI self-heal on the next
+push to `main` over doing any of this by hand.
+
+## 2. Pre-release gates
+
+All on the release ref, before the release PR merges:
+
+- [ ] `npm test` and `npm run lint` clean (root workspace covers CLI + flow-core + host; run `npm run test:all` when extension/vscode/plugin changed too).
+- [ ] `npm run generate:catalogs` regenerated **from the release ref, AFTER the version bump** and committed. `generated/catalog-version.json` and `generated/packages.json` embed the package versions — bumping `package.json` without regenerating makes `check:catalogs` drift and fails the release CI. Run it as the last step before committing. The `generated/` catalogs (Commander command tree, Chrome features, GUI pages, MCP tools, parity matrix) are what the docs site and skills consume — never quote a hand-counted command number anywhere.
+- [ ] `npm run check:all-contracts` clean — catalog drift + license-string + Node-version-claim + auth-docs consistency (also enforced in CI).
+- [ ] **API-version registry current** — when Salesforce has shipped a new GA release since the last sfdt release, curate it in `src/lib/data/api-version-registry.json` (facts only from the official release notes; empty change lists are fine, wrong facts are not). `test/lib/api-version-registry.test.js` fails automatically when the registry falls behind the GA version.
+- [ ] `npm run build:gui`, `npm run build:ext`, `npm run build:plugin` succeed.
+- [ ] Version-bump commit includes a synced lockfile: `npm install --package-lock-only`, stage `package-lock.json` — or CI's `npm ci` fails on the release commit.
+- [ ] `/pre-release-cli-test` run — smoke-tests `--help` for every registered command, derived from the Commander tree (never a hardcoded list or count).
+- [ ] `/pre-release-security` run if anything outside docs/tests changed.
+- [ ] `/pre-release-ui-test` run if anything in `gui/` changed.
+- [ ] `/validate-npm-paths` run — package-internal paths must resolve via `import.meta.url`.
+- [ ] `CHANGELOG.md` updated (Keep a Changelog format; move `[Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD`). If the bridge contract changed, call it out and reference the new `PROTOCOL_VERSION`.
+- [ ] If `@modelcontextprotocol/sdk` was bumped past 1.29.x: manual smoke of `sf mcp start` (client side) and `sfdt mcp start` (server side) — at minimum `tools/list` plus one `tools/call` round-trip.
+
+The skills are user-invoked — they are not auto-runnable from CI.
+
+## 3. Branch mechanics: develop → main
+
+Releases promote `develop` to `main` **wholesale** — CLI, flow-core, plugin, extension,
+VS Code together. Never cut a side release branch and never cherry-pick a subset; both
+re-drift the branches.
+
+1. Land the version bump + CHANGELOG + lockfile sync on `develop` (normal PR).
+2. Open the promote PR `develop → main`. Merge it as a **merge commit — never squash**. Squashing rewrites the commits, so `develop` and `main` permanently disagree and every later PR shows CONFLICTING.
+3. Fast-forward `develop` back onto `main` so both sit at the same commit:
+
    ```bash
-   git checkout main && git pull
-   npm install
-   npm test               # 100+ test files, 1500+ tests across all workspaces
-   npm run lint
-   npm run build:flow-core
-   npm run build:gui
-   npm run build:ext      # not published, but verifies the monorepo still builds
+   git checkout develop && git pull
+   git merge --ff-only origin/main && git push
    ```
 
-2. **Bump the version.** Edit `package.json#version`. Follow semver against the CLI's user-facing surface (commands, flags, output format), not the internals.
+4. Verify:
 
-3. **Update `CHANGELOG.md`.** Use the existing format. If the bridge contract changed, call that out explicitly and reference the new `PROTOCOL_VERSION`. If extension Web Store behavior also needs to change, note it under "Extension impact" and **link to the extension release PR**.
-
-4. **Open and merge the release PR.** Squash. Title: `release: vX.Y.Z`.
-
-5. **Publish.** From `main` after the merge:
    ```bash
-   npm run build:gui       # also runs via `prepack`
-   npm publish --access public
-   git tag vX.Y.Z && git push --tags
-   gh release create vX.Y.Z --notes-file <(awk '/^## \[X.Y.Z\]/,/^## \[/' CHANGELOG.md | head -n -1)
+   git rev-list --left-right --count main...develop   # must print: 0	0
    ```
 
-6. **Post-release.** Run the `/post-release` skill (it archives `pr-analysis/` artifacts, confirms `main` / `develop` sync, and enumerates cleanup items).
+**The release is not done until that check reads 0/0.** In v0.17.0 the promote step was
+skipped after the develop-side work merged; `main` sat 134 commits behind for a day while
+the "released" code existed only on `develop`, and reconciling it afterwards took a
+drift-repair merge. Treat the 0/0 check as a release gate, not housekeeping.
 
-7. **Distribution channels (ride the CLI version bump).** A CLI release also feeds two channels off the same version — handle them after npm publish:
-   - **Docker / GHCR (automatic).** The `publish` job's downstream `docker` job calls the reusable `docker-publish.yml` in the **same** CI run, building the multi-arch image and pushing `ghcr.io/scoobydrew83/sfdt:X.Y.Z` + `:latest`. (It does **not** rely on the `release: published` event — a Release created by `GITHUB_TOKEN` doesn't fire downstream workflows, which is why the call is wired directly.) To (re)publish a specific version on demand — e.g. after a Dockerfile fix that didn't ride a version bump — run `docker-publish.yml` via **workflow_dispatch** with the version input (builds from `main`). Verify with `gh run list --workflow=docker-publish.yml`. **First release only:** make the GHCR package **public** (it's created private), or `docker pull` 401s.
-   - **Homebrew (automatic when `HOMEBREW_TAP_TOKEN` is set).** The `publish` job's "Bump Homebrew tap" step computes the tarball `sha256` and pushes the new `url` + `sha256` to the tap repo `scoobydrew83/homebrew-sfdt` (`Formula/sfdt.rb`). This needs a **fine-grained PAT** (`contents:write` on the tap repo only) stored as the `HOMEBREW_TAP_TOKEN` secret — the default `GITHUB_TOKEN` can't write to another repo. If the secret is absent, the step logs a skip and you bump it manually:
-     ```bash
-     VERSION=X.Y.Z
-     curl -fsSL "https://registry.npmjs.org/@sfdt/cli/-/cli-${VERSION}.tgz" | shasum -a 256
-     # Update url + sha256 in the TAP repo's Formula/sfdt.rb, commit, push.
-     ```
-     The **tap repo is the single source of truth** for the formula — treat it as a publish target like npm/GHCR, not a parallel project. (The tap must be a separate `homebrew-*` repo; that's Homebrew's requirement for the `brew tap scoobydrew83/sfdt` UX, not something to "fix" by folding it into this repo.) The in-repo `Formula/sfdt.rb` mirror is **redundant** — it can't carry a correct `sha256` until after publish — and is slated for removal; do not spend effort keeping it in sync.
-   - **GitHub Action (automatic).** The root `action.yml` makes this repo a composite action; the `publish` job's "Update floating major tag" step force-moves `v<major>` (`v0` today) to the release tag, so `uses: scoobydrew83/sfdt@v0` always resolves to the newest stable release (beta publishes never move it). Nothing to do per release. **First release with `action.yml` only:** list the action on the GitHub Marketplace manually — open the Release in the web UI, edit it, and tick **"Publish this Action to the GitHub Marketplace"** (requires the root `action.yml` with `branding:`; the listing then updates automatically on subsequent releases).
+**Hotfixes:** a CLI hotfix that doesn't touch the bridge contract is a normal patch through
+the same develop→main flow. One that does must also bump `PROTOCOL_VERSION` — and if the
+bump is major, hold it until the extension side is ready (§6).
 
-> **Note:** publish itself is CI-driven now — `.github/workflows/ci.yml` publishes `@sfdt/flow-core` then `@sfdt/cli` (with `--provenance`) on a version-bump push to `main`, and the beta channel publishes from `develop` on a pre-release version. The manual `npm publish` in step 5 is the fallback, not the normal path.
+## 4. Docs site (sfdt.dev)
 
-### Releasing the VS Code extension (`sfdt.sfdt-devtools`)
+The public site lives in the separate `scoobydrew83/sfdt-site` repo. Cloudflare
+**Workers Builds auto-deploys `master`** — the GitHub workflow there is a build check only,
+so merging to `master` is deploying.
 
-The VS Code extension lives in `vscode/` (manifest package name **`sfdt-devtools`** — unscoped, because the Marketplace rejects scoped names) and is published to the VS Code Marketplace as **`sfdt.sfdt-devtools`** ("SFDT for Salesforce", publisher `sfdt`). It versions independently of the CLI.
+- [ ] Run `/sync-docs-site` — version references, install commands, changelog highlights, staleness pass over commands/flags/config keys/MCP tools.
+- [ ] Its **Step 2b catalog sync**: regenerate `generated/` catalogs **from the released ref (never develop)**, then in sfdt-site run `node scripts/sync-upstream-catalogs.mjs` and `--check` to confirm clean. Site counts render from these files, never by hand.
+- [ ] Merge any **HELD draft docs PRs** for features shipping in this release (e.g. the args-json Action docs). Drafts are held so the site never documents unreleased behavior; releasing is what un-holds them.
+- [ ] Verify the deploy landed: check the Workers Builds run for `master` and spot-check a changed page on https://sfdt.dev/.
 
-1. Bump `vscode/package.json#version` and add a `## [X.Y.Z] - YYYY-MM-DD` block to `vscode/CHANGELOG.md`. Update `vscode/README.md` if features/settings changed (the Marketplace re-renders it on publish).
-2. Verify + package locally:
-   ```bash
-   npm run lint -w vscode && npm run test:vscode && npm run build:vscode
-   npm run package:vscode      # -> vscode/sfdt-devtools-<version>.vsix
-   ```
-3. Open a PR to `main` (stage only `vscode/package.json`, `vscode/CHANGELOG.md`, and `vscode/README.md` if changed). On merge, `.github/workflows/vscode-release.yml` runs `vsce publish` (and `ovsx publish` if `OVSX_PAT` is set), tags `vscode-v{version}`, and attaches the `.vsix` to a GitHub Release.
-4. **Required secret:** `VSCE_PAT` (Azure DevOps PAT, scope Marketplace → Manage). Without it the publish step fails — fall back to a manual `.vsix` upload at <https://marketplace.visualstudio.com/manage/publishers/sfdt>. `OVSX_PAT` (Open VSX) is optional.
+## 5. Per-surface release notes
 
-> The extension bundles `@sfdt/flow-core` via esbuild (`--no-dependencies` at package time), so it never publishes flow-core to npm. Workspace selection uses the **path** form (`-w vscode`), never the package name.
+### Chrome extension (`@sfdt/extension`)
 
-### Releasing `@sfdt/extension`
+- Bump `extension/package.json#version` through the develop→main flow; `extension.yml` handles the CWS upload (auto-publish) and the `ext-vX.Y.Z` tag.
+- Web Store **review takes days** — plan protocol-affecting releases so the CLI that speaks the new protocol is on npm *before or as* the extension clears review. Note the minimum `@sfdt/cli` version in the CHANGELOG entry.
+- Do a full doc-staleness sweep, not just the CHANGELOG: README feature claims (sourced from the catalogs), `extension/PRIVACY.md` permissions vs the manifest, store listing, screenshots.
 
-The Web Store re-review process is slower than npm publish, so we bump the extension on a separate schedule. The extension's version is in `extension/package.json` and **does not need to match the CLI**.
+### VS Code extension (`sfdt.sfdt-devtools`)
 
-1. Make sure the bridge `PROTOCOL_VERSION` you target is the one published to npm. If it isn't yet, ship a CLI release first or hold the extension release.
-2. Bump `extension/package.json#version`.
-3. Add an entry to `CHANGELOG.md` under an `## Extension X.Y.Z — YYYY-MM-DD` heading. Note the minimum `@sfdt/cli` version required (i.e. the one that ships the protocol version this extension expects).
-4. `npm run package:ext` produces `extension/.output/<browser>-mv3.zip`.
-5. Upload to the Chrome Web Store dashboard. The listing references this README + `extension/PRIVACY.md` for reviewers.
-6. After the Store accepts the new version, tag: `git tag extension-vX.Y.Z && git push --tags`.
+- Bump `vscode/package.json#version` + `vscode/CHANGELOG.md` (+ README if features/settings changed — the Marketplace re-renders it on publish).
+- Verify locally: `npm run lint -w vscode && npm run test:vscode && npm run build:vscode && npm run package:vscode`.
+- On merge to `main`, `vscode-release.yml` publishes to the Marketplace and Open VSX. Workspace selection is by **path** (`-w vscode`), never package name — the manifest name is unscoped. `VSCE_PAT` missing → manual `.vsix` upload at the publisher portal.
 
-### Releasing `@sfdt/flow-core` (when we publish it)
+### sf plugin (`@sfdt/plugin`)
 
-Flow-core is currently `"private": true` and consumed only as a workspace dependency. When we publish:
+- Nothing to do — published by the same `ci.yml` job **after** the CLI.
+- Its oclif commands are code-generated from `createCli()`; never hand-edit them. Its `@sfdt/cli` dep is `>=` (not pinned) so the bump commit's `npm ci` never 404s; the coupled publish means installs resolve to the matching version.
 
-1. Remove `"private": true` from `packages/flow-core/package.json`.
-2. Set `version` to `0.x.0` for the first publish; track its own changelog under `packages/flow-core/CHANGELOG.md`.
-3. Publish from `main`:
-   ```bash
-   cd packages/flow-core
-   npm publish --access public
-   ```
-4. Update root `package.json` (and `extension/package.json`) to depend on the published version instead of workspace `*` **only** when we have an external consumer — until then, workspace `*` is fine.
+### flow-core / host
 
-The trigger for publishing flow-core is "a second consumer appears" — a Firefox build, a VS Code extension, an MCP server wrapper, or someone outside this repo wanting to build on the scoring engine.
+Nothing to do — flow-core is coupled to the CLI publish (and goes first); the host is bundled inside the CLI.
 
-### Releasing `@sfdt/host`
+### First-release-only chores
 
-The native messaging host has no independent release. It rides along inside `@sfdt/cli` and is installed at the user's machine via `sfdt extension install-host`. Its version equals the CLI version that shipped it.
+- Make the GHCR package public (it's created private; `docker pull` 401s otherwise).
+- Tick "Publish this Action to the GitHub Marketplace" on the Release once; it updates automatically afterwards.
 
----
+## 6. Rollback playbook
 
-## Gates that must pass
+npm versions are effectively immutable — **never unpublish** a release users may have
+installed. Roll forward.
 
-Before any release PR is merged:
+### npm published but docs/site failed or are stale
 
-- [ ] `npm test` clean (CLI + extension + flow-core + host + gui via the root workspace config).
-- [ ] `npm run lint` clean.
-- [ ] `npm run build:gui` and `npm run build:ext` both succeed.
-- [ ] If anything in `packages/flow-core/src/bridge-contract.ts` changed, the `/pre-release-cli-test` skill has been run (verifies all 21 CLI commands' `--help` smoke).
-- [ ] If anything in `gui/` changed, the `/pre-release-ui-test` skill has been run.
-- [ ] If you're releasing the VS Code extension, `npm run test:vscode` + `npm run build:vscode` pass, the `.vsix` packages cleanly, and the `VSCE_PAT` secret is configured (or you'll upload the `.vsix` manually).
-- [ ] After a CLI release: verify the CI `docker` job pushed the GHCR image (public on first release), and the "Bump Homebrew tap" step updated the tap's `Formula/sfdt.rb` (requires the `HOMEBREW_TAP_TOKEN` secret — bump manually if it skipped).
-- [ ] If anything outside docs/tests changed, the `/pre-release-security` skill has been run.
-- [ ] If `@modelcontextprotocol/sdk` was bumped past 1.29.x, a manual smoke test has been run against both `sf mcp start` (client side, `src/lib/mcp-client.js`) and `sfdt mcp start` (server side) — at minimum a `tools/list` plus one `tools/call` round-trip. The server relies on verified-but-undocumented SDK behaviors (handler results passed through verbatim, loose `_meta` parsing), so SDK bumps must not land silently.
-- [ ] `CHANGELOG.md` updated.
+Do not touch npm. Fix the docs: re-run `/sync-docs-site`, merge to sfdt-site `master`,
+verify the Workers Builds deploy. The package is fine; only the paper trail lagged.
 
-The user invokes those skills (`/pre-release-cli-test`, `/pre-release-ui-test`, `/pre-release-security`) — they are not auto-runnable from CI.
+### `@sfdt/cli` on npm but `@sfdt/flow-core` missing at the needed version
 
----
+Should be impossible — the publish job orders flow-core first and fails the run otherwise.
+If it somehow happens (e.g. a manual recovery publish done out of order): **stop everything**,
+publish flow-core at the required version immediately, then verify
+`npm install @sfdt/cli@X.Y.Z` resolves clean before doing anything else.
 
-## Hotfixes
+### Floating Action tag (`v0`) points at a broken release
 
-A CLI hotfix that does **not** touch the bridge contract is a normal patch release: bump `package.json#version` to `X.Y.(Z+1)`, single-commit fix, ship.
+```bash
+git tag -f v0 vX.Y.(Z-1) && git push -f origin v0    # back to last-good
+```
 
-A CLI hotfix that **does** touch the bridge contract must also bump `PROTOCOL_VERSION`. If the change is breaking (major bump), the in-flight extension release must be paused — shipping a CLI on protocol 2.0 while extensions on protocol 1.x are still in the Web Store will cause every user to see a "major version mismatch" error until the extension catches up.
+Leave the immutable `vX.Y.Z` tag alone. Ship a patch release; its publish job moves `v0`
+forward again.
 
----
+### Docs deployed claiming something stable that isn't
+
+Revert or correct the sfdt-site page immediately (merging to `master` deploys). Then add
+the offending phrase to the site's regression checks so the same claim can't ship silently
+again.
+
+### Protocol mismatch shipped
+
+The CLI speaks a new major protocol; the store extension doesn't. Every user sees a
+"major version mismatch" error until the extension clears review — this is the failure you
+**prevent, not fix**: never merge a breaking-protocol CLI release until the matching
+extension is through Web Store review. If it shipped anyway: patch the CLI to restore the
+old protocol compatibility (roll forward) — don't wait days on the Store.
+
+### Publish job failed mid-way
+
+Nothing to unwind — every publish step is idempotent, and the version check compares against
+npm's `latest`. Fix the cause, push to `main`, and the job self-heals on that run.
+
+## 7. Post-release
+
+- [ ] Run `/post-release` — archives `pr-analysis/` gate artifacts into `released/`, confirms branch sync, enumerates cleanup items.
+- [ ] Verify every distribution channel:
+  - `npm view @sfdt/cli version` (and `@sfdt/flow-core`, `@sfdt/plugin`) shows the new version.
+  - GHCR image tag present; Homebrew tap formula bumped; GitHub Release exists.
+  - `v0` moved (stable releases only).
+  - Marketplace / Web Store versions live (for VS Code / extension releases).
+- [ ] `git rev-list --left-right --count main...develop` → `0	0` (§3 — the release isn't done until it is).
+- [ ] Docs-site staleness pass done and deployed (§4).
 
 ## What this document does NOT cover
 
-- Day-to-day commit hygiene (covered by the `/codex:setup` and `/git-workflow-master` skills).
-- The actual `/release` skill — that wraps steps 2–5 of the CLI release flow above into one interactive workflow.
+- Day-to-day commit hygiene.
+- The `/release` skill — it wraps the version bump, CHANGELOG, and release-PR steps above into one interactive workflow.
 - Branch protection and CODEOWNERS — see `.github/CODEOWNERS`.

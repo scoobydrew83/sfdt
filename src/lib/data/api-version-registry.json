@@ -1,0 +1,263 @@
+{
+  "$comment": "Curated per-API-version facts that GROUND the api-upgrade-advisor prompt — the AI may only cite version facts from this file and must answer 'unknown — not in registry' for gaps. Facts are audited against official Salesforce sources (URLs in each entry's sources; audit 2026-07-14). Two kinds of fact appear and the text says which: VERSIONED changes gate on the component's own apiVersion ('at api >= N'); RELEASE-WIDE changes arrived with that release for everyone and are marked '(release-wide — not gated on component apiVersion)'. Apex language syntax (?., ??, triple-quoted strings) is release-tied compiler grammar, NOT gated on the class's apiVersion. Entries are conservative: gaps are intentional and safe; wrong facts are not — a documented 'no versioned change at this version' is itself recorded where verified. Update cadence: every Salesforce release, as part of the release checklist — test/lib/api-version-registry.test.js fails when maxVersion falls behind the current GA version (the failing test IS the reminder).",
+  "updated": "2026-07",
+  "maxVersion": 67,
+  "versions": {
+    "45": { "release": "Spring '19", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": ["Lightning Web Components GA — v45 is the minimum LWC api version"], "breaking": [] }, "featuresUnlocked": ["LWC components require apiVersion >= 45"], "sources": ["https://developer.salesforce.com/docs/platform/lwc/guide/get-started-api-versioning.html"] },
+    "46": { "release": "Summer '19", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": [], "sources": ["Salesforce Release Notes — Summer '19"] },
+    "47": { "release": "Winter '20", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": [], "sources": ["Salesforce Release Notes — Winter '20"] },
+    "48": { "release": "Spring '20", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": ["Before-save record-triggered flows introduced (release-wide)"], "breaking": [] }, "lwc": { "changes": ["Since Spring '20 (API 48), all LWC fields are reactive — @track no longer needed for reactivity (framework change, predates component-level api versioning)"], "breaking": [] }, "featuresUnlocked": ["Before-save flow triggers", "Simpler LWC reactivity (drop boilerplate @track)"], "sources": ["https://releasenotes.docs.salesforce.com/en-us/spring20/release-notes/rn_forcecom_flow_fbuilder_before_save_updates.htm", "https://developer.salesforce.com/docs/platform/lwc/guide/reference-decorators.html"] },
+    "49": { "release": "Summer '20", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": ["After-save record-triggered flows introduced (release-wide)"], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": ["After-save flow triggers"], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_forcecom_flow_fbuilder_after-save_trigger.htm&release=226&type=5"] },
+    "50": { "release": "Winter '21", "apex": { "changes": ["Safe navigation operator (?.) introduced (release-tied compiler feature — official docs state no minimum class apiVersion; do not present it as unlocked by a class version bump)"], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": [], "sources": ["https://releasenotes.docs.salesforce.com/en-us/winter21/release-notes/rn_apex_SafeNavigationOperator.htm"] },
+    "51": { "release": "Spring '21", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": ["Record-triggered flow entry conditions gain ISCHANGED/ISNEW/PRIORVALUE formulas and prior-record-value access", "Multi-Column screens (beta; GA Summer '21)"], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": [], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_forcecom_flow_fbuilder_prior_values_flow.htm&release=230&type=5", "https://help.salesforce.com/s/articleView?id=release-notes.rn_forcecom_flow_fbuilder_multicolumn_screens.htm&release=230&type=5"] },
+    "52": { "release": "Summer '21", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": ["Multi-Column screens GA"], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": [], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_automate_flow_builder_multicolumn_screens.htm&release=232&type=5"] },
+    "53": { "release": "Winter '22", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": ["Roll Back Records element in screen-flow fault paths"], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": [], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_automate_flow_builder_roll_back_records.htm&release=234&type=5"] },
+    "54": { "release": "Spring '22", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": ["Define the run order of record-triggered flows (trigger order)"], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": ["Deterministic record-triggered flow ordering"], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_automate_flow_builder_trigger_order.htm&release=236&type=5"] },
+    "55": { "release": "Summer '22", "apex": { "changes": ["User-mode database operations introduced (beta; GA Spring '23) — WITH USER_MODE on SOQL, AccessLevel on Database methods"], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": ["Apex user-mode DML/SOQL (beta at v55) — the modern replacement for WITH SECURITY_ENFORCED"], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_apex_UserMode_Database_Operations_Beta.htm&release=238&type=5"] },
+    "56": { "release": "Winter '23", "apex": { "changes": ["DataWeave in Apex (developer preview)"], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": [], "sources": ["Salesforce Release Notes — Winter '23"] },
+    "57": { "release": "Spring '23", "apex": { "changes": ["User-mode database operations GA", "DataWeave in Apex (beta; GA Winter '24)"], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": ["Template directives lwc:if / lwc:elseif / lwc:else replace if:true / if:false (release-wide — predates component-level api versioning)"], "breaking": [] }, "featuresUnlocked": ["Modern LWC conditional templates", "User-mode Apex security GA"], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_apex_User_Mode_GA.htm&release=242&type=5", "https://developer.salesforce.com/blogs/2023/01/lwc-enhancements-for-developers-learn-moar-spring-23"] },
+    "58": { "release": "Summer '23", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": ["Reactive screen components (beta; GA Winter '24)"], "breaking": [] }, "lwc": { "changes": ["lwc:spread directive — spread an object's properties onto a child component"], "breaking": [] }, "featuresUnlocked": [], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_automate_flow_reactive_screens_beta.htm&release=244&type=5"] },
+    "59": { "release": "Winter '24", "apex": { "changes": ["DataWeave in Apex GA"], "breaking": [] }, "flow": { "changes": ["Reactive screen components GA"], "breaking": [] }, "lwc": { "changes": ["Component-level API versioning begins — LWC apiVersion now selects versioned framework behavior"], "breaking": [] }, "featuresUnlocked": ["Reactive flow screens", "DataWeave transforms callable from Apex (GA)"], "sources": ["https://help.salesforce.com/s/articleView?id=release-notes.rn_apex_DataWeaveInApex_GA.htm&release=246&type=5", "https://admin.salesforce.com/blog/2023/flow-reactive-screen-components-ga-learn-moar-winter-24"] },
+    "60": {
+      "release": "Spring '24",
+      "apex": {
+        "changes": ["Null coalescing operator (??) introduced (release-tied compiler feature — official docs state no minimum class apiVersion; do not present it as unlocked by a class version bump)"],
+        "breaking": [
+          "At apex apiVersion >= 60: a List that implements Iterable no longer compiles (compilation fails) — code treating a List as an Iterable must change",
+          "At apex apiVersion >= 60: all Apex test savepoints are released when Test.startTest() and Test.stopTest() are called",
+          "At apex apiVersion >= 60: Database.rollback(savepoint) and Database.setSavepoint() no longer increment the DML row usage limit",
+          "At apex apiVersion >= 60: Type.forName() with an invalid namespace returns null (previously unpredictable)"
+        ]
+      },
+      "flow": { "changes": [], "breaking": [] },
+      "lwc": { "changes": [], "breaking": [] },
+      "featuresUnlocked": ["Null coalescing operator (??) (release-wide)"],
+      "sources": [
+        "https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/versioned_behavior_changes.htm",
+        "https://help.salesforce.com/s/articleView?id=release-notes.rn_apex_NullCoalescingOper.htm&release=248&type=5"
+      ]
+    },
+    "61": {
+      "release": "Summer '24",
+      "apex": {
+        "changes": [
+          "FormulaEval namespace — dynamic formula evaluation in Apex (beta; requires class/package apiVersion >= 61.0). Formula.builder() constructs and evaluates formulas at runtime over SObjects and Apex classes",
+          "At apex apiVersion >= 61: SObjectType.getDescribe() can return info on a specific Data Cloud object (DMO) — note FLS is not enforced on DMO descriptions"
+        ],
+        "breaking": [
+          "At apex apiVersion >= 61: a private superclass method is no longer overridden by a same-signature instance method in a subclass (accidental override removed)"
+        ]
+      },
+      "flow": { "changes": [], "breaking": [] },
+      "lwc": { "changes": [], "breaking": [] },
+      "featuresUnlocked": ["Dynamic formula evaluation in Apex (beta) — gated at class apiVersion >= 61.0"],
+      "sources": [
+        "https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/versioned_behavior_changes.htm",
+        "https://developer.salesforce.com/docs/atlas.en-us.apexref.meta/apexref/apex_namespace_formulaeval.htm"
+      ]
+    },
+    "62": {
+      "release": "Winter '25",
+      "apex": {
+        "changes": ["At apex apiVersion >= 62: DataWeave scripts use DataWeave 2.8 syntax (v61 and earlier use 2.5)"],
+        "breaking": ["At apex apiVersion >= 62: modifying elements of a Set while iterating it in a for/foreach loop now throws (previously sometimes allowed with unexpected results)"]
+      },
+      "flow": {
+        "changes": [],
+        "breaking": [
+          "At flow apiVersion >= 62: an autolaunched flow launched in default context by a 'with sharing' Apex class now ENFORCES that user's sharing rules — can return fewer rows or fail on permissions (previously ran in system context)",
+          "At flow apiVersion >= 62: a screen-action output not set via an Assignment is correctly set to null; conditionally hidden screen-component collection outputs are also correctly nulled"
+        ]
+      },
+      "lwc": {
+        "changes": [
+          "At LWC component apiVersion >= 62: class attribute accepts arrays/objects (class object binding); this.hostElement exposes the parent element; this.style returns the host CSSStyleDeclaration"
+        ],
+        "breaking": [
+          "At LWC component apiVersion >= 62: booleans/numbers/functions in class are removed rather than stringified — breaks code relying on old string coercion",
+          "At LWC component apiVersion >= 62: this.hostElement / this.style no longer start undefined — breaks code that depended on the previous undefined initial value",
+          "At LWC component apiVersion >= 62: stricter import/export rules — bare imports, 'export * as', and re-exports from 'lwc' are rejected"
+        ]
+      },
+      "featuresUnlocked": ["Class object binding, host element/style access in LWC (all gated at component apiVersion >= 62)", "Dynamic formula evaluation GA and Zip compression in Apex (release-wide)"],
+      "sources": [
+        "https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/versioned_behavior_changes.htm",
+        "https://help.salesforce.com/s/articleView?id=platform.automate_flow_versioned_updates_62.htm&type=5",
+        "https://help.salesforce.com/s/articleView?id=release-notes.rn_lwc_versioning.htm&release=252&type=5"
+      ]
+    },
+    "63": {
+      "release": "Spring '25",
+      "apex": {
+        "changes": ["At apex apiVersion >= 63: DataWeave scripts use DataWeave 2.9 syntax"],
+        "breaking": [
+          "At apex apiVersion >= 63: reparenting a master-detail child in Apex throws System.DmlException if the master-detail definition doesn't allow reparenting (previously could succeed depending on field-set order)",
+          "At apex apiVersion >= 63: JSON serialization of custom exception types and most built-in exceptions is no longer supported (throws 'Type unsupported in JSON') — previously serialized incompletely"
+        ]
+      },
+      "flow": {
+        "changes": [],
+        "breaking": [
+          "At flow apiVersion >= 63: a reactive Data Table clears when its source-collection screen-action output isn't reassigned on re-run (previously kept prior records)",
+          "At flow apiVersion >= 63: a same-API-name variable in a referenced (sub)flow no longer inherits the parent flow's value — the subflow uses its own",
+          "At flow apiVersion >= 63: screen-component validation errors appear on blur (focus change), not only on navigation/finish"
+        ]
+      },
+      "lwc": {
+        "changes": ["LWC API version 63.0 has NO version-specific changes (official) — a clean upgrade target, especially since component versioning is now required"],
+        "breaking": []
+      },
+      "featuresUnlocked": ["v63 is a low-risk LWC upgrade target (no versioned LWC changes); component versioning is now required (release-wide)"],
+      "sources": [
+        "https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/versioned_behavior_changes.htm",
+        "https://help.salesforce.com/s/articleView?id=platform.automate_flow_versioned_updates_63.htm&type=5",
+        "https://help.salesforce.com/s/articleView?id=release-notes.rn_lwc_versioning.htm&release=254&type=5"
+      ]
+    },
+    "64": {
+      "release": "Summer '25",
+      "apex": {
+        "changes": [
+          "No Apex versioned behavior change exists at API 64 — the official Versioned Behavior Changes doc jumps from 65.0 to 63.0, so raising a class 63 -> 64 triggers no documented behavior change",
+          "Crypto class adds AES-GCM (128/192/256-bit) and the P1363 signature format (release-wide — not class-gated)",
+          "FormulaEval.FormulaBuilder.parseAsTemplate() — template-mode formula evaluation with merge-field syntax (release-wide)"
+        ],
+        "breaking": [
+          "SOAP login() note: v64 is the last API version where SOAP login() exists (login() never shipped in v65+); login() on v31-64 keeps working until its Summer '27 retirement — integrations must move to OAuth (sfdt audit soap-logins mirrors this)"
+        ]
+      },
+      "flow": {
+        "changes": [
+          "At flow apiVersion >= 64: Is Null works when referencing Checkbox/Toggle (Boolean) screen components in conditional visibility",
+          "At flow apiVersion >= 64: flow XML locationX/locationY save as 0 in auto-layout — stable diffs between flow versions"
+        ],
+        "breaking": [
+          "At flow apiVersion >= 64: Repeater.AddedItems contains an empty repeater instance even when the user makes no selection in a child component — logic assuming an empty collection must iterate and null-check (or make the input required)"
+        ]
+      },
+      "lwc": {
+        "changes": [
+          "No LWC component-apiVersion-gated change at v64 (the official versioned-changes guide lists nothing for 64)"
+        ],
+        "breaking": [
+          "Release-wide (not apiVersion-gated): internal DOM of lightning-tree-grid and related base components changed for native shadow DOM — tests relying on internal structure break"
+        ]
+      },
+      "featuresUnlocked": ["Apex class upgrades to v64 are behavior-neutral per official docs; flows on v64 gain Boolean Is Null visibility checks and stable location XML"],
+      "sources": [
+        "https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/versioned_behavior_changes.htm",
+        "https://help.salesforce.com/s/articleView?id=platform.automate_flow_versioned_updates_64.htm&type=5",
+        "https://developer.salesforce.com/blogs/2025/05/summer25-developers"
+      ]
+    },
+    "65": {
+      "release": "Winter '26",
+      "apex": {
+        "changes": [
+          "Test Discovery API + updated Test Runner API (Tooling REST): unified retrieval and execution of Apex AND Flow tests in one run",
+          "ApexDoc standardized comment format (JavaDoc-based) for doc generators and AI agents",
+          "External Services: 16 MB binary upload/download via ContentDocument pointers instead of Apex-heap blobs"
+        ],
+        "breaking": [
+          "At apex apiVersion >= 65: abstract and override methods REQUIRE a protected, public, or global access modifier — previously-compiling classes can FAIL TO COMPILE on upgrade (error: Abstract methods require at least one of these modifiers: global, public, protected)",
+          "SOAP login() is not available in API versions 65.0 and later (it never shipped in v65); migration path is External Client Apps + OAuth"
+        ]
+      },
+      "flow": {
+        "changes": [
+          "At flow apiVersion >= 65: fields used in a data table column can't be deleted (delete attempt links to the flow first)",
+          "At flow apiVersion >= 65: data tables automatically reflect language and field label/API-name changes (previously caused run-time errors)",
+          "Run flow tests from the Salesforce CLI (sf flow run test) for CI integration (release-wide)"
+        ],
+        "breaking": []
+      },
+      "lwc": {
+        "changes": [
+          "No LWC component-apiVersion-gated change at v65 (official versioned-changes guide lists nothing past 63)",
+          "Release-wide: LWCs can be local actions in screen flows (lightning_FlowAction target + @api invoke())",
+          "Release-wide: new lightning/graphql module supersedes lightning/uiGraphQLApi (optional fields, dynamic query construction)"
+        ],
+        "breaking": []
+      },
+      "featuresUnlocked": ["Upgrading Apex classes to v65 requires auditing abstract/override method access modifiers first (compile gate); flows on v65 gain data-table resilience"],
+      "sources": [
+        "https://help.salesforce.com/s/articleView?id=release-notes.rn_apex.htm&release=258&type=5",
+        "https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/versioned_behavior_changes.htm",
+        "https://help.salesforce.com/s/articleView?id=platform.automate_flow_versioned_updates_65.htm&type=5",
+        "https://help.salesforce.com/s/articleView?id=005132110&type=1"
+      ]
+    },
+    "66": {
+      "release": "Spring '26",
+      "apex": {
+        "changes": [
+          "At apex apiVersion >= 66: new @IsTest params — @IsTest(critical=true) (test always runs under RunRelevantTests) and @IsTest(testFor='ApexClass:MyClass') (test runs when the named component changes; closes dynamic-dispatch blind spots)",
+          "Apex Cursors GA — chunked processing of large SOQL result sets, serializable across Queueable jobs",
+          "RunRelevantTests deploy test level (BETA — Salesforce advises against production pipelines while beta): selects tests via the compile-time dependency graph; blind to Type.forName dynamic dispatch",
+          "Unified test runner sf logic run test (BETA): Apex + Flow tests in one request (Flow tests as FlowTesting.<name>); single-request Apex+Flow execution is the Spring '26 addition"
+        ],
+        "breaking": []
+      },
+      "flow": {
+        "changes": [],
+        "breaking": [
+          "At flow apiVersion >= 66: custom Apex classes used as invocable action parameters require an accessible no-argument constructor (public in-org; global for managed packages)",
+          "At flow apiVersion >= 66: before-save record-triggered flows respect non-insertable/non-editable fields — updating one throws 'Invalid target field for field update'"
+        ]
+      },
+      "lwc": {
+        "changes": [
+          "At LWC component apiVersion >= 66: Complex Template Expressions (beta) — JavaScript expressions directly in HTML templates",
+          "Release-wide: lwc:on directive for dynamic event listeners; full TypeScript support via @salesforce/lightning-types"
+        ],
+        "breaking": []
+      },
+      "featuresUnlocked": ["@IsTest(critical/testFor) annotations (prerequisite for safe RunRelevantTests adoption — sfdt quality --test-hints flags missing ones)", "RunRelevantTests test level (beta; sfdt deployment.smart.useRelevantTests)", "Unified Apex + Flow testing (sfdt test --logic)", "Complex template expressions in LWC (beta)"],
+      "sources": [
+        "https://developer.salesforce.com/blogs/2026/01/developers-guide-to-the-spring-26-release",
+        "https://help.salesforce.com/s/articleView?id=platform.automate_flow_versioned_updates_66.htm&type=5",
+        "https://help.salesforce.com/s/articleView?id=release-notes.rn_lwc_versioning.htm&release=260&type=5",
+        "https://www.salesforce.com/blog/faster-deployment-test-runs/"
+      ]
+    },
+    "67": {
+      "release": "Summer '26",
+      "apex": {
+        "changes": [
+          "Multiline strings (''' triple quotes) and String.template() with ${var} placeholders — available in ALL API versions (release-wide, NOT gated on class apiVersion; Datetime values render in GMT)",
+          "@IntegrationTest annotation (developer preview) — integration tests with real callouts and relaxed rollback",
+          "Elastic Limits for async jobs (beta) — enqueue Queueable/@future up to 2x the daily limit with throttled overflow"
+        ],
+        "breaking": [
+          "At apex apiVersion >= 67: database operations (SOQL, SOSL, DML, Database methods) run in USER MODE by default — enforce sharing, FLS, and object perms. Migration: set an explicit access mode (WITH USER_MODE / WITH SYSTEM_MODE on SOQL-SOSL, 'as user' / 'as system' on DML, AccessLevel on Database methods). User mode overrides the class's sharing declaration",
+          "At apex apiVersion >= 67: WITH SECURITY_ENFORCED does not compile — replace with WITH USER_MODE (covers polymorphic fields, checks all clauses including WHERE, reports all FLS errors via QueryException.getInaccessibleFields())",
+          "At apex apiVersion >= 67: classes WITHOUT an explicit sharing declaration now default to WITH SHARING (previously without sharing) — audit every class missing a declaration before bumping (sfdt quality --api67 scans for exactly this)",
+          "Triggers always run in a without-sharing context, but at apiVersion >= 67 database operations inside trigger bodies run in user mode unless system mode is explicit — effectively enforcing with-sharing semantics in the trigger body"
+        ]
+      },
+      "flow": {
+        "changes": [
+          "No versioned flow run-time updates exist for API 67.0 (the official run-time-changes index ends at Spring '26 / 66.0 as of 2026-07)"
+        ],
+        "breaking": []
+      },
+      "lwc": {
+        "changes": [
+          "At LWC component apiVersion >= 67: <details> elements accept the name attribute (native exclusive accordions); improved Hot Module Reloading performance",
+          "Release-wide: State Managers GA (@lwc/state); Single Component Live Preview GA"
+        ],
+        "breaking": [
+          "Release-wide (LWS, not apiVersion-gated): Lightning Web Security blocks data: URIs on anchor href — migrate downloads to Blob + URL.createObjectURL()"
+        ]
+      },
+      "featuresUnlocked": ["Secure-by-default Apex: user-mode database operations + with-sharing default — the main reason to PLAN this upgrade rather than blindly bump apiVersion", "WITH USER_MODE as the sanctioned FLS mechanism", "Native exclusive accordions and faster HMR in LWC"],
+      "sources": [
+        "https://help.salesforce.com/s/articleView?id=release-notes.rn_apex_default_user_mode.htm&release=262&type=5",
+        "https://help.salesforce.com/s/articleView?id=release-notes.rn_apex_removed_withSecurityEnforced.htm&release=262&type=5",
+        "https://help.salesforce.com/s/articleView?id=release-notes.rn_apex_multiline_string.htm&release=262&type=5",
+        "https://help.salesforce.com/s/articleView?id=release-notes.rn_lwc_versioning.htm&release=262&type=5",
+        "https://developer.salesforce.com/blogs/2026/06/the-salesforce-developers-guide-to-the-summer-26-release"
+      ]
+    }
+  }
+}

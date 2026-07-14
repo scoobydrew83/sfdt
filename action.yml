@@ -5,15 +5,21 @@
 #
 #   - uses: scoobydrew83/sfdt@v0
 #     with:
-#       command: deploy --smart --org ci --delta-base "origin/main" --dry-run
+#       args-json: '["deploy","--smart","--org","ci","--delta-base","origin/main","--dry-run"]'
 #       auth-method: sfdx-url
 #       sfdx-auth-url: ${{ secrets.SFDX_AUTH_URL }}
 #       org-alias: ci
 #
+# args-json is the preferred interface: a JSON array of arguments spawned
+# directly (no shell), so quoting, spaces, and untrusted values can't be
+# interpreted as shell syntax. The legacy `command` string input is deprecated:
+# without allow-shell-command it accepts only shell-neutral characters and is
+# word-split without a shell; with allow-shell-command: true it keeps the old
+# eval behavior — never pass untrusted input to it in that mode.
+#
 # Pinning the action tag pins the CLI: cli-version defaults to "auto", which
 # resolves the version shipped in this repository at the pinned ref. Secrets
-# must be passed as expressions (never literals); do not pass untrusted input
-# to `command` — it is executed as a shell command line.
+# must be passed as expressions (never literals).
 name: SFDT for Salesforce
 description: >-
   Run any sfdt command in one step — smart delta deploys, org monitoring,
@@ -24,11 +30,27 @@ branding:
   color: blue
 
 inputs:
+  args-json:
+    description: >-
+      The sfdt arguments as a JSON array of strings, e.g.
+      '["deploy","--smart","--org","ci","--dry-run"]'. Spawned directly with
+      no shell — the safe interface. Exactly one of args-json / command is
+      required.
+    required: false
   command:
     description: >-
-      The sfdt command line to run (everything after "sfdt"), e.g.
-      "deploy --smart --org ci --dry-run" or "monitor all --org ci --json".
-    required: true
+      DEPRECATED — prefer args-json. The sfdt command line to run (everything
+      after "sfdt"). Without allow-shell-command it accepts only shell-neutral
+      characters (letters, digits, space, and _@%+=:,./-) and runs without a
+      shell; anything else (quotes, $, ;, |, newlines, …) is rejected.
+    required: false
+  allow-shell-command:
+    description: >-
+      Set "true" to run the command input through a shell (legacy eval
+      behavior) when it needs quoting or expansion. Only for fully trusted,
+      static strings — never workflow-interpolated user input. Removed in v1.
+    required: false
+    default: 'false'
   cli-version:
     description: >-
       @sfdt/cli version to install. "auto" (default) uses the version shipped
@@ -73,11 +95,19 @@ runs:
       shell: bash
       env:
         AUTH_METHOD: ${{ inputs.auth-method }}
+        SFDT_ARGS_JSON: ${{ inputs.args-json }}
+        SFDT_COMMAND: ${{ inputs.command }}
       run: |
         case "$AUTH_METHOD" in
           none|sfdx-url|jwt) ;;
           *) echo "auth-method must be one of: none, sfdx-url, jwt (got: $AUTH_METHOD)" >&2; exit 1 ;;
         esac
+        if [ -z "$SFDT_ARGS_JSON" ] && [ -z "$SFDT_COMMAND" ]; then
+          echo "::error::one of args-json or command is required"; exit 1
+        fi
+        if [ -n "$SFDT_ARGS_JSON" ] && [ -n "$SFDT_COMMAND" ]; then
+          echo "::error::args-json and command are mutually exclusive — pass exactly one"; exit 1
+        fi
 
     - uses: actions/setup-node@v4
       with:
@@ -155,5 +185,37 @@ runs:
     - name: Run sfdt
       shell: bash
       env:
+        SFDT_ARGS_JSON: ${{ inputs.args-json }}
         SFDT_COMMAND: ${{ inputs.command }}
-      run: eval "sfdt ${SFDT_COMMAND}"
+        SFDT_ALLOW_SHELL: ${{ inputs.allow-shell-command }}
+      run: |
+        if [ -n "$SFDT_ARGS_JSON" ]; then
+          # Preferred path: JSON array of args passed as a bash argv — the
+          # values never touch shell parsing, so nothing in them can be
+          # interpreted as shell syntax. jq is preinstalled on hosted runners.
+          if ! jq -e 'type=="array" and length>0 and all(.[]; type=="string")' >/dev/null 2>&1 <<<"$SFDT_ARGS_JSON"; then
+            echo "::error::args-json must be a non-empty JSON array of strings"; exit 1
+          fi
+          if jq -e 'any(.[]; test("\n"))' >/dev/null <<<"$SFDT_ARGS_JSON"; then
+            echo "::error::args-json values must not contain newlines"; exit 1
+          fi
+          readarray -t SFDT_ARGS < <(jq -r '.[]' <<<"$SFDT_ARGS_JSON")
+          sfdt "${SFDT_ARGS[@]}"
+        elif [ "$SFDT_ALLOW_SHELL" = "true" ]; then
+          echo "::warning::command with allow-shell-command runs through a shell (legacy eval) — migrate to args-json; this mode is removed in v1"
+          eval "sfdt ${SFDT_COMMAND}"
+        else
+          # Deprecated string path, hardened: reject newlines and anything
+          # outside a shell-neutral charset, then word-split WITHOUT a shell.
+          case "$SFDT_COMMAND" in
+            *$'\n'*)
+              echo "::error::the command input must not contain newlines — use args-json"; exit 1 ;;
+          esac
+          if printf '%s' "$SFDT_COMMAND" | LC_ALL=C grep -q '[^A-Za-z0-9 _@%+=:,./-]'; then
+            echo "::error::the command input contains shell-special characters (quotes, \$, ;, |, …). Use args-json (a JSON array, executed with no shell) — or set allow-shell-command: true only for a fully trusted static string."
+            exit 1
+          fi
+          echo "::notice::the command input is deprecated — prefer args-json (executed without a shell)"
+          read -r -a SFDT_ARGS <<< "$SFDT_COMMAND"
+          sfdt "${SFDT_ARGS[@]}"
+        fi

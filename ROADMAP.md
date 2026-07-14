@@ -1,120 +1,56 @@
-# sfdt Project Roadmap
+# sfdt Roadmap
 
-## Shipped
+Forward-looking work only. Shipped work lives in [CHANGELOG.md](CHANGELOG.md) — this file does not duplicate it.
 
-### Core & Configuration
-- Standardized `.sfdt/` configuration loader with `sfdt init` and `sfdt config set/get`
-- Non-interactive mode for CI/CD compatibility
-- ESLint + Prettier standardization
+Every item carries exactly one status:
 
-### Deployment & Quality
-- Configurable coverage threshold enforced in preflight and deploy
-- Automatic preflight checks before every `sfdt deploy`
-- Rollback with pre-rollback org state capture
-- `sfdt quality --generate-stubs` — identify untested Apex classes and scaffold `@IsTest` stubs
-- `sfdt compare` — metadata comparison between two orgs or an org vs local source; `--output` generates a package.xml of source-only items
+| Status | Meaning |
+|---|---|
+| **Shipped (stable)** | Released (≤ v0.17.0), generally available |
+| **Shipped (beta)** | Released, but behind an opt-in or depends on a Salesforce beta API |
+| **In develop** | Merged to `develop`, not yet in a release |
+| **Planned** | Approved and sequenced, not started |
+| **Research** | Exploratory; no commitment |
+| **Blocked** | Waiting on an external dependency |
 
-### AI & Intelligence
-- `sfdt manifest` — package.xml from git diffs with AI dependency cleanup
-- `sfdt explain` — AI-powered deployment error log analysis with heuristic fallback
-- `sfdt pr-description` — AI-generated GitHub PR descriptions and Slack summaries
-- `sfdt review`, `sfdt explain`, `sfdt quality --fix-plan` — structured project context injected into every AI prompt (org, API version, test history, coverage trend, preflight results, deploy history)
-- Multi-provider AI: `claude` (Claude Code CLI), `gemini` (REST), `openai` (REST)
+## Recently shipped
 
-### Web UI
-- `sfdt ui` — local SLDS dashboard (React + Vite) with test history, preflight, drift, and quality views
-- AI Chat Drawer — token-by-token streaming, page-aware context injection, `Ctrl+Shift+A` toggle
-- "Ask AI" buttons on Review, Explain, Drift, and Preflight pages
-- Log History Viewer — browse all structured logs by type, filter, and expand detail rows
-- Structured log format — JSON envelopes (`schemaVersion`, `type`, `timestamp`, `exitCode`, `org`, `data`) across all log types with timestamped archives and `*-latest.json` pointers
-- Compare page — run org-vs-org or org-vs-local comparisons and browse diff results in the dashboard
-- Settings page — view and edit `.sfdt/config.json` values directly from the browser dashboard
+Full detail in [CHANGELOG.md](CHANGELOG.md). Highlights only:
 
-### Platform & Ecosystem
-- Plugin architecture — load from `config.plugins[]`, auto-discover `sfdt-plugin-*` packages, or drop `.sfdt/plugins/*.js` local files
-- Docker support — mounts a Salesforce DX project at `/project`; ships Node 20, Salesforce CLI, git, jq, and sfdt
-- DevOps Center MCP integration — pipeline status and work items injected into chat context when `config.mcp.enabled` is true; targeted Headless360 tool calling via `SalesforceMcpClient` for live pipeline and work-item data in the AI chat drawer
-- sfdt skills library — 10 Salesforce domain skills for use with AI agents (apex-review, data, deploy, flow-review, lwc, org-audit, pmd-scan, scratch-org, test, sfdt-cli)
-- Pre-built GUI included in the published npm package
+- **v0.17.0** — `sfdt doctor`, `test --lwc`, `quality --output-file` (SARIF), Claude Code skill installs, skills audit + drift guard — **Shipped (stable)**
+- **v0.16.x** — dependency graph seed+expand, `dependencies --gaps`, run history (`sfdt history`), MCP mutating/test tools, native-host read-only kinds, skills pack export, Apache-2.0 relicense — **Shipped (stable)**
+- **`RunRelevantTests` smart-deploy opt-in** (`deployment.smart.useRelevantTests`) — depends on the Salesforce Spring '26 beta API — **Shipped (beta)**
+- **`quality --allow-legacy-analyzer`** — Code Analyzer v4 is opt-in legacy, non-authoritative; removed at 1.0 — **In develop** (see below)
 
-### Chrome extension (`@sfdt/extension`)
-- 14 productivity features for Salesforce Flow Builder and Setup — full list in [extension/README.md](extension/README.md)
-- Three-layer feature gating — remote kill-switch (`.sfdt/feature-flags.json`) → per-user toggle → context filter
-- Opt-in local telemetry (no network egress); snapshot pushed to `.sfdt/telemetry-snapshot.json` for `sfdt extension stats`
-- Registry-driven options page — adding a feature with a Zod settings schema auto-generates its controls
-- Privacy policy declared in [extension/PRIVACY.md](extension/PRIVACY.md)
+Items this revision reclassified from "planned" to shipped (they were stale here): unified logic tests (`sfdt test --logic`), Agentforce support (`sfdt agent-test` + GenAi metadata in smart-deploy deltas), Code Analyzer v5 in `sfdt quality`, the agent-skills pack (`skills export --target pack`), MCP mutating-tool expansion, the Chrome Web Store publish job, the org release badge, the Flow Scanner surface, and native-host read-only kinds. See the changelog for each.
 
-### Native messaging host (`@sfdt/host`)
-- Stdio loop with installers for Chrome / Edge / Brave / Chromium / Vivaldi on macOS, Linux, and Windows
-- One-command install via `sfdt extension install-host --extension-id <id>`
-- Fallback transport when the HTTP bridge (`sfdt ui`) isn't running
+## In develop (merged, unreleased)
 
-### Shared library (`@sfdt/flow-core`)
-- Flow normalization, rules engine, scoring — same code path on the CLI and in the extension so verdicts match byte-for-byte
-- Versioned bridge contract (`PROTOCOL_VERSION`, `negotiateProtocolVersion`) — extension and CLI warn on minor mismatch, refuse on major mismatch
-
-### Bridge + diagnostics
-- `GET /api/bridge/ping` and `POST /api/bridge/exchange` mounted by `sfdt ui`; surfaces `disabledFeatures` from `.sfdt/feature-flags.json` and `protocolVersion` for negotiation
-- `sfdt feature-flags` CLI for operator-friendly kill-switch management
-- `sfdt extension stats` CLI for telemetry visibility
-- `sfdt doctor --extension` end-to-end health check (bridge / native host / kill-switch / telemetry)
-
-### Since v0.14.0 (previously unlisted here)
-- **`sfdt plugin create`** — scaffolds a new `sfdt-plugin-*` package with example `register(program)` wiring, test, and README
-- **MCP server shipped** — `sfdt mcp start` exposes 21 tools (`sfdt_deploy`, `sfdt_audit`, `sfdt_monitor`, `sfdt_retrofit`, `sfdt_coverage`, `sfdt_scan`, `sfdt_dependencies`, `sfdt_flow_scan`, …) with `confirmExecution` gating on mutating operations
-- **Generic `http` AI provider** — any OpenAI-compatible `/chat/completions` gateway (Ollama, OpenRouter, MiniMax); secrets referenced by env-var name only
-- **New install methods** — `install.sh`, Homebrew tap (auto-bumped by the publish job once `HOMEBREW_TAP_TOKEN` is set), public GHCR Docker image (built from the published npm package on Node 22)
-- **VS Code extension live** — `sfdt.sfdt-devtools` on the Marketplace + Open VSX (v0.3.x): command catalog, org-health/status trees, embedded GUI dashboard webview
-- **`RunRelevantTests` (Spring '26 beta)** selectable in Release Hub, interactive deploy, and MCP; smart-deploy opt-in via `deployment.smart.useRelevantTests`
-- **Smart deploy, retrofit, PR decoration, CI templates, notifications** — see CHANGELOG for the full v0.14–v0.15 cycle
-
-### Gap-remediation & Summer '26 sprints (PRs #171 / #172 / #174 / #175, 2026-07)
-- **Bug fixes** — `sfdt smoke` config wiring, deploy manifest detection widened beyond `rl-*`, deploy `--tag/--create-pr/--notify`, live `docs.roleGuides/docs.ai/docs.diagrams` config keys, skipped-scan labelling, dead script tunables wired, credential-redaction sweep
-- **Google Chat notifier channel**; direct notifier-formatter and bridge-middleware tests
-- **VS Code extension uplift** — native `--json` result rendering, Problems-pane diagnostics, Smart Deploy validate/execute + Quick Deploy, Test Runs view, coverage highlights, Get Started walkthrough, catalog completeness, single consolidated CLI-spawn path
-- **API v67 readiness** — `sfdt quality --api67` (Summer '26 user-mode-by-default); `--test-hints` for `@IsTest(testFor=…)` gaps; annotation-aware smart-deploy test selection
-- **New org-health checks** — MFA readiness, SOAP `login()` retirement, Connected-Apps migration note, elastic async limits, release version/preview in `monitor org-info` (PR #174)
-- **GUI run-from-dashboard** — Audit/Monitor "Run now" + Scratch/Data/Docs actions with in-app confirmations (PR #174)
-- **Cross-org release-version warning** (PR #175) — `compare`/`retrofit` warn when the two orgs run different Salesforce releases (shared `src/lib/org-release.js`)
-
----
-
-## Next Session
-
-Live status + full queue: [docs/plans/2026-07-03-gap-remediation-and-release-research.md](docs/plans/2026-07-03-gap-remediation-and-release-research.md) (see its **Status** section). Snapshot as of 2026-07-05:
-
-- ✅ **Sprint 1 shipped** (PR #171 → develop): smoke config wiring, deploy `--tag/--create-pr/--notify`, live `docs.*` config keys, skipped-scan labelling, Google Chat channel, credential-redaction sweep, formatter/middleware tests.
-- ✅ **Sprint 2 shipped** (PR #172 → develop): VS Code native results, Problems-pane diagnostics, Smart Deploy preview/execute + Quick Deploy, onboarding walkthrough, catalog completeness.
-- ✅ **Sprint 3 shipped** (PR #174 → develop): `quality --api67`, annotation-aware smart-deploy tests + `quality --test-hints`, GUI run-from-dashboard, new audit/monitor checks (MFA readiness, SOAP login retirement, elastic async limits, release version/preview), VS Code Test Runs view + coverage highlights.
-- ✅ **4.7 tail shipped** (PR #175 → develop): cross-org release-version warning for `compare`/`retrofit` (shared `src/lib/org-release.js`).
-- **Up next:** remove the temporary `show_full_output` debug flag on the claude-review workflow; fix the always-failing `integration` CI job (DevHub org-auth; no org secrets in PR context); then Sprint 4/5 below. *(A follow-up PR carries doc reconciliation + a verified RunRelevantTests-still-Beta note.)*
-- **sfdt-site docs pass** covering all three sprints (needs the `scoobydrew83/sfdt-site` repo added to the session).
-
----
+- **GitHub Action `args-json` input** — closes the shell-injection hole in the legacy `command` eval; `command` is deprecated and hardened behind `allow-shell-command`. Surfaces: Action, CI templates. Status: **In develop**. Tracking: PR #200.
+- **Host logDir persistence** — `extension install-host` records the full project context (resolved absolute `logDir`, `configDir`, `cliVersion`) so custom log dirs survive browser-launched host sessions. Surfaces: native host, Chrome extension. Status: **In develop**. Tracking: PR #200.
+- **Logic-test zero-test guard + `--wait` validation** — a "passing" logic run that executed zero tests now exits non-zero (`--allow-zero-tests` to opt out); `--wait` must be a whole number ≥ 1. Surfaces: CLI. Status: **In develop**. Tracking: PR #200.
+- **Analyzer v4 legacy policy (J-1)** — v5 required for authoritative scans; v4 runs only behind `--allow-legacy-analyzer` and is labeled non-authoritative; skip ≠ pass. Surfaces: CLI, CI templates. Status: **In develop**. Tracking: PR #200, blueprint J-1.
+- **Surface catalog framework** — machine-generated inventories of every public surface (commands, Chrome features, GUI pages, VS Code, MCP, bridge, CI) with drift/consistency CI, so counts and parity claims can't go stale. Surfaces: repo tooling, docs site. Status: **In develop**. Tracking: PR #202.
 
 ## Planned
 
-Remaining Sprint 4/5 queue from the 2026-07-03 audit + Summer '26 / Spring '26 release research (details + sequencing in [the plan](docs/plans/2026-07-03-gap-remediation-and-release-research.md)). Items shipped in PRs #171/#172/#174 (API v67 check, RunRelevantTests follow-through, the new audit/monitor checks, Google Chat channel, all VS Code native-surface work, GUI run-from-dashboard) have moved to **Shipped** above.
+From the approved remediation program ([pr-analysis/blueprint-audit-2026-07-12.md](pr-analysis/blueprint-audit-2026-07-12.md)):
 
-### CLI
-- **Unified logic tests** — wrap `sf logic run test` so `sfdt test` runs Apex + Flow tests in one pass
-- **Agentforce support** — Agent metadata (`GenAiFunction`, `GenAiPlannerBundle`, scorers, Agent Script) in smart-deploy deltas; `sfdt agent-test` quality gate over `sf agent test run-eval` / the Testing API
-- **Code Analyzer v5 integration** in `sfdt quality` (PMD 7, `--include-fixes` feeding the AI fix loop)
-- **Agent-skills pack** compatible with `npx skills add`
-- **MCP coverage expansion** — ✅ read-only tools added for coverage/scan/dependencies/flow (test results already via `sfdt_logs`); gated mutating tools (release/scratch/data) still to do
-- **Release Manager channel awareness** — *blocked:* the Summer '26 Release Manager Beta exposes no stable queryable public field for the channel; revisit when Salesforce ships a documented API (release version/preview already reported by `monitor org-info`)
+- **Live Salesforce integration CI** — the CLI is never exercised against a real org in CI; add a Tier 2 smoke job (protected environment), grow to a nightly matrix. Surfaces: CI. Status: **Planned**. Tracking: blueprint item 7.
+- **Release evidence bundle** — each release should carry a verifiable artifact of what was tested (gate reports, catalog snapshot) instead of ad-hoc pr-analysis files. Surfaces: release process, CI. Status: **Planned**. Tracking: blueprint program.
+- **API-version audit, phase 1** — extend the `api-versions` audit check with org-ceiling + Flow coverage; new `sfdt versions` command scanning local meta files against the org; Chrome pill. Surfaces: CLI, audit, Chrome extension, VS Code catalog. Status: **Planned**. Tracking: blueprint item F.
+- **API-version AI upgrade advisor, phase 2** — AI advisor grounded by a curated per-version registry (`api-version-registry.json`); design complete, build after phase 1. Surfaces: CLI, AI. Status: **Planned**. Tracking: blueprint item F.
+- **Async logic-test lifecycle** — `test --logic --async` plus status/resume so long Flow-test runs don't hold a CI slot. Surfaces: CLI. Status: **Planned**. Tracking: blueprint I-2 (deferred).
+- **Unified test result model** — one result shape across Apex/logic/LWC/agent tests so history, GUI, and MCP render them uniformly. Surfaces: CLI, GUI, MCP. Status: **Planned**. Tracking: blueprint I-4 (deferred).
 
-### Chrome extension
-- **Summer '26 setup deep links** — Field Access Summary, enhanced profile UI, Security Center Essentials, Release Manager
-- **Org release badge** — ✅ Workspace top-bar shows the org's release + `(preview instance)` (via `/services/data`, shared `@sfdt/flow-core` release logic); Release Manager *channel* still blocked (no queryable API, see above)
-- **Flow Scanner surface** powered by `@sfdt/flow-core` — ✅ the `flow-quality` feature is now a full Flow Scanner (issue families + affected elements + recommendations + dependencies) and runs on real Setup/Flow pages, not just the builder canvas (Inspector Reloaded 2.0 parity)
+## Research
 
-### GUI / host / pipeline
-- **Native messaging host: read-only kinds** — ✅ drift/scan/compare/quality/org-health implemented (quality in-process via flow-core; the rest spawn the CLI / read `logs/` snapshots, reshaped to the bridge contract). Mutating kinds (deploy/rollback/ai) stay bridge-only. The host resolves the project from a config file written by `sfdt extension install-host` (or `SFDT_PROJECT_ROOT`)
-- **Chrome Web Store publish job** — un-comment behind a secrets-present guard (same pattern as the Homebrew tap job)
+- **Summer '26 setup deep links (Chrome extension)** — quick links to Field Access Summary, enhanced profile UI, Security Center Essentials, Release Manager; value unproven until the pages stabilize. Surfaces: Chrome extension. Status: **Research**.
 
----
+## Blocked
 
-## Feedback & Suggestions
+- **Release Manager channel awareness** — surface the org's release *channel* in compare/retrofit/monitor; the Summer '26 Release Manager Beta exposes no stable queryable public field. Surfaces: CLI, Chrome extension. Status: **Blocked** on a documented Salesforce API (release version/preview already reported by `monitor org-info`).
 
-We value community feedback! If you have ideas for features, please open an issue in the repository.
+## Feedback
+
+Feature ideas welcome — please open an issue in the repository.

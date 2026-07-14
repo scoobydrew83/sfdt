@@ -1,0 +1,35 @@
+{
+  "cli": {
+    "topLevelCommands": 44,
+    "jsonCapableCommands": 21,
+    "mutatingCommands": 16
+  },
+  "chrome": {
+    "registeredFeatures": 40,
+    "displayTools": 39,
+    "workspaceTools": 22,
+    "bridgeRequired": 5,
+    "standalone": 35,
+    "syntheticMenuItems": 1
+  },
+  "gui": {
+    "pages": 25
+  },
+  "vscode": {
+    "contributedCommands": 30,
+    "cliCatalogEntries": 106
+  },
+  "mcp": {
+    "tools": 31,
+    "confirmGated": 10
+  },
+  "bridge": {
+    "protocolVersion": "1.2",
+    "kinds": 11,
+    "nativeHostKinds": 8
+  },
+  "ci": {
+    "providers": 4,
+    "types": 4
+  }
+}

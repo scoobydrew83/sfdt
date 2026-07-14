@@ -91,9 +91,15 @@
     "licenseWarnThreshold": 0.75,
     "inactiveUserDays": 90,
     "minApiVersion": 45,
+    "apiVersionWarnBehind": 0,
     "fieldDescriptionMaxMissing": 0,
     "connectedAppFlagPermissive": true,
     "soapLoginLookbackDays": 30
+  },
+  "quality": {
+    "analyzer": {
+      "allowLegacyV4": false
+    }
   },
   "monitoring": {
     "backupDir": "monitoring-backup",

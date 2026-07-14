@@ -196,9 +196,23 @@
         "licenseWarnThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
         "inactiveUserDays": { "type": "integer", "minimum": 1 },
         "minApiVersion": { "type": "number", "minimum": 1 },
+        "apiVersionWarnBehind": { "type": "integer", "minimum": 0 },
         "fieldDescriptionMaxMissing": { "type": "integer", "minimum": 0 },
         "connectedAppFlagPermissive": { "type": "boolean" },
         "soapLoginLookbackDays": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "analyzer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allowLegacyV4": { "type": "boolean" }
+          }
+        }
       }
     },
     "monitoring": {

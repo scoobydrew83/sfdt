@@ -72,6 +72,7 @@ User runs command → Load .sfdt/ config → Set SFDT_* env vars → Execute she
 | `sfdt dependencies <name> [--gaps]` | What a component references / is referenced by (Tooling API + source parsing) |
 | `sfdt flow scan\|conflicts [--org] [--json]` | Flow health analysis; record-triggered flow collision detection |
 | `sfdt history [--type <t>] [--limit <n>] [--json]` | Recent run history from the local index |
+| `sfdt versions [--org <alias>] [--local-only] [--advise] [--json]` | API-version audit: local meta files (Apex/Flow/LWC/Aura) + org distributions vs the org max; `--advise` adds registry-grounded AI upgrade advice (`--target <ver>`, `--type apex\|flow\|lwc`) |
 | `sfdt pull` | Pull metadata from default org |
 
 **Project & data**

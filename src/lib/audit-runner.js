@@ -34,6 +34,7 @@ export const AUDIT_DEFAULTS = {
   licenseWarnThreshold: ORG_HEALTH_THRESHOLDS.usageAmber, // 0.75 (was 0.9 before flow-core unification)
   inactiveUserDays: ORG_HEALTH_THRESHOLDS.inactiveUserDays, // 90
   minApiVersion: ORG_HEALTH_THRESHOLDS.minApiVersionFloor, // 45
+  apiVersionWarnBehind: 0, // 0 = disabled; N > 0 also warns on components > N versions behind the org max
   fieldDescriptionMaxMissing: 0,
   connectedAppFlagPermissive: true,
   soapLoginLookbackDays: 30,
@@ -392,20 +393,45 @@ export async function checkInactiveUsers(orgAlias, { lookbackDays = AUDIT_DEFAUL
 }
 
 /**
- * Deprecated API versions — Apex classes/triggers on an API version below the
- * configured floor. Salesforce hard-blocks very old versions, so this surfaces
- * remediation work before it becomes a breaking change.
+ * Deprecated API versions — Apex classes/triggers/Flows on an API version
+ * below the effective floor. Salesforce hard-blocks very old versions, so this
+ * surfaces remediation work before it becomes a breaking change. The floor is
+ * `minApiVersion`, optionally raised to `orgCeiling - warnBehind` when
+ * `audit.apiVersionWarnBehind` > 0 and the org's max API version is
+ * detectable — so components can also warn for lagging far behind the org,
+ * not only for nearing hard deprecation.
  */
-export async function checkApiVersions(orgAlias, { minApiVersion = AUDIT_DEFAULTS.minApiVersion } = {}) {
+export async function checkApiVersions(orgAlias, {
+  minApiVersion = AUDIT_DEFAULTS.minApiVersion,
+  warnBehind = AUDIT_DEFAULTS.apiVersionWarnBehind,
+} = {}) {
   const id = 'api-versions';
   const title = 'Deprecated API versions';
   try {
-    // minApiVersion is interpolated into SOQL and may originate from
-    // user-editable config — coerce to a safe number to prevent SOQL injection.
+    // minApiVersion/warnBehind are interpolated into SOQL and may originate
+    // from user-editable config — coerce to safe numbers to prevent SOQL
+    // injection.
     const minApi = Number.parseInt(minApiVersion, 10);
     if (!Number.isFinite(minApi)) {
       throw new Error(`audit.minApiVersion must be a number, got: ${minApiVersion}`);
     }
+    const behind = Number.parseInt(warnBehind, 10) || 0;
+
+    // Best-effort org ceiling (max API version) — adds context to the summary
+    // and drives the warnBehind threshold. Never fails the check.
+    let release = null;
+    try {
+      const { detectOrgRelease } = await import('./org-release.js');
+      release = await detectOrgRelease(orgAlias);
+    } catch {
+      release = null;
+    }
+    const ceiling = release?.apiVersion ? Number.parseInt(release.apiVersion, 10) : null;
+    const effectiveFloor = Math.max(
+      minApi,
+      behind > 0 && Number.isFinite(ceiling) ? ceiling - behind : 0,
+    );
+
     // ApexClass and ApexTrigger are independent Tooling queries — run them in
     // parallel. Iterate the types in order afterwards so findings stay stable
     // (all ApexClass rows before ApexTrigger rows).
@@ -413,18 +439,47 @@ export async function checkApiVersions(orgAlias, { minApiVersion = AUDIT_DEFAULT
     const rowsByType = await Promise.all(
       types.map((type) => query(
         orgAlias,
-        `SELECT Name, ApiVersion FROM ${type} WHERE NamespacePrefix = null AND ApiVersion < ${minApi} ORDER BY ApiVersion`,
+        `SELECT Name, ApiVersion FROM ${type} WHERE NamespacePrefix = null AND ApiVersion < ${effectiveFloor} ORDER BY ApiVersion`,
         { tooling: true },
       )),
     );
     const findings = [];
+    const reasonFor = (v) => (v < minApi ? 'below-floor' : 'behind-ceiling');
     types.forEach((type, i) => {
-      for (const r of rowsByType[i]) findings.push({ type, name: r.Name, apiVersion: r.ApiVersion });
+      for (const r of rowsByType[i]) {
+        findings.push({ type, name: r.Name, apiVersion: r.ApiVersion, reason: reasonFor(r.ApiVersion) });
+      }
     });
+
+    // Flow coverage — active flow versions below the floor. Degrades silently
+    // like the beta-gated checks: some orgs/API versions reject Flow Tooling
+    // queries, and that must not error the whole check.
+    let flowNote = '';
+    try {
+      const flowRows = await query(
+        orgAlias,
+        `SELECT Definition.DeveloperName, ApiVersion FROM Flow WHERE Status = 'Active' AND ApiVersion < ${effectiveFloor} ORDER BY ApiVersion`,
+        { tooling: true },
+      );
+      for (const r of flowRows) {
+        findings.push({
+          type: 'Flow',
+          name: r.Definition?.DeveloperName ?? r.DeveloperName ?? '(unknown)',
+          apiVersion: r.ApiVersion,
+          reason: reasonFor(r.ApiVersion),
+        });
+      }
+    } catch {
+      flowNote = '; Flow versions not queryable on this org (Apex-only result)';
+    }
+
+    const ceilingNote = Number.isFinite(ceiling)
+      ? ` (org max: v${ceiling}${release?.release ? `, ${release.release}` : ''})`
+      : '';
     return result(id, title, findings.length ? 'warn' : 'ok',
       findings.length
-        ? `${findings.length} component(s) below API v${minApi}`
-        : `All components on API v${minApi} or newer`,
+        ? `${findings.length} component(s) below API v${effectiveFloor}${ceilingNote}${flowNote}`
+        : `All components on API v${effectiveFloor} or newer${ceilingNote}${flowNote}`,
       findings);
   } catch (err) {
     return errored(id, title, err);

@@ -10,7 +10,9 @@ beforeEach(async () => {
   await fs.ensureDir(dir);
 });
 afterEach(async () => {
-  await fs.remove(dir);
+  // Best-effort: a timed-out test can leave sqlite -wal/-shm handles that race
+  // removal (ENOTEMPTY cascades into unrelated tests); the OS clears tmpdir.
+  await fs.remove(dir).catch(() => {});
 });
 
 describe('run-history', () => {
@@ -40,10 +42,12 @@ describe('run-history', () => {
     expect(queryRuns(dir, { limit: 2 })).toHaveLength(2);
   });
 
+  // 205 sequential sqlite inserts can exceed the default 5s on contended CI
+  // runners (observed flake) — give this one test a real I/O budget.
   it('prunes beyond the per-type retention cap (200)', async () => {
     for (let i = 0; i < 205; i++) await recordRun(dir, { type: 'test-run', status: 'pass' });
     expect(queryRuns(dir, { type: 'test-run', limit: 1000 })).toHaveLength(200);
-  });
+  }, 30000);
 
   it('returns [] when no history db exists', () => {
     expect(queryRuns(path.join(dir, 'nope'), {})).toEqual([]);

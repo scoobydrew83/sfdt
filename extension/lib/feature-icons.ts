@@ -26,6 +26,7 @@ export const FEATURE_ICONS: Record<string, FeatureIcon> = {
   'soql-runner': { icon: '🗂', label: 'SOQL Query Runner' },
   'org-limits': { icon: '🚦', label: 'Org Limits' },
   'org-health': { icon: '🏥', label: 'Org Health' },
+  'api-version-audit': { icon: '📶', label: 'API Version Audit' },
   'rest-explore': { icon: '🛠', label: 'REST API Explorer' },
   'inspect-record': { icon: '🔍', label: 'Inspect Record (Show All Data)' },
   'show-api-names': { icon: '🏷️', label: 'Show API Names' },

@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sfdt surface parity matrix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["commands", "mcpInternalTools"],
+  "properties": {
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "surfaces", "mcpTools", "sideEffects"],
+        "properties": {
+          "id": { "type": "string" },
+          "surfaces": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cli", "sfPlugin", "gui", "vscode", "chrome"],
+            "properties": {
+              "cli": { "const": true },
+              "sfPlugin": { "const": true },
+              "gui": { "type": "boolean" },
+              "vscode": { "type": "boolean" },
+              "chrome": { "type": "boolean" }
+            }
+          },
+          "mcpTools": { "type": "array", "items": { "type": "string", "pattern": "^sfdt_" } },
+          "sideEffects": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "mcpInternalTools": { "type": "array", "items": { "type": "string", "pattern": "^sfdt_" } }
+  }
+}
