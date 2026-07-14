@@ -304,6 +304,16 @@
       ]
     },
     {
+      "name": "sfdt_api_versions",
+      "description": "Audit Salesforce API versions across local source and the org — per-type version distributions (Apex classes/triggers, Flows, LWC, Aura), sourceApiVersion, the org's max API version, and below-floor/behind-ceiling outliers. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "org",
+        "localOnly"
+      ]
+    },
+    {
       "name": "sfdt_get_parked_result",
       "description": "Retrieve the full payload of a previously parked tool result.",
       "confirmExecution": false,

@@ -45,6 +45,7 @@ import { registerCiCommand } from './commands/ci.js';
 import { registerPrCommand } from './commands/pr.js';
 import { registerRetrofitCommand } from './commands/retrofit.js';
 import { registerHistoryCommand } from './commands/history.js';
+import { registerVersionsCommand } from './commands/versions.js';
 import { formatSplash } from './lib/output.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -115,6 +116,7 @@ export function createCli() {
   registerPrCommand(program);
   registerRetrofitCommand(program);
   registerHistoryCommand(program);
+  registerVersionsCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program

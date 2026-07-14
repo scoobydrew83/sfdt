@@ -25,7 +25,10 @@ function buildParams(config) {
     audittrail: { lookbackDays: a.auditTrailLookbackDays ?? AUDIT_DEFAULTS.auditTrailLookbackDays },
     licenses: { warnThreshold: a.licenseWarnThreshold ?? AUDIT_DEFAULTS.licenseWarnThreshold },
     'inactive-users': { lookbackDays: a.inactiveUserDays ?? AUDIT_DEFAULTS.inactiveUserDays },
-    'api-versions': { minApiVersion: a.minApiVersion ?? AUDIT_DEFAULTS.minApiVersion },
+    'api-versions': {
+      minApiVersion: a.minApiVersion ?? AUDIT_DEFAULTS.minApiVersion,
+      warnBehind: a.apiVersionWarnBehind ?? AUDIT_DEFAULTS.apiVersionWarnBehind,
+    },
     'connected-apps': { flagPermissive: a.connectedAppFlagPermissive ?? AUDIT_DEFAULTS.connectedAppFlagPermissive },
     'field-descriptions': { maxMissing: a.fieldDescriptionMaxMissing ?? AUDIT_DEFAULTS.fieldDescriptionMaxMissing },
     'soap-logins': { lookbackDays: a.soapLoginLookbackDays ?? AUDIT_DEFAULTS.soapLoginLookbackDays },

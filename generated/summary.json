@@ -1,15 +1,15 @@
 {
   "cli": {
-    "topLevelCommands": 43,
-    "jsonCapableCommands": 20,
+    "topLevelCommands": 44,
+    "jsonCapableCommands": 21,
     "mutatingCommands": 16
   },
   "chrome": {
-    "registeredFeatures": 39,
-    "displayTools": 38,
+    "registeredFeatures": 40,
+    "displayTools": 39,
     "workspaceTools": 22,
     "bridgeRequired": 5,
-    "standalone": 34,
+    "standalone": 35,
     "syntheticMenuItems": 1
   },
   "gui": {
@@ -17,10 +17,10 @@
   },
   "vscode": {
     "contributedCommands": 30,
-    "cliCatalogEntries": 104
+    "cliCatalogEntries": 105
   },
   "mcp": {
-    "tools": 30,
+    "tools": 31,
     "confirmGated": 10
   },
   "bridge": {

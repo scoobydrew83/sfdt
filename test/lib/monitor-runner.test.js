@@ -211,7 +211,13 @@ describe('checkOrgInfo', () => {
     expect(r.findings[0]).toMatchObject({ release: 'Current Release', releaseApiVersion: ga, preview: false });
     expect(r.summary).toContain('Current Release');
     expect(r.summary).not.toContain('preview');
-    expect(execa).toHaveBeenCalledWith('sf', ['api', 'request', 'rest', '/services/data', '--target-org', 'dev']);
+    // env forces color off — sf colorizes `api request rest` output even
+    // without a TTY, which would break the JSON parse.
+    expect(execa).toHaveBeenCalledWith(
+      'sf',
+      ['api', 'request', 'rest', '/services/data', '--target-org', 'dev'],
+      expect.objectContaining({ env: expect.objectContaining({ NO_COLOR: '1' }) }),
+    );
   });
 
   it('marks a preview instance when the max API version is ahead of GA', async () => {

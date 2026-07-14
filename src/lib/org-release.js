@@ -24,7 +24,11 @@ export { expectedGaApiVersion };
 export async function detectOrgRelease(orgAlias, { timeoutMs } = {}) {
   try {
     const args = ['api', 'request', 'rest', '/services/data', '--target-org', orgAlias];
-    const resp = timeoutMs ? await execa('sf', args, { timeout: timeoutMs }) : await execa('sf', args);
+    // sf colorizes `api request rest` output even without a TTY (unlike
+    // --json commands), which breaks JSON.parse — force color off.
+    const opts = { env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' } };
+    if (timeoutMs) opts.timeout = timeoutMs;
+    const resp = await execa('sf', args, opts);
     return releaseFromVersionList(safeParse(resp.stdout));
   } catch {
     return null;

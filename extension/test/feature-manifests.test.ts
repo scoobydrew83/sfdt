@@ -1,7 +1,7 @@
 // Parity test for lib/feature-manifests.json — the browser-runtime-free,
 // checked-in source of truth for feature metadata. It instantiates every
 // feature exactly as the two entrypoints do (entrypoints/content.ts registers
-// 35; entrypoints/app/main.ts additionally registers the 4 Workspace-only
+// 36; entrypoints/app/main.ts additionally registers the 4 Workspace-only
 // tools: apex-test-runner + the three bridge tools) and asserts the collected
 // manifests match the JSON 1:1.
 //
@@ -52,6 +52,7 @@ import { createDebugLogViewerFeature } from '../features/debug-log-viewer.js';
 import { createSavedSoqlFeature } from '../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../features/org-switcher.js';
 import { createOrgReleaseBadgeFeature } from '../features/org-release-badge.js';
+import { createApiVersionAuditFeature } from '../features/api-version-audit.js';
 // --- Workspace-only factories (entrypoints/app/main.ts) ---
 import { createApexTestRunnerFeature } from '../features/apex-test-runner.js';
 import {
@@ -98,6 +99,7 @@ function instantiateAllFeatures(): Feature[] {
     // entrypoints/content.ts, in registration order:
     createSetupTabsFeature(),
     createOrgReleaseBadgeFeature(),
+    createApiVersionAuditFeature(),
     createCanvasSearchFeature(),
     createFlowListSearchFeature(),
     createFlowHealthCheckFeature(),
