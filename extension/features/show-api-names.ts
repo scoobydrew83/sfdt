@@ -445,7 +445,7 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
       btn.textContent = label;
       btn.disabled = !ctx;
       btn.style.cssText =
-        'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;' +
+        'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;' +
         (ctx ? '' : ' opacity: 0.5; cursor: not-allowed;');
       btn.addEventListener('click', () => void onClick());
       buttonRow.appendChild(btn);

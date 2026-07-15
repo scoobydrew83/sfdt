@@ -74,7 +74,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
 
   function sevBadge(sev: string): HTMLElement {
     const b = doc.createElement('span');
-    b.style.cssText = `display: inline-block; min-width: 44px; text-align: center; font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--sfdt-color-surface); background: ${severityColour(sev)}; border-radius: 3px; padding: 1px 6px;`;
+    b.style.cssText = `display: inline-block; min-width: 44px; text-align: center; font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--sfdt-color-on-accent); background: ${severityColour(sev)}; border-radius: 3px; padding: 1px 6px;`;
     b.textContent = sev || 'info';
     return b;
   }
@@ -92,7 +92,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
     summary.style.cssText =
       'display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; font-size: 13px; list-style: none;';
     const name = doc.createElement('span');
-    name.style.cssText = 'flex: 1; font-weight: 600; color: var(--sfdt-color-brand-deep);';
+    name.style.cssText = 'flex: 1; font-weight: 600; color: var(--sfdt-color-text-strong);';
     name.textContent = family.title ?? family.scoreFamily ?? 'Issue';
     const meta = doc.createElement('span');
     meta.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-muted);';
@@ -170,7 +170,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
       for (const family of families) results.appendChild(renderFamily(family));
     } else {
       const clean = doc.createElement('p');
-      clean.style.cssText = 'margin: 12px 0; color: var(--sfdt-color-success); font-size: 13px;';
+      clean.style.cssText = 'margin: 12px 0; color: var(--sfdt-color-success-text); font-size: 13px;';
       clean.textContent = '✓ No quality issues detected.';
       results.appendChild(clean);
     }
@@ -195,7 +195,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
           explore.textContent = '🔗 Explore';
           explore.title = `Open ${dep.name} in the Dependency Explorer`;
           explore.style.cssText =
-            'flex: none; padding: 2px 8px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-brand); border-radius: 4px; cursor: pointer; font-size: 11px;';
+            'flex: none; padding: 2px 8px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-text); border-radius: 4px; cursor: pointer; font-size: 11px;';
           explore.addEventListener('click', () => onExploreDependency({ type: metadataType, name: dep.name }));
           row.appendChild(explore);
         }
@@ -220,7 +220,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
     const runBtn = doc.createElement('button');
     runBtn.textContent = 'Scan';
     runBtn.style.cssText =
-      'padding: 5px 14px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 5px 14px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 13px;';
     const status = doc.createElement('span');
     status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     toolbar.append(input, runBtn, status);
@@ -256,7 +256,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
       } catch (err) {
         const panel = doc.createElement('div');
         panel.style.cssText =
-          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
         panel.textContent = err instanceof Error ? err.message : String(err);
         results.appendChild(panel);
         status.textContent = 'Failed';

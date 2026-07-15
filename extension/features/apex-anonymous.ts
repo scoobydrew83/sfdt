@@ -345,7 +345,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     const runBtn = doc.createElement('button');
     runBtn.textContent = 'Execute';
     runBtn.style.cssText =
-      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
     const saveBtn = doc.createElement('button');
     saveBtn.textContent = 'Save snippet';
     saveBtn.style.cssText =
@@ -435,7 +435,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         const summary = summariseResult(result);
         const head = summary.ok ? '✓ Success' : '✗ Failed';
         status.textContent = head;
-        status.style.color = summary.ok ? 'var(--sfdt-color-success)' : 'var(--sfdt-color-error)';
+        status.style.color = summary.ok ? 'var(--sfdt-color-success-text)' : 'var(--sfdt-color-error-text)';
         const lines = [summary.message];
         if (result.exceptionStackTrace) lines.push('', result.exceptionStackTrace);
         resultPane.textContent = lines.join('\n');
@@ -458,7 +458,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         status.textContent = '';
         resultPane.textContent = err instanceof Error ? err.message : String(err);
         resultPane.style.display = 'block';
-        resultPane.style.color = 'var(--sfdt-color-error)';
+        resultPane.style.color = 'var(--sfdt-color-error-text)';
       } finally {
         runBtn.disabled = false;
       }

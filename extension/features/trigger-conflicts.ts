@@ -207,7 +207,7 @@ function buildFlowRow(
   const latest = extra?.latestVersionNumber ?? null;
   activateBtn.textContent = latest ? `Activate v${latest}` : 'Activate';
   deactivateBtn.textContent = 'Deactivate';
-  deactivateBtn.style.color = 'var(--sfdt-color-error)';
+  deactivateBtn.style.color = 'var(--sfdt-color-error-text)';
   deactivateBtn.style.borderColor = 'var(--sfdt-color-error-bg-5)';
 
   const refresh = () => {
@@ -230,13 +230,13 @@ function buildFlowRow(
   };
   const setError = (msg: string) => {
     statusSpan.textContent = '✗';
-    statusSpan.style.color = 'var(--sfdt-color-error)';
+    statusSpan.style.color = 'var(--sfdt-color-error-text)';
     statusSpan.title = msg;
     refresh();
   };
   const setOk = () => {
     statusSpan.textContent = '✓';
-    statusSpan.style.color = 'var(--sfdt-color-success)';
+    statusSpan.style.color = 'var(--sfdt-color-success-text)';
     statusSpan.title = '';
     refresh();
   };
@@ -278,7 +278,7 @@ function setBadgeState(badge: HTMLSpanElement, active: boolean): void {
   if (active) {
     badge.textContent = 'Active';
     badge.style.background = 'var(--sfdt-color-success-bg)';
-    badge.style.color = 'var(--sfdt-color-success)';
+    badge.style.color = 'var(--sfdt-color-success-text)';
   } else {
     badge.textContent = 'Inactive';
     badge.style.background = 'var(--sfdt-color-bg)';
@@ -345,7 +345,7 @@ export function createTriggerConflictsFeature(
     async onActivate() {
       const loading = doc.createElement('div');
       loading.style.cssText =
-        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: var(--sfdt-color-surface); font-family: system-ui, sans-serif;';
+        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: var(--sfdt-color-on-accent); font-family: system-ui, sans-serif;';
       loading.textContent = 'Scanning flows for trigger conflicts…';
       doc.body.appendChild(loading);
       try {

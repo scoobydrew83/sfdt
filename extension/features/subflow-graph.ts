@@ -265,7 +265,7 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): View
     cycleBox.style.cssText =
       'border: 1px solid var(--sfdt-color-error); border-radius: 4px; padding: 10px; margin-bottom: 12px; background: var(--sfdt-color-error-bg);';
     const cycleTitle = doc.createElement('div');
-    cycleTitle.style.cssText = 'font-weight: 600; color: var(--sfdt-color-error); margin-bottom: 4px;';
+    cycleTitle.style.cssText = 'font-weight: 600; color: var(--sfdt-color-error-text); margin-bottom: 4px;';
     cycleTitle.textContent = `${graph.cycles.length} cycle${graph.cycles.length === 1 ? '' : 's'} detected`;
     cycleBox.appendChild(cycleTitle);
     for (const cycle of graph.cycles) {
@@ -350,16 +350,16 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): View
       graphPane.style.display = '';
       listPane.style.display = 'none';
       graphBtn.style.background = 'var(--sfdt-color-brand-deep)';
-      graphBtn.style.color = 'var(--sfdt-color-surface)';
+      graphBtn.style.color = 'var(--sfdt-color-on-accent)';
       listBtn.style.background = 'var(--sfdt-color-surface)';
-      listBtn.style.color = 'var(--sfdt-color-brand-deep)';
+      listBtn.style.color = 'var(--sfdt-color-text-strong)';
     } else {
       graphPane.style.display = 'none';
       listPane.style.display = '';
       listBtn.style.background = 'var(--sfdt-color-brand-deep)';
-      listBtn.style.color = 'var(--sfdt-color-surface)';
+      listBtn.style.color = 'var(--sfdt-color-on-accent)';
       graphBtn.style.background = 'var(--sfdt-color-surface)';
-      graphBtn.style.color = 'var(--sfdt-color-brand-deep)';
+      graphBtn.style.color = 'var(--sfdt-color-text-strong)';
     }
   };
   graphBtn.addEventListener('click', () => setView('graph'));
@@ -388,7 +388,7 @@ export function createSubflowGraphFeature(options: SubflowGraphFeatureOptions = 
     async onActivate() {
       const loading = doc.createElement('div');
       loading.style.cssText =
-        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: var(--sfdt-color-surface); font-family: system-ui, sans-serif;';
+        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: var(--sfdt-color-on-accent); font-family: system-ui, sans-serif;';
       loading.textContent = 'Building subflow graph…';
       doc.body.appendChild(loading);
       try {

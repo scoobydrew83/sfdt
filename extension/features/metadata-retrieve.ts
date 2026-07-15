@@ -92,13 +92,13 @@ export function createMetadataRetrieveFeature(options: {
       const item = doc.createElement('div');
       item.style.cssText = 'padding: 2px 0; font-family: monospace; font-size: 11px; border-bottom: 1px solid var(--sfdt-color-bg);';
       if (msg.level === 'error') {
-        item.style.color = 'var(--sfdt-color-error)';
+        item.style.color = 'var(--sfdt-color-error-text)';
         item.textContent = `❌ ${msg.text}`;
       } else if (msg.level === 'success') {
-        item.style.color = 'var(--sfdt-color-success)';
+        item.style.color = 'var(--sfdt-color-success-text)';
         item.textContent = `✅ ${msg.text}`;
       } else if (msg.level === 'working') {
-        item.style.color = 'var(--sfdt-color-brand)';
+        item.style.color = 'var(--sfdt-color-brand-text)';
         item.textContent = `⏳ ${msg.text}`;
       } else {
         item.style.color = 'var(--sfdt-color-text-weak)';
@@ -748,7 +748,7 @@ export function createMetadataRetrieveFeature(options: {
 
     const retrieveBtn = doc.createElement('button');
     retrieveBtn.textContent = 'Retrieve Zip';
-    retrieveBtn.style.cssText = 'padding: 6px 16px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; margin-left: auto;';
+    retrieveBtn.style.cssText = 'padding: 6px 16px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; margin-left: auto;';
     retrieveBtn.addEventListener('click', () => {
       void runRetrieve();
     });
@@ -850,7 +850,7 @@ export function createMetadataRetrieveFeature(options: {
 
     const deployBtn = doc.createElement('button');
     deployBtn.textContent = 'Deploy ZIP';
-    deployBtn.style.cssText = 'padding: 8px 16px; background: var(--sfdt-color-success); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; align-self: flex-start;';
+    deployBtn.style.cssText = 'padding: 8px 16px; background: var(--sfdt-color-success); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; align-self: flex-start;';
     deployBtn.addEventListener('click', () => {
       if (!fileInput.files?.length) {
         showToast('Please select a metadata ZIP file first.', { doc, kind: 'warning' });
@@ -878,7 +878,7 @@ export function createMetadataRetrieveFeature(options: {
     logsLabel.textContent = 'Execution Log';
     const clearLogsBtn = doc.createElement('button');
     clearLogsBtn.textContent = 'Clear Logs';
-    clearLogsBtn.style.cssText = 'background: none; border: 0; color: var(--sfdt-color-brand); font-size: 11px; cursor: pointer; padding: 0;';
+    clearLogsBtn.style.cssText = 'background: none; border: 0; color: var(--sfdt-color-brand-text); font-size: 11px; cursor: pointer; padding: 0;';
     clearLogsBtn.addEventListener('click', clearLogs);
     logsLabel.appendChild(clearLogsBtn);
     logsWrap.appendChild(logsLabel);

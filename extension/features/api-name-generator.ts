@@ -129,7 +129,7 @@ export function createApiNameGeneratorFeature(
     const copy = doc.createElement('button');
     copy.textContent = 'Copy';
     copy.style.cssText =
-      'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer;';
+      'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer;';
     copy.addEventListener('click', async () => {
       if (!preview.textContent) return;
       await navigator.clipboard.writeText(preview.textContent);

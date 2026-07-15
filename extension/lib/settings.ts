@@ -51,6 +51,11 @@ export const SettingsSchema = z.object({
     })
     .default({}),
 
+  // Global UI preference (P0-2 dark mode) — like telemetry/bridge, a top-level
+  // app setting, not a per-feature/kill-switchable content feature. 'auto'
+  // follows the OS (prefers-color-scheme); 'light'/'dark' override it.
+  theme: z.enum(['light', 'dark', 'auto']).default('auto'),
+
   // Bridge config. `token` is the bearer credential the extension presents
   // to the sfdt CLI's localhost server (/api/bridge/*) and to the native
   // messaging host. Threat model: chrome.storage.local is origin-isolated

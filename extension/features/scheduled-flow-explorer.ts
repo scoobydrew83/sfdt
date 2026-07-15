@@ -197,7 +197,7 @@ export function createScheduledFlowExplorerFeature(
 
       const loadingOverlay = doc.createElement('div');
       loadingOverlay.style.cssText =
-        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: var(--sfdt-color-surface); font-family: system-ui, sans-serif;';
+        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: var(--sfdt-color-on-accent); font-family: system-ui, sans-serif;';
       loadingOverlay.textContent = 'Discovering scheduled flows…';
       doc.body.appendChild(loadingOverlay);
       try {

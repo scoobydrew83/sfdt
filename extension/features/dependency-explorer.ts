@@ -146,7 +146,7 @@ export function createDependencyExplorerFeature(
     } catch (err) {
       const errorPanel = doc.createElement('div');
       errorPanel.style.cssText =
-        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
       errorPanel.textContent = err instanceof Error ? err.message : String(err);
       results.appendChild(errorPanel);
       status.textContent = 'Failed';
@@ -184,7 +184,7 @@ export function createDependencyExplorerFeature(
     const findBtn = doc.createElement('button');
     findBtn.textContent = 'Find';
     findBtn.style.cssText =
-      'padding: 5px 14px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 5px 14px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 13px;';
 
     const status = doc.createElement('span');
     status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px; margin-left: 4px;';
