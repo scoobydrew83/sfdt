@@ -1,6 +1,7 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { dedupeOrgs } from '../lib/org-list.js';
 import { sfApiFetch } from '../lib/sf-api-proxy.js';
+import { handleStreamPort } from '../lib/sf-stream-worker.js';
 
 // Only the extension's own content scripts may invoke privileged actions.
 // chrome.runtime.id is the canonical id of THIS extension at runtime — a
@@ -77,6 +78,24 @@ function clampBridgePort(value: unknown): number {
 }
 
 export default defineBackground(() => {
+  // Long-lived Port for the Event Streaming Monitor. The CometD/Bayeux
+  // long-poll runs entirely in the worker (sf-stream-worker.ts): the sid is
+  // read from the cookie here and never crosses back to the page. Only this
+  // extension's own content scripts may open the Port.
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== 'sfApiStream') return;
+    if (!port.sender || !isSelfSender(port.sender)) {
+      port.disconnect();
+      return;
+    }
+    handleStreamPort(port, {
+      fetchImpl: fetch,
+      cookieGet: readSidCookie,
+      senderOrigin: resolveSenderOrigin(port.sender),
+      isAllowedOrigin: isAllowedCookieUrl,
+    });
+  });
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       // Sender gate: every privileged action below assumes the caller is one

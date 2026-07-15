@@ -4,16 +4,11 @@
 // lib/sf-api-proxy.ts + entrypoints/background.ts). The worker reads the sid
 // cookie, injects Authorization, does the dual-host fallback + 401 retry, and
 // returns only the response *text*. This keeps the sid out of page-adjacent
-// memory entirely.
-//
-// Temporary exception (removed in PR2): `getSession()`/`getSessionDetails()`
-// still fetch the sid via the `getSidForUrls` worker route, used ONLY by the
-// Event Streaming Monitor's long-poll client. The streaming path migrates to a
-// worker-brokered connection in PR2; until then event-monitor.ts is the single
-// documented place a sid reaches the page.
+// memory entirely. As of P0-4 PR2 there are NO exceptions — the Event Streaming
+// Monitor's long-poll now runs worker-side too (lib/sf-stream-worker.ts), so no
+// page code ever holds a sid.
 
 import { escapeSoql } from './escape.js';
-import { mySalesforceHostname } from './hostname.js';
 import { SF_API_VERSION } from './api-version.js';
 import { SOAP_SID_SENTINEL, type SfApiFetchResponse } from './sf-api-proxy.js';
 import { XML } from './xml.js';
@@ -46,15 +41,6 @@ export interface QueryEnvelope<T = unknown> {
 }
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
-
-interface SessionCandidate {
-  baseUrl: string;
-  sid: string;
-}
-
-interface Session {
-  candidates: SessionCandidate[];
-}
 
 type RequestFailure = { baseUrl: string; status: number; errorText: string };
 
@@ -146,21 +132,11 @@ function defaultMessageBus(): MessageBus {
   };
 }
 
-function maybeDecodeSid(sid: string): string {
-  try {
-    return sid.includes('%') ? decodeURIComponent(sid) : sid;
-  } catch {
-    return sid;
-  }
-}
-
 export class SalesforceApiClient {
   readonly apiVersion: string;
   private readonly win: Window;
   private readonly bus: MessageBus;
   private readonly targetOrigin: string | null;
-  // Cached only for the getSessionDetails() path (Event Monitor, PR2 exception).
-  private session: Session | null = null;
 
   constructor(options: SfApiOptions = {}) {
     this.apiVersion = options.apiVersion ?? SF_API_VERSION;
@@ -169,8 +145,12 @@ export class SalesforceApiClient {
     this.targetOrigin = options.targetOrigin ?? null;
   }
 
-  clearSession(): void {
-    this.session = null;
+  // The org origin this client is bound to (app-tab callers set it via
+  // configureSalesforceApi; content-script callers leave it null and the worker
+  // uses the sender origin). Exposed so the streaming Port can tell the worker
+  // which org to open the CometD connection against.
+  get orgOrigin(): string | null {
+    return this.targetOrigin;
   }
 
   getFlowIdFromUrl(): string | null {
@@ -388,46 +368,6 @@ export class SalesforceApiClient {
   rawRequest(method: HttpMethod, endpoint: string, body?: unknown): Promise<unknown> {
     if (method === 'GET') return this.apiGet(endpoint);
     return this.apiRequest(method, endpoint, body ?? null);
-  }
-
-  // --- Event Monitor session bridge (temporary; removed in PR2) ---------------
-  // The streaming (CometD long-poll) client needs the raw sid to open its own
-  // connection, which the worker proxy can't broker yet. Until PR2 migrates it,
-  // getSessionDetails() reads the sid via the getSidForUrls worker route. This
-  // is the ONLY sanctioned place a sid reaches the page.
-
-  private async getSession(): Promise<Session | null> {
-    if (this.session?.candidates.length) return this.session;
-
-    const explicit = this.targetOrigin ? new URL(this.targetOrigin) : null;
-    const hostname = explicit ? explicit.hostname : this.win.location.hostname;
-    const currentOrigin = explicit ? explicit.origin : this.win.location.origin;
-    const mySf = mySalesforceHostname(hostname);
-    const mySfOrigin = mySf ? `https://${mySf}` : null;
-    const baseUrls = Array.from(new Set([mySfOrigin, currentOrigin].filter((v): v is string => !!v)));
-
-    const response = await this.bus.sendMessage<{
-      ok: boolean;
-      sids?: Record<string, string | null>;
-    }>({ action: 'getSidForUrls', urls: baseUrls });
-    if (!response?.ok) return null;
-    const sidMap = response.sids ?? {};
-
-    const candidates: SessionCandidate[] = [];
-    for (const baseUrl of baseUrls) {
-      const sid = sidMap[baseUrl];
-      if (sid) candidates.push({ baseUrl, sid: maybeDecodeSid(sid) });
-    }
-    if (candidates.length === 0) return null;
-
-    this.session = { candidates };
-    return this.session;
-  }
-
-  async getSessionDetails(): Promise<{ baseUrl: string; sid: string } | null> {
-    const session = await this.getSession();
-    if (!session || !session.candidates.length) return null;
-    return session.candidates[0]!;
   }
 
   // Flow Builder's `?flowId=` uses two shapes:
