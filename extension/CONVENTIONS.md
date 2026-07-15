@@ -75,7 +75,7 @@ overlay), mark it **N/A** with a reason — do not silently skip it.
    screen-reader semantics come for free. Only add ARIA roles when re-skinning a
    native control is unavoidable, and then wire the full keyboard contract
    yourself (e.g. the `role="menu"` group in `features/setup-tabs.ts` also sets
-   `aria-expanded`/`aria-haspopup` and closes on Esc + click-outside).
+   `aria-expanded`/`aria-haspopup` and closes on click-outside).
 
 ### ARIA & labelling
 
