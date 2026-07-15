@@ -375,7 +375,7 @@ export function createFieldCreatorFeature(options: {
         flsBtn.style.cssText = 'padding: 4px 8px; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 11px;';
         if (field.profiles && field.profiles.length > 0) {
           flsBtn.textContent = `🔒 FLS (${field.profiles.length})`;
-          flsBtn.style.color = 'var(--sfdt-color-success)';
+          flsBtn.style.color = 'var(--sfdt-color-success-text)';
           flsBtn.style.borderColor = 'var(--sfdt-color-success)';
         }
         flsBtn.addEventListener('click', () => {
@@ -390,13 +390,13 @@ export function createFieldCreatorFeature(options: {
         tdStatus.style.cssText = 'padding: 8px 12px; font-weight: bold;';
         if (field.deploymentStatus === 'pending') {
           tdStatus.textContent = '⏳ Pending';
-          tdStatus.style.color = 'var(--sfdt-color-brand)';
+          tdStatus.style.color = 'var(--sfdt-color-brand-text)';
         } else if (field.deploymentStatus === 'success') {
           tdStatus.textContent = '✅ Success';
-          tdStatus.style.color = 'var(--sfdt-color-success)';
+          tdStatus.style.color = 'var(--sfdt-color-success-text)';
         } else if (field.deploymentStatus === 'error') {
           tdStatus.textContent = '❌ Error';
-          tdStatus.style.color = 'var(--sfdt-color-error)';
+          tdStatus.style.color = 'var(--sfdt-color-error-text)';
           tdStatus.title = field.deploymentError || 'Unknown error';
         } else {
           tdStatus.textContent = '-';

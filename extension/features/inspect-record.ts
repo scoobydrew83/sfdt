@@ -262,7 +262,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           valSpan.textContent = isNull ? '(null)' : valStr;
           valSpan.style.cssText = isNull ? 'color: var(--sfdt-color-error-text); font-style: italic; cursor: pointer; flex: 1;' : 'cursor: pointer; flex: 1;';
           if (isRecordId(valStr)) {
-            valSpan.style.color = 'var(--sfdt-color-brand)';
+            valSpan.style.color = 'var(--sfdt-color-brand-text)';
             valSpan.style.textDecoration = 'underline';
           }
           
@@ -401,7 +401,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
 
         recordInfo.textContent = '🔍 Inspect Record: ';
         const idSpan = doc.createElement('span');
-        idSpan.style.cssText = 'color:var(--sfdt-color-brand); font-family:ui-monospace, monospace; margin-left: 6px;';
+        idSpan.style.cssText = 'color:var(--sfdt-color-brand-text); font-family:ui-monospace, monospace; margin-left: 6px;';
         idSpan.textContent = `${sobject} · ${recordId}`;
         recordInfo.appendChild(idSpan);
         

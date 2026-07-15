@@ -350,16 +350,16 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): View
       graphPane.style.display = '';
       listPane.style.display = 'none';
       graphBtn.style.background = 'var(--sfdt-color-brand-deep)';
-      graphBtn.style.color = 'var(--sfdt-color-surface)';
+      graphBtn.style.color = 'var(--sfdt-color-on-accent)';
       listBtn.style.background = 'var(--sfdt-color-surface)';
-      listBtn.style.color = 'var(--sfdt-color-brand-deep)';
+      listBtn.style.color = 'var(--sfdt-color-text-strong)';
     } else {
       graphPane.style.display = 'none';
       listPane.style.display = '';
       listBtn.style.background = 'var(--sfdt-color-brand-deep)';
-      listBtn.style.color = 'var(--sfdt-color-surface)';
+      listBtn.style.color = 'var(--sfdt-color-on-accent)';
       graphBtn.style.background = 'var(--sfdt-color-surface)';
-      graphBtn.style.color = 'var(--sfdt-color-brand-deep)';
+      graphBtn.style.color = 'var(--sfdt-color-text-strong)';
     }
   };
   graphBtn.addEventListener('click', () => setView('graph'));

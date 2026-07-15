@@ -92,13 +92,13 @@ export function createMetadataRetrieveFeature(options: {
       const item = doc.createElement('div');
       item.style.cssText = 'padding: 2px 0; font-family: monospace; font-size: 11px; border-bottom: 1px solid var(--sfdt-color-bg);';
       if (msg.level === 'error') {
-        item.style.color = 'var(--sfdt-color-error)';
+        item.style.color = 'var(--sfdt-color-error-text)';
         item.textContent = `❌ ${msg.text}`;
       } else if (msg.level === 'success') {
-        item.style.color = 'var(--sfdt-color-success)';
+        item.style.color = 'var(--sfdt-color-success-text)';
         item.textContent = `✅ ${msg.text}`;
       } else if (msg.level === 'working') {
-        item.style.color = 'var(--sfdt-color-brand)';
+        item.style.color = 'var(--sfdt-color-brand-text)';
         item.textContent = `⏳ ${msg.text}`;
       } else {
         item.style.color = 'var(--sfdt-color-text-weak)';

@@ -458,7 +458,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         status.textContent = '';
         resultPane.textContent = err instanceof Error ? err.message : String(err);
         resultPane.style.display = 'block';
-        resultPane.style.color = 'var(--sfdt-color-error)';
+        resultPane.style.color = 'var(--sfdt-color-error-text)';
       } finally {
         runBtn.disabled = false;
       }

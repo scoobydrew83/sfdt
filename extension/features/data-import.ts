@@ -327,13 +327,13 @@ export function createDataImportFeature(options: {
     queuedStat.style.color = 'var(--sfdt-color-text-weak)';
     const processingStat = doc.createElement('span');
     processingStat.textContent = 'Processing: 0';
-    processingStat.style.color = 'var(--sfdt-color-brand)';
+    processingStat.style.color = 'var(--sfdt-color-brand-text)';
     const succeededStat = doc.createElement('span');
     succeededStat.textContent = 'Succeeded: 0';
-    succeededStat.style.color = 'var(--sfdt-color-success)';
+    succeededStat.style.color = 'var(--sfdt-color-success-text)';
     const failedStat = doc.createElement('span');
     failedStat.textContent = 'Failed: 0';
-    failedStat.style.color = 'var(--sfdt-color-error)';
+    failedStat.style.color = 'var(--sfdt-color-error-text)';
     statsGrid.appendChild(queuedStat);
     statsGrid.appendChild(processingStat);
     statsGrid.appendChild(succeededStat);
@@ -688,9 +688,9 @@ export function createDataImportFeature(options: {
         const tdStatus = doc.createElement('td');
         tdStatus.textContent = row.status;
         tdStatus.style.cssText = 'padding: 6px 10px; font-weight: 600;';
-        if (row.status === 'Succeeded') tdStatus.style.color = 'var(--sfdt-color-success)';
-        else if (row.status === 'Failed') tdStatus.style.color = 'var(--sfdt-color-error)';
-        else if (row.status === 'Processing') tdStatus.style.color = 'var(--sfdt-color-brand)';
+        if (row.status === 'Succeeded') tdStatus.style.color = 'var(--sfdt-color-success-text)';
+        else if (row.status === 'Failed') tdStatus.style.color = 'var(--sfdt-color-error-text)';
+        else if (row.status === 'Processing') tdStatus.style.color = 'var(--sfdt-color-brand-text)';
 
         const tdAction = doc.createElement('td');
         tdAction.textContent = row.action || '-';
@@ -716,7 +716,7 @@ export function createDataImportFeature(options: {
         tdErrors.textContent = row.errors || '-';
         tdErrors.style.cssText = 'padding: 6px 10px;';
         if (row.errors) {
-          tdErrors.style.color = 'var(--sfdt-color-error)';
+          tdErrors.style.color = 'var(--sfdt-color-error-text)';
           tdErrors.style.fontWeight = '500';
         }
 
