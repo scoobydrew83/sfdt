@@ -4,6 +4,9 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Added
+- **UX & accessibility conventions doc** (`extension/CONVENTIONS.md`) — a numbered a11y/overlay/keyboard/theme/shadow-root checklist that reviewer agents apply verbatim to every UI-bearing change, plus two annotated reference implementations (`setup-tabs`, `flow-list-search`). Codifies the overlay rules (Esc closes, focus trap + restore, dialog semantics, pin/click-outside dismiss), the `createElement`+`textContent`/zero-`innerHTML` DOM discipline, and the `var(--sfdt-color-*)` theme-token rule. Contributor-facing; ships no runtime code.
+
 ### Changed
 - **Design-token refactor (internal, no visual change).** Every hard-coded colour across the content-script features, the Workspace app page, the options page, and the shared `ui/` components (~770 hex literals in 38 files) is now a `var(--sfdt-color-*)` CSS custom property. The raw values live in one place — `lib/tokens.ts` — which each surface injects at boot (`ensureTokens()` on Salesforce pages; the `:root` token block prepended to the app/options stylesheets). This is a pure refactor with no user-facing change; it's the enabling step for a future single-switch dark theme, which can now supply dark values in one file instead of hunting colours across the codebase. One documented exception remains: the user-configurable `canvasSearch.highlightColour` default (`#FFD700`) stays a literal because it's runtime data string-concatenated with an alpha suffix and cannot be a CSS variable.
 
