@@ -9,6 +9,12 @@
 //     is supplied by the Workspace, so the in-card header is omitted there.
 //
 // Features call the same `presentView()` either way and never branch on context.
+//
+// On a Salesforce page the modal mounts into the shared content root (the closed
+// shadow root — ui/shadow-host.ts + ui/content-root.ts) so the host page's CSS
+// can't restyle it; on our own pages / in tests it falls back to document.body.
+
+import { getContentRoot } from './content-root.js';
 
 export interface PresentOpts {
   /** Title shown in the modal header (page) or the tab chip (workspace). */
@@ -88,7 +94,7 @@ export function presentAsModal(opts: PresentOpts): ViewHandle {
   card.append(header, opts.body);
   if (opts.footer) card.append(opts.footer);
   overlay.appendChild(card);
-  doc.body.appendChild(overlay);
+  (getContentRoot() ?? doc.body).appendChild(overlay);
 
   return { close, root: card };
 }

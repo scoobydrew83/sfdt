@@ -2,6 +2,11 @@
 // automatically, so a rogue feature label has zero XSS surface here.
 // Gating is the caller's responsibility (see entrypoints/content.ts);
 // the menu rebuilds on every open so dynamic labels stay accurate.
+//
+// Mounts into the shared content root when one is set (the closed shadow root on
+// a Salesforce page — ui/shadow-host.ts + ui/content-root.ts), else document.body.
+
+import { getContentRoot } from './content-root.js';
 
 export interface MenuItem {
   featureId: string;
@@ -100,9 +105,14 @@ export function mountSideButton(opts: {
     };
   }
 
+  // Shadow root (Salesforce page) when set, else the light-DOM body (own pages
+  // + unit tests). Query our own nodes within the mount, not `doc`, since the
+  // closed shadow root is invisible to document.getElementById.
+  const mount = getContentRoot() ?? doc.body;
+
   // Re-mounts on the same page must not accumulate duplicate buttons.
-  doc.getElementById(BUTTON_ID)?.remove();
-  doc.getElementById(MENU_ID)?.remove();
+  mount.querySelector(`#${BUTTON_ID}`)?.remove();
+  mount.querySelector(`#${MENU_ID}`)?.remove();
 
   const button = styled(doc, 'div', BUTTON_STYLE, { id: BUTTON_ID, title: 'SFDT SF Helper' });
   button.className = 'sfdt-side-button';
@@ -149,8 +159,8 @@ export function mountSideButton(opts: {
   menu.appendChild(content);
   menu.appendChild(footer);
 
-  doc.body.appendChild(button);
-  doc.body.appendChild(menu);
+  mount.appendChild(button);
+  mount.appendChild(menu);
 
   let isOpen = false;
   let destroyed = false;
@@ -226,8 +236,11 @@ export function mountSideButton(opts: {
 
   const docClickHandler = (e: MouseEvent): void => {
     if (!isOpen) return;
-    const target = e.target as Node | null;
-    if (target && (menu.contains(target) || button.contains(target))) return;
+    // composedPath() crosses the shadow boundary, so this works whether the menu
+    // lives in light DOM or inside the closed shadow root (where e.target is
+    // retargeted to the host and menu.contains(target) would wrongly miss).
+    const path = e.composedPath();
+    if (path.includes(menu) || path.includes(button)) return;
     setOpen(false);
   };
   doc.addEventListener('click', docClickHandler);
@@ -244,6 +257,6 @@ export function mountSideButton(opts: {
       button.remove();
       menu.remove();
     },
-    isMounted: () => !destroyed && !!doc.getElementById(BUTTON_ID),
+    isMounted: () => !destroyed && button.isConnected,
   };
 }
