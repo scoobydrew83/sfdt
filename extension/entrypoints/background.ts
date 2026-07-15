@@ -1,5 +1,6 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { dedupeOrgs } from '../lib/org-list.js';
+import { sfApiFetch } from '../lib/sf-api-proxy.js';
 
 // Only the extension's own content scripts may invoke privileged actions.
 // chrome.runtime.id is the canonical id of THIS extension at runtime — a
@@ -35,6 +36,34 @@ function isAllowedCookieUrl(url: string): boolean {
 
 function isAllowedSalesforceDomain(hostname: string): boolean {
   return SALESFORCE_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix));
+}
+
+// The sfApiFetch proxy derives candidate hosts from the caller's org origin. For
+// content scripts that's the sender's own page origin; app-tab callers pass it
+// explicitly. Either way it's validated against the Salesforce host allowlist
+// before it can seed a cookie read.
+function resolveSenderOrigin(sender: chrome.runtime.MessageSender): string | null {
+  const raw = sender?.origin ?? sender?.tab?.url ?? sender?.url;
+  if (typeof raw !== 'string') return null;
+  try {
+    const { origin } = new URL(raw);
+    return isAllowedCookieUrl(origin) ? origin : null;
+  } catch {
+    return null;
+  }
+}
+
+// Reads the `sid` cookie for a base URL, enforcing the Salesforce host
+// allowlist. Passed into the sfApiFetch proxy so the sid is joined to the
+// request only inside the worker — it never crosses back to the page.
+function readSidCookie(url: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (!isAllowedCookieUrl(url)) {
+      resolve(null);
+      return;
+    }
+    chrome.cookies.get({ url, name: 'sid' }, (cookie) => resolve(cookie?.value ?? null));
+  });
 }
 
 // Localhost-only — the bridge ping fetch must target 127.0.0.1, and the port
@@ -83,6 +112,35 @@ export default defineBackground(() => {
               urls.map(async (url) => [url, await getSid(url)] as const),
             );
             return { ok: true, sids: Object.fromEntries(entries) };
+          }
+
+          case 'sfApiFetch': {
+            // Salesforce REST/Tooling/SOAP call executed entirely in the worker:
+            // the sid is read from the cookie here, injected as Authorization,
+            // and only the response *text* is returned. The response NEVER
+            // carries a sid. Content scripts omit targetOrigin (we fall back to
+            // their validated sender origin); app-tab callers pass it explicitly.
+            const targetOrigin =
+              typeof message.targetOrigin === 'string' && isAllowedCookieUrl(message.targetOrigin)
+                ? message.targetOrigin
+                : undefined;
+            return sfApiFetch(
+              {
+                kind: message.kind,
+                method: typeof message.method === 'string' ? message.method : 'GET',
+                endpoint: message.endpoint,
+                query: message.query,
+                body: message.body,
+                headers: message.headers,
+                soap: message.soap,
+                targetOrigin,
+              },
+              {
+                fetchImpl: fetch,
+                cookieGet: readSidCookie,
+                senderOrigin: resolveSenderOrigin(sender),
+              },
+            );
           }
 
           case 'listSalesforceOrgs': {

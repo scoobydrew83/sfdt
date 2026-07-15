@@ -148,7 +148,7 @@ export function createDataImportFeature(options: {
 
   async function getGlobalDescribe(): Promise<GlobalDescribe> {
     if (globalDescribeCached) return globalDescribeCached;
-    const apiVersion = (api as any).apiVersion ?? 'v62.0';
+    const apiVersion = api.apiVersion;
     const data = await api.apiGet<GlobalDescribe>(`/services/data/${apiVersion}/sobjects/`);
     globalDescribeCached = data && Array.isArray(data.sobjects) ? data : { sobjects: [] };
     return globalDescribeCached;
@@ -158,7 +158,7 @@ export function createDataImportFeature(options: {
     const key = name.toLowerCase();
     const cached = sobjectDescribesCached.get(key);
     if (cached) return cached;
-    const apiVersion = (api as any).apiVersion ?? 'v62.0';
+    const apiVersion = api.apiVersion;
     const data = await api.apiGet<SObjectDescribe>(`/services/data/${apiVersion}/sobjects/${name}/describe`);
     const enriched = data && Array.isArray(data.fields) ? data : { name, label: name, fields: [] };
     sobjectDescribesCached.set(key, enriched);

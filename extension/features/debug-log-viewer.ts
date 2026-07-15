@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
+import { SF_API_VERSION } from '../lib/api-version.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
@@ -11,8 +12,6 @@ const DEBUG_LOG_SETTINGS_SCHEMA = z.object({
 });
 
 registerSettingsShape('debug-log-viewer', DEBUG_LOG_SETTINGS_SCHEMA);
-
-const DEFAULT_API_VERSION = 'v62.0';
 
 export interface ApexLogRow {
   Id: string;
@@ -60,7 +59,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
   }
 
   async function fetchBody(id: string): Promise<string> {
-    return api.apiGetText(`/services/data/${DEFAULT_API_VERSION}/tooling/sobjects/ApexLog/${id}/Body`);
+    return api.apiGetText(`/services/data/${SF_API_VERSION}/tooling/sobjects/ApexLog/${id}/Body`);
   }
 
   async function open(): Promise<void> {
