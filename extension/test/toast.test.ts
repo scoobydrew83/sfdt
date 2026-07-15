@@ -34,9 +34,9 @@ describe('toast — showToast', () => {
     showToast('it broke', { kind: 'error' });
     const toasts = document.querySelectorAll<HTMLElement>('.sfdt-toast');
     expect(toasts[0]!.className).toContain('sfdt-toast--info');
-    expect(toasts[0]!.style.background).toBe('#0070d2');
+    expect(toasts[0]!.style.background).toBe('var(--sfdt-color-brand)');
     expect(toasts[1]!.className).toContain('sfdt-toast--error');
-    expect(toasts[1]!.style.background).toBe('#c23934');
+    expect(toasts[1]!.style.background).toBe('var(--sfdt-color-error)');
   });
 
   it('renders into a caller-provided document', () => {

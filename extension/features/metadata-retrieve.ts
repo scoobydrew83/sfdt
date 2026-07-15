@@ -90,18 +90,18 @@ export function createMetadataRetrieveFeature(options: {
     logsContainer.replaceChildren();
     for (const msg of logMessages) {
       const item = doc.createElement('div');
-      item.style.cssText = 'padding: 2px 0; font-family: monospace; font-size: 11px; border-bottom: 1px solid #f3f3f3;';
+      item.style.cssText = 'padding: 2px 0; font-family: monospace; font-size: 11px; border-bottom: 1px solid var(--sfdt-color-bg);';
       if (msg.level === 'error') {
-        item.style.color = '#c23934';
+        item.style.color = 'var(--sfdt-color-error)';
         item.textContent = `❌ ${msg.text}`;
       } else if (msg.level === 'success') {
-        item.style.color = '#04844b';
+        item.style.color = 'var(--sfdt-color-success)';
         item.textContent = `✅ ${msg.text}`;
       } else if (msg.level === 'working') {
-        item.style.color = '#0070d2';
+        item.style.color = 'var(--sfdt-color-brand)';
         item.textContent = `⏳ ${msg.text}`;
       } else {
-        item.style.color = '#54698d';
+        item.style.color = 'var(--sfdt-color-text-weak)';
         item.textContent = `ℹ️ ${msg.text}`;
       }
       logsContainer.appendChild(item);
@@ -517,7 +517,7 @@ export function createMetadataRetrieveFeature(options: {
     if (filtered.length === 0) {
       const empty = doc.createElement('li');
       empty.textContent = 'No matching metadata types';
-      empty.style.cssText = 'color: #80868d; font-size: 12px; padding: 4px;';
+      empty.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; padding: 4px;';
       list.appendChild(empty);
       treeContainer.appendChild(list);
       return;
@@ -525,14 +525,14 @@ export function createMetadataRetrieveFeature(options: {
 
     filtered.forEach(obj => {
       const li = doc.createElement('li');
-      li.style.cssText = 'margin-bottom: 4px; border-bottom: 1px solid #f3f3f3; padding-bottom: 4px;';
+      li.style.cssText = 'margin-bottom: 4px; border-bottom: 1px solid var(--sfdt-color-bg); padding-bottom: 4px;';
 
       const row = doc.createElement('div');
       row.style.cssText = 'display: flex; align-items: center; gap: 6px; cursor: pointer;';
 
       const expBtn = doc.createElement('button');
       expBtn.textContent = obj.expanded ? '▼' : '▶';
-      expBtn.style.cssText = 'background: none; border: 0; padding: 0; font-size: 10px; cursor: pointer; width: 16px; color: #54698d;';
+      expBtn.style.cssText = 'background: none; border: 0; padding: 0; font-size: 10px; cursor: pointer; width: 16px; color: var(--sfdt-color-text-weak);';
       expBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         void toggleExpand(obj);
@@ -551,7 +551,7 @@ export function createMetadataRetrieveFeature(options: {
 
       const label = doc.createElement('span');
       label.textContent = obj.xmlName;
-      label.style.cssText = 'font-size: 12px; font-weight: 500; color: #3e3e3c; flex: 1;';
+      label.style.cssText = 'font-size: 12px; font-weight: 500; color: var(--sfdt-color-text); flex: 1;';
       row.appendChild(label);
 
       row.addEventListener('click', () => {
@@ -581,7 +581,7 @@ export function createMetadataRetrieveFeature(options: {
 
             const childLabel = doc.createElement('span');
             childLabel.textContent = child.fullName;
-            childLabel.style.cssText = 'font-size: 11px; color: #54698d;';
+            childLabel.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak);';
             childLi.appendChild(childLabel);
 
             childList.appendChild(childLi);
@@ -615,7 +615,7 @@ export function createMetadataRetrieveFeature(options: {
     const spinnerRow = doc.createElement('div');
     spinnerRow.style.cssText = 'padding: 6px 16px 0; display: flex; justify-content: flex-end;';
     spinnerEl = doc.createElement('div');
-    spinnerEl.style.cssText = 'border: 2px solid #f3f3f3; border-top: 2px solid #0070d2; border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; display: none;';
+    spinnerEl.style.cssText = 'border: 2px solid var(--sfdt-color-bg); border-top: 2px solid var(--sfdt-color-brand); border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; display: none;';
     const style = doc.createElement('style');
     style.textContent = '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
     doc.head.appendChild(style);
@@ -624,13 +624,13 @@ export function createMetadataRetrieveFeature(options: {
 
     // Tab Header
     const tabsRow = doc.createElement('div');
-    tabsRow.style.cssText = 'display: flex; border-bottom: 1px solid #d8dde6; background: #fafaf9;';
+    tabsRow.style.cssText = 'display: flex; border-bottom: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface-alt);';
     const rTab = doc.createElement('button');
     rTab.textContent = 'Retrieve';
-    rTab.style.cssText = 'padding: 10px 20px; border: 0; background: #fff; border-right: 1px solid #d8dde6; border-bottom: 2px solid #0070d2; font-weight: 600; cursor: pointer;';
+    rTab.style.cssText = 'padding: 10px 20px; border: 0; background: var(--sfdt-color-surface); border-right: 1px solid var(--sfdt-color-border); border-bottom: 2px solid var(--sfdt-color-brand); font-weight: 600; cursor: pointer;';
     const dTab = doc.createElement('button');
     dTab.textContent = 'Deploy';
-    dTab.style.cssText = 'padding: 10px 20px; border: 0; background: none; border-right: 1px solid #d8dde6; font-weight: 600; cursor: pointer; color: #54698d;';
+    dTab.style.cssText = 'padding: 10px 20px; border: 0; background: none; border-right: 1px solid var(--sfdt-color-border); font-weight: 600; cursor: pointer; color: var(--sfdt-color-text-weak);';
 
     tabsRow.appendChild(rTab);
     tabsRow.appendChild(dTab);
@@ -648,7 +648,7 @@ export function createMetadataRetrieveFeature(options: {
 
     // Left half (Tree & Filter)
     const treeDiv = doc.createElement('div');
-    treeDiv.style.cssText = 'flex: 1; display: flex; flex-direction: column; gap: 10px; border-right: 1px solid #e0e0e0; padding-right: 16px; overflow: hidden;';
+    treeDiv.style.cssText = 'flex: 1; display: flex; flex-direction: column; gap: 10px; border-right: 1px solid var(--sfdt-color-border-2); padding-right: 16px; overflow: hidden;';
     rPanel.appendChild(treeDiv);
 
     const filterRow = doc.createElement('div');
@@ -656,7 +656,7 @@ export function createMetadataRetrieveFeature(options: {
     const search = doc.createElement('input');
     search.type = 'text';
     search.placeholder = 'Filter metadata type or member...';
-    search.style.cssText = 'flex: 1; padding: 6px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px;';
+    search.style.cssText = 'flex: 1; padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
     search.addEventListener('input', () => {
       metadataFilter = search.value.toLowerCase();
       renderTree();
@@ -664,7 +664,7 @@ export function createMetadataRetrieveFeature(options: {
     filterRow.appendChild(search);
 
     const managedLabel = doc.createElement('label');
-    managedLabel.style.cssText = 'font-size: 11px; color: #54698d; display: flex; align-items: center; gap: 4px; cursor: pointer;';
+    managedLabel.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak); display: flex; align-items: center; gap: 4px; cursor: pointer;';
     const managedChk = doc.createElement('input');
     managedChk.type = 'checkbox';
     managedChk.checked = includeManagedPackage;
@@ -679,7 +679,7 @@ export function createMetadataRetrieveFeature(options: {
     treeDiv.appendChild(filterRow);
 
     treeContainer = doc.createElement('div');
-    treeContainer.style.cssText = 'flex: 1; overflow-y: auto; border: 1px solid #d8dde6; border-radius: 4px; padding: 8px;';
+    treeContainer.style.cssText = 'flex: 1; overflow-y: auto; border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 8px;';
     treeDiv.appendChild(treeContainer);
 
     // Right half (XML Output)
@@ -689,14 +689,14 @@ export function createMetadataRetrieveFeature(options: {
 
     const xmlLabel = doc.createElement('span');
     xmlLabel.textContent = 'package.xml preview';
-    xmlLabel.style.cssText = 'font-size: 12px; font-weight: 600; color: #3e3e3c;';
+    xmlLabel.style.cssText = 'font-size: 12px; font-weight: 600; color: var(--sfdt-color-text);';
     xmlDiv.appendChild(xmlLabel);
 
     const xmlTextarea = doc.createElement('textarea');
     xmlTextarea.id = 'sfdt-meta-xml-textarea';
     xmlTextarea.readOnly = true;
     xmlTextarea.value = packageXml;
-    xmlTextarea.style.cssText = 'flex: 1; padding: 8px; border: 1px solid #d8dde6; border-radius: 4px; font-family: monospace; font-size: 11px; background: #fafaf9; resize: none; outline: none;';
+    xmlTextarea.style.cssText = 'flex: 1; padding: 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-family: monospace; font-size: 11px; background: var(--sfdt-color-surface-alt); resize: none; outline: none;';
     xmlTextareaEl = xmlTextarea;
     xmlDiv.appendChild(xmlTextarea);
 
@@ -704,14 +704,14 @@ export function createMetadataRetrieveFeature(options: {
     rActions.style.cssText = 'display: flex; gap: 8px;';
     const copyXmlBtn = doc.createElement('button');
     copyXmlBtn.textContent = 'Copy XML';
-    copyXmlBtn.style.cssText = 'padding: 6px 12px; border: 1px solid #d8dde6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px;';
+    copyXmlBtn.style.cssText = 'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); cursor: pointer; font-size: 12px;';
     copyXmlBtn.addEventListener('click', () => {
       void win.navigator.clipboard.writeText(packageXml);
       showToast('package.xml copied to clipboard', { doc, kind: 'success' });
     });
     const downloadXmlBtn = doc.createElement('button');
     downloadXmlBtn.textContent = 'Download XML';
-    downloadXmlBtn.style.cssText = 'padding: 6px 12px; border: 1px solid #d8dde6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px;';
+    downloadXmlBtn.style.cssText = 'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); cursor: pointer; font-size: 12px;';
     downloadXmlBtn.addEventListener('click', () => {
       const blob = new Blob([packageXml], { type: 'text/xml' });
       const a = doc.createElement('a');
@@ -741,14 +741,14 @@ export function createMetadataRetrieveFeature(options: {
 
     const importXmlBtn = doc.createElement('button');
     importXmlBtn.textContent = 'Import XML';
-    importXmlBtn.style.cssText = 'padding: 6px 12px; border: 1px solid #d8dde6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px;';
+    importXmlBtn.style.cssText = 'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); cursor: pointer; font-size: 12px;';
     importXmlBtn.addEventListener('click', () => {
       fileUploadXml.click();
     });
 
     const retrieveBtn = doc.createElement('button');
     retrieveBtn.textContent = 'Retrieve Zip';
-    retrieveBtn.style.cssText = 'padding: 6px 16px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; margin-left: auto;';
+    retrieveBtn.style.cssText = 'padding: 6px 16px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; margin-left: auto;';
     retrieveBtn.addEventListener('click', () => {
       void runRetrieve();
     });
@@ -772,7 +772,7 @@ export function createMetadataRetrieveFeature(options: {
     fileRow.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
     const fileLabel = doc.createElement('label');
     fileLabel.textContent = 'Select Metadata ZIP File';
-    fileLabel.style.cssText = 'font-size: 12px; font-weight: 600; color: #3e3e3c;';
+    fileLabel.style.cssText = 'font-size: 12px; font-weight: 600; color: var(--sfdt-color-text);';
     const fileInput = doc.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = '.zip';
@@ -797,7 +797,7 @@ export function createMetadataRetrieveFeature(options: {
 
     optsList.forEach(opt => {
       const label = doc.createElement('label');
-      label.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; color: #3e3e3c;';
+      label.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; color: var(--sfdt-color-text);';
       const chk = doc.createElement('input');
       chk.type = 'checkbox';
       chk.checked = !!(deployOptions as any)[opt.key];
@@ -813,9 +813,9 @@ export function createMetadataRetrieveFeature(options: {
     testLevelRow.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
     const testLevelLabel = doc.createElement('label');
     testLevelLabel.textContent = 'Test Level';
-    testLevelLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    testLevelLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const testLevelSelect = doc.createElement('select');
-    testLevelSelect.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    testLevelSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg'].forEach(v => {
       const opt = doc.createElement('option');
       opt.value = v;
@@ -831,11 +831,11 @@ export function createMetadataRetrieveFeature(options: {
     runTestsRow.style.cssText = 'display: none; flex-direction: column; gap: 4px;';
     const runTestsLabel = doc.createElement('label');
     runTestsLabel.textContent = 'Specified Tests (comma-separated class names)';
-    runTestsLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    runTestsLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const runTestsInput = doc.createElement('input');
     runTestsInput.type = 'text';
     runTestsInput.placeholder = 'MyTestClass1, MyTestClass2';
-    runTestsInput.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    runTestsInput.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     runTestsInput.addEventListener('input', () => {
       deployOptions.runTests = runTestsInput.value;
     });
@@ -850,7 +850,7 @@ export function createMetadataRetrieveFeature(options: {
 
     const deployBtn = doc.createElement('button');
     deployBtn.textContent = 'Deploy ZIP';
-    deployBtn.style.cssText = 'padding: 8px 16px; background: #04844b; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; align-self: flex-start;';
+    deployBtn.style.cssText = 'padding: 8px 16px; background: var(--sfdt-color-success); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; align-self: flex-start;';
     deployBtn.addEventListener('click', () => {
       if (!fileInput.files?.length) {
         showToast('Please select a metadata ZIP file first.', { doc, kind: 'warning' });
@@ -870,42 +870,42 @@ export function createMetadataRetrieveFeature(options: {
 
     // Logs Container (Shared bottom panel)
     const logsWrap = doc.createElement('div');
-    logsWrap.style.cssText = 'border-top: 1px solid #d8dde6; height: 140px; padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; background: #fafaf9;';
+    logsWrap.style.cssText = 'border-top: 1px solid var(--sfdt-color-border); height: 140px; padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; background: var(--sfdt-color-surface-alt);';
     body.appendChild(logsWrap);
 
     const logsLabel = doc.createElement('div');
-    logsLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d; display: flex; justify-content: space-between;';
+    logsLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak); display: flex; justify-content: space-between;';
     logsLabel.textContent = 'Execution Log';
     const clearLogsBtn = doc.createElement('button');
     clearLogsBtn.textContent = 'Clear Logs';
-    clearLogsBtn.style.cssText = 'background: none; border: 0; color: #0070d2; font-size: 11px; cursor: pointer; padding: 0;';
+    clearLogsBtn.style.cssText = 'background: none; border: 0; color: var(--sfdt-color-brand); font-size: 11px; cursor: pointer; padding: 0;';
     clearLogsBtn.addEventListener('click', clearLogs);
     logsLabel.appendChild(clearLogsBtn);
     logsWrap.appendChild(logsLabel);
 
     logsContainer = doc.createElement('div');
-    logsContainer.style.cssText = 'flex: 1; overflow-y: auto; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; padding: 6px;';
+    logsContainer.style.cssText = 'flex: 1; overflow-y: auto; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 6px;';
     logsWrap.appendChild(logsContainer);
 
     // Tab Event listeners
     rTab.addEventListener('click', () => {
-      rTab.style.background = '#fff';
-      rTab.style.borderBottom = '2px solid #0070d2';
-      rTab.style.color = '#3e3e3c';
+      rTab.style.background = 'var(--sfdt-color-surface)';
+      rTab.style.borderBottom = '2px solid var(--sfdt-color-brand)';
+      rTab.style.color = 'var(--sfdt-color-text)';
       dTab.style.background = 'none';
       dTab.style.borderBottom = '0';
-      dTab.style.color = '#54698d';
+      dTab.style.color = 'var(--sfdt-color-text-weak)';
       rPanel.style.display = 'flex';
       dPanel.style.display = 'none';
     });
 
     dTab.addEventListener('click', () => {
-      dTab.style.background = '#fff';
-      dTab.style.borderBottom = '2px solid #0070d2';
-      dTab.style.color = '#3e3e3c';
+      dTab.style.background = 'var(--sfdt-color-surface)';
+      dTab.style.borderBottom = '2px solid var(--sfdt-color-brand)';
+      dTab.style.color = 'var(--sfdt-color-text)';
       rTab.style.background = 'none';
       rTab.style.borderBottom = '0';
-      rTab.style.color = '#54698d';
+      rTab.style.color = 'var(--sfdt-color-text-weak)';
       dPanel.style.display = 'flex';
       rPanel.style.display = 'none';
     });

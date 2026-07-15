@@ -185,18 +185,18 @@ export function createEventMonitorFeature(options: {
     if (filtered.length === 0) {
       const empty = doc.createElement('div');
       empty.textContent = 'No events received yet';
-      empty.style.cssText = 'padding: 12px; color: #80868d; font-size: 13px; text-align: center;';
+      empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon); font-size: 13px; text-align: center;';
       eventListContainer.appendChild(empty);
       return;
     }
 
     filtered.forEach((e) => {
       const item = doc.createElement('div');
-      item.style.cssText = 'padding: 8px; border-bottom: 1px solid #d8dde6; cursor: pointer; font-family: monospace; font-size: 11px; white-space: pre-wrap;';
+      item.style.cssText = 'padding: 8px; border-bottom: 1px solid var(--sfdt-color-border); cursor: pointer; font-family: monospace; font-size: 11px; white-space: pre-wrap;';
       
       if (selectedEvent === e) {
-        item.style.background = '#f3f3f3';
-        item.style.borderLeft = '3px solid #0070d2';
+        item.style.background = 'var(--sfdt-color-bg)';
+        item.style.borderLeft = '3px solid var(--sfdt-color-brand)';
       }
 
       item.textContent = JSON.stringify(e, null, 2);
@@ -240,7 +240,7 @@ export function createEventMonitorFeature(options: {
           const limit = res[k]!;
           const percentage = ((limit.Max - limit.Remaining) / limit.Max * 100).toFixed(1);
           const p = doc.createElement('p');
-          p.style.cssText = 'margin: 4px 0; font-size: 12px; color: #3e3e3c;';
+          p.style.cssText = 'margin: 4px 0; font-size: 12px; color: var(--sfdt-color-text);';
           p.textContent = `${k}: Remaining ${limit.Remaining} out of ${limit.Max} (${percentage}% consumed)`;
           limitsContainer!.appendChild(p);
         });
@@ -255,7 +255,7 @@ export function createEventMonitorFeature(options: {
   function updateStatus(status: string, isError: boolean): void {
     if (statusLabel) {
       statusLabel.textContent = status;
-      statusLabel.style.color = isError ? '#c23934' : '#54698d';
+      statusLabel.style.color = isError ? 'var(--sfdt-color-error)' : 'var(--sfdt-color-text-weak)';
     }
   }
 
@@ -268,16 +268,16 @@ export function createEventMonitorFeature(options: {
 
     // Filter Config Row
     const configRow = doc.createElement('div');
-    configRow.style.cssText = 'display: grid; grid-template-columns: 1.5fr 1fr 1.5fr 100px; gap: 8px; border-bottom: 1px solid #e0e0e0; padding-bottom: 16px;';
+    configRow.style.cssText = 'display: grid; grid-template-columns: 1.5fr 1fr 1.5fr 100px; gap: 8px; border-bottom: 1px solid var(--sfdt-color-border-2); padding-bottom: 16px;';
     body.appendChild(configRow);
 
     const typeDiv = doc.createElement('div');
     typeDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
     const typeLabel = doc.createElement('label');
     typeLabel.textContent = 'Channel Type';
-    typeLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    typeLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const typeSelect = doc.createElement('select');
-    typeSelect.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    typeSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     [
       { v: 'platformEvent', l: 'Custom Platform Event' },
       { v: 'standardPlatformEvent', l: 'Standard Platform Event' },
@@ -297,9 +297,9 @@ export function createEventMonitorFeature(options: {
     nameDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
     const nameLabel = doc.createElement('label');
     nameLabel.textContent = 'Channel Name';
-    nameLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    nameLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     channelSelect = doc.createElement('select');
-    channelSelect.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    channelSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     nameDiv.appendChild(nameLabel);
     nameDiv.appendChild(channelSelect);
     configRow.appendChild(nameDiv);
@@ -308,11 +308,11 @@ export function createEventMonitorFeature(options: {
     customDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
     const customLabel = doc.createElement('label');
     customLabel.textContent = 'Or Custom Channel Path';
-    customLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    customLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const customInput = doc.createElement('input');
     customInput.type = 'text';
     customInput.placeholder = '/event/MyCustomEvent__e';
-    customInput.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    customInput.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     customInput.addEventListener('input', () => {
       customChannelPath = customInput.value.trim();
     });
@@ -324,11 +324,11 @@ export function createEventMonitorFeature(options: {
     replayDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
     const replayLabel = doc.createElement('label');
     replayLabel.textContent = 'Replay From';
-    replayLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    replayLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const replayInput = doc.createElement('input');
     replayInput.type = 'number';
     replayInput.value = '-1';
-    replayInput.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    replayInput.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     replayInput.addEventListener('change', () => {
       replayId = parseInt(replayInput.value, 10) || -1;
     });
@@ -354,20 +354,20 @@ export function createEventMonitorFeature(options: {
 
     const subscribeBtn = doc.createElement('button');
     subscribeBtn.textContent = 'Subscribe';
-    subscribeBtn.style.cssText = 'padding: 6px 16px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    subscribeBtn.style.cssText = 'padding: 6px 16px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     
     const unsubscribeBtn = doc.createElement('button');
     unsubscribeBtn.textContent = 'Unsubscribe';
     unsubscribeBtn.disabled = true;
-    unsubscribeBtn.style.cssText = 'padding: 6px 16px; border: 1px solid #d8dde6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 13px; color: #3e3e3c;';
+    unsubscribeBtn.style.cssText = 'padding: 6px 16px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); cursor: pointer; font-size: 13px; color: var(--sfdt-color-text);';
 
     statusLabel = doc.createElement('span');
-    statusLabel.style.cssText = 'font-size: 12px; color: #54698d; margin-left: 8px;';
+    statusLabel.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak); margin-left: 8px;';
     statusLabel.textContent = 'Ready to stream';
 
     const limitsBtn = doc.createElement('button');
     limitsBtn.textContent = 'Limits Metrics';
-    limitsBtn.style.cssText = 'padding: 6px 12px; border: 1px solid #d8dde6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px; color: #54698d; margin-left: auto;';
+    limitsBtn.style.cssText = 'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); cursor: pointer; font-size: 12px; color: var(--sfdt-color-text-weak); margin-left: auto;';
     limitsBtn.addEventListener('click', () => {
       void toggleMetrics();
     });
@@ -379,7 +379,7 @@ export function createEventMonitorFeature(options: {
 
     // Limits pane
     limitsContainer = doc.createElement('div');
-    limitsContainer.style.cssText = 'display: none; padding: 10px; background: #fef8f3; border: 1px solid #fe9339; border-radius: 4px; margin-bottom: 8px;';
+    limitsContainer.style.cssText = 'display: none; padding: 10px; background: var(--sfdt-color-warning-bg-4); border: 1px solid var(--sfdt-color-warning); border-radius: 4px; margin-bottom: 8px;';
     body.appendChild(limitsContainer);
 
     function setControlsDisabled(disabled: boolean): void {
@@ -464,22 +464,22 @@ export function createEventMonitorFeature(options: {
 
     // Left List Pane
     const listWrap = doc.createElement('div');
-    listWrap.style.cssText = 'flex: 1; display: flex; flex-direction: column; border: 1px solid #d8dde6; border-radius: 4px; overflow: hidden;';
+    listWrap.style.cssText = 'flex: 1; display: flex; flex-direction: column; border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: hidden;';
     contentRow.appendChild(listWrap);
 
     const listBar = doc.createElement('div');
-    listBar.style.cssText = 'background: #fafaf9; border-bottom: 1px solid #d8dde6; padding: 6px 12px; display: flex; align-items: center; justify-content: space-between;';
+    listBar.style.cssText = 'background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); padding: 6px 12px; display: flex; align-items: center; justify-content: space-between;';
     const filterInput = doc.createElement('input');
     filterInput.type = 'text';
     filterInput.placeholder = 'Filter events...';
-    filterInput.style.cssText = 'padding: 4px 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px; width: 150px;';
+    filterInput.style.cssText = 'padding: 4px 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px; width: 150px;';
     filterInput.addEventListener('input', () => {
       eventFilter = filterInput.value.toLowerCase();
       renderEvents();
     });
     const clearEventsBtn = doc.createElement('button');
     clearEventsBtn.textContent = 'Clear';
-    clearEventsBtn.style.cssText = 'padding: 4px 10px; border: 1px solid #d8dde6; border-radius: 4px; background: #fff; font-size: 11px; cursor: pointer; color: #54698d;';
+    clearEventsBtn.style.cssText = 'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); font-size: 11px; cursor: pointer; color: var(--sfdt-color-text-weak);';
     clearEventsBtn.addEventListener('click', () => {
       events.length = 0;
       selectedEvent = null;
@@ -492,22 +492,22 @@ export function createEventMonitorFeature(options: {
     listWrap.appendChild(listBar);
 
     eventListContainer = doc.createElement('div');
-    eventListContainer.style.cssText = 'flex: 1; overflow-y: auto; background: #fff;';
+    eventListContainer.style.cssText = 'flex: 1; overflow-y: auto; background: var(--sfdt-color-surface);';
     listWrap.appendChild(eventListContainer);
 
     // Right Details Inspector Pane
     const detailsWrap = doc.createElement('div');
-    detailsWrap.style.cssText = 'width: 400px; display: flex; flex-direction: column; border: 1px solid #d8dde6; border-radius: 4px; overflow: hidden;';
+    detailsWrap.style.cssText = 'width: 400px; display: flex; flex-direction: column; border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: hidden;';
     contentRow.appendChild(detailsWrap);
 
     const detailsBar = doc.createElement('div');
-    detailsBar.style.cssText = 'background: #fafaf9; border-bottom: 1px solid #d8dde6; padding: 6px 12px; display: flex; align-items: center; justify-content: space-between;';
+    detailsBar.style.cssText = 'background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); padding: 6px 12px; display: flex; align-items: center; justify-content: space-between;';
     const detailsTitle = doc.createElement('span');
     detailsTitle.textContent = 'Event Details';
-    detailsTitle.style.cssText = 'font-size: 12px; font-weight: 600; color: #3e3e3c;';
+    detailsTitle.style.cssText = 'font-size: 12px; font-weight: 600; color: var(--sfdt-color-text);';
     const copyJsonBtn = doc.createElement('button');
     copyJsonBtn.textContent = 'Copy JSON';
-    copyJsonBtn.style.cssText = 'padding: 4px 10px; border: 1px solid #d8dde6; border-radius: 4px; background: #fff; font-size: 11px; cursor: pointer; color: #54698d;';
+    copyJsonBtn.style.cssText = 'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); font-size: 11px; cursor: pointer; color: var(--sfdt-color-text-weak);';
     copyJsonBtn.addEventListener('click', () => {
       if (selectedEvent) {
         void win.navigator.clipboard.writeText(JSON.stringify(selectedEvent, null, 2));
@@ -520,7 +520,7 @@ export function createEventMonitorFeature(options: {
     detailsWrap.appendChild(detailsBar);
 
     detailsPane = doc.createElement('pre');
-    detailsPane.style.cssText = 'flex: 1; overflow-y: auto; margin: 0; padding: 10px; background: #fafaf9; font-family: monospace; font-size: 11px; color: #16325c; white-space: pre-wrap; word-break: break-all;';
+    detailsPane.style.cssText = 'flex: 1; overflow-y: auto; margin: 0; padding: 10px; background: var(--sfdt-color-surface-alt); font-family: monospace; font-size: 11px; color: var(--sfdt-color-brand-deep); white-space: pre-wrap; word-break: break-all;';
     detailsWrap.appendChild(detailsPane);
 
     renderEvents();

@@ -100,7 +100,7 @@ export function createApiNameGeneratorFeature(
 
     const preview = doc.createElement('div');
     preview.style.cssText =
-      'font-family: monospace; padding: 8px; background: #fafaf9; border: 1px solid #d8dde6; border-radius: 4px; margin-bottom: 12px; min-height: 20px;';
+      'font-family: monospace; padding: 8px; background: var(--sfdt-color-surface-alt); border: 1px solid var(--sfdt-color-border); border-radius: 4px; margin-bottom: 12px; min-height: 20px;';
     body.appendChild(preview);
 
     const update = () => {
@@ -129,7 +129,7 @@ export function createApiNameGeneratorFeature(
     const copy = doc.createElement('button');
     copy.textContent = 'Copy';
     copy.style.cssText =
-      'padding: 6px 12px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer;';
+      'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer;';
     copy.addEventListener('click', async () => {
       if (!preview.textContent) return;
       await navigator.clipboard.writeText(preview.textContent);
