@@ -105,15 +105,37 @@ overlay), mark it **N/A** with a reason — do not silently skip it.
     field names, record data) is untrusted. (`features/setup-tabs.ts` builds even
     its chevron SVG node-by-node specifically to keep the file `innerHTML`-free.)
 13. **Shadow-root mounting for injected UI.** Overlays and panels injected onto a
-    Salesforce page should mount inside a shadow root so the host page's CSS cannot
-    restyle our UI and our styles cannot leak onto the host. **This is not yet
-    implemented** — there is currently no shadow-root usage in the extension
-    (`attachShadow`/`shadowRoot` appear nowhere in source) and features mount in
-    light DOM. A shared Shadow-DOM host is planned (the P0-3 item); when it lands,
-    injected UI moves into it and the token custom properties must be injected into
-    the shadow mount so `var(--sfdt-*)` still resolves (today `lib/tokens.ts`
-    `ensureTokens` injects them into the light-DOM `document`). Until then, do not
-    hand-roll a bespoke `attachShadow` per feature.
+    Salesforce page mount inside ONE shared **closed** shadow root so the host
+    page's CSS cannot restyle our UI and our styles cannot leak onto the host
+    (isolation in both directions). The reference implementation is
+    **`ui/shadow-host.ts`** (`getShadowHost()` — a singleton closed root with an
+    adopted reset stylesheet) plus **`ui/content-root.ts`** (`setContentRoot()` /
+    `getContentRoot()` — the shared mount pointer). The content script
+    (`entrypoints/content.ts`) calls `setContentRoot(getShadowHost(document).mount)`
+    on boot; from there `ui/side-button.ts`, `ui/present-view.ts` (page-mode
+    modals), and `ui/toast.ts` mount into that root via `getContentRoot() ?? doc.body`.
+    Do **not** hand-roll a bespoke `attachShadow` per feature — render through the
+    shared root. New injected overlays should mount into `getContentRoot()` too.
+
+    Two rules that fall out of the shadow boundary:
+    - **Tokens stay on the host `:root`, never re-injected into the root.** CSS
+      custom properties inherit ACROSS the shadow boundary, so `var(--sfdt-*)` used
+      inside the root resolves against `ensureTokens(document)`'s host `:root` block
+      — and re-themes live when `applyTheme` flips `data-sfdt-theme` on the host
+      `<html>` (P0-2 dark mode). Re-injecting tokens into the root would shadow the
+      host definitions and break the theme toggle. (`ui/shadow-host.ts` adopts only
+      a small `all: initial` reset that severs hostile inherited properties while
+      leaving custom properties — and thus tokens — inheriting.)
+    - **Cross-boundary events use `composedPath()`, not `e.target`.** For a click
+      inside a closed root, `e.target` is retargeted to the host, so
+      `el.contains(e.target)` wrongly misses. Click-outside dismissal tests
+      `e.composedPath().includes(el)` instead (`ui/side-button.ts`). Keydown events
+      are `composed` and reach `document` capture-phase listeners across the
+      boundary, so the item-1 Esc pattern is unchanged.
+
+    Extension-page surfaces (the Workspace app + options page) are NOT injected into
+    a hostile document and stay in light DOM: they never call `setContentRoot`, so
+    the same helpers fall back to `document.body` there.
 
 ### Theming
 
