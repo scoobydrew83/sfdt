@@ -39,9 +39,9 @@ export interface CheckResult extends CheckBody {
 }
 
 const BAND_COLOUR: Record<Band, string> = {
-  green: '#04844b',
-  amber: '#fe9339',
-  red: '#c23934',
+  green: 'var(--sfdt-color-success)',
+  amber: 'var(--sfdt-color-warning)',
+  red: 'var(--sfdt-color-error)',
 };
 
 // ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ export function createOrgHealthLiveFeature(options: OrgHealthLiveOptions = {}): 
 
   function renderRow(results: HTMLElement, check: CheckResult): void {
     const row = doc.createElement('div');
-    row.style.cssText = 'border: 1px solid #d8dde6; border-radius: 4px; padding: 8px 10px; margin-bottom: 6px;';
+    row.style.cssText = 'border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 8px 10px; margin-bottom: 6px;';
 
     const head = doc.createElement('div');
     head.style.cssText = 'display: flex; align-items: center; gap: 8px;';
@@ -134,14 +134,14 @@ export function createOrgHealthLiveFeature(options: OrgHealthLiveOptions = {}): 
     titleEl.style.cssText = 'font-weight: 600; font-size: 12px;';
     titleEl.textContent = check.title;
     const summaryEl = doc.createElement('span');
-    summaryEl.style.cssText = 'color: #54698d; font-size: 11px;';
+    summaryEl.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 11px;';
     summaryEl.textContent = check.summary;
     head.append(dot, titleEl, summaryEl);
     row.appendChild(head);
 
     if (check.findings.length > 0) {
       const list = doc.createElement('ul');
-      list.style.cssText = 'margin: 6px 0 0; padding-left: 18px; color: #3e3e3c; font-size: 11px;';
+      list.style.cssText = 'margin: 6px 0 0; padding-left: 18px; color: var(--sfdt-color-text); font-size: 11px;';
       for (const f of check.findings.slice(0, 25)) {
         const li = doc.createElement('li');
         li.textContent = f;
@@ -175,7 +175,7 @@ export function createOrgHealthLiveFeature(options: OrgHealthLiveOptions = {}): 
     } catch (err) {
       const errorPanel = doc.createElement('div');
       errorPanel.style.cssText =
-        'border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
       errorPanel.textContent = err instanceof Error ? err.message : String(err);
       results.appendChild(errorPanel);
       status.textContent = 'Failed';
@@ -193,11 +193,11 @@ export function createOrgHealthLiveFeature(options: OrgHealthLiveOptions = {}): 
     const toolbar = doc.createElement('div');
     toolbar.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 12px;';
     const status = doc.createElement('span');
-    status.style.cssText = 'color: #54698d; font-size: 12px;';
+    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     const refreshBtn = doc.createElement('button');
     refreshBtn.textContent = 'Refresh';
     refreshBtn.style.cssText =
-      'margin-left: auto; padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      'margin-left: auto; padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     toolbar.append(status, refreshBtn);
     body.appendChild(toolbar);
 

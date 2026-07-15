@@ -80,11 +80,11 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
     const toolbar = doc.createElement('div');
     toolbar.style.cssText = 'display: flex; align-items: center; gap: 10px;';
     const status = doc.createElement('div');
-    status.style.cssText = 'font-size: 12px; color: #54698d;';
+    status.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
     const refreshBtn = doc.createElement('button');
     refreshBtn.textContent = '↻ Refresh';
     refreshBtn.style.cssText =
-      'margin-left: auto; padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      'margin-left: auto; padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     toolbar.appendChild(status);
     toolbar.appendChild(refreshBtn);
     body.appendChild(toolbar);
@@ -95,7 +95,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
 
     const logPane = doc.createElement('pre');
     logPane.style.cssText =
-      'margin: 0; padding: 10px; background: #1e1e1e; color: #d4d4d4; border-radius: 4px; overflow: auto; max-height: 360px; font-family: ui-monospace, monospace; font-size: 11px; display: none; white-space: pre-wrap;';
+      'margin: 0; padding: 10px; background: var(--sfdt-color-code-bg); color: var(--sfdt-color-border-3); border-radius: 4px; overflow: auto; max-height: 360px; font-family: ui-monospace, monospace; font-size: 11px; display: none; white-space: pre-wrap;';
     body.appendChild(logPane);
 
     view = presentView({
@@ -124,7 +124,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
         status.textContent = `${result.records.length} log${result.records.length === 1 ? '' : 's'}`;
         if (result.records.length === 0) {
           const empty = doc.createElement('div');
-          empty.style.cssText = 'color: #80868d; font-size: 12px; padding: 8px;';
+          empty.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; padding: 8px;';
           empty.textContent = 'No debug logs. Enable a trace flag in Setup to capture some.';
           table.appendChild(empty);
           return;
@@ -132,10 +132,10 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
         for (const row of result.records) {
           const item = doc.createElement('div');
           item.style.cssText =
-            'display: flex; gap: 10px; padding: 6px 8px; border-bottom: 1px solid #f3f3f3; cursor: pointer; font-size: 12px; align-items: center;';
+            'display: flex; gap: 10px; padding: 6px 8px; border-bottom: 1px solid var(--sfdt-color-bg); cursor: pointer; font-size: 12px; align-items: center;';
           const time = doc.createElement('span');
           time.textContent = new Date(row.StartTime).toLocaleString();
-          time.style.cssText = 'min-width: 170px; color: #54698d;';
+          time.style.cssText = 'min-width: 170px; color: var(--sfdt-color-text-weak);';
           const user = doc.createElement('span');
           user.textContent = row.LogUser?.Name ?? '—';
           user.style.cssText = 'min-width: 140px;';
@@ -147,7 +147,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
           status2.style.cssText = 'min-width: 90px;';
           const size = doc.createElement('span');
           size.textContent = formatBytes(row.LogLength);
-          size.style.cssText = 'min-width: 70px; text-align: right; color: #80868d;';
+          size.style.cssText = 'min-width: 70px; text-align: right; color: var(--sfdt-color-text-icon);';
           item.appendChild(time);
           item.appendChild(user);
           item.appendChild(op);
@@ -160,7 +160,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
         status.textContent = '';
         const errPanel = doc.createElement('div');
         errPanel.style.cssText =
-          'border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
         errPanel.textContent = err instanceof Error ? err.message : String(err);
         table.appendChild(errPanel);
       }

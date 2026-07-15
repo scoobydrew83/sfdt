@@ -72,18 +72,18 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
     function sectionTitle(text: string): HTMLDivElement {
       const t = doc.createElement('div');
       t.textContent = text;
-      t.style.cssText = 'font-weight: 600; font-size: 13px; color: #16325c;';
+      t.style.cssText = 'font-weight: 600; font-size: 13px; color: var(--sfdt-color-brand-deep);';
       return t;
     }
 
     function queryRow(q: string, apiMode: SavedQuery['api'], onDelete?: () => void): HTMLDivElement {
       const row = doc.createElement('div');
       row.style.cssText =
-        'display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid #eef1f4; border-radius: 4px;';
+        'display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--sfdt-color-surface-shade-3); border-radius: 4px;';
       const badge = doc.createElement('span');
       badge.textContent = apiMode === 'tooling' ? 'Tooling' : 'REST';
       badge.style.cssText =
-        'min-width: 54px; text-align: center; font-size: 10px; padding: 2px 4px; border-radius: 3px; background: #16325c; color: #fff;';
+        'min-width: 54px; text-align: center; font-size: 10px; padding: 2px 4px; border-radius: 3px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-surface);';
       const text = doc.createElement('span');
       text.textContent = q;
       text.style.cssText =
@@ -91,7 +91,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       const loadBtn = doc.createElement('button');
       loadBtn.textContent = 'Load';
       loadBtn.style.cssText =
-        'padding: 4px 10px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 11px;';
+        'padding: 4px 10px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 11px;';
       loadBtn.addEventListener('click', () => void loadInRunner(q, apiMode));
       row.appendChild(badge);
       row.appendChild(text);
@@ -100,7 +100,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
         const delBtn = doc.createElement('button');
         delBtn.textContent = '🗑';
         delBtn.style.cssText =
-          'padding: 4px 8px; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; cursor: pointer; font-size: 11px;';
+          'padding: 4px 8px; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 11px;';
         delBtn.addEventListener('click', onDelete);
         row.appendChild(delBtn);
       }
@@ -121,7 +121,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       const saved = await readSavedQueries();
       if (saved.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'color: #80868d; font-size: 12px;';
+        empty.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px;';
         empty.textContent = 'No bookmarks yet. Save queries from the SOQL Runner (★ Save).';
         savedList.appendChild(empty);
         return;
@@ -129,7 +129,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       for (const item of saved) {
         const nameLabel = doc.createElement('div');
         nameLabel.textContent = item.name;
-        nameLabel.style.cssText = 'font-size: 12px; color: #54698d; margin-top: 2px;';
+        nameLabel.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak); margin-top: 2px;';
         savedList.appendChild(nameLabel);
         savedList.appendChild(
           queryRow(item.q, item.api, async () => {
@@ -154,7 +154,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       const history = await readSoqlHistory();
       if (history.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'color: #80868d; font-size: 12px;';
+        empty.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px;';
         empty.textContent = 'No recent queries.';
         histList.appendChild(empty);
       } else {

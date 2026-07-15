@@ -337,7 +337,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     editor.placeholder = 'System.debug(\'Hello\');';
     editor.value = "System.debug('Hello from SFDT');";
     editor.style.cssText =
-      'width: 100%; min-height: 180px; font-family: ui-monospace, monospace; font-size: 12px; padding: 8px; border: 1px solid #d8dde6; border-radius: 4px; resize: vertical;';
+      'width: 100%; min-height: 180px; font-family: ui-monospace, monospace; font-size: 12px; padding: 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; resize: vertical;';
     body.appendChild(editor);
 
     const toolbar = doc.createElement('div');
@@ -345,18 +345,18 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     const runBtn = doc.createElement('button');
     runBtn.textContent = 'Execute';
     runBtn.style.cssText =
-      'padding: 6px 14px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
     const saveBtn = doc.createElement('button');
     saveBtn.textContent = 'Save snippet';
     saveBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     const openLogBtn = doc.createElement('button');
     openLogBtn.textContent = '🪵 Open log';
     openLogBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     const hint = doc.createElement('span');
     hint.textContent = 'Ctrl/Cmd+Enter to run';
-    hint.style.cssText = 'color: #80868d; font-size: 11px; margin-left: auto;';
+    hint.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 11px; margin-left: auto;';
     toolbar.appendChild(runBtn);
     toolbar.appendChild(saveBtn);
     toolbar.appendChild(openLogBtn);
@@ -364,17 +364,17 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     body.appendChild(toolbar);
 
     const status = doc.createElement('div');
-    status.style.cssText = 'font-size: 12px; color: #54698d;';
+    status.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
     body.appendChild(status);
 
     const resultPane = doc.createElement('pre');
     resultPane.style.cssText =
-      'margin: 0; padding: 10px; background: #fafaf9; border: 1px solid #d8dde6; border-radius: 4px; overflow: auto; max-height: 280px; font-family: ui-monospace, monospace; font-size: 12px; display: none; white-space: pre-wrap;';
+      'margin: 0; padding: 10px; background: var(--sfdt-color-surface-alt); border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 280px; font-family: ui-monospace, monospace; font-size: 12px; display: none; white-space: pre-wrap;';
     body.appendChild(resultPane);
 
     const logPane = doc.createElement('pre');
     logPane.style.cssText =
-      'margin: 0; padding: 10px; background: #1e1e1e; color: #d4d4d4; border-radius: 4px; overflow: auto; max-height: 320px; font-family: ui-monospace, monospace; font-size: 11px; display: none; white-space: pre-wrap;';
+      'margin: 0; padding: 10px; background: var(--sfdt-color-code-bg); color: var(--sfdt-color-border-3); border-radius: 4px; overflow: auto; max-height: 320px; font-family: ui-monospace, monospace; font-size: 11px; display: none; white-space: pre-wrap;';
     body.appendChild(logPane);
 
     // The log captured by the most recent run, if any. Drives the Open log button.
@@ -402,7 +402,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       capturedLogId = null;
       resultPane.style.display = 'none';
       resultPane.style.color = '';
-      status.style.color = '#54698d';
+      status.style.color = 'var(--sfdt-color-text-weak)';
       status.textContent = 'Executing…';
 
       // Trace-flag setup is best-effort: failing to arm log capture must never
@@ -435,7 +435,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         const summary = summariseResult(result);
         const head = summary.ok ? '✓ Success' : '✗ Failed';
         status.textContent = head;
-        status.style.color = summary.ok ? '#04844b' : '#c23934';
+        status.style.color = summary.ok ? 'var(--sfdt-color-success)' : 'var(--sfdt-color-error)';
         const lines = [summary.message];
         if (result.exceptionStackTrace) lines.push('', result.exceptionStackTrace);
         resultPane.textContent = lines.join('\n');
@@ -458,7 +458,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         status.textContent = '';
         resultPane.textContent = err instanceof Error ? err.message : String(err);
         resultPane.style.display = 'block';
-        resultPane.style.color = '#c23934';
+        resultPane.style.color = 'var(--sfdt-color-error)';
       } finally {
         runBtn.disabled = false;
       }

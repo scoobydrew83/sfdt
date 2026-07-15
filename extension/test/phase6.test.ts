@@ -311,13 +311,13 @@ describe('extension/features/subflow-graph', () => {
     ]);
     const svg = buildSubflowGraphSvg(document, graph);
     const rects = Array.from(svg.querySelectorAll('rect'));
-    expect(rects.every((r) => r.getAttribute('stroke') === '#c23934')).toBe(true);
+    expect(rects.every((r) => r.style.stroke === 'var(--sfdt-color-error)')).toBe(true);
     // Filter to direct-child edge paths so marker arrowhead paths don't
     // pollute the count.
     const directChildPaths = Array.from(svg.children).filter(
       (n): n is SVGPathElement => n.tagName.toLowerCase() === 'path',
     );
-    const cycleEdges = directChildPaths.filter((p) => p.getAttribute('stroke') === '#c23934');
+    const cycleEdges = directChildPaths.filter((p) => p.style.stroke === 'var(--sfdt-color-error)');
     // A→B and B→A — both should be in the cycle and stroked red.
     expect(cycleEdges).toHaveLength(2);
   });

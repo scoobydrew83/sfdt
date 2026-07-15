@@ -4,6 +4,9 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Changed
+- **Design-token refactor (internal, no visual change).** Every hard-coded colour across the content-script features, the Workspace app page, the options page, and the shared `ui/` components (~770 hex literals in 38 files) is now a `var(--sfdt-color-*)` CSS custom property. The raw values live in one place — `lib/tokens.ts` — which each surface injects at boot (`ensureTokens()` on Salesforce pages; the `:root` token block prepended to the app/options stylesheets). This is a pure refactor with no user-facing change; it's the enabling step for a future single-switch dark theme, which can now supply dark values in one file instead of hunting colours across the codebase. One documented exception remains: the user-configurable `canvasSearch.highlightColour` default (`#FFD700`) stays a literal because it's runtime data string-concatenated with an alpha suffix and cannot be a CSS variable.
+
 ## [0.7.0] - 2026-07-14
 
 ### Added

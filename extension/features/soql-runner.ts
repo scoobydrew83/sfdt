@@ -443,14 +443,14 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const setMode = (next: ApiMode): void => {
       mode = next;
       const isRest = next === 'rest';
-      restBtn.style.background = isRest ? '#0070d2' : '#fff';
-      restBtn.style.color = isRest ? '#fff' : '#16325c';
-      toolingBtn.style.background = isRest ? '#fff' : '#0070d2';
-      toolingBtn.style.color = isRest ? '#16325c' : '#fff';
+      restBtn.style.background = isRest ? 'var(--sfdt-color-brand)' : 'var(--sfdt-color-surface)';
+      restBtn.style.color = isRest ? 'var(--sfdt-color-surface)' : 'var(--sfdt-color-brand-deep)';
+      toolingBtn.style.background = isRest ? 'var(--sfdt-color-surface)' : 'var(--sfdt-color-brand)';
+      toolingBtn.style.color = isRest ? 'var(--sfdt-color-brand-deep)' : 'var(--sfdt-color-surface)';
       void runAutocomplete();
     };
     const togStyle =
-      'padding: 4px 12px; border: 1px solid #d8dde6; cursor: pointer; font-size: 12px;';
+      'padding: 4px 12px; border: 1px solid var(--sfdt-color-border); cursor: pointer; font-size: 12px;';
     restBtn.style.cssText = togStyle + ' border-radius: 4px 0 0 4px;';
     toolingBtn.style.cssText = togStyle + ' border-radius: 0 4px 4px 0;';
     restBtn.textContent = 'REST';
@@ -465,13 +465,13 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       const historyBtn = doc.createElement('button');
       historyBtn.textContent = '▸ History ▾';
       historyBtn.style.cssText =
-        'padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+        'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
       const histWrap = doc.createElement('div');
       histWrap.style.cssText = 'position: relative;';
       histWrap.appendChild(historyBtn);
       historyMenu = doc.createElement('div');
       historyMenu.style.cssText =
-        'display: none; position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; min-width: 360px; max-width: 600px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
+        'display: none; position: absolute; top: 100%; left: 0; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; min-width: 360px; max-width: 600px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
       histWrap.appendChild(historyMenu);
       historyBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -495,13 +495,13 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const savedQueriesBtn = doc.createElement('button');
     savedQueriesBtn.textContent = '★ Bookmarks ▾';
     savedQueriesBtn.style.cssText =
-      'padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     const savedWrap = doc.createElement('div');
     savedWrap.style.cssText = 'position: relative;';
     savedWrap.appendChild(savedQueriesBtn);
     const savedQueriesMenu = doc.createElement('div');
     savedQueriesMenu.style.cssText =
-      'display: none; position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; min-width: 360px; max-width: 600px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
+      'display: none; position: absolute; top: 100%; left: 0; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; min-width: 360px; max-width: 600px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
     savedWrap.appendChild(savedQueriesMenu);
     savedQueriesBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -524,7 +524,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const textarea = doc.createElement('textarea');
     textarea.placeholder = 'SELECT Id, Name FROM Account LIMIT 10';
     textarea.style.cssText =
-      'width: 100%; min-height: 120px; font-family: ui-monospace, monospace; font-size: 13px; padding: 8px; border: 1px solid #d8dde6; border-bottom: 1px solid #e1e6eb; border-radius: 4px 4px 0 0; resize: vertical; margin-bottom: 0; outline: none; box-sizing: border-box;';
+      'width: 100%; min-height: 120px; font-family: ui-monospace, monospace; font-size: 13px; padding: 8px; border: 1px solid var(--sfdt-color-border); border-bottom: 1px solid var(--sfdt-color-surface-shade-6); border-radius: 4px 4px 0 0; resize: vertical; margin-bottom: 0; outline: none; box-sizing: border-box;';
     body.appendChild(textarea);
 
     // --- AUTOCOMPLETE UI SETUP ---
@@ -537,10 +537,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const autocompleteBox = doc.createElement('div');
     autocompleteBox.className = 'sfdt-soql-autocomplete-box';
     autocompleteBox.style.cssText =
-      'border: 1px solid #d8dde6; border-top: none; border-radius: 0 0 4px 4px; background: #fafaf9; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-family: system-ui, sans-serif;';
+      'border: 1px solid var(--sfdt-color-border); border-top: none; border-radius: 0 0 4px 4px; background: var(--sfdt-color-surface-alt); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-family: system-ui, sans-serif;';
 
     const autocompleteHeader = doc.createElement('div');
-    autocompleteHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; color: #54698d; font-size: 12px; font-weight: 600;';
+    autocompleteHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; color: var(--sfdt-color-text-weak); font-size: 12px; font-weight: 600;';
     
     const autocompleteTitle = doc.createElement('span');
     autocompleteTitle.textContent = 'Enter query to see suggestions...';
@@ -548,7 +548,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
 
     const toggleWrapBtn = doc.createElement('button');
     toggleWrapBtn.textContent = 'Expand ▾';
-    toggleWrapBtn.style.cssText = 'background: none; border: none; color: #0070d2; font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: 3px; font-family: inherit;';
+    toggleWrapBtn.style.cssText = 'background: none; border: none; color: var(--sfdt-color-brand); font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: 3px; font-family: inherit;';
     toggleWrapBtn.addEventListener('click', () => {
       expandAutocomplete = !expandAutocomplete;
       updateResultsWrap();
@@ -567,11 +567,11 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const runBtn = doc.createElement('button');
     runBtn.textContent = '▶ Run';
     runBtn.style.cssText =
-      'padding: 6px 14px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
     const bookmarkBtn = doc.createElement('button');
     bookmarkBtn.textContent = '★ Save';
     bookmarkBtn.style.cssText =
-      'padding: 6px 12px; background: #fff; color: #0070d2; border: 1px solid #d8dde6; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 13px;';
     bookmarkBtn.addEventListener('click', async () => {
       const q = textarea.value.trim();
       if (!q) {
@@ -585,7 +585,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       }
     });
     const status = doc.createElement('span');
-    status.style.cssText = 'color: #54698d; font-size: 12px;';
+    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     runRow.appendChild(runBtn);
     runRow.appendChild(bookmarkBtn);
     runRow.appendChild(status);
@@ -593,12 +593,12 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
 
     const errorPanel = doc.createElement('div');
     errorPanel.style.cssText =
-      'display: none; border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
+      'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
     body.appendChild(errorPanel);
 
     const resultsWrap = doc.createElement('div');
     resultsWrap.style.cssText =
-      'border: 1px solid #d8dde6; border-radius: 4px; overflow: auto; max-height: 360px; display: none;';
+      'border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 360px; display: none;';
     body.appendChild(resultsWrap);
 
     const footer = doc.createElement('div');
@@ -606,19 +606,19 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const loadMoreBtn = doc.createElement('button');
     loadMoreBtn.textContent = 'Load more';
     loadMoreBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     const copyCsvBtn = doc.createElement('button');
     copyCsvBtn.textContent = 'Copy CSV';
     copyCsvBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     const exportCsvBtn = doc.createElement('button');
     exportCsvBtn.textContent = 'Export CSV';
     exportCsvBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     const langGraphBtn = doc.createElement('button');
     langGraphBtn.textContent = 'LangGraph Node';
     langGraphBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     footer.appendChild(loadMoreBtn);
     footer.appendChild(copyCsvBtn);
     footer.appendChild(exportCsvBtn);
@@ -628,7 +628,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       const clearHistBtn = doc.createElement('button');
       clearHistBtn.textContent = 'Clear history';
       clearHistBtn.style.cssText =
-        'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: auto;';
+        'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: auto;';
       clearHistBtn.addEventListener('click', async () => {
         await clearSoqlHistory();
         showToast('Query history cleared', { doc, kind: 'success' });
@@ -671,7 +671,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       const menu = doc.createElement('div');
       menu.className = 'sfdt-soql-cell-menu';
       menu.style.cssText =
-        'position: absolute; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 100030; padding: 4px 0; font-family: system-ui, sans-serif; font-size: 12px;';
+        'position: absolute; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 100030; padding: 4px 0; font-family: system-ui, sans-serif; font-size: 12px;';
 
       const items = [
         {
@@ -703,9 +703,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       for (const item of items) {
         const itemEl = doc.createElement('div');
         itemEl.textContent = item.label;
-        itemEl.style.cssText = 'padding: 6px 12px; cursor: pointer; color: #16325c;';
-        itemEl.addEventListener('mouseenter', () => itemEl.style.background = '#f4f6f9');
-        itemEl.addEventListener('mouseleave', () => itemEl.style.background = '#fff');
+        itemEl.style.cssText = 'padding: 6px 12px; cursor: pointer; color: var(--sfdt-color-brand-deep);';
+        itemEl.addEventListener('mouseenter', () => itemEl.style.background = 'var(--sfdt-color-surface-shade)');
+        itemEl.addEventListener('mouseleave', () => itemEl.style.background = 'var(--sfdt-color-surface)');
         itemEl.addEventListener('click', () => {
           item.click();
           menu.remove();
@@ -733,7 +733,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       while (resultsWrap.firstChild) resultsWrap.removeChild(resultsWrap.firstChild);
       if (records.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 12px; color: #80868d; font-size: 13px;';
+        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon); font-size: 13px;';
         empty.textContent = 'No rows.';
         resultsWrap.appendChild(empty);
         resultsWrap.style.display = 'block';
@@ -748,7 +748,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         const th = doc.createElement('th');
         th.textContent = c;
         th.style.cssText =
-          'text-align: left; padding: 6px 10px; border-bottom: 1px solid #d8dde6; background: #fafaf9; position: sticky; top: 0;';
+          'text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface-alt); position: sticky; top: 0;';
         headRow.appendChild(th);
       }
       thead.appendChild(headRow);
@@ -763,7 +763,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
             const link = doc.createElement('a');
             link.href = '#';
             link.textContent = raw.length > 200 ? raw.slice(0, 200) + '…' : raw;
-            link.style.cssText = 'color: #0070d2; text-decoration: underline; cursor: pointer;';
+            link.style.cssText = 'color: var(--sfdt-color-brand); text-decoration: underline; cursor: pointer;';
             link.addEventListener('click', (e) => {
               e.preventDefault();
               showCellMenu(link, raw);
@@ -773,7 +773,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
             td.textContent = raw.length > 200 ? raw.slice(0, 200) + '…' : raw;
           }
           td.title = raw;
-          td.style.cssText = 'padding: 6px 10px; border-bottom: 1px solid #f3f3f3; vertical-align: top;';
+          td.style.cssText = 'padding: 6px 10px; border-bottom: 1px solid var(--sfdt-color-bg); vertical-align: top;';
           tr.appendChild(td);
         }
         tbody.appendChild(tr);
@@ -795,7 +795,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       const entries = await readSoqlHistory();
       if (entries.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 10px; color: #80868d; font-size: 12px;';
+        empty.style.cssText = 'padding: 10px; color: var(--sfdt-color-text-icon); font-size: 12px;';
         empty.textContent = 'No queries yet.';
         historyMenu.appendChild(empty);
         return;
@@ -803,13 +803,13 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       for (const entry of entries) {
         const item = doc.createElement('div');
         item.style.cssText =
-          'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid #f3f3f3; font-family: ui-monospace, monospace; font-size: 11px;';
+          'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--sfdt-color-bg); font-family: ui-monospace, monospace; font-size: 11px;';
         const badge = doc.createElement('span');
         badge.textContent = entry.api === 'tooling' ? 'TOOL ' : 'REST ';
         badge.style.cssText =
           entry.api === 'tooling'
-            ? 'color: #b46600; font-weight: 600; margin-right: 6px;'
-            : 'color: #0070d2; font-weight: 600; margin-right: 6px;';
+            ? 'color: var(--sfdt-color-warning-text); font-weight: 600; margin-right: 6px;'
+            : 'color: var(--sfdt-color-brand); font-weight: 600; margin-right: 6px;';
         const text = doc.createElement('span');
         const trimmed = entry.q.length > 200 ? entry.q.slice(0, 200) + '…' : entry.q;
         text.textContent = trimmed;
@@ -830,7 +830,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       const entries = await readSavedQueries();
       if (entries.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 10px; color: #80868d; font-size: 12px;';
+        empty.style.cssText = 'padding: 10px; color: var(--sfdt-color-text-icon); font-size: 12px;';
         empty.textContent = 'No bookmarked queries yet.';
         savedQueriesMenu.appendChild(empty);
         return;
@@ -838,7 +838,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       for (const entry of entries) {
         const item = doc.createElement('div');
         item.style.cssText =
-          'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid #f3f3f3; font-family: ui-monospace, monospace; font-size: 11px; display: flex; justify-content: space-between; align-items: center;';
+          'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--sfdt-color-bg); font-family: ui-monospace, monospace; font-size: 11px; display: flex; justify-content: space-between; align-items: center;';
         
         const contentWrap = doc.createElement('div');
         contentWrap.style.cssText = 'display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
@@ -847,8 +847,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         badge.textContent = entry.api === 'tooling' ? 'TOOL ' : 'REST ';
         badge.style.cssText =
           entry.api === 'tooling'
-            ? 'color: #b46600; font-weight: 600; margin-right: 6px; flex-shrink: 0;'
-            : 'color: #0070d2; font-weight: 600; margin-right: 6px; flex-shrink: 0;';
+            ? 'color: var(--sfdt-color-warning-text); font-weight: 600; margin-right: 6px; flex-shrink: 0;'
+            : 'color: var(--sfdt-color-brand); font-weight: 600; margin-right: 6px; flex-shrink: 0;';
         
         const titleText = doc.createElement('strong');
         titleText.textContent = `${entry.name}: `;
@@ -865,7 +865,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
 
         const deleteBtn = doc.createElement('button');
         deleteBtn.textContent = '×';
-        deleteBtn.style.cssText = 'background: none; border: none; color: #c23934; font-size: 16px; cursor: pointer; padding: 0 4px;';
+        deleteBtn.style.cssText = 'background: none; border: none; color: var(--sfdt-color-error); font-size: 16px; cursor: pointer; padding: 0 4px;';
         deleteBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           if (win.confirm(`Are you sure you want to delete bookmark "${entry.name}"?`)) {
@@ -1448,7 +1448,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
 
       if (data.results.length === 0) {
         const none = doc.createElement('span');
-        none.style.cssText = 'color: #80868d; font-size: 12px; font-style: italic;';
+        none.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; font-style: italic;';
         none.textContent = 'No suggestions available';
         autocompleteResults.appendChild(none);
         return;
@@ -1461,16 +1461,16 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         btn.textContent = `${icon} ${item.value}`;
         btn.title = item.title;
         btn.style.cssText =
-          'display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #d8dde6; border-radius: 14px; background: #fff; color: #0070d2; font-size: 12px; cursor: pointer; white-space: nowrap; transition: background 0.15s, border-color 0.15s, transform 0.1s; outline: none; margin: 2px 0; font-family: system-ui, sans-serif;';
+          'display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 14px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand); font-size: 12px; cursor: pointer; white-space: nowrap; transition: background 0.15s, border-color 0.15s, transform 0.1s; outline: none; margin: 2px 0; font-family: system-ui, sans-serif;';
         
         btn.addEventListener('mouseenter', () => {
-          btn.style.background = '#f4f6f9';
-          btn.style.borderColor = '#0070d2';
+          btn.style.background = 'var(--sfdt-color-surface-shade)';
+          btn.style.borderColor = 'var(--sfdt-color-brand)';
           btn.style.transform = 'translateY(-1px)';
         });
         btn.addEventListener('mouseleave', () => {
-          btn.style.background = '#fff';
-          btn.style.borderColor = '#d8dde6';
+          btn.style.background = 'var(--sfdt-color-surface)';
+          btn.style.borderColor = 'var(--sfdt-color-border)';
           btn.style.transform = 'none';
         });
         

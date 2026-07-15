@@ -37,8 +37,8 @@ const BUTTON_STYLE = [
   'transform: translateY(-50%)',
   'width: 32px',
   'height: 48px',
-  'background: #0070d2',
-  'color: #fff',
+  'background: var(--sfdt-color-brand)',
+  'color: var(--sfdt-color-surface)',
   'border-radius: 4px 0 0 4px',
   'display: flex',
   'align-items: center',
@@ -54,8 +54,8 @@ const MENU_STYLE = [
   'top: 50%',
   'right: 40px',
   'transform: translateY(-50%)',
-  'background: #fff',
-  'border: 1px solid #d8dde6',
+  'background: var(--sfdt-color-surface)',
+  'border: 1px solid var(--sfdt-color-border)',
   'border-radius: 4px',
   'box-shadow: 0 2px 8px rgba(0,0,0,0.15)',
   'min-width: 240px',
@@ -117,14 +117,14 @@ export function mountSideButton(opts: {
   const header = doc.createElement('div');
   header.className = 'sfdt-menu-header';
   header.style.cssText =
-    'padding: 10px 14px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center;';
+    'padding: 10px 14px; border-bottom: 1px solid var(--sfdt-color-border); display: flex; justify-content: space-between; align-items: center;';
   const headerTitle = doc.createElement('span');
   headerTitle.className = 'sfdt-menu-title';
   headerTitle.style.fontWeight = '600';
   headerTitle.textContent = 'SFDT SF Helper';
   const headerClose = doc.createElement('span');
   headerClose.className = 'sfdt-menu-close';
-  headerClose.style.cssText = 'cursor: pointer; font-size: 18px; color: #80868d;';
+  headerClose.style.cssText = 'cursor: pointer; font-size: 18px; color: var(--sfdt-color-text-icon);';
   headerClose.textContent = '×';
   header.appendChild(headerTitle);
   header.appendChild(headerClose);
@@ -136,12 +136,12 @@ export function mountSideButton(opts: {
 
   const footer = doc.createElement('div');
   footer.className = 'sfdt-menu-footer';
-  footer.style.cssText = 'padding: 8px 14px; border-top: 1px solid #d8dde6;';
+  footer.style.cssText = 'padding: 8px 14px; border-top: 1px solid var(--sfdt-color-border);';
   const settingsLink = doc.createElement('a');
   settingsLink.href = '#';
   settingsLink.id = 'sfdt-settings-link';
   settingsLink.className = 'sfdt-menu-settings-link';
-  settingsLink.style.cssText = 'color: #0070d2; text-decoration: none; font-size: 12px;';
+  settingsLink.style.cssText = 'color: var(--sfdt-color-brand); text-decoration: none; font-size: 12px;';
   settingsLink.textContent = '⚙ Settings';
   footer.appendChild(settingsLink);
 
@@ -186,7 +186,7 @@ export function mountSideButton(opts: {
   function buildEmptyState(): HTMLDivElement {
     const empty = doc.createElement('div');
     empty.className = 'sfdt-menu-empty';
-    empty.style.cssText = 'padding: 16px; text-align: center; color: #80868d;';
+    empty.style.cssText = 'padding: 16px; text-align: center; color: var(--sfdt-color-text-icon);';
     empty.textContent = 'No tools available for this page.';
     return empty;
   }
