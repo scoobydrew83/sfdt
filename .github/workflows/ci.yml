@@ -367,6 +367,42 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git commit -am "chore: bump formula to ${VERSION}"
           git push
+      - name: Sync skills pack repo
+        # Regenerates the standalone pack repo (scoobydrew83/sfdt-skills) that
+        # backs `npx skills add scoobydrew83/sfdt-skills`. Same cross-repo
+        # constraint as the tap bump above: the default GITHUB_TOKEN can't write
+        # to another repo, so this needs a fine-grained PAT (contents:write on
+        # sfdt-skills) stored as SKILLS_PACK_TOKEN. Skips cleanly if unset.
+        # continue-on-error for the same reason as the tap: a downstream
+        # distribution sync must never fail an already-published release.
+        # The export only wipes skills/ in the target, so that repo's README and
+        # LICENSE (which are hand-written, not generated) survive each sync.
+        if: steps.version.outputs.changed == 'true'
+        continue-on-error: true
+        env:
+          SKILLS_PACK_TOKEN: ${{ secrets.SKILLS_PACK_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ -z "${SKILLS_PACK_TOKEN}" ]; then
+            echo "SKILLS_PACK_TOKEN not set — skipping skills pack sync."
+            echo "Sync manually with: sfdt skills export --target pack --out ../sfdt-skills"
+            exit 0
+          fi
+          git clone --depth 1 "https://x-access-token:${SKILLS_PACK_TOKEN}@github.com/scoobydrew83/sfdt-skills.git" skills-pack
+          node bin/sfdt.js skills export --target pack --out skills-pack
+          cd skills-pack
+          sed -i -E "s#(Synced from \`@sfdt/cli\` v)[0-9]+\.[0-9]+\.[0-9]+#\1${VERSION}#" README.md
+          # manifest.json carries a generatedAt timestamp that changes on every
+          # export, so diff the real content instead — otherwise a self-healing
+          # re-run of an already-published version pushes a timestamp-only commit.
+          if git diff --quiet -- skills README.md; then
+            echo "Skills pack already current at v${VERSION} — nothing to push."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "Sync skills from @sfdt/cli v${VERSION}"
+          git push
         # The Docker image builds via the `docker` job below, which calls the
         # reusable docker-publish.yml in this same run.
 

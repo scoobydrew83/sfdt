@@ -147,7 +147,13 @@ export function registerSkillsCommand(program) {
           throw new Error(`Skills directory not found at: ${SKILLS_DIR}`);
         }
 
-        const skillFiles = await glob('**/SKILL.md', { cwd: SKILLS_DIR, absolute: true });
+        // glob() gives no ordering guarantee, so sort — every target downstream
+        // renders in this order (pack manifest, rules markdown, .claude/skills).
+        // Unsorted, each export reshuffles skills and shows up as a spurious diff
+        // in the generated pack repo.
+        const skillFiles = (await glob('**/SKILL.md', { cwd: SKILLS_DIR, absolute: true })).sort(
+          (a, b) => a.localeCompare(b),
+        );
         if (skillFiles.length === 0) {
           throw new Error(`No SKILL.md files found under ${SKILLS_DIR}`);
         }

@@ -9,8 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Live Salesforce integration CI** — the `integration` job in `ci.yml` runs a Tier 2 smoke against a real Dev Hub on every push to `develop` (scratch org → deploy/test/audit/versions/drift/rollback cycle → always-delete). It's gated to a graceful no-op until `SFDX_AUTH_URL` + `SF_DEVHUB_USERNAME` secrets and an `integration` environment are configured, never runs on fork PRs, and always cleans up. See `docs/integration-ci.md`.
-
 ## [0.18.0] - 2026-07-14
 
 ### Added

@@ -235,6 +235,29 @@ describe('skills export --target pack', () => {
     expect(cli.files).toEqual(['SKILL.md', 'references/commands.md']);
   });
 
+  it('orders manifest skills deterministically regardless of glob order', async () => {
+    // glob() guarantees no ordering. Unsorted, every export reshuffles the
+    // manifest and shows up as a spurious diff in the generated pack repo
+    // (scoobydrew83/sfdt-skills), which the release job syncs.
+    glob.mockImplementation(async (pattern) => {
+      if (pattern === '**/SKILL.md') {
+        // Reverse of sorted order — a passing assertion below means we sorted.
+        return [
+          path.join(SKILLS_DIR, 'sfdt-cli', 'SKILL.md'),
+          path.join(SKILLS_DIR, 'sf-deploy', 'SKILL.md'),
+        ];
+      }
+      return ['sf-deploy/SKILL.md', 'sfdt-cli/SKILL.md'];
+    });
+
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'skills', 'export', '--target', 'pack', '--out', 'out-pack',
+    ]);
+
+    const manifest = fs.writeJson.mock.calls[0][1];
+    expect(manifest.skills.map((s) => s.name)).toEqual(['sf-deploy', 'sfdt-cli']);
+  });
+
   it('emits pack results as JSON', async () => {
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
