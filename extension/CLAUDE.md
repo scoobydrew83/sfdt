@@ -17,7 +17,8 @@ ui/              shared injected UI: side-button, present-view (page-mode overla
                  modals, and the shadow-DOM host
 lib/             tokens.ts (design tokens + dark palette), theme.ts (watchTheme/applyTheme),
                  settings.ts, salesforce-api.ts (thin client), sf-api-proxy.ts (worker fetch),
-                 sf-stream-worker.ts (worker CometD Port), commands.ts, org-list.ts, api-version.ts
+                 commands.ts, org-list.ts, api-version.ts
+                 (sf-stream-worker.ts — worker CometD Port — lands with the P0-4 streaming migration)
 test/            vitest (happy-dom), one suite per feature/lib module
 wxt.config.ts    manifest (permissions, commands, host_permissions)
 CONVENTIONS.md   the a11y/overlay/keyboard/theme/shadow-root checklist reviewers apply verbatim
@@ -27,7 +28,7 @@ CONVENTIONS.md   the a11y/overlay/keyboard/theme/shadow-root checklist reviewers
 
 1. **DOM discipline — zero `innerHTML`.** Build DOM with `createElement` + `textContent` (+ `setAttribute`, `adoptedStyleSheets`/`<style>.textContent` for styles). This is a security-by-construction property and a marketed differentiator — never regress it. Use the shared `el()` helpers.
 
-2. **The SID never leaves the background worker.** All Salesforce REST/Tooling/SOAP calls go through the worker's `sfApiFetch` route (`lib/sf-api-proxy.ts`); streaming (event-monitor CometD) goes through the `sfApiStream` Port (`lib/sf-stream-worker.ts`). `lib/salesforce-api.ts` is a **thin client** that describes a call and parses the reply — it holds no sid and makes no Salesforce fetch. Feature/UI/entrypoint code MUST NOT touch `chrome.cookies`, `getSidForUrls`, `getSessionDetails`, or a raw `Authorization: Bearer` header. `test/sid-never-leaves-worker.test.ts` + a scoped ESLint rule enforce this with **zero exceptions** — they will fail your build if you leak.
+2. **The SID never leaves the background worker.** All Salesforce REST/Tooling/SOAP calls go through the worker's `sfApiFetch` route (`lib/sf-api-proxy.ts`); `lib/salesforce-api.ts` is a **thin client** that describes a call and parses the reply — it holds no sid and makes no Salesforce fetch. Feature/UI/entrypoint code MUST NOT touch `chrome.cookies`, `getSidForUrls`, `getSessionDetails`, or a raw `Authorization: Bearer` header — `test/sid-never-leaves-worker.test.ts` + a scoped ESLint rule enforce this. The event-monitor CometD stream is being moved into the worker behind an `sfApiStream` Port (`lib/sf-stream-worker.ts`) in the P0-4 streaming migration; **until that migration merges** it is the one documented, allowlisted exception in the guard test (event-monitor still calls `getSessionDetails`). Once it lands the guard allowlists nothing — don't add a new exception.
 
 3. **Colours go through design tokens.** No hard-coded hex in `features/`, `ui/`, or `entrypoints/`. Use `var(--sfdt-color-*)` from `lib/tokens.ts`. **Foreground text** uses the foreground variants (`-text`, `-on-accent`, `-strong`); **fills/backgrounds/borders** use the base tokens (`brand`, `error`, `success`, `surface`, …). This split exists so dark mode is correct — a fill token used as `.style.color` renders wrong (low-contrast) in dark. `ensureTokens(document)` defines the `:root` token block (light + `[data-sfdt-theme="dark"]`) on the host document; custom properties inherit into shadow trees, so shadow-mounted UI just uses `var(--sfdt-*)`. `watchTheme()` boots the theme on every surface (returns `{ setSetting, stop }`; use `setSetting` for live preview).
 
