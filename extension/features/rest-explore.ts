@@ -6,6 +6,7 @@ import {
   type HttpMethod,
   type SalesforceApiClient,
 } from '../lib/salesforce-api.js';
+import { SF_API_VERSION } from '../lib/api-version.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
@@ -19,7 +20,6 @@ registerSettingsShape('rest-explore', REST_EXPLORE_SETTINGS_SCHEMA);
 
 const HISTORY_STORAGE_KEY = 'restExplore.history';
 const HISTORY_CAP = 20;
-const DEFAULT_API_VERSION = 'v62.0';
 
 const METHODS_WITH_BODY: ReadonlySet<HttpMethod> = new Set(['POST', 'PATCH', 'PUT']);
 
@@ -121,14 +121,14 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     }
     const pathInput = doc.createElement('input');
     pathInput.type = 'text';
-    pathInput.value = `/services/data/${DEFAULT_API_VERSION}/`;
-    pathInput.placeholder = `/services/data/${DEFAULT_API_VERSION}/sobjects/Account/describe`;
+    pathInput.value = `/services/data/${SF_API_VERSION}/`;
+    pathInput.placeholder = `/services/data/${SF_API_VERSION}/sobjects/Account/describe`;
     pathInput.style.cssText =
       'flex: 1; padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-family: ui-monospace, monospace; font-size: 12px;';
     const sendBtn = doc.createElement('button');
     sendBtn.textContent = 'Send';
     sendBtn.style.cssText =
-      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
     form.appendChild(methodSelect);
     form.appendChild(pathInput);
     form.appendChild(sendBtn);
@@ -152,7 +152,7 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
 
     const errorPanel = doc.createElement('div');
     errorPanel.style.cssText =
-      'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
+      'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
     body.appendChild(errorPanel);
 
     const responsePane = doc.createElement('pre');
@@ -249,7 +249,7 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
         const badge = doc.createElement('span');
         badge.textContent = entry.method;
         badge.style.cssText =
-          'display: inline-block; min-width: 50px; padding: 1px 4px; border-radius: 3px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-surface); font-weight: 600; margin-right: 6px; text-align: center;';
+          'display: inline-block; min-width: 50px; padding: 1px 4px; border-radius: 3px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-on-accent); font-weight: 600; margin-right: 6px; text-align: center;';
         const text = doc.createElement('span');
         text.textContent = entry.path;
         item.appendChild(badge);

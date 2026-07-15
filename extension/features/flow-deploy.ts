@@ -149,7 +149,7 @@ function showDeployModal(
   const deployBtn = doc.createElement('button');
   deployBtn.textContent = 'Deploy';
   deployBtn.style.cssText =
-    'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer;';
+    'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer;';
   deployBtn.addEventListener('click', async () => {
     view.close();
     await onChoice('deploy');
@@ -157,7 +157,7 @@ function showDeployModal(
   const rollbackBtn = doc.createElement('button');
   rollbackBtn.textContent = 'Rollback';
   rollbackBtn.style.cssText =
-    'padding: 6px 12px; background: var(--sfdt-color-error); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer;';
+    'padding: 6px 12px; background: var(--sfdt-color-error); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer;';
   rollbackBtn.addEventListener('click', async () => {
     view.close();
     await onChoice('rollback');

@@ -116,7 +116,7 @@ async function confirmModal(doc: Document, selected: RowMeta[]): Promise<boolean
     confirm.type = 'button';
     confirm.textContent = 'Delete Selected Versions';
     confirm.disabled = true;
-    confirm.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-error); color: var(--sfdt-color-surface); border: 0;';
+    confirm.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-error); color: var(--sfdt-color-on-accent); border: 0;';
     footer.appendChild(cancel);
     footer.appendChild(confirm);
     modal.appendChild(footer);

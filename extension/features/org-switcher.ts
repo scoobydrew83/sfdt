@@ -115,7 +115,7 @@ export function createOrgSwitcherFeature(options: OrgSwitcherOptions = {}): Feat
         'text-align: left; padding: 10px 12px; border: 1px solid var(--sfdt-color-surface-shade-3); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; gap: 2px;';
       const name = doc.createElement('span');
       name.textContent = org.displayName;
-      name.style.cssText = 'font-weight: 600; font-size: 13px; color: var(--sfdt-color-brand-deep);';
+      name.style.cssText = 'font-weight: 600; font-size: 13px; color: var(--sfdt-color-text-strong);';
       const host = doc.createElement('span');
       host.textContent = org.host;
       host.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-icon); font-family: ui-monospace, monospace;';

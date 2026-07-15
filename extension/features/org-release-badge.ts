@@ -85,7 +85,7 @@ function buildBadge(doc: Document, data: BadgeData): HTMLLIElement {
     'font-weight: 700',
     'text-transform: uppercase',
     'letter-spacing: 0.02em',
-    'color: var(--sfdt-color-surface)',
+    'color: var(--sfdt-color-on-accent)',
     `background: ${preview ? PREVIEW_COLOUR : GA_COLOUR}`,
     'border-radius: 3px',
     'padding: 2px 8px',

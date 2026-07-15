@@ -72,7 +72,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
     function sectionTitle(text: string): HTMLDivElement {
       const t = doc.createElement('div');
       t.textContent = text;
-      t.style.cssText = 'font-weight: 600; font-size: 13px; color: var(--sfdt-color-brand-deep);';
+      t.style.cssText = 'font-weight: 600; font-size: 13px; color: var(--sfdt-color-text-strong);';
       return t;
     }
 
@@ -83,7 +83,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       const badge = doc.createElement('span');
       badge.textContent = apiMode === 'tooling' ? 'Tooling' : 'REST';
       badge.style.cssText =
-        'min-width: 54px; text-align: center; font-size: 10px; padding: 2px 4px; border-radius: 3px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-surface);';
+        'min-width: 54px; text-align: center; font-size: 10px; padding: 2px 4px; border-radius: 3px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-on-accent);';
       const text = doc.createElement('span');
       text.textContent = q;
       text.style.cssText =
@@ -91,7 +91,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       const loadBtn = doc.createElement('button');
       loadBtn.textContent = 'Load';
       loadBtn.style.cssText =
-        'padding: 4px 10px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 11px;';
+        'padding: 4px 10px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 11px;';
       loadBtn.addEventListener('click', () => void loadInRunner(q, apiMode));
       row.appendChild(badge);
       row.appendChild(text);

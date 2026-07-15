@@ -87,7 +87,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
 
   async function getGlobalDescribe(): Promise<GlobalDescribe> {
     if (globalDescribeCached) return globalDescribeCached;
-    const apiVersion = (api as any).apiVersion ?? 'v62.0';
+    const apiVersion = api.apiVersion;
     const data = await api.apiGet<GlobalDescribe>(`/services/data/${apiVersion}/sobjects/`);
     globalDescribeCached = data && Array.isArray(data.sobjects) ? data : { sobjects: [] };
     return globalDescribeCached;
@@ -97,7 +97,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     const key = name.toLowerCase();
     const cached = sobjectDescribesCached.get(key);
     if (cached) return cached;
-    const apiVersion = (api as any).apiVersion ?? 'v62.0';
+    const apiVersion = api.apiVersion;
     const data = await api.apiGet<SObjectDescribe>(`/services/data/${apiVersion}/sobjects/${name}/describe`);
     const enriched = data && Array.isArray(data.fields) ? data : { name, label: name, fields: [] };
     sobjectDescribesCached.set(key, enriched);
@@ -129,7 +129,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     idInput.style.cssText = 'flex: 1; padding: 6px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     const inspectBtn = doc.createElement('button');
     inspectBtn.textContent = 'Inspect';
-    inspectBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    inspectBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     searchRow.appendChild(idInput);
     searchRow.appendChild(inspectBtn);
     body.appendChild(searchRow);
@@ -161,7 +161,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     cancelChangesBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 13px;';
     const saveChangesBtn = doc.createElement('button');
     saveChangesBtn.textContent = 'Save Changes';
-    saveChangesBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-success); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    saveChangesBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-success); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     saveBar.appendChild(cancelChangesBtn);
     saveBar.appendChild(saveChangesBtn);
 
@@ -225,7 +225,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
 
         const tdLabel = doc.createElement('td');
         tdLabel.textContent = field.label;
-        tdLabel.style.cssText = 'padding: 8px 12px; color: var(--sfdt-color-brand-deep);';
+        tdLabel.style.cssText = 'padding: 8px 12px; color: var(--sfdt-color-text-strong);';
 
         const tdApi = doc.createElement('td');
         tdApi.textContent = field.name;
@@ -260,9 +260,9 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           editWrapper.style.cssText = 'display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;';
           const valSpan = doc.createElement('span');
           valSpan.textContent = isNull ? '(null)' : valStr;
-          valSpan.style.cssText = isNull ? 'color: var(--sfdt-color-error); font-style: italic; cursor: pointer; flex: 1;' : 'cursor: pointer; flex: 1;';
+          valSpan.style.cssText = isNull ? 'color: var(--sfdt-color-error-text); font-style: italic; cursor: pointer; flex: 1;' : 'cursor: pointer; flex: 1;';
           if (isRecordId(valStr)) {
-            valSpan.style.color = 'var(--sfdt-color-brand)';
+            valSpan.style.color = 'var(--sfdt-color-brand-text)';
             valSpan.style.textDecoration = 'underline';
           }
           
@@ -318,7 +318,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           if (isNull) {
             readSpan.style.cssText = 'color: var(--sfdt-color-text-icon); font-style: italic;';
           } else if (isRecordId(valStr)) {
-            readSpan.style.cssText = 'color: var(--sfdt-color-brand); text-decoration: underline; cursor: pointer;';
+            readSpan.style.cssText = 'color: var(--sfdt-color-brand-text); text-decoration: underline; cursor: pointer;';
             readSpan.addEventListener('click', () => void navigateToRecord(valStr));
           }
           tdValue.appendChild(readSpan);
@@ -386,7 +386,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         const describe = await getSObjectDescribe(sobject);
         activeDescribe = describe;
 
-        const apiVersion = (api as any).apiVersion ?? 'v62.0';
+        const apiVersion = api.apiVersion;
         const rawRecord = await api.apiGet<Record<string, unknown>>(
           `/services/data/${apiVersion}/sobjects/${sobject}/${recordId}`
         );
@@ -401,7 +401,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
 
         recordInfo.textContent = '🔍 Inspect Record: ';
         const idSpan = doc.createElement('span');
-        idSpan.style.cssText = 'color:var(--sfdt-color-brand); font-family:ui-monospace, monospace; margin-left: 6px;';
+        idSpan.style.cssText = 'color:var(--sfdt-color-brand-text); font-family:ui-monospace, monospace; margin-left: 6px;';
         idSpan.textContent = `${sobject} · ${recordId}`;
         recordInfo.appendChild(idSpan);
         
@@ -449,7 +449,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       saveChangesBtn.disabled = true;
       saveChangesBtn.textContent = 'Saving…';
       try {
-        const apiVersion = (api as any).apiVersion ?? 'v62.0';
+        const apiVersion = api.apiVersion;
         await api.apiRequest(
           'PATCH',
           `/services/data/${apiVersion}/sobjects/${activeSobjectName}/${activeRecordId}`,

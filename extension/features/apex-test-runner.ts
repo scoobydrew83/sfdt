@@ -93,7 +93,7 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
   const api = options.api ?? getSalesforceApi();
   const pollIntervalMs = options.pollIntervalMs ?? 1500;
   const maxPolls = options.maxPolls ?? 40;
-  const apiVersion = api.apiVersion ?? 'v62.0';
+  const apiVersion = api.apiVersion;
 
   let view: ViewHandle | null = null;
 
@@ -105,7 +105,7 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
   function renderError(results: HTMLElement, status: HTMLSpanElement, message: string): void {
     const panel = doc.createElement('div');
     panel.style.cssText =
-      'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+      'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
     panel.textContent = message;
     results.appendChild(panel);
     status.textContent = 'Failed';
@@ -134,7 +134,7 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
         card.style.cssText =
           'border: 1px solid var(--sfdt-color-error-border); border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; background: var(--sfdt-color-error-bg-3);';
         const title = doc.createElement('div');
-        title.style.cssText = 'font-weight: 600; font-size: 12px; color: var(--sfdt-color-error); word-break: break-all;';
+        title.style.cssText = 'font-weight: 600; font-size: 12px; color: var(--sfdt-color-error-text); word-break: break-all;';
         title.textContent = f.name;
         card.appendChild(title);
         if (f.message) {
@@ -147,7 +147,7 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
       }
     } else if (summary.total > 0) {
       const ok = doc.createElement('div');
-      ok.style.cssText = 'padding: 8px 0; color: var(--sfdt-color-success); font-size: 13px;';
+      ok.style.cssText = 'padding: 8px 0; color: var(--sfdt-color-success-text); font-size: 13px;';
       ok.textContent = 'All tests passed. 🎉';
       results.appendChild(ok);
     } else {
@@ -235,7 +235,7 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
     const runBtn = doc.createElement('button');
     runBtn.textContent = 'Run';
     runBtn.style.cssText =
-      'padding: 5px 16px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 5px 16px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 13px;';
 
     const status = doc.createElement('span');
     status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px; margin-left: auto;';

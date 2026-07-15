@@ -208,7 +208,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
         while (resultArea.firstChild) resultArea.removeChild(resultArea.firstChild);
         const panel = doc.createElement('div');
         panel.style.cssText =
-          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
+          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
         panel.textContent = message;
         resultArea.appendChild(panel);
       };

@@ -164,7 +164,7 @@ function renderGroups(doc: Document, results: HTMLElement, groups: ObjectGroup[]
         'border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;';
 
       const badge = doc.createElement('span');
-      badge.style.cssText = `flex: 0 0 auto; font-size: 10px; font-weight: 700; color: var(--sfdt-color-surface); background: ${TIMING_COLOUR[flow.timing]}; border-radius: 3px; padding: 2px 6px;`;
+      badge.style.cssText = `flex: 0 0 auto; font-size: 10px; font-weight: 700; color: var(--sfdt-color-on-accent); background: ${TIMING_COLOUR[flow.timing]}; border-radius: 3px; padding: 2px 6px;`;
       badge.textContent = flow.timingLabel;
 
       const name = doc.createElement('span');
@@ -183,7 +183,7 @@ function renderGroups(doc: Document, results: HTMLElement, groups: ObjectGroup[]
         link.target = '_blank';
         link.rel = 'noopener';
         link.textContent = 'Open in Builder ↗';
-        link.style.cssText = 'margin-left: auto; font-size: 11px; color: var(--sfdt-color-brand); text-decoration: none;';
+        link.style.cssText = 'margin-left: auto; font-size: 11px; color: var(--sfdt-color-brand-text); text-decoration: none;';
         row.appendChild(link);
       }
 
@@ -238,7 +238,7 @@ export function createFlowTriggerExplorerEnhancerFeature(
     } catch (err) {
       const panel = doc.createElement('div');
       panel.style.cssText =
-        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
       panel.textContent = err instanceof Error ? err.message : String(err);
       results.appendChild(panel);
       status.textContent = 'Failed';

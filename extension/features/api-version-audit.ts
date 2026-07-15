@@ -122,7 +122,7 @@ function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
     'max-height: 380px',
     'overflow-y: auto',
     'font-size: 12px',
-    'color: var(--sfdt-color-brand-deep)',
+    'color: var(--sfdt-color-text-strong)',
     'text-align: left',
     'white-space: nowrap',
   ].join('; ');
@@ -254,7 +254,7 @@ export function createApiVersionAuditFeature(options: ApiVersionAuditOptions = {
       'font-weight: 700',
       'text-transform: uppercase',
       'letter-spacing: 0.02em',
-      'color: var(--sfdt-color-surface)',
+      'color: var(--sfdt-color-on-accent)',
       `background: ${behind ? BEHIND_COLOUR : OK_COLOUR}`,
       'border-radius: 3px',
       'padding: 2px 8px',

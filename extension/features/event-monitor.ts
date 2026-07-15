@@ -422,7 +422,7 @@ export function createEventMonitorFeature(options: {
   function updateStatus(status: string, isError: boolean): void {
     if (statusLabel) {
       statusLabel.textContent = status;
-      statusLabel.style.color = isError ? 'var(--sfdt-color-error)' : 'var(--sfdt-color-text-weak)';
+      statusLabel.style.color = isError ? 'var(--sfdt-color-error-text)' : 'var(--sfdt-color-text-weak)';
     }
   }
 
@@ -521,7 +521,7 @@ export function createEventMonitorFeature(options: {
 
     const subscribeBtn = doc.createElement('button');
     subscribeBtn.textContent = 'Subscribe';
-    subscribeBtn.style.cssText = 'padding: 6px 16px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    subscribeBtn.style.cssText = 'padding: 6px 16px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     
     const unsubscribeBtn = doc.createElement('button');
     unsubscribeBtn.textContent = 'Unsubscribe';
@@ -668,7 +668,7 @@ export function createEventMonitorFeature(options: {
     detailsWrap.appendChild(detailsBar);
 
     detailsPane = doc.createElement('pre');
-    detailsPane.style.cssText = 'flex: 1; overflow-y: auto; margin: 0; padding: 10px; background: var(--sfdt-color-surface-alt); font-family: monospace; font-size: 11px; color: var(--sfdt-color-brand-deep); white-space: pre-wrap; word-break: break-all;';
+    detailsPane.style.cssText = 'flex: 1; overflow-y: auto; margin: 0; padding: 10px; background: var(--sfdt-color-surface-alt); font-family: monospace; font-size: 11px; color: var(--sfdt-color-text-strong); white-space: pre-wrap; word-break: break-all;';
     detailsWrap.appendChild(detailsPane);
 
     renderEvents();

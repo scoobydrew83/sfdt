@@ -13,6 +13,7 @@ import { readKillSwitchCache, writeKillSwitchCache } from '../lib/killswitch-cac
 import { mountSideButton, type MenuItem } from '../ui/side-button.js';
 import { showToast } from '../ui/toast.js';
 import { ensureTokens } from '../lib/tokens.js';
+import { watchTheme } from '../lib/theme.js';
 import { FEATURE_ICONS } from '../lib/feature-icons.js';
 import { createAiAssistantFeature } from '../features/ai-assistant.js';
 import { createApiNameGeneratorFeature } from '../features/api-name-generator.js';
@@ -74,6 +75,11 @@ export default defineContentScript({
     // inline `var(--sfdt-*)` colours resolve. Idempotent + namespaced, so it
     // can't collide with Salesforce's own styles.
     ensureTokens(document);
+    // Resolve + apply the user's theme (light/dark/auto) to our injected UI and
+    // keep it live (OS scheme change + settings change). Our tokens are
+    // `--sfdt-*` scoped, so this themes only the extension's overlays, never
+    // the host Salesforce page.
+    watchTheme(document);
 
     const settings = await loadSettings();
     let currentSettings = settings;

@@ -17,6 +17,7 @@ import { FEATURE_ICONS, WORKSPACE_TOOLS } from '../../lib/feature-icons.js';
 import { showToast } from '../../ui/toast.js';
 import { createWorkspaceTabs } from '../../ui/workspace-tabs.js';
 import { SFDT_TOKENS_CSS } from '../../lib/tokens.js';
+import { watchTheme, OWN_PAGE_COLOR_SCHEME_CSS } from '../../lib/theme.js';
 
 import { createSoqlRunnerFeature } from '../../features/soql-runner.js';
 import { createSavedSoqlFeature } from '../../features/saved-soql.js';
@@ -64,13 +65,13 @@ function isAllowedSfHost(host: string): boolean {
 
 const STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: var(--sfdt-color-brand-deep); background: var(--sfdt-color-bg); }
-  #sfdt-topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-surface); }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: var(--sfdt-color-text-strong); background: var(--sfdt-color-bg); }
+  #sfdt-topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-on-accent); }
   #sfdt-topbar .title { font-weight: 600; font-size: 15px; }
   #sfdt-topbar .org { margin-left: auto; font-size: 12px; opacity: 0.85; font-family: ui-monospace, monospace; }
-  #sfdt-topbar .release-badge { display: none; align-items: center; font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.14); color: var(--sfdt-color-surface); white-space: nowrap; }
-  #sfdt-topbar .release-badge.preview { background: var(--sfdt-color-warning); color: var(--sfdt-color-brand-deep); font-weight: 600; }
-  #sfdt-topbar button { padding: 5px 12px; border: 1px solid rgba(255,255,255,0.4); background: transparent; color: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; }
+  #sfdt-topbar .release-badge { display: none; align-items: center; font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.14); color: var(--sfdt-color-on-accent); white-space: nowrap; }
+  #sfdt-topbar .release-badge.preview { background: var(--sfdt-color-warning); color: var(--sfdt-color-text-strong); font-weight: 600; }
+  #sfdt-topbar button { padding: 5px 12px; border: 1px solid rgba(255,255,255,0.4); background: transparent; color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 12px; }
   #sfdt-topbar button:hover { background: rgba(255,255,255,0.12); }
   #sfdt-layout { display: flex; height: calc(100vh - 45px); }
   #sfdt-sidebar { width: 260px; background: var(--sfdt-color-surface); border-right: 1px solid var(--sfdt-color-border); overflow-y: auto; padding: 8px; }
@@ -81,13 +82,13 @@ const STYLES = `
   #sfdt-tabbar { display: flex; gap: 4px; padding: 6px 8px 0; background: var(--sfdt-color-bg); border-bottom: 1px solid var(--sfdt-color-border); overflow-x: auto; }
   #sfdt-tabbar:empty { display: none; }
   #sfdt-tabbar .tab { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--sfdt-color-surface-shade-4); border: 1px solid var(--sfdt-color-border); border-bottom: none; border-radius: 4px 4px 0 0; cursor: pointer; font-size: 12px; white-space: nowrap; color: var(--sfdt-color-text-weak); }
-  #sfdt-tabbar .tab.active { background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-deep); font-weight: 600; }
+  #sfdt-tabbar .tab.active { background: var(--sfdt-color-surface); color: var(--sfdt-color-text-strong); font-weight: 600; }
   #sfdt-tabbar .tab .x { border: 0; background: none; cursor: pointer; font-size: 14px; line-height: 1; color: var(--sfdt-color-text-icon); padding: 0 2px; }
-  #sfdt-tabbar .tab .x:hover { color: var(--sfdt-color-error); }
+  #sfdt-tabbar .tab .x:hover { color: var(--sfdt-color-error-text); }
   #sfdt-panes { flex: 1; overflow: auto; }
   #sfdt-panes .pane { height: 100%; flex-direction: column; }
   #sfdt-panes .welcome { max-width: 560px; margin: 40px auto; text-align: center; color: var(--sfdt-color-text-weak); padding: 0 24px; }
-  #sfdt-panes .welcome h2 { color: var(--sfdt-color-brand-deep); }
+  #sfdt-panes .welcome h2 { color: var(--sfdt-color-text-strong); }
   #sfdt-panes code { background: var(--sfdt-color-surface-shade-4); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
 `;
 
@@ -162,7 +163,7 @@ function renderOrgPicker(root: HTMLElement): void {
     while (list.firstChild) list.removeChild(list.firstChild);
     if (orgs.length === 0) {
       const empty = el('div');
-      empty.style.cssText = 'color: var(--sfdt-color-error); font-size: 13px;';
+      empty.style.cssText = 'color: var(--sfdt-color-error-text); font-size: 13px;';
       empty.textContent =
         'No logged-in Salesforce orgs found. Log in to an org in another browser tab, then reload this page.';
       list.appendChild(empty);
@@ -349,8 +350,9 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
 
 async function main(): Promise<void> {
   const styleTag = document.createElement('style');
-  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${STYLES}`;
+  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${OWN_PAGE_COLOR_SCHEME_CSS}\n${STYLES}`;
   document.head.appendChild(styleTag);
+  watchTheme(document);
 
   const root = document.getElementById('sfdt-app-root');
   if (!root) return;
