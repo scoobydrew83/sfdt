@@ -345,7 +345,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     const runBtn = doc.createElement('button');
     runBtn.textContent = 'Execute';
     runBtn.style.cssText =
-      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
     const saveBtn = doc.createElement('button');
     saveBtn.textContent = 'Save snippet';
     saveBtn.style.cssText =

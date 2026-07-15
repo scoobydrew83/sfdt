@@ -10,6 +10,12 @@ import { createFeatureRegistry } from '../../lib/feature-registry.js';
 import { buildField } from '../../lib/zod-to-dom.js';
 import { createTelemetry } from '../../lib/telemetry.js';
 import { SFDT_TOKENS_CSS } from '../../lib/tokens.js';
+import {
+  applyTheme,
+  watchTheme,
+  OWN_PAGE_COLOR_SCHEME_CSS,
+  type ThemeSetting,
+} from '../../lib/theme.js';
 
 // Pull every feature factory in so each module's top-level
 // registerSettingsShape() call lands before loadSettings() runs.
@@ -41,7 +47,7 @@ const STYLES = `
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     background: var(--sfdt-color-surface-alt);
-    color: var(--sfdt-color-brand-deep);
+    color: var(--sfdt-color-text-strong);
     margin: 0;
     padding: 32px 24px;
   }
@@ -96,12 +102,12 @@ const STYLES = `
     border-radius: 3px;
     border: 1px solid var(--sfdt-color-border);
     background: var(--sfdt-color-surface);
-    color: var(--sfdt-color-brand-deep);
+    color: var(--sfdt-color-text-strong);
     cursor: pointer;
     font-size: 13px;
     font-family: inherit;
   }
-  button.primary { background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border-color: var(--sfdt-color-brand); }
+  button.primary { background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-color: var(--sfdt-color-brand); }
   button:hover { background: var(--sfdt-color-bg); }
   button.primary:hover { background: var(--sfdt-color-brand-active); }
   .actions { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
@@ -112,9 +118,9 @@ const STYLES = `
     display: none;
   }
   .status.show { display: inline-block; }
-  .status.ok { background: var(--sfdt-color-success-bg); color: var(--sfdt-color-success); }
+  .status.ok { background: var(--sfdt-color-success-bg); color: var(--sfdt-color-success-text); }
   .status.warn { background: var(--sfdt-color-warning-bg-6); color: var(--sfdt-color-warning-text); }
-  .status.error { background: var(--sfdt-color-error-bg-4); color: var(--sfdt-color-error); }
+  .status.error { background: var(--sfdt-color-error-bg-4); color: var(--sfdt-color-error-text); }
   .hint {
     background: var(--sfdt-color-surface-shade);
     border-left: 3px solid var(--sfdt-color-brand);
@@ -189,8 +195,9 @@ async function render(): Promise<void> {
   if (!root) return;
 
   const styleTag = document.createElement('style');
-  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${STYLES}`;
+  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${OWN_PAGE_COLOR_SCHEME_CSS}\n${STYLES}`;
   document.head.appendChild(styleTag);
+  watchTheme(document);
 
   const registry = createFeatureRegistry();
   registry.register(createSetupTabsFeature());
@@ -348,6 +355,33 @@ async function render(): Promise<void> {
     wrap.appendChild(section);
   }
 
+  const appearanceSection = el('section');
+  appearanceSection.appendChild(el('h2', {}, 'Appearance'));
+  const appearanceHelp = el('p', { class: 'section-help' });
+  appearanceHelp.textContent =
+    'Theme for the extension UI (side menu, tools, options). Applies to every Salesforce tab and persists across restarts.';
+  appearanceSection.appendChild(appearanceHelp);
+
+  const themeSelect = el('select', { id: 'sfdt-theme-select' });
+  themeSelect.setAttribute('aria-label', 'Theme');
+  for (const [value, optLabel] of [
+    ['auto', 'Auto (match your operating system)'],
+    ['light', 'Light'],
+    ['dark', 'Dark'],
+  ] as const) {
+    const opt = el('option', { value });
+    opt.textContent = optLabel;
+    if ((settings.theme ?? 'auto') === value) opt.selected = true;
+    themeSelect.appendChild(opt);
+  }
+  // Live preview: apply on change so the user sees the theme immediately; the
+  // choice is only persisted on Save (below).
+  themeSelect.addEventListener('change', () => {
+    applyTheme(themeSelect.value as ThemeSetting, document);
+  });
+  appearanceSection.appendChild(row('Theme', 'Light, dark, or follow the OS.', themeSelect));
+  wrap.appendChild(appearanceSection);
+
   const telemetrySection = el('section');
   telemetrySection.appendChild(el('h2', {}, 'Telemetry'));
   const telemetryHelp = el('p', { class: 'section-help' });
@@ -431,6 +465,7 @@ async function render(): Promise<void> {
           localhostPort: Number.isFinite(portValue) && portValue > 0 ? portValue : 7654,
         },
         telemetry: { enabled: telemetryCb.checked },
+        theme: themeSelect.value as ThemeSetting,
       };
       await patchSettings(next as Settings);
       saveStatus.className = 'status show ok';

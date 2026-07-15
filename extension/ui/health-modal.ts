@@ -141,7 +141,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     const wrap = styledDiv(doc, 'sfdt-health-error', 'padding: 16px;');
     const title = doc.createElement('div');
     title.className = 'sfdt-health-section-title';
-    title.style.cssText = 'font-size: 16px; font-weight: 600; color: var(--sfdt-color-error);';
+    title.style.cssText = 'font-size: 16px; font-weight: 600; color: var(--sfdt-color-error-text);';
     title.textContent = 'Health Check Failed';
     const msg = doc.createElement('div');
     msg.className = 'sfdt-health-error-message';
@@ -202,7 +202,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
 
     const sevBadge = doc.createElement('span');
     sevBadge.className = `sfdt-health-family-severity sfdt-health-severity-${family.severity}`;
-    sevBadge.style.cssText = `display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; color: var(--sfdt-color-surface); background: ${severityColour(family.severity)};`;
+    sevBadge.style.cssText = `display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; color: var(--sfdt-color-on-accent); background: ${severityColour(family.severity)};`;
     sevBadge.textContent = family.severity.toUpperCase();
 
     const titleSpan = doc.createElement('span');

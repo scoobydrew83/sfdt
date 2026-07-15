@@ -104,7 +104,7 @@ function createBridgeToolFeature(spec: ToolSpec, options: BridgeToolOptions): Fe
   function renderError(results: HTMLElement, status: HTMLSpanElement, message: string): void {
     const panel = doc.createElement('div');
     panel.style.cssText =
-      'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+      'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
     panel.textContent = message;
     results.appendChild(panel);
     status.textContent = 'Failed';
@@ -151,7 +151,7 @@ function createBridgeToolFeature(spec: ToolSpec, options: BridgeToolOptions): Fe
     const runBtn = doc.createElement('button');
     runBtn.textContent = spec.runLabel;
     runBtn.style.cssText =
-      'padding: 5px 14px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 5px 14px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 13px;';
     const status = doc.createElement('span');
     status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     toolbar.append(controls, runBtn, status);

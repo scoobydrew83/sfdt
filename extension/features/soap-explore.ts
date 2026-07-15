@@ -150,7 +150,7 @@ export function createSoapExploreFeature(options: {
 
     const sendBtn = doc.createElement('button');
     sendBtn.textContent = 'Send';
-    sendBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    sendBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     configRow.appendChild(sendBtn);
     body.appendChild(configRow);
 
@@ -211,7 +211,7 @@ export function createSoapExploreFeature(options: {
     body.appendChild(statusPanel);
 
     const errorPanel = doc.createElement('div');
-    errorPanel.style.cssText = 'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
+    errorPanel.style.cssText = 'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
     body.appendChild(errorPanel);
 
     const responsePane = doc.createElement('pre');
@@ -305,7 +305,7 @@ export function createSoapExploreFeature(options: {
         item.style.cssText = 'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--sfdt-color-bg); font-family: monospace; font-size: 11px;';
         const badge = doc.createElement('span');
         badge.textContent = entry.wsdl;
-        badge.style.cssText = 'display: inline-block; min-width: 60px; padding: 1px 4px; border-radius: 3px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-surface); font-weight: 600; margin-right: 6px; text-align: center;';
+        badge.style.cssText = 'display: inline-block; min-width: 60px; padding: 1px 4px; border-radius: 3px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-on-accent); font-weight: 600; margin-right: 6px; text-align: center;';
         const text = doc.createElement('span');
         text.textContent = entry.operation;
         item.appendChild(badge);

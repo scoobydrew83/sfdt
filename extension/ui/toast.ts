@@ -54,7 +54,7 @@ export function showToast(message: string, options: ToastOptions = {}): () => vo
   toast.setAttribute('role', 'status');
   toast.style.cssText = [
     'background: ' + KIND_BACKGROUND[kind],
-    'color: var(--sfdt-color-surface)',
+    'color: var(--sfdt-color-on-accent)',
     'padding: 10px 14px',
     'border-radius: 4px',
     'box-shadow: 0 2px 6px rgba(0,0,0,0.2)',

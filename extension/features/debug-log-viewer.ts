@@ -160,7 +160,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
         status.textContent = '';
         const errPanel = doc.createElement('div');
         errPanel.style.cssText =
-          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
         errPanel.textContent = err instanceof Error ? err.message : String(err);
         table.appendChild(errPanel);
       }

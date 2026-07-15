@@ -548,7 +548,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
 
     const toggleWrapBtn = doc.createElement('button');
     toggleWrapBtn.textContent = 'Expand ▾';
-    toggleWrapBtn.style.cssText = 'background: none; border: none; color: var(--sfdt-color-brand); font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: 3px; font-family: inherit;';
+    toggleWrapBtn.style.cssText = 'background: none; border: none; color: var(--sfdt-color-brand-text); font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: 3px; font-family: inherit;';
     toggleWrapBtn.addEventListener('click', () => {
       expandAutocomplete = !expandAutocomplete;
       updateResultsWrap();
@@ -567,11 +567,11 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const runBtn = doc.createElement('button');
     runBtn.textContent = '▶ Run';
     runBtn.style.cssText =
-      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
     const bookmarkBtn = doc.createElement('button');
     bookmarkBtn.textContent = '★ Save';
     bookmarkBtn.style.cssText =
-      'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-text); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 13px;';
     bookmarkBtn.addEventListener('click', async () => {
       const q = textarea.value.trim();
       if (!q) {
@@ -593,7 +593,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
 
     const errorPanel = doc.createElement('div');
     errorPanel.style.cssText =
-      'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
+      'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
     body.appendChild(errorPanel);
 
     const resultsWrap = doc.createElement('div');
@@ -703,7 +703,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       for (const item of items) {
         const itemEl = doc.createElement('div');
         itemEl.textContent = item.label;
-        itemEl.style.cssText = 'padding: 6px 12px; cursor: pointer; color: var(--sfdt-color-brand-deep);';
+        itemEl.style.cssText = 'padding: 6px 12px; cursor: pointer; color: var(--sfdt-color-text-strong);';
         itemEl.addEventListener('mouseenter', () => itemEl.style.background = 'var(--sfdt-color-surface-shade)');
         itemEl.addEventListener('mouseleave', () => itemEl.style.background = 'var(--sfdt-color-surface)');
         itemEl.addEventListener('click', () => {
@@ -763,7 +763,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
             const link = doc.createElement('a');
             link.href = '#';
             link.textContent = raw.length > 200 ? raw.slice(0, 200) + '…' : raw;
-            link.style.cssText = 'color: var(--sfdt-color-brand); text-decoration: underline; cursor: pointer;';
+            link.style.cssText = 'color: var(--sfdt-color-brand-text); text-decoration: underline; cursor: pointer;';
             link.addEventListener('click', (e) => {
               e.preventDefault();
               showCellMenu(link, raw);
@@ -809,7 +809,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         badge.style.cssText =
           entry.api === 'tooling'
             ? 'color: var(--sfdt-color-warning-text); font-weight: 600; margin-right: 6px;'
-            : 'color: var(--sfdt-color-brand); font-weight: 600; margin-right: 6px;';
+            : 'color: var(--sfdt-color-brand-text); font-weight: 600; margin-right: 6px;';
         const text = doc.createElement('span');
         const trimmed = entry.q.length > 200 ? entry.q.slice(0, 200) + '…' : entry.q;
         text.textContent = trimmed;
@@ -848,7 +848,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         badge.style.cssText =
           entry.api === 'tooling'
             ? 'color: var(--sfdt-color-warning-text); font-weight: 600; margin-right: 6px; flex-shrink: 0;'
-            : 'color: var(--sfdt-color-brand); font-weight: 600; margin-right: 6px; flex-shrink: 0;';
+            : 'color: var(--sfdt-color-brand-text); font-weight: 600; margin-right: 6px; flex-shrink: 0;';
         
         const titleText = doc.createElement('strong');
         titleText.textContent = `${entry.name}: `;
@@ -865,7 +865,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
 
         const deleteBtn = doc.createElement('button');
         deleteBtn.textContent = '×';
-        deleteBtn.style.cssText = 'background: none; border: none; color: var(--sfdt-color-error); font-size: 16px; cursor: pointer; padding: 0 4px;';
+        deleteBtn.style.cssText = 'background: none; border: none; color: var(--sfdt-color-error-text); font-size: 16px; cursor: pointer; padding: 0 4px;';
         deleteBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           if (win.confirm(`Are you sure you want to delete bookmark "${entry.name}"?`)) {
@@ -1461,7 +1461,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         btn.textContent = `${icon} ${item.value}`;
         btn.title = item.title;
         btn.style.cssText =
-          'display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 14px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand); font-size: 12px; cursor: pointer; white-space: nowrap; transition: background 0.15s, border-color 0.15s, transform 0.1s; outline: none; margin: 2px 0; font-family: system-ui, sans-serif;';
+          'display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 14px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-text); font-size: 12px; cursor: pointer; white-space: nowrap; transition: background 0.15s, border-color 0.15s, transform 0.1s; outline: none; margin: 2px 0; font-family: system-ui, sans-serif;';
         
         btn.addEventListener('mouseenter', () => {
           btn.style.background = 'var(--sfdt-color-surface-shade)';

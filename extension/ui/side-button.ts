@@ -38,7 +38,7 @@ const BUTTON_STYLE = [
   'width: 32px',
   'height: 48px',
   'background: var(--sfdt-color-brand)',
-  'color: var(--sfdt-color-surface)',
+  'color: var(--sfdt-color-on-accent)',
   'border-radius: 4px 0 0 4px',
   'display: flex',
   'align-items: center',
@@ -141,7 +141,7 @@ export function mountSideButton(opts: {
   settingsLink.href = '#';
   settingsLink.id = 'sfdt-settings-link';
   settingsLink.className = 'sfdt-menu-settings-link';
-  settingsLink.style.cssText = 'color: var(--sfdt-color-brand); text-decoration: none; font-size: 12px;';
+  settingsLink.style.cssText = 'color: var(--sfdt-color-brand-text); text-decoration: none; font-size: 12px;';
   settingsLink.textContent = '⚙ Settings';
   footer.appendChild(settingsLink);
 

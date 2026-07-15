@@ -345,7 +345,7 @@ export function createTriggerConflictsFeature(
     async onActivate() {
       const loading = doc.createElement('div');
       loading.style.cssText =
-        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: var(--sfdt-color-surface); font-family: system-ui, sans-serif;';
+        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: var(--sfdt-color-on-accent); font-family: system-ui, sans-serif;';
       loading.textContent = 'Scanning flows for trigger conflicts…';
       doc.body.appendChild(loading);
       try {

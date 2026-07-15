@@ -157,13 +157,13 @@ export function createFieldCreatorFeature(options: {
 
     const addFieldBtn = doc.createElement('button');
     addFieldBtn.textContent = '➕ Add Field';
-    addFieldBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+    addFieldBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-text); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
     const permAllBtn = doc.createElement('button');
     permAllBtn.textContent = '🔒 Permissions for All';
     permAllBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
     const clearBtn = doc.createElement('button');
     clearBtn.textContent = '🗑 Clear All';
-    clearBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-error); border: 1px solid var(--sfdt-color-error); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+    clearBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-error-text); border: 1px solid var(--sfdt-color-error); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
 
     buttonGroup.appendChild(addFieldBtn);
     buttonGroup.appendChild(permAllBtn);
@@ -199,7 +199,7 @@ export function createFieldCreatorFeature(options: {
 
     const deployBtn = doc.createElement('button');
     deployBtn.textContent = 'Deploy Fields';
-    deployBtn.style.cssText = 'padding: 8px 20px; background: var(--sfdt-color-success); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    deployBtn.style.cssText = 'padding: 8px 20px; background: var(--sfdt-color-success); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     deployBtn.disabled = true;
     actionRow.appendChild(deployBtn);
 
@@ -569,7 +569,7 @@ export function createFieldCreatorFeature(options: {
       buttons.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--sfdt-color-border-2); padding-top: 12px; margin-top: 8px;';
       const saveBtn = doc.createElement('button');
       saveBtn.textContent = 'Save';
-      saveBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+      saveBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
       saveBtn.addEventListener('click', () => {
         optOverlay.remove();
       });
@@ -775,7 +775,7 @@ export function createFieldCreatorFeature(options: {
 
       const saveBtn = doc.createElement('button');
       saveBtn.textContent = 'Save Permissions';
-      saveBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+      saveBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
       saveBtn.addEventListener('click', () => {
         const mappedProfiles = Object.entries(permissionsLocal)
           .filter(([_, perm]) => perm.read || perm.edit)

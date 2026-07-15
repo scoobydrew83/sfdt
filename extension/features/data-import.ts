@@ -276,7 +276,7 @@ export function createDataImportFeature(options: {
     mappingContainer.style.cssText = 'display: none; flex-direction: column; gap: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 12px;';
     const mappingHeader = doc.createElement('span');
     mappingHeader.textContent = 'Field Mappings';
-    mappingHeader.style.cssText = 'font-weight: 600; font-size: 13px; color: var(--sfdt-color-brand-deep);';
+    mappingHeader.style.cssText = 'font-weight: 600; font-size: 13px; color: var(--sfdt-color-text-strong);';
     mappingContainer.appendChild(mappingHeader);
     const mappingGrid = doc.createElement('div');
     mappingGrid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; max-height: 200px; overflow-y: auto; padding: 4px;';
@@ -290,12 +290,12 @@ export function createDataImportFeature(options: {
 
     const importBtn = doc.createElement('button');
     importBtn.textContent = 'Start Import';
-    importBtn.style.cssText = 'padding: 8px 20px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    importBtn.style.cssText = 'padding: 8px 20px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     importBtn.disabled = true;
 
     const downloadErrorsBtn = doc.createElement('button');
     downloadErrorsBtn.textContent = 'Download Errors CSV';
-    downloadErrorsBtn.style.cssText = 'padding: 8px 14px; background: var(--sfdt-color-surface); color: var(--sfdt-color-error); border: 1px solid var(--sfdt-color-error); border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; display: none;';
+    downloadErrorsBtn.style.cssText = 'padding: 8px 14px; background: var(--sfdt-color-surface); color: var(--sfdt-color-error-text); border: 1px solid var(--sfdt-color-error); border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; display: none;';
 
     actionRow.appendChild(downloadErrorsBtn);
     actionRow.appendChild(importBtn);
@@ -701,7 +701,7 @@ export function createDataImportFeature(options: {
         if (row.resultId) {
           const idLink = doc.createElement('span');
           idLink.textContent = row.resultId;
-          idLink.style.cssText = 'color: var(--sfdt-color-brand); text-decoration: underline; cursor: pointer;';
+          idLink.style.cssText = 'color: var(--sfdt-color-brand-text); text-decoration: underline; cursor: pointer;';
           idLink.addEventListener('click', () => {
             // open view-all-data or inspect-record
             // Just copy it or open a link
