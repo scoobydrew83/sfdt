@@ -16,7 +16,7 @@ jobs:
   selftest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # cli-version: latest (a published version) — 'auto' resolves to the
       # in-repo package.json version, which on a release PR isn't on npm yet;
       # auto-resolution is covered by test/action.test.js.

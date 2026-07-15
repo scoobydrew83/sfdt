@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+## [0.18.1] - 2026-07-15
+
+### Fixed
+
+- **Shell scripts now resolve bash through `/usr/bin/env`.** `smoke`, `rollback`, the enhanced test runner, the test analyzer, and the test-stub generator all hardcoded `#!/bin/bash`, which fails outright on systems that don't ship bash at that path (NixOS, slim containers) and pins macOS to the bundled bash 3.2 even when a modern bash is on `PATH`. They now use `#!/usr/bin/env bash`, matching the project's bash 4.0+ baseline.
+- **`sfdt skills export` emits a stable, deterministic order.** The underlying `glob()` call guarantees no ordering, so every export reshuffled skills across the pack manifest, the rules markdown, and `.claude/skills` — surfacing as a spurious diff in the generated pack repo on each run. Entries are now sorted.
+
+### Changed
+
+- Internal CI only, no runtime impact: the live Salesforce integration smoke was re-enabled. `actions/checkout` and `actions/setup-node` bumped to v7.
+
 ## [0.18.0] - 2026-07-14
 
 ### Added

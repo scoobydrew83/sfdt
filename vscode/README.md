@@ -1,7 +1,7 @@
 # SFDT for Salesforce (VS Code)
 
 [![Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-blue?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/sfdt.sfdt-devtools)](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools)
+![GitHub License](https://img.shields.io/github/license/scoobydrew83/sfdt)
 
 Drive the [`sfdt`](https://www.npmjs.com/package/@sfdt/cli) CLI from inside VS
 Code. This extension is a thin, fast UI over the CLI — it does not reimplement

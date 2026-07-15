@@ -3,7 +3,7 @@
     {
       "path": "package.json",
       "name": "@sfdt/cli",
-      "version": "0.18.0",
+      "version": "0.18.1",
       "license": "Apache-2.0",
       "private": false,
       "engines": {
@@ -55,7 +55,7 @@
     {
       "path": "packages/plugin/package.json",
       "name": "@sfdt/plugin",
-      "version": "0.18.0",
+      "version": "0.18.1",
       "license": "Apache-2.0",
       "private": false,
       "engines": {
