@@ -1,14 +1,13 @@
 // Guard test for P0-4: the Salesforce `sid` must never enter page-adjacent
 // memory. Feature code, UI code, and non-worker entrypoints must reach the org
-// only through the worker-brokered `sfApiFetch` route — never read the sid
-// cookie, never call the getSidForUrls route, never attach a raw
-// `Authorization: Bearer` header themselves.
+// only through the worker-brokered `sfApiFetch` route (and the `sfApiStream`
+// Port for streaming) — never read the sid cookie, never call the getSidForUrls
+// route, never call getSessionDetails, never attach a raw `Authorization:
+// Bearer` header themselves.
 //
-// The ONE documented, temporary exception is the Event Streaming Monitor
-// (features/event-monitor.ts): its CometD long-poll client still needs the raw
-// sid (via api.getSessionDetails()) to open its own connection. That path is
-// migrated to a worker-brokered connection in PR2, at which point this
-// allowlist entry is removed.
+// As of P0-4 PR2 there are ZERO exceptions: the Event Streaming Monitor's
+// CometD long-poll now runs worker-side (lib/sf-stream-worker.ts) behind the
+// sfApiStream Port, so no page-adjacent file is allowlisted.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -28,9 +27,6 @@ const SCANNED_ROOTS = [
 ];
 const SCANNED_FILES = [path.join(EXT_ROOT, 'entrypoints', 'content.ts')];
 
-// Temporary allowlist — removed in PR2. See file header.
-const ALLOWLIST = new Set([path.join(EXT_ROOT, 'features', 'event-monitor.ts')]);
-
 function collectTsFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
@@ -49,7 +45,7 @@ function allScannedFiles(): string[] {
   for (const root of SCANNED_ROOTS) {
     files.push(...collectTsFiles(root));
   }
-  return files.filter((f) => !ALLOWLIST.has(f));
+  return files;
 }
 
 // Bans a raw Bearer auth header on a fetch — the worker owns Authorization.
@@ -74,15 +70,14 @@ describe('sid never leaves the worker (P0-4 guard)', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('no feature/UI/entrypoint code attaches a raw Authorization: Bearer header', () => {
-    const offenders = files.filter((f) => BEARER_RE.test(readFileSync(f, 'utf8')));
+  it('no feature/UI/entrypoint code calls getSessionDetails (removed in PR2)', () => {
+    const offenders = files.filter((f) => readFileSync(f, 'utf8').includes('getSessionDetails'));
     expect(offenders).toEqual([]);
   });
 
-  it('the one allowlisted exception (event-monitor) is real and still present', () => {
-    // If event-monitor is refactored away, this reminds us to drop the allowlist.
-    const src = readFileSync(path.join(EXT_ROOT, 'features', 'event-monitor.ts'), 'utf8');
-    expect(src).toContain('getSessionDetails');
+  it('no feature/UI/entrypoint code attaches a raw Authorization: Bearer header', () => {
+    const offenders = files.filter((f) => BEARER_RE.test(readFileSync(f, 'utf8')));
+    expect(offenders).toEqual([]);
   });
 
   it('an sfApiFetch worker response carries NO sid field', async () => {

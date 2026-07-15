@@ -1,16 +1,65 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createEventMonitorFeature, SalesforceBayeuxClient, type BayeuxMessage } from '../features/event-monitor.js';
+import { createEventMonitorFeature } from '../features/event-monitor.js';
 import type { SalesforceApiClient } from '../lib/salesforce-api.js';
 
 function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
   return {
     apiVersion: 'v62.0',
+    orgOrigin: null,
     apiGet: vi.fn(async () => ({ records: [] })),
     toolingQuery: vi.fn(async () => ({ records: [] })),
     limits: vi.fn(async () => ({})),
-    getSessionDetails: vi.fn(async () => ({ baseUrl: 'https://test.salesforce.com', sid: 'session-id' })),
     ...overrides,
   } as unknown as SalesforceApiClient;
+}
+
+// Structural client-Port shape. The postMessage/disconnect values are vi.fn
+// spies at runtime (so toHaveBeenCalledWith works) but typed as plain functions
+// so the object is assignable to the feature's StreamClientPort option.
+interface MockPort {
+  postMessage: (message: unknown) => void;
+  onMessage: { addListener: (cb: (m: unknown) => void) => void };
+  onDisconnect: { addListener: (cb: () => void) => void };
+  disconnect: () => void;
+}
+
+// Mock of the client (page) side of a chrome.runtime.Port.
+function makeMockPort(): {
+  port: MockPort;
+  posted: unknown[];
+  emit: (m: unknown) => void;
+  fireDisconnect: () => void;
+} {
+  const posted: unknown[] = [];
+  let msgCb: ((m: unknown) => void) | null = null;
+  let discCb: (() => void) | null = null;
+  const port: MockPort = {
+    postMessage: vi.fn((m: unknown) => { posted.push(m); }),
+    onMessage: { addListener: (cb: (m: unknown) => void) => { msgCb = cb; } },
+    onDisconnect: { addListener: (cb: () => void) => { discCb = cb; } },
+    disconnect: vi.fn(),
+  };
+  return {
+    port,
+    posted,
+    emit: (m) => msgCb?.(m),
+    fireDisconnect: () => discCb?.(),
+  };
+}
+
+// A connect factory that records the ports it hands out.
+function makeConnect(): {
+  connect: (name: string) => MockPort;
+  ports: ReturnType<typeof makeMockPort>[];
+  last: () => ReturnType<typeof makeMockPort> | undefined;
+} {
+  const ports: ReturnType<typeof makeMockPort>[] = [];
+  const connect = vi.fn((_name: string): MockPort => {
+    const mp = makeMockPort();
+    ports.push(mp);
+    return mp.port;
+  });
+  return { connect, ports, last: () => ports[ports.length - 1] };
 }
 
 function clearBody(): void {
@@ -27,379 +76,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('SalesforceBayeuxClient', () => {
-  it('successfully handshakes, subscribes, and receives messages', async () => {
-    const fetchSpy = vi.fn(async (url, options: any) => {
-      const body = JSON.parse(options.body);
-      const channel = body[0]?.channel;
-
-      if (channel === '/meta/handshake') {
-        return {
-          ok: true,
-          json: async () => [{ channel: '/meta/handshake', clientId: 'client-123', successful: true }],
-        } as Response;
-      }
-      if (channel === '/meta/subscribe') {
-        return {
-          ok: true,
-          json: async () => [
-            {
-              channel: '/meta/subscribe',
-              clientId: 'client-123',
-              subscription: '/event/My_Event__e',
-              successful: true,
-            },
-          ],
-        } as Response;
-      }
-      if (channel === '/meta/connect') {
-        return {
-          ok: true,
-          json: async () => [
-            {
-              channel: '/event/My_Event__e',
-              data: { payload: { Message__c: 'Hello World' } },
-              successful: true,
-            },
-          ],
-        } as Response;
-      }
-      return { ok: false, status: 404 } as Response;
-    });
-
-    const client = new SalesforceBayeuxClient(
-      'https://test.salesforce.com',
-      'session-id',
-      'v62.0',
-      fetchSpy as any,
-    );
-
-    const receivedMessages: any[] = [];
-    const statusChanges: string[] = [];
-
-    client.onMessage((msg) => {
-      receivedMessages.push(msg);
-      void client.stop();
-    });
-
-    client.onStatus((status) => {
-      statusChanges.push(status);
-    });
-
-    await client.start('/event/My_Event__e', -1);
-
-    // Give some microtask execution cycles
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(receivedMessages).toEqual([{ payload: { Message__c: 'Hello World' } }]);
-    expect(statusChanges).toContain('Initiating handshake...');
-    expect(statusChanges).toContain('Handshake successful. Subscribing...');
-    expect(statusChanges).toContain('Listening on /event/My_Event__e...');
-    expect(statusChanges).toContain('Disconnected');
-  });
-
-  it('sends a typed replay extension and delivers typed message data', async () => {
-    // Typed fixture — compiles against the exported BayeuxMessage shape,
-    // including the replay `ext` and channel-specific `data` payload.
-    const connectMessages: BayeuxMessage[] = [
-      {
-        channel: '/event/My_Event__e',
-        data: { payload: { Message__c: 'typed' }, event: { replayId: 7 } },
-        ext: { replay: { '/event/My_Event__e': 7 } },
-      },
-    ];
-
-    const sentBodies: BayeuxMessage[][] = [];
-    const fetchSpy = vi.fn(async (url, options: any) => {
-      const body = JSON.parse(options.body) as BayeuxMessage[];
-      sentBodies.push(body);
-      const channel = body[0]?.channel;
-
-      if (channel === '/meta/handshake') {
-        return {
-          ok: true,
-          json: async () => [{ channel: '/meta/handshake', clientId: 'client-123', successful: true }],
-        } as Response;
-      }
-      if (channel === '/meta/subscribe') {
-        return {
-          ok: true,
-          json: async () => [{ channel: '/meta/subscribe', successful: true }],
-        } as Response;
-      }
-      if (channel === '/meta/connect') {
-        return { ok: true, json: async () => connectMessages } as Response;
-      }
-      return { ok: true, json: async () => [{ channel: '/meta/disconnect', successful: true }] } as Response;
-    });
-
-    const client = new SalesforceBayeuxClient(
-      'https://test.salesforce.com',
-      'session-id',
-      'v62.0',
-      fetchSpy as any,
-    );
-
-    const received: unknown[] = [];
-    client.onMessage((msg) => {
-      received.push(msg);
-      void client.stop();
-    });
-
-    await client.start('/event/My_Event__e', -5);
-    await new Promise((r) => setTimeout(r, 10));
-
-    const subscribeBody = sentBodies.find((b) => b[0]?.channel === '/meta/subscribe');
-    expect(subscribeBody?.[0]?.ext?.replay).toEqual({ '/event/My_Event__e': -5 });
-    expect(received).toEqual([{ payload: { Message__c: 'typed' }, event: { replayId: 7 } }]);
-  });
-
-  it('stops if handshake fails', async () => {
-    const fetchSpy = vi.fn(async () => {
-      return {
-        ok: true,
-        json: async () => [{ channel: '/meta/handshake', successful: false, error: 'Bad credentials' }],
-      } as Response;
-    });
-
-    const client = new SalesforceBayeuxClient(
-      'https://test.salesforce.com',
-      'session-id',
-      'v62.0',
-      fetchSpy as any,
-    );
-
-    const statusChanges: string[] = [];
-    client.onStatus((status) => {
-      statusChanges.push(status);
-    });
-
-    await client.start('/event/My_Event__e', -1);
-
-    expect(statusChanges).toContain('Connection failed: Bad credentials');
-  });
-
-  it('stops if subscription fails', async () => {
-    const fetchSpy = vi.fn(async (url, options: any) => {
-      const body = JSON.parse(options.body);
-      const channel = body[0]?.channel;
-
-      if (channel === '/meta/handshake') {
-        return {
-          ok: true,
-          json: async () => [{ channel: '/meta/handshake', clientId: 'client-123', successful: true }],
-        } as Response;
-      }
-      if (channel === '/meta/subscribe') {
-        return {
-          ok: true,
-          json: async () => [{ channel: '/meta/subscribe', clientId: 'client-123', successful: false, error: 'Forbidden' }],
-        } as Response;
-      }
-      return { ok: false } as Response;
-    });
-
-    const client = new SalesforceBayeuxClient(
-      'https://test.salesforce.com',
-      'session-id',
-      'v62.0',
-      fetchSpy as any,
-    );
-
-    const statusChanges: string[] = [];
-    client.onStatus((status) => {
-      statusChanges.push(status);
-    });
-
-    await client.start('/event/My_Event__e', -1);
-
-    expect(statusChanges).toContain('Connection failed: Forbidden');
-  });
-
-  it('reports when connection is lost', async () => {
-    const fetchSpy = vi.fn(async (url, options: any) => {
-      const body = JSON.parse(options.body);
-      const channel = body[0]?.channel;
-
-      if (channel === '/meta/handshake') {
-        return {
-          ok: true,
-          json: async () => [{ channel: '/meta/handshake', clientId: 'client-123', successful: true }],
-        } as Response;
-      }
-      if (channel === '/meta/subscribe') {
-        return {
-          ok: true,
-          json: async () => [
-            {
-              channel: '/meta/subscribe',
-              clientId: 'client-123',
-              subscription: '/event/My_Event__e',
-              successful: true,
-            },
-          ],
-        } as Response;
-      }
-      if (channel === '/meta/connect') {
-        return {
-          ok: true,
-          json: async () => [{ channel: '/meta/connect', successful: false, error: 'Connection expired' }],
-        } as Response;
-      }
-      return { ok: false } as Response;
-    });
-
-    const client = new SalesforceBayeuxClient(
-      'https://test.salesforce.com',
-      'session-id',
-      'v62.0',
-      fetchSpy as any,
-    );
-
-    const statusChanges: string[] = [];
-    client.onStatus((status) => {
-      statusChanges.push(status);
-      if (status.includes('Connection lost')) {
-        void client.stop();
-      }
-    });
-
-    await client.start('/event/My_Event__e', -1);
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(statusChanges).toContain('Connection lost: Connection expired');
-  });
-
-  it('auto-stops the loop when /meta/connect reports successful === false', async () => {
-    let connectCalls = 0;
-    const fetchSpy = vi.fn(async (url, options: any) => {
-      const body = JSON.parse(options.body);
-      const channel = body[0]?.channel;
-
-      if (channel === '/meta/handshake') {
-        return {
-          ok: true,
-          json: async () => [{ channel: '/meta/handshake', clientId: 'client-123', successful: true }],
-        } as Response;
-      }
-      if (channel === '/meta/subscribe') {
-        return {
-          ok: true,
-          json: async () => [
-            {
-              channel: '/meta/subscribe',
-              clientId: 'client-123',
-              subscription: '/event/My_Event__e',
-              successful: true,
-            },
-          ],
-        } as Response;
-      }
-      if (channel === '/meta/connect') {
-        connectCalls++;
-        return {
-          ok: true,
-          json: async () => [{ channel: '/meta/connect', successful: false, error: 'Invalid client id' }],
-        } as Response;
-      }
-      if (channel === '/meta/disconnect') {
-        return { ok: true, json: async () => [{ channel: '/meta/disconnect', successful: true }] } as Response;
-      }
-      return { ok: false } as Response;
-    });
-
-    const client = new SalesforceBayeuxClient(
-      'https://test.salesforce.com',
-      'session-id',
-      'v62.0',
-      fetchSpy as any,
-    );
-
-    const statusChanges: string[] = [];
-    client.onStatus((status) => {
-      statusChanges.push(status);
-    });
-
-    await client.start('/event/My_Event__e', -1);
-    await new Promise((r) => setTimeout(r, 20));
-
-    // The loop must not spam connect calls: a single failing /meta/connect
-    // stops the client rather than looping forever.
-    expect(connectCalls).toBe(1);
-    expect(statusChanges).toContain('Connection lost: Invalid client id');
-    expect(statusChanges).toContain('Disconnected');
-  });
-
-  it('retries connect on HTTP failure and increments attempts with backoff', async () => {
-    vi.useFakeTimers();
-
-    let connectCalls = 0;
-    const fetchSpy = vi.fn(async (url, options: any) => {
-      const body = JSON.parse(options.body);
-      const channel = body[0]?.channel;
-
-      if (channel === '/meta/handshake') {
-        return {
-          ok: true,
-          json: async () => [{ channel: '/meta/handshake', clientId: 'client-123', successful: true }],
-        } as Response;
-      }
-      if (channel === '/meta/subscribe') {
-        return {
-          ok: true,
-          json: async () => [
-            {
-              channel: '/meta/subscribe',
-              clientId: 'client-123',
-              subscription: '/event/My_Event__e',
-              successful: true,
-            },
-          ],
-        } as Response;
-      }
-      if (channel === '/meta/connect') {
-        connectCalls++;
-        if (connectCalls === 1) {
-          throw new Error('Network error');
-        }
-        return {
-          ok: true,
-          json: async () => [{ channel: '/meta/connect', successful: true }],
-        } as Response;
-      }
-      return { ok: false } as Response;
-    });
-
-    const client = new SalesforceBayeuxClient(
-      'https://test.salesforce.com',
-      'session-id',
-      'v62.0',
-      fetchSpy as any,
-    );
-
-    const statusChanges: string[] = [];
-    client.onStatus((status) => {
-      statusChanges.push(status);
-      if (status.includes('attempt 1')) {
-        vi.advanceTimersByTime(2000);
-      }
-      if (connectCalls === 2) {
-        void client.stop();
-      }
-    });
-
-    await client.start('/event/My_Event__e', -1);
-    await vi.advanceTimersByTimeAsync(0);
-
-    expect(statusChanges).toContain('Connection error (attempt 1): Network error');
-    vi.useRealTimers();
-  });
-});
-
 describe('Event Streaming Monitor UI Feature', () => {
   it('mounts the overlay and closes it', async () => {
     const api = fakeApi();
-    const feature = createEventMonitorFeature({ api });
+    const feature = createEventMonitorFeature({ api, connect: makeConnect().connect });
     await feature.onActivate?.();
 
     expect(document.querySelector('.sfdt-view-overlay')).not.toBeNull();
@@ -439,7 +119,7 @@ describe('Event Streaming Monitor UI Feature', () => {
       }) as unknown as SalesforceApiClient['toolingQuery'],
     });
 
-    const feature = createEventMonitorFeature({ api });
+    const feature = createEventMonitorFeature({ api, connect: makeConnect().connect });
     await feature.onActivate?.();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -452,19 +132,16 @@ describe('Event Streaming Monitor UI Feature', () => {
     // Default is platformEvent
     expect(nameSelect.textContent).toContain('Custom Event (Custom_Event__e)');
 
-    // Switch to standardPlatformEvent
     typeSelect.value = 'standardPlatformEvent';
     typeSelect.dispatchEvent(new Event('change'));
     await new Promise((r) => setTimeout(r, 0));
     expect(nameSelect.textContent).toContain('Standard Event (Standard_Event)');
 
-    // Switch to customChannel
     typeSelect.value = 'customChannel';
     typeSelect.dispatchEvent(new Event('change'));
     await new Promise((r) => setTimeout(r, 0));
     expect(nameSelect.textContent).toContain('My Channel (MyChannel)');
 
-    // Switch to changeEvent
     typeSelect.value = 'changeEvent';
     typeSelect.dispatchEvent(new Event('change'));
     await new Promise((r) => setTimeout(r, 0));
@@ -479,7 +156,7 @@ describe('Event Streaming Monitor UI Feature', () => {
       })),
     });
 
-    const feature = createEventMonitorFeature({ api });
+    const feature = createEventMonitorFeature({ api, connect: makeConnect().connect });
     await feature.onActivate?.();
 
     const limitsBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Limits Metrics');
@@ -490,18 +167,16 @@ describe('Event Streaming Monitor UI Feature', () => {
 
     const bodyText = document.body.textContent ?? '';
     expect(bodyText).toContain('HourlyPublishedPlatformEvents: Remaining 42000 out of 50000');
-    // DailyApiRequests should be filtered out because it's not a PlatformEvent / Streaming limit.
     expect(bodyText).not.toContain('DailyApiRequests');
   });
 
-  it('does not subscribe when no channel is selected and no custom path is provided', async () => {
-    const startSpy = vi.spyOn(SalesforceBayeuxClient.prototype, 'start').mockResolvedValue();
-
+  it('does not open a Port when no channel is selected and no custom path is provided', async () => {
+    const { connect } = makeConnect();
     // fakeApi returns empty records, so the channel dropdown falls back to the
     // placeholder option whose name is '' (empty), and no custom path is typed.
     const api = fakeApi();
 
-    const feature = createEventMonitorFeature({ api });
+    const feature = createEventMonitorFeature({ api, connect });
     await feature.onActivate?.();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -510,26 +185,20 @@ describe('Event Streaming Monitor UI Feature', () => {
     subscribeBtn?.click();
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(startSpy).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain('Please specify or select a streaming channel first.');
   });
 
-  it('subscribes to events, updates UI list, allows filter, copy, clear, and unsubscribe', async () => {
-    let activeClient: any = null;
-    const startSpy = vi.spyOn(SalesforceBayeuxClient.prototype, 'start').mockImplementation(async function (this: any) {
-      // eslint-disable-next-line @typescript-eslint/no-this-alias
-      activeClient = this;
-      this.statusListener?.('Listening...', false);
-    });
-    const stopSpy = vi.spyOn(SalesforceBayeuxClient.prototype, 'stop').mockResolvedValue();
-
+  it('subscribes over the Port, renders status + events, filters, copies, clears, and unsubscribes', async () => {
+    const conn = makeConnect();
     const api = fakeApi({
       apiGet: vi.fn(async () => ({
         records: [{ QualifiedApiName: 'My_Event__e', Label: 'My Event' }],
       })) as unknown as SalesforceApiClient['apiGet'],
+      orgOrigin: 'https://acme.lightning.force.com',
     });
 
-    const feature = createEventMonitorFeature({ api });
+    const feature = createEventMonitorFeature({ api, connect: conn.connect });
     await feature.onActivate?.();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -538,15 +207,28 @@ describe('Event Streaming Monitor UI Feature', () => {
     subscribeBtn?.click();
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(startSpy).toHaveBeenCalledWith('/event/My_Event__e', -1);
-    expect(activeClient).not.toBeNull();
-
-    // Simulate event delivery
-    activeClient.messageListener({
-      schema: 'eventSchema',
-      payload: { Message__c: 'Event payload message text' },
+    // Port opened with the subscribe command, including the org origin.
+    expect(conn.connect).toHaveBeenCalledWith('sfApiStream');
+    const mp = conn.last()!;
+    expect(mp.port.postMessage).toHaveBeenCalledWith({
+      cmd: 'subscribe',
+      channelPath: '/event/My_Event__e',
+      replayId: -1,
+      targetOrigin: 'https://acme.lightning.force.com',
     });
 
+    // Worker pushes a status message.
+    const statusLabel = Array.from(document.querySelectorAll('span')).find(
+      (s) => s.textContent === 'Ready to stream',
+    );
+    mp.emit({ type: 'status', status: 'Listening on /event/My_Event__e...', isError: false });
+    expect(statusLabel?.textContent).toBe('Listening on /event/My_Event__e...');
+
+    // Worker pushes an event.
+    mp.emit({
+      type: 'event',
+      data: { schema: 'eventSchema', payload: { Message__c: 'Event payload message text' } },
+    });
     expect(document.body.textContent).toContain('Event payload message text');
 
     // Click on event to view details
@@ -559,7 +241,7 @@ describe('Event Streaming Monitor UI Feature', () => {
     const detailsPre = document.querySelector('pre');
     expect(detailsPre?.textContent).toContain('Event payload message text');
 
-    // Test copy JSON
+    // Copy JSON
     const writeTextSpy = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: writeTextSpy },
@@ -570,10 +252,9 @@ describe('Event Streaming Monitor UI Feature', () => {
     copyBtn?.click();
     expect(writeTextSpy).toHaveBeenCalled();
 
-    // Test filtering
+    // Filtering
     const filterInput = document.querySelector('input[placeholder="Filter events..."]') as HTMLInputElement;
     expect(filterInput).not.toBeNull();
-
     const listContainer = filterInput.parentElement?.nextElementSibling;
     expect(listContainer).not.toBeNull();
 
@@ -586,15 +267,49 @@ describe('Event Streaming Monitor UI Feature', () => {
     filterInput.dispatchEvent(new Event('input'));
     expect(listContainer?.textContent).toContain('Event payload message text');
 
-    // Test clear
+    // Clear
     const clearBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Clear');
     clearBtn?.click();
     expect(listContainer?.textContent).not.toContain('Event payload message text');
     expect(detailsPre?.textContent).toContain('Select an event to inspect details');
 
-    // Test unsubscribe
+    // Unsubscribe → sends the command and disconnects the Port.
     const unsubscribeBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Unsubscribe');
     unsubscribeBtn?.click();
-    expect(stopSpy).toHaveBeenCalled();
+    expect(mp.port.postMessage).toHaveBeenCalledWith({ cmd: 'unsubscribe' });
+    expect(mp.port.disconnect).toHaveBeenCalled();
+  });
+
+  it('surfaces a Port disconnect as "Disconnected" and re-enables Subscribe', async () => {
+    const conn = makeConnect();
+    const api = fakeApi({
+      apiGet: vi.fn(async () => ({
+        records: [{ QualifiedApiName: 'My_Event__e', Label: 'My Event' }],
+      })) as unknown as SalesforceApiClient['apiGet'],
+    });
+
+    const feature = createEventMonitorFeature({ api, connect: conn.connect });
+    await feature.onActivate?.();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const subscribeBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Subscribe',
+    ) as HTMLButtonElement;
+    const unsubscribeBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Unsubscribe',
+    ) as HTMLButtonElement;
+
+    subscribeBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(subscribeBtn.disabled).toBe(true);
+    expect(unsubscribeBtn.disabled).toBe(false);
+
+    // Worker evicted / session lost → Port disconnects.
+    conn.last()!.fireDisconnect();
+
+    const statusLabel = Array.from(document.querySelectorAll('span')).find((s) => s.textContent === 'Disconnected');
+    expect(statusLabel).not.toBeUndefined();
+    expect(subscribeBtn.disabled).toBe(false);
+    expect(unsubscribeBtn.disabled).toBe(true);
   });
 });

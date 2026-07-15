@@ -16,198 +16,21 @@ const EVENT_MONITOR_SETTINGS_SCHEMA = z.object({
 
 registerSettingsShape('event-monitor', EVENT_MONITOR_SETTINGS_SCHEMA);
 
-// Bayeux/CometD `ext` field — this client only uses the Salesforce replay
-// extension (replayId per channel), but servers may echo arbitrary keys.
-interface BayeuxExt {
-  replay?: Record<string, number>;
-  [key: string]: unknown;
+// Client (page) side of the `sfApiStream` Port. The CometD/Bayeux long-poll and
+// the sid live entirely in the service worker (lib/sf-stream-worker.ts); this
+// feature only sends subscribe/unsubscribe and renders the status/event
+// messages the worker pushes back.
+interface StreamClientPort {
+  postMessage(message: unknown): void;
+  onMessage: { addListener(cb: (message: unknown) => void): void };
+  onDisconnect: { addListener(cb: () => void): void };
+  disconnect(): void;
 }
 
-export interface BayeuxMessage {
-  channel: string;
-  clientId?: string;
-  version?: string;
-  minimumVersion?: string;
-  supportedConnectionTypes?: string[];
-  connectionType?: string;
-  subscription?: string;
-  ext?: BayeuxExt;
-  id?: string;
-  // Event payload shape depends entirely on the subscribed channel; consumers
-  // must narrow before use.
-  data?: unknown;
-  successful?: boolean;
-  error?: string;
-}
-
-export class SalesforceBayeuxClient {
-  private clientId = '';
-  private isConnected = false;
-  private abortController: AbortController | null = null;
-  private messageListener: ((message: unknown) => void) | null = null;
-  private statusListener: ((status: string, isError: boolean) => void) | null = null;
-  private connectAttempts = 0;
-
-  constructor(
-    private readonly baseUrl: string,
-    private readonly sessionId: string,
-    private readonly apiVersion: string,
-    private readonly fetchImpl: typeof fetch = fetch,
-  ) {}
-
-  onMessage(callback: (message: unknown) => void): void {
-    this.messageListener = callback;
-  }
-
-  onStatus(callback: (status: string, isError: boolean) => void): void {
-    this.statusListener = callback;
-  }
-
-  private logStatus(status: string, isError = false): void {
-    if (this.statusListener) {
-      this.statusListener(status, isError);
-    }
-  }
-
-  async start(channelPath: string, replayId: number): Promise<void> {
-    if (this.isConnected) return;
-    this.isConnected = true;
-    this.connectAttempts = 0;
-    this.abortController = new AbortController();
-
-    try {
-      this.logStatus('Initiating handshake...');
-      const endpoint = `${this.baseUrl}/cometd/${this.apiVersion.replace(/^v/, '')}`;
-
-      // 1. Handshake
-      const handshakePayload: BayeuxMessage[] = [
-        {
-          version: '1.0',
-          minimumVersion: '0.9',
-          channel: '/meta/handshake',
-          supportedConnectionTypes: ['long-polling'],
-        },
-      ];
-
-      const handshakeRes = await this.post<BayeuxMessage[]>(endpoint, handshakePayload);
-      const handshakeData = handshakeRes[0];
-      if (!handshakeData || !handshakeData.successful || !handshakeData.clientId) {
-        throw new Error(handshakeData?.error || 'Handshake failed');
-      }
-
-      this.clientId = handshakeData.clientId;
-      this.logStatus('Handshake successful. Subscribing...');
-
-      // 2. Subscribe
-      const subscribePayload: BayeuxMessage[] = [
-        {
-          channel: '/meta/subscribe',
-          clientId: this.clientId,
-          subscription: channelPath,
-          ext: {
-            replay: {
-              [channelPath]: replayId,
-            },
-          },
-        },
-      ];
-
-      const subscribeRes = await this.post<BayeuxMessage[]>(endpoint, subscribePayload);
-      const subscribeData = subscribeRes[0];
-      if (!subscribeData || !subscribeData.successful) {
-        throw new Error(subscribeData?.error || 'Subscription failed');
-      }
-
-      this.logStatus(`Listening on ${channelPath}...`);
-      
-      // 3. Connect Loop
-      void this.connectLoop(endpoint, channelPath);
-
-    } catch (err) {
-      this.isConnected = false;
-      const message = err instanceof Error ? err.message : String(err);
-      this.logStatus(`Connection failed: ${message}`, true);
-    }
-  }
-
-  private async connectLoop(endpoint: string, channelPath: string): Promise<void> {
-    while (this.isConnected) {
-      try {
-        const connectPayload: BayeuxMessage[] = [
-          {
-            channel: '/meta/connect',
-            clientId: this.clientId,
-            connectionType: 'long-polling',
-          },
-        ];
-
-        const messages = await this.post<BayeuxMessage[]>(endpoint, connectPayload);
-        this.connectAttempts = 0;
-
-        for (const msg of messages) {
-          if (msg.channel === channelPath && msg.data) {
-            if (this.messageListener) {
-              this.messageListener(msg.data);
-            }
-          }
-          if (msg.channel === '/meta/connect' && msg.successful === false) {
-            this.logStatus(`Connection lost: ${msg.error || 'Unknown error'}`, true);
-            void this.stop();
-            return;
-          }
-        }
-      } catch (err) {
-        if ((err instanceof Error && err.name === 'AbortError') || !this.isConnected) {
-          break;
-        }
-        this.connectAttempts++;
-        const message = err instanceof Error ? err.message : String(err);
-        this.logStatus(`Connection error (attempt ${this.connectAttempts}): ${message}`, true);
-        
-        // Exponential backoff up to 30 seconds
-        const delay = Math.min(30000, 1000 * Math.pow(2, this.connectAttempts));
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-    }
-  }
-
-  async stop(): Promise<void> {
-    if (!this.isConnected) return;
-    this.isConnected = false;
-    this.abortController?.abort();
-
-    try {
-      const endpoint = `${this.baseUrl}/cometd/${this.apiVersion.replace(/^v/, '')}`;
-      const disconnectPayload: BayeuxMessage[] = [
-        {
-          channel: '/meta/disconnect',
-          clientId: this.clientId,
-        },
-      ];
-      await this.post<BayeuxMessage[]>(endpoint, disconnectPayload).catch(() => {});
-    } finally {
-      this.logStatus('Disconnected');
-    }
-  }
-
-  private async post<T>(url: string, body: BayeuxMessage[]): Promise<T> {
-    const response = await this.fetchImpl(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.sessionId}`,
-      },
-      body: JSON.stringify(body),
-      signal: this.abortController?.signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP Error ${response.status}: ${response.statusText}`);
-    }
-
-    return (await response.json()) as T;
-  }
-}
+// Messages the worker pushes back over the Port.
+type StreamInbound =
+  | { type: 'status'; status: string; isError?: boolean }
+  | { type: 'event'; data: unknown };
 
 interface ChannelOption {
   name: string;
@@ -218,20 +41,30 @@ export function createEventMonitorFeature(options: {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
+  // Injectable so tests can supply a mock Port without chrome.runtime.
+  connect?: (name: string) => StreamClientPort;
 } = {}): Feature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
+  const connect =
+    options.connect ?? ((name: string) => chrome.runtime.connect({ name }) as StreamClientPort);
 
   let view: ViewHandle | null = null;
-  let client: SalesforceBayeuxClient | null = null;
+  let port: StreamClientPort | null = null;
 
   // Live-stream teardown — must run whenever the view closes (tab close fires
-  // onClose; modal dismiss / re-open call close()). Stops the Bayeux long-poll.
+  // onClose; modal dismiss / re-open call close()). Disconnecting the Port stops
+  // the worker-side long-poll.
   function stopStream(): void {
-    if (client) {
-      void client.stop();
-      client = null;
+    if (port) {
+      try {
+        port.postMessage({ cmd: 'unsubscribe' });
+      } catch {
+        // Port already gone — disconnect below is a no-op.
+      }
+      port.disconnect();
+      port = null;
     }
   }
 
@@ -549,7 +382,22 @@ export function createEventMonitorFeature(options: {
     limitsContainer.style.cssText = 'display: none; padding: 10px; background: var(--sfdt-color-warning-bg-4); border: 1px solid var(--sfdt-color-warning); border-radius: 4px; margin-bottom: 8px;';
     body.appendChild(limitsContainer);
 
-    subscribeBtn.addEventListener('click', async () => {
+    function setControlsDisabled(disabled: boolean): void {
+      typeSelect.disabled = disabled;
+      channelSelect!.disabled = disabled;
+      customInput.disabled = disabled;
+      replayInput.disabled = disabled;
+    }
+
+    // Return the UI to the idle (not-streaming) state so Subscribe works again.
+    // Shared by explicit unsubscribe and by Port disconnect.
+    function resetToIdle(): void {
+      subscribeBtn.disabled = false;
+      unsubscribeBtn.disabled = true;
+      setControlsDisabled(false);
+    }
+
+    subscribeBtn.addEventListener('click', () => {
       let path = '';
       if (customChannelPath) {
         path = customChannelPath;
@@ -564,45 +412,49 @@ export function createEventMonitorFeature(options: {
       }
 
       subscribeBtn.disabled = true;
-      typeSelect.disabled = true;
-      channelSelect!.disabled = true;
-      customInput.disabled = true;
-      replayInput.disabled = true;
-
-      const details = await api.getSessionDetails();
-      if (!details) {
-        showToast('No active Salesforce session found.', { doc, kind: 'error' });
-        subscribeBtn.disabled = false;
-        return;
-      }
-
-      client = new SalesforceBayeuxClient(details.baseUrl, details.sid, api.apiVersion);
-      
-      client.onStatus((status, isErr) => {
-        updateStatus(status, isErr);
-      });
-
-      client.onMessage((msg) => {
-        events.unshift(msg);
-        renderEvents();
-      });
-
+      setControlsDisabled(true);
       unsubscribeBtn.disabled = false;
 
-      void client.start(path, replayId);
+      // Open the long-lived Port to the worker. The worker reads the sid,
+      // opens the CometD long-poll, and streams status/event messages back —
+      // the sid never reaches this page.
+      port = connect('sfApiStream');
+
+      port.onMessage.addListener((raw) => {
+        const msg = raw as StreamInbound;
+        if (msg?.type === 'status') {
+          updateStatus(msg.status, !!msg.isError);
+        } else if (msg?.type === 'event') {
+          events.unshift(msg.data);
+          renderEvents();
+        }
+      });
+
+      port.onDisconnect.addListener(() => {
+        // Worker evicted (MV3), session lost, or worker closed the Port. Surface
+        // it and re-enable Subscribe so the user can reconnect/re-subscribe.
+        port = null;
+        updateStatus('Disconnected', false);
+        resetToIdle();
+      });
+
+      port.postMessage({
+        cmd: 'subscribe',
+        channelPath: path,
+        replayId,
+        // App-tab callers pass their org origin; content scripts omit it and the
+        // worker falls back to the validated sender origin.
+        targetOrigin: api.orgOrigin ?? undefined,
+      });
     });
 
-    unsubscribeBtn.addEventListener('click', async () => {
-      if (client) {
-        await client.stop();
-        client = null;
+    unsubscribeBtn.addEventListener('click', () => {
+      if (port) {
+        port.postMessage({ cmd: 'unsubscribe' });
+        port.disconnect();
+        port = null;
       }
-      subscribeBtn.disabled = false;
-      unsubscribeBtn.disabled = true;
-      typeSelect.disabled = false;
-      channelSelect!.disabled = false;
-      customInput.disabled = false;
-      replayInput.disabled = false;
+      resetToIdle();
     });
 
     // Content Display Area
@@ -703,3 +555,4 @@ export function createEventMonitorFeature(options: {
     },
   };
 }
+
