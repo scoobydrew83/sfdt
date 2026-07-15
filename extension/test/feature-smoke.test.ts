@@ -22,31 +22,36 @@ beforeEach(() => {
   document.body.replaceChildren();
 });
 
-// A fetch-backed SalesforceApiClient whose responses are routed by the SOQL
-// `q` query param. `route` returns the records array, or throws to simulate a
+// A SalesforceApiClient whose messageBus plays the worker: it answers the
+// sfApiFetch route by routing on the SOQL `q` and returning response *text*
+// (never a sid). `route` returns the records array, or throws to simulate a
 // failed (4xx) Tooling API call.
 function makeRoutedApi(route: (soql: string) => unknown[]): SalesforceApiClient {
-  const fetchImpl = (async (url: string | URL | Request) => {
-    const soql = new URL(String(url), 'http://x').searchParams.get('q') ?? '';
-    let records: unknown[];
-    try {
-      records = route(soql);
-    } catch {
-      return { ok: false, status: 400, async json() { return {}; }, async text() { return 'err'; } } as Response;
-    }
-    return {
-      ok: true,
-      status: 200,
-      async json() { return { size: records.length, done: true, records }; },
-      async text() { return '{}'; },
-    } as Response;
-  }) as typeof fetch;
+  const bus: MessageBus = {
+    sendMessage: (async (msg: { action?: string; query?: Record<string, string> }) => {
+      if (msg.action !== 'sfApiFetch') return { ok: true, sids: {} };
+      const soql = msg.query?.q ?? '';
+      let records: unknown[];
+      try {
+        records = route(soql);
+      } catch {
+        return {
+          ok: false,
+          errors: [{ baseUrl: 'https://x.my.salesforce.com', status: 400, errorText: 'err' }],
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        bodyText: JSON.stringify({ size: records.length, done: true, records }),
+        contentType: 'application/json',
+        baseUrl: 'https://x.my.salesforce.com',
+      };
+    }) as unknown as MessageBus['sendMessage'],
+  };
   return new SalesforceApiClient({
     win: { location: { hostname: 'x.lightning.force.com', origin: 'https://x.lightning.force.com', search: '' } } as never,
-    messageBus: {
-      sendMessage: (async () => ({ ok: true, sids: { 'https://x.my.salesforce.com': 'sid' } })) as unknown as MessageBus['sendMessage'],
-    },
-    fetchImpl,
+    messageBus: bus,
   });
 }
 
@@ -236,68 +241,58 @@ describe('extension/features — smoke', () => {
   it('scheduled-flow-explorer discoverScheduledFlows returns only Schedule-Triggered flows', async () => {
     const { discoverScheduledFlows } = _scheduledFlowExplorerTestApi();
     let call = 0;
-    const fetchImpl = (async () => {
-      call += 1;
-      if (call === 1) {
-        // FlowDefinition query.
-        return {
-          ok: true,
+    // The bus plays the worker: it returns response text per call (never a sid).
+    const bus: MessageBus = {
+      sendMessage: (async (msg: { action?: string }) => {
+        if (msg.action !== 'sfApiFetch') return { ok: true, sids: {} };
+        call += 1;
+        const proxyOk = (body: unknown) => ({
+          ok: true as const,
           status: 200,
-          async json() {
-            return {
-              size: 2,
-              done: true,
-              records: [
-                { Id: '300A', DeveloperName: 'Scheduled_One', ActiveVersionId: '301A' },
-                { Id: '300B', DeveloperName: 'Autolaunched_One', ActiveVersionId: '301B' },
-              ],
-            };
-          },
-          async text() {
-            return '{}';
-          },
-        } as Response;
-      }
-      // Flow version queries — return Scheduled vs Autolaunched.
-      const isScheduled = call === 2;
-      return {
-        ok: true,
-        status: 200,
-        async json() {
-          return {
-            size: 1,
+          bodyText: JSON.stringify(body),
+          contentType: 'application/json',
+          baseUrl: 'https://x.my.salesforce.com',
+        });
+        if (call === 1) {
+          // FlowDefinition query.
+          return proxyOk({
+            size: 2,
             done: true,
             records: [
-              {
-                Id: isScheduled ? '301A' : '301B',
-                MasterLabel: isScheduled ? 'Scheduled Flow' : 'Autolaunched Flow',
-                LastModifiedDate: '2026-06-01T10:00:00.000Z',
-                VersionNumber: 1,
-                Status: 'Active',
-                Metadata: isScheduled
-                  ? {
-                      start: {
-                        triggerType: 'Scheduled',
-                        schedule: { frequency: 'Daily', startDate: '2026-04-30', startTime: '08:00:00.000Z' },
-                        object: 'Account',
-                      },
-                    }
-                  : { start: { triggerType: 'RecordAfterSave' } },
-              },
+              { Id: '300A', DeveloperName: 'Scheduled_One', ActiveVersionId: '301A' },
+              { Id: '300B', DeveloperName: 'Autolaunched_One', ActiveVersionId: '301B' },
             ],
-          };
-        },
-        async text() {
-          return '{}';
-        },
-      } as Response;
-    }) as typeof fetch;
+          });
+        }
+        // Flow version queries — return Scheduled vs Autolaunched.
+        const isScheduled = call === 2;
+        return proxyOk({
+          size: 1,
+          done: true,
+          records: [
+            {
+              Id: isScheduled ? '301A' : '301B',
+              MasterLabel: isScheduled ? 'Scheduled Flow' : 'Autolaunched Flow',
+              LastModifiedDate: '2026-06-01T10:00:00.000Z',
+              VersionNumber: 1,
+              Status: 'Active',
+              Metadata: isScheduled
+                ? {
+                    start: {
+                      triggerType: 'Scheduled',
+                      schedule: { frequency: 'Daily', startDate: '2026-04-30', startTime: '08:00:00.000Z' },
+                      object: 'Account',
+                    },
+                  }
+                : { start: { triggerType: 'RecordAfterSave' } },
+            },
+          ],
+        });
+      }) as unknown as MessageBus['sendMessage'],
+    };
     const api = new SalesforceApiClient({
       win: { location: { hostname: 'x.lightning.force.com', origin: 'https://x.lightning.force.com', search: '' } } as never,
-      messageBus: {
-        sendMessage: (async () => ({ ok: true, sids: { 'https://x.my.salesforce.com': 'sid' } })) as unknown as MessageBus['sendMessage'],
-      },
-      fetchImpl,
+      messageBus: bus,
     });
     const result = await discoverScheduledFlows(api);
     expect(result.flows).toHaveLength(1);

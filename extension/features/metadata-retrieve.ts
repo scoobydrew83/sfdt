@@ -114,7 +114,7 @@ export function createMetadataRetrieveFeature(options: {
     updateSpinner();
     addLog('working', 'Loading metadata describe details...');
     try {
-      const apiVersion = (api as any).apiVersion ?? 'v62.0';
+      const apiVersion = api.apiVersion;
       const cleanVersion = apiVersion.replace(/^v/, '');
       const res = await api.apiSoap<any>('Metadata', 'describeMetadata', { apiVersion: cleanVersion });
       if (res && res.metadataObjects) {
@@ -177,7 +177,7 @@ export function createMetadataRetrieveFeature(options: {
       updateSpinner();
       addLog('working', `Fetching components for ${anyMeta.xmlName ?? anyMeta.fullName}...`);
       try {
-        const apiVersion = (api as any).apiVersion ?? 'v62.0';
+        const apiVersion = api.apiVersion;
         const cleanVersion = apiVersion.replace(/^v/, '');
         const folderProof = getMetaFolderProof(anyMeta);
         const res = await api.apiSoap<any>('Metadata', 'listMetadata', {
@@ -253,7 +253,7 @@ export function createMetadataRetrieveFeature(options: {
       }
     });
 
-    const apiVersion = (api as any).apiVersion ?? 'v62.0';
+    const apiVersion = api.apiVersion;
     const cleanVersion = apiVersion.replace(/^v/, '');
 
     let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
@@ -344,7 +344,7 @@ export function createMetadataRetrieveFeature(options: {
         typeList.push({ name, members });
       }
 
-      const apiVersion = (api as any).apiVersion ?? 'v62.0';
+      const apiVersion = api.apiVersion;
       const cleanVersion = apiVersion.replace(/^v/, '');
       const retrieveRequest = {
         apiVersion: cleanVersion,

@@ -107,7 +107,7 @@ export function createFieldCreatorFeature(options: {
 
   async function getGlobalDescribe(): Promise<GlobalDescribe> {
     if (globalDescribeCached) return globalDescribeCached;
-    const apiVersion = (api as any).apiVersion ?? 'v62.0';
+    const apiVersion = api.apiVersion;
     const data = await api.apiGet<GlobalDescribe>(`/services/data/${apiVersion}/sobjects/`);
     globalDescribeCached = data && Array.isArray(data.sobjects) ? data : { sobjects: [] };
     return globalDescribeCached;
@@ -824,7 +824,7 @@ export function createFieldCreatorFeature(options: {
           PermissionsRead: profile.access === 'edit' || profile.access === 'read'
         };
 
-        const apiVersion = (api as any).apiVersion ?? 'v62.0';
+        const apiVersion = api.apiVersion;
         return api.apiRequest('POST', `/services/data/${apiVersion}/sobjects/FieldPermissions/`, fieldPermissionBody);
       });
 
@@ -900,7 +900,7 @@ export function createFieldCreatorFeature(options: {
           break;
       }
 
-      const apiVersion = (api as any).apiVersion ?? 'v62.0';
+      const apiVersion = api.apiVersion;
       await api.apiRequest('POST', `/services/data/${apiVersion}/tooling/sobjects/CustomField`, newField);
 
       // Now set FLS permissions if any are chosen

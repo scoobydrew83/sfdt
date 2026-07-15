@@ -93,7 +93,7 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
   const api = options.api ?? getSalesforceApi();
   const pollIntervalMs = options.pollIntervalMs ?? 1500;
   const maxPolls = options.maxPolls ?? 40;
-  const apiVersion = api.apiVersion ?? 'v62.0';
+  const apiVersion = api.apiVersion;
 
   let view: ViewHandle | null = null;
 

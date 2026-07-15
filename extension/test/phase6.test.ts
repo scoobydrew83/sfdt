@@ -23,49 +23,38 @@ beforeEach(() => {
   document.body.replaceChildren();
 });
 
-// A fetch-backed SalesforceApiClient whose responses are routed by the SOQL
-// `q` query param, mirroring the pattern in feature-smoke.test.ts. `route`
-// returns the JSON records array for a query, or throws to simulate a 4xx.
+// A SalesforceApiClient whose messageBus plays the worker: it answers the
+// sfApiFetch route by routing on the SOQL `q` and returning response *text*
+// (never a sid), mirroring feature-smoke.test.ts. `route` returns the records
+// for a query, or throws to simulate a 4xx.
 function makeRoutedApi(route: (soql: string) => unknown[]): SalesforceApiClient {
-  const fetchImpl = (async (url: string | URL | Request) => {
-    const soql = new URL(String(url), 'http://x').searchParams.get('q') ?? '';
-    let records: unknown[];
-    try {
-      records = route(soql);
-    } catch {
+  const bus: MessageBus = {
+    sendMessage: (async (msg: { action?: string; query?: Record<string, string> }) => {
+      if (msg.action !== 'sfApiFetch') return { ok: true, sids: {} };
+      const soql = msg.query?.q ?? '';
+      let records: unknown[];
+      try {
+        records = route(soql);
+      } catch {
+        return {
+          ok: false,
+          errors: [{ baseUrl: 'https://x.my.salesforce.com', status: 400, errorText: 'bad request' }],
+        };
+      }
       return {
-        ok: false,
-        status: 400,
-        async json() {
-          return {};
-        },
-        async text() {
-          return 'bad request';
-        },
-      } as Response;
-    }
-    return {
-      ok: true,
-      status: 200,
-      async json() {
-        return { size: records.length, done: true, records };
-      },
-      async text() {
-        return '{}';
-      },
-    } as Response;
-  }) as typeof fetch;
+        ok: true,
+        status: 200,
+        bodyText: JSON.stringify({ size: records.length, done: true, records }),
+        contentType: 'application/json',
+        baseUrl: 'https://x.my.salesforce.com',
+      };
+    }) as unknown as MessageBus['sendMessage'],
+  };
   return new SalesforceApiClient({
     win: {
       location: { hostname: 'x.lightning.force.com', origin: 'https://x.lightning.force.com', search: '' },
     } as never,
-    messageBus: {
-      sendMessage: (async () => ({
-        ok: true,
-        sids: { 'https://x.my.salesforce.com': 'sid' },
-      })) as unknown as MessageBus['sendMessage'],
-    },
-    fetchImpl,
+    messageBus: bus,
   });
 }
 

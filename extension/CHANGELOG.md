@@ -4,6 +4,10 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Changed
+- **Security posture: the Salesforce session id (`sid`) no longer enters page-adjacent memory.** Every REST/Tooling/SOAP call now runs inside the background service worker via a new `sfApiFetch` message route (`lib/sf-api-proxy.ts`): the worker reads the `sid` cookie, injects `Authorization`, performs the dual-host fallback + one-time 401 retry, and returns only the response *text* — never the sid. `lib/salesforce-api.ts` is now a thin client that describes the call and parses the reply; it holds no sid and makes no Salesforce fetch of its own. SOAP calls send a sentinel placeholder that the worker swaps for the real sid inside the `SessionHeader` only. Request headers are allowlisted (any client-supplied `Authorization` is stripped). A guard test (`test/sid-never-leaves-worker.test.ts`) plus a scoped ESLint rule enforce that feature/UI code never touches `chrome.cookies`, the `getSidForUrls` route, or a raw `Authorization: Bearer` header. The Event Streaming Monitor's CometD long-poll remains on the legacy session bridge as a single documented, temporary exception (retired in a follow-up). Internal refactor — no user-facing behaviour change.
+- **Single Salesforce API-version constant.** Divergent `v62.0` literals across features are consolidated into one authoritative `SF_API_VERSION` (`lib/api-version.ts`), re-exported by the client as `api.apiVersion`.
+
 ## [0.7.0] - 2026-07-14
 
 ### Added

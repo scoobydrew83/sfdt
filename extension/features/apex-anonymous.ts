@@ -3,6 +3,7 @@ import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import { escapeSoql } from '../lib/escape.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
+import { SF_API_VERSION } from '../lib/api-version.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
@@ -17,7 +18,6 @@ registerSettingsShape('apex-anonymous', APEX_ANONYMOUS_SETTINGS_SCHEMA);
 const HISTORY_STORAGE_KEY = 'apexAnonymous.history';
 const SNIPPETS_STORAGE_KEY = 'apexAnonymous.snippets';
 const HISTORY_CAP = 20;
-const DEFAULT_API_VERSION = 'v62.0';
 
 // DeveloperName for the DebugLevel this feature owns. Reused across runs so we
 // don't litter the org with a fresh DebugLevel every execution.
@@ -222,7 +222,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
 
   async function run(code: string): Promise<ExecuteAnonymousResult> {
     return api.apiGet<ExecuteAnonymousResult>(
-      `/services/data/${DEFAULT_API_VERSION}/tooling/executeAnonymous/`,
+      `/services/data/${SF_API_VERSION}/tooling/executeAnonymous/`,
       { anonymousBody: code },
     );
   }
@@ -244,7 +244,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     }
     try {
       const me = await api.apiGet<{ id?: string }>(
-        `/services/data/${DEFAULT_API_VERSION}/chatter/users/me`,
+        `/services/data/${SF_API_VERSION}/chatter/users/me`,
       );
       if (me?.id) return me.id;
     } catch {
@@ -259,7 +259,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     if (existing.records[0]?.Id) return existing.records[0].Id;
     const created = await api.apiRequest<{ id?: string }>(
       'POST',
-      `/services/data/${DEFAULT_API_VERSION}/tooling/sobjects/DebugLevel`,
+      `/services/data/${SF_API_VERSION}/tooling/sobjects/DebugLevel`,
       debugLevelCreatePayload(),
     );
     if (!created?.id) throw new Error('Could not create a DebugLevel for log capture.');
@@ -279,14 +279,14 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     if (current?.Id) {
       await api.apiRequest(
         'PATCH',
-        `/services/data/${DEFAULT_API_VERSION}/tooling/sobjects/TraceFlag/${current.Id}`,
+        `/services/data/${SF_API_VERSION}/tooling/sobjects/TraceFlag/${current.Id}`,
         { DebugLevelId: debugLevelId, ...traceFlagWindow(now) },
       );
       return;
     }
     await api.apiRequest(
       'POST',
-      `/services/data/${DEFAULT_API_VERSION}/tooling/sobjects/TraceFlag`,
+      `/services/data/${SF_API_VERSION}/tooling/sobjects/TraceFlag`,
       traceFlagCreatePayload(userId, debugLevelId, now),
     );
   }
@@ -312,7 +312,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
   // Same text endpoint the Debug Logs viewer uses for the raw log body.
   async function fetchLogBody(id: string): Promise<string> {
     return api.apiGetText(
-      `/services/data/${DEFAULT_API_VERSION}/tooling/sobjects/ApexLog/${id}/Body`,
+      `/services/data/${SF_API_VERSION}/tooling/sobjects/ApexLog/${id}/Body`,
     );
   }
 

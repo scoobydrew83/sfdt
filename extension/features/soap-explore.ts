@@ -8,6 +8,10 @@ import {
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { SF_API_VERSION } from '../lib/api-version.js';
+
+// SOAP request bodies carry the bare numeric version (e.g. "62.0"), not "v62.0".
+const SOAP_API_VERSION = SF_API_VERSION.replace(/^v/, '');
 
 const SOAP_EXPLORE_SETTINGS_SCHEMA = z.object({
   historyEnabled: z.boolean().default(true),
@@ -66,7 +70,7 @@ const TEMPLATES: Record<string, Record<string, string>> = {
     create: '{\n  "sObjects": [\n    {\n      "$xsi:type": "Account",\n      "Name": "New Test Account"\n    }\n  ]\n}',
   },
   Metadata: {
-    describeMetadata: '{\n  "apiVersion": "62.0"\n}',
+    describeMetadata: `{\n  "apiVersion": "${SOAP_API_VERSION}"\n}`,
     listMetadata: '{\n  "queries": {\n    "type": "ApexClass"\n  }\n}',
   },
   Tooling: {
