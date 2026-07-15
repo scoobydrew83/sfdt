@@ -26,6 +26,8 @@ export interface SideButtonHandlers {
 
 export interface SideButtonHandle {
   refresh: () => void;
+  /** Programmatically open the menu (e.g. from the open-palette command). */
+  open: () => void;
   destroy: () => void;
   isMounted: () => boolean;
 }
@@ -100,6 +102,7 @@ export function mountSideButton(opts: {
   if (win.top !== win.self) {
     return {
       refresh: () => {},
+      open: () => {},
       destroy: () => {},
       isMounted: () => false,
     };
@@ -250,6 +253,7 @@ export function mountSideButton(opts: {
 
   return {
     refresh: renderMenu,
+    open: () => setOpen(true),
     destroy: () => {
       if (destroyed) return;
       destroyed = true;

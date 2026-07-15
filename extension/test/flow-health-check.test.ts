@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   _flowHealthCheckTestApi,
   createFlowHealthCheckFeature,
@@ -27,27 +27,36 @@ function spyModal() {
   return { modal, calls };
 }
 
-function busThatReturnsSid(): MessageBus {
+// The client now delegates every Salesforce call to the worker's sfApiFetch
+// route, so the test bus plays the worker: it returns the response *text* (never
+// a sid). recordsBus answers any query with the given records; failingBus
+// returns a proxy error.
+function recordsBus(records: unknown[]): MessageBus {
   return {
     sendMessage: (async () => ({
       ok: true,
-      sids: { 'https://x.my.salesforce.com': 'sid' },
+      status: 200,
+      bodyText: JSON.stringify({ records, size: records.length, done: true }),
+      contentType: 'application/json',
+      baseUrl: 'https://x.my.salesforce.com',
     })) as unknown as MessageBus['sendMessage'],
   };
 }
 
-function fetchResponderFor(records: unknown[]): typeof fetch {
-  return (async () =>
-    ({
-      ok: true,
-      status: 200,
-      async json() {
-        return { records, size: records.length, done: true };
-      },
-      async text() {
-        return JSON.stringify({ records });
-      },
-    }) as Response) as typeof fetch;
+function failingBus(status: number, errorText: string): MessageBus {
+  return {
+    sendMessage: (async () => ({
+      ok: false,
+      errors: [{ baseUrl: 'https://x.my.salesforce.com', status, errorText }],
+    })) as unknown as MessageBus['sendMessage'],
+  };
+}
+
+const FLOW_BUILDER_URL =
+  'https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app?flowId=300abc';
+
+function apiFor(bus: MessageBus): SalesforceApiClient {
+  return new SalesforceApiClient({ win: fakeWin(FLOW_BUILDER_URL), messageBus: bus });
 }
 
 beforeEach(() => {
@@ -134,11 +143,7 @@ describe('extension/features/flow-health-check', () => {
 
   describe('feature lifecycle', () => {
     function makeApi(flow: Record<string, unknown>): SalesforceApiClient {
-      return new SalesforceApiClient({
-        win: fakeWin('https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app?flowId=300abc'),
-        messageBus: busThatReturnsSid(),
-        fetchImpl: fetchResponderFor([flow]),
-      });
+      return apiFor(recordsBus([flow]));
     }
 
     it('errors with a clear message when not on Flow Builder', async () => {
@@ -188,11 +193,7 @@ describe('extension/features/flow-health-check', () => {
         },
       };
       const { modal, calls } = spyModal();
-      const api = new SalesforceApiClient({
-        win: fakeWin('https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app?flowId=300abc'),
-        messageBus: busThatReturnsSid(),
-        fetchImpl: fetchResponderFor([flow]),
-      });
+      const api = apiFor(recordsBus([flow]));
       const feature = createFlowHealthCheckFeature({
         win: fakeWin('https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app?flowId=300abc'),
         modal,
@@ -235,11 +236,7 @@ describe('extension/features/flow-health-check', () => {
       const feature = createFlowHealthCheckFeature({
         win: fakeWin('https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app?flowId=300abc'),
         modal,
-        api: new SalesforceApiClient({
-          win: fakeWin('https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app?flowId=300abc'),
-          messageBus: busThatReturnsSid(),
-          fetchImpl: fetchResponderFor([flow]),
-        }),
+        api: apiFor(recordsBus([flow])),
       });
       await feature.onActivate?.();
       const report = (calls.find((c) => c.kind === 'report')!.payload) as HealthReport;
@@ -250,27 +247,10 @@ describe('extension/features/flow-health-check', () => {
 
     it('surfaces fetch errors as modal error messages', async () => {
       const { modal, calls } = spyModal();
-      const failingFetch = vi.fn(
-        async () =>
-          ({
-            ok: false,
-            status: 500,
-            async text() {
-              return 'kaboom';
-            },
-            async json() {
-              return {};
-            },
-          }) as Response,
-      ) as unknown as typeof fetch;
       const feature = createFlowHealthCheckFeature({
-        win: fakeWin('https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app?flowId=300abc'),
+        win: fakeWin(FLOW_BUILDER_URL),
         modal,
-        api: new SalesforceApiClient({
-          win: fakeWin('https://x.lightning.force.com/builder_platform_interaction/flowBuilder.app?flowId=300abc'),
-          messageBus: busThatReturnsSid(),
-          fetchImpl: failingFetch,
-        }),
+        api: apiFor(failingBus(500, 'kaboom')),
       });
       await feature.onActivate?.();
       const errCall = calls.find((c) => c.kind === 'error');

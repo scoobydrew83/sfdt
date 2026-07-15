@@ -6,6 +6,7 @@ import {
   type HttpMethod,
   type SalesforceApiClient,
 } from '../lib/salesforce-api.js';
+import { SF_API_VERSION } from '../lib/api-version.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
@@ -19,7 +20,6 @@ registerSettingsShape('rest-explore', REST_EXPLORE_SETTINGS_SCHEMA);
 
 const HISTORY_STORAGE_KEY = 'restExplore.history';
 const HISTORY_CAP = 20;
-const DEFAULT_API_VERSION = 'v62.0';
 
 const METHODS_WITH_BODY: ReadonlySet<HttpMethod> = new Set(['POST', 'PATCH', 'PUT']);
 
@@ -121,8 +121,8 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     }
     const pathInput = doc.createElement('input');
     pathInput.type = 'text';
-    pathInput.value = `/services/data/${DEFAULT_API_VERSION}/`;
-    pathInput.placeholder = `/services/data/${DEFAULT_API_VERSION}/sobjects/Account/describe`;
+    pathInput.value = `/services/data/${SF_API_VERSION}/`;
+    pathInput.placeholder = `/services/data/${SF_API_VERSION}/sobjects/Account/describe`;
     pathInput.style.cssText =
       'flex: 1; padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-family: ui-monospace, monospace; font-size: 12px;';
     const sendBtn = doc.createElement('button');

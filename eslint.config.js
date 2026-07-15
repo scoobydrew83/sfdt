@@ -43,4 +43,35 @@ export default [
       'no-console': 'off',
     },
   },
+  {
+    // Security boundary (P0-4): the `sid` must never enter page-adjacent memory.
+    // Feature and UI code must reach Salesforce only through the worker-brokered
+    // `sfApiFetch` route — never touch cookies or the sid-fetch route directly.
+    // Only the background service worker (extension/entrypoints/background.ts)
+    // and the thin client (extension/lib/salesforce-api.ts) may. The Event
+    // Monitor still reads the sid via api.getSessionDetails() (not chrome.cookies
+    // / getSidForUrls directly), so it does not trip these rules — its streaming
+    // path is retired in PR2.
+    files: ['extension/features/**/*.ts', 'extension/ui/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'MemberExpression[object.name="chrome"][property.name="cookies"]',
+          message:
+            'chrome.cookies is worker-only. Feature/UI code must call the Salesforce API through the sfApiFetch worker route so the sid never reaches the page.',
+        },
+        {
+          selector: 'Identifier[name="getSidForUrls"]',
+          message:
+            'getSidForUrls exposes the sid to the page. Route Salesforce calls through the sfApiFetch worker proxy instead.',
+        },
+        {
+          selector: 'Literal[value="getSidForUrls"]',
+          message:
+            'getSidForUrls exposes the sid to the page. Route Salesforce calls through the sfApiFetch worker proxy instead.',
+        },
+      ],
+    },
+  },
 ];

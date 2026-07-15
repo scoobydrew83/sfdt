@@ -87,7 +87,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
 
   async function getGlobalDescribe(): Promise<GlobalDescribe> {
     if (globalDescribeCached) return globalDescribeCached;
-    const apiVersion = (api as any).apiVersion ?? 'v62.0';
+    const apiVersion = api.apiVersion;
     const data = await api.apiGet<GlobalDescribe>(`/services/data/${apiVersion}/sobjects/`);
     globalDescribeCached = data && Array.isArray(data.sobjects) ? data : { sobjects: [] };
     return globalDescribeCached;
@@ -97,7 +97,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     const key = name.toLowerCase();
     const cached = sobjectDescribesCached.get(key);
     if (cached) return cached;
-    const apiVersion = (api as any).apiVersion ?? 'v62.0';
+    const apiVersion = api.apiVersion;
     const data = await api.apiGet<SObjectDescribe>(`/services/data/${apiVersion}/sobjects/${name}/describe`);
     const enriched = data && Array.isArray(data.fields) ? data : { name, label: name, fields: [] };
     sobjectDescribesCached.set(key, enriched);
@@ -386,7 +386,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         const describe = await getSObjectDescribe(sobject);
         activeDescribe = describe;
 
-        const apiVersion = (api as any).apiVersion ?? 'v62.0';
+        const apiVersion = api.apiVersion;
         const rawRecord = await api.apiGet<Record<string, unknown>>(
           `/services/data/${apiVersion}/sobjects/${sobject}/${recordId}`
         );
@@ -449,7 +449,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       saveChangesBtn.disabled = true;
       saveChangesBtn.textContent = 'Saving…';
       try {
-        const apiVersion = (api as any).apiVersion ?? 'v62.0';
+        const apiVersion = api.apiVersion;
         await api.apiRequest(
           'PATCH',
           `/services/data/${apiVersion}/sobjects/${activeSobjectName}/${activeRecordId}`,

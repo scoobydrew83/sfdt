@@ -1,5 +1,7 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { dedupeOrgs } from '../lib/org-list.js';
+import { planCommand } from '../lib/commands.js';
+import { sfApiFetch } from '../lib/sf-api-proxy.js';
 
 // Only the extension's own content scripts may invoke privileged actions.
 // chrome.runtime.id is the canonical id of THIS extension at runtime — a
@@ -37,6 +39,34 @@ function isAllowedSalesforceDomain(hostname: string): boolean {
   return SALESFORCE_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix));
 }
 
+// The sfApiFetch proxy derives candidate hosts from the caller's org origin. For
+// content scripts that's the sender's own page origin; app-tab callers pass it
+// explicitly. Either way it's validated against the Salesforce host allowlist
+// before it can seed a cookie read.
+function resolveSenderOrigin(sender: chrome.runtime.MessageSender): string | null {
+  const raw = sender?.origin ?? sender?.tab?.url ?? sender?.url;
+  if (typeof raw !== 'string') return null;
+  try {
+    const { origin } = new URL(raw);
+    return isAllowedCookieUrl(origin) ? origin : null;
+  } catch {
+    return null;
+  }
+}
+
+// Reads the `sid` cookie for a base URL, enforcing the Salesforce host
+// allowlist. Passed into the sfApiFetch proxy so the sid is joined to the
+// request only inside the worker — it never crosses back to the page.
+function readSidCookie(url: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (!isAllowedCookieUrl(url)) {
+      resolve(null);
+      return;
+    }
+    chrome.cookies.get({ url, name: 'sid' }, (cookie) => resolve(cookie?.value ?? null));
+  });
+}
+
 // Localhost-only — the bridge ping fetch must target 127.0.0.1, and the port
 // must be in the unprivileged range. A compromised content script could
 // otherwise drive arbitrary loopback port-scans through the service worker.
@@ -47,7 +77,55 @@ function clampBridgePort(value: unknown): number {
   return value;
 }
 
+// Build the Workspace tab URL, seeded with an org only when it's a valid,
+// allowlisted Salesforce host. Shared by the openApp message and the
+// open-workspace keyboard command.
+function workspaceUrl(org: unknown): string {
+  const host = typeof org === 'string' ? org : '';
+  const safe = host && isAllowedCookieUrl(`https://${host}/`) ? host : '';
+  return chrome.runtime.getURL('app.html') + (safe ? `?org=${encodeURIComponent(safe)}` : '');
+}
+
+// Forward a message to the active tab's content script. Used by the popup's
+// "Quick menu" button and the open-palette command so tab messaging (and the
+// tab lookup) stays in the worker. Best-effort: a tab with no content script
+// (e.g. a non-Salesforce page) simply has no receiver.
+async function sendToActiveTab(message: { action: string }): Promise<void> {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabId = tabs[0]?.id;
+  if (typeof tabId !== 'number') return;
+  try {
+    await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    // No content script on the active tab — nothing to open.
+  }
+}
+
 export default defineBackground(() => {
+  // Keyboard commands. Registered at the top level of the service worker, so
+  // they fire regardless of whether the active tab's content script has settled
+  // — the whole point of declared `commands` over per-feature keydown handlers.
+  chrome.commands?.onCommand.addListener((command) => {
+    void (async () => {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const plan = planCommand(command, tabs[0]);
+      switch (plan.kind) {
+        case 'open-workspace':
+          await chrome.tabs.create({ url: workspaceUrl(plan.org) });
+          break;
+        case 'message-tab':
+          try {
+            await chrome.tabs.sendMessage(plan.tabId, plan.message);
+          } catch {
+            // No content script on the target tab — nothing to do.
+          }
+          break;
+        case 'noop':
+          break;
+      }
+    })();
+  });
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       // Sender gate: every privileged action below assumes the caller is one
@@ -85,6 +163,35 @@ export default defineBackground(() => {
             return { ok: true, sids: Object.fromEntries(entries) };
           }
 
+          case 'sfApiFetch': {
+            // Salesforce REST/Tooling/SOAP call executed entirely in the worker:
+            // the sid is read from the cookie here, injected as Authorization,
+            // and only the response *text* is returned. The response NEVER
+            // carries a sid. Content scripts omit targetOrigin (we fall back to
+            // their validated sender origin); app-tab callers pass it explicitly.
+            const targetOrigin =
+              typeof message.targetOrigin === 'string' && isAllowedCookieUrl(message.targetOrigin)
+                ? message.targetOrigin
+                : undefined;
+            return sfApiFetch(
+              {
+                kind: message.kind,
+                method: typeof message.method === 'string' ? message.method : 'GET',
+                endpoint: message.endpoint,
+                query: message.query,
+                body: message.body,
+                headers: message.headers,
+                soap: message.soap,
+                targetOrigin,
+              },
+              {
+                fetchImpl: fetch,
+                cookieGet: readSidCookie,
+                senderOrigin: resolveSenderOrigin(sender),
+              },
+            );
+          }
+
           case 'listSalesforceOrgs': {
             // Enumerate sid cookies to discover which orgs the user is logged
             // in to. Same security posture as getSidForUrls: results are
@@ -101,12 +208,14 @@ export default defineBackground(() => {
             // Open the standalone Workspace tab, passing the current org so it
             // can target the right session. The org is validated against the
             // Salesforce host allowlist before it ever reaches the URL.
-            const org = typeof message.org === 'string' ? message.org : '';
-            const safe = org && isAllowedCookieUrl(`https://${org}/`) ? org : '';
-            const url =
-              chrome.runtime.getURL('app.html') +
-              (safe ? `?org=${encodeURIComponent(safe)}` : '');
-            await chrome.tabs.create({ url });
+            await chrome.tabs.create({ url: workspaceUrl(message.org) });
+            return { ok: true };
+          }
+
+          case 'openPaletteOnActiveTab': {
+            // Fired by the popup's "Quick menu" button — open the ⚡ side menu
+            // on the active Salesforce tab.
+            await sendToActiveTab({ action: 'openPalette' });
             return { ok: true };
           }
 
