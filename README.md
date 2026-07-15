@@ -51,7 +51,7 @@ For in-depth command walkthroughs and workflow examples, see [docs/USAGE.md](doc
 
 ## Repository layout
 
-`@sfdt/cli` is one of five workspaces in this monorepo:
+`@sfdt/cli` is one of six workspaces in this monorepo:
 
 | Workspace | What it is | Status |
 |---|---|---|
@@ -60,6 +60,7 @@ For in-depth command walkthroughs and workflow examples, see [docs/USAGE.md](doc
 | **`sfdt-devtools`** (`/vscode`) | VS Code extension — a CLI-backed command center (Org Health sidebar, command palette, CodeLens, diagnostics, embedded dashboard); it drives the `sfdt` binary and reimplements no logic. See [vscode/README.md](vscode/README.md). | [Published to the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools) |
 | **`@sfdt/host`** (`/host`) | Native messaging host used as the extension's fallback transport when `sfdt ui` isn't running. Installed with `sfdt extension install-host`. | Bundled with CLI |
 | **`@sfdt/flow-core`** (`/packages/flow-core`) | Shared TypeScript library — Flow normalization, rules engine, scoring, and the versioned bridge contract. Consumed by both CLI and extension. | Published to npm (publishes alongside the CLI) |
+| **`@sfdt/plugin`** (`/packages/plugin`) | Salesforce CLI plugin — a thin oclif wrapper exposing every command as `sf sfdt <command>`. Forwards argv to the bundled `sfdt` binary; reimplements no logic. | Published to npm (publishes alongside the CLI) |
 
 The CLI's `sfdt ui` command starts a local web dashboard (`/gui`) that exposes the same bridge endpoints the extension uses.
 
@@ -130,6 +131,8 @@ By area:
 - **Testing & quality** — the enhanced Apex runner, unified Apex + Flow logic tests, local LWC
   (Jest) tests, Agentforce agent tests as CI gates, Code Analyzer v5 scans (SARIF output for
   code scanning), coverage gates, and changelog management.
+- **Environments & data** — scratch-org creation, deletion, listing, and pooling (`sfdt scratch`),
+  plus org data set import/export over `sf data tree` (`sfdt data`).
 - **AI** — code review, deployment-error analysis, PR descriptions, fix plans, and ad-hoc
   prompts across Claude / Gemini / Codex CLI providers or any OpenAI-compatible endpoint.
 - **Org health** — `audit` and `monitor` check suites with multi-channel notifications,
@@ -260,7 +263,7 @@ Set `features.ai` to `false` to disable all AI prompts. Heuristic fallbacks stil
 
 ## Web Dashboard (`sfdt ui`)
 
-`sfdt ui` starts a local Express server and opens a **Salesforce Lightning Design System** dashboard in your browser:
+`sfdt ui` starts a local Express server and opens the SFDT dashboard in your browser:
 
 ```bash
 sfdt ui                   # opens http://localhost:7654
@@ -268,14 +271,16 @@ sfdt ui --port 8080       # custom port
 sfdt ui --no-open         # start server without opening browser
 ```
 
-Dashboard pages:
-- **Dashboard** — summary stat cards, recent test runs, preflight and drift status
-- **Test Runs** — Apex test history with coverage colouring; run tests directly from the UI
-- **Preflight** — per-check pass/fail list; run preflight directly from the UI
-- **Drift Detection** — filterable component table (All / Clean / Drift); run drift check from the UI
-- **Compare** — diff two orgs or local source vs an org, export source-only items as `package.xml`
-- **Scan** — fetch and browse full metadata inventory from any org; writes `logs/scan-latest.json`
-- **Logs** — searchable log viewer for deploy and rollback history with pagination and raw output
+The dashboard has 25 pages, grouped in the sidebar. The authoritative list is
+[`generated/gui-pages.json`](generated/gui-pages.json):
+
+- **Observe** — Dashboard, Drift, Org Audit, Org Monitor, Test Runs, Coverage, Logs
+- **Analyze** — Compare, Scan, Preflight, Manifests, Quality, Agent Test, Pull, Review, Explain,
+  Flow Intelligence, Dependency Graph, Scratch Orgs, Data Sets, Documentation
+- **Release** — Release Hub, Retrofit
+- **Config** — Notifications, Settings
+
+Most pages both read the latest snapshot and can trigger the underlying command directly from the UI.
 
 The dashboard reads log files from the project's configured `logDir` (defaults to `<project>/logs`). Data appears automatically after running `sfdt test`, `sfdt preflight`, or `sfdt drift` when those commands write JSON result files.
 
@@ -487,6 +492,22 @@ npm run lint
 ```
 
 After `npm link`, the `sfdt` command points to your local checkout.
+
+### Surface catalogs
+
+`generated/` holds machine-generated catalogs of every public surface — commands, MCP tools, GUI
+pages, VS Code commands, Chrome features, CI capabilities, and the parity matrix. **Code is
+authoritative; the catalogs are derived and checked in.** Never edit `generated/*` by hand.
+
+If you add or change a public surface (a command, a flag, an MCP tool, a GUI page), regenerate and
+commit the diff:
+
+```bash
+npm run generate:catalogs   # rewrite generated/* from the code
+npm run check:all-contracts # what CI runs — fails on drift
+```
+
+CI fails on catalog drift, so a surface change without a regenerated catalog will not merge.
 
 ## Contributing
 
