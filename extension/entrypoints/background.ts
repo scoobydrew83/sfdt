@@ -1,5 +1,6 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { dedupeOrgs } from '../lib/org-list.js';
+import { planCommand } from '../lib/commands.js';
 
 // Only the extension's own content scripts may invoke privileged actions.
 // chrome.runtime.id is the canonical id of THIS extension at runtime — a
@@ -47,7 +48,55 @@ function clampBridgePort(value: unknown): number {
   return value;
 }
 
+// Build the Workspace tab URL, seeded with an org only when it's a valid,
+// allowlisted Salesforce host. Shared by the openApp message and the
+// open-workspace keyboard command.
+function workspaceUrl(org: unknown): string {
+  const host = typeof org === 'string' ? org : '';
+  const safe = host && isAllowedCookieUrl(`https://${host}/`) ? host : '';
+  return chrome.runtime.getURL('app.html') + (safe ? `?org=${encodeURIComponent(safe)}` : '');
+}
+
+// Forward a message to the active tab's content script. Used by the popup's
+// "Quick menu" button and the open-palette command so tab messaging (and the
+// tab lookup) stays in the worker. Best-effort: a tab with no content script
+// (e.g. a non-Salesforce page) simply has no receiver.
+async function sendToActiveTab(message: { action: string }): Promise<void> {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabId = tabs[0]?.id;
+  if (typeof tabId !== 'number') return;
+  try {
+    await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    // No content script on the active tab — nothing to open.
+  }
+}
+
 export default defineBackground(() => {
+  // Keyboard commands. Registered at the top level of the service worker, so
+  // they fire regardless of whether the active tab's content script has settled
+  // — the whole point of declared `commands` over per-feature keydown handlers.
+  chrome.commands?.onCommand.addListener((command) => {
+    void (async () => {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const plan = planCommand(command, tabs[0]);
+      switch (plan.kind) {
+        case 'open-workspace':
+          await chrome.tabs.create({ url: workspaceUrl(plan.org) });
+          break;
+        case 'message-tab':
+          try {
+            await chrome.tabs.sendMessage(plan.tabId, plan.message);
+          } catch {
+            // No content script on the target tab — nothing to do.
+          }
+          break;
+        case 'noop':
+          break;
+      }
+    })();
+  });
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       // Sender gate: every privileged action below assumes the caller is one
@@ -101,12 +150,14 @@ export default defineBackground(() => {
             // Open the standalone Workspace tab, passing the current org so it
             // can target the right session. The org is validated against the
             // Salesforce host allowlist before it ever reaches the URL.
-            const org = typeof message.org === 'string' ? message.org : '';
-            const safe = org && isAllowedCookieUrl(`https://${org}/`) ? org : '';
-            const url =
-              chrome.runtime.getURL('app.html') +
-              (safe ? `?org=${encodeURIComponent(safe)}` : '');
-            await chrome.tabs.create({ url });
+            await chrome.tabs.create({ url: workspaceUrl(message.org) });
+            return { ok: true };
+          }
+
+          case 'openPaletteOnActiveTab': {
+            // Fired by the popup's "Quick menu" button — open the ⚡ side menu
+            // on the active Salesforce tab.
+            await sendToActiveTab({ action: 'openPalette' });
             return { ok: true };
           }
 

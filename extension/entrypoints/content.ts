@@ -11,6 +11,7 @@ import { createBridgeClient } from '../lib/sfdt-bridge.js';
 import { createTelemetry, type BridgeFailureCategory } from '../lib/telemetry.js';
 import { readKillSwitchCache, writeKillSwitchCache } from '../lib/killswitch-cache.js';
 import { mountSideButton, type MenuItem } from '../ui/side-button.js';
+import { showToast } from '../ui/toast.js';
 import { ensureTokens } from '../lib/tokens.js';
 import { FEATURE_ICONS } from '../lib/feature-icons.js';
 import { createAiAssistantFeature } from '../features/ai-assistant.js';
@@ -227,6 +228,22 @@ export default defineContentScript({
           });
         },
       },
+    });
+
+    // Keyboard-command targets forwarded from the background service worker.
+    // `open-palette` opens the ⚡ side menu (until the command palette ships in
+    // P2-2); `toggle-inspector` is declared now but the LWC inspector doesn't
+    // exist yet (P6-1), so it surfaces a "not available yet" toast. These are
+    // separate from every feature's own in-page keydown listeners, which stay
+    // untouched.
+    chrome.runtime.onMessage.addListener((message: { action?: string }) => {
+      if (message?.action === 'openPalette') {
+        sideButton.open();
+      } else if (message?.action === 'toggleInspector') {
+        showToast('LWC Inspector isn’t available yet — coming in a later release.', {
+          kind: 'info',
+        });
+      }
     });
 
     onSettingsChange((next) => {
