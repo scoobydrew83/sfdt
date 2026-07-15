@@ -5,6 +5,7 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 ## [Unreleased]
 
 ### Added
+- **UX & accessibility conventions doc** (`extension/CONVENTIONS.md`) — a numbered a11y/overlay/keyboard/theme/shadow-root checklist that reviewer agents apply verbatim to every UI-bearing change, plus two annotated reference implementations (`setup-tabs`, `flow-list-search`). Codifies the overlay rules (Esc closes, focus trap + restore, dialog semantics, pin/click-outside dismiss), the `createElement`+`textContent`/zero-`innerHTML` DOM discipline, and the `var(--sfdt-color-*)` theme-token rule. Contributor-facing; ships no runtime code.
 - **Packaging version-match guard** (`scripts/check-version-match.ts`) — the `package:ext` step now fails if `extension/package.json`'s version differs from the built manifest (`.output/chrome-mv3/manifest.json`), naming both versions and the file, so a stale build artifact can't be zipped and shipped. Runs in the Extension CI packaging job; documented in the new `extension/RELEASING.md`.
 
 ### Changed
