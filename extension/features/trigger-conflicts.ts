@@ -116,13 +116,13 @@ export function buildConflictsModal(
 
   if (groups.length === 0) {
     const empty = doc.createElement('div');
-    empty.style.color = '#80868d';
+    empty.style.color = 'var(--sfdt-color-text-icon)';
     empty.textContent =
       'No record-triggered flows in this org share the same object + timing + event.';
     body.appendChild(empty);
   } else {
     const intro = doc.createElement('div');
-    intro.style.cssText = 'color: #54698d; font-size: 13px; margin-bottom: 12px;';
+    intro.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 13px; margin-bottom: 12px;';
     intro.textContent =
       'These groups of record-triggered flows fire on the same object + timing + event. The order in which they run is not guaranteed, so behaviour can vary save-to-save. Use Deactivate to silence a conflicting flow without deleting it; Activate restores the latest version.';
     body.appendChild(intro);
@@ -130,7 +130,7 @@ export function buildConflictsModal(
     for (const group of groups) {
       const groupBox = doc.createElement('div');
       groupBox.style.cssText =
-        'border: 1px solid #d8dde6; border-radius: 4px; padding: 10px; margin-bottom: 8px;';
+        'border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 10px; margin-bottom: 8px;';
       const title = doc.createElement('div');
       title.style.cssText = 'font-weight: 600; margin-bottom: 6px;';
       title.textContent = `${group.objectApiName} · ${group.triggerTiming} · ${group.triggerEvent}`;
@@ -147,11 +147,11 @@ export function buildConflictsModal(
 
   const footer = doc.createElement('div');
   footer.style.cssText =
-    'padding: 12px 16px; border-top: 1px solid #d8dde6; display: flex; justify-content: flex-end; gap: 8px;';
+    'padding: 12px 16px; border-top: 1px solid var(--sfdt-color-border); display: flex; justify-content: flex-end; gap: 8px;';
   const closeFooter = doc.createElement('button');
   closeFooter.textContent = 'Close';
   closeFooter.style.cssText =
-    'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer;';
+    'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer;';
   footer.appendChild(closeFooter);
 
   const view = presentView({ title, body, footer, doc, width: '720px' });
@@ -167,7 +167,7 @@ function buildFlowRow(
 ): HTMLDivElement {
   const row = doc.createElement('div');
   row.style.cssText =
-    'display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid #f3f3f3;';
+    'display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--sfdt-color-bg);';
 
   const left = doc.createElement('div');
   left.style.cssText = 'min-width: 0; flex: 1;';
@@ -183,7 +183,7 @@ function buildFlowRow(
   labelLine.appendChild(labelSpan);
   labelLine.appendChild(stateBadge);
   const criteria = doc.createElement('div');
-  criteria.style.cssText = 'color: #80868d; font-size: 12px; margin-top: 1px;';
+  criteria.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; margin-top: 1px;';
   criteria.textContent = flow.entryCriteriaSummary ?? 'no entry criteria';
   left.appendChild(labelLine);
   left.appendChild(criteria);
@@ -193,22 +193,22 @@ function buildFlowRow(
   right.style.cssText = 'display: flex; gap: 4px; align-items: center;';
 
   const statusSpan = doc.createElement('span');
-  statusSpan.style.cssText = 'font-size: 11px; color: #80868d; min-width: 18px;';
+  statusSpan.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-icon); min-width: 18px;';
   right.appendChild(statusSpan);
 
   const activateBtn = doc.createElement('button');
   const deactivateBtn = doc.createElement('button');
 
   const baseBtnStyle =
-    'padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 3px; font-size: 12px; cursor: pointer;';
+    'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 3px; font-size: 12px; cursor: pointer;';
   activateBtn.style.cssText = baseBtnStyle;
   deactivateBtn.style.cssText = baseBtnStyle;
 
   const latest = extra?.latestVersionNumber ?? null;
   activateBtn.textContent = latest ? `Activate v${latest}` : 'Activate';
   deactivateBtn.textContent = 'Deactivate';
-  deactivateBtn.style.color = '#c23934';
-  deactivateBtn.style.borderColor = '#f9d4d2';
+  deactivateBtn.style.color = 'var(--sfdt-color-error)';
+  deactivateBtn.style.borderColor = 'var(--sfdt-color-error-bg-5)';
 
   const refresh = () => {
     const active = extra?.active ?? true;
@@ -224,19 +224,19 @@ function buildFlowRow(
 
   const setPending = (label: string) => {
     statusSpan.textContent = label;
-    statusSpan.style.color = '#54698d';
+    statusSpan.style.color = 'var(--sfdt-color-text-weak)';
     activateBtn.disabled = true;
     deactivateBtn.disabled = true;
   };
   const setError = (msg: string) => {
     statusSpan.textContent = '✗';
-    statusSpan.style.color = '#c23934';
+    statusSpan.style.color = 'var(--sfdt-color-error)';
     statusSpan.title = msg;
     refresh();
   };
   const setOk = () => {
     statusSpan.textContent = '✓';
-    statusSpan.style.color = '#04844b';
+    statusSpan.style.color = 'var(--sfdt-color-success)';
     statusSpan.title = '';
     refresh();
   };
@@ -277,12 +277,12 @@ function buildFlowRow(
 function setBadgeState(badge: HTMLSpanElement, active: boolean): void {
   if (active) {
     badge.textContent = 'Active';
-    badge.style.background = '#ddf3e4';
-    badge.style.color = '#04844b';
+    badge.style.background = 'var(--sfdt-color-success-bg)';
+    badge.style.color = 'var(--sfdt-color-success)';
   } else {
     badge.textContent = 'Inactive';
-    badge.style.background = '#f3f3f3';
-    badge.style.color = '#80868d';
+    badge.style.background = 'var(--sfdt-color-bg)';
+    badge.style.color = 'var(--sfdt-color-text-icon)';
   }
 }
 
@@ -345,7 +345,7 @@ export function createTriggerConflictsFeature(
     async onActivate() {
       const loading = doc.createElement('div');
       loading.style.cssText =
-        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: #fff; font-family: system-ui, sans-serif;';
+        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: var(--sfdt-color-surface); font-family: system-ui, sans-serif;';
       loading.textContent = 'Scanning flows for trigger conflicts…';
       doc.body.appendChild(loading);
       try {
