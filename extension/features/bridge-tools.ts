@@ -83,7 +83,7 @@ interface ToolSpec {
 function renderJson(doc: Document, results: HTMLElement, data: unknown): void {
   const pre = doc.createElement('pre');
   pre.style.cssText =
-    'margin: 0; padding: 12px; background: #f3f3f3; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-word;';
+    'margin: 0; padding: 12px; background: var(--sfdt-color-bg); border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-word;';
   pre.textContent = JSON.stringify(data ?? null, null, 2);
   results.appendChild(pre);
 }
@@ -104,7 +104,7 @@ function createBridgeToolFeature(spec: ToolSpec, options: BridgeToolOptions): Fe
   function renderError(results: HTMLElement, status: HTMLSpanElement, message: string): void {
     const panel = doc.createElement('div');
     panel.style.cssText =
-      'border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+      'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
     panel.textContent = message;
     results.appendChild(panel);
     status.textContent = 'Failed';
@@ -151,9 +151,9 @@ function createBridgeToolFeature(spec: ToolSpec, options: BridgeToolOptions): Fe
     const runBtn = doc.createElement('button');
     runBtn.textContent = spec.runLabel;
     runBtn.style.cssText =
-      'padding: 5px 14px; border: 1px solid #0070d2; background: #0070d2; color: #fff; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 5px 14px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 13px;';
     const status = doc.createElement('span');
-    status.style.cssText = 'color: #54698d; font-size: 12px;';
+    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     toolbar.append(controls, runBtn, status);
     body.appendChild(toolbar);
 
@@ -209,7 +209,7 @@ function textInput(doc: Document, placeholder: string): HTMLInputElement {
   input.type = 'text';
   input.placeholder = placeholder;
   input.style.cssText =
-    'flex: 1; min-width: 160px; padding: 5px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px;';
+    'flex: 1; min-width: 160px; padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
   return input;
 }
 
@@ -229,7 +229,7 @@ export function createDriftFeature(options: BridgeToolOptions = {}): Feature {
         const input = textInput(doc, 'Component, e.g. Account.MyField__c');
         controls.appendChild(input);
         const live = doc.createElement('label');
-        live.style.cssText = 'display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #54698d;';
+        live.style.cssText = 'display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--sfdt-color-text-weak);';
         const cb = doc.createElement('input');
         cb.type = 'checkbox';
         live.append(cb, doc.createTextNode('Run live (slower)'));
@@ -258,7 +258,7 @@ export function createScanFeature(options: BridgeToolOptions = {}): Feature {
       setupInputs(doc, controls) {
         const select = doc.createElement('select');
         select.style.cssText =
-          'padding: 5px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px;';
+          'padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
         for (const [value, label] of [
           ['scheduled', 'Scheduled flows only'],
           ['all', 'All flows'],

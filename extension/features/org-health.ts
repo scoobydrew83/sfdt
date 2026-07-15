@@ -33,10 +33,10 @@ interface Snapshot {
 // ---------------------------------------------------------------------------
 
 const BAND_COLOUR: Record<'green' | 'amber' | 'red' | 'grey', string> = {
-  green: '#04844b',
-  amber: '#fe9339',
-  red: '#c23934',
-  grey: '#80868d',
+  green: 'var(--sfdt-color-success)',
+  amber: 'var(--sfdt-color-warning)',
+  red: 'var(--sfdt-color-error)',
+  grey: 'var(--sfdt-color-text-icon)',
 };
 
 export function bandFor(status: string): 'green' | 'amber' | 'red' | 'grey' {
@@ -114,7 +114,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     const checks = shapeChecks(snapshot);
     if (checks.length === 0) {
       const empty = doc.createElement('div');
-      empty.style.cssText = 'padding: 8px 0; color: #80868d; font-size: 12px;';
+      empty.style.cssText = 'padding: 8px 0; color: var(--sfdt-color-text-icon); font-size: 12px;';
       empty.textContent = `No data. Run \`sfdt ${command} all\` to populate.`;
       section.appendChild(empty);
       container.appendChild(section);
@@ -123,7 +123,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
 
     for (const c of checks) {
       const row = doc.createElement('div');
-      row.style.cssText = 'border: 1px solid #d8dde6; border-radius: 4px; padding: 8px 10px; margin-bottom: 6px;';
+      row.style.cssText = 'border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 8px 10px; margin-bottom: 6px;';
 
       const head = doc.createElement('div');
       head.style.cssText = 'display: flex; align-items: center; gap: 8px;';
@@ -133,7 +133,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
       titleEl.style.cssText = 'font-weight: 600; font-size: 12px;';
       titleEl.textContent = c.title;
       const summaryEl = doc.createElement('span');
-      summaryEl.style.cssText = 'color: #54698d; font-size: 11px;';
+      summaryEl.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 11px;';
       summaryEl.textContent = c.summary;
       head.appendChild(dot);
       head.appendChild(titleEl);
@@ -142,7 +142,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
 
       if (c.findings.length > 0) {
         const list = doc.createElement('ul');
-        list.style.cssText = 'margin: 6px 0 0; padding-left: 18px; color: #3e3e3c; font-size: 11px;';
+        list.style.cssText = 'margin: 6px 0 0; padding-left: 18px; color: var(--sfdt-color-text); font-size: 11px;';
         for (const f of c.findings.slice(0, 25)) {
           const li = doc.createElement('li');
           li.textContent = describeFinding(f);
@@ -176,7 +176,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
               : '';
         const errorPanel = doc.createElement('div');
         errorPanel.style.cssText =
-          'border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
         errorPanel.textContent = `${response.error}${hint}`;
         body.appendChild(errorPanel);
         status.textContent = 'Failed';
@@ -200,7 +200,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     } catch (err) {
       const errorPanel = doc.createElement('div');
       errorPanel.style.cssText =
-        'border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
       errorPanel.textContent = err instanceof Error ? err.message : String(err);
       body.appendChild(errorPanel);
       status.textContent = 'Failed';
@@ -219,17 +219,17 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     const toolbar = doc.createElement('div');
     toolbar.style.cssText = 'display: flex; gap: 12px; align-items: center;';
     const status = doc.createElement('span');
-    status.style.cssText = 'color: #54698d; font-size: 12px;';
+    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     const actions = doc.createElement('div');
     actions.style.cssText = 'display: flex; gap: 6px; margin-left: auto;';
     const refreshBtn = doc.createElement('button');
     refreshBtn.textContent = 'Refresh';
     refreshBtn.style.cssText =
-      'padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     const copyBtn = doc.createElement('button');
     copyBtn.textContent = 'Copy JSON';
     copyBtn.style.cssText =
-      'padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     actions.appendChild(refreshBtn);
     actions.appendChild(copyBtn);
     toolbar.appendChild(status);

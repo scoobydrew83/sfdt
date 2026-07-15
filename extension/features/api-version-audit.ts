@@ -14,8 +14,8 @@ import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-ap
 
 const AUDIT_CLASS = 'sfdt-api-version-audit';
 const PANEL_CLASS = 'sfdt-api-version-audit-panel';
-const BEHIND_COLOUR = '#fe9339'; // amber — matches org-health's amber band
-const OK_COLOUR = '#706e6b'; // neutral grey
+const BEHIND_COLOUR = 'var(--sfdt-color-warning)'; // amber — matches org-health's amber band
+const OK_COLOUR = 'var(--sfdt-color-text-muted)'; // neutral grey
 
 interface ApiVersionRow {
   ApiVersion?: number | null;
@@ -113,8 +113,8 @@ function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
     'top: 100%',
     'right: 0',
     'z-index: 99999',
-    'background: #fff',
-    'border: 1px solid #d8dde6',
+    'background: var(--sfdt-color-surface)',
+    'border: 1px solid var(--sfdt-color-border)',
     'border-radius: 4px',
     'box-shadow: 0 2px 8px rgba(0,0,0,0.15)',
     'padding: 10px 12px',
@@ -122,7 +122,7 @@ function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
     'max-height: 380px',
     'overflow-y: auto',
     'font-size: 12px',
-    'color: #16325c',
+    'color: var(--sfdt-color-brand-deep)',
     'text-align: left',
     'white-space: nowrap',
   ].join('; ');
@@ -130,13 +130,13 @@ function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
   const floor = ORG_HEALTH_THRESHOLDS.minApiVersionFloor;
   for (const t of data.types) {
     const heading = doc.createElement('div');
-    heading.style.cssText = 'font-weight: 700; margin: 6px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; color: #54698d;';
+    heading.style.cssText = 'font-weight: 700; margin: 6px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--sfdt-color-text-weak);';
     heading.textContent = t.label;
     panel.appendChild(heading);
 
     if (t.versions.length === 0) {
       const empty = doc.createElement('div');
-      empty.style.cssText = 'color: #54698d; font-style: italic;';
+      empty.style.cssText = 'color: var(--sfdt-color-text-weak); font-style: italic;';
       empty.textContent = 'none';
       panel.appendChild(empty);
       continue;
@@ -152,7 +152,7 @@ function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
         'align-items: center',
         'gap: 8px',
         'padding: 1px 4px',
-        below ? `color: ${BEHIND_COLOUR}; font-weight: 700; background: #fef4ec` : '',
+        below ? `color: ${BEHIND_COLOUR}; font-weight: 700; background: var(--sfdt-color-warning-bg-5)` : '',
       ].join('; ');
       if (below) row.dataset['belowFloor'] = 'true';
 
@@ -165,7 +165,7 @@ function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
         'height: 8px',
         'border-radius: 2px',
         `width: ${Math.max(4, Math.round((count / max) * 80))}px`,
-        `background: ${below ? BEHIND_COLOUR : '#1589ee'}`,
+        `background: ${below ? BEHIND_COLOUR : 'var(--sfdt-color-info)'}`,
       ].join('; ');
       const countEl = doc.createElement('span');
       countEl.textContent = String(count);
@@ -177,7 +177,7 @@ function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
   if (data.release) {
     const footer = doc.createElement('div');
     footer.className = `${PANEL_CLASS}-footer`;
-    footer.style.cssText = 'margin-top: 8px; padding-top: 6px; border-top: 1px solid #d8dde6; color: #54698d;';
+    footer.style.cssText = 'margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--sfdt-color-border); color: var(--sfdt-color-text-weak);';
     footer.textContent = `Org max: v${data.release.apiVersion} — ${data.release.release}${data.release.preview ? ' (preview)' : ''}`;
     panel.appendChild(footer);
   }
@@ -254,7 +254,7 @@ export function createApiVersionAuditFeature(options: ApiVersionAuditOptions = {
       'font-weight: 700',
       'text-transform: uppercase',
       'letter-spacing: 0.02em',
-      'color: #fff',
+      'color: var(--sfdt-color-surface)',
       `background: ${behind ? BEHIND_COLOUR : OK_COLOUR}`,
       'border-radius: 3px',
       'padding: 2px 8px',

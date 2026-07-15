@@ -174,7 +174,7 @@ export function createDataImportFeature(options: {
 
     // Configuration Row
     const configRow = doc.createElement('div');
-    configRow.style.cssText = 'display: flex; flex-wrap: wrap; gap: 16px; border-bottom: 1px solid #e0e0e0; padding-bottom: 16px;';
+    configRow.style.cssText = 'display: flex; flex-wrap: wrap; gap: 16px; border-bottom: 1px solid var(--sfdt-color-border-2); padding-bottom: 16px;';
     body.appendChild(configRow);
 
     // Target SObject Select
@@ -182,9 +182,9 @@ export function createDataImportFeature(options: {
     sobjDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px; min-width: 180px;';
     const sobjLabel = doc.createElement('label');
     sobjLabel.textContent = 'SObject Name';
-    sobjLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    sobjLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const sobjSelect = doc.createElement('select');
-    sobjSelect.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    sobjSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     sobjDiv.appendChild(sobjLabel);
     sobjDiv.appendChild(sobjSelect);
     configRow.appendChild(sobjDiv);
@@ -194,9 +194,9 @@ export function createDataImportFeature(options: {
     opDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px; min-width: 120px;';
     const opLabel = doc.createElement('label');
     opLabel.textContent = 'Operation';
-    opLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    opLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const opSelect = doc.createElement('select');
-    opSelect.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    opSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     const ops = [
       { v: 'create', l: 'Insert' },
       { v: 'update', l: 'Update' },
@@ -219,9 +219,9 @@ export function createDataImportFeature(options: {
     extIdDiv.style.cssText = 'display: none; flex-direction: column; gap: 4px; min-width: 150px;';
     const extIdLabel = doc.createElement('label');
     extIdLabel.textContent = 'External ID Field';
-    extIdLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    extIdLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const extIdSelect = doc.createElement('select');
-    extIdSelect.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    extIdSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     extIdDiv.appendChild(extIdLabel);
     extIdDiv.appendChild(extIdSelect);
     configRow.appendChild(extIdDiv);
@@ -231,13 +231,13 @@ export function createDataImportFeature(options: {
     batchDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px; width: 80px;';
     const batchLabel = doc.createElement('label');
     batchLabel.textContent = 'Batch Size';
-    batchLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    batchLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const batchInput = doc.createElement('input');
     batchInput.type = 'number';
     batchInput.min = '1';
     batchInput.max = '200';
     batchInput.value = '200';
-    batchInput.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    batchInput.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     batchDiv.appendChild(batchLabel);
     batchDiv.appendChild(batchInput);
     configRow.appendChild(batchDiv);
@@ -247,13 +247,13 @@ export function createDataImportFeature(options: {
     concDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px; width: 80px;';
     const concLabel = doc.createElement('label');
     concLabel.textContent = 'Threads';
-    concLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    concLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const concInput = doc.createElement('input');
     concInput.type = 'number';
     concInput.min = '1';
     concInput.max = '10';
     concInput.value = '2';
-    concInput.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    concInput.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     concDiv.appendChild(concLabel);
     concDiv.appendChild(concInput);
     configRow.appendChild(concDiv);
@@ -263,20 +263,20 @@ export function createDataImportFeature(options: {
     pasteDiv.style.cssText = 'display: flex; flex-direction: column; gap: 6px;';
     const pasteLabel = doc.createElement('span');
     pasteLabel.textContent = 'Paste CSV / Excel Data (Tab or Comma delimited)';
-    pasteLabel.style.cssText = 'font-size: 12px; font-weight: 600; color: #3e3e3c;';
+    pasteLabel.style.cssText = 'font-size: 12px; font-weight: 600; color: var(--sfdt-color-text);';
     const pasteArea = doc.createElement('textarea');
     pasteArea.placeholder = 'First row must contain headers. E.g.\nFirstName\tLastName\tEmail\nJohn\tDoe\tjohn.doe@example.com';
-    pasteArea.style.cssText = 'height: 100px; padding: 10px; border: 1px solid #d8dde6; border-radius: 4px; font-family: monospace; font-size: 12px; outline: none; resize: vertical;';
+    pasteArea.style.cssText = 'height: 100px; padding: 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-family: monospace; font-size: 12px; outline: none; resize: vertical;';
     pasteDiv.appendChild(pasteLabel);
     pasteDiv.appendChild(pasteArea);
     body.appendChild(pasteDiv);
 
     // Mapping Grid Container
     const mappingContainer = doc.createElement('div');
-    mappingContainer.style.cssText = 'display: none; flex-direction: column; gap: 6px; border: 1px solid #d8dde6; border-radius: 4px; padding: 12px;';
+    mappingContainer.style.cssText = 'display: none; flex-direction: column; gap: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 12px;';
     const mappingHeader = doc.createElement('span');
     mappingHeader.textContent = 'Field Mappings';
-    mappingHeader.style.cssText = 'font-weight: 600; font-size: 13px; color: #16325c;';
+    mappingHeader.style.cssText = 'font-weight: 600; font-size: 13px; color: var(--sfdt-color-brand-deep);';
     mappingContainer.appendChild(mappingHeader);
     const mappingGrid = doc.createElement('div');
     mappingGrid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; max-height: 200px; overflow-y: auto; padding: 4px;';
@@ -285,17 +285,17 @@ export function createDataImportFeature(options: {
 
     // Action Row (Import button, Cancel, Download error, etc.)
     const actionRow = doc.createElement('div');
-    actionRow.style.cssText = 'display: flex; gap: 10px; justify-content: flex-end; align-items: center; border-top: 1px solid #e0e0e0; padding-top: 16px;';
+    actionRow.style.cssText = 'display: flex; gap: 10px; justify-content: flex-end; align-items: center; border-top: 1px solid var(--sfdt-color-border-2); padding-top: 16px;';
     body.appendChild(actionRow);
 
     const importBtn = doc.createElement('button');
     importBtn.textContent = 'Start Import';
-    importBtn.style.cssText = 'padding: 8px 20px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    importBtn.style.cssText = 'padding: 8px 20px; background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     importBtn.disabled = true;
 
     const downloadErrorsBtn = doc.createElement('button');
     downloadErrorsBtn.textContent = 'Download Errors CSV';
-    downloadErrorsBtn.style.cssText = 'padding: 8px 14px; background: #fff; color: #c23934; border: 1px solid #c23934; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; display: none;';
+    downloadErrorsBtn.style.cssText = 'padding: 8px 14px; background: var(--sfdt-color-surface); color: var(--sfdt-color-error); border: 1px solid var(--sfdt-color-error); border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; display: none;';
 
     actionRow.appendChild(downloadErrorsBtn);
     actionRow.appendChild(importBtn);
@@ -308,32 +308,32 @@ export function createDataImportFeature(options: {
     const progressLabel = doc.createElement('span');
     progressLabel.textContent = 'Import Progress';
     const progressStats = doc.createElement('span');
-    progressStats.style.cssText = 'color: #54698d;';
+    progressStats.style.cssText = 'color: var(--sfdt-color-text-weak);';
     progressInfo.appendChild(progressLabel);
     progressInfo.appendChild(progressStats);
     progressSection.appendChild(progressInfo);
 
     const progressOuter = doc.createElement('div');
-    progressOuter.style.cssText = 'height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden;';
+    progressOuter.style.cssText = 'height: 8px; background: var(--sfdt-color-border-2); border-radius: 4px; overflow: hidden;';
     const progressInner = doc.createElement('div');
-    progressInner.style.cssText = 'height: 100%; width: 0%; background: #0070d2; transition: width 0.2s;';
+    progressInner.style.cssText = 'height: 100%; width: 0%; background: var(--sfdt-color-brand); transition: width 0.2s;';
     progressOuter.appendChild(progressInner);
     progressSection.appendChild(progressOuter);
 
     const statsGrid = doc.createElement('div');
-    statsGrid.style.cssText = 'display: flex; gap: 20px; font-size: 12px; justify-content: flex-start; background: #fafaf9; padding: 10px; border-radius: 4px;';
+    statsGrid.style.cssText = 'display: flex; gap: 20px; font-size: 12px; justify-content: flex-start; background: var(--sfdt-color-surface-alt); padding: 10px; border-radius: 4px;';
     const queuedStat = doc.createElement('span');
     queuedStat.textContent = 'Queued: 0';
-    queuedStat.style.color = '#54698d';
+    queuedStat.style.color = 'var(--sfdt-color-text-weak)';
     const processingStat = doc.createElement('span');
     processingStat.textContent = 'Processing: 0';
-    processingStat.style.color = '#0070d2';
+    processingStat.style.color = 'var(--sfdt-color-brand)';
     const succeededStat = doc.createElement('span');
     succeededStat.textContent = 'Succeeded: 0';
-    succeededStat.style.color = '#04844b';
+    succeededStat.style.color = 'var(--sfdt-color-success)';
     const failedStat = doc.createElement('span');
     failedStat.textContent = 'Failed: 0';
-    failedStat.style.color = '#c23934';
+    failedStat.style.color = 'var(--sfdt-color-error)';
     statsGrid.appendChild(queuedStat);
     statsGrid.appendChild(processingStat);
     statsGrid.appendChild(succeededStat);
@@ -342,7 +342,7 @@ export function createDataImportFeature(options: {
 
     // Results Table Container
     const resultsContainer = doc.createElement('div');
-    resultsContainer.style.cssText = 'display: none; border: 1px solid #d8dde6; border-radius: 4px; overflow: auto; max-height: 250px;';
+    resultsContainer.style.cssText = 'display: none; border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 250px;';
     const resultsTable = doc.createElement('table');
     resultsTable.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 11px; text-align: left;';
     const resultsTHead = doc.createElement('thead');
@@ -351,7 +351,7 @@ export function createDataImportFeature(options: {
     for (const hCol of headerCols) {
       const th = doc.createElement('th');
       th.textContent = hCol;
-      th.style.cssText = 'padding: 6px 10px; background: #fafaf9; border-bottom: 1px solid #d8dde6; font-weight: 600; position: sticky; top: 0; z-index: 1;';
+      th.style.cssText = 'padding: 6px 10px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1;';
       headTr.appendChild(th);
     }
     resultsTHead.appendChild(headTr);
@@ -549,14 +549,14 @@ export function createDataImportFeature(options: {
 
       headers.forEach((h, idx) => {
         const colDiv = doc.createElement('div');
-        colDiv.style.cssText = 'display: flex; flex-direction: column; gap: 2px; border: 1px solid #f3f3f3; padding: 6px; border-radius: 4px; background: #fafaf9;';
+        colDiv.style.cssText = 'display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--sfdt-color-bg); padding: 6px; border-radius: 4px; background: var(--sfdt-color-surface-alt);';
         
         const headerLabel = doc.createElement('span');
         headerLabel.textContent = h;
         headerLabel.style.cssText = 'font-weight: 600; font-size: 11px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;';
         
         const select = doc.createElement('select');
-        select.style.cssText = 'padding: 4px; font-size: 11px; border: 1px solid #d8dde6; border-radius: 4px; outline: none;';
+        select.style.cssText = 'padding: 4px; font-size: 11px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; outline: none;';
         
         const optSkip = doc.createElement('option');
         optSkip.value = '';
@@ -674,34 +674,34 @@ export function createDataImportFeature(options: {
       const slice = importRows.slice(0, 1000);
       for (const row of slice) {
         const tr = doc.createElement('tr');
-        tr.style.cssText = 'border-bottom: 1px solid #f3f3f3;';
+        tr.style.cssText = 'border-bottom: 1px solid var(--sfdt-color-bg);';
         if (row.status === 'Succeeded') {
-          tr.style.background = '#f4fbf7';
+          tr.style.background = 'var(--sfdt-color-success-bg-2)';
         } else if (row.status === 'Failed') {
-          tr.style.background = '#fdf3f2';
+          tr.style.background = 'var(--sfdt-color-error-bg-2)';
         }
 
         const tdIndex = doc.createElement('td');
         tdIndex.textContent = String(row.index);
-        tdIndex.style.cssText = 'padding: 6px 10px; font-weight: bold; color: #54698d;';
+        tdIndex.style.cssText = 'padding: 6px 10px; font-weight: bold; color: var(--sfdt-color-text-weak);';
 
         const tdStatus = doc.createElement('td');
         tdStatus.textContent = row.status;
         tdStatus.style.cssText = 'padding: 6px 10px; font-weight: 600;';
-        if (row.status === 'Succeeded') tdStatus.style.color = '#04844b';
-        else if (row.status === 'Failed') tdStatus.style.color = '#c23934';
-        else if (row.status === 'Processing') tdStatus.style.color = '#0070d2';
+        if (row.status === 'Succeeded') tdStatus.style.color = 'var(--sfdt-color-success)';
+        else if (row.status === 'Failed') tdStatus.style.color = 'var(--sfdt-color-error)';
+        else if (row.status === 'Processing') tdStatus.style.color = 'var(--sfdt-color-brand)';
 
         const tdAction = doc.createElement('td');
         tdAction.textContent = row.action || '-';
-        tdAction.style.cssText = 'padding: 6px 10px; color: #54698d;';
+        tdAction.style.cssText = 'padding: 6px 10px; color: var(--sfdt-color-text-weak);';
 
         const tdId = doc.createElement('td');
         tdId.style.cssText = 'padding: 6px 10px;';
         if (row.resultId) {
           const idLink = doc.createElement('span');
           idLink.textContent = row.resultId;
-          idLink.style.cssText = 'color: #0070d2; text-decoration: underline; cursor: pointer;';
+          idLink.style.cssText = 'color: var(--sfdt-color-brand); text-decoration: underline; cursor: pointer;';
           idLink.addEventListener('click', () => {
             // open view-all-data or inspect-record
             // Just copy it or open a link
@@ -716,7 +716,7 @@ export function createDataImportFeature(options: {
         tdErrors.textContent = row.errors || '-';
         tdErrors.style.cssText = 'padding: 6px 10px;';
         if (row.errors) {
-          tdErrors.style.color = '#c23934';
+          tdErrors.style.color = 'var(--sfdt-color-error)';
           tdErrors.style.fontWeight = '500';
         }
 
@@ -733,7 +733,7 @@ export function createDataImportFeature(options: {
         const td = doc.createElement('td');
         td.colSpan = 5;
         td.textContent = `... and ${importRows.length - 1000} more rows (errors will still download completely) ...`;
-        td.style.cssText = 'padding: 8px; text-align: center; color: #80868d; font-style: italic; background: #fafaf9;';
+        td.style.cssText = 'padding: 8px; text-align: center; color: var(--sfdt-color-text-icon); font-style: italic; background: var(--sfdt-color-surface-alt);';
         tr.appendChild(td);
         resultsTBody.appendChild(tr);
       }

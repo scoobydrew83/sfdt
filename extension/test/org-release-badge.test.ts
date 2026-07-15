@@ -101,7 +101,7 @@ describe('org-release-badge feature', () => {
     await feature.init?.();
     const pill = document.querySelector<HTMLElement>('.sfdt-org-release-badge span');
     expect(pill?.textContent).toBe("Winter '27 · Preview");
-    expect(pill?.style.background).toBe('#fe9339'); // amber preview colour
+    expect(pill?.style.background).toBe('var(--sfdt-color-warning)'); // amber preview colour
   });
 
   it('renders nothing when neither release nor org can be read', async () => {

@@ -9,6 +9,7 @@ import { createBridgeClient, getBridgeData } from '../../lib/sfdt-bridge.js';
 import { createFeatureRegistry } from '../../lib/feature-registry.js';
 import { buildField } from '../../lib/zod-to-dom.js';
 import { createTelemetry } from '../../lib/telemetry.js';
+import { SFDT_TOKENS_CSS } from '../../lib/tokens.js';
 
 // Pull every feature factory in so each module's top-level
 // registerSettingsShape() call lands before loadSettings() runs.
@@ -39,8 +40,8 @@ const STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    background: #fafaf9;
-    color: #16325c;
+    background: var(--sfdt-color-surface-alt);
+    color: var(--sfdt-color-brand-deep);
     margin: 0;
     padding: 32px 24px;
   }
@@ -52,30 +53,30 @@ const STYLES = `
     align-items: center;
     gap: 8px;
   }
-  .subtitle { color: #54698d; font-size: 13px; margin: 0 0 24px; }
+  .subtitle { color: var(--sfdt-color-text-weak); font-size: 13px; margin: 0 0 24px; }
   section {
-    background: #fff;
-    border: 1px solid #d8dde6;
+    background: var(--sfdt-color-surface);
+    border: 1px solid var(--sfdt-color-border);
     border-radius: 4px;
     padding: 16px 20px;
     margin-bottom: 16px;
   }
   section h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
-  section p.section-help { color: #54698d; font-size: 12px; margin: 0 0 12px; }
+  section p.section-help { color: var(--sfdt-color-text-weak); font-size: 12px; margin: 0 0 12px; }
   label.row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     padding: 8px 0;
-    border-top: 1px solid #f3f3f3;
+    border-top: 1px solid var(--sfdt-color-bg);
   }
   label.row:first-of-type { border-top: 0; }
   label.row .label-text { flex: 1; }
   label.row .label-text strong { display: block; font-weight: 500; font-size: 13px; }
-  label.row .label-text span { color: #80868d; font-size: 12px; }
+  label.row .label-text span { color: var(--sfdt-color-text-icon); font-size: 12px; }
   input[type="text"], input[type="number"], select, input[type="password"] {
-    border: 1px solid #d8dde6;
+    border: 1px solid var(--sfdt-color-border);
     border-radius: 3px;
     padding: 6px 8px;
     font-size: 13px;
@@ -84,7 +85,7 @@ const STYLES = `
   }
   input[type="color"] {
     width: 36px; height: 28px;
-    border: 1px solid #d8dde6;
+    border: 1px solid var(--sfdt-color-border);
     border-radius: 3px;
     padding: 0;
     cursor: pointer;
@@ -93,16 +94,16 @@ const STYLES = `
   button {
     padding: 6px 14px;
     border-radius: 3px;
-    border: 1px solid #d8dde6;
-    background: #fff;
-    color: #16325c;
+    border: 1px solid var(--sfdt-color-border);
+    background: var(--sfdt-color-surface);
+    color: var(--sfdt-color-brand-deep);
     cursor: pointer;
     font-size: 13px;
     font-family: inherit;
   }
-  button.primary { background: #0070d2; color: #fff; border-color: #0070d2; }
-  button:hover { background: #f3f3f3; }
-  button.primary:hover { background: #005fb2; }
+  button.primary { background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border-color: var(--sfdt-color-brand); }
+  button:hover { background: var(--sfdt-color-bg); }
+  button.primary:hover { background: var(--sfdt-color-brand-active); }
   .actions { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
   .status {
     font-size: 12px;
@@ -111,21 +112,21 @@ const STYLES = `
     display: none;
   }
   .status.show { display: inline-block; }
-  .status.ok { background: #ddf3e4; color: #04844b; }
-  .status.warn { background: #fef1e1; color: #b46600; }
-  .status.error { background: #fde2e0; color: #c23934; }
+  .status.ok { background: var(--sfdt-color-success-bg); color: var(--sfdt-color-success); }
+  .status.warn { background: var(--sfdt-color-warning-bg-6); color: var(--sfdt-color-warning-text); }
+  .status.error { background: var(--sfdt-color-error-bg-4); color: var(--sfdt-color-error); }
   .hint {
-    background: #f4f6f9;
-    border-left: 3px solid #0070d2;
+    background: var(--sfdt-color-surface-shade);
+    border-left: 3px solid var(--sfdt-color-brand);
     padding: 8px 12px;
     font-size: 12px;
-    color: #54698d;
+    color: var(--sfdt-color-text-weak);
     margin: 12px 0;
     border-radius: 0 3px 3px 0;
   }
   .hint code {
-    background: #fff;
-    border: 1px solid #d8dde6;
+    background: var(--sfdt-color-surface);
+    border: 1px solid var(--sfdt-color-border);
     border-radius: 2px;
     padding: 1px 4px;
     font-family: ui-monospace, monospace;
@@ -188,7 +189,7 @@ async function render(): Promise<void> {
   if (!root) return;
 
   const styleTag = document.createElement('style');
-  styleTag.textContent = STYLES;
+  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${STYLES}`;
   document.head.appendChild(styleTag);
 
   const registry = createFeatureRegistry();
