@@ -11,6 +11,8 @@ import { createBridgeClient } from '../lib/sfdt-bridge.js';
 import { createTelemetry, type BridgeFailureCategory } from '../lib/telemetry.js';
 import { readKillSwitchCache, writeKillSwitchCache } from '../lib/killswitch-cache.js';
 import { mountSideButton, type MenuItem } from '../ui/side-button.js';
+import { getShadowHost } from '../ui/shadow-host.js';
+import { setContentRoot } from '../ui/content-root.js';
 import { showToast } from '../ui/toast.js';
 import { ensureTokens } from '../lib/tokens.js';
 import { watchTheme } from '../lib/theme.js';
@@ -80,6 +82,13 @@ export default defineContentScript({
     // `--sfdt-*` scoped, so this themes only the extension's overlays, never
     // the host Salesforce page.
     watchTheme(document);
+
+    // Mount ALL injected UI (side button + menu, present-view modals, toasts)
+    // inside one closed shadow root so the host page's CSS can't restyle us and
+    // our styles can't leak out (P0-3, CONVENTIONS.md item 13). Tokens stay on
+    // the host `:root` (above) and inherit across the boundary, so dark mode
+    // keeps working. From here, the UI helpers read this root via getContentRoot().
+    setContentRoot(getShadowHost(document).mount);
 
     const settings = await loadSettings();
     let currentSettings = settings;
