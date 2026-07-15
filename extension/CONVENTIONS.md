@@ -93,8 +93,8 @@ overlay), mark it **N/A** with a reason — do not silently skip it.
 11. **State is exposed, not just styled.** Selection, expansion, and checked state
     are conveyed via ARIA, not colour alone: `aria-selected` on tabs,
     `aria-expanded` on disclosure/menu triggers, `aria-checked` where relevant —
-    kept in sync as state changes (`features/setup-tabs.ts` updates
-    `aria-selected`/`aria-expanded` on toggle).
+    kept in sync as state changes (`features/setup-tabs.ts` sets `aria-selected`
+    on tabs from the active URL and updates `aria-expanded` on toggle).
 
 ### DOM discipline
 
@@ -143,8 +143,8 @@ Demonstrates:
 - **Correct tab/menu ARIA, kept in sync.** Injected tabs set
   `role="presentation"` on the `<li>` and `role="tab"` + `aria-selected` on the
   anchor, computed from the active URL (`isActiveTab`). The grouped variant uses
-  `role="menu"` / `role="menuitem"` and drives `aria-expanded` /
-  `aria-haspopup` / `aria-selected` on the trigger, updating them on every toggle
+  `role="menu"` / `role="menuitem"` and sets `aria-haspopup` / `aria-selected` on
+  the trigger at build and updates `aria-expanded` on every toggle
   (`buildGroupedTab`, `toggle`, `closeDropdown`).
 - **Esc-free dropdown that still dismisses correctly.** The group dropdown closes
   on click-outside via a capture-phase `document` click listener
