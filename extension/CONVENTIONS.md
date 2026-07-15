@@ -6,9 +6,10 @@ because our headline product weakness is **inconsistent accessibility** — our
 injected overlays and menus have historically each invented their own focus,
 keyboard, and dismiss behaviour. This document is the single, enforced bar.
 
-Read it alongside `extension/CLAUDE.md` (the house rules: feature-registry
-pattern, `createElement` + `textContent` only, vitest per feature,
-package-internal paths via `import.meta.url`).
+This document is the source of record for the extension's UI conventions. The
+wider house rules it builds on — the feature-registry pattern, `createElement` +
+`textContent` only, vitest per feature, package-internal paths via
+`import.meta.url` — are restated here where they bear on UI.
 
 ## How to use this document
 
@@ -33,9 +34,12 @@ overlay), mark it **N/A** with a reason — do not silently skip it.
    the `Escape` key. Register the handler on `document` in the **capture** phase
    (`doc.addEventListener('keydown', h, true)`) so it fires even when focus sits
    inside a Salesforce-owned widget, and **remove the listener on close** so it
-   does not leak across SPA navigations. (See `features/soql-runner.ts`,
-   `features/inspect-record.ts`, `features/api-version-audit.ts`,
-   `features/canvas-search.ts` for the established pattern.)
+   does not leak across SPA navigations. The capture-phase exemplar is
+   `features/canvas-search.ts:458` (`addEventListener('keydown', …, true)`).
+   `features/soql-runner.ts`, `features/inspect-record.ts`, and
+   `features/api-version-audit.ts` get the remove-on-close half right but
+   currently register in the default **bubble** phase (no third arg) — moving them
+   to capture phase is a gap the P6-3 retrofit closes.
 2. **Click-outside dismiss for transient surfaces.** Menus, dropdowns, and
    non-modal popovers also close on a click outside their own subtree
    (`if (!el.contains(e.target)) close()`). Modal dialogs presented via
@@ -49,10 +53,12 @@ overlay), mark it **N/A** with a reason — do not silently skip it.
    restore focus to it when the overlay closes, so keyboard users are returned to
    where they were. (Gap the P6-3 retrofit closes: most current features focus an
    input on open but do not restore on close.)
-5. **Dialog semantics.** A modal overlay carries `role="dialog"` +
-   `aria-modal="true"` and is labelled — `aria-label`, or `aria-labelledby`
-   pointing at the header title. The close control has an accessible name
-   (`aria-label="Close"`), as in `ui/present-view.ts`.
+5. **Dialog semantics.** A modal overlay must carry `role="dialog"` +
+   `aria-modal="true"` and be labelled — `aria-label`, or `aria-labelledby`
+   pointing at the header title. Today `ui/present-view.ts` gives its close control
+   an accessible name (`aria-label="Close"`, `present-view.ts:83`) but does **not**
+   yet set `role="dialog"`/`aria-modal` or label the dialog itself — adding those
+   to the shared presenter is the P6-3-retrofit gap.
 6. **One close affordance, always reachable.** Every overlay has a visible,
    focusable close control (the `×` button in `ui/present-view.ts`) in addition to
    Esc — never Esc-only.
@@ -90,7 +96,7 @@ overlay), mark it **N/A** with a reason — do not silently skip it.
     kept in sync as state changes (`features/setup-tabs.ts` updates
     `aria-selected`/`aria-expanded` on toggle).
 
-### DOM discipline (from `extension/CLAUDE.md`)
+### DOM discipline
 
 12. **Zero `innerHTML`.** Build every node with `document.createElement` and set
     text with `.textContent`; build SVG with `createElementNS`. Never assign
@@ -99,11 +105,15 @@ overlay), mark it **N/A** with a reason — do not silently skip it.
     field names, record data) is untrusted. (`features/setup-tabs.ts` builds even
     its chevron SVG node-by-node specifically to keep the file `innerHTML`-free.)
 13. **Shadow-root mounting for injected UI.** Overlays and panels injected onto a
-    Salesforce page should mount inside a shadow root (via the shared P0-3 mount
-    helper) so the host page's CSS cannot restyle our UI and our styles cannot
-    leak onto the host. Inject design-token custom properties into the mount so
-    `var(--sfdt-*)` still resolves inside the shadow root (see `lib/tokens.ts`
-    `ensureTokens`). Prefer the shared helper over a bespoke `attachShadow`.
+    Salesforce page should mount inside a shadow root so the host page's CSS cannot
+    restyle our UI and our styles cannot leak onto the host. **This is not yet
+    implemented** — there is currently no shadow-root usage in the extension
+    (`attachShadow`/`shadowRoot` appear nowhere in source) and features mount in
+    light DOM. A shared Shadow-DOM host is planned (the P0-3 item); when it lands,
+    injected UI moves into it and the token custom properties must be injected into
+    the shadow mount so `var(--sfdt-*)` still resolves (today `lib/tokens.ts`
+    `ensureTokens` injects them into the light-DOM `document`). Until then, do not
+    hand-roll a bespoke `attachShadow` per feature.
 
 ### Theming
 
