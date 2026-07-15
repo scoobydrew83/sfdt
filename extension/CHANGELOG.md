@@ -4,6 +4,9 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Added
+- **Packaging version-match guard** (`scripts/check-version-match.ts`) — the `package:ext` step now fails if `extension/package.json`'s version differs from the built manifest (`.output/chrome-mv3/manifest.json`), naming both versions and the file, so a stale build artifact can't be zipped and shipped. Runs in the Extension CI packaging job; documented in the new `extension/RELEASING.md`.
+
 ## [0.7.0] - 2026-07-14
 
 ### Added
