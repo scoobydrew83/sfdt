@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # SFDT - Enhanced Test Runner v2.0
 set -euo pipefail
