@@ -324,31 +324,12 @@ describe('extension/lib/salesforce-api (thin client over sfApiFetch)', () => {
     });
   });
 
-  describe('getSessionDetails (Event-Monitor bridge; PR2 exception)', () => {
-    it('returns the preferred session candidate via getSidForUrls', async () => {
-      const bus = makeBus({
-        sids: {
-          'https://x.my.salesforce.com': 'sid-mysf',
-          'https://x.lightning.force.com': 'sid-light',
-        },
-      });
-      const client = new SalesforceApiClient({
-        win: fakeWin(WIN),
-        messageBus: bus,
-        targetOrigin: 'https://x.lightning.force.com',
-      });
-      const details = await client.getSessionDetails();
-      expect(details).toEqual({ baseUrl: 'https://x.my.salesforce.com', sid: 'sid-mysf' });
-    });
-
-    it('returns null when no sid is available', async () => {
-      const bus = makeBus({ sids: {} });
-      const client = new SalesforceApiClient({
-        win: fakeWin(WIN),
-        messageBus: bus,
-        targetOrigin: 'https://x.lightning.force.com',
-      });
-      expect(await client.getSessionDetails()).toBeNull();
+  describe('orgOrigin', () => {
+    it('exposes the bound org origin (app-tab) and null for content-script clients', () => {
+      const bound = new SalesforceApiClient({ targetOrigin: 'https://x.lightning.force.com' });
+      expect(bound.orgOrigin).toBe('https://x.lightning.force.com');
+      const unbound = new SalesforceApiClient({ win: fakeWin(WIN) });
+      expect(unbound.orgOrigin).toBeNull();
     });
   });
 
