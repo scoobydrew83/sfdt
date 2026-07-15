@@ -55,20 +55,36 @@ export function applyTheme(setting: ThemeSetting, doc: Document = document): Eff
   return effective;
 }
 
+export interface ThemeController {
+  /**
+   * Override the active setting and apply it immediately — used by the options
+   * page for unsaved live preview. Crucially it updates the tracked setting the
+   * OS-scheme listener reads, so a `prefers-color-scheme` flip during an unsaved
+   * preview re-applies the PREVIEWED choice (manual wins) instead of reverting
+   * to the stored/`auto` value.
+   */
+  setSetting(next: ThemeSetting): void;
+  /** Detach the OS-scheme and settings listeners. */
+  stop(): void;
+}
+
 /**
  * Boot the theme on a surface: apply the stored setting immediately, then keep
  * it live — re-apply when the OS scheme flips (only changes anything while the
- * setting is `auto`) and when the setting itself changes (options page / other
- * tab, via chrome.storage). Returns an unsubscribe.
+ * effective setting is `auto`) and when the setting itself changes (options
+ * page / other tab, via chrome.storage). Returns a controller: `setSetting` for
+ * live preview and `stop` to detach.
  */
-export function watchTheme(doc: Document = document): () => void {
+export function watchTheme(doc: Document = document): ThemeController {
   const win = doc.defaultView ?? globalThis.window;
   let setting: ThemeSetting = 'auto';
 
-  void loadSettings().then((s) => {
-    setting = s.theme;
+  const setSetting = (next: ThemeSetting): void => {
+    setting = next;
     applyTheme(setting, doc);
-  });
+  };
+
+  void loadSettings().then((s) => setSetting(s.theme));
 
   const mql = win?.matchMedia ? win.matchMedia(DARK_QUERY) : null;
   const onMediaChange = (): void => {
@@ -76,13 +92,13 @@ export function watchTheme(doc: Document = document): () => void {
   };
   mql?.addEventListener('change', onMediaChange);
 
-  const unsubscribeSettings = onSettingsChange((s) => {
-    setting = s.theme;
-    applyTheme(setting, doc);
-  });
+  const unsubscribeSettings = onSettingsChange((s) => setSetting(s.theme));
 
-  return () => {
-    mql?.removeEventListener('change', onMediaChange);
-    unsubscribeSettings();
+  return {
+    setSetting,
+    stop() {
+      mql?.removeEventListener('change', onMediaChange);
+      unsubscribeSettings();
+    },
   };
 }

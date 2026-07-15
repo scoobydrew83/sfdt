@@ -91,7 +91,7 @@ describe('extension/lib/theme', () => {
       _clearSettingsCacheForTests();
       mm = installMatchMedia(false);
 
-      const stop = watchTheme(document);
+      const { stop } = watchTheme(document);
       await flush();
       expect(document.documentElement.getAttribute(THEME_ATTR)).toBe('dark');
       stop();
@@ -99,7 +99,7 @@ describe('extension/lib/theme', () => {
 
     it('defaults to auto and follows the OS when nothing is stored', async () => {
       mm = installMatchMedia(true); // OS = dark
-      const stop = watchTheme(document);
+      const { stop } = watchTheme(document);
       await flush();
       expect(document.documentElement.getAttribute(THEME_ATTR)).toBe('dark');
       stop();
@@ -107,7 +107,7 @@ describe('extension/lib/theme', () => {
 
     it('auto re-applies live when the OS scheme flips (media-query listener)', async () => {
       mm = installMatchMedia(false); // OS = light
-      const stop = watchTheme(document);
+      const { stop } = watchTheme(document);
       await flush();
       expect(document.documentElement.getAttribute(THEME_ATTR)).toBe('light');
 
@@ -120,7 +120,7 @@ describe('extension/lib/theme', () => {
       await saveSettings(SettingsSchema.parse({ theme: 'light' }));
       _clearSettingsCacheForTests();
       mm = installMatchMedia(true); // OS dark, but setting is light
-      const stop = watchTheme(document);
+      const { stop } = watchTheme(document);
       await flush();
       expect(document.documentElement.getAttribute(THEME_ATTR)).toBe('light');
 
@@ -133,7 +133,7 @@ describe('extension/lib/theme', () => {
 
     it('unsubscribe detaches the media-query listener', async () => {
       mm = installMatchMedia(false);
-      const stop = watchTheme(document);
+      const { stop } = watchTheme(document);
       await flush();
       expect(mm.listenerCount()).toBe(1);
       stop();
@@ -146,9 +146,28 @@ describe('extension/lib/theme', () => {
       _clearSettingsCacheForTests();
       document.documentElement.removeAttribute(THEME_ATTR);
       mm = installMatchMedia(false);
-      const stop = watchTheme(document);
+      const { stop } = watchTheme(document);
       await flush();
       expect(document.documentElement.getAttribute(THEME_ATTR)).toBe('dark');
+      stop();
+    });
+
+    it('preview via setSetting survives an OS scheme flip (manual wins for unsaved preview)', async () => {
+      // Repro of the options live-preview bug: saved=auto, OS=light, user
+      // previews "light"; OS flips to dark before Save must NOT revert to dark.
+      await saveSettings(SettingsSchema.parse({ theme: 'auto' }));
+      _clearSettingsCacheForTests();
+      mm = installMatchMedia(false); // OS = light
+      const { stop, setSetting } = watchTheme(document);
+      await flush();
+      expect(document.documentElement.getAttribute(THEME_ATTR)).toBe('light'); // auto → light
+
+      setSetting('light'); // user previews Light (unsaved)
+      expect(document.documentElement.getAttribute(THEME_ATTR)).toBe('light');
+
+      mm.setDark(true); // OS flips to dark mid-preview
+      // Bug would resolve auto → dark; fixed behaviour keeps the previewed light.
+      expect(document.documentElement.getAttribute(THEME_ATTR)).toBe('light');
       stop();
     });
   });

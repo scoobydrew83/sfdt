@@ -10,12 +10,7 @@ import { createFeatureRegistry } from '../../lib/feature-registry.js';
 import { buildField } from '../../lib/zod-to-dom.js';
 import { createTelemetry } from '../../lib/telemetry.js';
 import { SFDT_TOKENS_CSS } from '../../lib/tokens.js';
-import {
-  applyTheme,
-  watchTheme,
-  OWN_PAGE_COLOR_SCHEME_CSS,
-  type ThemeSetting,
-} from '../../lib/theme.js';
+import { watchTheme, OWN_PAGE_COLOR_SCHEME_CSS, type ThemeSetting } from '../../lib/theme.js';
 
 // Pull every feature factory in so each module's top-level
 // registerSettingsShape() call lands before loadSettings() runs.
@@ -197,7 +192,7 @@ async function render(): Promise<void> {
   const styleTag = document.createElement('style');
   styleTag.textContent = `${SFDT_TOKENS_CSS}\n${OWN_PAGE_COLOR_SCHEME_CSS}\n${STYLES}`;
   document.head.appendChild(styleTag);
-  watchTheme(document);
+  const themeController = watchTheme(document);
 
   const registry = createFeatureRegistry();
   registry.register(createSetupTabsFeature());
@@ -374,10 +369,12 @@ async function render(): Promise<void> {
     if ((settings.theme ?? 'auto') === value) opt.selected = true;
     themeSelect.appendChild(opt);
   }
-  // Live preview: apply on change so the user sees the theme immediately; the
-  // choice is only persisted on Save (below).
+  // Live preview: route through the controller (not applyTheme directly) so the
+  // OS-scheme listener tracks the previewed choice — an OS flip during an
+  // unsaved preview keeps the preview, rather than reverting it. Persisted only
+  // on Save (below).
   themeSelect.addEventListener('change', () => {
-    applyTheme(themeSelect.value as ThemeSetting, document);
+    themeController.setSetting(themeSelect.value as ThemeSetting);
   });
   appearanceSection.appendChild(row('Theme', 'Light, dark, or follow the OS.', themeSelect));
   wrap.appendChild(appearanceSection);
