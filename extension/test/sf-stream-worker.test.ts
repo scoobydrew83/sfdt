@@ -529,4 +529,64 @@ describe('handleStreamPort', () => {
 
     expect(posted).toContainEqual({ type: 'status', status: 'No Salesforce session available.', isError: true });
   });
+
+  // Regression (P0-4 PR2): an unsubscribe/disconnect that arrives WHILE the
+  // async session lookup is in flight must abort the subscribe — no orphaned,
+  // sid-bound long-poll may be started once the lookup resolves.
+  it('unsubscribe during the session lookup starts NO client (no orphaned long-poll)', async () => {
+    const startSpy = vi.spyOn(SalesforceBayeuxClient.prototype, 'start').mockResolvedValue();
+    const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => [] }) as Response);
+
+    // Deferred cookie read — leaves resolveStreamSession() pending until released.
+    let releaseCookie!: () => void;
+    const cookieGet = () =>
+      new Promise<string>((resolve) => {
+        releaseCookie = () => resolve('THE-SID');
+      });
+
+    const { port, emit } = makeMockPort();
+    handleStreamPort(port, {
+      fetchImpl: fetchSpy as any,
+      cookieGet,
+      senderOrigin: 'https://acme.my.salesforce.com',
+      isAllowedOrigin: () => true,
+    });
+
+    emit({ cmd: 'subscribe', channelPath: '/event/My_Event__e', replayId: -1 });
+    await new Promise((r) => setTimeout(r, 5)); // handler now parked on the cookie read
+    emit({ cmd: 'unsubscribe' }); // abort arrives mid-lookup
+    releaseCookie(); // lookup resolves AFTER the abort
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled(); // no Bayeux handshake ever fired
+  });
+
+  it('port disconnect during the session lookup starts NO client (no orphaned long-poll)', async () => {
+    const startSpy = vi.spyOn(SalesforceBayeuxClient.prototype, 'start').mockResolvedValue();
+    const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => [] }) as Response);
+
+    let releaseCookie!: () => void;
+    const cookieGet = () =>
+      new Promise<string>((resolve) => {
+        releaseCookie = () => resolve('THE-SID');
+      });
+
+    const { port, emit, fireDisconnect } = makeMockPort();
+    handleStreamPort(port, {
+      fetchImpl: fetchSpy as any,
+      cookieGet,
+      senderOrigin: 'https://acme.my.salesforce.com',
+      isAllowedOrigin: () => true,
+    });
+
+    emit({ cmd: 'subscribe', channelPath: '/event/My_Event__e', replayId: -1 });
+    await new Promise((r) => setTimeout(r, 5));
+    fireDisconnect(); // MV3 eviction / tab close mid-lookup
+    releaseCookie();
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });

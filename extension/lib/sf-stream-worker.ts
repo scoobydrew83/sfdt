@@ -277,6 +277,13 @@ interface SubscribeCommand {
 // back as {type:'status'} / {type:'event'}. The sid never crosses the Port.
 export function handleStreamPort(port: StreamPort, deps: StreamProxyDeps): void {
   let client: SalesforceBayeuxClient | null = null;
+  // Aborts an in-flight subscribe whose async session lookup hasn't resolved
+  // yet. Without it, an unsubscribe/onDisconnect that arrives DURING the
+  // `await resolveStreamSession(...)` window would run stop() while `client` is
+  // still null (a no-op), then the resolved handler would build and start an
+  // orphaned, sid-bound long-poll with nothing left holding a reference to stop
+  // it. Reset at the start of each fresh subscribe.
+  let aborted = false;
 
   const sendStatus = (status: string, isError = false): void => {
     try {
@@ -287,6 +294,7 @@ export function handleStreamPort(port: StreamPort, deps: StreamProxyDeps): void 
   };
 
   const stop = (): void => {
+    aborted = true;
     if (client) {
       void client.stop();
       client = null;
@@ -306,6 +314,7 @@ export function handleStreamPort(port: StreamPort, deps: StreamProxyDeps): void 
       if (msg.cmd !== 'subscribe') return;
       const cmd = raw as SubscribeCommand;
       if (client) return; // Already streaming on this port.
+      aborted = false; // Fresh subscribe attempt; clear any prior abort.
 
       if (typeof cmd.channelPath !== 'string' || !cmd.channelPath) {
         sendStatus('No streaming channel specified.', true);
@@ -322,6 +331,10 @@ export function handleStreamPort(port: StreamPort, deps: StreamProxyDeps): void 
       }
 
       const session = await resolveStreamSession(originStr, deps);
+      // Bailed here — an unsubscribe or port disconnect fired while the session
+      // lookup was in flight. Do NOT build or start the client (no orphaned
+      // long-poll).
+      if (aborted) return;
       if (!session) {
         sendStatus('No active Salesforce session found.', true);
         return;
