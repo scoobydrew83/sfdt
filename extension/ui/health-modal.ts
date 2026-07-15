@@ -48,28 +48,28 @@ function clear(el: Element): void {
 function severityColour(severity: Severity): string {
   switch (severity) {
     case 'high':
-      return '#c23934';
+      return 'var(--sfdt-color-error)';
     case 'medium':
-      return '#fe9339';
+      return 'var(--sfdt-color-warning)';
     case 'low':
-      return '#1589ee';
+      return 'var(--sfdt-color-info)';
     case 'info':
-      return '#80868d';
+      return 'var(--sfdt-color-text-icon)';
   }
 }
 
 function ratingColour(rating: Rating): string {
   switch (rating) {
     case 'Excellent':
-      return '#04844b';
+      return 'var(--sfdt-color-success)';
     case 'Very Good':
-      return '#2e844a';
+      return 'var(--sfdt-color-success-2)';
     case 'Good':
-      return '#1589ee';
+      return 'var(--sfdt-color-info)';
     case 'Poor':
-      return '#fe9339';
+      return 'var(--sfdt-color-warning)';
     case 'Very Poor':
-      return '#c23934';
+      return 'var(--sfdt-color-error)';
   }
 }
 
@@ -91,7 +91,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
   const footer = doc.createElement('div');
   footer.className = 'sfdt-modal-footer sfdt-health-modal-footer';
   footer.style.cssText =
-    'padding: 12px 16px; border-top: 1px solid #d8dde6; display: flex; justify-content: flex-end; gap: 8px;';
+    'padding: 12px 16px; border-top: 1px solid var(--sfdt-color-border); display: flex; justify-content: flex-end; gap: 8px;';
 
   let view: ViewHandle | null = null;
 
@@ -127,7 +127,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     title.textContent = 'Running Health Check';
     const sub = doc.createElement('div');
     sub.className = 'sfdt-health-loading-subtitle';
-    sub.style.cssText = 'color: #80868d; margin-top: 4px;';
+    sub.style.cssText = 'color: var(--sfdt-color-text-icon); margin-top: 4px;';
     sub.textContent = flowLabel;
     wrap.appendChild(title);
     wrap.appendChild(sub);
@@ -141,7 +141,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     const wrap = styledDiv(doc, 'sfdt-health-error', 'padding: 16px;');
     const title = doc.createElement('div');
     title.className = 'sfdt-health-section-title';
-    title.style.cssText = 'font-size: 16px; font-weight: 600; color: #c23934;';
+    title.style.cssText = 'font-size: 16px; font-weight: 600; color: var(--sfdt-color-error);';
     title.textContent = 'Health Check Failed';
     const msg = doc.createElement('div');
     msg.className = 'sfdt-health-error-message';
@@ -157,7 +157,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     const card = styledDiv(
       doc,
       'sfdt-health-card',
-      `border: 1px solid #d8dde6; border-radius: 4px; padding: 10px; text-align: center; min-width: 80px; background: #fafaf9;`,
+      `border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 10px; text-align: center; min-width: 80px; background: var(--sfdt-color-surface-alt);`,
     );
     const lbl = doc.createElement('div');
     lbl.className = 'sfdt-health-card-label';
@@ -176,11 +176,11 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     const card = styledDiv(
       doc,
       'sfdt-health-metric',
-      'border: 1px solid #d8dde6; border-radius: 4px; padding: 8px; text-align: center; min-width: 80px;',
+      'border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 8px; text-align: center; min-width: 80px;',
     );
     const lbl = doc.createElement('div');
     lbl.className = 'sfdt-health-metric-label';
-    lbl.style.cssText = 'font-size: 11px; color: #80868d; font-weight: 500;';
+    lbl.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-icon); font-weight: 500;';
     lbl.textContent = label;
     const val = doc.createElement('div');
     val.className = 'sfdt-health-metric-value';
@@ -194,7 +194,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
   function buildFamilyDisclosure(family: IssueFamily): HTMLDetailsElement {
     const details = doc.createElement('details');
     details.className = 'sfdt-health-family';
-    details.style.cssText = 'border: 1px solid #d8dde6; border-radius: 4px; margin-bottom: 6px;';
+    details.style.cssText = 'border: 1px solid var(--sfdt-color-border); border-radius: 4px; margin-bottom: 6px;';
 
     const summary = doc.createElement('summary');
     summary.style.cssText =
@@ -202,7 +202,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
 
     const sevBadge = doc.createElement('span');
     sevBadge.className = `sfdt-health-family-severity sfdt-health-severity-${family.severity}`;
-    sevBadge.style.cssText = `display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; color: #fff; background: ${severityColour(family.severity)};`;
+    sevBadge.style.cssText = `display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; color: var(--sfdt-color-surface); background: ${severityColour(family.severity)};`;
     sevBadge.textContent = family.severity.toUpperCase();
 
     const titleSpan = doc.createElement('span');
@@ -212,7 +212,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
 
     const countSpan = doc.createElement('span');
     countSpan.className = 'sfdt-health-family-count';
-    countSpan.style.cssText = 'color: #80868d; font-size: 12px;';
+    countSpan.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px;';
     countSpan.textContent = `(${family.instanceCount})`;
 
     summary.appendChild(sevBadge);
@@ -225,7 +225,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
 
     const impact = doc.createElement('div');
     impact.className = 'sfdt-health-family-impact';
-    impact.style.cssText = 'color: #80868d; margin-bottom: 6px;';
+    impact.style.cssText = 'color: var(--sfdt-color-text-icon); margin-bottom: 6px;';
     impact.textContent = `Score impact: -${family.scoreImpact}`;
     familyBody.appendChild(impact);
 
@@ -263,7 +263,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
 
     const metaLine = doc.createElement('div');
     metaLine.className = 'sfdt-health-flow-meta';
-    metaLine.style.cssText = 'color: #80868d; font-size: 12px; display: flex; gap: 12px;';
+    metaLine.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; display: flex; gap: 12px;';
     const flowTypeSpan = doc.createElement('span');
     flowTypeSpan.textContent = report.meta.flowType;
     metaLine.appendChild(flowTypeSpan);
@@ -286,7 +286,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     scoreNum.textContent = String(report.summary.overallScore);
     const scoreRating = doc.createElement('div');
     scoreRating.className = 'sfdt-health-rating';
-    scoreRating.style.cssText = 'color: #54698d; font-weight: 600;';
+    scoreRating.style.cssText = 'color: var(--sfdt-color-text-weak); font-weight: 600;';
     scoreRating.textContent = report.summary.rating;
     scoreWrap.appendChild(scoreNum);
     scoreWrap.appendChild(scoreRating);
@@ -314,7 +314,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     if (report.issueFamilies.length === 0) {
       const empty = doc.createElement('div');
       empty.className = 'sfdt-health-empty';
-      empty.style.cssText = 'color: #80868d; font-size: 13px;';
+      empty.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 13px;';
       empty.textContent = 'No issues detected — your flow is in excellent shape.';
       familiesSection.appendChild(empty);
     } else {
@@ -347,7 +347,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     copyBtn.className = 'sfdt-health-btn';
     copyBtn.textContent = 'Copy JSON';
     copyBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer;';
     copyBtn.addEventListener('click', () => {
       if (options.onCopyJson) {
         void options.onCopyJson(report.rawJson);

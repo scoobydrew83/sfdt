@@ -52,10 +52,10 @@ const TIMING_LABEL: Record<TriggerTiming, string> = {
 };
 
 const TIMING_COLOUR: Record<TriggerTiming, string> = {
-  BeforeSave: '#0070d2',
-  AfterSave: '#04844b',
-  BeforeDelete: '#c23934',
-  Other: '#706e6b',
+  BeforeSave: 'var(--sfdt-color-brand)',
+  AfterSave: 'var(--sfdt-color-success)',
+  BeforeDelete: 'var(--sfdt-color-error)',
+  Other: 'var(--sfdt-color-text-muted)',
 };
 
 export function triggerTiming(triggerType: string | undefined): TriggerTiming {
@@ -154,17 +154,17 @@ function renderGroups(doc: Document, results: HTMLElement, groups: ObjectGroup[]
 
     const header = doc.createElement('div');
     header.style.cssText =
-      'font-weight: 700; font-size: 13px; padding: 6px 0; border-bottom: 2px solid #d8dde6; margin-bottom: 8px;';
+      'font-weight: 700; font-size: 13px; padding: 6px 0; border-bottom: 2px solid var(--sfdt-color-border); margin-bottom: 8px;';
     header.textContent = `${group.object} · ${group.flows.length} flow${group.flows.length === 1 ? '' : 's'}`;
     section.appendChild(header);
 
     for (const flow of group.flows) {
       const row = doc.createElement('div');
       row.style.cssText =
-        'border: 1px solid #d8dde6; border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;';
+        'border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;';
 
       const badge = doc.createElement('span');
-      badge.style.cssText = `flex: 0 0 auto; font-size: 10px; font-weight: 700; color: #fff; background: ${TIMING_COLOUR[flow.timing]}; border-radius: 3px; padding: 2px 6px;`;
+      badge.style.cssText = `flex: 0 0 auto; font-size: 10px; font-weight: 700; color: var(--sfdt-color-surface); background: ${TIMING_COLOUR[flow.timing]}; border-radius: 3px; padding: 2px 6px;`;
       badge.textContent = flow.timingLabel;
 
       const name = doc.createElement('span');
@@ -172,7 +172,7 @@ function renderGroups(doc: Document, results: HTMLElement, groups: ObjectGroup[]
       name.textContent = flow.label;
 
       const meta = doc.createElement('span');
-      meta.style.cssText = 'color: #54698d; font-size: 11px;';
+      meta.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 11px;';
       meta.textContent = [flow.event, flow.processType].filter(Boolean).join(' · ');
 
       row.append(badge, name, meta);
@@ -183,13 +183,13 @@ function renderGroups(doc: Document, results: HTMLElement, groups: ObjectGroup[]
         link.target = '_blank';
         link.rel = 'noopener';
         link.textContent = 'Open in Builder ↗';
-        link.style.cssText = 'margin-left: auto; font-size: 11px; color: #0070d2; text-decoration: none;';
+        link.style.cssText = 'margin-left: auto; font-size: 11px; color: var(--sfdt-color-brand); text-decoration: none;';
         row.appendChild(link);
       }
 
       if (flow.description) {
         const desc = doc.createElement('div');
-        desc.style.cssText = 'flex: 1 0 100%; color: #3e3e3c; font-size: 11px; margin-top: 2px;';
+        desc.style.cssText = 'flex: 1 0 100%; color: var(--sfdt-color-text); font-size: 11px; margin-top: 2px;';
         desc.textContent = flow.description;
         row.appendChild(desc);
       }
@@ -229,7 +229,7 @@ export function createFlowTriggerExplorerEnhancerFeature(
       status.textContent = `${total} flow${total === 1 ? '' : 's'} · ${groups.length} object${groups.length === 1 ? '' : 's'}`;
       if (total === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 12px; color: #80868d;';
+        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon);';
         empty.textContent = 'No active record-triggered flows in this org.';
         results.appendChild(empty);
         return;
@@ -238,7 +238,7 @@ export function createFlowTriggerExplorerEnhancerFeature(
     } catch (err) {
       const panel = doc.createElement('div');
       panel.style.cssText =
-        'border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
       panel.textContent = err instanceof Error ? err.message : String(err);
       results.appendChild(panel);
       status.textContent = 'Failed';
@@ -254,11 +254,11 @@ export function createFlowTriggerExplorerEnhancerFeature(
     const toolbar = doc.createElement('div');
     toolbar.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 12px;';
     const status = doc.createElement('span');
-    status.style.cssText = 'color: #54698d; font-size: 12px;';
+    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     const refreshBtn = doc.createElement('button');
     refreshBtn.textContent = 'Refresh';
     refreshBtn.style.cssText =
-      'margin-left: auto; padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      'margin-left: auto; padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     toolbar.append(status, refreshBtn);
     body.appendChild(toolbar);
 

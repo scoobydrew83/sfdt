@@ -141,7 +141,7 @@ function flagCanvas(doc: Document, missing: readonly MissingItem[]): number {
     flag.setAttribute('aria-label', `Warning: ${text} has no description`);
     flag.textContent = '⚠';
     flag.style.cssText =
-      'position: absolute; top: 4px; right: 4px; color: #fe9339; font-size: 14px; z-index: 5;';
+      'position: absolute; top: 4px; right: 4px; color: var(--sfdt-color-warning); font-size: 14px; z-index: 5;';
     (card as HTMLElement).style.position = 'relative';
     card.appendChild(flag);
     seen.add(cardKey);
@@ -158,7 +158,7 @@ function flagCanvas(doc: Document, missing: readonly MissingItem[]): number {
       flag.title = 'This flow has no description';
       flag.setAttribute('aria-label', 'Warning: This flow has no description');
       flag.textContent = ' ⚠';
-      flag.style.cssText = 'color: #fe9339; margin-left: 4px;';
+      flag.style.cssText = 'color: var(--sfdt-color-warning); margin-left: 4px;';
       parent.appendChild(flag);
       count += 1;
     }

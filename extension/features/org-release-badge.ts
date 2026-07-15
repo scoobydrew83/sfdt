@@ -12,8 +12,8 @@ import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-ap
 // API, so it's deliberately out of scope — version + preview only.
 
 const BADGE_CLASS = 'sfdt-org-release-badge';
-const PREVIEW_COLOUR = '#fe9339'; // amber — matches org-health-live's preview/amber band
-const GA_COLOUR = '#706e6b'; // neutral grey
+const PREVIEW_COLOUR = 'var(--sfdt-color-warning)'; // amber — matches org-health-live's preview/amber band
+const GA_COLOUR = 'var(--sfdt-color-text-muted)'; // neutral grey
 
 interface OrgRow {
   InstanceName?: string | null;
@@ -85,7 +85,7 @@ function buildBadge(doc: Document, data: BadgeData): HTMLLIElement {
     'font-weight: 700',
     'text-transform: uppercase',
     'letter-spacing: 0.02em',
-    'color: #fff',
+    'color: var(--sfdt-color-surface)',
     `background: ${preview ? PREVIEW_COLOUR : GA_COLOUR}`,
     'border-radius: 3px',
     'padding: 2px 8px',

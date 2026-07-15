@@ -36,10 +36,10 @@ function ensureContainer(doc: Document): HTMLElement {
 }
 
 const KIND_BACKGROUND: Record<ToastKind, string> = {
-  info: '#0070d2',
-  success: '#04844b',
-  warning: '#fe9339',
-  error: '#c23934',
+  info: 'var(--sfdt-color-brand)',
+  success: 'var(--sfdt-color-success)',
+  warning: 'var(--sfdt-color-warning)',
+  error: 'var(--sfdt-color-error)',
 };
 
 // Returns a dismiss() so callers can close the toast early.
@@ -54,7 +54,7 @@ export function showToast(message: string, options: ToastOptions = {}): () => vo
   toast.setAttribute('role', 'status');
   toast.style.cssText = [
     'background: ' + KIND_BACKGROUND[kind],
-    'color: #fff',
+    'color: var(--sfdt-color-surface)',
     'padding: 10px 14px',
     'border-radius: 4px',
     'box-shadow: 0 2px 6px rgba(0,0,0,0.2)',

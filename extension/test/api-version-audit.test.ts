@@ -113,7 +113,7 @@ describe('api-version-audit feature', () => {
     await feature.init?.();
     const pill = document.querySelector<HTMLElement>(`.${AUDIT_CLASS} span`);
     expect(pill?.textContent).toBe('API v67 · 2 behind');
-    expect(pill?.style.background).toBe('#fe9339'); // amber — components below floor
+    expect(pill?.style.background).toBe('var(--sfdt-color-warning)'); // amber — components below floor
   });
 
   it('renders a neutral pill when nothing is below the floor', async () => {
@@ -127,7 +127,7 @@ describe('api-version-audit feature', () => {
     await feature.init?.();
     const pill = document.querySelector<HTMLElement>(`.${AUDIT_CLASS} span`);
     expect(pill?.textContent).toBe('API v67');
-    expect(pill?.style.background).toBe('#706e6b'); // neutral grey
+    expect(pill?.style.background).toBe('var(--sfdt-color-text-muted)'); // neutral grey
   });
 
   it('still renders Apex/Trigger when the Flow query fails', async () => {

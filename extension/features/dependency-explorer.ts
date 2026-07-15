@@ -49,7 +49,7 @@ export function createDependencyExplorerFeature(
   function typeBadge(type: string): HTMLElement {
     const badge = doc.createElement('span');
     badge.style.cssText =
-      'display: inline-block; padding: 1px 7px; border-radius: 10px; background: #eef1f6; color: #54698d; font-size: 11px; font-weight: 600; white-space: nowrap;';
+      'display: inline-block; padding: 1px 7px; border-radius: 10px; background: var(--sfdt-color-surface-shade-5); color: var(--sfdt-color-text-weak); font-size: 11px; font-weight: 600; white-space: nowrap;';
     badge.textContent = type;
     return badge;
   }
@@ -61,13 +61,13 @@ export function createDependencyExplorerFeature(
     const count = groups.reduce((n, g) => n + g.names.length, 0);
     const heading = doc.createElement('div');
     heading.style.cssText =
-      'font-weight: 600; font-size: 13px; margin-bottom: 8px; border-bottom: 1px solid #d8dde6; padding-bottom: 4px;';
+      'font-weight: 600; font-size: 13px; margin-bottom: 8px; border-bottom: 1px solid var(--sfdt-color-border); padding-bottom: 4px;';
     heading.textContent = `${title} (${count})`;
     section.appendChild(heading);
 
     if (count === 0) {
       const empty = doc.createElement('div');
-      empty.style.cssText = 'padding: 6px 0; color: #80868d; font-size: 12px;';
+      empty.style.cssText = 'padding: 6px 0; color: var(--sfdt-color-text-icon); font-size: 12px;';
       empty.textContent = 'None.';
       section.appendChild(empty);
       return section;
@@ -107,7 +107,7 @@ export function createDependencyExplorerFeature(
       if (!id) {
         status.textContent = '';
         const msg = doc.createElement('div');
-        msg.style.cssText = 'padding: 12px; color: #80868d;';
+        msg.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon);';
         msg.textContent = `No ${type} named "${name.trim()}" found in this org.`;
         results.appendChild(msg);
         return;
@@ -118,7 +118,7 @@ export function createDependencyExplorerFeature(
       if (type === 'CustomField' && resolved.records.length > 1) {
         const note = doc.createElement('div');
         note.style.cssText =
-          'padding: 8px 12px; margin-bottom: 6px; background: #fff8e5; border: 1px solid #f4d27a; border-radius: 4px; font-size: 12px; color: #6b5a1f;';
+          'padding: 8px 12px; margin-bottom: 6px; background: var(--sfdt-color-warning-bg); border: 1px solid var(--sfdt-color-warning-border); border-radius: 4px; font-size: 12px; color: var(--sfdt-color-warning-text-2);';
         note.textContent = `${resolved.records.length} fields share this name — showing dependencies for the first match (${id}).`;
         results.appendChild(note);
       }
@@ -135,7 +135,7 @@ export function createDependencyExplorerFeature(
 
       if (refs.records.length === 0 && refBy.records.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 12px; color: #80868d;';
+        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon);';
         empty.textContent = 'No metadata dependencies recorded for this component.';
         results.appendChild(empty);
         return;
@@ -146,7 +146,7 @@ export function createDependencyExplorerFeature(
     } catch (err) {
       const errorPanel = doc.createElement('div');
       errorPanel.style.cssText =
-        'border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
       errorPanel.textContent = err instanceof Error ? err.message : String(err);
       results.appendChild(errorPanel);
       status.textContent = 'Failed';
@@ -169,11 +169,11 @@ export function createDependencyExplorerFeature(
     nameInput.type = 'text';
     nameInput.placeholder = 'Component name';
     nameInput.style.cssText =
-      'flex: 1; min-width: 180px; padding: 5px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px;';
+      'flex: 1; min-width: 180px; padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
 
     const typeSelect = doc.createElement('select');
     typeSelect.style.cssText =
-      'padding: 5px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px;';
+      'padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
     for (const t of METADATA_TYPES) {
       const opt = doc.createElement('option');
       opt.value = t;
@@ -184,10 +184,10 @@ export function createDependencyExplorerFeature(
     const findBtn = doc.createElement('button');
     findBtn.textContent = 'Find';
     findBtn.style.cssText =
-      'padding: 5px 14px; border: 1px solid #0070d2; background: #0070d2; color: #fff; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 5px 14px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 13px;';
 
     const status = doc.createElement('span');
-    status.style.cssText = 'color: #54698d; font-size: 12px; margin-left: 4px;';
+    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px; margin-left: 4px;';
 
     searchRow.append(nameInput, typeSelect, findBtn, status);
     body.appendChild(searchRow);

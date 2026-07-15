@@ -11,6 +11,7 @@ import { createBridgeClient } from '../lib/sfdt-bridge.js';
 import { createTelemetry, type BridgeFailureCategory } from '../lib/telemetry.js';
 import { readKillSwitchCache, writeKillSwitchCache } from '../lib/killswitch-cache.js';
 import { mountSideButton, type MenuItem } from '../ui/side-button.js';
+import { ensureTokens } from '../lib/tokens.js';
 import { FEATURE_ICONS } from '../lib/feature-icons.js';
 import { createAiAssistantFeature } from '../features/ai-assistant.js';
 import { createApiNameGeneratorFeature } from '../features/api-name-generator.js';
@@ -67,6 +68,11 @@ export default defineContentScript({
     if (window.top !== window.self) return;
 
     if (!SALESFORCE_HOST_PATTERN.test(window.location.href)) return;
+
+    // Inject the --sfdt-* design tokens into the host page so every feature's
+    // inline `var(--sfdt-*)` colours resolve. Idempotent + namespaced, so it
+    // can't collide with Salesforce's own styles.
+    ensureTokens(document);
 
     const settings = await loadSettings();
     let currentSettings = settings;
