@@ -422,7 +422,7 @@ export function createEventMonitorFeature(options: {
   function updateStatus(status: string, isError: boolean): void {
     if (statusLabel) {
       statusLabel.textContent = status;
-      statusLabel.style.color = isError ? 'var(--sfdt-color-error)' : 'var(--sfdt-color-text-weak)';
+      statusLabel.style.color = isError ? 'var(--sfdt-color-error-text)' : 'var(--sfdt-color-text-weak)';
     }
   }
 

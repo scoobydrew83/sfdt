@@ -444,9 +444,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       mode = next;
       const isRest = next === 'rest';
       restBtn.style.background = isRest ? 'var(--sfdt-color-brand)' : 'var(--sfdt-color-surface)';
-      restBtn.style.color = isRest ? 'var(--sfdt-color-surface)' : 'var(--sfdt-color-brand-deep)';
+      restBtn.style.color = isRest ? 'var(--sfdt-color-on-accent)' : 'var(--sfdt-color-text-strong)';
       toolingBtn.style.background = isRest ? 'var(--sfdt-color-surface)' : 'var(--sfdt-color-brand)';
-      toolingBtn.style.color = isRest ? 'var(--sfdt-color-brand-deep)' : 'var(--sfdt-color-surface)';
+      toolingBtn.style.color = isRest ? 'var(--sfdt-color-text-strong)' : 'var(--sfdt-color-on-accent)';
       void runAutocomplete();
     };
     const togStyle =

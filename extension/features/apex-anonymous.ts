@@ -435,7 +435,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         const summary = summariseResult(result);
         const head = summary.ok ? '✓ Success' : '✗ Failed';
         status.textContent = head;
-        status.style.color = summary.ok ? 'var(--sfdt-color-success)' : 'var(--sfdt-color-error)';
+        status.style.color = summary.ok ? 'var(--sfdt-color-success-text)' : 'var(--sfdt-color-error-text)';
         const lines = [summary.message];
         if (result.exceptionStackTrace) lines.push('', result.exceptionStackTrace);
         resultPane.textContent = lines.join('\n');
