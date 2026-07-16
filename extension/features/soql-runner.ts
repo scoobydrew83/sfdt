@@ -253,18 +253,77 @@ export function formatCell(value: unknown): string {
   }
 }
 
+function csvEscape(s: string): string {
+  if (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes('\r')) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+// Serialize one page of records to CSV data rows (no header) for a fixed column
+// set. Used by both recordsToCsv and the streaming export-all path.
+function csvRows(cols: string[], records: ReadonlyArray<Record<string, unknown>>): string {
+  return records.map((r) => cols.map((c) => csvEscape(formatCell(r[c]))).join(',')).join('\n');
+}
+
 export function recordsToCsv(records: ReadonlyArray<Record<string, unknown>>): string {
   const cols = columnsFromRecords(records);
   if (cols.length === 0) return '';
-  const escape = (s: string): string => {
-    if (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes('\r')) {
-      return `"${s.replace(/"/g, '""')}"`;
-    }
-    return s;
+  const header = cols.map(csvEscape).join(',');
+  const rows = csvRows(cols, records);
+  return rows ? `${header}\n${rows}` : header;
+}
+
+export interface ExportAllProgress {
+  pages: number;
+  rows: number;
+}
+
+export interface ExportAllResult {
+  parts: string[];
+  rows: number;
+  pages: number;
+  canceled: boolean;
+}
+
+// Streams a query to completion via queryMore(), building CSV incrementally.
+// Memory approach: columns are fixed from the first page, then each page's rows
+// are converted to a CSV text chunk and pushed onto a `parts[]` array — the raw
+// record objects for that page are never retained past conversion, and we never
+// build one giant concatenated string (the caller hands `parts` straight to
+// `new Blob(parts, …)`, which concatenates lazily). Peak memory is therefore one
+// page of records plus the accumulated CSV text, not every record object at once.
+export async function exportAllToCsv(
+  api: SalesforceApiClient,
+  first: QueryEnvelope<Record<string, unknown>>,
+  opts: { signal?: AbortSignal; onProgress?: (p: ExportAllProgress) => void } = {},
+): Promise<ExportAllResult> {
+  const { signal, onProgress } = opts;
+  const cols = columnsFromRecords(first.records);
+  const parts: string[] = [];
+  let rows = 0;
+  let pages = 0;
+
+  const pushPage = (records: ReadonlyArray<Record<string, unknown>>): void => {
+    if (records.length === 0) return;
+    parts.push(`${csvRows(cols, records)}\n`);
+    rows += records.length;
   };
-  const header = cols.map(escape).join(',');
-  const rows = records.map((r) => cols.map((c) => escape(formatCell(r[c]))).join(','));
-  return [header, ...rows].join('\n');
+
+  if (cols.length > 0) parts.push(`${cols.map(csvEscape).join(',')}\n`);
+  pushPage(first.records);
+  pages = 1;
+  onProgress?.({ pages, rows });
+
+  let envelope = first;
+  while (!envelope.done && envelope.nextRecordsUrl) {
+    if (signal?.aborted) return { parts, rows, pages, canceled: true };
+    envelope = await api.queryMore<Record<string, unknown>>(envelope.nextRecordsUrl);
+    pushPage(envelope.records);
+    pages += 1;
+    onProgress?.({ pages, rows });
+  }
+  return { parts, rows, pages, canceled: false };
 }
 
 export function generateLangGraphNode(soql: string, records: ReadonlyArray<Record<string, unknown>>): string {
@@ -308,6 +367,18 @@ ${safeSoql}
     # return {"soql_results": results['records']}
     pass
 `;
+}
+
+function downloadBlob(doc: Document, filename: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const a = doc.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  doc.body.appendChild(a);
+  a.click();
+  doc.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function triggerDownload(doc: Document, filename: string, text: string, mime: string): void {
@@ -585,6 +656,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       }
     });
     const status = doc.createElement('span');
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
     status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     runRow.appendChild(runBtn);
     runRow.appendChild(bookmarkBtn);
@@ -615,6 +688,16 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     exportCsvBtn.textContent = 'Export CSV';
     exportCsvBtn.style.cssText =
       'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    const exportAllBtn = doc.createElement('button');
+    exportAllBtn.textContent = 'Export all as CSV';
+    exportAllBtn.title = 'Follow pagination to the end and download every row';
+    exportAllBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    const cancelExportBtn = doc.createElement('button');
+    cancelExportBtn.textContent = 'Cancel';
+    cancelExportBtn.setAttribute('aria-label', 'Cancel export');
+    cancelExportBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-surface); color: var(--sfdt-color-error-text); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     const langGraphBtn = doc.createElement('button');
     langGraphBtn.textContent = 'LangGraph Node';
     langGraphBtn.style.cssText =
@@ -622,6 +705,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     footer.appendChild(loadMoreBtn);
     footer.appendChild(copyCsvBtn);
     footer.appendChild(exportCsvBtn);
+    footer.appendChild(exportAllBtn);
+    footer.appendChild(cancelExportBtn);
     footer.appendChild(langGraphBtn);
 
     if (historyEnabled) {
@@ -656,6 +741,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       loadMoreBtn.style.display = 'none';
       copyCsvBtn.style.display = 'none';
       exportCsvBtn.style.display = 'none';
+      exportAllBtn.style.display = 'none';
       langGraphBtn.style.display = 'none';
     }
 
@@ -783,6 +869,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       resultsWrap.style.display = 'block';
       copyCsvBtn.style.display = 'inline-block';
       exportCsvBtn.style.display = 'inline-block';
+      exportAllBtn.style.display = 'inline-block';
       langGraphBtn.style.display = 'inline-block';
       const canPaginate =
         !!lastEnvelope && lastEnvelope.done === false && !!lastEnvelope.nextRecordsUrl;
@@ -1576,6 +1663,43 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       triggerDownload(doc, `soql-${stamp}.csv`, csv, 'text/csv');
     });
 
+    let exportController: AbortController | null = null;
+    cancelExportBtn.addEventListener('click', () => exportController?.abort());
+    exportAllBtn.addEventListener('click', async () => {
+      const soql = textarea.value.trim();
+      if (!soql) return;
+      exportController = new AbortController();
+      exportAllBtn.disabled = true;
+      cancelExportBtn.style.display = 'inline-block';
+      const prevStatus = status.textContent;
+      status.textContent = 'Exporting all… fetching page 1';
+      try {
+        const first = await runQuery(api, soql, mode);
+        const result = await exportAllToCsv(api, first, {
+          signal: exportController.signal,
+          onProgress: ({ pages, rows }) => {
+            status.textContent = `Exporting all… ${rows} row${rows === 1 ? '' : 's'} across ${pages} page${pages === 1 ? '' : 's'}`;
+          },
+        });
+        if (result.canceled) {
+          showToast('Export canceled', { doc, kind: 'warning' });
+          status.textContent = prevStatus;
+          return;
+        }
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        downloadBlob(doc, `soql-all-${stamp}.csv`, new Blob(result.parts, { type: 'text/csv' }));
+        status.textContent = `Exported ${result.rows} row${result.rows === 1 ? '' : 's'} across ${result.pages} page${result.pages === 1 ? '' : 's'}`;
+        showToast(`Exported ${result.rows} rows as CSV`, { doc, kind: 'success' });
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
+        status.textContent = prevStatus;
+      } finally {
+        exportAllBtn.disabled = false;
+        cancelExportBtn.style.display = 'none';
+        exportController = null;
+      }
+    });
+
     langGraphBtn.addEventListener('click', async () => {
       const currentSoql = textarea.value.trim();
       const code = generateLangGraphNode(currentSoql, records);
@@ -1634,6 +1758,7 @@ export function _soqlRunnerTestApi() {
     columnsFromRecords,
     formatCell,
     recordsToCsv,
+    exportAllToCsv,
     generateLangGraphNode,
     readSoqlHistory,
     writeSoqlHistory,

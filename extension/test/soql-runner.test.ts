@@ -16,6 +16,7 @@ const {
   columnsFromRecords,
   formatCell,
   recordsToCsv,
+  exportAllToCsv,
   generateLangGraphNode,
   HISTORY_CAP,
   readSavedQueries,
@@ -120,6 +121,80 @@ describe('soql-runner — pure helpers', () => {
         { Name: 'A, B', Notes: 'has "quotes"', Body: 'line1\nline2' },
       ]);
       expect(csv).toBe('Name,Notes,Body\n"A, B","has ""quotes""","line1\nline2"');
+    });
+  });
+
+  describe('exportAllToCsv', () => {
+    // Builds a fake api whose queryMore walks a fixed list of pages.
+    function pagedApi(pages: Array<Record<string, unknown>>[]): SalesforceApiClient {
+      let idx = 0; // pages[0] is the "first" envelope; queryMore serves the rest
+      const envelope = (i: number): QueryEnvelope<Record<string, unknown>> => ({
+        records: pages[i]!,
+        done: i >= pages.length - 1,
+        nextRecordsUrl: i >= pages.length - 1 ? undefined : `/next/${i + 1}`,
+        totalSize: pages.reduce((n, p) => n + p.length, 0),
+      });
+      return fakeApi({
+        queryMore: vi.fn(async () => {
+          idx += 1;
+          return envelope(idx);
+        }) as unknown as SalesforceApiClient['queryMore'],
+      });
+    }
+
+    it('follows pagination across 3 pages into one CSV with every row exactly once', async () => {
+      const pages = [
+        [{ Id: '1', Name: 'A' }, { Id: '2', Name: 'B' }],
+        [{ Id: '3', Name: 'C' }, { Id: '4', Name: 'D' }],
+        [{ Id: '5', Name: 'E' }],
+      ];
+      const api = pagedApi(pages);
+      const first: QueryEnvelope<Record<string, unknown>> = {
+        records: pages[0]!,
+        done: false,
+        nextRecordsUrl: '/next/1',
+        totalSize: 5,
+      };
+
+      const result = await exportAllToCsv(api, first);
+      expect(result.canceled).toBe(false);
+      expect(result.pages).toBe(3);
+      expect(result.rows).toBe(5);
+      expect(api.queryMore).toHaveBeenCalledTimes(2);
+
+      const csv = result.parts.join('');
+      // one header, five data rows, no dupes/missing
+      expect(csv).toBe('Id,Name\n1,A\n2,B\n3,C\n4,D\n5,E\n');
+      for (const id of ['1', '2', '3', '4', '5']) {
+        expect(csv.split(`\n${id},`).length).toBe(2); // appears exactly once
+      }
+    });
+
+    it('reports progress once per page', async () => {
+      const pages = [[{ Id: '1' }], [{ Id: '2' }], [{ Id: '3' }]];
+      const api = pagedApi(pages);
+      const seen: number[] = [];
+      await exportAllToCsv(
+        api,
+        { records: pages[0]!, done: false, nextRecordsUrl: '/next/1' },
+        { onProgress: ({ pages: p }) => seen.push(p) },
+      );
+      expect(seen).toEqual([1, 2, 3]);
+    });
+
+    it('aborts the loop mid-export when the signal is already aborted', async () => {
+      const pages = [[{ Id: '1' }], [{ Id: '2' }], [{ Id: '3' }]];
+      const api = pagedApi(pages);
+      const controller = new AbortController();
+      controller.abort();
+      const result = await exportAllToCsv(
+        api,
+        { records: pages[0]!, done: false, nextRecordsUrl: '/next/1' },
+        { signal: controller.signal },
+      );
+      expect(result.canceled).toBe(true);
+      expect(api.queryMore).not.toHaveBeenCalled(); // stopped before paging further
+      expect(result.rows).toBe(1); // only the already-fetched first page
     });
   });
 
