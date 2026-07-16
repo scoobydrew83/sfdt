@@ -217,9 +217,6 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
     toolbar.appendChild(refreshBtn);
     body.appendChild(toolbar);
 
-    // Rows from the most recent load — the delete target and the confirm count.
-    let currentRows: ApexLogRow[] = [];
-
     const table = doc.createElement('div');
     table.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
     body.appendChild(table);
@@ -252,7 +249,6 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       while (table.firstChild) table.removeChild(table.firstChild);
       try {
         const result = await api.toolingQuery<ApexLogRow>(buildApexLogQuery(config.pageSize));
-        currentRows = result.records;
         status.textContent = `${result.records.length} log${result.records.length === 1 ? '' : 's'}`;
         if (result.records.length === 0) {
           const empty = doc.createElement('div');
@@ -289,7 +285,6 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
           table.appendChild(item);
         }
       } catch (err) {
-        currentRows = [];
         status.textContent = '';
         const errPanel = doc.createElement('div');
         errPanel.style.cssText =
@@ -299,30 +294,62 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       }
     }
 
-    // Bulk delete. ponytail: deletes the loaded page (bounded by pageSize), which
-    // is exactly the count the confirm dialog quotes — no silent org-wide sweep.
-    // Upgrade path if true "all" is ever needed: page `SELECT Id FROM ApexLog`
-    // and delete every Id, not just the loaded window.
+    // Fetch EVERY ApexLog Id in the org, following query pagination — the org's
+    // log count routinely exceeds the 2000-row first page, so a single query
+    // would under-count and leave logs behind.
+    async function fetchAllLogIds(): Promise<string[]> {
+      const ids: string[] = [];
+      let page = await api.query<{ Id: string }>('SELECT Id FROM ApexLog');
+      ids.push(...page.records.map((r) => r.Id));
+      while (!page.done && page.nextRecordsUrl) {
+        page = await api.queryMore<{ Id: string }>(page.nextRecordsUrl);
+        ids.push(...page.records.map((r) => r.Id));
+      }
+      return ids;
+    }
+
+    // Bulk delete — clears ALL of the org's ApexLog rows (the standard "clear my
+    // debug logs" dev action), not just the loaded page.
     async function deleteAll(): Promise<void> {
-      const rows = currentRows;
-      if (rows.length === 0) {
-        showToast('No debug logs to delete.', { doc, kind: 'info' });
+      deleteBtn.disabled = true;
+      let ids: string[];
+      try {
+        status.textContent = 'Counting logs…';
+        ids = await fetchAllLogIds();
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
+        deleteBtn.disabled = false;
+        await load();
         return;
       }
-      const noun = `log${rows.length === 1 ? '' : 's'}`;
+      if (ids.length === 0) {
+        showToast('No debug logs to delete.', { doc, kind: 'info' });
+        deleteBtn.disabled = false;
+        await load();
+        return;
+      }
+      const noun = `log${ids.length === 1 ? '' : 's'}`;
       const ok = await confirmDialog(doc, {
         title: 'Delete debug logs',
-        message: `Delete ${rows.length} ${noun}?`,
+        message: `Delete ${ids.length} ${noun}?`,
         confirmLabel: 'Delete',
       });
-      if (!ok) return;
-      deleteBtn.disabled = true;
-      status.textContent = `Deleting ${rows.length} ${noun}…`;
+      if (!ok) {
+        deleteBtn.disabled = false;
+        return;
+      }
+      status.textContent = `Deleting ${ids.length} ${noun}…`;
       try {
-        for (const row of rows) {
-          await api.apiRequest('DELETE', buildLogDeleteEndpoint(row.Id));
+        // Chunked concurrency so a large org doesn't fire thousands of requests
+        // at once (or serialise into a multi-minute hang). ponytail: fixed
+        // chunk of 10; make it adaptive only if rate limits bite.
+        const CHUNK = 10;
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          await Promise.all(
+            ids.slice(i, i + CHUNK).map((id) => api.apiRequest('DELETE', buildLogDeleteEndpoint(id))),
+          );
         }
-        showToast(`Deleted ${rows.length} ${noun}.`, { doc, kind: 'success' });
+        showToast(`Deleted ${ids.length} ${noun}.`, { doc, kind: 'success' });
       } catch (err) {
         showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
       } finally {
