@@ -44,18 +44,34 @@ describe('extension/features/setup-tabs', () => {
     expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(0);
   });
 
-  it('injects the three base tabs when enabled', async () => {
+  it('injects the base tabs when enabled', async () => {
     await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
     const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
     await feature.init?.();
     const tabs = document.querySelectorAll('.sfdt-custom-tab');
-    expect(tabs).toHaveLength(3);
+    expect(tabs).toHaveLength(4);
     const ids = Array.from(tabs).map((t) => (t as HTMLElement).dataset.tabId);
     expect(ids).toEqual([
       'sfdt_tab_flows',
       'sfdt_tab_flow_trigger_explorer',
       'sfdt_tab_process_automation_settings',
+      'sfdt_tab_login_as',
     ]);
+  });
+
+  it('exposes a "Login as user…" entry deep-linking to the Setup user-search page', async () => {
+    await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
+    const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
+    await feature.init?.();
+    const anchor = document.querySelector<HTMLAnchorElement>(
+      '[data-tab-id="sfdt_tab_login_as"] a',
+    );
+    expect(anchor?.textContent).toBe('Login as user…');
+    // Deep link only — the standard Setup ManageUsers (user list) page, where
+    // Salesforce renders the per-user Login action and enforces Login-As perms.
+    expect(anchor?.href).toBe(
+      'https://x.my.salesforce-setup.com/lightning/setup/ManageUsers/home',
+    );
   });
 
   it('adds the Automation Home tab when its opt-in is enabled', async () => {
@@ -81,7 +97,7 @@ describe('extension/features/setup-tabs', () => {
     await feature.init?.();
     expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(1);
     expect(document.querySelector('.sfdt-group-tab')).not.toBeNull();
-    expect(document.querySelectorAll('.sfdt-group-dropdown li')).toHaveLength(3);
+    expect(document.querySelectorAll('.sfdt-group-dropdown li')).toHaveLength(4);
   });
 
   it('uses the org identifier from the URL hostname (v1.2.2 fix)', async () => {
@@ -128,12 +144,12 @@ describe('extension/features/setup-tabs', () => {
     await saveSettings(SettingsSchema.parse({ features: { setupTabs: true } }));
     const feature = createSetupTabsFeature({ waitTimeoutMs: 0 });
     await feature.init?.();
-    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(3);
+    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(4);
 
-    // Force-remove and call refresh — should restore the 3 tabs.
+    // Force-remove and call refresh — should restore the base tabs.
     document.querySelectorAll('.sfdt-custom-tab').forEach((t) => t.remove());
     await feature.refresh?.();
-    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(3);
+    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(4);
   });
 
   it('does nothing if the tab bar never appears (timeout, falsy bar)', async () => {
@@ -378,6 +394,6 @@ describe('setup-tabs — deferred tab bar', () => {
     document.body.appendChild(bar);
 
     await pending;
-    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(3);
+    expect(document.querySelectorAll('.sfdt-custom-tab')).toHaveLength(4);
   });
 });

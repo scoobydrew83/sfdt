@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createSavedSoqlFeature } from '../features/saved-soql.js';
+import { SOQL_TEMPLATES, isValidTemplateSoql } from '../features/soql-templates.js';
 import { setWorkspaceViewSink } from '../ui/present-view.js';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -53,6 +54,42 @@ describe('saved-soql feature', () => {
     expect(onLoadQuery).toHaveBeenCalledOnce();
   });
 
+  it('renders the built-in Templates group with all templates and no delete affordance', async () => {
+    const feature = createSavedSoqlFeature({});
+    await feature.onActivate?.();
+    await flush();
+
+    const overlay = document.querySelector('.sfdt-view-overlay') as HTMLElement;
+    expect(overlay.textContent).toContain('Templates');
+    expect(overlay.textContent).toContain('Built-in');
+    for (const tpl of SOQL_TEMPLATES) {
+      expect(overlay.textContent).toContain(tpl.name);
+    }
+
+    // Built-ins live in their own labelled list...
+    const tplList = overlay.querySelector('[aria-label="Built-in SOQL templates"]') as HTMLElement;
+    expect(tplList).toBeTruthy();
+    // ...each with a Load button (keyboard-reachable native <button>)...
+    const loadBtns = [...tplList.querySelectorAll('button')].filter((b) => b.textContent === 'Load');
+    expect(loadBtns.length).toBe(SOQL_TEMPLATES.length);
+    // ...and NO delete affordance (built-ins cannot be deleted).
+    const deleteBtns = [...tplList.querySelectorAll('button')].filter((b) => b.textContent === '🗑');
+    expect(deleteBtns.length).toBe(0);
+  });
+
+  it('loads a template into the runner via the onLoadQuery hook', async () => {
+    const onLoadQuery = vi.fn();
+    const feature = createSavedSoqlFeature({ onLoadQuery });
+    await feature.onActivate?.();
+    await flush();
+
+    const tplList = document.querySelector('[aria-label="Built-in SOQL templates"]') as HTMLElement;
+    const firstLoad = [...tplList.querySelectorAll('button')].find((b) => b.textContent === 'Load');
+    firstLoad!.click();
+    await flush();
+    expect(onLoadQuery).toHaveBeenCalledOnce();
+  });
+
   it('does not open outside a Salesforce context', async () => {
     // Drive the context guard via the window the feature reads, rather than
     // mutating the document origin (happy-dom blocks cross-origin pushState).
@@ -62,5 +99,33 @@ describe('saved-soql feature', () => {
     await feature.onActivate?.();
     await flush();
     expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
+  });
+});
+
+describe('SOQL template pack (data)', () => {
+  it('ships at least 8 templates with unique names and a valid api mode', () => {
+    expect(SOQL_TEMPLATES.length).toBeGreaterThanOrEqual(8);
+    const names = SOQL_TEMPLATES.map((t) => t.name);
+    expect(new Set(names).size).toBe(names.length);
+    for (const tpl of SOQL_TEMPLATES) {
+      expect(tpl.name.trim().length).toBeGreaterThan(0);
+      expect(tpl.description.trim().length).toBeGreaterThan(0);
+      expect(['rest', 'tooling']).toContain(tpl.api);
+    }
+  });
+
+  // AC2: every template parses via the extension's SOQL validation.
+  it('every template is structurally valid SOQL', () => {
+    for (const tpl of SOQL_TEMPLATES) {
+      expect(isValidTemplateSoql(tpl.q), `${tpl.name}: ${tpl.q}`).toBe(true);
+    }
+  });
+
+  it('rejects malformed SOQL (validator sanity)', () => {
+    expect(isValidTemplateSoql('SELECT Id FROM Account')).toBe(true);
+    expect(isValidTemplateSoql('DELETE FROM Account')).toBe(false);
+    expect(isValidTemplateSoql('SELECT Id Account')).toBe(false); // no FROM
+    expect(isValidTemplateSoql("SELECT Id FROM Account WHERE Name = 'x")).toBe(false); // unbalanced quote
+    expect(isValidTemplateSoql('SELECT Id FROM Account;')).toBe(false); // trailing semicolon
   });
 });
