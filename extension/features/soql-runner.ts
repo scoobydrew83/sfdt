@@ -697,6 +697,17 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     let lastEnvelope: QueryEnvelope<Record<string, unknown>> | null = null;
     let pagesLoaded = 0;
 
+    // Run and Explain share `records`/`lastEnvelope`/`status` and toggle the same
+    // panels, so only one may be in flight at a time. Guard both entry points —
+    // including the Ctrl+Enter path, which bypasses the disabled button — and
+    // disable both buttons for visual feedback.
+    let busy = false;
+    function setBusy(next: boolean): void {
+      busy = next;
+      runBtn.disabled = next;
+      explainBtn.disabled = next;
+    }
+
     function showError(message: string): void {
       errorPanel.textContent = message;
       errorPanel.style.display = 'block';
@@ -937,13 +948,14 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     }
 
     async function execute(): Promise<void> {
+      if (busy) return;
       const soql = textarea.value.trim();
       if (!soql) {
         showError('Enter a SOQL query to run.');
         return;
       }
       clearError();
-      runBtn.disabled = true;
+      setBusy(true);
       status.textContent = 'Running…';
       const t0 = Date.now();
       try {
@@ -964,13 +976,19 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         showError(err instanceof Error ? err.message : String(err));
         status.textContent = '';
       } finally {
-        runBtn.disabled = false;
+        setBusy(false);
       }
     }
 
     function renderPlan(plans: QueryPlan[]): void {
       while (explainPanel.firstChild) explainPanel.removeChild(explainPanel.firstChild);
+      // Hide the results-table + its footer actions: they're bound to the stale
+      // result set and would flip the view back to the (now-hidden) table.
       resultsWrap.style.display = 'none';
+      loadMoreBtn.style.display = 'none';
+      copyCsvBtn.style.display = 'none';
+      exportCsvBtn.style.display = 'none';
+      langGraphBtn.style.display = 'none';
       if (plans.length === 0) {
         const empty = doc.createElement('div');
         empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon); font-size: 13px;';
@@ -1031,13 +1049,14 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     }
 
     async function explain(): Promise<void> {
+      if (busy) return;
       const soql = textarea.value.trim();
       if (!soql) {
         showError('Enter a SOQL query to explain.');
         return;
       }
       clearError();
-      explainBtn.disabled = true;
+      setBusy(true);
       status.textContent = 'Explaining…';
       const t0 = Date.now();
       try {
@@ -1048,7 +1067,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         showError(err instanceof Error ? err.message : String(err));
         status.textContent = '';
       } finally {
-        explainBtn.disabled = false;
+        setBusy(false);
       }
     }
 

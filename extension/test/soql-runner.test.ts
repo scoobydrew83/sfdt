@@ -802,6 +802,67 @@ describe('soql-runner — Explain modal', () => {
     );
     expect(api.apiGet).not.toHaveBeenCalled();
   });
+
+  it('hides the stale results table + footer actions when a plan renders', async () => {
+    setSalesforceUrl();
+    const api = fakeApi({
+      query: vi.fn(async () => ({
+        totalSize: 1,
+        done: true,
+        records: [{ Id: '001', Name: 'Acme' }],
+      })) as unknown as SalesforceApiClient['query'],
+      apiGet: vi.fn(async () => ({ plans: [{ relativeCost: 1 }] })) as unknown as SalesforceApiClient['apiGet'],
+    });
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id, Name FROM Account';
+    findButton('▶ Run')?.click();
+    await flush();
+    // Results + footer actions are visible after a query.
+    expect(findButton('Copy CSV')?.style.display).not.toBe('none');
+
+    findButton('🔎 Explain')?.click();
+    await flush();
+    // The plan replaced the table; the table's footer actions are hidden so they
+    // can't act on the now-hidden stale result set.
+    const resultsTable = document.querySelector('table');
+    expect(resultsTable).toBeTruthy(); // this is the plan table
+    for (const label of ['Load more', 'Copy CSV', 'Export CSV', 'LangGraph Node']) {
+      expect(findButton(label)?.style.display).toBe('none');
+    }
+  });
+
+  it('disables both Run and Explain while a request is in flight, re-enabling both after', async () => {
+    setSalesforceUrl();
+    let resolveQuery!: (v: QueryEnvelope<Record<string, unknown>>) => void;
+    const api = fakeApi({
+      query: vi.fn(() => new Promise((res) => { resolveQuery = res; })) as unknown as SalesforceApiClient['query'],
+    });
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id FROM Account';
+    const runBtn = findButton('▶ Run')!;
+    const explainBtn = findButton('🔎 Explain')!;
+    runBtn.click();
+    await flush();
+
+    // Run is pending — BOTH buttons are disabled (Explain can't race it).
+    expect(runBtn.disabled).toBe(true);
+    expect(explainBtn.disabled).toBe(true);
+    // A guarded second call is a no-op while busy: apiGet (explain) never fires.
+    explainBtn.click();
+    await flush();
+    expect(api.apiGet).not.toHaveBeenCalled();
+
+    resolveQuery({ totalSize: 0, done: true, records: [] });
+    await flush();
+    expect(runBtn.disabled).toBe(false);
+    expect(explainBtn.disabled).toBe(false);
+  });
 });
 
 describe('soql-runner — modal menus & exports', () => {
