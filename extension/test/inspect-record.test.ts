@@ -263,6 +263,43 @@ describe('inspect-record — UI activation & inspection', () => {
     );
   });
 
+  it('openFor loads a specific record Id (the context-menu path), ignoring the page URL', async () => {
+    // Page is a plain Setup page — the context menu passes an explicit Id from a
+    // right-clicked link, so openFor must load THAT record, not the page URL.
+    setSalesforceUrl('https://x.lightning.force.com/lightning/setup/SetupOneHome/home');
+
+    const globalMock = vi.fn().mockResolvedValue({
+      sobjects: [{ name: 'Account', label: 'Account', keyPrefix: '001' }],
+    });
+    const describeMock = vi.fn().mockResolvedValue({
+      name: 'Account',
+      label: 'Account',
+      fields: [
+        { name: 'Name', label: 'Account Name', type: 'string', updateable: true, relationshipName: null, referenceTo: [] },
+      ],
+    });
+    const rowGetMock = vi.fn().mockResolvedValue({ Name: 'Menu Corp' });
+
+    const apiGetMock = vi.fn(async (path: string) => {
+      if (path.includes('/sobjects/Account/describe')) return describeMock();
+      if (path.includes('/sobjects/Account/001800000000001AAA')) return rowGetMock();
+      if (path.includes('/sobjects/')) return globalMock();
+      return {};
+    });
+
+    const feature = createInspectRecordFeature({ api: fakeApi({ apiGet: apiGetMock }) });
+    await feature.openFor('001800000000001AAA', 'Account');
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const recordInfo = Array.from(document.querySelectorAll('.sfdt-view-overlay span')).find(
+      (s) => s.textContent?.includes('Account · 001800000000001AAA'),
+    );
+    expect(recordInfo).toBeTruthy();
+    const values = Array.from(document.querySelectorAll('tbody tr td span')).map((s) => s.textContent);
+    expect(values).toContain('Menu Corp');
+  });
+
   it('opens an empty inspector with a blank ID input when the page is not a record', async () => {
     setSalesforceUrl('https://x.lightning.force.com/lightning/setup/SetupOneHome/home');
     const api = fakeApi();

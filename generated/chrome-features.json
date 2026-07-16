@@ -99,6 +99,17 @@
       "bridgeRequired": false
     },
     {
+      "id": "context-menu-inspect",
+      "name": "Right-click \"Inspect this record\"",
+      "contexts": [
+        "record_page"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": false,
+      "bridgeRequired": false
+    },
+    {
       "id": "data-import",
       "name": "Data Import Wizard",
       "contexts": [

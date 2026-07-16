@@ -1,9 +1,10 @@
 // Parity test for lib/feature-manifests.json — the browser-runtime-free,
 // checked-in source of truth for feature metadata. It instantiates every
-// feature exactly as the two entrypoints do (entrypoints/content.ts registers
-// 36; entrypoints/app/main.ts additionally registers the 4 Workspace-only
-// tools: apex-test-runner + the three bridge tools) and asserts the collected
-// manifests match the JSON 1:1.
+// feature exactly as the entrypoints do (entrypoints/content.ts registers 36;
+// entrypoints/app/main.ts additionally registers the 4 Workspace-only tools:
+// apex-test-runner + the three bridge tools; entrypoints/background.ts adds the
+// worker-backed context-menu-inspect) and asserts the collected manifests match
+// the JSON 1:1.
 //
 // To regenerate the JSON after adding/changing a feature:
 //   SFDT_WRITE_MANIFESTS=1 npx vitest run test/feature-manifests.test.ts
@@ -53,6 +54,8 @@ import { createSavedSoqlFeature } from '../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../features/org-switcher.js';
 import { createOrgReleaseBadgeFeature } from '../features/org-release-badge.js';
 import { createApiVersionAuditFeature } from '../features/api-version-audit.js';
+// --- Background/options-only feature (entrypoints/background.ts + options) ---
+import { createContextMenuInspectFeature } from '../features/context-menu-inspect.js';
 // --- Workspace-only factories (entrypoints/app/main.ts) ---
 import { createApexTestRunnerFeature } from '../features/apex-test-runner.js';
 import {
@@ -135,6 +138,10 @@ function instantiateAllFeatures(): Feature[] {
     createDebugLogViewerFeature(),
     createSavedSoqlFeature(),
     createOrgSwitcherFeature(),
+    // context-menu-inspect (P1-8): a worker-backed feature — its "Inspect this
+    // record" menu lives in entrypoints/background.ts and its toggle in the
+    // options page; it injects no content-script UI (no icon, no side button).
+    createContextMenuInspectFeature(),
     // entrypoints/app/main.ts additionally registers these Workspace-only
     // tools (all options default; main.ts only injects doc/win/api):
     createApexTestRunnerFeature(),

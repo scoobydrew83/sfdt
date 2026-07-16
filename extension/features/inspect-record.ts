@@ -62,7 +62,13 @@ export interface InspectRecordOptions {
   api?: SalesforceApiClient;
 }
 
-export function createInspectRecordFeature(options: InspectRecordOptions = {}): Feature {
+/** The Inspect Record feature, plus an imperative opener for the context menu. */
+export type InspectRecordFeature = Feature & {
+  /** Open the inspector for a specific record Id (used by the right-click menu). */
+  openFor: (recordId: string, sobjectName?: string) => Promise<void>;
+};
+
+export function createInspectRecordFeature(options: InspectRecordOptions = {}): InspectRecordFeature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
@@ -507,6 +513,10 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       } else {
         await open();
       }
+    },
+
+    async openFor(recordId: string, sobjectName?: string) {
+      await open(recordId, sobjectName);
     },
   };
 }

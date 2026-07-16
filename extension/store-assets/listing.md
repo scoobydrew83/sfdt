@@ -86,6 +86,9 @@ Lets the user one-click copy generated API names, compare-report data, SOQL resu
 ### cookies
 Reads the user's existing Salesforce session cookies so the extension can authenticate Tooling API and REST calls to the user's own org(s). The Switch Org / Workspace multi-org feature reads Salesforce session cookies to list the orgs you're already logged into and target tools at the one you pick. No cookies are ever sent off-origin.
 
+### contextMenus
+Adds an optional right-click "SFDT: Inspect this record" item on the user's Salesforce pages that opens the record inspector for the record Id in the page URL or a right-clicked record link. The menu only reads the URL to locate a record Id — it reads no cookies or session data — and it appears only on Salesforce hosts. It can be turned off from Options → Features.
+
 ### host_permissions: https://*.salesforce.com/*, https://*.salesforce-setup.com/*, https://*.my.salesforce.com/*, https://*.lightning.force.com/*
 The extension only operates on Salesforce origins. Required to inject UI and call the Tooling/REST APIs of the user's logged-in org.
 
