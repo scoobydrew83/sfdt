@@ -89,6 +89,9 @@ Reads the user's existing Salesforce session cookies so the extension can authen
 ### host_permissions: https://*.salesforce.com/*, https://*.salesforce-setup.com/*, https://*.my.salesforce.com/*, https://*.lightning.force.com/*
 The extension only operates on Salesforce origins. Required to inject UI and call the Tooling/REST APIs of the user's logged-in org.
 
+### host_permissions: https://*.my.salesforce.mil/*, https://*.lightning.force.mil/*, https://*.sfcrmapps.cn/*, https://*.mcas.ms/*
+Extends the same Salesforce-only support to orgs served on non-standard domains: US Government Cloud (GovCloud, `.mil`), Salesforce China (`.sfcrmapps.cn`), and orgs fronted by a Microsoft Defender for Cloud Apps reverse proxy (`.mcas.ms`). Used only to resolve and call the user's own org session on those domains; no data leaves the device.
+
 ### host_permissions: http://localhost/*, http://127.0.0.1/*
 Optional connection to the user's local sfdt CLI HTTP bridge (default port 7654) for Flow Deploy, Rollback, and AI Assistant features. Disabled until the user starts the bridge themselves.
 

@@ -8,6 +8,9 @@ export default defineConfig({
     description:
       'Productivity tools for Salesforce admins & developers — Flow, Setup, Object Manager, record pages, SOQL/REST/SOAP & AI.',
     permissions: ['storage', 'clipboardWrite', 'cookies'],
+    // Separate incognito session so an incognito window resolves and caches its
+    // own Salesforce sessions instead of sharing the normal profile's.
+    incognito: 'split',
     // The toolbar button opens the thin action popup (entrypoints/popup/).
     action: {
       default_title: 'SFDT SF Helper',
@@ -37,6 +40,14 @@ export default defineConfig({
       'https://*.salesforce-setup.com/*',
       'https://*.my.salesforce.com/*',
       'https://*.lightning.force.com/*',
+      // P0-5 (ledgered): US gov-cloud (GovCloud) orgs.
+      'https://*.my.salesforce.mil/*',
+      'https://*.lightning.force.mil/*',
+      // P0-5 (ledgered): Salesforce China (Alibaba-operated) orgs.
+      'https://*.sfcrmapps.cn/*',
+      // P0-5 (ledgered): Microsoft Defender for Cloud Apps (`.mcas.ms`)
+      // reverse-proxied Salesforce sessions.
+      'https://*.mcas.ms/*',
       // Required for the kill-switch / deploy / quality bridge calls.
       // Chrome blocks fetches from a https:// content script to http://127.0.0.1
       // unless the host is explicitly permitted at install time.

@@ -79,6 +79,50 @@ describe('extension/lib/hostname', () => {
       expect(mySalesforceHostname('example.com')).toBeNull();
     });
 
+    // P0-5 host coverage — gov-cloud (.mil), China (.sfcrmapps.cn), and
+    // Defender (.mcas.ms) proxies. Each resolves to the correct instance host
+    // OR fails cleanly (null → the proxy falls back to the page origin).
+    describe('gov-cloud (.mil)', () => {
+      it('passes through an existing my.salesforce.mil host', () => {
+        expect(mySalesforceHostname('gov.my.salesforce.mil')).toBe('gov.my.salesforce.mil');
+      });
+      it('builds from a lightning.force.mil source', () => {
+        expect(mySalesforceHostname('gov.lightning.force.mil')).toBe('gov.my.salesforce.mil');
+      });
+      it('builds from a salesforce-setup.mil source', () => {
+        expect(mySalesforceHostname('gov.my.salesforce-setup.mil')).toBe('gov.my.salesforce.mil');
+      });
+      it('preserves the sandbox middle segment', () => {
+        expect(mySalesforceHostname('gov.sandbox.lightning.force.mil')).toBe(
+          'gov.sandbox.my.salesforce.mil',
+        );
+      });
+      it('rebuilds Lightning + Setup hosts symmetrically', () => {
+        expect(lightningHostname('gov.my.salesforce.mil')).toBe('gov.lightning.force.mil');
+        expect(setupHostname('gov.lightning.force.mil')).toBe('gov.my.salesforce-setup.mil');
+      });
+    });
+
+    describe('China (.sfcrmapps.cn)', () => {
+      it('passes through an existing my.sfcrmapps.cn host', () => {
+        expect(mySalesforceHostname('cn.my.sfcrmapps.cn')).toBe('cn.my.sfcrmapps.cn');
+      });
+      it('builds from a lightning.sfcrmapps.cn source', () => {
+        expect(mySalesforceHostname('cn.lightning.sfcrmapps.cn')).toBe('cn.my.sfcrmapps.cn');
+      });
+      it('rebuilds the Lightning host symmetrically', () => {
+        expect(lightningHostname('cn.my.sfcrmapps.cn')).toBe('cn.lightning.sfcrmapps.cn');
+      });
+    });
+
+    describe('Defender .mcas.ms proxy', () => {
+      it('returns null (no canonical API host — the proxy origin is used)', () => {
+        // The sid cookie lives on the proxy origin and the API must go back
+        // through the proxy, so there is no my.* host to fabricate.
+        expect(mySalesforceHostname('acme-my-salesforce-com.us.mcas.ms')).toBeNull();
+      });
+    });
+
     it('preserves the develop/sandbox/scratch/trailblaze middle segment', () => {
       // Live regression: a real dev-edition org reported
       // INVALID_SESSION_ID 401s on Flow Health Check because the API host
