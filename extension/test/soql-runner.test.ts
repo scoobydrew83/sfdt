@@ -196,6 +196,40 @@ describe('soql-runner — pure helpers', () => {
       expect(api.queryMore).not.toHaveBeenCalled(); // stopped before paging further
       expect(result.rows).toBe(1); // only the already-fetched first page
     });
+
+    it('cancels a single-page (already-done) export instead of returning success', async () => {
+      const api = pagedApi([[{ Id: '1' }]]);
+      const controller = new AbortController();
+      controller.abort();
+      const result = await exportAllToCsv(
+        api,
+        { records: [{ Id: '1' }], done: true }, // no nextRecordsUrl → loop never runs
+        { signal: controller.signal },
+      );
+      expect(result.canceled).toBe(true); // BUG2: must observe the abort even single-page
+      expect(api.queryMore).not.toHaveBeenCalled();
+    });
+
+    it('stops without emitting a page when aborted mid-fetch', async () => {
+      const controller = new AbortController();
+      const seen: number[] = [];
+      // queryMore aborts as it resolves page 2, so the abort lands after the
+      // await but before the page is processed.
+      const api = fakeApi({
+        queryMore: vi.fn(async () => {
+          controller.abort();
+          return { records: [{ Id: '2' }], done: true } as QueryEnvelope<Record<string, unknown>>;
+        }) as unknown as SalesforceApiClient['queryMore'],
+      });
+      const result = await exportAllToCsv(
+        api,
+        { records: [{ Id: '1' }], done: false, nextRecordsUrl: '/next/1' },
+        { signal: controller.signal, onProgress: ({ pages }) => seen.push(pages) },
+      );
+      expect(result.canceled).toBe(true);
+      expect(result.rows).toBe(1); // page 2 fetched but not appended
+      expect(seen).toEqual([1]); // no trailing progress for the discarded page
+    });
   });
 
   describe('generateLangGraphNode', () => {

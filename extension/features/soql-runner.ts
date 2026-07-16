@@ -314,11 +314,17 @@ export async function exportAllToCsv(
   pushPage(first.records);
   pages = 1;
   onProgress?.({ pages, rows });
+  // Check even for a single-page (already-done) export so a Cancel between the
+  // first page and the return still aborts instead of downloading.
+  if (signal?.aborted) return { parts, rows, pages, canceled: true };
 
   let envelope = first;
   while (!envelope.done && envelope.nextRecordsUrl) {
     if (signal?.aborted) return { parts, rows, pages, canceled: true };
     envelope = await api.queryMore<Record<string, unknown>>(envelope.nextRecordsUrl);
+    // Re-check after the await: if cancelled mid-fetch, don't process/emit this
+    // page (avoids a trailing onProgress that would stomp a superseding run).
+    if (signal?.aborted) return { parts, rows, pages, canceled: true };
     pushPage(envelope.records);
     pages += 1;
     onProgress?.({ pages, rows });
@@ -382,16 +388,7 @@ function downloadBlob(doc: Document, filename: string, blob: Blob): void {
 }
 
 function triggerDownload(doc: Document, filename: string, text: string, mime: string): void {
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = doc.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.style.display = 'none';
-  doc.body.appendChild(a);
-  a.click();
-  doc.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadBlob(doc, filename, new Blob([text], { type: mime }));
 }
 
 async function runQuery(
@@ -733,8 +730,22 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     let records: Array<Record<string, unknown>> = [];
     let lastEnvelope: QueryEnvelope<Record<string, unknown>> | null = null;
     let pagesLoaded = 0;
+    // Tracks an in-flight "Export all" so a new run/loadMore/error can supersede
+    // it: the running export compares against this and stays silent once null'd.
+    let exportController: AbortController | null = null;
+
+    // Cancel any in-flight export and reset its UI. Idempotent; the running
+    // handler's owns()-guard skips its own cleanup once superseded here.
+    function abortExport(): void {
+      if (!exportController) return;
+      exportController.abort();
+      exportController = null;
+      exportAllBtn.disabled = false;
+      cancelExportBtn.style.display = 'none';
+    }
 
     function showError(message: string): void {
+      abortExport();
       errorPanel.textContent = message;
       errorPanel.style.display = 'block';
       resultsWrap.style.display = 'none';
@@ -979,6 +990,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         showError('Enter a SOQL query to run.');
         return;
       }
+      abortExport(); // a fresh run supersedes any in-flight export
       clearError();
       runBtn.disabled = true;
       status.textContent = 'Running…';
@@ -1007,6 +1019,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
 
     async function loadMore(): Promise<void> {
       if (!lastEnvelope?.nextRecordsUrl || lastEnvelope.done) return;
+      abortExport(); // loading a page supersedes any in-flight export
       if (pagesLoaded >= PAGE_CAP) {
         showToast(`Stopped at ${PAGE_CAP} pages — narrow your query for more.`, {
           doc,
@@ -1663,12 +1676,17 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       triggerDownload(doc, `soql-${stamp}.csv`, csv, 'text/csv');
     });
 
-    let exportController: AbortController | null = null;
     cancelExportBtn.addEventListener('click', () => exportController?.abort());
     exportAllBtn.addEventListener('click', async () => {
       const soql = textarea.value.trim();
       if (!soql) return;
-      exportController = new AbortController();
+      abortExport(); // never run two exports at once
+      const controller = new AbortController();
+      exportController = controller;
+      // Whether this handler is still the active export — false once a new
+      // run/loadMore/error (or a subsequent export) has superseded it. Guards
+      // every status/UI write so a stale export can't stomp a newer run.
+      const owns = (): boolean => exportController === controller;
       exportAllBtn.disabled = true;
       cancelExportBtn.style.display = 'inline-block';
       const prevStatus = status.textContent;
@@ -1676,11 +1694,14 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       try {
         const first = await runQuery(api, soql, mode);
         const result = await exportAllToCsv(api, first, {
-          signal: exportController.signal,
+          signal: controller.signal,
           onProgress: ({ pages, rows }) => {
-            status.textContent = `Exporting all… ${rows} row${rows === 1 ? '' : 's'} across ${pages} page${pages === 1 ? '' : 's'}`;
+            if (owns()) {
+              status.textContent = `Exporting all… ${rows} row${rows === 1 ? '' : 's'} across ${pages} page${pages === 1 ? '' : 's'}`;
+            }
           },
         });
+        if (!owns()) return; // superseded — stay silent, superseder owns the UI
         if (result.canceled) {
           showToast('Export canceled', { doc, kind: 'warning' });
           status.textContent = prevStatus;
@@ -1691,12 +1712,16 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         status.textContent = `Exported ${result.rows} row${result.rows === 1 ? '' : 's'} across ${result.pages} page${result.pages === 1 ? '' : 's'}`;
         showToast(`Exported ${result.rows} rows as CSV`, { doc, kind: 'success' });
       } catch (err) {
-        showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
-        status.textContent = prevStatus;
+        if (owns()) {
+          showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
+          status.textContent = prevStatus;
+        }
       } finally {
-        exportAllBtn.disabled = false;
-        cancelExportBtn.style.display = 'none';
-        exportController = null;
+        if (owns()) {
+          exportAllBtn.disabled = false;
+          cancelExportBtn.style.display = 'none';
+          exportController = null;
+        }
       }
     });
 
