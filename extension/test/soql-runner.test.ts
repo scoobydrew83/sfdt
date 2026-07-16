@@ -24,7 +24,38 @@ const {
   deleteSavedQuery,
   DescribeCache,
   runQuery,
+  explainQuery,
+  explainPlansToRows,
 } = _soqlRunnerTestApi();
+
+const CANNED_PLAN = {
+  plans: [
+    {
+      cardinality: 1,
+      fields: ['Name'],
+      leadingOperationType: 'Index',
+      relativeCost: 0.5,
+      sobjectCardinality: 100,
+      sobjectType: 'Account',
+      notes: [
+        {
+          description: 'Not considering filter for optimization because unindexed',
+          fields: ['Description'],
+          tableEnumOrId: 'Account',
+        },
+      ],
+    },
+    {
+      cardinality: 100,
+      leadingOperationType: 'TableScan',
+      relativeCost: 2.8,
+      sobjectCardinality: 100,
+      sobjectType: 'Account',
+      notes: [],
+    },
+  ],
+  sourceQuery: "SELECT Name FROM Account WHERE Name = 'x'",
+};
 
 function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
   return {
@@ -532,6 +563,144 @@ describe('soql-runner — runQuery', () => {
     await expect(
       runQuery(client, `query { uiapi { query { Account { edges { node { Bogus } } } } } }`, 'rest')
     ).rejects.toThrow("Cannot query field 'Bogus' on type 'Account'");
+  });
+});
+
+describe('soql-runner — explain / query plan', () => {
+  it('calls the REST query endpoint with an explain= param in rest mode', async () => {
+    const apiGet = vi.fn().mockResolvedValue(CANNED_PLAN);
+    const client = fakeApi({ apiGet });
+    await explainQuery(client, 'SELECT Name FROM Account', 'rest');
+    expect(apiGet).toHaveBeenCalledWith('/services/data/v62.0/query', {
+      explain: 'SELECT Name FROM Account',
+    });
+  });
+
+  it('calls the Tooling query endpoint with an explain= param in tooling mode', async () => {
+    const apiGet = vi.fn().mockResolvedValue(CANNED_PLAN);
+    const client = fakeApi({ apiGet });
+    await explainQuery(client, 'SELECT Id FROM FlowDefinition', 'tooling');
+    expect(apiGet).toHaveBeenCalledWith('/services/data/v62.0/tooling/query', {
+      explain: 'SELECT Id FROM FlowDefinition',
+    });
+  });
+
+  it('normalizes a canned plan response into renderable rows', () => {
+    const rows = explainPlansToRows(CANNED_PLAN);
+    expect(rows).toEqual([
+      {
+        sobjectType: 'Account',
+        leadingOperationType: 'Index',
+        relativeCost: '0.5',
+        cardinality: '1',
+        sobjectCardinality: '100',
+        notes: 'Not considering filter for optimization because unindexed',
+      },
+      {
+        sobjectType: 'Account',
+        leadingOperationType: 'TableScan',
+        relativeCost: '2.8',
+        cardinality: '100',
+        sobjectCardinality: '100',
+        notes: '',
+      },
+    ]);
+  });
+
+  it('returns no rows for an empty or malformed plan response', () => {
+    expect(explainPlansToRows(null)).toEqual([]);
+    expect(explainPlansToRows({})).toEqual([]);
+    expect(explainPlansToRows({ plans: [] })).toEqual([]);
+  });
+});
+
+describe('soql-runner — explain UI', () => {
+  function setSalesforceUrl(): void {
+    window.history.replaceState(
+      {},
+      '',
+      'https://x.lightning.force.com/lightning/setup/Flows/home',
+    );
+  }
+  async function flush(): Promise<void> {
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  function findButton(text: string): HTMLButtonElement | undefined {
+    return Array.from(document.querySelectorAll('button')).find((b) => b.textContent === text);
+  }
+
+  it('renders the query plan table from a canned explain response', async () => {
+    setSalesforceUrl();
+    const apiGet = vi.fn().mockResolvedValue(CANNED_PLAN);
+    const feature = createSoqlRunnerFeature({ api: fakeApi({ apiGet }) });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Name FROM Account';
+    findButton('🔎 Explain')?.click();
+    await flush();
+
+    expect(apiGet).toHaveBeenCalledWith('/services/data/v62.0/query', {
+      explain: 'SELECT Name FROM Account',
+    });
+
+    // The plan table lives in the keyboard-reachable region.
+    const region = document.querySelector('[aria-label="SOQL query plan"]') as HTMLElement;
+    expect(region).toBeTruthy();
+    expect(region.getAttribute('tabindex')).toBe('0');
+    const headers = Array.from(region.querySelectorAll('th')).map((th) => th.textContent);
+    expect(headers).toEqual([
+      'Leading Operation',
+      'Relative Cost',
+      'Cardinality',
+      'SObject Cardinality',
+      'SObject',
+      'Notes',
+    ]);
+    const rows = region.querySelectorAll('tbody tr');
+    expect(rows).toHaveLength(2);
+    const firstRowCells = Array.from(rows[0]!.querySelectorAll('td')).map((td) => td.textContent);
+    expect(firstRowCells).toEqual([
+      'Index',
+      '0.5',
+      '1',
+      '100',
+      'Account',
+      'Not considering filter for optimization because unindexed',
+    ]);
+  });
+
+  it('surfaces an explain error inline in the error panel, not as a throw', async () => {
+    setSalesforceUrl();
+    const apiGet = vi.fn().mockRejectedValue(
+      new Error("MALFORMED_QUERY: EXPLAIN is not supported for this query"),
+    );
+    const feature = createSoqlRunnerFeature({ api: fakeApi({ apiGet }) });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'FIND {Acme} IN ALL FIELDS';
+    // Must not throw — the click handler swallows the rejection into the panel.
+    expect(() => findButton('🔎 Explain')?.click()).not.toThrow();
+    await flush();
+
+    const alert = document.querySelector('[role="alert"]') as HTMLElement;
+    expect(alert).toBeTruthy();
+    expect(alert.textContent).toContain('MALFORMED_QUERY');
+    expect(alert.style.display).toBe('block');
+    // The plan region stays hidden on error.
+    const region = document.querySelector('[aria-label="SOQL query plan"]') as HTMLElement;
+    expect(region.style.display).toBe('none');
+  });
+
+  it('shows an inline error when explaining an empty query', async () => {
+    setSalesforceUrl();
+    const feature = createSoqlRunnerFeature({ api: fakeApi() });
+    await feature.onActivate?.();
+    findButton('🔎 Explain')?.click();
+    await flush();
+    expect(document.body.textContent).toContain('Enter a SOQL query to explain.');
   });
 });
 

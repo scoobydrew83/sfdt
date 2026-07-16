@@ -4,6 +4,9 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Added
+- **SOQL Query Runner — Explain (query plan).** The SOQL Runner gains a **🔎 Explain** action that calls Salesforce's query-plan endpoint (`.../query/?explain=` for REST, `.../tooling/query/?explain=` for Tooling) for the current query and renders the returned plans in a table — leading operation type, relative cost, cardinality, SObject cardinality, SObject, and optimizer notes — so you can spot table scans and unindexed filters before running the query. The call goes through the existing worker-proxied API client (the session id never leaves the worker). Non-explainable queries (SOSL/GraphQL) and API errors surface inline in the tool's error panel rather than as a thrown toast.
+
 ## [0.7.0] - 2026-07-14
 
 ### Added

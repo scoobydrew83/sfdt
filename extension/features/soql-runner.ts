@@ -396,6 +396,76 @@ async function runQuery(
   return api.query<Record<string, unknown>>(soql);
 }
 
+// --- QUERY PLAN / EXPLAIN ---
+// Salesforce's query-plan endpoint: GET .../query/?explain=<soql> (Tooling
+// queries use .../tooling/query/?explain=). It returns one plan per candidate
+// leading operation; the lowest relativeCost is the one the optimizer picks.
+interface QueryPlanNote {
+  description?: string;
+  fields?: string[];
+  tableEnumOrId?: string;
+}
+
+interface QueryPlan {
+  cardinality?: number;
+  leadingOperationType?: string;
+  relativeCost?: number;
+  sobjectCardinality?: number;
+  sobjectType?: string;
+  notes?: QueryPlanNote[];
+}
+
+interface QueryPlanResponse {
+  plans?: QueryPlan[];
+  sourceQuery?: string;
+}
+
+export interface ExplainPlanRow {
+  sobjectType: string;
+  leadingOperationType: string;
+  relativeCost: string;
+  cardinality: string;
+  sobjectCardinality: string;
+  notes: string;
+}
+
+// Only plain SOQL is explainable — SOSL/GraphQL will 400, which the caller
+// surfaces inline. The endpoint mirrors runQuery's REST/Tooling split so the
+// plan matches how the query itself would run.
+async function explainQuery(
+  api: SalesforceApiClient,
+  soql: string,
+  mode: ApiMode,
+): Promise<QueryPlanResponse> {
+  const apiVersion = api.apiVersion;
+  const endpoint =
+    mode === 'tooling'
+      ? `/services/data/${apiVersion}/tooling/query`
+      : `/services/data/${apiVersion}/query`;
+  return api.apiGet<QueryPlanResponse>(endpoint, { explain: soql });
+}
+
+function numToCell(value: number | undefined): string {
+  return typeof value === 'number' ? String(value) : '';
+}
+
+export function explainPlansToRows(resp: QueryPlanResponse | null | undefined): ExplainPlanRow[] {
+  const plans = Array.isArray(resp?.plans) ? resp!.plans : [];
+  return plans.map((plan) => ({
+    sobjectType: plan.sobjectType ?? '',
+    leadingOperationType: plan.leadingOperationType ?? '',
+    relativeCost: numToCell(plan.relativeCost),
+    cardinality: numToCell(plan.cardinality),
+    sobjectCardinality: numToCell(plan.sobjectCardinality),
+    notes: Array.isArray(plan.notes)
+      ? plan.notes
+          .map((n) => n.description)
+          .filter((d): d is string => typeof d === 'string' && d.length > 0)
+          .join('; ')
+      : '',
+  }));
+}
+
 export interface SoqlRunnerOptions {
   doc?: Document;
   win?: Window;
@@ -584,14 +654,22 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         showToast('Query bookmarked successfully', { doc, kind: 'success' });
       }
     });
+    const explainBtn = doc.createElement('button');
+    explainBtn.textContent = '🔎 Explain';
+    explainBtn.title = 'Show the query plan (cost, cardinality, leading operation) for this query';
+    explainBtn.style.cssText =
+      'padding: 6px 12px; background: #fff; color: #0070d2; border: 1px solid #d8dde6; border-radius: 4px; cursor: pointer; font-size: 13px;';
     const status = doc.createElement('span');
     status.style.cssText = 'color: #54698d; font-size: 12px;';
     runRow.appendChild(runBtn);
+    runRow.appendChild(explainBtn);
     runRow.appendChild(bookmarkBtn);
     runRow.appendChild(status);
     body.appendChild(runRow);
 
     const errorPanel = doc.createElement('div');
+    // role=alert so screen readers announce query/plan errors inline as they appear.
+    errorPanel.setAttribute('role', 'alert');
     errorPanel.style.cssText =
       'display: none; border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
     body.appendChild(errorPanel);
@@ -600,6 +678,16 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     resultsWrap.style.cssText =
       'border: 1px solid #d8dde6; border-radius: 4px; overflow: auto; max-height: 360px; display: none;';
     body.appendChild(resultsWrap);
+
+    // Query-plan (Explain) results — its own scrollable, keyboard-reachable
+    // region so it never clobbers the record table.
+    const explainWrap = doc.createElement('div');
+    explainWrap.tabIndex = 0;
+    explainWrap.setAttribute('role', 'region');
+    explainWrap.setAttribute('aria-label', 'SOQL query plan');
+    explainWrap.style.cssText =
+      'border: 1px solid #d8dde6; border-radius: 4px; overflow: auto; max-height: 360px; display: none;';
+    body.appendChild(explainWrap);
 
     const footer = doc.createElement('div');
     footer.style.cssText = 'display: flex; gap: 8px; align-items: center;';
@@ -653,6 +741,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       errorPanel.textContent = message;
       errorPanel.style.display = 'block';
       resultsWrap.style.display = 'none';
+      explainWrap.style.display = 'none';
       loadMoreBtn.style.display = 'none';
       copyCsvBtn.style.display = 'none';
       exportCsvBtn.style.display = 'none';
@@ -893,6 +982,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         return;
       }
       clearError();
+      explainWrap.style.display = 'none';
       runBtn.disabled = true;
       status.textContent = 'Running…';
       const t0 = Date.now();
@@ -945,6 +1035,82 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         showError(err instanceof Error ? err.message : String(err));
       } finally {
         loadMoreBtn.disabled = false;
+      }
+    }
+
+    function renderExplain(rows: ExplainPlanRow[]): void {
+      while (explainWrap.firstChild) explainWrap.removeChild(explainWrap.firstChild);
+      if (rows.length === 0) {
+        const empty = doc.createElement('div');
+        empty.style.cssText = 'padding: 12px; color: #80868d; font-size: 13px;';
+        empty.textContent = 'No query plan returned.';
+        explainWrap.appendChild(empty);
+        explainWrap.style.display = 'block';
+        return;
+      }
+      const cols: { key: keyof ExplainPlanRow; label: string }[] = [
+        { key: 'leadingOperationType', label: 'Leading Operation' },
+        { key: 'relativeCost', label: 'Relative Cost' },
+        { key: 'cardinality', label: 'Cardinality' },
+        { key: 'sobjectCardinality', label: 'SObject Cardinality' },
+        { key: 'sobjectType', label: 'SObject' },
+        { key: 'notes', label: 'Notes' },
+      ];
+      const table = doc.createElement('table');
+      table.style.cssText = 'border-collapse: collapse; width: 100%; font-size: 12px;';
+      const thead = doc.createElement('thead');
+      const headRow = doc.createElement('tr');
+      for (const c of cols) {
+        const th = doc.createElement('th');
+        th.textContent = c.label;
+        th.style.cssText =
+          'text-align: left; padding: 6px 10px; border-bottom: 1px solid #d8dde6; background: #fafaf9; position: sticky; top: 0;';
+        headRow.appendChild(th);
+      }
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+      const tbody = doc.createElement('tbody');
+      for (const row of rows) {
+        const tr = doc.createElement('tr');
+        for (const c of cols) {
+          const td = doc.createElement('td');
+          td.textContent = row[c.key];
+          td.style.cssText = 'padding: 6px 10px; border-bottom: 1px solid #f3f3f3; vertical-align: top;';
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      explainWrap.appendChild(table);
+      explainWrap.style.display = 'block';
+    }
+
+    async function explain(): Promise<void> {
+      const soql = textarea.value.trim();
+      if (!soql) {
+        showError('Enter a SOQL query to explain.');
+        return;
+      }
+      clearError();
+      explainBtn.disabled = true;
+      status.textContent = 'Explaining…';
+      const t0 = Date.now();
+      try {
+        const resp = await explainQuery(api, soql, mode);
+        const rows = explainPlansToRows(resp);
+        const elapsed = Date.now() - t0;
+        status.textContent = `⏱ ${elapsed} ms · query plan (${rows.length} plan${
+          rows.length === 1 ? '' : 's'
+        })`;
+        renderExplain(rows);
+      } catch (err) {
+        // Non-explainable queries (SOSL/GraphQL) and API errors land here — kept
+        // inline in the error panel, never thrown as an uncaught toast.
+        explainWrap.style.display = 'none';
+        showError(err instanceof Error ? err.message : String(err));
+        status.textContent = '';
+      } finally {
+        explainBtn.disabled = false;
       }
     }
 
@@ -1538,6 +1704,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     }
 
     runBtn.addEventListener('click', () => void execute());
+    explainBtn.addEventListener('click', () => void explain());
     loadMoreBtn.addEventListener('click', () => void loadMore());
     
     // Wire up autocomplete events
@@ -1645,6 +1812,8 @@ export function _soqlRunnerTestApi() {
     deleteSavedQuery,
     DescribeCache,
     runQuery,
+    explainQuery,
+    explainPlansToRows,
     HISTORY_CAP,
     PAGE_CAP,
   };
