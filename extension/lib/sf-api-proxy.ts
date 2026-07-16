@@ -49,6 +49,21 @@ export interface SfApiFetchFailure {
 
 export type SfApiFetchResponse = SfApiFetchSuccess | SfApiFetchFailure;
 
+// Cached resolution result for one page host. Holds NO sid — only the resolved
+// API base URL and the (non-secret) org id used to detect an org switch.
+export interface SessionCacheEntry {
+  baseUrl: string;
+  orgId: string;
+}
+
+// Worker-only per-host cache (chrome.storage.session, injected). See
+// lib/sf-session-cache.ts.
+export interface SessionCache {
+  get(host: string): Promise<SessionCacheEntry | null>;
+  set(host: string, entry: SessionCacheEntry): Promise<void>;
+  delete(host: string): Promise<void>;
+}
+
 export interface SfApiProxyDeps {
   fetchImpl: typeof fetch;
   // Returns the raw `sid` cookie value for a base URL, or null. The caller is
@@ -59,6 +74,41 @@ export interface SfApiProxyDeps {
   // validated against the allowlist. Used only when the request omits
   // targetOrigin.
   senderOrigin?: string | null;
+  // Optional per-host session-resolution cache (chrome.storage.session). When
+  // present, a resolved base URL is remembered per page host so repeat calls
+  // read a single cookie instead of scanning every candidate domain.
+  cache?: SessionCache;
+}
+
+// Salesforce sid cookies are `<OrgId(15)>!<sessionKey>`. The prefix before the
+// first `!` is the org id — non-secret (it appears in URLs) and stable per org.
+// Used to cross-match a sid against a candidate base domain: a candidate whose
+// cookie carries a DIFFERENT org id belongs to another org the user is also
+// logged into, and must not be used to authenticate this org's request.
+export function orgIdFromSid(sid: string): string | null {
+  const bang = sid.indexOf('!');
+  return bang > 0 ? sid.slice(0, bang) : null;
+}
+
+// SID-prefix (Org ID) cross-matching across candidate base domains. Keeps only
+// the candidates whose sid shares the page origin's org id — this is what
+// resolves the true instance on exotic domains (mcas / gov / cn) where the
+// naive host guess could point at a stale cross-org cookie. A candidate whose
+// sid has no parseable org id is kept (best-effort); if the reference origin
+// itself has no usable org id, no filtering is applied.
+export function crossMatchByOrgId(
+  baseUrls: string[],
+  sids: Map<string, string>,
+  referenceBaseUrl: string,
+): string[] {
+  const withSid = baseUrls.filter((u) => sids.has(u));
+  const refSid = sids.get(referenceBaseUrl);
+  const refOrg = refSid ? orgIdFromSid(refSid) : null;
+  if (!refOrg) return withSid;
+  return withSid.filter((u) => {
+    const org = orgIdFromSid(sids.get(u)!);
+    return org === null || org === refOrg;
+  });
 }
 
 function maybeDecodeSid(sid: string): string {
@@ -92,7 +142,7 @@ function injectSoapSid(body: string, sentinel: string, sid: string): string {
   return body.replace(pattern, `$1${sid}$2`);
 }
 
-function deriveBaseUrls(originStr: string): string[] {
+export function deriveBaseUrls(originStr: string): string[] {
   const url = new URL(originStr);
   const mySf = mySalesforceHostname(url.hostname);
   const mySfOrigin = mySf ? `https://${mySf}` : null;
@@ -160,10 +210,20 @@ async function runOnce(
   return { ok: false, errors };
 }
 
+function isPure401(errors: SfApiFetchFailure['errors']): boolean {
+  return errors.length > 0 && errors.every((e) => e.status === 401);
+}
+
 // Executes a Salesforce REST/Tooling/SOAP call from the worker. Never returns
-// the sid. On all-candidate 401 (and no other error) it clears its per-request
-// sids, refetches the cookie, and retries exactly once — mirroring the old
-// client's 401 policy.
+// the sid. Resolution order:
+//   1. Fast path — a cached, org-id-verified base URL for this page host reads a
+//      single cookie and runs directly.
+//   2. Full resolution — expand candidate base domains, read each candidate's
+//      sid, cross-match by org id, then run against the surviving candidates.
+// On all-candidate 401 (and no other error) it clears its per-request sids,
+// refetches the cookie, and retries exactly once — mirroring the old client's
+// 401 policy. A pure-401 outcome also invalidates the session cache so the next
+// call re-resolves; the page-side client surfaces the 401 as a toast.
 export async function sfApiFetch(
   req: SfApiFetchRequest,
   deps: SfApiProxyDeps,
@@ -173,6 +233,40 @@ export async function sfApiFetch(
   }
 
   const originStr = req.targetOrigin ?? deps.senderOrigin ?? '';
+  let pageOrigin: string;
+  let pageHost: string;
+  try {
+    const url = new URL(originStr);
+    pageOrigin = url.origin;
+    pageHost = url.hostname;
+  } catch {
+    return { ok: false, errors: [] };
+  }
+
+  // 1. Fast path: a previously resolved base URL for this page host.
+  if (deps.cache) {
+    const cached = await deps.cache.get(pageHost);
+    if (cached) {
+      const sids = await fetchSids([cached.baseUrl], deps.cookieGet);
+      const sid = sids.get(cached.baseUrl);
+      if (sid && orgIdFromSid(sid) === cached.orgId) {
+        const result = await runOnce([cached.baseUrl], sids, req, deps.fetchImpl);
+        if (result.ok) return result;
+        // A 401 on the cached host means the session went stale — drop the entry
+        // and re-resolve below. Any other error is a genuine API error; return it.
+        if (isPure401(result.errors)) {
+          await deps.cache.delete(pageHost);
+        } else {
+          return result;
+        }
+      } else {
+        // Cookie gone or the user switched orgs on this host — stale entry.
+        await deps.cache.delete(pageHost);
+      }
+    }
+  }
+
+  // 2. Full resolution.
   let baseUrls: string[];
   try {
     baseUrls = deriveBaseUrls(originStr);
@@ -184,14 +278,30 @@ export async function sfApiFetch(
   let sids = await fetchSids(baseUrls, deps.cookieGet);
   if (sids.size === 0) return { ok: false, errors: [] };
 
-  let result = await runOnce(baseUrls, sids, req, deps.fetchImpl);
+  const candidates = crossMatchByOrgId(baseUrls, sids, pageOrigin);
+  if (candidates.length === 0) return { ok: false, errors: [] };
+
+  let result = await runOnce(candidates, sids, req, deps.fetchImpl);
   if (!result.ok) {
     const has401 = result.errors.some((e) => e.status === 401);
     const hasNon401 = result.errors.some((e) => e.status >= 400 && e.status !== 401);
     if (has401 && !hasNon401) {
-      sids = await fetchSids(baseUrls, deps.cookieGet);
-      if (sids.size === 0) return result;
-      result = await runOnce(baseUrls, sids, req, deps.fetchImpl);
+      sids = await fetchSids(candidates, deps.cookieGet);
+      if (sids.size === 0) {
+        if (deps.cache) await deps.cache.delete(pageHost);
+        return result;
+      }
+      result = await runOnce(candidates, sids, req, deps.fetchImpl);
+    }
+  }
+
+  if (deps.cache) {
+    if (result.ok) {
+      const sid = sids.get(result.baseUrl);
+      const orgId = sid ? orgIdFromSid(sid) : null;
+      if (orgId) await deps.cache.set(pageHost, { baseUrl: result.baseUrl, orgId });
+    } else {
+      await deps.cache.delete(pageHost);
     }
   }
   return result;

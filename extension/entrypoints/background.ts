@@ -2,7 +2,14 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { dedupeOrgs } from '../lib/org-list.js';
 import { planCommand } from '../lib/commands.js';
 import { sfApiFetch } from '../lib/sf-api-proxy.js';
+import { createSessionCache } from '../lib/sf-session-cache.js';
 import { handleStreamPort } from '../lib/sf-stream-worker.js';
+
+// Per-host session-resolution cache. Backed by chrome.storage.session (NOT
+// chrome.storage.local): memory-only, cleared when the browser closes, and at
+// its default TRUSTED_CONTEXTS access level invisible to content scripts. It
+// stores only the resolved API base URL + org id — never the sid.
+const sessionCache = createSessionCache(chrome.storage.session);
 
 // Only the extension's own content scripts may invoke privileged actions.
 // chrome.runtime.id is the canonical id of THIS extension at runtime — a
@@ -23,6 +30,12 @@ const SALESFORCE_HOST_SUFFIXES = [
   '.lightning.force.com',
   '.force.com',
   '.visualforce.com',
+  // P0-5 host coverage (ledgered): US gov-cloud (GovCloud), China (Alibaba-
+  // operated), and Microsoft Defender for Cloud Apps reverse-proxied sessions.
+  '.my.salesforce.mil',
+  '.lightning.force.mil',
+  '.sfcrmapps.cn',
+  '.mcas.ms',
 ] as const;
 
 function isAllowedCookieUrl(url: string): boolean {
@@ -207,6 +220,7 @@ export default defineBackground(() => {
                 fetchImpl: fetch,
                 cookieGet: readSidCookie,
                 senderOrigin: resolveSenderOrigin(sender),
+                cache: sessionCache,
               },
             );
           }

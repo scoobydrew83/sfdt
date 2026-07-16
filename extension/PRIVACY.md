@@ -58,6 +58,8 @@ The SOQL Query Runner, Org Limits, REST API Explorer, Inspect Record, and Show A
 
 The Workspace org picker and the Switch Org feature read your existing Salesforce session cookies to list the orgs you're already logged in to, so you can target a tool at the org you choose. Only the org hostnames are used (to label and select an org); cookie values are never displayed and never leave your device. The Org Health panel reads the CLI's local audit/monitor snapshots through the same `http://127.0.0.1:7654` bridge described below.
 
+To reach the API of the org you're viewing — including orgs served through Microsoft Defender (`.mcas.ms`) proxies, US GovCloud (`.mil`), or Salesforce China (`.sfcrmapps.cn`) — the background worker resolves the correct instance host and remembers it per host in memory-only session storage (`chrome.storage.session`, cleared when the browser closes). This cache stores only the resolved hostname and org id; it never stores the session cookie. In an incognito window the extension keeps a **separate** session (`incognito: "split"`), so incognito and normal browsing never share resolved sessions.
+
 When you use a feature that calls the local bridge (e.g. "Deploy this Flow"), the extension sends the Flow's developer name (e.g. `My_Flow`) to `http://127.0.0.1:7654` so the local sfdt CLI on your machine can run the deploy. The data goes from your browser to a process running on the same machine — it never leaves your device.
 
 ---
@@ -72,6 +74,9 @@ The extension manifest requests the following permissions. Each is used for the 
 | `clipboardWrite` | Copy generated output to your clipboard on demand — e.g. the Flow Health Check report, SOQL results, the object schema for prompts, and the Copy-JSON actions on the Org Limits / Org Health panels |
 | `cookies` | Detect which Salesforce orgs you're logged in to by reading your existing Salesforce session cookies, so the Workspace org picker / Switch Org can target the org you choose. Cookies are read locally and never transmitted off your device. |
 | `host_permissions: https://*.salesforce.com/*, https://*.salesforce-setup.com/*, https://*.my.salesforce.com/*, https://*.lightning.force.com/*` | Run feature scripts and call the Tooling/REST APIs on Salesforce pages of your logged-in org |
+| `host_permissions: https://*.my.salesforce.mil/*, https://*.lightning.force.mil/*` | Same support for **US Government Cloud (GovCloud)** orgs, which serve on the `.mil` top-level domain. Only the `sid` cookie of these hosts is read, locally, to resolve the org's API session — never transmitted off your device. |
+| `host_permissions: https://*.sfcrmapps.cn/*` | Same support for **Salesforce China** orgs (operated in-country on the `.sfcrmapps.cn` domain). Session resolution only; nothing leaves your device. |
+| `host_permissions: https://*.mcas.ms/*` | Same support when your org is fronted by a **Microsoft Defender for Cloud Apps** reverse proxy (the `.mcas.ms` domain). The proxied session's `sid` cookie is read locally to authenticate API calls back through the proxy; it never leaves your device. |
 | `host_permissions: http://localhost/*, http://127.0.0.1/*` | Talk to the local sfdt CLI bridge running on your own machine (default port 7654); inactive until you start the bridge yourself |
 
 ---
