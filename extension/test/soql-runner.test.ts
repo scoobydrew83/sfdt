@@ -16,6 +16,8 @@ const {
   columnsFromRecords,
   formatCell,
   recordsToCsv,
+  recordsToJson,
+  recordsToTsv,
   generateLangGraphNode,
   HISTORY_CAP,
   readSavedQueries,
@@ -120,6 +122,74 @@ describe('soql-runner — pure helpers', () => {
         { Name: 'A, B', Notes: 'has "quotes"', Body: 'line1\nline2' },
       ]);
       expect(csv).toBe('Name,Notes,Body\n"A, B","has ""quotes""","line1\nline2"');
+    });
+  });
+
+  describe('recordsToJson', () => {
+    it('returns an empty array for no records', () => {
+      expect(recordsToJson([])).toBe('[]');
+      expect(() => JSON.parse(recordsToJson([]))).not.toThrow();
+    });
+
+    it('pretty-prints the records array (2-space indent) and stays valid JSON', () => {
+      const json = recordsToJson([
+        { Id: '1', Name: 'Acme' },
+        { Id: '2', Name: 'Universal' },
+      ]);
+      expect(json).toBe(
+        '[\n  {\n    "Id": "1",\n    "Name": "Acme"\n  },\n  {\n    "Id": "2",\n    "Name": "Universal"\n  }\n]',
+      );
+      expect(JSON.parse(json)).toEqual([
+        { Id: '1', Name: 'Acme' },
+        { Id: '2', Name: 'Universal' },
+      ]);
+    });
+
+    it('drops the Salesforce `attributes` envelope but keeps nested structure', () => {
+      const json = recordsToJson([
+        {
+          attributes: { type: 'Account', url: '/x' },
+          Name: 'Acme',
+          Owner: { Name: 'Rep' },
+        },
+      ]);
+      expect(JSON.parse(json)).toEqual([{ Name: 'Acme', Owner: { Name: 'Rep' } }]);
+    });
+
+    it('produces valid JSON when values contain quotes, tabs, and newlines', () => {
+      const json = recordsToJson([
+        { Notes: 'has "quotes"\tand a tab', Body: 'line1\nline2' },
+      ]);
+      // Round-trips losslessly — the delimiters do not corrupt the output.
+      expect(JSON.parse(json)).toEqual([
+        { Notes: 'has "quotes"\tand a tab', Body: 'line1\nline2' },
+      ]);
+    });
+  });
+
+  describe('recordsToTsv', () => {
+    it('returns empty string for no records', () => {
+      expect(recordsToTsv([])).toBe('');
+    });
+
+    it('produces a tab-delimited header row + data rows', () => {
+      const tsv = recordsToTsv([
+        { Id: '1', Name: 'Acme' },
+        { Id: '2', Name: 'Universal' },
+      ]);
+      expect(tsv).toBe('Id\tName\n1\tAcme\n2\tUniversal');
+    });
+
+    it('quotes/escapes values containing tabs, newlines, and quotes so columns do not break', () => {
+      const tsv = recordsToTsv([
+        { Name: 'A\tB', Notes: 'has "quotes"', Body: 'line1\nline2' },
+      ]);
+      expect(tsv).toBe('Name\tNotes\tBody\n"A\tB"\t"has ""quotes"""\t"line1\nline2"');
+    });
+
+    it('leaves comma-containing values unquoted (TSV, not CSV)', () => {
+      const tsv = recordsToTsv([{ Name: 'A, B' }]);
+      expect(tsv).toBe('Name\nA, B');
     });
   });
 
