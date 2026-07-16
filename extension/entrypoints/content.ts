@@ -17,6 +17,7 @@ import { showToast } from '../ui/toast.js';
 import { ensureTokens } from '../lib/tokens.js';
 import { watchTheme } from '../lib/theme.js';
 import { FEATURE_ICONS } from '../lib/feature-icons.js';
+import { enabledFeatureIds } from '../lib/palette-sources.js';
 import { createAiAssistantFeature } from '../features/ai-assistant.js';
 import { createApiNameGeneratorFeature } from '../features/api-name-generator.js';
 import { createCanvasSearchFeature } from '../features/canvas-search.js';
@@ -211,15 +212,19 @@ export default defineContentScript({
     const OPEN_WORKSPACE_ID = '__open-workspace__';
 
     const menuItemsProvider = (): MenuItem[] => {
-      const available = getAvailableFeatures();
       // Always offer the Workspace first — it works on any Salesforce page.
       const items: MenuItem[] = [
         { featureId: OPEN_WORKSPACE_ID, icon: '↗', label: 'Open Workspace ↗' },
       ];
-      for (const featureId of available) {
-        if (!registry.has(featureId)) continue;
-        if (disabledRemote.has(featureId)) continue;
-        if (!isFeatureEnabled(currentSettings, featureId)) continue;
+      // Same enabled-for-context filter the command palette uses (AC-3), factored
+      // into lib/palette-sources so the two surfaces can't drift.
+      const enabled = enabledFeatureIds({
+        available: getAvailableFeatures(),
+        isRegistered: (id) => registry.has(id),
+        disabledRemote,
+        isEnabled: (id) => isFeatureEnabled(currentSettings, id),
+      });
+      for (const featureId of enabled) {
         const entry = ICONS[featureId];
         if (!entry) continue;
         items.push({ featureId, icon: entry.icon, label: entry.label });
