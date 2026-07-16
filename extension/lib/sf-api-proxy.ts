@@ -243,7 +243,16 @@ export async function sfApiFetch(
     return { ok: false, errors: [] };
   }
 
-  // 1. Fast path: a previously resolved base URL for this page host.
+  // 1. Fast path: a previously resolved base URL for this page host. On ANY
+  // failure we fall through to full resolution so the OTHER derived candidates
+  // are tried (the cached host being down must never be less resilient than an
+  // uncached call). We remember the host we just tried (to exclude it from the
+  // re-resolution) and the failure itself (to return verbatim if no alternates
+  // exist — avoids a redundant re-fetch of the same failing host). A 401 also
+  // means the cached session is stale, so we drop the entry; other errors leave
+  // it intact (the host may recover) but still fall through for THIS request.
+  let excludeBaseUrl: string | null = null;
+  let fastPathFailure: SfApiFetchFailure | null = null;
   if (deps.cache) {
     const cached = await deps.cache.get(pageHost);
     if (cached) {
@@ -252,13 +261,9 @@ export async function sfApiFetch(
       if (sid && orgIdFromSid(sid) === cached.orgId) {
         const result = await runOnce([cached.baseUrl], sids, req, deps.fetchImpl);
         if (result.ok) return result;
-        // A 401 on the cached host means the session went stale — drop the entry
-        // and re-resolve below. Any other error is a genuine API error; return it.
-        if (isPure401(result.errors)) {
-          await deps.cache.delete(pageHost);
-        } else {
-          return result;
-        }
+        excludeBaseUrl = cached.baseUrl;
+        fastPathFailure = result;
+        if (isPure401(result.errors)) await deps.cache.delete(pageHost);
       } else {
         // Cookie gone or the user switched orgs on this host — stale entry.
         await deps.cache.delete(pageHost);
@@ -266,20 +271,23 @@ export async function sfApiFetch(
     }
   }
 
-  // 2. Full resolution.
+  // 2. Full resolution — over the candidates NOT already tried by the fast path.
   let baseUrls: string[];
   try {
     baseUrls = deriveBaseUrls(originStr);
   } catch {
-    return { ok: false, errors: [] };
+    return fastPathFailure ?? { ok: false, errors: [] };
   }
-  if (baseUrls.length === 0) return { ok: false, errors: [] };
+  if (excludeBaseUrl) baseUrls = baseUrls.filter((u) => u !== excludeBaseUrl);
+  // No other candidate to try (e.g. a single-host family like .mcas.ms): return
+  // the fast-path failure rather than re-fetching the same host.
+  if (baseUrls.length === 0) return fastPathFailure ?? { ok: false, errors: [] };
 
   let sids = await fetchSids(baseUrls, deps.cookieGet);
-  if (sids.size === 0) return { ok: false, errors: [] };
+  if (sids.size === 0) return fastPathFailure ?? { ok: false, errors: [] };
 
   const candidates = crossMatchByOrgId(baseUrls, sids, pageOrigin);
-  if (candidates.length === 0) return { ok: false, errors: [] };
+  if (candidates.length === 0) return fastPathFailure ?? { ok: false, errors: [] };
 
   let result = await runOnce(candidates, sids, req, deps.fetchImpl);
   if (!result.ok) {
@@ -295,14 +303,12 @@ export async function sfApiFetch(
     }
   }
 
-  if (deps.cache) {
-    if (result.ok) {
-      const sid = sids.get(result.baseUrl);
-      const orgId = sid ? orgIdFromSid(sid) : null;
-      if (orgId) await deps.cache.set(pageHost, { baseUrl: result.baseUrl, orgId });
-    } else {
-      await deps.cache.delete(pageHost);
-    }
+  if (deps.cache && result.ok) {
+    const sid = sids.get(result.baseUrl);
+    const orgId = sid ? orgIdFromSid(sid) : null;
+    if (orgId) await deps.cache.set(pageHost, { baseUrl: result.baseUrl, orgId });
   }
+  // Non-401 failures leave any existing cache entry intact (handled above); a
+  // stale/401 entry was already deleted, so there is nothing more to clear here.
   return result;
 }

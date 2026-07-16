@@ -136,9 +136,9 @@ function makeDeps(
   cookies: Record<string, string | null>,
   routes: Record<string, { status: number; body: string }>,
   cache?: SessionCache,
-): SfApiProxyDeps & { cookieSpy: ReturnType<typeof vi.fn> } {
+): SfApiProxyDeps & { cookieSpy: ReturnType<typeof vi.fn>; fetchSpy: ReturnType<typeof vi.fn> } {
   const cookieSpy = vi.fn(async (url: string) => cookies[url] ?? null);
-  const fetchImpl = (async (url: string | URL) => {
+  const fetchSpy = vi.fn(async (url: string | URL) => {
     const key = typeof url === 'string' ? url : url.toString();
     for (const [prefix, r] of Object.entries(routes)) {
       if (key.startsWith(prefix)) {
@@ -154,8 +154,8 @@ function makeDeps(
       }
     }
     throw new Error(`no route for ${key}`);
-  }) as typeof fetch;
-  return { fetchImpl, cookieGet: cookieSpy, cookieSpy, cache };
+  });
+  return { fetchImpl: fetchSpy as unknown as typeof fetch, cookieGet: cookieSpy, cookieSpy, fetchSpy, cache };
 }
 
 const ORIGIN = 'https://acme.lightning.force.com';
@@ -247,6 +247,67 @@ describe('sfApiFetch session cache (AC2)', () => {
     const resp = await sfApiFetch(REQ, deps);
     expect(resp.ok).toBe(true);
     if (resp.ok) expect(resp.baseUrl).toBe(ORIGIN);
+  });
+
+  // FINDING 1: a non-401 error on the cached host must still fall through to the
+  // other derived candidates (caching must never reduce resiliency).
+  it('cached host returns 500 → falls through to a healthy alternate and succeeds', async () => {
+    const cache = memoryCache({ 'acme.lightning.force.com': { baseUrl: MY, orgId: '00DORG1' } });
+    const deps = makeDeps(
+      { [MY]: '00DORG1!secret', [ORIGIN]: '00DORG1!secret' },
+      {
+        [MY]: { status: 500, body: 'server error' },
+        [ORIGIN]: { status: 200, body: '{"records":[]}' },
+      },
+      cache,
+    );
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(true);
+    if (resp.ok) expect(resp.baseUrl).toBe(ORIGIN);
+  });
+
+  // FINDING 2: after a fast-path failure, full resolution must NOT re-fetch the
+  // just-tried cached host.
+  it('cached host 401 → invalidates cache, re-resolves WITHOUT re-fetching the cached host', async () => {
+    const cache = memoryCache({ 'acme.lightning.force.com': { baseUrl: MY, orgId: '00DORG1' } });
+    const deps = makeDeps(
+      { [MY]: '00DORG1!secret', [ORIGIN]: '00DORG1!secret' },
+      {
+        [MY]: { status: 401, body: 'unauthorized' },
+        [ORIGIN]: { status: 200, body: '{"records":[]}' },
+      },
+      cache,
+    );
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(true);
+    if (resp.ok) expect(resp.baseUrl).toBe(ORIGIN);
+    // MY was fetched exactly once (the fast path) — never re-fetched.
+    const myFetches = deps.fetchSpy.mock.calls.filter(([u]) => String(u).startsWith(MY));
+    expect(myFetches).toHaveLength(1);
+    // Cache re-resolved onto the working host.
+    expect(cache.store.get('acme.lightning.force.com')).toEqual({ baseUrl: ORIGIN, orgId: '00DORG1' });
+  });
+
+  // FINDING 2 edge: single-candidate family (.mcas.ms) — excluding the tried
+  // host leaves NO alternates, so return the fast-path error with exactly ONE
+  // fetch (no redundant re-fetch, no throw).
+  it('single-candidate .mcas.ms family: cached host 401 → one fetch, returns the error cleanly', async () => {
+    const MCAS = 'https://acme-my-salesforce-com.us.mcas.ms';
+    const MCAS_HOST = 'acme-my-salesforce-com.us.mcas.ms';
+    const cache = memoryCache({ [MCAS_HOST]: { baseUrl: MCAS, orgId: '00DORG1' } });
+    const deps = makeDeps(
+      { [MCAS]: '00DORG1!secret' },
+      { [MCAS]: { status: 401, body: 'unauthorized' } },
+      cache,
+    );
+    const resp = await sfApiFetch(
+      { kind: 'json', method: 'GET', endpoint: '/services/data', targetOrigin: MCAS },
+      deps,
+    );
+    expect(resp.ok).toBe(false);
+    if (!resp.ok) expect(resp.errors.some((e) => e.status === 401)).toBe(true);
+    // Exactly one fetch — the fast path — with no redundant second attempt.
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
 
