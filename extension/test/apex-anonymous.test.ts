@@ -16,6 +16,9 @@ const {
   HISTORY_CAP,
   DEBUG_LEVEL_DEVELOPER_NAME,
   buildDebugLevelLookup,
+  buildDebugLevelListQuery,
+  readSelectedDebugLevelId,
+  writeSelectedDebugLevelId,
   buildTraceFlagLookup,
   buildLatestApexLogLookup,
   debugLevelCreatePayload,
@@ -132,6 +135,25 @@ describe('apex-anonymous — log capture SOQL builders', () => {
     expect(q).toContain("LogUserId = '005000000000001'");
     expect(q).toContain('ORDER BY StartTime DESC');
     expect(q).toContain('LIMIT 1');
+  });
+
+  it('lists the org DebugLevels for the picker', () => {
+    const q = buildDebugLevelListQuery();
+    expect(q).toContain('FROM DebugLevel');
+    expect(q).toContain('DeveloperName');
+    expect(q).toContain('MasterLabel');
+    expect(q).toContain('ORDER BY DeveloperName');
+  });
+});
+
+describe('apex-anonymous — selected debug level persistence', () => {
+  it('returns empty when nothing is stored', async () => {
+    expect(await readSelectedDebugLevelId()).toBe('');
+  });
+
+  it('round-trips the picked DebugLevel id through storage', async () => {
+    await writeSelectedDebugLevelId('7dl000000000001');
+    expect(await readSelectedDebugLevelId()).toBe('7dl000000000001');
   });
 });
 
@@ -406,6 +428,45 @@ describe('apex-anonymous — execute with log capture', () => {
     await flush();
     expect(api.apiGetText).toHaveBeenCalledWith(expect.stringContaining('/ApexLog/07Lnew/Body'));
     expect(document.querySelector('.sfdt-view-overlay')?.textContent).toContain('USER_DEBUG|captured');
+  });
+
+  it('arms the trace flag with the picked DebugLevel from the picker', async () => {
+    // Persist a pick; the picker restores it from this list on open.
+    await writeSelectedDebugLevelId('7dlPICKED');
+    const api = fakeApi({
+      apiGet: vi.fn(async (endpoint: string) => {
+        if (endpoint.includes('userinfo')) return { user_id: '005xx0000000001' };
+        return okResult();
+      }) as unknown as SalesforceApiClient['apiGet'],
+      toolingQuery: vi.fn(async (soql: string) => {
+        if (soql.includes('ORDER BY DeveloperName')) {
+          return {
+            records: [{ Id: '7dlPICKED', DeveloperName: 'Picked', MasterLabel: 'Picked Level' }],
+            size: 1,
+            done: true,
+          };
+        }
+        if (soql.includes('FROM TraceFlag')) return { records: [], size: 0, done: true };
+        if (soql.includes('FROM ApexLog')) return { records: [{ Id: '07Lbaseline' }], size: 1, done: true };
+        return { records: [], size: 0, done: true };
+      }) as unknown as SalesforceApiClient['toolingQuery'],
+    });
+    const feature = createApexAnonymousFeature({ api });
+    await feature.onActivate?.();
+    await flush();
+    // The picker should have restored the persisted selection.
+    const select = document.querySelector<HTMLSelectElement>('.sfdt-view-overlay select')!;
+    expect(select.value).toBe('7dlPICKED');
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find(
+      (b) => b.textContent === 'Execute',
+    )!.click();
+    await flush();
+    // No active flag existed → a TraceFlag is created carrying the picked level.
+    expect(api.apiRequest).toHaveBeenCalledWith(
+      'POST',
+      expect.stringContaining('/TraceFlag'),
+      expect.objectContaining({ DebugLevelId: '7dlPICKED' }),
+    );
   });
 
   it('notes "could not identify user" when no identity is resolvable', async () => {
