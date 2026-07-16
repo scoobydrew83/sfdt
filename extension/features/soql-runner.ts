@@ -396,6 +396,40 @@ async function runQuery(
   return api.query<Record<string, unknown>>(soql);
 }
 
+// --- QUERY PLAN / EXPLAIN ---
+// Salesforce's query-plan endpoint is the same query resource with an
+// `?explain=<soql>` param instead of `?q=`; the Tooling variant lives under
+// /tooling/query. It returns one plan per candidate access path (the first is
+// the one the optimizer picks). Non-explainable queries (SOSL, aggregate-only,
+// malformed) return an HTTP error, which the caller surfaces inline.
+export interface QueryPlanNote {
+  description?: string;
+  tableEnumOrId?: string;
+  fields?: string[];
+}
+
+export interface QueryPlan {
+  cardinality?: number;
+  sobjectCardinality?: number;
+  leadingOperationType?: string;
+  relativeCost?: number;
+  sobjectType?: string;
+  notes?: QueryPlanNote[];
+}
+
+async function explainQuery(
+  api: SalesforceApiClient,
+  soql: string,
+  mode: ApiMode,
+): Promise<QueryPlan[]> {
+  const apiVersion = api.apiVersion;
+  const endpoint = mode === 'tooling'
+    ? `/services/data/${apiVersion}/tooling/query`
+    : `/services/data/${apiVersion}/query`;
+  const resp = await api.apiGet<{ plans?: QueryPlan[] }>(endpoint, { explain: soql });
+  return Array.isArray(resp?.plans) ? resp.plans : [];
+}
+
 export interface SoqlRunnerOptions {
   doc?: Document;
   win?: Window;
@@ -568,6 +602,11 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     runBtn.textContent = '▶ Run';
     runBtn.style.cssText =
       'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+    const explainBtn = doc.createElement('button');
+    explainBtn.textContent = '🔎 Explain';
+    explainBtn.title = 'Show the query plan (cost, cardinality, leading operation) without running the query';
+    explainBtn.style.cssText =
+      'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-text); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 13px;';
     const bookmarkBtn = doc.createElement('button');
     bookmarkBtn.textContent = '★ Save';
     bookmarkBtn.style.cssText =
@@ -587,14 +626,23 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const status = doc.createElement('span');
     status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     runRow.appendChild(runBtn);
+    runRow.appendChild(explainBtn);
     runRow.appendChild(bookmarkBtn);
     runRow.appendChild(status);
     body.appendChild(runRow);
 
     const errorPanel = doc.createElement('div');
+    errorPanel.setAttribute('role', 'alert');
     errorPanel.style.cssText =
       'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
     body.appendChild(errorPanel);
+
+    // Query-plan (EXPLAIN) output panel — separate from the results table so a
+    // plan and a result set don't clobber each other.
+    const explainPanel = doc.createElement('div');
+    explainPanel.style.cssText =
+      'display: none; border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 360px;';
+    body.appendChild(explainPanel);
 
     const resultsWrap = doc.createElement('div');
     resultsWrap.style.cssText =
@@ -653,6 +701,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       errorPanel.textContent = message;
       errorPanel.style.display = 'block';
       resultsWrap.style.display = 'none';
+      explainPanel.style.display = 'none';
       loadMoreBtn.style.display = 'none';
       copyCsvBtn.style.display = 'none';
       exportCsvBtn.style.display = 'none';
@@ -730,6 +779,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     }
 
     function renderResults(): void {
+      explainPanel.style.display = 'none';
       while (resultsWrap.firstChild) resultsWrap.removeChild(resultsWrap.firstChild);
       if (records.length === 0) {
         const empty = doc.createElement('div');
@@ -915,6 +965,90 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         status.textContent = '';
       } finally {
         runBtn.disabled = false;
+      }
+    }
+
+    function renderPlan(plans: QueryPlan[]): void {
+      while (explainPanel.firstChild) explainPanel.removeChild(explainPanel.firstChild);
+      resultsWrap.style.display = 'none';
+      if (plans.length === 0) {
+        const empty = doc.createElement('div');
+        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon); font-size: 13px;';
+        empty.textContent = 'No query plan returned.';
+        explainPanel.appendChild(empty);
+        explainPanel.style.display = 'block';
+        return;
+      }
+
+      const fmtNotes = (notes: QueryPlanNote[] | undefined): string => {
+        if (!Array.isArray(notes) || notes.length === 0) return '—';
+        return notes
+          .map((n) => n.description)
+          .filter((d): d is string => typeof d === 'string' && d.length > 0)
+          .join('\n') || '—';
+      };
+      const fmt = (v: unknown): string =>
+        v === null || v === undefined ? '—' : String(v);
+
+      plans.forEach((plan, i) => {
+        const heading = doc.createElement('div');
+        heading.style.cssText =
+          'padding: 8px 10px; font-weight: 600; font-size: 12px; color: var(--sfdt-color-text-strong); background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border);';
+        heading.textContent = plan.sobjectType
+          ? `Plan ${i + 1} · ${plan.sobjectType}${i === 0 ? ' (chosen)' : ''}`
+          : `Plan ${i + 1}${i === 0 ? ' (chosen)' : ''}`;
+        explainPanel.appendChild(heading);
+
+        const table = doc.createElement('table');
+        table.style.cssText = 'border-collapse: collapse; width: 100%; font-size: 12px;';
+        const rows: Array<[string, string]> = [
+          ['Cardinality', fmt(plan.cardinality)],
+          ['SObject cardinality', fmt(plan.sobjectCardinality)],
+          ['Leading operation', fmt(plan.leadingOperationType)],
+          ['Relative cost', fmt(plan.relativeCost)],
+          ['Notes', fmtNotes(plan.notes)],
+        ];
+        const tbody = doc.createElement('tbody');
+        for (const [label, value] of rows) {
+          const tr = doc.createElement('tr');
+          const th = doc.createElement('th');
+          th.scope = 'row';
+          th.textContent = label;
+          th.style.cssText =
+            'text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--sfdt-color-bg); color: var(--sfdt-color-text-weak); font-weight: 600; white-space: nowrap; vertical-align: top; width: 160px;';
+          const td = doc.createElement('td');
+          td.textContent = value;
+          td.style.cssText =
+            'padding: 6px 10px; border-bottom: 1px solid var(--sfdt-color-bg); color: var(--sfdt-color-text-strong); white-space: pre-wrap; vertical-align: top;';
+          tr.appendChild(th);
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        explainPanel.appendChild(table);
+      });
+      explainPanel.style.display = 'block';
+    }
+
+    async function explain(): Promise<void> {
+      const soql = textarea.value.trim();
+      if (!soql) {
+        showError('Enter a SOQL query to explain.');
+        return;
+      }
+      clearError();
+      explainBtn.disabled = true;
+      status.textContent = 'Explaining…';
+      const t0 = Date.now();
+      try {
+        const plans = await explainQuery(api, soql, mode);
+        renderPlan(plans);
+        status.textContent = `⏱ ${Date.now() - t0} ms · query plan`;
+      } catch (err) {
+        showError(err instanceof Error ? err.message : String(err));
+        status.textContent = '';
+      } finally {
+        explainBtn.disabled = false;
       }
     }
 
@@ -1538,6 +1672,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     }
 
     runBtn.addEventListener('click', () => void execute());
+    explainBtn.addEventListener('click', () => void explain());
     loadMoreBtn.addEventListener('click', () => void loadMore());
     
     // Wire up autocomplete events
@@ -1645,6 +1780,7 @@ export function _soqlRunnerTestApi() {
     deleteSavedQuery,
     DescribeCache,
     runQuery,
+    explainQuery,
     HISTORY_CAP,
     PAGE_CAP,
   };

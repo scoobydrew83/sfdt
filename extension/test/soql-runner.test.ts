@@ -24,6 +24,7 @@ const {
   deleteSavedQuery,
   DescribeCache,
   runQuery,
+  explainQuery,
 } = _soqlRunnerTestApi();
 
 function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
@@ -678,6 +679,128 @@ describe('soql-runner — runQuery extra branches', () => {
     await expect(
       runQuery(fakeApi({ apiRequest }), 'query { uiapi { x } }', 'rest'),
     ).rejects.toThrow('GraphQL query failed.');
+  });
+});
+
+describe('soql-runner — explainQuery request shape', () => {
+  it('hits the REST query endpoint with the explain param in rest mode', async () => {
+    const apiGet = vi.fn().mockResolvedValue({ plans: [] });
+    await explainQuery(fakeApi({ apiGet }), 'SELECT Id FROM Account', 'rest');
+    expect(apiGet).toHaveBeenCalledWith('/services/data/v62.0/query', {
+      explain: 'SELECT Id FROM Account',
+    });
+  });
+
+  it('hits the Tooling query endpoint with the explain param in tooling mode', async () => {
+    const apiGet = vi.fn().mockResolvedValue({ plans: [] });
+    await explainQuery(fakeApi({ apiGet }), 'SELECT Id FROM ApexClass', 'tooling');
+    expect(apiGet).toHaveBeenCalledWith('/services/data/v62.0/tooling/query', {
+      explain: 'SELECT Id FROM ApexClass',
+    });
+  });
+
+  it('returns the plans array and tolerates a missing plans key', async () => {
+    expect(
+      await explainQuery(fakeApi({ apiGet: vi.fn().mockResolvedValue({ plans: [{ relativeCost: 1 }] }) }), 'q', 'rest'),
+    ).toEqual([{ relativeCost: 1 }]);
+    expect(
+      await explainQuery(fakeApi({ apiGet: vi.fn().mockResolvedValue({}) }), 'q', 'rest'),
+    ).toEqual([]);
+  });
+});
+
+describe('soql-runner — Explain modal', () => {
+  function setSalesforceUrl(): void {
+    window.history.replaceState(
+      {},
+      '',
+      'https://x.lightning.force.com/lightning/setup/Flows/home',
+    );
+  }
+  async function flush(): Promise<void> {
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  function findButton(text: string): HTMLButtonElement | undefined {
+    return Array.from(document.querySelectorAll('button')).find((b) => b.textContent === text);
+  }
+
+  it('renders the query plan from a canned explain response', async () => {
+    setSalesforceUrl();
+    const api = fakeApi({
+      apiGet: vi.fn(async () => ({
+        plans: [
+          {
+            cardinality: 1,
+            sobjectCardinality: 42,
+            leadingOperationType: 'TableScan',
+            relativeCost: 2.8,
+            sobjectType: 'Account',
+            notes: [{ description: 'Not considering filter for optimization because unindexed' }],
+          },
+        ],
+      })) as unknown as SalesforceApiClient['apiGet'],
+    });
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id FROM Account';
+    findButton('🔎 Explain')?.click();
+    await flush();
+
+    expect(api.apiGet).toHaveBeenCalledWith('/services/data/v62.0/query', {
+      explain: 'SELECT Id FROM Account',
+    });
+    const rowLabels = Array.from(document.querySelectorAll('th[scope="row"]')).map((th) => th.textContent);
+    expect(rowLabels).toEqual([
+      'Cardinality',
+      'SObject cardinality',
+      'Leading operation',
+      'Relative cost',
+      'Notes',
+    ]);
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).toContain('TableScan');
+    expect(bodyText).toContain('2.8');
+    expect(bodyText).toContain('unindexed');
+    expect(bodyText).toContain('Account (chosen)');
+  });
+
+  it('surfaces a non-explainable query error inline via a role="alert" panel', async () => {
+    setSalesforceUrl();
+    const api = fakeApi({
+      apiGet: vi.fn(async () => {
+        throw new Error('Salesforce GET request failed (HTTP 400): explain not supported');
+      }) as unknown as SalesforceApiClient['apiGet'],
+    });
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'FIND {Acme} IN ALL FIELDS';
+    findButton('🔎 Explain')?.click();
+    await flush();
+
+    const alert = document.querySelector('[role="alert"]') as HTMLElement | null;
+    expect(alert).toBeTruthy();
+    expect(alert?.textContent).toContain('explain not supported');
+    // The error is inline, not a thrown toast.
+    expect(document.querySelector('.sfdt-toast')).toBeNull();
+    expect(document.querySelectorAll('table')).toHaveLength(0);
+  });
+
+  it('shows an error when explaining an empty query', async () => {
+    setSalesforceUrl();
+    const api = fakeApi();
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+    findButton('🔎 Explain')?.click();
+    await flush();
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      'Enter a SOQL query to explain.',
+    );
+    expect(api.apiGet).not.toHaveBeenCalled();
   });
 });
 
