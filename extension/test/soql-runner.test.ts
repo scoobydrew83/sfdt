@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   createSoqlRunnerFeature,
   _soqlRunnerTestApi,
@@ -523,6 +523,89 @@ describe('soql-runner — modal execution', () => {
 
     expect(api.queryMore).toHaveBeenCalledWith('/services/data/v62.0/query/01gxx-2000');
     expect(document.querySelectorAll('tbody tr')).toHaveLength(3);
+  });
+
+  // Interaction between "Export all" and the sibling Run/Explain/Load-more
+  // actions that share `status` and the result panels.
+  describe('Export-all concurrency', () => {
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const btn = (t: string) =>
+      Array.from(document.querySelectorAll('button')).find((b) => b.textContent === t);
+
+    let origCreate: typeof URL.createObjectURL;
+    let origRevoke: typeof URL.revokeObjectURL;
+    let createObjectURL: ReturnType<typeof vi.fn>;
+    beforeEach(() => {
+      origCreate = URL.createObjectURL;
+      origRevoke = URL.revokeObjectURL;
+      createObjectURL = vi.fn(() => 'blob:mock');
+      URL.createObjectURL = createObjectURL as unknown as typeof URL.createObjectURL;
+      URL.revokeObjectURL = vi.fn() as unknown as typeof URL.revokeObjectURL;
+    });
+    afterEach(() => {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+    });
+
+    // Runs one query (page 1, done:false) so the "Export all" button appears,
+    // then starts an export that stalls awaiting queryMore.
+    async function startStalledExport(release: { fn: (v: unknown) => void }) {
+      setSalesforceUrl();
+      const queryMore = vi.fn(
+        () => new Promise((res) => { release.fn = res as (v: unknown) => void; }),
+      );
+      const api = fakeApi({
+        query: vi.fn(async () => ({
+          totalSize: 3, done: false, nextRecordsUrl: '/next/1', records: [{ Id: '1' }],
+        })) as unknown as SalesforceApiClient['query'],
+        queryMore: queryMore as unknown as SalesforceApiClient['queryMore'],
+        apiGet: vi.fn(async () => ({ plans: [{ relativeCost: 0.5 }] })) as unknown as SalesforceApiClient['apiGet'],
+      });
+      const feature = createSoqlRunnerFeature({ api });
+      await feature.onActivate?.();
+      (document.querySelector('textarea') as HTMLTextAreaElement).value = 'SELECT Id FROM Account';
+      btn('▶ Run')!.click();
+      await tick(); await tick();
+      btn('Export all as CSV')!.click();
+      await tick(); await tick(); // page-1 resolves, onProgress fires, now stalled on queryMore
+      return api;
+    }
+
+    it('Explain aborts an in-flight export, hides Cancel, and the late export result cannot overwrite the plan status', async () => {
+      const release = { fn: (_: unknown) => {} };
+      await startStalledExport(release);
+
+      const cancelBtn = btn('Cancel')!;
+      expect(cancelBtn.style.display).not.toBe('none'); // visible while exporting
+
+      btn('🔎 Explain')!.click();
+      await tick(); await tick();
+
+      expect(cancelBtn.style.display).toBe('none'); // abortExport() hid it
+      const status = document.querySelector('[role="status"]') as HTMLElement;
+      expect(status.textContent).toContain('query plan');
+      const planStatus = status.textContent;
+
+      // Release the stalled export — it must stay silent (superseded).
+      release.fn({ done: true, records: [{ Id: '2' }] });
+      await tick(); await tick();
+      expect(status.textContent).toBe(planStatus); // export did NOT stomp the plan
+      expect(createObjectURL).not.toHaveBeenCalled(); // and produced no download
+    });
+
+    it('Cancel during a stalled page fetch produces no download', async () => {
+      const release = { fn: (_: unknown) => {} };
+      await startStalledExport(release);
+
+      btn('Cancel')!.click(); // abort while queryMore is still pending
+      await tick();
+      // Page fetch completes AFTER cancel (worker fetch can't be network-aborted).
+      release.fn({ done: true, records: [{ Id: '2' }] });
+      await tick(); await tick();
+
+      expect(createObjectURL).not.toHaveBeenCalled(); // canceled ⇒ no file
+      expect(btn('Cancel')!.style.display).toBe('none'); // UI reset
+    });
   });
 
   it('renders and updates autocomplete suggestions', async () => {

@@ -1131,6 +1131,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       copyCsvBtn.style.display = 'none';
       exportCsvBtn.style.display = 'none';
       exportAllBtn.style.display = 'none';
+      cancelExportBtn.style.display = 'none';
       copyJsonBtn.style.display = 'none';
       copyExcelBtn.style.display = 'none';
       langGraphBtn.style.display = 'none';
@@ -1200,6 +1201,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         showError('Enter a SOQL query to explain.');
         return;
       }
+      abortExport(); // Explain supersedes any in-flight export (shares status/panels)
       clearError();
       setBusy(true);
       status.textContent = 'Explaining…';
@@ -1893,6 +1895,14 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       status.textContent = 'Exporting all… fetching page 1';
       try {
         const first = await runQuery(api, soql, mode);
+        // The worker-proxied page-1 fetch can't be aborted mid-flight; guarantee
+        // the data-correctness half — a Cancel during page 1 yields NO download.
+        if (!owns()) return; // superseded by a new run/loadMore/explain — stay silent
+        if (controller.signal.aborted) {
+          showToast('Export canceled', { doc, kind: 'warning' });
+          status.textContent = prevStatus;
+          return;
+        }
         const result = await exportAllToCsv(api, first, {
           signal: controller.signal,
           onProgress: ({ pages, rows }) => {
