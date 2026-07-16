@@ -469,6 +469,47 @@ describe('apex-anonymous — execute with log capture', () => {
     );
   });
 
+  it('applies the persisted pick even when Execute fires before the picker finishes loading', async () => {
+    await writeSelectedDebugLevelId('7dlDEFER');
+    // Hold the picker's DebugLevel-list query open until we choose to release it,
+    // so Execute is triggered while populateDebugLevels() is still pending.
+    let releaseList!: (v: { records: unknown[]; size: number; done: boolean }) => void;
+    const listPromise = new Promise<{ records: unknown[]; size: number; done: boolean }>((res) => {
+      releaseList = res;
+    });
+    const api = fakeApi({
+      apiGet: vi.fn(async (endpoint: string) => {
+        if (endpoint.includes('userinfo')) return { user_id: '005xx0000000001' };
+        return okResult();
+      }) as unknown as SalesforceApiClient['apiGet'],
+      toolingQuery: vi.fn((soql: string) => {
+        if (soql.includes('ORDER BY DeveloperName')) return listPromise;
+        if (soql.includes('FROM TraceFlag')) return Promise.resolve({ records: [], size: 0, done: true });
+        if (soql.includes('FROM ApexLog')) return Promise.resolve({ records: [{ Id: '07Lbase' }], size: 1, done: true });
+        return Promise.resolve({ records: [], size: 0, done: true });
+      }) as unknown as SalesforceApiClient['toolingQuery'],
+    });
+    const feature = createApexAnonymousFeature({ api });
+    await feature.onActivate?.();
+    await flush(); // builds the DOM; the picker query is still pending.
+    const select = document.querySelector<HTMLSelectElement>('.sfdt-view-overlay select')!;
+    expect(select.value).toBe(''); // not yet restored
+    // Fire Execute before the picker resolves — execute() must await the restore.
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find(
+      (b) => b.textContent === 'Execute',
+    )!.click();
+    await flush();
+    // Now let the picker finish; the persisted pick lands and execute continues.
+    releaseList({ records: [{ Id: '7dlDEFER', DeveloperName: 'Deferred', MasterLabel: 'Deferred' }], size: 1, done: true });
+    await flush();
+    // The created TraceFlag must carry the PERSISTED level, not the '' auto fallback.
+    expect(api.apiRequest).toHaveBeenCalledWith(
+      'POST',
+      expect.stringContaining('/TraceFlag'),
+      expect.objectContaining({ DebugLevelId: '7dlDEFER' }),
+    );
+  });
+
   it('leaves an active flag untouched when its DebugLevel already matches the pick', async () => {
     await writeSelectedDebugLevelId('7dlMATCH');
     const api = fakeApi({

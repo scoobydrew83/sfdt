@@ -435,9 +435,13 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     toolbar.appendChild(runBtn);
     toolbar.appendChild(saveBtn);
     toolbar.appendChild(openLogBtn);
+    // Kick off population and hold the promise so execute() can await the
+    // persisted-pick restore before reading debugSelect.value — otherwise a fast
+    // Ctrl/Cmd+Enter would run with the still-default '' and lose the saved pick.
+    let debugReady: Promise<void> | null = null;
     if (config.captureLogs) {
       toolbar.appendChild(debugLabel);
-      void populateDebugLevels();
+      debugReady = populateDebugLevels();
     }
     toolbar.appendChild(hint);
     body.appendChild(toolbar);
@@ -493,6 +497,9 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       if (config.captureLogs) {
         status.textContent = 'Preparing debug log…';
         try {
+          // Ensure the persisted pick has been restored into the select before
+          // we read it (covers both the button and Ctrl/Cmd+Enter paths).
+          if (debugReady) await debugReady;
           userId = await getCurrentUserId();
           if (userId) {
             await ensureTraceFlag(userId, debugSelect.value || null);
