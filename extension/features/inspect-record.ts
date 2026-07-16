@@ -134,6 +134,24 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     searchRow.appendChild(inspectBtn);
     body.appendChild(searchRow);
 
+    // Fields / JSON view toggle (P1-7). Native <button>s in a tablist —
+    // keyboard-reachable, aria-selected kept in sync by applyViewMode().
+    const viewToggleRow = doc.createElement('div');
+    viewToggleRow.setAttribute('role', 'tablist');
+    viewToggleRow.setAttribute('aria-label', 'Record view mode');
+    viewToggleRow.style.cssText = 'display: none; gap: 4px; margin-top: 4px;';
+    const fieldsTab = doc.createElement('button');
+    fieldsTab.type = 'button';
+    fieldsTab.textContent = 'Fields';
+    fieldsTab.setAttribute('role', 'tab');
+    const jsonTab = doc.createElement('button');
+    jsonTab.type = 'button';
+    jsonTab.textContent = 'JSON';
+    jsonTab.setAttribute('role', 'tab');
+    viewToggleRow.appendChild(fieldsTab);
+    viewToggleRow.appendChild(jsonTab);
+    body.appendChild(viewToggleRow);
+
     const filterRow = doc.createElement('div');
     filterRow.style.cssText = 'display: none; justify-content: space-between; align-items: center; gap: 12px; margin-top: 4px;';
     const filterInput = doc.createElement('input');
@@ -153,6 +171,23 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     const tableContainer = doc.createElement('div');
     tableContainer.style.cssText = 'border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 50vh; display: none;';
     body.appendChild(tableContainer);
+
+    // Raw REST payload view (P1-7): pretty-printed JSON + copy button.
+    const jsonContainer = doc.createElement('div');
+    jsonContainer.style.cssText = 'display: none; flex-direction: column; gap: 8px;';
+    const jsonToolbar = doc.createElement('div');
+    jsonToolbar.style.cssText = 'display: flex; justify-content: flex-end;';
+    const copyJsonBtn = doc.createElement('button');
+    copyJsonBtn.type = 'button';
+    copyJsonBtn.textContent = 'Copy JSON';
+    copyJsonBtn.setAttribute('aria-label', 'Copy raw JSON payload to clipboard');
+    copyJsonBtn.style.cssText = 'padding: 5px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+    jsonToolbar.appendChild(copyJsonBtn);
+    const jsonPre = doc.createElement('pre');
+    jsonPre.style.cssText = 'margin: 0; padding: 12px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface-alt); color: var(--sfdt-color-text); font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.5; white-space: pre; overflow: auto; max-height: 50vh;';
+    jsonContainer.appendChild(jsonToolbar);
+    jsonContainer.appendChild(jsonPre);
+    body.appendChild(jsonContainer);
 
     const saveBar = doc.createElement('div');
     saveBar.style.cssText = 'display: none; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface-alt);';
@@ -181,7 +216,33 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     let activeSobjectName = '';
     let originalRecordData: Record<string, unknown> = {};
     let editedRecordData: Record<string, unknown> = {};
+    let rawRecordData: Record<string, unknown> = {};
     let activeDescribe: SObjectDescribe | null = null;
+    // Persisted for the lifetime of the open modal (checklist item on toggle state).
+    let viewMode: 'fields' | 'json' = 'fields';
+
+    const TAB_ACTIVE = 'padding: 5px 14px; border: 1px solid var(--sfdt-color-brand); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent);';
+    const TAB_INACTIVE = 'padding: 5px 14px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak);';
+
+    function renderJson(): void {
+      jsonPre.textContent = JSON.stringify(rawRecordData, null, 2);
+    }
+
+    function applyViewMode(): void {
+      const isJson = viewMode === 'json';
+      fieldsTab.style.cssText = isJson ? TAB_INACTIVE : TAB_ACTIVE;
+      jsonTab.style.cssText = isJson ? TAB_ACTIVE : TAB_INACTIVE;
+      fieldsTab.setAttribute('aria-selected', String(!isJson));
+      jsonTab.setAttribute('aria-selected', String(isJson));
+      filterRow.style.display = isJson ? 'none' : 'flex';
+      jsonContainer.style.display = isJson ? 'flex' : 'none';
+      if (isJson) {
+        tableContainer.style.display = 'none';
+        renderJson();
+      } else {
+        renderFields();
+      }
+    }
 
     function renderFields(): void {
       if (!activeDescribe) return;
@@ -391,6 +452,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           `/services/data/${apiVersion}/sobjects/${sobject}/${recordId}`
         );
 
+        rawRecordData = rawRecord;
         originalRecordData = {};
         editedRecordData = {};
         for (const field of describe.fields) {
@@ -405,8 +467,8 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         idSpan.textContent = `${sobject} · ${recordId}`;
         recordInfo.appendChild(idSpan);
         
-        filterRow.style.display = 'flex';
-        renderFields();
+        viewToggleRow.style.display = 'flex';
+        applyViewMode();
         updateSaveBarVisibility();
       } catch (err) {
         showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
@@ -430,6 +492,27 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
 
     filterInput.addEventListener('input', renderFields);
     showNullsCheckbox.addEventListener('change', renderFields);
+
+    fieldsTab.addEventListener('click', () => {
+      if (viewMode !== 'fields') {
+        viewMode = 'fields';
+        applyViewMode();
+      }
+    });
+    jsonTab.addEventListener('click', () => {
+      if (viewMode !== 'json') {
+        viewMode = 'json';
+        applyViewMode();
+      }
+    });
+    copyJsonBtn.addEventListener('click', async () => {
+      try {
+        await win.navigator.clipboard.writeText(jsonPre.textContent ?? '');
+        showToast('JSON copied to clipboard', { doc, kind: 'success' });
+      } catch {
+        showToast('Could not copy to clipboard', { doc, kind: 'error' });
+      }
+    });
 
     cancelChangesBtn.addEventListener('click', () => {
       editedRecordData = { ...originalRecordData };

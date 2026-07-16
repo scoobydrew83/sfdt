@@ -304,3 +304,117 @@ describe('inspect-record — UI activation & inspection', () => {
     expect(api.apiGet).not.toHaveBeenCalled();
   });
 });
+
+describe('inspect-record — Fields / JSON view toggle (P1-7)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  // Raw REST payload including the `attributes` envelope the API returns.
+  const RAW_RECORD = {
+    attributes: { type: 'Account', url: '/services/data/v62.0/sobjects/Account/001800000000001AAA' },
+    Id: '001800000000001AAA',
+    Name: 'Acme Test Corp',
+    Phone: '123-456-7890',
+  };
+  const PRETTY = JSON.stringify(RAW_RECORD, null, 2);
+
+  function makeApi(): SalesforceApiClient {
+    const apiGetMock = vi.fn(async (path: string): Promise<unknown> => {
+      if (path.includes('/sobjects/Account/describe')) {
+        return {
+          name: 'Account',
+          label: 'Account Label',
+          fields: [
+            { name: 'Id', label: 'Record ID', type: 'id', updateable: false, relationshipName: null, referenceTo: [] },
+            { name: 'Name', label: 'Account Name', type: 'string', updateable: true, relationshipName: null, referenceTo: [] },
+            { name: 'Phone', label: 'Phone Number', type: 'phone', updateable: true, relationshipName: null, referenceTo: [] },
+          ],
+        };
+      }
+      if (path.includes('/sobjects/Account/001800000000001AAA')) return RAW_RECORD;
+      if (path.includes('/sobjects/')) return { sobjects: [{ name: 'Account', label: 'Account', keyPrefix: '001' }] };
+      return {};
+    });
+    return fakeApi({ apiGet: apiGetMock as unknown as SalesforceApiClient['apiGet'] });
+  }
+
+  async function activateWithRecord(api: SalesforceApiClient) {
+    window.history.replaceState(
+      {},
+      '',
+      'https://x.lightning.force.com/lightning/r/Account/001800000000001AAA/view',
+    );
+    const feature = createInspectRecordFeature({ api });
+    await feature.onActivate?.();
+    await flush();
+    await flush();
+    await flush();
+  }
+
+  function tabByText(label: string): HTMLButtonElement {
+    return Array.from(document.querySelectorAll('[role="tab"]')).find(
+      (b) => b.textContent === label,
+    ) as HTMLButtonElement;
+  }
+
+  it('renders the raw REST payload pretty-printed when the JSON view is selected', async () => {
+    await activateWithRecord(makeApi());
+
+    // Fields view is the default; the JSON <pre> is not yet visible.
+    const jsonTab = tabByText('JSON');
+    expect(jsonTab).toBeTruthy();
+    expect(jsonTab.getAttribute('aria-selected')).toBe('false');
+
+    jsonTab.click();
+    await flush();
+
+    const pre = document.querySelector('pre') as HTMLPreElement;
+    expect(pre).toBeTruthy();
+    // Raw payload, pretty-printed (includes the attributes envelope).
+    expect(pre.textContent).toBe(PRETTY);
+    expect(pre.textContent).toContain('Acme Test Corp');
+    expect(pre.textContent).toContain('"attributes"');
+    expect(jsonTab.getAttribute('aria-selected')).toBe('true');
+    expect(tabByText('Fields').getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('copies the raw JSON payload to the clipboard', async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(window.navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+    await activateWithRecord(makeApi());
+    tabByText('JSON').click();
+    await flush();
+
+    const copyBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Copy JSON',
+    ) as HTMLButtonElement;
+    copyBtn.click();
+    await flush();
+
+    expect(writeText).toHaveBeenCalledWith(PRETTY);
+    expect(document.body.textContent).toContain('JSON copied to clipboard');
+  });
+
+  it('preserves the JSON view selection across a re-inspect', async () => {
+    const api = makeApi();
+    await activateWithRecord(api);
+
+    tabByText('JSON').click();
+    await flush();
+    expect(tabByText('JSON').getAttribute('aria-selected')).toBe('true');
+
+    // Re-run the inspection; the selected view must stay on JSON.
+    const inspectBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Inspect',
+    ) as HTMLButtonElement;
+    inspectBtn.click();
+    await flush();
+    await flush();
+    await flush();
+
+    expect(tabByText('JSON').getAttribute('aria-selected')).toBe('true');
+    expect(tabByText('Fields').getAttribute('aria-selected')).toBe('false');
+    const pre = document.querySelector('pre') as HTMLPreElement;
+    expect(pre.textContent).toBe(PRETTY);
+  });
+});
