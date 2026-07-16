@@ -88,17 +88,27 @@ function wordBoundaryScore(q: string, candidate: string): number | null {
   }
 
   let qi = 0;
-  let matched = 0;
-  for (const b of boundaries) {
-    if (qi >= q.length) break;
-    if (candidate.charAt(b).toLowerCase() === q.charAt(qi)) {
+  const matchedAt: number[] = []; // indices in `boundaries` consumed, in order
+  for (let bIdx = 0; bIdx < boundaries.length && qi < q.length; bIdx++) {
+    const b = boundaries[bIdx];
+    if (b !== undefined && candidate.charAt(b).toLowerCase() === q.charAt(qi)) {
+      matchedAt.push(bIdx);
       qi++;
-      matched++;
     }
   }
   if (qi < q.length) return null;
-  // Reward covering the query with fewer boundaries (a tight acronym).
-  return WORD_BOUNDARY_BASE + Math.min(matched * 10, 199);
+  // Reward a TIGHT acronym: matched boundaries that are consecutive in the
+  // boundary list (few intervening unmatched words), starting early. `skipped`
+  // is how many boundaries were passed over between the first and last match —
+  // 0 for a perfectly contiguous acronym ("fls" -> "Flow List Search"), growing
+  // as the same letters scatter across more words. Bonus stays in [0,199] so the
+  // word-boundary band (500..699) never overlaps the neighbouring tiers.
+  const first = matchedAt[0] ?? 0; // non-empty here: qi === q.length ≥ 1
+  const last = matchedAt[matchedAt.length - 1] ?? 0;
+  const skipped = last - first - (matchedAt.length - 1);
+  const contiguityBonus = Math.max(0, 100 - skipped * 12);
+  const earlyBonus = Math.max(0, 40 - first * 8);
+  return WORD_BOUNDARY_BASE + Math.min(contiguityBonus + earlyBonus, 199);
 }
 
 // Query chars appear in order anywhere in the candidate. Reward contiguous runs

@@ -89,7 +89,13 @@ describe('extension/lib/palette-sources — buildPaletteSources', () => {
   });
 
   it('routes a real record Id to an inspect candidate, at the top', () => {
-    const sections = buildPaletteSources({ ...base, recordIdHint: '001000000000001AAA' });
+    // inspect-record must be enabled for the record candidate to appear — it opens
+    // that feature, so it is gated like any other (base's gate() kill-switches it).
+    const sections = buildPaletteSources({
+      ...base,
+      gate: gate({ disabledRemote: new Set(), isEnabled: () => true }),
+      recordIdHint: '001000000000001AAA',
+    });
     const record = sectionFor(sections, 'record');
     expect(record?.candidates[0]?.action).toEqual({
       kind: 'inspect-record',
@@ -97,6 +103,13 @@ describe('extension/lib/palette-sources — buildPaletteSources', () => {
     });
     // Record section leads the non-recent sections.
     expect(sections[0]?.category).toBe('record');
+  });
+
+  it('suppresses the record candidate when inspect-record is kill-switched/disabled (AC-3)', () => {
+    // base's gate() kill-switches inspect-record; the record entry opens that same
+    // feature, so it must be gated too — not a kill-switch bypass.
+    const sections = buildPaletteSources({ ...base, recordIdHint: '001000000000001AAA' });
+    expect(sectionFor(sections, 'record')).toBeUndefined();
   });
 
   it('does not mint an inspect candidate for a non-record hint', () => {

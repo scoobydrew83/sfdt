@@ -110,9 +110,17 @@ const SECTION_ORDER: PaletteCategory[] = ['record', 'feature', 'setup', 'shortcu
  */
 export function buildPaletteSources(inputs: PaletteSourceInputs): PaletteSection[] {
   const pool: PaletteCandidate[] = [];
+  const enabledIds = enabledFeatureIds(inputs.gate);
 
   // Record (top when present): a single inspect candidate for a real record Id.
-  if (inputs.recordIdHint && isRecordId(inputs.recordIdHint)) {
+  // Gated on inspect-record being enabled-for-context (not kill-switched /
+  // user-disabled) — selecting it opens that feature, so it must respect the same
+  // gate as the Features section rather than bypass the kill-switch (AC-3).
+  if (
+    inputs.recordIdHint &&
+    isRecordId(inputs.recordIdHint) &&
+    enabledIds.includes('inspect-record')
+  ) {
     pool.push({
       id: `record:${inputs.recordIdHint}`,
       category: 'record',
@@ -124,7 +132,7 @@ export function buildPaletteSources(inputs: PaletteSourceInputs): PaletteSection
   }
 
   // Features: only the enabled-for-context set (AC-3), rendered via the icon map.
-  for (const featureId of enabledFeatureIds(inputs.gate)) {
+  for (const featureId of enabledIds) {
     const meta = inputs.featureIcons[featureId];
     if (!meta) continue;
     pool.push({

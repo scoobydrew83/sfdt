@@ -48,6 +48,16 @@ describe('extension/lib/fuzzy — fuzzyScore', () => {
   it('matches camelCase humps at word boundaries', () => {
     expect(fuzzyScore('ff', 'fooFlow')).not.toBeNull();
   });
+
+  it('ranks a tight acronym above the same letters scattered across more words', () => {
+    // "fbs" hits consecutive word boundaries in "Foo Bar Sample" but skips several
+    // words in the longer string — the tight match must score higher.
+    const tight = fuzzyScore('fbs', 'Foo Bar Sample')!;
+    const scattered = fuzzyScore('fbs', 'Foo AlphaX BetaY GammaZ Bar DeltaW Sample')!;
+    expect(tight).not.toBeNull();
+    expect(scattered).not.toBeNull();
+    expect(tight).toBeGreaterThan(scattered);
+  });
 });
 
 describe('extension/lib/fuzzy — fuzzyScoreFields', () => {
