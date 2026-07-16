@@ -1,6 +1,6 @@
 // Parity test for lib/feature-manifests.json — the browser-runtime-free,
 // checked-in source of truth for feature metadata. It instantiates every
-// feature exactly as the entrypoints do (entrypoints/content.ts registers 36;
+// feature exactly as the entrypoints do (entrypoints/content.ts registers 37;
 // entrypoints/app/main.ts additionally registers the 4 Workspace-only tools:
 // apex-test-runner + the three bridge tools; entrypoints/background.ts adds the
 // worker-backed context-menu-inspect) and asserts the collected manifests match
@@ -54,6 +54,7 @@ import { createSavedSoqlFeature } from '../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../features/org-switcher.js';
 import { createOrgReleaseBadgeFeature } from '../features/org-release-badge.js';
 import { createApiVersionAuditFeature } from '../features/api-version-audit.js';
+import { createCommandPaletteFeature } from '../features/command-palette.js';
 // --- Background/options-only feature (entrypoints/background.ts + options) ---
 import { createContextMenuInspectFeature } from '../features/context-menu-inspect.js';
 // --- Workspace-only factories (entrypoints/app/main.ts) ---
@@ -138,6 +139,9 @@ function instantiateAllFeatures(): Feature[] {
     createDebugLogViewerFeature(),
     createSavedSoqlFeature(),
     createOrgSwitcherFeature(),
+    // command-palette (P2-2): metadata-only overlay feature (no icon / side
+    // button); opened imperatively from content.ts, kill-switchable like any other.
+    createCommandPaletteFeature(),
     // context-menu-inspect (P1-8): a worker-backed feature — its "Inspect this
     // record" menu lives in entrypoints/background.ts and its toggle in the
     // options page; it injects no content-script UI (no icon, no side button).

@@ -18,7 +18,11 @@ export type PaletteCategory = 'recent' | 'feature' | 'setup' | 'shortcut' | 'rec
 export type PaletteAction =
   | { kind: 'feature'; featureId: string }
   | { kind: 'url'; url: string; newTab: boolean }
-  | { kind: 'inspect-record'; recordId: string };
+  | { kind: 'inspect-record'; recordId: string }
+  // Objects are assembled by the overlay (ui/command-palette.ts) after first
+  // paint from the describe cache — not by buildPaletteSources — so their action
+  // shape lives here for the shared PaletteCandidate type but is minted there.
+  | { kind: 'object'; objectName: string };
 
 export interface PaletteCandidate {
   /** Stable id, unique across the pool. Also the MRU key (see palette-recents). */
