@@ -6,6 +6,13 @@ import {
   type QueryEnvelope,
   type SalesforceApiClient,
 } from '../lib/salesforce-api.js';
+import {
+  getDescribeCache,
+  DescribeCache,
+  type ApiMode,
+  type FieldDescribe,
+  type SObjectDescribe,
+} from '../lib/describe-cache.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
@@ -20,8 +27,6 @@ registerSettingsShape('soql-runner', SOQL_RUNNER_SETTINGS_SCHEMA);
 const HISTORY_STORAGE_KEY = 'soqlRunner.history';
 const HISTORY_CAP = 20;
 const PAGE_CAP = 10;
-
-type ApiMode = 'rest' | 'tooling';
 
 interface HistoryEntry {
   q: string;
@@ -126,97 +131,6 @@ export async function takePendingQuery(): Promise<PendingQuery | null> {
     });
   });
 }
-
-// --- METADATA DESCRIBE INTERFACES & CACHE ---
-export interface FieldDescribe {
-  name: string;
-  label: string;
-  type: string;
-  relationshipName: string | null;
-  referenceTo: string[];
-  picklistValues: { value: string; label: string }[];
-  nillable: boolean;
-  calculated: boolean;
-}
-
-export interface SObjectDescribe {
-  name: string;
-  label: string;
-  fields: FieldDescribe[];
-}
-
-export interface GlobalDescribe {
-  sobjects: { name: string; label: string; keyPrefix: string | null }[];
-}
-
-export class DescribeCache {
-  private api: SalesforceApiClient;
-  private globalCache = new Map<ApiMode, { status: 'loading' | 'ready' | 'error'; data?: GlobalDescribe }>();
-  private sobjectCache = new Map<string, { status: 'loading' | 'ready' | 'error'; data?: SObjectDescribe }>();
-  private onUpdate: () => void;
-
-  constructor(api: SalesforceApiClient, onUpdate: () => void) {
-    this.api = api;
-    this.onUpdate = onUpdate;
-  }
-
-  clear(): void {
-    this.globalCache.clear();
-    this.sobjectCache.clear();
-  }
-
-  getGlobal(mode: ApiMode) {
-    const cached = this.globalCache.get(mode);
-    if (cached) return cached;
-
-    this.globalCache.set(mode, { status: 'loading' });
-    const apiVersion = this.api.apiVersion;
-    const endpoint = mode === 'tooling'
-      ? `/services/data/${apiVersion}/tooling/sobjects/`
-      : `/services/data/${apiVersion}/sobjects/`;
-
-    this.api.apiGet<GlobalDescribe>(endpoint)
-      .then(data => {
-        const enriched = data && Array.isArray(data.sobjects) ? data : { sobjects: [] };
-        this.globalCache.set(mode, { status: 'ready', data: enriched });
-        this.onUpdate();
-      })
-      .catch(err => {
-        console.error('Failed to describe global', err);
-        this.globalCache.set(mode, { status: 'error' });
-        this.onUpdate();
-      });
-
-    return { status: 'loading' as const };
-  }
-
-  getSObject(mode: ApiMode, name: string) {
-    const key = `${mode}:${name.toLowerCase()}`;
-    const cached = this.sobjectCache.get(key);
-    if (cached) return cached;
-
-    this.sobjectCache.set(key, { status: 'loading' });
-    const apiVersion = this.api.apiVersion;
-    const endpoint = mode === 'tooling'
-      ? `/services/data/${apiVersion}/tooling/sobjects/${name}/describe`
-      : `/services/data/${apiVersion}/sobjects/${name}/describe`;
-
-    this.api.apiGet<SObjectDescribe>(endpoint)
-      .then(data => {
-        const enriched = data && Array.isArray(data.fields) ? data : { name, label: name, fields: [] };
-        this.sobjectCache.set(key, { status: 'ready', data: enriched });
-        this.onUpdate();
-      })
-      .catch(err => {
-        console.error(`Failed to describe sobject ${name}`, err);
-        this.sobjectCache.set(key, { status: 'error' });
-        this.onUpdate();
-      });
-
-    return { status: 'loading' as const };
-  }
-}
-
 
 // Shape shared by every autocomplete chip (objects, fields, values, retry).
 // `rank`/`dataType` are optional because sentinel entries (e.g. Retry) omit them.
@@ -659,7 +573,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
 
     // --- AUTOCOMPLETE UI SETUP ---
     let expandAutocomplete = false;
-    const describeCache = new DescribeCache(api, () => {
+    const describeCache = getDescribeCache(api);
+    const unsubscribeDescribe = describeCache.subscribe(() => {
       autocompleteState = '';
       void runAutocomplete();
     });
@@ -810,7 +725,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       body,
       doc,
       width: '860px',
-      onClose: () => { view = null; },
+      onClose: () => { view = null; unsubscribeDescribe(); },
     });
 
     let records: Array<Record<string, unknown>> = [];

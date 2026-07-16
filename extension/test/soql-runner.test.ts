@@ -10,6 +10,7 @@ import {
   takePendingQuery,
 } from '../features/soql-runner.js';
 import { _resetSettingsShapesForTests, _clearSettingsCacheForTests } from '../lib/settings.js';
+import { _resetDescribeCachesForTests } from '../lib/describe-cache.js';
 import type { SalesforceApiClient, QueryEnvelope } from '../lib/salesforce-api.js';
 
 const {
@@ -61,6 +62,7 @@ function clearBody(): void {
 beforeEach(() => {
   _resetSettingsShapesForTests();
   _clearSettingsCacheForTests();
+  _resetDescribeCachesForTests();
   clearBody();
 });
 
