@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   createSoqlRunnerFeature,
   _soqlRunnerTestApi,
@@ -16,6 +16,7 @@ const {
   columnsFromRecords,
   formatCell,
   recordsToCsv,
+  exportAllToCsv,
   recordsToJson,
   recordsToTsv,
   generateLangGraphNode,
@@ -123,6 +124,114 @@ describe('soql-runner — pure helpers', () => {
         { Name: 'A, B', Notes: 'has "quotes"', Body: 'line1\nline2' },
       ]);
       expect(csv).toBe('Name,Notes,Body\n"A, B","has ""quotes""","line1\nline2"');
+    });
+  });
+
+  describe('exportAllToCsv', () => {
+    // Builds a fake api whose queryMore walks a fixed list of pages.
+    function pagedApi(pages: Array<Record<string, unknown>>[]): SalesforceApiClient {
+      let idx = 0; // pages[0] is the "first" envelope; queryMore serves the rest
+      const envelope = (i: number): QueryEnvelope<Record<string, unknown>> => ({
+        records: pages[i]!,
+        done: i >= pages.length - 1,
+        nextRecordsUrl: i >= pages.length - 1 ? undefined : `/next/${i + 1}`,
+        totalSize: pages.reduce((n, p) => n + p.length, 0),
+      });
+      return fakeApi({
+        queryMore: vi.fn(async () => {
+          idx += 1;
+          return envelope(idx);
+        }) as unknown as SalesforceApiClient['queryMore'],
+      });
+    }
+
+    it('follows pagination across 3 pages into one CSV with every row exactly once', async () => {
+      const pages = [
+        [{ Id: '1', Name: 'A' }, { Id: '2', Name: 'B' }],
+        [{ Id: '3', Name: 'C' }, { Id: '4', Name: 'D' }],
+        [{ Id: '5', Name: 'E' }],
+      ];
+      const api = pagedApi(pages);
+      const first: QueryEnvelope<Record<string, unknown>> = {
+        records: pages[0]!,
+        done: false,
+        nextRecordsUrl: '/next/1',
+        totalSize: 5,
+      };
+
+      const result = await exportAllToCsv(api, first);
+      expect(result.canceled).toBe(false);
+      expect(result.pages).toBe(3);
+      expect(result.rows).toBe(5);
+      expect(api.queryMore).toHaveBeenCalledTimes(2);
+
+      const csv = result.parts.join('');
+      // one header, five data rows, no dupes/missing
+      expect(csv).toBe('Id,Name\n1,A\n2,B\n3,C\n4,D\n5,E\n');
+      for (const id of ['1', '2', '3', '4', '5']) {
+        expect(csv.split(`\n${id},`).length).toBe(2); // appears exactly once
+      }
+    });
+
+    it('reports progress once per page', async () => {
+      const pages = [[{ Id: '1' }], [{ Id: '2' }], [{ Id: '3' }]];
+      const api = pagedApi(pages);
+      const seen: number[] = [];
+      await exportAllToCsv(
+        api,
+        { records: pages[0]!, done: false, nextRecordsUrl: '/next/1' },
+        { onProgress: ({ pages: p }) => seen.push(p) },
+      );
+      expect(seen).toEqual([1, 2, 3]);
+    });
+
+    it('aborts the loop mid-export when the signal is already aborted', async () => {
+      const pages = [[{ Id: '1' }], [{ Id: '2' }], [{ Id: '3' }]];
+      const api = pagedApi(pages);
+      const controller = new AbortController();
+      controller.abort();
+      const result = await exportAllToCsv(
+        api,
+        { records: pages[0]!, done: false, nextRecordsUrl: '/next/1' },
+        { signal: controller.signal },
+      );
+      expect(result.canceled).toBe(true);
+      expect(api.queryMore).not.toHaveBeenCalled(); // stopped before paging further
+      expect(result.rows).toBe(1); // only the already-fetched first page
+    });
+
+    it('cancels a single-page (already-done) export instead of returning success', async () => {
+      const api = pagedApi([[{ Id: '1' }]]);
+      const controller = new AbortController();
+      controller.abort();
+      const result = await exportAllToCsv(
+        api,
+        { records: [{ Id: '1' }], done: true }, // no nextRecordsUrl → loop never runs
+        { signal: controller.signal },
+      );
+      expect(result.canceled).toBe(true); // BUG2: must observe the abort even single-page
+      expect(api.queryMore).not.toHaveBeenCalled();
+    });
+
+    it('stops without emitting a page when aborted mid-fetch', async () => {
+      const controller = new AbortController();
+      const seen: number[] = [];
+      // queryMore aborts as it resolves page 2, so the abort lands after the
+      // await but before the page is processed.
+      const api = fakeApi({
+        queryMore: vi.fn(async () => {
+          controller.abort();
+          return { records: [{ Id: '2' }], done: true } as QueryEnvelope<Record<string, unknown>>;
+        }) as unknown as SalesforceApiClient['queryMore'],
+      });
+      const result = await exportAllToCsv(
+        api,
+        { records: [{ Id: '1' }], done: false, nextRecordsUrl: '/next/1' },
+        { signal: controller.signal, onProgress: ({ pages }) => seen.push(pages) },
+      );
+      expect(result.canceled).toBe(true);
+      expect(result.rows).toBe(1); // page 2 fetched but not appended
+      expect(seen).toEqual([1]); // no trailing progress for the discarded page
     });
   });
 
@@ -414,6 +523,89 @@ describe('soql-runner — modal execution', () => {
 
     expect(api.queryMore).toHaveBeenCalledWith('/services/data/v62.0/query/01gxx-2000');
     expect(document.querySelectorAll('tbody tr')).toHaveLength(3);
+  });
+
+  // Interaction between "Export all" and the sibling Run/Explain/Load-more
+  // actions that share `status` and the result panels.
+  describe('Export-all concurrency', () => {
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const btn = (t: string) =>
+      Array.from(document.querySelectorAll('button')).find((b) => b.textContent === t);
+
+    let origCreate: typeof URL.createObjectURL;
+    let origRevoke: typeof URL.revokeObjectURL;
+    let createObjectURL: ReturnType<typeof vi.fn>;
+    beforeEach(() => {
+      origCreate = URL.createObjectURL;
+      origRevoke = URL.revokeObjectURL;
+      createObjectURL = vi.fn(() => 'blob:mock');
+      URL.createObjectURL = createObjectURL as unknown as typeof URL.createObjectURL;
+      URL.revokeObjectURL = vi.fn() as unknown as typeof URL.revokeObjectURL;
+    });
+    afterEach(() => {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+    });
+
+    // Runs one query (page 1, done:false) so the "Export all" button appears,
+    // then starts an export that stalls awaiting queryMore.
+    async function startStalledExport(release: { fn: (v: unknown) => void }) {
+      setSalesforceUrl();
+      const queryMore = vi.fn(
+        () => new Promise((res) => { release.fn = res as (v: unknown) => void; }),
+      );
+      const api = fakeApi({
+        query: vi.fn(async () => ({
+          totalSize: 3, done: false, nextRecordsUrl: '/next/1', records: [{ Id: '1' }],
+        })) as unknown as SalesforceApiClient['query'],
+        queryMore: queryMore as unknown as SalesforceApiClient['queryMore'],
+        apiGet: vi.fn(async () => ({ plans: [{ relativeCost: 0.5 }] })) as unknown as SalesforceApiClient['apiGet'],
+      });
+      const feature = createSoqlRunnerFeature({ api });
+      await feature.onActivate?.();
+      (document.querySelector('textarea') as HTMLTextAreaElement).value = 'SELECT Id FROM Account';
+      btn('▶ Run')!.click();
+      await tick(); await tick();
+      btn('Export all as CSV')!.click();
+      await tick(); await tick(); // page-1 resolves, onProgress fires, now stalled on queryMore
+      return api;
+    }
+
+    it('Explain aborts an in-flight export, hides Cancel, and the late export result cannot overwrite the plan status', async () => {
+      const release = { fn: (_: unknown) => {} };
+      await startStalledExport(release);
+
+      const cancelBtn = btn('Cancel')!;
+      expect(cancelBtn.style.display).not.toBe('none'); // visible while exporting
+
+      btn('🔎 Explain')!.click();
+      await tick(); await tick();
+
+      expect(cancelBtn.style.display).toBe('none'); // abortExport() hid it
+      const status = document.querySelector('[role="status"]') as HTMLElement;
+      expect(status.textContent).toContain('query plan');
+      const planStatus = status.textContent;
+
+      // Release the stalled export — it must stay silent (superseded).
+      release.fn({ done: true, records: [{ Id: '2' }] });
+      await tick(); await tick();
+      expect(status.textContent).toBe(planStatus); // export did NOT stomp the plan
+      expect(createObjectURL).not.toHaveBeenCalled(); // and produced no download
+    });
+
+    it('Cancel during a stalled page fetch produces no download', async () => {
+      const release = { fn: (_: unknown) => {} };
+      await startStalledExport(release);
+
+      btn('Cancel')!.click(); // abort while queryMore is still pending
+      await tick();
+      // Page fetch completes AFTER cancel (worker fetch can't be network-aborted).
+      release.fn({ done: true, records: [{ Id: '2' }] });
+      await tick(); await tick();
+
+      expect(createObjectURL).not.toHaveBeenCalled(); // canceled ⇒ no file
+      expect(btn('Cancel')!.style.display).toBe('none'); // UI reset
+    });
   });
 
   it('renders and updates autocomplete suggestions', async () => {
