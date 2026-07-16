@@ -41,6 +41,7 @@ import { createSoqlRunnerFeature } from '../features/soql-runner.js';
 import { createSubflowGraphFeature } from '../features/subflow-graph.js';
 import { createTriggerConflictsFeature } from '../features/trigger-conflicts.js';
 import { createInspectRecordFeature } from '../features/inspect-record.js';
+import { createSchemaBrowserFeature } from '../features/schema-browser.js';
 import { createShowApiNamesFeature } from '../features/show-api-names.js';
 import { createDataImportFeature } from '../features/data-import.js';
 import { createFieldCreatorFeature } from '../features/field-creator.js';
@@ -127,6 +128,7 @@ function instantiateAllFeatures(): Feature[] {
     createCodeCoverageFeature(),
     createRestExploreFeature(),
     createInspectRecordFeature(),
+    createSchemaBrowserFeature(),
     createShowApiNamesFeature(),
     createDataImportFeature(),
     createFieldCreatorFeature(),
