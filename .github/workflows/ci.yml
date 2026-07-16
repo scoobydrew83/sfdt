@@ -7,6 +7,7 @@ on:
     branches: [main, develop]
   schedule:
     - cron: '0 2 * * *'    # 2am UTC nightly
+  workflow_dispatch: {}    # manual on-demand integration smoke
 
 jobs:
   test:
@@ -63,11 +64,16 @@ jobs:
 
   # Gate: skip the live integration smoke gracefully when the DevHub auth
   # secret isn't configured, so the job is a no-op (not a failure) until a
-  # maintainer adds SFDX_AUTH_URL + SF_DEVHUB_USERNAME. Never runs on
-  # pull_request (secrets are not exposed to fork PRs and must not run there).
+  # maintainer adds SFDX_AUTH_URL + SF_DEVHUB_USERNAME.
+  #
+  # Runs on the nightly schedule and manual dispatch ONLY — never per push.
+  # Creating a scratch org on every develop push exhausts the Dev Hub's daily
+  # scratch-org allocation; a once-nightly smoke (plus on-demand) is enough.
+  # (schedule/workflow_dispatch never carry a pull_request context, so fork PRs
+  # still never see the secrets.)
   integration-gate:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop' && github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
     outputs:
