@@ -1,14 +1,22 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   createContextMenuInspectFeature,
   buildInspectMenuMessage,
   planInspectFromClick,
+  isInspectMenuEnabled,
   CONTEXT_MENU_INSPECT_ID,
   INSPECT_MENU_ITEM_ID,
   INSPECT_MENU_TITLE,
   INSPECT_MENU_URL_PATTERNS,
   _contextMenuInspectTestApi,
 } from '../features/context-menu-inspect.js';
+import {
+  loadSettings,
+  onSettingsChange,
+  _clearSettingsCacheForTests,
+  _resetSettingsShapesForTests,
+} from '../lib/settings.js';
+import { readKillSwitchCache, writeKillSwitchCache } from '../lib/killswitch-cache.js';
 
 const RECORD_URL =
   'https://x.lightning.force.com/lightning/r/Account/001800000000001AAA/view';
@@ -129,5 +137,47 @@ describe('context-menu-inspect — feature manifest & constants', () => {
     const api = _contextMenuInspectTestApi();
     expect(api.planInspectFromClick).toBe(planInspectFromClick);
     expect(api.buildInspectMenuMessage).toBe(buildInspectMenuMessage);
+    expect(api.isInspectMenuEnabled).toBe(isInspectMenuEnabled);
+  });
+});
+
+describe('context-menu-inspect — gate honours toggle + kill-switch without a worker restart', () => {
+  beforeEach(() => {
+    _resetSettingsShapesForTests();
+    _clearSettingsCacheForTests();
+  });
+
+  // Mirror the background worker's gate: memoised loadSettings() + the uncached
+  // kill-switch cache.
+  async function gate(): Promise<boolean> {
+    const [settings, disabledRemote] = await Promise.all([loadSettings(), readKillSwitchCache()]);
+    return isInspectMenuEnabled(settings, disabledRemote);
+  }
+
+  it('flips to disabled after another surface writes the toggle off (BUG 1 — cache refresh)', async () => {
+    // Enabled by default (no explicit entry).
+    expect(await gate()).toBe(true);
+
+    // The worker registers this on boot; its side effect is refreshing settings.ts's
+    // memoised cache on every storage write — the fix. Without it, the first gate()
+    // above caches `true` and the direct write below (which bypasses this module's
+    // saveSettings) never reaches the cache, so gate() would stay stale `true`.
+    const unsubscribe = onSettingsChange(() => {});
+
+    // Simulate the options page (a DIFFERENT context) writing the toggle off,
+    // straight to storage.
+    chrome.storage.local.set({
+      'sfdt.settings': { features: { [CONTEXT_MENU_INSPECT_ID]: false } },
+    } as never);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(await gate()).toBe(false);
+    unsubscribe();
+  });
+
+  it('a kill-switch cache entry disables the menu even when the toggle is on', async () => {
+    expect(await gate()).toBe(true);
+    await writeKillSwitchCache([CONTEXT_MENU_INSPECT_ID]);
+    expect(await gate()).toBe(false);
   });
 });

@@ -12,6 +12,7 @@
 
 import { CONTEXTS, extractRecordContext } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
+import { isFeatureEnabled, type Settings } from '../lib/settings.js';
 
 /** Settings / kill-switch id — the feature-registry key. */
 export const CONTEXT_MENU_INSPECT_ID = 'context-menu-inspect';
@@ -72,6 +73,20 @@ export function buildInspectMenuMessage(info: InspectClickInfo): InspectRecordMe
   return { action: 'inspectRecord', recordId: target.recordId, sobjectName: target.sobjectName };
 }
 
+// Pure gate: the menu shows only when the user's toggle is on AND the remote
+// kill-switch hasn't disabled it — "kill-switchable like any feature". Kept
+// pure (no storage reads) so the background worker's async wrapper is trivially
+// testable.
+export function isInspectMenuEnabled(
+  settings: Settings,
+  disabledRemote: readonly string[],
+): boolean {
+  return (
+    isFeatureEnabled(settings, CONTEXT_MENU_INSPECT_ID) &&
+    !disabledRemote.includes(CONTEXT_MENU_INSPECT_ID)
+  );
+}
+
 // Registry feature — metadata only. The actual menu lives in the service
 // worker; declaring the `contextMenus` permission here lets the registry skip
 // the feature if the manifest ever loses the permission.
@@ -87,5 +102,5 @@ export function createContextMenuInspectFeature(): Feature {
 }
 
 export function _contextMenuInspectTestApi() {
-  return { planInspectFromClick, buildInspectMenuMessage };
+  return { planInspectFromClick, buildInspectMenuMessage, isInspectMenuEnabled };
 }

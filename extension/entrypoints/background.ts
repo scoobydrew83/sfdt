@@ -4,14 +4,14 @@ import { planCommand } from '../lib/commands.js';
 import { sfApiFetch } from '../lib/sf-api-proxy.js';
 import { createSessionCache } from '../lib/sf-session-cache.js';
 import { handleStreamPort } from '../lib/sf-stream-worker.js';
-import { isFeatureEnabled, loadSettings } from '../lib/settings.js';
+import { loadSettings, onSettingsChange } from '../lib/settings.js';
 import { readKillSwitchCache } from '../lib/killswitch-cache.js';
 import {
-  CONTEXT_MENU_INSPECT_ID,
   INSPECT_MENU_ITEM_ID,
   INSPECT_MENU_TITLE,
   INSPECT_MENU_URL_PATTERNS,
   buildInspectMenuMessage,
+  isInspectMenuEnabled,
 } from '../features/context-menu-inspect.js';
 
 // Per-host session-resolution cache. Backed by chrome.storage.session (NOT
@@ -126,40 +126,77 @@ async function sendToActiveTab(message: { action: string }): Promise<void> {
 
 // P1-8 context menu is gated on the user's opt-in toggle AND the remote
 // kill-switch (read from the same cache content.ts writes — no bridge needed
-// here). Both live in chrome.storage.local, so a change to either re-runs
-// syncInspectContextMenu() via the storage listener below.
+// here). `loadSettings()` memoises per module instance; this worker keeps its
+// copy fresh by registering `onSettingsChange` in defineBackground (unlike
+// content.ts, the worker otherwise never refreshes it), so a toggle change is
+// honoured without a worker restart. `readKillSwitchCache()` reads storage
+// directly (uncached), so the kill-switch is always current.
 async function inspectMenuEnabled(): Promise<boolean> {
-  const settings = await loadSettings();
-  if (!isFeatureEnabled(settings, CONTEXT_MENU_INSPECT_ID)) return false;
-  const disabledRemote = await readKillSwitchCache();
-  return !disabledRemote.includes(CONTEXT_MENU_INSPECT_ID);
+  const [settings, disabledRemote] = await Promise.all([loadSettings(), readKillSwitchCache()]);
+  return isInspectMenuEnabled(settings, disabledRemote);
 }
 
 // Idempotent: clear our menu item and recreate it only when the feature is on.
 // removeAll (rather than remove by id) tolerates a missing item and never
 // throws a duplicate-id error on recreate.
-async function syncInspectContextMenu(): Promise<void> {
+async function runInspectMenuSync(): Promise<void> {
   if (!chrome.contextMenus?.create) return;
   const enabled = await inspectMenuEnabled();
   await new Promise<void>((resolve) => chrome.contextMenus.removeAll(() => resolve()));
   if (!enabled) return;
-  chrome.contextMenus.create({
-    id: INSPECT_MENU_ITEM_ID,
-    title: INSPECT_MENU_TITLE,
-    // `page` covers a right-click anywhere on a record page (uses the page URL);
-    // `link` covers right-clicking a link to a record (uses the link's href).
-    contexts: ['page', 'link'],
-    documentUrlPatterns: [...INSPECT_MENU_URL_PATTERNS],
-    targetUrlPatterns: [...INSPECT_MENU_URL_PATTERNS],
-  });
+  chrome.contextMenus.create(
+    {
+      id: INSPECT_MENU_ITEM_ID,
+      title: INSPECT_MENU_TITLE,
+      // `page` covers a right-click anywhere on a record page (uses the page URL);
+      // `link` covers right-clicking a link to a record (uses the link's href).
+      contexts: ['page', 'link'],
+      documentUrlPatterns: [...INSPECT_MENU_URL_PATTERNS],
+      targetUrlPatterns: [...INSPECT_MENU_URL_PATTERNS],
+    },
+    // A racing removeAll/create from a near-simultaneous trigger can make this
+    // create fail (e.g. duplicate id); reading lastError consumes it so it isn't
+    // logged as an unchecked runtime error. The coalescing wrapper re-runs to
+    // reconcile the final state.
+    () => void chrome.runtime.lastError,
+  );
+}
+
+// Coalesce overlapping triggers (boot + onInstalled + storage.onChanged can
+// fire near-simultaneously): only one sync runs at a time; triggers arriving
+// mid-run set a flag so exactly one more reconciling run follows.
+let syncInFlight: Promise<void> | null = null;
+let syncQueued = false;
+function syncInspectContextMenu(): Promise<void> {
+  if (syncInFlight) {
+    syncQueued = true;
+    return syncInFlight;
+  }
+  syncInFlight = (async () => {
+    try {
+      do {
+        syncQueued = false;
+        await runInspectMenuSync();
+      } while (syncQueued);
+    } finally {
+      syncInFlight = null;
+    }
+  })();
+  return syncInFlight;
 }
 
 export default defineBackground(() => {
   // P1-8 — right-click "Inspect this record". Keep the menu in sync with the
   // feature toggle + kill-switch on boot, on install/update, and whenever
-  // either storage key changes.
+  // storage changes. `onSettingsChange` refreshes THIS worker's memoised
+  // settings cache on every write (the fix for the toggle silently not taking
+  // effect until a worker restart) and re-syncs; the broad storage listener
+  // additionally reacts to the kill-switch cache (a different storage key that
+  // onSettingsChange ignores). Overlapping triggers coalesce in
+  // syncInspectContextMenu().
   void syncInspectContextMenu();
   chrome.runtime.onInstalled.addListener(() => void syncInspectContextMenu());
+  onSettingsChange(() => void syncInspectContextMenu());
   chrome.storage.onChanged.addListener((_changes, namespace) => {
     if (namespace === 'local') void syncInspectContextMenu();
   });
