@@ -389,7 +389,8 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     // implicit labelling and the full keyboard path for free. Only meaningful
     // when log capture is on (the trace flag is what carries the DebugLevel).
     const debugSelect = doc.createElement('select');
-    debugSelect.setAttribute('aria-label', 'Debug level for the captured log');
+    // Accessible name comes from the wrapping <label>'s visible "Log level" text
+    // (no aria-label — it would override the visible label and fail WCAG 2.5.3).
     debugSelect.style.cssText =
       'font-size: 11px; padding: 4px 6px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px;';
     const debugDefaultOpt = doc.createElement('option');
@@ -413,6 +414,8 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         const res = await api.toolingQuery<DebugLevelRow>(buildDebugLevelListQuery());
         for (const row of res.records) {
           if (!row.Id) continue;
+          // Skip our managed level — it's already the "SFDT Finest (auto)" default.
+          if (row.DeveloperName === DEBUG_LEVEL_DEVELOPER_NAME) continue;
           const opt = doc.createElement('option');
           opt.value = row.Id;
           opt.textContent = row.MasterLabel || row.DeveloperName || row.Id;

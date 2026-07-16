@@ -469,6 +469,68 @@ describe('apex-anonymous — execute with log capture', () => {
     );
   });
 
+  it('leaves an active flag untouched when its DebugLevel already matches the pick', async () => {
+    await writeSelectedDebugLevelId('7dlMATCH');
+    const api = fakeApi({
+      apiGet: vi.fn(async (endpoint: string) => {
+        if (endpoint.includes('userinfo')) return { user_id: '005xx0000000001' };
+        return okResult();
+      }) as unknown as SalesforceApiClient['apiGet'],
+      toolingQuery: vi.fn(async (soql: string) => {
+        if (soql.includes('ORDER BY DeveloperName')) {
+          return { records: [{ Id: '7dlMATCH', DeveloperName: 'Match', MasterLabel: 'Match' }], size: 1, done: true };
+        }
+        if (soql.includes('FROM TraceFlag')) {
+          return { records: [{ Id: '7tfxx', ExpirationDate: '2999-01-01T00:00:00.000Z', DebugLevelId: '7dlMATCH' }], size: 1, done: true };
+        }
+        if (soql.includes('FROM ApexLog')) return { records: [{ Id: '07Lbase' }], size: 1, done: true };
+        return { records: [], size: 0, done: true };
+      }) as unknown as SalesforceApiClient['toolingQuery'],
+    });
+    const feature = createApexAnonymousFeature({ api });
+    await feature.onActivate?.();
+    await flush();
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find(
+      (b) => b.textContent === 'Execute',
+    )!.click();
+    await flush();
+    // Active flag already carries the pick → no write to TraceFlag.
+    expect(api.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it('re-points an active flag when the pick differs from its DebugLevel', async () => {
+    await writeSelectedDebugLevelId('7dlNEW');
+    const api = fakeApi({
+      apiGet: vi.fn(async (endpoint: string) => {
+        if (endpoint.includes('userinfo')) return { user_id: '005xx0000000001' };
+        return okResult();
+      }) as unknown as SalesforceApiClient['apiGet'],
+      toolingQuery: vi.fn(async (soql: string) => {
+        if (soql.includes('ORDER BY DeveloperName')) {
+          return { records: [{ Id: '7dlNEW', DeveloperName: 'New', MasterLabel: 'New' }], size: 1, done: true };
+        }
+        if (soql.includes('FROM TraceFlag')) {
+          return { records: [{ Id: '7tfxx', ExpirationDate: '2999-01-01T00:00:00.000Z', DebugLevelId: '7dlOLD' }], size: 1, done: true };
+        }
+        if (soql.includes('FROM ApexLog')) return { records: [{ Id: '07Lbase' }], size: 1, done: true };
+        return { records: [], size: 0, done: true };
+      }) as unknown as SalesforceApiClient['toolingQuery'],
+    });
+    const feature = createApexAnonymousFeature({ api });
+    await feature.onActivate?.();
+    await flush();
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find(
+      (b) => b.textContent === 'Execute',
+    )!.click();
+    await flush();
+    // Active flag carried a different level → PATCHed onto the picked one.
+    expect(api.apiRequest).toHaveBeenCalledWith(
+      'PATCH',
+      expect.stringContaining('/TraceFlag/7tfxx'),
+      expect.objectContaining({ DebugLevelId: '7dlNEW' }),
+    );
+  });
+
   it('notes "could not identify user" when no identity is resolvable', async () => {
     const api = fakeApi({
       apiGet: vi.fn(async (endpoint: string) => {
