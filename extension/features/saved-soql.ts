@@ -11,6 +11,7 @@ import {
   writePendingQuery,
   type SavedQuery,
 } from './soql-runner.js';
+import { SOQL_TEMPLATES } from './soql-templates.js';
 
 const SAVED_SOQL_SETTINGS_SCHEMA = z.object({
   showHistory: z.boolean().default(true),
@@ -140,6 +141,49 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       }
     }
     await renderSaved();
+
+    // --- Built-in templates (read-only, no delete affordance) ---
+    const tplSection = doc.createElement('div');
+    tplSection.style.cssText = 'display: flex; flex-direction: column; gap: 6px;';
+    tplSection.appendChild(sectionTitle('Templates'));
+    const tplHint = doc.createElement('div');
+    tplHint.textContent = 'Built-in admin & dev queries — click Load to copy into the runner.';
+    tplHint.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 11px;';
+    tplSection.appendChild(tplHint);
+    const tplList = doc.createElement('div');
+    tplList.setAttribute('role', 'list');
+    tplList.setAttribute('aria-label', 'Built-in SOQL templates');
+    tplList.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
+    tplSection.appendChild(tplList);
+    bodyEl.appendChild(tplSection);
+
+    for (const tpl of SOQL_TEMPLATES) {
+      // Visually distinct from user bookmarks: brand-accent left border + a
+      // "Built-in" tag. No delete button is rendered (queryRow omits onDelete),
+      // so built-ins cannot be deleted (AC3).
+      const wrap = doc.createElement('div');
+      wrap.setAttribute('role', 'listitem');
+      wrap.style.cssText =
+        'display: flex; flex-direction: column; gap: 2px; padding-left: 8px; border-left: 3px solid var(--sfdt-color-brand);';
+      const nameRow = doc.createElement('div');
+      nameRow.style.cssText = 'display: flex; gap: 6px; align-items: center;';
+      const nameLabel = doc.createElement('span');
+      nameLabel.textContent = tpl.name;
+      nameLabel.style.cssText = 'font-size: 12px; font-weight: 600; color: var(--sfdt-color-text-strong);';
+      const tag = doc.createElement('span');
+      tag.textContent = 'Built-in';
+      tag.style.cssText =
+        'font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 5px; border-radius: 3px; background: var(--sfdt-color-surface-shade-3); color: var(--sfdt-color-text-weak);';
+      nameRow.appendChild(nameLabel);
+      nameRow.appendChild(tag);
+      const desc = doc.createElement('div');
+      desc.textContent = tpl.description;
+      desc.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak);';
+      wrap.appendChild(nameRow);
+      wrap.appendChild(desc);
+      wrap.appendChild(queryRow(tpl.q, tpl.api));
+      tplList.appendChild(wrap);
+    }
 
     // --- Recent history ---
     if (config.showHistory) {
