@@ -267,6 +267,34 @@ export function recordsToCsv(records: ReadonlyArray<Record<string, unknown>>): s
   return [header, ...rows].join('\n');
 }
 
+// Pretty-printed JSON of the current result set. The Salesforce `attributes`
+// envelope is dropped so the output matches the columns shown in the table
+// (and what CSV/TSV export). Nested relationship records keep their real
+// structure — this is not a stringified-cell flattening like CSV/TSV.
+export function recordsToJson(records: ReadonlyArray<Record<string, unknown>>): string {
+  const stripped = records.map(({ attributes: _attributes, ...rest }) => rest);
+  return JSON.stringify(stripped, null, 2);
+}
+
+// Tab-separated values for pasting into a spreadsheet. Mirrors recordsToCsv's
+// RFC-4180-style quoting but on the TAB delimiter, so a value containing a tab
+// or newline is quoted and can't break the column/row grid on paste.
+// ponytail: near-copy of recordsToCsv; fold into one delimiter-parametrised
+// helper only if a third delimiter ever shows up.
+export function recordsToTsv(records: ReadonlyArray<Record<string, unknown>>): string {
+  const cols = columnsFromRecords(records);
+  if (cols.length === 0) return '';
+  const escape = (s: string): string => {
+    if (s.includes('"') || s.includes('\t') || s.includes('\n') || s.includes('\r')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
+  const header = cols.map(escape).join('\t');
+  const rows = records.map((r) => cols.map((c) => escape(formatCell(r[c]))).join('\t'));
+  return [header, ...rows].join('\n');
+}
+
 export function generateLangGraphNode(soql: string, records: ReadonlyArray<Record<string, unknown>>): string {
   const cols = columnsFromRecords(records);
   const typeMap: Record<string, string> = {};
@@ -663,6 +691,14 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     exportCsvBtn.textContent = 'Export CSV';
     exportCsvBtn.style.cssText =
       'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    const copyJsonBtn = doc.createElement('button');
+    copyJsonBtn.textContent = 'Copy JSON';
+    copyJsonBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-strong); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    const copyExcelBtn = doc.createElement('button');
+    copyExcelBtn.textContent = 'Copy for Excel';
+    copyExcelBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-strong); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     const langGraphBtn = doc.createElement('button');
     langGraphBtn.textContent = 'LangGraph Node';
     langGraphBtn.style.cssText =
@@ -670,6 +706,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     footer.appendChild(loadMoreBtn);
     footer.appendChild(copyCsvBtn);
     footer.appendChild(exportCsvBtn);
+    footer.appendChild(copyJsonBtn);
+    footer.appendChild(copyExcelBtn);
     footer.appendChild(langGraphBtn);
 
     if (historyEnabled) {
@@ -716,6 +754,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       loadMoreBtn.style.display = 'none';
       copyCsvBtn.style.display = 'none';
       exportCsvBtn.style.display = 'none';
+      copyJsonBtn.style.display = 'none';
+      copyExcelBtn.style.display = 'none';
       langGraphBtn.style.display = 'none';
     }
 
@@ -844,6 +884,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       resultsWrap.style.display = 'block';
       copyCsvBtn.style.display = 'inline-block';
       exportCsvBtn.style.display = 'inline-block';
+      copyJsonBtn.style.display = 'inline-block';
+      copyExcelBtn.style.display = 'inline-block';
       langGraphBtn.style.display = 'inline-block';
       const canPaginate =
         !!lastEnvelope && lastEnvelope.done === false && !!lastEnvelope.nextRecordsUrl;
@@ -1730,6 +1772,23 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       triggerDownload(doc, `soql-${stamp}.csv`, csv, 'text/csv');
     });
 
+    copyJsonBtn.addEventListener('click', async () => {
+      try {
+        await win.navigator.clipboard.writeText(recordsToJson(records));
+        showToast(`Copied ${records.length} rows as JSON`, { doc, kind: 'success' });
+      } catch {
+        showToast('Could not copy to clipboard', { doc, kind: 'error' });
+      }
+    });
+    copyExcelBtn.addEventListener('click', async () => {
+      try {
+        await win.navigator.clipboard.writeText(recordsToTsv(records));
+        showToast(`Copied ${records.length} rows for Excel`, { doc, kind: 'success' });
+      } catch {
+        showToast('Could not copy to clipboard', { doc, kind: 'error' });
+      }
+    });
+
     langGraphBtn.addEventListener('click', async () => {
       const currentSoql = textarea.value.trim();
       const code = generateLangGraphNode(currentSoql, records);
@@ -1788,6 +1847,8 @@ export function _soqlRunnerTestApi() {
     columnsFromRecords,
     formatCell,
     recordsToCsv,
+    recordsToJson,
+    recordsToTsv,
     generateLangGraphNode,
     readSoqlHistory,
     writeSoqlHistory,

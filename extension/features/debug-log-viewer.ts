@@ -6,12 +6,24 @@ import { SF_API_VERSION } from '../lib/api-version.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { getContentRoot } from '../ui/content-root.js';
 
 const DEBUG_LOG_SETTINGS_SCHEMA = z.object({
   pageSize: z.number().int().min(1).max(200).default(50),
 });
 
 registerSettingsShape('debug-log-viewer', DEBUG_LOG_SETTINGS_SCHEMA);
+
+// Auto-refresh poll interval. 15s sits in the middle of the sanctioned 10–30s
+// band: frequent enough to surface new logs while a trace flag is active,
+// infrequent enough not to hammer the Tooling API. The timer is owned at
+// feature scope and cleared on close()/teardown() so it never orphans.
+export const AUTO_REFRESH_INTERVAL_MS = 15_000;
+
+// Tooling API single-record delete endpoint for an ApexLog row.
+export function buildLogDeleteEndpoint(id: string): string {
+  return `/services/data/${SF_API_VERSION}/tooling/sobjects/ApexLog/${id}`;
+}
 
 export interface ApexLogRow {
   Id: string;
@@ -40,6 +52,93 @@ export function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Small accessible count-confirm dialog for the destructive bulk delete.
+// role="dialog" + aria-modal, labelled by its title; Esc (capture phase, removed
+// on close) and backdrop click cancel; Tab is trapped between the two buttons;
+// focus is moved to Cancel on open and restored to the opener on close
+// (CONVENTIONS.md items 1–6, 8–10). Mounts into the shared shadow content root.
+function confirmDialog(
+  doc: Document,
+  opts: { title: string; message: string; confirmLabel: string },
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const previouslyFocused = doc.activeElement as HTMLElement | null;
+
+    const overlay = doc.createElement('div');
+    overlay.className = 'sfdt-confirm-overlay';
+    overlay.style.cssText =
+      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100025; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
+
+    const card = doc.createElement('div');
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-modal', 'true');
+    const titleId = `sfdt-confirm-title-${Math.random().toString(36).slice(2)}`;
+    card.setAttribute('aria-labelledby', titleId);
+    card.style.cssText =
+      'background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px; padding: 16px; min-width: 320px; max-width: 460px;';
+
+    const title = doc.createElement('h2');
+    title.id = titleId;
+    title.textContent = opts.title;
+    title.style.cssText = 'margin: 0 0 8px; font-size: 16px;';
+
+    const msg = doc.createElement('p');
+    msg.textContent = opts.message;
+    msg.style.cssText = 'margin: 0 0 12px; font-size: 13px; color: var(--sfdt-color-text-weak);';
+
+    const footer = doc.createElement('div');
+    footer.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px;';
+    const cancelBtn = doc.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px; cursor: pointer; font-size: 13px;';
+    const confirmBtn = doc.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.textContent = opts.confirmLabel;
+    confirmBtn.style.cssText =
+      'padding: 6px 12px; border: 0; background: var(--sfdt-color-error); color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 13px;';
+    footer.append(cancelBtn, confirmBtn);
+
+    card.append(title, msg, footer);
+    overlay.appendChild(card);
+
+    const onKeydown = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cleanup(false);
+      }
+    };
+    // Capture phase so Esc fires even when focus sits in a Salesforce widget,
+    // and removed on close so it can't leak across SPA navigations (item 1).
+    doc.addEventListener('keydown', onKeydown, true);
+
+    // Two-button focus trap: Tab/Shift-Tab only ever move between these two
+    // controls, so focus can never reach the page behind the dialog (item 3).
+    card.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      e.preventDefault();
+      (e.target === confirmBtn ? cancelBtn : confirmBtn).focus();
+    });
+
+    function cleanup(result: boolean): void {
+      doc.removeEventListener('keydown', onKeydown, true);
+      overlay.remove();
+      previouslyFocused?.focus?.();
+      resolve(result);
+    }
+
+    cancelBtn.addEventListener('click', () => cleanup(false));
+    confirmBtn.addEventListener('click', () => cleanup(true));
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) cleanup(false);
+    });
+
+    (getContentRoot() ?? doc.body).appendChild(overlay);
+    setTimeout(() => cancelBtn.focus(), 0);
+  });
+}
+
 export interface DebugLogViewerOptions {
   doc?: Document;
   win?: Window;
@@ -52,8 +151,17 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
   const api = options.api ?? getSalesforceApi();
 
   let view: ViewHandle | null = null;
+  let autoTimer: ReturnType<typeof setInterval> | null = null;
+
+  function stopAutoRefresh(): void {
+    if (autoTimer !== null) {
+      clearInterval(autoTimer);
+      autoTimer = null;
+    }
+  }
 
   function close(): void {
+    stopAutoRefresh();
     view?.close();
     view = null;
   }
@@ -80,11 +188,32 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
     toolbar.style.cssText = 'display: flex; align-items: center; gap: 10px;';
     const status = doc.createElement('div');
     status.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
+
+    // Auto-refresh toggle — native checkbox in a <label> so it's labelled and
+    // keyboard-operable for free. OFF by default; toggling on starts the poll.
+    const autoLabel = doc.createElement('label');
+    autoLabel.style.cssText =
+      'margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--sfdt-color-text-weak); cursor: pointer;';
+    const autoToggle = doc.createElement('input');
+    autoToggle.type = 'checkbox';
+    const autoText = doc.createElement('span');
+    autoText.textContent = 'Auto-refresh (15s)';
+    autoLabel.append(autoToggle, autoText);
+
+    const deleteBtn = doc.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = '🗑 Delete all logs';
+    deleteBtn.setAttribute('aria-label', 'Delete all debug logs');
+    deleteBtn.style.cssText =
+      'padding: 4px 10px; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-surface); color: var(--sfdt-color-error-text); border-radius: 4px; cursor: pointer; font-size: 12px;';
+
     const refreshBtn = doc.createElement('button');
     refreshBtn.textContent = '↻ Refresh';
     refreshBtn.style.cssText =
-      'margin-left: auto; padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
+      'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     toolbar.appendChild(status);
+    toolbar.appendChild(autoLabel);
+    toolbar.appendChild(deleteBtn);
     toolbar.appendChild(refreshBtn);
     body.appendChild(toolbar);
 
@@ -165,6 +294,77 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       }
     }
 
+    // Fetch EVERY ApexLog Id in the org, following query pagination — the org's
+    // log count routinely exceeds the 2000-row first page, so a single query
+    // would under-count and leave logs behind.
+    async function fetchAllLogIds(): Promise<string[]> {
+      const ids: string[] = [];
+      let page = await api.query<{ Id: string }>('SELECT Id FROM ApexLog');
+      ids.push(...page.records.map((r) => r.Id));
+      while (!page.done && page.nextRecordsUrl) {
+        page = await api.queryMore<{ Id: string }>(page.nextRecordsUrl);
+        ids.push(...page.records.map((r) => r.Id));
+      }
+      return ids;
+    }
+
+    // Bulk delete — clears ALL of the org's ApexLog rows (the standard "clear my
+    // debug logs" dev action), not just the loaded page.
+    async function deleteAll(): Promise<void> {
+      deleteBtn.disabled = true;
+      let ids: string[];
+      try {
+        status.textContent = 'Counting logs…';
+        ids = await fetchAllLogIds();
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
+        deleteBtn.disabled = false;
+        await load();
+        return;
+      }
+      if (ids.length === 0) {
+        showToast('No debug logs to delete.', { doc, kind: 'info' });
+        deleteBtn.disabled = false;
+        await load();
+        return;
+      }
+      const noun = `log${ids.length === 1 ? '' : 's'}`;
+      const ok = await confirmDialog(doc, {
+        title: 'Delete debug logs',
+        message: `Delete ${ids.length} ${noun}?`,
+        confirmLabel: 'Delete',
+      });
+      if (!ok) {
+        deleteBtn.disabled = false;
+        return;
+      }
+      status.textContent = `Deleting ${ids.length} ${noun}…`;
+      try {
+        // Chunked concurrency so a large org doesn't fire thousands of requests
+        // at once (or serialise into a multi-minute hang). ponytail: fixed
+        // chunk of 10; make it adaptive only if rate limits bite.
+        const CHUNK = 10;
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          await Promise.all(
+            ids.slice(i, i + CHUNK).map((id) => api.apiRequest('DELETE', buildLogDeleteEndpoint(id))),
+          );
+        }
+        showToast(`Deleted ${ids.length} ${noun}.`, { doc, kind: 'success' });
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
+      } finally {
+        deleteBtn.disabled = false;
+        await load();
+      }
+    }
+
+    autoToggle.addEventListener('change', () => {
+      stopAutoRefresh();
+      if (autoToggle.checked) {
+        autoTimer = setInterval(() => void load(), AUTO_REFRESH_INTERVAL_MS);
+      }
+    });
+    deleteBtn.addEventListener('click', () => void deleteAll());
     refreshBtn.addEventListener('click', () => void load());
     await load();
   }
@@ -188,9 +388,15 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       }
       await open();
     },
+
+    // Unwinds injected DOM and — critically — clears the auto-refresh interval
+    // so no orphan timer survives a kill-switch/route change (CONVENTIONS + AC1).
+    teardown() {
+      close();
+    },
   };
 }
 
 export function _debugLogViewerTestApi() {
-  return { buildApexLogQuery, formatBytes };
+  return { buildApexLogQuery, formatBytes, buildLogDeleteEndpoint, AUTO_REFRESH_INTERVAL_MS };
 }
