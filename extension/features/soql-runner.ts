@@ -332,6 +332,34 @@ export async function exportAllToCsv(
   return { parts, rows, pages, canceled: false };
 }
 
+// Pretty-printed JSON of the current result set. The Salesforce `attributes`
+// envelope is dropped so the output matches the columns shown in the table
+// (and what CSV/TSV export). Nested relationship records keep their real
+// structure — this is not a stringified-cell flattening like CSV/TSV.
+export function recordsToJson(records: ReadonlyArray<Record<string, unknown>>): string {
+  const stripped = records.map(({ attributes: _attributes, ...rest }) => rest);
+  return JSON.stringify(stripped, null, 2);
+}
+
+// Tab-separated values for pasting into a spreadsheet. Mirrors recordsToCsv's
+// RFC-4180-style quoting but on the TAB delimiter, so a value containing a tab
+// or newline is quoted and can't break the column/row grid on paste.
+// ponytail: near-copy of recordsToCsv; fold into one delimiter-parametrised
+// helper only if a third delimiter ever shows up.
+export function recordsToTsv(records: ReadonlyArray<Record<string, unknown>>): string {
+  const cols = columnsFromRecords(records);
+  if (cols.length === 0) return '';
+  const escape = (s: string): string => {
+    if (s.includes('"') || s.includes('\t') || s.includes('\n') || s.includes('\r')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
+  const header = cols.map(escape).join('\t');
+  const rows = records.map((r) => cols.map((c) => escape(formatCell(r[c]))).join('\t'));
+  return [header, ...rows].join('\n');
+}
+
 export function generateLangGraphNode(soql: string, records: ReadonlyArray<Record<string, unknown>>): string {
   const cols = columnsFromRecords(records);
   const typeMap: Record<string, string> = {};
@@ -462,6 +490,40 @@ async function runQuery(
     return result;
   }
   return api.query<Record<string, unknown>>(soql);
+}
+
+// --- QUERY PLAN / EXPLAIN ---
+// Salesforce's query-plan endpoint is the same query resource with an
+// `?explain=<soql>` param instead of `?q=`; the Tooling variant lives under
+// /tooling/query. It returns one plan per candidate access path (the first is
+// the one the optimizer picks). Non-explainable queries (SOSL, aggregate-only,
+// malformed) return an HTTP error, which the caller surfaces inline.
+export interface QueryPlanNote {
+  description?: string;
+  tableEnumOrId?: string;
+  fields?: string[];
+}
+
+export interface QueryPlan {
+  cardinality?: number;
+  sobjectCardinality?: number;
+  leadingOperationType?: string;
+  relativeCost?: number;
+  sobjectType?: string;
+  notes?: QueryPlanNote[];
+}
+
+async function explainQuery(
+  api: SalesforceApiClient,
+  soql: string,
+  mode: ApiMode,
+): Promise<QueryPlan[]> {
+  const apiVersion = api.apiVersion;
+  const endpoint = mode === 'tooling'
+    ? `/services/data/${apiVersion}/tooling/query`
+    : `/services/data/${apiVersion}/query`;
+  const resp = await api.apiGet<{ plans?: QueryPlan[] }>(endpoint, { explain: soql });
+  return Array.isArray(resp?.plans) ? resp.plans : [];
 }
 
 export interface SoqlRunnerOptions {
@@ -636,6 +698,11 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     runBtn.textContent = '▶ Run';
     runBtn.style.cssText =
       'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+    const explainBtn = doc.createElement('button');
+    explainBtn.textContent = '🔎 Explain';
+    explainBtn.title = 'Show the query plan (cost, cardinality, leading operation) without running the query';
+    explainBtn.style.cssText =
+      'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-text); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 13px;';
     const bookmarkBtn = doc.createElement('button');
     bookmarkBtn.textContent = '★ Save';
     bookmarkBtn.style.cssText =
@@ -657,14 +724,23 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     status.setAttribute('aria-live', 'polite');
     status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     runRow.appendChild(runBtn);
+    runRow.appendChild(explainBtn);
     runRow.appendChild(bookmarkBtn);
     runRow.appendChild(status);
     body.appendChild(runRow);
 
     const errorPanel = doc.createElement('div');
+    errorPanel.setAttribute('role', 'alert');
     errorPanel.style.cssText =
       'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
     body.appendChild(errorPanel);
+
+    // Query-plan (EXPLAIN) output panel — separate from the results table so a
+    // plan and a result set don't clobber each other.
+    const explainPanel = doc.createElement('div');
+    explainPanel.style.cssText =
+      'display: none; border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 360px;';
+    body.appendChild(explainPanel);
 
     const resultsWrap = doc.createElement('div');
     resultsWrap.style.cssText =
@@ -695,6 +771,14 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     cancelExportBtn.setAttribute('aria-label', 'Cancel export');
     cancelExportBtn.style.cssText =
       'padding: 6px 12px; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-surface); color: var(--sfdt-color-error-text); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    const copyJsonBtn = doc.createElement('button');
+    copyJsonBtn.textContent = 'Copy JSON';
+    copyJsonBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-strong); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    const copyExcelBtn = doc.createElement('button');
+    copyExcelBtn.textContent = 'Copy for Excel';
+    copyExcelBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-strong); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     const langGraphBtn = doc.createElement('button');
     langGraphBtn.textContent = 'LangGraph Node';
     langGraphBtn.style.cssText =
@@ -704,6 +788,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     footer.appendChild(exportCsvBtn);
     footer.appendChild(exportAllBtn);
     footer.appendChild(cancelExportBtn);
+    footer.appendChild(copyJsonBtn);
+    footer.appendChild(copyExcelBtn);
     footer.appendChild(langGraphBtn);
 
     if (historyEnabled) {
@@ -744,15 +830,30 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       cancelExportBtn.style.display = 'none';
     }
 
+    // Run and Explain share `records`/`lastEnvelope`/`status` and toggle the same
+    // panels, so only one may be in flight at a time. Guard both entry points —
+    // including the Ctrl+Enter path, which bypasses the disabled button — and
+    // disable both buttons for visual feedback.
+    let busy = false;
+    function setBusy(next: boolean): void {
+      busy = next;
+      runBtn.disabled = next;
+      explainBtn.disabled = next;
+    }
+
     function showError(message: string): void {
       abortExport();
       errorPanel.textContent = message;
       errorPanel.style.display = 'block';
       resultsWrap.style.display = 'none';
+      explainPanel.style.display = 'none';
       loadMoreBtn.style.display = 'none';
       copyCsvBtn.style.display = 'none';
       exportCsvBtn.style.display = 'none';
       exportAllBtn.style.display = 'none';
+      cancelExportBtn.style.display = 'none';
+      copyJsonBtn.style.display = 'none';
+      copyExcelBtn.style.display = 'none';
       langGraphBtn.style.display = 'none';
     }
 
@@ -827,6 +928,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     }
 
     function renderResults(): void {
+      explainPanel.style.display = 'none';
       while (resultsWrap.firstChild) resultsWrap.removeChild(resultsWrap.firstChild);
       if (records.length === 0) {
         const empty = doc.createElement('div');
@@ -881,6 +983,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       copyCsvBtn.style.display = 'inline-block';
       exportCsvBtn.style.display = 'inline-block';
       exportAllBtn.style.display = 'inline-block';
+      copyJsonBtn.style.display = 'inline-block';
+      copyExcelBtn.style.display = 'inline-block';
       langGraphBtn.style.display = 'inline-block';
       const canPaginate =
         !!lastEnvelope && lastEnvelope.done === false && !!lastEnvelope.nextRecordsUrl;
@@ -985,6 +1089,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     }
 
     async function execute(): Promise<void> {
+      if (busy) return;
       const soql = textarea.value.trim();
       if (!soql) {
         showError('Enter a SOQL query to run.');
@@ -992,7 +1097,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       }
       abortExport(); // a fresh run supersedes any in-flight export
       clearError();
-      runBtn.disabled = true;
+      setBusy(true);
       status.textContent = 'Running…';
       const t0 = Date.now();
       try {
@@ -1013,7 +1118,101 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         showError(err instanceof Error ? err.message : String(err));
         status.textContent = '';
       } finally {
-        runBtn.disabled = false;
+        setBusy(false);
+      }
+    }
+
+    function renderPlan(plans: QueryPlan[]): void {
+      while (explainPanel.firstChild) explainPanel.removeChild(explainPanel.firstChild);
+      // Hide the results-table + its footer actions: they're bound to the stale
+      // result set and would flip the view back to the (now-hidden) table.
+      resultsWrap.style.display = 'none';
+      loadMoreBtn.style.display = 'none';
+      copyCsvBtn.style.display = 'none';
+      exportCsvBtn.style.display = 'none';
+      exportAllBtn.style.display = 'none';
+      copyJsonBtn.style.display = 'none';
+      copyExcelBtn.style.display = 'none';
+      langGraphBtn.style.display = 'none';
+      if (plans.length === 0) {
+        const empty = doc.createElement('div');
+        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon); font-size: 13px;';
+        empty.textContent = 'No query plan returned.';
+        explainPanel.appendChild(empty);
+        explainPanel.style.display = 'block';
+        return;
+      }
+
+      const fmtNotes = (notes: QueryPlanNote[] | undefined): string => {
+        if (!Array.isArray(notes) || notes.length === 0) return '—';
+        return notes
+          .map((n) => n.description)
+          .filter((d): d is string => typeof d === 'string' && d.length > 0)
+          .join('\n') || '—';
+      };
+      const fmt = (v: unknown): string =>
+        v === null || v === undefined ? '—' : String(v);
+
+      plans.forEach((plan, i) => {
+        const heading = doc.createElement('div');
+        heading.style.cssText =
+          'padding: 8px 10px; font-weight: 600; font-size: 12px; color: var(--sfdt-color-text-strong); background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border);';
+        heading.textContent = plan.sobjectType
+          ? `Plan ${i + 1} · ${plan.sobjectType}${i === 0 ? ' (chosen)' : ''}`
+          : `Plan ${i + 1}${i === 0 ? ' (chosen)' : ''}`;
+        explainPanel.appendChild(heading);
+
+        const table = doc.createElement('table');
+        table.style.cssText = 'border-collapse: collapse; width: 100%; font-size: 12px;';
+        const rows: Array<[string, string]> = [
+          ['Cardinality', fmt(plan.cardinality)],
+          ['SObject cardinality', fmt(plan.sobjectCardinality)],
+          ['Leading operation', fmt(plan.leadingOperationType)],
+          ['Relative cost', fmt(plan.relativeCost)],
+          ['Notes', fmtNotes(plan.notes)],
+        ];
+        const tbody = doc.createElement('tbody');
+        for (const [label, value] of rows) {
+          const tr = doc.createElement('tr');
+          const th = doc.createElement('th');
+          th.scope = 'row';
+          th.textContent = label;
+          th.style.cssText =
+            'text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--sfdt-color-bg); color: var(--sfdt-color-text-weak); font-weight: 600; white-space: nowrap; vertical-align: top; width: 160px;';
+          const td = doc.createElement('td');
+          td.textContent = value;
+          td.style.cssText =
+            'padding: 6px 10px; border-bottom: 1px solid var(--sfdt-color-bg); color: var(--sfdt-color-text-strong); white-space: pre-wrap; vertical-align: top;';
+          tr.appendChild(th);
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        explainPanel.appendChild(table);
+      });
+      explainPanel.style.display = 'block';
+    }
+
+    async function explain(): Promise<void> {
+      if (busy) return;
+      const soql = textarea.value.trim();
+      if (!soql) {
+        showError('Enter a SOQL query to explain.');
+        return;
+      }
+      clearError();
+      setBusy(true);
+      status.textContent = 'Explaining…';
+      const t0 = Date.now();
+      try {
+        const plans = await explainQuery(api, soql, mode);
+        renderPlan(plans);
+        status.textContent = `⏱ ${Date.now() - t0} ms · query plan`;
+      } catch (err) {
+        showError(err instanceof Error ? err.message : String(err));
+        status.textContent = '';
+      } finally {
+        setBusy(false);
       }
     }
 
@@ -1638,6 +1837,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     }
 
     runBtn.addEventListener('click', () => void execute());
+    explainBtn.addEventListener('click', () => void explain());
     loadMoreBtn.addEventListener('click', () => void loadMore());
     
     // Wire up autocomplete events
@@ -1724,6 +1924,22 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         }
       }
     });
+    copyJsonBtn.addEventListener('click', async () => {
+      try {
+        await win.navigator.clipboard.writeText(recordsToJson(records));
+        showToast(`Copied ${records.length} rows as JSON`, { doc, kind: 'success' });
+      } catch {
+        showToast('Could not copy to clipboard', { doc, kind: 'error' });
+      }
+    });
+    copyExcelBtn.addEventListener('click', async () => {
+      try {
+        await win.navigator.clipboard.writeText(recordsToTsv(records));
+        showToast(`Copied ${records.length} rows for Excel`, { doc, kind: 'success' });
+      } catch {
+        showToast('Could not copy to clipboard', { doc, kind: 'error' });
+      }
+    });
 
     langGraphBtn.addEventListener('click', async () => {
       const currentSoql = textarea.value.trim();
@@ -1784,6 +2000,8 @@ export function _soqlRunnerTestApi() {
     formatCell,
     recordsToCsv,
     exportAllToCsv,
+    recordsToJson,
+    recordsToTsv,
     generateLangGraphNode,
     readSoqlHistory,
     writeSoqlHistory,
@@ -1795,6 +2013,7 @@ export function _soqlRunnerTestApi() {
     deleteSavedQuery,
     DescribeCache,
     runQuery,
+    explainQuery,
     HISTORY_CAP,
     PAGE_CAP,
   };

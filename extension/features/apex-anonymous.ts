@@ -17,6 +17,8 @@ registerSettingsShape('apex-anonymous', APEX_ANONYMOUS_SETTINGS_SCHEMA);
 
 const HISTORY_STORAGE_KEY = 'apexAnonymous.history';
 const SNIPPETS_STORAGE_KEY = 'apexAnonymous.snippets';
+// Per-user persisted pick for the trace-flag's DebugLevel (empty = managed default).
+const DEBUG_LEVEL_STORAGE_KEY = 'apexAnonymous.debugLevelId';
 const HISTORY_CAP = 20;
 
 // DeveloperName for the DebugLevel this feature owns. Reused across runs so we
@@ -55,6 +57,8 @@ export interface ExecuteAnonymousResult {
 // Minimal projections of the Tooling rows the log-capture flow queries.
 interface DebugLevelRow {
   Id: string;
+  DeveloperName?: string;
+  MasterLabel?: string;
 }
 interface TraceFlagRow {
   Id: string;
@@ -69,6 +73,11 @@ interface ApexLogIdRow {
 // mirroring buildApexLogQuery() in the Debug Logs viewer.
 export function buildDebugLevelLookup(): string {
   return `SELECT Id FROM DebugLevel WHERE DeveloperName = '${DEBUG_LEVEL_DEVELOPER_NAME}' LIMIT 1`;
+}
+
+// All of the org's DebugLevels, to populate the log-level picker.
+export function buildDebugLevelListQuery(): string {
+  return 'SELECT Id, DeveloperName, MasterLabel FROM DebugLevel ORDER BY DeveloperName LIMIT 200';
 }
 
 export function buildTraceFlagLookup(userId: string): string {
@@ -178,6 +187,23 @@ export async function pushApexSnippet(entry: ApexSnippet): Promise<void> {
   });
 }
 
+// The picked DebugLevel Id persists per browser profile (i.e. per user); empty
+// string means "use the feature-managed SFDT_Finest default".
+export async function readSelectedDebugLevelId(): Promise<string> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(DEBUG_LEVEL_STORAGE_KEY, (result) => {
+      const raw = result?.[DEBUG_LEVEL_STORAGE_KEY];
+      resolve(typeof raw === 'string' ? raw : '');
+    });
+  });
+}
+
+export async function writeSelectedDebugLevelId(id: string): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [DEBUG_LEVEL_STORAGE_KEY]: id }, () => resolve());
+  });
+}
+
 // Summarises the executeAnonymous response into a single human-readable line.
 export function summariseResult(result: ExecuteAnonymousResult): {
   ok: boolean;
@@ -270,12 +296,16 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
   // flag is left untouched (respect the user's existing tracing); an expired one
   // is extended in place; otherwise a new one is created. Salesforce rejects a
   // second overlapping DEVELOPER_LOG flag for the same entity, hence the lookup.
-  async function ensureTraceFlag(userId: string): Promise<void> {
+  async function ensureTraceFlag(userId: string, selectedDebugLevelId: string | null = null): Promise<void> {
     const now = Date.now();
     const existing = await api.toolingQuery<TraceFlagRow>(buildTraceFlagLookup(userId));
     const current = existing.records[0];
-    if (traceFlagIsActive(current, now)) return;
-    const debugLevelId = await ensureDebugLevelId();
+    const active = traceFlagIsActive(current, now);
+    // No explicit pick: keep respecting an already-active flag as-is.
+    if (active && !selectedDebugLevelId) return;
+    const debugLevelId = selectedDebugLevelId ?? (await ensureDebugLevelId());
+    // Explicit pick that already matches the active flag: nothing to change.
+    if (active && current?.DebugLevelId === debugLevelId) return;
     if (current?.Id) {
       await api.apiRequest(
         'PATCH',
@@ -354,12 +384,65 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     openLogBtn.textContent = '🪵 Open log';
     openLogBtn.style.cssText =
       'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    // Log-level picker: choose which org DebugLevel the trace flag uses so users
+    // set log verbosity without a trip to Setup. A native <label>+<select> gives
+    // implicit labelling and the full keyboard path for free. Only meaningful
+    // when log capture is on (the trace flag is what carries the DebugLevel).
+    const debugSelect = doc.createElement('select');
+    // Accessible name comes from the wrapping <label>'s visible "Log level" text
+    // (no aria-label — it would override the visible label and fail WCAG 2.5.3).
+    debugSelect.style.cssText =
+      'font-size: 11px; padding: 4px 6px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px;';
+    const debugDefaultOpt = doc.createElement('option');
+    debugDefaultOpt.value = '';
+    debugDefaultOpt.textContent = 'SFDT Finest (auto)';
+    debugSelect.appendChild(debugDefaultOpt);
+    const debugLabel = doc.createElement('label');
+    debugLabel.style.cssText =
+      'display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--sfdt-color-text-weak);';
+    const debugLabelText = doc.createElement('span');
+    debugLabelText.textContent = 'Log level';
+    debugLabel.appendChild(debugLabelText);
+    debugLabel.appendChild(debugSelect);
+    debugSelect.addEventListener('change', () => void writeSelectedDebugLevelId(debugSelect.value));
+
+    // Best-effort: fill the picker with the org's DebugLevels and restore the
+    // persisted pick. A failure leaves just the managed-default option.
+    async function populateDebugLevels(): Promise<void> {
+      try {
+        const stored = await readSelectedDebugLevelId();
+        const res = await api.toolingQuery<DebugLevelRow>(buildDebugLevelListQuery());
+        for (const row of res.records) {
+          if (!row.Id) continue;
+          // Skip our managed level — it's already the "SFDT Finest (auto)" default.
+          if (row.DeveloperName === DEBUG_LEVEL_DEVELOPER_NAME) continue;
+          const opt = doc.createElement('option');
+          opt.value = row.Id;
+          opt.textContent = row.MasterLabel || row.DeveloperName || row.Id;
+          debugSelect.appendChild(opt);
+        }
+        if (stored && Array.from(debugSelect.options).some((o) => o.value === stored)) {
+          debugSelect.value = stored;
+        }
+      } catch {
+        // Leave the default option; picking is a convenience, not required.
+      }
+    }
+
     const hint = doc.createElement('span');
     hint.textContent = 'Ctrl/Cmd+Enter to run';
     hint.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 11px; margin-left: auto;';
     toolbar.appendChild(runBtn);
     toolbar.appendChild(saveBtn);
     toolbar.appendChild(openLogBtn);
+    // Kick off population and hold the promise so execute() can await the
+    // persisted-pick restore before reading debugSelect.value — otherwise a fast
+    // Ctrl/Cmd+Enter would run with the still-default '' and lose the saved pick.
+    let debugReady: Promise<void> | null = null;
+    if (config.captureLogs) {
+      toolbar.appendChild(debugLabel);
+      debugReady = populateDebugLevels();
+    }
     toolbar.appendChild(hint);
     body.appendChild(toolbar);
 
@@ -414,9 +497,12 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       if (config.captureLogs) {
         status.textContent = 'Preparing debug log…';
         try {
+          // Ensure the persisted pick has been restored into the select before
+          // we read it (covers both the button and Ctrl/Cmd+Enter paths).
+          if (debugReady) await debugReady;
           userId = await getCurrentUserId();
           if (userId) {
-            await ensureTraceFlag(userId);
+            await ensureTraceFlag(userId, debugSelect.value || null);
             baselineLogId = await latestLogId(userId);
           } else {
             captureNote = 'log not captured (could not identify user)';
@@ -523,6 +609,9 @@ export function _apexAnonymousTestApi() {
     HISTORY_CAP,
     DEBUG_LEVEL_DEVELOPER_NAME,
     buildDebugLevelLookup,
+    buildDebugLevelListQuery,
+    readSelectedDebugLevelId,
+    writeSelectedDebugLevelId,
     buildTraceFlagLookup,
     buildLatestApexLogLookup,
     debugLevelCreatePayload,

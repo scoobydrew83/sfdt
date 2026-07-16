@@ -17,6 +17,8 @@ const {
   formatCell,
   recordsToCsv,
   exportAllToCsv,
+  recordsToJson,
+  recordsToTsv,
   generateLangGraphNode,
   HISTORY_CAP,
   readSavedQueries,
@@ -25,6 +27,7 @@ const {
   deleteSavedQuery,
   DescribeCache,
   runQuery,
+  explainQuery,
 } = _soqlRunnerTestApi();
 
 function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
@@ -229,6 +232,74 @@ describe('soql-runner — pure helpers', () => {
       expect(result.canceled).toBe(true);
       expect(result.rows).toBe(1); // page 2 fetched but not appended
       expect(seen).toEqual([1]); // no trailing progress for the discarded page
+    });
+  });
+
+  describe('recordsToJson', () => {
+    it('returns an empty array for no records', () => {
+      expect(recordsToJson([])).toBe('[]');
+      expect(() => JSON.parse(recordsToJson([]))).not.toThrow();
+    });
+
+    it('pretty-prints the records array (2-space indent) and stays valid JSON', () => {
+      const json = recordsToJson([
+        { Id: '1', Name: 'Acme' },
+        { Id: '2', Name: 'Universal' },
+      ]);
+      expect(json).toBe(
+        '[\n  {\n    "Id": "1",\n    "Name": "Acme"\n  },\n  {\n    "Id": "2",\n    "Name": "Universal"\n  }\n]',
+      );
+      expect(JSON.parse(json)).toEqual([
+        { Id: '1', Name: 'Acme' },
+        { Id: '2', Name: 'Universal' },
+      ]);
+    });
+
+    it('drops the Salesforce `attributes` envelope but keeps nested structure', () => {
+      const json = recordsToJson([
+        {
+          attributes: { type: 'Account', url: '/x' },
+          Name: 'Acme',
+          Owner: { Name: 'Rep' },
+        },
+      ]);
+      expect(JSON.parse(json)).toEqual([{ Name: 'Acme', Owner: { Name: 'Rep' } }]);
+    });
+
+    it('produces valid JSON when values contain quotes, tabs, and newlines', () => {
+      const json = recordsToJson([
+        { Notes: 'has "quotes"\tand a tab', Body: 'line1\nline2' },
+      ]);
+      // Round-trips losslessly — the delimiters do not corrupt the output.
+      expect(JSON.parse(json)).toEqual([
+        { Notes: 'has "quotes"\tand a tab', Body: 'line1\nline2' },
+      ]);
+    });
+  });
+
+  describe('recordsToTsv', () => {
+    it('returns empty string for no records', () => {
+      expect(recordsToTsv([])).toBe('');
+    });
+
+    it('produces a tab-delimited header row + data rows', () => {
+      const tsv = recordsToTsv([
+        { Id: '1', Name: 'Acme' },
+        { Id: '2', Name: 'Universal' },
+      ]);
+      expect(tsv).toBe('Id\tName\n1\tAcme\n2\tUniversal');
+    });
+
+    it('quotes/escapes values containing tabs, newlines, and quotes so columns do not break', () => {
+      const tsv = recordsToTsv([
+        { Name: 'A\tB', Notes: 'has "quotes"', Body: 'line1\nline2' },
+      ]);
+      expect(tsv).toBe('Name\tNotes\tBody\n"A\tB"\t"has ""quotes"""\t"line1\nline2"');
+    });
+
+    it('leaves comma-containing values unquoted (TSV, not CSV)', () => {
+      const tsv = recordsToTsv([{ Name: 'A, B' }]);
+      expect(tsv).toBe('Name\nA, B');
     });
   });
 
@@ -787,6 +858,189 @@ describe('soql-runner — runQuery extra branches', () => {
     await expect(
       runQuery(fakeApi({ apiRequest }), 'query { uiapi { x } }', 'rest'),
     ).rejects.toThrow('GraphQL query failed.');
+  });
+});
+
+describe('soql-runner — explainQuery request shape', () => {
+  it('hits the REST query endpoint with the explain param in rest mode', async () => {
+    const apiGet = vi.fn().mockResolvedValue({ plans: [] });
+    await explainQuery(fakeApi({ apiGet }), 'SELECT Id FROM Account', 'rest');
+    expect(apiGet).toHaveBeenCalledWith('/services/data/v62.0/query', {
+      explain: 'SELECT Id FROM Account',
+    });
+  });
+
+  it('hits the Tooling query endpoint with the explain param in tooling mode', async () => {
+    const apiGet = vi.fn().mockResolvedValue({ plans: [] });
+    await explainQuery(fakeApi({ apiGet }), 'SELECT Id FROM ApexClass', 'tooling');
+    expect(apiGet).toHaveBeenCalledWith('/services/data/v62.0/tooling/query', {
+      explain: 'SELECT Id FROM ApexClass',
+    });
+  });
+
+  it('returns the plans array and tolerates a missing plans key', async () => {
+    expect(
+      await explainQuery(fakeApi({ apiGet: vi.fn().mockResolvedValue({ plans: [{ relativeCost: 1 }] }) }), 'q', 'rest'),
+    ).toEqual([{ relativeCost: 1 }]);
+    expect(
+      await explainQuery(fakeApi({ apiGet: vi.fn().mockResolvedValue({}) }), 'q', 'rest'),
+    ).toEqual([]);
+  });
+});
+
+describe('soql-runner — Explain modal', () => {
+  function setSalesforceUrl(): void {
+    window.history.replaceState(
+      {},
+      '',
+      'https://x.lightning.force.com/lightning/setup/Flows/home',
+    );
+  }
+  async function flush(): Promise<void> {
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  function findButton(text: string): HTMLButtonElement | undefined {
+    return Array.from(document.querySelectorAll('button')).find((b) => b.textContent === text);
+  }
+
+  it('renders the query plan from a canned explain response', async () => {
+    setSalesforceUrl();
+    const api = fakeApi({
+      apiGet: vi.fn(async () => ({
+        plans: [
+          {
+            cardinality: 1,
+            sobjectCardinality: 42,
+            leadingOperationType: 'TableScan',
+            relativeCost: 2.8,
+            sobjectType: 'Account',
+            notes: [{ description: 'Not considering filter for optimization because unindexed' }],
+          },
+        ],
+      })) as unknown as SalesforceApiClient['apiGet'],
+    });
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id FROM Account';
+    findButton('🔎 Explain')?.click();
+    await flush();
+
+    expect(api.apiGet).toHaveBeenCalledWith('/services/data/v62.0/query', {
+      explain: 'SELECT Id FROM Account',
+    });
+    const rowLabels = Array.from(document.querySelectorAll('th[scope="row"]')).map((th) => th.textContent);
+    expect(rowLabels).toEqual([
+      'Cardinality',
+      'SObject cardinality',
+      'Leading operation',
+      'Relative cost',
+      'Notes',
+    ]);
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).toContain('TableScan');
+    expect(bodyText).toContain('2.8');
+    expect(bodyText).toContain('unindexed');
+    expect(bodyText).toContain('Account (chosen)');
+  });
+
+  it('surfaces a non-explainable query error inline via a role="alert" panel', async () => {
+    setSalesforceUrl();
+    const api = fakeApi({
+      apiGet: vi.fn(async () => {
+        throw new Error('Salesforce GET request failed (HTTP 400): explain not supported');
+      }) as unknown as SalesforceApiClient['apiGet'],
+    });
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'FIND {Acme} IN ALL FIELDS';
+    findButton('🔎 Explain')?.click();
+    await flush();
+
+    const alert = document.querySelector('[role="alert"]') as HTMLElement | null;
+    expect(alert).toBeTruthy();
+    expect(alert?.textContent).toContain('explain not supported');
+    // The error is inline, not a thrown toast.
+    expect(document.querySelector('.sfdt-toast')).toBeNull();
+    expect(document.querySelectorAll('table')).toHaveLength(0);
+  });
+
+  it('shows an error when explaining an empty query', async () => {
+    setSalesforceUrl();
+    const api = fakeApi();
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+    findButton('🔎 Explain')?.click();
+    await flush();
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      'Enter a SOQL query to explain.',
+    );
+    expect(api.apiGet).not.toHaveBeenCalled();
+  });
+
+  it('hides the stale results table + footer actions when a plan renders', async () => {
+    setSalesforceUrl();
+    const api = fakeApi({
+      query: vi.fn(async () => ({
+        totalSize: 1,
+        done: true,
+        records: [{ Id: '001', Name: 'Acme' }],
+      })) as unknown as SalesforceApiClient['query'],
+      apiGet: vi.fn(async () => ({ plans: [{ relativeCost: 1 }] })) as unknown as SalesforceApiClient['apiGet'],
+    });
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id, Name FROM Account';
+    findButton('▶ Run')?.click();
+    await flush();
+    // Results + footer actions are visible after a query.
+    expect(findButton('Copy CSV')?.style.display).not.toBe('none');
+
+    findButton('🔎 Explain')?.click();
+    await flush();
+    // The plan replaced the table; the table's footer actions are hidden so they
+    // can't act on the now-hidden stale result set.
+    const resultsTable = document.querySelector('table');
+    expect(resultsTable).toBeTruthy(); // this is the plan table
+    for (const label of ['Load more', 'Copy CSV', 'Export CSV', 'LangGraph Node']) {
+      expect(findButton(label)?.style.display).toBe('none');
+    }
+  });
+
+  it('disables both Run and Explain while a request is in flight, re-enabling both after', async () => {
+    setSalesforceUrl();
+    let resolveQuery!: (v: QueryEnvelope<Record<string, unknown>>) => void;
+    const api = fakeApi({
+      query: vi.fn(() => new Promise((res) => { resolveQuery = res; })) as unknown as SalesforceApiClient['query'],
+    });
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id FROM Account';
+    const runBtn = findButton('▶ Run')!;
+    const explainBtn = findButton('🔎 Explain')!;
+    runBtn.click();
+    await flush();
+
+    // Run is pending — BOTH buttons are disabled (Explain can't race it).
+    expect(runBtn.disabled).toBe(true);
+    expect(explainBtn.disabled).toBe(true);
+    // A guarded second call is a no-op while busy: apiGet (explain) never fires.
+    explainBtn.click();
+    await flush();
+    expect(api.apiGet).not.toHaveBeenCalled();
+
+    resolveQuery({ totalSize: 0, done: true, records: [] });
+    await flush();
+    expect(runBtn.disabled).toBe(false);
+    expect(explainBtn.disabled).toBe(false);
   });
 });
 

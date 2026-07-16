@@ -4,6 +4,15 @@ import { planCommand } from '../lib/commands.js';
 import { sfApiFetch } from '../lib/sf-api-proxy.js';
 import { createSessionCache } from '../lib/sf-session-cache.js';
 import { handleStreamPort } from '../lib/sf-stream-worker.js';
+import { loadSettings, onSettingsChange } from '../lib/settings.js';
+import { readKillSwitchCache } from '../lib/killswitch-cache.js';
+import {
+  INSPECT_MENU_ITEM_ID,
+  INSPECT_MENU_TITLE,
+  INSPECT_MENU_URL_PATTERNS,
+  buildInspectMenuMessage,
+  isInspectMenuEnabled,
+} from '../features/context-menu-inspect.js';
 
 // Per-host session-resolution cache. Backed by chrome.storage.session (NOT
 // chrome.storage.local): memory-only, cleared when the browser closes, and at
@@ -115,7 +124,104 @@ async function sendToActiveTab(message: { action: string }): Promise<void> {
   }
 }
 
+// P1-8 context menu is gated on the user's opt-in toggle AND the remote
+// kill-switch (read from the same cache content.ts writes — no bridge needed
+// here). `loadSettings()` memoises per module instance; this worker keeps its
+// copy fresh by registering `onSettingsChange` in defineBackground (unlike
+// content.ts, the worker otherwise never refreshes it), so a toggle change is
+// honoured without a worker restart. `readKillSwitchCache()` reads storage
+// directly (uncached), so the kill-switch is always current.
+async function inspectMenuEnabled(): Promise<boolean> {
+  const [settings, disabledRemote] = await Promise.all([loadSettings(), readKillSwitchCache()]);
+  return isInspectMenuEnabled(settings, disabledRemote);
+}
+
+// Idempotent: clear our menu item and recreate it only when the feature is on.
+// removeAll (rather than remove by id) tolerates a missing item and never
+// throws a duplicate-id error on recreate.
+async function runInspectMenuSync(): Promise<void> {
+  if (!chrome.contextMenus?.create) return;
+  const enabled = await inspectMenuEnabled();
+  await new Promise<void>((resolve) => chrome.contextMenus.removeAll(() => resolve()));
+  if (!enabled) return;
+  chrome.contextMenus.create(
+    {
+      id: INSPECT_MENU_ITEM_ID,
+      title: INSPECT_MENU_TITLE,
+      // `page` covers a right-click anywhere on a record page (uses the page URL);
+      // `link` covers right-clicking a link to a record (uses the link's href).
+      contexts: ['page', 'link'],
+      documentUrlPatterns: [...INSPECT_MENU_URL_PATTERNS],
+      targetUrlPatterns: [...INSPECT_MENU_URL_PATTERNS],
+    },
+    // A racing removeAll/create from a near-simultaneous trigger can make this
+    // create fail (e.g. duplicate id); reading lastError consumes it so it isn't
+    // logged as an unchecked runtime error. The coalescing wrapper re-runs to
+    // reconcile the final state.
+    () => void chrome.runtime.lastError,
+  );
+}
+
+// Coalesce overlapping triggers (boot + onInstalled + storage.onChanged can
+// fire near-simultaneously): only one sync runs at a time; triggers arriving
+// mid-run set a flag so exactly one more reconciling run follows.
+let syncInFlight: Promise<void> | null = null;
+let syncQueued = false;
+function syncInspectContextMenu(): Promise<void> {
+  if (syncInFlight) {
+    syncQueued = true;
+    return syncInFlight;
+  }
+  syncInFlight = (async () => {
+    try {
+      do {
+        syncQueued = false;
+        await runInspectMenuSync();
+      } while (syncQueued);
+    } finally {
+      syncInFlight = null;
+    }
+  })();
+  return syncInFlight;
+}
+
 export default defineBackground(() => {
+  // P1-8 — right-click "Inspect this record". Keep the menu in sync with the
+  // feature toggle + kill-switch on boot, on install/update, and whenever
+  // storage changes. `onSettingsChange` refreshes THIS worker's memoised
+  // settings cache on every write (the fix for the toggle silently not taking
+  // effect until a worker restart) and re-syncs; the broad storage listener
+  // additionally reacts to the kill-switch cache (a different storage key that
+  // onSettingsChange ignores). Overlapping triggers coalesce in
+  // syncInspectContextMenu().
+  void syncInspectContextMenu();
+  chrome.runtime.onInstalled.addListener(() => void syncInspectContextMenu());
+  onSettingsChange(() => void syncInspectContextMenu());
+  chrome.storage.onChanged.addListener((_changes, namespace) => {
+    if (namespace === 'local') void syncInspectContextMenu();
+  });
+
+  chrome.contextMenus?.onClicked.addListener((info, tab) => {
+    if (info.menuItemId !== INSPECT_MENU_ITEM_ID) return;
+    void (async () => {
+      // Re-check the gate at click time — the menu could be stale if a toggle
+      // change and the click race.
+      if (!(await inspectMenuEnabled())) return;
+      const inspectMessage = buildInspectMenuMessage({
+        linkUrl: info.linkUrl,
+        pageUrl: info.pageUrl,
+      });
+      if (!inspectMessage) return; // No record Id in the URL/link — do nothing (AC2).
+      const tabId = tab?.id;
+      if (typeof tabId !== 'number') return;
+      try {
+        await chrome.tabs.sendMessage(tabId, inspectMessage);
+      } catch {
+        // No content script on the tab (e.g. a not-yet-loaded page) — nothing to open.
+      }
+    })();
+  });
+
   // Long-lived Port for the Event Streaming Monitor. The CometD/Bayeux
   // long-poll runs entirely in the worker (sf-stream-worker.ts): the sid is
   // read from the cookie here and never crosses back to the page. Only this

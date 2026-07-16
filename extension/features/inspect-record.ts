@@ -62,7 +62,13 @@ export interface InspectRecordOptions {
   api?: SalesforceApiClient;
 }
 
-export function createInspectRecordFeature(options: InspectRecordOptions = {}): Feature {
+/** The Inspect Record feature, plus an imperative opener for the context menu. */
+export type InspectRecordFeature = Feature & {
+  /** Open the inspector for a specific record Id (used by the right-click menu). */
+  openFor: (recordId: string, sobjectName?: string) => Promise<void>;
+};
+
+export function createInspectRecordFeature(options: InspectRecordOptions = {}): InspectRecordFeature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
@@ -134,6 +140,23 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     searchRow.appendChild(inspectBtn);
     body.appendChild(searchRow);
 
+    // Fields / JSON view toggle (hidden until a record is loaded).
+    const viewToggleRow = doc.createElement('div');
+    viewToggleRow.style.cssText = 'display: none; margin-top: 4px;';
+    viewToggleRow.setAttribute('role', 'group');
+    viewToggleRow.setAttribute('aria-label', 'Record view mode');
+    const fieldsTabBtn = doc.createElement('button');
+    fieldsTabBtn.type = 'button';
+    fieldsTabBtn.textContent = 'Fields';
+    fieldsTabBtn.style.borderRadius = '4px 0 0 4px';
+    const jsonTabBtn = doc.createElement('button');
+    jsonTabBtn.type = 'button';
+    jsonTabBtn.textContent = 'JSON';
+    jsonTabBtn.style.borderRadius = '0 4px 4px 0';
+    viewToggleRow.appendChild(fieldsTabBtn);
+    viewToggleRow.appendChild(jsonTabBtn);
+    body.appendChild(viewToggleRow);
+
     const filterRow = doc.createElement('div');
     filterRow.style.cssText = 'display: none; justify-content: space-between; align-items: center; gap: 12px; margin-top: 4px;';
     const filterInput = doc.createElement('input');
@@ -153,6 +176,22 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     const tableContainer = doc.createElement('div');
     tableContainer.style.cssText = 'border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 50vh; display: none;';
     body.appendChild(tableContainer);
+
+    // Raw-JSON view: the REST record payload, pretty-printed with a copy button.
+    const jsonContainer = doc.createElement('div');
+    jsonContainer.style.cssText = 'display: none; flex-direction: column; gap: 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 8px; max-height: 50vh; overflow: auto;';
+    const jsonCopyRow = doc.createElement('div');
+    jsonCopyRow.style.cssText = 'display: flex; justify-content: flex-end;';
+    const jsonCopyBtn = doc.createElement('button');
+    jsonCopyBtn.type = 'button';
+    jsonCopyBtn.textContent = '📋 Copy JSON';
+    jsonCopyBtn.style.cssText = 'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak); border-radius: 4px; cursor: pointer; font-size: 12px;';
+    jsonCopyRow.appendChild(jsonCopyBtn);
+    const jsonPre = doc.createElement('pre');
+    jsonPre.style.cssText = 'margin: 0; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; color: var(--sfdt-color-text-strong);';
+    jsonContainer.appendChild(jsonCopyRow);
+    jsonContainer.appendChild(jsonPre);
+    body.appendChild(jsonContainer);
 
     const saveBar = doc.createElement('div');
     saveBar.style.cssText = 'display: none; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface-alt);';
@@ -181,7 +220,29 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     let activeSobjectName = '';
     let originalRecordData: Record<string, unknown> = {};
     let editedRecordData: Record<string, unknown> = {};
+    let rawRecordData: Record<string, unknown> = {};
     let activeDescribe: SObjectDescribe | null = null;
+    let currentView: 'fields' | 'json' = 'fields';
+
+    function styleToggleBtn(btn: HTMLButtonElement, active: boolean): void {
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      const radius = btn.style.borderRadius;
+      btn.style.cssText = `padding: 5px 14px; border: 1px solid var(--sfdt-color-border); cursor: pointer; font-size: 12px; font-weight: 600; border-radius: ${radius}; background: ${active ? 'var(--sfdt-color-brand)' : 'var(--sfdt-color-surface)'}; color: ${active ? 'var(--sfdt-color-on-accent)' : 'var(--sfdt-color-text-weak)'};`;
+    }
+
+    function renderJson(): void {
+      jsonPre.textContent = JSON.stringify(rawRecordData, null, 2);
+    }
+
+    function applyView(): void {
+      const isJson = currentView === 'json';
+      styleToggleBtn(fieldsTabBtn, !isJson);
+      styleToggleBtn(jsonTabBtn, isJson);
+      filterRow.style.display = isJson ? 'none' : 'flex';
+      tableContainer.style.display = isJson ? 'none' : 'block';
+      jsonContainer.style.display = isJson ? 'flex' : 'none';
+      if (isJson) renderJson();
+    }
 
     function renderFields(): void {
       if (!activeDescribe) return;
@@ -390,6 +451,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         const rawRecord = await api.apiGet<Record<string, unknown>>(
           `/services/data/${apiVersion}/sobjects/${sobject}/${recordId}`
         );
+        rawRecordData = rawRecord;
 
         originalRecordData = {};
         editedRecordData = {};
@@ -405,9 +467,10 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         idSpan.textContent = `${sobject} · ${recordId}`;
         recordInfo.appendChild(idSpan);
         
-        filterRow.style.display = 'flex';
         renderFields();
         updateSaveBarVisibility();
+        viewToggleRow.style.display = 'flex';
+        applyView();
       } catch (err) {
         showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
       } finally {
@@ -430,6 +493,23 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
 
     filterInput.addEventListener('input', renderFields);
     showNullsCheckbox.addEventListener('change', renderFields);
+
+    fieldsTabBtn.addEventListener('click', () => {
+      currentView = 'fields';
+      applyView();
+    });
+    jsonTabBtn.addEventListener('click', () => {
+      currentView = 'json';
+      applyView();
+    });
+    jsonCopyBtn.addEventListener('click', async () => {
+      try {
+        await win.navigator.clipboard.writeText(JSON.stringify(rawRecordData, null, 2));
+        showToast('Record JSON copied to clipboard', { doc, kind: 'success' });
+      } catch {
+        showToast('Could not copy to clipboard', { doc, kind: 'error' });
+      }
+    });
 
     cancelChangesBtn.addEventListener('click', () => {
       editedRecordData = { ...originalRecordData };
@@ -507,6 +587,10 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       } else {
         await open();
       }
+    },
+
+    async openFor(recordId: string, sobjectName?: string) {
+      await open(recordId, sobjectName);
     },
   };
 }

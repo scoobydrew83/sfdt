@@ -142,7 +142,10 @@ export default defineContentScript({
     registry.register(createOrgHealthFeature());
     registry.register(createCodeCoverageFeature());
     registry.register(createRestExploreFeature());
-    registry.register(createInspectRecordFeature());
+    // Kept as a reference so the P1-8 context-menu message can open the
+    // inspector for a specific record Id (openFor), not just the page's URL.
+    const inspectRecord = createInspectRecordFeature();
+    registry.register(inspectRecord);
     registry.register(createShowApiNamesFeature());
     registry.register(createDataImportFeature());
     registry.register(createFieldCreatorFeature());
@@ -251,15 +254,25 @@ export default defineContentScript({
     // exist yet (P6-1), so it surfaces a "not available yet" toast. These are
     // separate from every feature's own in-page keydown listeners, which stay
     // untouched.
-    chrome.runtime.onMessage.addListener((message: { action?: string }) => {
-      if (message?.action === 'openPalette') {
-        sideButton.open();
-      } else if (message?.action === 'toggleInspector') {
-        showToast('LWC Inspector isn’t available yet — coming in a later release.', {
-          kind: 'info',
-        });
-      }
-    });
+    chrome.runtime.onMessage.addListener(
+      (message: { action?: string; recordId?: string; sobjectName?: string }) => {
+        if (message?.action === 'openPalette') {
+          sideButton.open();
+        } else if (message?.action === 'toggleInspector') {
+          showToast('LWC Inspector isn’t available yet — coming in a later release.', {
+            kind: 'info',
+          });
+        } else if (message?.action === 'inspectRecord') {
+          // Forwarded by the background worker's "Inspect this record" context
+          // menu. The worker already gated on the feature toggle + kill-switch
+          // and extracted the Id; we just open the modal (which fetches through
+          // the worker proxy — no sid touches this code).
+          if (typeof message.recordId === 'string' && message.recordId.length > 0) {
+            void inspectRecord.openFor(message.recordId, message.sobjectName);
+          }
+        }
+      },
+    );
 
     onSettingsChange((next) => {
       const bridgeChanged =
