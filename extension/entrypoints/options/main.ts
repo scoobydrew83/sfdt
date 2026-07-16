@@ -35,6 +35,7 @@ import { createApexAnonymousFeature } from '../../features/apex-anonymous.js';
 import { createDebugLogViewerFeature } from '../../features/debug-log-viewer.js';
 import { createSavedSoqlFeature } from '../../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../../features/org-switcher.js';
+import { createContextMenuInspectFeature } from '../../features/context-menu-inspect.js';
 
 
 const STYLES = `
@@ -216,6 +217,7 @@ async function render(): Promise<void> {
   registry.register(createDebugLogViewerFeature());
   registry.register(createSavedSoqlFeature());
   registry.register(createOrgSwitcherFeature());
+  registry.register(createContextMenuInspectFeature());
 
   const settings = await loadSettings();
   while (root.firstChild) root.removeChild(root.firstChild);

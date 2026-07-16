@@ -7,7 +7,7 @@ export default defineConfig({
     name: 'SFDT SF Helper',
     description:
       'Productivity tools for Salesforce admins & developers — Flow, Setup, Object Manager, record pages, SOQL/REST/SOAP & AI.',
-    permissions: ['storage', 'clipboardWrite', 'cookies'],
+    permissions: ['storage', 'clipboardWrite', 'cookies', 'contextMenus'],
     // Separate incognito session so an incognito window resolves and caches its
     // own Salesforce sessions instead of sharing the normal profile's.
     incognito: 'split',
