@@ -24,6 +24,7 @@ import { createSoqlRunnerFeature } from '../features/soql-runner.js';
 import { createSavedSoqlFeature } from '../features/saved-soql.js';
 import { createApexAnonymousFeature } from '../features/apex-anonymous.js';
 import { createDebugLogViewerFeature } from '../features/debug-log-viewer.js';
+import { createTraceFlagsFeature } from '../features/trace-flags.js';
 import { createRestExploreFeature } from '../features/rest-explore.js';
 import { createSoapExploreFeature } from '../features/soap-explore.js';
 import { createInspectRecordFeature } from '../features/inspect-record.js';
@@ -258,7 +259,12 @@ export function bootHost(root: HTMLElement, orgHost: string, opts: HostOptions):
         onLoadQuery: () => void registry.dispatch('soql-runner', 'activate'),
       }),
     'apex-anonymous': () => createApexAnonymousFeature(common),
-    'debug-log-viewer': () => createDebugLogViewerFeature(common),
+    'debug-log-viewer': () =>
+      createDebugLogViewerFeature({
+        ...common,
+        onManageTraceFlags: () => void registry.dispatch('trace-flags', 'activate'),
+      }),
+    'trace-flags': () => createTraceFlagsFeature(common),
     'rest-explore': () => createRestExploreFeature(common),
     'soap-explore': () => createSoapExploreFeature(common),
     'inspect-record': () => createInspectRecordFeature(common),

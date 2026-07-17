@@ -543,6 +543,19 @@
     "bridgeRequired": false
   },
   {
+    "id": "trace-flags",
+    "name": "Trace Flags",
+    "contexts": [
+      "workspace",
+      "setup_other",
+      "setup_flows"
+    ],
+    "enabledByDefault": true,
+    "workspace": true,
+    "sideButton": true,
+    "bridgeRequired": false
+  },
+  {
     "id": "trigger-conflicts",
     "name": "Trigger Conflicts",
     "contexts": [

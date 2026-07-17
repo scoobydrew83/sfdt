@@ -143,12 +143,17 @@ export interface DebugLogViewerOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
+  // Cross-link into the Trace Flags manager (P3-1). When provided, the Debug
+  // Logs header shows a "⚑ Trace flags" entry that opens it — the two tools are
+  // siblings (a trace flag is what makes ApexLogs appear in the first place).
+  onManageTraceFlags?: () => void;
 }
 
 export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {}): Feature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
+  const onManageTraceFlags = options.onManageTraceFlags;
 
   let view: ViewHandle | null = null;
   let autoTimer: ReturnType<typeof setInterval> | null = null;
@@ -213,6 +218,17 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     toolbar.appendChild(status);
     toolbar.appendChild(autoLabel);
+    // Header entry into the Trace Flags manager (only when wired by the entrypoint).
+    if (onManageTraceFlags) {
+      const traceBtn = doc.createElement('button');
+      traceBtn.type = 'button';
+      traceBtn.textContent = '⚑ Trace flags';
+      traceBtn.setAttribute('aria-label', 'Manage trace flags');
+      traceBtn.style.cssText =
+        'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px; cursor: pointer; font-size: 12px;';
+      traceBtn.addEventListener('click', () => onManageTraceFlags());
+      toolbar.appendChild(traceBtn);
+    }
     toolbar.appendChild(deleteBtn);
     toolbar.appendChild(refreshBtn);
     body.appendChild(toolbar);
