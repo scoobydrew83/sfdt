@@ -6,8 +6,8 @@
   },
   "chrome": {
     "registeredFeatures": 42,
-    "displayTools": 39,
-    "workspaceTools": 22,
+    "displayTools": 40,
+    "workspaceTools": 23,
     "bridgeRequired": 5,
     "standalone": 37,
     "syntheticMenuItems": 1

@@ -464,6 +464,19 @@
     "bridgeRequired": false
   },
   {
+    "id": "schema-browser",
+    "name": "Schema Browser",
+    "contexts": [
+      "record_page",
+      "setup_other",
+      "workspace"
+    ],
+    "enabledByDefault": true,
+    "workspace": true,
+    "sideButton": true,
+    "bridgeRequired": false
+  },
+  {
     "id": "setup-tabs",
     "name": "Setup Tabs",
     "contexts": [

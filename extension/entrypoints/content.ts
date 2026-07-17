@@ -41,6 +41,7 @@ import { createSoqlRunnerFeature } from '../features/soql-runner.js';
 import { createSubflowGraphFeature } from '../features/subflow-graph.js';
 import { createTriggerConflictsFeature } from '../features/trigger-conflicts.js';
 import { createInspectRecordFeature } from '../features/inspect-record.js';
+import { createSchemaBrowserFeature } from '../features/schema-browser.js';
 import { createShowApiNamesFeature } from '../features/show-api-names.js';
 import { createDataImportFeature } from '../features/data-import.js';
 import { createFieldCreatorFeature } from '../features/field-creator.js';
@@ -151,6 +152,9 @@ export default defineContentScript({
     // inspector for a specific record Id (openFor), not just the page's URL.
     const inspectRecord = createInspectRecordFeature();
     registry.register(inspectRecord);
+    // Record-page ⚡ entry dispatches onActivate, which reads the sObject from the
+    // URL and calls openFor() itself — no kept reference needed here (P2-1).
+    registry.register(createSchemaBrowserFeature());
     registry.register(createShowApiNamesFeature());
     registry.register(createDataImportFeature());
     registry.register(createFieldCreatorFeature());

@@ -26,6 +26,7 @@ import { createDebugLogViewerFeature } from '../../features/debug-log-viewer.js'
 import { createRestExploreFeature } from '../../features/rest-explore.js';
 import { createSoapExploreFeature } from '../../features/soap-explore.js';
 import { createInspectRecordFeature } from '../../features/inspect-record.js';
+import { createSchemaBrowserFeature } from '../../features/schema-browser.js';
 import { createOrgLimitsFeature } from '../../features/org-limits.js';
 import { createEventMonitorFeature } from '../../features/event-monitor.js';
 import { createDataImportFeature } from '../../features/data-import.js';
@@ -244,6 +245,7 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
     'rest-explore': () => createRestExploreFeature(common),
     'soap-explore': () => createSoapExploreFeature(common),
     'inspect-record': () => createInspectRecordFeature(common),
+    'schema-browser': () => createSchemaBrowserFeature(common),
     'org-limits': () => createOrgLimitsFeature(common),
     'event-monitor': () => createEventMonitorFeature(common),
     'data-import': () => createDataImportFeature(common),
