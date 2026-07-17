@@ -576,7 +576,10 @@ export function createTraceFlagsFeature(options: TraceFlagsOptions = {}): Featur
           const row = doc.createElement('div');
           row.style.cssText =
             'display: flex; gap: 10px; align-items: center; padding: 7px 8px; border-bottom: 1px solid var(--sfdt-color-bg); font-size: 12px;';
-          if (c.expired) row.style.opacity = '0.6';
+          // Expired rows are distinguished by the red "Expired" countdown text
+          // (error-text token) — NOT by dimming the whole row: opacity multiplies
+          // the error token below WCAG AA contrast and the row still has active
+          // Renew/Stop controls, so it must stay full-contrast (CONVENTIONS.md 15).
 
           const user = doc.createElement('span');
           user.textContent = userNames.get(flag.TracedEntityId) ?? flag.TracedEntityId;
