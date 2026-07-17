@@ -432,6 +432,29 @@ async function render(): Promise<void> {
     themeController.setSetting(themeSelect.value as ThemeSetting);
   });
   appearanceSection.appendChild(row('Theme', 'Light, dark, or follow the OS.', themeSelect));
+
+  // Default tool surface (P2-3 PR-2): where tools open by default. Default
+  // 'modal' preserves the classic centered overlay, so nothing changes unless
+  // opted in. Honoured today by the toolbar popup (promotes "Open side panel");
+  // deep routing of an on-page tool into the open panel is a follow-up.
+  const surfaceSelect = el('select', { id: 'sfdt-surface-select' });
+  surfaceSelect.setAttribute('aria-label', 'Default tool surface');
+  for (const [value, optLabel] of [
+    ['modal', 'Centered modal (classic)'],
+    ['panel', 'Docked side panel'],
+  ] as const) {
+    const opt = el('option', { value });
+    opt.textContent = optLabel;
+    if ((settings.defaultSurface ?? 'modal') === value) opt.selected = true;
+    surfaceSelect.appendChild(opt);
+  }
+  appearanceSection.appendChild(
+    row(
+      'Default tool surface',
+      'Where tools prefer to open (Chrome side panel or the classic modal).',
+      surfaceSelect,
+    ),
+  );
   wrap.appendChild(appearanceSection);
 
   const telemetrySection = el('section');
@@ -521,6 +544,7 @@ async function render(): Promise<void> {
         },
         telemetry: { enabled: telemetryCb.checked },
         theme: themeSelect.value as ThemeSetting,
+        defaultSurface: surfaceSelect.value as Settings['defaultSurface'],
       };
       await patchSettings(next as Settings);
       saveStatus.className = 'status show ok';

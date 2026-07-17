@@ -51,18 +51,12 @@ import {
   persistLastOrg,
 } from '../features/org-switcher.js';
 
-export const SF_HOST_SUFFIXES = [
-  '.salesforce.com',
-  '.salesforce-setup.com',
-  '.lightning.force.com',
-  '.force.com',
-  '.my.salesforce.com',
-];
-
-export function isAllowedSfHost(host: string): boolean {
-  const h = host.toLowerCase();
-  return SF_HOST_SUFFIXES.some((s) => h.endsWith(s));
-}
+// The SF-host suffix list + `isAllowedSfHost` moved to the chrome-free, feature-free
+// `lib/sf-panel.js` so the background worker can import the panel predicates
+// without pulling every feature module into the worker bundle. Re-exported here
+// so existing importers (the panel entrypoint, tests) keep working unchanged.
+import { SF_HOST_SUFFIXES, isAllowedSfHost } from '../lib/sf-panel.js';
+export { SF_HOST_SUFFIXES, isAllowedSfHost };
 
 /** An org host set explicitly on our own page URL (`?org=`), validated. Shared by
  *  the Workspace tab and the side panel so the two can't drift. */

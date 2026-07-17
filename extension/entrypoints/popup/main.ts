@@ -7,6 +7,7 @@
 import { SFDT_TOKENS_CSS } from '../../lib/tokens.js';
 import { loadPopupState, renderPopup, type PopupState } from '../../lib/popup.js';
 import { salesforceHostFromUrl } from '../../lib/sf-tab.js';
+import { loadSettings } from '../../lib/settings.js';
 
 const STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
@@ -148,6 +149,9 @@ async function main(): Promise<void> {
 
   const version = chrome.runtime.getManifest().version;
   const { url: activeTabUrl, id: activeTabId } = await getActiveTab();
+  // Read the default-surface preference up front so the very first frame already
+  // orders the action buttons correctly (a fast chrome.storage.local read).
+  const defaultSurface = (await loadSettings()).defaultSurface;
 
   // Paint a first frame immediately (before the async status lookups resolve)
   // so the popup never flashes empty.
@@ -157,6 +161,7 @@ async function main(): Promise<void> {
     orgHost: salesforceHostFromUrl(activeTabUrl),
     session: null,
     bridge: null,
+    defaultSurface,
     version,
   };
   const handlers = bindHandlers(activeTabUrl, activeTabId);
@@ -165,6 +170,7 @@ async function main(): Promise<void> {
   const state = await loadPopupState({
     activeTabUrl,
     hasSidePanel: !!chrome.sidePanel,
+    defaultSurface,
     version,
     listLoggedInHosts,
     pingBridge,

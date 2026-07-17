@@ -56,6 +56,15 @@ export const SettingsSchema = z.object({
   // follows the OS (prefers-color-scheme); 'light'/'dark' override it.
   theme: z.enum(['light', 'dark', 'auto']).default('auto'),
 
+  // Where injected tools open by default when triggered from a Salesforce page
+  // (P2-3 PR-2). 'modal' = the classic centered overlay (unchanged default, so
+  // nothing changes unless opted in); 'panel' = prefer the docked side panel.
+  // A global UI preference like `theme` — not a per-feature/kill-switchable one.
+  // Honoured in this PR by the toolbar popup (it promotes "Open side panel" to
+  // the primary action when set to 'panel'); deep present-view routing of an
+  // on-page tool straight into the open panel is a follow-up.
+  defaultSurface: z.enum(['modal', 'panel']).default('modal'),
+
   // Bridge config. `token` is the bearer credential the extension presents
   // to the sfdt CLI's localhost server (/api/bridge/*) and to the native
   // messaging host. Threat model: chrome.storage.local is origin-isolated

@@ -14,6 +14,7 @@ import { mySalesforceHostname } from './hostname.js';
 
 export type SessionStatus = 'active' | 'logged-out';
 export type BridgeStatus = 'connected' | 'disconnected';
+export type DefaultSurface = 'modal' | 'panel';
 
 export interface PopupState {
   isSalesforceTab: boolean;
@@ -25,6 +26,8 @@ export interface PopupState {
   session: SessionStatus | null;
   /** null on a non-Salesforce tab — no bridge ping is made there. */
   bridge: BridgeStatus | null;
+  /** User's preferred default tool surface — 'panel' promotes the side-panel button. */
+  defaultSurface: DefaultSurface;
   version: string;
 }
 
@@ -33,6 +36,8 @@ export interface PopupDeps {
   activeTabUrl: string | undefined;
   /** Whether `chrome.sidePanel` exists in this browser (Chrome yes, Firefox no). */
   hasSidePanel: boolean;
+  /** User's preferred default tool surface (settings.defaultSurface). */
+  defaultSurface: DefaultSurface;
   /** Extension version, from chrome.runtime.getManifest(). */
   version: string;
   /** Logged-in Salesforce org hosts (canonical my.salesforce.com), via worker. */
@@ -64,6 +69,7 @@ export async function loadPopupState(deps: PopupDeps): Promise<PopupState> {
       orgHost: null,
       session: null,
       bridge: null,
+      defaultSurface: deps.defaultSurface,
       version: deps.version,
     };
   }
@@ -82,6 +88,7 @@ export async function loadPopupState(deps: PopupDeps): Promise<PopupState> {
     orgHost,
     session: hasSession ? 'active' : 'logged-out',
     bridge: bridgeUp ? 'connected' : 'disconnected',
+    defaultSurface: deps.defaultSurface,
     version: deps.version,
   };
 }
@@ -207,15 +214,21 @@ export function renderPopup(
 
   const actions = doc.createElement('div');
   actions.className = 'sfdt-popup-actions';
-  // Workspace works from any tab (it shows an org picker when there's no org),
-  // so it's always offered and is the primary action.
-  actions.appendChild(button(doc, 'Open Workspace', handlers.onOpenWorkspace, true));
-  // The docked side panel hosts the same tools alongside the current tab. Like
-  // the Workspace it works from any tab (bind-on-open, else an org picker).
-  // Chrome only — Firefox has no chrome.sidePanel (it uses the native sidebar),
-  // so gate the button rather than offer a dead affordance.
-  if (state.hasSidePanel) {
-    actions.appendChild(button(doc, 'Open side panel', handlers.onOpenPanel));
+  // The docked side panel and the Workspace both host the same tools and both
+  // work from any tab (bind-on-open, else an org picker). Which one leads is the
+  // user's `defaultSurface` preference (P2-3 PR-2, behaviour C): when they prefer
+  // the panel AND this browser has chrome.sidePanel (Chrome; Firefox uses the
+  // native sidebar and has no button here), the panel is the primary action;
+  // otherwise the Workspace leads as before.
+  const panelPreferred = state.defaultSurface === 'panel' && state.hasSidePanel;
+  if (panelPreferred) {
+    actions.appendChild(button(doc, 'Open side panel', handlers.onOpenPanel, true));
+    actions.appendChild(button(doc, 'Open Workspace', handlers.onOpenWorkspace));
+  } else {
+    actions.appendChild(button(doc, 'Open Workspace', handlers.onOpenWorkspace, true));
+    if (state.hasSidePanel) {
+      actions.appendChild(button(doc, 'Open side panel', handlers.onOpenPanel));
+    }
   }
   // The palette (⚡ menu) only exists on a Salesforce page's content script.
   if (state.isSalesforceTab) {
