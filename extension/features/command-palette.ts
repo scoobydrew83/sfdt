@@ -26,7 +26,12 @@ import { AUTOMATION_HOME_TAB, BASE_TABS } from '../lib/setup-links.js';
 import { setupHostname } from '../lib/hostname.js';
 import { FEATURE_ICONS } from '../lib/feature-icons.js';
 import { loadRecents, pushRecent } from '../lib/palette-recents.js';
-import { enabledFeatureIds, type FeatureGate } from '../lib/palette-sources.js';
+import { loadSettings } from '../lib/settings.js';
+import {
+  enabledFeatureIds,
+  type CustomShortcut,
+  type FeatureGate,
+} from '../lib/palette-sources.js';
 import { openCommandPalette, type PaletteObject } from '../ui/command-palette.js';
 
 /** Settings / kill-switch id — the feature-registry key. */
@@ -138,9 +143,20 @@ export function createPaletteOpener(deps: PaletteOpenerDeps): PaletteOpener {
   };
 
   const open = async (): Promise<void> => {
-    // Recents are a local-storage read (not a Salesforce api call); loading them
-    // before first paint keeps recent-first ordering without a re-render.
-    const recents = await loadRecents();
+    // Recents and settings are local-storage reads (not Salesforce api calls);
+    // loading them before first paint keeps recent-first ordering + shortcuts
+    // without a re-render.
+    const [recents, settings] = await Promise.all([loadRecents(), loadSettings()]);
+    // Map the stored {name,url} shortcuts to the palette's CustomShortcut shape.
+    // id = name (names are unique, enforced by the options CRUD) so recents key
+    // stably on `shortcut:<name>` across sessions. Open in a new tab (window.open)
+    // so a shortcut to an external URL never navigates away from the SF page.
+    const customShortcuts: CustomShortcut[] = (settings.customShortcuts ?? []).map((s) => ({
+      id: s.name,
+      label: s.name,
+      url: s.url,
+      openInNewTab: true,
+    }));
     const recordIdHint = extractRecordContext(win.location.href)?.recordId;
     openCommandPalette({
       sourceInputs: {
@@ -148,6 +164,7 @@ export function createPaletteOpener(deps: PaletteOpenerDeps): PaletteOpener {
         featureIcons: FEATURE_ICONS,
         setupLinks: [...BASE_TABS, AUTOMATION_HOME_TAB],
         hostname: deps.getHostname(),
+        customShortcuts,
         recordIdHint,
         recents,
       },
