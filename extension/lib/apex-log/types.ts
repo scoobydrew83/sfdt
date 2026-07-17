@@ -1,9 +1,7 @@
 // Public types for the Apex debug-log parser (P3-2).
 //
 // PR-1 populates: apiVersion, debugLevels, events, tree, truncation, parseErrors,
-// durationNanos. The limits/soql/dml/callouts inventories are declared here so the
-// public shape is stable, but the PR-1 parser returns them empty.
-// TODO(P3-2 PR-2): populate limits/soql/dml/callouts.
+// durationNanos. PR-2 populates the limits/soql/dml/callouts inventories.
 
 export interface ParseOptions {
   /** Collect the flat events[] array. Default true. PR-3 sets false on huge logs. */
@@ -20,10 +18,10 @@ export interface ParsedLog {
   debugLevels: Record<string, string>;
   events: LogEvent[]; // [] when collectEvents=false
   tree: InvocationNode[]; // roots
-  limits: NamespaceLimits[]; // [] in PR-1 (PR-2)
-  soql: SoqlEntry[]; // [] in PR-1 (PR-2)
-  dml: DmlEntry[]; // [] in PR-1 (PR-2)
-  callouts: CalloutEntry[]; // [] in PR-1 (PR-2)
+  limits: NamespaceLimits[]; // per-namespace governor-limit snapshots, document order
+  soql: SoqlEntry[];
+  dml: DmlEntry[];
+  callouts: CalloutEntry[];
   truncated: boolean;
   truncationReason: TruncationReason | null;
   parseErrors: string[];

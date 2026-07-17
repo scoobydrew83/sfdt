@@ -29,7 +29,13 @@ function childTotal(node: InvocationNode): number {
 
 describe('extension/lib/apex-log parseApexLog', () => {
   describe('duration invariants (non-truncated fixtures)', () => {
-    for (const fixture of ['small-happy.log', 'deep-nesting.log']) {
+    for (const fixture of [
+      'small-happy.log',
+      'deep-nesting.log',
+      'managed-package.log',
+      'soql-dml-heavy.log',
+      'limits-heavy.log',
+    ]) {
       it(`${fixture}: Σ children.totalNanos ≤ node.totalNanos, self = total − children, self ≥ 0`, () => {
         const parsed = parseApexLog(load(fixture));
         expect(parsed.truncated).toBe(false);
@@ -129,6 +135,98 @@ describe('extension/lib/apex-log parseApexLog', () => {
       expect(() => parseApexLog(load('truncated.log'))).not.toThrow();
       expect(parsed.apiVersion).toBe('64.0');
       expect(parsed.events.some((e) => e.type === 'SOQL_EXECUTE_BEGIN')).toBe(true);
+    });
+  });
+
+  describe('inventories (soql-dml-heavy.log)', () => {
+    const parsed = parseApexLog(load('soql-dml-heavy.log'));
+
+    it('collects one SOQL entry with query, rows, 1-based line, enclosing node', () => {
+      expect(parsed.soql).toHaveLength(1);
+      const [q] = parsed.soql;
+      expect(q!.query).toBe("SELECT Id, Name FROM Account WHERE Industry = 'Tech'");
+      expect(q!.rows).toBe(12);
+      expect(q!.line).toBe(5); // 1-based raw-body line of SOQL_EXECUTE_BEGIN
+      expect(q!.node!.name).toBe('DataService.loadAccounts()');
+      expect(q!.node!.kind).toBe('method');
+    });
+
+    it('collects one DML entry with op + sobject + rows + node', () => {
+      expect(parsed.dml).toHaveLength(1);
+      const [d] = parsed.dml;
+      expect(d!.op).toBe('Insert');
+      expect(d!.sobject).toBe('Account');
+      expect(d!.rows).toBe(3);
+      expect(d!.line).toBe(7);
+      expect(d!.node!.name).toBe('DataService.loadAccounts()');
+    });
+
+    it('collects one callout entry with method + endpoint + status + node', () => {
+      expect(parsed.callouts).toHaveLength(1);
+      const [c] = parsed.callouts;
+      expect(c!.method).toBe('POST');
+      expect(c!.endpoint).toBe('https://api.example.com/v1/accounts');
+      expect(c!.status).toBe('OK');
+      expect(c!.line).toBe(11);
+      expect(c!.node!.name).toBe('IntegrationService.push()'); // the SECOND method
+    });
+  });
+
+  describe('limits (managed-package.log)', () => {
+    const parsed = parseApexLog(load('managed-package.log'));
+
+    it('attributes the managed namespace to the tree node', () => {
+      let node: InvocationNode | undefined;
+      walk(parsed.tree, (n) => {
+        if (n.name.startsWith('myns.Service')) node = n;
+      });
+      expect(node!.namespace).toBe('myns');
+    });
+
+    it('captures the myns limit snapshot with mapped metric keys', () => {
+      expect(parsed.limits).toHaveLength(1);
+      const [snap] = parsed.limits;
+      expect(snap!.namespace).toBe('myns');
+      expect(snap!.cumulative).toBe(true);
+      expect(snap!.metrics.soqlQueries).toEqual({ used: 2, max: 100 });
+      expect(snap!.metrics.queryRows).toEqual({ used: 15, max: 50000 });
+      expect(snap!.metrics.dmlStatements).toEqual({ used: 1, max: 150 });
+      expect(snap!.metrics.cpuTime).toEqual({ used: 45, max: 10000 });
+      expect(snap!.metrics.heapSize).toEqual({ used: 0, max: 6000000 });
+    });
+  });
+
+  describe('limits (limits-heavy.log)', () => {
+    const parsed = parseApexLog(load('limits-heavy.log'));
+
+    it('keeps per-namespace snapshots in document order', () => {
+      expect(parsed.limits.map((l) => l.namespace)).toEqual([
+        '(default)',
+        'myns',
+        '(default)',
+        'myns',
+      ]);
+      expect(parsed.limits.every((l) => l.cumulative)).toBe(true);
+    });
+
+    // Invariant 3: for each namespace+metric, `used` is non-decreasing across
+    // successive snapshots, and every `used ≤ max`.
+    it('used is monotonic non-decreasing per namespace+metric, and used ≤ max', () => {
+      const seen = new Map<string, number>();
+      for (const snap of parsed.limits) {
+        for (const [metric, pair] of Object.entries(snap.metrics)) {
+          expect(pair.used).toBeLessThanOrEqual(pair.max);
+          const key = `${snap.namespace}::${metric}`;
+          const prev = seen.get(key);
+          if (prev !== undefined) {
+            expect(pair.used).toBeGreaterThanOrEqual(prev);
+          }
+          seen.set(key, pair.used);
+        }
+      }
+      // The fixture must actually exercise growth, not just be trivially flat.
+      expect(seen.get('(default)::soqlQueries')).toBe(4);
+      expect(seen.get('myns::soqlQueries')).toBe(3);
     });
   });
 
