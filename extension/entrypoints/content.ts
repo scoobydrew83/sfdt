@@ -152,9 +152,11 @@ export default defineContentScript({
     // inspector for a specific record Id (openFor), not just the page's URL.
     const inspectRecord = createInspectRecordFeature();
     registry.register(inspectRecord);
-    // Record-page ⚡ entry dispatches onActivate, which reads the sObject from the
-    // URL and calls openFor() itself — no kept reference needed here (P2-1).
-    registry.register(createSchemaBrowserFeature());
+    // Record-page ⚡ entry dispatches onActivate (reads the sObject from the URL);
+    // the reference is also kept so the command palette can drill an object into
+    // the richer Schema Browser via openFor() (wired into the opener below).
+    const schemaBrowser = createSchemaBrowserFeature();
+    registry.register(schemaBrowser);
     registry.register(createShowApiNamesFeature());
     registry.register(createDataImportFeature());
     registry.register(createFieldCreatorFeature());
@@ -238,10 +240,9 @@ export default defineContentScript({
       getHostname: () => window.location.hostname,
       activateFeature: (id) => registry.dispatch(id, 'activate'),
       inspectRecord: (id) => inspectRecord.openFor(id),
-      // openSchemaBrowser is intentionally omitted: a concurrent PR adds the
-      // schema-browser feature; until it lands, objects fall back to Object
-      // Manager. Wire `openSchemaBrowser: (name) => schemaBrowser.openFor(name)`
-      // once that feature is registered above.
+      // Drill a palette-selected object into the richer Schema Browser (falls back
+      // to the Object Manager page inside the opener if this is ever absent).
+      openSchemaBrowser: (name) => schemaBrowser.openFor(name),
     });
 
     const menuItemsProvider = (): MenuItem[] => {

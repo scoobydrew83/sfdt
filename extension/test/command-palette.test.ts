@@ -105,6 +105,19 @@ describe('extension/ui/command-palette', () => {
     });
   });
 
+  // --- single live instance: a re-open must not leak the prior instance ---
+  describe('single live instance', () => {
+    it('closes the previous palette when a new one opens (no leaked listener/node)', () => {
+      const first = openCommandPalette({ sourceInputs: inputs(), executors: noopExecutors() });
+      expect(first.isOpen()).toBe(true);
+      handle = openCommandPalette({ sourceInputs: inputs(), executors: noopExecutors() });
+      // Prior instance fully closed (its capture-phase Esc listener removed), and
+      // exactly one overlay is mounted — no leaked node or handler.
+      expect(first.isOpen()).toBe(false);
+      expect(document.querySelectorAll('#sfdt-command-palette').length).toBe(1);
+    });
+  });
+
   // --- AC-2: keyboard-first overlay ---
   describe('AC-2 — keyboard & a11y contract', () => {
     it('renders a labelled listbox of options and focuses the input on open', () => {

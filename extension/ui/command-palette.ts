@@ -144,11 +144,19 @@ function optionDomId(candidateId: string): string {
   return `sfdt-cp-opt-${candidateId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 }
 
+// The single live palette instance, if any. A re-open fully closes the previous
+// one (removing its capture-phase Esc listener + restoring focus) before mounting
+// a new overlay — otherwise a double-open would leak the old listener, which would
+// keep firing on Escape and fight the new instance's focus restoration.
+let activeHandle: CommandPaletteHandle | null = null;
+
 export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteHandle {
   const doc = opts.doc ?? document;
   const mount = getContentRoot() ?? doc.body;
 
-  // One palette at a time — a re-open replaces any stray previous overlay.
+  // One palette at a time — properly close the prior instance (not just drop its
+  // DOM node), then clear any stray overlay left behind.
+  if (activeHandle?.isOpen()) activeHandle.close();
   mount.querySelector(`#${OVERLAY_ID}`)?.remove();
 
   // Focus restore (checklist item 4): remember where focus was before opening.
@@ -156,8 +164,10 @@ export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteH
 
   // Synchronous categories (recents/record/features/setup/shortcuts). The
   // Objects section is filled after first paint from loadObjects().
-  const syncSections = buildPaletteSources(opts.sourceInputs);
-  let objectSection: PaletteSection | null = null;
+  // The built section list — rebuilt WITH objects once loadObjects resolves, so a
+  // recently-used object resolves into "Recent" (and dedupes from the Objects
+  // section) uniformly, rather than being appended as a standalone section.
+  let sourceSections = buildPaletteSources(opts.sourceInputs);
 
   let closed = false;
   let activeIndex = -1;
@@ -238,10 +248,7 @@ export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteH
     while (listbox.firstChild) listbox.removeChild(listbox.firstChild);
     visible = [];
 
-    const sections = filterSections(
-      objectSection ? [...syncSections, objectSection] : syncSections,
-      query,
-    );
+    const sections = filterSections(sourceSections, query);
 
     if (sections.length === 0) {
       const empty = doc.createElement('div');
@@ -377,6 +384,7 @@ export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteH
     closed = true;
     doc.removeEventListener('keydown', escHandler, true);
     overlay.remove();
+    if (activeHandle === handle) activeHandle = null;
     previouslyFocused?.focus?.();
   }
 
@@ -392,18 +400,10 @@ export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteH
       try {
         const objects = await opts.loadObjects!();
         if (closed || objects.length === 0) return;
-        objectSection = {
-          category: 'object',
-          label: 'Objects',
-          candidates: objects.map((o) => ({
-            id: `object:${o.name}`,
-            category: 'object',
-            label: o.label || o.name,
-            apiName: o.name,
-            icon: '🗂',
-            action: { kind: 'object', objectName: o.name },
-          })),
-        };
+        // Rebuild through buildPaletteSources WITH objects so a recently-used
+        // object resolves into "Recent" (and dedupes from Objects) like any other
+        // category — not just appended as a standalone section.
+        sourceSections = buildPaletteSources({ ...opts.sourceInputs, objects });
         if (!closed) render(input.value);
       } catch {
         // Objects are best-effort — a describe failure must never break the palette.
@@ -411,5 +411,7 @@ export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteH
     });
   }
 
-  return { close, isOpen: () => !closed };
+  const handle: CommandPaletteHandle = { close, isOpen: () => !closed };
+  activeHandle = handle;
+  return handle;
 }
