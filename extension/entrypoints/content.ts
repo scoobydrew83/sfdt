@@ -136,7 +136,10 @@ export default defineContentScript({
     registry.register(createTriggerConflictsFeature());
     registry.register(createSubflowGraphFeature());
     registry.register(createFlowDeployFeature());
-    registry.register(createSoqlRunnerFeature());
+    // Kept as references so the Schema Browser can drop a field into the SOQL
+    // Runner draft and export a chosen field subset for a prompt (P2-1 PR-3).
+    const soqlRunner = createSoqlRunnerFeature();
+    registry.register(soqlRunner);
     registry.register(createOrgLimitsFeature());
     // Org Health & Apex Coverage query the org's Tooling/REST API directly (via
     // getSalesforceApi(), same as SOQL Runner) rather than reading static CLI
@@ -155,7 +158,13 @@ export default defineContentScript({
     // Record-page ⚡ entry dispatches onActivate (reads the sObject from the URL);
     // the reference is also kept so the command palette can drill an object into
     // the richer Schema Browser via openFor() (wired into the opener below).
-    const schemaBrowser = createSchemaBrowserFeature();
+    // Export for Prompt kept as a reference so the Schema Browser can export a
+    // chosen field subset for an object (P2-1 PR-3).
+    const exportForPrompt = createExportForPromptFeature();
+    const schemaBrowser = createSchemaBrowserFeature({
+      insertFieldIntoDraft: (field) => soqlRunner.insertFieldIntoDraft(field),
+      exportForPrompt: (name, fields) => exportForPrompt.exportObject(name, fields),
+    });
     registry.register(schemaBrowser);
     registry.register(createShowApiNamesFeature());
     registry.register(createDataImportFeature());
@@ -163,7 +172,7 @@ export default defineContentScript({
     registry.register(createMetadataRetrieveFeature());
     registry.register(createSoapExploreFeature());
     registry.register(createEventMonitorFeature());
-    registry.register(createExportForPromptFeature());
+    registry.register(exportForPrompt);
     registry.register(createApexAnonymousFeature());
     registry.register(createDebugLogViewerFeature());
     registry.register(createSavedSoqlFeature());

@@ -29,6 +29,7 @@ const {
   DescribeCache,
   runQuery,
   explainQuery,
+  insertFieldIntoQuery,
 } = _soqlRunnerTestApi();
 
 function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
@@ -325,6 +326,30 @@ describe('soql-runner — pure helpers', () => {
     it('falls back to a pass body when there are no records', () => {
       const code = generateLangGraphNode('SELECT Id FROM Account', []);
       expect(code).toContain('class SoqlResult(BaseModel):\n    pass');
+    });
+  });
+
+  describe('insertFieldIntoQuery', () => {
+    it('returns just the field for an empty draft', () => {
+      expect(insertFieldIntoQuery('', 'Name')).toBe('Name');
+      expect(insertFieldIntoQuery('   ', 'Name')).toBe('Name');
+    });
+
+    it('slots a field into the SELECT list before FROM', () => {
+      expect(insertFieldIntoQuery('SELECT Id FROM Account', 'Name')).toBe(
+        'SELECT Id, Name FROM Account',
+      );
+    });
+
+    it('does not double-comma right after SELECT or a trailing comma', () => {
+      expect(insertFieldIntoQuery('SELECT FROM Account', 'Id')).toBe('SELECT Id FROM Account');
+      expect(insertFieldIntoQuery('SELECT Id, FROM Account', 'Name')).toBe(
+        'SELECT Id, Name FROM Account',
+      );
+    });
+
+    it('appends with a comma when there is no FROM clause', () => {
+      expect(insertFieldIntoQuery('SELECT Id', 'Name')).toBe('SELECT Id, Name ');
     });
   });
 });
@@ -851,6 +876,41 @@ describe('soql-runner — pending query handoff', () => {
       chrome.storage.local.set({ 'soqlRunner.pendingQuery': { api: 'rest' } }, () => resolve()),
     );
     expect(await takePendingQuery()).toBeNull();
+  });
+});
+
+describe('soql-runner — insertFieldIntoDraft (P2-1 PR-3)', () => {
+  function setSalesforceUrl(): void {
+    window.history.replaceState(
+      {},
+      '',
+      'https://x.lightning.force.com/lightning/setup/Flows/home',
+    );
+  }
+
+  it('appends the field to a live draft when the runner is open', async () => {
+    setSalesforceUrl();
+    const feature = createSoqlRunnerFeature({ api: fakeApi() });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id FROM Account';
+
+    feature.insertFieldIntoDraft('Name');
+    expect(textarea.value).toBe('SELECT Id, Name FROM Account');
+  });
+
+  it('stashes a pending fragment when closed and applies it on the next open', async () => {
+    setSalesforceUrl();
+    const feature = createSoqlRunnerFeature({ api: fakeApi() });
+
+    // Runner not open yet — the field is stashed, not dropped.
+    feature.insertFieldIntoDraft('Name');
+    expect(document.querySelector('textarea')).toBeNull();
+
+    await feature.onActivate?.();
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Name');
   });
 });
 

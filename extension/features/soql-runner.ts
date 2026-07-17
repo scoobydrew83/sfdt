@@ -446,16 +446,57 @@ export interface SoqlRunnerOptions {
   api?: SalesforceApiClient;
 }
 
-export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Feature {
+/** The SOQL Runner feature, plus an imperative hook so other tools (Schema
+ * Browser) can drop a field into the live draft — or stash it for the next open. */
+export type SoqlRunnerFeature = Feature & {
+  insertFieldIntoDraft: (fieldApiName: string) => void;
+};
+
+// Append a field into a draft SOQL query predictably: slot it into the SELECT
+// list (before FROM when present, else at the end). Comma-separates unless the
+// insertion point already follows SELECT or a trailing comma.
+export function insertFieldIntoQuery(query: string, field: string): string {
+  if (!query.trim()) return field;
+  const sep = (before: string): string =>
+    /(,|\bselect)\s*$/i.test(before) ? ' ' : ', ';
+  const from = /\bfrom\b/i.exec(query);
+  if (from) {
+    const before = query.slice(0, from.index).replace(/\s+$/, '');
+    return `${before}${sep(before)}${field} ${query.slice(from.index)}`;
+  }
+  const trimmed = query.replace(/\s+$/, '');
+  return `${trimmed}${sep(trimmed)}${field} `;
+}
+
+export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRunnerFeature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
 
   let view: ViewHandle | null = null;
+  // The live query textarea while the runner is open (null once closed), plus a
+  // field fragment stashed by insertFieldIntoDraft() when the runner is closed —
+  // applied to the draft on the next open(). Mirrors the pending-query hand-off.
+  let activeTextarea: HTMLTextAreaElement | null = null;
+  let pendingFieldFragment: string | null = null;
+
+  // Drop a field API name into the draft: append to the open textarea, or stash
+  // it for the next open() when the runner isn't up.
+  function insertFieldIntoDraft(fieldApiName: string): void {
+    if (activeTextarea) {
+      activeTextarea.value = insertFieldIntoQuery(activeTextarea.value, fieldApiName);
+      // Re-run autocomplete + keep the field list in sync via the existing input path.
+      activeTextarea.dispatchEvent(new Event('input'));
+      activeTextarea.focus();
+      return;
+    }
+    pendingFieldFragment = insertFieldIntoQuery(pendingFieldFragment ?? '', fieldApiName);
+  }
 
   function close(): void {
     view?.close();
     view = null;
+    activeTextarea = null;
   }
 
   // Helper to check if a value is a Salesforce Record ID
@@ -725,7 +766,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       body,
       doc,
       width: '860px',
-      onClose: () => { view = null; unsubscribeDescribe(); },
+      onClose: () => { view = null; activeTextarea = null; unsubscribeDescribe(); },
     });
 
     let records: Array<Record<string, unknown>> = [];
@@ -1891,11 +1932,20 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       mode = pending.api;
     }
 
+    // Expose the live textarea so insertFieldIntoDraft() targets it, and drain
+    // any field fragment stashed while the runner was closed.
+    activeTextarea = textarea;
+    if (pendingFieldFragment) {
+      textarea.value = insertFieldIntoQuery(textarea.value, pendingFieldFragment);
+      pendingFieldFragment = null;
+    }
+
     textarea.focus();
     setMode(mode);
   }
 
   return {
+    insertFieldIntoDraft,
     manifest: {
       id: 'soql-runner',
       name: 'SOQL Query Runner',
@@ -1939,6 +1989,7 @@ export function _soqlRunnerTestApi() {
     DescribeCache,
     runQuery,
     explainQuery,
+    insertFieldIntoQuery,
     HISTORY_CAP,
     PAGE_CAP,
   };
