@@ -149,6 +149,12 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
     let filtered: ObjectListItem[] = [];
     let windowCount = PAGE;
     let selectedName = '';
+    // Cache the mapped object-list VM — toObjectListVM over an 800+ object global
+    // describe is recomputed only when the underlying data reference changes (once
+    // on load, again on org switch/cache clear), not on every keystroke/scroll or
+    // unrelated cache-subscribe notification.
+    let cachedAll: ObjectListItem[] = [];
+    let cachedSource: unknown;
 
     function matchesFilter(item: ObjectListItem, term: string): boolean {
       if (!term) return true;
@@ -172,7 +178,11 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
       }
 
       const term = filterInput.value.trim().toLowerCase();
-      const all = toObjectListVM(global.data);
+      if (global.data !== cachedSource) {
+        cachedSource = global.data;
+        cachedAll = toObjectListVM(global.data);
+      }
+      const all = cachedAll;
       filtered = all
         .filter((item) => matchesFilter(item, term))
         .sort((a, b) => (a.label || a.name).localeCompare(b.label || b.name));
@@ -229,6 +239,21 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
       renderDetail();
     }
 
+    // A cross-link to another object — reused by reference-target fields and the
+    // child-relationship list (keeps the two from drifting).
+    function buildCrossLink(name: string): HTMLAnchorElement {
+      const link = doc.createElement('a');
+      link.href = '#';
+      link.textContent = name;
+      link.setAttribute('role', 'link');
+      link.style.cssText = 'color: var(--sfdt-color-brand-text); text-decoration: underline; cursor: pointer;';
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        void openFor(name);
+      });
+      return link;
+    }
+
     function renderDetail(): void {
       while (rightPane.firstChild) rightPane.removeChild(rightPane.firstChild);
       if (!selectedName) {
@@ -271,16 +296,7 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
         for (const child of vm.childRelationships) {
           const li = doc.createElement('li');
           li.style.cssText = 'margin-bottom: 4px;';
-          const link = doc.createElement('a');
-          link.href = '#';
-          link.textContent = child.childSObject;
-          link.setAttribute('role', 'link');
-          link.style.cssText = 'color: var(--sfdt-color-brand-text); text-decoration: underline; cursor: pointer;';
-          link.addEventListener('click', (e) => {
-            e.preventDefault();
-            void openFor(child.childSObject);
-          });
-          li.appendChild(link);
+          li.appendChild(buildCrossLink(child.childSObject));
           const rel = doc.createElement('span');
           rel.textContent = child.relationshipName ? ` · ${child.relationshipName} (${child.field})` : ` · ${child.field}`;
           li.appendChild(rel);
@@ -374,16 +390,7 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
         wrap.appendChild(doc.createTextNode('→ '));
         field.referenceTo.forEach((target, i) => {
           if (i > 0) wrap.appendChild(doc.createTextNode(', '));
-          const link = doc.createElement('a');
-          link.href = '#';
-          link.textContent = target;
-          link.setAttribute('role', 'link');
-          link.style.cssText = 'color: var(--sfdt-color-brand-text); text-decoration: underline; cursor: pointer;';
-          link.addEventListener('click', (e) => {
-            e.preventDefault();
-            void openFor(target);
-          });
-          wrap.appendChild(link);
+          wrap.appendChild(buildCrossLink(target));
         });
         cell.appendChild(wrap);
       }
