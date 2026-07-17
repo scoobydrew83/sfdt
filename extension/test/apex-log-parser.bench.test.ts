@@ -13,7 +13,7 @@ import { parseApexLog } from '../lib/apex-log/index.js';
 
 const TARGET_BYTES = 5 * 1024 * 1024; // ~5 MB
 // Generous enough to be safe on slow CI, tight enough to catch a pathological
-// (e.g. accidental O(n²)) regression. On dev hardware the parse runs ~10-15× under.
+// (e.g. accidental O(n²)) regression. On dev hardware the parse runs ~60× under.
 const BUDGET_MS = 2000;
 
 /** One balanced execution block; `base` offsets nanos so they stay monotonic. */
