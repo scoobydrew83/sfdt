@@ -266,7 +266,7 @@ export function parseApexLog(raw: string, opts: ParseOptions = {}): ParsedLog {
     const node = stack[stack.length - 1] ?? null;
     if (ev.type === 'SOQL_EXECUTE_BEGIN') {
       const entry: SoqlEntry = {
-        line: i + 1,
+        line: i,
         timestampNanos: ev.nanos,
         // Last field is the query text (after the [line] + Aggregations fields).
         query: ev.fields.length > 0 ? ev.fields[ev.fields.length - 1]! : '',
@@ -287,7 +287,7 @@ export function parseApexLog(raw: string, opts: ParseOptions = {}): ParsedLog {
       // carries no payload and is ignored.
       const { op, sobject } = extractDml(ev.fields);
       dml.push({
-        line: i + 1,
+        line: i,
         timestampNanos: ev.nanos,
         op,
         sobject,
@@ -299,7 +299,7 @@ export function parseApexLog(raw: string, opts: ParseOptions = {}): ParsedLog {
     if (ev.type === 'CALLOUT_REQUEST') {
       const { method, endpoint } = extractCalloutRequest(ev.fields);
       const entry: CalloutEntry = {
-        line: i + 1,
+        line: i,
         timestampNanos: ev.nanos,
         method,
         endpoint,

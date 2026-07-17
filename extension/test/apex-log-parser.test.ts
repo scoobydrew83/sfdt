@@ -141,12 +141,12 @@ describe('extension/lib/apex-log parseApexLog', () => {
   describe('inventories (soql-dml-heavy.log)', () => {
     const parsed = parseApexLog(load('soql-dml-heavy.log'));
 
-    it('collects one SOQL entry with query, rows, 1-based line, enclosing node', () => {
+    it('collects one SOQL entry with query, rows, 0-based line, enclosing node', () => {
       expect(parsed.soql).toHaveLength(1);
       const [q] = parsed.soql;
       expect(q!.query).toBe("SELECT Id, Name FROM Account WHERE Industry = 'Tech'");
       expect(q!.rows).toBe(12);
-      expect(q!.line).toBe(5); // 1-based raw-body line of SOQL_EXECUTE_BEGIN
+      expect(q!.line).toBe(4); // 0-based raw-body line of SOQL_EXECUTE_BEGIN (matches events/nodes)
       expect(q!.node!.name).toBe('DataService.loadAccounts()');
       expect(q!.node!.kind).toBe('method');
     });
@@ -157,7 +157,7 @@ describe('extension/lib/apex-log parseApexLog', () => {
       expect(d!.op).toBe('Insert');
       expect(d!.sobject).toBe('Account');
       expect(d!.rows).toBe(3);
-      expect(d!.line).toBe(7);
+      expect(d!.line).toBe(6);
       expect(d!.node!.name).toBe('DataService.loadAccounts()');
     });
 
@@ -167,7 +167,7 @@ describe('extension/lib/apex-log parseApexLog', () => {
       expect(c!.method).toBe('POST');
       expect(c!.endpoint).toBe('https://api.example.com/v1/accounts');
       expect(c!.status).toBe('OK');
-      expect(c!.line).toBe(11);
+      expect(c!.line).toBe(10);
       expect(c!.node!.name).toBe('IntegrationService.push()'); // the SECOND method
     });
   });

@@ -29,6 +29,8 @@ export interface ParsedLog {
 }
 
 export interface LogEvent {
+  /** 0-based line index into the raw log body — `raw.split('\n')[line]`. Every
+   *  `line`/`enterLine`/`exitLine` in ParsedLog uses this same 0-based convention. */
   line: number;
   clockTime: string | null;
   timestampNanos: number | null;
@@ -40,7 +42,9 @@ export interface InvocationNode {
   name: string;
   kind: 'execution' | 'code-unit' | 'method';
   namespace: string | null;
+  /** 0-based line index (into `raw.split('\n')`) of the entry event. */
   enterLine: number;
+  /** 0-based line index of the exit event; null when truncated. */
   exitLine: number | null;
   startNanos: number | null;
   endNanos: number | null;
@@ -62,6 +66,8 @@ export interface NamespaceLimits {
 }
 
 export interface SoqlEntry {
+  /** 0-based line index into the raw log body — `raw.split('\n')[line]`. Every
+   *  `line`/`enterLine`/`exitLine` in ParsedLog uses this same 0-based convention. */
   line: number;
   timestampNanos: number | null;
   query: string;
@@ -70,6 +76,8 @@ export interface SoqlEntry {
 }
 
 export interface DmlEntry {
+  /** 0-based line index into the raw log body — `raw.split('\n')[line]`. Every
+   *  `line`/`enterLine`/`exitLine` in ParsedLog uses this same 0-based convention. */
   line: number;
   timestampNanos: number | null;
   op: string;
@@ -79,6 +87,8 @@ export interface DmlEntry {
 }
 
 export interface CalloutEntry {
+  /** 0-based line index into the raw log body — `raw.split('\n')[line]`. Every
+   *  `line`/`enterLine`/`exitLine` in ParsedLog uses this same 0-based convention. */
   line: number;
   timestampNanos: number | null;
   method: string;
