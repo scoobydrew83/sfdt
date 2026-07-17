@@ -28,10 +28,12 @@ export interface ParsedLog {
   durationNanos: number | null;
 }
 
+/** 0-based line index into the raw log body — `raw.split('\n')[i]`. Every
+ *  `line` / `enterLine` / `exitLine` field in ParsedLog uses this one convention. */
+export type RawLineIndex = number;
+
 export interface LogEvent {
-  /** 0-based line index into the raw log body — `raw.split('\n')[line]`. Every
-   *  `line`/`enterLine`/`exitLine` in ParsedLog uses this same 0-based convention. */
-  line: number;
+  line: RawLineIndex;
   clockTime: string | null;
   timestampNanos: number | null;
   type: string;
@@ -42,10 +44,8 @@ export interface InvocationNode {
   name: string;
   kind: 'execution' | 'code-unit' | 'method';
   namespace: string | null;
-  /** 0-based line index (into `raw.split('\n')`) of the entry event. */
-  enterLine: number;
-  /** 0-based line index of the exit event; null when truncated. */
-  exitLine: number | null;
+  enterLine: RawLineIndex;
+  exitLine: RawLineIndex | null;
   startNanos: number | null;
   endNanos: number | null;
   totalNanos: number | null;
@@ -66,9 +66,7 @@ export interface NamespaceLimits {
 }
 
 export interface SoqlEntry {
-  /** 0-based line index into the raw log body — `raw.split('\n')[line]`. Every
-   *  `line`/`enterLine`/`exitLine` in ParsedLog uses this same 0-based convention. */
-  line: number;
+  line: RawLineIndex;
   timestampNanos: number | null;
   query: string;
   rows: number | null;
@@ -76,9 +74,7 @@ export interface SoqlEntry {
 }
 
 export interface DmlEntry {
-  /** 0-based line index into the raw log body — `raw.split('\n')[line]`. Every
-   *  `line`/`enterLine`/`exitLine` in ParsedLog uses this same 0-based convention. */
-  line: number;
+  line: RawLineIndex;
   timestampNanos: number | null;
   op: string;
   sobject: string;
@@ -87,9 +83,7 @@ export interface DmlEntry {
 }
 
 export interface CalloutEntry {
-  /** 0-based line index into the raw log body — `raw.split('\n')[line]`. Every
-   *  `line`/`enterLine`/`exitLine` in ParsedLog uses this same 0-based convention. */
-  line: number;
+  line: RawLineIndex;
   timestampNanos: number | null;
   method: string;
   endpoint: string;

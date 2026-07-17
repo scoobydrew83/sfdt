@@ -138,6 +138,26 @@ describe('extension/lib/apex-log parseApexLog', () => {
     });
   });
 
+  describe('inventory truncation recovery', () => {
+    it('does not misattribute a post-gap SOQL_END to a pre-gap pending BEGIN', () => {
+      // The pre-gap query's END is eaten by the skip; a later, unrelated END must
+      // NOT pop the stale pending entry and set its rows — it stays null.
+      const raw = [
+        '64.0 APEX_CODE,FINEST',
+        '10:00:00.0 (1000)|EXECUTION_STARTED',
+        "10:00:00.1 (2000)|SOQL_EXECUTE_BEGIN|[1]|SELECT Id FROM Account",
+        '*** Skipped 500 bytes of detailed log',
+        '10:00:00.3 (4000)|SOQL_EXECUTE_END|[9]|Rows:99',
+        '10:00:00.4 (5000)|EXECUTION_FINISHED',
+      ].join('\n');
+      const parsed = parseApexLog(raw);
+      expect(parsed.truncated).toBe(true);
+      expect(parsed.truncationReason).toBe('SKIPPED_BYTES');
+      expect(parsed.soql).toHaveLength(1);
+      expect(parsed.soql[0]!.rows).toBeNull(); // NOT 99
+    });
+  });
+
   describe('inventories (soql-dml-heavy.log)', () => {
     const parsed = parseApexLog(load('soql-dml-heavy.log'));
 

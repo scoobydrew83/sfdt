@@ -161,6 +161,14 @@ export function parseApexLog(raw: string, opts: ParseOptions = {}): ParsedLog {
   const callouts: CalloutEntry[] = [];
   const pendingSoql: SoqlEntry[] = [];
   const pendingCallouts: CalloutEntry[] = [];
+  // On a truncation gap, drop any open BEGINs so a later, post-gap END can't pop a
+  // stale pre-gap entry and misattribute its rows/status — the orphaned entries
+  // keep their null rows/status (the honest result), mirroring how the invocation
+  // stack recovers across a gap.
+  const dropPendingInventories = (): void => {
+    pendingSoql.length = 0;
+    pendingCallouts.length = 0;
+  };
 
   // Governor-limit snapshots. `currentLimitBlock` is the open LIMIT_USAGE_FOR_NS
   // sub-block being filled from indented body lines; `cumulative` tracks whether
@@ -193,12 +201,14 @@ export function parseApexLog(raw: string, opts: ParseOptions = {}): ParsedLog {
     if (MAX_SIZE_RE.test(line)) {
       truncated = true;
       truncationReason = 'MAXIMUM_DEBUG_LOG_SIZE_REACHED';
+      dropPendingInventories();
       continue;
     }
     if (SKIPPED_BYTES_RE.test(line)) {
       truncated = true;
       // A later MAXIMUM marker outranks SKIPPED; don't overwrite one already set.
       if (truncationReason === null) truncationReason = 'SKIPPED_BYTES';
+      dropPendingInventories();
       continue;
     }
 
@@ -262,7 +272,7 @@ export function parseApexLog(raw: string, opts: ParseOptions = {}): ParsedLog {
       continue;
     }
 
-    // Inventories. 1-based raw-body line so P3-3 can deep-link.
+    // Inventories. 0-based raw-body line (same convention as events/nodes) so P3-3 can deep-link.
     const node = stack[stack.length - 1] ?? null;
     if (ev.type === 'SOQL_EXECUTE_BEGIN') {
       const entry: SoqlEntry = {
