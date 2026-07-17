@@ -88,6 +88,24 @@
       "bridgeRequired": false
     },
     {
+      "id": "command-palette",
+      "name": "Command Palette",
+      "contexts": [
+        "setup_flows",
+        "flow_details",
+        "flow_builder",
+        "compare_flows",
+        "flow_trigger_explorer",
+        "setup_other",
+        "record_page",
+        "none"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": false,
+      "bridgeRequired": false
+    },
+    {
       "id": "comparison-exporter",
       "name": "Comparison Exporter",
       "contexts": [

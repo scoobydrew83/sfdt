@@ -18,7 +18,11 @@ export type PaletteCategory = 'recent' | 'feature' | 'setup' | 'shortcut' | 'rec
 export type PaletteAction =
   | { kind: 'feature'; featureId: string }
   | { kind: 'url'; url: string; newTab: boolean }
-  | { kind: 'inspect-record'; recordId: string };
+  | { kind: 'inspect-record'; recordId: string }
+  // Objects are assembled by the overlay (ui/command-palette.ts) after first
+  // paint from the describe cache — not by buildPaletteSources — so their action
+  // shape lives here for the shared PaletteCandidate type but is minted there.
+  | { kind: 'object'; objectName: string };
 
 export interface PaletteCandidate {
   /** Stable id, unique across the pool. Also the MRU key (see palette-recents). */
@@ -85,6 +89,14 @@ export interface PaletteSourceInputs {
   recordIdHint?: string;
   /** Most-recently-used candidate ids, most-recent first (from palette-recents). */
   recents?: readonly string[];
+  /**
+   * The org's objects (name + label), loaded lazily by the overlay AFTER first
+   * paint and passed back on a rebuild — empty on the initial synchronous build,
+   * so open() stays network-free (AC-1). Included in the pool here so a recently
+   * used object resolves into "Recent" and dedupes from the Objects section like
+   * any other category.
+   */
+  objects?: readonly { name: string; label: string }[];
 }
 
 const CATEGORY_LABELS: Record<PaletteCategory, string> = {
@@ -102,11 +114,10 @@ const SECTION_ORDER: PaletteCategory[] = ['record', 'feature', 'setup', 'shortcu
 /**
  * Assemble the categorized palette candidates. Returns sections in display
  * order, with a "Recent" section first (recent-first ordering) resolved from the
- * `recents` id list against the full candidate pool. The "Objects" section is
- * deliberately empty.
- * // TODO(P2-2 PR-2): wire the Objects category to getDescribeCache once P2-1's
- * // lib/describe-cache lands. Do NOT import describe-cache here — it ships in a
- * // separate PR; leaving it lazy keeps this module dependency-free.
+ * `recents` id list against the full candidate pool. Objects (when provided via
+ * `inputs.objects`) are part of that pool, so a recently-used object surfaces in
+ * "Recent" like any other category. This module stays dependency-free — the caller
+ * loads objects from the describe cache and passes them in on a rebuild.
  */
 export function buildPaletteSources(inputs: PaletteSourceInputs): PaletteSection[] {
   const pool: PaletteCandidate[] = [];
@@ -168,7 +179,17 @@ export function buildPaletteSources(inputs: PaletteSourceInputs): PaletteSection
     });
   }
 
-  // Objects: intentionally empty stub (see TODO above).
+  // Objects (loaded lazily after first paint; empty on the synchronous build).
+  for (const obj of inputs.objects ?? []) {
+    pool.push({
+      id: `object:${obj.name}`,
+      category: 'object',
+      label: obj.label || obj.name,
+      apiName: obj.name,
+      icon: '🗂',
+      action: { kind: 'object', objectName: obj.name },
+    });
+  }
 
   const byId = new Map(pool.map((c) => [c.id, c]));
   const sections: PaletteSection[] = [];

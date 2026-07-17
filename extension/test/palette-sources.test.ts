@@ -135,4 +135,23 @@ describe('extension/lib/palette-sources — buildPaletteSources', () => {
     const sections = buildPaletteSources({ ...base, recents: ['feature:does-not-exist'] });
     expect(sectionFor(sections, 'recent')).toBeUndefined();
   });
+
+  it('includes provided objects and resolves an object recent into Recent', () => {
+    const objects = [
+      { name: 'Account', label: 'Account' },
+      { name: 'Contact', label: 'Contact' },
+    ];
+    // No recents → objects appear only under the Objects section, in input order.
+    const plain = buildPaletteSources({ ...base, objects });
+    expect(sectionFor(plain, 'object')?.candidates.map((c) => c.id)).toEqual([
+      'object:Account',
+      'object:Contact',
+    ]);
+    expect(sectionFor(plain, 'recent')).toBeUndefined();
+
+    // A recently-used object resolves into "Recent" and is de-duped from Objects.
+    const withRecent = buildPaletteSources({ ...base, objects, recents: ['object:Account'] });
+    expect(sectionFor(withRecent, 'recent')?.candidates.map((c) => c.id)).toEqual(['object:Account']);
+    expect(sectionFor(withRecent, 'object')?.candidates.map((c) => c.id)).toEqual(['object:Contact']);
+  });
 });

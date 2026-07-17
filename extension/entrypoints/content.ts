@@ -55,6 +55,10 @@ import { createSavedSoqlFeature } from '../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../features/org-switcher.js';
 import { createOrgReleaseBadgeFeature } from '../features/org-release-badge.js';
 import { createApiVersionAuditFeature } from '../features/api-version-audit.js';
+import {
+  createCommandPaletteFeature,
+  createPaletteOpener,
+} from '../features/command-palette.js';
 
 const SALESFORCE_HOST_PATTERN =
   /^https:\/\/[^/]+\.(salesforce\.com|salesforce-setup\.com|my\.salesforce\.com|lightning\.force\.com)\//i;
@@ -148,9 +152,11 @@ export default defineContentScript({
     // inspector for a specific record Id (openFor), not just the page's URL.
     const inspectRecord = createInspectRecordFeature();
     registry.register(inspectRecord);
-    // Record-page ⚡ entry dispatches onActivate, which reads the sObject from the
-    // URL and calls openFor() itself — no kept reference needed here (P2-1).
-    registry.register(createSchemaBrowserFeature());
+    // Record-page ⚡ entry dispatches onActivate (reads the sObject from the URL);
+    // the reference is also kept so the command palette can drill an object into
+    // the richer Schema Browser via openFor() (wired into the opener below).
+    const schemaBrowser = createSchemaBrowserFeature();
+    registry.register(schemaBrowser);
     registry.register(createShowApiNamesFeature());
     registry.register(createDataImportFeature());
     registry.register(createFieldCreatorFeature());
@@ -162,6 +168,10 @@ export default defineContentScript({
     registry.register(createDebugLogViewerFeature());
     registry.register(createSavedSoqlFeature());
     registry.register(createOrgSwitcherFeature());
+    // The command palette (P2-2): a global keyboard-first overlay listing every
+    // enabled-for-context action. Metadata-only feature so it gets an options
+    // toggle + kill-switch id; the overlay is opened imperatively below.
+    registry.register(createCommandPaletteFeature());
 
     setContextSource(buildContextToFeatures(registry.listManifests()));
 
@@ -211,15 +221,39 @@ export default defineContentScript({
 
     const ICONS = FEATURE_ICONS;
 
-    // Synthetic menu id — not a registered feature. Selecting it opens the
-    // standalone Workspace tab rather than dispatching to the registry.
+    // Synthetic menu ids — not registered features. Selecting them opens the
+    // standalone Workspace tab / the command palette rather than dispatching to
+    // the registry.
     const OPEN_WORKSPACE_ID = '__open-workspace__';
+    const OPEN_PALETTE_ID = '__open-palette__';
+
+    // The command palette opener. The ⚡ menu stays the dynamic, location-aware
+    // shortlist; the palette is the exhaustive searchable view — both surfaces
+    // are kept, bridged by the "View all features" menu entry below.
+    const palette = createPaletteOpener({
+      getGate: () => ({
+        available: getAvailableFeatures(),
+        isRegistered: (id) => registry.has(id),
+        disabledRemote,
+        isEnabled: (id) => isFeatureEnabled(currentSettings, id),
+      }),
+      getHostname: () => window.location.hostname,
+      activateFeature: (id) => registry.dispatch(id, 'activate'),
+      inspectRecord: (id) => inspectRecord.openFor(id),
+      // Drill a palette-selected object into the richer Schema Browser (falls back
+      // to the Object Manager page inside the opener if this is ever absent).
+      openSchemaBrowser: (name) => schemaBrowser.openFor(name),
+    });
 
     const menuItemsProvider = (): MenuItem[] => {
       // Always offer the Workspace first — it works on any Salesforce page.
       const items: MenuItem[] = [
         { featureId: OPEN_WORKSPACE_ID, icon: '↗', label: 'Open Workspace ↗' },
       ];
+      // Bridge to the exhaustive palette (only when it's enabled-for-context).
+      if (palette.isEnabled()) {
+        items.push({ featureId: OPEN_PALETTE_ID, icon: '⌘', label: 'View all features' });
+      }
       // Same enabled-for-context filter the command palette uses (AC-3), factored
       // into lib/palette-sources so the two surfaces can't drift.
       const enabled = enabledFeatureIds({
@@ -247,6 +281,10 @@ export default defineContentScript({
             );
             return;
           }
+          if (item.featureId === OPEN_PALETTE_ID) {
+            void palette.open();
+            return;
+          }
           return registry.dispatch(item.featureId, item.action ?? 'activate');
         },
         onOpenSettings: () => {
@@ -258,15 +296,17 @@ export default defineContentScript({
     });
 
     // Keyboard-command targets forwarded from the background service worker.
-    // `open-palette` opens the ⚡ side menu (until the command palette ships in
-    // P2-2); `toggle-inspector` is declared now but the LWC inspector doesn't
-    // exist yet (P6-1), so it surfaces a "not available yet" toast. These are
-    // separate from every feature's own in-page keydown listeners, which stay
+    // `open-palette` opens the command palette (P2-2); if it's kill-switched or
+    // user-disabled we fall back to the ⚡ side menu so the shortcut still does
+    // something useful. `toggle-inspector` is declared now but the LWC inspector
+    // doesn't exist yet (P6-1), so it surfaces a "not available yet" toast. These
+    // are separate from every feature's own in-page keydown listeners, which stay
     // untouched.
     chrome.runtime.onMessage.addListener(
       (message: { action?: string; recordId?: string; sobjectName?: string }) => {
         if (message?.action === 'openPalette') {
-          sideButton.open();
+          if (palette.isEnabled()) void palette.open();
+          else sideButton.open();
         } else if (message?.action === 'toggleInspector') {
           showToast('LWC Inspector isn’t available yet — coming in a later release.', {
             kind: 'info',
