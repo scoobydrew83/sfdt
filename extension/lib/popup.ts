@@ -82,6 +82,7 @@ export async function loadPopupState(deps: PopupDeps): Promise<PopupState> {
 
 export interface PopupHandlers {
   onOpenWorkspace: () => void;
+  onOpenPanel: () => void;
   onOpenPalette: () => void;
   onOpenOptions: () => void;
 }
@@ -203,6 +204,9 @@ export function renderPopup(
   // Workspace works from any tab (it shows an org picker when there's no org),
   // so it's always offered and is the primary action.
   actions.appendChild(button(doc, 'Open Workspace', handlers.onOpenWorkspace, true));
+  // The docked side panel hosts the same tools alongside the current tab. Like
+  // the Workspace it works from any tab (bind-on-open, else an org picker).
+  actions.appendChild(button(doc, 'Open side panel', handlers.onOpenPanel));
   // The palette (⚡ menu) only exists on a Salesforce page's content script.
   if (state.isSalesforceTab) {
     actions.appendChild(button(doc, 'Quick menu', handlers.onOpenPalette));

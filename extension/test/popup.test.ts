@@ -79,6 +79,7 @@ describe('loadPopupState', () => {
 describe('renderPopup', () => {
   const handlers = {
     onOpenWorkspace: vi.fn(),
+    onOpenPanel: vi.fn(),
     onOpenPalette: vi.fn(),
     onOpenOptions: vi.fn(),
   };
@@ -114,7 +115,7 @@ describe('renderPopup', () => {
     expect(text).toContain('sfdt bridge');
     expect(text).toContain('v0.7.0');
     const labels = Array.from(root().querySelectorAll('button')).map((b) => b.textContent);
-    expect(labels).toEqual(['Open Workspace', 'Quick menu', 'Settings']);
+    expect(labels).toEqual(['Open Workspace', 'Open side panel', 'Quick menu', 'Settings']);
   });
 
   it('renders the "not a Salesforce tab" state and hides the Quick menu button', () => {
@@ -125,7 +126,7 @@ describe('renderPopup', () => {
     );
     expect(root().textContent).toContain('Not a Salesforce tab');
     const labels = Array.from(root().querySelectorAll('button')).map((b) => b.textContent);
-    expect(labels).toEqual(['Open Workspace', 'Settings']);
+    expect(labels).toEqual(['Open Workspace', 'Open side panel', 'Settings']);
   });
 
   it('status is conveyed by text, not colour alone (a11y): dots are aria-hidden', () => {
@@ -165,9 +166,11 @@ describe('renderPopup', () => {
     const buttons = Array.from(root().querySelectorAll('button'));
     buttons.forEach((b) => expect(b.tagName).toBe('BUTTON'));
     buttons.find((b) => b.textContent === 'Open Workspace')?.click();
+    buttons.find((b) => b.textContent === 'Open side panel')?.click();
     buttons.find((b) => b.textContent === 'Quick menu')?.click();
     buttons.find((b) => b.textContent === 'Settings')?.click();
     expect(handlers.onOpenWorkspace).toHaveBeenCalledOnce();
+    expect(handlers.onOpenPanel).toHaveBeenCalledOnce();
     expect(handlers.onOpenPalette).toHaveBeenCalledOnce();
     expect(handlers.onOpenOptions).toHaveBeenCalledOnce();
   });
