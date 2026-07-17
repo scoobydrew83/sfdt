@@ -231,9 +231,14 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
   // the full org-wide Dependency Explorer (openFor pre-fills + runs the search).
   const depExplorer = createDependencyExplorerFeature(common);
 
+  // Created eagerly so the Schema Browser can drop a field into the SOQL Runner
+  // draft and export a chosen field subset for a prompt (P2-1 PR-3).
+  const soqlRunner = createSoqlRunnerFeature(common);
+  const exportForPrompt = createExportForPromptFeature({ doc: document, win: syntheticWin });
+
   // Saved SOQL hands a chosen query to the runner, then asks us to open it.
   const factories: Record<string, () => Feature> = {
-    'soql-runner': () => createSoqlRunnerFeature(common),
+    'soql-runner': () => soqlRunner,
     'saved-soql': () =>
       createSavedSoqlFeature({
         doc: document,
@@ -245,14 +250,18 @@ function bootWorkspace(root: HTMLElement, orgHost: string): void {
     'rest-explore': () => createRestExploreFeature(common),
     'soap-explore': () => createSoapExploreFeature(common),
     'inspect-record': () => createInspectRecordFeature(common),
-    'schema-browser': () => createSchemaBrowserFeature(common),
+    'schema-browser': () =>
+      createSchemaBrowserFeature({
+        ...common,
+        insertFieldIntoDraft: (field) => soqlRunner.insertFieldIntoDraft(field),
+        exportForPrompt: (name, fields) => exportForPrompt.exportObject(name, fields),
+      }),
     'org-limits': () => createOrgLimitsFeature(common),
     'event-monitor': () => createEventMonitorFeature(common),
     'data-import': () => createDataImportFeature(common),
     'field-creator': () => createFieldCreatorFeature(common),
     'metadata-retrieve': () => createMetadataRetrieveFeature(common),
-    'export-for-prompt': () =>
-      createExportForPromptFeature({ doc: document, win: syntheticWin }),
+    'export-for-prompt': () => exportForPrompt,
     'apex-coverage': () => createCodeCoverageFeature(common),
     'apex-test-runner': () => createApexTestRunnerFeature(common),
     'org-health-live': () => createOrgHealthLiveFeature(common),

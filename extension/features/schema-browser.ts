@@ -29,6 +29,12 @@ export interface SchemaBrowserOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
+  /** Drop a field API name into the SOQL Runner draft (P2-1 PR-3). When absent,
+   * the per-field "Insert into query" action is hidden. */
+  insertFieldIntoDraft?: (fieldApiName: string) => void;
+  /** Copy an object's schema (optionally a field subset) to the clipboard for an
+   * LLM prompt (P2-1 PR-3). When absent, the field-selection + export UI is hidden. */
+  exportForPrompt?: (objectName: string, fieldNames?: readonly string[]) => void | Promise<void>;
 }
 
 /** The Schema Browser feature, plus an imperative opener for cross-links / the ⚡ menu. */
@@ -42,6 +48,12 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
   const cache = getDescribeCache(api);
+  const insertField = options.insertFieldIntoDraft;
+  const exportForPrompt = options.exportForPrompt;
+  // Per-object field selection for "Export selected for prompt": object API name →
+  // set of chosen field API names. Default = every field selected (users unselect
+  // what they don't want). Persists across reopens for the feature instance.
+  const fieldSelection = new Map<string, Set<string>>();
 
   let view: ViewHandle | null = null;
   let escHandler: ((e: KeyboardEvent) => void) | null = null;
@@ -292,6 +304,17 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
       }
 
       const vm = toFieldTableVM(describe.data);
+
+      // Field selection + export toolbar (only when the export hook is wired).
+      // The object's fields are pulled back by API name, all pre-selected; the
+      // user unselects the ones to exclude, then exports just the selection.
+      if (exportForPrompt) {
+        if (!fieldSelection.has(selectedName)) {
+          fieldSelection.set(selectedName, new Set(vm.fields.map((f) => f.name)));
+        }
+        rightPane.appendChild(buildSelectionToolbar(vm.fields));
+      }
+
       rightPane.appendChild(buildFieldTable(vm.fields));
 
       if (vm.childRelationships.length > 0) {
@@ -315,13 +338,67 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
       }
     }
 
+    // Select-all / clear-all + "Export selected for prompt". Mutating a selection
+    // re-renders the detail so the row checkboxes reflect the new state.
+    function buildSelectionToolbar(fields: FieldRow[]): HTMLElement {
+      const bar = doc.createElement('div');
+      bar.style.cssText = 'display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap;';
+
+      const selected = fieldSelection.get(selectedName)!;
+      const count = doc.createElement('span');
+      count.setAttribute('aria-live', 'polite');
+      count.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
+      count.textContent = `${selected.size} of ${fields.length} fields selected`;
+
+      const btnStyle =
+        'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak); border-radius: 4px; cursor: pointer; font-size: 12px;';
+
+      const selectAll = doc.createElement('button');
+      selectAll.type = 'button';
+      selectAll.textContent = 'Select all';
+      selectAll.style.cssText = btnStyle;
+      selectAll.addEventListener('click', () => {
+        fieldSelection.set(selectedName, new Set(fields.map((f) => f.name)));
+        renderDetail();
+      });
+
+      const clearAll = doc.createElement('button');
+      clearAll.type = 'button';
+      clearAll.textContent = 'Clear all';
+      clearAll.style.cssText = btnStyle;
+      clearAll.addEventListener('click', () => {
+        fieldSelection.set(selectedName, new Set());
+        renderDetail();
+      });
+
+      const exportBtn = doc.createElement('button');
+      exportBtn.type = 'button';
+      exportBtn.textContent = '📋 Export selected for prompt';
+      exportBtn.style.cssText =
+        'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 12px;';
+      exportBtn.addEventListener('click', () => {
+        const chosen = fieldSelection.get(selectedName);
+        if (!chosen || chosen.size === 0) {
+          showToast('Select at least one field to export.', { doc, kind: 'warning' });
+          return;
+        }
+        void exportForPrompt!(selectedName, [...chosen]);
+      });
+
+      bar.append(selectAll, clearAll, exportBtn, count);
+      return bar;
+    }
+
     function buildFieldTable(fields: FieldRow[]): HTMLElement {
       const table = doc.createElement('table');
       table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;';
 
       const thead = doc.createElement('thead');
       const headRow = doc.createElement('tr');
-      for (const h of ['Label', 'API Name', 'Type', 'Length', 'Required', 'Details', '']) {
+      const headers = exportForPrompt
+        ? ['', 'Label', 'API Name', 'Type', 'Length', 'Required', 'Details', '']
+        : ['Label', 'API Name', 'Type', 'Length', 'Required', 'Details', ''];
+      for (const h of headers) {
         const th = doc.createElement('th');
         th.textContent = h;
         th.style.cssText = 'padding: 6px 8px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; color: var(--sfdt-color-text-strong);';
@@ -341,6 +418,24 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
     function buildFieldRow(field: FieldRow): HTMLElement {
       const tr = doc.createElement('tr');
       tr.style.cssText = 'border-bottom: 1px solid var(--sfdt-color-bg); vertical-align: top;';
+
+      // Leading selection checkbox (export flow only). Pre-checked; unchecking
+      // drops the field from the exported subset for this object.
+      let tdSelect: HTMLTableCellElement | null = null;
+      if (exportForPrompt) {
+        tdSelect = doc.createElement('td');
+        tdSelect.style.cssText = 'padding: 6px 8px; text-align: center;';
+        const cb = doc.createElement('input');
+        cb.type = 'checkbox';
+        const selected = fieldSelection.get(selectedName)!;
+        cb.checked = selected.has(field.name);
+        cb.setAttribute('aria-label', `Select field ${field.name} for export`);
+        cb.addEventListener('change', () => {
+          if (cb.checked) selected.add(field.name);
+          else selected.delete(field.name);
+        });
+        tdSelect.appendChild(cb);
+      }
 
       const tdLabel = doc.createElement('td');
       tdLabel.textContent = field.label;
@@ -369,15 +464,17 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
       tdDetails.style.cssText = 'padding: 6px 8px; color: var(--sfdt-color-text-weak);';
       appendFieldDetails(tdDetails, field);
 
-      // Quick actions cell (PR-2: Copy API name only).
+      // Quick actions cell: Copy API name, plus "Insert into query" when the SOQL
+      // Runner hook is wired (PR-3).
       const tdActions = doc.createElement('td');
-      tdActions.style.cssText = 'padding: 6px 8px; white-space: nowrap;';
+      tdActions.style.cssText = 'padding: 6px 8px; white-space: nowrap; display: flex; gap: 4px;';
+      const actionStyle = 'padding: 3px 8px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak); border-radius: 4px; cursor: pointer; font-size: 11px;';
       const copyBtn = doc.createElement('button');
       copyBtn.type = 'button';
       copyBtn.textContent = 'Copy';
       copyBtn.title = `Copy API name (${field.name})`;
       copyBtn.setAttribute('aria-label', `Copy API name ${field.name}`);
-      copyBtn.style.cssText = 'padding: 3px 8px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak); border-radius: 4px; cursor: pointer; font-size: 11px;';
+      copyBtn.style.cssText = actionStyle;
       copyBtn.addEventListener('click', async () => {
         try {
           await win.navigator.clipboard.writeText(field.name);
@@ -388,7 +485,23 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
       });
       tdActions.appendChild(copyBtn);
 
-      tr.append(tdLabel, tdApi, tdType, tdLength, tdRequired, tdDetails, tdActions);
+      if (insertField) {
+        const insertBtn = doc.createElement('button');
+        insertBtn.type = 'button';
+        insertBtn.textContent = 'Insert into query';
+        insertBtn.title = `Insert ${field.name} into the SOQL Runner draft`;
+        insertBtn.setAttribute('aria-label', `Insert field ${field.name} into query`);
+        insertBtn.style.cssText = actionStyle;
+        insertBtn.addEventListener('click', () => {
+          insertField(field.name);
+          showToast(`Inserted ${field.name} into query`, { doc, kind: 'success' });
+        });
+        tdActions.appendChild(insertBtn);
+      }
+
+      const cells = [tdLabel, tdApi, tdType, tdLength, tdRequired, tdDetails, tdActions];
+      if (tdSelect) cells.unshift(tdSelect);
+      tr.append(...cells);
       return tr;
     }
 

@@ -322,3 +322,106 @@ describe('schema-browser — a11y (P0-8)', () => {
     expect(document.activeElement).toBe(trigger);
   });
 });
+
+describe('schema-browser — SOQL insert + export selection (P2-1 PR-3)', () => {
+  const fixtures: Fixtures = {
+    sobjects: [{ name: 'Account', label: 'Account', keyPrefix: '001' }],
+    describes: {
+      Account: {
+        name: 'Account',
+        label: 'Account',
+        fields: [
+          field({ name: 'Name', label: 'Account Name', type: 'string', nillable: false }),
+          field({ name: 'Industry', label: 'Industry', type: 'picklist' }),
+          field({ name: 'Phone', label: 'Phone', type: 'phone' }),
+        ],
+        childRelationships: [],
+      },
+    },
+  };
+
+  const byText = (text: string) =>
+    Array.from(document.querySelectorAll('button')).find((b) => b.textContent === text) as
+      | HTMLButtonElement
+      | undefined;
+
+  it('per-field "Insert into query" calls insertFieldIntoDraft with the API name', async () => {
+    const insertFieldIntoDraft = vi.fn();
+    const api = makeApi(fixtures);
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api, insertFieldIntoDraft });
+    await feature.openFor('Account');
+    await tick();
+
+    const insertBtn = byText('Insert into query');
+    expect(insertBtn).toBeTruthy();
+    insertBtn!.click();
+    expect(insertFieldIntoDraft).toHaveBeenCalledWith('Name');
+  });
+
+  it('hides the insert action when no hook is wired', async () => {
+    const api = makeApi(fixtures);
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api });
+    await feature.openFor('Account');
+    await tick();
+    expect(byText('Insert into query')).toBeUndefined();
+  });
+
+  it('pre-selects every field and exports only the still-selected subset', async () => {
+    const exportForPrompt = vi.fn();
+    const api = makeApi(fixtures);
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api, exportForPrompt });
+    await feature.openFor('Account');
+    await tick();
+
+    const boxes = Array.from(
+      document.querySelectorAll('input[type="checkbox"]'),
+    ) as HTMLInputElement[];
+    expect(boxes).toHaveLength(3);
+    // Default: all selected.
+    expect(boxes.every((b) => b.checked)).toBe(true);
+
+    // Unselect "Industry" (aria-label carries the field name).
+    const industry = boxes.find((b) =>
+      b.getAttribute('aria-label')?.includes('Industry'),
+    ) as HTMLInputElement;
+    industry.checked = false;
+    industry.dispatchEvent(new Event('change'));
+
+    byText('📋 Export selected for prompt')!.click();
+    expect(exportForPrompt).toHaveBeenCalledWith('Account', ['Name', 'Phone']);
+  });
+
+  it('supports clear-all then select-all, and refuses an empty export', async () => {
+    const exportForPrompt = vi.fn();
+    const api = makeApi(fixtures);
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api, exportForPrompt });
+    await feature.openFor('Account');
+    await tick();
+
+    byText('Clear all')!.click();
+    await tick();
+    let boxes = Array.from(document.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+    expect(boxes.some((b) => b.checked)).toBe(false);
+
+    // Exporting with nothing selected warns and does not call the hook.
+    byText('📋 Export selected for prompt')!.click();
+    expect(exportForPrompt).not.toHaveBeenCalled();
+
+    byText('Select all')!.click();
+    await tick();
+    boxes = Array.from(document.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+    expect(boxes.every((b) => b.checked)).toBe(true);
+
+    byText('📋 Export selected for prompt')!.click();
+    expect(exportForPrompt).toHaveBeenCalledWith('Account', ['Name', 'Industry', 'Phone']);
+  });
+
+  it('does not render selection UI when no export hook is wired', async () => {
+    const api = makeApi(fixtures);
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api });
+    await feature.openFor('Account');
+    await tick();
+    expect(document.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+    expect(byText('📋 Export selected for prompt')).toBeUndefined();
+  });
+});
