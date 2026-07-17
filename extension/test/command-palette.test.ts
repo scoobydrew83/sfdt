@@ -264,6 +264,53 @@ describe('extension/ui/command-palette', () => {
       expect(labels.some((l) => l.includes('Flow AI Assistant'))).toBe(false);
     });
   });
+
+  // --- P2-2 PR-3: custom shortcuts + recents ---
+  describe('custom shortcuts', () => {
+    const shortcut = {
+      id: 'My Report',
+      label: 'My Report',
+      url: 'https://example.com/r',
+      openInNewTab: true,
+    };
+
+    it('renders a configured shortcut in the Shortcuts category', () => {
+      handle = openCommandPalette({
+        sourceInputs: inputs({ customShortcuts: [shortcut] }),
+        executors: noopExecutors(),
+      });
+      expect(overlay()!.querySelector('[role="group"][aria-label="Shortcuts"]')).not.toBeNull();
+      expect(optionLabels().some((l) => l.includes('My Report'))).toBe(true);
+    });
+
+    it('executes a shortcut via navigate(url, newTab) and records it for recents', async () => {
+      const executors = noopExecutors();
+      const onExecute = vi.fn();
+      handle = openCommandPalette({
+        sourceInputs: inputs({ customShortcuts: [shortcut] }),
+        executors,
+        onExecute,
+      });
+      const input = searchInput();
+      input.value = 'My Report';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      key(input, 'Enter');
+      expect(executors.navigate).toHaveBeenCalledWith('https://example.com/r', true);
+      await flush();
+      // Stable id → a used shortcut can resurface in "Recent" on reopen.
+      expect(onExecute).toHaveBeenCalledWith('shortcut:My Report');
+    });
+
+    it('surfaces a previously-used shortcut in the Recent section (keyed on shortcut:<id>)', () => {
+      handle = openCommandPalette({
+        sourceInputs: inputs({ customShortcuts: [shortcut], recents: ['shortcut:My Report'] }),
+        executors: noopExecutors(),
+      });
+      const recentGroup = overlay()!.querySelector('[role="group"][aria-label="Recent"]');
+      expect(recentGroup).not.toBeNull();
+      expect(recentGroup!.textContent).toContain('My Report');
+    });
+  });
 });
 
 describe('extension/features/command-palette — global availability', () => {

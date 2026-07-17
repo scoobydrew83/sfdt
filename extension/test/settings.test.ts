@@ -70,6 +70,38 @@ describe('extension/lib/settings', () => {
       saveSettings({ bridge: { localhostPort: -1 } } as never),
     ).rejects.toThrow();
   });
+
+  describe('customShortcuts', () => {
+    it('defaults to an empty array', async () => {
+      const s = await loadSettings();
+      expect(s.customShortcuts).toEqual([]);
+    });
+
+    it('parses a valid {name,url} entry', () => {
+      const parsed = SettingsSchema.parse({
+        customShortcuts: [{ name: 'Docs', url: 'https://sfdt.dev/' }],
+      });
+      expect(parsed.customShortcuts).toEqual([{ name: 'Docs', url: 'https://sfdt.dev/' }]);
+    });
+
+    it('rejects a malformed URL at the schema boundary', () => {
+      expect(
+        SettingsSchema.safeParse({ customShortcuts: [{ name: 'Bad', url: 'not-a-url' }] }).success,
+      ).toBe(false);
+    });
+
+    it('patchSettings replaces the array wholesale (does not index-merge)', async () => {
+      await saveSettings(
+        SettingsSchema.parse({ customShortcuts: [{ name: 'A', url: 'https://a.example/' }] }),
+      );
+      const merged = await patchSettings({
+        customShortcuts: [{ name: 'B', url: 'https://b.example/' }],
+      } as never);
+      // Wholesale replacement — not { 0: {A}, ...{B} } index-keyed object.
+      expect(Array.isArray(merged.customShortcuts)).toBe(true);
+      expect(merged.customShortcuts).toEqual([{ name: 'B', url: 'https://b.example/' }]);
+    });
+  });
 });
 
 describe('settings.features legacy id adapter', () => {

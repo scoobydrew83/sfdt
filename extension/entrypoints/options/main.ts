@@ -7,6 +7,7 @@ import {
 } from '../../lib/settings.js';
 import { createBridgeClient, getBridgeData } from '../../lib/sfdt-bridge.js';
 import { createFeatureRegistry } from '../../lib/feature-registry.js';
+import { validateCustomShortcuts } from '../../lib/custom-shortcuts.js';
 import { buildField } from '../../lib/zod-to-dom.js';
 import { createTelemetry } from '../../lib/telemetry.js';
 import { SFDT_TOKENS_CSS } from '../../lib/tokens.js';
@@ -107,6 +108,8 @@ const STYLES = `
   button:hover { background: var(--sfdt-color-bg); }
   button.primary:hover { background: var(--sfdt-color-brand-active); }
   .actions { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
+  .shortcut-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
+  .shortcut-row input[type="text"] { flex: 1; min-width: 0; }
   .status {
     font-size: 12px;
     padding: 4px 8px;
@@ -294,6 +297,56 @@ async function render(): Promise<void> {
   bridgeSection.appendChild(actions);
   wrap.appendChild(bridgeSection);
 
+  // --- Custom shortcuts (command palette) ---
+  const shortcutsSection = el('section');
+  shortcutsSection.appendChild(el('h2', {}, 'Custom shortcuts'));
+  const shortcutsHelp = el('p', { class: 'section-help' });
+  shortcutsHelp.textContent =
+    'Name/URL shortcuts that appear in the command palette (Ctrl/Cmd+Shift+K) under "Shortcuts". Selecting one opens its URL. Names must be unique and URLs must be valid.';
+  shortcutsSection.appendChild(shortcutsHelp);
+
+  const shortcutRows: Array<{ nameInput: HTMLInputElement; urlInput: HTMLInputElement }> = [];
+  const shortcutList = el('div');
+  shortcutsSection.appendChild(shortcutList);
+
+  function addShortcutRow(name = '', url = ''): void {
+    const nameInput = el('input', { type: 'text', placeholder: 'Name' });
+    nameInput.value = name;
+    nameInput.setAttribute('aria-label', 'Shortcut name');
+    const urlInput = el('input', { type: 'text', placeholder: 'https://…' });
+    urlInput.value = url;
+    urlInput.setAttribute('aria-label', 'Shortcut URL');
+    const removeBtn = el('button', {}, 'Remove');
+    removeBtn.setAttribute('aria-label', 'Remove shortcut');
+    const entry = { nameInput, urlInput };
+    const rowEl = el('div', { class: 'shortcut-row' });
+    rowEl.appendChild(nameInput);
+    rowEl.appendChild(urlInput);
+    rowEl.appendChild(removeBtn);
+    removeBtn.addEventListener('click', () => {
+      const i = shortcutRows.indexOf(entry);
+      if (i >= 0) shortcutRows.splice(i, 1);
+      rowEl.remove();
+    });
+    shortcutRows.push(entry);
+    shortcutList.appendChild(rowEl);
+  }
+
+  for (const s of settings.customShortcuts ?? []) addShortcutRow(s.name, s.url);
+
+  const addShortcutBtn = el('button', {}, 'Add shortcut');
+  addShortcutBtn.addEventListener('click', () => addShortcutRow());
+  const shortcutActions = el('div', { class: 'actions' });
+  shortcutActions.appendChild(addShortcutBtn);
+  shortcutsSection.appendChild(shortcutActions);
+  wrap.appendChild(shortcutsSection);
+
+  // Collect + validate the shortcut rows for the shared Save handler. Throws with
+  // a user-facing message on a duplicate name or a malformed URL (the caller's
+  // try/catch surfaces it in the status pill). Blank rows are dropped.
+  const collectShortcuts = (): Array<{ name: string; url: string }> =>
+    validateCustomShortcuts(shortcutRows.map((r) => ({ name: r.nameInput.value, url: r.urlInput.value })));
+
   const featuresSection = el('section');
   featuresSection.appendChild(el('h2', {}, 'Features'));
   const featuresHelp = el('p', { class: 'section-help' });
@@ -454,10 +507,13 @@ async function render(): Promise<void> {
         featureSettings[group.id] = group.getValues();
       }
 
+      const customShortcuts = collectShortcuts();
+
       const portValue = Number(portInput.value);
       const next: Partial<Settings> = {
         features,
         featureSettings: featureSettings as Settings['featureSettings'],
+        customShortcuts,
         bridge: {
           token: tokenInput.value.trim(),
           preferredTransport: transportSelect.value as Settings['bridge']['preferredTransport'],

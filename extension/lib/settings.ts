@@ -74,6 +74,14 @@ export const SettingsSchema = z.object({
       localhostPort: z.number().int().positive().default(7654),
     })
     .default({}),
+
+  // User-defined command-palette shortcuts (P2-2). A global preference like
+  // theme/bridge — NOT a per-feature/kill-switchable content feature. `url` is
+  // validated at the z.string().url() boundary so a malformed entry is rejected
+  // on save rather than opened; the options page also enforces unique `name`s.
+  customShortcuts: z
+    .array(z.object({ name: z.string(), url: z.string().url() }))
+    .default([]),
 });
 
 export type Settings = z.infer<typeof SettingsSchema> & {
@@ -177,6 +185,10 @@ export async function patchSettings(patch: Partial<Settings>): Promise<Settings>
   for (const key of Object.keys(patch) as Array<keyof Settings>) {
     const a = current[key];
     const b = patch[key];
+    // Arrays (e.g. customShortcuts) replace wholesale — spread-merging two arrays
+    // yields an index-keyed object, which fails schema validation. Only plain
+    // objects (bridge, telemetry, …) merge one level deep.
+    if (Array.isArray(a) || Array.isArray(b)) continue;
     if (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null) {
       (next as Record<string, unknown>)[key] = { ...a, ...b };
     }
