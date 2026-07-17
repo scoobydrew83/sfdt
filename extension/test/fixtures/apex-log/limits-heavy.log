@@ -1,0 +1,29 @@
+64.0 APEX_CODE,FINEST;APEX_PROFILING,INFO;DB,INFO;SYSTEM,FINE
+09:50:00.500 (1000)|EXECUTION_STARTED
+09:50:00.500 (2000)|CODE_UNIT_STARTED|[EXTERNAL]|apex://BatchController/ACTION$run
+09:50:00.500 (3000)|METHOD_ENTRY|[5]|01p5j000000BaSvAAK|BatchService.execute()
+09:50:00.500 (4000)|CUMULATIVE_LIMIT_USAGE
+09:50:00.500 (4000)|LIMIT_USAGE_FOR_NS|(default)|
+  Number of SOQL queries: 1 out of 100
+  Number of query rows: 10 out of 50000
+  Number of DML statements: 0 out of 150
+  Maximum CPU time: 30 out of 10000
+09:50:00.500 (4000)|LIMIT_USAGE_FOR_NS|myns|
+  Number of SOQL queries: 2 out of 100
+  Number of DML statements: 1 out of 150
+09:50:00.500 (4000)|CUMULATIVE_LIMIT_USAGE_END
+09:50:00.500 (5000)|METHOD_EXIT|[5]|01p5j000000BaSvAAK|BatchService.execute()
+09:50:00.500 (6000)|METHOD_ENTRY|[10]|01p5j000000BaFnAAK|BatchService.finish()
+09:50:00.500 (7000)|CUMULATIVE_LIMIT_USAGE
+09:50:00.500 (7000)|LIMIT_USAGE_FOR_NS|(default)|
+  Number of SOQL queries: 4 out of 100
+  Number of query rows: 55 out of 50000
+  Number of DML statements: 2 out of 150
+  Maximum CPU time: 90 out of 10000
+09:50:00.500 (7000)|LIMIT_USAGE_FOR_NS|myns|
+  Number of SOQL queries: 3 out of 100
+  Number of DML statements: 1 out of 150
+09:50:00.500 (7000)|CUMULATIVE_LIMIT_USAGE_END
+09:50:00.500 (8000)|METHOD_EXIT|[10]|01p5j000000BaFnAAK|BatchService.finish()
+09:50:00.500 (9000)|CODE_UNIT_FINISHED|apex://BatchController/ACTION$run
+09:50:00.500 (10000)|EXECUTION_FINISHED

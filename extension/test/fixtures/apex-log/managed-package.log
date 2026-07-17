@@ -1,0 +1,15 @@
+64.0 APEX_CODE,FINEST;APEX_PROFILING,INFO;DB,INFO;SYSTEM,FINE
+09:30:00.300 (1000)|EXECUTION_STARTED
+09:30:00.300 (2000)|CODE_UNIT_STARTED|[EXTERNAL]|01q5j000000MgDdEAK|MyManaged on Account trigger event BeforeInsert|__sfdc_trigger/myns__MyManaged
+09:30:00.300 (3000)|METHOD_ENTRY|[5]|01p5j000000MgSvAAK|myns.Service.doWork(List<Account>)
+09:30:00.300 (5000)|METHOD_EXIT|[5]|01p5j000000MgSvAAK|myns.Service.doWork(List<Account>)
+09:30:00.300 (6000)|CODE_UNIT_FINISHED|MyManaged on Account trigger event BeforeInsert
+09:30:00.300 (7000)|EXECUTION_FINISHED
+09:30:00.300 (8000)|CUMULATIVE_LIMIT_USAGE
+09:30:00.300 (8000)|LIMIT_USAGE_FOR_NS|myns|
+  Number of SOQL queries: 2 out of 100
+  Number of query rows: 15 out of 50000
+  Number of DML statements: 1 out of 150
+  Maximum CPU time: 45 out of 10000
+  Maximum heap size: 0 out of 6000000
+09:30:00.300 (8000)|CUMULATIVE_LIMIT_USAGE_END

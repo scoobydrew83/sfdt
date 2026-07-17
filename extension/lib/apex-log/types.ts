@@ -1,9 +1,7 @@
 // Public types for the Apex debug-log parser (P3-2).
 //
 // PR-1 populates: apiVersion, debugLevels, events, tree, truncation, parseErrors,
-// durationNanos. The limits/soql/dml/callouts inventories are declared here so the
-// public shape is stable, but the PR-1 parser returns them empty.
-// TODO(P3-2 PR-2): populate limits/soql/dml/callouts.
+// durationNanos. PR-2 populates the limits/soql/dml/callouts inventories.
 
 export interface ParseOptions {
   /** Collect the flat events[] array. Default true. PR-3 sets false on huge logs. */
@@ -20,18 +18,22 @@ export interface ParsedLog {
   debugLevels: Record<string, string>;
   events: LogEvent[]; // [] when collectEvents=false
   tree: InvocationNode[]; // roots
-  limits: NamespaceLimits[]; // [] in PR-1 (PR-2)
-  soql: SoqlEntry[]; // [] in PR-1 (PR-2)
-  dml: DmlEntry[]; // [] in PR-1 (PR-2)
-  callouts: CalloutEntry[]; // [] in PR-1 (PR-2)
+  limits: NamespaceLimits[]; // per-namespace governor-limit snapshots, document order
+  soql: SoqlEntry[];
+  dml: DmlEntry[];
+  callouts: CalloutEntry[];
   truncated: boolean;
   truncationReason: TruncationReason | null;
   parseErrors: string[];
   durationNanos: number | null;
 }
 
+/** 0-based line index into the raw log body — `raw.split('\n')[i]`. Every
+ *  `line` / `enterLine` / `exitLine` field in ParsedLog uses this one convention. */
+export type RawLineIndex = number;
+
 export interface LogEvent {
-  line: number;
+  line: RawLineIndex;
   clockTime: string | null;
   timestampNanos: number | null;
   type: string;
@@ -42,8 +44,8 @@ export interface InvocationNode {
   name: string;
   kind: 'execution' | 'code-unit' | 'method';
   namespace: string | null;
-  enterLine: number;
-  exitLine: number | null;
+  enterLine: RawLineIndex;
+  exitLine: RawLineIndex | null;
   startNanos: number | null;
   endNanos: number | null;
   totalNanos: number | null;
@@ -64,7 +66,7 @@ export interface NamespaceLimits {
 }
 
 export interface SoqlEntry {
-  line: number;
+  line: RawLineIndex;
   timestampNanos: number | null;
   query: string;
   rows: number | null;
@@ -72,7 +74,7 @@ export interface SoqlEntry {
 }
 
 export interface DmlEntry {
-  line: number;
+  line: RawLineIndex;
   timestampNanos: number | null;
   op: string;
   sobject: string;
@@ -81,7 +83,7 @@ export interface DmlEntry {
 }
 
 export interface CalloutEntry {
-  line: number;
+  line: RawLineIndex;
   timestampNanos: number | null;
   method: string;
   endpoint: string;

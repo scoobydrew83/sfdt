@@ -5,21 +5,102 @@
 // pushes on ENTRY tokens and pops on EXIT tokens, computing per-node durations at
 // pop time. Degrades gracefully on the three truncation shapes; never throws.
 //
-// Out of scope for PR-1 (returns empty): limits, soql, dml, callouts (PR-2);
-// worker/chunking for huge logs (PR-3).
+// PR-2 adds, in the same single pass: SOQL/DML/callout inventories (BEGIN records
+// an entry back-referencing the current stack-top node; END completes it) and
+// per-namespace governor-limit snapshots (LIMIT_USAGE_FOR_NS opens an indented
+// sub-block of `label: used out of max` lines). Out of scope: worker/chunking for
+// huge logs (PR-3).
 
 import { ENTRY_KINDS, EXIT_KINDS, parseHeader, splitEventLine } from './tokens.js';
 import type {
+  CalloutEntry,
+  DmlEntry,
   InvocationNode,
   LogEvent,
   NamespaceLimits,
   ParsedLog,
   ParseOptions,
+  SoqlEntry,
   TruncationReason,
 } from './types.js';
 
 const SKIPPED_BYTES_RE = /^\*+\s*Skipped\s+\d+\s+bytes of detailed log/i;
 const MAX_SIZE_RE = /MAXIMUM DEBUG LOG SIZE REACHED/;
+
+// A limit-block body line: "  Number of SOQL queries: 3 out of 100".
+const LIMIT_METRIC_RE = /^\s*(.+?):\s*(\d+)\s+out of\s+(\d+)\s*$/;
+
+// Stable camelCase keys for the common governor metrics. Unmatched labels fall
+// back to a normalized key (metricKey) so nothing is silently dropped.
+const LIMIT_LABEL_MAP: Readonly<Record<string, string>> = {
+  'Number of SOQL queries': 'soqlQueries',
+  'Number of query rows': 'queryRows',
+  'Number of SOSL queries': 'soslQueries',
+  'Number of DML statements': 'dmlStatements',
+  'Number of DML rows': 'dmlRows',
+  'Maximum CPU time': 'cpuTime',
+  'Maximum heap size': 'heapSize',
+  'Number of callouts': 'callouts',
+  'Number of future calls': 'futureCalls',
+  'Number of queueable jobs added to the queue': 'queueableJobs',
+  'Number of Email Invocations': 'emailInvocations',
+};
+
+function metricKey(label: string): string {
+  const mapped = LIMIT_LABEL_MAP[label];
+  if (mapped) return mapped;
+  // Fallback: camelCase the words so an unmapped metric still lands somewhere.
+  const words = label.replace(/[^A-Za-z0-9]+/g, ' ').trim().split(' ');
+  return words
+    .map((w, i) =>
+      i === 0
+        ? w.toLowerCase()
+        : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
+    )
+    .join('');
+}
+
+/** Find the first `Rows:<n>` field (SOQL_EXECUTE_END, DML_BEGIN). */
+function extractRows(fields: string[]): number | null {
+  for (const f of fields) {
+    const m = /Rows:(\d+)/.exec(f);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+/** DML op + sobject from `Op:Insert` / `Type:Account` fields. */
+function extractDml(fields: string[]): { op: string; sobject: string } {
+  let op = '';
+  let sobject = '';
+  for (const f of fields) {
+    const o = /^Op:(.+)$/.exec(f);
+    if (o) op = o[1]!.trim();
+    const t = /^Type:(.+)$/.exec(f);
+    if (t) sobject = t[1]!.trim();
+  }
+  return { op, sobject };
+}
+
+/** Callout method + endpoint from a `...[Endpoint=..., Method=...]` request field. */
+function extractCalloutRequest(fields: string[]): { method: string; endpoint: string } {
+  const joined = fields.join('|');
+  const method = /Method=([^,\]|]+)/.exec(joined);
+  const endpoint = /Endpoint=([^,\]|]+)/.exec(joined);
+  return {
+    method: method ? method[1]!.trim() : '',
+    endpoint: endpoint ? endpoint[1]!.trim() : '',
+  };
+}
+
+/** Callout status from a `...[Status=OK, StatusCode=200]` response field. */
+function extractCalloutStatus(fields: string[]): string | null {
+  const joined = fields.join('|');
+  const status = /Status=([^,\]|]+)/.exec(joined);
+  if (status) return status[1]!.trim();
+  const code = /StatusCode=(\d+)/.exec(joined);
+  return code ? code[1]! : null;
+}
 
 /** Managed-package methods appear as `ns.Class.method(...)`; unmanaged as `Class.method(...)`. */
 function namespaceOf(signature: string): string | null {
@@ -71,7 +152,36 @@ export function parseApexLog(raw: string, opts: ParseOptions = {}): ParsedLog {
   const stack: InvocationNode[] = [];
   const events: LogEvent[] = [];
   const parseErrors: string[] = [];
-  const limits: NamespaceLimits[] = []; // TODO(P3-2 PR-2)
+
+  // Inventories: entries are pushed at BEGIN (document order) and completed at
+  // END by mutation; pending stacks match END→BEGIN. A missing END (truncation)
+  // leaves the entry with its END-derived field null.
+  const soql: SoqlEntry[] = [];
+  const dml: DmlEntry[] = [];
+  const callouts: CalloutEntry[] = [];
+  const pendingSoql: SoqlEntry[] = [];
+  const pendingCallouts: CalloutEntry[] = [];
+  // On a truncation gap, drop any open BEGINs so a later, post-gap END can't pop a
+  // stale pre-gap entry and misattribute its rows/status — the orphaned entries
+  // keep their null rows/status (the honest result), mirroring how the invocation
+  // stack recovers across a gap.
+  const dropPendingInventories = (): void => {
+    pendingSoql.length = 0;
+    pendingCallouts.length = 0;
+  };
+
+  // Governor-limit snapshots. `currentLimitBlock` is the open LIMIT_USAGE_FOR_NS
+  // sub-block being filled from indented body lines; `cumulative` tracks whether
+  // we're inside a CUMULATIVE_LIMIT_USAGE wrapper.
+  const limits: NamespaceLimits[] = [];
+  let currentLimitBlock: NamespaceLimits | null = null;
+  let cumulative = false;
+  const flushLimitBlock = (): void => {
+    if (currentLimitBlock) {
+      limits.push(currentLimitBlock);
+      currentLimitBlock = null;
+    }
+  };
 
   let apiVersion: string | null = null;
   let debugLevels: Record<string, string> = {};
@@ -91,19 +201,34 @@ export function parseApexLog(raw: string, opts: ParseOptions = {}): ParsedLog {
     if (MAX_SIZE_RE.test(line)) {
       truncated = true;
       truncationReason = 'MAXIMUM_DEBUG_LOG_SIZE_REACHED';
+      dropPendingInventories();
       continue;
     }
     if (SKIPPED_BYTES_RE.test(line)) {
       truncated = true;
       // A later MAXIMUM marker outranks SKIPPED; don't overwrite one already set.
       if (truncationReason === null) truncationReason = 'SKIPPED_BYTES';
+      dropPendingInventories();
       continue;
     }
 
     const ev = splitEventLine(line);
     if (!ev) {
+      // Inside an open LIMIT_USAGE_FOR_NS block, indented `label: used out of max`
+      // lines fill the snapshot. A non-metric line (blank already skipped) leaves
+      // the block open; the block closes when the next event line arrives.
+      if (currentLimitBlock) {
+        const m = LIMIT_METRIC_RE.exec(line);
+        if (m) {
+          currentLimitBlock.metrics[metricKey(m[1]!.trim())] = {
+            used: Number(m[2]),
+            max: Number(m[3]),
+          };
+          continue;
+        }
+      }
       // First non-event, non-marker line is the header (line 0-ish). Everything
-      // else unmatched is limit-block body (PR-2) or ignorable noise.
+      // else unmatched is ignorable noise.
       if (apiVersion === null) {
         const header = parseHeader(line);
         if (header) {
@@ -113,6 +238,9 @@ export function parseApexLog(raw: string, opts: ParseOptions = {}): ParsedLog {
       }
       continue;
     }
+
+    // Any event line terminates an open limit sub-block.
+    flushLimitBlock();
 
     if (collectEvents) {
       events.push({
@@ -125,6 +253,78 @@ export function parseApexLog(raw: string, opts: ParseOptions = {}): ParsedLog {
     }
     if (minNanos === null || ev.nanos < minNanos) minNanos = ev.nanos;
     if (maxNanos === null || ev.nanos > maxNanos) maxNanos = ev.nanos;
+
+    // Governor-limit snapshot framing.
+    if (ev.type === 'CUMULATIVE_LIMIT_USAGE') {
+      cumulative = true;
+      continue;
+    }
+    if (ev.type === 'CUMULATIVE_LIMIT_USAGE_END') {
+      cumulative = false;
+      continue;
+    }
+    if (ev.type === 'LIMIT_USAGE_FOR_NS') {
+      currentLimitBlock = {
+        namespace: ev.fields[0] || '(default)',
+        cumulative,
+        metrics: {},
+      };
+      continue;
+    }
+
+    // Inventories. 0-based raw-body line (same convention as events/nodes) so P3-3 can deep-link.
+    const node = stack[stack.length - 1] ?? null;
+    if (ev.type === 'SOQL_EXECUTE_BEGIN') {
+      const entry: SoqlEntry = {
+        line: i,
+        timestampNanos: ev.nanos,
+        // Last field is the query text (after the [line] + Aggregations fields).
+        query: ev.fields.length > 0 ? ev.fields[ev.fields.length - 1]! : '',
+        rows: null,
+        node,
+      };
+      soql.push(entry);
+      pendingSoql.push(entry);
+      continue;
+    }
+    if (ev.type === 'SOQL_EXECUTE_END') {
+      const entry = pendingSoql.pop();
+      if (entry) entry.rows = extractRows(ev.fields);
+      continue;
+    }
+    if (ev.type === 'DML_BEGIN') {
+      // DML rows travel on BEGIN (not END), so the entry is complete here; DML_END
+      // carries no payload and is ignored.
+      const { op, sobject } = extractDml(ev.fields);
+      dml.push({
+        line: i,
+        timestampNanos: ev.nanos,
+        op,
+        sobject,
+        rows: extractRows(ev.fields),
+        node,
+      });
+      continue;
+    }
+    if (ev.type === 'CALLOUT_REQUEST') {
+      const { method, endpoint } = extractCalloutRequest(ev.fields);
+      const entry: CalloutEntry = {
+        line: i,
+        timestampNanos: ev.nanos,
+        method,
+        endpoint,
+        status: null,
+        node,
+      };
+      callouts.push(entry);
+      pendingCallouts.push(entry);
+      continue;
+    }
+    if (ev.type === 'CALLOUT_RESPONSE') {
+      const entry = pendingCallouts.pop();
+      if (entry) entry.status = extractCalloutStatus(ev.fields);
+      continue;
+    }
 
     const entryKind = ENTRY_KINDS[ev.type];
     if (entryKind) {
@@ -183,6 +383,9 @@ export function parseApexLog(raw: string, opts: ParseOptions = {}): ParsedLog {
     }
   }
 
+  // A limit block still open at EOF (e.g. log ends inside the block) is kept.
+  flushLimitBlock();
+
   // EOF with open frames → truncation. An explicit marker (if seen) is the real
   // cause; otherwise it's an abrupt EOF. Close every dangling frame with null
   // durations.
@@ -208,9 +411,9 @@ export function parseApexLog(raw: string, opts: ParseOptions = {}): ParsedLog {
     events,
     tree: roots,
     limits,
-    soql: [], // TODO(P3-2 PR-2)
-    dml: [], // TODO(P3-2 PR-2)
-    callouts: [], // TODO(P3-2 PR-2)
+    soql,
+    dml,
+    callouts,
     truncated,
     truncationReason,
     parseErrors,
