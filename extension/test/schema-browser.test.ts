@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createSchemaBrowserFeature } from '../features/schema-browser.js';
-import { _resetDescribeCachesForTests } from '../lib/describe-cache.js';
+import { _resetDescribeCachesForTests, getDescribeCache } from '../lib/describe-cache.js';
 import type { SalesforceApiClient } from '../lib/salesforce-api.js';
 
 const tick = async () => {
@@ -196,6 +196,31 @@ describe('schema-browser — field table (AC-2)', () => {
     expect(values.style.display).toBe('block');
     expect(values.textContent).toContain('Tech');
     expect(values.textContent).toContain('Finance');
+  });
+
+  it('keeps an expanded picklist open when an unrelated describe resolves (shared cache)', async () => {
+    const api = makeApi(fixtures);
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api });
+    await feature.openFor('Account');
+    await tick();
+
+    const toggle = Array.from(document.querySelectorAll('button')).find((b) =>
+      b.textContent?.startsWith('Picklist'),
+    ) as HTMLButtonElement;
+    toggle.click();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+
+    // Another tool describes a DIFFERENT object through the same shared cache,
+    // firing the cache's subscribe while Account is still shown. The detail pane
+    // must NOT be torn down (which would collapse the open picklist).
+    getDescribeCache(api).getSObject('rest', 'Contact');
+    await tick();
+
+    const toggleAfter = Array.from(document.querySelectorAll('button')).find((b) =>
+      b.textContent?.startsWith('Picklist'),
+    ) as HTMLButtonElement;
+    expect(toggleAfter).toBe(toggle); // same node — the pane was not rebuilt
+    expect(toggleAfter.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('renders a reference target as a link whose activation calls openFor(target)', async () => {

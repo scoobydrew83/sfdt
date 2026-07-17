@@ -155,6 +155,12 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
     // unrelated cache-subscribe notification.
     let cachedAll: ObjectListItem[] = [];
     let cachedSource: unknown;
+    // Cache-entry refs last rendered into each pane. The shared describe cache's
+    // subscribe fires on ANY describe resolving (incl. other tools' unrelated
+    // fetches), so each pane re-renders only when its OWN entry changed — else
+    // unrelated activity would tear down visible state (e.g. an open picklist).
+    let lastRenderedGlobal: unknown;
+    let lastRenderedDetail: unknown;
 
     function matchesFilter(item: ObjectListItem, term: string): boolean {
       if (!term) return true;
@@ -166,6 +172,7 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
 
     function renderList(): void {
       const global = cache.getGlobal('rest');
+      lastRenderedGlobal = global;
       while (listScroll.firstChild) listScroll.removeChild(listScroll.firstChild);
 
       if (global.status === 'loading') {
@@ -257,6 +264,7 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
     function renderDetail(): void {
       while (rightPane.firstChild) rightPane.removeChild(rightPane.firstChild);
       if (!selectedName) {
+        lastRenderedDetail = undefined;
         rightPane.appendChild(placeholder);
         return;
       }
@@ -267,6 +275,7 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
       rightPane.appendChild(heading);
 
       const describe = cache.getSObject('rest', selectedName);
+      lastRenderedDetail = describe;
       if (describe.status === 'loading') {
         const loading = doc.createElement('div');
         loading.textContent = 'Loading fields…';
@@ -435,10 +444,15 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
     // Expose the selector for openFor / cache updates.
     selectObject = doSelectObject;
 
-    // Re-render both panes when an async describe resolves.
+    // Re-render a pane only when its OWN cache entry changed. The shared cache
+    // notifies on ANY describe resolving (incl. other tools' unrelated fetches),
+    // so an unconditional rebuild would discard visible state — e.g. an expanded
+    // picklist collapsing when SOQL Runner describes a different object.
     unsubscribe = cache.subscribe(() => {
-      renderList();
-      if (selectedName) renderDetail();
+      if (cache.getGlobal('rest') !== lastRenderedGlobal) renderList();
+      if (selectedName && cache.getSObject('rest', selectedName) !== lastRenderedDetail) {
+        renderDetail();
+      }
     });
 
     renderList();
