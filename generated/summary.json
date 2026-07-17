@@ -5,11 +5,11 @@
     "mutatingCommands": 16
   },
   "chrome": {
-    "registeredFeatures": 42,
+    "registeredFeatures": 43,
     "displayTools": 40,
     "workspaceTools": 23,
     "bridgeRequired": 5,
-    "standalone": 37,
+    "standalone": 38,
     "syntheticMenuItems": 1
   },
   "gui": {
