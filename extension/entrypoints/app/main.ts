@@ -18,14 +18,9 @@ import {
   bootHost,
   renderOrgPicker,
   isAllowedSfHost,
+  resolveOrgFromUrl,
   HOST_STYLES,
 } from '../../ui/workspace-host.js';
-
-function resolveOrgFromUrl(): string | null {
-  const param = new URLSearchParams(window.location.search).get('org');
-  if (param && isAllowedSfHost(param)) return param;
-  return null;
-}
 
 function reloadWithOrg(host: string): void {
   const base = chrome.runtime?.getURL

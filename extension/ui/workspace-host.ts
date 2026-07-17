@@ -64,6 +64,14 @@ export function isAllowedSfHost(host: string): boolean {
   return SF_HOST_SUFFIXES.some((s) => h.endsWith(s));
 }
 
+/** An org host set explicitly on our own page URL (`?org=`), validated. Shared by
+ *  the Workspace tab and the side panel so the two can't drift. */
+export function resolveOrgFromUrl(): string | null {
+  const param = new URLSearchParams(window.location.search).get('org');
+  if (param && isAllowedSfHost(param)) return param;
+  return null;
+}
+
 /** The org's Lightning origin, e.g. `https://acme.lightning.force.com`. */
 export function orgOriginFor(orgHost: string): string {
   return `https://${lightningHostname(orgHost)}`;

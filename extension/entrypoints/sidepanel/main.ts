@@ -17,17 +17,11 @@ import {
   bootHost,
   renderOrgPicker,
   isAllowedSfHost,
+  resolveOrgFromUrl,
   HOST_STYLES,
 } from '../../ui/workspace-host.js';
 
 const PANEL_TITLE = '⚡ SFDT Panel';
-
-// An explicit org set by our own switch/reload navigation.
-function resolveOrgFromUrl(): string | null {
-  const param = new URLSearchParams(window.location.search).get('org');
-  if (param && isAllowedSfHost(param)) return param;
-  return null;
-}
 
 // Bind-on-open: the org of the tab the panel was opened from. Returns null on a
 // non-Salesforce tab (the caller then falls back to last-used org / picker).

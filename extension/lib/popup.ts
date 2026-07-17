@@ -17,6 +17,8 @@ export type BridgeStatus = 'connected' | 'disconnected';
 
 export interface PopupState {
   isSalesforceTab: boolean;
+  /** Whether `chrome.sidePanel` exists (Chrome yes, Firefox no) — gates the panel button. */
+  hasSidePanel: boolean;
   /** The active tab's Salesforce host, or null on a non-Salesforce tab. */
   orgHost: string | null;
   /** null on a non-Salesforce tab — no session check is made there. */
@@ -29,6 +31,8 @@ export interface PopupState {
 export interface PopupDeps {
   /** URL of the active tab (chrome.tabs.query in the entrypoint). */
   activeTabUrl: string | undefined;
+  /** Whether `chrome.sidePanel` exists in this browser (Chrome yes, Firefox no). */
+  hasSidePanel: boolean;
   /** Extension version, from chrome.runtime.getManifest(). */
   version: string;
   /** Logged-in Salesforce org hosts (canonical my.salesforce.com), via worker. */
@@ -56,6 +60,7 @@ export async function loadPopupState(deps: PopupDeps): Promise<PopupState> {
   if (!orgHost) {
     return {
       isSalesforceTab: false,
+      hasSidePanel: deps.hasSidePanel,
       orgHost: null,
       session: null,
       bridge: null,
@@ -73,6 +78,7 @@ export async function loadPopupState(deps: PopupDeps): Promise<PopupState> {
 
   return {
     isSalesforceTab: true,
+    hasSidePanel: deps.hasSidePanel,
     orgHost,
     session: hasSession ? 'active' : 'logged-out',
     bridge: bridgeUp ? 'connected' : 'disconnected',
@@ -206,7 +212,11 @@ export function renderPopup(
   actions.appendChild(button(doc, 'Open Workspace', handlers.onOpenWorkspace, true));
   // The docked side panel hosts the same tools alongside the current tab. Like
   // the Workspace it works from any tab (bind-on-open, else an org picker).
-  actions.appendChild(button(doc, 'Open side panel', handlers.onOpenPanel));
+  // Chrome only — Firefox has no chrome.sidePanel (it uses the native sidebar),
+  // so gate the button rather than offer a dead affordance.
+  if (state.hasSidePanel) {
+    actions.appendChild(button(doc, 'Open side panel', handlers.onOpenPanel));
+  }
   // The palette (⚡ menu) only exists on a Salesforce page's content script.
   if (state.isSalesforceTab) {
     actions.appendChild(button(doc, 'Quick menu', handlers.onOpenPalette));

@@ -153,6 +153,7 @@ async function main(): Promise<void> {
   // so the popup never flashes empty.
   const initial: PopupState = {
     isSalesforceTab: !!salesforceHostFromUrl(activeTabUrl),
+    hasSidePanel: !!chrome.sidePanel,
     orgHost: salesforceHostFromUrl(activeTabUrl),
     session: null,
     bridge: null,
@@ -163,6 +164,7 @@ async function main(): Promise<void> {
 
   const state = await loadPopupState({
     activeTabUrl,
+    hasSidePanel: !!chrome.sidePanel,
     version,
     listLoggedInHosts,
     pingBridge,

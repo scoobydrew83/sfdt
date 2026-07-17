@@ -7,6 +7,7 @@ const CANONICAL = 'acme.my.salesforce.com';
 function deps(over: Partial<PopupDeps> = {}): PopupDeps {
   return {
     activeTabUrl: SF_URL,
+    hasSidePanel: true,
     version: '0.7.0',
     listLoggedInHosts: vi.fn(async () => [CANONICAL]),
     pingBridge: vi.fn(async () => true),
@@ -19,6 +20,7 @@ describe('loadPopupState', () => {
     const state = await loadPopupState(deps());
     expect(state).toEqual({
       isSalesforceTab: true,
+      hasSidePanel: true,
       orgHost: 'acme.lightning.force.com',
       session: 'active',
       bridge: 'connected',
@@ -59,6 +61,7 @@ describe('loadPopupState', () => {
     );
     expect(state).toEqual({
       isSalesforceTab: false,
+      hasSidePanel: true,
       orgHost: null,
       session: null,
       bridge: null,
@@ -101,6 +104,7 @@ describe('renderPopup', () => {
       root(),
       {
         isSalesforceTab: true,
+        hasSidePanel: true,
         orgHost: 'acme.lightning.force.com',
         session: 'active',
         bridge: 'connected',
@@ -121,7 +125,7 @@ describe('renderPopup', () => {
   it('renders the "not a Salesforce tab" state and hides the Quick menu button', () => {
     renderPopup(
       root(),
-      { isSalesforceTab: false, orgHost: null, session: null, bridge: null, version: '0.7.0' },
+      { isSalesforceTab: false, hasSidePanel: true, orgHost: null, session: null, bridge: null, version: '0.7.0' },
       handlers,
     );
     expect(root().textContent).toContain('Not a Salesforce tab');
@@ -134,6 +138,7 @@ describe('renderPopup', () => {
       root(),
       {
         isSalesforceTab: true,
+        hasSidePanel: true,
         orgHost: 'acme.lightning.force.com',
         session: 'logged-out',
         bridge: 'disconnected',
@@ -156,6 +161,7 @@ describe('renderPopup', () => {
       root(),
       {
         isSalesforceTab: true,
+        hasSidePanel: true,
         orgHost: 'acme.lightning.force.com',
         session: 'active',
         bridge: 'connected',
@@ -175,10 +181,28 @@ describe('renderPopup', () => {
     expect(handlers.onOpenOptions).toHaveBeenCalledOnce();
   });
 
+  it('hides the "Open side panel" button when chrome.sidePanel is absent (Firefox)', () => {
+    renderPopup(
+      root(),
+      {
+        isSalesforceTab: true,
+        hasSidePanel: false,
+        orgHost: 'acme.lightning.force.com',
+        session: 'active',
+        bridge: 'connected',
+        version: '0.7.0',
+      },
+      handlers,
+    );
+    const labels = Array.from(root().querySelectorAll('button')).map((b) => b.textContent);
+    expect(labels).not.toContain('Open side panel');
+    expect(labels).toEqual(['Open Workspace', 'Quick menu', 'Settings']);
+  });
+
   it('has a single heading for the popup (a11y landmark)', () => {
     renderPopup(
       root(),
-      { isSalesforceTab: false, orgHost: null, session: null, bridge: null, version: '0.7.0' },
+      { isSalesforceTab: false, hasSidePanel: true, orgHost: null, session: null, bridge: null, version: '0.7.0' },
       handlers,
     );
     const headings = root().querySelectorAll('h1');
