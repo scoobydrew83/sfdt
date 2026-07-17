@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { openCommandPalette, type CommandPaletteHandle } from '../ui/command-palette.js';
 import type { FeatureGate, PaletteSourceInputs } from '../lib/palette-sources.js';
 import { BASE_TABS } from '../lib/setup-links.js';
+import { createCommandPaletteFeature } from '../features/command-palette.js';
+import { buildContextToFeatures, CONTEXTS } from '../lib/context-detector.js';
 
 const ICONS = {
   'soql-runner': { icon: '🗂', label: 'SOQL Query Runner' },
@@ -239,5 +241,20 @@ describe('extension/ui/command-palette', () => {
       expect(labels.some((l) => l.includes('Inspect Record'))).toBe(true);
       expect(labels.some((l) => l.includes('Flow AI Assistant'))).toBe(false);
     });
+  });
+});
+
+describe('extension/features/command-palette — global availability', () => {
+  it('is available in the NONE context (Home/list/report/… pages), so the launcher is truly global', () => {
+    const feature = createCommandPaletteFeature();
+    const map = buildContextToFeatures([
+      { id: feature.manifest.id, contexts: feature.manifest.contexts },
+    ]);
+    // Without NONE, Ctrl/Cmd+Shift+K and the "View all features" entry would be
+    // dead on every plain Salesforce page.
+    expect(map[CONTEXTS.NONE]).toContain('command-palette');
+    // Still available on the named page contexts.
+    expect(map[CONTEXTS.RECORD_PAGE]).toContain('command-palette');
+    expect(map[CONTEXTS.SETUP_OTHER]).toContain('command-palette');
   });
 });

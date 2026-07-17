@@ -34,8 +34,11 @@ export const COMMAND_PALETTE_ID = 'command-palette';
 
 // Registry feature — metadata only. The overlay is opened imperatively from
 // content.ts (keyboard command + ⚡ "View all features"), not by dispatch, so
-// there is no init/onActivate. Listing every real page context keeps the palette
-// available (enabled-for-context) on any Salesforce page.
+// there is no init/onActivate. The palette is a GLOBAL launcher, so it lists every
+// page context INCLUDING `NONE` — the catch-all detectContext() returns for plain
+// pages (Home, list views, reports, dashboards, App Launcher, Chatter, …). Without
+// NONE the "View all features" entry and Ctrl/Cmd+Shift+K would be dead on exactly
+// those everyday pages. (Kill-switch / user-disable still gate it via the registry.)
 export function createCommandPaletteFeature(): Feature {
   return {
     manifest: {
@@ -49,6 +52,7 @@ export function createCommandPaletteFeature(): Feature {
         CONTEXTS.FLOW_TRIGGER_EXPLORER,
         CONTEXTS.SETUP_OTHER,
         CONTEXTS.RECORD_PAGE,
+        CONTEXTS.NONE,
       ],
     },
   };

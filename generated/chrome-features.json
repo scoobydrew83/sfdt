@@ -97,7 +97,8 @@
         "compare_flows",
         "flow_trigger_explorer",
         "setup_other",
-        "record_page"
+        "record_page",
+        "none"
       ],
       "enabledByDefault": true,
       "workspace": false,
