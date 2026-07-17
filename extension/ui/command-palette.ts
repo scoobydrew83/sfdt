@@ -125,16 +125,26 @@ const OPTION_STYLE = [
 
 /** Filter each section to matching candidates and rank them; drop empty sections.
  *  Empty query keeps the source order (recents first). */
+// Cap candidates rendered per section so a large org's Objects list (potentially
+// 800+ sobjects) can't materialise hundreds of DOM rows on open — fuzzy ranking
+// surfaces the best matches, and typing narrows further.
+const MAX_PER_SECTION = 50;
+
 function filterSections(sections: readonly PaletteSection[], query: string): PaletteSection[] {
   const q = query.trim();
-  if (q === '') return sections.filter((s) => s.candidates.length > 0);
+  if (q === '') {
+    return sections
+      .filter((s) => s.candidates.length > 0)
+      .map((s) => ({ ...s, candidates: s.candidates.slice(0, MAX_PER_SECTION) }));
+  }
   return sections
     .map((s) => {
-      const matched = s.candidates.filter(
-        (c) => fuzzyScoreFields(q, c.label, c.apiName) !== null,
-      );
-      const ranked = stableSortByScore(matched, (c) => fuzzyScoreFields(q, c.label, c.apiName) ?? 0);
-      return { ...s, candidates: ranked };
+      // Score each candidate ONCE (filter + sort share it), then cap.
+      const scored = s.candidates
+        .map((c) => ({ c, score: fuzzyScoreFields(q, c.label, c.apiName) }))
+        .filter((x): x is { c: PaletteCandidate; score: number } => x.score !== null);
+      const ranked = stableSortByScore(scored, (x) => x.score).map((x) => x.c);
+      return { ...s, candidates: ranked.slice(0, MAX_PER_SECTION) };
     })
     .filter((s) => s.candidates.length > 0);
 }
@@ -244,7 +254,11 @@ export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteH
     cur.el.scrollIntoView({ block: 'nearest' });
   }
 
-  function render(query: string): void {
+  function render(query: string, preserveActive = false): void {
+    // A background rebuild (the async Objects load) must keep the user's current
+    // selection rather than snapping back to row 0 — the user didn't change the
+    // query, so Enter should still fire what they had arrowed to.
+    const keepId = preserveActive ? visible[activeIndex]?.candidate.id : undefined;
     while (listbox.firstChild) listbox.removeChild(listbox.firstChild);
     visible = [];
 
@@ -307,7 +321,12 @@ export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteH
       }
       listbox.appendChild(group);
     }
-    setActive(0);
+    if (keepId) {
+      const idx = visible.findIndex((v) => v.candidate.id === keepId);
+      setActive(idx >= 0 ? idx : 0);
+    } else {
+      setActive(0);
+    }
   }
 
   async function execute(candidate: PaletteCandidate): Promise<void> {
@@ -404,7 +423,7 @@ export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteH
         // object resolves into "Recent" (and dedupes from Objects) like any other
         // category — not just appended as a standalone section.
         sourceSections = buildPaletteSources({ ...opts.sourceInputs, objects });
-        if (!closed) render(input.value);
+        if (!closed) render(input.value, true);
       } catch {
         // Objects are best-effort — a describe failure must never break the palette.
       }

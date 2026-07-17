@@ -1,6 +1,6 @@
 // Parity test for lib/feature-manifests.json — the browser-runtime-free,
 // checked-in source of truth for feature metadata. It instantiates every
-// feature exactly as the entrypoints do (entrypoints/content.ts registers 37;
+// feature exactly as the entrypoints do (entrypoints/content.ts registers 38;
 // entrypoints/app/main.ts additionally registers the 4 Workspace-only tools:
 // apex-test-runner + the three bridge tools; entrypoints/background.ts adds the
 // worker-backed context-menu-inspect) and asserts the collected manifests match

@@ -105,6 +105,28 @@ describe('extension/ui/command-palette', () => {
       expect(objectsGroup).not.toBeNull();
       expect(optionLabels().some((l) => l.includes('Account'))).toBe(true);
     });
+
+    it('caps the Objects section so a large org does not build unbounded DOM rows', async () => {
+      const many = Array.from({ length: 120 }, (_, i) => ({ name: `Obj${i}__c`, label: `Object ${i}` }));
+      const loadObjects = vi.fn().mockResolvedValue(many);
+      handle = openCommandPalette({ sourceInputs: inputs(), loadObjects, executors: noopExecutors() });
+      await flush();
+      const objGroup = overlay()!.querySelector('[role="group"][aria-label="Objects"]')!;
+      const objOptions = objGroup.querySelectorAll('[role="option"]');
+      expect(objOptions.length).toBeGreaterThan(0);
+      expect(objOptions.length).toBeLessThanOrEqual(50); // windowed, not all 120
+    });
+
+    it('keeps the active selection when the Objects describe resolves mid-use', async () => {
+      const loadObjects = vi.fn().mockResolvedValue([{ name: 'Account', label: 'Account' }]);
+      handle = openCommandPalette({ sourceInputs: inputs(), loadObjects, executors: noopExecutors() });
+      // Arrow down off row 0 before the async Objects load lands.
+      key(searchInput(), 'ArrowDown');
+      const activeBefore = overlay()!.querySelector('[aria-selected="true"]')?.textContent;
+      await flush(); // Objects resolve → background rebuild
+      const activeAfter = overlay()!.querySelector('[aria-selected="true"]')?.textContent;
+      expect(activeAfter).toBe(activeBefore); // selection preserved, not reset to row 0
+    });
   });
 
   // --- single live instance: a re-open must not leak the prior instance ---
