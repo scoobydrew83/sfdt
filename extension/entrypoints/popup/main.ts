@@ -83,12 +83,12 @@ function sendMessage<T>(message: unknown): Promise<T | null> {
   });
 }
 
-async function getActiveTabUrl(): Promise<string | undefined> {
+async function getActiveTab(): Promise<{ url?: string; id?: number }> {
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    return tabs[0]?.url;
+    return { url: tabs[0]?.url, id: tabs[0]?.id };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -105,11 +105,26 @@ async function pingBridge(): Promise<boolean> {
   return !!resp?.ok;
 }
 
-function bindHandlers(activeTabUrl: string | undefined) {
+function bindHandlers(activeTabUrl: string | undefined, activeTabId: number | undefined) {
   const org = salesforceHostFromUrl(activeTabUrl) ?? '';
   return {
     onOpenWorkspace: () => {
       void sendMessage({ action: 'openApp', org }).then(() => window.close());
+    },
+    onOpenPanel: () => {
+      // chrome.sidePanel.open() requires a live user gesture, so it must run
+      // synchronously in this click handler (no awaits before it) with a tab id
+      // captured earlier. Chrome-only — on Firefox the sidebar opens from the
+      // native sidebar button, so there's simply nothing to do here.
+      const panel = chrome.sidePanel;
+      if (panel?.open && typeof activeTabId === 'number') {
+        panel.open({ tabId: activeTabId }).then(
+          () => window.close(),
+          () => window.close(),
+        );
+      } else {
+        window.close();
+      }
     },
     onOpenPalette: () => {
       // Opening the ⚡ menu lives on the tab's content script; the background
@@ -132,22 +147,24 @@ async function main(): Promise<void> {
   if (!root) return;
 
   const version = chrome.runtime.getManifest().version;
-  const activeTabUrl = await getActiveTabUrl();
+  const { url: activeTabUrl, id: activeTabId } = await getActiveTab();
 
   // Paint a first frame immediately (before the async status lookups resolve)
   // so the popup never flashes empty.
   const initial: PopupState = {
     isSalesforceTab: !!salesforceHostFromUrl(activeTabUrl),
+    hasSidePanel: !!chrome.sidePanel,
     orgHost: salesforceHostFromUrl(activeTabUrl),
     session: null,
     bridge: null,
     version,
   };
-  const handlers = bindHandlers(activeTabUrl);
+  const handlers = bindHandlers(activeTabUrl, activeTabId);
   renderPopup(root, initial, handlers);
 
   const state = await loadPopupState({
     activeTabUrl,
+    hasSidePanel: !!chrome.sidePanel,
     version,
     listLoggedInHosts,
     pingBridge,

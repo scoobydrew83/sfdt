@@ -89,6 +89,9 @@ Reads the user's existing Salesforce session cookies so the extension can authen
 ### contextMenus
 Adds an optional right-click "SFDT: Inspect this record" item on the user's Salesforce pages that opens the record inspector for the record Id in the page URL or a right-clicked record link. The menu only reads the URL to locate a record Id — it reads no cookies or session data — and it appears only on Salesforce hosts. It can be turned off from Options → Features.
 
+### sidePanel
+Lets the user dock the extension's own tool panel beside the Salesforce page (a "Workspace-in-a-dock"), opened from the toolbar popup's "Open side panel" button. It reads no new data and requests no additional host access — the panel resolves the org session the same way the Workspace tab does. Chrome only; on Firefox the same panel opens through the browser's native sidebar with no extra permission.
+
 ### host_permissions: https://*.salesforce.com/*, https://*.salesforce-setup.com/*, https://*.my.salesforce.com/*, https://*.lightning.force.com/*
 The extension only operates on Salesforce origins. Required to inject UI and call the Tooling/REST APIs of the user's logged-in org.
 

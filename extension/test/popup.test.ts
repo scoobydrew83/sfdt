@@ -7,6 +7,7 @@ const CANONICAL = 'acme.my.salesforce.com';
 function deps(over: Partial<PopupDeps> = {}): PopupDeps {
   return {
     activeTabUrl: SF_URL,
+    hasSidePanel: true,
     version: '0.7.0',
     listLoggedInHosts: vi.fn(async () => [CANONICAL]),
     pingBridge: vi.fn(async () => true),
@@ -19,6 +20,7 @@ describe('loadPopupState', () => {
     const state = await loadPopupState(deps());
     expect(state).toEqual({
       isSalesforceTab: true,
+      hasSidePanel: true,
       orgHost: 'acme.lightning.force.com',
       session: 'active',
       bridge: 'connected',
@@ -59,6 +61,7 @@ describe('loadPopupState', () => {
     );
     expect(state).toEqual({
       isSalesforceTab: false,
+      hasSidePanel: true,
       orgHost: null,
       session: null,
       bridge: null,
@@ -79,6 +82,7 @@ describe('loadPopupState', () => {
 describe('renderPopup', () => {
   const handlers = {
     onOpenWorkspace: vi.fn(),
+    onOpenPanel: vi.fn(),
     onOpenPalette: vi.fn(),
     onOpenOptions: vi.fn(),
   };
@@ -100,6 +104,7 @@ describe('renderPopup', () => {
       root(),
       {
         isSalesforceTab: true,
+        hasSidePanel: true,
         orgHost: 'acme.lightning.force.com',
         session: 'active',
         bridge: 'connected',
@@ -114,18 +119,18 @@ describe('renderPopup', () => {
     expect(text).toContain('sfdt bridge');
     expect(text).toContain('v0.7.0');
     const labels = Array.from(root().querySelectorAll('button')).map((b) => b.textContent);
-    expect(labels).toEqual(['Open Workspace', 'Quick menu', 'Settings']);
+    expect(labels).toEqual(['Open Workspace', 'Open side panel', 'Quick menu', 'Settings']);
   });
 
   it('renders the "not a Salesforce tab" state and hides the Quick menu button', () => {
     renderPopup(
       root(),
-      { isSalesforceTab: false, orgHost: null, session: null, bridge: null, version: '0.7.0' },
+      { isSalesforceTab: false, hasSidePanel: true, orgHost: null, session: null, bridge: null, version: '0.7.0' },
       handlers,
     );
     expect(root().textContent).toContain('Not a Salesforce tab');
     const labels = Array.from(root().querySelectorAll('button')).map((b) => b.textContent);
-    expect(labels).toEqual(['Open Workspace', 'Settings']);
+    expect(labels).toEqual(['Open Workspace', 'Open side panel', 'Settings']);
   });
 
   it('status is conveyed by text, not colour alone (a11y): dots are aria-hidden', () => {
@@ -133,6 +138,7 @@ describe('renderPopup', () => {
       root(),
       {
         isSalesforceTab: true,
+        hasSidePanel: true,
         orgHost: 'acme.lightning.force.com',
         session: 'logged-out',
         bridge: 'disconnected',
@@ -155,6 +161,7 @@ describe('renderPopup', () => {
       root(),
       {
         isSalesforceTab: true,
+        hasSidePanel: true,
         orgHost: 'acme.lightning.force.com',
         session: 'active',
         bridge: 'connected',
@@ -165,17 +172,37 @@ describe('renderPopup', () => {
     const buttons = Array.from(root().querySelectorAll('button'));
     buttons.forEach((b) => expect(b.tagName).toBe('BUTTON'));
     buttons.find((b) => b.textContent === 'Open Workspace')?.click();
+    buttons.find((b) => b.textContent === 'Open side panel')?.click();
     buttons.find((b) => b.textContent === 'Quick menu')?.click();
     buttons.find((b) => b.textContent === 'Settings')?.click();
     expect(handlers.onOpenWorkspace).toHaveBeenCalledOnce();
+    expect(handlers.onOpenPanel).toHaveBeenCalledOnce();
     expect(handlers.onOpenPalette).toHaveBeenCalledOnce();
     expect(handlers.onOpenOptions).toHaveBeenCalledOnce();
+  });
+
+  it('hides the "Open side panel" button when chrome.sidePanel is absent (Firefox)', () => {
+    renderPopup(
+      root(),
+      {
+        isSalesforceTab: true,
+        hasSidePanel: false,
+        orgHost: 'acme.lightning.force.com',
+        session: 'active',
+        bridge: 'connected',
+        version: '0.7.0',
+      },
+      handlers,
+    );
+    const labels = Array.from(root().querySelectorAll('button')).map((b) => b.textContent);
+    expect(labels).not.toContain('Open side panel');
+    expect(labels).toEqual(['Open Workspace', 'Quick menu', 'Settings']);
   });
 
   it('has a single heading for the popup (a11y landmark)', () => {
     renderPopup(
       root(),
-      { isSalesforceTab: false, orgHost: null, session: null, bridge: null, version: '0.7.0' },
+      { isSalesforceTab: false, hasSidePanel: true, orgHost: null, session: null, bridge: null, version: '0.7.0' },
       handlers,
     );
     const headings = root().querySelectorAll('h1');
