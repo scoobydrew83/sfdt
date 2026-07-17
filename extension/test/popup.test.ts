@@ -8,6 +8,7 @@ function deps(over: Partial<PopupDeps> = {}): PopupDeps {
   return {
     activeTabUrl: SF_URL,
     hasSidePanel: true,
+    defaultSurface: 'modal',
     version: '0.7.0',
     listLoggedInHosts: vi.fn(async () => [CANONICAL]),
     pingBridge: vi.fn(async () => true),
@@ -24,6 +25,7 @@ describe('loadPopupState', () => {
       orgHost: 'acme.lightning.force.com',
       session: 'active',
       bridge: 'connected',
+      defaultSurface: 'modal',
       version: '0.7.0',
     });
   });
@@ -65,6 +67,7 @@ describe('loadPopupState', () => {
       orgHost: null,
       session: null,
       bridge: null,
+      defaultSurface: 'modal',
       version: '0.7.0',
     });
     expect(listLoggedInHosts).not.toHaveBeenCalled();
@@ -108,6 +111,7 @@ describe('renderPopup', () => {
         orgHost: 'acme.lightning.force.com',
         session: 'active',
         bridge: 'connected',
+        defaultSurface: 'modal',
         version: '0.7.0',
       },
       handlers,
@@ -125,7 +129,7 @@ describe('renderPopup', () => {
   it('renders the "not a Salesforce tab" state and hides the Quick menu button', () => {
     renderPopup(
       root(),
-      { isSalesforceTab: false, hasSidePanel: true, orgHost: null, session: null, bridge: null, version: '0.7.0' },
+      { isSalesforceTab: false, hasSidePanel: true, orgHost: null, session: null, bridge: null, defaultSurface: 'modal', version: '0.7.0' },
       handlers,
     );
     expect(root().textContent).toContain('Not a Salesforce tab');
@@ -142,6 +146,7 @@ describe('renderPopup', () => {
         orgHost: 'acme.lightning.force.com',
         session: 'logged-out',
         bridge: 'disconnected',
+        defaultSurface: 'modal',
         version: '0.7.0',
       },
       handlers,
@@ -165,6 +170,7 @@ describe('renderPopup', () => {
         orgHost: 'acme.lightning.force.com',
         session: 'active',
         bridge: 'connected',
+        defaultSurface: 'modal',
         version: '0.7.0',
       },
       handlers,
@@ -190,6 +196,7 @@ describe('renderPopup', () => {
         orgHost: 'acme.lightning.force.com',
         session: 'active',
         bridge: 'connected',
+        defaultSurface: 'modal',
         version: '0.7.0',
       },
       handlers,
@@ -199,10 +206,50 @@ describe('renderPopup', () => {
     expect(labels).toEqual(['Open Workspace', 'Quick menu', 'Settings']);
   });
 
+  it("promotes 'Open side panel' to the primary/first action when defaultSurface is 'panel' (C)", () => {
+    renderPopup(
+      root(),
+      {
+        isSalesforceTab: true,
+        hasSidePanel: true,
+        orgHost: 'acme.lightning.force.com',
+        session: 'active',
+        bridge: 'connected',
+        defaultSurface: 'panel',
+        version: '0.7.0',
+      },
+      handlers,
+    );
+    const buttons = Array.from(root().querySelectorAll('button'));
+    const labels = buttons.map((b) => b.textContent);
+    // Side panel now leads; it's the primary button.
+    expect(labels).toEqual(['Open side panel', 'Open Workspace', 'Quick menu', 'Settings']);
+    expect(buttons[0]?.classList.contains('primary')).toBe(true);
+    expect(buttons[1]?.classList.contains('primary')).toBe(false);
+  });
+
+  it("ignores the 'panel' preference on Firefox (no chrome.sidePanel) — Workspace still leads", () => {
+    renderPopup(
+      root(),
+      {
+        isSalesforceTab: true,
+        hasSidePanel: false,
+        orgHost: 'acme.lightning.force.com',
+        session: 'active',
+        bridge: 'connected',
+        defaultSurface: 'panel',
+        version: '0.7.0',
+      },
+      handlers,
+    );
+    const labels = Array.from(root().querySelectorAll('button')).map((b) => b.textContent);
+    expect(labels).toEqual(['Open Workspace', 'Quick menu', 'Settings']);
+  });
+
   it('has a single heading for the popup (a11y landmark)', () => {
     renderPopup(
       root(),
-      { isSalesforceTab: false, hasSidePanel: true, orgHost: null, session: null, bridge: null, version: '0.7.0' },
+      { isSalesforceTab: false, hasSidePanel: true, orgHost: null, session: null, bridge: null, defaultSurface: 'modal', version: '0.7.0' },
       handlers,
     );
     const headings = root().querySelectorAll('h1');

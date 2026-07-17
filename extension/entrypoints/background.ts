@@ -1,5 +1,7 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { dedupeOrgs } from '../lib/org-list.js';
+import { salesforceHostFromUrl } from '../lib/sf-tab.js';
+import { panelEnabledForUrl } from '../lib/sf-panel.js';
 import { planCommand } from '../lib/commands.js';
 import { sfApiFetch } from '../lib/sf-api-proxy.js';
 import { createSessionCache } from '../lib/sf-session-cache.js';
@@ -185,7 +187,73 @@ function syncInspectContextMenu(): Promise<void> {
   return syncInFlight;
 }
 
+// Runtime message the worker broadcasts to an open side panel when the active
+// tab's org changes, so the panel can follow it (P2-3 PR-2, behaviour A). The
+// panel is the only listener; every other extension context ignores it.
+const PANEL_ACTIVE_TAB_ACTION = 'sfdtPanelActiveTab';
+
+// Tell an OPEN side panel which Salesforce tab is now active so it can re-bind
+// (behaviour A). We send the tab URL only when it's a Salesforce page (so the
+// pure `shouldRebindPanel` helper on the panel side runs on real input);
+// otherwise null, which the panel treats as "keep your current org". Best-effort
+// — with no panel open, runtime.sendMessage rejects and we swallow it.
+function broadcastActiveTab(url: string | undefined): void {
+  const isSf = salesforceHostFromUrl(url) !== null;
+  chrome.runtime
+    .sendMessage({ action: PANEL_ACTIVE_TAB_ACTION, url: isSf ? url : null })
+    .catch(() => {
+      // No side panel (or other listener) is open — nothing to notify.
+    });
+}
+
+// P2-3 PR-2 — Chrome side-panel behaviours A (org-follow) + B (auto-enable).
+// Firefox uses `sidebar_action` (always available, no per-tab enablement and no
+// tabs-follow API), so this whole block is Chrome-only and guarded on
+// `chrome.sidePanel` existing. Uses NO new permission: the chrome.tabs events
+// and `chrome.sidePanel.setOptions` ride on the existing `sidePanel` permission
+// and host_permissions (a tab's URL is readable for permitted Salesforce hosts
+// without the broad `tabs` permission; non-permitted tabs report url:undefined,
+// which correctly reads as "not a Salesforce tab" → panel disabled).
+function setupSidePanelFollow(): void {
+  if (!chrome.sidePanel?.setOptions || !chrome.tabs) return;
+
+  // B: offer the panel only on Salesforce tabs. A per-tab setOptions({enabled})
+  // overrides the global default; on a non-SF tab the panel is disabled.
+  // A: after applying enablement, tell any open panel the active org changed.
+  const applyForTab = async (tabId: number, url: string | undefined): Promise<void> => {
+    try {
+      await chrome.sidePanel.setOptions({
+        tabId,
+        path: 'sidepanel.html',
+        enabled: panelEnabledForUrl(url),
+      });
+    } catch {
+      // A closing/prerender/discarded tab can reject setOptions — ignore.
+    }
+    broadcastActiveTab(url);
+  };
+
+  chrome.tabs.onActivated.addListener(({ tabId }) => {
+    void chrome.tabs.get(tabId).then(
+      (tab) => applyForTab(tabId, tab.url),
+      () => {
+        // Tab vanished between the event and the lookup — nothing to do.
+      },
+    );
+  });
+
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    // Only react to the active tab, and only on a meaningful change (navigation
+    // finished, or the URL changed) — onUpdated also fires for title/favicon.
+    if (!tab.active) return;
+    if (changeInfo.status !== 'complete' && changeInfo.url === undefined) return;
+    void applyForTab(tabId, tab.url);
+  });
+}
+
 export default defineBackground(() => {
+  setupSidePanelFollow();
+
   // P1-8 — right-click "Inspect this record". Keep the menu in sync with the
   // feature toggle + kill-switch on boot, on install/update, and whenever
   // storage changes. `onSettingsChange` refreshes THIS worker's memoised

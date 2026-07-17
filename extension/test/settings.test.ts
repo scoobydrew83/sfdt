@@ -102,6 +102,21 @@ describe('extension/lib/settings', () => {
       expect(merged.customShortcuts).toEqual([{ name: 'B', url: 'https://b.example/' }]);
     });
   });
+
+  describe('defaultSurface (P2-3 PR-2)', () => {
+    it("defaults to 'modal' (classic overlay — nothing changes unless opted in)", async () => {
+      const s = await loadSettings();
+      expect(s.defaultSurface).toBe('modal');
+    });
+
+    it("parses 'panel'", () => {
+      expect(SettingsSchema.parse({ defaultSurface: 'panel' }).defaultSurface).toBe('panel');
+    });
+
+    it('rejects an unknown surface at the schema boundary', () => {
+      expect(SettingsSchema.safeParse({ defaultSurface: 'sidebar' }).success).toBe(false);
+    });
+  });
 });
 
 describe('settings.features legacy id adapter', () => {
