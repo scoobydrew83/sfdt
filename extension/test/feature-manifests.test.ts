@@ -51,6 +51,7 @@ import { createEventMonitorFeature } from '../features/event-monitor.js';
 import { createExportForPromptFeature } from '../features/export-for-prompt.js';
 import { createApexAnonymousFeature } from '../features/apex-anonymous.js';
 import { createDebugLogViewerFeature } from '../features/debug-log-viewer.js';
+import { createTraceFlagsFeature } from '../features/trace-flags.js';
 import { createSavedSoqlFeature } from '../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../features/org-switcher.js';
 import { createOrgReleaseBadgeFeature } from '../features/org-release-badge.js';
@@ -139,6 +140,7 @@ function instantiateAllFeatures(): Feature[] {
     createExportForPromptFeature(),
     createApexAnonymousFeature(),
     createDebugLogViewerFeature(),
+    createTraceFlagsFeature(),
     createSavedSoqlFeature(),
     createOrgSwitcherFeature(),
     // command-palette (P2-2): metadata-only overlay feature (no icon / side

@@ -51,6 +51,7 @@ import { createEventMonitorFeature } from '../features/event-monitor.js';
 import { createExportForPromptFeature } from '../features/export-for-prompt.js';
 import { createApexAnonymousFeature } from '../features/apex-anonymous.js';
 import { createDebugLogViewerFeature } from '../features/debug-log-viewer.js';
+import { createTraceFlagsFeature } from '../features/trace-flags.js';
 import { createSavedSoqlFeature } from '../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../features/org-switcher.js';
 import { createOrgReleaseBadgeFeature } from '../features/org-release-badge.js';
@@ -174,7 +175,14 @@ export default defineContentScript({
     registry.register(createEventMonitorFeature());
     registry.register(exportForPrompt);
     registry.register(createApexAnonymousFeature());
-    registry.register(createDebugLogViewerFeature());
+    // Debug Logs cross-links into the Trace Flags manager (a trace flag is what
+    // makes ApexLogs appear), so its header entry dispatches to it.
+    registry.register(
+      createDebugLogViewerFeature({
+        onManageTraceFlags: () => void registry.dispatch('trace-flags', 'activate'),
+      }),
+    );
+    registry.register(createTraceFlagsFeature());
     registry.register(createSavedSoqlFeature());
     registry.register(createOrgSwitcherFeature());
     // The command palette (P2-2): a global keyboard-first overlay listing every

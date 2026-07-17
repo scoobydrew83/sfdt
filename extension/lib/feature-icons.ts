@@ -40,6 +40,7 @@ export const FEATURE_ICONS: Record<string, FeatureIcon> = {
   // Workspace-first tools (also surfaced on Salesforce pages where useful).
   'apex-anonymous': { icon: '⚡', label: 'Execute Anonymous Apex' },
   'debug-log-viewer': { icon: '🪵', label: 'Debug Logs' },
+  'trace-flags': { icon: '⚑', label: 'Trace Flags' },
   'saved-soql': { icon: '⭐', label: 'Saved SOQL' },
   'org-switcher': { icon: '🏢', label: 'Switch Org' },
   'apex-coverage': { icon: '📈', label: 'Apex Coverage' },
@@ -62,6 +63,7 @@ export const WORKSPACE_TOOLS: readonly string[] = [
   'saved-soql',
   'apex-anonymous',
   'debug-log-viewer',
+  'trace-flags',
   'rest-explore',
   'soap-explore',
   'inspect-record',
