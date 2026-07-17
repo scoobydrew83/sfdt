@@ -1,0 +1,10 @@
+64.0 APEX_CODE,FINEST;APEX_PROFILING,INFO;DB,INFO;SYSTEM,FINE
+09:20:00.200 (1000)|EXECUTION_STARTED
+09:20:00.200 (2000)|CODE_UNIT_STARTED|[EXTERNAL]|01q5j000000AbCdEAK|ContactTrigger on Contact trigger event AfterInsert|__sfdc_trigger/ContactTrigger
+09:20:00.200 (3000)|METHOD_ENTRY|[8]|01p5j000000CoNtAAK|ContactService.syncContacts(List<Contact>)
+09:20:00.200 (4000)|METHOD_EXIT|[8]|01p5j000000CoNtAAK|ContactService.syncContacts(List<Contact>)
+09:20:00.200 (5000)|METHOD_ENTRY|[12]|01p5j000000CoNtAAK|ContactService.recalculateScores(List<Contact>)
+09:20:00.200 (6000)|SOQL_EXECUTE_BEGIN|[14]|Aggregations:0|SELECT Id FROM Contact WHERE AccountId != null
+09:20:00.200 (7000)|SOQL_EXECUTE_END|[14]|Rows:200
+
+*********** MAXIMUM DEBUG LOG SIZE REACHED ***********

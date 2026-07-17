@@ -1,0 +1,11 @@
+64.0 APEX_CODE,FINEST;APEX_PROFILING,INFO;CALLOUT,INFO;DB,INFO;SYSTEM,FINE;VALIDATION,INFO;VISUALFORCE,INFO;WORKFLOW,INFO
+Execution log
+09:00:00.001 (1000)|EXECUTION_STARTED
+09:00:00.001 (2000)|CODE_UNIT_STARTED|[EXTERNAL]|01q5j000000AbCdEAK|AccountTrigger on Account trigger event BeforeUpdate|__sfdc_trigger/AccountTrigger
+09:00:00.001 (3000)|METHOD_ENTRY|[12]|01p5j000000XyZwAAK|AccountService.validateAccounts(List<Account>)
+09:00:00.001 (5000)|USER_DEBUG|[15]|DEBUG|Validating 3 accounts
+09:00:00.001 (8000)|METHOD_EXIT|[12]|01p5j000000XyZwAAK|AccountService.validateAccounts(List<Account>)
+09:00:00.001 (9000)|METHOD_ENTRY|[20]|01p5j000000XyZwAAK|AccountService.enrichAccounts(List<Account>)
+09:00:00.001 (14000)|METHOD_EXIT|[20]|01p5j000000XyZwAAK|AccountService.enrichAccounts(List<Account>)
+09:00:00.001 (15000)|CODE_UNIT_FINISHED|AccountTrigger on Account trigger event BeforeUpdate
+09:00:00.001 (16000)|EXECUTION_FINISHED
