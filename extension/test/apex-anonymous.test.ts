@@ -588,3 +588,172 @@ describe('apex-anonymous — execute with log capture', () => {
     expect(document.querySelector('.sfdt-view-overlay')?.textContent).toContain('could not identify user');
   });
 });
+
+// A minimal-but-parseable Apex log body so parseApexLog + the analyzer render.
+const ANALYZABLE_LOG_BODY = [
+  '61.0 APEX_CODE,FINEST',
+  '10:00:00.0 (1)|EXECUTION_STARTED',
+  '10:00:00.0 (2)|CODE_UNIT_STARTED|[EXTERNAL]|execute anonymous',
+  '10:00:00.0 (3)|USER_DEBUG|[1]|DEBUG|hello from run+analyze',
+  '10:00:00.0 (4)|CODE_UNIT_FINISHED|execute anonymous',
+  '10:00:00.0 (5)|EXECUTION_FINISHED',
+].join('\n');
+
+// A win whose setTimeout fires synchronously so pollForNewLog's retry loop
+// resolves without real timers (the log-not-found path polls 6× with delays).
+function fastWin(): Window {
+  return {
+    location: { href: 'https://x.lightning.force.com/lightning/setup/SetupOneHome/home' },
+    setTimeout: (fn: () => void) => {
+      fn();
+      return 0;
+    },
+  } as unknown as Window;
+}
+
+function runAnalyzeBtn(): HTMLButtonElement {
+  return Array.from(
+    document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button'),
+  ).find((b) => b.textContent === '📊 Run & analyze')!;
+}
+
+describe('apex-anonymous — Run & analyze', () => {
+  beforeEach(async () => {
+    clearBody();
+    setSetupUrl();
+    // captureLogs off on purpose: Run & analyze must force capture on for the run.
+    await seedSettings({ 'apex-anonymous': { captureLogs: false, historyEnabled: false } });
+  });
+
+  it('runs, locates the produced log, and opens it in the analyzer', async () => {
+    let apexLogCalls = 0;
+    const api = fakeApi({
+      apiGet: vi.fn(async (endpoint: string) => {
+        if (endpoint.includes('userinfo')) return { user_id: '005xx0000000001' };
+        return okResult();
+      }) as unknown as SalesforceApiClient['apiGet'],
+      toolingQuery: vi.fn(async (soql: string) => {
+        if (soql.includes('FROM DebugLevel')) return { records: [], size: 0, done: true };
+        if (soql.includes('FROM TraceFlag')) return { records: [], size: 0, done: true };
+        if (soql.includes('FROM ApexLog')) {
+          apexLogCalls += 1;
+          // First call = baseline (old id); the poll then sees a new id.
+          return { records: [{ Id: apexLogCalls === 1 ? '07Lold' : '07Lnew' }], size: 1, done: true };
+        }
+        return { records: [], size: 0, done: true };
+      }) as unknown as SalesforceApiClient['toolingQuery'],
+      apiGetText: vi.fn(async () => ANALYZABLE_LOG_BODY) as unknown as SalesforceApiClient['apiGetText'],
+    });
+    const feature = createApexAnonymousFeature({ api, win: fastWin() });
+    await feature.onActivate?.();
+    await flush();
+
+    runAnalyzeBtn().click();
+    await flush();
+
+    // The produced log's body was fetched via the shared ApexLog Body path…
+    expect(api.apiGetText).toHaveBeenCalledWith(expect.stringContaining('/ApexLog/07Lnew/Body'));
+    // …parsed, and opened in the analyzer (a second overlay with its headings).
+    expect(document.querySelectorAll('.sfdt-view-overlay').length).toBe(2);
+    expect(document.body.textContent).toContain('Method timings');
+  });
+
+  it('falls back to the result view with a notice when no log is produced', async () => {
+    const api = fakeApi({
+      apiGet: vi.fn(async (endpoint: string) => {
+        if (endpoint.includes('userinfo')) return { user_id: '005xx0000000001' };
+        return okResult();
+      }) as unknown as SalesforceApiClient['apiGet'],
+      toolingQuery: vi.fn(async (soql: string) => {
+        if (soql.includes('FROM DebugLevel')) return { records: [], size: 0, done: true };
+        if (soql.includes('FROM TraceFlag')) return { records: [], size: 0, done: true };
+        // ApexLog query always returns the same baseline id → no new log ever appears.
+        if (soql.includes('FROM ApexLog')) return { records: [{ Id: '07Lbase' }], size: 1, done: true };
+        return { records: [], size: 0, done: true };
+      }) as unknown as SalesforceApiClient['toolingQuery'],
+    });
+    const feature = createApexAnonymousFeature({ api, win: fastWin() });
+    await feature.onActivate?.();
+    await flush();
+
+    runAnalyzeBtn().click();
+    await flush();
+
+    // Analyzer was NOT opened — only the Execute Anonymous overlay remains…
+    expect(document.querySelectorAll('.sfdt-view-overlay').length).toBe(1);
+    expect(document.body.textContent).not.toContain('Method timings');
+    // …the normal result view is shown, and a notice explains the fallback.
+    const overlayText = document.querySelector('.sfdt-view-overlay')?.textContent ?? '';
+    expect(overlayText).toContain('no log captured');
+    expect(document.querySelector('.sfdt-toast')?.textContent).toContain('No debug log was produced');
+    // The body fetch was never attempted (no log to fetch).
+    expect(api.apiGetText).not.toHaveBeenCalled();
+  });
+
+  it('honors the persisted DebugLevel pick even with the capture setting off', async () => {
+    // Capture setting is off (beforeEach) so the picker is never populated, but a
+    // DebugLevel was chosen in a prior session. Run & analyze forces capture on —
+    // it must still apply that persisted pick, not silently fall back to the
+    // managed SFDT_Finest default.
+    await writeSelectedDebugLevelId('7dlPERSISTED');
+    const api = fakeApi({
+      apiGet: vi.fn(async (endpoint: string) => {
+        if (endpoint.includes('userinfo')) return { user_id: '005xx0000000001' };
+        return okResult();
+      }) as unknown as SalesforceApiClient['apiGet'],
+      toolingQuery: vi.fn(async (soql: string) => {
+        if (soql.includes('FROM TraceFlag')) return { records: [], size: 0, done: true };
+        if (soql.includes('FROM ApexLog')) return { records: [{ Id: '07Lbase' }], size: 1, done: true };
+        return { records: [], size: 0, done: true };
+      }) as unknown as SalesforceApiClient['toolingQuery'],
+    });
+    const feature = createApexAnonymousFeature({ api, win: fastWin() });
+    await feature.onActivate?.();
+    await flush();
+
+    runAnalyzeBtn().click();
+    await flush();
+
+    // The created TraceFlag carries the persisted level — not '' → managed default.
+    expect(api.apiRequest).toHaveBeenCalledWith(
+      'POST',
+      expect.stringContaining('/TraceFlag'),
+      expect.objectContaining({ DebugLevelId: '7dlPERSISTED' }),
+    );
+  });
+
+  it('restores focus to the Run & analyze button after the analyzer closes', async () => {
+    let apexLogCalls = 0;
+    const api = fakeApi({
+      apiGet: vi.fn(async (endpoint: string) => {
+        if (endpoint.includes('userinfo')) return { user_id: '005xx0000000001' };
+        return okResult();
+      }) as unknown as SalesforceApiClient['apiGet'],
+      toolingQuery: vi.fn(async (soql: string) => {
+        if (soql.includes('FROM TraceFlag')) return { records: [], size: 0, done: true };
+        if (soql.includes('FROM ApexLog')) {
+          apexLogCalls += 1;
+          return { records: [{ Id: apexLogCalls === 1 ? '07Lold' : '07Lnew' }], size: 1, done: true };
+        }
+        return { records: [], size: 0, done: true };
+      }) as unknown as SalesforceApiClient['toolingQuery'],
+      apiGetText: vi.fn(async () => ANALYZABLE_LOG_BODY) as unknown as SalesforceApiClient['apiGetText'],
+    });
+    const feature = createApexAnonymousFeature({ api, win: fastWin() });
+    await feature.onActivate?.();
+    await flush();
+
+    const analyzeBtn = runAnalyzeBtn();
+    analyzeBtn.click();
+    await flush();
+    // Analyzer opened (2 overlays).
+    expect(document.querySelectorAll('.sfdt-view-overlay').length).toBe(2);
+
+    // Close the analyzer via Esc; focus must return to the analyze button, not
+    // <body> — proving the opener wasn't left disabled/blurred at open time.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await flush();
+    expect(document.querySelectorAll('.sfdt-view-overlay').length).toBe(1);
+    expect(document.activeElement).toBe(analyzeBtn);
+  });
+});
