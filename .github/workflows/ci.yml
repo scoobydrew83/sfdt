@@ -26,7 +26,12 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Security audit
-        run: npm audit --audit-level=high
+        # Runtime deps only (--omit=dev): high-severity advisories in build tooling
+        # (e.g. wxt -> web-ext-run -> firefox-profile -> adm-zip, and wxt's esbuild)
+        # never ship in any published artifact and can't be forward-fixed while wxt is
+        # at its latest version. The weekly scheduled-audit.yml still reports dev
+        # advisories at moderate so they stay visible for when an upstream fix lands.
+        run: npm audit --audit-level=high --omit=dev
       - run: npm run lint
       - run: npm test
       - name: Surface contracts (catalog drift + license/node/auth consistency)
