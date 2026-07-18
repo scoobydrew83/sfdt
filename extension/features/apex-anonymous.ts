@@ -524,7 +524,13 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
           if (debugReady) await debugReady;
           userId = await getCurrentUserId();
           if (userId) {
-            await ensureTraceFlag(userId, debugSelect.value || null);
+            // debugSelect is only populated (and the persisted pick restored into
+            // it) when the capture *setting* is on. "Run & analyze" forces capture
+            // even when that setting is off, so read the persisted pick directly
+            // when the select is empty — otherwise we'd silently downgrade the
+            // user's chosen DebugLevel to the managed SFDT_Finest default.
+            const debugLevelId = debugSelect.value || (await readSelectedDebugLevelId()) || null;
+            await ensureTraceFlag(userId, debugLevelId);
             baselineLogId = await latestLogId(userId);
           } else {
             captureNote = 'log not captured (could not identify user)';
@@ -558,6 +564,13 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
             status.textContent = `${head} · log ready`;
             if (analyze) {
               try {
+                // Focus-restore: presentApexLogAnalyzer captures the current
+                // activeElement to restore focus to on close. analyzeBtn was
+                // disabled at the top of the run (which blurred it to <body>), so
+                // re-enable + refocus it before opening — otherwise focus would
+                // land on <body> when the analyzer closes.
+                analyzeBtn.disabled = false;
+                analyzeBtn.focus();
                 await openAnalyzer(capturedLogId);
               } catch (err) {
                 showToast(err instanceof Error ? err.message : String(err), {
