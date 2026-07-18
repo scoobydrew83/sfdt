@@ -131,3 +131,37 @@ describe('apex-log-analyzer — render', () => {
     expect(document.activeElement).toBe(opener);
   });
 });
+
+describe('apex-log-analyzer — flame chart', () => {
+  beforeEach(clearBody);
+
+  it('renders a Flame chart section with a labelled canvas', () => {
+    const { raw, parsed } = fixture('deep-nesting.log');
+    presentApexLogAnalyzer({ parsed, rawText: raw, doc: document });
+    expect(overlay().textContent).toContain('Flame chart');
+    const canvas = overlay().querySelector('canvas');
+    expect(canvas).not.toBeNull();
+    expect(canvas!.getAttribute('aria-label')).toMatch(/flame chart/i);
+  });
+
+  it('keeps the method table keyboard-reachable (method names are buttons)', () => {
+    const { raw, parsed } = fixture('deep-nesting.log');
+    presentApexLogAnalyzer({ parsed, rawText: raw, doc: document });
+    const nameButtons = Array.from(
+      overlay().querySelectorAll<HTMLButtonElement>('tbody button'),
+    );
+    expect(nameButtons.length).toBeGreaterThan(0);
+    // Table→chart: activating a method name must not throw (drives highlightKey).
+    expect(() => nameButtons[0]!.click()).not.toThrow();
+  });
+
+  it('the Reset zoom control is present and starts disabled', () => {
+    const { raw, parsed } = fixture('deep-nesting.log');
+    presentApexLogAnalyzer({ parsed, rawText: raw, doc: document });
+    const reset = Array.from(overlay().querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent === 'Reset zoom',
+    );
+    expect(reset).toBeDefined();
+    expect(reset!.disabled).toBe(true);
+  });
+});
