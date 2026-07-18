@@ -23,7 +23,7 @@ describe('extension/lib/settings', () => {
     expect(isFeatureEnabled(s, 'scheduled-flow-explorer')).toBe(true);
     expect(isFeatureEnabled(s, 'setup-tabs')).toBe(true);
     expect(s.canvasSearch.shortcut).toBe('Ctrl+Shift+F');
-    expect(s.apiNameGenerator.namingPattern).toBe('Snake_Case');
+    expect(s.apiNameGenerator.namingPattern).toBe('camelCase');
     expect(s.bridge.preferredTransport).toBe('auto');
     expect(s.bridge.localhostPort).toBe(7654);
   });
