@@ -78,6 +78,8 @@ export function orgOriginFor(orgHost: string): string {
 export const HOST_STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: var(--sfdt-color-text-strong); background: var(--sfdt-color-bg); }
+  /* A native <button> ignores inherited colour (UA buttontext), so tool buttons that set a themed background but no colour go dark-on-dark in dark mode. Make them inherit; more-specific rules (#sfdt-topbar button) and inline colours still win. */
+  button { color: inherit; }
   #sfdt-topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-on-accent); }
   #sfdt-topbar .title { font-weight: 600; font-size: 15px; }
   #sfdt-topbar .org { margin-left: auto; font-size: 12px; opacity: 0.85; font-family: ui-monospace, monospace; }

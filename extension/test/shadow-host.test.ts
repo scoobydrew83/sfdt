@@ -42,6 +42,16 @@ describe('ui/shadow-host', () => {
     expect(h.root.querySelectorAll('style')).toHaveLength(0);
   });
 
+  it('forces <button> to inherit the themed colour (no dark-on-dark buttons)', () => {
+    // A native <button> ignores the parent `color` (UA `buttontext`), so any
+    // button with a themed background but no explicit colour would be invisible
+    // in dark mode. The reset must make buttons inherit the wrapper colour.
+    const h = getShadowHost(document);
+    const sheet = h.root.adoptedStyleSheets[0]!;
+    const css = [...sheet.cssRules].map((r) => r.cssText).join('\n');
+    expect(css).toMatch(/\.sfdt-shadow-content button\s*\{[^}]*color:\s*inherit/);
+  });
+
   it('is idempotent — repeated calls return the same root+mount', () => {
     const a = getShadowHost(document);
     const b = getShadowHost(document);

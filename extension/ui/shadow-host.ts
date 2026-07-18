@@ -21,12 +21,22 @@ const CONTENT_CLASS = 'sfdt-shadow-content';
 // otherwise inherit inward) and re-establishes our own baseline. `all`
 // excludes custom properties by spec, so `var(--sfdt-*)` still inherits from the
 // host :root — dark mode keeps working. display is restored (initial => inline).
+// A native <button> does NOT inherit `color` — it uses the UA `buttontext`
+// system colour (dark) regardless of its parent, so any button that sets a
+// themed `background` (e.g. --sfdt-color-surface) but omits `color` renders
+// dark-on-dark in dark mode. Force buttons to inherit the wrapper's themed
+// colour; buttons that set their own inline `color` (primary/brand/error) still
+// win (inline style > adopted stylesheet). Scoped to <button> only — <select>/
+// <textarea> may rely on the UA field background, so leave them untouched.
 const BASE_CSS = `.${CONTENT_CLASS} {
   all: initial;
   display: block;
   color: var(--sfdt-color-text);
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 13px;
+}
+.${CONTENT_CLASS} button {
+  color: inherit;
 }`;
 
 export interface ShadowHost {
