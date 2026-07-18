@@ -54,6 +54,32 @@ export function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Import-from-disk cap. The parser handles 5 MB in ~30 ms, so 30 MB is generous
+// headroom while still rejecting absurd files before they hang the tab.
+export const MAX_IMPORT_BYTES = 30 * 1024 * 1024;
+
+// Analyze a LOCAL log file's text via the SAME analyzer path as an org log —
+// but with ZERO Salesforce calls (it's a user-picked file, no `api` involved).
+// Returns the ViewHandle, or null when the input is rejected (empty / not a log)
+// so the caller doesn't open an empty analyzer over garbage. The parser never
+// throws, so "clearly not a log" = no header AND no recognised events.
+export function importApexLogText(
+  text: string,
+  fileName: string,
+  doc: Document,
+): ViewHandle | null {
+  if (!text.trim()) {
+    showToast(`"${fileName}" is empty — nothing to analyze.`, { doc, kind: 'warning' });
+    return null;
+  }
+  const parsed = parseApexLog(text);
+  if (parsed.apiVersion === null && parsed.events.length === 0) {
+    showToast(`"${fileName}" doesn't look like an Apex debug log.`, { doc, kind: 'warning' });
+    return null;
+  }
+  return presentApexLogAnalyzer({ parsed, rawText: text, title: fileName, doc });
+}
+
 // Small accessible count-confirm dialog for the destructive bulk delete.
 // role="dialog" + aria-modal, labelled by its title; Esc (capture phase, removed
 // on close) and backdrop click cancel; Tab is trapped between the two buttons;
@@ -234,6 +260,68 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
     toolbar.appendChild(deleteBtn);
     toolbar.appendChild(refreshBtn);
     body.appendChild(toolbar);
+
+    // Import-from-disk zone. Analyzes a LOCAL .log/.txt via the same analyzer as
+    // an org log, with NO Salesforce call — so it works with no session at all.
+    // The file input is natively labelled (wrapped in <label>) and keyboard-
+    // operable (Enter/Space opens the picker); the zone is also a drop target.
+    const importZone = doc.createElement('div');
+    importZone.style.cssText =
+      'display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px dashed var(--sfdt-color-border); border-radius: 4px; font-size: 12px; color: var(--sfdt-color-text-weak);';
+    const importLabel = doc.createElement('label');
+    importLabel.style.cssText =
+      'display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--sfdt-color-text);';
+    const importText = doc.createElement('span');
+    importText.textContent = '📂 Import log';
+    const importInput = doc.createElement('input');
+    importInput.type = 'file';
+    importInput.accept = '.log,.txt';
+    importInput.setAttribute('aria-label', 'Import a debug log file from disk');
+    importInput.style.cssText = 'font-size: 11px;';
+    importLabel.append(importText, importInput);
+    const importHint = doc.createElement('span');
+    importHint.textContent = 'or drop a .log/.txt file here — analyzed locally, no org needed';
+    importZone.append(importLabel, importHint);
+    body.appendChild(importZone);
+
+    // Reads a user-picked/dropped file and opens the analyzer. Rejects oversized
+    // files up front (before reading) with a visible toast — never an org call.
+    async function handleImportFile(file: File | null | undefined): Promise<void> {
+      if (!file) return;
+      if (file.size > MAX_IMPORT_BYTES) {
+        showToast(
+          `"${file.name}" is ${formatBytes(file.size)} — too large to import (max ${formatBytes(MAX_IMPORT_BYTES)}).`,
+          { doc, kind: 'error' },
+        );
+        return;
+      }
+      let text: string;
+      try {
+        text = await file.text();
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
+        return;
+      }
+      importApexLogText(text, file.name, doc);
+    }
+
+    importInput.addEventListener('change', () => {
+      void handleImportFile(importInput.files?.[0]);
+      // Reset so re-picking the same file fires 'change' again.
+      importInput.value = '';
+    });
+    importZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      importZone.style.background = 'var(--sfdt-color-bg)';
+    });
+    importZone.addEventListener('dragleave', () => {
+      importZone.style.background = '';
+    });
+    importZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      importZone.style.background = '';
+      void handleImportFile(e.dataTransfer?.files?.[0]);
+    });
 
     const table = doc.createElement('div');
     table.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
@@ -440,5 +528,12 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
 }
 
 export function _debugLogViewerTestApi() {
-  return { buildApexLogQuery, formatBytes, buildLogDeleteEndpoint, AUTO_REFRESH_INTERVAL_MS };
+  return {
+    buildApexLogQuery,
+    formatBytes,
+    buildLogDeleteEndpoint,
+    AUTO_REFRESH_INTERVAL_MS,
+    importApexLogText,
+    MAX_IMPORT_BYTES,
+  };
 }
