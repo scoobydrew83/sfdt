@@ -7,6 +7,8 @@ import { SF_API_VERSION } from '../lib/api-version.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { parseApexLog } from '../lib/apex-log/index.js';
+import { presentApexLogAnalyzer } from '../ui/apex-log-analyzer.js';
 
 const APEX_ANONYMOUS_SETTINGS_SCHEMA = z.object({
   historyEnabled: z.boolean().default(true),
@@ -376,6 +378,12 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     runBtn.textContent = 'Execute';
     runBtn.style.cssText =
       'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+    // Runs the Apex, then opens the produced log in the profiler view. Forces log
+    // capture on for the run regardless of the captureLogs setting.
+    const analyzeBtn = doc.createElement('button');
+    analyzeBtn.textContent = '📊 Run & analyze';
+    analyzeBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     const saveBtn = doc.createElement('button');
     saveBtn.textContent = 'Save snippet';
     saveBtn.style.cssText =
@@ -433,6 +441,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     hint.textContent = 'Ctrl/Cmd+Enter to run';
     hint.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 11px; margin-left: auto;';
     toolbar.appendChild(runBtn);
+    toolbar.appendChild(analyzeBtn);
     toolbar.appendChild(saveBtn);
     toolbar.appendChild(openLogBtn);
     // Kick off population and hold the promise so execute() can await the
@@ -473,13 +482,26 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       },
     });
 
-    async function execute(): Promise<void> {
+    // Fetch the produced log, parse it, and open the profiler view — same
+    // fetch/parse/present path the Debug Logs viewer's "Analyze" uses.
+    async function openAnalyzer(logId: string): Promise<void> {
+      const raw = await fetchLogBody(logId);
+      const parsed = parseApexLog(raw);
+      presentApexLogAnalyzer({ parsed, rawText: raw, title: 'Execute Anonymous', doc });
+    }
+
+    // analyze=true is the "Run & analyze" action: force log capture on for this
+    // run and, once the log is located, open it in the analyzer. If no log is
+    // produced, the normal result view is already shown — we just add a notice.
+    async function execute(analyze = false): Promise<void> {
       const code = editor.value;
       if (!code.trim()) {
         showToast('Enter some Apex to execute.', { doc, kind: 'warning' });
         return;
       }
+      const wantCapture = config.captureLogs || analyze;
       runBtn.disabled = true;
+      analyzeBtn.disabled = true;
       openLogBtn.style.display = 'none';
       logPane.style.display = 'none';
       capturedLogId = null;
@@ -494,7 +516,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       let userId: string | null = null;
       let baselineLogId: string | null = null;
       let captureNote = '';
-      if (config.captureLogs) {
+      if (wantCapture) {
         status.textContent = 'Preparing debug log…';
         try {
           // Ensure the persisted pick has been restored into the select before
@@ -528,17 +550,40 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         resultPane.style.display = 'block';
         if (config.historyEnabled) await pushApexHistory({ code, ts: Date.now() });
 
-        if (config.captureLogs && userId) {
+        if (wantCapture && userId) {
           status.textContent = `${head} · capturing log…`;
           capturedLogId = await pollForNewLog(userId, baselineLogId);
           if (capturedLogId) {
             openLogBtn.style.display = '';
             status.textContent = `${head} · log ready`;
+            if (analyze) {
+              try {
+                await openAnalyzer(capturedLogId);
+              } catch (err) {
+                showToast(err instanceof Error ? err.message : String(err), {
+                  doc,
+                  kind: 'error',
+                });
+              }
+            }
           } else {
             status.textContent = `${head} · no log captured`;
+            // AC: analyze fell back — the result view above is still shown; notify why.
+            if (analyze) {
+              showToast('No debug log was produced — showing the result instead.', {
+                doc,
+                kind: 'warning',
+              });
+            }
           }
         } else if (captureNote) {
           status.textContent = `${head} · ${captureNote}`;
+          if (analyze) {
+            showToast(`Could not analyze — ${captureNote}. Showing the result instead.`, {
+              doc,
+              kind: 'warning',
+            });
+          }
         }
       } catch (err) {
         status.textContent = '';
@@ -547,10 +592,12 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         resultPane.style.color = 'var(--sfdt-color-error-text)';
       } finally {
         runBtn.disabled = false;
+        analyzeBtn.disabled = false;
       }
     }
 
     runBtn.addEventListener('click', () => void execute());
+    analyzeBtn.addEventListener('click', () => void execute(true));
     editor.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
