@@ -1,21 +1,18 @@
 import { releaseFromVersionList, ORG_HEALTH_THRESHOLDS, type OrgReleaseInfo } from '@sfdt/flow-core';
-import { isFeatureEnabled, loadSettings, onSettingsChange } from '../lib/settings.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { CONTEXTS } from '../lib/context-detector.js';
-import { waitForTabBar } from '../lib/setup-tab-bar.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 
-// An interactive pill in the Setup tab strip auditing the org's API-version
-// spread: org max API version + release (via /services/data, same flow-core
-// reduction as the release badge) plus per-type ApiVersion histograms from the
-// Tooling API. "Behind" = components below flow-core's minApiVersionFloor, so
-// the banding matches the CLI's org-health checks. Clicking the pill toggles a
-// small histogram panel.
+// An org API-version audit, launched on demand from the ⚡ menu / command
+// palette (no always-on Setup-strip pill). Reports the org max API version +
+// release (via /services/data, same flow-core reduction as the release badge)
+// plus per-type ApiVersion histograms from the Tooling API. "Behind" =
+// components below flow-core's minApiVersionFloor, so the banding matches the
+// CLI's org-health checks. Opens as a Workspace tab or a page modal.
 
-const AUDIT_CLASS = 'sfdt-api-version-audit';
 const PANEL_CLASS = 'sfdt-api-version-audit-panel';
 const BEHIND_COLOUR = 'var(--sfdt-color-warning)'; // amber — matches org-health's amber band
-const OK_COLOUR = 'var(--sfdt-color-text-muted)'; // neutral grey
 
 interface ApiVersionRow {
   ApiVersion?: number | null;
@@ -108,24 +105,22 @@ async function fetchAuditData(api: SalesforceApiClient): Promise<AuditData | nul
 function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
   const panel = doc.createElement('div');
   panel.className = PANEL_CLASS;
+  // Modal/tab-pane content: the presenter (present-view) supplies the card
+  // chrome, so this is a plain flex:1 scroll body rather than a floating pill
+  // dropdown.
   panel.style.cssText = [
-    'position: absolute',
-    'top: 100%',
-    'right: 0',
-    'z-index: 99999',
-    'background: var(--sfdt-color-surface)',
-    'border: 1px solid var(--sfdt-color-border)',
-    'border-radius: 4px',
-    'box-shadow: 0 2px 8px rgba(0,0,0,0.15)',
-    'padding: 10px 12px',
-    'min-width: 240px',
-    'max-height: 380px',
+    'flex: 1',
     'overflow-y: auto',
-    'font-size: 12px',
+    'padding: 12px 16px',
+    'font-size: 13px',
     'color: var(--sfdt-color-text-strong)',
     'text-align: left',
-    'white-space: nowrap',
   ].join('; ');
+
+  const summary = doc.createElement('div');
+  summary.style.cssText = 'font-weight: 700; font-size: 14px; margin-bottom: 10px;';
+  summary.textContent = describeAuditPill(data).text;
+  panel.appendChild(summary);
 
   const floor = ORG_HEALTH_THRESHOLDS.minApiVersionFloor;
   for (const t of data.types) {
@@ -185,120 +180,17 @@ function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
   return panel;
 }
 
-function removeAudit(doc: Document): void {
-  for (const el of doc.querySelectorAll(`.${AUDIT_CLASS}`)) el.remove();
-}
-
 export interface ApiVersionAuditOptions {
   doc?: Document;
-  win?: Window;
   api?: SalesforceApiClient;
-  waitTimeoutMs?: number;
 }
 
 export function createApiVersionAuditFeature(options: ApiVersionAuditOptions = {}): Feature {
   const doc = options.doc ?? document;
   const api = options.api ?? getSalesforceApi();
-  const timeoutMs = options.waitTimeoutMs ?? 10_000;
-  let injecting = false;
-  let unsubscribe: (() => void) | null = null;
-  // Version spread doesn't change within a session — fetch once, reuse across
-  // SPA navigations (each nav rebuilds the tab bar, so we re-inject the pill).
+  // Version spread doesn't change within a session — fetch once, reuse.
   let cached: AuditData | null = null;
-  let escListener: ((e: KeyboardEvent) => void) | null = null;
-  let outsideListener: ((e: MouseEvent) => void) | null = null;
-
-  function closePanel(): void {
-    for (const el of doc.querySelectorAll(`.${PANEL_CLASS}`)) el.remove();
-    if (escListener) {
-      doc.removeEventListener('keydown', escListener);
-      escListener = null;
-    }
-    if (outsideListener) {
-      doc.removeEventListener('click', outsideListener);
-      outsideListener = null;
-    }
-  }
-
-  function togglePanel(host: HTMLElement, data: AuditData): void {
-    if (host.querySelector(`.${PANEL_CLASS}`)) {
-      closePanel();
-      return;
-    }
-    closePanel();
-    host.appendChild(buildPanel(doc, data));
-    escListener = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closePanel();
-    };
-    doc.addEventListener('keydown', escListener);
-    // Close on click outside the pill/panel — matches the dropdown pattern in
-    // rest-explore/soql-runner; without it the absolute panel floats over
-    // subsequent content after an SPA nav (which rebuilds the tab bar).
-    outsideListener = (e: MouseEvent) => {
-      if (!host.contains(e.target as Node)) closePanel();
-    };
-    doc.addEventListener('click', outsideListener);
-  }
-
-  function buildPill(data: AuditData): HTMLLIElement {
-    const { text, title } = describeAuditPill(data);
-    const li = doc.createElement('li');
-    li.setAttribute('role', 'presentation');
-    li.className = `oneConsoleTabItem tabItem slds-context-bar__item ${AUDIT_CLASS}`;
-    li.style.cssText = 'display: flex; align-items: center; padding: 0 8px; position: relative;';
-
-    const pill = doc.createElement('span');
-    const behind = countBehind(data.types) > 0;
-    pill.style.cssText = [
-      'font-size: 10px',
-      'font-weight: 700',
-      'text-transform: uppercase',
-      'letter-spacing: 0.02em',
-      'color: var(--sfdt-color-on-accent)',
-      `background: ${behind ? BEHIND_COLOUR : OK_COLOUR}`,
-      'border-radius: 3px',
-      'padding: 2px 8px',
-      'white-space: nowrap',
-      'cursor: pointer',
-    ].join('; ');
-    pill.textContent = text;
-    pill.title = title;
-    // stopPropagation so this opening click doesn't immediately reach the
-    // outside-click listener togglePanel registers on the document.
-    pill.addEventListener('click', (e) => {
-      e.stopPropagation();
-      togglePanel(li, data);
-    });
-
-    li.appendChild(pill);
-    return li;
-  }
-
-  async function injectIfEnabled(): Promise<void> {
-    const settings = await loadSettings();
-    if (!isFeatureEnabled(settings, 'api-version-audit')) {
-      closePanel();
-      removeAudit(doc);
-      return;
-    }
-    if (injecting) return;
-    if (doc.querySelector(`.${AUDIT_CLASS}`)) return;
-
-    injecting = true;
-    try {
-      const tabBar = await waitForTabBar(doc, timeoutMs);
-      if (!tabBar) return;
-      if (doc.querySelector(`.${AUDIT_CLASS}`)) return; // another pass mounted it while we waited
-
-      cached ??= await fetchAuditData(api);
-      if (!cached) return;
-      tabBar.appendChild(buildPill(cached));
-    } catch (err) {
-      console.warn('[SFDT api-version-audit] failed to render', err);
-    } finally {
-      injecting = false;
-    }
-  }
+  let handle: ViewHandle | null = null;
 
   return {
     manifest: {
@@ -307,37 +199,30 @@ export function createApiVersionAuditFeature(options: ApiVersionAuditOptions = {
       contexts: [CONTEXTS.SETUP_FLOWS, CONTEXTS.FLOW_TRIGGER_EXPLORER, CONTEXTS.SETUP_OTHER],
     },
 
-    async init() {
-      await injectIfEnabled();
-      unsubscribe = onSettingsChange(async () => {
-        closePanel();
-        removeAudit(doc);
-        await injectIfEnabled();
+    // Launched on demand from the ⚡ menu / command palette. Opens the audit as
+    // a view — a Workspace tab, or a centered modal on a Salesforce page. There
+    // is no always-on Setup-strip pill.
+    async onActivate() {
+      cached ??= await fetchAuditData(api);
+      if (!cached) return;
+      handle?.close();
+      handle = presentView({
+        title: 'API Version Audit',
+        body: buildPanel(doc, cached),
+        doc,
+        onClose: () => {
+          handle = null;
+        },
       });
     },
 
-    // Side-button activation: make sure the pill exists, then toggle its panel.
-    async onActivate() {
-      await injectIfEnabled();
-      const host = doc.querySelector<HTMLElement>(`.${AUDIT_CLASS}`);
-      if (host && cached) togglePanel(host, cached);
-    },
-
-    async refresh() {
-      closePanel();
-      removeAudit(doc);
-      await injectIfEnabled();
-    },
-
     async teardown() {
-      unsubscribe?.();
-      unsubscribe = null;
-      closePanel();
-      removeAudit(doc);
+      handle?.close();
+      handle = null;
     },
   };
 }
 
 export function _apiVersionAuditTestApi() {
-  return { AUDIT_CLASS, PANEL_CLASS };
+  return { PANEL_CLASS };
 }
