@@ -34,7 +34,7 @@ export const SettingsSchema = z.object({
   // @deprecated — superseded by registerSettingsShape('api-name-generator', …).
   apiNameGenerator: z
     .object({
-      namingPattern: z.enum(['Snake_Case', 'PascalCase', 'camelCase']).default('Snake_Case'),
+      namingPattern: z.enum(['Snake_Case', 'PascalCase', 'camelCase']).default('camelCase'),
     })
     .default({}),
 

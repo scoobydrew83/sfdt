@@ -12,7 +12,7 @@ import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { z } from 'zod';
 
 const API_NAME_GENERATOR_SETTINGS_SCHEMA = z.object({
-  namingPattern: z.enum(['Snake_Case', 'PascalCase', 'camelCase']).default('Snake_Case'),
+  namingPattern: z.enum(['Snake_Case', 'PascalCase', 'camelCase']).default('camelCase'),
 });
 
 registerSettingsShape('api-name-generator', API_NAME_GENERATOR_SETTINGS_SCHEMA);

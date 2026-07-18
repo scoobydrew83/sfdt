@@ -230,6 +230,8 @@ describe('extension/features — smoke', () => {
 
     labelInput!.value = 'Active Accounts';
     typeSelect!.value = 'Get Records';
+    // Pin the pattern so this smoke check is independent of the default.
+    patternSelect!.value = 'Snake_Case';
     labelInput!.dispatchEvent(new Event('input', { bubbles: true }));
     expect(preview?.textContent).toBe('Get_Active_Accounts');
   });
