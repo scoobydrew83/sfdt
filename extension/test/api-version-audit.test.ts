@@ -1,7 +1,7 @@
-// API Version Audit tests — a click-to-open pill in the Setup tab strip
-// showing org max API version + per-type ApiVersion histograms. We exercise
-// the pure aggregation/description helpers and the feature against a
-// happy-dom tab bar with a mocked Salesforce API client.
+// API Version Audit tests — an on-demand view (⚡ menu / command palette) showing
+// org max API version + per-type ApiVersion histograms. No always-on Setup-strip
+// pill. We exercise the pure aggregation/description helpers and the feature's
+// onActivate → present-view flow against happy-dom with a mocked Salesforce API.
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ORG_HEALTH_THRESHOLDS } from '@sfdt/flow-core';
@@ -12,17 +12,15 @@ import {
   describeAuditPill,
   _apiVersionAuditTestApi,
 } from '../features/api-version-audit.js';
-import { _clearSettingsCacheForTests, saveSettings, SettingsSchema } from '../lib/settings.js';
 import type { SalesforceApiClient } from '../lib/salesforce-api.js';
 
-const { AUDIT_CLASS, PANEL_CLASS } = _apiVersionAuditTestApi();
+const { PANEL_CLASS } = _apiVersionAuditTestApi();
 const FLOOR = ORG_HEALTH_THRESHOLDS.minApiVersionFloor; // 45 at time of writing
 
+// With no content root or workspace sink registered, present-view falls back to
+// a modal mounted in document.body — so the audit body is queryable there.
 function resetDom(): void {
   document.body.replaceChildren();
-  const tabBar = document.createElement('ul');
-  tabBar.className = 'tabBarItems';
-  document.body.appendChild(tabBar);
 }
 
 // Two GA versions; 67 is the org max.
@@ -55,7 +53,6 @@ function fakeApi(
 }
 
 beforeEach(() => {
-  _clearSettingsCacheForTests();
   resetDom();
 });
 
@@ -107,33 +104,30 @@ describe('describeAuditPill', () => {
 });
 
 describe('api-version-audit feature', () => {
-  it('injects an amber pill with org max and below-floor count', async () => {
-    await saveSettings(SettingsSchema.parse({}));
-    const feature = createApiVersionAuditFeature({ waitTimeoutMs: 0, api: fakeApi() });
+  it('renders nothing until activated (no always-on pill)', async () => {
+    const feature = createApiVersionAuditFeature({ api: fakeApi() });
     await feature.init?.();
-    const pill = document.querySelector<HTMLElement>(`.${AUDIT_CLASS} span`);
-    expect(pill?.textContent).toBe('API v67 · 2 behind');
-    expect(pill?.style.background).toBe('var(--sfdt-color-warning)'); // amber — components below floor
+    expect(document.querySelector(`.${PANEL_CLASS}`)).toBeNull();
   });
 
-  it('renders a neutral pill when nothing is below the floor', async () => {
-    await saveSettings(SettingsSchema.parse({}));
-    const feature = createApiVersionAuditFeature({
-      waitTimeoutMs: 0,
-      api: fakeApi({
-        toolingQuery: async () => ({ records: [{ ApiVersion: 62 }], size: 1, done: true }),
-      }),
-    });
-    await feature.init?.();
-    const pill = document.querySelector<HTMLElement>(`.${AUDIT_CLASS} span`);
-    expect(pill?.textContent).toBe('API v67');
-    expect(pill?.style.background).toBe('var(--sfdt-color-text-muted)'); // neutral grey
+  it('onActivate opens a view with the org-max summary and histogram rows', async () => {
+    const feature = createApiVersionAuditFeature({ api: fakeApi() });
+    await feature.onActivate?.();
+
+    const panel = document.querySelector<HTMLElement>(`.${PANEL_CLASS}`);
+    expect(panel).not.toBeNull();
+    // Summary line reuses describeAuditPill: org max + below-floor count.
+    expect(panel!.textContent).toContain('API v67 · 2 behind');
+    // ApexClass v40+v62, ApexTrigger v44, Flow v58 = 4 histogram rows.
+    expect(panel!.querySelectorAll(`.${PANEL_CLASS}-row`)).toHaveLength(4);
+    const below = panel!.querySelectorAll('[data-below-floor="true"]');
+    expect(below).toHaveLength(2); // v40 class + v44 trigger
+    expect(panel!.textContent).toContain("Org max: v67 — Summer '26");
+    expect(panel!.textContent).not.toContain('(preview)');
   });
 
   it('still renders Apex/Trigger when the Flow query fails', async () => {
-    await saveSettings(SettingsSchema.parse({}));
     const feature = createApiVersionAuditFeature({
-      waitTimeoutMs: 0,
       api: fakeApi({
         toolingQuery: async (soql: string) => {
           if (soql.includes('FROM Flow')) throw new Error('INVALID_TYPE');
@@ -143,58 +137,15 @@ describe('api-version-audit feature', () => {
         },
       }),
     });
-    await feature.init?.();
-    const pill = document.querySelector<HTMLElement>(`.${AUDIT_CLASS} span`);
-    expect(pill?.textContent).toBe('API v67 · 2 behind');
-    (pill as HTMLElement).click();
+    await feature.onActivate?.();
     const panelText = document.querySelector(`.${PANEL_CLASS}`)?.textContent ?? '';
     expect(panelText).toContain('Apex Classes');
     expect(panelText).toContain('Apex Triggers');
     expect(panelText).not.toContain('Flows');
   });
 
-  it('click toggles a panel with histogram rows, below-floor rows highlighted', async () => {
-    await saveSettings(SettingsSchema.parse({}));
-    const feature = createApiVersionAuditFeature({ waitTimeoutMs: 0, api: fakeApi() });
-    await feature.init?.();
-    const pill = document.querySelector<HTMLElement>(`.${AUDIT_CLASS} span`)!;
-
-    pill.click();
-    const panel = document.querySelector<HTMLElement>(`.${PANEL_CLASS}`);
-    expect(panel).not.toBeNull();
-    // ApexClass v40+v62, ApexTrigger v44, Flow v58 = 4 histogram rows.
-    const rows = panel!.querySelectorAll(`.${PANEL_CLASS}-row`);
-    expect(rows).toHaveLength(4);
-    const below = panel!.querySelectorAll('[data-below-floor="true"]');
-    expect(below).toHaveLength(2); // v40 class + v44 trigger
-    expect(panel!.textContent).toContain("Org max: v67 — Summer '26");
-    expect(panel!.textContent).not.toContain('(preview)');
-
-    // Second click closes.
-    pill.click();
-    expect(document.querySelector(`.${PANEL_CLASS}`)).toBeNull();
-  });
-
-  it('closes the panel on a click outside the pill', async () => {
-    await saveSettings(SettingsSchema.parse({}));
-    const feature = createApiVersionAuditFeature({ waitTimeoutMs: 0, api: fakeApi() });
-    await feature.init?.();
-    const pill = document.querySelector<HTMLElement>(`.${AUDIT_CLASS} span`)!;
-
-    pill.click();
-    expect(document.querySelector(`.${PANEL_CLASS}`)).not.toBeNull();
-
-    // A click elsewhere on the page dismisses the floating panel.
-    const outside = document.createElement('button');
-    document.body.appendChild(outside);
-    outside.click();
-    expect(document.querySelector(`.${PANEL_CLASS}`)).toBeNull();
-  });
-
-  it('marks preview releases in the footer and closes on Escape', async () => {
-    await saveSettings(SettingsSchema.parse({}));
+  it('marks preview releases in the footer', async () => {
     const feature = createApiVersionAuditFeature({
-      waitTimeoutMs: 0,
       api: fakeApi({
         apiGet: async () => [
           { version: '67.0', label: "Summer '26" },
@@ -202,20 +153,14 @@ describe('api-version-audit feature', () => {
         ],
       }),
     });
-    await feature.init?.();
-    const pill = document.querySelector<HTMLElement>(`.${AUDIT_CLASS} span`)!;
-    pill.click();
+    await feature.onActivate?.();
     expect(document.querySelector(`.${PANEL_CLASS}`)?.textContent).toContain(
       "Org max: v68 — Winter '27 (preview)",
     );
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    expect(document.querySelector(`.${PANEL_CLASS}`)).toBeNull();
   });
 
   it('renders nothing when every fetch fails', async () => {
-    await saveSettings(SettingsSchema.parse({}));
     const feature = createApiVersionAuditFeature({
-      waitTimeoutMs: 0,
       api: fakeApi({
         apiGet: async () => {
           throw new Error('no versions');
@@ -225,33 +170,15 @@ describe('api-version-audit feature', () => {
         },
       }),
     });
-    await feature.init?.();
-    expect(document.querySelector(`.${AUDIT_CLASS}`)).toBeNull();
+    await feature.onActivate?.();
+    expect(document.querySelector(`.${PANEL_CLASS}`)).toBeNull();
   });
 
-  it('does not double-inject when init runs twice', async () => {
-    await saveSettings(SettingsSchema.parse({}));
-    const feature = createApiVersionAuditFeature({ waitTimeoutMs: 0, api: fakeApi() });
-    await feature.init?.();
-    await feature.refresh?.();
-    expect(document.querySelectorAll(`.${AUDIT_CLASS}`)).toHaveLength(1);
-  });
-
-  it('is absent when the feature is disabled', async () => {
-    await saveSettings(SettingsSchema.parse({ features: { 'api-version-audit': false } }));
-    const feature = createApiVersionAuditFeature({ waitTimeoutMs: 0, api: fakeApi() });
-    await feature.init?.();
-    expect(document.querySelector(`.${AUDIT_CLASS}`)).toBeNull();
-  });
-
-  it('removes pill and panel on teardown', async () => {
-    await saveSettings(SettingsSchema.parse({}));
-    const feature = createApiVersionAuditFeature({ waitTimeoutMs: 0, api: fakeApi() });
-    await feature.init?.();
-    document.querySelector<HTMLElement>(`.${AUDIT_CLASS} span`)!.click();
+  it('teardown closes an open view', async () => {
+    const feature = createApiVersionAuditFeature({ api: fakeApi() });
+    await feature.onActivate?.();
     expect(document.querySelector(`.${PANEL_CLASS}`)).not.toBeNull();
     await feature.teardown?.();
-    expect(document.querySelector(`.${AUDIT_CLASS}`)).toBeNull();
     expect(document.querySelector(`.${PANEL_CLASS}`)).toBeNull();
   });
 });
