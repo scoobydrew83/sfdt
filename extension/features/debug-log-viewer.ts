@@ -7,6 +7,8 @@ import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { getContentRoot } from '../ui/content-root.js';
+import { parseApexLog } from '../lib/apex-log/index.js';
+import { presentApexLogAnalyzer } from '../ui/apex-log-analyzer.js';
 
 const DEBUG_LOG_SETTINGS_SCHEMA = z.object({
   pageSize: z.number().int().min(1).max(200).default(50),
@@ -260,6 +262,18 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       }
     }
 
+    // "Analyze" — fetch the body (same path as showLog, no second fetch route),
+    // parse it, and open the profiler view (timings + limits + inventories).
+    async function analyze(row: ApexLogRow): Promise<void> {
+      try {
+        const raw = await fetchBody(row.Id);
+        const parsed = parseApexLog(raw);
+        presentApexLogAnalyzer({ parsed, rawText: raw, title: row.Operation, doc });
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
+      }
+    }
+
     async function load(): Promise<void> {
       status.textContent = 'Loading logs…';
       while (table.firstChild) table.removeChild(table.firstChild);
@@ -292,11 +306,23 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
           const size = doc.createElement('span');
           size.textContent = formatBytes(row.LogLength);
           size.style.cssText = 'min-width: 70px; text-align: right; color: var(--sfdt-color-text-icon);';
+          const analyzeBtn = doc.createElement('button');
+          analyzeBtn.type = 'button';
+          analyzeBtn.textContent = '📊 Analyze';
+          analyzeBtn.setAttribute('aria-label', `Analyze log: ${row.Operation}`);
+          analyzeBtn.style.cssText =
+            'flex: none; padding: 2px 8px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px; cursor: pointer; font-size: 11px;';
+          // stopPropagation so Analyze doesn't also trigger the row's show-body click.
+          analyzeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            void analyze(row);
+          });
           item.appendChild(time);
           item.appendChild(user);
           item.appendChild(op);
           item.appendChild(status2);
           item.appendChild(size);
+          item.appendChild(analyzeBtn);
           item.addEventListener('click', () => void showLog(row));
           table.appendChild(item);
         }
