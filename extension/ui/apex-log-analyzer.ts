@@ -11,11 +11,13 @@ import {
   buildAnalyzerViewModel,
   sortMethodRows,
   formatNanosMs,
+  methodKey,
   type AnalyzerViewModel,
   type MethodRow,
   type MethodSortKey,
 } from '../lib/apex-log/viewmodel.js';
 import type { ParsedLog, RawLineIndex } from '../lib/apex-log/types.js';
+import { buildFlameChart, type FlameChartHandle } from './apex-log-flame-chart.js';
 import { presentView, type ViewHandle } from './present-view.js';
 
 export interface ApexLogAnalyzerOptions {
@@ -61,8 +63,29 @@ export function presentApexLogAnalyzer(opts: ApexLogAnalyzerOptions): ViewHandle
   // per-line elements.
   const { pane: rawPane, jumpTo } = buildRawLogPane(doc, opts.rawText);
 
-  const firstControl = buildMethodTable(doc, vm);
+  // Flame chart + method table are wired bidirectionally: selecting a frame
+  // highlights its table row (chart→table, AC-1); activating a method name
+  // highlights its frames (table→chart, keyboard-reachable).
+  let flame: FlameChartHandle | null = null;
+  const firstControl = buildMethodTable(doc, vm, {
+    onMethodActivate: (ns, name) => flame?.highlightKey(ns, name),
+  });
   body.appendChild(firstControl.section);
+
+  flame = buildFlameChart({
+    roots: opts.parsed.tree,
+    doc,
+    onSelectNode: (node) => {
+      if (node) firstControl.highlightRow(node.namespace, node.name);
+    },
+  });
+  const flameSection = doc.createElement('section');
+  const flameHeading = doc.createElement('h3');
+  flameHeading.textContent = 'Flame chart';
+  flameHeading.style.cssText = HEADING_CSS;
+  flameSection.append(flameHeading, flame.element);
+  body.appendChild(flameSection);
+
   body.appendChild(buildLimitsSection(doc, vm));
   body.appendChild(buildInventorySection(doc, 'SOQL queries', vm.soql, jumpTo, (q) => q.query));
   body.appendChild(
@@ -108,6 +131,7 @@ export function presentApexLogAnalyzer(opts: ApexLogAnalyzerOptions): ViewHandle
     if (cleanedUp) return;
     cleanedUp = true;
     doc.removeEventListener('keydown', onKeydown, true);
+    flame?.destroy();
     previouslyFocused?.focus?.();
   }
 
@@ -130,9 +154,22 @@ function buildTruncationBanner(doc: Document, vm: AnalyzerViewModel): HTMLElemen
 interface MethodTableHandle {
   section: HTMLElement;
   firstHeaderButton: HTMLButtonElement;
+  /** Highlight (and scroll to) the row for a method key — driven by the flame
+   *  chart's frame selection, so chart→table selection stays in sync. */
+  highlightRow(namespace: string | null, name: string): void;
 }
 
-function buildMethodTable(doc: Document, vm: AnalyzerViewModel): MethodTableHandle {
+interface MethodTableCallbacks {
+  /** A method-name button was activated (click/Enter) — used to highlight the
+   *  matching frames in the flame chart (table→chart, keyboard-reachable). */
+  onMethodActivate?: (namespace: string | null, name: string) => void;
+}
+
+function buildMethodTable(
+  doc: Document,
+  vm: AnalyzerViewModel,
+  cb: MethodTableCallbacks = {},
+): MethodTableHandle {
   const section = doc.createElement('section');
   const heading = doc.createElement('h3');
   heading.textContent = 'Method timings';
@@ -151,8 +188,12 @@ function buildMethodTable(doc: Document, vm: AnalyzerViewModel): MethodTableHand
     placeholder.setAttribute('aria-hidden', 'true');
     placeholder.tabIndex = -1;
     section.appendChild(placeholder);
-    return { section, firstHeaderButton: placeholder };
+    return { section, firstHeaderButton: placeholder, highlightRow: () => {} };
   }
+
+  // key → current <tr>; rebuilt on each render (sort rebuilds the tbody).
+  const rowByKey = new Map<string, HTMLTableRowElement>();
+  let highlightedKey: string | null = null;
 
   const table = doc.createElement('table');
   table.style.cssText = TABLE_CSS;
@@ -197,6 +238,7 @@ function buildMethodTable(doc: Document, vm: AnalyzerViewModel): MethodTableHand
 
   function renderRows(): void {
     while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    rowByKey.clear();
     for (const [key, { th, btn }] of headerButtons) {
       const active = key === sortKey;
       th.setAttribute('aria-sort', active ? 'descending' : 'none');
@@ -204,11 +246,27 @@ function buildMethodTable(doc: Document, vm: AnalyzerViewModel): MethodTableHand
       btn.textContent = active ? `${label} ▼` : label;
     }
     for (const row of sortMethodRows(vm.methods, sortKey)) appendRow(row);
+    applyHighlight(); // re-apply across a sort re-render
   }
 
   function appendRow(row: MethodRow): void {
     const tr = doc.createElement('tr');
-    tr.appendChild(cell(doc, 'td', row.name, CELL_CSS));
+    rowByKey.set(methodKey(row.namespace, row.name), tr);
+
+    // The method name is a button so table→chart selection is keyboard-reachable
+    // (the table stays the fully accessible representation — CONVENTIONS a11y).
+    const nameCell = doc.createElement('td');
+    nameCell.style.cssText = CELL_CSS;
+    const nameBtn = doc.createElement('button');
+    nameBtn.type = 'button';
+    nameBtn.textContent = row.name;
+    nameBtn.setAttribute('aria-label', `Highlight ${row.name} in the flame chart`);
+    nameBtn.style.cssText =
+      'background: none; border: 0; padding: 0; cursor: pointer; font: inherit; text-align: left; color: var(--sfdt-color-brand-text);';
+    nameBtn.addEventListener('click', () => cb.onMethodActivate?.(row.namespace, row.name));
+    nameCell.appendChild(nameBtn);
+    tr.appendChild(nameCell);
+
     tr.appendChild(cell(doc, 'td', row.namespace ?? '—', CELL_CSS));
     const total = cell(doc, 'td', formatNanosMs(row.totalNanos), NUM_CELL_CSS);
     total.title = `${row.totalNanos} ns`;
@@ -220,9 +278,22 @@ function buildMethodTable(doc: Document, vm: AnalyzerViewModel): MethodTableHand
     tbody.appendChild(tr);
   }
 
+  function applyHighlight(): void {
+    for (const [key, tr] of rowByKey) {
+      const on = key === highlightedKey;
+      tr.style.background = on ? 'var(--sfdt-color-warning-bg)' : '';
+    }
+  }
+
+  function highlightRow(namespace: string | null, name: string): void {
+    highlightedKey = methodKey(namespace, name);
+    applyHighlight();
+    rowByKey.get(highlightedKey)?.scrollIntoView?.({ block: 'nearest' });
+  }
+
   renderRows();
   section.appendChild(table);
-  return { section, firstHeaderButton: headerButtons.get('total')!.btn };
+  return { section, firstHeaderButton: headerButtons.get('total')!.btn, highlightRow };
 }
 
 function buildLimitsSection(doc: Document, vm: AnalyzerViewModel): HTMLElement {
