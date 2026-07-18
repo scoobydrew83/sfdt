@@ -44,7 +44,7 @@ const STYLES = `
     border-radius: 4px;
     border: 1px solid var(--sfdt-color-border);
     background: var(--sfdt-color-surface);
-    color: var(--sfdt-color-brand-deep);
+    color: var(--sfdt-color-brand-text);
     cursor: pointer;
     font-size: 13px;
     font-family: inherit;
@@ -53,7 +53,7 @@ const STYLES = `
   .sfdt-popup-btn:hover { background: var(--sfdt-color-bg); }
   .sfdt-popup-btn.primary {
     background: var(--sfdt-color-brand);
-    color: var(--sfdt-color-surface);
+    color: var(--sfdt-color-on-accent);
     border-color: var(--sfdt-color-brand);
   }
   .sfdt-popup-btn.primary:hover { background: var(--sfdt-color-brand-active); }
