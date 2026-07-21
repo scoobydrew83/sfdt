@@ -9,6 +9,9 @@ const { asArray } = _metadataRetrieveTestApi();
 
 function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
   return {
+    // The real client always exposes apiVersion (sourced from SF_API_VERSION);
+    // the feature reads it synchronously to build the SOAP version string.
+    apiVersion: 'v62.0',
     apiSoap: vi.fn(async (wsdl: string, method: string, _args: any) => {
       if (method === 'describeMetadata') {
         return {

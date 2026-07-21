@@ -11,6 +11,7 @@ import {
   writePendingQuery,
   type SavedQuery,
 } from './soql-runner.js';
+import { SOQL_TEMPLATES } from './soql-templates.js';
 
 const SAVED_SOQL_SETTINGS_SCHEMA = z.object({
   showHistory: z.boolean().default(true),
@@ -72,18 +73,18 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
     function sectionTitle(text: string): HTMLDivElement {
       const t = doc.createElement('div');
       t.textContent = text;
-      t.style.cssText = 'font-weight: 600; font-size: 13px; color: #16325c;';
+      t.style.cssText = 'font-weight: 600; font-size: 13px; color: var(--sfdt-color-text-strong);';
       return t;
     }
 
     function queryRow(q: string, apiMode: SavedQuery['api'], onDelete?: () => void): HTMLDivElement {
       const row = doc.createElement('div');
       row.style.cssText =
-        'display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid #eef1f4; border-radius: 4px;';
+        'display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--sfdt-color-surface-shade-3); border-radius: 4px;';
       const badge = doc.createElement('span');
       badge.textContent = apiMode === 'tooling' ? 'Tooling' : 'REST';
       badge.style.cssText =
-        'min-width: 54px; text-align: center; font-size: 10px; padding: 2px 4px; border-radius: 3px; background: #16325c; color: #fff;';
+        'min-width: 54px; text-align: center; font-size: 10px; padding: 2px 4px; border-radius: 3px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-on-accent);';
       const text = doc.createElement('span');
       text.textContent = q;
       text.style.cssText =
@@ -91,7 +92,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       const loadBtn = doc.createElement('button');
       loadBtn.textContent = 'Load';
       loadBtn.style.cssText =
-        'padding: 4px 10px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 11px;';
+        'padding: 4px 10px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 11px;';
       loadBtn.addEventListener('click', () => void loadInRunner(q, apiMode));
       row.appendChild(badge);
       row.appendChild(text);
@@ -100,7 +101,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
         const delBtn = doc.createElement('button');
         delBtn.textContent = '🗑';
         delBtn.style.cssText =
-          'padding: 4px 8px; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; cursor: pointer; font-size: 11px;';
+          'padding: 4px 8px; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 11px;';
         delBtn.addEventListener('click', onDelete);
         row.appendChild(delBtn);
       }
@@ -121,7 +122,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       const saved = await readSavedQueries();
       if (saved.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'color: #80868d; font-size: 12px;';
+        empty.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px;';
         empty.textContent = 'No bookmarks yet. Save queries from the SOQL Runner (★ Save).';
         savedList.appendChild(empty);
         return;
@@ -129,7 +130,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       for (const item of saved) {
         const nameLabel = doc.createElement('div');
         nameLabel.textContent = item.name;
-        nameLabel.style.cssText = 'font-size: 12px; color: #54698d; margin-top: 2px;';
+        nameLabel.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak); margin-top: 2px;';
         savedList.appendChild(nameLabel);
         savedList.appendChild(
           queryRow(item.q, item.api, async () => {
@@ -140,6 +141,49 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       }
     }
     await renderSaved();
+
+    // --- Built-in templates (read-only, no delete affordance) ---
+    const tplSection = doc.createElement('div');
+    tplSection.style.cssText = 'display: flex; flex-direction: column; gap: 6px;';
+    tplSection.appendChild(sectionTitle('Templates'));
+    const tplHint = doc.createElement('div');
+    tplHint.textContent = 'Built-in admin & dev queries — click Load to copy into the runner.';
+    tplHint.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 11px;';
+    tplSection.appendChild(tplHint);
+    const tplList = doc.createElement('div');
+    tplList.setAttribute('role', 'list');
+    tplList.setAttribute('aria-label', 'Built-in SOQL templates');
+    tplList.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
+    tplSection.appendChild(tplList);
+    bodyEl.appendChild(tplSection);
+
+    for (const tpl of SOQL_TEMPLATES) {
+      // Visually distinct from user bookmarks: brand-accent left border + a
+      // "Built-in" tag. No delete button is rendered (queryRow omits onDelete),
+      // so built-ins cannot be deleted (AC3).
+      const wrap = doc.createElement('div');
+      wrap.setAttribute('role', 'listitem');
+      wrap.style.cssText =
+        'display: flex; flex-direction: column; gap: 2px; padding-left: 8px; border-left: 3px solid var(--sfdt-color-brand);';
+      const nameRow = doc.createElement('div');
+      nameRow.style.cssText = 'display: flex; gap: 6px; align-items: center;';
+      const nameLabel = doc.createElement('span');
+      nameLabel.textContent = tpl.name;
+      nameLabel.style.cssText = 'font-size: 12px; font-weight: 600; color: var(--sfdt-color-text-strong);';
+      const tag = doc.createElement('span');
+      tag.textContent = 'Built-in';
+      tag.style.cssText =
+        'font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 5px; border-radius: 3px; background: var(--sfdt-color-surface-shade-3); color: var(--sfdt-color-text-weak);';
+      nameRow.appendChild(nameLabel);
+      nameRow.appendChild(tag);
+      const desc = doc.createElement('div');
+      desc.textContent = tpl.description;
+      desc.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak);';
+      wrap.appendChild(nameRow);
+      wrap.appendChild(desc);
+      wrap.appendChild(queryRow(tpl.q, tpl.api));
+      tplList.appendChild(wrap);
+    }
 
     // --- Recent history ---
     if (config.showHistory) {
@@ -154,7 +198,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       const history = await readSoqlHistory();
       if (history.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'color: #80868d; font-size: 12px;';
+        empty.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px;';
         empty.textContent = 'No recent queries.';
         histList.appendChild(empty);
       } else {

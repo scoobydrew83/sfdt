@@ -107,7 +107,7 @@ export function createFieldCreatorFeature(options: {
 
   async function getGlobalDescribe(): Promise<GlobalDescribe> {
     if (globalDescribeCached) return globalDescribeCached;
-    const apiVersion = (api as any).apiVersion ?? 'v62.0';
+    const apiVersion = api.apiVersion;
     const data = await api.apiGet<GlobalDescribe>(`/services/data/${apiVersion}/sobjects/`);
     globalDescribeCached = data && Array.isArray(data.sobjects) ? data : { sobjects: [] };
     return globalDescribeCached;
@@ -137,16 +137,16 @@ export function createFieldCreatorFeature(options: {
 
     // Top Controls
     const topRow = doc.createElement('div');
-    topRow.style.cssText = 'display: flex; gap: 16px; align-items: center; border-bottom: 1px solid #e0e0e0; padding-bottom: 16px;';
+    topRow.style.cssText = 'display: flex; gap: 16px; align-items: center; border-bottom: 1px solid var(--sfdt-color-border-2); padding-bottom: 16px;';
     body.appendChild(topRow);
 
     const sobjDiv = doc.createElement('div');
     sobjDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px; min-width: 250px;';
     const sobjLabel = doc.createElement('label');
     sobjLabel.textContent = 'Select Target SObject';
-    sobjLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    sobjLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const sobjSelect = doc.createElement('select');
-    sobjSelect.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    sobjSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     sobjDiv.appendChild(sobjLabel);
     sobjDiv.appendChild(sobjSelect);
     topRow.appendChild(sobjDiv);
@@ -157,13 +157,13 @@ export function createFieldCreatorFeature(options: {
 
     const addFieldBtn = doc.createElement('button');
     addFieldBtn.textContent = '➕ Add Field';
-    addFieldBtn.style.cssText = 'padding: 6px 12px; background: #fff; color: #0070d2; border: 1px solid #d8dde6; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+    addFieldBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-text); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
     const permAllBtn = doc.createElement('button');
     permAllBtn.textContent = '🔒 Permissions for All';
-    permAllBtn.style.cssText = 'padding: 6px 12px; background: #fff; color: #54698d; border: 1px solid #d8dde6; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+    permAllBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
     const clearBtn = doc.createElement('button');
     clearBtn.textContent = '🗑 Clear All';
-    clearBtn.style.cssText = 'padding: 6px 12px; background: #fff; color: #c23934; border: 1px solid #c23934; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+    clearBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-error-text); border: 1px solid var(--sfdt-color-error); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
 
     buttonGroup.appendChild(addFieldBtn);
     buttonGroup.appendChild(permAllBtn);
@@ -171,7 +171,7 @@ export function createFieldCreatorFeature(options: {
 
     // Table Container
     const tableContainer = doc.createElement('div');
-    tableContainer.style.cssText = 'border: 1px solid #d8dde6; border-radius: 4px; overflow: auto; max-height: 40vh;';
+    tableContainer.style.cssText = 'border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 40vh;';
     body.appendChild(tableContainer);
 
     const table = doc.createElement('table');
@@ -182,7 +182,7 @@ export function createFieldCreatorFeature(options: {
     for (const c of cols) {
       const th = doc.createElement('th');
       th.textContent = c;
-      th.style.cssText = 'padding: 8px 12px; background: #fafaf9; border-bottom: 1px solid #d8dde6; font-weight: 600; position: sticky; top: 0; z-index: 1;';
+      th.style.cssText = 'padding: 8px 12px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1;';
       headTr.appendChild(th);
     }
     thead.appendChild(headTr);
@@ -194,12 +194,12 @@ export function createFieldCreatorFeature(options: {
 
     // Bottom Action Row
     const actionRow = doc.createElement('div');
-    actionRow.style.cssText = 'display: flex; gap: 10px; justify-content: flex-end; align-items: center; border-top: 1px solid #e0e0e0; padding-top: 16px;';
+    actionRow.style.cssText = 'display: flex; gap: 10px; justify-content: flex-end; align-items: center; border-top: 1px solid var(--sfdt-color-border-2); padding-top: 16px;';
     body.appendChild(actionRow);
 
     const deployBtn = doc.createElement('button');
     deployBtn.textContent = 'Deploy Fields';
-    deployBtn.style.cssText = 'padding: 8px 20px; background: #04844b; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    deployBtn.style.cssText = 'padding: 8px 20px; background: var(--sfdt-color-success); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     deployBtn.disabled = true;
     actionRow.appendChild(deployBtn);
 
@@ -275,7 +275,7 @@ export function createFieldCreatorFeature(options: {
 
       fields.forEach((field, idx) => {
         const tr = doc.createElement('tr');
-        tr.style.cssText = 'border-bottom: 1px solid #f3f3f3;';
+        tr.style.cssText = 'border-bottom: 1px solid var(--sfdt-color-bg);';
 
         // Actions
         const tdActions = doc.createElement('td');
@@ -311,7 +311,7 @@ export function createFieldCreatorFeature(options: {
         labelInput.type = 'text';
         labelInput.value = field.label;
         labelInput.placeholder = 'Field Label...';
-        labelInput.style.cssText = 'width: 140px; padding: 4px 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px;';
+        labelInput.style.cssText = 'width: 140px; padding: 4px 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
         labelInput.addEventListener('input', () => {
           field.label = labelInput.value;
           field.name = formatApiName(labelInput.value);
@@ -327,7 +327,7 @@ export function createFieldCreatorFeature(options: {
         nameInput.type = 'text';
         nameInput.value = field.name;
         nameInput.placeholder = 'Developer_Name';
-        nameInput.style.cssText = 'width: 140px; padding: 4px 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px;';
+        nameInput.style.cssText = 'width: 140px; padding: 4px 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
         nameInput.addEventListener('input', () => {
           field.name = nameInput.value;
           validateReady();
@@ -338,7 +338,7 @@ export function createFieldCreatorFeature(options: {
         const tdType = doc.createElement('td');
         tdType.style.cssText = 'padding: 8px 12px;';
         const typeSelect = doc.createElement('select');
-        typeSelect.style.cssText = 'padding: 4px 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px;';
+        typeSelect.style.cssText = 'padding: 4px 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
         const types = [
           'Text', 'Checkbox', 'Currency', 'Date', 'DateTime', 'Email',
           'Location', 'Number', 'Percent', 'Phone', 'Picklist',
@@ -361,7 +361,7 @@ export function createFieldCreatorFeature(options: {
         tdOpt.style.cssText = 'padding: 8px 12px;';
         const optBtn = doc.createElement('button');
         optBtn.textContent = '⚙️ Options';
-        optBtn.style.cssText = 'padding: 4px 8px; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; cursor: pointer; font-size: 11px;';
+        optBtn.style.cssText = 'padding: 4px 8px; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 11px;';
         optBtn.addEventListener('click', () => {
           openOptionsModal(field);
         });
@@ -372,11 +372,11 @@ export function createFieldCreatorFeature(options: {
         tdFLS.style.cssText = 'padding: 8px 12px;';
         const flsBtn = doc.createElement('button');
         flsBtn.textContent = '🔒 FLS';
-        flsBtn.style.cssText = 'padding: 4px 8px; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; cursor: pointer; font-size: 11px;';
+        flsBtn.style.cssText = 'padding: 4px 8px; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 11px;';
         if (field.profiles && field.profiles.length > 0) {
           flsBtn.textContent = `🔒 FLS (${field.profiles.length})`;
-          flsBtn.style.color = '#04844b';
-          flsBtn.style.borderColor = '#04844b';
+          flsBtn.style.color = 'var(--sfdt-color-success-text)';
+          flsBtn.style.borderColor = 'var(--sfdt-color-success)';
         }
         flsBtn.addEventListener('click', () => {
           openFLSModal(field, () => {
@@ -390,17 +390,17 @@ export function createFieldCreatorFeature(options: {
         tdStatus.style.cssText = 'padding: 8px 12px; font-weight: bold;';
         if (field.deploymentStatus === 'pending') {
           tdStatus.textContent = '⏳ Pending';
-          tdStatus.style.color = '#0070d2';
+          tdStatus.style.color = 'var(--sfdt-color-brand-text)';
         } else if (field.deploymentStatus === 'success') {
           tdStatus.textContent = '✅ Success';
-          tdStatus.style.color = '#04844b';
+          tdStatus.style.color = 'var(--sfdt-color-success-text)';
         } else if (field.deploymentStatus === 'error') {
           tdStatus.textContent = '❌ Error';
-          tdStatus.style.color = '#c23934';
+          tdStatus.style.color = 'var(--sfdt-color-error-text)';
           tdStatus.title = field.deploymentError || 'Unknown error';
         } else {
           tdStatus.textContent = '-';
-          tdStatus.style.color = '#80868d';
+          tdStatus.style.color = 'var(--sfdt-color-text-icon)';
         }
         tr.appendChild(tdActions);
         tr.appendChild(tdLabel);
@@ -419,11 +419,11 @@ export function createFieldCreatorFeature(options: {
       optOverlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 100030; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
       
       const optModal = doc.createElement('div');
-      optModal.style.cssText = 'background: #fff; border-radius: 4px; width: 450px; max-height: 80vh; display: flex; flex-direction: column; padding: 16px; gap: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);';
+      optModal.style.cssText = 'background: var(--sfdt-color-surface); border-radius: 4px; width: 450px; max-height: 80vh; display: flex; flex-direction: column; padding: 16px; gap: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);';
       
       const optTitle = doc.createElement('span');
       optTitle.textContent = `Configure Field: ${field.label || 'New Field'} (${field.type})`;
-      optTitle.style.cssText = 'font-weight: 600; font-size: 14px; border-bottom: 1px solid #e0e0e0; padding-bottom: 8px;';
+      optTitle.style.cssText = 'font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--sfdt-color-border-2); padding-bottom: 8px;';
       optModal.appendChild(optTitle);
 
       const fieldsContainer = doc.createElement('div');
@@ -436,14 +436,14 @@ export function createFieldCreatorFeature(options: {
         row.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
         const lbl = doc.createElement('label');
         lbl.textContent = labelVal;
-        lbl.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+        lbl.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
         row.appendChild(lbl);
 
         if (typeVal === 'text') {
           const inp = doc.createElement('input');
           inp.type = 'text';
           inp.value = String(field[key] ?? defaultVal);
-          inp.style.cssText = 'padding: 4px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px;';
+          inp.style.cssText = 'padding: 4px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
           inp.addEventListener('input', () => {
             (field as any)[key] = inp.value;
           });
@@ -452,7 +452,7 @@ export function createFieldCreatorFeature(options: {
           const inp = doc.createElement('input');
           inp.type = 'number';
           inp.value = String(field[key] ?? defaultVal);
-          inp.style.cssText = 'padding: 4px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px;';
+          inp.style.cssText = 'padding: 4px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
           inp.addEventListener('input', () => {
             (field as any)[key] = parseInt(inp.value) || 0;
           });
@@ -495,9 +495,9 @@ export function createFieldCreatorFeature(options: {
         row.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
         const lbl = doc.createElement('label');
         lbl.textContent = 'Default Value';
-        lbl.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+        lbl.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
         const sel = doc.createElement('select');
-        sel.style.cssText = 'padding: 4px 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px;';
+        sel.style.cssText = 'padding: 4px 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
         const optUnchecked = doc.createElement('option');
         optUnchecked.value = 'unchecked';
         optUnchecked.textContent = 'Unchecked';
@@ -519,9 +519,9 @@ export function createFieldCreatorFeature(options: {
         row.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
         const lbl = doc.createElement('label');
         lbl.textContent = 'Display Format';
-        lbl.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+        lbl.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
         const sel = doc.createElement('select');
-        sel.style.cssText = 'padding: 4px 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px;';
+        sel.style.cssText = 'padding: 4px 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
         const optDec = doc.createElement('option');
         optDec.value = 'decimal';
         optDec.textContent = 'Decimal Degrees';
@@ -542,11 +542,11 @@ export function createFieldCreatorFeature(options: {
         row.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
         const lbl = doc.createElement('label');
         lbl.textContent = 'Picklist Values (Enter values, one per line)';
-        lbl.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+        lbl.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
         const area = doc.createElement('textarea');
         area.value = field.picklistvalues || '';
         area.placeholder = 'Value1\nValue2\nValue3';
-        area.style.cssText = 'height: 80px; padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px; resize: vertical;';
+        area.style.cssText = 'height: 80px; padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px; resize: vertical;';
         area.addEventListener('input', () => {
           field.picklistvalues = area.value;
         });
@@ -566,10 +566,10 @@ export function createFieldCreatorFeature(options: {
       }
 
       const buttons = doc.createElement('div');
-      buttons.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #e0e0e0; padding-top: 12px; margin-top: 8px;';
+      buttons.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--sfdt-color-border-2); padding-top: 12px; margin-top: 8px;';
       const saveBtn = doc.createElement('button');
       saveBtn.textContent = 'Save';
-      saveBtn.style.cssText = 'padding: 6px 14px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+      saveBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
       saveBtn.addEventListener('click', () => {
         optOverlay.remove();
       });
@@ -585,22 +585,22 @@ export function createFieldCreatorFeature(options: {
       flsOverlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 100030; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
       
       const flsModal = doc.createElement('div');
-      flsModal.style.cssText = 'background: #fff; border-radius: 4px; width: 650px; height: 80vh; display: flex; flex-direction: column; padding: 16px; gap: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);';
+      flsModal.style.cssText = 'background: var(--sfdt-color-surface); border-radius: 4px; width: 650px; height: 80vh; display: flex; flex-direction: column; padding: 16px; gap: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);';
       
       const title = doc.createElement('span');
       title.textContent = targetField 
         ? `Field-Level Security (FLS) for ${targetField.label || 'New Field'}`
         : 'Grant Permissions to All Fields';
-      title.style.cssText = 'font-weight: 600; font-size: 14px; border-bottom: 1px solid #e0e0e0; padding-bottom: 8px;';
+      title.style.cssText = 'font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--sfdt-color-border-2); padding-bottom: 8px;';
       flsModal.appendChild(title);
 
       const searchInp = doc.createElement('input');
       searchInp.placeholder = 'Search Profiles or Permission Sets...';
-      searchInp.style.cssText = 'padding: 6px 10px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px; outline: none;';
+      searchInp.style.cssText = 'padding: 6px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px; outline: none;';
       flsModal.appendChild(searchInp);
 
       const tableDiv = doc.createElement('div');
-      tableDiv.style.cssText = 'flex: 1; overflow-y: auto; border: 1px solid #d8dde6; border-radius: 4px;';
+      tableDiv.style.cssText = 'flex: 1; overflow-y: auto; border: 1px solid var(--sfdt-color-border); border-radius: 4px;';
       flsModal.appendChild(tableDiv);
 
       const flsTable = doc.createElement('table');
@@ -610,15 +610,15 @@ export function createFieldCreatorFeature(options: {
       const trHead = doc.createElement('tr');
       const thName = doc.createElement('th');
       thName.textContent = 'Name';
-      thName.style.cssText = 'padding: 6px 10px; background: #fafaf9; border-bottom: 1px solid #d8dde6; font-weight: 600; position: sticky; top: 0; z-index: 1;';
+      thName.style.cssText = 'padding: 6px 10px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1;';
       
       const thType = doc.createElement('th');
       thType.textContent = 'Type';
-      thType.style.cssText = 'padding: 6px 10px; background: #fafaf9; border-bottom: 1px solid #d8dde6; font-weight: 600; position: sticky; top: 0; z-index: 1;';
+      thType.style.cssText = 'padding: 6px 10px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1;';
 
       const thRead = doc.createElement('th');
       thRead.textContent = 'Visible';
-      thRead.style.cssText = 'padding: 6px 10px; background: #fafaf9; border-bottom: 1px solid #d8dde6; font-weight: 600; position: sticky; top: 0; z-index: 1; text-align: center;';
+      thRead.style.cssText = 'padding: 6px 10px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1; text-align: center;';
       const readAll = doc.createElement('input');
       readAll.type = 'checkbox';
       thRead.appendChild(doc.createElement('br'));
@@ -626,7 +626,7 @@ export function createFieldCreatorFeature(options: {
 
       const thEdit = doc.createElement('th');
       thEdit.textContent = 'Read-Write';
-      thEdit.style.cssText = 'padding: 6px 10px; background: #fafaf9; border-bottom: 1px solid #d8dde6; font-weight: 600; position: sticky; top: 0; z-index: 1; text-align: center;';
+      thEdit.style.cssText = 'padding: 6px 10px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1; text-align: center;';
       const editAll = doc.createElement('input');
       editAll.type = 'checkbox';
       thEdit.appendChild(doc.createElement('br'));
@@ -687,7 +687,7 @@ export function createFieldCreatorFeature(options: {
 
         filtered.forEach(([name, profile]) => {
           const tr = doc.createElement('tr');
-          tr.style.cssText = 'border-bottom: 1px solid #f3f3f3;';
+          tr.style.cssText = 'border-bottom: 1px solid var(--sfdt-color-bg);';
 
           const tdName = doc.createElement('td');
           tdName.textContent = profile || name;
@@ -695,7 +695,7 @@ export function createFieldCreatorFeature(options: {
 
           const tdType = doc.createElement('td');
           tdType.textContent = profile ? 'Profile' : 'Permission Set';
-          tdType.style.cssText = 'padding: 6px 10px; color: #54698d;';
+          tdType.style.cssText = 'padding: 6px 10px; color: var(--sfdt-color-text-weak);';
 
           const tdReadVal = doc.createElement('td');
           tdReadVal.style.cssText = 'padding: 6px 10px; text-align: center;';
@@ -764,18 +764,18 @@ export function createFieldCreatorFeature(options: {
       });
 
       const buttons = doc.createElement('div');
-      buttons.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #e0e0e0; padding-top: 12px; margin-top: 8px;';
+      buttons.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--sfdt-color-border-2); padding-top: 12px; margin-top: 8px;';
       
       const cancelBtn = doc.createElement('button');
       cancelBtn.textContent = 'Cancel';
-      cancelBtn.style.cssText = 'padding: 6px 12px; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      cancelBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 12px;';
       cancelBtn.addEventListener('click', () => {
         flsOverlay.remove();
       });
 
       const saveBtn = doc.createElement('button');
       saveBtn.textContent = 'Save Permissions';
-      saveBtn.style.cssText = 'padding: 6px 14px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+      saveBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
       saveBtn.addEventListener('click', () => {
         const mappedProfiles = Object.entries(permissionsLocal)
           .filter(([_, perm]) => perm.read || perm.edit)
@@ -824,7 +824,7 @@ export function createFieldCreatorFeature(options: {
           PermissionsRead: profile.access === 'edit' || profile.access === 'read'
         };
 
-        const apiVersion = (api as any).apiVersion ?? 'v62.0';
+        const apiVersion = api.apiVersion;
         return api.apiRequest('POST', `/services/data/${apiVersion}/sobjects/FieldPermissions/`, fieldPermissionBody);
       });
 
@@ -900,7 +900,7 @@ export function createFieldCreatorFeature(options: {
           break;
       }
 
-      const apiVersion = (api as any).apiVersion ?? 'v62.0';
+      const apiVersion = api.apiVersion;
       await api.apiRequest('POST', `/services/data/${apiVersion}/tooling/sobjects/CustomField`, newField);
 
       // Now set FLS permissions if any are chosen

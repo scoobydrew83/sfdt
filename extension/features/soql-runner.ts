@@ -6,6 +6,13 @@ import {
   type QueryEnvelope,
   type SalesforceApiClient,
 } from '../lib/salesforce-api.js';
+import {
+  getDescribeCache,
+  DescribeCache,
+  type ApiMode,
+  type FieldDescribe,
+  type SObjectDescribe,
+} from '../lib/describe-cache.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
@@ -20,8 +27,6 @@ registerSettingsShape('soql-runner', SOQL_RUNNER_SETTINGS_SCHEMA);
 const HISTORY_STORAGE_KEY = 'soqlRunner.history';
 const HISTORY_CAP = 20;
 const PAGE_CAP = 10;
-
-type ApiMode = 'rest' | 'tooling';
 
 interface HistoryEntry {
   q: string;
@@ -127,97 +132,6 @@ export async function takePendingQuery(): Promise<PendingQuery | null> {
   });
 }
 
-// --- METADATA DESCRIBE INTERFACES & CACHE ---
-export interface FieldDescribe {
-  name: string;
-  label: string;
-  type: string;
-  relationshipName: string | null;
-  referenceTo: string[];
-  picklistValues: { value: string; label: string }[];
-  nillable: boolean;
-  calculated: boolean;
-}
-
-export interface SObjectDescribe {
-  name: string;
-  label: string;
-  fields: FieldDescribe[];
-}
-
-export interface GlobalDescribe {
-  sobjects: { name: string; label: string; keyPrefix: string | null }[];
-}
-
-export class DescribeCache {
-  private api: SalesforceApiClient;
-  private globalCache = new Map<ApiMode, { status: 'loading' | 'ready' | 'error'; data?: GlobalDescribe }>();
-  private sobjectCache = new Map<string, { status: 'loading' | 'ready' | 'error'; data?: SObjectDescribe }>();
-  private onUpdate: () => void;
-
-  constructor(api: SalesforceApiClient, onUpdate: () => void) {
-    this.api = api;
-    this.onUpdate = onUpdate;
-  }
-
-  clear(): void {
-    this.globalCache.clear();
-    this.sobjectCache.clear();
-  }
-
-  getGlobal(mode: ApiMode) {
-    const cached = this.globalCache.get(mode);
-    if (cached) return cached;
-
-    this.globalCache.set(mode, { status: 'loading' });
-    const apiVersion = this.api.apiVersion;
-    const endpoint = mode === 'tooling'
-      ? `/services/data/${apiVersion}/tooling/sobjects/`
-      : `/services/data/${apiVersion}/sobjects/`;
-
-    this.api.apiGet<GlobalDescribe>(endpoint)
-      .then(data => {
-        const enriched = data && Array.isArray(data.sobjects) ? data : { sobjects: [] };
-        this.globalCache.set(mode, { status: 'ready', data: enriched });
-        this.onUpdate();
-      })
-      .catch(err => {
-        console.error('Failed to describe global', err);
-        this.globalCache.set(mode, { status: 'error' });
-        this.onUpdate();
-      });
-
-    return { status: 'loading' as const };
-  }
-
-  getSObject(mode: ApiMode, name: string) {
-    const key = `${mode}:${name.toLowerCase()}`;
-    const cached = this.sobjectCache.get(key);
-    if (cached) return cached;
-
-    this.sobjectCache.set(key, { status: 'loading' });
-    const apiVersion = this.api.apiVersion;
-    const endpoint = mode === 'tooling'
-      ? `/services/data/${apiVersion}/tooling/sobjects/${name}/describe`
-      : `/services/data/${apiVersion}/sobjects/${name}/describe`;
-
-    this.api.apiGet<SObjectDescribe>(endpoint)
-      .then(data => {
-        const enriched = data && Array.isArray(data.fields) ? data : { name, label: name, fields: [] };
-        this.sobjectCache.set(key, { status: 'ready', data: enriched });
-        this.onUpdate();
-      })
-      .catch(err => {
-        console.error(`Failed to describe sobject ${name}`, err);
-        this.sobjectCache.set(key, { status: 'error' });
-        this.onUpdate();
-      });
-
-    return { status: 'loading' as const };
-  }
-}
-
-
 // Shape shared by every autocomplete chip (objects, fields, values, retry).
 // `rank`/`dataType` are optional because sentinel entries (e.g. Retry) omit them.
 interface AutocompleteSuggestion {
@@ -253,17 +167,110 @@ export function formatCell(value: unknown): string {
   }
 }
 
+function csvEscape(s: string): string {
+  if (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes('\r')) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+// Serialize one page of records to CSV data rows (no header) for a fixed column
+// set. Used by both recordsToCsv and the streaming export-all path.
+function csvRows(cols: string[], records: ReadonlyArray<Record<string, unknown>>): string {
+  return records.map((r) => cols.map((c) => csvEscape(formatCell(r[c]))).join(',')).join('\n');
+}
+
 export function recordsToCsv(records: ReadonlyArray<Record<string, unknown>>): string {
   const cols = columnsFromRecords(records);
   if (cols.length === 0) return '';
+  const header = cols.map(csvEscape).join(',');
+  const rows = csvRows(cols, records);
+  return rows ? `${header}\n${rows}` : header;
+}
+
+export interface ExportAllProgress {
+  pages: number;
+  rows: number;
+}
+
+export interface ExportAllResult {
+  parts: string[];
+  rows: number;
+  pages: number;
+  canceled: boolean;
+}
+
+// Streams a query to completion via queryMore(), building CSV incrementally.
+// Memory approach: columns are fixed from the first page, then each page's rows
+// are converted to a CSV text chunk and pushed onto a `parts[]` array — the raw
+// record objects for that page are never retained past conversion, and we never
+// build one giant concatenated string (the caller hands `parts` straight to
+// `new Blob(parts, …)`, which concatenates lazily). Peak memory is therefore one
+// page of records plus the accumulated CSV text, not every record object at once.
+export async function exportAllToCsv(
+  api: SalesforceApiClient,
+  first: QueryEnvelope<Record<string, unknown>>,
+  opts: { signal?: AbortSignal; onProgress?: (p: ExportAllProgress) => void } = {},
+): Promise<ExportAllResult> {
+  const { signal, onProgress } = opts;
+  const cols = columnsFromRecords(first.records);
+  const parts: string[] = [];
+  let rows = 0;
+  let pages = 0;
+
+  const pushPage = (records: ReadonlyArray<Record<string, unknown>>): void => {
+    if (records.length === 0) return;
+    parts.push(`${csvRows(cols, records)}\n`);
+    rows += records.length;
+  };
+
+  if (cols.length > 0) parts.push(`${cols.map(csvEscape).join(',')}\n`);
+  pushPage(first.records);
+  pages = 1;
+  onProgress?.({ pages, rows });
+  // Check even for a single-page (already-done) export so a Cancel between the
+  // first page and the return still aborts instead of downloading.
+  if (signal?.aborted) return { parts, rows, pages, canceled: true };
+
+  let envelope = first;
+  while (!envelope.done && envelope.nextRecordsUrl) {
+    if (signal?.aborted) return { parts, rows, pages, canceled: true };
+    envelope = await api.queryMore<Record<string, unknown>>(envelope.nextRecordsUrl);
+    // Re-check after the await: if cancelled mid-fetch, don't process/emit this
+    // page (avoids a trailing onProgress that would stomp a superseding run).
+    if (signal?.aborted) return { parts, rows, pages, canceled: true };
+    pushPage(envelope.records);
+    pages += 1;
+    onProgress?.({ pages, rows });
+  }
+  return { parts, rows, pages, canceled: false };
+}
+
+// Pretty-printed JSON of the current result set. The Salesforce `attributes`
+// envelope is dropped so the output matches the columns shown in the table
+// (and what CSV/TSV export). Nested relationship records keep their real
+// structure — this is not a stringified-cell flattening like CSV/TSV.
+export function recordsToJson(records: ReadonlyArray<Record<string, unknown>>): string {
+  const stripped = records.map(({ attributes: _attributes, ...rest }) => rest);
+  return JSON.stringify(stripped, null, 2);
+}
+
+// Tab-separated values for pasting into a spreadsheet. Mirrors recordsToCsv's
+// RFC-4180-style quoting but on the TAB delimiter, so a value containing a tab
+// or newline is quoted and can't break the column/row grid on paste.
+// ponytail: near-copy of recordsToCsv; fold into one delimiter-parametrised
+// helper only if a third delimiter ever shows up.
+export function recordsToTsv(records: ReadonlyArray<Record<string, unknown>>): string {
+  const cols = columnsFromRecords(records);
+  if (cols.length === 0) return '';
   const escape = (s: string): string => {
-    if (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes('\r')) {
+    if (s.includes('"') || s.includes('\t') || s.includes('\n') || s.includes('\r')) {
       return `"${s.replace(/"/g, '""')}"`;
     }
     return s;
   };
-  const header = cols.map(escape).join(',');
-  const rows = records.map((r) => cols.map((c) => escape(formatCell(r[c]))).join(','));
+  const header = cols.map(escape).join('\t');
+  const rows = records.map((r) => cols.map((c) => escape(formatCell(r[c]))).join('\t'));
   return [header, ...rows].join('\n');
 }
 
@@ -310,8 +317,7 @@ ${safeSoql}
 `;
 }
 
-function triggerDownload(doc: Document, filename: string, text: string, mime: string): void {
-  const blob = new Blob([text], { type: mime });
+function downloadBlob(doc: Document, filename: string, blob: Blob): void {
   const url = URL.createObjectURL(blob);
   const a = doc.createElement('a');
   a.href = url;
@@ -321,6 +327,10 @@ function triggerDownload(doc: Document, filename: string, text: string, mime: st
   a.click();
   doc.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function triggerDownload(doc: Document, filename: string, text: string, mime: string): void {
+  downloadBlob(doc, filename, new Blob([text], { type: mime }));
 }
 
 async function runQuery(
@@ -396,22 +406,97 @@ async function runQuery(
   return api.query<Record<string, unknown>>(soql);
 }
 
+// --- QUERY PLAN / EXPLAIN ---
+// Salesforce's query-plan endpoint is the same query resource with an
+// `?explain=<soql>` param instead of `?q=`; the Tooling variant lives under
+// /tooling/query. It returns one plan per candidate access path (the first is
+// the one the optimizer picks). Non-explainable queries (SOSL, aggregate-only,
+// malformed) return an HTTP error, which the caller surfaces inline.
+export interface QueryPlanNote {
+  description?: string;
+  tableEnumOrId?: string;
+  fields?: string[];
+}
+
+export interface QueryPlan {
+  cardinality?: number;
+  sobjectCardinality?: number;
+  leadingOperationType?: string;
+  relativeCost?: number;
+  sobjectType?: string;
+  notes?: QueryPlanNote[];
+}
+
+async function explainQuery(
+  api: SalesforceApiClient,
+  soql: string,
+  mode: ApiMode,
+): Promise<QueryPlan[]> {
+  const apiVersion = api.apiVersion;
+  const endpoint = mode === 'tooling'
+    ? `/services/data/${apiVersion}/tooling/query`
+    : `/services/data/${apiVersion}/query`;
+  const resp = await api.apiGet<{ plans?: QueryPlan[] }>(endpoint, { explain: soql });
+  return Array.isArray(resp?.plans) ? resp.plans : [];
+}
+
 export interface SoqlRunnerOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
 }
 
-export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Feature {
+/** The SOQL Runner feature, plus an imperative hook so other tools (Schema
+ * Browser) can drop a field into the live draft — or stash it for the next open. */
+export type SoqlRunnerFeature = Feature & {
+  insertFieldIntoDraft: (fieldApiName: string) => void;
+};
+
+// Append a field into a draft SOQL query predictably: slot it into the SELECT
+// list (before FROM when present, else at the end). Comma-separates unless the
+// insertion point already follows SELECT or a trailing comma.
+export function insertFieldIntoQuery(query: string, field: string): string {
+  if (!query.trim()) return field;
+  const sep = (before: string): string =>
+    /(,|\bselect)\s*$/i.test(before) ? ' ' : ', ';
+  const from = /\bfrom\b/i.exec(query);
+  if (from) {
+    const before = query.slice(0, from.index).replace(/\s+$/, '');
+    return `${before}${sep(before)}${field} ${query.slice(from.index)}`;
+  }
+  const trimmed = query.replace(/\s+$/, '');
+  return `${trimmed}${sep(trimmed)}${field} `;
+}
+
+export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRunnerFeature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
 
   let view: ViewHandle | null = null;
+  // The live query textarea while the runner is open (null once closed), plus a
+  // field fragment stashed by insertFieldIntoDraft() when the runner is closed —
+  // applied to the draft on the next open(). Mirrors the pending-query hand-off.
+  let activeTextarea: HTMLTextAreaElement | null = null;
+  let pendingFieldFragment: string | null = null;
+
+  // Drop a field API name into the draft: append to the open textarea, or stash
+  // it for the next open() when the runner isn't up.
+  function insertFieldIntoDraft(fieldApiName: string): void {
+    if (activeTextarea) {
+      activeTextarea.value = insertFieldIntoQuery(activeTextarea.value, fieldApiName);
+      // Re-run autocomplete + keep the field list in sync via the existing input path.
+      activeTextarea.dispatchEvent(new Event('input'));
+      activeTextarea.focus();
+      return;
+    }
+    pendingFieldFragment = insertFieldIntoQuery(pendingFieldFragment ?? '', fieldApiName);
+  }
 
   function close(): void {
     view?.close();
     view = null;
+    activeTextarea = null;
   }
 
   // Helper to check if a value is a Salesforce Record ID
@@ -443,14 +528,14 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const setMode = (next: ApiMode): void => {
       mode = next;
       const isRest = next === 'rest';
-      restBtn.style.background = isRest ? '#0070d2' : '#fff';
-      restBtn.style.color = isRest ? '#fff' : '#16325c';
-      toolingBtn.style.background = isRest ? '#fff' : '#0070d2';
-      toolingBtn.style.color = isRest ? '#16325c' : '#fff';
+      restBtn.style.background = isRest ? 'var(--sfdt-color-brand)' : 'var(--sfdt-color-surface)';
+      restBtn.style.color = isRest ? 'var(--sfdt-color-on-accent)' : 'var(--sfdt-color-text-strong)';
+      toolingBtn.style.background = isRest ? 'var(--sfdt-color-surface)' : 'var(--sfdt-color-brand)';
+      toolingBtn.style.color = isRest ? 'var(--sfdt-color-text-strong)' : 'var(--sfdt-color-on-accent)';
       void runAutocomplete();
     };
     const togStyle =
-      'padding: 4px 12px; border: 1px solid #d8dde6; cursor: pointer; font-size: 12px;';
+      'padding: 4px 12px; border: 1px solid var(--sfdt-color-border); cursor: pointer; font-size: 12px;';
     restBtn.style.cssText = togStyle + ' border-radius: 4px 0 0 4px;';
     toolingBtn.style.cssText = togStyle + ' border-radius: 0 4px 4px 0;';
     restBtn.textContent = 'REST';
@@ -465,13 +550,13 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       const historyBtn = doc.createElement('button');
       historyBtn.textContent = '▸ History ▾';
       historyBtn.style.cssText =
-        'padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+        'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
       const histWrap = doc.createElement('div');
       histWrap.style.cssText = 'position: relative;';
       histWrap.appendChild(historyBtn);
       historyMenu = doc.createElement('div');
       historyMenu.style.cssText =
-        'display: none; position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; min-width: 360px; max-width: 600px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
+        'display: none; position: absolute; top: 100%; left: 0; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; min-width: 360px; max-width: 600px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
       histWrap.appendChild(historyMenu);
       historyBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -495,13 +580,13 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const savedQueriesBtn = doc.createElement('button');
     savedQueriesBtn.textContent = '★ Bookmarks ▾';
     savedQueriesBtn.style.cssText =
-      'padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     const savedWrap = doc.createElement('div');
     savedWrap.style.cssText = 'position: relative;';
     savedWrap.appendChild(savedQueriesBtn);
     const savedQueriesMenu = doc.createElement('div');
     savedQueriesMenu.style.cssText =
-      'display: none; position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; min-width: 360px; max-width: 600px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
+      'display: none; position: absolute; top: 100%; left: 0; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; min-width: 360px; max-width: 600px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
     savedWrap.appendChild(savedQueriesMenu);
     savedQueriesBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -524,12 +609,13 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const textarea = doc.createElement('textarea');
     textarea.placeholder = 'SELECT Id, Name FROM Account LIMIT 10';
     textarea.style.cssText =
-      'width: 100%; min-height: 120px; font-family: ui-monospace, monospace; font-size: 13px; padding: 8px; border: 1px solid #d8dde6; border-bottom: 1px solid #e1e6eb; border-radius: 4px 4px 0 0; resize: vertical; margin-bottom: 0; outline: none; box-sizing: border-box;';
+      'width: 100%; min-height: 120px; font-family: ui-monospace, monospace; font-size: 13px; padding: 8px; border: 1px solid var(--sfdt-color-border); border-bottom: 1px solid var(--sfdt-color-surface-shade-6); border-radius: 4px 4px 0 0; resize: vertical; margin-bottom: 0; outline: none; box-sizing: border-box;';
     body.appendChild(textarea);
 
     // --- AUTOCOMPLETE UI SETUP ---
     let expandAutocomplete = false;
-    const describeCache = new DescribeCache(api, () => {
+    const describeCache = getDescribeCache(api);
+    const unsubscribeDescribe = describeCache.subscribe(() => {
       autocompleteState = '';
       void runAutocomplete();
     });
@@ -537,10 +623,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const autocompleteBox = doc.createElement('div');
     autocompleteBox.className = 'sfdt-soql-autocomplete-box';
     autocompleteBox.style.cssText =
-      'border: 1px solid #d8dde6; border-top: none; border-radius: 0 0 4px 4px; background: #fafaf9; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-family: system-ui, sans-serif;';
+      'border: 1px solid var(--sfdt-color-border); border-top: none; border-radius: 0 0 4px 4px; background: var(--sfdt-color-surface-alt); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-family: system-ui, sans-serif;';
 
     const autocompleteHeader = doc.createElement('div');
-    autocompleteHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; color: #54698d; font-size: 12px; font-weight: 600;';
+    autocompleteHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; color: var(--sfdt-color-text-weak); font-size: 12px; font-weight: 600;';
     
     const autocompleteTitle = doc.createElement('span');
     autocompleteTitle.textContent = 'Enter query to see suggestions...';
@@ -548,7 +634,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
 
     const toggleWrapBtn = doc.createElement('button');
     toggleWrapBtn.textContent = 'Expand ▾';
-    toggleWrapBtn.style.cssText = 'background: none; border: none; color: #0070d2; font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: 3px; font-family: inherit;';
+    toggleWrapBtn.style.cssText = 'background: none; border: none; color: var(--sfdt-color-brand-text); font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: 3px; font-family: inherit;';
     toggleWrapBtn.addEventListener('click', () => {
       expandAutocomplete = !expandAutocomplete;
       updateResultsWrap();
@@ -567,11 +653,16 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const runBtn = doc.createElement('button');
     runBtn.textContent = '▶ Run';
     runBtn.style.cssText =
-      'padding: 6px 14px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+    const explainBtn = doc.createElement('button');
+    explainBtn.textContent = '🔎 Explain';
+    explainBtn.title = 'Show the query plan (cost, cardinality, leading operation) without running the query';
+    explainBtn.style.cssText =
+      'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-text); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 13px;';
     const bookmarkBtn = doc.createElement('button');
     bookmarkBtn.textContent = '★ Save';
     bookmarkBtn.style.cssText =
-      'padding: 6px 12px; background: #fff; color: #0070d2; border: 1px solid #d8dde6; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-text); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 13px;';
     bookmarkBtn.addEventListener('click', async () => {
       const q = textarea.value.trim();
       if (!q) {
@@ -585,20 +676,31 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       }
     });
     const status = doc.createElement('span');
-    status.style.cssText = 'color: #54698d; font-size: 12px;';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     runRow.appendChild(runBtn);
+    runRow.appendChild(explainBtn);
     runRow.appendChild(bookmarkBtn);
     runRow.appendChild(status);
     body.appendChild(runRow);
 
     const errorPanel = doc.createElement('div');
+    errorPanel.setAttribute('role', 'alert');
     errorPanel.style.cssText =
-      'display: none; border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
+      'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
     body.appendChild(errorPanel);
+
+    // Query-plan (EXPLAIN) output panel — separate from the results table so a
+    // plan and a result set don't clobber each other.
+    const explainPanel = doc.createElement('div');
+    explainPanel.style.cssText =
+      'display: none; border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 360px;';
+    body.appendChild(explainPanel);
 
     const resultsWrap = doc.createElement('div');
     resultsWrap.style.cssText =
-      'border: 1px solid #d8dde6; border-radius: 4px; overflow: auto; max-height: 360px; display: none;';
+      'border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 360px; display: none;';
     body.appendChild(resultsWrap);
 
     const footer = doc.createElement('div');
@@ -606,29 +708,51 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     const loadMoreBtn = doc.createElement('button');
     loadMoreBtn.textContent = 'Load more';
     loadMoreBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     const copyCsvBtn = doc.createElement('button');
     copyCsvBtn.textContent = 'Copy CSV';
     copyCsvBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     const exportCsvBtn = doc.createElement('button');
     exportCsvBtn.textContent = 'Export CSV';
     exportCsvBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    const exportAllBtn = doc.createElement('button');
+    exportAllBtn.textContent = 'Export all as CSV';
+    exportAllBtn.title = 'Follow pagination to the end and download every row';
+    exportAllBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    const cancelExportBtn = doc.createElement('button');
+    cancelExportBtn.textContent = 'Cancel';
+    cancelExportBtn.setAttribute('aria-label', 'Cancel export');
+    cancelExportBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-surface); color: var(--sfdt-color-error-text); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    const copyJsonBtn = doc.createElement('button');
+    copyJsonBtn.textContent = 'Copy JSON';
+    copyJsonBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-strong); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    const copyExcelBtn = doc.createElement('button');
+    copyExcelBtn.textContent = 'Copy for Excel';
+    copyExcelBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-strong); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     const langGraphBtn = doc.createElement('button');
     langGraphBtn.textContent = 'LangGraph Node';
     langGraphBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     footer.appendChild(loadMoreBtn);
     footer.appendChild(copyCsvBtn);
     footer.appendChild(exportCsvBtn);
+    footer.appendChild(exportAllBtn);
+    footer.appendChild(cancelExportBtn);
+    footer.appendChild(copyJsonBtn);
+    footer.appendChild(copyExcelBtn);
     footer.appendChild(langGraphBtn);
 
     if (historyEnabled) {
       const clearHistBtn = doc.createElement('button');
       clearHistBtn.textContent = 'Clear history';
       clearHistBtn.style.cssText =
-        'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: auto;';
+        'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: auto;';
       clearHistBtn.addEventListener('click', async () => {
         await clearSoqlHistory();
         showToast('Query history cleared', { doc, kind: 'success' });
@@ -642,20 +766,50 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       body,
       doc,
       width: '860px',
-      onClose: () => { view = null; },
+      onClose: () => { view = null; activeTextarea = null; unsubscribeDescribe(); },
     });
 
     let records: Array<Record<string, unknown>> = [];
     let lastEnvelope: QueryEnvelope<Record<string, unknown>> | null = null;
     let pagesLoaded = 0;
+    // Tracks an in-flight "Export all" so a new run/loadMore/error can supersede
+    // it: the running export compares against this and stays silent once null'd.
+    let exportController: AbortController | null = null;
+
+    // Cancel any in-flight export and reset its UI. Idempotent; the running
+    // handler's owns()-guard skips its own cleanup once superseded here.
+    function abortExport(): void {
+      if (!exportController) return;
+      exportController.abort();
+      exportController = null;
+      exportAllBtn.disabled = false;
+      cancelExportBtn.style.display = 'none';
+    }
+
+    // Run and Explain share `records`/`lastEnvelope`/`status` and toggle the same
+    // panels, so only one may be in flight at a time. Guard both entry points —
+    // including the Ctrl+Enter path, which bypasses the disabled button — and
+    // disable both buttons for visual feedback.
+    let busy = false;
+    function setBusy(next: boolean): void {
+      busy = next;
+      runBtn.disabled = next;
+      explainBtn.disabled = next;
+    }
 
     function showError(message: string): void {
+      abortExport();
       errorPanel.textContent = message;
       errorPanel.style.display = 'block';
       resultsWrap.style.display = 'none';
+      explainPanel.style.display = 'none';
       loadMoreBtn.style.display = 'none';
       copyCsvBtn.style.display = 'none';
       exportCsvBtn.style.display = 'none';
+      exportAllBtn.style.display = 'none';
+      cancelExportBtn.style.display = 'none';
+      copyJsonBtn.style.display = 'none';
+      copyExcelBtn.style.display = 'none';
       langGraphBtn.style.display = 'none';
     }
 
@@ -671,7 +825,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       const menu = doc.createElement('div');
       menu.className = 'sfdt-soql-cell-menu';
       menu.style.cssText =
-        'position: absolute; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 100030; padding: 4px 0; font-family: system-ui, sans-serif; font-size: 12px;';
+        'position: absolute; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 100030; padding: 4px 0; font-family: system-ui, sans-serif; font-size: 12px;';
 
       const items = [
         {
@@ -703,9 +857,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       for (const item of items) {
         const itemEl = doc.createElement('div');
         itemEl.textContent = item.label;
-        itemEl.style.cssText = 'padding: 6px 12px; cursor: pointer; color: #16325c;';
-        itemEl.addEventListener('mouseenter', () => itemEl.style.background = '#f4f6f9');
-        itemEl.addEventListener('mouseleave', () => itemEl.style.background = '#fff');
+        itemEl.style.cssText = 'padding: 6px 12px; cursor: pointer; color: var(--sfdt-color-text-strong);';
+        itemEl.addEventListener('mouseenter', () => itemEl.style.background = 'var(--sfdt-color-surface-shade)');
+        itemEl.addEventListener('mouseleave', () => itemEl.style.background = 'var(--sfdt-color-surface)');
         itemEl.addEventListener('click', () => {
           item.click();
           menu.remove();
@@ -730,10 +884,11 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     }
 
     function renderResults(): void {
+      explainPanel.style.display = 'none';
       while (resultsWrap.firstChild) resultsWrap.removeChild(resultsWrap.firstChild);
       if (records.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 12px; color: #80868d; font-size: 13px;';
+        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon); font-size: 13px;';
         empty.textContent = 'No rows.';
         resultsWrap.appendChild(empty);
         resultsWrap.style.display = 'block';
@@ -748,7 +903,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         const th = doc.createElement('th');
         th.textContent = c;
         th.style.cssText =
-          'text-align: left; padding: 6px 10px; border-bottom: 1px solid #d8dde6; background: #fafaf9; position: sticky; top: 0;';
+          'text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface-alt); position: sticky; top: 0;';
         headRow.appendChild(th);
       }
       thead.appendChild(headRow);
@@ -763,7 +918,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
             const link = doc.createElement('a');
             link.href = '#';
             link.textContent = raw.length > 200 ? raw.slice(0, 200) + '…' : raw;
-            link.style.cssText = 'color: #0070d2; text-decoration: underline; cursor: pointer;';
+            link.style.cssText = 'color: var(--sfdt-color-brand-text); text-decoration: underline; cursor: pointer;';
             link.addEventListener('click', (e) => {
               e.preventDefault();
               showCellMenu(link, raw);
@@ -773,7 +928,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
             td.textContent = raw.length > 200 ? raw.slice(0, 200) + '…' : raw;
           }
           td.title = raw;
-          td.style.cssText = 'padding: 6px 10px; border-bottom: 1px solid #f3f3f3; vertical-align: top;';
+          td.style.cssText = 'padding: 6px 10px; border-bottom: 1px solid var(--sfdt-color-bg); vertical-align: top;';
           tr.appendChild(td);
         }
         tbody.appendChild(tr);
@@ -783,6 +938,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       resultsWrap.style.display = 'block';
       copyCsvBtn.style.display = 'inline-block';
       exportCsvBtn.style.display = 'inline-block';
+      exportAllBtn.style.display = 'inline-block';
+      copyJsonBtn.style.display = 'inline-block';
+      copyExcelBtn.style.display = 'inline-block';
       langGraphBtn.style.display = 'inline-block';
       const canPaginate =
         !!lastEnvelope && lastEnvelope.done === false && !!lastEnvelope.nextRecordsUrl;
@@ -795,7 +953,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       const entries = await readSoqlHistory();
       if (entries.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 10px; color: #80868d; font-size: 12px;';
+        empty.style.cssText = 'padding: 10px; color: var(--sfdt-color-text-icon); font-size: 12px;';
         empty.textContent = 'No queries yet.';
         historyMenu.appendChild(empty);
         return;
@@ -803,13 +961,13 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       for (const entry of entries) {
         const item = doc.createElement('div');
         item.style.cssText =
-          'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid #f3f3f3; font-family: ui-monospace, monospace; font-size: 11px;';
+          'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--sfdt-color-bg); font-family: ui-monospace, monospace; font-size: 11px;';
         const badge = doc.createElement('span');
         badge.textContent = entry.api === 'tooling' ? 'TOOL ' : 'REST ';
         badge.style.cssText =
           entry.api === 'tooling'
-            ? 'color: #b46600; font-weight: 600; margin-right: 6px;'
-            : 'color: #0070d2; font-weight: 600; margin-right: 6px;';
+            ? 'color: var(--sfdt-color-warning-text); font-weight: 600; margin-right: 6px;'
+            : 'color: var(--sfdt-color-brand-text); font-weight: 600; margin-right: 6px;';
         const text = doc.createElement('span');
         const trimmed = entry.q.length > 200 ? entry.q.slice(0, 200) + '…' : entry.q;
         text.textContent = trimmed;
@@ -830,7 +988,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       const entries = await readSavedQueries();
       if (entries.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 10px; color: #80868d; font-size: 12px;';
+        empty.style.cssText = 'padding: 10px; color: var(--sfdt-color-text-icon); font-size: 12px;';
         empty.textContent = 'No bookmarked queries yet.';
         savedQueriesMenu.appendChild(empty);
         return;
@@ -838,7 +996,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       for (const entry of entries) {
         const item = doc.createElement('div');
         item.style.cssText =
-          'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid #f3f3f3; font-family: ui-monospace, monospace; font-size: 11px; display: flex; justify-content: space-between; align-items: center;';
+          'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--sfdt-color-bg); font-family: ui-monospace, monospace; font-size: 11px; display: flex; justify-content: space-between; align-items: center;';
         
         const contentWrap = doc.createElement('div');
         contentWrap.style.cssText = 'display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
@@ -847,8 +1005,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         badge.textContent = entry.api === 'tooling' ? 'TOOL ' : 'REST ';
         badge.style.cssText =
           entry.api === 'tooling'
-            ? 'color: #b46600; font-weight: 600; margin-right: 6px; flex-shrink: 0;'
-            : 'color: #0070d2; font-weight: 600; margin-right: 6px; flex-shrink: 0;';
+            ? 'color: var(--sfdt-color-warning-text); font-weight: 600; margin-right: 6px; flex-shrink: 0;'
+            : 'color: var(--sfdt-color-brand-text); font-weight: 600; margin-right: 6px; flex-shrink: 0;';
         
         const titleText = doc.createElement('strong');
         titleText.textContent = `${entry.name}: `;
@@ -865,7 +1023,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
 
         const deleteBtn = doc.createElement('button');
         deleteBtn.textContent = '×';
-        deleteBtn.style.cssText = 'background: none; border: none; color: #c23934; font-size: 16px; cursor: pointer; padding: 0 4px;';
+        deleteBtn.style.cssText = 'background: none; border: none; color: var(--sfdt-color-error-text); font-size: 16px; cursor: pointer; padding: 0 4px;';
         deleteBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           if (win.confirm(`Are you sure you want to delete bookmark "${entry.name}"?`)) {
@@ -887,13 +1045,15 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     }
 
     async function execute(): Promise<void> {
+      if (busy) return;
       const soql = textarea.value.trim();
       if (!soql) {
         showError('Enter a SOQL query to run.');
         return;
       }
+      abortExport(); // a fresh run supersedes any in-flight export
       clearError();
-      runBtn.disabled = true;
+      setBusy(true);
       status.textContent = 'Running…';
       const t0 = Date.now();
       try {
@@ -914,12 +1074,109 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         showError(err instanceof Error ? err.message : String(err));
         status.textContent = '';
       } finally {
-        runBtn.disabled = false;
+        setBusy(false);
+      }
+    }
+
+    function renderPlan(plans: QueryPlan[]): void {
+      while (explainPanel.firstChild) explainPanel.removeChild(explainPanel.firstChild);
+      // Hide the results-table + its footer actions: they're bound to the stale
+      // result set and would flip the view back to the (now-hidden) table.
+      resultsWrap.style.display = 'none';
+      loadMoreBtn.style.display = 'none';
+      copyCsvBtn.style.display = 'none';
+      exportCsvBtn.style.display = 'none';
+      exportAllBtn.style.display = 'none';
+      cancelExportBtn.style.display = 'none';
+      copyJsonBtn.style.display = 'none';
+      copyExcelBtn.style.display = 'none';
+      langGraphBtn.style.display = 'none';
+      if (plans.length === 0) {
+        const empty = doc.createElement('div');
+        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon); font-size: 13px;';
+        empty.textContent = 'No query plan returned.';
+        explainPanel.appendChild(empty);
+        explainPanel.style.display = 'block';
+        return;
+      }
+
+      const fmtNotes = (notes: QueryPlanNote[] | undefined): string => {
+        if (!Array.isArray(notes) || notes.length === 0) return '—';
+        return notes
+          .map((n) => n.description)
+          .filter((d): d is string => typeof d === 'string' && d.length > 0)
+          .join('\n') || '—';
+      };
+      const fmt = (v: unknown): string =>
+        v === null || v === undefined ? '—' : String(v);
+
+      plans.forEach((plan, i) => {
+        const heading = doc.createElement('div');
+        heading.style.cssText =
+          'padding: 8px 10px; font-weight: 600; font-size: 12px; color: var(--sfdt-color-text-strong); background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border);';
+        heading.textContent = plan.sobjectType
+          ? `Plan ${i + 1} · ${plan.sobjectType}${i === 0 ? ' (chosen)' : ''}`
+          : `Plan ${i + 1}${i === 0 ? ' (chosen)' : ''}`;
+        explainPanel.appendChild(heading);
+
+        const table = doc.createElement('table');
+        table.style.cssText = 'border-collapse: collapse; width: 100%; font-size: 12px;';
+        const rows: Array<[string, string]> = [
+          ['Cardinality', fmt(plan.cardinality)],
+          ['SObject cardinality', fmt(plan.sobjectCardinality)],
+          ['Leading operation', fmt(plan.leadingOperationType)],
+          ['Relative cost', fmt(plan.relativeCost)],
+          ['Notes', fmtNotes(plan.notes)],
+        ];
+        const tbody = doc.createElement('tbody');
+        for (const [label, value] of rows) {
+          const tr = doc.createElement('tr');
+          const th = doc.createElement('th');
+          th.scope = 'row';
+          th.textContent = label;
+          th.style.cssText =
+            'text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--sfdt-color-bg); color: var(--sfdt-color-text-weak); font-weight: 600; white-space: nowrap; vertical-align: top; width: 160px;';
+          const td = doc.createElement('td');
+          td.textContent = value;
+          td.style.cssText =
+            'padding: 6px 10px; border-bottom: 1px solid var(--sfdt-color-bg); color: var(--sfdt-color-text-strong); white-space: pre-wrap; vertical-align: top;';
+          tr.appendChild(th);
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        explainPanel.appendChild(table);
+      });
+      explainPanel.style.display = 'block';
+    }
+
+    async function explain(): Promise<void> {
+      if (busy) return;
+      const soql = textarea.value.trim();
+      if (!soql) {
+        showError('Enter a SOQL query to explain.');
+        return;
+      }
+      abortExport(); // Explain supersedes any in-flight export (shares status/panels)
+      clearError();
+      setBusy(true);
+      status.textContent = 'Explaining…';
+      const t0 = Date.now();
+      try {
+        const plans = await explainQuery(api, soql, mode);
+        renderPlan(plans);
+        status.textContent = `⏱ ${Date.now() - t0} ms · query plan`;
+      } catch (err) {
+        showError(err instanceof Error ? err.message : String(err));
+        status.textContent = '';
+      } finally {
+        setBusy(false);
       }
     }
 
     async function loadMore(): Promise<void> {
       if (!lastEnvelope?.nextRecordsUrl || lastEnvelope.done) return;
+      abortExport(); // loading a page supersedes any in-flight export
       if (pagesLoaded >= PAGE_CAP) {
         showToast(`Stopped at ${PAGE_CAP} pages — narrow your query for more.`, {
           doc,
@@ -1448,7 +1705,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
 
       if (data.results.length === 0) {
         const none = doc.createElement('span');
-        none.style.cssText = 'color: #80868d; font-size: 12px; font-style: italic;';
+        none.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; font-style: italic;';
         none.textContent = 'No suggestions available';
         autocompleteResults.appendChild(none);
         return;
@@ -1461,16 +1718,16 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
         btn.textContent = `${icon} ${item.value}`;
         btn.title = item.title;
         btn.style.cssText =
-          'display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #d8dde6; border-radius: 14px; background: #fff; color: #0070d2; font-size: 12px; cursor: pointer; white-space: nowrap; transition: background 0.15s, border-color 0.15s, transform 0.1s; outline: none; margin: 2px 0; font-family: system-ui, sans-serif;';
+          'display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 14px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-text); font-size: 12px; cursor: pointer; white-space: nowrap; transition: background 0.15s, border-color 0.15s, transform 0.1s; outline: none; margin: 2px 0; font-family: system-ui, sans-serif;';
         
         btn.addEventListener('mouseenter', () => {
-          btn.style.background = '#f4f6f9';
-          btn.style.borderColor = '#0070d2';
+          btn.style.background = 'var(--sfdt-color-surface-shade)';
+          btn.style.borderColor = 'var(--sfdt-color-brand)';
           btn.style.transform = 'translateY(-1px)';
         });
         btn.addEventListener('mouseleave', () => {
-          btn.style.background = '#fff';
-          btn.style.borderColor = '#d8dde6';
+          btn.style.background = 'var(--sfdt-color-surface)';
+          btn.style.borderColor = 'var(--sfdt-color-border)';
           btn.style.transform = 'none';
         });
         
@@ -1538,6 +1795,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
     }
 
     runBtn.addEventListener('click', () => void execute());
+    explainBtn.addEventListener('click', () => void explain());
     loadMoreBtn.addEventListener('click', () => void loadMore());
     
     // Wire up autocomplete events
@@ -1576,6 +1834,79 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       triggerDownload(doc, `soql-${stamp}.csv`, csv, 'text/csv');
     });
 
+    cancelExportBtn.addEventListener('click', () => exportController?.abort());
+    exportAllBtn.addEventListener('click', async () => {
+      const soql = textarea.value.trim();
+      if (!soql) return;
+      abortExport(); // never run two exports at once
+      const controller = new AbortController();
+      exportController = controller;
+      // Whether this handler is still the active export — false once a new
+      // run/loadMore/error (or a subsequent export) has superseded it. Guards
+      // every status/UI write so a stale export can't stomp a newer run.
+      const owns = (): boolean => exportController === controller;
+      exportAllBtn.disabled = true;
+      cancelExportBtn.style.display = 'inline-block';
+      const prevStatus = status.textContent;
+      status.textContent = 'Exporting all… fetching page 1';
+      try {
+        const first = await runQuery(api, soql, mode);
+        // The worker-proxied page-1 fetch can't be aborted mid-flight; guarantee
+        // the data-correctness half — a Cancel during page 1 yields NO download.
+        if (!owns()) return; // superseded by a new run/loadMore/explain — stay silent
+        if (controller.signal.aborted) {
+          showToast('Export canceled', { doc, kind: 'warning' });
+          status.textContent = prevStatus;
+          return;
+        }
+        const result = await exportAllToCsv(api, first, {
+          signal: controller.signal,
+          onProgress: ({ pages, rows }) => {
+            if (owns()) {
+              status.textContent = `Exporting all… ${rows} row${rows === 1 ? '' : 's'} across ${pages} page${pages === 1 ? '' : 's'}`;
+            }
+          },
+        });
+        if (!owns()) return; // superseded — stay silent, superseder owns the UI
+        if (result.canceled) {
+          showToast('Export canceled', { doc, kind: 'warning' });
+          status.textContent = prevStatus;
+          return;
+        }
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        downloadBlob(doc, `soql-all-${stamp}.csv`, new Blob(result.parts, { type: 'text/csv' }));
+        status.textContent = `Exported ${result.rows} row${result.rows === 1 ? '' : 's'} across ${result.pages} page${result.pages === 1 ? '' : 's'}`;
+        showToast(`Exported ${result.rows} rows as CSV`, { doc, kind: 'success' });
+      } catch (err) {
+        if (owns()) {
+          showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
+          status.textContent = prevStatus;
+        }
+      } finally {
+        if (owns()) {
+          exportAllBtn.disabled = false;
+          cancelExportBtn.style.display = 'none';
+          exportController = null;
+        }
+      }
+    });
+    copyJsonBtn.addEventListener('click', async () => {
+      try {
+        await win.navigator.clipboard.writeText(recordsToJson(records));
+        showToast(`Copied ${records.length} rows as JSON`, { doc, kind: 'success' });
+      } catch {
+        showToast('Could not copy to clipboard', { doc, kind: 'error' });
+      }
+    });
+    copyExcelBtn.addEventListener('click', async () => {
+      try {
+        await win.navigator.clipboard.writeText(recordsToTsv(records));
+        showToast(`Copied ${records.length} rows for Excel`, { doc, kind: 'success' });
+      } catch {
+        showToast('Could not copy to clipboard', { doc, kind: 'error' });
+      }
+    });
+
     langGraphBtn.addEventListener('click', async () => {
       const currentSoql = textarea.value.trim();
       const code = generateLangGraphNode(currentSoql, records);
@@ -1601,11 +1932,20 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): Featur
       mode = pending.api;
     }
 
+    // Expose the live textarea so insertFieldIntoDraft() targets it, and drain
+    // any field fragment stashed while the runner was closed.
+    activeTextarea = textarea;
+    if (pendingFieldFragment) {
+      textarea.value = insertFieldIntoQuery(textarea.value, pendingFieldFragment);
+      pendingFieldFragment = null;
+    }
+
     textarea.focus();
     setMode(mode);
   }
 
   return {
+    insertFieldIntoDraft,
     manifest: {
       id: 'soql-runner',
       name: 'SOQL Query Runner',
@@ -1634,6 +1974,9 @@ export function _soqlRunnerTestApi() {
     columnsFromRecords,
     formatCell,
     recordsToCsv,
+    exportAllToCsv,
+    recordsToJson,
+    recordsToTsv,
     generateLangGraphNode,
     readSoqlHistory,
     writeSoqlHistory,
@@ -1645,6 +1988,8 @@ export function _soqlRunnerTestApi() {
     deleteSavedQuery,
     DescribeCache,
     runQuery,
+    explainQuery,
+    insertFieldIntoQuery,
     HISTORY_CAP,
     PAGE_CAP,
   };

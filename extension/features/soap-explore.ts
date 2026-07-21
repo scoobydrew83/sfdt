@@ -8,6 +8,10 @@ import {
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { SF_API_VERSION } from '../lib/api-version.js';
+
+// SOAP request bodies carry the bare numeric version (e.g. "62.0"), not "v62.0".
+const SOAP_API_VERSION = SF_API_VERSION.replace(/^v/, '');
 
 const SOAP_EXPLORE_SETTINGS_SCHEMA = z.object({
   historyEnabled: z.boolean().default(true),
@@ -66,7 +70,7 @@ const TEMPLATES: Record<string, Record<string, string>> = {
     create: '{\n  "sObjects": [\n    {\n      "$xsi:type": "Account",\n      "Name": "New Test Account"\n    }\n  ]\n}',
   },
   Metadata: {
-    describeMetadata: '{\n  "apiVersion": "62.0"\n}',
+    describeMetadata: `{\n  "apiVersion": "${SOAP_API_VERSION}"\n}`,
     listMetadata: '{\n  "queries": {\n    "type": "ApexClass"\n  }\n}',
   },
   Tooling: {
@@ -121,14 +125,14 @@ export function createSoapExploreFeature(options: {
 
     // Working spinner lives at the top of the body (presentView's header is title + × only).
     const spinner = doc.createElement('div');
-    spinner.style.cssText = 'border: 2px solid #f3f3f3; border-top: 2px solid #0070d2; border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; display: none;';
+    spinner.style.cssText = 'border: 2px solid var(--sfdt-color-bg); border-top: 2px solid var(--sfdt-color-brand); border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; display: none;';
 
     const configRow = doc.createElement('div');
     configRow.style.cssText = 'display: flex; gap: 8px; align-items: center;';
     configRow.appendChild(spinner);
 
     const wsdlSelect = doc.createElement('select');
-    wsdlSelect.style.cssText = 'padding: 6px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    wsdlSelect.style.cssText = 'padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     (['Partner', 'Metadata', 'Tooling', 'Enterprise', 'Apex'] as const).forEach(w => {
       const opt = doc.createElement('option');
       opt.value = w;
@@ -140,24 +144,24 @@ export function createSoapExploreFeature(options: {
     opInput.type = 'text';
     opInput.placeholder = 'Operation (e.g. getUserInfo)';
     opInput.value = 'getUserInfo';
-    opInput.style.cssText = 'flex: 1; padding: 6px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    opInput.style.cssText = 'flex: 1; padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
 
     const opSelect = doc.createElement('select');
-    opSelect.style.cssText = 'padding: 6px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    opSelect.style.cssText = 'padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     configRow.appendChild(wsdlSelect);
     configRow.appendChild(opSelect);
     configRow.appendChild(opInput);
 
     const sendBtn = doc.createElement('button');
     sendBtn.textContent = 'Send';
-    sendBtn.style.cssText = 'padding: 6px 14px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    sendBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     configRow.appendChild(sendBtn);
     body.appendChild(configRow);
 
     const payloadTextarea = doc.createElement('textarea');
     payloadTextarea.placeholder = 'JSON arguments';
     payloadTextarea.value = '{}';
-    payloadTextarea.style.cssText = 'width: 100%; min-height: 120px; font-family: monospace; font-size: 12px; padding: 8px; border: 1px solid #d8dde6; border-radius: 4px; resize: vertical; outline: none;';
+    payloadTextarea.style.cssText = 'width: 100%; min-height: 120px; font-family: monospace; font-size: 12px; padding: 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; resize: vertical; outline: none;';
     body.appendChild(payloadTextarea);
 
     function syncOperations(): void {
@@ -207,15 +211,15 @@ export function createSoapExploreFeature(options: {
     syncOperations();
 
     const statusPanel = doc.createElement('div');
-    statusPanel.style.cssText = 'color: #54698d; font-size: 12px;';
+    statusPanel.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     body.appendChild(statusPanel);
 
     const errorPanel = doc.createElement('div');
-    errorPanel.style.cssText = 'display: none; border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
+    errorPanel.style.cssText = 'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
     body.appendChild(errorPanel);
 
     const responsePane = doc.createElement('pre');
-    responsePane.style.cssText = 'margin: 0; padding: 10px; background: #fafaf9; border: 1px solid #d8dde6; border-radius: 4px; overflow: auto; max-height: 280px; font-family: monospace; font-size: 12px; display: none; white-space: pre-wrap;';
+    responsePane.style.cssText = 'margin: 0; padding: 10px; background: var(--sfdt-color-surface-alt); border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 280px; font-family: monospace; font-size: 12px; display: none; white-space: pre-wrap;';
     body.appendChild(responsePane);
 
     let lastResponse: any = null;
@@ -224,19 +228,19 @@ export function createSoapExploreFeature(options: {
     footer.style.cssText = 'display: flex; gap: 8px; align-items: center;';
     const copyBtn = doc.createElement('button');
     copyBtn.textContent = 'Copy response';
-    copyBtn.style.cssText = 'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    copyBtn.style.cssText = 'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     footer.appendChild(copyBtn);
 
     let historyMenu: HTMLDivElement | null = null;
     if (historyEnabled) {
       const historyBtn = doc.createElement('button');
       historyBtn.textContent = '▸ History ▾';
-      historyBtn.style.cssText = 'padding: 6px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      historyBtn.style.cssText = 'padding: 6px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
       const histWrap = doc.createElement('div');
       histWrap.style.cssText = 'position: relative; margin-left: auto;';
       histWrap.appendChild(historyBtn);
       historyMenu = doc.createElement('div');
-      historyMenu.style.cssText = 'display: none; position: absolute; top: 100%; right: 0; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; min-width: 420px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
+      historyMenu.style.cssText = 'display: none; position: absolute; top: 100%; right: 0; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; min-width: 420px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
       histWrap.appendChild(historyMenu);
       historyBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -256,7 +260,7 @@ export function createSoapExploreFeature(options: {
       doc.addEventListener('click', docClickHandler);
       const clearBtn = doc.createElement('button');
       clearBtn.textContent = 'Clear history';
-      clearBtn.style.cssText = 'padding: 6px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      clearBtn.style.cssText = 'padding: 6px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
       clearBtn.addEventListener('click', async () => {
         await clearSoapHistory();
         showToast('History cleared', { doc, kind: 'success' });
@@ -295,17 +299,17 @@ export function createSoapExploreFeature(options: {
       const entries = await readSoapHistory();
       if (entries.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 10px; color: #80868d; font-size: 12px;';
+        empty.style.cssText = 'padding: 10px; color: var(--sfdt-color-text-icon); font-size: 12px;';
         empty.textContent = 'No requests yet.';
         historyMenu.appendChild(empty);
         return;
       }
       entries.forEach(entry => {
         const item = doc.createElement('div');
-        item.style.cssText = 'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid #f3f3f3; font-family: monospace; font-size: 11px;';
+        item.style.cssText = 'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--sfdt-color-bg); font-family: monospace; font-size: 11px;';
         const badge = doc.createElement('span');
         badge.textContent = entry.wsdl;
-        badge.style.cssText = 'display: inline-block; min-width: 60px; padding: 1px 4px; border-radius: 3px; background: #16325c; color: #fff; font-weight: 600; margin-right: 6px; text-align: center;';
+        badge.style.cssText = 'display: inline-block; min-width: 60px; padding: 1px 4px; border-radius: 3px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-on-accent); font-weight: 600; margin-right: 6px; text-align: center;';
         const text = doc.createElement('span');
         text.textContent = entry.operation;
         item.appendChild(badge);

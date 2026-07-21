@@ -34,7 +34,7 @@ export const SettingsSchema = z.object({
   // @deprecated — superseded by registerSettingsShape('api-name-generator', …).
   apiNameGenerator: z
     .object({
-      namingPattern: z.enum(['Snake_Case', 'PascalCase', 'camelCase']).default('Snake_Case'),
+      namingPattern: z.enum(['Snake_Case', 'PascalCase', 'camelCase']).default('camelCase'),
     })
     .default({}),
 
@@ -50,6 +50,20 @@ export const SettingsSchema = z.object({
       enabled: z.boolean().default(false),
     })
     .default({}),
+
+  // Global UI preference (P0-2 dark mode) — like telemetry/bridge, a top-level
+  // app setting, not a per-feature/kill-switchable content feature. 'auto'
+  // follows the OS (prefers-color-scheme); 'light'/'dark' override it.
+  theme: z.enum(['light', 'dark', 'auto']).default('auto'),
+
+  // Where injected tools open by default when triggered from a Salesforce page
+  // (P2-3 PR-2). 'modal' = the classic centered overlay (unchanged default, so
+  // nothing changes unless opted in); 'panel' = prefer the docked side panel.
+  // A global UI preference like `theme` — not a per-feature/kill-switchable one.
+  // Honoured in this PR by the toolbar popup (it promotes "Open side panel" to
+  // the primary action when set to 'panel'); deep present-view routing of an
+  // on-page tool straight into the open panel is a follow-up.
+  defaultSurface: z.enum(['modal', 'panel']).default('modal'),
 
   // Bridge config. `token` is the bearer credential the extension presents
   // to the sfdt CLI's localhost server (/api/bridge/*) and to the native
@@ -69,6 +83,14 @@ export const SettingsSchema = z.object({
       localhostPort: z.number().int().positive().default(7654),
     })
     .default({}),
+
+  // User-defined command-palette shortcuts (P2-2). A global preference like
+  // theme/bridge — NOT a per-feature/kill-switchable content feature. `url` is
+  // validated at the z.string().url() boundary so a malformed entry is rejected
+  // on save rather than opened; the options page also enforces unique `name`s.
+  customShortcuts: z
+    .array(z.object({ name: z.string(), url: z.string().url() }))
+    .default([]),
 });
 
 export type Settings = z.infer<typeof SettingsSchema> & {
@@ -172,6 +194,10 @@ export async function patchSettings(patch: Partial<Settings>): Promise<Settings>
   for (const key of Object.keys(patch) as Array<keyof Settings>) {
     const a = current[key];
     const b = patch[key];
+    // Arrays (e.g. customShortcuts) replace wholesale — spread-merging two arrays
+    // yields an index-keyed object, which fails schema validation. Only plain
+    // objects (bridge, telemetry, …) merge one level deep.
+    if (Array.isArray(a) || Array.isArray(b)) continue;
     if (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null) {
       (next as Record<string, unknown>)[key] = { ...a, ...b };
     }

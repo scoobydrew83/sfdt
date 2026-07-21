@@ -2,6 +2,11 @@
 // automatically, so a rogue feature label has zero XSS surface here.
 // Gating is the caller's responsibility (see entrypoints/content.ts);
 // the menu rebuilds on every open so dynamic labels stay accurate.
+//
+// Mounts into the shared content root when one is set (the closed shadow root on
+// a Salesforce page — ui/shadow-host.ts + ui/content-root.ts), else document.body.
+
+import { getContentRoot } from './content-root.js';
 
 export interface MenuItem {
   featureId: string;
@@ -21,6 +26,8 @@ export interface SideButtonHandlers {
 
 export interface SideButtonHandle {
   refresh: () => void;
+  /** Programmatically open the menu (e.g. from the open-palette command). */
+  open: () => void;
   destroy: () => void;
   isMounted: () => boolean;
 }
@@ -37,8 +44,8 @@ const BUTTON_STYLE = [
   'transform: translateY(-50%)',
   'width: 32px',
   'height: 48px',
-  'background: #0070d2',
-  'color: #fff',
+  'background: var(--sfdt-color-brand)',
+  'color: var(--sfdt-color-on-accent)',
   'border-radius: 4px 0 0 4px',
   'display: flex',
   'align-items: center',
@@ -54,8 +61,8 @@ const MENU_STYLE = [
   'top: 50%',
   'right: 40px',
   'transform: translateY(-50%)',
-  'background: #fff',
-  'border: 1px solid #d8dde6',
+  'background: var(--sfdt-color-surface)',
+  'border: 1px solid var(--sfdt-color-border)',
   'border-radius: 4px',
   'box-shadow: 0 2px 8px rgba(0,0,0,0.15)',
   'min-width: 240px',
@@ -95,14 +102,20 @@ export function mountSideButton(opts: {
   if (win.top !== win.self) {
     return {
       refresh: () => {},
+      open: () => {},
       destroy: () => {},
       isMounted: () => false,
     };
   }
 
+  // Shadow root (Salesforce page) when set, else the light-DOM body (own pages
+  // + unit tests). Query our own nodes within the mount, not `doc`, since the
+  // closed shadow root is invisible to document.getElementById.
+  const mount = getContentRoot() ?? doc.body;
+
   // Re-mounts on the same page must not accumulate duplicate buttons.
-  doc.getElementById(BUTTON_ID)?.remove();
-  doc.getElementById(MENU_ID)?.remove();
+  mount.querySelector(`#${BUTTON_ID}`)?.remove();
+  mount.querySelector(`#${MENU_ID}`)?.remove();
 
   const button = styled(doc, 'div', BUTTON_STYLE, { id: BUTTON_ID, title: 'SFDT SF Helper' });
   button.className = 'sfdt-side-button';
@@ -117,14 +130,14 @@ export function mountSideButton(opts: {
   const header = doc.createElement('div');
   header.className = 'sfdt-menu-header';
   header.style.cssText =
-    'padding: 10px 14px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center;';
+    'padding: 10px 14px; border-bottom: 1px solid var(--sfdt-color-border); display: flex; justify-content: space-between; align-items: center;';
   const headerTitle = doc.createElement('span');
   headerTitle.className = 'sfdt-menu-title';
   headerTitle.style.fontWeight = '600';
   headerTitle.textContent = 'SFDT SF Helper';
   const headerClose = doc.createElement('span');
   headerClose.className = 'sfdt-menu-close';
-  headerClose.style.cssText = 'cursor: pointer; font-size: 18px; color: #80868d;';
+  headerClose.style.cssText = 'cursor: pointer; font-size: 18px; color: var(--sfdt-color-text-icon);';
   headerClose.textContent = '×';
   header.appendChild(headerTitle);
   header.appendChild(headerClose);
@@ -136,12 +149,12 @@ export function mountSideButton(opts: {
 
   const footer = doc.createElement('div');
   footer.className = 'sfdt-menu-footer';
-  footer.style.cssText = 'padding: 8px 14px; border-top: 1px solid #d8dde6;';
+  footer.style.cssText = 'padding: 8px 14px; border-top: 1px solid var(--sfdt-color-border);';
   const settingsLink = doc.createElement('a');
   settingsLink.href = '#';
   settingsLink.id = 'sfdt-settings-link';
   settingsLink.className = 'sfdt-menu-settings-link';
-  settingsLink.style.cssText = 'color: #0070d2; text-decoration: none; font-size: 12px;';
+  settingsLink.style.cssText = 'color: var(--sfdt-color-brand-text); text-decoration: none; font-size: 12px;';
   settingsLink.textContent = '⚙ Settings';
   footer.appendChild(settingsLink);
 
@@ -149,8 +162,8 @@ export function mountSideButton(opts: {
   menu.appendChild(content);
   menu.appendChild(footer);
 
-  doc.body.appendChild(button);
-  doc.body.appendChild(menu);
+  mount.appendChild(button);
+  mount.appendChild(menu);
 
   let isOpen = false;
   let destroyed = false;
@@ -186,7 +199,7 @@ export function mountSideButton(opts: {
   function buildEmptyState(): HTMLDivElement {
     const empty = doc.createElement('div');
     empty.className = 'sfdt-menu-empty';
-    empty.style.cssText = 'padding: 16px; text-align: center; color: #80868d;';
+    empty.style.cssText = 'padding: 16px; text-align: center; color: var(--sfdt-color-text-icon);';
     empty.textContent = 'No tools available for this page.';
     return empty;
   }
@@ -226,8 +239,11 @@ export function mountSideButton(opts: {
 
   const docClickHandler = (e: MouseEvent): void => {
     if (!isOpen) return;
-    const target = e.target as Node | null;
-    if (target && (menu.contains(target) || button.contains(target))) return;
+    // composedPath() crosses the shadow boundary, so this works whether the menu
+    // lives in light DOM or inside the closed shadow root (where e.target is
+    // retargeted to the host and menu.contains(target) would wrongly miss).
+    const path = e.composedPath();
+    if (path.includes(menu) || path.includes(button)) return;
     setOpen(false);
   };
   doc.addEventListener('click', docClickHandler);
@@ -237,6 +253,7 @@ export function mountSideButton(opts: {
 
   return {
     refresh: renderMenu,
+    open: () => setOpen(true),
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
@@ -244,6 +261,6 @@ export function mountSideButton(opts: {
       button.remove();
       menu.remove();
     },
-    isMounted: () => !destroyed && !!doc.getElementById(BUTTON_ID),
+    isMounted: () => !destroyed && button.isConnected,
   };
 }

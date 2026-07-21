@@ -128,7 +128,7 @@ function buildModal(doc: Document, result: DiscoveryResult, now: Date): HTMLDivE
   if (result.flows.length === 0) {
     const empty = doc.createElement('div');
     empty.textContent = 'No active Schedule-Triggered Flows in this org.';
-    empty.style.color = '#80868d';
+    empty.style.color = 'var(--sfdt-color-text-icon)';
     body.appendChild(empty);
   } else {
     const list = doc.createElement('div');
@@ -136,12 +136,12 @@ function buildModal(doc: Document, result: DiscoveryResult, now: Date): HTMLDivE
       const next = calculateNextRun(entry.parsedSchedule, entry.activationDate, now);
       const row = doc.createElement('div');
       row.style.cssText =
-        'padding: 10px; border: 1px solid #d8dde6; border-radius: 4px; margin-bottom: 8px;';
+        'padding: 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; margin-bottom: 8px;';
       const title = doc.createElement('div');
       title.style.fontWeight = '600';
       title.textContent = entry.label;
       const meta = doc.createElement('div');
-      meta.style.cssText = 'color: #80868d; font-size: 12px; margin-top: 4px;';
+      meta.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; margin-top: 4px;';
       meta.textContent = `${entry.parsedSchedule.frequency} · ${entry.parsedSchedule.targetObject ?? 'no target object'}`;
       const nextRun = doc.createElement('div');
       nextRun.style.cssText = 'margin-top: 4px; font-size: 13px;';
@@ -159,7 +159,7 @@ function buildModal(doc: Document, result: DiscoveryResult, now: Date): HTMLDivE
   if (result.errors.length > 0) {
     const errBox = doc.createElement('div');
     errBox.style.cssText =
-      'margin-top: 12px; padding: 10px; background: #fef2f1; border: 1px solid #c23934; border-radius: 4px; font-size: 12px;';
+      'margin-top: 12px; padding: 10px; background: var(--sfdt-color-error-bg); border: 1px solid var(--sfdt-color-error); border-radius: 4px; font-size: 12px;';
     errBox.textContent = `${result.errors.length} flow${result.errors.length === 1 ? '' : 's'} could not be loaded.`;
     body.appendChild(errBox);
   }
@@ -197,7 +197,7 @@ export function createScheduledFlowExplorerFeature(
 
       const loadingOverlay = doc.createElement('div');
       loadingOverlay.style.cssText =
-        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: #fff; font-family: system-ui, sans-serif;';
+        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: var(--sfdt-color-on-accent); font-family: system-ui, sans-serif;';
       loadingOverlay.textContent = 'Discovering scheduled flows…';
       doc.body.appendChild(loadingOverlay);
       try {

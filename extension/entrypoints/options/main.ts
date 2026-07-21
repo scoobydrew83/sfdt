@@ -7,8 +7,11 @@ import {
 } from '../../lib/settings.js';
 import { createBridgeClient, getBridgeData } from '../../lib/sfdt-bridge.js';
 import { createFeatureRegistry } from '../../lib/feature-registry.js';
+import { validateCustomShortcuts } from '../../lib/custom-shortcuts.js';
 import { buildField } from '../../lib/zod-to-dom.js';
 import { createTelemetry } from '../../lib/telemetry.js';
+import { SFDT_TOKENS_CSS } from '../../lib/tokens.js';
+import { watchTheme, OWN_PAGE_COLOR_SCHEME_CSS, type ThemeSetting } from '../../lib/theme.js';
 
 // Pull every feature factory in so each module's top-level
 // registerSettingsShape() call lands before loadSettings() runs.
@@ -33,14 +36,15 @@ import { createApexAnonymousFeature } from '../../features/apex-anonymous.js';
 import { createDebugLogViewerFeature } from '../../features/debug-log-viewer.js';
 import { createSavedSoqlFeature } from '../../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../../features/org-switcher.js';
+import { createContextMenuInspectFeature } from '../../features/context-menu-inspect.js';
 
 
 const STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    background: #fafaf9;
-    color: #16325c;
+    background: var(--sfdt-color-surface-alt);
+    color: var(--sfdt-color-text-strong);
     margin: 0;
     padding: 32px 24px;
   }
@@ -52,30 +56,30 @@ const STYLES = `
     align-items: center;
     gap: 8px;
   }
-  .subtitle { color: #54698d; font-size: 13px; margin: 0 0 24px; }
+  .subtitle { color: var(--sfdt-color-text-weak); font-size: 13px; margin: 0 0 24px; }
   section {
-    background: #fff;
-    border: 1px solid #d8dde6;
+    background: var(--sfdt-color-surface);
+    border: 1px solid var(--sfdt-color-border);
     border-radius: 4px;
     padding: 16px 20px;
     margin-bottom: 16px;
   }
   section h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
-  section p.section-help { color: #54698d; font-size: 12px; margin: 0 0 12px; }
+  section p.section-help { color: var(--sfdt-color-text-weak); font-size: 12px; margin: 0 0 12px; }
   label.row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     padding: 8px 0;
-    border-top: 1px solid #f3f3f3;
+    border-top: 1px solid var(--sfdt-color-bg);
   }
   label.row:first-of-type { border-top: 0; }
   label.row .label-text { flex: 1; }
   label.row .label-text strong { display: block; font-weight: 500; font-size: 13px; }
-  label.row .label-text span { color: #80868d; font-size: 12px; }
+  label.row .label-text span { color: var(--sfdt-color-text-icon); font-size: 12px; }
   input[type="text"], input[type="number"], select, input[type="password"] {
-    border: 1px solid #d8dde6;
+    border: 1px solid var(--sfdt-color-border);
     border-radius: 3px;
     padding: 6px 8px;
     font-size: 13px;
@@ -84,7 +88,7 @@ const STYLES = `
   }
   input[type="color"] {
     width: 36px; height: 28px;
-    border: 1px solid #d8dde6;
+    border: 1px solid var(--sfdt-color-border);
     border-radius: 3px;
     padding: 0;
     cursor: pointer;
@@ -93,17 +97,19 @@ const STYLES = `
   button {
     padding: 6px 14px;
     border-radius: 3px;
-    border: 1px solid #d8dde6;
-    background: #fff;
-    color: #16325c;
+    border: 1px solid var(--sfdt-color-border);
+    background: var(--sfdt-color-surface);
+    color: var(--sfdt-color-text-strong);
     cursor: pointer;
     font-size: 13px;
     font-family: inherit;
   }
-  button.primary { background: #0070d2; color: #fff; border-color: #0070d2; }
-  button:hover { background: #f3f3f3; }
-  button.primary:hover { background: #005fb2; }
+  button.primary { background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-color: var(--sfdt-color-brand); }
+  button:hover { background: var(--sfdt-color-bg); }
+  button.primary:hover { background: var(--sfdt-color-brand-active); }
   .actions { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
+  .shortcut-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
+  .shortcut-row input[type="text"] { flex: 1; min-width: 0; }
   .status {
     font-size: 12px;
     padding: 4px 8px;
@@ -111,21 +117,21 @@ const STYLES = `
     display: none;
   }
   .status.show { display: inline-block; }
-  .status.ok { background: #ddf3e4; color: #04844b; }
-  .status.warn { background: #fef1e1; color: #b46600; }
-  .status.error { background: #fde2e0; color: #c23934; }
+  .status.ok { background: var(--sfdt-color-success-bg); color: var(--sfdt-color-success-text); }
+  .status.warn { background: var(--sfdt-color-warning-bg-6); color: var(--sfdt-color-warning-text); }
+  .status.error { background: var(--sfdt-color-error-bg-4); color: var(--sfdt-color-error-text); }
   .hint {
-    background: #f4f6f9;
-    border-left: 3px solid #0070d2;
+    background: var(--sfdt-color-surface-shade);
+    border-left: 3px solid var(--sfdt-color-brand);
     padding: 8px 12px;
     font-size: 12px;
-    color: #54698d;
+    color: var(--sfdt-color-text-weak);
     margin: 12px 0;
     border-radius: 0 3px 3px 0;
   }
   .hint code {
-    background: #fff;
-    border: 1px solid #d8dde6;
+    background: var(--sfdt-color-surface);
+    border: 1px solid var(--sfdt-color-border);
     border-radius: 2px;
     padding: 1px 4px;
     font-family: ui-monospace, monospace;
@@ -188,8 +194,9 @@ async function render(): Promise<void> {
   if (!root) return;
 
   const styleTag = document.createElement('style');
-  styleTag.textContent = STYLES;
+  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${OWN_PAGE_COLOR_SCHEME_CSS}\n${STYLES}`;
   document.head.appendChild(styleTag);
+  const themeController = watchTheme(document);
 
   const registry = createFeatureRegistry();
   registry.register(createSetupTabsFeature());
@@ -213,6 +220,7 @@ async function render(): Promise<void> {
   registry.register(createDebugLogViewerFeature());
   registry.register(createSavedSoqlFeature());
   registry.register(createOrgSwitcherFeature());
+  registry.register(createContextMenuInspectFeature());
 
   const settings = await loadSettings();
   while (root.firstChild) root.removeChild(root.firstChild);
@@ -289,6 +297,56 @@ async function render(): Promise<void> {
   bridgeSection.appendChild(actions);
   wrap.appendChild(bridgeSection);
 
+  // --- Custom shortcuts (command palette) ---
+  const shortcutsSection = el('section');
+  shortcutsSection.appendChild(el('h2', {}, 'Custom shortcuts'));
+  const shortcutsHelp = el('p', { class: 'section-help' });
+  shortcutsHelp.textContent =
+    'Name/URL shortcuts that appear in the command palette (Ctrl/Cmd+Shift+K) under "Shortcuts". Selecting one opens its URL. Names must be unique and URLs must be valid.';
+  shortcutsSection.appendChild(shortcutsHelp);
+
+  const shortcutRows: Array<{ nameInput: HTMLInputElement; urlInput: HTMLInputElement }> = [];
+  const shortcutList = el('div');
+  shortcutsSection.appendChild(shortcutList);
+
+  function addShortcutRow(name = '', url = ''): void {
+    const nameInput = el('input', { type: 'text', placeholder: 'Name' });
+    nameInput.value = name;
+    nameInput.setAttribute('aria-label', 'Shortcut name');
+    const urlInput = el('input', { type: 'text', placeholder: 'https://…' });
+    urlInput.value = url;
+    urlInput.setAttribute('aria-label', 'Shortcut URL');
+    const removeBtn = el('button', {}, 'Remove');
+    removeBtn.setAttribute('aria-label', 'Remove shortcut');
+    const entry = { nameInput, urlInput };
+    const rowEl = el('div', { class: 'shortcut-row' });
+    rowEl.appendChild(nameInput);
+    rowEl.appendChild(urlInput);
+    rowEl.appendChild(removeBtn);
+    removeBtn.addEventListener('click', () => {
+      const i = shortcutRows.indexOf(entry);
+      if (i >= 0) shortcutRows.splice(i, 1);
+      rowEl.remove();
+    });
+    shortcutRows.push(entry);
+    shortcutList.appendChild(rowEl);
+  }
+
+  for (const s of settings.customShortcuts ?? []) addShortcutRow(s.name, s.url);
+
+  const addShortcutBtn = el('button', {}, 'Add shortcut');
+  addShortcutBtn.addEventListener('click', () => addShortcutRow());
+  const shortcutActions = el('div', { class: 'actions' });
+  shortcutActions.appendChild(addShortcutBtn);
+  shortcutsSection.appendChild(shortcutActions);
+  wrap.appendChild(shortcutsSection);
+
+  // Collect + validate the shortcut rows for the shared Save handler. Throws with
+  // a user-facing message on a duplicate name or a malformed URL (the caller's
+  // try/catch surfaces it in the status pill). Blank rows are dropped.
+  const collectShortcuts = (): Array<{ name: string; url: string }> =>
+    validateCustomShortcuts(shortcutRows.map((r) => ({ name: r.nameInput.value, url: r.urlInput.value })));
+
   const featuresSection = el('section');
   featuresSection.appendChild(el('h2', {}, 'Features'));
   const featuresHelp = el('p', { class: 'section-help' });
@@ -346,6 +404,58 @@ async function render(): Promise<void> {
     });
     wrap.appendChild(section);
   }
+
+  const appearanceSection = el('section');
+  appearanceSection.appendChild(el('h2', {}, 'Appearance'));
+  const appearanceHelp = el('p', { class: 'section-help' });
+  appearanceHelp.textContent =
+    'Theme for the extension UI (side menu, tools, options). Applies to every Salesforce tab and persists across restarts.';
+  appearanceSection.appendChild(appearanceHelp);
+
+  const themeSelect = el('select', { id: 'sfdt-theme-select' });
+  themeSelect.setAttribute('aria-label', 'Theme');
+  for (const [value, optLabel] of [
+    ['auto', 'Auto (match your operating system)'],
+    ['light', 'Light'],
+    ['dark', 'Dark'],
+  ] as const) {
+    const opt = el('option', { value });
+    opt.textContent = optLabel;
+    if ((settings.theme ?? 'auto') === value) opt.selected = true;
+    themeSelect.appendChild(opt);
+  }
+  // Live preview: route through the controller (not applyTheme directly) so the
+  // OS-scheme listener tracks the previewed choice — an OS flip during an
+  // unsaved preview keeps the preview, rather than reverting it. Persisted only
+  // on Save (below).
+  themeSelect.addEventListener('change', () => {
+    themeController.setSetting(themeSelect.value as ThemeSetting);
+  });
+  appearanceSection.appendChild(row('Theme', 'Light, dark, or follow the OS.', themeSelect));
+
+  // Default tool surface (P2-3 PR-2): where tools open by default. Default
+  // 'modal' preserves the classic centered overlay, so nothing changes unless
+  // opted in. Honoured today by the toolbar popup (promotes "Open side panel");
+  // deep routing of an on-page tool into the open panel is a follow-up.
+  const surfaceSelect = el('select', { id: 'sfdt-surface-select' });
+  surfaceSelect.setAttribute('aria-label', 'Default tool surface');
+  for (const [value, optLabel] of [
+    ['modal', 'Centered modal (classic)'],
+    ['panel', 'Docked side panel'],
+  ] as const) {
+    const opt = el('option', { value });
+    opt.textContent = optLabel;
+    if ((settings.defaultSurface ?? 'modal') === value) opt.selected = true;
+    surfaceSelect.appendChild(opt);
+  }
+  appearanceSection.appendChild(
+    row(
+      'Default tool surface',
+      'Where tools prefer to open (Chrome side panel or the classic modal).',
+      surfaceSelect,
+    ),
+  );
+  wrap.appendChild(appearanceSection);
 
   const telemetrySection = el('section');
   telemetrySection.appendChild(el('h2', {}, 'Telemetry'));
@@ -420,16 +530,21 @@ async function render(): Promise<void> {
         featureSettings[group.id] = group.getValues();
       }
 
+      const customShortcuts = collectShortcuts();
+
       const portValue = Number(portInput.value);
       const next: Partial<Settings> = {
         features,
         featureSettings: featureSettings as Settings['featureSettings'],
+        customShortcuts,
         bridge: {
           token: tokenInput.value.trim(),
           preferredTransport: transportSelect.value as Settings['bridge']['preferredTransport'],
           localhostPort: Number.isFinite(portValue) && portValue > 0 ? portValue : 7654,
         },
         telemetry: { enabled: telemetryCb.checked },
+        theme: themeSelect.value as ThemeSetting,
+        defaultSurface: surfaceSelect.value as Settings['defaultSurface'],
       };
       await patchSettings(next as Settings);
       saveStatus.className = 'status show ok';

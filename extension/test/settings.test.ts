@@ -23,7 +23,7 @@ describe('extension/lib/settings', () => {
     expect(isFeatureEnabled(s, 'scheduled-flow-explorer')).toBe(true);
     expect(isFeatureEnabled(s, 'setup-tabs')).toBe(true);
     expect(s.canvasSearch.shortcut).toBe('Ctrl+Shift+F');
-    expect(s.apiNameGenerator.namingPattern).toBe('Snake_Case');
+    expect(s.apiNameGenerator.namingPattern).toBe('camelCase');
     expect(s.bridge.preferredTransport).toBe('auto');
     expect(s.bridge.localhostPort).toBe(7654);
   });
@@ -69,6 +69,53 @@ describe('extension/lib/settings', () => {
     await expect(
       saveSettings({ bridge: { localhostPort: -1 } } as never),
     ).rejects.toThrow();
+  });
+
+  describe('customShortcuts', () => {
+    it('defaults to an empty array', async () => {
+      const s = await loadSettings();
+      expect(s.customShortcuts).toEqual([]);
+    });
+
+    it('parses a valid {name,url} entry', () => {
+      const parsed = SettingsSchema.parse({
+        customShortcuts: [{ name: 'Docs', url: 'https://sfdt.dev/' }],
+      });
+      expect(parsed.customShortcuts).toEqual([{ name: 'Docs', url: 'https://sfdt.dev/' }]);
+    });
+
+    it('rejects a malformed URL at the schema boundary', () => {
+      expect(
+        SettingsSchema.safeParse({ customShortcuts: [{ name: 'Bad', url: 'not-a-url' }] }).success,
+      ).toBe(false);
+    });
+
+    it('patchSettings replaces the array wholesale (does not index-merge)', async () => {
+      await saveSettings(
+        SettingsSchema.parse({ customShortcuts: [{ name: 'A', url: 'https://a.example/' }] }),
+      );
+      const merged = await patchSettings({
+        customShortcuts: [{ name: 'B', url: 'https://b.example/' }],
+      } as never);
+      // Wholesale replacement — not { 0: {A}, ...{B} } index-keyed object.
+      expect(Array.isArray(merged.customShortcuts)).toBe(true);
+      expect(merged.customShortcuts).toEqual([{ name: 'B', url: 'https://b.example/' }]);
+    });
+  });
+
+  describe('defaultSurface (P2-3 PR-2)', () => {
+    it("defaults to 'modal' (classic overlay — nothing changes unless opted in)", async () => {
+      const s = await loadSettings();
+      expect(s.defaultSurface).toBe('modal');
+    });
+
+    it("parses 'panel'", () => {
+      expect(SettingsSchema.parse({ defaultSurface: 'panel' }).defaultSurface).toBe('panel');
+    });
+
+    it('rejects an unknown surface at the schema boundary', () => {
+      expect(SettingsSchema.safeParse({ defaultSurface: 'sidebar' }).success).toBe(false);
+    });
   });
 });
 

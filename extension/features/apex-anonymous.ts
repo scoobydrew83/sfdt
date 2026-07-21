@@ -3,9 +3,12 @@ import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import { escapeSoql } from '../lib/escape.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
+import { SF_API_VERSION } from '../lib/api-version.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { parseApexLog } from '../lib/apex-log/index.js';
+import { presentApexLogAnalyzer } from '../ui/apex-log-analyzer.js';
 
 const APEX_ANONYMOUS_SETTINGS_SCHEMA = z.object({
   historyEnabled: z.boolean().default(true),
@@ -16,8 +19,9 @@ registerSettingsShape('apex-anonymous', APEX_ANONYMOUS_SETTINGS_SCHEMA);
 
 const HISTORY_STORAGE_KEY = 'apexAnonymous.history';
 const SNIPPETS_STORAGE_KEY = 'apexAnonymous.snippets';
+// Per-user persisted pick for the trace-flag's DebugLevel (empty = managed default).
+const DEBUG_LEVEL_STORAGE_KEY = 'apexAnonymous.debugLevelId';
 const HISTORY_CAP = 20;
-const DEFAULT_API_VERSION = 'v62.0';
 
 // DeveloperName for the DebugLevel this feature owns. Reused across runs so we
 // don't litter the org with a fresh DebugLevel every execution.
@@ -55,6 +59,8 @@ export interface ExecuteAnonymousResult {
 // Minimal projections of the Tooling rows the log-capture flow queries.
 interface DebugLevelRow {
   Id: string;
+  DeveloperName?: string;
+  MasterLabel?: string;
 }
 interface TraceFlagRow {
   Id: string;
@@ -69,6 +75,11 @@ interface ApexLogIdRow {
 // mirroring buildApexLogQuery() in the Debug Logs viewer.
 export function buildDebugLevelLookup(): string {
   return `SELECT Id FROM DebugLevel WHERE DeveloperName = '${DEBUG_LEVEL_DEVELOPER_NAME}' LIMIT 1`;
+}
+
+// All of the org's DebugLevels, to populate the log-level picker.
+export function buildDebugLevelListQuery(): string {
+  return 'SELECT Id, DeveloperName, MasterLabel FROM DebugLevel ORDER BY DeveloperName LIMIT 200';
 }
 
 export function buildTraceFlagLookup(userId: string): string {
@@ -178,6 +189,23 @@ export async function pushApexSnippet(entry: ApexSnippet): Promise<void> {
   });
 }
 
+// The picked DebugLevel Id persists per browser profile (i.e. per user); empty
+// string means "use the feature-managed SFDT_Finest default".
+export async function readSelectedDebugLevelId(): Promise<string> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(DEBUG_LEVEL_STORAGE_KEY, (result) => {
+      const raw = result?.[DEBUG_LEVEL_STORAGE_KEY];
+      resolve(typeof raw === 'string' ? raw : '');
+    });
+  });
+}
+
+export async function writeSelectedDebugLevelId(id: string): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [DEBUG_LEVEL_STORAGE_KEY]: id }, () => resolve());
+  });
+}
+
 // Summarises the executeAnonymous response into a single human-readable line.
 export function summariseResult(result: ExecuteAnonymousResult): {
   ok: boolean;
@@ -222,7 +250,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
 
   async function run(code: string): Promise<ExecuteAnonymousResult> {
     return api.apiGet<ExecuteAnonymousResult>(
-      `/services/data/${DEFAULT_API_VERSION}/tooling/executeAnonymous/`,
+      `/services/data/${SF_API_VERSION}/tooling/executeAnonymous/`,
       { anonymousBody: code },
     );
   }
@@ -244,7 +272,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     }
     try {
       const me = await api.apiGet<{ id?: string }>(
-        `/services/data/${DEFAULT_API_VERSION}/chatter/users/me`,
+        `/services/data/${SF_API_VERSION}/chatter/users/me`,
       );
       if (me?.id) return me.id;
     } catch {
@@ -259,7 +287,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     if (existing.records[0]?.Id) return existing.records[0].Id;
     const created = await api.apiRequest<{ id?: string }>(
       'POST',
-      `/services/data/${DEFAULT_API_VERSION}/tooling/sobjects/DebugLevel`,
+      `/services/data/${SF_API_VERSION}/tooling/sobjects/DebugLevel`,
       debugLevelCreatePayload(),
     );
     if (!created?.id) throw new Error('Could not create a DebugLevel for log capture.');
@@ -270,23 +298,27 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
   // flag is left untouched (respect the user's existing tracing); an expired one
   // is extended in place; otherwise a new one is created. Salesforce rejects a
   // second overlapping DEVELOPER_LOG flag for the same entity, hence the lookup.
-  async function ensureTraceFlag(userId: string): Promise<void> {
+  async function ensureTraceFlag(userId: string, selectedDebugLevelId: string | null = null): Promise<void> {
     const now = Date.now();
     const existing = await api.toolingQuery<TraceFlagRow>(buildTraceFlagLookup(userId));
     const current = existing.records[0];
-    if (traceFlagIsActive(current, now)) return;
-    const debugLevelId = await ensureDebugLevelId();
+    const active = traceFlagIsActive(current, now);
+    // No explicit pick: keep respecting an already-active flag as-is.
+    if (active && !selectedDebugLevelId) return;
+    const debugLevelId = selectedDebugLevelId ?? (await ensureDebugLevelId());
+    // Explicit pick that already matches the active flag: nothing to change.
+    if (active && current?.DebugLevelId === debugLevelId) return;
     if (current?.Id) {
       await api.apiRequest(
         'PATCH',
-        `/services/data/${DEFAULT_API_VERSION}/tooling/sobjects/TraceFlag/${current.Id}`,
+        `/services/data/${SF_API_VERSION}/tooling/sobjects/TraceFlag/${current.Id}`,
         { DebugLevelId: debugLevelId, ...traceFlagWindow(now) },
       );
       return;
     }
     await api.apiRequest(
       'POST',
-      `/services/data/${DEFAULT_API_VERSION}/tooling/sobjects/TraceFlag`,
+      `/services/data/${SF_API_VERSION}/tooling/sobjects/TraceFlag`,
       traceFlagCreatePayload(userId, debugLevelId, now),
     );
   }
@@ -312,7 +344,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
   // Same text endpoint the Debug Logs viewer uses for the raw log body.
   async function fetchLogBody(id: string): Promise<string> {
     return api.apiGetText(
-      `/services/data/${DEFAULT_API_VERSION}/tooling/sobjects/ApexLog/${id}/Body`,
+      `/services/data/${SF_API_VERSION}/tooling/sobjects/ApexLog/${id}/Body`,
     );
   }
 
@@ -337,7 +369,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     editor.placeholder = 'System.debug(\'Hello\');';
     editor.value = "System.debug('Hello from SFDT');";
     editor.style.cssText =
-      'width: 100%; min-height: 180px; font-family: ui-monospace, monospace; font-size: 12px; padding: 8px; border: 1px solid #d8dde6; border-radius: 4px; resize: vertical;';
+      'width: 100%; min-height: 180px; font-family: ui-monospace, monospace; font-size: 12px; padding: 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; resize: vertical;';
     body.appendChild(editor);
 
     const toolbar = doc.createElement('div');
@@ -345,36 +377,96 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     const runBtn = doc.createElement('button');
     runBtn.textContent = 'Execute';
     runBtn.style.cssText =
-      'padding: 6px 14px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+    // Runs the Apex, then opens the produced log in the profiler view. Forces log
+    // capture on for the run regardless of the captureLogs setting.
+    const analyzeBtn = doc.createElement('button');
+    analyzeBtn.textContent = '📊 Run & analyze';
+    analyzeBtn.style.cssText =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     const saveBtn = doc.createElement('button');
     saveBtn.textContent = 'Save snippet';
     saveBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     const openLogBtn = doc.createElement('button');
     openLogBtn.textContent = '🪵 Open log';
     openLogBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    // Log-level picker: choose which org DebugLevel the trace flag uses so users
+    // set log verbosity without a trip to Setup. A native <label>+<select> gives
+    // implicit labelling and the full keyboard path for free. Only meaningful
+    // when log capture is on (the trace flag is what carries the DebugLevel).
+    const debugSelect = doc.createElement('select');
+    // Accessible name comes from the wrapping <label>'s visible "Log level" text
+    // (no aria-label — it would override the visible label and fail WCAG 2.5.3).
+    debugSelect.style.cssText =
+      'font-size: 11px; padding: 4px 6px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px;';
+    const debugDefaultOpt = doc.createElement('option');
+    debugDefaultOpt.value = '';
+    debugDefaultOpt.textContent = 'SFDT Finest (auto)';
+    debugSelect.appendChild(debugDefaultOpt);
+    const debugLabel = doc.createElement('label');
+    debugLabel.style.cssText =
+      'display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--sfdt-color-text-weak);';
+    const debugLabelText = doc.createElement('span');
+    debugLabelText.textContent = 'Log level';
+    debugLabel.appendChild(debugLabelText);
+    debugLabel.appendChild(debugSelect);
+    debugSelect.addEventListener('change', () => void writeSelectedDebugLevelId(debugSelect.value));
+
+    // Best-effort: fill the picker with the org's DebugLevels and restore the
+    // persisted pick. A failure leaves just the managed-default option.
+    async function populateDebugLevels(): Promise<void> {
+      try {
+        const stored = await readSelectedDebugLevelId();
+        const res = await api.toolingQuery<DebugLevelRow>(buildDebugLevelListQuery());
+        for (const row of res.records) {
+          if (!row.Id) continue;
+          // Skip our managed level — it's already the "SFDT Finest (auto)" default.
+          if (row.DeveloperName === DEBUG_LEVEL_DEVELOPER_NAME) continue;
+          const opt = doc.createElement('option');
+          opt.value = row.Id;
+          opt.textContent = row.MasterLabel || row.DeveloperName || row.Id;
+          debugSelect.appendChild(opt);
+        }
+        if (stored && Array.from(debugSelect.options).some((o) => o.value === stored)) {
+          debugSelect.value = stored;
+        }
+      } catch {
+        // Leave the default option; picking is a convenience, not required.
+      }
+    }
+
     const hint = doc.createElement('span');
     hint.textContent = 'Ctrl/Cmd+Enter to run';
-    hint.style.cssText = 'color: #80868d; font-size: 11px; margin-left: auto;';
+    hint.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 11px; margin-left: auto;';
     toolbar.appendChild(runBtn);
+    toolbar.appendChild(analyzeBtn);
     toolbar.appendChild(saveBtn);
     toolbar.appendChild(openLogBtn);
+    // Kick off population and hold the promise so execute() can await the
+    // persisted-pick restore before reading debugSelect.value — otherwise a fast
+    // Ctrl/Cmd+Enter would run with the still-default '' and lose the saved pick.
+    let debugReady: Promise<void> | null = null;
+    if (config.captureLogs) {
+      toolbar.appendChild(debugLabel);
+      debugReady = populateDebugLevels();
+    }
     toolbar.appendChild(hint);
     body.appendChild(toolbar);
 
     const status = doc.createElement('div');
-    status.style.cssText = 'font-size: 12px; color: #54698d;';
+    status.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
     body.appendChild(status);
 
     const resultPane = doc.createElement('pre');
     resultPane.style.cssText =
-      'margin: 0; padding: 10px; background: #fafaf9; border: 1px solid #d8dde6; border-radius: 4px; overflow: auto; max-height: 280px; font-family: ui-monospace, monospace; font-size: 12px; display: none; white-space: pre-wrap;';
+      'margin: 0; padding: 10px; background: var(--sfdt-color-surface-alt); border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 280px; font-family: ui-monospace, monospace; font-size: 12px; display: none; white-space: pre-wrap;';
     body.appendChild(resultPane);
 
     const logPane = doc.createElement('pre');
     logPane.style.cssText =
-      'margin: 0; padding: 10px; background: #1e1e1e; color: #d4d4d4; border-radius: 4px; overflow: auto; max-height: 320px; font-family: ui-monospace, monospace; font-size: 11px; display: none; white-space: pre-wrap;';
+      'margin: 0; padding: 10px; background: var(--sfdt-color-code-bg); color: var(--sfdt-color-border-3); border-radius: 4px; overflow: auto; max-height: 320px; font-family: ui-monospace, monospace; font-size: 11px; display: none; white-space: pre-wrap;';
     body.appendChild(logPane);
 
     // The log captured by the most recent run, if any. Drives the Open log button.
@@ -390,19 +482,32 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       },
     });
 
-    async function execute(): Promise<void> {
+    // Fetch the produced log, parse it, and open the profiler view — same
+    // fetch/parse/present path the Debug Logs viewer's "Analyze" uses.
+    async function openAnalyzer(logId: string): Promise<void> {
+      const raw = await fetchLogBody(logId);
+      const parsed = parseApexLog(raw);
+      presentApexLogAnalyzer({ parsed, rawText: raw, title: 'Execute Anonymous', doc });
+    }
+
+    // analyze=true is the "Run & analyze" action: force log capture on for this
+    // run and, once the log is located, open it in the analyzer. If no log is
+    // produced, the normal result view is already shown — we just add a notice.
+    async function execute(analyze = false): Promise<void> {
       const code = editor.value;
       if (!code.trim()) {
         showToast('Enter some Apex to execute.', { doc, kind: 'warning' });
         return;
       }
+      const wantCapture = config.captureLogs || analyze;
       runBtn.disabled = true;
+      analyzeBtn.disabled = true;
       openLogBtn.style.display = 'none';
       logPane.style.display = 'none';
       capturedLogId = null;
       resultPane.style.display = 'none';
       resultPane.style.color = '';
-      status.style.color = '#54698d';
+      status.style.color = 'var(--sfdt-color-text-weak)';
       status.textContent = 'Executing…';
 
       // Trace-flag setup is best-effort: failing to arm log capture must never
@@ -411,12 +516,21 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       let userId: string | null = null;
       let baselineLogId: string | null = null;
       let captureNote = '';
-      if (config.captureLogs) {
+      if (wantCapture) {
         status.textContent = 'Preparing debug log…';
         try {
+          // Ensure the persisted pick has been restored into the select before
+          // we read it (covers both the button and Ctrl/Cmd+Enter paths).
+          if (debugReady) await debugReady;
           userId = await getCurrentUserId();
           if (userId) {
-            await ensureTraceFlag(userId);
+            // debugSelect is only populated (and the persisted pick restored into
+            // it) when the capture *setting* is on. "Run & analyze" forces capture
+            // even when that setting is off, so read the persisted pick directly
+            // when the select is empty — otherwise we'd silently downgrade the
+            // user's chosen DebugLevel to the managed SFDT_Finest default.
+            const debugLevelId = debugSelect.value || (await readSelectedDebugLevelId()) || null;
+            await ensureTraceFlag(userId, debugLevelId);
             baselineLogId = await latestLogId(userId);
           } else {
             captureNote = 'log not captured (could not identify user)';
@@ -435,36 +549,68 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         const summary = summariseResult(result);
         const head = summary.ok ? '✓ Success' : '✗ Failed';
         status.textContent = head;
-        status.style.color = summary.ok ? '#04844b' : '#c23934';
+        status.style.color = summary.ok ? 'var(--sfdt-color-success-text)' : 'var(--sfdt-color-error-text)';
         const lines = [summary.message];
         if (result.exceptionStackTrace) lines.push('', result.exceptionStackTrace);
         resultPane.textContent = lines.join('\n');
         resultPane.style.display = 'block';
         if (config.historyEnabled) await pushApexHistory({ code, ts: Date.now() });
 
-        if (config.captureLogs && userId) {
+        if (wantCapture && userId) {
           status.textContent = `${head} · capturing log…`;
           capturedLogId = await pollForNewLog(userId, baselineLogId);
           if (capturedLogId) {
             openLogBtn.style.display = '';
             status.textContent = `${head} · log ready`;
+            if (analyze) {
+              try {
+                // Focus-restore: presentApexLogAnalyzer captures the current
+                // activeElement to restore focus to on close. analyzeBtn was
+                // disabled at the top of the run (which blurred it to <body>), so
+                // re-enable + refocus it before opening — otherwise focus would
+                // land on <body> when the analyzer closes.
+                analyzeBtn.disabled = false;
+                analyzeBtn.focus();
+                await openAnalyzer(capturedLogId);
+              } catch (err) {
+                showToast(err instanceof Error ? err.message : String(err), {
+                  doc,
+                  kind: 'error',
+                });
+              }
+            }
           } else {
             status.textContent = `${head} · no log captured`;
+            // AC: analyze fell back — the result view above is still shown; notify why.
+            if (analyze) {
+              showToast('No debug log was produced — showing the result instead.', {
+                doc,
+                kind: 'warning',
+              });
+            }
           }
         } else if (captureNote) {
           status.textContent = `${head} · ${captureNote}`;
+          if (analyze) {
+            showToast(`Could not analyze — ${captureNote}. Showing the result instead.`, {
+              doc,
+              kind: 'warning',
+            });
+          }
         }
       } catch (err) {
         status.textContent = '';
         resultPane.textContent = err instanceof Error ? err.message : String(err);
         resultPane.style.display = 'block';
-        resultPane.style.color = '#c23934';
+        resultPane.style.color = 'var(--sfdt-color-error-text)';
       } finally {
         runBtn.disabled = false;
+        analyzeBtn.disabled = false;
       }
     }
 
     runBtn.addEventListener('click', () => void execute());
+    analyzeBtn.addEventListener('click', () => void execute(true));
     editor.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
@@ -523,6 +669,9 @@ export function _apexAnonymousTestApi() {
     HISTORY_CAP,
     DEBUG_LEVEL_DEVELOPER_NAME,
     buildDebugLevelLookup,
+    buildDebugLevelListQuery,
+    readSelectedDebugLevelId,
+    writeSelectedDebugLevelId,
     buildTraceFlagLookup,
     buildLatestApexLogLookup,
     debugLevelCreatePayload,

@@ -16,198 +16,21 @@ const EVENT_MONITOR_SETTINGS_SCHEMA = z.object({
 
 registerSettingsShape('event-monitor', EVENT_MONITOR_SETTINGS_SCHEMA);
 
-// Bayeux/CometD `ext` field — this client only uses the Salesforce replay
-// extension (replayId per channel), but servers may echo arbitrary keys.
-interface BayeuxExt {
-  replay?: Record<string, number>;
-  [key: string]: unknown;
+// Client (page) side of the `sfApiStream` Port. The CometD/Bayeux long-poll and
+// the sid live entirely in the service worker (lib/sf-stream-worker.ts); this
+// feature only sends subscribe/unsubscribe and renders the status/event
+// messages the worker pushes back.
+interface StreamClientPort {
+  postMessage(message: unknown): void;
+  onMessage: { addListener(cb: (message: unknown) => void): void };
+  onDisconnect: { addListener(cb: () => void): void };
+  disconnect(): void;
 }
 
-export interface BayeuxMessage {
-  channel: string;
-  clientId?: string;
-  version?: string;
-  minimumVersion?: string;
-  supportedConnectionTypes?: string[];
-  connectionType?: string;
-  subscription?: string;
-  ext?: BayeuxExt;
-  id?: string;
-  // Event payload shape depends entirely on the subscribed channel; consumers
-  // must narrow before use.
-  data?: unknown;
-  successful?: boolean;
-  error?: string;
-}
-
-export class SalesforceBayeuxClient {
-  private clientId = '';
-  private isConnected = false;
-  private abortController: AbortController | null = null;
-  private messageListener: ((message: unknown) => void) | null = null;
-  private statusListener: ((status: string, isError: boolean) => void) | null = null;
-  private connectAttempts = 0;
-
-  constructor(
-    private readonly baseUrl: string,
-    private readonly sessionId: string,
-    private readonly apiVersion: string,
-    private readonly fetchImpl: typeof fetch = fetch,
-  ) {}
-
-  onMessage(callback: (message: unknown) => void): void {
-    this.messageListener = callback;
-  }
-
-  onStatus(callback: (status: string, isError: boolean) => void): void {
-    this.statusListener = callback;
-  }
-
-  private logStatus(status: string, isError = false): void {
-    if (this.statusListener) {
-      this.statusListener(status, isError);
-    }
-  }
-
-  async start(channelPath: string, replayId: number): Promise<void> {
-    if (this.isConnected) return;
-    this.isConnected = true;
-    this.connectAttempts = 0;
-    this.abortController = new AbortController();
-
-    try {
-      this.logStatus('Initiating handshake...');
-      const endpoint = `${this.baseUrl}/cometd/${this.apiVersion.replace(/^v/, '')}`;
-
-      // 1. Handshake
-      const handshakePayload: BayeuxMessage[] = [
-        {
-          version: '1.0',
-          minimumVersion: '0.9',
-          channel: '/meta/handshake',
-          supportedConnectionTypes: ['long-polling'],
-        },
-      ];
-
-      const handshakeRes = await this.post<BayeuxMessage[]>(endpoint, handshakePayload);
-      const handshakeData = handshakeRes[0];
-      if (!handshakeData || !handshakeData.successful || !handshakeData.clientId) {
-        throw new Error(handshakeData?.error || 'Handshake failed');
-      }
-
-      this.clientId = handshakeData.clientId;
-      this.logStatus('Handshake successful. Subscribing...');
-
-      // 2. Subscribe
-      const subscribePayload: BayeuxMessage[] = [
-        {
-          channel: '/meta/subscribe',
-          clientId: this.clientId,
-          subscription: channelPath,
-          ext: {
-            replay: {
-              [channelPath]: replayId,
-            },
-          },
-        },
-      ];
-
-      const subscribeRes = await this.post<BayeuxMessage[]>(endpoint, subscribePayload);
-      const subscribeData = subscribeRes[0];
-      if (!subscribeData || !subscribeData.successful) {
-        throw new Error(subscribeData?.error || 'Subscription failed');
-      }
-
-      this.logStatus(`Listening on ${channelPath}...`);
-      
-      // 3. Connect Loop
-      void this.connectLoop(endpoint, channelPath);
-
-    } catch (err) {
-      this.isConnected = false;
-      const message = err instanceof Error ? err.message : String(err);
-      this.logStatus(`Connection failed: ${message}`, true);
-    }
-  }
-
-  private async connectLoop(endpoint: string, channelPath: string): Promise<void> {
-    while (this.isConnected) {
-      try {
-        const connectPayload: BayeuxMessage[] = [
-          {
-            channel: '/meta/connect',
-            clientId: this.clientId,
-            connectionType: 'long-polling',
-          },
-        ];
-
-        const messages = await this.post<BayeuxMessage[]>(endpoint, connectPayload);
-        this.connectAttempts = 0;
-
-        for (const msg of messages) {
-          if (msg.channel === channelPath && msg.data) {
-            if (this.messageListener) {
-              this.messageListener(msg.data);
-            }
-          }
-          if (msg.channel === '/meta/connect' && msg.successful === false) {
-            this.logStatus(`Connection lost: ${msg.error || 'Unknown error'}`, true);
-            void this.stop();
-            return;
-          }
-        }
-      } catch (err) {
-        if ((err instanceof Error && err.name === 'AbortError') || !this.isConnected) {
-          break;
-        }
-        this.connectAttempts++;
-        const message = err instanceof Error ? err.message : String(err);
-        this.logStatus(`Connection error (attempt ${this.connectAttempts}): ${message}`, true);
-        
-        // Exponential backoff up to 30 seconds
-        const delay = Math.min(30000, 1000 * Math.pow(2, this.connectAttempts));
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-    }
-  }
-
-  async stop(): Promise<void> {
-    if (!this.isConnected) return;
-    this.isConnected = false;
-    this.abortController?.abort();
-
-    try {
-      const endpoint = `${this.baseUrl}/cometd/${this.apiVersion.replace(/^v/, '')}`;
-      const disconnectPayload: BayeuxMessage[] = [
-        {
-          channel: '/meta/disconnect',
-          clientId: this.clientId,
-        },
-      ];
-      await this.post<BayeuxMessage[]>(endpoint, disconnectPayload).catch(() => {});
-    } finally {
-      this.logStatus('Disconnected');
-    }
-  }
-
-  private async post<T>(url: string, body: BayeuxMessage[]): Promise<T> {
-    const response = await this.fetchImpl(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.sessionId}`,
-      },
-      body: JSON.stringify(body),
-      signal: this.abortController?.signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP Error ${response.status}: ${response.statusText}`);
-    }
-
-    return (await response.json()) as T;
-  }
-}
+// Messages the worker pushes back over the Port.
+type StreamInbound =
+  | { type: 'status'; status: string; isError?: boolean }
+  | { type: 'event'; data: unknown };
 
 interface ChannelOption {
   name: string;
@@ -218,20 +41,30 @@ export function createEventMonitorFeature(options: {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
+  // Injectable so tests can supply a mock Port without chrome.runtime.
+  connect?: (name: string) => StreamClientPort;
 } = {}): Feature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
+  const connect =
+    options.connect ?? ((name: string) => chrome.runtime.connect({ name }) as StreamClientPort);
 
   let view: ViewHandle | null = null;
-  let client: SalesforceBayeuxClient | null = null;
+  let port: StreamClientPort | null = null;
 
   // Live-stream teardown — must run whenever the view closes (tab close fires
-  // onClose; modal dismiss / re-open call close()). Stops the Bayeux long-poll.
+  // onClose; modal dismiss / re-open call close()). Disconnecting the Port stops
+  // the worker-side long-poll.
   function stopStream(): void {
-    if (client) {
-      void client.stop();
-      client = null;
+    if (port) {
+      try {
+        port.postMessage({ cmd: 'unsubscribe' });
+      } catch {
+        // Port already gone — disconnect below is a no-op.
+      }
+      port.disconnect();
+      port = null;
     }
   }
 
@@ -352,18 +185,18 @@ export function createEventMonitorFeature(options: {
     if (filtered.length === 0) {
       const empty = doc.createElement('div');
       empty.textContent = 'No events received yet';
-      empty.style.cssText = 'padding: 12px; color: #80868d; font-size: 13px; text-align: center;';
+      empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon); font-size: 13px; text-align: center;';
       eventListContainer.appendChild(empty);
       return;
     }
 
     filtered.forEach((e) => {
       const item = doc.createElement('div');
-      item.style.cssText = 'padding: 8px; border-bottom: 1px solid #d8dde6; cursor: pointer; font-family: monospace; font-size: 11px; white-space: pre-wrap;';
+      item.style.cssText = 'padding: 8px; border-bottom: 1px solid var(--sfdt-color-border); cursor: pointer; font-family: monospace; font-size: 11px; white-space: pre-wrap;';
       
       if (selectedEvent === e) {
-        item.style.background = '#f3f3f3';
-        item.style.borderLeft = '3px solid #0070d2';
+        item.style.background = 'var(--sfdt-color-bg)';
+        item.style.borderLeft = '3px solid var(--sfdt-color-brand)';
       }
 
       item.textContent = JSON.stringify(e, null, 2);
@@ -407,7 +240,7 @@ export function createEventMonitorFeature(options: {
           const limit = res[k]!;
           const percentage = ((limit.Max - limit.Remaining) / limit.Max * 100).toFixed(1);
           const p = doc.createElement('p');
-          p.style.cssText = 'margin: 4px 0; font-size: 12px; color: #3e3e3c;';
+          p.style.cssText = 'margin: 4px 0; font-size: 12px; color: var(--sfdt-color-text);';
           p.textContent = `${k}: Remaining ${limit.Remaining} out of ${limit.Max} (${percentage}% consumed)`;
           limitsContainer!.appendChild(p);
         });
@@ -422,7 +255,7 @@ export function createEventMonitorFeature(options: {
   function updateStatus(status: string, isError: boolean): void {
     if (statusLabel) {
       statusLabel.textContent = status;
-      statusLabel.style.color = isError ? '#c23934' : '#54698d';
+      statusLabel.style.color = isError ? 'var(--sfdt-color-error-text)' : 'var(--sfdt-color-text-weak)';
     }
   }
 
@@ -435,16 +268,16 @@ export function createEventMonitorFeature(options: {
 
     // Filter Config Row
     const configRow = doc.createElement('div');
-    configRow.style.cssText = 'display: grid; grid-template-columns: 1.5fr 1fr 1.5fr 100px; gap: 8px; border-bottom: 1px solid #e0e0e0; padding-bottom: 16px;';
+    configRow.style.cssText = 'display: grid; grid-template-columns: 1.5fr 1fr 1.5fr 100px; gap: 8px; border-bottom: 1px solid var(--sfdt-color-border-2); padding-bottom: 16px;';
     body.appendChild(configRow);
 
     const typeDiv = doc.createElement('div');
     typeDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
     const typeLabel = doc.createElement('label');
     typeLabel.textContent = 'Channel Type';
-    typeLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    typeLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const typeSelect = doc.createElement('select');
-    typeSelect.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    typeSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     [
       { v: 'platformEvent', l: 'Custom Platform Event' },
       { v: 'standardPlatformEvent', l: 'Standard Platform Event' },
@@ -464,9 +297,9 @@ export function createEventMonitorFeature(options: {
     nameDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
     const nameLabel = doc.createElement('label');
     nameLabel.textContent = 'Channel Name';
-    nameLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    nameLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     channelSelect = doc.createElement('select');
-    channelSelect.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    channelSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     nameDiv.appendChild(nameLabel);
     nameDiv.appendChild(channelSelect);
     configRow.appendChild(nameDiv);
@@ -475,11 +308,11 @@ export function createEventMonitorFeature(options: {
     customDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
     const customLabel = doc.createElement('label');
     customLabel.textContent = 'Or Custom Channel Path';
-    customLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    customLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const customInput = doc.createElement('input');
     customInput.type = 'text';
     customInput.placeholder = '/event/MyCustomEvent__e';
-    customInput.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    customInput.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     customInput.addEventListener('input', () => {
       customChannelPath = customInput.value.trim();
     });
@@ -491,11 +324,11 @@ export function createEventMonitorFeature(options: {
     replayDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
     const replayLabel = doc.createElement('label');
     replayLabel.textContent = 'Replay From';
-    replayLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: #54698d;';
+    replayLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
     const replayInput = doc.createElement('input');
     replayInput.type = 'number';
     replayInput.value = '-1';
-    replayInput.style.cssText = 'padding: 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    replayInput.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     replayInput.addEventListener('change', () => {
       replayId = parseInt(replayInput.value, 10) || -1;
     });
@@ -521,20 +354,20 @@ export function createEventMonitorFeature(options: {
 
     const subscribeBtn = doc.createElement('button');
     subscribeBtn.textContent = 'Subscribe';
-    subscribeBtn.style.cssText = 'padding: 6px 16px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    subscribeBtn.style.cssText = 'padding: 6px 16px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     
     const unsubscribeBtn = doc.createElement('button');
     unsubscribeBtn.textContent = 'Unsubscribe';
     unsubscribeBtn.disabled = true;
-    unsubscribeBtn.style.cssText = 'padding: 6px 16px; border: 1px solid #d8dde6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 13px; color: #3e3e3c;';
+    unsubscribeBtn.style.cssText = 'padding: 6px 16px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); cursor: pointer; font-size: 13px; color: var(--sfdt-color-text);';
 
     statusLabel = doc.createElement('span');
-    statusLabel.style.cssText = 'font-size: 12px; color: #54698d; margin-left: 8px;';
+    statusLabel.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak); margin-left: 8px;';
     statusLabel.textContent = 'Ready to stream';
 
     const limitsBtn = doc.createElement('button');
     limitsBtn.textContent = 'Limits Metrics';
-    limitsBtn.style.cssText = 'padding: 6px 12px; border: 1px solid #d8dde6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px; color: #54698d; margin-left: auto;';
+    limitsBtn.style.cssText = 'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); cursor: pointer; font-size: 12px; color: var(--sfdt-color-text-weak); margin-left: auto;';
     limitsBtn.addEventListener('click', () => {
       void toggleMetrics();
     });
@@ -546,10 +379,25 @@ export function createEventMonitorFeature(options: {
 
     // Limits pane
     limitsContainer = doc.createElement('div');
-    limitsContainer.style.cssText = 'display: none; padding: 10px; background: #fef8f3; border: 1px solid #fe9339; border-radius: 4px; margin-bottom: 8px;';
+    limitsContainer.style.cssText = 'display: none; padding: 10px; background: var(--sfdt-color-warning-bg-4); border: 1px solid var(--sfdt-color-warning); border-radius: 4px; margin-bottom: 8px;';
     body.appendChild(limitsContainer);
 
-    subscribeBtn.addEventListener('click', async () => {
+    function setControlsDisabled(disabled: boolean): void {
+      typeSelect.disabled = disabled;
+      channelSelect!.disabled = disabled;
+      customInput.disabled = disabled;
+      replayInput.disabled = disabled;
+    }
+
+    // Return the UI to the idle (not-streaming) state so Subscribe works again.
+    // Shared by explicit unsubscribe and by Port disconnect.
+    function resetToIdle(): void {
+      subscribeBtn.disabled = false;
+      unsubscribeBtn.disabled = true;
+      setControlsDisabled(false);
+    }
+
+    subscribeBtn.addEventListener('click', () => {
       let path = '';
       if (customChannelPath) {
         path = customChannelPath;
@@ -564,45 +412,49 @@ export function createEventMonitorFeature(options: {
       }
 
       subscribeBtn.disabled = true;
-      typeSelect.disabled = true;
-      channelSelect!.disabled = true;
-      customInput.disabled = true;
-      replayInput.disabled = true;
-
-      const details = await api.getSessionDetails();
-      if (!details) {
-        showToast('No active Salesforce session found.', { doc, kind: 'error' });
-        subscribeBtn.disabled = false;
-        return;
-      }
-
-      client = new SalesforceBayeuxClient(details.baseUrl, details.sid, api.apiVersion);
-      
-      client.onStatus((status, isErr) => {
-        updateStatus(status, isErr);
-      });
-
-      client.onMessage((msg) => {
-        events.unshift(msg);
-        renderEvents();
-      });
-
+      setControlsDisabled(true);
       unsubscribeBtn.disabled = false;
 
-      void client.start(path, replayId);
+      // Open the long-lived Port to the worker. The worker reads the sid,
+      // opens the CometD long-poll, and streams status/event messages back —
+      // the sid never reaches this page.
+      port = connect('sfApiStream');
+
+      port.onMessage.addListener((raw) => {
+        const msg = raw as StreamInbound;
+        if (msg?.type === 'status') {
+          updateStatus(msg.status, !!msg.isError);
+        } else if (msg?.type === 'event') {
+          events.unshift(msg.data);
+          renderEvents();
+        }
+      });
+
+      port.onDisconnect.addListener(() => {
+        // Worker evicted (MV3), session lost, or worker closed the Port. Surface
+        // it and re-enable Subscribe so the user can reconnect/re-subscribe.
+        port = null;
+        updateStatus('Disconnected', false);
+        resetToIdle();
+      });
+
+      port.postMessage({
+        cmd: 'subscribe',
+        channelPath: path,
+        replayId,
+        // App-tab callers pass their org origin; content scripts omit it and the
+        // worker falls back to the validated sender origin.
+        targetOrigin: api.orgOrigin ?? undefined,
+      });
     });
 
-    unsubscribeBtn.addEventListener('click', async () => {
-      if (client) {
-        await client.stop();
-        client = null;
+    unsubscribeBtn.addEventListener('click', () => {
+      if (port) {
+        port.postMessage({ cmd: 'unsubscribe' });
+        port.disconnect();
+        port = null;
       }
-      subscribeBtn.disabled = false;
-      unsubscribeBtn.disabled = true;
-      typeSelect.disabled = false;
-      channelSelect!.disabled = false;
-      customInput.disabled = false;
-      replayInput.disabled = false;
+      resetToIdle();
     });
 
     // Content Display Area
@@ -612,22 +464,22 @@ export function createEventMonitorFeature(options: {
 
     // Left List Pane
     const listWrap = doc.createElement('div');
-    listWrap.style.cssText = 'flex: 1; display: flex; flex-direction: column; border: 1px solid #d8dde6; border-radius: 4px; overflow: hidden;';
+    listWrap.style.cssText = 'flex: 1; display: flex; flex-direction: column; border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: hidden;';
     contentRow.appendChild(listWrap);
 
     const listBar = doc.createElement('div');
-    listBar.style.cssText = 'background: #fafaf9; border-bottom: 1px solid #d8dde6; padding: 6px 12px; display: flex; align-items: center; justify-content: space-between;';
+    listBar.style.cssText = 'background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); padding: 6px 12px; display: flex; align-items: center; justify-content: space-between;';
     const filterInput = doc.createElement('input');
     filterInput.type = 'text';
     filterInput.placeholder = 'Filter events...';
-    filterInput.style.cssText = 'padding: 4px 6px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px; width: 150px;';
+    filterInput.style.cssText = 'padding: 4px 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px; width: 150px;';
     filterInput.addEventListener('input', () => {
       eventFilter = filterInput.value.toLowerCase();
       renderEvents();
     });
     const clearEventsBtn = doc.createElement('button');
     clearEventsBtn.textContent = 'Clear';
-    clearEventsBtn.style.cssText = 'padding: 4px 10px; border: 1px solid #d8dde6; border-radius: 4px; background: #fff; font-size: 11px; cursor: pointer; color: #54698d;';
+    clearEventsBtn.style.cssText = 'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); font-size: 11px; cursor: pointer; color: var(--sfdt-color-text-weak);';
     clearEventsBtn.addEventListener('click', () => {
       events.length = 0;
       selectedEvent = null;
@@ -640,22 +492,22 @@ export function createEventMonitorFeature(options: {
     listWrap.appendChild(listBar);
 
     eventListContainer = doc.createElement('div');
-    eventListContainer.style.cssText = 'flex: 1; overflow-y: auto; background: #fff;';
+    eventListContainer.style.cssText = 'flex: 1; overflow-y: auto; background: var(--sfdt-color-surface);';
     listWrap.appendChild(eventListContainer);
 
     // Right Details Inspector Pane
     const detailsWrap = doc.createElement('div');
-    detailsWrap.style.cssText = 'width: 400px; display: flex; flex-direction: column; border: 1px solid #d8dde6; border-radius: 4px; overflow: hidden;';
+    detailsWrap.style.cssText = 'width: 400px; display: flex; flex-direction: column; border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: hidden;';
     contentRow.appendChild(detailsWrap);
 
     const detailsBar = doc.createElement('div');
-    detailsBar.style.cssText = 'background: #fafaf9; border-bottom: 1px solid #d8dde6; padding: 6px 12px; display: flex; align-items: center; justify-content: space-between;';
+    detailsBar.style.cssText = 'background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); padding: 6px 12px; display: flex; align-items: center; justify-content: space-between;';
     const detailsTitle = doc.createElement('span');
     detailsTitle.textContent = 'Event Details';
-    detailsTitle.style.cssText = 'font-size: 12px; font-weight: 600; color: #3e3e3c;';
+    detailsTitle.style.cssText = 'font-size: 12px; font-weight: 600; color: var(--sfdt-color-text);';
     const copyJsonBtn = doc.createElement('button');
     copyJsonBtn.textContent = 'Copy JSON';
-    copyJsonBtn.style.cssText = 'padding: 4px 10px; border: 1px solid #d8dde6; border-radius: 4px; background: #fff; font-size: 11px; cursor: pointer; color: #54698d;';
+    copyJsonBtn.style.cssText = 'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); font-size: 11px; cursor: pointer; color: var(--sfdt-color-text-weak);';
     copyJsonBtn.addEventListener('click', () => {
       if (selectedEvent) {
         void win.navigator.clipboard.writeText(JSON.stringify(selectedEvent, null, 2));
@@ -668,7 +520,7 @@ export function createEventMonitorFeature(options: {
     detailsWrap.appendChild(detailsBar);
 
     detailsPane = doc.createElement('pre');
-    detailsPane.style.cssText = 'flex: 1; overflow-y: auto; margin: 0; padding: 10px; background: #fafaf9; font-family: monospace; font-size: 11px; color: #16325c; white-space: pre-wrap; word-break: break-all;';
+    detailsPane.style.cssText = 'flex: 1; overflow-y: auto; margin: 0; padding: 10px; background: var(--sfdt-color-surface-alt); font-family: monospace; font-size: 11px; color: var(--sfdt-color-text-strong); white-space: pre-wrap; word-break: break-all;';
     detailsWrap.appendChild(detailsPane);
 
     renderEvents();
@@ -703,3 +555,5 @@ export function createEventMonitorFeature(options: {
     },
   };
 }
+
+

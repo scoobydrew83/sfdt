@@ -22,10 +22,10 @@ export type RawCoverageRow = RawClassCoverageRow;
 export type CoverageRow = ClassCoverageRow;
 
 const BAND_COLOUR: Record<'green' | 'amber' | 'red' | 'none', string> = {
-  green: '#04844b',
-  amber: '#fe9339',
-  red: '#c23934',
-  none: '#b0adab',
+  green: 'var(--sfdt-color-success)',
+  amber: 'var(--sfdt-color-warning)',
+  red: 'var(--sfdt-color-error)',
+  none: 'var(--sfdt-color-text-disabled)',
 };
 
 export interface CodeCoverageOptions {
@@ -70,12 +70,12 @@ export function createCodeCoverageFeature(options: CodeCoverageOptions = {}): Fe
       // Org-wide summary banner.
       const summary = doc.createElement('div');
       const orgFrac = typeof orgPct === 'number' ? orgPct / 100 : null;
-      summary.style.cssText = `margin-bottom: 14px; padding: 12px 14px; border-radius: 6px; border: 1px solid #d8dde6; border-left: 4px solid ${BAND_COLOUR[coverageBand(orgFrac)]}; display: flex; align-items: baseline; gap: 10px;`;
+      summary.style.cssText = `margin-bottom: 14px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--sfdt-color-border); border-left: 4px solid ${BAND_COLOUR[coverageBand(orgFrac)]}; display: flex; align-items: baseline; gap: 10px;`;
       const big = doc.createElement('span');
       big.style.cssText = 'font-size: 22px; font-weight: 700;';
       big.textContent = typeof orgPct === 'number' ? `${orgPct}%` : '—';
       const cap = doc.createElement('span');
-      cap.style.cssText = 'font-size: 12px; color: #54698d;';
+      cap.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
       cap.textContent = 'org-wide Apex coverage (75% required to deploy)';
       summary.appendChild(big);
       summary.appendChild(cap);
@@ -83,7 +83,7 @@ export function createCodeCoverageFeature(options: CodeCoverageOptions = {}): Fe
 
       if (rows.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 12px; color: #80868d;';
+        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon);';
         empty.textContent = 'No coverage data. Run Apex tests in this org first.';
         results.appendChild(empty);
         return;
@@ -95,18 +95,18 @@ export function createCodeCoverageFeature(options: CodeCoverageOptions = {}): Fe
       for (const r of rows) {
         const card = doc.createElement('div');
         card.style.cssText =
-          'border: 1px solid #d8dde6; border-radius: 4px; padding: 10px; display: flex; flex-direction: column; gap: 6px;';
+          'border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 10px; display: flex; flex-direction: column; gap: 6px;';
         const title = doc.createElement('div');
         title.style.cssText = 'font-weight: 600; font-size: 12px; word-break: break-all;';
         title.textContent = r.name;
         const bar = doc.createElement('div');
-        bar.style.cssText = 'height: 6px; background: #f3f3f3; border-radius: 3px; overflow: hidden;';
+        bar.style.cssText = 'height: 6px; background: var(--sfdt-color-bg); border-radius: 3px; overflow: hidden;';
         const fill = doc.createElement('div');
         const band = coverageBand(r.pct);
         fill.style.cssText = `height: 100%; width: ${((r.pct ?? 0) * 100).toFixed(1)}%; background: ${BAND_COLOUR[band]};`;
         bar.appendChild(fill);
         const usage = doc.createElement('div');
-        usage.style.cssText = 'font-size: 11px; color: #54698d;';
+        usage.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak);';
         usage.textContent = `${pctLabel(r.pct)} — ${r.covered}/${r.total} lines`;
         card.appendChild(title);
         card.appendChild(bar);
@@ -117,7 +117,7 @@ export function createCodeCoverageFeature(options: CodeCoverageOptions = {}): Fe
     } catch (err) {
       const errorPanel = doc.createElement('div');
       errorPanel.style.cssText =
-        'border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
       errorPanel.textContent = err instanceof Error ? err.message : String(err);
       results.appendChild(errorPanel);
       status.textContent = 'Failed';
@@ -135,11 +135,11 @@ export function createCodeCoverageFeature(options: CodeCoverageOptions = {}): Fe
     const toolbar = doc.createElement('div');
     toolbar.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 12px;';
     const status = doc.createElement('span');
-    status.style.cssText = 'color: #54698d; font-size: 12px;';
+    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     const refreshBtn = doc.createElement('button');
     refreshBtn.textContent = 'Refresh';
     refreshBtn.style.cssText =
-      'margin-left: auto; padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      'margin-left: auto; padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     toolbar.appendChild(status);
     toolbar.appendChild(refreshBtn);
     body.appendChild(toolbar);

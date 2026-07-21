@@ -9,6 +9,12 @@
 //     is supplied by the Workspace, so the in-card header is omitted there.
 //
 // Features call the same `presentView()` either way and never branch on context.
+//
+// On a Salesforce page the modal mounts into the shared content root (the closed
+// shadow root — ui/shadow-host.ts + ui/content-root.ts) so the host page's CSS
+// can't restyle it; on our own pages / in tests it falls back to document.body.
+
+import { getContentRoot } from './content-root.js';
 
 export interface PresentOpts {
   /** Title shown in the modal header (page) or the tab chip (workspace). */
@@ -56,7 +62,7 @@ export function presentView(opts: PresentOpts): ViewHandle {
 export function presentAsModal(opts: PresentOpts): ViewHandle {
   const doc = opts.doc ?? document;
   const card = doc.createElement('div');
-  card.style.cssText = `background: #fff; border-radius: 4px; width: ${opts.width ?? '860px'}; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column;`;
+  card.style.cssText = `background: var(--sfdt-color-surface); border-radius: 4px; width: ${opts.width ?? '860px'}; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column;`;
 
   let overlay: HTMLDivElement | null = doc.createElement('div');
   overlay.className = 'sfdt-view-overlay';
@@ -75,7 +81,7 @@ export function presentAsModal(opts: PresentOpts): ViewHandle {
 
   const header = doc.createElement('div');
   header.style.cssText =
-    'padding: 12px 16px; border-bottom: 1px solid #d8dde6; display: flex; justify-content: space-between; align-items: center; font-weight: 600;';
+    'padding: 12px 16px; border-bottom: 1px solid var(--sfdt-color-border); display: flex; justify-content: space-between; align-items: center; font-weight: 600;';
   const label = doc.createElement('span');
   label.textContent = opts.title;
   const closeBtn = doc.createElement('button');
@@ -88,7 +94,7 @@ export function presentAsModal(opts: PresentOpts): ViewHandle {
   card.append(header, opts.body);
   if (opts.footer) card.append(opts.footer);
   overlay.appendChild(card);
-  doc.body.appendChild(overlay);
+  (getContentRoot() ?? doc.body).appendChild(overlay);
 
   return { close, root: card };
 }

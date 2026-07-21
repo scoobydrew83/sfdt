@@ -88,6 +88,24 @@
       "bridgeRequired": false
     },
     {
+      "id": "command-palette",
+      "name": "Command Palette",
+      "contexts": [
+        "setup_flows",
+        "flow_details",
+        "flow_builder",
+        "compare_flows",
+        "flow_trigger_explorer",
+        "setup_other",
+        "record_page",
+        "none"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": false,
+      "bridgeRequired": false
+    },
+    {
       "id": "comparison-exporter",
       "name": "Comparison Exporter",
       "contexts": [
@@ -96,6 +114,17 @@
       "enabledByDefault": true,
       "workspace": false,
       "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "context-menu-inspect",
+      "name": "Right-click \"Inspect this record\"",
+      "contexts": [
+        "record_page"
+      ],
+      "enabledByDefault": true,
+      "workspace": false,
+      "sideButton": false,
       "bridgeRequired": false
     },
     {
@@ -437,6 +466,19 @@
       "bridgeRequired": false
     },
     {
+      "id": "schema-browser",
+      "name": "Schema Browser",
+      "contexts": [
+        "record_page",
+        "setup_other",
+        "workspace"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
       "id": "setup-tabs",
       "name": "Setup Tabs",
       "contexts": [
@@ -498,6 +540,19 @@
       ],
       "enabledByDefault": true,
       "workspace": false,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
+      "id": "trace-flags",
+      "name": "Trace Flags",
+      "contexts": [
+        "workspace",
+        "setup_other",
+        "setup_flows"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
       "sideButton": true,
       "bridgeRequired": false
     },

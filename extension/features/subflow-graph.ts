@@ -138,13 +138,13 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
   svg.setAttribute('width', String(width));
   svg.setAttribute('height', String(height));
   svg.style.cssText =
-    'display: block; font-family: system-ui, sans-serif; background: #fff;';
+    'display: block; font-family: system-ui, sans-serif; background: var(--sfdt-color-surface);';
 
   const defs = doc.createElementNS(SVG_NS, 'defs');
   for (const [id, fill] of [
-    ['sfdt-arrow', '#54698d'],
-    ['sfdt-arrow-cycle', '#c23934'],
-    ['sfdt-arrow-missing', '#b46600'],
+    ['sfdt-arrow', 'var(--sfdt-color-text-weak)'],
+    ['sfdt-arrow-cycle', 'var(--sfdt-color-error)'],
+    ['sfdt-arrow-missing', 'var(--sfdt-color-warning-text)'],
   ] as const) {
     const marker = doc.createElementNS(SVG_NS, 'marker');
     marker.setAttribute('id', id);
@@ -156,7 +156,10 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
     marker.setAttribute('orient', 'auto-start-reverse');
     const path = doc.createElementNS(SVG_NS, 'path');
     path.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
-    path.setAttribute('fill', fill);
+    // SVG paint via the CSS `fill` property (not the presentation attribute) so
+    // the `var(--sfdt-*)` token resolves; the custom property inherits from the
+    // injected :root block into the <marker> subtree.
+    path.style.fill = fill;
     marker.appendChild(path);
     defs.appendChild(marker);
   }
@@ -176,7 +179,7 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
         line.setAttribute('y1', String(sy));
         line.setAttribute('x2', String(sx + 30));
         line.setAttribute('y2', String(sy));
-        line.setAttribute('stroke', '#b46600');
+        line.style.stroke = 'var(--sfdt-color-warning-text)';
         line.setAttribute('stroke-width', '1.5');
         line.setAttribute('stroke-dasharray', '4 3');
         line.setAttribute('marker-end', 'url(#sfdt-arrow-missing)');
@@ -191,7 +194,7 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
       const path = doc.createElementNS(SVG_NS, 'path');
       path.setAttribute('d', `M ${sx} ${sy} C ${mx} ${sy}, ${mx} ${ty}, ${tx} ${ty}`);
       path.setAttribute('fill', 'none');
-      path.setAttribute('stroke', isCycle ? '#c23934' : '#54698d');
+      path.style.stroke = isCycle ? 'var(--sfdt-color-error)' : 'var(--sfdt-color-text-weak)';
       path.setAttribute('stroke-width', isCycle ? '2' : '1.5');
       if (edge.missing) path.setAttribute('stroke-dasharray', '4 3');
       path.setAttribute('marker-end', isCycle ? 'url(#sfdt-arrow-cycle)' : 'url(#sfdt-arrow)');
@@ -209,8 +212,8 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
     rect.setAttribute('height', String(lay.height));
     rect.setAttribute('rx', '4');
     rect.setAttribute('ry', '4');
-    rect.setAttribute('fill', inCycle ? '#fef2f1' : '#f4f6f9');
-    rect.setAttribute('stroke', inCycle ? '#c23934' : '#d8dde6');
+    rect.style.fill = inCycle ? 'var(--sfdt-color-error-bg)' : 'var(--sfdt-color-surface-shade)';
+    rect.style.stroke = inCycle ? 'var(--sfdt-color-error)' : 'var(--sfdt-color-border)';
     rect.setAttribute('stroke-width', '1.5');
     group.appendChild(rect);
 
@@ -219,7 +222,7 @@ export function buildSubflowGraphSvg(doc: Document, graph: SubflowGraph): SVGSVG
     text.setAttribute('y', String(lay.height / 2 + 4));
     text.setAttribute('text-anchor', 'middle');
     text.setAttribute('font-size', '12');
-    text.setAttribute('fill', inCycle ? '#c23934' : '#16325c');
+    text.style.fill = inCycle ? 'var(--sfdt-color-error)' : 'var(--sfdt-color-brand-deep)';
     const label = lay.node.label;
     text.textContent = label.length > MAX_LABEL_CHARS ? label.slice(0, MAX_LABEL_CHARS - 1) + '…' : label;
     const title = doc.createElementNS(SVG_NS, 'title');
@@ -242,11 +245,11 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): View
   // header is title + × only, so it sits at the top of the body now.
   const toggle = doc.createElement('div');
   toggle.style.cssText =
-    'display: inline-flex; border: 1px solid #d8dde6; border-radius: 4px; overflow: hidden; margin-bottom: 12px;';
+    'display: inline-flex; border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: hidden; margin-bottom: 12px;';
   const graphBtn = doc.createElement('button');
   const listBtn = doc.createElement('button');
   const baseToggleStyle =
-    'padding: 4px 12px; border: 0; background: #fff; cursor: pointer; font-size: 12px;';
+    'padding: 4px 12px; border: 0; background: var(--sfdt-color-surface); cursor: pointer; font-size: 12px;';
   graphBtn.style.cssText = baseToggleStyle;
   listBtn.style.cssText = baseToggleStyle;
   graphBtn.textContent = 'Graph';
@@ -260,9 +263,9 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): View
   if (graph.cycles.length > 0) {
     const cycleBox = doc.createElement('div');
     cycleBox.style.cssText =
-      'border: 1px solid #c23934; border-radius: 4px; padding: 10px; margin-bottom: 12px; background: #fef2f1;';
+      'border: 1px solid var(--sfdt-color-error); border-radius: 4px; padding: 10px; margin-bottom: 12px; background: var(--sfdt-color-error-bg);';
     const cycleTitle = doc.createElement('div');
-    cycleTitle.style.cssText = 'font-weight: 600; color: #c23934; margin-bottom: 4px;';
+    cycleTitle.style.cssText = 'font-weight: 600; color: var(--sfdt-color-error-text); margin-bottom: 4px;';
     cycleTitle.textContent = `${graph.cycles.length} cycle${graph.cycles.length === 1 ? '' : 's'} detected`;
     cycleBox.appendChild(cycleTitle);
     for (const cycle of graph.cycles) {
@@ -276,7 +279,7 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): View
   }
 
   const graphPane = doc.createElement('div');
-  graphPane.style.cssText = 'border: 1px solid #d8dde6; border-radius: 4px; overflow: auto;';
+  graphPane.style.cssText = 'border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto;';
   graphPane.appendChild(buildSubflowGraphSvg(doc, graph));
 
   const listPane = doc.createElement('div');
@@ -290,12 +293,12 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): View
   for (const node of flows) {
     const row = doc.createElement('div');
     row.style.cssText =
-      'border: 1px solid #d8dde6; border-radius: 4px; padding: 10px; margin-bottom: 6px;';
+      'border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 10px; margin-bottom: 6px;';
     const title = doc.createElement('div');
     title.style.cssText = 'font-weight: 600;';
     title.textContent = node.label;
     const meta = doc.createElement('div');
-    meta.style.cssText = 'color: #80868d; font-size: 12px; margin-top: 2px;';
+    meta.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; margin-top: 2px;';
     const depth = graph.maxDepth.get(node.id) ?? 0;
     meta.textContent = `depth ${depth} · calls ${node.outgoing.length} · called by ${node.incoming.length}`;
     row.appendChild(title);
@@ -306,7 +309,7 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): View
       if (chains.length > 0) {
         const chainBox = doc.createElement('div');
         chainBox.style.cssText =
-          'margin-top: 6px; font-family: monospace; font-size: 12px; color: #54698d;';
+          'margin-top: 6px; font-family: monospace; font-size: 12px; color: var(--sfdt-color-text-weak);';
         for (const chain of chains.slice(0, 5)) {
           const line = doc.createElement('div');
           line.textContent = chain.join(' → ');
@@ -314,7 +317,7 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): View
         }
         if (chains.length > 5) {
           const more = doc.createElement('div');
-          more.style.color = '#80868d';
+          more.style.color = 'var(--sfdt-color-text-icon)';
           more.textContent = `…and ${chains.length - 5} more chain${chains.length - 5 === 1 ? '' : 's'}`;
           chainBox.appendChild(more);
         }
@@ -330,13 +333,13 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): View
   if (graph.unresolvedReferences.length > 0) {
     const unresolvedBox = doc.createElement('div');
     unresolvedBox.style.cssText =
-      'border: 1px solid #fe9339; border-radius: 4px; padding: 10px; margin-top: 12px; background: #fff7eb;';
+      'border: 1px solid var(--sfdt-color-warning); border-radius: 4px; padding: 10px; margin-top: 12px; background: var(--sfdt-color-warning-bg-3);';
     const title = doc.createElement('div');
-    title.style.cssText = 'font-weight: 600; color: #b46600;';
+    title.style.cssText = 'font-weight: 600; color: var(--sfdt-color-warning-text);';
     title.textContent = `${graph.unresolvedReferences.length} reference${graph.unresolvedReferences.length === 1 ? '' : 's'} to flows we couldn't load`;
     unresolvedBox.appendChild(title);
     const list = doc.createElement('div');
-    list.style.cssText = 'font-size: 12px; color: #b46600;';
+    list.style.cssText = 'font-size: 12px; color: var(--sfdt-color-warning-text);';
     list.textContent = graph.unresolvedReferences.join(', ');
     unresolvedBox.appendChild(list);
     body.appendChild(unresolvedBox);
@@ -346,17 +349,17 @@ export function buildSubflowGraphModal(doc: Document, graph: SubflowGraph): View
     if (mode === 'graph') {
       graphPane.style.display = '';
       listPane.style.display = 'none';
-      graphBtn.style.background = '#16325c';
-      graphBtn.style.color = '#fff';
-      listBtn.style.background = '#fff';
-      listBtn.style.color = '#16325c';
+      graphBtn.style.background = 'var(--sfdt-color-brand-deep)';
+      graphBtn.style.color = 'var(--sfdt-color-on-accent)';
+      listBtn.style.background = 'var(--sfdt-color-surface)';
+      listBtn.style.color = 'var(--sfdt-color-text-strong)';
     } else {
       graphPane.style.display = 'none';
       listPane.style.display = '';
-      listBtn.style.background = '#16325c';
-      listBtn.style.color = '#fff';
-      graphBtn.style.background = '#fff';
-      graphBtn.style.color = '#16325c';
+      listBtn.style.background = 'var(--sfdt-color-brand-deep)';
+      listBtn.style.color = 'var(--sfdt-color-on-accent)';
+      graphBtn.style.background = 'var(--sfdt-color-surface)';
+      graphBtn.style.color = 'var(--sfdt-color-text-strong)';
     }
   };
   graphBtn.addEventListener('click', () => setView('graph'));
@@ -385,7 +388,7 @@ export function createSubflowGraphFeature(options: SubflowGraphFeatureOptions = 
     async onActivate() {
       const loading = doc.createElement('div');
       loading.style.cssText =
-        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: #fff; font-family: system-ui, sans-serif;';
+        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: var(--sfdt-color-on-accent); font-family: system-ui, sans-serif;';
       loading.textContent = 'Building subflow graph…';
       doc.body.appendChild(loading);
       try {

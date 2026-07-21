@@ -133,7 +133,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       heading.textContent = summary?.label ?? 'Flow';
       body.appendChild(heading);
       const subline = doc.createElement('div');
-      subline.style.cssText = 'color: #80868d; font-size: 12px; margin-bottom: 12px;';
+      subline.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; margin-bottom: 12px;';
       subline.textContent = `${summary?.totalElements ?? 0} elements, ${summary?.totalResources ?? 0} resources · raw ~${rawTokens} tokens · cleaned ~${cleanTokens} tokens`;
       body.appendChild(subline);
 
@@ -158,7 +158,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       body.appendChild(promptRow);
 
       const description = doc.createElement('div');
-      description.style.cssText = 'color: #54698d; font-size: 12px; margin-bottom: 12px;';
+      description.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px; margin-bottom: 12px;';
       const updateDescription = () => {
         const sel = library.getById(select.value);
         description.textContent = sel?.description ?? '';
@@ -173,7 +173,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
         const btn = doc.createElement('button');
         btn.textContent = label;
         btn.style.cssText =
-          'padding: 6px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer;';
+          'padding: 6px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer;';
         btn.addEventListener('click', () => void handler());
         return btn;
       };
@@ -208,7 +208,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
         while (resultArea.firstChild) resultArea.removeChild(resultArea.firstChild);
         const panel = doc.createElement('div');
         panel.style.cssText =
-          'border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
+          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
         panel.textContent = message;
         resultArea.appendChild(panel);
       };
@@ -219,7 +219,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
         header.style.cssText =
           'display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px;';
         const label = doc.createElement('span');
-        label.style.cssText = 'font-size: 12px; color: #54698d; font-weight: 600;';
+        label.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak); font-weight: 600;';
         label.textContent = provider ? `AI response (${provider})` : 'AI response';
         const copyBtn = makeBtn('📋 Copy response', async () => {
           await navigator.clipboard.writeText(responseText);
@@ -228,7 +228,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
         header.append(label, copyBtn);
         const pre = doc.createElement('pre');
         pre.style.cssText =
-          'margin: 0; padding: 12px; background: #f3f3f3; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 45vh; overflow: auto;';
+          'margin: 0; padding: 12px; background: var(--sfdt-color-bg); border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 45vh; overflow: auto;';
         pre.textContent = responseText;
         resultArea.append(header, pre);
       };

@@ -1,5 +1,26 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { dedupeOrgs } from '../lib/org-list.js';
+import { salesforceHostFromUrl } from '../lib/sf-tab.js';
+import { panelEnabledForUrl } from '../lib/sf-panel.js';
+import { planCommand } from '../lib/commands.js';
+import { sfApiFetch } from '../lib/sf-api-proxy.js';
+import { createSessionCache } from '../lib/sf-session-cache.js';
+import { handleStreamPort } from '../lib/sf-stream-worker.js';
+import { loadSettings, onSettingsChange } from '../lib/settings.js';
+import { readKillSwitchCache } from '../lib/killswitch-cache.js';
+import {
+  INSPECT_MENU_ITEM_ID,
+  INSPECT_MENU_TITLE,
+  INSPECT_MENU_URL_PATTERNS,
+  buildInspectMenuMessage,
+  isInspectMenuEnabled,
+} from '../features/context-menu-inspect.js';
+
+// Per-host session-resolution cache. Backed by chrome.storage.session (NOT
+// chrome.storage.local): memory-only, cleared when the browser closes, and at
+// its default TRUSTED_CONTEXTS access level invisible to content scripts. It
+// stores only the resolved API base URL + org id — never the sid.
+const sessionCache = createSessionCache(chrome.storage.session);
 
 // Only the extension's own content scripts may invoke privileged actions.
 // chrome.runtime.id is the canonical id of THIS extension at runtime — a
@@ -20,6 +41,12 @@ const SALESFORCE_HOST_SUFFIXES = [
   '.lightning.force.com',
   '.force.com',
   '.visualforce.com',
+  // P0-5 host coverage (ledgered): US gov-cloud (GovCloud), China (Alibaba-
+  // operated), and Microsoft Defender for Cloud Apps reverse-proxied sessions.
+  '.my.salesforce.mil',
+  '.lightning.force.mil',
+  '.sfcrmapps.cn',
+  '.mcas.ms',
 ] as const;
 
 function isAllowedCookieUrl(url: string): boolean {
@@ -37,6 +64,34 @@ function isAllowedSalesforceDomain(hostname: string): boolean {
   return SALESFORCE_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix));
 }
 
+// The sfApiFetch proxy derives candidate hosts from the caller's org origin. For
+// content scripts that's the sender's own page origin; app-tab callers pass it
+// explicitly. Either way it's validated against the Salesforce host allowlist
+// before it can seed a cookie read.
+function resolveSenderOrigin(sender: chrome.runtime.MessageSender): string | null {
+  const raw = sender?.origin ?? sender?.tab?.url ?? sender?.url;
+  if (typeof raw !== 'string') return null;
+  try {
+    const { origin } = new URL(raw);
+    return isAllowedCookieUrl(origin) ? origin : null;
+  } catch {
+    return null;
+  }
+}
+
+// Reads the `sid` cookie for a base URL, enforcing the Salesforce host
+// allowlist. Passed into the sfApiFetch proxy so the sid is joined to the
+// request only inside the worker — it never crosses back to the page.
+function readSidCookie(url: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (!isAllowedCookieUrl(url)) {
+      resolve(null);
+      return;
+    }
+    chrome.cookies.get({ url, name: 'sid' }, (cookie) => resolve(cookie?.value ?? null));
+  });
+}
+
 // Localhost-only — the bridge ping fetch must target 127.0.0.1, and the port
 // must be in the unprivileged range. A compromised content script could
 // otherwise drive arbitrary loopback port-scans through the service worker.
@@ -47,7 +102,236 @@ function clampBridgePort(value: unknown): number {
   return value;
 }
 
+// Build the Workspace tab URL, seeded with an org only when it's a valid,
+// allowlisted Salesforce host. Shared by the openApp message and the
+// open-workspace keyboard command.
+function workspaceUrl(org: unknown): string {
+  const host = typeof org === 'string' ? org : '';
+  const safe = host && isAllowedCookieUrl(`https://${host}/`) ? host : '';
+  return chrome.runtime.getURL('app.html') + (safe ? `?org=${encodeURIComponent(safe)}` : '');
+}
+
+// Forward a message to the active tab's content script. Used by the popup's
+// "Quick menu" button and the open-palette command so tab messaging (and the
+// tab lookup) stays in the worker. Best-effort: a tab with no content script
+// (e.g. a non-Salesforce page) simply has no receiver.
+async function sendToActiveTab(message: { action: string }): Promise<void> {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabId = tabs[0]?.id;
+  if (typeof tabId !== 'number') return;
+  try {
+    await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    // No content script on the active tab — nothing to open.
+  }
+}
+
+// P1-8 context menu is gated on the user's opt-in toggle AND the remote
+// kill-switch (read from the same cache content.ts writes — no bridge needed
+// here). `loadSettings()` memoises per module instance; this worker keeps its
+// copy fresh by registering `onSettingsChange` in defineBackground (unlike
+// content.ts, the worker otherwise never refreshes it), so a toggle change is
+// honoured without a worker restart. `readKillSwitchCache()` reads storage
+// directly (uncached), so the kill-switch is always current.
+async function inspectMenuEnabled(): Promise<boolean> {
+  const [settings, disabledRemote] = await Promise.all([loadSettings(), readKillSwitchCache()]);
+  return isInspectMenuEnabled(settings, disabledRemote);
+}
+
+// Idempotent: clear our menu item and recreate it only when the feature is on.
+// removeAll (rather than remove by id) tolerates a missing item and never
+// throws a duplicate-id error on recreate.
+async function runInspectMenuSync(): Promise<void> {
+  if (!chrome.contextMenus?.create) return;
+  const enabled = await inspectMenuEnabled();
+  await new Promise<void>((resolve) => chrome.contextMenus.removeAll(() => resolve()));
+  if (!enabled) return;
+  chrome.contextMenus.create(
+    {
+      id: INSPECT_MENU_ITEM_ID,
+      title: INSPECT_MENU_TITLE,
+      // `page` covers a right-click anywhere on a record page (uses the page URL);
+      // `link` covers right-clicking a link to a record (uses the link's href).
+      contexts: ['page', 'link'],
+      documentUrlPatterns: [...INSPECT_MENU_URL_PATTERNS],
+      targetUrlPatterns: [...INSPECT_MENU_URL_PATTERNS],
+    },
+    // A racing removeAll/create from a near-simultaneous trigger can make this
+    // create fail (e.g. duplicate id); reading lastError consumes it so it isn't
+    // logged as an unchecked runtime error. The coalescing wrapper re-runs to
+    // reconcile the final state.
+    () => void chrome.runtime.lastError,
+  );
+}
+
+// Coalesce overlapping triggers (boot + onInstalled + storage.onChanged can
+// fire near-simultaneously): only one sync runs at a time; triggers arriving
+// mid-run set a flag so exactly one more reconciling run follows.
+let syncInFlight: Promise<void> | null = null;
+let syncQueued = false;
+function syncInspectContextMenu(): Promise<void> {
+  if (syncInFlight) {
+    syncQueued = true;
+    return syncInFlight;
+  }
+  syncInFlight = (async () => {
+    try {
+      do {
+        syncQueued = false;
+        await runInspectMenuSync();
+      } while (syncQueued);
+    } finally {
+      syncInFlight = null;
+    }
+  })();
+  return syncInFlight;
+}
+
+// Runtime message the worker broadcasts to an open side panel when the active
+// tab's org changes, so the panel can follow it (P2-3 PR-2, behaviour A). The
+// panel is the only listener; every other extension context ignores it.
+const PANEL_ACTIVE_TAB_ACTION = 'sfdtPanelActiveTab';
+
+// Tell an OPEN side panel which Salesforce tab is now active so it can re-bind
+// (behaviour A). We send the tab URL only when it's a Salesforce page (so the
+// pure `shouldRebindPanel` helper on the panel side runs on real input);
+// otherwise null, which the panel treats as "keep your current org". Best-effort
+// — with no panel open, runtime.sendMessage rejects and we swallow it.
+function broadcastActiveTab(url: string | undefined): void {
+  const isSf = salesforceHostFromUrl(url) !== null;
+  chrome.runtime
+    .sendMessage({ action: PANEL_ACTIVE_TAB_ACTION, url: isSf ? url : null })
+    .catch(() => {
+      // No side panel (or other listener) is open — nothing to notify.
+    });
+}
+
+// P2-3 PR-2 — Chrome side-panel behaviours A (org-follow) + B (auto-enable).
+// Firefox uses `sidebar_action` (always available, no per-tab enablement and no
+// tabs-follow API), so this whole block is Chrome-only and guarded on
+// `chrome.sidePanel` existing. Uses NO new permission: the chrome.tabs events
+// and `chrome.sidePanel.setOptions` ride on the existing `sidePanel` permission
+// and host_permissions (a tab's URL is readable for permitted Salesforce hosts
+// without the broad `tabs` permission; non-permitted tabs report url:undefined,
+// which correctly reads as "not a Salesforce tab" → panel disabled).
+function setupSidePanelFollow(): void {
+  if (!chrome.sidePanel?.setOptions || !chrome.tabs) return;
+
+  // B: offer the panel only on Salesforce tabs. A per-tab setOptions({enabled})
+  // overrides the global default; on a non-SF tab the panel is disabled.
+  // A: after applying enablement, tell any open panel the active org changed.
+  const applyForTab = async (tabId: number, url: string | undefined): Promise<void> => {
+    try {
+      await chrome.sidePanel.setOptions({
+        tabId,
+        path: 'sidepanel.html',
+        enabled: panelEnabledForUrl(url),
+      });
+    } catch {
+      // A closing/prerender/discarded tab can reject setOptions — ignore.
+    }
+    broadcastActiveTab(url);
+  };
+
+  chrome.tabs.onActivated.addListener(({ tabId }) => {
+    void chrome.tabs.get(tabId).then(
+      (tab) => applyForTab(tabId, tab.url),
+      () => {
+        // Tab vanished between the event and the lookup — nothing to do.
+      },
+    );
+  });
+
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    // Only react to the active tab, and only on a meaningful change (navigation
+    // finished, or the URL changed) — onUpdated also fires for title/favicon.
+    if (!tab.active) return;
+    if (changeInfo.status !== 'complete' && changeInfo.url === undefined) return;
+    void applyForTab(tabId, tab.url);
+  });
+}
+
 export default defineBackground(() => {
+  setupSidePanelFollow();
+
+  // P1-8 — right-click "Inspect this record". Keep the menu in sync with the
+  // feature toggle + kill-switch on boot, on install/update, and whenever
+  // storage changes. `onSettingsChange` refreshes THIS worker's memoised
+  // settings cache on every write (the fix for the toggle silently not taking
+  // effect until a worker restart) and re-syncs; the broad storage listener
+  // additionally reacts to the kill-switch cache (a different storage key that
+  // onSettingsChange ignores). Overlapping triggers coalesce in
+  // syncInspectContextMenu().
+  void syncInspectContextMenu();
+  chrome.runtime.onInstalled.addListener(() => void syncInspectContextMenu());
+  onSettingsChange(() => void syncInspectContextMenu());
+  chrome.storage.onChanged.addListener((_changes, namespace) => {
+    if (namespace === 'local') void syncInspectContextMenu();
+  });
+
+  chrome.contextMenus?.onClicked.addListener((info, tab) => {
+    if (info.menuItemId !== INSPECT_MENU_ITEM_ID) return;
+    void (async () => {
+      // Re-check the gate at click time — the menu could be stale if a toggle
+      // change and the click race.
+      if (!(await inspectMenuEnabled())) return;
+      const inspectMessage = buildInspectMenuMessage({
+        linkUrl: info.linkUrl,
+        pageUrl: info.pageUrl,
+      });
+      if (!inspectMessage) return; // No record Id in the URL/link — do nothing (AC2).
+      const tabId = tab?.id;
+      if (typeof tabId !== 'number') return;
+      try {
+        await chrome.tabs.sendMessage(tabId, inspectMessage);
+      } catch {
+        // No content script on the tab (e.g. a not-yet-loaded page) — nothing to open.
+      }
+    })();
+  });
+
+  // Long-lived Port for the Event Streaming Monitor. The CometD/Bayeux
+  // long-poll runs entirely in the worker (sf-stream-worker.ts): the sid is
+  // read from the cookie here and never crosses back to the page. Only this
+  // extension's own content scripts may open the Port.
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== 'sfApiStream') return;
+    if (!port.sender || !isSelfSender(port.sender)) {
+      port.disconnect();
+      return;
+    }
+    handleStreamPort(port, {
+      fetchImpl: fetch,
+      cookieGet: readSidCookie,
+      senderOrigin: resolveSenderOrigin(port.sender),
+      isAllowedOrigin: isAllowedCookieUrl,
+    });
+  });
+
+  // Keyboard commands. Registered at the top level of the service worker, so
+  // they fire regardless of whether the active tab's content script has settled
+  // — the whole point of declared `commands` over per-feature keydown handlers.
+  chrome.commands?.onCommand.addListener((command) => {
+    void (async () => {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const plan = planCommand(command, tabs[0]);
+      switch (plan.kind) {
+        case 'open-workspace':
+          await chrome.tabs.create({ url: workspaceUrl(plan.org) });
+          break;
+        case 'message-tab':
+          try {
+            await chrome.tabs.sendMessage(plan.tabId, plan.message);
+          } catch {
+            // No content script on the target tab — nothing to do.
+          }
+          break;
+        case 'noop':
+          break;
+      }
+    })();
+  });
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       // Sender gate: every privileged action below assumes the caller is one
@@ -85,6 +369,36 @@ export default defineBackground(() => {
             return { ok: true, sids: Object.fromEntries(entries) };
           }
 
+          case 'sfApiFetch': {
+            // Salesforce REST/Tooling/SOAP call executed entirely in the worker:
+            // the sid is read from the cookie here, injected as Authorization,
+            // and only the response *text* is returned. The response NEVER
+            // carries a sid. Content scripts omit targetOrigin (we fall back to
+            // their validated sender origin); app-tab callers pass it explicitly.
+            const targetOrigin =
+              typeof message.targetOrigin === 'string' && isAllowedCookieUrl(message.targetOrigin)
+                ? message.targetOrigin
+                : undefined;
+            return sfApiFetch(
+              {
+                kind: message.kind,
+                method: typeof message.method === 'string' ? message.method : 'GET',
+                endpoint: message.endpoint,
+                query: message.query,
+                body: message.body,
+                headers: message.headers,
+                soap: message.soap,
+                targetOrigin,
+              },
+              {
+                fetchImpl: fetch,
+                cookieGet: readSidCookie,
+                senderOrigin: resolveSenderOrigin(sender),
+                cache: sessionCache,
+              },
+            );
+          }
+
           case 'listSalesforceOrgs': {
             // Enumerate sid cookies to discover which orgs the user is logged
             // in to. Same security posture as getSidForUrls: results are
@@ -101,12 +415,14 @@ export default defineBackground(() => {
             // Open the standalone Workspace tab, passing the current org so it
             // can target the right session. The org is validated against the
             // Salesforce host allowlist before it ever reaches the URL.
-            const org = typeof message.org === 'string' ? message.org : '';
-            const safe = org && isAllowedCookieUrl(`https://${org}/`) ? org : '';
-            const url =
-              chrome.runtime.getURL('app.html') +
-              (safe ? `?org=${encodeURIComponent(safe)}` : '');
-            await chrome.tabs.create({ url });
+            await chrome.tabs.create({ url: workspaceUrl(message.org) });
+            return { ok: true };
+          }
+
+          case 'openPaletteOnActiveTab': {
+            // Fired by the popup's "Quick menu" button — open the ⚡ side menu
+            // on the active Salesforce tab.
+            await sendToActiveTab({ action: 'openPalette' });
             return { ok: true };
           }
 

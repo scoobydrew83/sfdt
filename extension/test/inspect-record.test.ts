@@ -145,6 +145,81 @@ describe('inspect-record — UI activation & inspection', () => {
     expect(values).toContain('123-456-7890');
   });
 
+  it('toggles between Fields and JSON views, copies the raw payload, and preserves toggle state', async () => {
+    setSalesforceUrl('https://x.lightning.force.com/lightning/r/Account/001800000000001AAA/view');
+
+    const globalMock = vi.fn().mockResolvedValue({
+      sobjects: [{ name: 'Account', label: 'Account', keyPrefix: '001' }]
+    });
+
+    const describeMock = vi.fn().mockResolvedValue({
+      name: 'Account',
+      label: 'Account Label',
+      fields: [
+        { name: 'Name', label: 'Account Name', type: 'string', updateable: true, relationshipName: null, referenceTo: [] }
+      ]
+    });
+
+    // Raw REST payload is a superset of the describe fields (note `attributes`),
+    // proving the JSON view renders the raw payload, not the describe-mapped subset.
+    const rawPayload = {
+      attributes: { type: 'Account', url: '/services/data/v60.0/sobjects/Account/001800000000001AAA' },
+      Id: '001800000000001AAA',
+      Name: 'Acme Test Corp',
+    };
+
+    const apiGetMock = vi.fn(async (path: string) => {
+      if (path.includes('/sobjects/Account/describe')) return describeMock();
+      if (path.includes('/sobjects/Account/001800000000001AAA')) return rawPayload;
+      if (path.includes('/sobjects/')) return globalMock();
+      return {};
+    });
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+
+    const api = fakeApi({ apiGet: apiGetMock });
+    const feature = createInspectRecordFeature({ api });
+
+    await feature.onActivate?.();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const jsonTab = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'JSON') as HTMLButtonElement;
+    const fieldsTab = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Fields') as HTMLButtonElement;
+    expect(jsonTab).toBeTruthy();
+    expect(fieldsTab).toBeTruthy();
+
+    // Defaults to Fields view.
+    expect(fieldsTab.getAttribute('aria-pressed')).toBe('true');
+    expect(jsonTab.getAttribute('aria-pressed')).toBe('false');
+    // The JSON <pre> exists but is empty and its container hidden in Fields view.
+    const pre = document.querySelector('pre') as HTMLPreElement;
+    expect(pre.textContent).toBe('');
+    expect((pre.parentElement as HTMLElement).style.display).toBe('none');
+
+    // Switch to JSON → raw payload pretty-printed in a <pre> via textContent.
+    jsonTab.click();
+    expect((pre.parentElement as HTMLElement).style.display).toBe('flex');
+    expect(pre.textContent).toBe(JSON.stringify(rawPayload, null, 2));
+    expect(jsonTab.getAttribute('aria-pressed')).toBe('true');
+    expect(fieldsTab.getAttribute('aria-pressed')).toBe('false');
+
+    // Copy button writes the same pretty-printed JSON to the clipboard.
+    const copyBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('Copy JSON')) as HTMLButtonElement;
+    copyBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(writeText).toHaveBeenCalledWith(JSON.stringify(rawPayload, null, 2));
+
+    // Toggle state is preserved across a re-render (switch back to Fields sticks).
+    fieldsTab.click();
+    expect(fieldsTab.getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelector('tbody')).toBeTruthy();
+  });
+
   it('filters field lists dynamically', async () => {
     setSalesforceUrl('https://x.lightning.force.com/lightning/r/Account/001800000000001AAA/view');
 
@@ -261,6 +336,43 @@ describe('inspect-record — UI activation & inspection', () => {
       expect.stringContaining('/sobjects/Account/001800000000001AAA'),
       { Name: 'New Corp Name' }
     );
+  });
+
+  it('openFor loads a specific record Id (the context-menu path), ignoring the page URL', async () => {
+    // Page is a plain Setup page — the context menu passes an explicit Id from a
+    // right-clicked link, so openFor must load THAT record, not the page URL.
+    setSalesforceUrl('https://x.lightning.force.com/lightning/setup/SetupOneHome/home');
+
+    const globalMock = vi.fn().mockResolvedValue({
+      sobjects: [{ name: 'Account', label: 'Account', keyPrefix: '001' }],
+    });
+    const describeMock = vi.fn().mockResolvedValue({
+      name: 'Account',
+      label: 'Account',
+      fields: [
+        { name: 'Name', label: 'Account Name', type: 'string', updateable: true, relationshipName: null, referenceTo: [] },
+      ],
+    });
+    const rowGetMock = vi.fn().mockResolvedValue({ Name: 'Menu Corp' });
+
+    const apiGetMock = vi.fn(async (path: string) => {
+      if (path.includes('/sobjects/Account/describe')) return describeMock();
+      if (path.includes('/sobjects/Account/001800000000001AAA')) return rowGetMock();
+      if (path.includes('/sobjects/')) return globalMock();
+      return {};
+    });
+
+    const feature = createInspectRecordFeature({ api: fakeApi({ apiGet: apiGetMock }) });
+    await feature.openFor('001800000000001AAA', 'Account');
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const recordInfo = Array.from(document.querySelectorAll('.sfdt-view-overlay span')).find(
+      (s) => s.textContent?.includes('Account · 001800000000001AAA'),
+    );
+    expect(recordInfo).toBeTruthy();
+    const values = Array.from(document.querySelectorAll('tbody tr td span')).map((s) => s.textContent);
+    expect(values).toContain('Menu Corp');
   });
 
   it('opens an empty inspector with a blank ID input when the page is not a record', async () => {

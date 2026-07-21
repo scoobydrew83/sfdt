@@ -77,7 +77,7 @@ async function confirmModal(doc: Document, selected: RowMeta[]): Promise<boolean
     modal.className = 'sfdt-version-manager-modal';
     modal.setAttribute('role', 'dialog');
     modal.style.cssText =
-      'background: #fff; border-radius: 4px; padding: 16px; min-width: 360px; max-width: 480px; font-family: system-ui, sans-serif;';
+      'background: var(--sfdt-color-surface); border-radius: 4px; padding: 16px; min-width: 360px; max-width: 480px; font-family: system-ui, sans-serif;';
 
     const title = doc.createElement('h2');
     title.textContent = 'Delete Selected Versions';
@@ -116,7 +116,7 @@ async function confirmModal(doc: Document, selected: RowMeta[]): Promise<boolean
     confirm.type = 'button';
     confirm.textContent = 'Delete Selected Versions';
     confirm.disabled = true;
-    confirm.style.cssText = 'padding: 6px 12px; background: #c23934; color: #fff; border: 0;';
+    confirm.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-error); color: var(--sfdt-color-on-accent); border: 0;';
     footer.appendChild(cancel);
     footer.appendChild(confirm);
     modal.appendChild(footer);

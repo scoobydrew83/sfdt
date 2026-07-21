@@ -62,7 +62,13 @@ export interface InspectRecordOptions {
   api?: SalesforceApiClient;
 }
 
-export function createInspectRecordFeature(options: InspectRecordOptions = {}): Feature {
+/** The Inspect Record feature, plus an imperative opener for the context menu. */
+export type InspectRecordFeature = Feature & {
+  /** Open the inspector for a specific record Id (used by the right-click menu). */
+  openFor: (recordId: string, sobjectName?: string) => Promise<void>;
+};
+
+export function createInspectRecordFeature(options: InspectRecordOptions = {}): InspectRecordFeature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
@@ -87,7 +93,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
 
   async function getGlobalDescribe(): Promise<GlobalDescribe> {
     if (globalDescribeCached) return globalDescribeCached;
-    const apiVersion = (api as any).apiVersion ?? 'v62.0';
+    const apiVersion = api.apiVersion;
     const data = await api.apiGet<GlobalDescribe>(`/services/data/${apiVersion}/sobjects/`);
     globalDescribeCached = data && Array.isArray(data.sobjects) ? data : { sobjects: [] };
     return globalDescribeCached;
@@ -97,7 +103,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     const key = name.toLowerCase();
     const cached = sobjectDescribesCached.get(key);
     if (cached) return cached;
-    const apiVersion = (api as any).apiVersion ?? 'v62.0';
+    const apiVersion = api.apiVersion;
     const data = await api.apiGet<SObjectDescribe>(`/services/data/${apiVersion}/sobjects/${name}/describe`);
     const enriched = data && Array.isArray(data.fields) ? data : { name, label: name, fields: [] };
     sobjectDescribesCached.set(key, enriched);
@@ -126,21 +132,38 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     searchRow.style.cssText = 'display: flex; gap: 8px; align-items: center;';
     const idInput = doc.createElement('input');
     idInput.placeholder = 'Paste Salesforce Record ID (e.g. 001800000000001AAA)';
-    idInput.style.cssText = 'flex: 1; padding: 6px 10px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px; outline: none;';
+    idInput.style.cssText = 'flex: 1; padding: 6px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     const inspectBtn = doc.createElement('button');
     inspectBtn.textContent = 'Inspect';
-    inspectBtn.style.cssText = 'padding: 6px 14px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    inspectBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     searchRow.appendChild(idInput);
     searchRow.appendChild(inspectBtn);
     body.appendChild(searchRow);
+
+    // Fields / JSON view toggle (hidden until a record is loaded).
+    const viewToggleRow = doc.createElement('div');
+    viewToggleRow.style.cssText = 'display: none; margin-top: 4px;';
+    viewToggleRow.setAttribute('role', 'group');
+    viewToggleRow.setAttribute('aria-label', 'Record view mode');
+    const fieldsTabBtn = doc.createElement('button');
+    fieldsTabBtn.type = 'button';
+    fieldsTabBtn.textContent = 'Fields';
+    fieldsTabBtn.style.borderRadius = '4px 0 0 4px';
+    const jsonTabBtn = doc.createElement('button');
+    jsonTabBtn.type = 'button';
+    jsonTabBtn.textContent = 'JSON';
+    jsonTabBtn.style.borderRadius = '0 4px 4px 0';
+    viewToggleRow.appendChild(fieldsTabBtn);
+    viewToggleRow.appendChild(jsonTabBtn);
+    body.appendChild(viewToggleRow);
 
     const filterRow = doc.createElement('div');
     filterRow.style.cssText = 'display: none; justify-content: space-between; align-items: center; gap: 12px; margin-top: 4px;';
     const filterInput = doc.createElement('input');
     filterInput.placeholder = 'Filter fields by label, API name, or value...';
-    filterInput.style.cssText = 'flex: 1; max-width: 400px; padding: 5px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 12px; outline: none;';
+    filterInput.style.cssText = 'flex: 1; max-width: 400px; padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px; outline: none;';
     const checkboxLabel = doc.createElement('label');
-    checkboxLabel.style.cssText = 'display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #54698d; cursor: pointer;';
+    checkboxLabel.style.cssText = 'display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sfdt-color-text-weak); cursor: pointer;';
     const showNullsCheckbox = doc.createElement('input');
     showNullsCheckbox.type = 'checkbox';
     showNullsCheckbox.checked = true;
@@ -151,17 +174,33 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     body.appendChild(filterRow);
 
     const tableContainer = doc.createElement('div');
-    tableContainer.style.cssText = 'border: 1px solid #d8dde6; border-radius: 4px; overflow: auto; max-height: 50vh; display: none;';
+    tableContainer.style.cssText = 'border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 50vh; display: none;';
     body.appendChild(tableContainer);
 
+    // Raw-JSON view: the REST record payload, pretty-printed with a copy button.
+    const jsonContainer = doc.createElement('div');
+    jsonContainer.style.cssText = 'display: none; flex-direction: column; gap: 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 8px; max-height: 50vh; overflow: auto;';
+    const jsonCopyRow = doc.createElement('div');
+    jsonCopyRow.style.cssText = 'display: flex; justify-content: flex-end;';
+    const jsonCopyBtn = doc.createElement('button');
+    jsonCopyBtn.type = 'button';
+    jsonCopyBtn.textContent = '📋 Copy JSON';
+    jsonCopyBtn.style.cssText = 'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak); border-radius: 4px; cursor: pointer; font-size: 12px;';
+    jsonCopyRow.appendChild(jsonCopyBtn);
+    const jsonPre = doc.createElement('pre');
+    jsonPre.style.cssText = 'margin: 0; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; color: var(--sfdt-color-text-strong);';
+    jsonContainer.appendChild(jsonCopyRow);
+    jsonContainer.appendChild(jsonPre);
+    body.appendChild(jsonContainer);
+
     const saveBar = doc.createElement('div');
-    saveBar.style.cssText = 'display: none; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid #d8dde6; background: #fafaf9;';
+    saveBar.style.cssText = 'display: none; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface-alt);';
     const cancelChangesBtn = doc.createElement('button');
     cancelChangesBtn.textContent = 'Cancel';
-    cancelChangesBtn.style.cssText = 'padding: 6px 12px; background: #fff; color: #54698d; border: 1px solid #d8dde6; border-radius: 4px; cursor: pointer; font-size: 13px;';
+    cancelChangesBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 13px;';
     const saveChangesBtn = doc.createElement('button');
     saveChangesBtn.textContent = 'Save Changes';
-    saveChangesBtn.style.cssText = 'padding: 6px 14px; background: #04844b; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    saveChangesBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-success); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
     saveBar.appendChild(cancelChangesBtn);
     saveBar.appendChild(saveChangesBtn);
 
@@ -181,7 +220,29 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     let activeSobjectName = '';
     let originalRecordData: Record<string, unknown> = {};
     let editedRecordData: Record<string, unknown> = {};
+    let rawRecordData: Record<string, unknown> = {};
     let activeDescribe: SObjectDescribe | null = null;
+    let currentView: 'fields' | 'json' = 'fields';
+
+    function styleToggleBtn(btn: HTMLButtonElement, active: boolean): void {
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      const radius = btn.style.borderRadius;
+      btn.style.cssText = `padding: 5px 14px; border: 1px solid var(--sfdt-color-border); cursor: pointer; font-size: 12px; font-weight: 600; border-radius: ${radius}; background: ${active ? 'var(--sfdt-color-brand)' : 'var(--sfdt-color-surface)'}; color: ${active ? 'var(--sfdt-color-on-accent)' : 'var(--sfdt-color-text-weak)'};`;
+    }
+
+    function renderJson(): void {
+      jsonPre.textContent = JSON.stringify(rawRecordData, null, 2);
+    }
+
+    function applyView(): void {
+      const isJson = currentView === 'json';
+      styleToggleBtn(fieldsTabBtn, !isJson);
+      styleToggleBtn(jsonTabBtn, isJson);
+      filterRow.style.display = isJson ? 'none' : 'flex';
+      tableContainer.style.display = isJson ? 'none' : 'block';
+      jsonContainer.style.display = isJson ? 'flex' : 'none';
+      if (isJson) renderJson();
+    }
 
     function renderFields(): void {
       if (!activeDescribe) return;
@@ -196,7 +257,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       for (const h of headers) {
         const th = doc.createElement('th');
         th.textContent = h;
-        th.style.cssText = 'padding: 8px 12px; background: #fafaf9; border-bottom: 1px solid #d8dde6; font-weight: 600; position: sticky; top: 0; z-index: 1;';
+        th.style.cssText = 'padding: 8px 12px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1;';
         headRow.appendChild(th);
       }
       thead.appendChild(headRow);
@@ -221,27 +282,27 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         if (filterText && !matchesFilter) continue;
 
         const tr = doc.createElement('tr');
-        tr.style.cssText = 'border-bottom: 1px solid #f3f3f3;';
+        tr.style.cssText = 'border-bottom: 1px solid var(--sfdt-color-bg);';
 
         const tdLabel = doc.createElement('td');
         tdLabel.textContent = field.label;
-        tdLabel.style.cssText = 'padding: 8px 12px; color: #16325c;';
+        tdLabel.style.cssText = 'padding: 8px 12px; color: var(--sfdt-color-text-strong);';
 
         const tdApi = doc.createElement('td');
         tdApi.textContent = field.name;
-        tdApi.style.cssText = 'padding: 8px 12px; font-family: ui-monospace, monospace; color: #54698d;';
+        tdApi.style.cssText = 'padding: 8px 12px; font-family: ui-monospace, monospace; color: var(--sfdt-color-text-weak);';
 
         const tdType = doc.createElement('td');
         const icon = getIconForType(field.type);
         tdType.textContent = `${icon} ${field.type}`;
-        tdType.style.cssText = 'padding: 8px 12px; color: #54698d;';
+        tdType.style.cssText = 'padding: 8px 12px; color: var(--sfdt-color-text-weak);';
 
         const tdValue = doc.createElement('td');
         tdValue.style.cssText = 'padding: 8px 12px; position: relative;';
 
         const isDirty = originalRecordData[field.name] !== rawValue;
         if (isDirty) {
-          tr.style.background = '#fff8e1';
+          tr.style.background = 'var(--sfdt-color-warning-bg-2)';
         }
 
         if (field.type === 'boolean') {
@@ -260,9 +321,9 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           editWrapper.style.cssText = 'display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;';
           const valSpan = doc.createElement('span');
           valSpan.textContent = isNull ? '(null)' : valStr;
-          valSpan.style.cssText = isNull ? 'color: #c23934; font-style: italic; cursor: pointer; flex: 1;' : 'cursor: pointer; flex: 1;';
+          valSpan.style.cssText = isNull ? 'color: var(--sfdt-color-error-text); font-style: italic; cursor: pointer; flex: 1;' : 'cursor: pointer; flex: 1;';
           if (isRecordId(valStr)) {
-            valSpan.style.color = '#0070d2';
+            valSpan.style.color = 'var(--sfdt-color-brand-text)';
             valSpan.style.textDecoration = 'underline';
           }
           
@@ -271,7 +332,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           const editInput = doc.createElement('input');
           editInput.type = 'text';
           editInput.value = isNull ? '' : valStr;
-          editInput.style.cssText = 'display: none; flex: 1; padding: 2px 6px; border: 1px solid #0070d2; border-radius: 4px; font-size: 12px; outline: none;';
+          editInput.style.cssText = 'display: none; flex: 1; padding: 2px 6px; border: 1px solid var(--sfdt-color-brand); border-radius: 4px; font-size: 12px; outline: none;';
           editWrapper.appendChild(editInput);
 
           const startEdit = () => {
@@ -316,9 +377,9 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           const readSpan = doc.createElement('span');
           readSpan.textContent = isNull ? '(null)' : valStr;
           if (isNull) {
-            readSpan.style.cssText = 'color: #80868d; font-style: italic;';
+            readSpan.style.cssText = 'color: var(--sfdt-color-text-icon); font-style: italic;';
           } else if (isRecordId(valStr)) {
-            readSpan.style.cssText = 'color: #0070d2; text-decoration: underline; cursor: pointer;';
+            readSpan.style.cssText = 'color: var(--sfdt-color-brand-text); text-decoration: underline; cursor: pointer;';
             readSpan.addEventListener('click', () => void navigateToRecord(valStr));
           }
           tdValue.appendChild(readSpan);
@@ -386,10 +447,11 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         const describe = await getSObjectDescribe(sobject);
         activeDescribe = describe;
 
-        const apiVersion = (api as any).apiVersion ?? 'v62.0';
+        const apiVersion = api.apiVersion;
         const rawRecord = await api.apiGet<Record<string, unknown>>(
           `/services/data/${apiVersion}/sobjects/${sobject}/${recordId}`
         );
+        rawRecordData = rawRecord;
 
         originalRecordData = {};
         editedRecordData = {};
@@ -401,13 +463,14 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
 
         recordInfo.textContent = '🔍 Inspect Record: ';
         const idSpan = doc.createElement('span');
-        idSpan.style.cssText = 'color:#0070d2; font-family:ui-monospace, monospace; margin-left: 6px;';
+        idSpan.style.cssText = 'color:var(--sfdt-color-brand-text); font-family:ui-monospace, monospace; margin-left: 6px;';
         idSpan.textContent = `${sobject} · ${recordId}`;
         recordInfo.appendChild(idSpan);
         
-        filterRow.style.display = 'flex';
         renderFields();
         updateSaveBarVisibility();
+        viewToggleRow.style.display = 'flex';
+        applyView();
       } catch (err) {
         showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
       } finally {
@@ -431,6 +494,23 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     filterInput.addEventListener('input', renderFields);
     showNullsCheckbox.addEventListener('change', renderFields);
 
+    fieldsTabBtn.addEventListener('click', () => {
+      currentView = 'fields';
+      applyView();
+    });
+    jsonTabBtn.addEventListener('click', () => {
+      currentView = 'json';
+      applyView();
+    });
+    jsonCopyBtn.addEventListener('click', async () => {
+      try {
+        await win.navigator.clipboard.writeText(JSON.stringify(rawRecordData, null, 2));
+        showToast('Record JSON copied to clipboard', { doc, kind: 'success' });
+      } catch {
+        showToast('Could not copy to clipboard', { doc, kind: 'error' });
+      }
+    });
+
     cancelChangesBtn.addEventListener('click', () => {
       editedRecordData = { ...originalRecordData };
       updateSaveBarVisibility();
@@ -449,7 +529,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       saveChangesBtn.disabled = true;
       saveChangesBtn.textContent = 'Saving…';
       try {
-        const apiVersion = (api as any).apiVersion ?? 'v62.0';
+        const apiVersion = api.apiVersion;
         await api.apiRequest(
           'PATCH',
           `/services/data/${apiVersion}/sobjects/${activeSobjectName}/${activeRecordId}`,
@@ -507,6 +587,10 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       } else {
         await open();
       }
+    },
+
+    async openFor(recordId: string, sobjectName?: string) {
+      await open(recordId, sobjectName);
     },
   };
 }

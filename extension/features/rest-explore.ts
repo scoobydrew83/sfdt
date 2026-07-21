@@ -6,6 +6,7 @@ import {
   type HttpMethod,
   type SalesforceApiClient,
 } from '../lib/salesforce-api.js';
+import { SF_API_VERSION } from '../lib/api-version.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
@@ -19,7 +20,6 @@ registerSettingsShape('rest-explore', REST_EXPLORE_SETTINGS_SCHEMA);
 
 const HISTORY_STORAGE_KEY = 'restExplore.history';
 const HISTORY_CAP = 20;
-const DEFAULT_API_VERSION = 'v62.0';
 
 const METHODS_WITH_BODY: ReadonlySet<HttpMethod> = new Set(['POST', 'PATCH', 'PUT']);
 
@@ -111,7 +111,7 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     form.style.cssText = 'display: flex; gap: 8px; align-items: center;';
     const methodSelect = doc.createElement('select');
     methodSelect.style.cssText =
-      'padding: 6px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px;';
+      'padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
     for (const m of ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] as const) {
       const opt = doc.createElement('option');
       opt.value = m;
@@ -121,14 +121,14 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     }
     const pathInput = doc.createElement('input');
     pathInput.type = 'text';
-    pathInput.value = `/services/data/${DEFAULT_API_VERSION}/`;
-    pathInput.placeholder = `/services/data/${DEFAULT_API_VERSION}/sobjects/Account/describe`;
+    pathInput.value = `/services/data/${SF_API_VERSION}/`;
+    pathInput.placeholder = `/services/data/${SF_API_VERSION}/sobjects/Account/describe`;
     pathInput.style.cssText =
-      'flex: 1; padding: 6px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-family: ui-monospace, monospace; font-size: 12px;';
+      'flex: 1; padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-family: ui-monospace, monospace; font-size: 12px;';
     const sendBtn = doc.createElement('button');
     sendBtn.textContent = 'Send';
     sendBtn.style.cssText =
-      'padding: 6px 14px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
     form.appendChild(methodSelect);
     form.appendChild(pathInput);
     form.appendChild(sendBtn);
@@ -137,7 +137,7 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     const bodyTextarea = doc.createElement('textarea');
     bodyTextarea.placeholder = 'JSON body (POST / PATCH / PUT)';
     bodyTextarea.style.cssText =
-      'width: 100%; min-height: 100px; font-family: ui-monospace, monospace; font-size: 12px; padding: 8px; border: 1px solid #d8dde6; border-radius: 4px; resize: vertical; display: none;';
+      'width: 100%; min-height: 100px; font-family: ui-monospace, monospace; font-size: 12px; padding: 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; resize: vertical; display: none;';
 
     function syncBodyVisibility(): void {
       bodyTextarea.style.display = METHODS_WITH_BODY.has(methodSelect.value as HttpMethod) ? 'block' : 'none';
@@ -147,17 +147,17 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     body.appendChild(bodyTextarea);
 
     const status = doc.createElement('div');
-    status.style.cssText = 'color: #54698d; font-size: 12px;';
+    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     body.appendChild(status);
 
     const errorPanel = doc.createElement('div');
     errorPanel.style.cssText =
-      'display: none; border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
+      'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
     body.appendChild(errorPanel);
 
     const responsePane = doc.createElement('pre');
     responsePane.style.cssText =
-      'margin: 0; padding: 10px; background: #fafaf9; border: 1px solid #d8dde6; border-radius: 4px; overflow: auto; max-height: 360px; font-family: ui-monospace, monospace; font-size: 12px; display: none; white-space: pre-wrap;';
+      'margin: 0; padding: 10px; background: var(--sfdt-color-surface-alt); border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 360px; font-family: ui-monospace, monospace; font-size: 12px; display: none; white-space: pre-wrap;';
     body.appendChild(responsePane);
 
     let lastResponse: unknown = null;
@@ -167,7 +167,7 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     const copyBtn = doc.createElement('button');
     copyBtn.textContent = 'Copy response';
     copyBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     footer.appendChild(copyBtn);
 
     let historyMenu: HTMLDivElement | null = null;
@@ -175,13 +175,13 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
       const historyBtn = doc.createElement('button');
       historyBtn.textContent = '▸ History ▾';
       historyBtn.style.cssText =
-        'padding: 6px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+        'padding: 6px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
       const histWrap = doc.createElement('div');
       histWrap.style.cssText = 'position: relative; margin-left: auto;';
       histWrap.appendChild(historyBtn);
       historyMenu = doc.createElement('div');
       historyMenu.style.cssText =
-        'display: none; position: absolute; top: 100%; right: 0; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; min-width: 420px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
+        'display: none; position: absolute; top: 100%; right: 0; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; min-width: 420px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
       histWrap.appendChild(historyMenu);
       historyBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -201,7 +201,7 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
       const clearBtn = doc.createElement('button');
       clearBtn.textContent = 'Clear history';
       clearBtn.style.cssText =
-        'padding: 6px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+        'padding: 6px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
       clearBtn.addEventListener('click', async () => {
         await clearRestHistory();
         showToast('History cleared', { doc, kind: 'success' });
@@ -237,7 +237,7 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
       const entries = await readRestHistory();
       if (entries.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 10px; color: #80868d; font-size: 12px;';
+        empty.style.cssText = 'padding: 10px; color: var(--sfdt-color-text-icon); font-size: 12px;';
         empty.textContent = 'No requests yet.';
         historyMenu.appendChild(empty);
         return;
@@ -245,11 +245,11 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
       for (const entry of entries) {
         const item = doc.createElement('div');
         item.style.cssText =
-          'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid #f3f3f3; font-family: ui-monospace, monospace; font-size: 11px;';
+          'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--sfdt-color-bg); font-family: ui-monospace, monospace; font-size: 11px;';
         const badge = doc.createElement('span');
         badge.textContent = entry.method;
         badge.style.cssText =
-          'display: inline-block; min-width: 50px; padding: 1px 4px; border-radius: 3px; background: #16325c; color: #fff; font-weight: 600; margin-right: 6px; text-align: center;';
+          'display: inline-block; min-width: 50px; padding: 1px 4px; border-radius: 3px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-on-accent); font-weight: 600; margin-right: 6px; text-align: center;';
         const text = doc.createElement('span');
         text.textContent = entry.path;
         item.appendChild(badge);

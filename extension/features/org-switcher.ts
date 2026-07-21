@@ -85,7 +85,7 @@ export function createOrgSwitcherFeature(options: OrgSwitcherOptions = {}): Feat
     list.style.cssText =
       'padding: 8px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 4px;';
     const loading = doc.createElement('div');
-    loading.style.cssText = 'padding: 12px; color: #54698d; font-size: 12px;';
+    loading.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-weak); font-size: 12px;';
     loading.textContent = 'Finding logged-in orgs…';
     list.appendChild(loading);
 
@@ -103,7 +103,7 @@ export function createOrgSwitcherFeature(options: OrgSwitcherOptions = {}): Feat
     while (list.firstChild) list.removeChild(list.firstChild);
     if (orgs.length === 0) {
       const empty = doc.createElement('div');
-      empty.style.cssText = 'padding: 12px; color: #80868d; font-size: 12px;';
+      empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon); font-size: 12px;';
       empty.textContent =
         'No logged-in Salesforce orgs found. Log in to an org in another tab, then retry.';
       list.appendChild(empty);
@@ -112,13 +112,13 @@ export function createOrgSwitcherFeature(options: OrgSwitcherOptions = {}): Feat
     for (const org of orgs) {
       const item = doc.createElement('button');
       item.style.cssText =
-        'text-align: left; padding: 10px 12px; border: 1px solid #eef1f4; background: #fff; border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; gap: 2px;';
+        'text-align: left; padding: 10px 12px; border: 1px solid var(--sfdt-color-surface-shade-3); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; gap: 2px;';
       const name = doc.createElement('span');
       name.textContent = org.displayName;
-      name.style.cssText = 'font-weight: 600; font-size: 13px; color: #16325c;';
+      name.style.cssText = 'font-weight: 600; font-size: 13px; color: var(--sfdt-color-text-strong);';
       const host = doc.createElement('span');
       host.textContent = org.host;
-      host.style.cssText = 'font-size: 11px; color: #80868d; font-family: ui-monospace, monospace;';
+      host.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-icon); font-family: ui-monospace, monospace;';
       item.appendChild(name);
       item.appendChild(host);
       item.addEventListener('click', () => void apply(org.host));

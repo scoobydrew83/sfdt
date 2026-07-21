@@ -210,7 +210,7 @@ function makeApiSpan(doc: Document, text: string): HTMLSpanElement {
   const span = doc.createElement('span');
   span.className = MARKER_CLASS;
   span.textContent = `(${text})`;
-  span.style.cssText = 'font-weight: normal; color: #a9a9a9; margin-left: 0.5rem;';
+  span.style.cssText = 'font-weight: normal; color: var(--sfdt-color-text-faint); margin-left: 0.5rem;';
   return span;
 }
 
@@ -432,7 +432,7 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
     body.appendChild(toggleLabel);
 
     const hint = doc.createElement('div');
-    hint.style.cssText = 'color: #54698d; font-size: 12px;';
+    hint.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     hint.textContent = ctx
       ? `Current record: ${ctx.sobjectName} · ${ctx.recordId}`
       : 'Open a Lightning record page to use the copy helpers.';
@@ -445,7 +445,7 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
       btn.textContent = label;
       btn.disabled = !ctx;
       btn.style.cssText =
-        'padding: 6px 12px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;' +
+        'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;' +
         (ctx ? '' : ' opacity: 0.5; cursor: not-allowed;');
       btn.addEventListener('click', () => void onClick());
       buttonRow.appendChild(btn);

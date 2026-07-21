@@ -62,7 +62,7 @@ export function shapeTestResults(rows: RawApexTestResultRow[]): ApexTestSummary 
   return { total: rows.length, passed, failed, skipped, failures };
 }
 
-const BAND_COLOUR = { green: '#04844b', red: '#c23934' } as const;
+const BAND_COLOUR = { green: 'var(--sfdt-color-success)', red: 'var(--sfdt-color-error)' } as const;
 
 // Test levels that need no class selection — RunSpecifiedTests is omitted
 // because it requires a class list the Workspace can't supply cleanly.
@@ -93,7 +93,7 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
   const api = options.api ?? getSalesforceApi();
   const pollIntervalMs = options.pollIntervalMs ?? 1500;
   const maxPolls = options.maxPolls ?? 40;
-  const apiVersion = api.apiVersion ?? 'v62.0';
+  const apiVersion = api.apiVersion;
 
   let view: ViewHandle | null = null;
 
@@ -105,7 +105,7 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
   function renderError(results: HTMLElement, status: HTMLSpanElement, message: string): void {
     const panel = doc.createElement('div');
     panel.style.cssText =
-      'border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+      'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
     panel.textContent = message;
     results.appendChild(panel);
     status.textContent = 'Failed';
@@ -114,12 +114,12 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
   function renderSummary(results: HTMLElement, summary: ApexTestSummary, complete: boolean): void {
     const banner = doc.createElement('div');
     const band = summary.failed > 0 ? 'red' : 'green';
-    banner.style.cssText = `margin-bottom: 14px; padding: 12px 14px; border-radius: 6px; border: 1px solid #d8dde6; border-left: 4px solid ${BAND_COLOUR[band]}; display: flex; align-items: baseline; gap: 10px;`;
+    banner.style.cssText = `margin-bottom: 14px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--sfdt-color-border); border-left: 4px solid ${BAND_COLOUR[band]}; display: flex; align-items: baseline; gap: 10px;`;
     const big = doc.createElement('span');
     big.style.cssText = 'font-size: 20px; font-weight: 700;';
     big.textContent = `${summary.passed} passed · ${summary.failed} failed`;
     const cap = doc.createElement('span');
-    cap.style.cssText = 'font-size: 12px; color: #54698d;';
+    cap.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
     cap.textContent =
       `${summary.total} method${summary.total === 1 ? '' : 's'}` +
       (summary.skipped > 0 ? `, ${summary.skipped} skipped` : '') +
@@ -132,14 +132,14 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
       for (const f of summary.failures) {
         const card = doc.createElement('div');
         card.style.cssText =
-          'border: 1px solid #f4c7c3; border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; background: #fef6f5;';
+          'border: 1px solid var(--sfdt-color-error-border); border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; background: var(--sfdt-color-error-bg-3);';
         const title = doc.createElement('div');
-        title.style.cssText = 'font-weight: 600; font-size: 12px; color: #c23934; word-break: break-all;';
+        title.style.cssText = 'font-weight: 600; font-size: 12px; color: var(--sfdt-color-error-text); word-break: break-all;';
         title.textContent = f.name;
         card.appendChild(title);
         if (f.message) {
           const msg = doc.createElement('div');
-          msg.style.cssText = 'font-size: 11px; color: #3e3e3c; margin-top: 4px; white-space: pre-wrap;';
+          msg.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text); margin-top: 4px; white-space: pre-wrap;';
           msg.textContent = f.message;
           card.appendChild(msg);
         }
@@ -147,12 +147,12 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
       }
     } else if (summary.total > 0) {
       const ok = doc.createElement('div');
-      ok.style.cssText = 'padding: 8px 0; color: #04844b; font-size: 13px;';
+      ok.style.cssText = 'padding: 8px 0; color: var(--sfdt-color-success-text); font-size: 13px;';
       ok.textContent = 'All tests passed. 🎉';
       results.appendChild(ok);
     } else {
       const empty = doc.createElement('div');
-      empty.style.cssText = 'padding: 8px 0; color: #80868d; font-size: 13px;';
+      empty.style.cssText = 'padding: 8px 0; color: var(--sfdt-color-text-icon); font-size: 13px;';
       empty.textContent = 'No test results returned for this run.';
       results.appendChild(empty);
     }
@@ -224,7 +224,7 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
 
     const levelSelect = doc.createElement('select');
     levelSelect.style.cssText =
-      'padding: 5px 8px; border: 1px solid #d8dde6; border-radius: 4px; font-size: 13px;';
+      'padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
     for (const level of TEST_LEVELS) {
       const opt = doc.createElement('option');
       opt.value = level;
@@ -235,10 +235,10 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
     const runBtn = doc.createElement('button');
     runBtn.textContent = 'Run';
     runBtn.style.cssText =
-      'padding: 5px 16px; border: 1px solid #0070d2; background: #0070d2; color: #fff; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      'padding: 5px 16px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 13px;';
 
     const status = doc.createElement('span');
-    status.style.cssText = 'color: #54698d; font-size: 12px; margin-left: auto;';
+    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px; margin-left: auto;';
 
     toolbar.append(levelSelect, runBtn, status);
     body.appendChild(toolbar);

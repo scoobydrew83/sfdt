@@ -43,4 +43,39 @@ export default [
       'no-console': 'off',
     },
   },
+  {
+    // Security boundary (P0-4): the `sid` must never enter page-adjacent memory.
+    // Feature and UI code must reach Salesforce only through the worker-brokered
+    // `sfApiFetch` route (and the `sfApiStream` Port for streaming) — never touch
+    // cookies, the sid-fetch route, or getSessionDetails directly. Only the
+    // background service worker (extension/entrypoints/background.ts) and the
+    // worker modules (extension/lib/sf-api-proxy.ts, sf-stream-worker.ts) join
+    // the sid to a request. As of PR2 there are ZERO exceptions.
+    files: ['extension/features/**/*.ts', 'extension/ui/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'MemberExpression[object.name="chrome"][property.name="cookies"]',
+          message:
+            'chrome.cookies is worker-only. Feature/UI code must call the Salesforce API through the sfApiFetch worker route so the sid never reaches the page.',
+        },
+        {
+          selector: 'Identifier[name="getSidForUrls"]',
+          message:
+            'getSidForUrls exposes the sid to the page. Route Salesforce calls through the sfApiFetch worker proxy instead.',
+        },
+        {
+          selector: 'Literal[value="getSidForUrls"]',
+          message:
+            'getSidForUrls exposes the sid to the page. Route Salesforce calls through the sfApiFetch worker proxy instead.',
+        },
+        {
+          selector: 'Identifier[name="getSessionDetails"]',
+          message:
+            'getSessionDetails exposed the sid to the page and was removed in P0-4 PR2. Stream via the sfApiStream Port instead.',
+        },
+      ],
+    },
+  },
 ];

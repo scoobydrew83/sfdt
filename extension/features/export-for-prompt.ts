@@ -62,11 +62,20 @@ export function extractSetupObject(url: string): string | null {
 /**
  * Build a dense Markdown schema table optimised for LLM prompts. Includes all
  * fields (standard + custom) with type, required, and inline help text so the
- * model gets maximum signal per token.
+ * model gets maximum signal per token. When `fieldNames` is supplied, only those
+ * fields (by API name) are emitted; omitting it exports the full object as before.
  */
-export function buildSchemaMarkdown(objectName: string, describe: SObjectDescribe): string {
+export function buildSchemaMarkdown(
+  objectName: string,
+  describe: SObjectDescribe,
+  fieldNames?: readonly string[],
+): string {
   const lines: string[] = [`# Schema: ${objectName}`, ''];
-  const fields = describe.fields ?? [];
+  let fields = describe.fields ?? [];
+  if (fieldNames && fieldNames.length > 0) {
+    const wanted = new Set(fieldNames);
+    fields = fields.filter((f) => wanted.has(f.name));
+  }
   if (fields.length === 0) {
     lines.push('_No fields returned from describe._');
     return lines.join('\n');
@@ -146,10 +155,51 @@ async function describeObject(
   }
 }
 
-export function createExportForPromptFeature(options: ExportForPromptOptions = {}): Feature {
+/** The Export for Prompt feature, plus an imperative opener so the Schema Browser
+ * can export an explicit object — optionally a chosen field subset. */
+export type ExportForPromptFeature = Feature & {
+  exportObject: (objectName: string, fieldNames?: readonly string[]) => Promise<void>;
+};
+
+export function createExportForPromptFeature(
+  options: ExportForPromptOptions = {},
+): ExportForPromptFeature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const nav = options.navigator ?? navigator;
+
+  // Describe an object and copy its (optionally field-subset) schema markdown.
+  async function runExport(
+    sfApi: SalesforceApiClient,
+    objectName: string,
+    fieldNames?: readonly string[],
+  ): Promise<void> {
+    showToast('Extracting schema for prompt…', { kind: 'info', doc });
+
+    const describe = await describeObject(sfApi, objectName);
+    if (!describe) {
+      showToast(`Could not describe object "${objectName}".`, { kind: 'error', doc });
+      return;
+    }
+
+    const resolvedName = describe.name || objectName;
+    const markdown = buildSchemaMarkdown(resolvedName, describe, fieldNames);
+    await nav.clipboard.writeText(markdown);
+    showToast(`Schema for ${resolvedName} copied to clipboard`, { kind: 'success', doc });
+  }
+
+  async function exportObject(objectName: string, fieldNames?: readonly string[]): Promise<void> {
+    try {
+      const sfApi = getSalesforceApi();
+      if (!sfApi) {
+        showToast('Salesforce API not available. Please refresh the page.', { kind: 'error', doc });
+        return;
+      }
+      await runExport(sfApi, objectName, fieldNames);
+    } catch (err) {
+      showToast(`Export failed: ${err instanceof Error ? err.message : String(err)}`, { kind: 'error', doc });
+    }
+  }
 
   return {
     manifest: {
@@ -175,22 +225,13 @@ export function createExportForPromptFeature(options: ExportForPromptOptions = {
           return;
         }
 
-        showToast('Extracting schema for prompt…', { kind: 'info', doc });
-
-        const describe = await describeObject(sfApi, objectName);
-        if (!describe) {
-          showToast(`Could not describe object "${objectName}".`, { kind: 'error', doc });
-          return;
-        }
-
-        const resolvedName = describe.name || objectName;
-        const markdown = buildSchemaMarkdown(resolvedName, describe);
-        await nav.clipboard.writeText(markdown);
-        showToast(`Schema for ${resolvedName} copied to clipboard`, { kind: 'success', doc });
+        await runExport(sfApi, objectName);
       } catch (err) {
         showToast(`Export failed: ${err instanceof Error ? err.message : String(err)}`, { kind: 'error', doc });
       }
     },
+
+    exportObject,
   };
 }
 

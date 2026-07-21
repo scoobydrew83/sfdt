@@ -1,0 +1,2 @@
+# These are test fixtures, not build artifacts — override the global *.log ignore.
+!*.log

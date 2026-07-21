@@ -140,7 +140,7 @@ function showDeployModal(
   body.style.cssText = 'padding: 16px;';
 
   const intro = doc.createElement('p');
-  intro.style.cssText = 'margin: 0 0 12px; font-size: 13px; color: #54698d;';
+  intro.style.cssText = 'margin: 0 0 12px; font-size: 13px; color: var(--sfdt-color-text-weak);';
   intro.textContent = 'sfdt re-validates against the target org before pushing.';
   body.appendChild(intro);
 
@@ -149,7 +149,7 @@ function showDeployModal(
   const deployBtn = doc.createElement('button');
   deployBtn.textContent = 'Deploy';
   deployBtn.style.cssText =
-    'padding: 6px 12px; background: #0070d2; color: #fff; border: 0; border-radius: 4px; cursor: pointer;';
+    'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer;';
   deployBtn.addEventListener('click', async () => {
     view.close();
     await onChoice('deploy');
@@ -157,7 +157,7 @@ function showDeployModal(
   const rollbackBtn = doc.createElement('button');
   rollbackBtn.textContent = 'Rollback';
   rollbackBtn.style.cssText =
-    'padding: 6px 12px; background: #c23934; color: #fff; border: 0; border-radius: 4px; cursor: pointer;';
+    'padding: 6px 12px; background: var(--sfdt-color-error); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer;';
   rollbackBtn.addEventListener('click', async () => {
     view.close();
     await onChoice('rollback');

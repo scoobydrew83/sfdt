@@ -6,7 +6,8 @@ import {
 } from '../features/debug-log-viewer.js';
 import type { SalesforceApiClient } from '../lib/salesforce-api.js';
 
-const { buildApexLogQuery, formatBytes } = _debugLogViewerTestApi();
+const { buildApexLogQuery, formatBytes, buildLogDeleteEndpoint, AUTO_REFRESH_INTERVAL_MS } =
+  _debugLogViewerTestApi();
 
 function clearBody(): void {
   while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
@@ -26,6 +27,9 @@ function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiCli
   return {
     toolingQuery: vi.fn(async () => ({ records: [], size: 0, done: true })),
     apiGetText: vi.fn(async () => 'LOG BODY'),
+    apiRequest: vi.fn(async () => null),
+    query: vi.fn(async () => ({ records: [], done: true })),
+    queryMore: vi.fn(async () => ({ records: [], done: true })),
     ...overrides,
   } as unknown as SalesforceApiClient;
 }
@@ -195,5 +199,199 @@ describe('debug-log-viewer — log table', () => {
     const overlay = document.querySelector<HTMLElement>('.sfdt-view-overlay')!;
     overlay.click();
     expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
+  });
+});
+
+describe('debug-log-viewer — buildLogDeleteEndpoint', () => {
+  it('targets the Tooling ApexLog sobject by id', () => {
+    const ep = buildLogDeleteEndpoint('07L000000000001');
+    expect(ep).toContain('/tooling/sobjects/ApexLog/07L000000000001');
+  });
+});
+
+describe('debug-log-viewer — auto-refresh timer lifecycle', () => {
+  beforeEach(() => {
+    clearBody();
+    setSetupUrl();
+  });
+
+  function autoToggle(): HTMLInputElement {
+    return Array.from(document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(
+      (c) => c.parentElement?.textContent?.includes('Auto-refresh'),
+    )!;
+  }
+
+  it('is OFF by default (no interval until toggled)', async () => {
+    const setSpy = vi.spyOn(globalThis, 'setInterval');
+    const feature = createDebugLogViewerFeature({ api: fakeApi() });
+    await feature.onActivate?.();
+    await flush();
+    expect(autoToggle().checked).toBe(false);
+    expect(setSpy).not.toHaveBeenCalled();
+    await feature.teardown?.();
+    setSpy.mockRestore();
+  });
+
+  it('toggling on starts an interval that re-runs the query, and teardown clears it', async () => {
+    const setSpy = vi.spyOn(globalThis, 'setInterval');
+    const clearSpy = vi.spyOn(globalThis, 'clearInterval');
+    const toolingQuery = vi.fn(async () => ({ records: [logRow()], size: 1, done: true }));
+    const feature = createDebugLogViewerFeature({
+      api: fakeApi({ toolingQuery: toolingQuery as unknown as SalesforceApiClient['toolingQuery'] }),
+    });
+    await feature.onActivate?.();
+    await flush();
+    expect(toolingQuery).toHaveBeenCalledTimes(1);
+
+    const toggle = autoToggle();
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change'));
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    expect(setSpy.mock.calls[0]![1]).toBe(AUTO_REFRESH_INTERVAL_MS);
+    const handle = setSpy.mock.results[0]!.value;
+
+    // The interval callback re-runs load().
+    const cb = setSpy.mock.calls[0]![0] as () => void;
+    cb();
+    await flush();
+    expect(toolingQuery).toHaveBeenCalledTimes(2);
+
+    // Teardown must clear the exact interval — no orphan timer.
+    await feature.teardown?.();
+    expect(clearSpy).toHaveBeenCalledWith(handle);
+
+    setSpy.mockRestore();
+    clearSpy.mockRestore();
+  });
+
+  it('toggling off clears the interval without tearing down the view', async () => {
+    const setSpy = vi.spyOn(globalThis, 'setInterval');
+    const clearSpy = vi.spyOn(globalThis, 'clearInterval');
+    const feature = createDebugLogViewerFeature({ api: fakeApi() });
+    await feature.onActivate?.();
+    await flush();
+    const toggle = autoToggle();
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change'));
+    const handle = setSpy.mock.results[0]!.value;
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change'));
+    expect(clearSpy).toHaveBeenCalledWith(handle);
+    expect(document.querySelector('.sfdt-view-overlay')).not.toBeNull();
+    await feature.teardown?.();
+    setSpy.mockRestore();
+    clearSpy.mockRestore();
+  });
+});
+
+describe('debug-log-viewer — bulk delete', () => {
+  beforeEach(() => {
+    clearBody();
+    setSetupUrl();
+  });
+
+  function deleteButton(): HTMLButtonElement {
+    return Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+      b.textContent?.includes('Delete all logs'),
+    )!;
+  }
+
+  it('deletes ALL org ApexLogs (paginated) after count-confirm, then refreshes', async () => {
+    // Page 1 is not `done` and carries a nextRecordsUrl → the feature must
+    // follow it via queryMore to get the true total, not the first page.
+    const query = vi.fn(async () => ({
+      records: [{ Id: '07L000000000001' }, { Id: '07L000000000002' }],
+      done: false,
+      nextRecordsUrl: '/services/data/query/next-1',
+    }));
+    const queryMore = vi.fn(async () => ({
+      records: [{ Id: '07L000000000003' }],
+      done: true,
+    }));
+    const apiRequest = vi.fn(async () => null);
+    const toolingQuery = vi.fn(async () => ({ records: [logRow()], size: 1, done: true }));
+    const feature = createDebugLogViewerFeature({
+      api: fakeApi({
+        toolingQuery: toolingQuery as unknown as SalesforceApiClient['toolingQuery'],
+        query: query as unknown as SalesforceApiClient['query'],
+        queryMore: queryMore as unknown as SalesforceApiClient['queryMore'],
+        apiRequest: apiRequest as unknown as SalesforceApiClient['apiRequest'],
+      }),
+    });
+    await feature.onActivate?.();
+    await flush();
+    expect(toolingQuery).toHaveBeenCalledTimes(1);
+
+    deleteButton().click();
+    await flush();
+
+    // The Id query paginated to the true total (3), not the first page (2).
+    expect(query).toHaveBeenCalledWith('SELECT Id FROM ApexLog');
+    expect(queryMore).toHaveBeenCalledWith('/services/data/query/next-1');
+
+    // Count-confirm dialog quotes the TRUE org total.
+    const dialog = document.querySelector<HTMLElement>('.sfdt-confirm-overlay [role="dialog"]')!;
+    expect(dialog).not.toBeNull();
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(dialog.textContent).toContain('Delete 3 logs?');
+
+    const confirm = Array.from(dialog.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Delete',
+    )!;
+    confirm.click();
+    await flush();
+
+    // One DELETE per Id across BOTH pages, to the Tooling ApexLog endpoint.
+    expect(apiRequest).toHaveBeenCalledTimes(3);
+    for (const id of ['07L000000000001', '07L000000000002', '07L000000000003']) {
+      expect(apiRequest).toHaveBeenCalledWith('DELETE', buildLogDeleteEndpoint(id));
+    }
+    // Dialog dismissed and the list re-queried.
+    expect(document.querySelector('.sfdt-confirm-overlay')).toBeNull();
+    expect(toolingQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancelling the confirm dialog issues no deletes', async () => {
+    const apiRequest = vi.fn(async () => null);
+    const feature = createDebugLogViewerFeature({
+      api: fakeApi({
+        query: vi.fn(async () => ({
+          records: [{ Id: '07L000000000001' }],
+          done: true,
+        })) as unknown as SalesforceApiClient['query'],
+        apiRequest: apiRequest as unknown as SalesforceApiClient['apiRequest'],
+      }),
+    });
+    await feature.onActivate?.();
+    await flush();
+    deleteButton().click();
+    await flush();
+    const dialog = document.querySelector<HTMLElement>('.sfdt-confirm-overlay [role="dialog"]')!;
+    expect(dialog.textContent).toContain('Delete 1 log?');
+    const cancel = Array.from(dialog.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Cancel',
+    )!;
+    cancel.click();
+    await flush();
+    expect(apiRequest).not.toHaveBeenCalled();
+    expect(document.querySelector('.sfdt-confirm-overlay')).toBeNull();
+  });
+
+  it('does nothing (no dialog, no delete) when the org has no logs', async () => {
+    const apiRequest = vi.fn(async () => null);
+    const query = vi.fn(async () => ({ records: [], done: true }));
+    const feature = createDebugLogViewerFeature({
+      api: fakeApi({
+        query: query as unknown as SalesforceApiClient['query'],
+        apiRequest: apiRequest as unknown as SalesforceApiClient['apiRequest'],
+      }),
+    });
+    await feature.onActivate?.();
+    await flush();
+    deleteButton().click();
+    await flush();
+    expect(query).toHaveBeenCalledWith('SELECT Id FROM ApexLog');
+    expect(document.querySelector('.sfdt-confirm-overlay')).toBeNull();
+    expect(apiRequest).not.toHaveBeenCalled();
   });
 });

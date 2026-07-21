@@ -22,6 +22,38 @@ describe('export-for-prompt — buildSchemaMarkdown', () => {
     expect(md).toContain('| `Industry` | Industry | picklist | No | The sector |');
   });
 
+  it('emits only the requested field subset, preserving order', () => {
+    const describe = {
+      name: 'Account',
+      label: 'Account',
+      fields: [
+        { name: 'Name', label: 'Account Name', type: 'string', nillable: false, inlineHelpText: null },
+        { name: 'Industry', label: 'Industry', type: 'picklist', nillable: true, inlineHelpText: null },
+        { name: 'Phone', label: 'Phone', type: 'phone', nillable: true, inlineHelpText: null },
+      ],
+    };
+    const md = buildSchemaMarkdown('Account', describe, ['Name', 'Phone']);
+    expect(md).toContain('| `Name` |');
+    expect(md).toContain('| `Phone` |');
+    // The unselected field is dropped.
+    expect(md).not.toContain('| `Industry` |');
+  });
+
+  it('falls back to the full object when the subset is empty or omitted', () => {
+    const describe = {
+      name: 'Account',
+      label: 'Account',
+      fields: [
+        { name: 'Name', label: 'Account Name', type: 'string', nillable: false, inlineHelpText: null },
+        { name: 'Industry', label: 'Industry', type: 'picklist', nillable: true, inlineHelpText: null },
+      ],
+    };
+    const full = buildSchemaMarkdown('Account', describe);
+    expect(buildSchemaMarkdown('Account', describe, [])).toBe(full);
+    expect(full).toContain('| `Name` |');
+    expect(full).toContain('| `Industry` |');
+  });
+
   it('reports when describe returns no fields', () => {
     const md = buildSchemaMarkdown('Empty__c', { name: 'Empty__c', label: 'Empty', fields: [] });
     expect(md).toContain('# Schema: Empty__c');

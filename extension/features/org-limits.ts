@@ -36,9 +36,9 @@ export function bandFor(pct: number): 'green' | 'amber' | 'red' {
 }
 
 const BAND_COLOUR: Record<'green' | 'amber' | 'red', string> = {
-  green: '#04844b',
-  amber: '#fe9339',
-  red: '#c23934',
+  green: 'var(--sfdt-color-success)',
+  amber: 'var(--sfdt-color-warning)',
+  red: 'var(--sfdt-color-error)',
 };
 
 function humaniseName(camel: string): string {
@@ -72,7 +72,7 @@ export function createOrgLimitsFeature(options: OrgLimitsOptions = {}): Feature 
       status.textContent = `${rows.length} limits`;
       if (rows.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 12px; color: #80868d;';
+        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon);';
         empty.textContent = 'No limits returned.';
         body.appendChild(empty);
         return raw;
@@ -83,16 +83,16 @@ export function createOrgLimitsFeature(options: OrgLimitsOptions = {}): Feature 
       for (const r of rows) {
         const card = doc.createElement('div');
         card.style.cssText =
-          'border: 1px solid #d8dde6; border-radius: 4px; padding: 10px; display: flex; flex-direction: column; gap: 6px;';
+          'border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 10px; display: flex; flex-direction: column; gap: 6px;';
         const title = doc.createElement('div');
         title.style.cssText = 'font-weight: 600; font-size: 12px;';
         title.textContent = humaniseName(r.name);
         const usage = doc.createElement('div');
-        usage.style.cssText = 'font-size: 11px; color: #54698d;';
+        usage.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak);';
         usage.textContent = `${r.used.toLocaleString()} / ${r.max.toLocaleString()}  (${(r.pct * 100).toFixed(1)}%)`;
         const bar = doc.createElement('div');
         bar.style.cssText =
-          'height: 6px; background: #f3f3f3; border-radius: 3px; overflow: hidden;';
+          'height: 6px; background: var(--sfdt-color-bg); border-radius: 3px; overflow: hidden;';
         const fill = doc.createElement('div');
         const band = bandFor(r.pct);
         fill.style.cssText = `height: 100%; width: ${Math.min(100, r.pct * 100).toFixed(1)}%; background: ${BAND_COLOUR[band]};`;
@@ -107,7 +107,7 @@ export function createOrgLimitsFeature(options: OrgLimitsOptions = {}): Feature 
     } catch (err) {
       const errorPanel = doc.createElement('div');
       errorPanel.style.cssText =
-        'border: 1px solid #c23934; background: #fef2f1; color: #c23934; padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
       errorPanel.textContent = err instanceof Error ? err.message : String(err);
       body.appendChild(errorPanel);
       status.textContent = 'Failed';
@@ -126,17 +126,17 @@ export function createOrgLimitsFeature(options: OrgLimitsOptions = {}): Feature 
     const toolbar = doc.createElement('div');
     toolbar.style.cssText = 'display: flex; align-items: center; gap: 12px; margin-bottom: 12px;';
     const status = doc.createElement('span');
-    status.style.cssText = 'color: #54698d; font-size: 12px;';
+    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
     const actions = doc.createElement('div');
     actions.style.cssText = 'display: flex; gap: 6px; margin-left: auto;';
     const refreshBtn = doc.createElement('button');
     refreshBtn.textContent = 'Refresh';
     refreshBtn.style.cssText =
-      'padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     const copyBtn = doc.createElement('button');
     copyBtn.textContent = 'Copy JSON';
     copyBtn.style.cssText =
-      'padding: 4px 10px; border: 1px solid #d8dde6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px;';
+      'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
     actions.appendChild(refreshBtn);
     actions.appendChild(copyBtn);
     toolbar.appendChild(status);
