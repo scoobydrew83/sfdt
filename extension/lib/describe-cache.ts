@@ -123,7 +123,7 @@ export class DescribeCache {
         this.notify();
       })
       .catch(err => {
-        console.error(`Failed to describe sobject ${name}`, err);
+        console.error('Failed to describe sobject', name, err);
         this.sobjectCache.set(key, { status: 'error' });
         this.notify();
       });
