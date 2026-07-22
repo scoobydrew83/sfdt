@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+## [0.18.2] - 2026-07-22
+
+### Security
+
+- **Cleared all outstanding high-severity dependency advisories (runtime and dev-scope).** Applied npm-audit fixes for `fast-uri`, `brace-expansion`, and `body-parser` (runtime highs); overrode `adm-zip` to `^0.6.0` to clear GHSA-xcpc-8h2w-3j85 / CVE-2026-39244 (a 4 GB-allocation DoS reachable only through the extension's Firefox e2e tooling); tightened the `shell-quote` override floor from `^1.8.4` to the patched `^1.9.0`; and bumped `express-rate-limit`. No API or runtime behaviour change.
+
+### Changed
+
+- Refreshed development dependencies (happy-dom, prettier, typescript-eslint, @vitejs/plugin-react, vite, oclif) and bumped `actions/setup-node` v4 → v7 in CI. Internal only, no runtime impact.
+
 ## [0.18.1] - 2026-07-15
 
 ### Fixed

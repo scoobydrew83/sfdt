@@ -1,6 +1,6 @@
 {
   "name": "@sfdt/plugin",
-  "version": "0.18.1",
+  "version": "0.18.2",
   "description": "Salesforce CLI (sf) plugin for SFDT — exposes the @sfdt/cli commands as `sf sfdt <command>`. Thin wrapper; reimplements no logic.",
   "license": "Apache-2.0",
   "repository": {
