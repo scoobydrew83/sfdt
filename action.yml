@@ -109,7 +109,7 @@ runs:
           echo "::error::args-json and command are mutually exclusive — pass exactly one"; exit 1
         fi
 
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v7
       with:
         node-version: ${{ inputs.node-version }}
 
