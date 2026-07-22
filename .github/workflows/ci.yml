@@ -387,7 +387,8 @@ jobs:
         # continue-on-error for the same reason as the tap: a downstream
         # distribution sync must never fail an already-published release.
         # The export only wipes skills/ in the target, so that repo's README and
-        # LICENSE (which are hand-written, not generated) survive each sync.
+        # LICENSE (hand-written, not generated) survive each sync — except the
+        # README's "Synced from" footer, which the export bumps from package.json.
         if: steps.version.outputs.changed == 'true'
         continue-on-error: true
         env:
@@ -402,7 +403,8 @@ jobs:
           git clone --depth 1 "https://x-access-token:${SKILLS_PACK_TOKEN}@github.com/scoobydrew83/sfdt-skills.git" skills-pack
           node bin/sfdt.js skills export --target pack --out skills-pack
           cd skills-pack
-          sed -i -E "s#(Synced from \`@sfdt/cli\` v)[0-9]+\.[0-9]+\.[0-9]+#\1${VERSION}#" README.md
+          # The export bumps the README "Synced from" footer from package.json —
+          # no out-of-band sed needed, so a manual sync stays in step too.
           # manifest.json carries a generatedAt timestamp that changes on every
           # export, so diff the real content instead — otherwise a self-healing
           # re-run of an already-published version pushes a timestamp-only commit.
