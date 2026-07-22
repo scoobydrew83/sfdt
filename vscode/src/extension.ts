@@ -40,7 +40,7 @@ function dashboardPort(): number {
   return cfg().get<number>('dashboardPort') || 7654;
 }
 function orgColorEnabled(): boolean {
-  return cfg().get<boolean>('orgColor') !== false;
+  return cfg().get<boolean>('orgColor') === true;
 }
 function smartDeployTimeoutMinutes(): number {
   const v = cfg().get<number>('smartDeployTimeoutMinutes');
@@ -460,23 +460,27 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // ── Per-org window tint ──
   async function applyOrgColor(): Promise<void> {
-    if (!orgColorEnabled()) return;
-    const org = defaultOrg();
-    const orgJson = await capture('sf', ['org', 'display', '--json', ...(org ? ['--target-org', org] : [])], workspaceRoot());
     let customizations: Record<string, string> | null = null;
-    try {
-      const r = JSON.parse(orgJson).result ?? {};
-      customizations = colorForOrg(classifyOrg({
-        instanceUrl: r.instanceUrl,
-        isSandbox: r.isSandbox,
-        isScratch: r.isScratchOrg,
-        isDevEdition: typeof r.edition === 'string' && /developer/i.test(r.edition),
-      }));
-    } catch { /* leave untinted */ }
+    if (orgColorEnabled()) {
+      const org = defaultOrg();
+      const orgJson = await capture('sf', ['org', 'display', '--json', ...(org ? ['--target-org', org] : [])], workspaceRoot());
+      try {
+        const r = JSON.parse(orgJson).result ?? {};
+        customizations = colorForOrg(classifyOrg({
+          instanceUrl: r.instanceUrl,
+          isSandbox: r.isSandbox,
+          isScratch: r.isScratchOrg,
+          isDevEdition: typeof r.edition === 'string' && /developer/i.test(r.edition),
+        }));
+      } catch { /* leave untinted */ }
+    }
     try {
       await cfg().update('orgColorCustomizations', undefined, vscode.ConfigurationTarget.Workspace).then(undefined, () => {});
       const workbench = vscode.workspace.getConfiguration('workbench');
-      await workbench.update('colorCustomizations', customizations ?? {}, vscode.ConfigurationTarget.Workspace);
+      // Remove the key entirely when disabled or unmatched, so we never leave a
+      // stale colored (or empty) block behind in the workspace's settings.json.
+      const next = customizations && Object.keys(customizations).length ? customizations : undefined;
+      await workbench.update('colorCustomizations', next, vscode.ConfigurationTarget.Workspace);
     } catch { /* color update is best-effort */ }
   }
 

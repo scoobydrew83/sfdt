@@ -6,6 +6,15 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+### Changed
+
+- **Per-org window theming (`sfdt.orgColor`) is now opt-in** — the default flipped
+  from `true` to `false`. Previously the extension silently wrote
+  `workbench.colorCustomizations` into the workspace's `.vscode/settings.json`
+  (a commonly version-controlled file) on activation. Enabling the setting still
+  tints the window; disabling it now **removes** the color keys it wrote instead
+  of leaving a stale block behind ([#263](https://github.com/scoobydrew83/sfdt/issues/263)).
+
 ## [0.5.0] - 2026-07-14
 
 ### Added

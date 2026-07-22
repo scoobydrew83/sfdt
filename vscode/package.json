@@ -456,8 +456,8 @@
         },
         "sfdt.orgColor": {
           "type": "boolean",
-          "default": true,
-          "description": "Tint the VS Code window by org type (production = red, sandbox = orange, scratch/developer = green) to prevent wrong-org mistakes."
+          "default": false,
+          "description": "Tint the VS Code window by org type (production = red, sandbox = orange, scratch/developer = green) to prevent wrong-org mistakes. Opt-in: when enabled, this writes workbench.colorCustomizations into the workspace's .vscode/settings.json; disabling it removes those keys again."
         },
         "sfdt.smartDeployTimeoutMinutes": {
           "type": "number",

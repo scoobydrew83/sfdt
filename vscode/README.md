@@ -40,8 +40,9 @@ The SFDT activity-bar container holds three views plus a status bar:
   Follows the editor's light/dark theme and recovers automatically from dashboard
   port conflicts.
 - **Per-org window theming** — tints the window by org type (production = red,
-  sandbox = orange, scratch/developer = green) to prevent wrong-org mistakes
-  (toggle with `sfdt.orgColor`).
+  sandbox = orange, scratch/developer = green) to prevent wrong-org mistakes.
+  Opt-in — enable `sfdt.orgColor` (it writes `workbench.colorCustomizations`
+  into the workspace `.vscode/settings.json`; disabling it removes those keys).
 - **Status bar** — shows the active org and the worst monitor/audit status.
 
 New here? When the `sfdt` CLI isn't found or the project isn't initialized, the
@@ -60,7 +61,7 @@ views offer a one-click **Run sfdt init** and links to the install docs.
 | `sfdt.cliPath` | `sfdt` | Path to the sfdt binary. |
 | `sfdt.defaultOrg` | `""` | Org alias passed as `--org`; empty uses the project default. |
 | `sfdt.dashboardPort` | `7654` | Port the `sfdt ui` server listens on. |
-| `sfdt.orgColor` | `true` | Tint the window by org type (prod/sandbox/scratch) to prevent wrong-org mistakes. |
+| `sfdt.orgColor` | `false` | Opt-in: tint the window by org type (prod/sandbox/scratch) to prevent wrong-org mistakes. Writes `workbench.colorCustomizations` into the workspace `.vscode/settings.json` when enabled; disabling removes them. |
 
 ## Development
 
