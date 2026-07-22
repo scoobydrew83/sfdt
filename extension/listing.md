@@ -1,12 +1,19 @@
 # Chrome Web Store Listing
 
-> **Store-sync status:** Updated for **v0.3.2** (29 features). The 0.3.x line adds
-> a standalone **Workspace** tab plus five new tools — Execute Anonymous Apex,
-> Debug Logs, Saved SOQL, Switch Org (multi-org), and **Org Health** (audit/monitor
-> snapshots via the local CLI bridge). As of the last manual upload the *live* CWS
-> listing still reflects the older **17-feature** copy — this file is ahead of the
-> store. Paste the sections below into the CWS dashboard during the manual v0.3.2
-> upload, then this file and the store will be back in sync.
+> **Store-sync status:** Updated for **v0.8.0** (44 features). Since the last
+> manual store upload (0.3.x era) this adds Apex tooling (Test Runner, Code
+> Coverage, Trace Flags), a **Schema Browser**, **Dependency Explorer**, **API
+> Version Audit**, in-browser **Flow Scanner**, **Org Health (Live)**, an **Org
+> Release** badge, a **Command Palette**, a right-click record inspector, and the
+> bridge tools **Org Compare / Drift Check / Metadata Scan**. As of the last
+> manual upload the *live* CWS listing still reflects the older 29-feature copy —
+> this file is ahead of the store. Paste the sections below into the CWS dashboard
+> during the v0.8.0 upload, then this file and the store are back in sync.
+>
+> **Permission justifications must be pasted into the item's Privacy practices
+> tab** (not just the description) — the store rejects auto-publish until every
+> permission below has a justification saved. `contextMenus` + `sidePanel` were
+> the two that blocked the v0.8.0 auto-publish.
 >
 > Screenshots, the store icon, and the small promo tile live alongside this file in
 > `extension/store-assets/` (`store-icon-128.png`, `promo-small-440x280.png`, and
@@ -29,7 +36,7 @@ Developer Tools (alt: Workflow & Planning)
 English (United States)
 
 ## Detailed description
-SFDT SF Helper adds 29 productivity features for Salesforce admins and developers across Flow Builder, Setup, Object Manager, and record pages — now including a standalone Workspace tab that runs SOQL, Apex, and other tools in their own browser tab so they never disturb the Salesforce page you're on. Features span flow analysis, schema and data tooling, SOQL/REST/SOAP exploration, anonymous Apex, debug-log and event monitoring, org health diagnostics, and optional AI assistance. Every feature is opt-in via the options page, and any feature can be remotely disabled without a Web Store re-review.
+SFDT SF Helper adds 44 productivity features for Salesforce admins and developers across Flow Builder, Setup, Object Manager, and record pages — now including a standalone Workspace tab that runs SOQL, Apex, and other tools in their own browser tab so they never disturb the Salesforce page you're on. Features span flow analysis, schema and dependency exploration, data tooling, SOQL/REST/SOAP exploration, anonymous Apex, Apex test running and coverage, debug-log/trace-flag and event monitoring, org health diagnostics, and optional AI assistance. Every feature is opt-in via the options page, and any feature can be remotely disabled without a Web Store re-review.
 
 Features include:
 - Setup Tabs — adds an Automation Home tab plus reorderable, groupable tabs to the Setup tab bar
@@ -61,6 +68,21 @@ Features include:
 - Saved SOQL — bookmark and re-run SOQL queries and history
 - Switch Org — discover every org you're logged into and run any tool against it (multi-org)
 - Org Health — view native sfdt audit and monitor snapshots (org limits, license usage, MFA coverage, security health score, Apex job failures, and more) in a side panel via the local CLI bridge
+- Org Health (Live) — run org-health checks live against the org (Apex coverage, inactive users, licenses, API versions, limits) with no CLI snapshot needed
+- Show API Names — toggle inline field API names and object/18-char-Id header on record pages; copy the record Id, an Apex insert, or SOQL for the current record
+- Schema Browser — searchable two-pane explorer for the org's objects, fields, and relationships (Workspace or record page)
+- Dependency Explorer — "what references this / what does this reference" across Apex, Flow, fields, pages, and LWC via MetadataComponentDependency
+- Command Palette — keyboard-driven launcher to find and open any SFDT tool
+- Apex Test Runner — run Apex tests asynchronously and view pass/fail results in the browser
+- Apex Code Coverage — org-wide and per-class Apex coverage, worst-covered first, with the 75% deploy line flagged
+- Trace Flags — create and manage TraceFlags/DebugLevels to control Apex debug logging
+- API Version Audit — the org's max API version and release, with per-type API-version histograms that flag components below the supported floor
+- Flow Scanner — score any Flow against the @sfdt/flow-core rules engine, run in-browser with no bridge required
+- Org Release Badge — a Setup pill showing the org's Salesforce release and whether it's a preview instance
+- Org Compare — diff two orgs' metadata and export the report (via the local CLI bridge)
+- Drift Check — surface untracked metadata drift against a baseline (via the local CLI bridge)
+- Metadata Scan — scan org metadata for issues (via the local CLI bridge)
+- Right-click "Inspect this record" — optional context-menu shortcut that opens the record inspector from any Salesforce page or record link
 
 Privacy
 - No user data is sent to any third-party service.
