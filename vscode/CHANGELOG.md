@@ -6,6 +6,8 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-22
+
 ### Changed
 
 - **Per-org window theming (`sfdt.orgColor`) is now opt-in** — the default flipped
