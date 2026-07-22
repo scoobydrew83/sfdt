@@ -106,12 +106,31 @@ async function exportPack(parsedSkills, outOption) {
   const manifestPath = path.join(outDir, 'manifest.json');
   await fs.writeJson(manifestPath, manifest, { spaces: 2 });
 
+  // The mirror repo (scoobydrew83/sfdt-skills) carries a hand-written README whose
+  // footer records which CLI version it was synced from. Own that one line here,
+  // derived from package.json, so *every* sync path — CI and the documented manual
+  // `sfdt skills export --target pack` command — bumps it in lockstep and it can
+  // never drift out of step with the shipped version (harness H-014).
+  const readmePath = path.join(outDir, 'README.md');
+  let readmeSynced = false;
+  if (await fs.pathExists(readmePath)) {
+    const { version } = await fs.readJson(path.resolve(SKILLS_DIR, '..', 'package.json'));
+    const readme = await fs.readFile(readmePath, 'utf-8');
+    const footerRe = /Synced from `@sfdt\/cli` v\d+\.\d+\.\d+\./;
+    const updated = readme.replace(footerRe, `Synced from \`@sfdt/cli\` v${version}.`);
+    if (updated !== readme) {
+      await fs.writeFile(readmePath, updated, 'utf-8');
+      readmeSynced = true;
+    }
+  }
+
   const cwd = process.cwd();
   return {
     skillsCount: manifestSkills.length,
     outDir: path.relative(cwd, outDir) || '.',
     manifest: path.relative(cwd, manifestPath),
     skills: manifestSkills.map((s) => s.name),
+    readmeSynced,
   };
 }
 

@@ -45,6 +45,7 @@ so a previously failed publish **self-heals** on the next push to `main`. The `p
 4. Creates the GitHub Release (`--generate-notes`).
 5. Bumps the Homebrew tap (`scoobydrew83/homebrew-sfdt`, `Formula/sfdt.rb` url + sha256). Needs the `HOMEBREW_TAP_TOKEN` fine-grained PAT and runs `continue-on-error` — a failure is a yellow step, not a red run. Check it; bump the tap manually if it skipped. The tap repo is the single source of truth for the formula.
 6. The downstream `docker` job calls the reusable `docker-publish.yml` via `workflow_call` in the **same run** (a `GITHUB_TOKEN`-created Release doesn't fire downstream workflows), pushing `ghcr.io/scoobydrew83/sfdt:X.Y.Z` + `:latest`. Re-publish a version on demand via `workflow_dispatch` with the version input.
+7. Syncs the standalone skills pack repo (`scoobydrew83/sfdt-skills`, backs `npx skills add`) by running `sfdt skills export --target pack`, which regenerates `skills/` + `manifest.json` **and bumps the README "Synced from `@sfdt/cli` vX.Y.Z" footer from `package.json`** so it can't drift (harness H-014). Needs the `SKILLS_PACK_TOKEN` fine-grained PAT and runs `continue-on-error` — a downstream distribution sync must never fail a published release. To sync by hand, run `sfdt skills export --target pack --out ../sfdt-skills` (the footer bump is in the command, not the CI job).
 
 A prerelease version (`X.Y.Z-*`) on `main` **fails the job** by design — prereleases publish from `develop`.
 

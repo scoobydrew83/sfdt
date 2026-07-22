@@ -1,6 +1,6 @@
 {
   "name": "@sfdt/cli",
-  "version": "0.18.1",
+  "version": "0.18.2",
   "description": "Salesforce DevTools — Production-grade CLI for Salesforce DX deployment, testing, quality analysis, and release management",
   "type": "module",
   "bin": {
@@ -120,7 +120,8 @@
   "overrides": {
     "tmp": "^0.2.6",
     "uuid": "^11.1.1",
-    "shell-quote": "^1.8.4",
+    "shell-quote": "^1.9.0",
+    "adm-zip": "^0.6.0",
     "esbuild": "^0.28.1",
     "node-notifier": {
       "uuid": "^11.1.1"

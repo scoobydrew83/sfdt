@@ -258,6 +258,29 @@ describe('skills export --target pack', () => {
     expect(manifest.skills.map((s) => s.name)).toEqual(['sf-deploy', 'sfdt-cli']);
   });
 
+  it('bumps the mirror README "Synced from" footer from package.json', async () => {
+    // The pack repo's README footer must track the shipped CLI version — the
+    // export owns it so every sync (CI or manual) stays in step (harness H-014).
+    fs.readFile.mockImplementation(async (file) => {
+      if (String(file).endsWith('README.md')) {
+        return '# SFDT Agent Skills\n\nSynced from `@sfdt/cli` v0.0.0.\n';
+      }
+      return `---\nname: sf-deploy\ndescription: Deploy metadata\n---\nbody`;
+    });
+
+    await createProgram().parseAsync([
+      'node', 'sfdt', 'skills', 'export', '--target', 'pack', '--out', 'out-pack',
+    ]);
+
+    const readmeWrite = fs.writeFile.mock.calls.find(([f]) => String(f).endsWith('README.md'));
+    expect(readmeWrite, 'README.md should be rewritten').toBeTruthy();
+    const written = readmeWrite[1];
+    expect(written).not.toContain('v0.0.0.');
+    // Footer now carries the real package.json version — asserted structurally so
+    // the test doesn't need bumping on every release.
+    expect(written).toMatch(/Synced from `@sfdt\/cli` v\d+\.\d+\.\d+\./);
+  });
+
   it('emits pack results as JSON', async () => {
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 

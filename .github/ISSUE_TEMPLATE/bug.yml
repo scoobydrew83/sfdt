@@ -16,6 +16,7 @@ body:
       options:
         - cli — the @sfdt/cli npm package
         - extension — the Chrome extension
+        - vscode — the VS Code extension (sfdt.sfdt-devtools)
         - host — the native messaging host
         - flow-core — the shared TypeScript library
         - dashboard — the sfdt ui local web dashboard
