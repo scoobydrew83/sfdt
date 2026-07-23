@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   SFDT_TOKENS,
   SFDT_TOKENS_DARK,
@@ -89,5 +92,41 @@ describe('extension/lib/tokens', () => {
     it('error text on surface ≥ AA', () => {
       expect(ratio(map, 'color-error-text', 'color-surface')).toBeGreaterThanOrEqual(AA);
     });
+  });
+});
+
+// Regression guard for the defect class that hit the shadow host, the Workspace
+// host, and the toolbar popup: a saturated FILL token (surface / brand /
+// brand-deep) used as a `color:`. It looks fine in light mode — the light values
+// of the foreground aliases are byte-identical to the fills they replaced — and
+// goes dark-on-dark the moment the dark theme swaps the fill. Use the
+// foreground aliases instead: on-accent, brand-text, text-strong.
+describe('fill tokens are never used as a foreground', () => {
+  const ROOT = path.resolve(fileURLToPath(import.meta.url), '..', '..');
+  const DIRS = ['ui', 'entrypoints', 'features', 'lib'];
+  // `(^|[^-])` so border-color / outline-color / background-color don't match.
+  const FILL_AS_FG = /(^|[^-])color:\s*var\(--sfdt-color-(surface|brand-deep|brand)\)/;
+
+  function tsFiles(dir: string): string[] {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) return tsFiles(full);
+      return e.isFile() && full.endsWith('.ts') ? [full] : [];
+    });
+  }
+
+  it('no source file sets `color:` to a fill token', () => {
+    const offenders: string[] = [];
+    for (const dir of DIRS) {
+      for (const file of tsFiles(path.join(ROOT, dir))) {
+        fs.readFileSync(file, 'utf8')
+          .split('\n')
+          .forEach((line, i) => {
+            if (FILL_AS_FG.test(line))
+              offenders.push(`${path.relative(ROOT, file)}:${i + 1}: ${line.trim()}`);
+          });
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
