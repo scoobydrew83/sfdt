@@ -16,7 +16,10 @@ const STYLES = `
     width: 300px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     background: var(--sfdt-color-surface);
-    color: var(--sfdt-color-brand-deep);
+    /* text-strong, not brand-deep: brand-deep is a navy FILL token, so using it
+       as the popup's inherited foreground put navy-on-near-black in dark mode
+       (the title inherits it). Light values are identical, so light is unchanged. */
+    color: var(--sfdt-color-text-strong);
   }
   #sfdt-popup-root { padding: 14px 16px; }
   .sfdt-popup-title { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 6px; }
@@ -44,7 +47,7 @@ const STYLES = `
     border-radius: 4px;
     border: 1px solid var(--sfdt-color-border);
     background: var(--sfdt-color-surface);
-    color: var(--sfdt-color-brand-deep);
+    color: var(--sfdt-color-brand-text);
     cursor: pointer;
     font-size: 13px;
     font-family: inherit;
@@ -53,7 +56,7 @@ const STYLES = `
   .sfdt-popup-btn:hover { background: var(--sfdt-color-bg); }
   .sfdt-popup-btn.primary {
     background: var(--sfdt-color-brand);
-    color: var(--sfdt-color-surface);
+    color: var(--sfdt-color-on-accent);
     border-color: var(--sfdt-color-brand);
   }
   .sfdt-popup-btn.primary:hover { background: var(--sfdt-color-brand-active); }

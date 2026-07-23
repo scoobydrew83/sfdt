@@ -77,12 +77,13 @@ export function orgOriginFor(orgHost: string): string {
 // after hands-on browser validation.
 export const HOST_STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: var(--sfdt-color-text-strong); background: var(--sfdt-color-bg); }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: var(--sfdt-color-text-strong); background: var(--sfdt-color-bg); overflow-x: hidden; }
   /* A native <button> ignores inherited colour (UA buttontext), so tool buttons that set a themed background but no colour go dark-on-dark in dark mode. Make them inherit; more-specific rules (#sfdt-topbar button) and inline colours still win. */
   button { color: inherit; }
-  #sfdt-topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-on-accent); }
+  /* flex-wrap + min-width:0 keep the topbar from forcing a horizontal scrollbar in the narrow side panel — the org/badge/switch wrap instead of overflowing. */
+  #sfdt-topbar { display: flex; flex-wrap: wrap; min-width: 0; align-items: center; gap: 8px 12px; padding: 10px 16px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-on-accent); }
   #sfdt-topbar .title { font-weight: 600; font-size: 15px; }
-  #sfdt-topbar .org { margin-left: auto; font-size: 12px; opacity: 0.85; font-family: ui-monospace, monospace; }
+  #sfdt-topbar .org { margin-left: auto; min-width: 0; overflow-wrap: anywhere; font-size: 12px; opacity: 0.85; font-family: ui-monospace, monospace; }
   #sfdt-topbar .release-badge { display: none; align-items: center; font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.14); color: var(--sfdt-color-on-accent); white-space: nowrap; }
   #sfdt-topbar .release-badge.preview { background: var(--sfdt-color-warning); color: var(--sfdt-color-text-strong); font-weight: 600; }
   #sfdt-topbar button { padding: 5px 12px; border: 1px solid rgba(255,255,255,0.4); background: transparent; color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 12px; }
@@ -104,6 +105,10 @@ export const HOST_STYLES = `
   #sfdt-panes .welcome { max-width: 560px; margin: 40px auto; text-align: center; color: var(--sfdt-color-text-weak); padding: 0 24px; }
   #sfdt-panes .welcome h2 { color: var(--sfdt-color-text-strong); }
   #sfdt-panes code { background: var(--sfdt-color-surface-shade-4); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  /* Narrow side panel: shrink the tool sidebar so the main pane stays usable. */
+  @media (max-width: 520px) {
+    #sfdt-sidebar { width: 160px; }
+  }
 `;
 
 function el<K extends keyof HTMLElementTagNameMap>(
