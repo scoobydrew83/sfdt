@@ -4,6 +4,8 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-07-23
+
 ### Changed
 - **API Version Audit is now launched on demand, not an always-on Setup pill.** The audit used to inject an `API v67 · N behind` pill into the Setup tab strip on every Setup page load. That was too prominent for a diagnostic you consult occasionally, and it put a live org query behind an ordinary page view. The pill is gone; the audit is opened from the ⚡ menu / command palette like every other tool and renders through `present-view` as a Workspace tab or page modal. The feature manifest (`id`, `name`, `contexts`) is unchanged, so the feature registry, settings toggle, and catalogs are unaffected — only the entry point moved.
 
