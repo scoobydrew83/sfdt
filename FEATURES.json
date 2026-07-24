@@ -1,0 +1,20 @@
+{
+  "$comment": "Ground-truth acceptance criteria for sfdt's current active phase, graded as JSON (not prose) by a verifier. Contract (mirrors HARNESS-FEATURES.json): the verifier may flip passes/evidence only; entries are added/removed only by planner/human commit. A passes:true the verifier can no longer reproduce is DRIFT and fails the run. Seeded 2026-07-24 from ROADMAP.md (no CONTEXT.md exists). ROADMAP's In develop/Planned/Research/Blocked sections are currently empty; the only doc-sourced forward item is the 1.0 removal of the legacy Code Analyzer v4 path (ROADMAP.md line 23 + CLAUDE.md). Add entries here as the roadmap's current milestone gains sourced acceptance criteria.",
+  "project": "sfdt",
+  "phase": "1.0 stabilization",
+  "seeded_from": "ROADMAP.md (2026-07-24)",
+  "features": [
+    {
+      "id": "F-001",
+      "category": "quality-analyzer",
+      "description": "Legacy Code Analyzer v4 (`sf scanner run`) support removed at 1.0 — v5 is the only supported engine; the --allow-legacy-analyzer opt-in and the v4 fallback are gone.",
+      "source": "ROADMAP.md:23 ('Code Analyzer v4 is opt-in legacy, non-authoritative; removed at 1.0'); CLAUDE.md ('v4 support is removed at 1.0')",
+      "steps": [
+        "grep -rq 'sf scanner run' scripts/quality/ returns nothing",
+        "grep -rq 'allow-legacy-analyzer\\|allowLegacyV4\\|SFDT_ANALYZER_ALLOW_LEGACY' src/ scripts/ returns nothing"
+      ],
+      "passes": false,
+      "evidence": null
+    }
+  ]
+}
