@@ -6,8 +6,12 @@ vi.mock('../../src/lib/ai.js', () => ({
 }));
 vi.mock('../../src/lib/prompts.js', () => ({ getPrompt: vi.fn().mockResolvedValue('FIX THIS:') }));
 
+import os from 'os';
+import path from 'path';
+import fs from 'fs-extra';
 import { runAiPrompt, providerSupportsAgenticTools } from '../../src/lib/ai.js';
 import { runFixLoop } from '../../src/lib/agent-loop.js';
+import { queryRuns } from '../../src/lib/run-history.js';
 
 const baseConfig = { ai: { provider: 'claude', agent: { enabled: true, allowWrite: true, maxTurns: 3 } } };
 
@@ -74,5 +78,21 @@ describe('runFixLoop iteration', () => {
     const validate = vi.fn().mockResolvedValue({ ok: false, output: 'x' });
     const r = await runFixLoop({ failureOutput: 'boom', config: baseConfig, projectRoot: '/p', org: 'dev', validate, maxTurns: 99 });
     expect(r.turns.length).toBeLessThanOrEqual(20);
+  });
+});
+
+describe('runFixLoop history', () => {
+  it('persists an agent-fix row queryable via run-history', async () => {
+    const logDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-agentfix-'));
+    try {
+      const validate = vi.fn().mockResolvedValueOnce({ ok: true, output: '' });
+      await runFixLoop({ failureOutput: 'boom', config: { ...baseConfig, logDir }, org: 'dev', validate });
+      const rows = queryRuns(logDir, { type: 'agent-fix' });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ type: 'agent-fix', org: 'dev', status: 'pass' });
+      expect(rows[0].summary).toMatchObject({ turns: 1, ran: true });
+    } finally {
+      await fs.remove(logDir);
+    }
   });
 });
