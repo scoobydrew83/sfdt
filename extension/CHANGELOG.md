@@ -4,6 +4,8 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-24
+
 ### Added
 - **API Version Audit now names the components that are behind, and covers Lightning Web Components.** The audit previously answered "12 things are on v41" but never "*which* twelve" — its Tooling queries selected `ApiVersion` alone, so the names were discarded before they reached the panel. The queries now also select each type's name field (`Name` for Apex, `Definition.DeveloperName` for Flows, `DeveloperName` for LWC), and every histogram bucket carries its component names. Below-floor buckets render as **native `<button>` disclosures** — `aria-expanded`, `aria-controls`, and a descriptive `aria-label` ("Apex Classes: 3 components on API v41, below the v45 floor. Show names.") — that expand to the sorted name list; on-floor buckets stay inert, since there is nothing to action there. This brings the extension level with the CLI, which has always listed named outliers (`sfdt versions`). **Lightning Web Components** (`LightningComponentBundle`) and **Aura Components** (`AuraDefinitionBundle`) are now queried too, alongside Apex classes, Apex triggers, and active Flows — five types where there were three. Names cost no extra round-trip — same queries, one more field — and the feature manifest (`id`, `name`, `contexts`) is unchanged, so the registry, settings toggle, and catalogs are unaffected.
 
