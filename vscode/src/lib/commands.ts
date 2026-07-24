@@ -101,7 +101,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           { id: 'audit-mfa', label: 'MFA Coverage', detail: 'Users without MFA', args: ['audit', 'mfa'], refreshes: 'audit' },
           { id: 'audit-unused-apex', label: 'Unused Apex', detail: 'Apex classes with no coverage', args: ['audit', 'unused-apex'], refreshes: 'audit' },
           { id: 'audit-inactive-users', label: 'Inactive Users', detail: 'Users with no recent login', args: ['audit', 'inactive-users'], refreshes: 'audit' },
-          { id: 'audit-api-versions', label: 'API Versions', detail: 'Deprecated API versions + org ceiling (Apex, triggers, Flows)', args: ['audit', 'api-versions'], refreshes: 'audit' },
+          { id: 'audit-api-versions', label: 'API Versions', detail: 'Deprecated API versions + org ceiling (Apex, triggers, Flows, LWC, Aura)', args: ['audit', 'api-versions'], refreshes: 'audit' },
           { id: 'audit-inactive-flows', label: 'Inactive Flows', detail: 'Flows with no active version', args: ['audit', 'inactive-flows'], refreshes: 'audit' },
           { id: 'audit-unused-permsets', label: 'Unused Permission Sets', detail: 'Permission sets with no assignment', args: ['audit', 'unused-permsets'], refreshes: 'audit' },
           { id: 'audit-connected-apps', label: 'Connected Apps', detail: 'Connected apps permitting all users', args: ['audit', 'connected-apps'], refreshes: 'audit' },

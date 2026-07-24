@@ -358,7 +358,7 @@
     {
       "id": "audit-api-versions",
       "label": "API Versions",
-      "detail": "Deprecated API versions + org ceiling (Apex, triggers, Flows)",
+      "detail": "Deprecated API versions + org ceiling (Apex, triggers, Flows, LWC, Aura)",
       "args": [
         "audit",
         "api-versions"

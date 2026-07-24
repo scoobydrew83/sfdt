@@ -308,14 +308,50 @@ describe('checkApiVersions', () => {
 
   it('degrades to an Apex-only result when the Flow query is rejected', async () => {
     detectOrgRelease.mockResolvedValueOnce(null);
-    query
-      .mockResolvedValueOnce([{ Name: 'OldClass', ApiVersion: 30 }])
-      .mockResolvedValueOnce([])
-      .mockRejectedValueOnce(new Error('sObject type Flow is not supported'));
+    query.mockImplementation(async (org, soql) => {
+      if (soql.includes('FROM ApexClass')) return [{ Name: 'OldClass', ApiVersion: 30 }];
+      if (soql.includes('FROM Flow')) throw new Error('sObject type Flow is not supported');
+      return [];
+    });
     const r = await checkApiVersions('dev', { minApiVersion: 45 });
     expect(r.status).toBe('warn'); // never errors the whole check
     expect(r.findings).toHaveLength(1);
-    expect(r.summary).toContain('Flow versions not queryable');
+    // Only the type that actually failed is named — LWC/Aura succeeded.
+    expect(r.summary).toContain('Flow not queryable on this org');
+    expect(r.summary).not.toContain('LWC');
+  });
+
+  it('reports below-floor LWC and Aura bundles alongside Apex and Flows', async () => {
+    detectOrgRelease.mockResolvedValueOnce(null);
+    query.mockImplementation(async (org, soql) => {
+      if (soql.includes('FROM ApexClass')) return [{ Name: 'OldClass', ApiVersion: 30 }];
+      if (soql.includes('LightningComponentBundle')) return [{ DeveloperName: 'oldCmp', ApiVersion: 41 }];
+      if (soql.includes('AuraDefinitionBundle')) return [{ DeveloperName: 'oldAura', ApiVersion: 40 }];
+      return [];
+    });
+    const r = await checkApiVersions('dev', { minApiVersion: 45 });
+    expect(r.status).toBe('warn');
+    // Apex first, then the optional types in declaration order.
+    expect(r.findings.map((f) => [f.type, f.name])).toEqual([
+      ['ApexClass', 'OldClass'],
+      ['LWC', 'oldCmp'],
+      ['Aura', 'oldAura'],
+    ]);
+    expect(r.summary).toContain('3 component(s) below API v45');
+    expect(r.summary).not.toContain('not queryable');
+  });
+
+  it('degrades each optional type independently', async () => {
+    detectOrgRelease.mockResolvedValueOnce(null);
+    query.mockImplementation(async (org, soql) => {
+      if (soql.includes('AuraDefinitionBundle')) throw new Error('no aura');
+      if (soql.includes('LightningComponentBundle')) throw new Error('no lwc');
+      return [];
+    });
+    const r = await checkApiVersions('dev', { minApiVersion: 45 });
+    expect(r.status).toBe('ok');
+    // Named in declaration order regardless of which rejected first.
+    expect(r.summary).toContain('LWC/Aura not queryable on this org');
   });
 
   it('a detectOrgRelease failure never affects the result', async () => {

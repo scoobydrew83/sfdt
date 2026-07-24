@@ -451,27 +451,52 @@ export async function checkApiVersions(orgAlias, {
       }
     });
 
-    // Flow coverage — active flow versions below the floor. Degrades silently
-    // like the beta-gated checks: some orgs/API versions reject Flow Tooling
-    // queries, and that must not error the whole check.
-    let flowNote = '';
-    try {
-      const flowRows = await query(
-        orgAlias,
-        `SELECT Definition.DeveloperName, ApiVersion FROM Flow WHERE Status = 'Active' AND ApiVersion < ${effectiveFloor} ORDER BY ApiVersion`,
-        { tooling: true },
-      );
-      for (const r of flowRows) {
+    // Flow / LWC / Aura coverage — below-floor components of each type. These
+    // degrade silently and INDEPENDENTLY, like the beta-gated checks: some
+    // orgs/API versions reject these Tooling queries, and that must not error
+    // the whole check (Apex above is the required core). Queried in parallel
+    // but consumed in declaration order so findings and the note stay stable.
+    const optionalTypes = [
+      {
+        type: 'Flow',
+        soql: `SELECT Definition.DeveloperName, ApiVersion FROM Flow WHERE Status = 'Active' AND ApiVersion < ${effectiveFloor} ORDER BY ApiVersion`,
+      },
+      {
+        type: 'LWC',
+        soql: `SELECT DeveloperName, ApiVersion FROM LightningComponentBundle WHERE NamespacePrefix = null AND ApiVersion < ${effectiveFloor} ORDER BY ApiVersion`,
+      },
+      {
+        type: 'Aura',
+        soql: `SELECT DeveloperName, ApiVersion FROM AuraDefinitionBundle WHERE NamespacePrefix = null AND ApiVersion < ${effectiveFloor} ORDER BY ApiVersion`,
+      },
+    ];
+    const optionalRows = await Promise.all(
+      optionalTypes.map(async ({ type, soql }) => {
+        try {
+          return { type, rows: await query(orgAlias, soql, { tooling: true }) };
+        } catch {
+          return { type, rows: null };
+        }
+      }),
+    );
+    const unavailable = [];
+    for (const { type, rows } of optionalRows) {
+      if (!rows) {
+        unavailable.push(type);
+        continue;
+      }
+      for (const r of rows) {
         findings.push({
-          type: 'Flow',
-          name: r.Definition?.DeveloperName ?? r.DeveloperName ?? '(unknown)',
+          type,
+          name: r.Definition?.DeveloperName ?? r.DeveloperName ?? r.Name ?? '(unknown)',
           apiVersion: r.ApiVersion,
           reason: reasonFor(r.ApiVersion),
         });
       }
-    } catch {
-      flowNote = '; Flow versions not queryable on this org (Apex-only result)';
     }
+    const flowNote = unavailable.length
+      ? `; ${unavailable.join('/')} not queryable on this org`
+      : '';
 
     const ceilingNote = Number.isFinite(ceiling)
       ? ` (org max: v${ceiling}${release?.release ? `, ${release.release}` : ''})`
