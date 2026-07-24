@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`sfdt versions` and `sfdt audit api-versions` now cover LWC and Aura on the org side.** The local source scan has always inventoried Apex classes/triggers, Flows, LWC, and Aura, but the org half of the comparison stopped at Apex and Flows — so an org-side bundle stuck on an old API version was invisible, and the local/org columns weren't comparing the same set. Both now also query `LightningComponentBundle` and `AuraDefinitionBundle` via the Tooling API (verified against a live org), keyed `LWC`/`Aura` to match the local scan's component types so the two sides of the report line up. Component names are read per type — `Name` (Apex), `Definition.DeveloperName` (Flow), `DeveloperName` (LWC/Aura).
+- In `audit api-versions`, Flow/LWC/Aura are **optional types that degrade independently**: any of them being unqueryable on a given org leaves the check at `warn`/`ok` with the unavailable types named in the summary (`; LWC/Aura not queryable on this org`) rather than failing the run — the same posture the Flow query already had, now generalised. Apex remains the required core. Queries run in parallel but are consumed in declaration order, so findings order and the summary text are stable rather than dependent on which query returns first (`fetchOrgApiVersions`'s `degraded` list is now order-stable for the same reason).
 
 ## [0.18.2] - 2026-07-22
 
