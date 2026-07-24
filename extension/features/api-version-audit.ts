@@ -10,16 +10,36 @@ import { presentView, type ViewHandle } from '../ui/present-view.js';
 // plus per-type ApiVersion histograms from the Tooling API. "Behind" =
 // components below flow-core's minApiVersionFloor, so the banding matches the
 // CLI's org-health checks. Opens as a Workspace tab or a page modal.
+//
+// Each histogram bucket carries the component NAMES at that version (the
+// queries select a name field, so this costs no extra round-trip). Below-floor
+// buckets render as disclosure buttons that expand to the name list — the
+// "which classes are actually behind?" answer the CLI already gives via
+// `sfdt versions` outliers.
 
 const PANEL_CLASS = 'sfdt-api-version-audit-panel';
-const BEHIND_COLOUR = 'var(--sfdt-color-warning)'; // amber — matches org-health's amber band
+// Fills/bars use the base token; TEXT uses the foreground variant — a fill
+// token as .style.color renders low-contrast in dark (see extension CLAUDE.md).
+const BEHIND_FILL = 'var(--sfdt-color-warning)';
+const BEHIND_TEXT = 'var(--sfdt-color-warning-text)';
 
 interface ApiVersionRow {
   ApiVersion?: number | null;
+  // Name shape varies by type: Name (Apex), DeveloperName (LWC/Aura),
+  // Definition.DeveloperName (Flow).
+  Name?: string | null;
+  DeveloperName?: string | null;
+  Definition?: { DeveloperName?: string | null } | null;
 }
 
-/** version → count, oldest first. */
-export type VersionHistogram = ReadonlyArray<readonly [number, number]>;
+/** One API version and the components sitting on it. `names.length` is the count. */
+export interface VersionBucket {
+  version: number;
+  names: string[];
+}
+
+/** Buckets oldest version first. */
+export type VersionHistogram = ReadonlyArray<VersionBucket>;
 
 export interface TypeDistribution {
   label: string;
@@ -32,28 +52,49 @@ export interface AuditData {
 }
 
 const TYPE_QUERIES: ReadonlyArray<{ label: string; soql: string }> = [
-  { label: 'Apex Classes', soql: 'SELECT ApiVersion FROM ApexClass WHERE NamespacePrefix = null' },
-  { label: 'Apex Triggers', soql: 'SELECT ApiVersion FROM ApexTrigger WHERE NamespacePrefix = null' },
-  { label: 'Flows', soql: "SELECT ApiVersion FROM Flow WHERE Status = 'Active'" },
+  { label: 'Apex Classes', soql: 'SELECT Name, ApiVersion FROM ApexClass WHERE NamespacePrefix = null' },
+  { label: 'Apex Triggers', soql: 'SELECT Name, ApiVersion FROM ApexTrigger WHERE NamespacePrefix = null' },
+  { label: 'Flows', soql: "SELECT Definition.DeveloperName, ApiVersion FROM Flow WHERE Status = 'Active'" },
+  {
+    label: 'Lightning Web Components',
+    soql: 'SELECT DeveloperName, ApiVersion FROM LightningComponentBundle WHERE NamespacePrefix = null',
+  },
+  {
+    label: 'Aura Components',
+    soql: 'SELECT DeveloperName, ApiVersion FROM AuraDefinitionBundle WHERE NamespacePrefix = null',
+  },
 ];
 
-/** Aggregate raw ApiVersion rows into a version→count histogram, oldest first. */
+/** The component name across the three Tooling row shapes. */
+function rowName(row: ApiVersionRow): string {
+  const raw = row?.Name ?? row?.DeveloperName ?? row?.Definition?.DeveloperName;
+  return typeof raw === 'string' && raw.trim() ? raw : '(unknown)';
+}
+
+/**
+ * Aggregate raw rows into version buckets, oldest first, names sorted within
+ * each bucket. Rows without a usable ApiVersion are skipped.
+ */
 export function aggregateVersions(rows: ReadonlyArray<ApiVersionRow>): VersionHistogram {
-  const counts = new Map<number, number>();
+  const buckets = new Map<number, string[]>();
   for (const row of rows) {
     const v = row?.ApiVersion;
     if (typeof v !== 'number' || !Number.isFinite(v)) continue;
-    counts.set(v, (counts.get(v) ?? 0) + 1);
+    const names = buckets.get(v);
+    if (names) names.push(rowName(row));
+    else buckets.set(v, [rowName(row)]);
   }
-  return [...counts.entries()].sort((a, b) => a[0] - b[0]);
+  return [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([version, names]) => ({ version, names: names.sort((a, b) => a.localeCompare(b)) }));
 }
 
 /** Components with an ApiVersion below flow-core's minApiVersionFloor. */
 export function countBehind(types: ReadonlyArray<TypeDistribution>): number {
   let behind = 0;
   for (const t of types) {
-    for (const [version, count] of t.versions) {
-      if (version < ORG_HEALTH_THRESHOLDS.minApiVersionFloor) behind += count;
+    for (const bucket of t.versions) {
+      if (bucket.version < ORG_HEALTH_THRESHOLDS.minApiVersionFloor) behind += bucket.names.length;
     }
   }
   return behind;
@@ -123,6 +164,7 @@ function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
   panel.appendChild(summary);
 
   const floor = ORG_HEALTH_THRESHOLDS.minApiVersionFloor;
+  let listId = 0; // unique aria-controls targets within this panel
   for (const t of data.types) {
     const heading = doc.createElement('div');
     heading.style.cssText = 'font-weight: 700; margin: 6px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--sfdt-color-text-weak);';
@@ -137,35 +179,92 @@ function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
       continue;
     }
 
-    const max = Math.max(...t.versions.map(([, count]) => count));
-    for (const [version, count] of t.versions) {
-      const below = version < floor;
-      const row = doc.createElement('div');
+    const max = Math.max(...t.versions.map((b) => b.names.length));
+    for (const bucket of t.versions) {
+      const below = bucket.version < floor;
+      // Below-floor buckets are expandable (native <button>, aria-expanded,
+      // labelled) so the user can see WHICH components are behind. On-floor
+      // buckets stay inert — nothing to action there.
+      const row = doc.createElement(below ? 'button' : 'div');
       row.className = `${PANEL_CLASS}-row`;
       row.style.cssText = [
         'display: flex',
         'align-items: center',
         'gap: 8px',
         'padding: 1px 4px',
-        below ? `color: ${BEHIND_COLOUR}; font-weight: 700; background: var(--sfdt-color-warning-bg-5)` : '',
+        'width: 100%',
+        'box-sizing: border-box',
+        'text-align: left',
+        'font: inherit',
+        below
+          ? `color: ${BEHIND_TEXT}; font-weight: 700; background: var(--sfdt-color-warning-bg-5); border: 0; border-radius: 2px; cursor: pointer`
+          : 'background: none; border: 0',
       ].join('; ');
-      if (below) row.dataset['belowFloor'] = 'true';
+
+      const caret = doc.createElement('span');
+      caret.setAttribute('aria-hidden', 'true');
+      caret.style.cssText = 'width: 10px; flex: 0 0 auto;';
+      caret.textContent = below ? '▸' : '';
 
       const label = doc.createElement('span');
       label.style.cssText = 'width: 36px; flex: 0 0 auto;';
-      label.textContent = `v${version}`;
+      label.textContent = `v${bucket.version}`;
       const bar = doc.createElement('span');
       bar.style.cssText = [
         'display: inline-block',
         'height: 8px',
         'border-radius: 2px',
-        `width: ${Math.max(4, Math.round((count / max) * 80))}px`,
-        `background: ${below ? BEHIND_COLOUR : 'var(--sfdt-color-info)'}`,
+        `width: ${Math.max(4, Math.round((bucket.names.length / max) * 80))}px`,
+        `background: ${below ? BEHIND_FILL : 'var(--sfdt-color-info)'}`,
       ].join('; ');
       const countEl = doc.createElement('span');
-      countEl.textContent = String(count);
-      row.append(label, bar, countEl);
-      panel.appendChild(row);
+      countEl.textContent = String(bucket.names.length);
+      row.append(caret, label, bar, countEl);
+
+      if (!below) {
+        panel.appendChild(row);
+        continue;
+      }
+
+      row.dataset['belowFloor'] = 'true';
+      (row as HTMLButtonElement).type = 'button';
+      listId += 1;
+      const namesId = `${PANEL_CLASS}-names-${listId}`;
+      const n = bucket.names.length;
+      row.setAttribute('aria-expanded', 'false');
+      row.setAttribute('aria-controls', namesId);
+      row.setAttribute(
+        'aria-label',
+        `${t.label}: ${n} component${n === 1 ? '' : 's'} on API v${bucket.version}, below the v${floor} floor. Show names.`,
+      );
+
+      const names = doc.createElement('ul');
+      names.id = namesId;
+      names.className = `${PANEL_CLASS}-names`;
+      names.hidden = true;
+      names.style.cssText = [
+        'margin: 2px 0 6px 54px',
+        'padding: 0',
+        'list-style: none',
+        'font-weight: 400',
+        'font-size: 12px',
+        'color: var(--sfdt-color-text-weak)',
+      ].join('; ');
+      for (const name of bucket.names) {
+        const li = doc.createElement('li');
+        li.style.cssText = 'padding: 1px 0;';
+        li.textContent = name;
+        names.appendChild(li);
+      }
+
+      row.addEventListener('click', () => {
+        const open = row.getAttribute('aria-expanded') === 'true';
+        row.setAttribute('aria-expanded', String(!open));
+        names.hidden = open;
+        caret.textContent = open ? '▸' : '▾';
+      });
+
+      panel.append(row, names);
     }
   }
 
