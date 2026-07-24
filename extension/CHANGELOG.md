@@ -4,6 +4,15 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-24
+
+### Added
+- **API Version Audit now names the components that are behind, and covers Lightning Web Components.** The audit previously answered "12 things are on v41" but never "*which* twelve" — its Tooling queries selected `ApiVersion` alone, so the names were discarded before they reached the panel. The queries now also select each type's name field (`Name` for Apex, `Definition.DeveloperName` for Flows, `DeveloperName` for LWC), and every histogram bucket carries its component names. Below-floor buckets render as **native `<button>` disclosures** — `aria-expanded`, `aria-controls`, and a descriptive `aria-label` ("Apex Classes: 3 components on API v41, below the v45 floor. Show names.") — that expand to the sorted name list; on-floor buckets stay inert, since there is nothing to action there. This brings the extension level with the CLI, which has always listed named outliers (`sfdt versions`). **Lightning Web Components** (`LightningComponentBundle`) and **Aura Components** (`AuraDefinitionBundle`) are now queried too, alongside Apex classes, Apex triggers, and active Flows — five types where there were three. Names cost no extra round-trip — same queries, one more field — and the feature manifest (`id`, `name`, `contexts`) is unchanged, so the registry, settings toggle, and catalogs are unaffected.
+
+### Fixed
+- **The fill-token-as-foreground guard had two holes, and three more instances were hiding in them.** The `test/tokens.test.ts` scan added in 0.8.1 checked only three fills (`surface`, `brand-deep`, `brand`) and only matched inline literals — so `color: var(--sfdt-color-warning)` was never checked at all, and a fill reached through a `const` (`` color: ${BEHIND_COLOUR} ``) was invisible even for the fills it did cover. The guard now covers **every fill that has a foreground variant** (`surface`, `brand-deep`, `brand`, `error`, `success`, `warning`; `info` is excluded because it has no `-text` alias yet) and resolves single-line `const X = 'var(--sfdt-color-fill)'` bindings before matching. It also has its own tests now — the guard is asserted to catch both shapes and to *not* flag foreground variants, backgrounds, or borders, because a regression scan that silently matches nothing is worse than none.
+- **Three fill-as-foreground defects the widened guard found**, all genuine dark-mode contrast bugs: the API Version Audit's below-floor histogram rows, the ⚠ glyphs in Missing Description Flags (both the card badge and the inline flag), and the Schema Browser's describe-failure message. Warning text moves `--sfdt-color-warning` → `--sfdt-color-warning-text`; the error message moves `--sfdt-color-error` → `--sfdt-color-error-text`. The error case is byte-identical in light (`#c23934`), so only dark changes; the warning cases are **not** (`#fe9339` → `#b46600`), so that text is deliberately darker amber in light mode too — that *is* the contrast improvement. Fills used as bars/backgrounds are untouched in both themes.
+
 ## [0.8.1] - 2026-07-23
 
 ### Changed

@@ -298,7 +298,7 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
       if (describe.status === 'error' || !describe.data) {
         const err = doc.createElement('div');
         err.textContent = 'Failed to load object describe.';
-        err.style.cssText = 'color: var(--sfdt-color-error);';
+        err.style.cssText = 'color: var(--sfdt-color-error-text);';
         rightPane.appendChild(err);
         return;
       }

@@ -82,26 +82,38 @@ export async function fetchOrgApiVersions(orgAlias) {
   const rel = await detectOrgRelease(orgAlias).catch(() => null);
   const ceiling = rel?.apiVersion ? Number.parseInt(rel.apiVersion, 10) : null;
 
+  // Keys match scanLocalApiVersions' component types so local and org sides of
+  // the report line up. Name field differs per type: Name (Apex),
+  // Definition.DeveloperName (Flow), DeveloperName (LWC/Aura).
   const queries = {
     ApexClass: `SELECT Name, ApiVersion FROM ApexClass WHERE NamespacePrefix = null ORDER BY ApiVersion`,
     ApexTrigger: `SELECT Name, ApiVersion FROM ApexTrigger WHERE NamespacePrefix = null ORDER BY ApiVersion`,
     Flow: `SELECT Definition.DeveloperName, ApiVersion FROM Flow WHERE Status = 'Active' ORDER BY ApiVersion`,
+    LWC: `SELECT DeveloperName, ApiVersion FROM LightningComponentBundle WHERE NamespacePrefix = null ORDER BY ApiVersion`,
+    Aura: `SELECT DeveloperName, ApiVersion FROM AuraDefinitionBundle WHERE NamespacePrefix = null ORDER BY ApiVersion`,
   };
   const byType = {};
-  const degraded = [];
-  await Promise.all(
+  // Settled in declaration order (not completion order) so `degraded` is stable.
+  const settled = await Promise.all(
     Object.entries(queries).map(async ([type, soql]) => {
       try {
-        const rows = await query(orgAlias, soql, { tooling: true });
-        byType[type] = rows.map((r) => ({
-          name: r.Name ?? r.Definition?.DeveloperName ?? '(unknown)',
-          apiVersion: r.ApiVersion,
-        }));
+        return { type, rows: await query(orgAlias, soql, { tooling: true }) };
       } catch {
-        degraded.push(type);
+        return { type, rows: null };
       }
     }),
   );
+  const degraded = [];
+  for (const { type, rows } of settled) {
+    if (!rows) {
+      degraded.push(type);
+      continue;
+    }
+    byType[type] = rows.map((r) => ({
+      name: r.Name ?? r.DeveloperName ?? r.Definition?.DeveloperName ?? '(unknown)',
+      apiVersion: r.ApiVersion,
+    }));
+  }
   return {
     ceiling: Number.isFinite(ceiling) ? ceiling : null,
     release: rel?.release ?? null,

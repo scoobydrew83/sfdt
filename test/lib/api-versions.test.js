@@ -79,6 +79,8 @@ describe('fetchOrgApiVersions', () => {
     query.mockImplementation(async (org, soql) => {
       if (soql.includes('ApexClass')) return [{ Name: 'Foo', ApiVersion: 58 }];
       if (soql.includes('ApexTrigger')) return [];
+      if (soql.includes('LightningComponentBundle')) return [{ DeveloperName: 'cmp', ApiVersion: 61 }];
+      if (soql.includes('AuraDefinitionBundle')) return [{ DeveloperName: 'aur', ApiVersion: 40 }];
       return [{ Definition: { DeveloperName: 'My_Flow' }, ApiVersion: 60 }];
     });
     const org = await fetchOrgApiVersions('dev');
@@ -86,6 +88,10 @@ describe('fetchOrgApiVersions', () => {
     expect(org.release).toBe("Summer '26");
     expect(org.byType.ApexClass).toEqual([{ name: 'Foo', apiVersion: 58 }]);
     expect(org.byType.Flow).toEqual([{ name: 'My_Flow', apiVersion: 60 }]);
+    // LWC/Aura are keyed to match scanLocalApiVersions' component types, and
+    // read their name from DeveloperName.
+    expect(org.byType.LWC).toEqual([{ name: 'cmp', apiVersion: 61 }]);
+    expect(org.byType.Aura).toEqual([{ name: 'aur', apiVersion: 40 }]);
     expect(org.degraded).toEqual([]);
   });
 
@@ -99,6 +105,22 @@ describe('fetchOrgApiVersions', () => {
     expect(org.ceiling).toBeNull();
     expect(org.degraded).toEqual(['Flow']);
     expect(org.byType.ApexClass).toEqual([]);
+    expect(org.byType.LWC).toEqual([]);
+  });
+
+  it('reports degraded types in declaration order, not completion order', async () => {
+    detectOrgRelease.mockResolvedValue(null);
+    // Aura rejects fast, Flow rejects slow — completion order would be reversed.
+    query.mockImplementation(async (org, soql) => {
+      if (soql.includes('AuraDefinitionBundle')) throw new Error('no aura');
+      if (soql.includes('FROM Flow')) {
+        await new Promise((r) => setTimeout(r, 10));
+        throw new Error('no flow');
+      }
+      return [];
+    });
+    const org = await fetchOrgApiVersions('dev');
+    expect(org.degraded).toEqual(['Flow', 'Aura']);
   });
 });
 

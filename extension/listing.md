@@ -76,7 +76,7 @@ Features include:
 - Apex Test Runner — run Apex tests asynchronously and view pass/fail results in the browser
 - Apex Code Coverage — org-wide and per-class Apex coverage, worst-covered first, with the 75% deploy line flagged
 - Trace Flags — create and manage TraceFlags/DebugLevels to control Apex debug logging
-- API Version Audit — the org's max API version and release, with per-type API-version histograms that flag components below the supported floor
+- API Version Audit — the org's max API version and release, with per-type API-version histograms (Apex classes/triggers, Flows, LWC, Aura) that flag components below the supported floor and expand to name exactly which ones are behind
 - Flow Scanner — score any Flow against the @sfdt/flow-core rules engine, run in-browser with no bridge required
 - Org Release Badge — a Setup pill showing the org's Salesforce release and whether it's a preview instance
 - Org Compare — diff two orgs' metadata and export the report (via the local CLI bridge)
