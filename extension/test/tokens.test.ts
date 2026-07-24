@@ -104,8 +104,20 @@ describe('extension/lib/tokens', () => {
 describe('fill tokens are never used as a foreground', () => {
   const ROOT = path.resolve(fileURLToPath(import.meta.url), '..', '..');
   const DIRS = ['ui', 'entrypoints', 'features', 'lib'];
+
+  // Every fill that has a dedicated foreground variant. `info` is deliberately
+  // absent — it has no `-text` alias yet, so there is nothing to demand instead.
+  // (The v0.8.1 guard listed only surface/brand-deep/brand, which is why
+  // `color: var(--sfdt-color-warning)` in the API Version Audit slipped past it.)
+  const FILLS = ['surface', 'brand-deep', 'brand', 'error', 'success', 'warning'];
+  // A trailing `\)` keeps the `-text` / `-bg-*` variants from matching.
+  const FILL_VAR = String.raw`var\(--sfdt-color-(?:${FILLS.join('|')})\)`;
   // `(^|[^-])` so border-color / outline-color / background-color don't match.
-  const FILL_AS_FG = /(^|[^-])color:\s*var\(--sfdt-color-(surface|brand-deep|brand)\)/;
+  const FILL_AS_FG = new RegExp(String.raw`(^|[^-])color:\s*${FILL_VAR}`);
+  // The second hole: `color: ${SOME_CONST}` where the const holds a fill var.
+  // Resolve single-line `const X = 'var(--sfdt-color-fill)'` bindings per file.
+  const FILL_CONST = new RegExp(String.raw`const\s+(\w+)\s*=\s*['"\`]${FILL_VAR}['"\`]`, 'g');
+  const INTERPOLATED_FG = /(^|[^-])color:\s*\$\{(\w+)\}/;
 
   function tsFiles(dir: string): string[] {
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -115,18 +127,52 @@ describe('fill tokens are never used as a foreground', () => {
     });
   }
 
+  function scan(source: string): Array<{ line: number; text: string }> {
+    const fillConsts = new Set([...source.matchAll(FILL_CONST)].map((m) => m[1]));
+    const hits: Array<{ line: number; text: string }> = [];
+    source.split('\n').forEach((line, i) => {
+      const interpolated = INTERPOLATED_FG.exec(line);
+      if (FILL_AS_FG.test(line) || (interpolated && fillConsts.has(interpolated[2])))
+        hits.push({ line: i + 1, text: line.trim() });
+    });
+    return hits;
+  }
+
   it('no source file sets `color:` to a fill token', () => {
     const offenders: string[] = [];
     for (const dir of DIRS) {
       for (const file of tsFiles(path.join(ROOT, dir))) {
-        fs.readFileSync(file, 'utf8')
-          .split('\n')
-          .forEach((line, i) => {
-            if (FILL_AS_FG.test(line))
-              offenders.push(`${path.relative(ROOT, file)}:${i + 1}: ${line.trim()}`);
-          });
+        for (const hit of scan(fs.readFileSync(file, 'utf8')))
+          offenders.push(`${path.relative(ROOT, file)}:${hit.line}: ${hit.text}`);
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  // The guard must actually catch both shapes — a guard that silently matches
+  // nothing is worse than no guard, which is how this class escaped four times.
+  it('catches a fill token used directly as a foreground', () => {
+    expect(scan(`el.style.cssText = 'color: var(--sfdt-color-warning)';`)).toHaveLength(1);
+    expect(scan(`el.style.cssText = 'color: var(--sfdt-color-brand)';`)).toHaveLength(1);
+  });
+
+  it('catches a fill token reached through a const', () => {
+    const source = [
+      `const BEHIND = 'var(--sfdt-color-warning)';`,
+      'el.style.cssText = `color: ${BEHIND}`;',
+    ].join('\n');
+    expect(scan(source)).toHaveLength(1);
+  });
+
+  it('does not flag foreground variants, fills used as backgrounds, or borders', () => {
+    const source = [
+      `a.style.cssText = 'color: var(--sfdt-color-warning-text)';`,
+      `b.style.cssText = 'background: var(--sfdt-color-warning)';`,
+      `c.style.cssText = 'border-color: var(--sfdt-color-brand)';`,
+      `d.style.cssText = 'background-color: var(--sfdt-color-surface)';`,
+      `const FILL = 'var(--sfdt-color-warning)';`,
+      'e.style.cssText = `background: ${FILL}`;',
+    ].join('\n');
+    expect(scan(source)).toEqual([]);
   });
 });
