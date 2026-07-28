@@ -45,6 +45,7 @@
     "baseURL": "",
     "apiKeyEnv": "",
     "headers": {},
+    "headersEnv": {},
     "timeoutMs": 300000,
     "agent": {
       "enabled": false,
