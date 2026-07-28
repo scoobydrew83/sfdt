@@ -125,6 +125,7 @@
     "shell-quote": "^1.9.0",
     "adm-zip": "^0.6.0",
     "esbuild": "^0.28.1",
+    "brace-expansion": "^5.0.8",
     "node-notifier": {
       "uuid": "^11.1.1"
     }
