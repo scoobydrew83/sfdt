@@ -13,6 +13,7 @@
 
 import { maxStatus, meetsThreshold } from './check-status.js';
 import { redactSensitiveData } from './audit-logger.js';
+import { resolveEnvHeaders } from './env-headers.js';
 import {
   buildEventMessage,
   buildSnapshotMessage,
@@ -90,31 +91,16 @@ function channelLabel(ch) {
 }
 
 /**
- * Resolve a channel's outbound headers. `headers` holds literal values;
- * `headersEnv` maps a header name to the NAME of an env var holding its value,
- * resolved here — the same contract as `webhookUrlEnv` and the SMTP `*Env`
- * keys, so an auth token never has to be written into `.sfdt/config.json`.
+ * Resolve a channel's outbound headers — literal `headers`, with `headersEnv`
+ * values read from the named env vars, so an auth token never has to be written
+ * into `.sfdt/config.json`. Shared with the `http` AI provider so the precedence
+ * and unset-var semantics can't drift between the two.
  *
- * `headersEnv` wins over a literal `headers` entry of the same name.
- *
- * An env var that is named but unset is a hard error rather than a skipped
- * header: silently dropping an auth header turns a local config mistake into a
- * 401 from the far end, which is far harder to trace back to here. The throw is
- * caught by sendToChannel, so it degrades to one failed channel, not a crash.
+ * The throw on an unset var is caught by sendToChannel, so it degrades to one
+ * failed channel rather than a crash.
  */
 function channelHeaders(ch) {
-  const headers = { ...(ch.headers ?? {}) };
-  for (const [name, envVar] of Object.entries(ch.headersEnv ?? {})) {
-    const value = process.env[envVar];
-    if (!value) {
-      throw new Error(
-        `header "${name}" is configured from env var ${envVar}, which is unset or empty — ` +
-          `export ${envVar}, or drop "${name}" from this channel's headersEnv`,
-      );
-    }
-    headers[name] = value;
-  }
-  return headers;
+  return resolveEnvHeaders(ch.headers, ch.headersEnv, `channel "${channelLabel(ch)}" headersEnv`);
 }
 
 function eventAllowed(ch, event) {
