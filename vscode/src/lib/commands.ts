@@ -128,7 +128,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         ],
       },
       { id: 'notify-monitor', label: 'Send Org Health to Notifications', detail: 'Push the latest monitor snapshot to configured channels', args: ['notify', 'snapshot', '--type', 'monitor'], icon: 'bell' },
-      { id: 'notify', label: 'Send Notification (event)', detail: 'Send a lifecycle event to configured channels: deploy-success | deploy-failure | test-failure | release-created | snapshot', args: ['notify'], argsIncomplete: true, icon: 'bell' },
+      { id: 'notify', label: 'Send Notification (event)', detail: 'Send a lifecycle event to configured channels: deploy-success | deploy-failure | test-failure | release-created | harness-escalation | snapshot', args: ['notify'], argsIncomplete: true, icon: 'bell' },
       { id: 'backup', label: 'Backup Metadata', detail: 'Retrieve a full metadata backup', args: ['monitor', 'backup'], destructive: true, icon: 'archive' },
       { id: 'scan', label: 'Scan Inventory', detail: 'Fetch the org metadata inventory', args: ['scan'], refreshes: 'scan', icon: 'search' },
       { id: 'drift', label: 'Detect Drift', detail: 'Compare local source against the org', args: ['drift'], refreshes: 'drift', icon: 'git-compare' },

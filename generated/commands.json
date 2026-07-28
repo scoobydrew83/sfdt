@@ -787,7 +787,7 @@
       "path": [
         "notify"
       ],
-      "description": "Send a notification (events: deploy-success, deploy-failure, test-failure, release-created, snapshot)",
+      "description": "Send a notification (events: deploy-success, deploy-failure, test-failure, release-created, harness-escalation, snapshot)",
       "aliases": [],
       "hidden": false,
       "arguments": [

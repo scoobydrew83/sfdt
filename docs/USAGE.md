@@ -840,7 +840,7 @@ sfdt notify snapshot --type monitor        # push the latest monitor snapshot
 
 | Argument | Description |
 |---|---|
-| `<event>` | A lifecycle event (e.g. `deploy-success`, `deploy-failure`, `test-failure`, `release-created`), or `snapshot` to push the latest org-health snapshot |
+| `<event>` | A lifecycle event (e.g. `deploy-success`, `deploy-failure`, `test-failure`, `release-created`, `harness-escalation`), or `snapshot` to push the latest org-health snapshot |
 
 **Options:**
 

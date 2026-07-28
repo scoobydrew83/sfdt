@@ -255,7 +255,7 @@ Send a notification through the configured channels (Slack, MS Teams, Google Cha
 **Arguments**:
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `event` | Yes | One of: `deploy-success`, `deploy-failure`, `test-failure`, `release-created`, `snapshot` |
+| `event` | Yes | One of: `deploy-success`, `deploy-failure`, `test-failure`, `release-created`, `harness-escalation`, `snapshot` |
 
 **Options**:
 | Flag | Description |
