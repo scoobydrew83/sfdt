@@ -87,20 +87,36 @@ function git(args) {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
-function defaultBranch() {
-  const head = git(['rev-parse', '--abbrev-ref', 'origin/HEAD']); // e.g. "origin/develop"
-  if (head) return head.replace(/^origin\//, '');
-  for (const b of ['develop', 'main', 'master']) {
-    if (git(['rev-parse', '--verify', '--quiet', b]) !== null) return b;
+function baseCandidates() {
+  const names = ['develop', 'main', 'master'];
+  const head = git(['rev-parse', '--abbrev-ref', 'origin/HEAD']); // e.g. "origin/main"
+  if (head) names.unshift(head.replace(/^origin\//, ''));
+  return [...new Set(names)].filter((b) => git(['rev-parse', '--verify', '--quiet', b]) !== null);
+}
+
+// The fork point is the merge-base CLOSEST to HEAD, not the merge-base with
+// whatever `origin/HEAD` happens to name. In a develop -> main gitflow
+// `origin/HEAD` is main, but work forks from develop — and merge-base(HEAD, main)
+// sits back at the last release merge, so every develop commit since then
+// replays as if this branch had added it. That made the whole of FEATURES.json
+// (added to develop after the last promotion) read as one giant addition and
+// tripped Rule 2 on every branch, develop included.
+function forkPoint() {
+  let best = null;
+  for (const b of baseCandidates()) {
+    const mb = git(['merge-base', 'HEAD', b]);
+    if (!mb) continue;
+    const when = Number(git(['show', '-s', '--format=%ct', mb]) || 0);
+    if (!best || when > best.when) best = { mb, when };
   }
-  return null;
+  return best?.mb ?? null;
 }
 
 const inRepo = git(['rev-parse', '--is-inside-work-tree']) === 'true';
-const base = inRepo ? defaultBranch() : null;
-// Compare the fork point (merge-base of the working tree and default) to the
-// working tree — captures both this branch's commits and uncommitted edits.
-const mergeBase = base ? git(['merge-base', 'HEAD', base]) : null;
+// Compare the fork point to the working tree — captures both this branch's
+// commits and uncommitted edits. On the integration branch itself the fork
+// point IS HEAD, so the diff is empty and only the structure rules apply.
+const mergeBase = inRepo ? forkPoint() : null;
 const diff = mergeBase ? git(['diff', '--no-color', '-U0', mergeBase, '--', 'FEATURES.json']) : null;
 
 if (diff) {
