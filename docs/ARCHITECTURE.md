@@ -386,7 +386,7 @@ Publishing is **CI-first** (`.github/workflows/ci.yml`); humans merge, CI ships:
 | Native host | **Read-only** — mutating kinds and `ai` are `nativeHost: false` in the contract; project access only via the explicit install-host pointer file |
 | GitHub Action | `args-json` input is spawned **with no shell** (a JSON argv array); the legacy `command` string is restricted to shell-neutral characters unless `allow-shell-command: true` is explicitly set |
 | MCP | Every mutating tool requires `confirmExecution: true`; enforced by tests, not convention |
-| Secrets | Config stores env-var **names**, never values (`ai.apiKeyEnv`, `webhookUrlEnv`, SMTP `*Env`); AI payloads pass through `redactSensitiveData` |
+| Secrets | Config stores env-var **names**, never values (`ai.apiKeyEnv`, `webhookUrlEnv`, `headersEnv`, SMTP `*Env`); AI payloads pass through `redactSensitiveData` |
 | AI subprocesses | CLI providers run in read-only sandboxes; write-capable agent loop is double-opt-in and dry-run-verified per turn |
 
 ## 19. "Adding a ..." recipes

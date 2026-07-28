@@ -13,6 +13,7 @@
 
 import { maxStatus, meetsThreshold } from './check-status.js';
 import { redactSensitiveData } from './audit-logger.js';
+import { resolveEnvHeaders } from './env-headers.js';
 import {
   buildEventMessage,
   buildSnapshotMessage,
@@ -87,6 +88,19 @@ function channelUrl(ch) {
 
 function channelLabel(ch) {
   return ch.name || ch.type;
+}
+
+/**
+ * Resolve a channel's outbound headers — literal `headers`, with `headersEnv`
+ * values read from the named env vars, so an auth token never has to be written
+ * into `.sfdt/config.json`. Shared with the `http` AI provider so the precedence
+ * and unset-var semantics can't drift between the two.
+ *
+ * The throw on an unset var is caught by sendToChannel, so it degrades to one
+ * failed channel rather than a crash.
+ */
+function channelHeaders(ch) {
+  return resolveEnvHeaders(ch.headers, ch.headersEnv, `channel "${channelLabel(ch)}" headersEnv`);
 }
 
 function eventAllowed(ch, event) {
@@ -165,7 +179,7 @@ async function sendToChannel(ch, message, { kind, snapshot, org } = {}) {
     } else {
       return { channel: label, type: ch.type, ok: false, error: `unsupported channel type: ${ch.type}` };
     }
-    await postJson(url, body, ch.headers);
+    await postJson(url, body, channelHeaders(ch));
     return { channel: label, type: ch.type, ok: true };
   } catch (err) {
     return { channel: label, type: ch.type, ok: false, error: err.message };

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`headersEnv` on notification channels — authenticate a webhook without putting the token in config.** Channel secrets were already referenced by env-var *name* (`webhookUrlEnv`, the SMTP `*Env` keys), but `headers` was literal-values-only, so any bearer token or webhook auth header had to be written into `.sfdt/config.json` — contradicting that rule for the one field most likely to hold a credential. `headersEnv` maps a header name to the **name** of the env var holding its value (`{"X-Auth-Token": "MY_TOKEN_VAR"}`), resolved at send time. It overrides a literal `headers` entry of the same name, so an existing config can adopt it key by key. A named-but-unset env var **fails that one channel** with an error naming the variable, rather than silently sending an unauthenticated request and surfacing as a confusing 401 from the far end; other channels are unaffected. Enables n8n Header Auth, Cloudflare Access service tokens, and any gateway expecting a shared-secret header.
+
 ## [0.19.0] - 2026-07-24
 
 ### Added
