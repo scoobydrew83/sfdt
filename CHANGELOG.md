@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Redaction now covers secrets that arrive as free text.** `redactSensitiveData` matched Salesforce token *shapes* (`00D…`, `005…`, `5AepD…`), sensitive CLI flags, and sensitive JSON *keys* — but nothing that appears as prose. Diffs, log excerpts, error messages, and stack traces all pass through it on the way to an AI provider, a notification webhook, or the audit log, and those carried secrets through verbatim. Four patterns added: PEM private-key blocks (**which the function's own header comment had always claimed were handled — no pattern existed**, so a JWT signing key in a deploy error was passed through), `force://` sfdx auth URLs (a complete replayable org credential, printed by `sf org display --verbose`), `Authorization: Bearer <token>`, and secret-ish `key=value` / `key: value` assignments. Over-redaction was guarded against as deliberately as under-redaction: `apiKeyEnv: "MY_VAR"` (a variable *name*), prose like "the deployment token flow", and empty/structural values are all left intact, with tests pinning each.
+
 ## [0.19.0] - 2026-07-24
 
 ### Added
