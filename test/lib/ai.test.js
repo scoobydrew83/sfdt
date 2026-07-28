@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('execa', () => ({
   execa: vi.fn(),
@@ -477,5 +477,72 @@ describe('streamAiResponse', () => {
     const idx = args.indexOf('--allowedTools');
     expect(idx).toBeGreaterThan(-1);
     expect(args[idx + 1]).toBe('Read,Grep,Glob');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// http provider — ai.headersEnv
+// ---------------------------------------------------------------------------
+
+describe('http provider headers', () => {
+  const httpConfig = (ai) =>
+    makeConfig({ ai: { provider: 'http', baseURL: 'https://gw.example/v1', model: 'm', ...ai } });
+
+  const okFetch = () =>
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'hi' } }] }),
+    });
+
+  afterEach(() => {
+    delete process.env.SFDT_TEST_GW;
+    // These are the only stubGlobal calls in this file; without the unstub the
+    // mocked fetch leaks into later suites (it broke gui-server-routes9's AI
+    // review test, which passed in isolation and failed in the full run).
+    vi.unstubAllGlobals();
+  });
+
+  it('resolves ai.headersEnv into the request headers', async () => {
+    const fetchMock = okFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.SFDT_TEST_GW = 'gateway-secret';
+
+    vi.resetModules();
+    const { runAiPrompt: freshRun } = await import('../../src/lib/ai.js');
+    const res = await freshRun('p', {
+      config: httpConfig({ headersEnv: { 'X-Gw': 'SFDT_TEST_GW' } }),
+      aiEnabled: true,
+    });
+
+    expect(res.exitCode).toBe(0);
+    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({ 'X-Gw': 'gateway-secret' });
+  });
+
+  it('fails the request with a named error when the env var is unset', async () => {
+    const fetchMock = okFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    vi.resetModules();
+    const { runAiPrompt: freshRun } = await import('../../src/lib/ai.js');
+    const res = await freshRun('p', {
+      config: httpConfig({ headersEnv: { 'X-Gw': 'SFDT_TEST_GW' } }),
+      aiEnabled: true,
+    });
+
+    // Must not call the endpoint unauthenticated.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr).toContain('SFDT_TEST_GW');
+  });
+
+  it('still sends literal ai.headers when no headersEnv is set', async () => {
+    const fetchMock = okFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    vi.resetModules();
+    const { runAiPrompt: freshRun } = await import('../../src/lib/ai.js');
+    await freshRun('p', { config: httpConfig({ headers: { 'X-Plain': 'literal' } }), aiEnabled: true });
+
+    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({ 'X-Plain': 'literal' });
   });
 });

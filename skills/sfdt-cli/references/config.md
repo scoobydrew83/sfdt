@@ -52,7 +52,8 @@ Created by `sfdt init` in the project root as `.sfdt/`:
 
 Notes:
 - `ai.provider` is one of `claude` | `gemini` | `openai` | `http`. For `http`, set `ai.baseURL`, `ai.model`, and `ai.apiKeyEnv` — the **name** of the env var holding the API key; the key itself is never stored in config.
-- Notification channel secrets are likewise referenced by env-var name (`webhookUrlEnv`, SMTP `*Env`). The legacy `notifications.slack.webhookUrl` shape still works for back-compat.
+- Notification channel secrets are likewise referenced by env-var name (`webhookUrlEnv`, `headersEnv`, SMTP `*Env`). The legacy `notifications.slack.webhookUrl` shape still works for back-compat.
+- `headersEnv` authenticates a webhook channel: `{"X-Auth-Token": "MY_TOKEN_VAR"}` maps a header name to the **name** of the env var holding its value. It overrides a literal `headers` entry of the same name, and a named-but-unset variable fails that channel with an error naming it instead of sending unauthenticated.
 - The full shape (including `audit`, `monitoring`, `docs`, and `deployment.smart` blocks) lives in `src/templates/sfdt.config.json` — the canonical source of truth for keys and defaults.
 
 **Required keys** (validated at load): `defaultOrg`, `features`. Config is validated by AJV against `src/lib/config-schema.json` with `additionalProperties: false` — an unknown key fails `validateConfig()` at load time.

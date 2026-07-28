@@ -21,6 +21,7 @@ import {
   notificationsConfigured,
   dispatch,
   dispatchSnapshot,
+  describeChannels,
 } from '../../src/lib/notifier.js';
 
 beforeEach(() => {
@@ -124,6 +125,61 @@ describe('dispatch (events)', () => {
     await dispatch('deploy-success', {}, cfg);
     expect(fetchMock).toHaveBeenCalledWith('https://env.example.com/hook', expect.anything());
     delete process.env.SFDT_TEST_HOOK;
+  });
+});
+
+describe('headersEnv', () => {
+  const cfgWith = (channel) => ({
+    notifications: { enabled: true, channels: [{ type: 'webhook', url: 'https://x.example/h', ...channel }] },
+  });
+
+  afterEach(() => {
+    delete process.env.SFDT_TEST_HEADER;
+  });
+
+  it('resolves a header value from an env var name', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.SFDT_TEST_HEADER = 'super-secret-token';
+    const results = await dispatch('deploy-success', {}, cfgWith({ headersEnv: { 'X-Token': 'SFDT_TEST_HEADER' } }));
+    expect(results[0].ok).toBe(true);
+    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({ 'X-Token': 'super-secret-token' });
+  });
+
+  it('fails the channel with a named error when the env var is unset', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const results = await dispatch('deploy-success', {}, cfgWith({ headersEnv: { 'X-Token': 'SFDT_TEST_HEADER' } }));
+    // Silently dropping an auth header would surface as a 401 from the far end.
+    expect(results[0].ok).toBe(false);
+    expect(results[0].error).toContain('SFDT_TEST_HEADER');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('takes precedence over a literal headers entry of the same name', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.SFDT_TEST_HEADER = 'from-env';
+    await dispatch(
+      'deploy-success',
+      {},
+      cfgWith({ headers: { 'X-Token': 'from-config' }, headersEnv: { 'X-Token': 'SFDT_TEST_HEADER' } }),
+    );
+    expect(fetchMock.mock.calls[0][1].headers['X-Token']).toBe('from-env');
+  });
+
+  it('leaves literal headers untouched when no headersEnv is set', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    await dispatch('deploy-success', {}, cfgWith({ headers: { 'X-Plain': 'literal' } }));
+    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({ 'X-Plain': 'literal' });
+  });
+
+  it('never leaks a resolved header value through describeChannels', async () => {
+    process.env.SFDT_TEST_HEADER = 'super-secret-token';
+    const described = JSON.stringify(describeChannels(cfgWith({ headersEnv: { 'X-Token': 'SFDT_TEST_HEADER' } })));
+    expect(described).not.toContain('super-secret-token');
+    expect(described).not.toContain('SFDT_TEST_HEADER');
   });
 });
 

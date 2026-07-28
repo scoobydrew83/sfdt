@@ -1,5 +1,6 @@
 import { execa } from 'execa';
 import { redactSensitiveData } from './audit-logger.js';
+import { resolveEnvHeaders } from './env-headers.js';
 
 // ─── Provider helpers ─────────────────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ export function getHttpConfig(config) {
     apiKeyEnv,
     apiKey: apiKeyEnv ? process.env[apiKeyEnv] || '' : '',
     headers: ai.headers && typeof ai.headers === 'object' ? ai.headers : {},
+    headersEnv: ai.headersEnv && typeof ai.headersEnv === 'object' ? ai.headersEnv : {},
     timeoutMs: Number(ai.timeoutMs) > 0 ? Number(ai.timeoutMs) : HTTP_DEFAULT_TIMEOUT,
   };
 }
@@ -276,9 +278,17 @@ async function runOpenAiPrompt(prompt, options) {
 
 /**
  * Build the request headers for an OpenAI-compatible endpoint.
+ *
+ * `ai.headers` holds literal values; `ai.headersEnv` names the env vars holding
+ * them, so a gateway token stays out of `.sfdt/config.json` — the same contract
+ * `ai.apiKeyEnv` already follows. Throws (naming the variable) if a named env
+ * var is unset, rather than calling the endpoint unauthenticated.
  */
 function buildHttpHeaders(httpCfg) {
-  const headers = { 'Content-Type': 'application/json', ...httpCfg.headers };
+  const headers = {
+    'Content-Type': 'application/json',
+    ...resolveEnvHeaders(httpCfg.headers, httpCfg.headersEnv, 'ai.headersEnv'),
+  };
   if (httpCfg.apiKey) headers.Authorization = `Bearer ${httpCfg.apiKey}`;
   return headers;
 }
