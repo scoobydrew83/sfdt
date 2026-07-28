@@ -43,3 +43,9 @@ enforcement (existing check, planned lint, or gc-scan).
     - id/category/description/steps change by planner/human commit only; entries are added/removed only by planner/human commit.
 
     *(enforced: `check:features` → `tools/check-features-edits.mjs`)*
+12. **Checks exclude the artifacts that define them.** A grep-based rule must
+    filter out the checker, the feature file, the docs describing the fix, and
+    any test fixture that names the banned value — the enforcement tool naming
+    a violation is not a violation. Observed twice (H-002, H-019) before this
+    was written down. *(pattern source: reflexivity guards in
+    `check-harness.mjs`; applies to every future `tools/check-*.mjs`)*
