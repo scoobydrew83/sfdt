@@ -1,0 +1,149 @@
+name: Harness Improver
+
+# Weekly meta-agent (Conductor Method phase: meta). Mines persisted verdict /
+# escalation / agent-fix telemetry for recurring failure categories and converts
+# each into exactly one encoded fix — a lint rule, a doc/skill edit, or a human
+# escalation. It opens PRs; it never merges. Self-improving is not self-approving.
+#
+# The agent definition is NOT vendored here — it lives in the skills repo
+# (harness-improver.md) so the three flywheel agents stay distributed from one
+# place. This workflow only supplies the schedule, the sandbox, and the
+# least-privilege allowlist.
+
+on:
+  schedule:
+    # Mondays 11:00 UTC. Deliberately clear of the other Monday jobs:
+    # codeql.yml (08:00) and scheduled-audit.yml (09:00).
+    - cron: '0 11 * * 1'
+  workflow_dispatch:
+
+# Only one improver at a time — two concurrent runs would mine the same rows
+# and open duplicate PRs against the same category.
+concurrency:
+  group: harness-improver
+  cancel-in-progress: false
+
+jobs:
+  improve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # pushes harness/<category-slug> branches
+      pull-requests: write # opens the PRs (never merges — see allowlist below)
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # Full history: the improver clusters failures partly by git log /
+          # file area, and a depth-1 checkout would hide that signal.
+          fetch-depth: 0
+
+      - name: Checkout agent definitions
+        uses: actions/checkout@v7
+        with:
+          repository: scoobydrew83/skills
+          path: .harness-skills
+          fetch-depth: 1
+
+      - name: Verify the agent definition is present
+        run: |
+          DEF=.harness-skills/harness-improver.md
+          if [ ! -f "$DEF" ]; then
+            echo "::error::$DEF not found in scoobydrew83/skills."
+            echo "The harness-improver agent definition has not been published to the skills repo yet (H-011)."
+            echo "This job runs the definition rather than a vendored copy, so it cannot proceed without it."
+            exit 1
+          fi
+          echo "Using agent definition: $DEF"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install and link the CLI
+        run: |
+          npm ci
+          npm link # puts `sfdt` on PATH so the agent runs the documented commands
+
+      # Telemetry lives in logs/history.db, which is gitignored and therefore
+      # absent from a fresh checkout. The cache carries it week to week.
+      # ponytail: a GitHub cache is best-effort (7-day eviction, no guarantees) —
+      # a cold cache means zero rows, which the improver reports as "no signal",
+      # a PASS. Move to an artifact or an external store if the flywheel needs
+      # telemetry that survives eviction.
+      - name: Restore run history
+        uses: actions/cache@v4
+        with:
+          path: logs
+          key: harness-history-${{ github.run_id }}
+          restore-keys: harness-history-
+
+      - name: Write a minimal CLI config
+        env:
+          # Generic webhook channel. n8n owns routing from here — no `events`
+          # filter, so every event the improver emits reaches the webhook.
+          HARNESS_WEBHOOK_URL: ${{ secrets.HARNESS_WEBHOOK_URL }}
+        run: |
+          # `sfdt history` / `sfdt notify` both require a .sfdt/ config dir. This
+          # repo has none (it's the CLI itself, not a Salesforce project), so
+          # write an ephemeral one — and exclude it locally so the improver's own
+          # `git add` can never sweep it into a PR.
+          mkdir -p .sfdt
+          cat > .sfdt/config.json <<'JSON'
+          {
+            "projectName": "sfdt harness",
+            "features": { "notifications": true },
+            "notifications": {
+              "enabled": true,
+              "channels": [
+                { "type": "webhook", "name": "n8n", "webhookUrlEnv": "HARNESS_WEBHOOK_URL", "severityThreshold": "warn" }
+              ]
+            }
+          }
+          JSON
+          echo '.sfdt/' >> .git/info/exclude
+          echo '.harness-skills/' >> .git/info/exclude
+
+      - name: Run harness-improver
+        uses: anthropics/claude-code-action@v1
+        env:
+          HARNESS_WEBHOOK_URL: ${{ secrets.HARNESS_WEBHOOK_URL }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Least-privilege, on the same pattern as claude-code-review.yml:
+          # enumerated subcommands, never `Bash(gh pr:*)` or `Bash(git:*)`.
+          # Deliberately absent, and deliberately NOT to be added:
+          #   gh pr merge / gh pr review  — the improver is a builder, never a
+          #                                 merger; gates and humans merge.
+          #   gh api                      — a write-capable escape hatch around
+          #                                 every restriction above it.
+          #   gh issue create             — findings ship as PRs, not issues.
+          # `git push` is unqualified because branch names are computed per
+          # finding; branch protection on the default branch is what stops a
+          # push there, not this list.
+          claude_args: >-
+            --allowedTools 'Read,Glob,Grep,Edit,Write,Bash(sfdt history:*),Bash(sfdt notify:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git branch:*),Bash(git switch:*),Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh pr create:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm run check:*),Bash(npm run generate:catalogs),Bash(npm test:*),Bash(node tools/:*)'
+          prompt: |
+            Read `.harness-skills/harness-improver.md` and follow its procedure exactly — it is your agent definition, including your hard bounds.
+
+            Repository: ${{ github.repository }} (default branch: ${{ github.event.repository.default_branch }}). You are running unattended on a schedule.
+
+            Binding constraints for this run:
+            - Mine `sfdt history --type verdict --json --limit 200`, then the same for `--type escalation` and `--type agent-fix`. Cluster by category.
+            - A category qualifies only at **>=3 occurrences**. Ignore singletons.
+            - Open **at most 3 PRs**, one per finding, branch `harness/<category-slug>`, smallest possible diff.
+            - Every PR body MUST cite the motivating history rows — id and timestamp for each — under a "Motivating history" heading. A PR that cannot cite >=3 rows must not be opened.
+            - Escalations go through `sfdt notify` (generic webhook channel; n8n owns routing from there). Note: `sfdt notify` validates its event against a fixed list — run `sfdt notify --help` first and use a valid event, putting the escalation detail in `--message`. If no event fits, say so in your summary rather than inventing one.
+            - Never edit `generated/*` by hand — run `npm run generate:catalogs` if catalogs must change.
+            - Never touch FEATURES.json, verdict history, or another agent's open branch.
+            - Do not merge, approve, or close anything.
+
+            If `sfdt history` returns no qualifying categories (including the case where the run-history cache was empty), stop and report a one-line "no signal" note. A quiet week is a PASS, not a failure to find work.
+
+            # NOTE: PRs opened with GITHUB_TOKEN do not trigger other workflows,
+            # so claude-code-review.yml will not auto-review them. Grade each PR
+            # by re-requesting review manually, or swap in an App/PAT token here.
