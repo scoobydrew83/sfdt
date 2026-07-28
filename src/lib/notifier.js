@@ -89,6 +89,34 @@ function channelLabel(ch) {
   return ch.name || ch.type;
 }
 
+/**
+ * Resolve a channel's outbound headers. `headers` holds literal values;
+ * `headersEnv` maps a header name to the NAME of an env var holding its value,
+ * resolved here — the same contract as `webhookUrlEnv` and the SMTP `*Env`
+ * keys, so an auth token never has to be written into `.sfdt/config.json`.
+ *
+ * `headersEnv` wins over a literal `headers` entry of the same name.
+ *
+ * An env var that is named but unset is a hard error rather than a skipped
+ * header: silently dropping an auth header turns a local config mistake into a
+ * 401 from the far end, which is far harder to trace back to here. The throw is
+ * caught by sendToChannel, so it degrades to one failed channel, not a crash.
+ */
+function channelHeaders(ch) {
+  const headers = { ...(ch.headers ?? {}) };
+  for (const [name, envVar] of Object.entries(ch.headersEnv ?? {})) {
+    const value = process.env[envVar];
+    if (!value) {
+      throw new Error(
+        `header "${name}" is configured from env var ${envVar}, which is unset or empty — ` +
+          `export ${envVar}, or drop "${name}" from this channel's headersEnv`,
+      );
+    }
+    headers[name] = value;
+  }
+  return headers;
+}
+
 function eventAllowed(ch, event) {
   if (!Array.isArray(ch.events)) return true; // no filter → all events
   return ch.events.includes(event);
@@ -165,7 +193,7 @@ async function sendToChannel(ch, message, { kind, snapshot, org } = {}) {
     } else {
       return { channel: label, type: ch.type, ok: false, error: `unsupported channel type: ${ch.type}` };
     }
-    await postJson(url, body, ch.headers);
+    await postJson(url, body, channelHeaders(ch));
     return { channel: label, type: ch.type, ok: true };
   } catch (err) {
     return { channel: label, type: ch.type, ok: false, error: err.message };
