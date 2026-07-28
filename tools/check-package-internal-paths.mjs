@@ -28,7 +28,10 @@ import { glob } from 'glob';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const violations = [];
 
-const CWD_LIKE = /(_projectRoot|process\.cwd\(\))/;
+// `projectRoot` unanchored, so this catches both `config._projectRoot` and the
+// bare `projectRoot` local that CLAUDE.md also lists as WRONG. Requiring the
+// leading underscore silently missed the bare form.
+const CWD_LIKE = /(projectRoot|process\.cwd\(\))/;
 const PACKAGE_INTERNAL_LITERAL = /['"](scripts\/|src\/templates\/|gui\/dist|templates\/)/;
 const CALL_START = /path\.(?:join|resolve)\(/g;
 
