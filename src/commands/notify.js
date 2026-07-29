@@ -5,7 +5,16 @@ import { print } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { dispatch, dispatchSnapshot, notificationsConfigured } from '../lib/notifier.js';
 
-const LIFECYCLE_EVENTS = ['deploy-success', 'deploy-failure', 'test-failure', 'release-created'];
+const LIFECYCLE_EVENTS = [
+  'deploy-success',
+  'deploy-failure',
+  'test-failure',
+  'release-created',
+  // Fired by the weekly harness-improver when a recurring failure category needs
+  // human judgment rather than an encoded fix. Routed by whatever the generic
+  // webhook channel points at — sfdt does not care what happens downstream.
+  'harness-escalation',
+];
 const VALID_EVENTS = [...LIFECYCLE_EVENTS, 'snapshot'];
 
 function printNotConfiguredHelp() {

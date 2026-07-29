@@ -35,6 +35,7 @@
         "baseURL": { "type": "string" },
         "apiKeyEnv": { "type": "string" },
         "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+        "headersEnv": { "type": "object", "additionalProperties": { "type": "string" } },
         "timeoutMs": { "type": "number" },
         "agent": {
           "type": "object",
@@ -82,6 +83,7 @@
               "urlEnv": { "type": "string" },
               "format": { "type": "string", "enum": ["json", "loki"] },
               "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+              "headersEnv": { "type": "object", "additionalProperties": { "type": "string" } },
               "severityThreshold": { "type": "string", "enum": ["ok", "warn", "error", "fail"] },
               "events": { "type": "array", "items": { "type": "string" } },
               "from": { "type": "string" },

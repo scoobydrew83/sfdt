@@ -22,6 +22,20 @@ import { loadConfig } from './config.js';
 import { print } from './output.js';
 
 /**
+ * True for npm package specifiers (`pkg`, `@org/pkg`, `pkg/sub/path`), false for
+ * anything that resolves as a filesystem path.
+ *
+ * @param {string} spec
+ */
+function isBarePackageSpecifier(spec) {
+  if (spec.startsWith('.') || spec.startsWith('/') || spec.startsWith('~')) return false;
+  if (spec.includes('\\')) return false; // Windows separator
+  if (/^[A-Za-z]:/.test(spec)) return false; // Windows drive letter
+  if (spec.split('/').includes('..')) return false; // traversal out of node_modules
+  return true;
+}
+
+/**
  * Load all plugins into the Commander program.
  * Silently skips if not inside an sfdt project (no config found).
  *
@@ -42,11 +56,23 @@ export async function loadPlugins(program) {
   const sources = [];
 
   // ── 1. Explicit packages from config.plugins ──────────────────────────────
+  // Package names only. `require.resolve` accepts relative and absolute paths,
+  // so a path here would import repo-local code on every CLI invocation — and
+  // .sfdt/config.json arrives with whatever project the user cloned. That is the
+  // same "executes arbitrary project-local code" risk auto-discovery is gated
+  // for below, minus the opt-in. Scoped names (@org/pkg) and package subpaths
+  // stay allowed; anything path-shaped does not.
   if (Array.isArray(config.plugins) && config.plugins.length > 0) {
     for (const name of config.plugins) {
-      if (typeof name === 'string' && name.trim()) {
-        sources.push({ name: name.trim(), type: 'package', explicit: true });
+      if (typeof name !== 'string' || !name.trim()) continue;
+      const trimmed = name.trim();
+      if (!isBarePackageSpecifier(trimmed)) {
+        print.warning(
+          `Ignoring plugin "${trimmed}": config.plugins accepts package names, not file paths.`,
+        );
+        continue;
       }
+      sources.push({ name: trimmed, type: 'package', explicit: true });
     }
   }
 

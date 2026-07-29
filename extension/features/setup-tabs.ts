@@ -25,8 +25,6 @@ function isActiveTab(tabId: string, url: string): boolean {
       return url.includes('/interaction_explorer/flowExplorer');
     case 'sfdt_tab_process_automation_settings':
       return url.includes('/lightning/setup/WorkflowSettings/');
-    case 'sfdt_tab_login_as':
-      return url.includes('/lightning/setup/ManageUsers/');
     case 'sfdt_tab_automation_home':
       return url.includes('/lightning/app/');
     case 'sfdt_tab_field_access':

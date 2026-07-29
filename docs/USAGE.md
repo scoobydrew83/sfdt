@@ -840,7 +840,7 @@ sfdt notify snapshot --type monitor        # push the latest monitor snapshot
 
 | Argument | Description |
 |---|---|
-| `<event>` | A lifecycle event (e.g. `deploy-success`, `deploy-failure`, `test-failure`, `release-created`), or `snapshot` to push the latest org-health snapshot |
+| `<event>` | A lifecycle event (e.g. `deploy-success`, `deploy-failure`, `test-failure`, `release-created`, `harness-escalation`), or `snapshot` to push the latest org-health snapshot |
 
 **Options:**
 
@@ -851,7 +851,20 @@ sfdt notify snapshot --type monitor        # push the latest monitor snapshot
 | `--org <alias>` | Org alias to display (defaults to `config.defaultOrg`) |
 | `--message <msg>` | Custom message body |
 
-**Setup:** Channels are configured under the `notifications` block (`enabled` + a `channels[]` array). Each channel has an `events` filter and a `severityThreshold` that decides whether a given snapshot/event is loud enough to send. Channel secrets are referenced **by env-var NAME** (`webhookUrlEnv`, the SMTP `*Env` keys) — never inline.
+**Setup:** Channels are configured under the `notifications` block (`enabled` + a `channels[]` array). Each channel has an `events` filter and a `severityThreshold` that decides whether a given snapshot/event is loud enough to send. Channel secrets are referenced **by env-var NAME** (`webhookUrlEnv`, `headersEnv`, the SMTP `*Env` keys) — never inline.
+
+For a webhook that requires authentication, use `headersEnv` — it maps a header name to the **name** of the env var holding its value, so the token stays out of `.sfdt/config.json`:
+
+```json
+{
+  "type": "webhook",
+  "name": "n8n",
+  "webhookUrlEnv": "HARNESS_WEBHOOK_URL",
+  "headersEnv": { "X-Auth-Token": "HARNESS_WEBHOOK_TOKEN" }
+}
+```
+
+`headersEnv` wins over a literal `headers` entry of the same name. If a named env var is unset, that channel fails with an error naming the variable rather than sending the request unauthenticated.
 
 ```json
 {

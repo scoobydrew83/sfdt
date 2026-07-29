@@ -85,7 +85,7 @@ in the project's `node_modules/`, and local `.sfdt/plugins/*.js` files. Each exp
 spawning a script with execa (`stdio: 'inherit'` for full TTY passthrough), `script-runner.js`'s
 `buildScriptEnv()` flattens the loaded config into `SFDT_`-prefixed environment variables
 (`SFDT_PROJECT_ROOT`, `SFDT_DEFAULT_ORG`, `SFDT_API_VERSION`, …). The full variable table is
-maintained in the repo `CLAUDE.md` ("SFDT_ Environment Variables") — when you add one, update
+maintained in `docs/ENV-VARS.md` — when you add one, update
 both `buildScriptEnv()` and that table.
 
 Commands that support `--json` emit the Salesforce sf-native envelope on stdout via
@@ -386,7 +386,7 @@ Publishing is **CI-first** (`.github/workflows/ci.yml`); humans merge, CI ships:
 | Native host | **Read-only** — mutating kinds and `ai` are `nativeHost: false` in the contract; project access only via the explicit install-host pointer file |
 | GitHub Action | `args-json` input is spawned **with no shell** (a JSON argv array); the legacy `command` string is restricted to shell-neutral characters unless `allow-shell-command: true` is explicitly set |
 | MCP | Every mutating tool requires `confirmExecution: true`; enforced by tests, not convention |
-| Secrets | Config stores env-var **names**, never values (`ai.apiKeyEnv`, `webhookUrlEnv`, SMTP `*Env`); AI payloads pass through `redactSensitiveData` |
+| Secrets | Config stores env-var **names**, never values (`ai.apiKeyEnv`, `webhookUrlEnv`, `headersEnv`, SMTP `*Env`); AI payloads pass through `redactSensitiveData` |
 | AI subprocesses | CLI providers run in read-only sandboxes; write-capable agent loop is double-opt-in and dry-run-verified per turn |
 
 ## 19. "Adding a ..." recipes
@@ -410,4 +410,4 @@ Publishing is **CI-first** (`.github/workflows/ci.yml`); humans merge, CI ships:
   `host/src/index.js` **only if read-only**; `npm run build:flow-core`; regenerate catalogs.
 - **A config key**: three places in lockstep — `src/templates/sfdt.config.json`,
   `src/lib/config-schema.json`, and the consuming code; if a shell script needs it, extend
-  `buildScriptEnv()` and the `SFDT_` table in `CLAUDE.md`.
+  `buildScriptEnv()` and the `SFDT_` table in `docs/ENV-VARS.md`.

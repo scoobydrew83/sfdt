@@ -52,7 +52,8 @@ Created by `sfdt init` in the project root as `.sfdt/`:
 
 Notes:
 - `ai.provider` is one of `claude` | `gemini` | `openai` | `http`. For `http`, set `ai.baseURL`, `ai.model`, and `ai.apiKeyEnv` — the **name** of the env var holding the API key; the key itself is never stored in config.
-- Notification channel secrets are likewise referenced by env-var name (`webhookUrlEnv`, SMTP `*Env`). The legacy `notifications.slack.webhookUrl` shape still works for back-compat.
+- Notification channel secrets are likewise referenced by env-var name (`webhookUrlEnv`, `headersEnv`, SMTP `*Env`). The legacy `notifications.slack.webhookUrl` shape still works for back-compat.
+- `headersEnv` authenticates a webhook channel: `{"X-Auth-Token": "MY_TOKEN_VAR"}` maps a header name to the **name** of the env var holding its value. It overrides a literal `headers` entry of the same name, and a named-but-unset variable fails that channel with an error naming it instead of sending unauthenticated.
 - The full shape (including `audit`, `monitoring`, `docs`, and `deployment.smart` blocks) lives in `src/templates/sfdt.config.json` — the canonical source of truth for keys and defaults.
 
 **Required keys** (validated at load): `defaultOrg`, `features`. Config is validated by AJV against `src/lib/config-schema.json` with `additionalProperties: false` — an unknown key fails `validateConfig()` at load time.
@@ -117,7 +118,7 @@ These are injected by `loadConfig()` and available to commands:
 
 ## SFDT_ environment variable mapping
 
-`script-runner.js` flattens config into these env vars before executing shell scripts. This is the complete list — when adding a new var, update `buildScriptEnv()` in `src/lib/script-runner.js` AND this table AND the CLAUDE.md table.
+`script-runner.js` flattens config into these env vars before executing shell scripts. This is the complete list — when adding a new var, update `buildScriptEnv()` in `src/lib/script-runner.js` AND this table AND the `docs/ENV-VARS.md` table.
 
 ### Standard config mapping
 
@@ -183,5 +184,5 @@ When extending sfdt with new config, three places move in lockstep:
 Then, if applicable:
 
 4. Add the env var mapping to `buildScriptEnv()` in `src/lib/script-runner.js`
-5. Update the SFDT_ env var table in the project CLAUDE.md (and this file)
+5. Update the SFDT_ env var table in `docs/ENV-VARS.md` (and this file)
 6. If the field should be prompted during init, update `src/commands/init.js`

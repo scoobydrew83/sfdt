@@ -118,17 +118,17 @@ describe('extension/lib/palette-sources — buildPaletteSources', () => {
   });
 
   it('orders recents first, resolved against the pool and de-duped from home sections', () => {
-    const sections = buildPaletteSources({ ...base, recents: ['setup:sfdt_tab_login_as', 'feature:soql-runner'] });
+    const sections = buildPaletteSources({ ...base, recents: ['setup:sfdt_tab_flows', 'feature:soql-runner'] });
     expect(sections[0]?.category).toBe('recent');
     expect(sections[0]?.candidates.map((c) => c.id)).toEqual([
-      'setup:sfdt_tab_login_as',
+      'setup:sfdt_tab_flows',
       'feature:soql-runner',
     ]);
     // The recent feature is not repeated in the Features section.
     expect(sectionFor(sections, 'feature')).toBeUndefined();
     // The recent setup link is removed from the Setup section.
     const setupIds = sectionFor(sections, 'setup')?.candidates.map((c) => c.id) ?? [];
-    expect(setupIds).not.toContain('setup:sfdt_tab_login_as');
+    expect(setupIds).not.toContain('setup:sfdt_tab_flows');
   });
 
   it('skips recents that are not present in the current context', () => {

@@ -107,6 +107,41 @@ describe('notify command', () => {
     vi.unstubAllGlobals();
   });
 
+  it('routes harness-escalation to a generic webhook channel with the event as the kind', async () => {
+    // The harness-improver's escalation path (.github/workflows/harness-improver.yml):
+    // a generic webhook with no `events` filter, so n8n routes on `kind`.
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/project',
+      projectName: 'sfdt harness',
+      notifications: {
+        enabled: true,
+        channels: [{ type: 'webhook', name: 'n8n', webhookUrl: 'https://n8n.test/hook' }],
+      },
+    });
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await createProgram().parseAsync([
+      'node',
+      'sfdt',
+      'notify',
+      'harness-escalation',
+      '--message',
+      'flaky-tests: 4 verdicts, needs a human call',
+    ]);
+
+    expect(print.error).not.toHaveBeenCalled();
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body).toMatchObject({
+      kind: 'harness-escalation',
+      title: 'Harness Escalation',
+      text: 'flaky-tests: 4 verdicts, needs a human call',
+    });
+    expect(process.exitCode).toBeUndefined();
+
+    vi.unstubAllGlobals();
+  });
+
   it('includes org and version fields in payload', async () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal('fetch', mockFetch);

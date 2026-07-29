@@ -6,6 +6,15 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-07-28
+
+### Changed
+
+- The **Send Notification (event)** entry in "SFDT: Run Command…" now lists
+  `harness-escalation` among the accepted lifecycle events, matching the CLI's
+  `sfdt notify` surface. Description text only — no new command, setting, or
+  capability.
+
 ## [0.5.1] - 2026-07-22
 
 ### Changed

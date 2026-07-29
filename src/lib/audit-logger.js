@@ -5,13 +5,37 @@ import { loadConfig } from './config.js';
 const MAX_AUDIT_LOG_ENTRIES = 1000;
 
 // Access token pattern: standard Salesforce Session ID / access token (starts with 00D, etc.)
-// 15 or 18 alphanumeric characters. Also handles generic refresh tokens, private keys.
+// 15 or 18 alphanumeric characters, plus the generic refresh-token prefix.
 const ACCESS_TOKEN_RE = /\b(00D[a-zA-Z0-9]{12,15})\b/g;
 const ACCESS_TOKEN_USER_RE = /\b(005[a-zA-Z0-9]{12,15})\b/g;
 const REFRESH_TOKEN_RE = /\b(5AepD[a-zA-Z0-9]{20,})\b/g;
 
 // CLI arguments pattern: redact password, client-secret, and token flags
 const SENSITIVE_CLI_ARGS_RE = /(-p|--password|--client-secret|--access-token|-u|--username)\s+([^\s]+)/gi;
+
+// The patterns below cover secrets that appear as *free text* rather than as a
+// known token shape or a JSON key — diffs, log excerpts, error messages, and
+// stack traces all flow through here on their way to an AI provider, a webhook,
+// or the audit log. The token/key patterns above never saw them.
+
+// PEM private key blocks. The header comment above has always claimed these
+// were handled; no pattern existed. A JWT signing key pasted into a log or a
+// deploy error was passed through verbatim.
+const PRIVATE_KEY_BLOCK_RE = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
+
+// sfdx auth URL — a complete, replayable org credential in a single string.
+// `sf org display --verbose` prints these, and that output lands in logs.
+const SFDX_AUTH_URL_RE = /force:\/\/[^\s"']+/g;
+
+// `Authorization: Bearer <token>` as it appears in a captured request or a
+// curl line. Keeps the scheme so the redaction is readable in context.
+const BEARER_RE = /\b(Bearer)\s+[A-Za-z0-9._~+/-]{12,}={0,2}/gi;
+
+// key=value / key: value for secret-ish names in prose. The `\b` after the name
+// matters: it keeps `apiKeyEnv: "MY_VAR"` (a variable NAME, not a secret) from
+// being redacted, while still catching `api_key: abc123`.
+const SECRET_ASSIGNMENT_RE =
+  /\b(password|passwd|secret|client[_-]?secret|api[_-]?key|apikey|token|access[_-]?token|refresh[_-]?token|private[_-]?key)\b(\s*[:=]\s*)(["']?)([^\s"',;}]{4,})\3/gi;
 
 // JSON keys that should have their values redacted
 const SENSITIVE_KEYS = [
@@ -43,11 +67,21 @@ export function redactSensitiveData(value) {
     redacted = redacted.replace(ACCESS_TOKEN_RE, '[REDACTED_ACCESS_TOKEN]');
     redacted = redacted.replace(ACCESS_TOKEN_USER_RE, '[REDACTED_USER_TOKEN]');
     redacted = redacted.replace(REFRESH_TOKEN_RE, '[REDACTED_REFRESH_TOKEN]');
-    
+
     // 2. Redact command-line arguments
     redacted = redacted.replace(SENSITIVE_CLI_ARGS_RE, (match, flag) => {
       return `${flag} [REDACTED]`;
     });
+
+    // 3. Redact secrets that appear as free text. Private-key blocks run first
+    //    so the multi-line match isn't chewed up by the single-line patterns.
+    redacted = redacted.replace(PRIVATE_KEY_BLOCK_RE, '[REDACTED_PRIVATE_KEY]');
+    redacted = redacted.replace(SFDX_AUTH_URL_RE, '[REDACTED_SFDX_AUTH_URL]');
+    redacted = redacted.replace(BEARER_RE, '$1 [REDACTED]');
+    redacted = redacted.replace(
+      SECRET_ASSIGNMENT_RE,
+      (match, key, sep, quote) => `${key}${sep}${quote}[REDACTED]${quote}`,
+    );
 
     return redacted;
   }

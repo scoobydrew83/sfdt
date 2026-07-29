@@ -560,7 +560,7 @@
     {
       "id": "notify",
       "label": "Send Notification (event)",
-      "detail": "Send a lifecycle event to configured channels: deploy-success | deploy-failure | test-failure | release-created | snapshot",
+      "detail": "Send a lifecycle event to configured channels: deploy-success | deploy-failure | test-failure | release-created | harness-escalation | snapshot",
       "args": [
         "notify"
       ],

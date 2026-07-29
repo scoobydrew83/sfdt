@@ -4,6 +4,11 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-07-28
+
+### Removed
+- **The "Login as user…" Setup tab.** The `sfdt_tab_login_as` entry is gone from the Setup tab strip (`lib/setup-links.ts` `BASE_TABS`), so the strip now injects three base tabs rather than four, and the tab no longer surfaces as a Setup deep-link in the ⚡ command palette. It was only ever a deep link to Setup's standard user list — the page where Salesforce itself renders the per-user Login action — so nothing that depended on it is lost: that page is one click away in Setup, and the extension never listed users or minted sessions to begin with. No manifest permission changes (the tab needed none), and the `setup-tabs` feature itself, its kill-switch, its grouping toggle, and its Automation Home opt-in are all unchanged.
+
 ## [0.9.0] - 2026-07-24
 
 ### Added

@@ -52,7 +52,7 @@ async function loadContract() {
  * Prefers an explicit projectRoot from caller; falls back to deriving it
  * from configDir (one level up from `.sfdt/`). process.cwd() is intentionally
  * NOT consulted — the bridge runs inside `sfdt ui` whose working directory
- * may not be the project (per CLAUDE.md CRITICAL RULE).
+ * may not be the project (per golden principle #8).
  */
 function resolveProjectRoot({ projectRoot, configDir }) {
   if (projectRoot) return projectRoot;

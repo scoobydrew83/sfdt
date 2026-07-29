@@ -1,6 +1,8 @@
+import path from 'path';
 import { runAiPrompt, providerSupportsAgenticTools } from './ai.js';
 import { getPrompt } from './prompts.js';
 import { redactSensitiveData } from './audit-logger.js';
+import { recordRun } from './run-history.js';
 
 /**
  * Bounded coding-agent auto-fix loop for failed deployments.
@@ -43,6 +45,21 @@ export async function runFixLoop({ failureOutput, config, projectRoot, org, vali
   const basePrompt = await getPrompt('deploy-error', config._configDir);
   const turns = [];
   let lastOutput = failureOutput;
+  const started = Date.now();
+
+  // Persist the loop outcome to run-history so agent-fix runs can be trended,
+  // not discarded by the caller. Best-effort (recordRun never throws).
+  const finish = async (outcome) => {
+    const logDir = config?.logDir ?? (projectRoot ? path.join(projectRoot, 'logs') : null);
+    await recordRun(logDir, {
+      type: 'agent-fix',
+      org,
+      durationMs: Date.now() - started,
+      status: outcome.fixed ? 'pass' : 'fail',
+      summary: { turns: outcome.turns.length, ran: outcome.ran },
+    });
+    return outcome;
+  };
 
   for (let i = 1; i <= limit; i++) {
     const redacted = String(redactSensitiveData(lastOutput) || '').slice(0, 12000);
@@ -62,9 +79,9 @@ export async function runFixLoop({ failureOutput, config, projectRoot, org, vali
 
     const result = await validate();
     turns.push({ turn: i, ok: !!result?.ok });
-    if (result?.ok) return { ran: true, fixed: true, turns };
+    if (result?.ok) return finish({ ran: true, fixed: true, turns });
     lastOutput = result?.output || lastOutput;
   }
 
-  return { ran: true, fixed: false, turns };
+  return finish({ ran: true, fixed: false, turns });
 }

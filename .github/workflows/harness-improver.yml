@@ -90,8 +90,15 @@ jobs:
           #
           # One generic webhook channel, no `events` filter, so every event the
           # improver emits reaches it. n8n owns routing from there; it keys off
-          # the payload's `kind` field (e.g. `harness-escalation`). The secret is
-          # referenced by env-var NAME — sfdt never stores the URL in config.
+          # the payload's `kind` field (e.g. `harness-escalation`). Both secrets
+          # are referenced by env-var NAME — sfdt never stores either in config,
+          # so this file is safe to cat in a log.
+          #
+          # `headersEnv` carries the auth header for the n8n Webhook node's
+          # Header Auth. Without it the URL is the only credential, and anyone
+          # who learns it can post to the workflow. If HARNESS_WEBHOOK_TOKEN is
+          # unset, that channel fails loudly by design rather than sending
+          # unauthenticated — see resolveEnvHeaders in src/lib/env-headers.js.
           mkdir -p .sfdt
           cat > .sfdt/config.json <<'JSON'
           {
@@ -101,7 +108,13 @@ jobs:
             "notifications": {
               "enabled": true,
               "channels": [
-                { "type": "webhook", "name": "n8n", "webhookUrlEnv": "HARNESS_WEBHOOK_URL", "severityThreshold": "warn" }
+                {
+                  "type": "webhook",
+                  "name": "n8n",
+                  "webhookUrlEnv": "HARNESS_WEBHOOK_URL",
+                  "headersEnv": { "X-Harness-Token": "HARNESS_WEBHOOK_TOKEN" },
+                  "severityThreshold": "warn"
+                }
               ]
             }
           }
@@ -113,6 +126,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         env:
           HARNESS_WEBHOOK_URL: ${{ secrets.HARNESS_WEBHOOK_URL }}
+          HARNESS_WEBHOOK_TOKEN: ${{ secrets.HARNESS_WEBHOOK_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # PRs opened with GITHUB_TOKEN do not trigger other workflows, so

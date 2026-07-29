@@ -26,7 +26,7 @@ import {
 import { detectLwcTests } from '../lib/lwc-test.js';
 
 // CI templates ship inside the package — resolve from the module location, never
-// from the user's CWD (the package-internal path rule in CLAUDE.md).
+// from the user's CWD (the package-internal path rule, golden principle #8).
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const CI_DIR = path.resolve(__dirname, '..', '..', 'scripts', 'ci');

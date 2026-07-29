@@ -34,17 +34,7 @@ export const BASE_TABS: readonly TabDefinition[] = [
     buildUrl: (hostname) =>
       `https://${toSetupHost(hostname)}/lightning/setup/WorkflowSettings/home`,
     openInNewTab: false,
-  },
-  {
-    // Deep link ONLY — lands on Setup's user list, where Salesforce renders the
-    // per-user "Login" action and enforces the Login-As permission server-side.
-    // We never list users or mint sessions ourselves (no sid involved — this is
-    // a plain in-page navigation).
-    id: 'sfdt_tab_login_as',
-    label: 'Login as user…',
-    buildUrl: (hostname) => `https://${toSetupHost(hostname)}/lightning/setup/ManageUsers/home`,
-    openInNewTab: false,
-  },
+  }
 ];
 
 export const AUTOMATION_HOME_TAB: TabDefinition = {
