@@ -25,6 +25,7 @@ This guide covers every sfdt command in depth: what it does, when to use it, all
    - [sfdt pull](#sfdt-pull)
    - [sfdt drift](#sfdt-drift)
    - [sfdt compare](#sfdt-compare)
+   - [sfdt soql](#sfdt-soql)
 8. [Commands: Release Management](#commands-release-management)
    - [sfdt release](#sfdt-release)
    - [sfdt changelog](#sfdt-changelog)
@@ -400,11 +401,11 @@ sfdt quality --generate-stubs --dry-run  # preview stubs without writing files
 | `--all` | Run both `quality/code-analyzer.sh` and `quality/test-analyzer.sh` |
 | `--fix-plan` | After analysis, send the output to AI for a prioritized, file-specific fix plan |
 | `--include-fixes` | Ask **Code Analyzer v5** for actionable fixes/suggestions in the scan output (`--include-fixes --include-suggestions`); the richer output feeds `--fix-plan` |
-| `--output-file <path>` | Also write the Code Analyzer v5 results to a file; the format follows the extension (e.g. `.sarif` for GitHub code-scanning upload). Requires v5 — v4 logs a warning and skips |
+| `--output-file <path>` | Also write the Code Analyzer v5 results to a file; the format follows the extension (e.g. `.sarif` for GitHub code-scanning upload) |
 | `--generate-stubs` | Generate `@IsTest` stub classes for Apex classes that have no test class |
 | `--dry-run` | Preview `--generate-stubs` output without writing any files |
 
-**Code Analyzer engine:** `sfdt quality` runs **Salesforce Code Analyzer v5** (`sf code-analyzer run`, a just-in-time plugin that auto-installs on a modern `sf` CLI). It falls back to the retired v4 (`sf scanner run`) if only that is present, and otherwise reports the scan as **SKIPPED** (never a fabricated clean result). Install manually with `sf plugins install code-analyzer` if needed.
+**Code Analyzer engine:** `sfdt quality` runs **Salesforce Code Analyzer v5** (`sf code-analyzer run`, a just-in-time plugin that auto-installs on a modern `sf` CLI) — the only supported engine. If v5 is unavailable the scan is reported as **SKIPPED** (never a fabricated clean result). Install manually with `sf plugins install code-analyzer` if needed. Legacy Code Analyzer v4 support (and its `--allow-legacy-analyzer` opt-in) was removed at 1.0.
 
 **AI fix plan:** The fix plan groups issues by severity (critical, high, medium, low) and provides file locations, descriptions, and concrete code suggestions. It focuses on Salesforce-specific concerns: governor limits, CRUD/FLS enforcement, bulk-safe patterns, and test coverage gaps.
 
@@ -636,6 +637,41 @@ sfdt compare --output deploy/missing.xml     # write source-only items as packag
 **Output:** Results are visible in the web dashboard's Compare page, where you can filter by status and trigger an XML diff of individual components that exist in both sides.
 
 **See also:** [Drift vs Compare](#drift-vs-compare-choosing-the-right-tool)
+
+---
+
+### sfdt soql
+
+The SOQL/SOSL toolkit — the query and schema lifecycle in one command family: find sObjects, describe their fields and relationships, validate a query without running it, check the org's query plans, and finally execute it with a row bound enforced (never an unbounded dump). All subcommands are read-only against the org and support `--json`.
+
+```bash
+sfdt soql search invoice --category custom          # which objects match "invoice"?
+sfdt soql describe Account --filter phone           # field inventory (filtered)
+sfdt soql relationships Contact                     # parent lookups + child subqueries
+sfdt soql validate "SELECT Id FROM Account"         # local checks + org LIMIT 0 round-trip
+sfdt soql plan "SELECT Id FROM Case WHERE Status='Open'"   # REST explain: cost/selectivity
+sfdt soql query "SELECT Id, Name FROM Account" --limit 50  # bounded execution
+sfdt soql query "SELECT Id FROM Contact" --out contacts.csv # export raw rows (csv/json)
+sfdt soql sosl "FIND {Acme} IN ALL FIELDS RETURNING Account(Id, Name)"
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|---|---|
+| `search [term]` | Find sObjects by case-insensitive name substring (`--category all\|custom\|standard`, `--limit <n>`) |
+| `describe <sobject>` | Fields (type, picklists, references), key prefix, and child relationships (`--filter <term>`, `--tooling`) |
+| `relationships <sobject>` | Parent lookups (dot notation) and child relationships (subqueries) (`--direction parent\|child\|both`) |
+| `validate <query>` | Local static checks plus an org `LIMIT 0` round-trip; exits non-zero when invalid (`--local-only`, `--tooling`) |
+| `plan <query>` | Org query plans via the REST explain endpoint — the query is never executed (`--api-version <ver>`) |
+| `query <soql>` | Bounded SOQL execution (`--limit <n>`, `--tooling`, `--all-rows`, `--out <file>`, `--format json\|csv`) |
+| `sosl <search>` | Bounded SOSL execution (`--limit <n>`, `--out <file>`, `--format json\|csv`) |
+
+**Bounded execution:** `query`/`sosl` never run unbounded. The effective row cap is `--limit`, defaulting to `soql.defaultLimit` (200) and clamped to `soql.maxLimit` (2000) — both configurable in `.sfdt/config.json`. A `LIMIT` already in the query is kept only when it is at or under the cap; results carry `bound` and `truncated` metadata so CI consumers can tell a complete result from a capped one.
+
+**Validation degrades gracefully:** with no reachable org, `validate` reports its local-only verdict with a warning — it never fabricates an org pass. `--out` exports write the **raw** records to disk (the `{status, result, warnings}` envelope exists on stdout only).
+
+All read-only pieces are exposed to MCP as `sfdt_soql_search`, `sfdt_soql_describe`, `sfdt_soql_validate`, `sfdt_soql_plan`, and `sfdt_soql_query` (see [MCP.md](MCP.md)), and the family appears in the VS Code command tree as "SOQL Toolkit".
 
 ---
 

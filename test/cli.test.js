@@ -66,6 +66,7 @@ describe('createCli', () => {
       'retrofit',
       'history',
       'versions',
+      'soql',
       'version',
     ];
 

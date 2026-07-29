@@ -97,11 +97,6 @@
     "connectedAppFlagPermissive": true,
     "soapLoginLookbackDays": 30
   },
-  "quality": {
-    "analyzer": {
-      "allowLegacyV4": false
-    }
-  },
   "monitoring": {
     "backupDir": "monitoring-backup",
     "limitWarnThreshold": 0.75,
@@ -120,6 +115,10 @@
   },
   "data": {
     "dir": ".sfdt/data"
+  },
+  "soql": {
+    "defaultLimit": 200,
+    "maxLimit": 2000
   },
   "scratch": {
     "definitionFile": "config/project-scratch-def.json",

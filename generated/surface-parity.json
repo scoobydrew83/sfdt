@@ -585,6 +585,24 @@
       "sideEffects": null
     },
     {
+      "id": "soql",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_soql_search",
+        "sfdt_soql_describe",
+        "sfdt_soql_validate",
+        "sfdt_soql_plan",
+        "sfdt_soql_query"
+      ],
+      "sideEffects": null
+    },
+    {
       "id": "version",
       "surfaces": {
         "cli": true,
