@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Legacy Code Analyzer v4 (`sf scanner run`) support** — Salesforce Code Analyzer v5 is now the only supported engine (F-001). The `quality --allow-legacy-analyzer` opt-in flag, the `quality.analyzer.allowLegacyV4` config key, the `SFDT_ANALYZER_ALLOW_LEGACY` env var, and the v4 fallback in `scripts/quality/code-analyzer.sh` are gone. On a machine without v5, the static scan is reported as `skipped` (never a fabricated clean result) with install guidance (`sf plugins install code-analyzer`); a lingering `quality` key in an existing `.sfdt/config.json` is ignored, not an error.
+
 ## [0.20.0] - 2026-07-28
 
 ### Security
