@@ -160,6 +160,42 @@ Shows recent sfdt run history (audit/monitor/quality/test/deploy/agent-test) fro
   * `type` (string, optional): filter to one run type.
   * `limit` (number, optional): max rows (default 30).
 
+#### `sfdt_soql_search`
+Finds sObjects in the org by name substring (schema search). Read-only.
+* **Arguments:**
+  * `term` (string, optional): case-insensitive substring matched against API names (omit for all).
+  * `category` (enum, optional): `all` | `custom` | `standard` (default `all`).
+  * `limit` (number, optional): max matches (default 100).
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+#### `sfdt_soql_describe`
+Describes an sObject — fields (type, picklists, references), key prefix, child relationships. Read-only.
+* **Arguments:**
+  * `sobject` (string, **required**): sObject API name.
+  * `filter` (string, optional): only fields whose name/label contains this substring.
+  * `tooling` (boolean, optional): describe a Tooling API object.
+  * `org` (string, optional): org alias.
+
+#### `sfdt_soql_validate`
+Validates a SOQL query without executing it — local static checks plus an org `LIMIT 0` round-trip (degrades to local-only when the org is unreachable). Read-only.
+* **Arguments:**
+  * `query` (string, **required**): the SOQL query.
+  * `org` (string, optional): org alias.
+
+#### `sfdt_soql_plan`
+Fetches the org's query plans for a SOQL query (REST explain endpoint — the query is never executed). Read-only.
+* **Arguments:**
+  * `query` (string, **required**): the SOQL query.
+  * `org` (string, optional): org alias.
+
+#### `sfdt_soql_query`
+Executes a SOQL SELECT with a row bound enforced (`soql.defaultLimit`/`soql.maxLimit` — never unbounded); returns records plus truncation metadata. Read-only.
+* **Arguments:**
+  * `query` (string, **required**): the SOQL SELECT.
+  * `limit` (number, optional): row bound (clamped to `soql.maxLimit`).
+  * `tooling` (boolean, optional): query the Tooling API.
+  * `org` (string, optional): org alias.
+
 #### `sfdt_test`
 Runs Apex tests via the enhanced test runner, optionally limited to specific classes. Consumes org test resources; not metadata-mutating.
 * **Arguments:**
@@ -170,6 +206,13 @@ Exports a configured data set from the org to local files. Read-only with respec
 * **Arguments:**
   * `set` (string, **required**): data set name.
   * `org` (string, optional): org alias.
+
+#### `sfdt_apex_logs`
+Lists recent Apex debug logs, or retrieves one log body by Id. Read-only.
+* **Arguments:**
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+  * `logId` (string, optional): retrieve this log's body instead of listing.
+  * `limit` (number, optional): max logs to list (default 20).
 
 ---
 
@@ -200,6 +243,14 @@ Imports a data set into the org. **Requires `confirmExecution`.**
 #### `sfdt_data_delete`
 Bulk-deletes a data set in the org. Destructive — **requires `confirmExecution`.**
 * **Arguments:** `set` (**required**), `org`, `confirmExecution` (**required**).
+
+#### `sfdt_apex_trace`
+Manages Apex debug trace flags. `list` is read-only; `start`/`stop` write `TraceFlag` records and **require `confirmExecution`.**
+* **Arguments:** `action` (`start` | `stop` | `list`, **required**), `org`, `user`, `duration` (minutes, start only), `debugLevel` (start only), `all` (stop only), `confirmExecution` (required for `start`/`stop`).
+
+#### `sfdt_apex_run`
+Executes Anonymous Apex in the org from a project file or inline code. **Requires `confirmExecution`.**
+* **Arguments:** `org`, `file` (project-relative path) or `apexCode` (inline), `confirmExecution` (**required**).
 
 ---
 

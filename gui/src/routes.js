@@ -13,6 +13,7 @@ export const GUI_ROUTES = [
   { id: 'coverage', label: 'Coverage', group: 'Observe' },
   { id: 'logs', label: 'Logs', pageLabel: 'Log History', group: 'Observe' },
   { id: 'release', label: 'Release Hub', group: 'Release' },
+  { id: 'manifest-builder', label: 'Manifest Builder', group: 'Release' },
   { id: 'retrofit', label: 'Retrofit', group: 'Release' },
   { id: 'compare', label: 'Compare', group: 'Analyze' },
   { id: 'scan', label: 'Scan', group: 'Analyze' },

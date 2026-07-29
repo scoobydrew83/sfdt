@@ -241,7 +241,16 @@ export const api = {
   /** @returns {Promise<{ ok: boolean }>} */
   removeManifestComponent:(relPath, type, member) => postJson('/manifest/remove-component', { relPath, type, member }),
   addManifestComponent:   (relPath, type, member) => postJson('/manifest/add-component',    { relPath, type, member }),
-  discoverComponents:     (type, exclude = []) => fetchJson(`/manifest/discover?type=${encodeURIComponent(type)}${exclude.length ? `&exclude=${encodeURIComponent(exclude.join(','))}` : ''}`),
+  /** Discover local components of one type. `pkg` scopes to a packageDirectory name ('all' = default source path). @returns {Promise<{ members: string[] }>} */
+  discoverComponents:     (type, exclude = [], pkg) => fetchJson(`/manifest/discover?type=${encodeURIComponent(type)}${exclude.length ? `&exclude=${encodeURIComponent(exclude.join(','))}` : ''}${pkg && pkg !== 'all' ? `&package=${encodeURIComponent(pkg)}` : ''}`),
+  /** List metadata types in an org (cached scan snapshot when fresh). @returns {Promise<{ org: string, types: string[], cached: boolean, timestamp?: string }>} */
+  discoverOrgTypes:       (org, { refresh = false } = {}) => fetchJson(`/manifest/discover-org?org=${encodeURIComponent(org)}&types=1${refresh ? '&refresh=1' : ''}`),
+  /** List members of one metadata type in an org. @returns {Promise<{ org: string, type: string, members: string[], cached: boolean, timestamp?: string }>} */
+  discoverOrgMembers:     (org, type, { refresh = false } = {}) => fetchJson(`/manifest/discover-org?org=${encodeURIComponent(org)}&type=${encodeURIComponent(type)}${refresh ? '&refresh=1' : ''}`),
+  /** Render selections to manifest XML server-side (single writer: renderPackageXml). @returns {Promise<{ mode: string, xml?: string, destructiveChangesXml?: string, emptyPackageXml?: string }>} */
+  renderManifest:         ({ items, mode = 'additive', apiVersion } = {}) => postJson('/manifest/render', { items, mode, ...(apiVersion ? { apiVersion } : {}) }),
+  /** Batch-save: new rl-<name> file(s) in manifestDir, or batch-add items into an existing manifest via relPath. @returns {Promise<{ ok: boolean, added?: number, path?: string, files?: Array<{filename: string, path: string}>, xml?: string, destructiveChangesXml?: string, emptyPackageXml?: string }>} */
+  saveManifest:           (body) => postJson('/manifest/save', body),
   /** @returns {Promise<{ prompts: Array<{key:string, label:string, description:string, feature:string, default:string, current:string, overridden:boolean}> }>} */
   listPrompts:            () => fetchJson('/prompts'),
   /** @returns {Promise<{ ok: boolean, key: string }>} */

@@ -18,12 +18,14 @@ This guide covers every sfdt command in depth: what it does, when to use it, all
 6. [Commands: Testing and Quality](#commands-testing-and-quality)
    - [sfdt test](#sfdt-test)
    - [sfdt agent-test](#sfdt-agent-test)
+   - [sfdt apex](#sfdt-apex)
    - [sfdt quality](#sfdt-quality)
 7. [Commands: Metadata and Source Control](#commands-metadata-and-source-control)
    - [sfdt manifest](#sfdt-manifest)
    - [sfdt pull](#sfdt-pull)
    - [sfdt drift](#sfdt-drift)
    - [sfdt compare](#sfdt-compare)
+   - [sfdt soql](#sfdt-soql)
 8. [Commands: Release Management](#commands-release-management)
    - [sfdt release](#sfdt-release)
    - [sfdt changelog](#sfdt-changelog)
@@ -439,6 +441,54 @@ sfdt agent-test --spec MyAgentEval --notify --pr-comment
 
 The pass rate is computed from the `sf agent test run --json` result (both the legacy and Agentforce Studio result shapes), mirroring how the `sf` agent plugin itself counts passing cases: a case passes when every one of its scorer/test results passes.
 
+
+### sfdt apex
+
+Apex observability: manage debug **trace flags**, retrieve and **watch debug logs**, and execute **Anonymous Apex** — the debugging loop that complements `sfdt test` (which owns test execution). Debug logs go through the `sf apex` commands; trace flags use the Tooling API, since the `sf` CLI has no first-class trace-flag command. If the `sf apex` plugin is unavailable, commands fail with an actionable install hint (`sf plugins install @salesforce/plugin-apex`) rather than a fabricated result.
+
+```bash
+# Trace flags (mutating — they write TraceFlag records)
+sfdt apex trace start                          # trace the authenticated user for 60 minutes
+sfdt apex trace start --user u@x.com --duration 30
+sfdt apex trace start --level SFDC_DevConsole  # use an existing DebugLevel
+sfdt apex trace list                           # read-only
+sfdt apex trace stop                           # delete the authenticated user's USER_DEBUG flags
+sfdt apex trace stop --all                     # delete every USER_DEBUG flag in the org
+
+# Debug logs (read-only)
+sfdt apex logs list --limit 10
+sfdt apex logs get 07L5g00000AbCdEEAV          # print the raw body
+sfdt apex logs get 07L5g00000AbCdEEAV --output debug.log
+sfdt apex logs watch                           # tail new logs for 5 minutes (CI-safe default)
+sfdt apex logs watch --duration 0              # until interrupted (interactive)
+sfdt apex logs watch --duration 60 --max 3 --no-body
+
+# Anonymous Apex (mutating — the code runs in the org)
+sfdt apex run --file scripts/apex/reset-flags.apex
+echo 'System.debug(UserInfo.getUserName());' | sfdt apex run
+```
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--org <alias>` | Target org (default: `config.defaultOrg`); available on every subcommand |
+| `--json` | Emit the structured JSON envelope on stdout; available on every subcommand |
+| `trace start --user <username>` | Username to trace (default: the org's authenticated user) |
+| `trace start --duration <minutes>` | Trace window in minutes (default 60, capped at 1440 = the Salesforce 24 h limit) |
+| `trace start --level <developerName>` | DebugLevel DeveloperName. Default: the sfdt-managed `SFDT_Trace`, created on demand; any other missing name is an error — sfdt never silently invents a level you named |
+| `trace stop --user <username>` / `--all` | Whose USER_DEBUG flags to delete (default: the authenticated user), or all of them |
+| `logs list --limit <n>` / `--user <name>` | Cap the list (default 20) / only logs from one user |
+| `logs get <logId> --output <file>` | Write the raw log body to a file (the file stays raw; the JSON envelope is stdout-only) |
+| `logs watch --interval <seconds>` | Poll interval (default 5) |
+| `logs watch --duration <seconds>` | Total watch window (default 300; `0` = until interrupted). Bounded by default so it is safe in CI |
+| `logs watch --max <n>` / `--no-body` | Stop after n new logs / report metadata without fetching bodies |
+| `run --file <path>` | Apex file to execute; without it, code is read from stdin (piped input) |
+
+`apex run` reports the full compile/execution diagnostics (`compiled`, `compileProblem`, `exceptionMessage`, stack trace, and the debug log) and exits non-zero when the Apex failed — in `--json` mode the envelope still carries the diagnostics, so CI can branch on `result.success`.
+
+Only logs generated *after* `apex logs watch` starts are streamed; pre-existing logs are skipped.
+
 ---
 
 ## Commands: Metadata and Source Control
@@ -594,6 +644,41 @@ sfdt compare --output deploy/missing.xml     # write source-only items as packag
 **Output:** Results are visible in the web dashboard's Compare page, where you can filter by status and trigger an XML diff of individual components that exist in both sides.
 
 **See also:** [Drift vs Compare](#drift-vs-compare-choosing-the-right-tool)
+
+---
+
+### sfdt soql
+
+The SOQL/SOSL toolkit — the query and schema lifecycle in one command family: find sObjects, describe their fields and relationships, validate a query without running it, check the org's query plans, and finally execute it with a row bound enforced (never an unbounded dump). All subcommands are read-only against the org and support `--json`.
+
+```bash
+sfdt soql search invoice --category custom          # which objects match "invoice"?
+sfdt soql describe Account --filter phone           # field inventory (filtered)
+sfdt soql relationships Contact                     # parent lookups + child subqueries
+sfdt soql validate "SELECT Id FROM Account"         # local checks + org LIMIT 0 round-trip
+sfdt soql plan "SELECT Id FROM Case WHERE Status='Open'"   # REST explain: cost/selectivity
+sfdt soql query "SELECT Id, Name FROM Account" --limit 50  # bounded execution
+sfdt soql query "SELECT Id FROM Contact" --out contacts.csv # export raw rows (csv/json)
+sfdt soql sosl "FIND {Acme} IN ALL FIELDS RETURNING Account(Id, Name)"
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|---|---|
+| `search [term]` | Find sObjects by case-insensitive name substring (`--category all\|custom\|standard`, `--limit <n>`) |
+| `describe <sobject>` | Fields (type, picklists, references), key prefix, and child relationships (`--filter <term>`, `--tooling`) |
+| `relationships <sobject>` | Parent lookups (dot notation) and child relationships (subqueries) (`--direction parent\|child\|both`) |
+| `validate <query>` | Local static checks plus an org `LIMIT 0` round-trip; exits non-zero when invalid (`--local-only`, `--tooling`) |
+| `plan <query>` | Org query plans via the REST explain endpoint — the query is never executed (`--api-version <ver>`) |
+| `query <soql>` | Bounded SOQL execution (`--limit <n>`, `--tooling`, `--all-rows`, `--out <file>`, `--format json\|csv`) |
+| `sosl <search>` | Bounded SOSL execution (`--limit <n>`, `--out <file>`, `--format json\|csv`) |
+
+**Bounded execution:** `query`/`sosl` never run unbounded. The effective row cap is `--limit`, defaulting to `soql.defaultLimit` (200) and clamped to `soql.maxLimit` (2000) — both configurable in `.sfdt/config.json`. A `LIMIT` already in the query is kept only when it is at or under the cap; results carry `bound` and `truncated` metadata so CI consumers can tell a complete result from a capped one.
+
+**Validation degrades gracefully:** with no reachable org, `validate` reports its local-only verdict with a warning — it never fabricates an org pass. `--out` exports write the **raw** records to disk (the `{status, result, warnings}` envelope exists on stdout only).
+
+All read-only pieces are exposed to MCP as `sfdt_soql_search`, `sfdt_soql_describe`, `sfdt_soql_validate`, `sfdt_soql_plan`, and `sfdt_soql_query` (see [MCP.md](MCP.md)), and the family appears in the VS Code command tree as "SOQL Toolkit".
 
 ---
 
@@ -1282,6 +1367,7 @@ The dashboard has eight pages:
 | **Review** | AI-powered code review results for the current branch | `logs/review-latest.json` |
 | **Explain** | AI-powered deployment log analysis | `logs/explain-latest.json` |
 | **Release Hub** | Release manifest artifacts and release notes | `logs/release/` |
+| **Manifest Builder** | Changeset-style builder: browse metadata by type (org inventory or local source), tick components (or a whole type → `*` wildcard), watch a live server-rendered XML preview, and save `rl-<name>-package.xml` — or, in destructive mode, the `rl-<name>-destructiveChanges.xml` + empty `package.xml` pair (deploy timing: `SFDT_DESTRUCTIVE_TIMING`, see `docs/ENV-VARS.md`). Selections persist per org. | `/api/manifest/discover-org` (cached by `logs/scan-latest.json`), `/api/manifest/discover`, `/api/manifest/render`, `/api/manifest/save` |
 
 **Live command runner:** The Test Runs, Preflight, and Drift pages each have a "Run" button that triggers the corresponding shell script via a Server-Sent Events stream. Output appears line-by-line in the UI in real time, the same as running the CLI command directly.
 

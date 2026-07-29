@@ -27,7 +27,7 @@ function fmtDate(iso) {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
 }
 
-function AddComponentForm({ existingComponents, onAdd }) {
+function AddComponentForm({ existingComponents, onAddBatch }) {
   const [type, setType]         = useState('ApexClass');
   const [typeSearch, setTypeSearch] = useState('');
   const [members, setMembers]   = useState([]);   // discovered from source
@@ -77,7 +77,9 @@ function AddComponentForm({ existingComponents, onAdd }) {
   const handleAdd = async () => {
     if (!selected.size) return;
     setBusy(true);
-    for (const m of selected) await onAdd(type, m);
+    // One batch round trip (POST /api/manifest/save) instead of one request
+    // per component.
+    await onAddBatch(type, [...selected]);
     setSelected(new Set());
     // Refresh discovered list
     const { members: fresh = [] } = await api.discoverComponents(type, existingForType).catch(() => ({ members: [] }));
@@ -192,9 +194,12 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
     }
   };
 
-  const addComponent = async (type, member) => {
+  const addComponents = async (type, members) => {
     try {
-      await api.addManifestComponent(manifest.relPath, type, member);
+      await api.saveManifest({
+        relPath: manifest.relPath,
+        items: members.map((member) => ({ type, member })),
+      });
       load();
     } catch (err) {
       alert(`Add failed: ${err.message}`);
@@ -244,7 +249,7 @@ function ManifestViewer({ manifest, preloadedXml, onClose }) {
                   </table>
                 </div>
                 {manifest?.relPath && manifest.source !== 'deployed' && (
-                  <AddComponentForm existingComponents={data?.components ?? []} onAdd={addComponent} />
+                  <AddComponentForm existingComponents={data?.components ?? []} onAddBatch={addComponents} />
                 )}
               </div>
 

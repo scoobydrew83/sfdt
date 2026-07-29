@@ -11,6 +11,7 @@ import MonitorPage from './pages/Monitor.jsx';
 import ComparePage from './pages/Compare.jsx';
 import ScanPage from './pages/Scan.jsx';
 import ManifestsPage from './pages/Manifests.jsx';
+import ManifestBuilderPage from './pages/ManifestBuilder.jsx';
 import QualityPage from './pages/Quality.jsx';
 import PullPage from './pages/Pull.jsx';
 import ReleaseHubPage from './pages/ReleaseHub/index.jsx';
@@ -31,6 +32,7 @@ import {
   IconHome, IconList, IconCheck, IconRefresh, IconCompare,
   IconSun, IconMoon, IconFileText, IconActivity, IconCloudDown,
   IconRocket, IconCode, IconSearch, IconSettings, IconClock, IconGraph,
+  IconPackage,
 } from './Icons.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 import ChatDrawer from './components/ChatDrawer.jsx';
@@ -50,6 +52,7 @@ const ICONS = {
   coverage: IconActivity,
   logs: IconClock,
   release: IconRocket,
+  'manifest-builder': IconPackage,
   retrofit: IconRefresh,
   compare: IconCompare,
   scan: IconList,
@@ -78,6 +81,7 @@ const PAGES = {
   coverage: CoveragePage,
   logs: LogsPage,
   release: ReleaseHubPage,
+  'manifest-builder': ManifestBuilderPage,
   retrofit: RetrofitPage,
   compare: ComparePage,
   scan: ScanPage,

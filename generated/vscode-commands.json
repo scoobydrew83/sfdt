@@ -651,11 +651,147 @@
       "group": null
     },
     {
+      "id": "apex-trace-start",
+      "label": "Trace: Start",
+      "detail": "Start a USER_DEBUG trace flag for the authenticated user",
+      "args": [
+        "apex",
+        "trace",
+        "start"
+      ],
+      "group": null
+    },
+    {
+      "id": "apex-trace-list",
+      "label": "Trace: List",
+      "detail": "List trace flags in the org (read-only)",
+      "args": [
+        "apex",
+        "trace",
+        "list"
+      ],
+      "group": null
+    },
+    {
+      "id": "apex-trace-stop",
+      "label": "Trace: Stop",
+      "detail": "Delete the authenticated user's USER_DEBUG trace flags",
+      "args": [
+        "apex",
+        "trace",
+        "stop"
+      ],
+      "group": null
+    },
+    {
+      "id": "apex-logs-list",
+      "label": "Logs: List",
+      "detail": "List recent Apex debug logs",
+      "args": [
+        "apex",
+        "logs",
+        "list"
+      ],
+      "group": null
+    },
+    {
+      "id": "apex-logs-get",
+      "label": "Logs: Get",
+      "detail": "Retrieve one debug log body — append the log Id",
+      "args": [
+        "apex",
+        "logs",
+        "get"
+      ],
+      "group": null
+    },
+    {
+      "id": "apex-logs-watch",
+      "label": "Logs: Watch",
+      "detail": "Tail new debug logs (bounded, 5-minute default window)",
+      "args": [
+        "apex",
+        "logs",
+        "watch"
+      ],
+      "group": null
+    },
+    {
+      "id": "apex-run",
+      "label": "Run Anonymous Apex",
+      "detail": "Execute an Apex script file in the org — append --file <path>",
+      "args": [
+        "apex",
+        "run"
+      ],
+      "group": null
+    },
+    {
       "id": "dependencies",
       "label": "Dependencies",
       "detail": "Show metadata dependencies for a component",
       "args": [
         "dependencies"
+      ],
+      "group": null
+    },
+    {
+      "id": "soql-search",
+      "label": "Search Schema",
+      "detail": "Find sObjects by name — append a search term",
+      "args": [
+        "soql",
+        "search"
+      ],
+      "group": null
+    },
+    {
+      "id": "soql-describe",
+      "label": "Describe sObject",
+      "detail": "Fields, picklists, and child relationships — append an sObject API name",
+      "args": [
+        "soql",
+        "describe"
+      ],
+      "group": null
+    },
+    {
+      "id": "soql-relationships",
+      "label": "Relationships",
+      "detail": "Parent lookups and child relationships — append an sObject API name",
+      "args": [
+        "soql",
+        "relationships"
+      ],
+      "group": null
+    },
+    {
+      "id": "soql-validate",
+      "label": "Validate Query",
+      "detail": "Validate SOQL without executing it — append the quoted query",
+      "args": [
+        "soql",
+        "validate"
+      ],
+      "group": null
+    },
+    {
+      "id": "soql-plan",
+      "label": "Query Plan",
+      "detail": "Fetch org query plans (never executes) — append the quoted query",
+      "args": [
+        "soql",
+        "plan"
+      ],
+      "group": null
+    },
+    {
+      "id": "soql-query",
+      "label": "Run Query (bounded)",
+      "detail": "Execute SOQL with the configured row bound — append the quoted query",
+      "args": [
+        "soql",
+        "query"
       ],
       "group": null
     },

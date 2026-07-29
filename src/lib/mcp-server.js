@@ -6,6 +6,7 @@ import { parkIfNeeded, getParkedResult } from './mcp-parking.js';
 import { CHECK_IDS as AUDIT_CHECK_IDS } from './audit-runner.js';
 import { CHECK_IDS as MONITOR_CHECK_IDS } from './monitor-runner.js';
 import { execa } from 'execa';
+import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
 import { fileURLToPath } from 'url';
@@ -437,6 +438,62 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_apex_logs',
+    description: 'List recent Apex debug logs, or retrieve one log body by Id. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        logId: { type: 'string', description: 'Retrieve this debug log\'s body instead of listing.' },
+        limit: { type: 'number', description: 'Maximum logs to list (default 20).' }
+      }
+    },
+    examples: [
+      { description: 'List the 10 most recent debug logs in the dev org', input: { org: 'dev', limit: 10 } },
+      { description: 'Fetch one debug log body by Id', input: { logId: '07L5g00000AbCdEEAV' } }
+    ]
+  },
+  {
+    name: 'sfdt_apex_trace',
+    description: 'Manage Apex debug trace flags. action="list" is read-only; action="start"/"stop" write TraceFlag records in the org and require confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['start', 'stop', 'list'], description: 'start/stop trace flags (mutating) or list them (read-only).' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        user: { type: 'string', description: 'Username to trace / stop tracing (defaults to the authenticated user).' },
+        duration: { type: 'number', description: 'start only: trace window in minutes (max 1440).' },
+        debugLevel: { type: 'string', description: 'start only: DebugLevel DeveloperName (default SFDT_Trace, created if missing).' },
+        all: { type: 'boolean', description: 'stop only: delete every USER_DEBUG trace flag in the org.' },
+        confirmExecution: { type: 'boolean', description: 'Required when action="start" or "stop" (they write to the org).' }
+      },
+      required: ['action']
+    },
+    examples: [
+      { description: 'List trace flags (read-only)', input: { action: 'list', org: 'dev' } },
+      { description: 'Start a 30-minute trace for a user', input: { action: 'start', org: 'dev', user: 'admin@example.com', duration: 30, confirmExecution: true } },
+      { description: 'Stop the authenticated user\'s trace flags', input: { action: 'stop', org: 'dev', confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_apex_run',
+    description: 'Execute Anonymous Apex in the org from a file or inline code. Mutating (the code runs with the authenticated user\'s permissions) — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        file: { type: 'string', description: 'Path to an Apex code file (relative to the project root).' },
+        apexCode: { type: 'string', description: 'Inline Apex code (used when no file is given).' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to execute code in the org.' }
+      },
+      required: ['confirmExecution']
+    },
+    examples: [
+      { description: 'Run an Apex script file against the dev org', input: { org: 'dev', file: 'scripts/apex/reset-flags.apex', confirmExecution: true } },
+      { description: 'Run a one-liner inline', input: { apexCode: 'System.debug(UserInfo.getUserName());', confirmExecution: true } }
+    ]
+  },
+  {
     name: 'sfdt_test',
     description: 'Run Apex tests via the enhanced test runner. Optionally limit to specific test classes. Consumes org test resources; not metadata-mutating.',
     inputSchema: {
@@ -477,6 +534,89 @@ export const TOOLS = [
     examples: [
       { description: 'Full local + org API-version report', input: { org: 'dev' } },
       { description: 'Offline scan of local source only', input: { localOnly: true } }
+    ]
+  },
+  {
+    name: 'sfdt_soql_search',
+    description: 'Find sObjects in the org by name substring (schema search across the org inventory). Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        term: { type: 'string', description: 'Case-insensitive substring matched against sObject API names (omit for all).' },
+        category: { type: 'string', enum: ['all', 'custom', 'standard'], description: 'Which sObjects to scan (default all).' },
+        limit: { type: 'number', description: 'Maximum matches to return (default 100).' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    },
+    examples: [
+      { description: 'Find custom objects with "invoice" in the name', input: { term: 'invoice', category: 'custom' } },
+      { description: 'List the first 20 standard objects in the dev org', input: { category: 'standard', limit: 20, org: 'dev' } }
+    ]
+  },
+  {
+    name: 'sfdt_soql_describe',
+    description: 'Describe an sObject — fields (type, picklists, references), key prefix, and child relationships. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sobject: { type: 'string', description: 'sObject API name (e.g. Account, Invoice__c).' },
+        filter: { type: 'string', description: 'Only return fields whose API name or label contains this substring.' },
+        tooling: { type: 'boolean', description: 'Describe a Tooling API object.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['sobject']
+    },
+    examples: [
+      { description: 'Describe Account, only fields matching "phone"', input: { sobject: 'Account', filter: 'phone' } },
+      { description: 'Describe the ApexClass Tooling object in dev', input: { sobject: 'ApexClass', tooling: true, org: 'dev' } }
+    ]
+  },
+  {
+    name: 'sfdt_soql_validate',
+    description: 'Validate a SOQL query without executing it — local static checks plus an org LIMIT 0 round-trip (degrades to local-only when the org is unreachable). Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The SOQL query to validate.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['query']
+    },
+    examples: [
+      { description: 'Validate a query against the default org', input: { query: 'SELECT Id, Name FROM Account WHERE CreatedDate = LAST_N_DAYS:7' } }
+    ]
+  },
+  {
+    name: 'sfdt_soql_plan',
+    description: 'Fetch the org query plans for a SOQL query (REST explain endpoint) — leading operation, relative cost, cardinality, and notes. The query is never executed. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The SOQL query to explain.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['query']
+    },
+    examples: [
+      { description: 'Explain a query to check it is selective', input: { query: 'SELECT Id FROM Case WHERE Status = \'Open\'' } }
+    ]
+  },
+  {
+    name: 'sfdt_soql_query',
+    description: 'Execute a SOQL SELECT with a row bound enforced (config soql.defaultLimit/maxLimit — never unbounded). Returns records plus truncation metadata. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The SOQL SELECT to run.' },
+        limit: { type: 'number', description: 'Row bound (default config soql.defaultLimit, clamped to soql.maxLimit).' },
+        tooling: { type: 'boolean', description: 'Query the Tooling API.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['query']
+    },
+    examples: [
+      { description: 'Fetch 10 recent accounts', input: { query: 'SELECT Id, Name FROM Account ORDER BY CreatedDate DESC', limit: 10 } },
+      { description: 'Count Apex classes via the Tooling API', input: { query: 'SELECT COUNT() FROM ApexClass', tooling: true, org: 'dev' } }
     ]
   },
   {
@@ -720,6 +860,55 @@ export class SfdtMcpServer {
         return this.#parseCliJson(stdout);
       }
 
+      case 'sfdt_apex_logs': {
+        const cliArgs = args.logId
+          ? ['apex', 'logs', 'get', args.logId, '--json']
+          : ['apex', 'logs', 'list', '--json'];
+        if (!args.logId && args.limit != null) cliArgs.push('--limit', String(args.limit));
+        if (args.org) cliArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_apex_trace': {
+        const action = ['start', 'stop', 'list'].includes(args.action) ? args.action : 'list';
+        if (action !== 'list' && !args.confirmExecution) {
+          throw new Error('Starting or stopping a trace flag writes to the org. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['apex', 'trace', action, '--json'];
+        if (args.org) cliArgs.push('--org', args.org);
+        if (action !== 'list' && args.user) cliArgs.push('--user', args.user);
+        if (action === 'start' && args.duration != null) cliArgs.push('--duration', String(args.duration));
+        if (action === 'start' && args.debugLevel) cliArgs.push('--level', args.debugLevel);
+        if (action === 'stop' && args.all) cliArgs.push('--all');
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_apex_run': {
+        if (!args.confirmExecution) {
+          throw new Error('Anonymous Apex executes code in the org. Pass confirmExecution: true to proceed.');
+        }
+        if (!args.file && !args.apexCode) {
+          throw new Error('Provide "file" (a path in the project) or "apexCode" (inline Apex).');
+        }
+        let apexFile = args.file ? path.resolve(projectRoot, args.file) : null;
+        let tmpDir = null;
+        if (!apexFile) {
+          tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-mcp-apex-'));
+          apexFile = path.join(tmpDir, 'anonymous.apex');
+          await fs.writeFile(apexFile, args.apexCode);
+        }
+        try {
+          const cliArgs = ['apex', 'run', '--file', apexFile, '--json'];
+          if (args.org) cliArgs.push('--org', args.org);
+          const { stdout } = await this.#runCliCommand(cliArgs);
+          return this.#parseCliJson(stdout);
+        } finally {
+          if (tmpDir) await fs.remove(tmpDir).catch(() => {});
+        }
+      }
+
       case 'sfdt_test': {
         const cliArgs = ['test'];
         if (Array.isArray(args.classNames) && args.classNames.length > 0) {
@@ -733,6 +922,49 @@ export class SfdtMcpServer {
         const cmdArgs = ['history', '--json'];
         if (args.type) cmdArgs.push('--type', args.type);
         if (args.limit != null) cmdArgs.push('--limit', String(args.limit));
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_soql_search': {
+        const cmdArgs = ['soql', 'search'];
+        if (args.term) cmdArgs.push(args.term);
+        cmdArgs.push('--json');
+        if (args.category) cmdArgs.push('--category', args.category);
+        if (args.limit != null) cmdArgs.push('--limit', String(args.limit));
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_soql_describe': {
+        const cmdArgs = ['soql', 'describe', args.sobject, '--json'];
+        if (args.filter) cmdArgs.push('--filter', args.filter);
+        if (args.tooling) cmdArgs.push('--tooling');
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_soql_validate': {
+        const cmdArgs = ['soql', 'validate', args.query, '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_soql_plan': {
+        const cmdArgs = ['soql', 'plan', args.query, '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_soql_query': {
+        const cmdArgs = ['soql', 'query', args.query, '--json'];
+        if (args.limit != null) cmdArgs.push('--limit', String(args.limit));
+        if (args.tooling) cmdArgs.push('--tooling');
+        if (args.org) cmdArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);
       }
