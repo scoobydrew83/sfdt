@@ -106,8 +106,22 @@ function isTestClassName(name) {
 
 /** `@IsTest` outside comments/strings — always test against sanitized source. */
 const IS_TEST_RE = /@IsTest\b/i;
-/** `@IsTest(...)` with the `d` flag so arg offsets can be sliced from the original source. */
-const IS_TEST_ARGS_RE = /@IsTest\s*\(([^)]*)\)/dgi;
+/** `@IsTest(...)` — pair with `annotationArgs` to slice args from the original source. */
+const IS_TEST_ARGS_RE = /@IsTest\s*\(([^)]*)\)/gi;
+
+/**
+ * Slice an `IS_TEST_ARGS_RE` group-1 span out of the *original* source, given a
+ * match against the sanitized text (`sanitizeApexSource` preserves offsets).
+ *
+ * ponytail: offsets are computed by hand instead of via the regex `d` flag —
+ * CodeQL's JavaScript extractor cannot parse `d` and silently skips the entire
+ * file, costing this module its security scan. Switch back to
+ * `match.indices[1]` once the extractor understands `d`.
+ */
+function annotationArgs(match, source) {
+  const start = match.index + match[0].indexOf('(') + 1;
+  return source.slice(start, start + match[1].length);
+}
 
 /**
  * Select test classes from `@IsTest` annotation metadata (Spring '26):
@@ -144,7 +158,7 @@ export function selectAnnotatedTests(deltaComponents, testClassSources) {
     const sanitized = sanitizeApexSource(source);
     if (!IS_TEST_RE.test(sanitized)) continue;
     for (const annotation of sanitized.matchAll(IS_TEST_ARGS_RE)) {
-      const args = source.slice(...annotation.indices[1]);
+      const args = annotationArgs(annotation, source);
       if (/\bcritical\s*=\s*true\b/i.test(args)) selected.add(className);
       for (const tf of args.matchAll(/testFor\s*=\s*(?:'([^']*)'|"([^"]*)")/gi)) {
         const value = tf[1] ?? tf[2] ?? '';
@@ -223,7 +237,7 @@ export function checkTestForHints(testClassSources) {
     total += 1;
     let hinted = false;
     for (const annotation of sanitized.matchAll(IS_TEST_ARGS_RE)) {
-      const args = source.slice(...annotation.indices[1]);
+      const args = annotationArgs(annotation, source);
       if (/\btestFor\s*=/i.test(args) || /\bcritical\s*=\s*true\b/i.test(args)) {
         hinted = true;
         break;
