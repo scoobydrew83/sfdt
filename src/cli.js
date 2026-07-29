@@ -46,6 +46,7 @@ import { registerPrCommand } from './commands/pr.js';
 import { registerRetrofitCommand } from './commands/retrofit.js';
 import { registerHistoryCommand } from './commands/history.js';
 import { registerVersionsCommand } from './commands/versions.js';
+import { registerSoqlCommand } from './commands/soql.js';
 import { formatSplash } from './lib/output.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -117,6 +118,7 @@ export function createCli() {
   registerRetrofitCommand(program);
   registerHistoryCommand(program);
   registerVersionsCommand(program);
+  registerSoqlCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program

@@ -147,6 +147,17 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       { id: 'agent-test', label: 'Agent Test (Agentforce)', detail: 'Run an Agentforce agent test as a CI gate (sf agent test run) — append the AiEvaluationDefinition API name', args: ['agent-test', '--spec'], argsIncomplete: true, icon: 'hubot' },
       { id: 'coverage', label: 'Code Coverage', detail: 'Report Apex code coverage (org-wide + per-class)', args: ['coverage'], icon: 'shield' },
       { id: 'dependencies', label: 'Dependencies', detail: 'Show metadata dependencies for a component', args: ['dependencies'], icon: 'references' },
+      {
+        id: 'soql', label: 'SOQL Toolkit', detail: 'Schema search/describe, relationships, query validation, plans, bounded execution', icon: 'database',
+        children: [
+          { id: 'soql-search', label: 'Search Schema', detail: 'Find sObjects by name — append a search term', args: ['soql', 'search'], argsIncomplete: true },
+          { id: 'soql-describe', label: 'Describe sObject', detail: 'Fields, picklists, and child relationships — append an sObject API name', args: ['soql', 'describe'], argsIncomplete: true },
+          { id: 'soql-relationships', label: 'Relationships', detail: 'Parent lookups and child relationships — append an sObject API name', args: ['soql', 'relationships'], argsIncomplete: true },
+          { id: 'soql-validate', label: 'Validate Query', detail: 'Validate SOQL without executing it — append the quoted query', args: ['soql', 'validate'], argsIncomplete: true },
+          { id: 'soql-plan', label: 'Query Plan', detail: 'Fetch org query plans (never executes) — append the quoted query', args: ['soql', 'plan'], argsIncomplete: true },
+          { id: 'soql-query', label: 'Run Query (bounded)', detail: 'Execute SOQL with the configured row bound — append the quoted query', args: ['soql', 'query'], argsIncomplete: true },
+        ],
+      },
       { id: 'review', label: 'Code Review', detail: 'AI review of the current diff', args: ['review'], icon: 'comment-discussion' },
       {
         id: 'flow', label: 'Flow Analysis', detail: 'Analyze Flows', icon: 'type-hierarchy',

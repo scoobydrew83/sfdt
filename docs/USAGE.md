@@ -24,6 +24,7 @@ This guide covers every sfdt command in depth: what it does, when to use it, all
    - [sfdt pull](#sfdt-pull)
    - [sfdt drift](#sfdt-drift)
    - [sfdt compare](#sfdt-compare)
+   - [sfdt soql](#sfdt-soql)
 8. [Commands: Release Management](#commands-release-management)
    - [sfdt release](#sfdt-release)
    - [sfdt changelog](#sfdt-changelog)
@@ -587,6 +588,41 @@ sfdt compare --output deploy/missing.xml     # write source-only items as packag
 **Output:** Results are visible in the web dashboard's Compare page, where you can filter by status and trigger an XML diff of individual components that exist in both sides.
 
 **See also:** [Drift vs Compare](#drift-vs-compare-choosing-the-right-tool)
+
+---
+
+### sfdt soql
+
+The SOQL/SOSL toolkit — the query and schema lifecycle in one command family: find sObjects, describe their fields and relationships, validate a query without running it, check the org's query plans, and finally execute it with a row bound enforced (never an unbounded dump). All subcommands are read-only against the org and support `--json`.
+
+```bash
+sfdt soql search invoice --category custom          # which objects match "invoice"?
+sfdt soql describe Account --filter phone           # field inventory (filtered)
+sfdt soql relationships Contact                     # parent lookups + child subqueries
+sfdt soql validate "SELECT Id FROM Account"         # local checks + org LIMIT 0 round-trip
+sfdt soql plan "SELECT Id FROM Case WHERE Status='Open'"   # REST explain: cost/selectivity
+sfdt soql query "SELECT Id, Name FROM Account" --limit 50  # bounded execution
+sfdt soql query "SELECT Id FROM Contact" --out contacts.csv # export raw rows (csv/json)
+sfdt soql sosl "FIND {Acme} IN ALL FIELDS RETURNING Account(Id, Name)"
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|---|---|
+| `search [term]` | Find sObjects by case-insensitive name substring (`--category all\|custom\|standard`, `--limit <n>`) |
+| `describe <sobject>` | Fields (type, picklists, references), key prefix, and child relationships (`--filter <term>`, `--tooling`) |
+| `relationships <sobject>` | Parent lookups (dot notation) and child relationships (subqueries) (`--direction parent\|child\|both`) |
+| `validate <query>` | Local static checks plus an org `LIMIT 0` round-trip; exits non-zero when invalid (`--local-only`, `--tooling`) |
+| `plan <query>` | Org query plans via the REST explain endpoint — the query is never executed (`--api-version <ver>`) |
+| `query <soql>` | Bounded SOQL execution (`--limit <n>`, `--tooling`, `--all-rows`, `--out <file>`, `--format json\|csv`) |
+| `sosl <search>` | Bounded SOSL execution (`--limit <n>`, `--out <file>`, `--format json\|csv`) |
+
+**Bounded execution:** `query`/`sosl` never run unbounded. The effective row cap is `--limit`, defaulting to `soql.defaultLimit` (200) and clamped to `soql.maxLimit` (2000) — both configurable in `.sfdt/config.json`. A `LIMIT` already in the query is kept only when it is at or under the cap; results carry `bound` and `truncated` metadata so CI consumers can tell a complete result from a capped one.
+
+**Validation degrades gracefully:** with no reachable org, `validate` reports its local-only verdict with a warning — it never fabricates an org pass. `--out` exports write the **raw** records to disk (the `{status, result, warnings}` envelope exists on stdout only).
+
+All read-only pieces are exposed to MCP as `sfdt_soql_search`, `sfdt_soql_describe`, `sfdt_soql_validate`, `sfdt_soql_plan`, and `sfdt_soql_query` (see [MCP.md](MCP.md)), and the family appears in the VS Code command tree as "SOQL Toolkit".
 
 ---
 

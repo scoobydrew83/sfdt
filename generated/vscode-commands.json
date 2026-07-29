@@ -660,6 +660,66 @@
       "group": null
     },
     {
+      "id": "soql-search",
+      "label": "Search Schema",
+      "detail": "Find sObjects by name — append a search term",
+      "args": [
+        "soql",
+        "search"
+      ],
+      "group": null
+    },
+    {
+      "id": "soql-describe",
+      "label": "Describe sObject",
+      "detail": "Fields, picklists, and child relationships — append an sObject API name",
+      "args": [
+        "soql",
+        "describe"
+      ],
+      "group": null
+    },
+    {
+      "id": "soql-relationships",
+      "label": "Relationships",
+      "detail": "Parent lookups and child relationships — append an sObject API name",
+      "args": [
+        "soql",
+        "relationships"
+      ],
+      "group": null
+    },
+    {
+      "id": "soql-validate",
+      "label": "Validate Query",
+      "detail": "Validate SOQL without executing it — append the quoted query",
+      "args": [
+        "soql",
+        "validate"
+      ],
+      "group": null
+    },
+    {
+      "id": "soql-plan",
+      "label": "Query Plan",
+      "detail": "Fetch org query plans (never executes) — append the quoted query",
+      "args": [
+        "soql",
+        "plan"
+      ],
+      "group": null
+    },
+    {
+      "id": "soql-query",
+      "label": "Run Query (bounded)",
+      "detail": "Execute SOQL with the configured row bound — append the quoted query",
+      "args": [
+        "soql",
+        "query"
+      ],
+      "group": null
+    },
+    {
       "id": "review",
       "label": "Code Review",
       "detail": "AI review of the current diff",
