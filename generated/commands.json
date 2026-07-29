@@ -538,13 +538,6 @@
           "description": "Also write the Code Analyzer v5 results to a file; the format follows the extension (e.g. .sarif for code-scanning upload)"
         },
         {
-          "flags": "--allow-legacy-analyzer",
-          "name": "allowLegacyAnalyzer",
-          "required": false,
-          "default": null,
-          "description": "Permit the legacy Code Analyzer v4 (sf scanner run) when v5 is unavailable — results are non-authoritative (also: config quality.analyzer.allowLegacyV4)"
-        },
-        {
           "flags": "--dry-run",
           "name": "dryRun",
           "required": false,
