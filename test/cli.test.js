@@ -27,6 +27,7 @@ describe('createCli', () => {
       'release',
       'test',
       'agent-test',
+      'apex',
       'pull',
       'quality',
       'preflight',
@@ -65,6 +66,7 @@ describe('createCli', () => {
       'retrofit',
       'history',
       'versions',
+      'soql',
       'version',
     ];
 

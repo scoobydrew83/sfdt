@@ -204,19 +204,6 @@
         "soapLoginLookbackDays": { "type": "integer", "minimum": 1 }
       }
     },
-    "quality": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "analyzer": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "allowLegacyV4": { "type": "boolean" }
-          }
-        }
-      }
-    },
     "monitoring": {
       "type": "object",
       "additionalProperties": false,
@@ -246,6 +233,14 @@
       "additionalProperties": false,
       "properties": {
         "dir": { "type": "string" }
+      }
+    },
+    "soql": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaultLimit": { "type": "integer", "minimum": 1 },
+        "maxLimit": { "type": "integer", "minimum": 1 }
       }
     },
     "scratch": {

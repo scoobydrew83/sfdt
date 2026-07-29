@@ -92,6 +92,19 @@ export const COMMAND_POLICY = {
     surfaces: { gui: true, vscode: true, chrome: false },
     mcpTools: {},
   },
+  apex: {
+    mutating: true, // trace-flag create/delete and Anonymous Apex change org state
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'testing-quality',
+    surfaces: { gui: false, vscode: true, chrome: false },
+    mcpTools: {
+      sfdt_apex_logs: { mutating: false }, // log list/retrieve is read-only
+      sfdt_apex_trace: { mutating: true }, // start/stop write TraceFlag records
+      sfdt_apex_run: { mutating: true }, // Anonymous Apex executes code in the org
+    },
+  },
   pull: {
     mutating: true, // overwrites local source from the org
     requiresProject: true,
@@ -452,5 +465,20 @@ export const COMMAND_POLICY = {
     docsCategory: 'org-health',
     surfaces: { gui: false, vscode: true, chrome: true }, // chrome = the org-side api-version-audit feature
     mcpTools: { sfdt_api_versions: { mutating: false } },
+  },
+  soql: {
+    mutating: false, // read-only query/schema lifecycle; exports are regenerable local files
+    requiresProject: true,
+    requiresOrg: true, // `validate --local-only` works offline, but the primary path queries the org
+    supportsJson: true,
+    docsCategory: 'metadata',
+    surfaces: { gui: false, vscode: true, chrome: false },
+    mcpTools: {
+      sfdt_soql_search: { mutating: false },
+      sfdt_soql_describe: { mutating: false },
+      sfdt_soql_validate: { mutating: false },
+      sfdt_soql_plan: { mutating: false },
+      sfdt_soql_query: { mutating: false },
+    },
   },
 };

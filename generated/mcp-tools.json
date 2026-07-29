@@ -285,6 +285,44 @@
       ]
     },
     {
+      "name": "sfdt_apex_logs",
+      "description": "List recent Apex debug logs, or retrieve one log body by Id. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "org",
+        "logId",
+        "limit"
+      ]
+    },
+    {
+      "name": "sfdt_apex_trace",
+      "description": "Manage Apex debug trace flags. action=\"list\" is read-only; action=\"start\"/\"stop\" write TraceFlag records in the org and require confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "action",
+        "org",
+        "user",
+        "duration",
+        "debugLevel",
+        "all",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_apex_run",
+      "description": "Execute Anonymous Apex in the org from a file or inline code. Mutating (the code runs with the authenticated user's permissions) — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "org",
+        "file",
+        "apexCode",
+        "confirmExecution"
+      ]
+    },
+    {
       "name": "sfdt_test",
       "description": "Run Apex tests via the enhanced test runner. Optionally limit to specific test classes. Consumes org test resources; not metadata-mutating.",
       "confirmExecution": false,
@@ -311,6 +349,62 @@
       "inputProperties": [
         "org",
         "localOnly"
+      ]
+    },
+    {
+      "name": "sfdt_soql_search",
+      "description": "Find sObjects in the org by name substring (schema search across the org inventory). Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "term",
+        "category",
+        "limit",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_soql_describe",
+      "description": "Describe an sObject — fields (type, picklists, references), key prefix, and child relationships. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "sobject",
+        "filter",
+        "tooling",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_soql_validate",
+      "description": "Validate a SOQL query without executing it — local static checks plus an org LIMIT 0 round-trip (degrades to local-only when the org is unreachable). Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "query",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_soql_plan",
+      "description": "Fetch the org query plans for a SOQL query (REST explain endpoint) — leading operation, relative cost, cardinality, and notes. The query is never executed. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "query",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_soql_query",
+      "description": "Execute a SOQL SELECT with a row bound enforced (config soql.defaultLimit/maxLimit — never unbounded). Returns records plus truncation metadata. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "query",
+        "limit",
+        "tooling",
+        "org"
       ]
     },
     {

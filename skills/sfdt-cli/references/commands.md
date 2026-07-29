@@ -409,6 +409,10 @@ Compact reference for the rest of the CLI. Run `sfdt <command> --help` for the f
 | `sfdt coverage [--org] [--threshold <pct>] [--json]` | Org-wide + per-class Apex coverage; exits non-zero below the threshold (default 75) |
 | `sfdt flow scan\|conflicts [--org] [--output <file>] [--json]` | Flow health analysis via `@sfdt/flow-core`; `conflicts` lists record-triggered flows colliding on object + timing + event |
 | `sfdt dependencies <name> [--type <t>] [--gaps] [--org]` | Tooling-API dependency graph for a component (both directions); `--gaps` adds source-parsed inferred edges the API misses |
+| `sfdt apex trace start\|list\|stop [--user] [--duration] [--level] [--all]` | Manage USER_DEBUG trace flags (Tooling API); `start` defaults to the authenticated user for 60 min and creates the `SFDT_Trace` debug level on demand |
+| `sfdt apex logs list\|get <id>\|watch [--limit] [--output] [--duration] [--max]` | Retrieve Apex debug logs; `watch` tails only new logs and is bounded by default (300 s) so it is CI-safe |
+| `sfdt apex run [--file <path>]` | Execute Anonymous Apex from a file or stdin; reports compile/runtime diagnostics and exits non-zero on failure |
+| `sfdt soql search\|describe\|relationships\|validate\|plan\|query\|sosl` | SOQL/SOSL toolkit: schema search/describe, relationship discovery, LIMIT-0 query validation (degrades to local checks offline), REST query plans, and bounded execution with JSON/CSV export — row cap from `--limit` / `soql.defaultLimit`, clamped to `soql.maxLimit` |
 
 ### Docs, data, scratch
 
