@@ -38,7 +38,9 @@ The SFDT activity-bar container holds three views plus a status bar:
 - **Embedded dashboard** — `SFDT: Open Dashboard` runs `sfdt ui` and shows the
   full web dashboard in an editor tab (authenticated via the CLI's launch token).
   Follows the editor's light/dark theme and recovers automatically from dashboard
-  port conflicts.
+  port conflicts. `SFDT: Open Manifest Builder` opens the same dashboard
+  deep-linked to the changeset-style Manifest Builder page (browse metadata,
+  tick components, preview and save `package.xml` / `destructiveChanges.xml`).
 - **Per-org window theming** — tints the window by org type (production = red,
   sandbox = orange, scratch/developer = green) to prevent wrong-org mistakes.
   Opt-in — enable `sfdt.orgColor` (it writes `workbench.colorCustomizations`

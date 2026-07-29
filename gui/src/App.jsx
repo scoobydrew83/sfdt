@@ -36,7 +36,7 @@ import {
 } from './Icons.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 import ChatDrawer from './components/ChatDrawer.jsx';
-import { GUI_ROUTES } from './routes.js';
+import { GUI_ROUTES, initialPageFromPath } from './routes.js';
 
 export const ChatContext = createContext(null);
 
@@ -118,7 +118,9 @@ const PAGE_LABELS = Object.fromEntries(
   GUI_ROUTES.map(({ id, label, pageLabel }) => [id, pageLabel ?? label]));
 
 export default function App() {
-  const [page, setPage]           = useState('dashboard');
+  // Boot on the page named by the URL path (e.g. /manifest-builder from the
+  // VS Code extension's deep link); unknown paths fall back to the dashboard.
+  const [page, setPage]           = useState(() => initialPageFromPath(window.location.pathname));
   const [project, setProject]     = useState(null);
   const [dark, setDark]           = useState(() =>
     resolveInitialTheme(window.location.search, localStorage.getItem('sfdt-theme')));

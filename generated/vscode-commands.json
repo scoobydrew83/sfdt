@@ -136,6 +136,11 @@
       "icon": "$(list-tree)"
     },
     {
+      "command": "sfdt.manifestBuilder",
+      "title": "SFDT: Open Manifest Builder",
+      "icon": "$(checklist)"
+    },
+    {
       "command": "sfdt.changelog",
       "title": "SFDT: Generate Changelog",
       "icon": "$(history)"
