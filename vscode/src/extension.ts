@@ -625,6 +625,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('sfdt.refresh', () => { refreshLatestVersion(); return refreshViews(); }),
     vscode.commands.registerCommand('sfdt.openDashboard', () => dashboard.open()),
+    // Changeset-style manifest builder — the dashboard page deep-linked, not a
+    // new webview (the extension stays a thin UI over the CLI's `sfdt ui`).
+    vscode.commands.registerCommand('sfdt.manifestBuilder', () => dashboard.open('manifest-builder')),
 
     vscode.commands.registerCommand('sfdt.searchCommands', async () => {
       const pick = await vscode.window.showQuickPick(

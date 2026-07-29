@@ -6,6 +6,16 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+### Added
+
+- **`SFDT: Open Manifest Builder`** — opens the embedded dashboard deep-linked
+  to the new Manifest Builder page (changeset-style `package.xml` /
+  `destructiveChanges.xml` builder), contributed alongside `SFDT: Manifest from
+  Diff`. No new webview — the existing `DashboardController` iframe is reused,
+  keeping the extension a thin UI over `sfdt ui`. Requires `@sfdt/cli` >= 0.21
+  (the release that ships the Manifest Builder GUI page and honors URL-path
+  deep links).
+
 ## [0.5.2] - 2026-07-28
 
 ### Changed
