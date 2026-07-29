@@ -102,7 +102,15 @@ export async function fetchLocalInventory(config) {
   return inventory;
 }
 
-async function listMetadataTypes(orgAlias) {
+/**
+ * List every metadata type exposed by an org (`sf org list metadata-types`).
+ * Throws on sf CLI failure — callers surface the error rather than
+ * fabricating an empty type list.
+ *
+ * @param {string} orgAlias
+ * @returns {Promise<string[]>} xmlNames
+ */
+export async function listMetadataTypes(orgAlias) {
   const result = await execa('sf', [
     'org',
     'list',
@@ -115,7 +123,16 @@ async function listMetadataTypes(orgAlias) {
   return (parsed.result?.metadataObjects ?? []).map((obj) => obj.xmlName);
 }
 
-async function listMetadataMembers(orgAlias, metadataType) {
+/**
+ * List the members of one metadata type in an org (`sf org list metadata`).
+ * Returns null when the type could not be listed (not-listable type, org
+ * unreachable) so callers can distinguish "failed" from "empty".
+ *
+ * @param {string} orgAlias
+ * @param {string} metadataType
+ * @returns {Promise<Array<{name: string, lastModifiedDate: string}>|null>}
+ */
+export async function listMetadataMembers(orgAlias, metadataType) {
   try {
     const result = await execa('sf', [
       'org',

@@ -20,7 +20,7 @@ import { setNestedValue, coerceConfigValue } from '../config-utils.js';
 import { loadConfig } from '../config.js';
 import { getPrompt, getAllPrompts, setPromptOverride, resetPromptOverride, interpolate } from '../prompts.js';
 import { buildScriptEnv } from '../script-runner.js';
-import { fetchOrgInventory, fetchInventory } from '../org-inventory.js';
+import { fetchOrgInventory, fetchInventory, listMetadataTypes, listMetadataMembers } from '../org-inventory.js';
 import { isSafeGitRef, resolveBaseRef } from '../git-utils.js';
 import { buildSourceDirArgs } from '../source-dirs.js';
 import { initCache, getDelta, updateCache } from '../pull-cache.js';
@@ -2426,6 +2426,272 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 
       res.json({ members: [...new Set(members)] });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Manifest builder: org discovery, render, batch save ───────────────────
+  //
+  // These three routes back the Manifest Builder GUI page (and, in PR-3, the
+  // matching bridge kinds). All XML rendering goes through renderPackageXml
+  // (metadata-mapper.js) — the single manifest writer across every surface.
+
+  // How long a logs/scan-latest.json snapshot may serve discover-org requests
+  // before the route re-queries the org. `?refresh=1` always bypasses it.
+  const SCAN_CACHE_TTL_MS = 15 * 60 * 1000;
+
+  /**
+   * Collapse `[{type, member}]` request items into the `{type: members[]}`
+   * map renderPackageXml consumes. Invalid entries are skipped (same policy
+   * as POST /api/compare/manifest); members containing XML-special or control
+   * characters are rejected so request payloads cannot inject markup into the
+   * rendered manifest. A `*` member collapses the whole type to the wildcard.
+   */
+  function collectManifestItems(items) {
+    const metaMap = new Map();
+    for (const { type, member } of items) {
+      if (typeof type !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(type)) continue;
+      if (typeof member !== 'string' || !member.trim()) continue;
+      if (/[<>&"']/.test(member) || [...member].some((c) => c.charCodeAt(0) < 0x20)) continue;
+      if (!metaMap.has(type)) metaMap.set(type, new Set());
+      metaMap.get(type).add(member.trim());
+    }
+    const out = {};
+    for (const [type, members] of metaMap) {
+      out[type] = members.has('*') ? ['*'] : [...members];
+    }
+    return out;
+  }
+
+  app.get('/api/manifest/discover-org', apiLimiter, async (req, res) => {
+    try {
+      const { org, type, types, refresh } = req.query;
+      const orgAlias = typeof org === 'string' ? org.trim() : '';
+      if (!orgAlias) return res.status(400).json({ error: 'org is required' });
+      if (!/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(orgAlias)) {
+        return res.status(400).json({ error: 'Invalid org alias' });
+      }
+
+      const wantTypes = types === '1' || types === 'true';
+      const wantRefresh = refresh === '1' || refresh === 'true';
+
+      // Serve from the scan snapshot when it is fresh for this org.
+      let cached = null;
+      if (!wantRefresh) {
+        const scan = await tryReadJson(path.join(logDir, 'scan-latest.json'));
+        if (
+          scan?.org === orgAlias &&
+          scan.inventory &&
+          Date.now() - new Date(scan.timestamp).getTime() < SCAN_CACHE_TTL_MS
+        ) {
+          cached = scan;
+        }
+      }
+
+      if (wantTypes) {
+        if (cached) {
+          return res.json({
+            org: orgAlias,
+            types: Object.keys(cached.inventory).sort(),
+            cached: true,
+            timestamp: cached.timestamp,
+          });
+        }
+        // Throws on sf failure → 500 with the real message. Never degrade a
+        // listMetadata failure into a fabricated empty tree.
+        const typeList = await listMetadataTypes(orgAlias);
+        return res.json({ org: orgAlias, types: [...typeList].sort(), cached: false });
+      }
+
+      const metadataType = typeof type === 'string' ? type.trim() : '';
+      if (!metadataType) {
+        return res.status(400).json({ error: 'type is required (or pass types=1 to list types)' });
+      }
+      if (!/^[A-Za-z][A-Za-z0-9]*$/.test(metadataType)) {
+        return res.status(400).json({ error: 'Invalid metadata type' });
+      }
+
+      if (cached && Object.prototype.hasOwnProperty.call(cached.inventory, metadataType)) {
+        const cachedMembers = cached.inventory[metadataType];
+        return res.json({
+          org: orgAlias,
+          type: metadataType,
+          members: [...cachedMembers].sort(),
+          cached: true,
+          timestamp: cached.timestamp,
+        });
+      }
+
+      const members = await listMetadataMembers(orgAlias, metadataType);
+      if (members === null) {
+        // sf could not list this type — surface it as an error state.
+        return res.status(502).json({
+          error: `Could not list ${metadataType} members from ${orgAlias}. The type may not be listable, or the org is unreachable.`,
+        });
+      }
+      res.json({
+        org: orgAlias,
+        type: metadataType,
+        members: members.map((m) => m.name).sort(),
+        cached: false,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/manifest/render', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { items, mode = 'additive', apiVersion } = req.body ?? {};
+      if (mode !== 'additive' && mode !== 'destructive') {
+        return res.status(400).json({ error: 'mode must be "additive" or "destructive"' });
+      }
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'items is required' });
+      }
+      if (items.length > 20_000) {
+        return res.status(413).json({ error: 'Too many items (max 20000)' });
+      }
+      if (apiVersion !== undefined && !/^\d+\.\d+$/.test(String(apiVersion))) {
+        return res.status(400).json({ error: 'Invalid apiVersion. Expected e.g. "63.0".' });
+      }
+
+      const metadata = collectManifestItems(items);
+      if (Object.keys(metadata).length === 0) {
+        return res.status(400).json({ error: 'No valid items to render' });
+      }
+
+      const { renderPackageXml } = await import('../metadata-mapper.js');
+      const resolvedVersion = apiVersion ?? config.sourceApiVersion ?? '63.0';
+
+      if (mode === 'destructive') {
+        // Destructive deploys need the pair: the destructiveChanges.xml plus
+        // an empty package.xml submitted alongside it.
+        return res.json({
+          mode,
+          destructiveChangesXml: renderPackageXml(metadata, resolvedVersion),
+          emptyPackageXml: renderPackageXml({}, resolvedVersion),
+        });
+      }
+      res.json({ mode, xml: renderPackageXml(metadata, resolvedVersion) });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/manifest/save', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { items, mode = 'additive', apiVersion, name, relPath } = req.body ?? {};
+      if (mode !== 'additive' && mode !== 'destructive') {
+        return res.status(400).json({ error: 'mode must be "additive" or "destructive"' });
+      }
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'items is required' });
+      }
+      if (items.length > 20_000) {
+        return res.status(413).json({ error: 'Too many items (max 20000)' });
+      }
+      if (apiVersion !== undefined && !/^\d+\.\d+$/.test(String(apiVersion))) {
+        return res.status(400).json({ error: 'Invalid apiVersion. Expected e.g. "63.0".' });
+      }
+
+      const metadata = collectManifestItems(items);
+      if (Object.keys(metadata).length === 0) {
+        return res.status(400).json({ error: 'No valid items to save' });
+      }
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const manifestBase = path.resolve(projectRoot, config.manifestDir ?? 'manifest/release');
+      const deployedDir = path.join(manifestBase, 'deployed');
+
+      // Existing-file mode: batch-add every item into one manifest in a single
+      // round trip (replaces the former per-component add-component loop).
+      if (relPath !== undefined && relPath !== null) {
+        if (typeof relPath !== 'string' || path.isAbsolute(relPath) || relPath.includes('..')) {
+          return res.status(400).json({ error: 'Invalid path' });
+        }
+        const absPath = path.resolve(projectRoot, relPath);
+        if (!absPath.startsWith(projectRoot + path.sep)) {
+          return res.status(403).json({ error: 'Forbidden' });
+        }
+        if (absPath.startsWith(deployedDir + path.sep) || absPath === deployedDir) {
+          return res.status(403).json({ error: 'Deployed manifests are read-only' });
+        }
+        let xml = await fs.readFile(absPath, 'utf8');
+        let added = 0;
+        for (const [type, members] of Object.entries(metadata)) {
+          for (const member of members) {
+            xml = addComponentToXml(xml, type, member);
+            added++;
+          }
+        }
+        await fs.writeFile(absPath, xml);
+        return res.json({ ok: true, added, path: path.relative(projectRoot, absPath) });
+      }
+
+      // New-file mode: write to manifestDir with the rl-… release naming.
+      if (typeof name !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)) {
+        return res.status(400).json({ error: 'Invalid release label. Must start with alphanumeric.' });
+      }
+
+      const { renderPackageXml } = await import('../metadata-mapper.js');
+      const resolvedVersion = apiVersion ?? config.sourceApiVersion ?? '63.0';
+
+      const packageFilename = path.basename(`rl-${name}-package.xml`);
+      const packagePath = path.join(manifestBase, packageFilename);
+      const destructiveFilename = path.basename(`rl-${name}-destructiveChanges.xml`);
+      const destructivePath = path.join(manifestBase, destructiveFilename);
+
+      for (const p of [packagePath, destructivePath]) {
+        const resolved = path.resolve(p);
+        if (!resolved.startsWith(manifestBase + path.sep)) {
+          return res.status(400).json({ error: 'Invalid manifest path' });
+        }
+        if (resolved.startsWith(deployedDir + path.sep) || resolved === deployedDir) {
+          return res.status(403).json({ error: 'Deployed manifests are read-only' });
+        }
+      }
+
+      // Conflict-check every file before writing any (no orphaned halves).
+      if (await fs.pathExists(packagePath)) {
+        return res.status(409).json({ error: `${packageFilename} already exists. Delete it or use a different name.` });
+      }
+      if (mode === 'destructive' && await fs.pathExists(destructivePath)) {
+        return res.status(409).json({ error: `${destructiveFilename} already exists. Delete it or use a different name.` });
+      }
+
+      await fs.ensureDir(manifestBase);
+
+      if (mode === 'destructive') {
+        // The pair: destructiveChanges.xml + an empty package.xml with the
+        // same rl-<name> prefix so the deploy script finds them together.
+        const destructiveChangesXml = renderPackageXml(metadata, resolvedVersion);
+        const emptyPackageXml = renderPackageXml({}, resolvedVersion);
+        await fs.writeFile(destructivePath, destructiveChangesXml);
+        await fs.writeFile(packagePath, emptyPackageXml);
+        return res.json({
+          ok: true,
+          mode,
+          destructiveChangesXml,
+          emptyPackageXml,
+          files: [
+            { filename: destructiveFilename, path: path.relative(projectRoot, destructivePath) },
+            { filename: packageFilename, path: path.relative(projectRoot, packagePath) },
+          ],
+        });
+      }
+
+      const xml = renderPackageXml(metadata, resolvedVersion);
+      await fs.writeFile(packagePath, xml);
+      res.json({
+        ok: true,
+        mode,
+        xml,
+        files: [{ filename: packageFilename, path: path.relative(projectRoot, packagePath) }],
+      });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
