@@ -651,6 +651,82 @@
       "group": null
     },
     {
+      "id": "apex-trace-start",
+      "label": "Trace: Start",
+      "detail": "Start a USER_DEBUG trace flag for the authenticated user",
+      "args": [
+        "apex",
+        "trace",
+        "start"
+      ],
+      "group": null
+    },
+    {
+      "id": "apex-trace-list",
+      "label": "Trace: List",
+      "detail": "List trace flags in the org (read-only)",
+      "args": [
+        "apex",
+        "trace",
+        "list"
+      ],
+      "group": null
+    },
+    {
+      "id": "apex-trace-stop",
+      "label": "Trace: Stop",
+      "detail": "Delete the authenticated user's USER_DEBUG trace flags",
+      "args": [
+        "apex",
+        "trace",
+        "stop"
+      ],
+      "group": null
+    },
+    {
+      "id": "apex-logs-list",
+      "label": "Logs: List",
+      "detail": "List recent Apex debug logs",
+      "args": [
+        "apex",
+        "logs",
+        "list"
+      ],
+      "group": null
+    },
+    {
+      "id": "apex-logs-get",
+      "label": "Logs: Get",
+      "detail": "Retrieve one debug log body — append the log Id",
+      "args": [
+        "apex",
+        "logs",
+        "get"
+      ],
+      "group": null
+    },
+    {
+      "id": "apex-logs-watch",
+      "label": "Logs: Watch",
+      "detail": "Tail new debug logs (bounded, 5-minute default window)",
+      "args": [
+        "apex",
+        "logs",
+        "watch"
+      ],
+      "group": null
+    },
+    {
+      "id": "apex-run",
+      "label": "Run Anonymous Apex",
+      "detail": "Execute an Apex script file in the org — append --file <path>",
+      "args": [
+        "apex",
+        "run"
+      ],
+      "group": null
+    },
+    {
       "id": "dependencies",
       "label": "Dependencies",
       "detail": "Show metadata dependencies for a component",

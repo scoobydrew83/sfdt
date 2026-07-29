@@ -18,6 +18,7 @@ This guide covers every sfdt command in depth: what it does, when to use it, all
 6. [Commands: Testing and Quality](#commands-testing-and-quality)
    - [sfdt test](#sfdt-test)
    - [sfdt agent-test](#sfdt-agent-test)
+   - [sfdt apex](#sfdt-apex)
    - [sfdt quality](#sfdt-quality)
 7. [Commands: Metadata and Source Control](#commands-metadata-and-source-control)
    - [sfdt manifest](#sfdt-manifest)
@@ -432,6 +433,54 @@ sfdt agent-test --spec MyAgentEval --notify --pr-comment
 | `--pr-comment` | Post the pass/fail result to the current PR (via the `gh` CLI) |
 
 The pass rate is computed from the `sf agent test run --json` result (both the legacy and Agentforce Studio result shapes), mirroring how the `sf` agent plugin itself counts passing cases: a case passes when every one of its scorer/test results passes.
+
+
+### sfdt apex
+
+Apex observability: manage debug **trace flags**, retrieve and **watch debug logs**, and execute **Anonymous Apex** — the debugging loop that complements `sfdt test` (which owns test execution). Debug logs go through the `sf apex` commands; trace flags use the Tooling API, since the `sf` CLI has no first-class trace-flag command. If the `sf apex` plugin is unavailable, commands fail with an actionable install hint (`sf plugins install @salesforce/plugin-apex`) rather than a fabricated result.
+
+```bash
+# Trace flags (mutating — they write TraceFlag records)
+sfdt apex trace start                          # trace the authenticated user for 60 minutes
+sfdt apex trace start --user u@x.com --duration 30
+sfdt apex trace start --level SFDC_DevConsole  # use an existing DebugLevel
+sfdt apex trace list                           # read-only
+sfdt apex trace stop                           # delete the authenticated user's USER_DEBUG flags
+sfdt apex trace stop --all                     # delete every USER_DEBUG flag in the org
+
+# Debug logs (read-only)
+sfdt apex logs list --limit 10
+sfdt apex logs get 07L5g00000AbCdEEAV          # print the raw body
+sfdt apex logs get 07L5g00000AbCdEEAV --output debug.log
+sfdt apex logs watch                           # tail new logs for 5 minutes (CI-safe default)
+sfdt apex logs watch --duration 0              # until interrupted (interactive)
+sfdt apex logs watch --duration 60 --max 3 --no-body
+
+# Anonymous Apex (mutating — the code runs in the org)
+sfdt apex run --file scripts/apex/reset-flags.apex
+echo 'System.debug(UserInfo.getUserName());' | sfdt apex run
+```
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--org <alias>` | Target org (default: `config.defaultOrg`); available on every subcommand |
+| `--json` | Emit the structured JSON envelope on stdout; available on every subcommand |
+| `trace start --user <username>` | Username to trace (default: the org's authenticated user) |
+| `trace start --duration <minutes>` | Trace window in minutes (default 60, capped at 1440 = the Salesforce 24 h limit) |
+| `trace start --level <developerName>` | DebugLevel DeveloperName. Default: the sfdt-managed `SFDT_Trace`, created on demand; any other missing name is an error — sfdt never silently invents a level you named |
+| `trace stop --user <username>` / `--all` | Whose USER_DEBUG flags to delete (default: the authenticated user), or all of them |
+| `logs list --limit <n>` / `--user <name>` | Cap the list (default 20) / only logs from one user |
+| `logs get <logId> --output <file>` | Write the raw log body to a file (the file stays raw; the JSON envelope is stdout-only) |
+| `logs watch --interval <seconds>` | Poll interval (default 5) |
+| `logs watch --duration <seconds>` | Total watch window (default 300; `0` = until interrupted). Bounded by default so it is safe in CI |
+| `logs watch --max <n>` / `--no-body` | Stop after n new logs / report metadata without fetching bodies |
+| `run --file <path>` | Apex file to execute; without it, code is read from stdin (piped input) |
+
+`apex run` reports the full compile/execution diagnostics (`compiled`, `compileProblem`, `exceptionMessage`, stack trace, and the debug log) and exits non-zero when the Apex failed — in `--json` mode the envelope still carries the diagnostics, so CI can branch on `result.success`.
+
+Only logs generated *after* `apex logs watch` starts are streamed; pre-existing logs are skipped.
 
 ---
 

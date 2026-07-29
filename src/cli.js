@@ -8,6 +8,7 @@ import { registerDeployCommand } from './commands/deploy.js';
 import { registerReleaseCommand } from './commands/release.js';
 import { registerTestCommand } from './commands/test.js';
 import { registerAgentTestCommand } from './commands/agent-test.js';
+import { registerApexCommand } from './commands/apex.js';
 import { registerPullCommand } from './commands/pull.js';
 import { registerQualityCommand } from './commands/quality.js';
 import { registerPreflightCommand } from './commands/preflight.js';
@@ -80,6 +81,7 @@ export function createCli() {
   registerReleaseCommand(program);
   registerTestCommand(program);
   registerAgentTestCommand(program);
+  registerApexCommand(program);
   registerPullCommand(program);
   registerQualityCommand(program);
   registerPreflightCommand(program);

@@ -146,6 +146,18 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       { id: 'test-lwc', label: 'Run LWC Tests', detail: 'Run the project\'s LWC (Jest) unit tests locally', args: ['test', '--lwc'], noOrg: true, icon: 'beaker' },
       { id: 'agent-test', label: 'Agent Test (Agentforce)', detail: 'Run an Agentforce agent test as a CI gate (sf agent test run) — append the AiEvaluationDefinition API name', args: ['agent-test', '--spec'], argsIncomplete: true, icon: 'hubot' },
       { id: 'coverage', label: 'Code Coverage', detail: 'Report Apex code coverage (org-wide + per-class)', args: ['coverage'], icon: 'shield' },
+      {
+        id: 'apex', label: 'Apex Observability', detail: 'Trace flags, debug logs, Anonymous Apex', icon: 'debug',
+        children: [
+          { id: 'apex-trace-start', label: 'Trace: Start', detail: 'Start a USER_DEBUG trace flag for the authenticated user', args: ['apex', 'trace', 'start'], destructive: true },
+          { id: 'apex-trace-list', label: 'Trace: List', detail: 'List trace flags in the org (read-only)', args: ['apex', 'trace', 'list'] },
+          { id: 'apex-trace-stop', label: 'Trace: Stop', detail: 'Delete the authenticated user\'s USER_DEBUG trace flags', args: ['apex', 'trace', 'stop'], destructive: true },
+          { id: 'apex-logs-list', label: 'Logs: List', detail: 'List recent Apex debug logs', args: ['apex', 'logs', 'list'] },
+          { id: 'apex-logs-get', label: 'Logs: Get', detail: 'Retrieve one debug log body — append the log Id', args: ['apex', 'logs', 'get'], argsIncomplete: true },
+          { id: 'apex-logs-watch', label: 'Logs: Watch', detail: 'Tail new debug logs (bounded, 5-minute default window)', args: ['apex', 'logs', 'watch'] },
+          { id: 'apex-run', label: 'Run Anonymous Apex', detail: 'Execute an Apex script file in the org — append --file <path>', args: ['apex', 'run'], argsIncomplete: true, destructive: true },
+        ],
+      },
       { id: 'dependencies', label: 'Dependencies', detail: 'Show metadata dependencies for a component', args: ['dependencies'], icon: 'references' },
       {
         id: 'soql', label: 'SOQL Toolkit', detail: 'Schema search/describe, relationships, query validation, plans, bounded execution', icon: 'database',

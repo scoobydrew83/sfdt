@@ -92,6 +92,19 @@ export const COMMAND_POLICY = {
     surfaces: { gui: true, vscode: true, chrome: false },
     mcpTools: {},
   },
+  apex: {
+    mutating: true, // trace-flag create/delete and Anonymous Apex change org state
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'testing-quality',
+    surfaces: { gui: false, vscode: true, chrome: false },
+    mcpTools: {
+      sfdt_apex_logs: { mutating: false }, // log list/retrieve is read-only
+      sfdt_apex_trace: { mutating: true }, // start/stop write TraceFlag records
+      sfdt_apex_run: { mutating: true }, // Anonymous Apex executes code in the org
+    },
+  },
   pull: {
     mutating: true, // overwrites local source from the org
     requiresProject: true,

@@ -205,6 +205,13 @@ Exports a configured data set from the org to local files. Read-only with respec
   * `set` (string, **required**): data set name.
   * `org` (string, optional): org alias.
 
+#### `sfdt_apex_logs`
+Lists recent Apex debug logs, or retrieves one log body by Id. Read-only.
+* **Arguments:**
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+  * `logId` (string, optional): retrieve this log's body instead of listing.
+  * `limit` (number, optional): max logs to list (default 20).
+
 ---
 
 ### 4. Release, Scratch Orgs & Data (Safety Guarded)
@@ -234,6 +241,14 @@ Imports a data set into the org. **Requires `confirmExecution`.**
 #### `sfdt_data_delete`
 Bulk-deletes a data set in the org. Destructive — **requires `confirmExecution`.**
 * **Arguments:** `set` (**required**), `org`, `confirmExecution` (**required**).
+
+#### `sfdt_apex_trace`
+Manages Apex debug trace flags. `list` is read-only; `start`/`stop` write `TraceFlag` records and **require `confirmExecution`.**
+* **Arguments:** `action` (`start` | `stop` | `list`, **required**), `org`, `user`, `duration` (minutes, start only), `debugLevel` (start only), `all` (stop only), `confirmExecution` (required for `start`/`stop`).
+
+#### `sfdt_apex_run`
+Executes Anonymous Apex in the org from a project file or inline code. **Requires `confirmExecution`.**
+* **Arguments:** `org`, `file` (project-relative path) or `apexCode` (inline), `confirmExecution` (**required**).
 
 ---
 

@@ -26,6 +26,7 @@ Items this revision reclassified from "planned" to shipped (they were stale here
 
 ## In develop (merged, unreleased)
 
+- **`sfdt apex` — Apex observability** — trace flags (`apex trace start|list|stop`, Tooling API), debug log retrieve/watch (`apex logs list|get|watch`, bounded/CI-safe tail), Anonymous Apex execution (`apex run` from file or stdin); complements `sfdt test`. MCP: `sfdt_apex_logs` (read-only), `sfdt_apex_trace`/`sfdt_apex_run` (confirmExecution-gated). Inspired by sf-pi's SF Apex extension, natively re-implemented — **In develop**
 - **`sfdt soql` command family** — schema search/describe, relationship discovery, query validation, query plans, bounded SOQL/SOSL execution with exports. Thin command + `soql-runner.js`; read-only MCP tools (`sfdt_soql_*`) and a VS Code "SOQL Toolkit" tree group. Native re-implementation inspired by sf-pi's SF SOQL extension (no dependency, no code copied) — **In develop**
 
 ## Planned
@@ -34,7 +35,6 @@ Cross-workstream dispatch and status (including Chrome-extension items tracked o
 
 Sequenced from the [sf-pi integration review](docs/reviews/sf-pi-integration-review.md) (2026-07-29). All three re-implement capabilities natively — no dependency on sf-pi, which is pi-runtime-coupled. FEATURES.json entries are seeded when a phase for them opens; the active phase remains 1.0 stabilization (F-001 first).
 
-- **Apex observability** — trace flags, debug log retrieve/watch, Anonymous Apex execution; complements `sfdt test`. Inspired by sf-pi's SF Apex extension — **Planned**
 - **ApexGuru check in `sfdt quality`** — additive org-side analysis alongside Code Analyzer v5; license/edition-gated, so it degrades to `warn`/`skipped`, never `error`. Inspired by sf-pi's SF Code Analyzer extension — **Planned**
 - **Visual manifest builder (GUI · VS Code · Chrome)** — changeset-style checkbox builder: browse org inventory or local source by type, tick components, live package.xml / destructiveChanges.xml preview, save/deploy. One engine (`renderPackageXml` + `org-inventory.js`), GUI page inherited by VS Code via the dashboard iframe, Chrome via new read-only bridge kinds. Absorbs extension-plan items P5-4/P5-5 (pulled forward 2026-07-29). Mini-plan: [docs/design/visual-manifest-builder.md](docs/design/visual-manifest-builder.md) — **Planned**
 
