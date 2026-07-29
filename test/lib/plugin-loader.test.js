@@ -72,6 +72,52 @@ describe('loadPlugins', () => {
     );
   });
 
+  // ── config.plugins accepts package names only ─────────────────────────────
+  // A path here is imported before arg parsing, so a cloned project's
+  // .sfdt/config.json would run its own code on any `sfdt` invocation.
+
+  it.each([
+    ['relative', './tools/build-helper.js'],
+    ['relative parent', '../evil.js'],
+    ['absolute posix', '/tmp/evil.js'],
+    ['home-relative', '~/evil.js'],
+    ['windows separator', '.\\evil.js'],
+    ['windows drive', 'C:\\evil.js'],
+    ['traversal via subpath', 'sfdt-plugin-ok/../../../evil.js'],
+  ])('refuses a path-shaped plugin entry (%s)', async (_label, entry) => {
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/project',
+      _configDir: '/project/.sfdt',
+      plugins: [entry],
+    });
+
+    const { loadPlugins } = await import('../../src/lib/plugin-loader.js');
+    const before = program.commands.length;
+    await loadPlugins(program);
+
+    expect(program.commands.length).toBe(before);
+    expect(print.warning).toHaveBeenCalledWith(
+      expect.stringContaining('package names, not file paths'),
+    );
+  });
+
+  it('still accepts scoped and subpath package specifiers', async () => {
+    loadConfig.mockResolvedValue({
+      _projectRoot: '/project',
+      _configDir: '/project/.sfdt',
+      plugins: ['@acme/sfdt-plugin-thing', 'sfdt-plugin-thing/dist/index.js'],
+    });
+
+    const { loadPlugins } = await import('../../src/lib/plugin-loader.js');
+    await loadPlugins(program);
+
+    // Both are unresolvable here, so they warn about loading — but never about
+    // being rejected as paths. The guard must not swallow legitimate names.
+    expect(print.warning).not.toHaveBeenCalledWith(
+      expect.stringContaining('package names, not file paths'),
+    );
+  });
+
   // ── autoDiscover: node_modules sfdt-plugin-* ──────────────────────────────
 
   it('does not scan node_modules when autoDiscover is false (default)', async () => {
