@@ -95,7 +95,7 @@
     "@sfdt/flow-core": "^0.9.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
-    "chalk": "^5.4.1",
+    "chalk": "^6.0.0",
     "commander": "^13.1.0",
     "execa": "^9.5.2",
     "express": "^5.2.1",
@@ -114,6 +114,7 @@
     "@vitest/coverage-v8": "^4.1.4",
     "eslint": "^9.22.0",
     "happy-dom": "^20.10.6",
+    "jsdom": "^30.0.0",
     "prettier": "^3.5.3",
     "supertest": "^7.1.0",
     "typescript-eslint": "^8.59.3",
@@ -125,6 +126,7 @@
     "shell-quote": "^1.9.0",
     "adm-zip": "^0.6.0",
     "esbuild": "^0.28.1",
+    "brace-expansion": "^5.0.8",
     "node-notifier": {
       "uuid": "^11.1.1"
     }
