@@ -1,5 +1,5 @@
 {
-  "protocolVersion": "1.2",
+  "protocolVersion": "1.3",
   "kinds": [
     {
       "kind": "ping",
@@ -53,6 +53,16 @@
     },
     {
       "kind": "telemetry.snapshot",
+      "mutating": false,
+      "nativeHost": true
+    },
+    {
+      "kind": "manifest.discover",
+      "mutating": false,
+      "nativeHost": true
+    },
+    {
+      "kind": "manifest.render",
       "mutating": false,
       "nativeHost": true
     }

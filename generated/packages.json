@@ -47,7 +47,7 @@
     {
       "path": "packages/flow-core/package.json",
       "name": "@sfdt/flow-core",
-      "version": "0.9.7",
+      "version": "0.10.0",
       "license": "Apache-2.0",
       "private": false,
       "engines": null

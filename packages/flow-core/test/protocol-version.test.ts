@@ -5,6 +5,29 @@ describe('flow-core/bridge-contract — PROTOCOL_VERSION', () => {
   it('is a major.minor semver string', () => {
     expect(PROTOCOL_VERSION).toMatch(/^\d+\.\d+$/);
   });
+
+  it('is 1.3 (manifest.discover/manifest.render — additive minor bump)', () => {
+    expect(PROTOCOL_VERSION).toBe('1.3');
+  });
+});
+
+describe('flow-core/bridge-contract — 1.2 ↔ 1.3 negotiation (PR-3 bump)', () => {
+  // The 1.2 → 1.3 bump is additive (two new read-only kinds), so a client
+  // still on 1.2 must be WARNED about the mismatch, never refused.
+  it('a 1.2 client against the current 1.3 server warns, not refuses', () => {
+    const result = negotiateProtocolVersion(PROTOCOL_VERSION, '1.2');
+    expect(result.ok).toBe(true);
+    expect(result.severity).toBe('warn');
+    if (result.severity === 'warn') {
+      expect(result.message).toContain('minor mismatch');
+    }
+  });
+
+  it('a 1.3 client against a 1.2 server warns, not refuses (older CLI)', () => {
+    const result = negotiateProtocolVersion('1.2', PROTOCOL_VERSION);
+    expect(result.ok).toBe(true);
+    expect(result.severity).toBe('warn');
+  });
 });
 
 describe('flow-core/bridge-contract — negotiateProtocolVersion', () => {
