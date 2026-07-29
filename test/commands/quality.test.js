@@ -32,11 +32,17 @@ vi.mock('../../src/lib/api-readiness.js', async (importOriginal) => {
   return { ...actual, scanApexReadiness: vi.fn() };
 });
 
+vi.mock('../../src/lib/apexguru-runner.js', () => ({
+  runApexGuruCheck: vi.fn(),
+  persistApexGuruSnapshot: vi.fn(),
+}));
+
 import { loadConfig } from '../../src/lib/config.js';
 import { runScript } from '../../src/lib/script-runner.js';
 import { isAiAvailable, runAiPrompt } from '../../src/lib/ai.js';
 import { print, emitJson, emitJsonError } from '../../src/lib/output.js';
 import { scanApexReadiness } from '../../src/lib/api-readiness.js';
+import { runApexGuruCheck, persistApexGuruSnapshot } from '../../src/lib/apexguru-runner.js';
 import { registerQualityCommand } from '../../src/commands/quality.js';
 
 function createProgram() {
@@ -46,6 +52,14 @@ function createProgram() {
   return program;
 }
 
+const apexGuruSkipped = {
+  id: 'apexguru',
+  title: 'ApexGuru org-side analysis',
+  status: 'skipped',
+  summary: 'ApexGuru unavailable for dev (license/edition-gated): NOT_FOUND',
+  findings: [],
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
   process.exitCode = undefined;
@@ -54,6 +68,10 @@ beforeEach(() => {
     defaultOrg: 'dev',
     features: { ai: true },
   });
+  // Default posture for this environment: ApexGuru is org-side and gated, so
+  // most runs see a skipped result.
+  runApexGuruCheck.mockResolvedValue(apexGuruSkipped);
+  persistApexGuruSnapshot.mockResolvedValue('/project/logs/apexguru-latest.json');
 });
 
 describe('quality command', () => {
@@ -198,6 +216,8 @@ describe('quality command', () => {
   it('does not print the skipped warning for a real scan result', async () => {
     const scanLine = JSON.stringify({ status: 0, result: [{ fileName: 'A.cls', violations: [] }] });
     runScript.mockResolvedValue({ exitCode: 0, stdout: `log\n${scanLine}` });
+    // A clean ApexGuru pass too, so no warning comes from either check.
+    runApexGuruCheck.mockResolvedValue({ ...apexGuruSkipped, status: 'ok', summary: 'ApexGuru found no issues in 1/1 class(es)' });
 
     await createProgram().parseAsync(['node', 'sfdt', 'quality']);
 
@@ -242,6 +262,140 @@ describe('quality command', () => {
     const stubCall = runScript.mock.calls.find((call) => call[0] === 'quality/generate-test-stubs.sh');
     expect(stubCall).toBeDefined();
     expect(stubCall[2].env).toMatchObject({ SFDT_DRY_RUN: 'true' });
+  });
+});
+
+describe('quality — additive ApexGuru check', () => {
+  it('runs the ApexGuru check after the default code-analyzer run, using defaultOrg', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: 'ok' });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality']);
+
+    expect(runApexGuruCheck).toHaveBeenCalledTimes(1);
+    expect(runApexGuruCheck).toHaveBeenCalledWith('dev', expect.objectContaining({ _projectRoot: '/project' }));
+    expect(persistApexGuruSnapshot).toHaveBeenCalledWith(expect.any(Object), apexGuruSkipped);
+  });
+
+  it('a skipped ApexGuru is loud but does not change the exit code', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: 'ok' });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality']);
+
+    expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('ApexGuru: SKIPPED'));
+    expect(process.exitCode).toBeUndefined();
+    expect(print.error).not.toHaveBeenCalled();
+  });
+
+  it('ApexGuru findings (warn) are advisory — exit code stays what v5 produced', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: 'ok' });
+    runApexGuruCheck.mockResolvedValue({
+      ...apexGuruSkipped,
+      status: 'warn',
+      summary: 'ApexGuru reported 1 insight(s) across 1/1 class(es)',
+      findings: [{ file: 'A.cls', line: 3, type: 'BestPractice', description: 'Avoid SOQL in loops' }],
+    });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality']);
+
+    expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('1 insight(s)'));
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('passes --org through to the check', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: 'ok' });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--org', 'staging']);
+
+    expect(runApexGuruCheck).toHaveBeenCalledWith('staging', expect.any(Object));
+  });
+
+  it('also runs with --all, but not with --tests', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: 'ok' });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--all']);
+    expect(runApexGuruCheck).toHaveBeenCalledTimes(1);
+
+    runApexGuruCheck.mockClear();
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--tests']);
+    expect(runApexGuruCheck).not.toHaveBeenCalled();
+  });
+
+  it('--skip-apexguru opts out of the org-side check', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: 'ok' });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--skip-apexguru']);
+
+    expect(runApexGuruCheck).not.toHaveBeenCalled();
+    expect(persistApexGuruSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('an unexpected ApexGuru crash degrades to a warning, never an error exit', async () => {
+    runScript.mockResolvedValue({ exitCode: 0, stdout: 'ok' });
+    runApexGuruCheck.mockRejectedValue(new Error('kaboom'));
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality']);
+
+    expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('kaboom'));
+    expect(print.error).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+  });
+});
+
+describe('quality --apexguru (run-only mode)', () => {
+  it('runs ONLY the ApexGuru check (no analyzer scripts) and persists the snapshot', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--apexguru']);
+
+    expect(runApexGuruCheck).toHaveBeenCalledTimes(1);
+    expect(runScript).not.toHaveBeenCalled();
+    expect(persistApexGuruSnapshot).toHaveBeenCalledTimes(1);
+    expect(print.header).toHaveBeenCalledWith(expect.stringContaining('ApexGuru'));
+  });
+
+  it('exits 0 even when the check is skipped (license/edition-gated policy)', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--apexguru']);
+
+    expect(process.exitCode).toBeUndefined();
+    expect(print.error).not.toHaveBeenCalled();
+  });
+
+  it('exits 0 when findings exist — the check is advisory', async () => {
+    runApexGuruCheck.mockResolvedValue({
+      ...apexGuruSkipped,
+      status: 'warn',
+      summary: 'ApexGuru reported 2 insight(s) across 1/1 class(es)',
+      findings: [
+        { file: 'A.cls', line: 3, type: 'BestPractice', description: 'x' },
+        { file: 'A.cls', line: null, type: 'CodeInfo', description: 'y' },
+      ],
+    });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--apexguru']);
+
+    expect(print.warning).toHaveBeenCalledWith(expect.stringContaining('2 insight(s)'));
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('--json emits the raw check in the sf envelope', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--apexguru', '--json']);
+
+    expect(emitJson).toHaveBeenCalledWith(apexGuruSkipped);
+    expect(print.header).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('--json routes infrastructure failures (config load) through emitJsonError', async () => {
+    loadConfig.mockRejectedValue(new Error('no .sfdt here'));
+
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--apexguru', '--json']);
+
+    expect(emitJsonError).toHaveBeenCalledWith(expect.objectContaining({ message: 'no .sfdt here' }));
+    expect(emitJson).not.toHaveBeenCalled();
+  });
+
+  it('uses --org over defaultOrg', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'quality', '--apexguru', '--org', 'uat']);
+
+    expect(runApexGuruCheck).toHaveBeenCalledWith('uat', expect.any(Object));
   });
 });
 

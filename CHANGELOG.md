@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **ApexGuru org-side check in `sfdt quality` (D-3).** Alongside the local Code Analyzer v5 scan, `quality` now submits the project's largest non-test Apex classes (up to 10) to ApexGuru — Salesforce's org-side performance/anti-pattern service — through the org REST API (`apexguru/validate` → `apexguru/request` → report poll, all via `sf api request rest`, no new dependencies). ApexGuru is license/edition-gated, so the check follows the established gated-org-check policy: no org, no license, or feature-disabled degrades to a loud **skipped** (never a fabricated pass), an enabled-but-incomplete analysis degrades to **warn**, and it **never** reports `error` — the `quality` exit code stays exactly what the local analyzers alone would produce. New flags: `--apexguru` (run only this check; honours `--json`), `--skip-apexguru` (opt out of the additive pass), `--org <alias>` (target org, default `defaultOrg`). Findings feed the `--fix-plan` AI context; the raw snapshot lands in `logs/apexguru-latest.json` (archived under `logs/apexguru-results/`, indexed in `sfdt history` as type `apexguru`), and MCP's `sfdt_quality` grows matching `apexGuru`/`org` inputs. Native re-implementation inspired by sf-pi's SF Code Analyzer extension — no code shared.
+
 ### Removed
 - **Legacy Code Analyzer v4 (`sf scanner run`) support** — Salesforce Code Analyzer v5 is now the only supported engine (F-001). The `quality --allow-legacy-analyzer` opt-in flag, the `quality.analyzer.allowLegacyV4` config key, the `SFDT_ANALYZER_ALLOW_LEGACY` env var, and the v4 fallback in `scripts/quality/code-analyzer.sh` are gone. On a machine without v5, the static scan is reported as `skipped` (never a fabricated clean result) with install guidance (`sf plugins install code-analyzer`); a lingering `quality` key in an existing `.sfdt/config.json` is ignored, not an error.
 

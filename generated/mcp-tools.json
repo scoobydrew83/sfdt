@@ -35,7 +35,9 @@
       "internal": false,
       "inputProperties": [
         "generateStubs",
-        "fixPlan"
+        "fixPlan",
+        "apexGuru",
+        "org"
       ]
     },
     {
