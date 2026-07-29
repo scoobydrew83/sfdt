@@ -59,7 +59,7 @@ docs/           The system of record — see pointer table below
 ## Cross-repo duties
 
 - **Docs site (sfdt.dev):** user-facing changes must be mirrored to `sfdt-site` (separate repo, released together). Staleness pass before a release is done. Details: `docs/DEVELOPMENT.md`.
-- **Skills mirror:** `sfdt-skills` is a pure downstream mirror synced by `sfdt skills export --target pack` during release (RELEASING.md §7) — never edited by hand.
+- **Skills mirror:** `sfdt-skills` is a pure downstream mirror synced by `sfdt skills export --target pack` during release (RELEASING.md §1, step 7) — never edited by hand.
 - **Harness:** this repo is graded by `check-harness.mjs` in the `skills` repo. Adoption claims live in HARNESS-FEATURES.json there, not in prose.
 
 ## Development quick reference

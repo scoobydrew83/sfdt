@@ -118,7 +118,7 @@ These are injected by `loadConfig()` and available to commands:
 
 ## SFDT_ environment variable mapping
 
-`script-runner.js` flattens config into these env vars before executing shell scripts. This is the complete list — when adding a new var, update `buildScriptEnv()` in `src/lib/script-runner.js` AND this table AND the CLAUDE.md table.
+`script-runner.js` flattens config into these env vars before executing shell scripts. This is the complete list — when adding a new var, update `buildScriptEnv()` in `src/lib/script-runner.js` AND this table AND the `docs/ENV-VARS.md` table.
 
 ### Standard config mapping
 
@@ -184,5 +184,5 @@ When extending sfdt with new config, three places move in lockstep:
 Then, if applicable:
 
 4. Add the env var mapping to `buildScriptEnv()` in `src/lib/script-runner.js`
-5. Update the SFDT_ env var table in the project CLAUDE.md (and this file)
+5. Update the SFDT_ env var table in `docs/ENV-VARS.md` (and this file)
 6. If the field should be prompted during init, update `src/commands/init.js`

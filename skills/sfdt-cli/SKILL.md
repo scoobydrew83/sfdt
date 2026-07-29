@@ -238,7 +238,7 @@ When the user says sfdt **should** support something, **could** do something, or
 - New command → `src/commands/<name>.js` + register in `src/cli.js`
 - New shell script → `scripts/<category>/<name>.sh` (de-parameterized, reads `SFDT_` vars)
 - New config key → start in `src/templates/sfdt.config.json` (source of truth)
-- New `SFDT_` env var → update `buildScriptEnv()` in `src/lib/script-runner.js` AND the CLAUDE.md env var table — both must stay in sync
+- New `SFDT_` env var → update `buildScriptEnv()` in `src/lib/script-runner.js` AND the `docs/ENV-VARS.md` env var table — both must stay in sync
 
 ```bash
 npm install && npm link   # dev setup

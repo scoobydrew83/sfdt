@@ -120,7 +120,7 @@ If shell scripts need the new key, add it to `buildScriptEnv()` in `src/lib/scri
 env.SFDT_MY_NEW_KEY = config.myNewKey || 'default';
 ```
 
-**Then immediately update the CLAUDE.md env var table** — both must stay in sync or the table becomes wrong documentation. The table lives in the `SFDT_ Environment Variables` section of `CLAUDE.md`.
+**Then immediately update the env var table** — both must stay in sync or the table becomes wrong documentation. The table lives in `docs/ENV-VARS.md`.
 
 ---
 
@@ -133,7 +133,7 @@ Two changes, always together:
    env.SFDT_MY_VAR = config.myKey || '';
    ```
 
-2. **`CLAUDE.md`** — add a row to the env var table:
+2. **`docs/ENV-VARS.md`** — add a row to the env var table:
    ```markdown
    | `SFDT_MY_VAR` | `config.myKey` |
    ```
@@ -198,7 +198,7 @@ Before marking any CLI change complete:
 - [ ] Config key added to `src/templates/sfdt.config.json` if applicable
 - [ ] Config key added to `src/lib/config-schema.json` (AJV rejects unknown keys)
 - [ ] `buildScriptEnv()` updated if new `SFDT_` var added
-- [ ] CLAUDE.md env var table updated if new `SFDT_` var added
+- [ ] `docs/ENV-VARS.md` env var table updated if new `SFDT_` var added
 - [ ] Tests written or updated
 - [ ] `npm test` passes
 - [ ] `npm run lint` clean
@@ -214,7 +214,7 @@ Before marking any CLI change complete:
 |---------|-----|
 | Positional args in shell script | Use `SFDT_` env var instead |
 | Config key with no template entry | Add to `src/templates/sfdt.config.json` first |
-| New `SFDT_` var without CLAUDE.md update | Update the table — they must stay in sync |
+| New `SFDT_` var without `docs/ENV-VARS.md` update | Update the table — they must stay in sync |
 | Logic in command file | Move to `src/lib/` or shell script |
 | Using `process.exit()` | Use `process.exitCode =` and `return` instead |
 | Forgetting `resolveExitCode(err)` | Always use it — raw exit codes lose context |
