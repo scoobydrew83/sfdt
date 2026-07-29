@@ -168,7 +168,7 @@ deploys). Two transports serve one contract:
    extension is written against a single `SfdtRequest`/`SfdtResponse` contract regardless of
    transport.
 
-The contract is versioned (`protocolVersion`, currently 1.2 — see
+The contract is versioned (`protocolVersion`, currently 1.3 — see
 `generated/bridge-contract.json` for the authoritative kind list). Each kind declares
 `mutating` and `nativeHost`. **The native host is read-only by design**: mutating kinds
 (`deploy`, `rollback`) and `ai` are bridge-only (`nativeHost: false`) — a Chrome-launched

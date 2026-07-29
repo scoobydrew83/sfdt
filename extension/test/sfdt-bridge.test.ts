@@ -20,7 +20,7 @@ describe('createBridgeClient.getServerInfo', () => {
         data: {
           pong: true,
           serverVersion: '0.9.0',
-          protocolVersion: '1.2',
+          protocolVersion: '1.3',
           transport: 'localhost',
           disabledFeatures: ['canvas-search'],
         },
@@ -29,7 +29,7 @@ describe('createBridgeClient.getServerInfo', () => {
     const info = await client.getServerInfo();
     expect(info).toEqual({
       serverVersion: '0.9.0',
-      protocolVersion: '1.2',
+      protocolVersion: '1.3',
       negotiation: { ok: true, severity: 'ok' },
       transport: 'localhost',
       disabledFeatures: ['canvas-search'],
@@ -51,7 +51,7 @@ describe('createBridgeClient.getServerInfo', () => {
       preferredTransport: 'localhost',
       sendMessageImpl: fakeSendMessage({
         ok: true,
-        data: { pong: true, serverVersion: '0.8.1', protocolVersion: '1.2', transport: 'localhost' },
+        data: { pong: true, serverVersion: '0.8.1', protocolVersion: '1.3', transport: 'localhost' },
       }),
     });
     const info = await client.getServerInfo();
@@ -77,7 +77,7 @@ describe('createBridgeClient.getServerInfo', () => {
         data: {
           pong: true,
           serverVersion: '0.9.0',
-          protocolVersion: '1.2',
+          protocolVersion: '1.3',
           transport: 'localhost',
           disabledFeatures: ['canvas-search'],
         },
@@ -91,7 +91,7 @@ describe('createBridgeClient.getServerInfo', () => {
     const info = await client.getServerInfo();
     expect(info).toEqual({
       serverVersion: '0.9.0',
-      protocolVersion: '1.2',
+      protocolVersion: '1.3',
       negotiation: { ok: true, severity: 'ok' },
       transport: 'localhost',
       disabledFeatures: ['canvas-search'],
@@ -112,7 +112,7 @@ describe('createBridgeClient — protocol negotiation', () => {
         data: {
           pong: true,
           serverVersion: '0.9.0',
-          protocolVersion: '1.3',
+          protocolVersion: '1.4',
           transport: 'localhost',
           disabledFeatures: [],
         },
@@ -472,7 +472,7 @@ function nativePong(req: { requestId: string }) {
     data: {
       pong: true,
       serverVersion: '0.9.0',
-      protocolVersion: '1.2',
+      protocolVersion: '1.3',
       transport: 'native',
       disabledFeatures: [],
     },
@@ -754,7 +754,7 @@ describe('createBridgeClient — default chrome.runtime transport (no sendMessag
           data: {
             pong: true,
             serverVersion: '0.9.0',
-            protocolVersion: '1.2',
+            protocolVersion: '1.3',
             transport: 'localhost',
             disabledFeatures: [],
           },
@@ -818,7 +818,7 @@ describe('createBridgeClient — call() and getServerInfo native fallback', () =
     const info = await client.getServerInfo();
     expect(info).toEqual({
       serverVersion: '0.9.0',
-      protocolVersion: '1.2',
+      protocolVersion: '1.3',
       negotiation: { ok: true, severity: 'ok' },
       transport: 'native',
       disabledFeatures: [],

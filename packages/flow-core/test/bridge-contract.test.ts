@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  collapseManifestItems,
   makeErrorResponse,
   makeSuccessResponse,
   validateSfdtRequest,
@@ -307,6 +308,119 @@ describe('flow-core/bridge-contract', () => {
         counters: { feat_a: { activated: 3, errored: 1, disabled_remote: 0 } },
       });
       expect(result.ok).toBe(true);
+    });
+  });
+
+  describe('validateSfdtRequest — manifest kinds (protocol 1.3)', () => {
+    it('manifest.discover accepts the envelope alone (org and type both optional)', () => {
+      expect(validateSfdtRequest({ requestId: 'r1', kind: 'manifest.discover' }).ok).toBe(true);
+      expect(
+        validateSfdtRequest({ requestId: 'r1', kind: 'manifest.discover', org: 'dev' }).ok,
+      ).toBe(true);
+      expect(
+        validateSfdtRequest({ requestId: 'r1', kind: 'manifest.discover', org: 'dev', type: 'ApexClass' }).ok,
+      ).toBe(true);
+    });
+
+    it('manifest.discover rejects a flag-injection org and a malformed type', () => {
+      const badOrg = validateSfdtRequest({
+        requestId: 'r1',
+        kind: 'manifest.discover',
+        org: '--target-org=evil',
+      });
+      expect(badOrg.ok).toBe(false);
+      if (!badOrg.ok) expect(badOrg.errors.some((e) => e.field === 'org')).toBe(true);
+
+      const badType = validateSfdtRequest({
+        requestId: 'r1',
+        kind: 'manifest.discover',
+        org: 'dev',
+        type: 'Apex Class; rm -rf',
+      });
+      expect(badType.ok).toBe(false);
+      if (!badType.ok) expect(badType.errors.some((e) => e.field === 'type')).toBe(true);
+    });
+
+    it('manifest.render requires a non-empty items array of objects', () => {
+      expect(validateSfdtRequest({ requestId: 'r1', kind: 'manifest.render' }).ok).toBe(false);
+      expect(
+        validateSfdtRequest({ requestId: 'r1', kind: 'manifest.render', items: [] }).ok,
+      ).toBe(false);
+      expect(
+        validateSfdtRequest({ requestId: 'r1', kind: 'manifest.render', items: ['not-an-object'] }).ok,
+      ).toBe(false);
+      expect(
+        validateSfdtRequest({
+          requestId: 'r1',
+          kind: 'manifest.render',
+          items: [{ type: 'ApexClass', member: 'Foo' }],
+        }).ok,
+      ).toBe(true);
+    });
+
+    it('manifest.render caps items at 20000 entries', () => {
+      const items = Array.from({ length: 20_001 }, (_, i) => ({ type: 'ApexClass', member: `C${i}` }));
+      const result = validateSfdtRequest({ requestId: 'r1', kind: 'manifest.render', items });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.errors.some((e) => e.field === 'items')).toBe(true);
+    });
+
+    it('manifest.render restricts mode and apiVersion formats', () => {
+      const items = [{ type: 'Flow', member: 'My_Flow' }];
+      expect(
+        validateSfdtRequest({ requestId: 'r1', kind: 'manifest.render', items, mode: 'destructive' }).ok,
+      ).toBe(true);
+      expect(
+        validateSfdtRequest({ requestId: 'r1', kind: 'manifest.render', items, mode: 'sideways' }).ok,
+      ).toBe(false);
+      expect(
+        validateSfdtRequest({ requestId: 'r1', kind: 'manifest.render', items, apiVersion: '63.0' }).ok,
+      ).toBe(true);
+      expect(
+        validateSfdtRequest({ requestId: 'r1', kind: 'manifest.render', items, apiVersion: 'sixty three' }).ok,
+      ).toBe(false);
+    });
+  });
+
+  describe('collapseManifestItems', () => {
+    it('groups members under their type', () => {
+      expect(
+        collapseManifestItems([
+          { type: 'ApexClass', member: 'B' },
+          { type: 'ApexClass', member: 'A' },
+          { type: 'Flow', member: 'My_Flow' },
+        ]),
+      ).toEqual({ ApexClass: ['B', 'A'], Flow: ['My_Flow'] });
+    });
+
+    it('skips malformed types, empty members, and XML-special members', () => {
+      expect(
+        collapseManifestItems([
+          { type: '1Bad', member: 'X' },
+          { type: 'ApexClass', member: '  ' },
+          { type: 'ApexClass', member: '<script>' },
+          { type: 'ApexClass', member: 'ctl\u0001char' },
+          { type: 'ApexClass', member: 'Good' },
+        ]),
+      ).toEqual({ ApexClass: ['Good'] });
+    });
+
+    it('collapses a type to the wildcard when * is present', () => {
+      expect(
+        collapseManifestItems([
+          { type: 'ApexClass', member: 'A' },
+          { type: 'ApexClass', member: '*' },
+        ]),
+      ).toEqual({ ApexClass: ['*'] });
+    });
+
+    it('deduplicates members after trimming', () => {
+      expect(
+        collapseManifestItems([
+          { type: 'ApexClass', member: 'A' },
+          { type: 'ApexClass', member: ' A ' },
+        ]),
+      ).toEqual({ ApexClass: ['A'] });
     });
   });
 

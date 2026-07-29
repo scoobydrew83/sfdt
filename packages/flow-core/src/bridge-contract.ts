@@ -24,7 +24,10 @@
 //   1.1 — added telemetry.snapshot request kind.
 //   1.2 — added org-health request kind (reads the latest audit/monitor
 //         snapshots from logs/ over the bridge).
-export const PROTOCOL_VERSION = '1.2';
+//   1.3 — added manifest.discover and manifest.render request kinds (the
+//         read-only manifest-builder surface: org type/member discovery via
+//         org-inventory, package.xml rendering via renderPackageXml).
+export const PROTOCOL_VERSION = '1.3';
 
 export type SfdtRequestKind =
   | 'ping'
@@ -37,7 +40,9 @@ export type SfdtRequestKind =
   | 'scan'
   | 'compare'
   | 'org-health'
-  | 'telemetry.snapshot';
+  | 'telemetry.snapshot'
+  | 'manifest.discover'
+  | 'manifest.render';
 
 export interface RequestEnvelope {
   // Client-generated correlation id. Servers MUST echo it back in the response
@@ -149,6 +154,42 @@ export interface TelemetrySnapshotRequest extends RequestEnvelope {
   >;
 }
 
+/**
+ * Read-only org metadata discovery for the manifest builder. Two shapes,
+ * discriminated by the presence of `type`:
+ *   - no `type`  → list the org's metadata type names
+ *                  (`sf org list metadata-types` via org-inventory).
+ *   - with `type` → list the members of that one metadata type
+ *                  (`sf org list metadata` via org-inventory).
+ * A listMetadata failure surfaces as an error response — never a fabricated
+ * empty tree.
+ */
+export interface ManifestDiscoverRequest extends RequestEnvelope {
+  kind: 'manifest.discover';
+  // Org alias to query. Optional — when absent the server falls back to the
+  // project's configured defaultOrg and errors if none is set.
+  org?: string;
+  // Metadata type whose members to list. Absent → list type names instead.
+  type?: string;
+}
+
+/**
+ * Render selected components into manifest XML — pure, no org round-trip.
+ * Every surface renders through the CLI's single writer
+ * (`renderPackageXml` in src/lib/metadata-mapper.js), so bridge output is
+ * byte-identical to what `sfdt manifest` and the GUI builder produce.
+ * Destructive mode returns the pair `{destructiveChangesXml, emptyPackageXml}`
+ * expected by `sf project deploy`.
+ */
+export interface ManifestRenderRequest extends RequestEnvelope {
+  kind: 'manifest.render';
+  items: Array<{ type: string; member: string }>;
+  // Defaults to 'additive' when absent.
+  mode?: 'additive' | 'destructive';
+  // e.g. "63.0". Defaults to the project's sourceApiVersion server-side.
+  apiVersion?: string;
+}
+
 export type SfdtRequest =
   | PingRequest
   | VersionRequest
@@ -160,7 +201,9 @@ export type SfdtRequest =
   | ScanRequest
   | CompareRequest
   | OrgHealthRequest
-  | TelemetrySnapshotRequest;
+  | TelemetrySnapshotRequest
+  | ManifestDiscoverRequest
+  | ManifestRenderRequest;
 
 export interface SfdtSuccessResponse<T = unknown> {
   ok: true;
@@ -298,6 +341,35 @@ export interface OrgHealthResponseData {
   monitor: OrgHealthSnapshot | null;
 }
 
+/**
+ * manifest.discover success payload. Exactly one of `types` / `members` is
+ * present, matching the request shape: type-less requests return `types`,
+ * typed requests return `type` + `members`.
+ */
+export interface ManifestDiscoverResponseData {
+  org: string;
+  types?: string[];
+  type?: string;
+  members?: string[];
+}
+
+/** manifest.render success payload — additive mode. */
+export interface ManifestRenderAdditiveData {
+  mode: 'additive';
+  xml: string;
+}
+
+/** manifest.render success payload — destructive mode (the paired files). */
+export interface ManifestRenderDestructiveData {
+  mode: 'destructive';
+  destructiveChangesXml: string;
+  emptyPackageXml: string;
+}
+
+export type ManifestRenderResponseData =
+  | ManifestRenderAdditiveData
+  | ManifestRenderDestructiveData;
+
 // ----- Runtime validators --------------------------------------------------
 //
 // Hand-rolled to keep the package zero-dep. Returns a structured ValidationError
@@ -365,6 +437,50 @@ function isValidDeveloperName(v: unknown): v is string {
   return typeof v === 'string' && v.length > 0 && DEVELOPER_NAME_RE.test(v);
 }
 
+// Salesforce metadata type xmlName grammar (ApexClass, CustomObject, …):
+// alphanumerics only, must start with a letter. Mirrors what the gui-server
+// enforces on /api/manifest/discover-org so `--flag-injection` style values
+// never reach `sf org list metadata --metadata-type`.
+export const METADATA_TYPE_RE = /^[A-Za-z][A-Za-z0-9]*$/;
+function isValidMetadataType(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0 && METADATA_TYPE_RE.test(v);
+}
+
+// Hard cap on manifest.render items — mirrors the gui-server's
+// POST /api/manifest/render limit so both surfaces refuse the same payloads.
+export const MANIFEST_ITEMS_MAX = 20_000;
+
+// package.xml <version> grammar, e.g. "63.0".
+export const API_VERSION_RE = /^\d+\.\d+$/;
+
+/**
+ * Collapse `[{type, member}]` manifest items into the `{type: members[]}`
+ * map that renderPackageXml consumes. Shared by the HTTP bridge, the native
+ * host, and any other transport so the filtering semantics cannot drift
+ * (mirrors the gui-server's collectManifestItems):
+ *   - entries with a malformed type or empty member are skipped;
+ *   - members containing XML-special or control characters are skipped so a
+ *     request payload cannot inject markup into the rendered manifest;
+ *   - a `*` member collapses the whole type to the wildcard.
+ */
+export function collapseManifestItems(
+  items: Array<{ type: string; member: string }>,
+): Record<string, string[]> {
+  const metaMap = new Map<string, Set<string>>();
+  for (const { type, member } of items) {
+    if (typeof type !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(type)) continue;
+    if (typeof member !== 'string' || !member.trim()) continue;
+    if (/[<>&"']/.test(member) || [...member].some((c) => c.charCodeAt(0) < 0x20)) continue;
+    if (!metaMap.has(type)) metaMap.set(type, new Set());
+    metaMap.get(type)!.add(member.trim());
+  }
+  const out: Record<string, string[]> = {};
+  for (const [type, members] of metaMap) {
+    out[type] = members.has('*') ? ['*'] : [...members];
+  }
+  return out;
+}
+
 export const KNOWN_KINDS: readonly SfdtRequestKind[] = [
   'ping',
   'version',
@@ -377,6 +493,8 @@ export const KNOWN_KINDS: readonly SfdtRequestKind[] = [
   'compare',
   'org-health',
   'telemetry.snapshot',
+  'manifest.discover',
+  'manifest.render',
 ];
 
 export function validateSfdtRequest(input: unknown): {
@@ -520,6 +638,37 @@ export function validateSfdtRequest(input: unknown): {
         }
       }
       break;
+    case 'manifest.discover':
+      // Both fields optional: no `type` lists metadata types, `type` lists
+      // that type's members. `org` falls back to the server's defaultOrg.
+      if (input.org !== undefined && !isValidOrgAlias(input.org)) {
+        errors.push({
+          field: 'org',
+          reason: 'must match /^[A-Za-z0-9@][A-Za-z0-9_.\\-@]*$/ if present (first char alphanumeric or @)',
+        });
+      }
+      if (input.type !== undefined && !isValidMetadataType(input.type)) {
+        errors.push({ field: 'type', reason: 'must match /^[A-Za-z][A-Za-z0-9]*$/ if present' });
+      }
+      break;
+    case 'manifest.render': {
+      if (!Array.isArray(input.items) || input.items.length === 0) {
+        errors.push({ field: 'items', reason: 'must be a non-empty array of {type, member}' });
+      } else if (input.items.length > MANIFEST_ITEMS_MAX) {
+        errors.push({ field: 'items', reason: `must have at most ${MANIFEST_ITEMS_MAX} entries` });
+      } else if (!input.items.every((it: unknown) => isObject(it))) {
+        errors.push({ field: 'items', reason: 'every entry must be an object' });
+      }
+      if (input.mode !== undefined && input.mode !== 'additive' && input.mode !== 'destructive') {
+        errors.push({ field: 'mode', reason: "must be 'additive' or 'destructive' if present" });
+      }
+      if (input.apiVersion !== undefined) {
+        if (typeof input.apiVersion !== 'string' || !API_VERSION_RE.test(input.apiVersion)) {
+          errors.push({ field: 'apiVersion', reason: "must match /^\\d+\\.\\d+$/ if present (e.g. '63.0')" });
+        }
+      }
+      break;
+    }
   }
 
   if (errors.length > 0) return { ok: false, errors };

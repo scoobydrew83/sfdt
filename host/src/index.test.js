@@ -151,6 +151,114 @@ describe('native host — read-only kinds', () => {
     expect(res.code).toBe('NOT_FOUND');
   });
 
+  it('manifest.discover with no type lists metadata types via the CLI org-inventory helper', async () => {
+    state.execaImpl = async () => ({
+      exitCode: 0,
+      stdout: JSON.stringify({ result: { metadataObjects: [{ xmlName: 'Flow' }, { xmlName: 'ApexClass' }] } }),
+      stderr: '',
+    });
+    const res = await handleMessage(req('manifest.discover', { org: 'dev' }));
+    expect(res.ok).toBe(true);
+    expect(res.data).toEqual({ org: 'dev', types: ['ApexClass', 'Flow'] });
+    expect(execaCalls[0]).toMatchObject({
+      cmd: 'sf',
+      args: ['org', 'list', 'metadata-types', '--json', '--target-org', 'dev'],
+    });
+  });
+
+  it('manifest.discover with a type lists members, sorted', async () => {
+    state.execaImpl = async () => ({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        result: [
+          { fullName: 'Zeta', lastModifiedDate: 'd1' },
+          { fullName: 'Alpha', lastModifiedDate: 'd2' },
+        ],
+      }),
+      stderr: '',
+    });
+    const res = await handleMessage(req('manifest.discover', { org: 'dev', type: 'ApexClass' }));
+    expect(res.ok).toBe(true);
+    expect(res.data).toEqual({ org: 'dev', type: 'ApexClass', members: ['Alpha', 'Zeta'] });
+    expect(execaCalls[0]).toMatchObject({
+      cmd: 'sf',
+      args: ['org', 'list', 'metadata', '--metadata-type', 'ApexClass', '--json', '--target-org', 'dev'],
+    });
+  });
+
+  it('manifest.discover falls back to the project config defaultOrg when org is omitted', async () => {
+    files.set('config.json', { defaultOrg: 'cfg-org' });
+    state.execaImpl = async () => ({
+      exitCode: 0,
+      stdout: JSON.stringify({ result: { metadataObjects: [{ xmlName: 'Flow' }] } }),
+      stderr: '',
+    });
+    const res = await handleMessage(req('manifest.discover'));
+    expect(res.ok).toBe(true);
+    expect(res.data).toEqual({ org: 'cfg-org', types: ['Flow'] });
+  });
+
+  it('manifest.discover errors when no org is given and none is configured', async () => {
+    const res = await handleMessage(req('manifest.discover'));
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe('REQUEST_INVALID');
+    expect(res.error).toMatch(/no default org/i);
+  });
+
+  it('manifest.discover surfaces an unlistable type as an error, never an empty tree', async () => {
+    state.execaImpl = async () => {
+      throw new Error('sf exploded');
+    };
+    const res = await handleMessage(req('manifest.discover', { org: 'dev', type: 'Unlistable' }));
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe('INTERNAL_ERROR');
+    expect(res.error).toMatch(/Could not list Unlistable members/);
+  });
+
+  it('manifest.render (additive) is byte-identical to the CLI renderPackageXml (single writer)', async () => {
+    const { renderPackageXml } = await import('../../src/lib/metadata-mapper.js');
+    const res = await handleMessage(
+      req('manifest.render', {
+        items: [
+          { type: 'ApexClass', member: 'Zeta' },
+          { type: 'ApexClass', member: 'Alpha' },
+          { type: 'Flow', member: 'My_Flow' },
+        ],
+        apiVersion: '63.0',
+      }),
+    );
+    expect(res.ok).toBe(true);
+    expect(res.data.mode).toBe('additive');
+    expect(res.data.xml).toBe(
+      renderPackageXml({ ApexClass: ['Zeta', 'Alpha'], Flow: ['My_Flow'] }, '63.0'),
+    );
+    expect(execaCalls).toHaveLength(0); // pure — no spawn, no org round-trip
+  });
+
+  it('manifest.render (destructive) returns the paired files', async () => {
+    const { renderPackageXml } = await import('../../src/lib/metadata-mapper.js');
+    const res = await handleMessage(
+      req('manifest.render', {
+        items: [{ type: 'ApexClass', member: 'Dead_Class' }],
+        mode: 'destructive',
+        apiVersion: '63.0',
+      }),
+    );
+    expect(res.ok).toBe(true);
+    expect(res.data.mode).toBe('destructive');
+    expect(res.data.destructiveChangesXml).toBe(renderPackageXml({ ApexClass: ['Dead_Class'] }, '63.0'));
+    expect(res.data.emptyPackageXml).toBe(renderPackageXml({}, '63.0'));
+  });
+
+  it('manifest.render rejects a payload with no valid items after filtering', async () => {
+    const res = await handleMessage(
+      req('manifest.render', { items: [{ type: 'ApexClass', member: '<injected/>' }] }),
+    );
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe('REQUEST_INVALID');
+    expect(res.error).toMatch(/No valid items/);
+  });
+
   it('keeps mutating kinds bridge-only (NOT_IMPLEMENTED)', async () => {
     const valid = {
       deploy: { flowApiName: 'MyFlow' },

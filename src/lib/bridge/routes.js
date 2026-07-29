@@ -162,9 +162,10 @@ export function mountBridgeRoutes(app, { port, version, config, projectRoot, con
  * Dispatch a validated SfdtRequest to the correct handler.
  *
  * All contract kinds are now handled: ping/version inline; quality/deploy/
- * rollback/ai/scan/compare/drift/org-health/telemetry.snapshot via their
- * handlers (each keeps its own fetch/runner). Unknown kinds are rejected by
- * the contract validator before reaching here.
+ * rollback/ai/scan/compare/drift/org-health/telemetry.snapshot/
+ * manifest.discover/manifest.render via their handlers (each keeps its own
+ * fetch/runner). Unknown kinds are rejected by the contract validator before
+ * reaching here.
  */
 async function dispatch(request, { version, config, projectRoot, logDir, makeSuccessResponse, makeErrorResponse }) {
   switch (request.kind) {
@@ -426,6 +427,69 @@ async function dispatch(request, { version, config, projectRoot, logDir, makeSuc
         timestamp: snapshot?.timestamp ?? snapshot?.date ?? null,
         component: request.component ?? null,
         components,
+      });
+    }
+    case 'manifest.discover': {
+      // Read-only org metadata discovery for the manifest builder — the same
+      // org-inventory helpers the `sfdt scan` command and the GUI's
+      // /api/manifest/discover-org route use, so every surface sees the same
+      // tree. No `type` → list type names; with `type` → list that type's
+      // members. A listMetadata failure surfaces as an error — never a
+      // fabricated empty tree.
+      const org = request.org ?? config?.defaultOrg;
+      if (!org) {
+        return makeErrorResponse(
+          request.requestId,
+          'No org specified and no default org configured for manifest.discover',
+          'REQUEST_INVALID',
+        );
+      }
+      try {
+        const { listMetadataTypes, listMetadataMembers } = await import('../org-inventory.js');
+        if (request.type === undefined) {
+          const types = await listMetadataTypes(org);
+          return makeSuccessResponse(request.requestId, { org, types: [...types].sort() });
+        }
+        const members = await listMetadataMembers(org, request.type);
+        if (members === null) {
+          return makeErrorResponse(
+            request.requestId,
+            `Could not list ${request.type} members from ${org}. The type may not be listable, or the org is unreachable.`,
+            'INTERNAL_ERROR',
+          );
+        }
+        return makeSuccessResponse(request.requestId, {
+          org,
+          type: request.type,
+          members: members.map((m) => m.name).sort(),
+        });
+      } catch (err) {
+        return makeErrorResponse(request.requestId, `Discover failed: ${err.message}`, 'INTERNAL_ERROR');
+      }
+    }
+    case 'manifest.render': {
+      // Pure render — no org round-trip. XML goes through renderPackageXml
+      // (metadata-mapper.js), the single manifest writer across every surface,
+      // so bridge output is byte-identical to `sfdt manifest` and the GUI
+      // builder. Destructive mode returns the paired files.
+      const { collapseManifestItems } = await loadContract();
+      const metadata = collapseManifestItems(request.items);
+      if (Object.keys(metadata).length === 0) {
+        return makeErrorResponse(request.requestId, 'No valid items to render', 'REQUEST_INVALID');
+      }
+      const { renderPackageXml } = await import('../metadata-mapper.js');
+      const mode = request.mode ?? 'additive';
+      const resolvedVersion = request.apiVersion ?? config?.sourceApiVersion ?? '63.0';
+      if (mode === 'destructive') {
+        return makeSuccessResponse(request.requestId, {
+          mode,
+          destructiveChangesXml: renderPackageXml(metadata, resolvedVersion),
+          emptyPackageXml: renderPackageXml({}, resolvedVersion),
+        });
+      }
+      return makeSuccessResponse(request.requestId, {
+        mode,
+        xml: renderPackageXml(metadata, resolvedVersion),
       });
     }
     case 'ai': {

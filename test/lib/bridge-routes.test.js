@@ -86,7 +86,7 @@ describe('GET /api/bridge/ping', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       ok: true,
-      data: { pong: true, serverVersion: VERSION, protocolVersion: '1.2', transport: 'localhost', disabledFeatures: [] },
+      data: { pong: true, serverVersion: VERSION, protocolVersion: '1.3', transport: 'localhost', disabledFeatures: [] },
     });
   });
 
@@ -146,7 +146,7 @@ describe('POST /api/bridge/exchange — authentication', () => {
     expect(res.body).toEqual({
       ok: true,
       requestId: 'r1',
-      data: { pong: true, serverVersion: VERSION, protocolVersion: '1.2', transport: 'localhost', disabledFeatures: [] },
+      data: { pong: true, serverVersion: VERSION, protocolVersion: '1.3', transport: 'localhost', disabledFeatures: [] },
     });
   });
 });
@@ -422,6 +422,135 @@ describe('GET /api/bridge/ping — disabledFeatures wiring', () => {
     const res = await request(localApp).get('/api/bridge/ping');
     expect(res.status).toBe(200);
     expect(res.body.data.disabledFeatures).toEqual([]);
+  });
+});
+
+describe('POST /api/bridge/exchange — manifest.discover / manifest.render (protocol 1.3)', () => {
+  const sfListTypes = JSON.stringify({
+    result: { metadataObjects: [{ xmlName: 'Flow' }, { xmlName: 'ApexClass' }] },
+  });
+  const sfListMembers = JSON.stringify({
+    result: [
+      { fullName: 'Zeta', lastModifiedDate: 'd1' },
+      { fullName: 'Alpha', lastModifiedDate: 'd2' },
+    ],
+  });
+
+  afterEach(async () => {
+    const { execa } = await import('execa');
+    execa.mockReset();
+    execa.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
+  });
+
+  it('manifest.discover with no type lists metadata types for the default org, sorted', async () => {
+    const { execa } = await import('execa');
+    execa.mockResolvedValue({ exitCode: 0, stdout: sfListTypes, stderr: '' });
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({ requestId: 'md1', kind: 'manifest.discover' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    // MOCK_CONFIG.defaultOrg === 'dev' backs the org fallback.
+    expect(res.body.data).toEqual({ org: 'dev', types: ['ApexClass', 'Flow'] });
+    expect(execa).toHaveBeenCalledWith('sf', [
+      'org', 'list', 'metadata-types', '--json', '--target-org', 'dev',
+    ]);
+  });
+
+  it('manifest.discover with a type lists that type\'s members, sorted', async () => {
+    const { execa } = await import('execa');
+    execa.mockResolvedValue({ exitCode: 0, stdout: sfListMembers, stderr: '' });
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({ requestId: 'md2', kind: 'manifest.discover', org: 'qa', type: 'ApexClass' });
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ org: 'qa', type: 'ApexClass', members: ['Alpha', 'Zeta'] });
+    expect(execa).toHaveBeenCalledWith('sf', [
+      'org', 'list', 'metadata', '--metadata-type', 'ApexClass', '--json', '--target-org', 'qa',
+    ]);
+  });
+
+  it('manifest.discover surfaces an unlistable type as an error, never an empty tree', async () => {
+    const { execa } = await import('execa');
+    execa.mockRejectedValue(new Error('sf exploded'));
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({ requestId: 'md3', kind: 'manifest.discover', type: 'Unlistable' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.code).toBe('INTERNAL_ERROR');
+    expect(res.body.error).toMatch(/Could not list Unlistable members/);
+  });
+
+  it('manifest.discover rejects a flag-injection org at the contract validator', async () => {
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({ requestId: 'md4', kind: 'manifest.discover', org: '--target-org=evil' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('REQUEST_INVALID');
+  });
+
+  it('manifest.render (additive) returns XML byte-identical to renderPackageXml', async () => {
+    const { renderPackageXml } = await import('../../src/lib/metadata-mapper.js');
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({
+        requestId: 'mr1',
+        kind: 'manifest.render',
+        items: [
+          { type: 'ApexClass', member: 'Zeta' },
+          { type: 'ApexClass', member: 'Alpha' },
+          { type: 'Flow', member: 'My_Flow' },
+        ],
+        apiVersion: '63.0',
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.data.mode).toBe('additive');
+    expect(res.body.data.xml).toBe(
+      renderPackageXml({ ApexClass: ['Zeta', 'Alpha'], Flow: ['My_Flow'] }, '63.0'),
+    );
+    expect(res.body.data.xml).toContain('<name>ApexClass</name>');
+  });
+
+  it('manifest.render (destructive) returns the destructiveChanges + empty package pair', async () => {
+    const { renderPackageXml } = await import('../../src/lib/metadata-mapper.js');
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({
+        requestId: 'mr2',
+        kind: 'manifest.render',
+        items: [{ type: 'ApexClass', member: 'Dead_Class' }],
+        mode: 'destructive',
+        apiVersion: '63.0',
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.data.mode).toBe('destructive');
+    expect(res.body.data.destructiveChangesXml).toBe(
+      renderPackageXml({ ApexClass: ['Dead_Class'] }, '63.0'),
+    );
+    expect(res.body.data.emptyPackageXml).toBe(renderPackageXml({}, '63.0'));
+  });
+
+  it('manifest.render rejects a payload with no valid items after filtering', async () => {
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({
+        requestId: 'mr3',
+        kind: 'manifest.render',
+        items: [{ type: 'ApexClass', member: '<injected/>' }],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.code).toBe('REQUEST_INVALID');
+    expect(res.body.error).toMatch(/No valid items/);
   });
 });
 
