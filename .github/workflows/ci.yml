@@ -229,6 +229,9 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      # issues: write is for the skills-pack escalation step only — a job-level
+      # permissions block is restrictive, so without it GITHUB_TOKEN 403s.
+      issues: write
     outputs:
       changed: ${{ steps.version.outputs.changed }}
       version: ${{ steps.version.outputs.version }}
@@ -429,7 +432,13 @@ jobs:
         # release), but the miss itself must surface. One idempotent issue per
         # missed version; @claude answers issues in this repo, so the issue IS
         # the escalation edge.
+        #
+        # continue-on-error for the same reason as the sync it reports on: this
+        # step only ever runs on an already-degraded release, and a failure to
+        # file the issue (403, API blip) must not turn that into a red run and
+        # block the downstream `docker` job.
         if: steps.version.outputs.changed == 'true' && steps.skills_sync.outputs.synced != 'true'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}

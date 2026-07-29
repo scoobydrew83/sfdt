@@ -32,7 +32,7 @@ docs/           The system of record — see pointer table below
 
 | Task | Read |
 |------|------|
-| The rules with teeth (11 mechanical principles) | `docs/golden-principles.md` |
+| The rules with teeth (12 mechanical principles) | `docs/golden-principles.md` |
 | How a subsystem works (patterns: AI, notifier, run-history, smart deploy, CI templates, plugin, JSON envelope) | `docs/PATTERNS.md` |
 | System design, package topology, lifecycles, threat boundaries, "adding a …" recipes | `docs/ARCHITECTURE.md` |
 | SFDT_ env var ↔ config mapping | `docs/ENV-VARS.md` |
@@ -54,6 +54,7 @@ docs/           The system of record — see pointer table below
 - The verifier never writes. (#9)
 - One feature per session; clean tree at handoff. (#10)
 - FEATURES.json is ground truth — only `passes`/`evidence` flip, only with re-checkable evidence. (#11)
+- Checks exclude the artifacts that define them — a grep rule never flags its own checker, fixture, or docs. (#12)
 
 ## Cross-repo duties
 
