@@ -1,6 +1,6 @@
 /**
- * Package-internal path resolution check. CLAUDE.md's "Package-Internal Path
- * Resolution — CRITICAL RULE" requires any path that references a file
+ * Package-internal path resolution check. docs/DEVELOPMENT.md's "Package-Internal
+ * Path Resolution" section (golden principle #8) requires any path that references a file
  * INSIDE the sfdt package (scripts/, templates/, gui/dist, bin/) to be
  * resolved via import.meta.url, never from config._projectRoot or
  * process.cwd() — those point at the user's Salesforce project when sfdt is
@@ -29,7 +29,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const violations = [];
 
 // `projectRoot` unanchored, so this catches both `config._projectRoot` and the
-// bare `projectRoot` local that CLAUDE.md also lists as WRONG. Requiring the
+// bare `projectRoot` local that docs/DEVELOPMENT.md also lists as WRONG. Requiring the
 // leading underscore silently missed the bare form.
 const CWD_LIKE = /(projectRoot|process\.cwd\(\))/;
 const PACKAGE_INTERNAL_LITERAL = /['"](scripts\/|src\/templates\/|gui\/dist|templates\/)/;
