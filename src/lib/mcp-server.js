@@ -65,12 +65,15 @@ export const TOOLS = [
       type: 'object',
       properties: {
         generateStubs: { type: 'boolean', description: 'Generate mock Apex test class boilerplate stubs.' },
-        fixPlan: { type: 'boolean', description: 'Create an AI-powered plan to resolve code coverage gaps.' }
+        fixPlan: { type: 'boolean', description: 'Create an AI-powered plan to resolve code coverage gaps.' },
+        apexGuru: { type: 'boolean', description: 'Run only the ApexGuru org-side analysis check (license/edition-gated; degrades to skipped, never an error).' },
+        org: { type: 'string', description: 'Target org alias for the ApexGuru check (defaults to the configured defaultOrg).' }
       }
     },
     examples: [
       { description: 'Generate an AI fix-plan for coverage gaps', input: { fixPlan: true } },
-      { description: 'Scaffold missing Apex test-class boilerplate stubs', input: { generateStubs: true } }
+      { description: 'Scaffold missing Apex test-class boilerplate stubs', input: { generateStubs: true } },
+      { description: 'Run the ApexGuru org-side analysis against the dev sandbox', input: { apexGuru: true, org: 'dev' } }
     ]
   },
   {
@@ -989,9 +992,11 @@ export class SfdtMcpServer {
         const cmdArgs = ['quality'];
         if (args.generateStubs) cmdArgs.push('--generate-stubs');
         if (args.fixPlan) cmdArgs.push('--fix-plan');
+        if (args.apexGuru) cmdArgs.push('--apexguru');
+        if (args.org) cmdArgs.push('--org', args.org);
 
         const { exitCode, stdout, stderr } = await this.#runCliCommand(cmdArgs);
-        const latestPath = path.join(logDir, 'quality-latest.json');
+        const latestPath = path.join(logDir, args.apexGuru ? 'apexguru-latest.json' : 'quality-latest.json');
         if (exitCode === 0 && await fs.pathExists(latestPath)) {
           return await fs.readJson(latestPath);
         }

@@ -934,11 +934,32 @@
           "description": "Run only the RunRelevantTests hint check: flag @IsTest classes with no @IsTest(testFor=...) annotation (Spring '26)"
         },
         {
+          "flags": "--apexguru",
+          "name": "apexguru",
+          "required": false,
+          "default": null,
+          "description": "Run only the ApexGuru org-side analysis check (license/edition-gated; degrades to skipped, never an error)"
+        },
+        {
+          "flags": "--skip-apexguru",
+          "name": "skipApexguru",
+          "required": false,
+          "default": null,
+          "description": "Skip the additive ApexGuru org-side check during analyzer runs"
+        },
+        {
+          "flags": "--org <alias>",
+          "name": "org",
+          "required": false,
+          "default": null,
+          "description": "Target org for the ApexGuru check (defaults to defaultOrg from .sfdt/config.json)"
+        },
+        {
           "flags": "--json",
           "name": "json",
           "required": false,
           "default": null,
-          "description": "Emit structured JSON to stdout (only honoured with --api67 / --test-hints)"
+          "description": "Emit structured JSON to stdout (only honoured with --api67 / --test-hints / --apexguru)"
         }
       ],
       "subcommands": [],
