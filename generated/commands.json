@@ -438,6 +438,374 @@
       "source": "src/commands/agent-test.js"
     },
     {
+      "id": "apex",
+      "path": [
+        "apex"
+      ],
+      "description": "Apex observability — trace flags, debug log retrieve/watch, Anonymous Apex execution (complements `sfdt test`)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "apex trace",
+          "path": [
+            "apex",
+            "trace"
+          ],
+          "description": "Manage Apex debug trace flags (Tooling API)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [],
+          "subcommands": [
+            {
+              "id": "apex trace start",
+              "path": [
+                "apex",
+                "trace",
+                "start"
+              ],
+              "description": "Start a USER_DEBUG trace flag for a user (creates the sfdt debug level on demand)",
+              "aliases": [],
+              "hidden": false,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--org <alias>",
+                  "name": "org",
+                  "required": false,
+                  "default": null,
+                  "description": "Org alias (defaults to config.defaultOrg)"
+                },
+                {
+                  "flags": "--user <username>",
+                  "name": "user",
+                  "required": false,
+                  "default": null,
+                  "description": "Username to trace (defaults to the authenticated user)"
+                },
+                {
+                  "flags": "--duration <minutes>",
+                  "name": "duration",
+                  "required": false,
+                  "default": "60",
+                  "description": "Trace window in minutes (max 1440 = 24 h)"
+                },
+                {
+                  "flags": "--level <developerName>",
+                  "name": "level",
+                  "required": false,
+                  "default": null,
+                  "description": "DebugLevel DeveloperName (default: SFDT_Trace, created if missing)"
+                },
+                {
+                  "flags": "--json",
+                  "name": "json",
+                  "required": false,
+                  "default": null,
+                  "description": "Emit structured JSON to stdout"
+                }
+              ],
+              "subcommands": []
+            },
+            {
+              "id": "apex trace list",
+              "path": [
+                "apex",
+                "trace",
+                "list"
+              ],
+              "description": "List trace flags in the org (read-only)",
+              "aliases": [],
+              "hidden": false,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--org <alias>",
+                  "name": "org",
+                  "required": false,
+                  "default": null,
+                  "description": "Org alias (defaults to config.defaultOrg)"
+                },
+                {
+                  "flags": "--json",
+                  "name": "json",
+                  "required": false,
+                  "default": null,
+                  "description": "Emit structured JSON to stdout"
+                }
+              ],
+              "subcommands": []
+            },
+            {
+              "id": "apex trace stop",
+              "path": [
+                "apex",
+                "trace",
+                "stop"
+              ],
+              "description": "Delete USER_DEBUG trace flags for a user (or --all for every user)",
+              "aliases": [],
+              "hidden": false,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--org <alias>",
+                  "name": "org",
+                  "required": false,
+                  "default": null,
+                  "description": "Org alias (defaults to config.defaultOrg)"
+                },
+                {
+                  "flags": "--user <username>",
+                  "name": "user",
+                  "required": false,
+                  "default": null,
+                  "description": "Username whose flags to delete (defaults to the authenticated user)"
+                },
+                {
+                  "flags": "--all",
+                  "name": "all",
+                  "required": false,
+                  "default": null,
+                  "description": "Delete every USER_DEBUG trace flag in the org"
+                },
+                {
+                  "flags": "--json",
+                  "name": "json",
+                  "required": false,
+                  "default": null,
+                  "description": "Emit structured JSON to stdout"
+                }
+              ],
+              "subcommands": []
+            }
+          ]
+        },
+        {
+          "id": "apex logs",
+          "path": [
+            "apex",
+            "logs"
+          ],
+          "description": "Retrieve and watch Apex debug logs (read-only)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [],
+          "subcommands": [
+            {
+              "id": "apex logs list",
+              "path": [
+                "apex",
+                "logs",
+                "list"
+              ],
+              "description": "List recent debug logs (newest first)",
+              "aliases": [],
+              "hidden": false,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--org <alias>",
+                  "name": "org",
+                  "required": false,
+                  "default": null,
+                  "description": "Org alias (defaults to config.defaultOrg)"
+                },
+                {
+                  "flags": "--limit <n>",
+                  "name": "limit",
+                  "required": false,
+                  "default": "20",
+                  "description": "Maximum logs to return"
+                },
+                {
+                  "flags": "--user <name>",
+                  "name": "user",
+                  "required": false,
+                  "default": null,
+                  "description": "Only logs generated by this user (display name)"
+                },
+                {
+                  "flags": "--json",
+                  "name": "json",
+                  "required": false,
+                  "default": null,
+                  "description": "Emit structured JSON to stdout"
+                }
+              ],
+              "subcommands": []
+            },
+            {
+              "id": "apex logs get",
+              "path": [
+                "apex",
+                "logs",
+                "get"
+              ],
+              "description": "Retrieve one debug log body (print, or save raw with --output)",
+              "aliases": [],
+              "hidden": false,
+              "arguments": [
+                {
+                  "name": "logId",
+                  "required": true,
+                  "variadic": false,
+                  "description": ""
+                }
+              ],
+              "options": [
+                {
+                  "flags": "--org <alias>",
+                  "name": "org",
+                  "required": false,
+                  "default": null,
+                  "description": "Org alias (defaults to config.defaultOrg)"
+                },
+                {
+                  "flags": "--output <file>",
+                  "name": "output",
+                  "required": false,
+                  "default": null,
+                  "description": "Write the raw log body to a file"
+                },
+                {
+                  "flags": "--json",
+                  "name": "json",
+                  "required": false,
+                  "default": null,
+                  "description": "Emit structured JSON to stdout"
+                }
+              ],
+              "subcommands": []
+            },
+            {
+              "id": "apex logs watch",
+              "path": [
+                "apex",
+                "logs",
+                "watch"
+              ],
+              "description": "Tail new debug logs — bounded by --duration/--max so it is CI-safe (0 = until interrupted)",
+              "aliases": [],
+              "hidden": false,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--org <alias>",
+                  "name": "org",
+                  "required": false,
+                  "default": null,
+                  "description": "Org alias (defaults to config.defaultOrg)"
+                },
+                {
+                  "flags": "--interval <seconds>",
+                  "name": "interval",
+                  "required": false,
+                  "default": "5",
+                  "description": "Poll interval"
+                },
+                {
+                  "flags": "--duration <seconds>",
+                  "name": "duration",
+                  "required": false,
+                  "default": "300",
+                  "description": "Total watch window; 0 = until interrupted"
+                },
+                {
+                  "flags": "--max <n>",
+                  "name": "max",
+                  "required": false,
+                  "default": null,
+                  "description": "Stop after this many new logs"
+                },
+                {
+                  "flags": "--no-body",
+                  "name": "body",
+                  "required": false,
+                  "default": null,
+                  "description": "Report new log metadata without fetching bodies"
+                },
+                {
+                  "flags": "--json",
+                  "name": "json",
+                  "required": false,
+                  "default": null,
+                  "description": "Emit a structured JSON summary to stdout when the watch ends"
+                }
+              ],
+              "subcommands": []
+            }
+          ]
+        },
+        {
+          "id": "apex run",
+          "path": [
+            "apex",
+            "run"
+          ],
+          "description": "Execute Anonymous Apex from --file or stdin (mutating — code runs in the org)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--file <path>",
+              "name": "file",
+              "required": false,
+              "default": null,
+              "description": "Path to an Apex code file"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "testing-quality",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_apex_logs",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_apex_trace",
+          "mutating": true
+        },
+        {
+          "name": "sfdt_apex_run",
+          "mutating": true
+        }
+      ],
+      "source": "src/commands/apex.js"
+    },
+    {
       "id": "pull",
       "path": [
         "pull"

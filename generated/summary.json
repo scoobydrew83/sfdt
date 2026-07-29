@@ -1,8 +1,8 @@
 {
   "cli": {
-    "topLevelCommands": 44,
-    "jsonCapableCommands": 21,
-    "mutatingCommands": 16
+    "topLevelCommands": 45,
+    "jsonCapableCommands": 22,
+    "mutatingCommands": 17
   },
   "chrome": {
     "registeredFeatures": 44,
@@ -17,11 +17,11 @@
   },
   "vscode": {
     "contributedCommands": 30,
-    "cliCatalogEntries": 106
+    "cliCatalogEntries": 113
   },
   "mcp": {
-    "tools": 31,
-    "confirmGated": 10
+    "tools": 34,
+    "confirmGated": 12
   },
   "bridge": {
     "protocolVersion": "1.2",

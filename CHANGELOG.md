@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`sfdt apex` — Apex observability: trace flags, debug log retrieve/watch, Anonymous Apex.** A native clean-room implementation of the capability set in sf-pi's SF Apex extension (no code shared; targeted tests stay in `sfdt test`), closing the gap that sfdt had no log/trace/anonymous-Apex surface. `apex trace start|list|stop` manages USER_DEBUG `TraceFlag` records via the Tooling API — `start` defaults to the authenticated user for 60 minutes (capped at the Salesforce 24 h limit) and creates the sfdt-managed `SFDT_Trace` DebugLevel on demand, while any *other* missing `--level` name is an error rather than a silently-invented level. `apex logs list|get|watch` wraps `sf apex list log` / `sf apex get log`; `watch` tails only logs generated after it starts and is **bounded by default** (5-minute window, `--interval`/`--duration`/`--max`/`--no-body`, `--duration 0` for interactive tailing), so it is safe to drop into CI. `apex run` executes Anonymous Apex from `--file` or stdin and reports the full compile/execution diagnostics, exiting non-zero when the Apex failed (the `--json` envelope still carries the diagnostics for CI branching). A missing `sf apex` plugin degrades to an actionable install hint, never a fabricated pass. Every subcommand supports `--org` and `--json`. Surfaced to MCP as read-only `sfdt_apex_logs` plus `sfdt_apex_trace` and `sfdt_apex_run` — both org-mutating and therefore `confirmExecution`-gated — and to the VS Code command tree under Quality & Analysis.
+
 ## [0.20.0] - 2026-07-28
 
 ### Security

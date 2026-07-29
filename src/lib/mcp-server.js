@@ -6,6 +6,7 @@ import { parkIfNeeded, getParkedResult } from './mcp-parking.js';
 import { CHECK_IDS as AUDIT_CHECK_IDS } from './audit-runner.js';
 import { CHECK_IDS as MONITOR_CHECK_IDS } from './monitor-runner.js';
 import { execa } from 'execa';
+import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
 import { fileURLToPath } from 'url';
@@ -434,6 +435,62 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_apex_logs',
+    description: 'List recent Apex debug logs, or retrieve one log body by Id. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        logId: { type: 'string', description: 'Retrieve this debug log\'s body instead of listing.' },
+        limit: { type: 'number', description: 'Maximum logs to list (default 20).' }
+      }
+    },
+    examples: [
+      { description: 'List the 10 most recent debug logs in the dev org', input: { org: 'dev', limit: 10 } },
+      { description: 'Fetch one debug log body by Id', input: { logId: '07L5g00000AbCdEEAV' } }
+    ]
+  },
+  {
+    name: 'sfdt_apex_trace',
+    description: 'Manage Apex debug trace flags. action="list" is read-only; action="start"/"stop" write TraceFlag records in the org and require confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['start', 'stop', 'list'], description: 'start/stop trace flags (mutating) or list them (read-only).' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        user: { type: 'string', description: 'Username to trace / stop tracing (defaults to the authenticated user).' },
+        duration: { type: 'number', description: 'start only: trace window in minutes (max 1440).' },
+        debugLevel: { type: 'string', description: 'start only: DebugLevel DeveloperName (default SFDT_Trace, created if missing).' },
+        all: { type: 'boolean', description: 'stop only: delete every USER_DEBUG trace flag in the org.' },
+        confirmExecution: { type: 'boolean', description: 'Required when action="start" or "stop" (they write to the org).' }
+      },
+      required: ['action']
+    },
+    examples: [
+      { description: 'List trace flags (read-only)', input: { action: 'list', org: 'dev' } },
+      { description: 'Start a 30-minute trace for a user', input: { action: 'start', org: 'dev', user: 'admin@example.com', duration: 30, confirmExecution: true } },
+      { description: 'Stop the authenticated user\'s trace flags', input: { action: 'stop', org: 'dev', confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_apex_run',
+    description: 'Execute Anonymous Apex in the org from a file or inline code. Mutating (the code runs with the authenticated user\'s permissions) — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        file: { type: 'string', description: 'Path to an Apex code file (relative to the project root).' },
+        apexCode: { type: 'string', description: 'Inline Apex code (used when no file is given).' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to execute code in the org.' }
+      },
+      required: ['confirmExecution']
+    },
+    examples: [
+      { description: 'Run an Apex script file against the dev org', input: { org: 'dev', file: 'scripts/apex/reset-flags.apex', confirmExecution: true } },
+      { description: 'Run a one-liner inline', input: { apexCode: 'System.debug(UserInfo.getUserName());', confirmExecution: true } }
+    ]
+  },
+  {
     name: 'sfdt_test',
     description: 'Run Apex tests via the enhanced test runner. Optionally limit to specific test classes. Consumes org test resources; not metadata-mutating.',
     inputSchema: {
@@ -715,6 +772,55 @@ export class SfdtMcpServer {
         if (args.org) cliArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cliArgs);
         return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_apex_logs': {
+        const cliArgs = args.logId
+          ? ['apex', 'logs', 'get', args.logId, '--json']
+          : ['apex', 'logs', 'list', '--json'];
+        if (!args.logId && args.limit != null) cliArgs.push('--limit', String(args.limit));
+        if (args.org) cliArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_apex_trace': {
+        const action = ['start', 'stop', 'list'].includes(args.action) ? args.action : 'list';
+        if (action !== 'list' && !args.confirmExecution) {
+          throw new Error('Starting or stopping a trace flag writes to the org. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['apex', 'trace', action, '--json'];
+        if (args.org) cliArgs.push('--org', args.org);
+        if (action !== 'list' && args.user) cliArgs.push('--user', args.user);
+        if (action === 'start' && args.duration != null) cliArgs.push('--duration', String(args.duration));
+        if (action === 'start' && args.debugLevel) cliArgs.push('--level', args.debugLevel);
+        if (action === 'stop' && args.all) cliArgs.push('--all');
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_apex_run': {
+        if (!args.confirmExecution) {
+          throw new Error('Anonymous Apex executes code in the org. Pass confirmExecution: true to proceed.');
+        }
+        if (!args.file && !args.apexCode) {
+          throw new Error('Provide "file" (a path in the project) or "apexCode" (inline Apex).');
+        }
+        let apexFile = args.file ? path.resolve(projectRoot, args.file) : null;
+        let tmpDir = null;
+        if (!apexFile) {
+          tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-mcp-apex-'));
+          apexFile = path.join(tmpDir, 'anonymous.apex');
+          await fs.writeFile(apexFile, args.apexCode);
+        }
+        try {
+          const cliArgs = ['apex', 'run', '--file', apexFile, '--json'];
+          if (args.org) cliArgs.push('--org', args.org);
+          const { stdout } = await this.#runCliCommand(cliArgs);
+          return this.#parseCliJson(stdout);
+        } finally {
+          if (tmpDir) await fs.remove(tmpDir).catch(() => {});
+        }
       }
 
       case 'sfdt_test': {
