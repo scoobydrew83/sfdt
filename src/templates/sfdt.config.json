@@ -121,6 +121,10 @@
   "data": {
     "dir": ".sfdt/data"
   },
+  "soql": {
+    "defaultLimit": 200,
+    "maxLimit": 2000
+  },
   "scratch": {
     "definitionFile": "config/project-scratch-def.json",
     "durationDays": 7,

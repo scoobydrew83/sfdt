@@ -4155,6 +4155,411 @@
       "source": "src/commands/versions.js"
     },
     {
+      "id": "soql",
+      "path": [
+        "soql"
+      ],
+      "description": "SOQL/SOSL toolkit — schema search/describe, relationships, query validation, plans, bounded execution",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "soql search",
+          "path": [
+            "soql",
+            "search"
+          ],
+          "description": "Find sObjects by name (schema search across the org inventory)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "term",
+              "required": false,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--category <cat>",
+              "name": "category",
+              "required": false,
+              "default": "all",
+              "description": "all | custom | standard"
+            },
+            {
+              "flags": "--limit <n>",
+              "name": "limit",
+              "required": false,
+              "default": null,
+              "description": "Maximum matches to return (default 100)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "soql describe",
+          "path": [
+            "soql",
+            "describe"
+          ],
+          "description": "Describe an sObject: fields, types, picklists, and child relationships",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "sobject",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--filter <term>",
+              "name": "filter",
+              "required": false,
+              "default": null,
+              "description": "Only show fields whose API name or label contains this substring"
+            },
+            {
+              "flags": "--tooling",
+              "name": "tooling",
+              "required": false,
+              "default": null,
+              "description": "Describe a Tooling API object"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "soql relationships",
+          "path": [
+            "soql",
+            "relationships"
+          ],
+          "description": "Discover parent lookups (dot notation) and child relationships (subqueries) of an sObject",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "sobject",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--direction <dir>",
+              "name": "direction",
+              "required": false,
+              "default": "both",
+              "description": "parent | child | both"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "soql validate",
+          "path": [
+            "soql",
+            "validate"
+          ],
+          "description": "Validate a SOQL query without executing it (local checks + an org LIMIT 0 round-trip)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "query",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--local-only",
+              "name": "localOnly",
+              "required": false,
+              "default": null,
+              "description": "Skip the org round-trip even when an org is configured"
+            },
+            {
+              "flags": "--tooling",
+              "name": "tooling",
+              "required": false,
+              "default": null,
+              "description": "Validate against the Tooling API"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "soql plan",
+          "path": [
+            "soql",
+            "plan"
+          ],
+          "description": "Fetch the org query plans for a SOQL query (REST explain — the query is never executed)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "query",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--api-version <ver>",
+              "name": "apiVersion",
+              "required": false,
+              "default": null,
+              "description": "REST API version (default: sourceApiVersion from sfdx-project.json)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "soql query",
+          "path": [
+            "soql",
+            "query"
+          ],
+          "description": "Execute a SOQL query with a row bound enforced (never unbounded); optionally export the rows",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "soql",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--limit <n>",
+              "name": "limit",
+              "required": false,
+              "default": null,
+              "description": "Row bound (default config soql.defaultLimit, clamped to soql.maxLimit)"
+            },
+            {
+              "flags": "--tooling",
+              "name": "tooling",
+              "required": false,
+              "default": null,
+              "description": "Query the Tooling API"
+            },
+            {
+              "flags": "--all-rows",
+              "name": "allRows",
+              "required": false,
+              "default": null,
+              "description": "Include deleted and archived rows"
+            },
+            {
+              "flags": "--out <file>",
+              "name": "out",
+              "required": false,
+              "default": null,
+              "description": "Export the raw records to a file (.json or .csv)"
+            },
+            {
+              "flags": "--format <fmt>",
+              "name": "format",
+              "required": false,
+              "default": null,
+              "description": "Export format: json | csv (default: from --out extension)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "soql sosl",
+          "path": [
+            "soql",
+            "sosl"
+          ],
+          "description": "Execute a SOSL search (FIND {…}) with a row bound enforced; optionally export the rows",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "search",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--limit <n>",
+              "name": "limit",
+              "required": false,
+              "default": null,
+              "description": "Row bound (default config soql.defaultLimit, clamped to soql.maxLimit)"
+            },
+            {
+              "flags": "--out <file>",
+              "name": "out",
+              "required": false,
+              "default": null,
+              "description": "Export the raw records to a file (.json or .csv)"
+            },
+            {
+              "flags": "--format <fmt>",
+              "name": "format",
+              "required": false,
+              "default": null,
+              "description": "Export format: json | csv (default: from --out extension)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "metadata",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_soql_search",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_soql_describe",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_soql_validate",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_soql_plan",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_soql_query",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/soql.js"
+    },
+    {
       "id": "version",
       "path": [
         "version"

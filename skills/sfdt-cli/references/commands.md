@@ -409,6 +409,7 @@ Compact reference for the rest of the CLI. Run `sfdt <command> --help` for the f
 | `sfdt coverage [--org] [--threshold <pct>] [--json]` | Org-wide + per-class Apex coverage; exits non-zero below the threshold (default 75) |
 | `sfdt flow scan\|conflicts [--org] [--output <file>] [--json]` | Flow health analysis via `@sfdt/flow-core`; `conflicts` lists record-triggered flows colliding on object + timing + event |
 | `sfdt dependencies <name> [--type <t>] [--gaps] [--org]` | Tooling-API dependency graph for a component (both directions); `--gaps` adds source-parsed inferred edges the API misses |
+| `sfdt soql search\|describe\|relationships\|validate\|plan\|query\|sosl` | SOQL/SOSL toolkit: schema search/describe, relationship discovery, LIMIT-0 query validation (degrades to local checks offline), REST query plans, and bounded execution with JSON/CSV export — row cap from `--limit` / `soql.defaultLimit`, clamped to `soql.maxLimit` |
 
 ### Docs, data, scratch
 

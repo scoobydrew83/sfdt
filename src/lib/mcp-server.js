@@ -477,6 +477,89 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_soql_search',
+    description: 'Find sObjects in the org by name substring (schema search across the org inventory). Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        term: { type: 'string', description: 'Case-insensitive substring matched against sObject API names (omit for all).' },
+        category: { type: 'string', enum: ['all', 'custom', 'standard'], description: 'Which sObjects to scan (default all).' },
+        limit: { type: 'number', description: 'Maximum matches to return (default 100).' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    },
+    examples: [
+      { description: 'Find custom objects with "invoice" in the name', input: { term: 'invoice', category: 'custom' } },
+      { description: 'List the first 20 standard objects in the dev org', input: { category: 'standard', limit: 20, org: 'dev' } }
+    ]
+  },
+  {
+    name: 'sfdt_soql_describe',
+    description: 'Describe an sObject — fields (type, picklists, references), key prefix, and child relationships. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sobject: { type: 'string', description: 'sObject API name (e.g. Account, Invoice__c).' },
+        filter: { type: 'string', description: 'Only return fields whose API name or label contains this substring.' },
+        tooling: { type: 'boolean', description: 'Describe a Tooling API object.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['sobject']
+    },
+    examples: [
+      { description: 'Describe Account, only fields matching "phone"', input: { sobject: 'Account', filter: 'phone' } },
+      { description: 'Describe the ApexClass Tooling object in dev', input: { sobject: 'ApexClass', tooling: true, org: 'dev' } }
+    ]
+  },
+  {
+    name: 'sfdt_soql_validate',
+    description: 'Validate a SOQL query without executing it — local static checks plus an org LIMIT 0 round-trip (degrades to local-only when the org is unreachable). Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The SOQL query to validate.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['query']
+    },
+    examples: [
+      { description: 'Validate a query against the default org', input: { query: 'SELECT Id, Name FROM Account WHERE CreatedDate = LAST_N_DAYS:7' } }
+    ]
+  },
+  {
+    name: 'sfdt_soql_plan',
+    description: 'Fetch the org query plans for a SOQL query (REST explain endpoint) — leading operation, relative cost, cardinality, and notes. The query is never executed. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The SOQL query to explain.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['query']
+    },
+    examples: [
+      { description: 'Explain a query to check it is selective', input: { query: 'SELECT Id FROM Case WHERE Status = \'Open\'' } }
+    ]
+  },
+  {
+    name: 'sfdt_soql_query',
+    description: 'Execute a SOQL SELECT with a row bound enforced (config soql.defaultLimit/maxLimit — never unbounded). Returns records plus truncation metadata. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The SOQL SELECT to run.' },
+        limit: { type: 'number', description: 'Row bound (default config soql.defaultLimit, clamped to soql.maxLimit).' },
+        tooling: { type: 'boolean', description: 'Query the Tooling API.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['query']
+    },
+    examples: [
+      { description: 'Fetch 10 recent accounts', input: { query: 'SELECT Id, Name FROM Account ORDER BY CreatedDate DESC', limit: 10 } },
+      { description: 'Count Apex classes via the Tooling API', input: { query: 'SELECT COUNT() FROM ApexClass', tooling: true, org: 'dev' } }
+    ]
+  },
+  {
     name: 'sfdt_get_parked_result',
     description: 'Retrieve the full payload of a previously parked tool result.',
     inputSchema: {
@@ -730,6 +813,49 @@ export class SfdtMcpServer {
         const cmdArgs = ['history', '--json'];
         if (args.type) cmdArgs.push('--type', args.type);
         if (args.limit != null) cmdArgs.push('--limit', String(args.limit));
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_soql_search': {
+        const cmdArgs = ['soql', 'search'];
+        if (args.term) cmdArgs.push(args.term);
+        cmdArgs.push('--json');
+        if (args.category) cmdArgs.push('--category', args.category);
+        if (args.limit != null) cmdArgs.push('--limit', String(args.limit));
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_soql_describe': {
+        const cmdArgs = ['soql', 'describe', args.sobject, '--json'];
+        if (args.filter) cmdArgs.push('--filter', args.filter);
+        if (args.tooling) cmdArgs.push('--tooling');
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_soql_validate': {
+        const cmdArgs = ['soql', 'validate', args.query, '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_soql_plan': {
+        const cmdArgs = ['soql', 'plan', args.query, '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_soql_query': {
+        const cmdArgs = ['soql', 'query', args.query, '--json'];
+        if (args.limit != null) cmdArgs.push('--limit', String(args.limit));
+        if (args.tooling) cmdArgs.push('--tooling');
+        if (args.org) cmdArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);
       }

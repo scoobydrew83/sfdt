@@ -453,4 +453,19 @@ export const COMMAND_POLICY = {
     surfaces: { gui: false, vscode: true, chrome: true }, // chrome = the org-side api-version-audit feature
     mcpTools: { sfdt_api_versions: { mutating: false } },
   },
+  soql: {
+    mutating: false, // read-only query/schema lifecycle; exports are regenerable local files
+    requiresProject: true,
+    requiresOrg: true, // `validate --local-only` works offline, but the primary path queries the org
+    supportsJson: true,
+    docsCategory: 'metadata',
+    surfaces: { gui: false, vscode: true, chrome: false },
+    mcpTools: {
+      sfdt_soql_search: { mutating: false },
+      sfdt_soql_describe: { mutating: false },
+      sfdt_soql_validate: { mutating: false },
+      sfdt_soql_plan: { mutating: false },
+      sfdt_soql_query: { mutating: false },
+    },
+  },
 };
