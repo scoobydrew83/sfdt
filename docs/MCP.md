@@ -108,6 +108,8 @@ Analyzes Apex code quality or generates mock test stubs.
 * **Arguments:**
   * `generateStubs` (boolean, optional): Generate boilerplate `@IsTest` classes.
   * `fixPlan` (boolean, optional): Generate an AI-powered plan to fix coverage gaps.
+  * `apexGuru` (boolean, optional): Run only the ApexGuru org-side analysis check. License/edition-gated — degrades to `skipped`/`warn`, never an error; returns `logs/apexguru-latest.json`.
+  * `org` (string, optional): Target org alias for the ApexGuru check (default: the configured `defaultOrg`).
 
 #### `sfdt_logs`
 Reads the latest deployment, preflight, quality, or drift logs.

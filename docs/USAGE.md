@@ -383,11 +383,13 @@ Test results are written to `logs/test-results/` as JSON files and are visible i
 Runs static code quality analysis and optionally generates an AI fix plan. Can analyze code structure, test quality, or both.
 
 ```bash
-sfdt quality                    # code analyzer only (default)
+sfdt quality                    # code analyzer + additive ApexGuru org-side check (default)
 sfdt quality --api67            # API v67 (Summer '26) user-mode readiness scan only
 sfdt quality --test-hints       # flag @IsTest classes lacking @IsTest(testFor=...) hints
+sfdt quality --apexguru         # ApexGuru org-side analysis only
 sfdt quality --tests            # test analyzer only
-sfdt quality --all              # both analyzers
+sfdt quality --all              # both analyzers (+ ApexGuru)
+sfdt quality --skip-apexguru    # analyzer run without the org-side check
 sfdt quality --fix-plan         # run analyzer + AI fix plan
 sfdt quality --generate-stubs   # generate @IsTest stub classes for untested Apex
 sfdt quality --generate-stubs --dry-run  # preview stubs without writing files
@@ -399,6 +401,9 @@ sfdt quality --generate-stubs --dry-run  # preview stubs without writing files
 |---|---|
 | `--tests` | Run `quality/test-analyzer.sh` only |
 | `--all` | Run both `quality/code-analyzer.sh` and `quality/test-analyzer.sh` |
+| `--apexguru` | Run **only** the ApexGuru org-side analysis check (honours `--json`) |
+| `--skip-apexguru` | Skip the additive ApexGuru check during analyzer runs |
+| `--org <alias>` | Target org for the ApexGuru check (default: `config.defaultOrg`) |
 | `--fix-plan` | After analysis, send the output to AI for a prioritized, file-specific fix plan |
 | `--include-fixes` | Ask **Code Analyzer v5** for actionable fixes/suggestions in the scan output (`--include-fixes --include-suggestions`); the richer output feeds `--fix-plan` |
 | `--output-file <path>` | Also write the Code Analyzer v5 results to a file; the format follows the extension (e.g. `.sarif` for GitHub code-scanning upload) |
@@ -406,6 +411,8 @@ sfdt quality --generate-stubs --dry-run  # preview stubs without writing files
 | `--dry-run` | Preview `--generate-stubs` output without writing any files |
 
 **Code Analyzer engine:** `sfdt quality` runs **Salesforce Code Analyzer v5** (`sf code-analyzer run`, a just-in-time plugin that auto-installs on a modern `sf` CLI) — the only supported engine. If v5 is unavailable the scan is reported as **SKIPPED** (never a fabricated clean result). Install manually with `sf plugins install code-analyzer` if needed. Legacy Code Analyzer v4 support (and its `--allow-legacy-analyzer` opt-in) was removed at 1.0.
+
+**ApexGuru org-side analysis:** alongside the local Code Analyzer v5 scan, `sfdt quality` submits your largest non-test Apex classes (up to 10) to **ApexGuru**, Salesforce's org-side performance/anti-pattern service, via the org REST API (`apexguru/validate` → `apexguru/request` → poll for the report). ApexGuru is **license/edition-gated** and must be enabled by an org admin, so the check follows the established gated-org-check policy: with no org, no license, or the feature disabled it degrades to **skipped** (loudly — never a fabricated pass), and an enabled-but-incomplete analysis degrades to **warn**. It never reports `error` and it is **advisory**: whatever ApexGuru returns, the `sfdt quality` exit code stays what the local analyzers alone would produce. Results print in the CLI, feed the `--fix-plan` context, and are persisted raw to `logs/apexguru-latest.json` (archived under `logs/apexguru-results/`, indexed in `sfdt history` as type `apexguru`).
 
 **AI fix plan:** The fix plan groups issues by severity (critical, high, medium, low) and provides file locations, descriptions, and concrete code suggestions. It focuses on Salesforce-specific concerns: governor limits, CRUD/FLS enforcement, bulk-safe patterns, and test coverage gaps.
 

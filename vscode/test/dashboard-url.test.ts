@@ -21,6 +21,11 @@ describe('dashboardPageUrl', () => {
   it('deep-links to a page with the token', () => {
     expect(dashboardPageUrl(7654, 'audit', 'TOK')).toBe('http://localhost:7654/audit?token=TOK');
   });
+  it('deep-links to the manifest builder (sfdt.manifestBuilder)', () => {
+    expect(dashboardPageUrl(7654, 'manifest-builder', 'TOK', 'dark')).toBe(
+      'http://localhost:7654/manifest-builder?token=TOK&theme=dark',
+    );
+  });
   it('normalizes a leading slash on the page', () => {
     expect(dashboardPageUrl(8080, '/monitor', 'T')).toBe('http://localhost:8080/monitor?token=T');
   });

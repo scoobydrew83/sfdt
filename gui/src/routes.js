@@ -32,3 +32,19 @@ export const GUI_ROUTES = [
   { id: 'notifications', label: 'Notifications', group: 'Config' },
   { id: 'settings', label: 'Settings', group: 'Config' },
 ];
+
+/**
+ * Resolve the page to boot on from the URL path, so deep links like
+ * `/manifest-builder` (built by the VS Code extension's `dashboardPageUrl`)
+ * land on the right page instead of always opening the dashboard. The first
+ * path segment is matched against GUI_ROUTES; anything unknown (including
+ * `/`) falls back to 'dashboard'. Pure so it can be unit-tested.
+ *
+ * @param {string} pathname  window.location.pathname (e.g. "/audit")
+ * @param {Array<{id: string}>} [routes]  route registry (defaults to GUI_ROUTES)
+ * @returns {string} a valid page id
+ */
+export function initialPageFromPath(pathname, routes = GUI_ROUTES) {
+  const segment = (pathname ?? '').replace(/^\/+/, '').split('/')[0];
+  return routes.some(({ id }) => id === segment) ? segment : 'dashboard';
+}
