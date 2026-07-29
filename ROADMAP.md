@@ -28,6 +28,8 @@ Items this revision reclassified from "planned" to shipped (they were stale here
 
 ## Planned
 
+Cross-workstream dispatch and status (including Chrome-extension items tracked outside this repo) lives on the internal Notion board "SFDT Master Backlog — Agent Dispatch Board"; this file remains the source of truth for the CLI items below.
+
 Sequenced from the [sf-pi integration review](docs/reviews/sf-pi-integration-review.md) (2026-07-29). All three re-implement capabilities natively — no dependency on sf-pi, which is pi-runtime-coupled. FEATURES.json entries are seeded when a phase for them opens; the active phase remains 1.0 stabilization (F-001 first).
 
 - **`sfdt soql` command family** — schema search/describe, relationship discovery, query validation, query plans, bounded SOQL/SOSL execution with exports. Thin command + `soql-runner.js`, auto-surfaced to MCP/GUI/VS Code. Inspired by sf-pi's SF SOQL extension — **Planned**
