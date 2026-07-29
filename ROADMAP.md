@@ -33,6 +33,7 @@ Sequenced from the [sf-pi integration review](docs/reviews/sf-pi-integration-rev
 - **`sfdt soql` command family** — schema search/describe, relationship discovery, query validation, query plans, bounded SOQL/SOSL execution with exports. Thin command + `soql-runner.js`, auto-surfaced to MCP/GUI/VS Code. Inspired by sf-pi's SF SOQL extension — **Planned**
 - **Apex observability** — trace flags, debug log retrieve/watch, Anonymous Apex execution; complements `sfdt test`. Inspired by sf-pi's SF Apex extension — **Planned**
 - **ApexGuru check in `sfdt quality`** — additive org-side analysis alongside Code Analyzer v5; license/edition-gated, so it degrades to `warn`/`skipped`, never `error`. Inspired by sf-pi's SF Code Analyzer extension — **Planned**
+- **Visual manifest builder (GUI · VS Code · Chrome)** — changeset-style checkbox builder: browse org inventory or local source by type, tick components, live package.xml / destructiveChanges.xml preview, save/deploy. One engine (`renderPackageXml` + `org-inventory.js`), GUI page inherited by VS Code via the dashboard iframe, Chrome via new read-only bridge kinds. Absorbs extension-plan items P5-4/P5-5 (pulled forward 2026-07-29). Mini-plan: [docs/design/visual-manifest-builder.md](docs/design/visual-manifest-builder.md) — **Planned**
 
 ## Research
 
