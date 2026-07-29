@@ -13,8 +13,8 @@
         "grep -rq 'sf scanner run' scripts/quality/ returns nothing",
         "grep -rq 'allow-legacy-analyzer\\|allowLegacyV4\\|SFDT_ANALYZER_ALLOW_LEGACY' src/ scripts/ returns nothing"
       ],
-      "passes": false,
-      "evidence": null
+      "passes": true,
+      "evidence": "2026-07-29, develop@c03aa30 (PR #287): step-1 grep -r 'sf scanner run' scripts/quality/ → empty (exit 1); step-2 grep -r 'allow-legacy-analyzer|allowLegacyV4|SFDT_ANALYZER_ALLOW_LEGACY' src/ scripts/ → empty (exit 1); npm test 4193 passed / check:all-contracts pass. Reviewer additionally proved via instrumented stub that sf scanner run is never invoked (PR #287 review)."
     }
   ]
 }
