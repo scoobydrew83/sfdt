@@ -971,6 +971,64 @@ describe('features/field-impact — an unreadable flow never implies a reference
     } as unknown as SalesforceApiClient;
   }
 
+  // S4: a THIRD way to end up with nothing to analyse — the metadata query
+  // succeeds and returns no row at all (version deleted between the two
+  // queries, or a dangling dependency edge). It used to `continue`, dropping
+  // the candidate without counting it, so the note described a candidate the
+  // result set did not contain. It must behave exactly like the other two.
+  describe('a metadata query that returns NO ROW is treated like any other unreadable flow', () => {
+    function noRowApi(custom: boolean): SalesforceApiClient {
+      const toolingQuery = vi.fn(async (soql: string) => {
+        if (soql.includes('FROM CustomField')) {
+          return custom
+            ? { records: [{ Id: '00Nxx1' }], size: 1, done: true }
+            : { records: [], size: 0, done: true };
+        }
+        if (soql.includes('MetadataComponentDependency')) {
+          return { records: [{ MetadataComponentId: '301qqq' }], size: 1, done: true };
+        }
+        if (soql.includes("Status = 'Active'")) {
+          return { records: [{ Id: '301qqq' }], size: 1, done: true };
+        }
+        // The candidate exists as an id, but the version row is gone.
+        if (soql.includes('FROM Flow WHERE Id')) return { records: [], size: 0, done: true };
+        return { records: [], size: 0, done: true };
+      });
+      return {
+        apiVersion: 'v62.0',
+        orgOrigin: ORIGIN,
+        apiGet: vi.fn(async () => ({})),
+        query: vi.fn(),
+        toolingQuery,
+        apiRequest: vi.fn(),
+      } as unknown as SalesforceApiClient;
+    }
+
+    it('counts and discloses it on the broad scan instead of dropping it silently', async () => {
+      const feature = createFieldImpactFeature({ win: fakeWin(), api: noRowApi(false) });
+      await feature.openFor('Account', 'Status');
+      await tick();
+      const note = document.querySelector('[role="note"]')!.textContent!;
+      expect(note).toContain('1 flow(s) in the scanned set could not be read');
+      expect(document.querySelectorAll('tbody tr').length).toBe(0);
+      expect(document.querySelector('[role="status"]')!.textContent).toContain('in the scanned set');
+    });
+
+    it('keeps the dependency-path note truthful by actually listing the lead', async () => {
+      // The note promises these are "listed as an inferred lead rather than
+      // dropped". Dropping it here is what made the note contradict the result.
+      const feature = createFieldImpactFeature({ win: fakeWin(), api: noRowApi(true) });
+      await feature.openFor('Account', 'Industry__c');
+      await tick();
+      const note = document.querySelector('[role="note"]')!.textContent!;
+      expect(note).toContain('1 flow(s) linked to Account.Industry__c could not be read');
+      expect(note).toContain('inferred lead rather than dropped');
+      // …and the promise holds: the lead is really there.
+      expect(document.querySelectorAll('tbody tr').length).toBe(1);
+      expect(document.querySelector('[role="status"]')!.textContent).toContain('1 source(s)');
+    });
+  });
+
   for (const mode of ['throws', 'null-metadata'] as const) {
     describe(`broad scan, metadata ${mode}`, () => {
       it('does not list the flow at all', async () => {

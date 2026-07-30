@@ -309,16 +309,24 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
           Metadata?: unknown;
         }>(flowMetadataQuery(versionId));
         const record = result.records[0];
-        if (!record) continue;
-        // A successful query can still yield no `Metadata` — some orgs refuse
-        // the projection per row rather than failing the request.
-        if (record.Metadata == null) unreadable++;
+        // A query can SUCCEED and still leave nothing to analyse, two ways: the
+        // row comes back without `Metadata` (some orgs refuse the projection per
+        // row rather than failing the request), or no row comes back at all (the
+        // version was deleted between the candidate query and this one, or a
+        // dependency edge is dangling). Downstream they are the same thing — a
+        // candidate we could not analyse — so they are counted and pushed
+        // together. `continue`-ing the no-row case instead would drop it without
+        // counting it, leaving the note describing a candidate the result set
+        // does not contain: on the dependency path the note would promise it was
+        // "listed as an inferred lead rather than dropped" when it was dropped.
+        // A drop the user cannot see is the failure this panel exists to avoid.
+        if (record?.Metadata == null) unreadable++;
         candidates.push({
           versionId,
-          apiName: record.Definition?.DeveloperName ?? record.MasterLabel ?? versionId,
-          label: record.MasterLabel ?? null,
-          status: record.Status ?? null,
-          metadata: (record.Metadata ?? null) as FlowCandidate['metadata'],
+          apiName: record?.Definition?.DeveloperName ?? record?.MasterLabel ?? versionId,
+          label: record?.MasterLabel ?? null,
+          status: record?.Status ?? null,
+          metadata: (record?.Metadata ?? null) as FlowCandidate['metadata'],
           discovery,
         });
       } catch {
