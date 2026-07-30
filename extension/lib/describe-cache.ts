@@ -34,8 +34,16 @@ export interface FieldDescribe {
   // them. Optional for the same reason as the block above: existing consumers
   // and test fixtures built against the base shape must keep compiling.
   //
-  // Note the polarity a consumer must use: because these are optional, absence
-  // is not permission. Read them as `=== true`, never `!== false`.
+  // Because these are optional, a consumer must read every one of them as
+  // `=== true`, never `!== false` — but note the two groups differ in what that
+  // buys, so `=== true` is a rule about being explicit, not a single fail-safe
+  // direction:
+  //   PERMIT flags (updateable, createable) — `=== true` fails CLOSED: an
+  //     absent or non-boolean value denies the write.
+  //   DENY flags (autoNumber, htmlFormatted, encrypted, and the pre-existing
+  //     calculated) — `=== true` fails OPEN: absence means "not excluded".
+  //     Unreachable from a real describe, which always sends booleans, but it
+  //     is why these must never be inferred from anything but the payload.
   updateable?: boolean;
   createable?: boolean;
   autoNumber?: boolean;

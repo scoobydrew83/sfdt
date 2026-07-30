@@ -1,10 +1,16 @@
 // Pure editability model for record edit / clone (P4-1, PR-1).
 //
-// No DOM, no chrome.*, no I/O — every function here is a total function of its
-// arguments. The UI layers (inspect-record's edit mode in PR-2, the clone form
-// in PR-3) render what these decide; the *decisions* all live here so there is
-// exactly one answer to "may this field be written", "what goes on the wire",
-// and "what changed".
+// No DOM, no chrome.*, no I/O. Every function here is total over its declared
+// argument types, and the two that walk arrays — buildDirtyDiff and
+// mapSaveErrors — additionally skip malformed elements rather than throwing,
+// because both sit on paths (a save, an error render) where a throw would cost
+// the user their edits. The leaf functions keep precise signatures and are not
+// defensive: TypeScript is the guard there.
+//
+// The UI layers (inspect-record's edit mode in PR-2, the clone form in PR-3)
+// render what these decide; the *decisions* all live here so there is exactly
+// one answer to "may this field be written", "what goes on the wire", and
+// "what changed".
 //
 // The design rule (mini-plan decision 4): a field is editable in v1 iff the DOM
 // offers a native, lossless control for it AND the wire format is unambiguous.
@@ -74,7 +80,11 @@ export const SYSTEM_FIELD_NAMES: readonly string[] = [
   'LastReferencedDate',
 ];
 
-const SYSTEM_FIELD_SET: ReadonlySet<string> = new Set(SYSTEM_FIELD_NAMES);
+// Case-folded, matching how mapSaveErrors matches field names — describe always
+// sends canonical casing, but one convention per module beats two.
+const SYSTEM_FIELD_SET: ReadonlySet<string> = new Set(
+  SYSTEM_FIELD_NAMES.map((n) => n.toLowerCase()),
+);
 
 // ---------------------------------------------------------------------------
 // Classification
@@ -143,14 +153,25 @@ export function classifyFieldEditability(
   const permitted = mode === 'create' ? field.createable === true : field.updateable === true;
 
   // "System" needs both halves: a platform-maintained name AND describe
-  // agreeing it is writable by nobody. An org with Set Audit Fields enabled
-  // reports CreatedDate as createable, and then it is genuinely a create-time
-  // input rather than a system field to grey out.
-  if (SYSTEM_FIELD_SET.has(field.name) && field.updateable !== true && field.createable !== true) {
+  // agreeing it is not writable IN THIS MODE. An org with Set Audit Fields
+  // enabled reports CreatedDate as createable, and then it is genuinely a
+  // create-time input rather than a system field to grey out — so describe wins
+  // over the name list, per mode.
+  //
+  // The per-mode test matters in the other direction too. `CreatedDate` is
+  // never updateable in any org under any FLS configuration, so falling through
+  // to `no-permission` in update mode would offer an explanation that is not
+  // merely vague but wrong, sending the user hunting through profiles for a
+  // permission that does not exist. `no-permission` is reserved for the case
+  // where the cause genuinely is unverifiable; here it is verifiable.
+  if (SYSTEM_FIELD_SET.has(field.name.toLowerCase()) && !permitted) {
     return {
       editable: false,
       reason: 'system',
-      message: 'Maintained by Salesforce and not writable.',
+      message:
+        mode === 'create'
+          ? 'Maintained by Salesforce and not settable on create.'
+          : 'Maintained by Salesforce and not editable.',
     };
   }
 
@@ -387,9 +408,12 @@ function multipicklistKey(value: unknown): string {
 //     field-level security is simply absent from the record JSON, so it reads
 //     back as `undefined` — indistinguishable, to a naive comparison, from a
 //     field the user just cleared. Including it would PATCH `null` over a value
-//     the user was never allowed to see. `in` is the test, not a truthiness
-//     check, because a legitimately null field IS present and must stay
-//     editable.
+//     the user was never allowed to see. `hasOwnProperty` is the test, not a
+//     truthiness check, because a legitimately null field IS present and must
+//     stay editable — and an own key whose value is literally `undefined` is
+//     rejected too, so the guard does not depend on how the caller built the
+//     map. (`JSON.parse` cannot produce such a key; a hand-built `original`
+//     can.)
 //
 //  3. Only values that actually differ once both sides are in canonical wire
 //     form — so re-serialising a number or an instant is not mistaken for an
@@ -399,17 +423,25 @@ export function buildDirtyDiff(
   original: Record<string, unknown>,
   edited: Record<string, unknown>,
 ): DirtyDiff {
-  const patchBody: Record<string, unknown> = {};
+  // Null-prototype so a field named `__proto__` lands as a real own key rather
+  // than being swallowed by the setter — otherwise changedFieldNames and
+  // patchBody could disagree, which is the one thing this function must never
+  // do. (Unreachable from Salesforce API names; free to close.)
+  const patchBody: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   const changedFieldNames: string[] = [];
 
   const fields = describe?.fields;
   if (!Array.isArray(fields)) return { patchBody, changedFieldNames };
 
   for (const field of fields) {
+    // Tolerate a malformed element rather than throwing: this walks an array
+    // whose shape TypeScript guarantees but a runtime payload need not.
+    if (!field || typeof field !== 'object' || typeof field.name !== 'string') continue;
     if (!classifyFieldEditability(field, 'update').editable) continue;
 
     // Filter 2 — see above. Never relax this to a truthiness or != null check.
     if (!Object.prototype.hasOwnProperty.call(original, field.name)) continue;
+    if (original[field.name] === undefined) continue;
     if (!Object.prototype.hasOwnProperty.call(edited, field.name)) continue;
 
     const before = coerceForWire(field, original[field.name]);
@@ -468,15 +500,23 @@ export function mapSaveErrors(
 ): MappedSaveErrors {
   const fieldErrors: FieldSaveError[] = [];
   const bannerErrors: BannerSaveError[] = [];
-  if (!details) return { fieldErrors, bannerErrors };
+  if (!Array.isArray(details)) return { fieldErrors, bannerErrors };
 
   const rendered = new Set<string>();
-  for (const name of renderedFieldNames) rendered.add(name.toLowerCase());
+  for (const name of renderedFieldNames ?? []) {
+    if (typeof name === 'string') rendered.add(name.toLowerCase());
+  }
 
   for (const detail of details) {
-    const errorCode = detail.errorCode ?? '';
-    const message = detail.message ?? '';
-    const fields = Array.isArray(detail.fields) ? detail.fields.filter((f) => f !== '') : [];
+    // An error path must not be able to throw — see the guard note on
+    // buildDirtyDiff. parseRestErrorDetails cannot produce a malformed element,
+    // but this function is also callable with a hand-built list.
+    if (!detail || typeof detail !== 'object') continue;
+    const errorCode = typeof detail.errorCode === 'string' ? detail.errorCode : '';
+    const message = typeof detail.message === 'string' ? detail.message : '';
+    const fields: string[] = Array.isArray(detail.fields)
+      ? (detail.fields as unknown[]).filter((f): f is string => typeof f === 'string' && f !== '')
+      : [];
 
     if (fields.length === 0) {
       bannerErrors.push({ text: message, field: null, errorCode });

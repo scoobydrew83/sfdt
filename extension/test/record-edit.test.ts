@@ -92,6 +92,26 @@ describe('classifyFieldEditability', () => {
     expect(r).toMatchObject({ editable: true, type: 'datetime' });
   });
 
+  it('still calls that audit field "system" in update mode, not a permission problem', () => {
+    // The same field, asked the update question. CreatedDate is not updateable
+    // in any org under any FLS configuration, so "field-level security" would
+    // be a wrong explanation, not merely a vague one — it sends the user
+    // hunting through profiles for a permission that does not exist.
+    const r = classifyFieldEditability(
+      fld({ name: 'CreatedDate', type: 'datetime', updateable: false, createable: true }),
+      'update',
+    );
+    expect(r).toMatchObject({ editable: false, reason: 'system' });
+    expect(r.editable === false && r.message).not.toMatch(/field-level security/i);
+  });
+
+  it('matches the system field list regardless of casing', () => {
+    const r = classifyFieldEditability(
+      fld({ name: 'systemmodstamp', type: 'datetime', updateable: false, createable: false }),
+    );
+    expect(r).toMatchObject({ editable: false, reason: 'system' });
+  });
+
   it('names the offending type in the unsupported-type reason', () => {
     const r = classifyFieldEditability(fld({ name: 'Geo__c', type: 'location', updateable: true }));
     expect(r).toMatchObject({ editable: false, reason: 'unsupported-type' });
@@ -344,7 +364,6 @@ describe('buildDirtyDiff', () => {
       Opens__c: '09:30:45.500Z',
       CloseDate: '2026-07-30',
       Amount: 1234.5,
-      // Stored order differs from picklist-definition order on purpose.
       Tags__c: 'C;A',
       IsActive__c: true,
       Name: 'Acme',
@@ -454,6 +473,38 @@ describe('buildDirtyDiff', () => {
       changedFieldNames: [],
     });
   });
+
+  it('skips a malformed field entry instead of throwing', () => {
+    // A save must not be able to die on a bad describe element.
+    const d = {
+      fields: [null, undefined, 42, { type: 'string' }, fld({ name: 'Name', type: 'string' })],
+    } as unknown as { fields: FieldDescribe[] };
+    expect(buildDirtyDiff(d, { Name: 'a' }, { Name: 'b' })).toEqual({
+      patchBody: { Name: 'b' },
+      changedFieldNames: ['Name'],
+    });
+  });
+
+  it('ignores an own key whose value is explicitly undefined', () => {
+    // JSON.parse cannot produce this, but a hand-built `original` can — and if
+    // it did, filter 2 would otherwise stop guarding.
+    const original = { Name: 'A', Amount: undefined };
+    const diff = buildDirtyDiff(describeStub, original, { Name: 'A', Amount: 999 });
+    expect(diff.patchBody).toEqual({});
+  });
+
+  it('keeps the save bar and the PATCH body in agreement for any field name', () => {
+    // `__proto__` is not a reachable Salesforce API name, but the two outputs
+    // disagreeing is the one failure this function must never have.
+    const d = { fields: [fld({ name: '__proto__', type: 'string' })] };
+    const diff = buildDirtyDiff(d, { ['__proto__']: 'a' }, { ['__proto__']: 'b' });
+    expect(diff.changedFieldNames).toEqual(['__proto__']);
+    expect(Object.keys(diff.patchBody)).toEqual(diff.changedFieldNames);
+    // NB: a `{ __proto__: 'b' }` object literal would set the prototype, not an
+    // own key — which is precisely the trap this test exists to close, so the
+    // assertion is made on the serialised body the PATCH would actually send.
+    expect(JSON.stringify(diff.patchBody)).toBe('{"__proto__":"b"}');
+  });
 });
 
 describe('mapSaveErrors', () => {
@@ -535,5 +586,34 @@ describe('mapSaveErrors', () => {
     expect(mapSaveErrors(null, ['Name'])).toEqual({ fieldErrors: [], bannerErrors: [] });
     expect(mapSaveErrors(undefined, ['Name'])).toEqual({ fieldErrors: [], bannerErrors: [] });
     expect(mapSaveErrors([], ['Name'])).toEqual({ fieldErrors: [], bannerErrors: [] });
+  });
+
+  it('skips malformed entries instead of throwing', () => {
+    // The error renderer is the last thing that may fail: a throw here costs
+    // the user the edits the error was supposed to help them fix.
+    const hostile = [
+      null,
+      undefined,
+      42,
+      'nope',
+      { message: null, fields: 'NotAnArray' },
+      { message: 'ok', errorCode: 7, fields: [1, null, 'Name'] },
+    ] as unknown as SalesforceRestErrorDetail[];
+    const r = mapSaveErrors(hostile, ['Name']);
+    expect(r.fieldErrors).toEqual([{ field: 'Name', message: 'ok', errorCode: '' }]);
+    // The message-less record still lands somewhere rather than vanishing.
+    expect(r.bannerErrors).toHaveLength(1);
+  });
+
+  it('tolerates a non-array detail list and non-string rendered names', () => {
+    expect(mapSaveErrors('boom' as unknown as SalesforceRestErrorDetail[], ['Name'])).toEqual({
+      fieldErrors: [],
+      bannerErrors: [],
+    });
+    const r = mapSaveErrors([detail({ fields: ['Name'] })], [
+      null,
+      'Name',
+    ] as unknown as string[]);
+    expect(r.fieldErrors).toHaveLength(1);
   });
 });
