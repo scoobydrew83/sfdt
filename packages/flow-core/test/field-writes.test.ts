@@ -110,6 +110,67 @@ describe('flow-core/field-writes', () => {
       expect(hop.object).toBeNull();
       expect(hop.status).toBe('inferred');
     });
+
+    // The resolver used to run a fixed two passes, so a chain longer than two —
+    // or one declared in reverse dependency order — silently degraded to
+    // `inferred`. It now iterates to a fixed point, which is order-independent.
+    describe('a chain of loops resolves regardless of declaration order', () => {
+      // outer -> mid -> inner, each iterating the previous loop's output. Only
+      // `Get_Cases` states an object; every other binding is transitive.
+      const chained = (order: 'forward' | 'reverse') => {
+        const loops = [
+          { name: 'Outer', collectionReference: 'Get_Cases' },
+          { name: 'Mid', collectionReference: 'Outer' },
+          { name: 'Inner', collectionReference: 'Mid' },
+        ];
+        return {
+          label: 'Chained Loops',
+          recordLookups: [{ name: 'Get_Cases', label: 'Get Cases', object: 'Case' }],
+          loops: order === 'forward' ? loops : [...loops].reverse(),
+          assignments: [
+            {
+              name: 'Set',
+              label: 'Set Description',
+              assignmentItems: [{ assignToReference: 'Inner.Description', operator: 'Assign' }],
+            },
+          ],
+        };
+      };
+
+      it('binds a 3-deep chain declared in dependency order', () => {
+        const write = extractFieldWrites(chained('forward'))[0]!;
+        expect(write.object).toBe('Case');
+        expect(write.status).toBe('confirmed');
+      });
+
+      it('binds the same chain declared in REVERSE order', () => {
+        const write = extractFieldWrites(chained('reverse'))[0]!;
+        expect(write.object).toBe('Case');
+        expect(write.status).toBe('confirmed');
+      });
+    });
+
+    it('terminates on a cyclic loop chain instead of spinning', () => {
+      // A self-referential / mutually-referential collection can never resolve;
+      // the fixed point must stop rather than iterate forever.
+      const cyclic = {
+        label: 'Cyclic',
+        loops: [
+          { name: 'A', collectionReference: 'B' },
+          { name: 'B', collectionReference: 'A' },
+        ],
+        assignments: [
+          {
+            name: 'Set',
+            label: 'Set',
+            assignmentItems: [{ assignToReference: 'A.Description', operator: 'Assign' }],
+          },
+        ],
+      };
+      const write = extractFieldWrites(cyclic)[0]!;
+      expect(write.object).toBeNull();
+      expect(write.status).toBe('inferred');
+    });
   });
 
   describe('extractFieldWrites — degenerate input', () => {
