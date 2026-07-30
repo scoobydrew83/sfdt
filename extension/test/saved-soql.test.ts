@@ -129,3 +129,53 @@ describe('SOQL template pack (data)', () => {
     expect(isValidTemplateSoql('SELECT Id FROM Account;')).toBe(false); // trailing semicolon
   });
 });
+
+describe('saved-soql feature — query language (P4-3)', () => {
+  function getStorage(key: string): Promise<unknown> {
+    return new Promise((r) => chrome.storage.local.get(key, (res) => r(res?.[key])));
+  }
+
+  it('badges each row with its query language and stages it for the runner', async () => {
+    await setStorage({
+      'soqlRunner.savedQueries': {
+        entries: [{ name: 'Find Acme', q: 'FIND {Acme} IN ALL FIELDS', api: 'rest', lang: 'sosl' }],
+      },
+    });
+    const feature = createSavedSoqlFeature({ onLoadQuery: vi.fn() });
+    await feature.onActivate?.();
+    await flush();
+
+    const overlay = document.querySelector('.sfdt-view-overlay') as HTMLElement;
+    const badges = [...overlay.querySelectorAll('span')].filter((s) => s.textContent === 'SOSL');
+    expect(badges.length).toBe(1);
+
+    const loadBtn = [...overlay.querySelectorAll('button')].find((b) => b.textContent === 'Load');
+    loadBtn!.click();
+    await flush();
+    expect(await getStorage('soqlRunner.pendingQuery')).toEqual({
+      q: 'FIND {Acme} IN ALL FIELDS',
+      api: 'rest',
+      lang: 'sosl',
+    });
+  });
+
+  it('infers the language for entries stored before the toggle shipped', async () => {
+    await setStorage({
+      'soqlRunner.history': {
+        // No `lang` key — written by an older version.
+        entries: [{ q: 'FIND {Legacy}', api: 'rest', ts: 1 }],
+      },
+    });
+    const feature = createSavedSoqlFeature({ onLoadQuery: vi.fn() });
+    await feature.onActivate?.();
+    await flush();
+
+    const overlay = document.querySelector('.sfdt-view-overlay') as HTMLElement;
+    const row = [...overlay.querySelectorAll('span')].find((s) => s.textContent === 'FIND {Legacy}')
+      ?.parentElement as HTMLElement;
+    expect([...row.querySelectorAll('span')].some((s) => s.textContent === 'SOSL')).toBe(true);
+    (row.querySelector('button') as HTMLButtonElement).click();
+    await flush();
+    expect(await getStorage('soqlRunner.pendingQuery')).toMatchObject({ lang: 'sosl' });
+  });
+});

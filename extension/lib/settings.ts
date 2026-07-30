@@ -3,11 +3,13 @@
 // not preferences. zod validation surfaces corrupt writes as typed errors.
 
 import { z } from 'zod';
+import { isEnabledByDefault } from './feature-defaults.js';
 
 export const SettingsSchema = z.object({
-  // Undefined entries = "enabled by default" (each feature's manifest carries
-  // its own enabledByDefault). Legacy camelCase keys are honoured via
-  // LEGACY_FEATURE_ID_MAP.
+  // Only ids the user has explicitly toggled appear here. An absent entry falls
+  // back to the feature's own manifest `enabledByDefault` (see
+  // lib/feature-defaults.ts) — NOT a blanket "on". Legacy camelCase keys are
+  // honoured via LEGACY_FEATURE_ID_MAP.
   features: z.record(z.string(), z.boolean()).default({}),
 
   // The four blocks below predate the registry-driven options page and
@@ -104,6 +106,20 @@ const LEGACY_FEATURE_ID_MAP: Record<string, string> = {
   scheduledFlowExplorer: 'scheduled-flow-explorer',
 };
 
+/**
+ * Effective enablement for a feature, ignoring the remote kill switch (callers
+ * layer that on top — see the `InitGate` in lib/feature-registry.ts).
+ *
+ * Precedence, highest first:
+ *   1. An explicit stored preference under the canonical kebab-case id.
+ *   2. An explicit stored preference under a legacy camelCase id.
+ *   3. The feature manifest's `enabledByDefault` (defaulting to true when the
+ *      manifest omits it, or when the id is unknown).
+ *
+ * A user's choice always beats the manifest default, in BOTH directions: a
+ * feature the user switched off stays off even if it ships on by default, and a
+ * feature the user switched on stays on even if it ships off by default.
+ */
 export function isFeatureEnabled(settings: Settings, featureId: string): boolean {
   if (Object.prototype.hasOwnProperty.call(settings.features, featureId)) {
     return settings.features[featureId] !== false;
@@ -113,7 +129,8 @@ export function isFeatureEnabled(settings: Settings, featureId: string): boolean
       return settings.features[legacy] !== false;
     }
   }
-  return true;
+  // No stored preference — the manifest decides.
+  return isEnabledByDefault(featureId);
 }
 
 const STORAGE_KEY = 'sfdt.settings';
