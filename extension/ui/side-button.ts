@@ -117,7 +117,7 @@ export function mountSideButton(opts: {
   mount.querySelector(`#${BUTTON_ID}`)?.remove();
   mount.querySelector(`#${MENU_ID}`)?.remove();
 
-  const button = styled(doc, 'div', BUTTON_STYLE, { id: BUTTON_ID, title: 'SFDT SF Helper' });
+  const button = styled(doc, 'div', BUTTON_STYLE, { id: BUTTON_ID, title: 'SFDT for Salesforce' });
   button.className = 'sfdt-side-button';
   const buttonIcon = doc.createElement('span');
   buttonIcon.className = 'sfdt-side-button-icon';
@@ -134,7 +134,7 @@ export function mountSideButton(opts: {
   const headerTitle = doc.createElement('span');
   headerTitle.className = 'sfdt-menu-title';
   headerTitle.style.fontWeight = '600';
-  headerTitle.textContent = 'SFDT SF Helper';
+  headerTitle.textContent = 'SFDT for Salesforce';
   const headerClose = doc.createElement('span');
   headerClose.className = 'sfdt-menu-close';
   headerClose.style.cssText = 'cursor: pointer; font-size: 18px; color: var(--sfdt-color-text-icon);';

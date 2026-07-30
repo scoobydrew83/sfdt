@@ -9,7 +9,7 @@ export default defineConfig({
   manifest: ({ browser }) => {
     const isFirefox = browser === 'firefox';
     return {
-      name: 'SFDT SF Helper',
+      name: 'SFDT for Salesforce',
       description:
         'Productivity tools for Salesforce admins & developers — Flow, Setup, Object Manager, record pages, SOQL/REST/SOAP & AI.',
       // `sidePanel` (P2-3, ledgered): host the extension's own docked tool panel
@@ -45,7 +45,7 @@ export default defineConfig({
       incognito: 'split',
       // The toolbar button opens the thin action popup (entrypoints/popup/).
       action: {
-        default_title: 'SFDT SF Helper',
+        default_title: 'SFDT for Salesforce',
         default_popup: 'popup.html',
       },
       // Declared keyboard shortcuts. They're registered by the browser (not our
