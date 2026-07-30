@@ -48,6 +48,27 @@ describe('guidanceForErrorCode', () => {
     expect(guidanceForErrorCode('  malformed_query ')).toBe(guidanceForErrorCode('MALFORMED_QUERY'));
   });
 
+  it('does not send a concurrent-limit user to a page that will show headroom', () => {
+    // REQUEST_LIMIT_EXCEEDED covers the 24-hour allowance AND the concurrent
+    // long-running request cap. Naming only the first means a user who hit the
+    // second checks the page, sees 2% used, and concludes the tool is broken.
+    const advice = guidanceForErrorCode('REQUEST_LIMIT_EXCEEDED');
+    expect(advice).toMatch(/concurrent/i);
+    expect(advice).toMatch(/24-hour/i);
+  });
+
+  it('does not blame a validation rule for what may be an Apex trigger', () => {
+    // FIELD_CUSTOM_VALIDATION_EXCEPTION is also what addError() produces, so
+    // sending someone to Setup > Validation Rules can be a dead end.
+    const advice = guidanceForErrorCode('FIELD_CUSTOM_VALIDATION_EXCEPTION');
+    expect(advice).toMatch(/trigger/i);
+    expect(advice).toMatch(/validation rule/i);
+  });
+
+  it('has advice for a 400, the most common status on these paths', () => {
+    expect(guidanceForStatus(400)).not.toBe('');
+  });
+
   it('never advises re-authenticating for a code that is not a session problem', () => {
     // The whole point of the bug: a session claim must be established, not guessed.
     for (const code of ['MALFORMED_QUERY', 'INVALID_FIELD', 'INVALID_TYPE']) {
