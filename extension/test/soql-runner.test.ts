@@ -28,8 +28,15 @@ const {
   deleteSavedQuery,
   DescribeCache,
   runQuery,
+  runSearch,
   explainQuery,
   insertFieldIntoQuery,
+  isSoslQuery,
+  detectQueryLang,
+  entryLang,
+  searchRecordsFrom,
+  groupSearchRecords,
+  soslRowCount,
 } = _soqlRunnerTestApi();
 
 function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
@@ -1326,7 +1333,7 @@ describe('soql-runner — modal menus & exports', () => {
     findButton('★ Save')?.click();
     await flush();
     expect(await readSavedQueries()).toEqual([
-      { name: 'Named', q: 'SELECT Id FROM Account', api: 'rest' },
+      { name: 'Named', q: 'SELECT Id FROM Account', api: 'rest', lang: 'soql' },
     ]);
     window.prompt = originalPrompt;
   });
@@ -1556,5 +1563,426 @@ describe('soql-runner — autocomplete field paths', () => {
     await flush();
     expect(textarea.value).toContain('Name');
     expect(textarea.value).toContain('OwnerId');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P4-3 — SOSL mode
+// ---------------------------------------------------------------------------
+
+describe('soql-runner — SOSL language detection', () => {
+  it('treats a leading FIND (any case, leading whitespace) as SOSL', () => {
+    expect(isSoslQuery('FIND {Acme}')).toBe(true);
+    expect(isSoslQuery('  find {Acme} IN ALL FIELDS')).toBe(true);
+    expect(isSoslQuery('\n\tFiNd {Acme}')).toBe(true);
+    expect(detectQueryLang('FIND {Acme}')).toBe('sosl');
+  });
+
+  it('treats everything else as SOQL', () => {
+    expect(isSoslQuery('SELECT Id FROM Account')).toBe(false);
+    expect(isSoslQuery('')).toBe(false);
+    expect(isSoslQuery(null)).toBe(false);
+    expect(detectQueryLang('SELECT Id FROM Account')).toBe('soql');
+  });
+
+  it('requires FIND to be a whole word, not a prefix', () => {
+    // `Finder__c` starts with "find" but is not a SOSL query — the CLI's
+    // /^find\b/i rule (validateLocal) says the same.
+    expect(isSoslQuery('SELECT Id FROM Finder__c')).toBe(false);
+    expect(isSoslQuery('finder')).toBe(false);
+  });
+});
+
+describe('soql-runner — SOSL result mapping', () => {
+  const multiObject = {
+    searchRecords: [
+      { attributes: { type: 'Account', url: '/a/1' }, Id: '001A', Name: 'Acme Inc' },
+      { attributes: { type: 'Contact', url: '/c/1' }, Id: '003C', Name: 'Ada Acme' },
+      { attributes: { type: 'Account', url: '/a/2' }, Id: '001B', Name: 'Acme Ltd' },
+      { attributes: { type: 'Lead', url: '/l/1' }, Id: '00QA', Company: 'Acme Co' },
+    ],
+  };
+
+  it('groups a multi-object response per sObject, in first-seen order', () => {
+    const groups = groupSearchRecords(multiObject);
+    expect(groups.map((g) => g.sobject)).toEqual(['Account', 'Contact', 'Lead']);
+    expect(groups.map((g) => g.records.length)).toEqual([2, 1, 1]);
+    expect(groups[0]?.records).toEqual([
+      { Id: '001A', Name: 'Acme Inc' },
+      { Id: '001B', Name: 'Acme Ltd' },
+    ]);
+  });
+
+  it('drops the Salesforce attributes envelope from every row', () => {
+    for (const group of groupSearchRecords(multiObject)) {
+      for (const record of group.records) {
+        expect(record).not.toHaveProperty('attributes');
+      }
+    }
+  });
+
+  it('yields no groups at all for an empty result set', () => {
+    // An object that matched nothing simply isn't in the response, so an empty
+    // search produces zero groups — never a group with an empty record list,
+    // which would present a heading for rows that do not exist.
+    expect(groupSearchRecords({ searchRecords: [] })).toEqual([]);
+    expect(soslRowCount(groupSearchRecords({ searchRecords: [] }))).toBe(0);
+  });
+
+  it('yields no groups for a malformed or empty reply rather than throwing', () => {
+    expect(groupSearchRecords({})).toEqual([]);
+    expect(groupSearchRecords(null)).toEqual([]);
+    expect(groupSearchRecords(undefined)).toEqual([]);
+    expect(groupSearchRecords('nope')).toEqual([]);
+    expect(groupSearchRecords({ searchRecords: 'nope' })).toEqual([]);
+  });
+
+  it('accepts a bare array of search records', () => {
+    const groups = groupSearchRecords([
+      { attributes: { type: 'Account' }, Id: '001A' },
+    ]);
+    expect(groups).toEqual([{ sobject: 'Account', records: [{ Id: '001A' }] }]);
+    expect(searchRecordsFrom([{ Id: 'x' }])).toEqual([{ Id: 'x' }]);
+  });
+
+  it('buckets rows with no usable attributes.type under Unknown', () => {
+    const groups = groupSearchRecords({
+      searchRecords: [
+        { Id: '001A' },
+        { attributes: { type: '' }, Id: '001B' },
+        { attributes: 'bogus', Id: '001C' },
+      ],
+    });
+    expect(groups).toEqual([
+      { sobject: 'Unknown', records: [{ Id: '001A' }, { Id: '001B' }, { Id: '001C' }] },
+    ]);
+  });
+
+  it('counts rows across every group', () => {
+    expect(soslRowCount(groupSearchRecords(multiObject))).toBe(4);
+    expect(soslRowCount([])).toBe(0);
+  });
+
+  it('runSearch calls the REST Search resource and returns groups', async () => {
+    const apiGet = vi.fn().mockResolvedValue(multiObject);
+    const groups = await runSearch(fakeApi({ apiGet }), 'FIND {Acme} IN ALL FIELDS');
+    expect(apiGet).toHaveBeenCalledWith('/services/data/v62.0/search', {
+      q: 'FIND {Acme} IN ALL FIELDS',
+    });
+    expect(groups.map((g) => g.sobject)).toEqual(['Account', 'Contact', 'Lead']);
+  });
+
+  it('runQuery flattens the same groups for a FIND query', async () => {
+    // One SOSL mapping: runQuery's FIND branch is the flat view of runSearch's
+    // groups, so both surfaces see identical rows.
+    const apiGet = vi.fn().mockResolvedValue(multiObject);
+    const envelope = await runQuery(fakeApi({ apiGet }), 'FIND {Acme} IN ALL FIELDS', 'rest');
+    expect(envelope.done).toBe(true);
+    expect(envelope.records).toEqual([
+      { Id: '001A', Name: 'Acme Inc' },
+      { Id: '001B', Name: 'Acme Ltd' },
+      { Id: '003C', Name: 'Ada Acme' },
+      { Id: '00QA', Company: 'Acme Co' },
+    ]);
+  });
+});
+
+describe('soql-runner — history/saved entry language', () => {
+  it('reads the recorded language', () => {
+    expect(entryLang({ q: 'SELECT Id FROM Account', lang: 'soql' })).toBe('soql');
+    expect(entryLang({ q: 'FIND {Acme}', lang: 'sosl' })).toBe('sosl');
+  });
+
+  it('falls back to detection for entries stored before the toggle shipped', () => {
+    expect(entryLang({ q: 'FIND {Acme}' })).toBe('sosl');
+    expect(entryLang({ q: 'SELECT Id FROM Account' })).toBe('soql');
+    expect(entryLang(null)).toBe('soql');
+  });
+
+  it('records the language on history entries and dedupes per language', async () => {
+    await clearSoqlHistory();
+    await pushSoqlHistory({ q: 'FIND {Acme}', api: 'rest', lang: 'sosl', ts: 1 });
+    await pushSoqlHistory({ q: 'SELECT Id FROM Account', api: 'rest', lang: 'soql', ts: 2 });
+    await pushSoqlHistory({ q: 'FIND {Acme}', api: 'rest', lang: 'sosl', ts: 3 });
+    const entries = await readSoqlHistory();
+    expect(entries).toEqual([
+      { q: 'FIND {Acme}', api: 'rest', lang: 'sosl', ts: 3 },
+      { q: 'SELECT Id FROM Account', api: 'rest', lang: 'soql', ts: 2 },
+    ]);
+  });
+
+  it('round-trips the language through the saved-query and pending-query stores', async () => {
+    await writeSavedQueries([]);
+    await pushSavedQuery({ name: 'Find Acme', q: 'FIND {Acme}', api: 'rest', lang: 'sosl' });
+    expect(await readSavedQueries()).toEqual([
+      { name: 'Find Acme', q: 'FIND {Acme}', api: 'rest', lang: 'sosl' },
+    ]);
+
+    await writePendingQuery({ q: 'FIND {Acme}', api: 'rest', lang: 'sosl' });
+    expect(await takePendingQuery()).toEqual({ q: 'FIND {Acme}', api: 'rest', lang: 'sosl' });
+  });
+});
+
+describe('soql-runner — SOSL mode in the runner UI', () => {
+  const twoObjectSearch = {
+    searchRecords: [
+      { attributes: { type: 'Account' }, Id: '001A', Name: 'Acme Inc' },
+      { attributes: { type: 'Contact' }, Id: '003C', Name: 'Ada Acme' },
+    ],
+  };
+
+  function setSalesforceUrl(): void {
+    window.history.replaceState(
+      {},
+      '',
+      'https://x.lightning.force.com/lightning/setup/Flows/home',
+    );
+  }
+  async function flush(): Promise<void> {
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  function findButton(text: string): HTMLButtonElement | undefined {
+    return Array.from(document.querySelectorAll('button')).find((b) => b.textContent === text);
+  }
+  function langButton(value: 'SOQL' | 'SOSL'): HTMLButtonElement {
+    const group = document.querySelector('[role="radiogroup"]') as HTMLElement;
+    return Array.from(group.querySelectorAll('button')).find(
+      (b) => b.textContent === value,
+    ) as HTMLButtonElement;
+  }
+  async function openWith(api: ReturnType<typeof fakeApi>): Promise<HTMLTextAreaElement> {
+    setSalesforceUrl();
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+    await flush();
+    return document.querySelector('textarea') as HTMLTextAreaElement;
+  }
+  async function runSosl(apiGet: ReturnType<typeof vi.fn>): Promise<HTMLTextAreaElement> {
+    const textarea = await openWith(
+      fakeApi({ apiGet: apiGet as unknown as SalesforceApiClient['apiGet'] }),
+    );
+    textarea.value = 'FIND {Acme} IN ALL FIELDS RETURNING Account(Id, Name), Contact(Id, Name)';
+    textarea.dispatchEvent(new Event('input'));
+    findButton('▶ Run')?.click();
+    await flush();
+    return textarea;
+  }
+
+  it('exposes the language toggle as a labelled radiogroup, SOQL selected by default', async () => {
+    await openWith(fakeApi());
+    const group = document.querySelector('[role="radiogroup"]') as HTMLElement;
+    expect(group.getAttribute('aria-label')).toBe('Query language');
+    expect(langButton('SOQL').getAttribute('role')).toBe('radio');
+    expect(langButton('SOQL').getAttribute('aria-checked')).toBe('true');
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('false');
+    // Roving tabindex: only the selected radio is in the tab order.
+    expect(langButton('SOQL').tabIndex).toBe(0);
+    expect(langButton('SOSL').tabIndex).toBe(-1);
+  });
+
+  it('switches language by click and by arrow key', async () => {
+    await openWith(fakeApi());
+    langButton('SOSL').click();
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+    expect(langButton('SOQL').getAttribute('aria-checked')).toBe('false');
+
+    langButton('SOSL').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+    );
+    expect(langButton('SOQL').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('auto-detects the language from the query text, matching the GUI console', async () => {
+    const textarea = await openWith(fakeApi());
+    textarea.value = 'FIND {Acme} IN ALL FIELDS';
+    textarea.dispatchEvent(new Event('input'));
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+
+    textarea.value = 'SELECT Id FROM Account';
+    textarea.dispatchEvent(new Event('input'));
+    expect(langButton('SOQL').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('disables Explain and the Tooling toggle in SOSL mode', async () => {
+    await openWith(fakeApi());
+    expect(findButton('🔎 Explain')?.disabled).toBe(false);
+    langButton('SOSL').click();
+    expect(findButton('🔎 Explain')?.disabled).toBe(true);
+    expect(findButton('Tooling')?.disabled).toBe(true);
+    langButton('SOQL').click();
+    expect(findButton('🔎 Explain')?.disabled).toBe(false);
+    expect(findButton('Tooling')?.disabled).toBe(false);
+  });
+
+  it('runs SOSL through the search resource and renders one section per object', async () => {
+    const apiGet = vi.fn().mockResolvedValue(twoObjectSearch);
+    await runSosl(apiGet);
+    expect(apiGet).toHaveBeenCalledWith(
+      '/services/data/v62.0/search',
+      expect.objectContaining({ q: expect.stringContaining('FIND {Acme}') }),
+    );
+    const sections = Array.from(document.querySelectorAll('section'));
+    expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual([
+      'Account results',
+      'Contact results',
+    ]);
+    expect(document.body.textContent).toContain('Account · 1 row');
+    expect(document.body.textContent).toContain('Contact · 1 row');
+    expect(document.body.textContent).toContain('1 row');
+    // One table per group, each with the group's own rows.
+    expect(document.querySelectorAll('section table')).toHaveLength(2);
+    expect(sections[0]?.textContent).toContain('Acme Inc');
+    expect(sections[0]?.textContent).not.toContain('Ada Acme');
+  });
+
+  it('gives every group its own copy of the shared result toolbar', async () => {
+    const apiGet = vi.fn().mockResolvedValue(twoObjectSearch);
+    await runSosl(apiGet);
+    for (const label of ['Copy CSV', 'Export CSV', 'Copy JSON', 'Copy for Excel']) {
+      const buttons = Array.from(document.querySelectorAll('section button')).filter(
+        (b) => b.textContent === label,
+      );
+      expect(buttons).toHaveLength(2);
+      // Same visible label, per-group accessible names (checklist item 10).
+      expect(buttons[0]?.getAttribute('aria-label')).toContain('Account');
+      expect(buttons[1]?.getAttribute('aria-label')).toContain('Contact');
+    }
+  });
+
+  it('copies and exports per group, not the whole result set', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const anchors: HTMLAnchorElement[] = [];
+    const realCreate = document.createElement.bind(document);
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:fake') as never;
+    globalThis.URL.revokeObjectURL = vi.fn() as never;
+
+    const apiGet = vi.fn().mockResolvedValue(twoObjectSearch);
+    await runSosl(apiGet);
+
+    const contactSection = Array.from(document.querySelectorAll('section')).find(
+      (s) => s.getAttribute('aria-label') === 'Contact results',
+    ) as HTMLElement;
+    const btn = (label: string): HTMLButtonElement =>
+      Array.from(contactSection.querySelectorAll('button')).find(
+        (b) => b.textContent === label,
+      ) as HTMLButtonElement;
+
+    btn('Copy CSV').click();
+    await flush();
+    // The Contact group only — the shared recordsToCsv serialiser, one group's rows.
+    expect(writeText).toHaveBeenLastCalledWith('Id,Name\n003C,Ada Acme');
+    expect(document.querySelector('.sfdt-toast')?.textContent).toBe('Copied 1 Contact row as CSV');
+
+    btn('Copy for Excel').click();
+    await flush();
+    expect(writeText).toHaveBeenLastCalledWith('Id\tName\n003C\tAda Acme');
+
+    btn('Copy JSON').click();
+    await flush();
+    expect(JSON.parse(writeText.mock.lastCall?.[0] as string)).toEqual([
+      { Id: '003C', Name: 'Ada Acme' },
+    ]);
+
+    // Export CSV downloads that group under a per-object filename. The
+    // download anchor's click() is neutered so happy-dom doesn't navigate the
+    // test document to the blob URL.
+    const spy = vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
+      const el = realCreate(tag);
+      if (tag === 'a') {
+        (el as HTMLAnchorElement).click = () => {};
+        anchors.push(el as HTMLAnchorElement);
+      }
+      return el;
+    }) as never);
+    btn('Export CSV').click();
+    await flush();
+    spy.mockRestore();
+    expect(anchors[0]?.download).toMatch(/^sosl-Contact-/);
+  });
+
+  it('hides the SOQL-only footer actions while showing SOSL results', async () => {
+    const apiGet = vi.fn().mockResolvedValue(twoObjectSearch);
+    await runSosl(apiGet);
+    // The footer's own copy of the toolbar (and pagination/LangGraph) belongs to
+    // the flat SOQL set and stays hidden.
+    const footerButtons = Array.from(document.querySelectorAll('button')).filter(
+      (b) => !b.closest('section'),
+    );
+    for (const label of ['Copy CSV', 'Export CSV', 'Copy JSON', 'Copy for Excel', 'Load more', 'Export all as CSV', 'LangGraph Node']) {
+      const b = footerButtons.find((x) => x.textContent === label);
+      expect(b?.style.display).toBe('none');
+    }
+  });
+
+  it('shows a no-matches note for an empty search', async () => {
+    const apiGet = vi.fn().mockResolvedValue({ searchRecords: [] });
+    await runSosl(apiGet);
+    expect(document.body.textContent).toContain('No matches.');
+    expect(document.querySelectorAll('section')).toHaveLength(0);
+  });
+
+  it('records the SOSL mode in history and restores it from the history menu', async () => {
+    await clearSoqlHistory();
+    const apiGet = vi.fn().mockResolvedValue(twoObjectSearch);
+    const textarea = await runSosl(apiGet);
+    const entries = await readSoqlHistory();
+    expect(entries[0]).toMatchObject({ lang: 'sosl', api: 'rest' });
+    expect(entries[0]?.q).toContain('FIND {Acme}');
+
+    // Back to SOQL, then restore the SOSL entry from the menu.
+    textarea.value = 'SELECT Id FROM Account';
+    textarea.dispatchEvent(new Event('input'));
+    expect(langButton('SOQL').getAttribute('aria-checked')).toBe('true');
+
+    findButton('▸ History ▾')?.click();
+    await flush();
+    expect(document.body.textContent).toContain('SOSL');
+    const textSpan = Array.from(document.querySelectorAll('span')).find((s) =>
+      s.textContent?.startsWith('FIND {Acme}'),
+    );
+    (textSpan?.parentElement as HTMLElement | undefined)?.click();
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+    expect(textarea.value).toContain('FIND {Acme}');
+  });
+
+  it('restores the SOSL mode from a bookmark and from a staged pending query', async () => {
+    await writeSavedQueries([
+      { name: 'Find Acme', q: 'FIND {Acme} IN ALL FIELDS', api: 'rest', lang: 'sosl' },
+    ]);
+    await openWith(fakeApi());
+    findButton('★ Bookmarks ▾')?.click();
+    await flush();
+    const qSpan = Array.from(document.querySelectorAll('span')).find(
+      (s) => s.textContent === 'FIND {Acme} IN ALL FIELDS',
+    );
+    (qSpan?.closest('div[style*="cursor: pointer"]') as HTMLElement | undefined)?.click();
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+
+    // A pending query staged by the Saved SOQL panel opens the runner in SOSL.
+    clearBody();
+    await writePendingQuery({ q: 'FIND {Universal}', api: 'rest', lang: 'sosl' });
+    const textarea = await openWith(fakeApi());
+    expect(textarea.value).toBe('FIND {Universal}');
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('restores SOSL for a pre-P4-3 entry that has no recorded language', async () => {
+    await clearSoqlHistory();
+    // Written before the toggle existed: no `lang` key at all.
+    await writeSoqlHistory([{ q: 'FIND {Legacy}', api: 'rest', ts: 1 }]);
+    const textarea = await openWith(fakeApi());
+    findButton('▸ History ▾')?.click();
+    await flush();
+    const textSpan = Array.from(document.querySelectorAll('span')).find(
+      (s) => s.textContent === 'FIND {Legacy}',
+    );
+    (textSpan?.parentElement as HTMLElement | undefined)?.click();
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+    expect(textarea.value).toBe('FIND {Legacy}');
   });
 });
