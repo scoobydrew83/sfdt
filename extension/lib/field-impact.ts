@@ -61,9 +61,10 @@ export interface FlowCandidate {
   /** Active / Obsolete / Draft — shown so an obsolete hit is obvious. */
   status?: string | null;
   /**
-   * Tooling `Flow.Metadata`. `null` means the flow was NOT analysed (over the
-   * scan cap, or the metadata fetch failed) — such a flow can only ever be an
-   * `inferred` row, never a confirmed one.
+   * Tooling `Flow.Metadata`. `null` means the flow was NOT analysed — over the
+   * scan cap, the metadata fetch threw, or the row came back with no `Metadata`.
+   * Such a flow can never be a `confirmed` row; whether it is an `inferred` row
+   * or no row at all depends on `discovery` (see below).
    */
   metadata: Parameters<typeof extractFieldWrites>[0];
   /**
@@ -72,13 +73,18 @@ export interface FlowCandidate {
    *
    * - `dependency` (default) — `MetadataComponentDependency` says this flow
    *   references the field. A write we cannot bind to an object is still a real
-   *   lead, so it is kept and labelled `inferred`.
+   *   lead, so it is kept and labelled `inferred`; so is a flow whose metadata
+   *   could not be read, because the reference itself is established.
    * - `broad-scan` — the flow came from an untargeted sweep (no dependency edge
    *   exists, e.g. for a standard field). There is NO evidence this flow touches
    *   the field at all, so an unbindable write would be a pure NAME collision:
    *   a flow assigning `Status` into an untyped wrapper would be reported as
    *   writing your object's `Status`. Those writes are dropped, not downgraded —
    *   only writes bound to the queried object in the flow's own metadata count.
+   *   For the same reason a flow whose metadata could not be read produces NO
+   *   row: with neither an edge nor metadata there is nothing to report, and a
+   *   row would assert a reference that was never established. Both drops are
+   *   disclosed as scope notes by the feature, never silent.
    */
   discovery?: 'dependency' | 'broad-scan';
 }
@@ -176,8 +182,22 @@ function flowRow(
   const url = flowBuilderUrl(input.origin, candidate.versionId);
   const statusSuffix = candidate.status ? ` · ${candidate.status}` : '';
 
-  // Not analysed → the only honest classification is `inferred`.
+  // Not analysed. What that is worth depends ENTIRELY on how the candidate was
+  // found, because the evidence string below asserts a reference:
+  //
+  // - `dependency` — the flow is in the set precisely BECAUSE an edge links it
+  //   to this field. "References this field" is established, the metadata just
+  //   wasn't readable, so an `inferred` lead is honest.
+  // - `broad-scan` — the flow is in the set only for being recently modified.
+  //   Nothing links it to the field. With no metadata there is no evidence of
+  //   anything, so a row here would assert a relationship that was never
+  //   established, contradict the note promising that a broad-scan flow is
+  //   reported only when its metadata binds the write, and inflate the count so
+  //   the empty-result hedge never fires. Dropped instead — the same call the
+  //   unbindable-write rule already makes on this path. The feature counts these
+  //   and discloses them as a scope note, so the drop is never silent.
   if (candidate.metadata == null) {
+    if (candidate.discovery === 'broad-scan') return null;
     return {
       sourceType: 'Flow',
       typeLabel: SOURCE_TYPES.Flow.label,

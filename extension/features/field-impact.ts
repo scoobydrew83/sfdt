@@ -252,10 +252,20 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
       // bound to `object` in the flow's own metadata counts. Both the breadth
       // AND that precision rule are disclosed.
       discovery = 'broad-scan';
-      // Only claim "no dependency edge" when we actually established it.
+      // Say which of the four reasons actually applies. Only the last is a
+      // MEASUREMENT — the dependency query ran and came back empty. The others
+      // are a failure or a derivation (for a standard field the CustomField
+      // query is short-circuited and never runs at all), and reporting them as
+      // "no dependency edge" states more than the evidence supports.
       const cause = edgeLookupFailed
         ? `Because the lookup above failed, the scan for ${object}.${field} could not be narrowed`
-        : `No dependency edge for ${object}.${field}`;
+        : !/__c$/i.test(field)
+          ? `${object}.${field} is a standard field, so it has no CustomField record for a ` +
+            `dependency edge to point at`
+          : !fieldId
+            ? `No CustomField record was found for ${object}.${field}, so no dependency edge ` +
+              `could be looked up`
+            : `No dependency edge was found for ${object}.${field}`;
       try {
         const flows = await api.toolingQuery<{ Id?: string }>(recentActiveFlowsQuery());
         versionIds = flows.records
@@ -287,6 +297,8 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
     }
 
     const candidates: FlowCandidate[] = [];
+    /** Analysed candidates that came back with no usable `Metadata`. */
+    let unreadable = 0;
     for (const versionId of analysed) {
       try {
         const result = await api.toolingQuery<{
@@ -298,6 +310,9 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
         }>(flowMetadataQuery(versionId));
         const record = result.records[0];
         if (!record) continue;
+        // A successful query can still yield no `Metadata` — some orgs refuse
+        // the projection per row rather than failing the request.
+        if (record.Metadata == null) unreadable++;
         candidates.push({
           versionId,
           apiName: record.Definition?.DeveloperName ?? record.MasterLabel ?? versionId,
@@ -307,6 +322,7 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
           discovery,
         });
       } catch {
+        unreadable++;
         candidates.push({
           versionId,
           apiName: versionId,
@@ -317,9 +333,31 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
         });
       }
     }
-    // Only the dependency path can overflow the cap (the broad scan queries at
-    // most FLOW_ANALYSE_CAP rows), so an un-analysed candidate always carries a
-    // real dependency edge and is honestly an `inferred` lead.
+    // An ANALYSED candidate can still end up with no metadata — the fetch threw,
+    // or the row came back without `Metadata`. That is a different case from the
+    // cap overflow below, and it is the one that decides whether a row may
+    // assert "references this field":
+    //
+    // - `dependency` — the edge already established the reference, so the row is
+    //   an honest `inferred` lead and needs no note beyond its own evidence.
+    // - `broad-scan` — nothing links the flow to the field, so `flowRow` drops
+    //   it rather than assert a reference we never had. Disclosed here, because
+    //   a drop the user cannot see is exactly the failure this panel exists to
+    //   avoid (and because, unlike a row, a drop leaves no evidence of itself).
+    if (unreadable > 0) {
+      notes.push(
+        discovery === 'broad-scan'
+          ? `${unreadable} flow(s) in the scanned set could not be read (their metadata was ` +
+              `unavailable) and are NOT listed. Nothing linked them to ${object}.${field} in the ` +
+              `first place, so there is no reference to report — but any of them could write it.`
+          : `${unreadable} flow(s) linked to ${object}.${field} could not be read (their metadata ` +
+              `was unavailable); each is listed as an inferred lead rather than dropped.`,
+      );
+    }
+    // Distinct from the above: these were never fetched at all. Only the
+    // dependency path can overflow the cap (the broad scan queries at most
+    // FLOW_ANALYSE_CAP rows), so a cap-skipped candidate always carries a real
+    // dependency edge and is honestly an `inferred` lead.
     for (const versionId of skipped) {
       candidates.push({
         versionId,

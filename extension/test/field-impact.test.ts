@@ -469,7 +469,7 @@ describe('features/field-impact — rendered surface', () => {
     await tick();
 
     const note = document.querySelector('[role="note"]')!;
-    expect(note.textContent).toContain('No dependency edge for Account.Industry');
+    expect(note.textContent).toContain('is a standard field');
     expect(note.textContent).toContain('not every flow in the org');
   });
 
@@ -860,16 +860,182 @@ describe('features/field-impact — a refused query is never reported as a findi
     expect(note.toLowerCase()).not.toContain('dependency edge for');
   });
 
-  it('still says "No dependency edge" when that was actually ESTABLISHED', async () => {
-    // A standard field genuinely has no CustomField row — nothing was refused,
-    // so the confident statement is the true one here.
-    const feature = createFieldImpactFeature({ win: fakeWin(), api: stubApi() });
+  // N8: only ONE of the four reasons for falling back is a measurement. The
+  // note must say which one applies rather than reaching for the strongest
+  // phrasing, and "no dependency edge" is only earned when the query ran.
+  it('says "No dependency edge was found" only when the query actually RAN and was empty', async () => {
+    const toolingQuery = vi.fn(async (soql: string) => {
+      // Custom field, CustomField row exists, dependency query returns nothing:
+      // the one case where the absence of an edge was genuinely measured.
+      if (soql.includes('FROM CustomField')) return { records: [{ Id: '00Nxx1' }], size: 1, done: true };
+      return { records: [], size: 0, done: true };
+    });
+    const api = {
+      apiVersion: 'v62.0',
+      orgOrigin: ORIGIN,
+      apiGet: vi.fn(async () => ({})),
+      query: vi.fn(),
+      toolingQuery,
+      apiRequest: vi.fn(),
+    } as unknown as SalesforceApiClient;
+    const feature = createFieldImpactFeature({ win: fakeWin(), api });
+    await feature.openFor('Account', 'Industry__c');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    expect(note).toContain('No dependency edge was found for Account.Industry__c');
+    expect(note).not.toContain('was refused');
+    expect(note).not.toContain('is a standard field');
+  });
+
+  it('does NOT claim a measured absence for a STANDARD field — the query never ran', async () => {
+    const api = stubApi();
+    const feature = createFieldImpactFeature({ win: fakeWin(), api });
     await feature.openFor('Account', 'Industry');
     await tick();
     const note = document.querySelector('[role="note"]')!.textContent!;
-    expect(note).toContain('No dependency edge for Account.Industry');
-    expect(note).not.toContain('was refused');
+    expect(note).toContain('Account.Industry is a standard field');
+    expect(note).toContain('no CustomField record for a dependency edge to point at');
+    expect(note.toLowerCase()).not.toContain('no dependency edge was found');
+    // …and the claim is honest because the query genuinely was short-circuited.
+    const queries = (api.toolingQuery as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(queries.some((q: string) => q.includes('FROM CustomField'))).toBe(false);
   });
+
+  it('says the CustomField record was missing when the lookup ran but found nothing', async () => {
+    const toolingQuery = vi.fn(async () => ({ records: [], size: 0, done: true }));
+    const api = {
+      apiVersion: 'v62.0',
+      orgOrigin: ORIGIN,
+      apiGet: vi.fn(async () => ({})),
+      query: vi.fn(),
+      toolingQuery,
+      apiRequest: vi.fn(),
+    } as unknown as SalesforceApiClient;
+    const feature = createFieldImpactFeature({ win: fakeWin(), api });
+    await feature.openFor('Account', 'Ghost__c');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    expect(note).toContain('No CustomField record was found for Account.Ghost__c');
+    expect(note.toLowerCase()).not.toContain('no dependency edge was found');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B3 — an un-analysable candidate must not assert a reference nobody
+// established. On the broad scan the flow is in the set only for being recently
+// modified, so with no metadata there is no evidence of ANYTHING: a row there
+// would contradict the note printed above it and, by making counts.total === 1,
+// silently disable the empty-state hedge on the exact path that needs it.
+// Both ways the metadata can go missing are covered on both paths.
+// ---------------------------------------------------------------------------
+describe('features/field-impact — an unreadable flow never implies a reference', () => {
+  const UNRELATED = 'Unrelated Opportunity Flow';
+
+  /** @param mode how the metadata goes missing; @param custom drives which path. */
+  function unreadableApi(mode: 'throws' | 'null-metadata', custom: boolean): SalesforceApiClient {
+    const toolingQuery = vi.fn(async (soql: string) => {
+      if (soql.includes('FROM CustomField')) {
+        return custom ? { records: [{ Id: '00Nxx1' }], size: 1, done: true } : { records: [], size: 0, done: true };
+      }
+      if (soql.includes('MetadataComponentDependency')) {
+        return { records: [{ MetadataComponentId: '301zzz' }], size: 1, done: true };
+      }
+      if (soql.includes("Status = 'Active'")) {
+        return { records: [{ Id: '301zzz' }], size: 1, done: true };
+      }
+      if (soql.includes('FROM Flow WHERE Id')) {
+        if (mode === 'throws') throw new Error('METADATA_TOO_LARGE');
+        return {
+          records: [
+            {
+              Id: '301zzz',
+              MasterLabel: UNRELATED,
+              Status: 'Active',
+              Definition: { DeveloperName: 'Unrelated_Opportunity_Flow' },
+              Metadata: null,
+            },
+          ],
+          size: 1,
+          done: true,
+        };
+      }
+      return { records: [], size: 0, done: true };
+    });
+    return {
+      apiVersion: 'v62.0',
+      orgOrigin: ORIGIN,
+      apiGet: vi.fn(async () => ({})),
+      query: vi.fn(),
+      toolingQuery,
+      apiRequest: vi.fn(),
+    } as unknown as SalesforceApiClient;
+  }
+
+  for (const mode of ['throws', 'null-metadata'] as const) {
+    describe(`broad scan, metadata ${mode}`, () => {
+      it('does not list the flow at all', async () => {
+        const feature = createFieldImpactFeature({ win: fakeWin(), api: unreadableApi(mode, false) });
+        await feature.openFor('Account', 'Status');
+        await tick();
+        expect(document.body.textContent).not.toContain(UNRELATED);
+        expect(document.body.textContent).not.toContain('References this field');
+        expect(document.querySelectorAll('tbody tr').length).toBe(0);
+      });
+
+      it('keeps the empty-state hedge instead of announcing a confident count', async () => {
+        // The regression this guards: a single unreadable flow made
+        // counts.total === 1, so the run took the populated branch and
+        // announced "1 source(s)" — defeating the hedge entirely.
+        const feature = createFieldImpactFeature({ win: fakeWin(), api: unreadableApi(mode, false) });
+        await feature.openFor('Account', 'Status');
+        await tick();
+        const summary = document.querySelector('[role="status"]')!.textContent!;
+        expect(summary).not.toContain('source(s)');
+        expect(summary).toContain('in the scanned set');
+        expect(summary).toContain('partial scan');
+      });
+
+      it('discloses the drop rather than performing it silently', async () => {
+        const feature = createFieldImpactFeature({ win: fakeWin(), api: unreadableApi(mode, false) });
+        await feature.openFor('Account', 'Status');
+        await tick();
+        const note = document.querySelector('[role="note"]')!.textContent!;
+        expect(note).toContain('1 flow(s) in the scanned set could not be read');
+        expect(note).toContain('are NOT listed');
+        expect(note).toContain('no reference to report');
+      });
+
+      it('leaves the note\'s "only when its metadata binds the write" promise true', async () => {
+        const feature = createFieldImpactFeature({ win: fakeWin(), api: unreadableApi(mode, false) });
+        await feature.openFor('Account', 'Status');
+        await tick();
+        const note = document.querySelector('[role="note"]')!.textContent!;
+        // The promise is printed…
+        expect(note).toContain('only reported when its metadata binds the write to Account');
+        // …and nothing is reported that would contradict it.
+        expect(document.querySelectorAll('tbody tr').length).toBe(0);
+      });
+    });
+
+    describe(`dependency path, metadata ${mode}`, () => {
+      it('KEEPS the flow as an inferred lead — the edge established the reference', async () => {
+        const feature = createFieldImpactFeature({ win: fakeWin(), api: unreadableApi(mode, true) });
+        await feature.openFor('Account', 'Industry__c');
+        await tick();
+        expect(document.body.textContent).toContain('References this field');
+        expect(document.querySelector('[role="status"]')!.textContent).toContain('1 source(s)');
+      });
+
+      it('discloses that the metadata was unreadable, without dropping it', async () => {
+        const feature = createFieldImpactFeature({ win: fakeWin(), api: unreadableApi(mode, true) });
+        await feature.openFor('Account', 'Industry__c');
+        await tick();
+        const note = document.querySelector('[role="note"]')!.textContent!;
+        expect(note).toContain('1 flow(s) linked to Account.Industry__c could not be read');
+        expect(note).toContain('inferred lead rather than dropped');
+      });
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
