@@ -2,6 +2,7 @@
 // without double-initialising on the same URL.
 
 import type { Context } from './context-detector.js';
+import { registerFeatureDefault } from './feature-defaults.js';
 import { showToast } from '../ui/toast.js';
 
 export type FeatureId = string;
@@ -11,7 +12,12 @@ export interface FeatureManifest {
   name: string;
   contexts: readonly Context[];
   permissions?: readonly chrome.runtime.ManifestPermission[];
-  /** Defaults to true when the user has no explicit `settings.features[id]` entry. */
+  /**
+   * Whether the feature is on for a user who has never toggled it. Omitted
+   * means `true`. Honoured at runtime by `isFeatureEnabled()` (via
+   * lib/feature-defaults.ts) — an explicit `settings.features[id]` entry still
+   * wins, so a user's own choice is never overridden by this.
+   */
   enabledByDefault?: boolean;
   /** Composed into the top-level Settings via registerSettingsShape. */
   settingsSchema?: import('zod').ZodTypeAny;
@@ -117,6 +123,12 @@ export function createFeatureRegistry(options: {
 
   return {
     register(feature) {
+      // Record the manifest default before the permission gate below: even a
+      // feature we decline to register can still be asked about by the options
+      // page or a stale stored id, and it must answer from its own manifest
+      // rather than falling back to "enabled".
+      registerFeatureDefault(feature.manifest.id, feature.manifest.enabledByDefault);
+
       const declared = feature.manifest.permissions ?? [];
       const missing = declared.filter((p) => !manifestPermissions.has(p));
       if (missing.length > 0) {

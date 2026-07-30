@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod';
 import {
   _clearSettingsCacheForTests,
@@ -11,6 +11,10 @@ import {
   saveSettings,
   SettingsSchema,
 } from '../lib/settings.js';
+import {
+  _clearFeatureDefaultForTests,
+  registerFeatureDefault,
+} from '../lib/feature-defaults.js';
 
 describe('extension/lib/settings', () => {
   beforeEach(() => {
@@ -147,10 +151,79 @@ describe('settings.features legacy id adapter', () => {
     expect(isFeatureEnabled(s, 'missing-descriptions')).toBe(false);
   });
 
-  it('defaults unknown ids to enabled (enabledByDefault semantics)', async () => {
+  it('defaults an id with no manifest entry to enabled', async () => {
+    // An id we have no manifest for is a stale/legacy storage key, not a
+    // feature that asked to ship off. Enabled is the safe answer.
     chrome.storage.local.set({ 'sfdt.settings': { features: {} } } as any);
     const s = await loadSettings();
     expect(isFeatureEnabled(s, 'never-toggled')).toBe(true);
+  });
+});
+
+describe('isFeatureEnabled honours manifest enabledByDefault', () => {
+  const OFF_ID = '__test-off-by-default__';
+  const ON_ID = '__test-on-by-default__';
+
+  beforeEach(() => {
+    _clearSettingsCacheForTests();
+    chrome.storage.local.clear();
+    registerFeatureDefault(OFF_ID, false);
+    registerFeatureDefault(ON_ID, true);
+  });
+
+  afterEach(() => {
+    _clearFeatureDefaultForTests(OFF_ID);
+    _clearFeatureDefaultForTests(ON_ID);
+  });
+
+  it('resolves an enabledByDefault:false feature to disabled with no stored preference', async () => {
+    chrome.storage.local.set({ 'sfdt.settings': { features: {} } } as any);
+    const s = await loadSettings();
+    expect(isFeatureEnabled(s, OFF_ID)).toBe(false);
+  });
+
+  it('resolves an enabledByDefault:true feature to enabled with no stored preference', async () => {
+    chrome.storage.local.set({ 'sfdt.settings': { features: {} } } as any);
+    const s = await loadSettings();
+    expect(isFeatureEnabled(s, ON_ID)).toBe(true);
+  });
+
+  it('treats an omitted enabledByDefault as enabled', async () => {
+    const IMPLICIT_ID = '__test-implicit-default__';
+    registerFeatureDefault(IMPLICIT_ID, undefined);
+    chrome.storage.local.set({ 'sfdt.settings': { features: {} } } as any);
+    const s = await loadSettings();
+    expect(isFeatureEnabled(s, IMPLICIT_ID)).toBe(true);
+    _clearFeatureDefaultForTests(IMPLICIT_ID);
+  });
+
+  // The main regression risk of making the flag authoritative: a stored choice
+  // must keep beating the manifest, in BOTH directions.
+  it('a stored `true` turns on a feature that ships off by default', async () => {
+    chrome.storage.local.set({
+      'sfdt.settings': { features: { [OFF_ID]: true } },
+    } as any);
+    const s = await loadSettings();
+    expect(isFeatureEnabled(s, OFF_ID)).toBe(true);
+  });
+
+  it('a stored `false` keeps off a feature that ships on by default', async () => {
+    chrome.storage.local.set({
+      'sfdt.settings': { features: { [ON_ID]: false } },
+    } as any);
+    const s = await loadSettings();
+    expect(isFeatureEnabled(s, ON_ID)).toBe(false);
+  });
+
+  it('a legacy camelCase stored preference still beats the manifest default', async () => {
+    registerFeatureDefault('setup-tabs', false);
+    chrome.storage.local.set({
+      'sfdt.settings': { features: { setupTabs: true } },
+    } as any);
+    const s = await loadSettings();
+    expect(isFeatureEnabled(s, 'setup-tabs')).toBe(true);
+    // Restore the real manifest default for any later test in this file.
+    registerFeatureDefault('setup-tabs', true);
   });
 });
 
