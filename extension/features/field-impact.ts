@@ -107,10 +107,21 @@ export function workflowFieldUpdateQuery(object: string, withMetadata: boolean):
  * SOSL for the Apex text search. Field API names are `[A-Za-z0-9_]` only, so an
  * unexpected character means we refuse to build a search rather than emit a
  * term with SOSL syntax in it.
+ *
+ * The cap is applied THREE ways on purpose, because a statement-trailing SOSL
+ * `LIMIT` is not a reliable total: a per-object `LIMIT` inside each `RETURNING`
+ * clause, the trailing `LIMIT`, and — the one that actually binds — a hard
+ * client-side truncation in `fetchApexHits`. Relying on the trailing clause
+ * alone let two returned sObject types yield `2 × APEX_HIT_CAP` rows while the
+ * constant claimed one.
  */
 export function apexSearchSosl(field: string): string | null {
   if (!/^[A-Za-z0-9_]+$/.test(field)) return null;
-  return `FIND {${field}} IN ALL FIELDS RETURNING ApexClass(Id, Name), ApexTrigger(Id, Name) LIMIT ${APEX_HIT_CAP}`;
+  return (
+    `FIND {${field}} IN ALL FIELDS RETURNING ` +
+    `ApexClass(Id, Name LIMIT ${APEX_HIT_CAP}), ApexTrigger(Id, Name LIMIT ${APEX_HIT_CAP})` +
+    ` LIMIT ${APEX_HIT_CAP}`
+  );
 }
 
 // --------------------------------------------------------------------------
@@ -167,6 +178,9 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
     const notes: string[] = [];
     const fieldId = await resolveCustomFieldId(object, field);
     let versionIds: string[] = [];
+    // Provenance decides how much benefit of the doubt each candidate's writes
+    // get downstream (see FlowCandidate.discovery in lib/field-impact.ts).
+    let discovery: FlowCandidate['discovery'] = 'dependency';
 
     if (fieldId) {
       try {
@@ -184,16 +198,27 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
     }
 
     if (!fieldId || versionIds.length === 0) {
-      // No dependency edge (standard field, or the org records none) — fall back
-      // to the most recently modified ACTIVE flows and say so plainly.
+      // No dependency edge (a standard field has no CustomField row; some orgs
+      // record none) — fall back to a broad sweep of the most recently modified
+      // ACTIVE flows. Because nothing ties these flows to the field, they are
+      // adjudicated STRICTLY: only a write bound to `object` in the flow's own
+      // metadata counts. Both the breadth AND that precision rule are disclosed.
+      discovery = 'broad-scan';
       try {
         const flows = await api.toolingQuery<{ Id?: string }>(recentActiveFlowsQuery());
         versionIds = flows.records
           .map((r) => r.Id)
           .filter((id): id is string => typeof id === 'string' && id.length > 0);
         notes.push(
-          `No dependency edge for ${object}.${field}, so Flow coverage is a partial scan of the ` +
+          `No dependency edge for ${object}.${field}, so Flow coverage is a broad scan of the ` +
             `${versionIds.length} most recently modified active flow(s) — not every flow in the org.`,
+        );
+        notes.push(
+          `On that broad scan a flow is only reported when its metadata binds the write to ` +
+            `${object} itself. A write into an untyped or Apex-defined variable is SKIPPED rather ` +
+            `than guessed at, because matching on the field name alone would attribute any flow ` +
+            `writing some other object's "${field}" to this one. Flows that do write ${object}.${field} ` +
+            `through such an unbindable reference are therefore missing from these results.`,
         );
       } catch (err) {
         notes.push(`Flows could not be listed (${message(err)}).`);
@@ -227,6 +252,7 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
           label: record.MasterLabel ?? null,
           status: record.Status ?? null,
           metadata: (record.Metadata ?? null) as FlowCandidate['metadata'],
+          discovery,
         });
       } catch {
         candidates.push({
@@ -235,11 +261,22 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
           label: null,
           status: null,
           metadata: null,
+          discovery,
         });
       }
     }
+    // Only the dependency path can overflow the cap (the broad scan queries at
+    // most FLOW_ANALYSE_CAP rows), so an un-analysed candidate always carries a
+    // real dependency edge and is honestly an `inferred` lead.
     for (const versionId of skipped) {
-      candidates.push({ versionId, apiName: versionId, label: null, status: null, metadata: null });
+      candidates.push({
+        versionId,
+        apiName: versionId,
+        label: null,
+        status: null,
+        metadata: null,
+        discovery,
+      });
     }
     return { candidates, notes };
   }
@@ -342,6 +379,20 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
         if (type !== 'ApexClass' && type !== 'ApexTrigger') continue;
         if (!record.Id || !record.Name) continue;
         hits.push({ id: record.Id, name: record.Name, type });
+      }
+      // The real bound. Sorted first so the truncation is deterministic rather
+      // than "whatever order the search happened to return".
+      hits.sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+      if (hits.length > APEX_HIT_CAP) {
+        const total = hits.length;
+        hits.length = APEX_HIT_CAP;
+        return {
+          hits,
+          notes: [
+            `The Apex text search matched ${total} classes/triggers; the first ${APEX_HIT_CAP} ` +
+              `(by type, then name) are listed. Others exist.`,
+          ],
+        };
       }
       return { hits, notes: [] };
     } catch (err) {

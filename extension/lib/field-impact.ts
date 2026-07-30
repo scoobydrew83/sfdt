@@ -66,6 +66,21 @@ export interface FlowCandidate {
    * `inferred` row, never a confirmed one.
    */
   metadata: Parameters<typeof extractFieldWrites>[0];
+  /**
+   * HOW this candidate was found, which decides how much benefit of the doubt a
+   * write gets:
+   *
+   * - `dependency` (default) — `MetadataComponentDependency` says this flow
+   *   references the field. A write we cannot bind to an object is still a real
+   *   lead, so it is kept and labelled `inferred`.
+   * - `broad-scan` — the flow came from an untargeted sweep (no dependency edge
+   *   exists, e.g. for a standard field). There is NO evidence this flow touches
+   *   the field at all, so an unbindable write would be a pure NAME collision:
+   *   a flow assigning `Status` into an untyped wrapper would be reported as
+   *   writing your object's `Status`. Those writes are dropped, not downgraded —
+   *   only writes bound to the queried object in the flow's own metadata count.
+   */
+  discovery?: 'dependency' | 'broad-scan';
 }
 
 export interface WorkflowFieldUpdateCandidate {
@@ -174,12 +189,19 @@ function flowRow(
     };
   }
 
+  // A broad-scan candidate has no evidence it touches this field, so an
+  // unbindable write there is a name collision, not a lead. flow-core drops
+  // those under `requireResolvedObject`; the dependency-narrowed path keeps its
+  // lenient behaviour, where an unbindable write IS a real lead.
+  const broadScan = candidate.discovery === 'broad-scan';
   const matches = filterFieldWrites(extractFieldWrites(candidate.metadata), {
     field: input.field,
     object: input.object,
+    requireResolvedObject: broadScan,
   });
-  // Analysed and writes nothing → it only READS the field. Not a row: this is
-  // exactly what flow-core buys us over a raw dependency query.
+  // Analysed and writes nothing → it only READS the field (or, on a broad scan,
+  // merely shares a field name). Not a row: this is exactly what flow-core buys
+  // us over a raw dependency query.
   if (matches.length === 0) return null;
 
   const confirmed = matches.some((w) => w.status === 'confirmed');

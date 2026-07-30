@@ -247,13 +247,35 @@ export interface FieldWriteQuery {
   field: string;
   /** Object API name to match. Omit to match any object. */
   object?: string | null;
+  /**
+   * When true, a write whose object could not be resolved (`object === null`,
+   * always `status: 'inferred'`) is DROPPED instead of kept.
+   *
+   * Default `false` — the lenient behaviour, correct when the caller already
+   * knows the flow references the field in question (e.g. it was narrowed by a
+   * `MetadataComponentDependency` edge). There, an unbindable write is a real
+   * lead worth surfacing as `inferred`.
+   *
+   * Set `true` when the candidate flow has NO such backing — e.g. a broad
+   * "recently modified flows" sweep. Without a per-flow guarantee that the flow
+   * touches this field at all, keeping unbindable writes matches on the bare
+   * field NAME alone, so a flow assigning `Status` into an untyped wrapper
+   * variable would be reported as writing YOUR object's `Status`. Common
+   * standard-field names (`Status`, `Type`, `Rating`, `Description`) make that
+   * collision the norm rather than the exception, and a false positive that
+   * renders like a real hit is worse than no result at all.
+   */
+  requireResolvedObject?: boolean;
 }
 
 /**
- * Narrow a flow's writes to one field. Writes whose object could not be resolved
- * (`object === null`, always `status: 'inferred'`) are KEPT when an object is
- * supplied — dropping them would silently hide a real write, and keeping them
- * labelled `inferred` is the honest presentation.
+ * Narrow a flow's writes to one field.
+ *
+ * By default, writes whose object could not be resolved (`object === null`,
+ * always `status: 'inferred'`) are KEPT when an object is supplied — dropping
+ * them would silently hide a real write from a caller that already knows this
+ * flow touches the field. Callers without that backing must pass
+ * `requireResolvedObject: true`; see the field's doc comment for why.
  */
 export function filterFieldWrites(
   writes: readonly FlowFieldWrite[],
@@ -264,8 +286,8 @@ export function filterFieldWrites(
   const object = str(query.object).toLowerCase();
   return writes.filter((write) => {
     if (write.field.toLowerCase() !== field) return false;
+    if (write.object === null) return !query.requireResolvedObject;
     if (!object) return true;
-    if (write.object === null) return true;
     return write.object.toLowerCase() === object;
   });
 }

@@ -138,6 +138,50 @@ describe('lib/field-impact — viewmodel', () => {
     expect(vm.rows[0]!.detail).toContain('object could not be bound');
   });
 
+  describe('broad-scan candidates cannot be attributed on a name collision', () => {
+    // A flow that writes `Industry__c` into an UNTYPED wrapper variable. On the
+    // dependency-narrowed path this is a real lead (something already told us
+    // the flow references the field). On a broad scan it is nothing but a name
+    // match, and reporting it would attribute another object's field to ours.
+    const collision = {
+      versionId: '301xx7',
+      apiName: 'Unrelated_Writer',
+      label: 'Unrelated Writer',
+      metadata: writesIndustryUnbound,
+    };
+
+    it('is dropped on the broad-scan path — no false attribution', () => {
+      const vm = vmFor({ flows: [{ ...collision, discovery: 'broad-scan' as const }] });
+      expect(vm.rows).toEqual([]);
+      expect(vm.counts).toEqual({ confirmed: 0, inferred: 0, total: 0 });
+    });
+
+    it('is still kept, as inferred, on the dependency-narrowed path', () => {
+      const vm = vmFor({ flows: [{ ...collision, discovery: 'dependency' as const }] });
+      expect(vm.rows).toHaveLength(1);
+      expect(vm.rows[0]!.status).toBe('inferred');
+    });
+
+    it('defaults to the lenient dependency behaviour when provenance is absent', () => {
+      expect(vmFor({ flows: [collision] }).rows).toHaveLength(1);
+    });
+
+    it('still reports an object-BOUND write found by a broad scan', () => {
+      const vm = vmFor({
+        flows: [
+          {
+            versionId: '301xx8',
+            apiName: 'Account_Stamp',
+            metadata: writesIndustry,
+            discovery: 'broad-scan' as const,
+          },
+        ],
+      });
+      expect(vm.rows).toHaveLength(1);
+      expect(vm.rows[0]!.status).toBe('confirmed');
+    });
+  });
+
   it('labels an un-analysed Flow candidate as inferred and says why', () => {
     const vm = vmFor({
       flows: [{ versionId: '301xx4', apiName: 'Not_Scanned', metadata: null }],
@@ -263,6 +307,14 @@ describe('features/field-impact — query construction', () => {
   it('queries workflow field updates with and without Metadata', () => {
     expect(workflowFieldUpdateQuery('Account', true)).toContain('Metadata');
     expect(workflowFieldUpdateQuery('Account', false)).not.toContain('Metadata');
+  });
+
+  it('caps the Apex search per RETURNING object, not just at the statement end', () => {
+    const sosl = apexSearchSosl('Industry__c')!;
+    // A trailing LIMIT alone is not a reliable total across two returned types.
+    expect(sosl).toContain('ApexClass(Id, Name LIMIT 25)');
+    expect(sosl).toContain('ApexTrigger(Id, Name LIMIT 25)');
+    expect(sosl.endsWith('LIMIT 25')).toBe(true);
   });
 
   it('refuses to build an Apex search for anything that is not a plain API name', () => {
@@ -498,6 +550,184 @@ describe('features/field-impact — rendered surface', () => {
       const label = document.querySelector(`label[for="${input.id}"]`);
       expect(label?.textContent).toBeTruthy();
     }
+  });
+});
+
+describe('features/field-impact — broad-scan precision (standard fields)', () => {
+  // A standard field name (`Status`) is the worst case: every org has flows
+  // writing SOME object's Status. Two flows come back from the broad sweep —
+  // one genuinely writes Case.Status, the other writes `Status` into an untyped
+  // Apex wrapper and has nothing to do with Case.
+  const writesCaseStatus = {
+    label: 'Case Triage',
+    start: { object: 'Case', triggerType: 'RecordBeforeSave', recordTriggerType: 'Create' },
+    assignments: [
+      {
+        name: 'Set_Status',
+        label: 'Set Status',
+        assignmentItems: [{ assignToReference: '$Record.Status', operator: 'Assign', value: {} }],
+      },
+    ],
+  };
+  const writesSomeOtherStatus = {
+    label: 'Order Wrapper Builder',
+    variables: [{ name: 'wrapper', dataType: 'Apex', apexClass: 'OrderWrapper' }],
+    assignments: [
+      {
+        name: 'Fill',
+        label: 'Fill Wrapper',
+        assignmentItems: [{ assignToReference: 'wrapper.Status', operator: 'Assign', value: {} }],
+      },
+    ],
+  };
+
+  function broadScanApi(): SalesforceApiClient {
+    const toolingQuery = vi.fn(async (soql: string) => {
+      if (soql.includes("Status = 'Active'")) {
+        return { records: [{ Id: '301aaa' }, { Id: '301bbb' }], size: 2, done: true };
+      }
+      if (soql.includes("FROM Flow WHERE Id = '301aaa'")) {
+        return {
+          records: [
+            {
+              Id: '301aaa',
+              MasterLabel: 'Case Triage',
+              Status: 'Active',
+              Definition: { DeveloperName: 'Case_Triage' },
+              Metadata: writesCaseStatus,
+            },
+          ],
+          size: 1,
+          done: true,
+        };
+      }
+      if (soql.includes("FROM Flow WHERE Id = '301bbb'")) {
+        return {
+          records: [
+            {
+              Id: '301bbb',
+              MasterLabel: 'Order Wrapper Builder',
+              Status: 'Active',
+              Definition: { DeveloperName: 'Order_Wrapper_Builder' },
+              Metadata: writesSomeOtherStatus,
+            },
+          ],
+          size: 1,
+          done: true,
+        };
+      }
+      return { records: [], size: 0, done: true };
+    });
+    return {
+      apiVersion: 'v62.0',
+      orgOrigin: ORIGIN,
+      apiGet: vi.fn(async () => ({})),
+      query: vi.fn(),
+      toolingQuery,
+      apiRequest: vi.fn(),
+    } as unknown as SalesforceApiClient;
+  }
+
+  it('never resolves a CustomField Id for a standard field (so there IS no dependency edge)', async () => {
+    const api = broadScanApi();
+    const feature = createFieldImpactFeature({ win: fakeWin(), api });
+    await feature.openFor('Case', 'Status');
+    await tick();
+    const queries = (api.toolingQuery as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(queries.some((q: string) => q.includes('FROM CustomField'))).toBe(false);
+    expect(queries.some((q: string) => q.includes("Status = 'Active'"))).toBe(true);
+  });
+
+  it('reports the flow that binds the write to the queried object', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: broadScanApi() });
+    await feature.openFor('Case', 'Status');
+    await tick();
+    expect(document.body.textContent).toContain('Case Triage');
+  });
+
+  it('does NOT attribute an unrelated flow that merely writes a same-named field', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: broadScanApi() });
+    await feature.openFor('Case', 'Status');
+    await tick();
+    expect(document.body.textContent).not.toContain('Order Wrapper Builder');
+    expect(document.querySelector('[role="status"]')!.textContent).toContain('1 source(s)');
+  });
+
+  it('states the broad scan\'s PRECISION rule, not just its breadth', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: broadScanApi() });
+    await feature.openFor('Case', 'Status');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    // Breadth (was already disclosed) …
+    expect(note).toContain('not every flow in the org');
+    // … and precision: what the strict rule skips, and why.
+    expect(note).toContain('only reported when its metadata binds the write to Case');
+    expect(note).toContain('SKIPPED rather than guessed at');
+    expect(note).toContain('are therefore missing from these results');
+  });
+});
+
+describe('features/field-impact — the Apex cap is a real bound', () => {
+  function manyApexHitsApi(count: number): SalesforceApiClient {
+    // SOSL applies a statement-trailing LIMIT per returned sObject type, so two
+    // RETURNING types can hand back 2x the cap. The client-side truncation is
+    // what makes APEX_HIT_CAP mean what its name says.
+    const searchRecords = Array.from({ length: count }, (_, i) => ({
+      Id: `01p${String(i).padStart(12, '0')}`,
+      Name: `AccountService${String(i).padStart(3, '0')}`,
+      attributes: { type: i % 2 === 0 ? 'ApexClass' : 'ApexTrigger' },
+    }));
+    return {
+      apiVersion: 'v62.0',
+      orgOrigin: ORIGIN,
+      apiGet: vi.fn(async (endpoint: string) =>
+        endpoint.includes('/tooling/search/') ? { searchRecords } : {},
+      ),
+      query: vi.fn(),
+      toolingQuery: vi.fn(async () => ({ records: [], size: 0, done: true })),
+      apiRequest: vi.fn(),
+    } as unknown as SalesforceApiClient;
+  }
+
+  it('renders at most 25 Apex rows even when the search returns 50', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: manyApexHitsApi(50) });
+    await feature.openFor('Account', 'Industry__c');
+    await tick();
+    const rows = document.querySelectorAll('tbody tr');
+    expect(rows.length).toBe(25);
+  });
+
+  it('discloses the true bound as a scope note when it truncates', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: manyApexHitsApi(50) });
+    await feature.openFor('Account', 'Industry__c');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    expect(note).toContain('matched 50 classes/triggers');
+    expect(note).toContain('the first 25');
+    expect(note).toContain('Others exist');
+  });
+
+  it('adds no cap note when the result set is under the bound', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: manyApexHitsApi(4) });
+    await feature.openFor('Account', 'Industry__c');
+    await tick();
+    expect(document.querySelectorAll('tbody tr').length).toBe(4);
+    expect(document.body.textContent).not.toContain('Others exist');
+  });
+
+  it('truncates deterministically (by type, then name)', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: manyApexHitsApi(50) });
+    await feature.openFor('Account', 'Industry__c');
+    await tick();
+    const rows = [...document.querySelectorAll('tbody tr')];
+    const names = rows.map((tr) => tr.querySelectorAll('td')[2]!.textContent);
+    const types = rows.map((tr) => tr.querySelectorAll('td')[1]!.textContent);
+    // 25 ApexClass + 25 ApexTrigger came back; sorting by type then name means
+    // the retained window is exactly the classes, in name order.
+    expect(new Set(types)).toEqual(new Set(['Apex Class']));
+    expect(names[0]).toBe('AccountService000');
+    expect(names[names.length - 1]).toBe('AccountService048');
+    expect(names).toEqual([...names].sort());
   });
 });
 

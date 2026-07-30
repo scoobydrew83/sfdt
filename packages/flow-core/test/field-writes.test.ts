@@ -168,6 +168,52 @@ describe('flow-core/field-writes', () => {
     it('returns [] for an empty field name', () => {
       expect(filterFieldWrites(writes, { field: '  ' })).toEqual([]);
     });
+
+    describe('requireResolvedObject — for callers with no per-flow backing', () => {
+      it('drops the unresolved-object write instead of keeping it', () => {
+        const strict = filterFieldWrites(writes, {
+          field: 'Email',
+          object: 'Contact',
+          requireResolvedObject: true,
+        });
+        expect(keys(strict)).toEqual(['Contact.Email:assignment:confirmed']);
+      });
+
+      it('leaves every object-bound write untouched', () => {
+        const lenient = filterFieldWrites(writes, { field: 'Status', object: 'Case' });
+        const strict = filterFieldWrites(writes, {
+          field: 'Status',
+          object: 'Case',
+          requireResolvedObject: true,
+        });
+        expect(strict).toEqual(lenient);
+      });
+
+      it('never rescues a same-named write on a DIFFERENT object', () => {
+        // Task.Status is a real, bound write — it must not answer a Case.Status query
+        // under either mode.
+        for (const requireResolvedObject of [false, true]) {
+          const rows = filterFieldWrites(writes, {
+            field: 'Status',
+            object: 'Case',
+            requireResolvedObject,
+          });
+          expect(rows.every((w) => w.object === 'Case')).toBe(true);
+        }
+      });
+
+      it('drops unbindable writes even when no object is supplied', () => {
+        expect(
+          filterFieldWrites(writes, { field: 'Email', requireResolvedObject: true }).every(
+            (w) => w.object !== null,
+          ),
+        ).toBe(true);
+      });
+
+      it('defaults to the lenient behaviour when the flag is omitted', () => {
+        expect(filterFieldWrites(writes, { field: 'Email', object: 'Contact' })).toHaveLength(2);
+      });
+    });
   });
 
   it('exports a display label for every write kind', () => {
