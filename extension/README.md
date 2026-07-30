@@ -1,4 +1,4 @@
-# @sfdt/extension — SFDT SF Helper
+# @sfdt/extension — SFDT for Salesforce
 
 A Chrome extension that augments Salesforce Flow Builder and Setup with productivity features for admins and developers. Works standalone; an optional local bridge to the [`@sfdt/cli`](../README.md) unlocks deploy, rollback, quality scoring, and AI-powered analysis directly from the canvas.
 

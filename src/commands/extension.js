@@ -1,6 +1,6 @@
 /**
  * `sfdt extension` — manage the Chrome native messaging host that bridges
- * the SFDT SF Helper extension to this CLI when the local
+ * the SFDT for Salesforce extension to this CLI when the local
  * `sfdt ui` HTTP server isn't running.
  *
  * Subcommands:
@@ -65,7 +65,7 @@ export function registerExtensionCommand(program) {
 
   extension
     .command('install-host')
-    .description('Install the Chrome native messaging host manifest for the SFDT SF Helper extension')
+    .description('Install the Chrome native messaging host manifest for the SFDT for Salesforce extension')
     .requiredOption(
       '--extension-id <id>',
       'The Chrome extension ID (32 lowercase letters a–p; find it at chrome://extensions with Developer Mode on)',

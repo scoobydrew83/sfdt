@@ -228,7 +228,7 @@ async function render(): Promise<void> {
   const wrap = el('div', { class: 'wrap' });
 
   const title = el('h1');
-  title.textContent = '⚡ SFDT SF Helper';
+  title.textContent = '⚡ SFDT for Salesforce';
   wrap.appendChild(title);
 
   const subtitle = el('p', { class: 'subtitle' });

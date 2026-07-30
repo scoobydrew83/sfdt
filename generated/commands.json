@@ -3586,7 +3586,7 @@
             "extension",
             "install-host"
           ],
-          "description": "Install the Chrome native messaging host manifest for the SFDT SF Helper extension",
+          "description": "Install the Chrome native messaging host manifest for the SFDT for Salesforce extension",
           "aliases": [],
           "hidden": false,
           "arguments": [],

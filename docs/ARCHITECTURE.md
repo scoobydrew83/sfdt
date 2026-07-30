@@ -16,7 +16,7 @@ One codebase ships several **surfaces** over the same engine:
 |---------|-----------|-------|
 | CLI | `@sfdt/cli` on npm; the engine everything else drives | `sfdt <command>` |
 | GUI dashboard | Local Express server + prebuilt React app | `sfdt ui` (port 7654) |
-| Chrome extension | "SFDT SF Helper" — in-page tools on Salesforce Setup/Flow Builder/record pages | `extension/` (WXT) |
+| Chrome extension | "SFDT for Salesforce" — in-page tools on Salesforce Setup/Flow Builder/record pages | `extension/` (WXT) |
 | VS Code extension | `sfdt.sfdt-devtools` — CLI-backed command center inside the editor | `vscode/` |
 | Salesforce CLI plugin | `@sfdt/plugin` — exposes every command as `sf sfdt <command>` | `packages/plugin/` |
 | MCP server | Read/write tools for AI agents over stdio | `sfdt mcp` (`src/lib/mcp-server.js`) |

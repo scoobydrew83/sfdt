@@ -1286,7 +1286,7 @@ sfdt retrofit --source production --target staging --execute
 
 ## Commands: Chrome Extension Bridge
 
-These commands manage the SFDT SF Helper Chrome extension's connection to the local CLI. The extension talks to sfdt either over HTTP (`sfdt ui` server on port 7654) or via Chrome's native messaging API (managed by these commands). See the top-level README for the full architecture overview.
+These commands manage the SFDT for Salesforce Chrome extension's connection to the local CLI. The extension talks to sfdt either over HTTP (`sfdt ui` server on port 7654) or via Chrome's native messaging API (managed by these commands). See the top-level README for the full architecture overview.
 
 ### sfdt extension
 
