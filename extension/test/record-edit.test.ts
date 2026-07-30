@@ -160,22 +160,54 @@ describe('formatForInput / coerceForWire round trips', () => {
     expect(coerceForWire(f, '')).toBeNull();
   });
 
+  // A round-trip fixture whose seconds are zero is structurally incapable of
+  // detecting a truncating formatter — the assertion passes either way. Every
+  // datetime/time fixture below therefore carries NON-ZERO seconds, and the
+  // millisecond cases carry non-zero milliseconds.
   it('datetime: reads to browser local, writes back the same instant in ISO UTC', () => {
     const f = fld({ name: 'When__c', type: 'datetime' });
-    const wire = '2026-07-30T14:35:00.000Z';
+    const wire = '2026-07-30T14:35:45.000Z';
     const local = formatForInput(f, wire) as string;
-    expect(local).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
-    // The round trip must land on the same minute of the same instant.
+    expect(local).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
+    // The round trip must land on the same INSTANT — seconds included.
     expect(new Date(coerceForWire(f, local) as string).getTime()).toBe(new Date(wire).getTime());
     expect(coerceForWire(f, '')).toBeNull();
   });
 
+  it('datetime: the round trip preserves seconds and milliseconds exactly', () => {
+    const f = fld({ name: 'When__c', type: 'datetime' });
+    for (const wire of [
+      '2026-07-30T14:35:45.000Z',
+      '2026-07-30T14:35:00.123Z',
+      '2026-07-30T14:35:45.678Z',
+      '2026-01-01T00:00:01.001Z',
+    ]) {
+      expect(coerceForWire(f, formatForInput(f, wire)), wire).toBe(wire);
+    }
+  });
+
+  it('datetime: milliseconds are emitted only when non-zero', () => {
+    const f = fld({ name: 'When__c', type: 'datetime' });
+    expect(formatForInput(f, '2026-07-30T14:35:45.000Z')).not.toContain('.');
+    expect(formatForInput(f, '2026-07-30T14:35:45.250Z')).toContain('.250');
+  });
+
   it('time: reads to HH:mm:ss and writes back the Salesforce time literal', () => {
     const f = fld({ name: 'Opens__c', type: 'time' });
-    expect(formatForInput(f, '09:30:00.000Z')).toBe('09:30:00');
-    expect(coerceForWire(f, '09:30:00')).toBe('09:30:00.000Z');
+    expect(formatForInput(f, '09:30:45.000Z')).toBe('09:30:45');
+    expect(coerceForWire(f, '09:30:45')).toBe('09:30:45.000Z');
+    // A control with no `step` yields 'HH:mm'; that must still be a valid write.
     expect(coerceForWire(f, '09:30')).toBe('09:30:00.000Z');
     expect(coerceForWire(f, '')).toBeNull();
+  });
+
+  it('time: the round trip preserves seconds and milliseconds exactly', () => {
+    const f = fld({ name: 'Opens__c', type: 'time' });
+    for (const wire of ['09:30:45.000Z', '09:30:00.500Z', '23:59:59.999Z']) {
+      expect(coerceForWire(f, formatForInput(f, wire)), wire).toBe(wire);
+    }
+    expect(formatForInput(f, '09:30:45.000Z')).not.toContain('.');
+    expect(formatForInput(f, '09:30:45.500Z')).toBe('09:30:45.500');
   });
 
   it('numbers: empty becomes null, numeric text becomes a number', () => {
@@ -228,8 +260,8 @@ describe('formatForInput / coerceForWire round trips', () => {
       ['currency', 10.25],
       ['percent', 33],
       ['date', '2026-02-28'],
-      ['datetime', '2026-02-28T10:11:12.000Z'],
-      ['time', '10:11:12.000Z'],
+      ['datetime', '2026-02-28T10:11:12.345Z'],
+      ['time', '10:11:12.345Z'],
       ['picklist', 'Open'],
       ['multipicklist', 'A;B'],
       ['reference', '001800000000001AAA'],
@@ -286,10 +318,57 @@ describe('buildDirtyDiff', () => {
     const dt = { fields: [fld({ name: 'When__c', type: 'datetime' })] };
     const diff = buildDirtyDiff(
       dt,
-      { When__c: '2026-07-30T14:35:00.000+0000' },
-      { When__c: '2026-07-30T14:35:00Z' },
+      { When__c: '2026-07-30T14:35:45.000+0000' },
+      { When__c: '2026-07-30T14:35:45Z' },
     );
     expect(diff.changedFieldNames).toEqual([]);
+  });
+
+  // The regression this PR was held for. Reading a record into the controls and
+  // saving without touching anything must produce an EMPTY diff. A formatter
+  // that truncates makes an untouched field dirty AND silently rewrites it.
+  it('a read->render->save cycle with no user edit is never dirty', () => {
+    const d = {
+      fields: [
+        fld({ name: 'When__c', type: 'datetime' }),
+        fld({ name: 'Opens__c', type: 'time' }),
+        fld({ name: 'CloseDate', type: 'date' }),
+        fld({ name: 'Amount', type: 'currency' }),
+        fld({ name: 'IsActive__c', type: 'boolean' }),
+        fld({ name: 'Name', type: 'string' }),
+      ],
+    };
+    const record = {
+      When__c: '2026-07-30T14:35:45.678Z',
+      Opens__c: '09:30:45.500Z',
+      CloseDate: '2026-07-30',
+      Amount: 1234.5,
+      IsActive__c: true,
+      Name: 'Acme',
+    };
+    // What PR-2's controls will hold after rendering the record.
+    const edited = Object.fromEntries(
+      d.fields.map((f) => [f.name, formatForInput(f, record[f.name as keyof typeof record])]),
+    );
+    expect(buildDirtyDiff(d, record, edited)).toEqual({ patchBody: {}, changedFieldNames: [] });
+  });
+
+  it('datetime: a real edit writes the edited instant with its seconds intact', () => {
+    const f = fld({ name: 'When__c', type: 'datetime' });
+    const original = '2026-07-30T14:35:45.000Z';
+    // The user nudges the minute in the control; everything else is untouched.
+    // Derived from the formatted value rather than by string-substituting UTC
+    // digits, so this holds in every host zone including half-hour offsets.
+    const local = formatForInput(f, original) as string;
+    const parts = /^(\d{4}-\d{2}-\d{2}T\d{2}):(\d{2})(:\d{2})$/.exec(local);
+    expect(parts).not.toBeNull();
+    const [, head = '', minute = '', tail = ''] = parts ?? [];
+    const edited = `${head}:${String((Number(minute) + 5) % 60).padStart(2, '0')}${tail}`;
+    const diff = buildDirtyDiff({ fields: [f] }, { When__c: original }, { When__c: edited });
+    expect(diff.changedFieldNames).toEqual(['When__c']);
+    expect(diff.patchBody.When__c).toBe(new Date(edited).toISOString());
+    // The seconds survived the edit rather than being zeroed on the way through.
+    expect(diff.patchBody.When__c).toContain(':45.000Z');
   });
 
   it('clearing a value emits an explicit null', () => {

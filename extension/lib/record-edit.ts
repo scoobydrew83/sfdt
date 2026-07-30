@@ -195,18 +195,40 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-// Reads a `datetime` (an ISO-8601 UTC instant on the wire) into the
-// 'YYYY-MM-DDTHH:mm' shape <input type="datetime-local"> requires, in the
-// browser's own zone. Seconds are dropped: the control does not surface them
-// unless `step` asks, and a save must not silently rewrite them — coerceForWire
-// round-trips whatever the control gives back.
+// Reads a `datetime` (an ISO-8601 UTC instant on the wire) into the local-time
+// shape <input type="datetime-local"> accepts, in the browser's own zone.
+//
+// SECONDS AND MILLISECONDS ARE CARRIED, and that is the whole point: the
+// read->write round trip has to be VALUE-PRESERVING or buildDirtyDiff's
+// comparison is a lie. An earlier version emitted 'YYYY-MM-DDTHH:mm' on the
+// reasoning that the control does not surface seconds anyway — but that
+// destroys them one step before coerceForWire can preserve them, so a record
+// holding 14:35:45 read back as 14:35:00 and PATCHed itself to zero on a field
+// nobody edited. A control cannot round-trip what it was never given.
+//
+// The alternative considered and rejected: keep minute precision here and teach
+// buildDirtyDiff to ignore a difference the control cannot express. That works,
+// but it puts "what precision is the control?" inside the pure model, where it
+// would have to be kept in lockstep with PR-2's `step` attributes — a second
+// source of truth about the same question, which is the exact failure mode this
+// module exists to remove. Precision belongs to the value; display belongs to
+// the control.
+//
+// Consequence for PR-2: the control needs `step="1"` (or `step="0.001"` when the
+// value carries milliseconds) or the browser reports a stepMismatch. The value
+// itself survives either way — `step` governs validity and the spinner UI, not
+// value sanitisation.
+//
+// Milliseconds are emitted only when non-zero, so the overwhelmingly common
+// '.000' case still yields the clean 'YYYY-MM-DDTHH:mm:ss' shape.
 function toLocalDateTimeInput(value: string): string {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return (
+  const base =
     `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` +
-    `T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
-  );
+    `T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  const ms = d.getMilliseconds();
+  return ms === 0 ? base : `${base}.${String(ms).padStart(3, '0')}`;
 }
 
 // Formats a record value for its native control.
@@ -234,10 +256,15 @@ export function formatForInput(field: FieldDescribe, value: unknown): InputValue
   if (field.type === 'datetime') return toLocalDateTimeInput(String(value));
 
   if (field.type === 'time') {
-    // Salesforce sends 'HH:mm:ss.SSSZ'; <input type="time"> wants 'HH:mm:ss'.
+    // Salesforce sends 'HH:mm:ss.SSSZ'; <input type="time"> wants 'HH:mm:ss'
+    // (plus '.SSS' when sub-second precision is present). Same losslessness
+    // rule as datetime above, and the same `step` consequence for PR-2.
     const s = String(value);
-    const match = /^(\d{2}:\d{2}(?::\d{2})?)/.exec(s);
-    return match?.[1] ?? s;
+    const match = /^(\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,3}))?/.exec(s);
+    if (!match) return s;
+    const ms = (match[4] ?? '').padEnd(3, '0');
+    const base = `${match[1]}:${match[2]}:${match[3] ?? '00'}`;
+    return ms === '000' ? base : `${base}.${ms}`;
   }
 
   return String(value);
