@@ -589,7 +589,7 @@
       "surfaces": {
         "cli": true,
         "sfPlugin": true,
-        "gui": false,
+        "gui": true,
         "vscode": true,
         "chrome": false
       },

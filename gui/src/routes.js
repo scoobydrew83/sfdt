@@ -26,6 +26,7 @@ export const GUI_ROUTES = [
   { id: 'explain', label: 'Explain', group: 'Analyze' },
   { id: 'flows', label: 'Flow Intelligence', group: 'Analyze' },
   { id: 'dependency', label: 'Dependency Graph', group: 'Analyze' },
+  { id: 'soql', label: 'SOQL Console', group: 'Analyze' },
   { id: 'scratch', label: 'Scratch Orgs', group: 'Analyze' },
   { id: 'data', label: 'Data Sets', group: 'Analyze' },
   { id: 'docs', label: 'Documentation', group: 'Analyze' },
