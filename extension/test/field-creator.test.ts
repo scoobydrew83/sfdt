@@ -618,4 +618,22 @@ describe('field-creator — error & resilience branches', () => {
     await deploy();
     expect(document.body.textContent).toContain('Error');
   });
+
+  // The SObject-list catch used to log the error and show a fixed string, so
+  // the org's reason never reached the user at all.
+  it('surfaces the org reason when the SObject list cannot be loaded', async () => {
+    const { feature } = mountFC({
+      apiGet: vi.fn(async () => {
+        throw new Error(
+          'Salesforce GET request failed (HTTP 403): API access is disabled\nAPI_DISABLED_FOR_ORG — an admin has to enable it.',
+        );
+      }) as any,
+    });
+    await feature.onActivate?.();
+    await flush();
+    await flush();
+
+    expect(document.body.textContent).toContain('API access is disabled');
+    expect(document.body.textContent).toContain('API_DISABLED_FOR_ORG');
+  });
 });

@@ -10,6 +10,7 @@
 // core stays unit-testable without a browser.
 
 import { mySalesforceHostname } from './hostname.js';
+import { isSalesforceErrorBody } from './sf-error-body.js';
 
 // Placeholder the client stamps in place of the SOAP <sessionId>. The worker
 // swaps it for the real sid inside the SessionHeader before sending, so the
@@ -214,6 +215,52 @@ function isPure401(errors: SfApiFetchFailure['errors']): boolean {
   return errors.length > 0 && errors.every((e) => e.status === 401);
 }
 
+// Did the ORG answer this request, as opposed to the transport failing around
+// it? Salesforce rejecting what was asked — MALFORMED_QUERY, INVALID_FIELD,
+// INVALID_TYPE, an FLS denial — is a final answer. Both candidate base URLs are
+// two names for the SAME org, so a second host cannot answer such a request
+// differently; it can only fail differently. Retrying there cannot help, and it
+// actively hurts: `.lightning.force.com` routinely answers 401, so the
+// fallback's session error would stand in place of the real, actionable one.
+//
+// The test is the BODY, not the status. A status code cannot distinguish the
+// org from an intermediary — a 403 is Salesforce denying access when Salesforce
+// sends it and a block page when a corporate proxy sends it, and the two want
+// opposite handling. Requiring a body that actually parses as a Salesforce
+// error record (or a SOAP fault) means an opaque HTML 403 from a WAF, or a
+// routing 404 the org never saw, keeps the old fall-through to the other
+// candidate — while every error the org itself explained is still returned
+// verbatim.
+//
+// 401 (re-resolve the session), 5xx and network errors (status 0) are likewise
+// never definitive, whatever their body: those say something about the host,
+// not about the request.
+function isDefinitiveOrgFailure(errors: SfApiFetchFailure['errors']): boolean {
+  return (
+    errors.length > 0 &&
+    errors.every(
+      (e) =>
+        e.status >= 400 &&
+        e.status < 500 &&
+        e.status !== 401 &&
+        isSalesforceErrorBody(e.errorText),
+    )
+  );
+}
+
+// Nothing that actually reached the org may be dropped. When the fast path
+// failed and we fell through to the remaining candidates anyway, its failure is
+// still the first thing that happened to this request, so it is carried into
+// the reported errors instead of being replaced by whatever the alternate host
+// said. The page-side client decides which of them to headline.
+function mergeFailures(
+  result: SfApiFetchResponse,
+  fastPathFailure: SfApiFetchFailure | null,
+): SfApiFetchResponse {
+  if (result.ok || !fastPathFailure) return result;
+  return { ok: false, errors: [...fastPathFailure.errors, ...result.errors] };
+}
+
 // Executes a Salesforce REST/Tooling/SOAP call from the worker. Never returns
 // the sid. Resolution order:
 //   1. Fast path — a cached, org-id-verified base URL for this page host reads a
@@ -261,6 +308,11 @@ export async function sfApiFetch(
       if (sid && orgIdFromSid(sid) === cached.orgId) {
         const result = await runOnce([cached.baseUrl], sids, req, deps.fetchImpl);
         if (result.ok) return result;
+        // The org answered — that answer IS the result. Falling through here is
+        // what used to turn a bad-type WHERE clause (HTTP 400 MALFORMED_QUERY,
+        // naming the offending field) into "HTTP 401: Session expired or
+        // invalid" from the second host, discarding the real error entirely.
+        if (isDefinitiveOrgFailure(result.errors)) return result;
         excludeBaseUrl = cached.baseUrl;
         fastPathFailure = result;
         if (isPure401(result.errors)) await deps.cache.delete(pageHost);
@@ -297,7 +349,7 @@ export async function sfApiFetch(
       sids = await fetchSids(candidates, deps.cookieGet);
       if (sids.size === 0) {
         if (deps.cache) await deps.cache.delete(pageHost);
-        return result;
+        return mergeFailures(result, fastPathFailure);
       }
       result = await runOnce(candidates, sids, req, deps.fetchImpl);
     }
@@ -310,5 +362,5 @@ export async function sfApiFetch(
   }
   // Non-401 failures leave any existing cache entry intact (handled above); a
   // stale/401 entry was already deleted, so there is nothing more to clear here.
-  return result;
+  return mergeFailures(result, fastPathFailure);
 }

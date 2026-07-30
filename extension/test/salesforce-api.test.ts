@@ -265,12 +265,18 @@ describe('extension/lib/salesforce-api (thin client over sfApiFetch)', () => {
       expect((err as SalesforceRestError).status).toBe(400);
     });
 
-    it('keeps the short .message and the http-error tag byte-for-byte', async () => {
-      // Every existing caller reads only `.message`; this must stay additive.
+    it('leads with the org text unchanged, then adds the code, field and advice', async () => {
+      // Every caller reads only `.message`, so the guidance has to live there to
+      // reach a user. The org's own first line is preserved byte-for-byte and is
+      // never replaced — our text is only ever appended below it.
       const err = await failWith(
         '[{"message":"Value too long","errorCode":"STRING_TOO_LONG","fields":["Name"]}]',
       );
-      expect(err.message).toBe('Salesforce PATCH request failed (HTTP 400): Value too long');
+      const [headline, ...rest] = err.message.split('\n');
+      expect(headline).toBe('Salesforce PATCH request failed (HTTP 400): Value too long');
+      expect(rest.join('\n')).toContain('STRING_TOO_LONG');
+      expect(rest.join('\n')).toContain('field: Name');
+      expect(rest.join('\n')).toContain('Shorten it');
       expect(sfApiErrorKind(err)).toBe('http-error');
       expect(err).toBeInstanceOf(Error);
     });
@@ -301,6 +307,16 @@ describe('extension/lib/salesforce-api (thin client over sfApiFetch)', () => {
       expect(err).toBeInstanceOf(SalesforceRestError);
       expect((err as SalesforceRestError).details).toEqual([]);
       expect(err.message).toContain('HTTP 503');
+    });
+
+    it('renders a body with no errorCode in full, even though it is not the org', () => {
+      // Classification is strict (isSalesforceErrorBody requires an errorCode
+      // so a gateway's bare `message` does not dead-end a request); RENDERING
+      // stays permissive, so if such a body ever does reach a user its text is
+      // still shown rather than dropped.
+      expect(parseRestErrorDetails('[{"message":"Forbidden"}]')).toEqual([
+        { message: 'Forbidden', errorCode: '', fields: [] },
+      ]);
     });
 
     it('parseRestErrorDetails tolerates every shape the wire can produce', () => {

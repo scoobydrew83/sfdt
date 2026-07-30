@@ -10,6 +10,12 @@
 
 import { escapeSoql } from './escape.js';
 import { SF_API_VERSION } from './api-version.js';
+import {
+  buildUserFacingMessage,
+  guidanceForErrorCode,
+  guidanceForStatus,
+} from './sf-error-guidance.js';
+import { parseRestErrorDetails, type SalesforceRestErrorDetail } from './sf-error-body.js';
 import { SOAP_SID_SENTINEL, type SfApiFetchResponse } from './sf-api-proxy.js';
 import { XML } from './xml.js';
 
@@ -79,29 +85,17 @@ export type SfApiErrorKind = 'timeout' | 'no-session' | 'http-error';
 // ---------------------------------------------------------------------------
 // Structured REST error bodies
 //
-// A Salesforce REST rejection body is an array of records like
-//   [{ "message": "…", "errorCode": "FIELD_CUSTOM_VALIDATION_EXCEPTION",
-//      "fields": ["Foo__c"] }]
-// and `fields` is the only thing that says *which field* the org rejected.
-// extractErrorDetail() below flattens all of that to one human string for the
-// `.message`, which is all any caller has ever read — but a caller that wants
-// to render an error against the exact field it belongs to needs the records
-// themselves, so they are carried here alongside the unchanged message.
+// The body SHAPE — the record type and its parser — lives in lib/sf-error-body.ts
+// because the worker proxy needs the same knowledge and cannot import this file.
+// Both are re-exported here so this stays the one public entry point callers
+// already import from.
 //
-// This is purely additive: buildRequestError() still produces byte-identical
-// `.message` text and the same `sfdtKind`/`status` tags, it just returns this
-// subclass instead of a bare Error. No existing call site changes.
+// extractErrorDetail() below flattens a rejection to one human string for the
+// `.message`; a caller that wants to render an error against the exact field it
+// belongs to reads the records off `SalesforceRestError.details` instead.
 // ---------------------------------------------------------------------------
-export interface SalesforceRestErrorDetail {
-  message: string;
-  // '' when the body did not carry one — never undefined, so a consumer can
-  // render it without a null check.
-  errorCode: string;
-  // Field API names the org attributed the failure to. Empty for object-level
-  // failures (validation rules with no field binding, row locks, trigger
-  // addError() on the record itself).
-  fields: string[];
-}
+export type { SalesforceRestErrorDetail } from './sf-error-body.js';
+export { parseRestErrorDetails } from './sf-error-body.js';
 
 export class SalesforceRestError extends Error {
   readonly sfdtKind: SfApiErrorKind = 'http-error';
@@ -114,37 +108,6 @@ export class SalesforceRestError extends Error {
     this.status = status;
     this.details = details;
   }
-}
-
-function toErrorDetail(entry: unknown): SalesforceRestErrorDetail | null {
-  if (!entry || typeof entry !== 'object') return null;
-  const rec = entry as Record<string, unknown>;
-  if (typeof rec.message !== 'string') return null;
-  return {
-    message: rec.message,
-    errorCode: typeof rec.errorCode === 'string' ? rec.errorCode : '',
-    fields: Array.isArray(rec.fields) ? rec.fields.filter((f): f is string => typeof f === 'string') : [],
-  };
-}
-
-// Parses a REST rejection body into its records. Returns [] for anything that
-// is not the documented shape (HTML error pages, empty bodies, plain text) —
-// the caller falls back to `.message`, which is unaffected.
-export function parseRestErrorDetails(errorText: string): SalesforceRestErrorDetail[] {
-  if (!errorText) return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(errorText);
-  } catch {
-    return [];
-  }
-  const entries = Array.isArray(parsed) ? parsed : [parsed];
-  const details: SalesforceRestErrorDetail[] = [];
-  for (const entry of entries) {
-    const detail = toErrorDetail(entry);
-    if (detail) details.push(detail);
-  }
-  return details;
 }
 
 export interface SfApiError extends Error {
@@ -234,11 +197,40 @@ function extractErrorDetail(errorText: string): string {
   return errorText.length > 200 ? `${errorText.slice(0, 200)}…` : errorText;
 }
 
+// Which of the per-host failures do we headline? The one the ORG explained.
+//
+// A body that parses into Salesforce error records is the org answering the
+// request; a bare 401 or 5xx from a fallback host is the transport failing
+// around it. Preferring the explained failure is what keeps a real
+// MALFORMED_QUERY from being displaced by another host's session error when
+// both are reported. INVALID_SESSION_ID is excluded from the first tier for
+// exactly that reason — it is the org describing our plumbing, not the user's
+// request. The previous "first non-401" rule is kept as the next tier, so
+// nothing that used to be chosen stops being chosen.
+function pickPrimary(errors: RequestFailure[]): {
+  failure: RequestFailure;
+  details: SalesforceRestErrorDetail[];
+} {
+  const parsed = errors.map((failure) => ({
+    failure,
+    details: parseRestErrorDetails(failure.errorText),
+  }));
+  return (
+    parsed.find((p) => p.details.some((d) => d.errorCode && d.errorCode !== 'INVALID_SESSION_ID')) ??
+    parsed.find((p) => p.failure.status >= 400 && p.failure.status !== 401) ??
+    parsed[0]!
+  );
+}
+
 // Multi-host failures log the full per-host breakdown to the console for
-// debugging; the thrown Error stays short because callers surface
-// err.message directly in user-facing toasts and error panels.
+// debugging. The thrown Error's message leads with the org's own text —
+// unchanged, and never replaced by ours — then adds the errorCode, the field(s)
+// the org blamed, and a short "what to do" line where we have one. Callers
+// surface err.message directly in toasts and error panels, so enriching it here
+// is what puts the guidance in front of the user everywhere at once; the parsed
+// records stay on `.details` for callers that render per-field errors.
 function buildRequestError(operation: string, endpoint: string, errors: RequestFailure[]): Error {
-  const primary = errors.find((e) => e.status >= 400 && e.status !== 401) ?? errors[0]!;
+  const { failure: primary, details } = pickPrimary(errors);
   // First arg is a constant literal — operation/endpoint are passed as separate
   // arguments so they are never interpreted as console format-string specifiers.
   console.error(
@@ -250,12 +242,11 @@ function buildRequestError(operation: string, endpoint: string, errors: RequestF
   );
   const detail = extractErrorDetail(primary.errorText);
   const summary = primary.status > 0 ? `HTTP ${primary.status}` : 'network error';
-  // Message text and tags are unchanged; only the concrete class is new, and it
-  // carries the parsed records for callers that render per-field errors.
+  const headline = `Salesforce ${operation} failed (${summary})${detail ? `: ${detail}` : ''}`;
   return new SalesforceRestError(
-    `Salesforce ${operation} failed (${summary})${detail ? `: ${detail}` : ''}`,
+    buildUserFacingMessage(headline, details, primary.status),
     primary.status,
-    parseRestErrorDetails(primary.errorText),
+    details,
   );
 }
 
@@ -303,6 +294,20 @@ function extractFaultString(text: string): string {
   try {
     const doc = new DOMParser().parseFromString(text, 'text/xml');
     return findElementByLocalName(doc, 'faultstring')?.textContent ?? '';
+  } catch {
+    return '';
+  }
+}
+
+// A SOAP fault carries the same vocabulary as a REST errorCode, just in
+// <faultcode> and namespace-prefixed: `sf:INVALID_FIELD`. Stripping the prefix
+// lets a fault reuse the one guidance table, so a data-import batch or a
+// metadata retrieve explains itself the same way a REST call does.
+function extractFaultCode(text: string): string {
+  try {
+    const doc = new DOMParser().parseFromString(text, 'text/xml');
+    const raw = findElementByLocalName(doc, 'faultcode')?.textContent ?? '';
+    return raw.includes(':') ? raw.slice(raw.lastIndexOf(':') + 1) : raw;
   } catch {
     return '';
   }
@@ -585,10 +590,25 @@ export class SalesforceApiClient {
     if (!resp) throw soapError('No Salesforce session available', 0, 'no-session');
     if (!resp.ok) {
       if (!resp.errors.length) throw soapError('No Salesforce session available', 0, 'no-session');
-      const primary = resp.errors.find((e) => e.status >= 400 && e.status !== 401) ?? resp.errors[0]!;
+      // Same precedence as the REST path: a host that returned an actual SOAP
+      // fault explained the request, so it wins over one that merely 401'd or
+      // 5xx'd alongside it.
+      const primary =
+        resp.errors.find((e) => extractFaultString(e.errorText)) ??
+        resp.errors.find((e) => e.status >= 400 && e.status !== 401) ??
+        resp.errors[0]!;
       const fault = extractFaultString(primary.errorText);
       const detail = fault || primary.errorText;
-      throw soapError(detail || `SOAP error ${primary.status}`, primary.status, 'http-error');
+      const headline = detail || `SOAP error ${primary.status}`;
+      const faultCode = extractFaultCode(primary.errorText);
+      // The fault string usually already begins with the code, so only the
+      // guidance is appended — never a restatement of what the org just said.
+      // An UNRECOGNISED faultcode falls back to the status advice rather than
+      // yielding nothing, matching the REST path: not knowing the code is not a
+      // reason to leave the user with no next step.
+      const advice =
+        (faultCode ? guidanceForErrorCode(faultCode) : '') || guidanceForStatus(primary.status);
+      throw soapError(advice ? `${headline}\n${advice}` : headline, primary.status, 'http-error');
     }
 
     const doc = new DOMParser().parseFromString(resp.bodyText, 'text/xml');

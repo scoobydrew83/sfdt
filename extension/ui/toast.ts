@@ -72,6 +72,10 @@ export function showToast(message: string, options: ToastOptions = {}): () => vo
     'pointer-events: auto',
     'max-width: 360px',
     'word-break: break-word',
+    // Salesforce errors arrive as "<the org's message>\n<what to do>" (see
+    // lib/sf-error-guidance.ts). Without this the guidance line would be
+    // collapsed onto the end of the org's text and read as one run-on sentence.
+    'white-space: pre-line',
   ].join('; ');
   toast.textContent = message;
   container.appendChild(toast);

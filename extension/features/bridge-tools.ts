@@ -104,7 +104,7 @@ function createBridgeToolFeature(spec: ToolSpec, options: BridgeToolOptions): Fe
   function renderError(results: HTMLElement, status: HTMLSpanElement, message: string): void {
     const panel = doc.createElement('div');
     panel.style.cssText =
-      'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+      'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
     panel.textContent = message;
     results.appendChild(panel);
     status.textContent = 'Failed';

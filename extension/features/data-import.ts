@@ -714,7 +714,11 @@ export function createDataImportFeature(options: {
 
         const tdErrors = doc.createElement('td');
         tdErrors.textContent = row.errors || '-';
-        tdErrors.style.cssText = 'padding: 6px 10px;';
+        // A batch-level failure puts the whole annotated error in this cell —
+        // the org's message, then the "what to do" line — so the newline has to
+        // survive, or the two run together into one sentence. This is one of
+        // the two paths users actually reported.
+        tdErrors.style.cssText = 'padding: 6px 10px; white-space: pre-line;';
         if (row.errors) {
           tdErrors.style.color = 'var(--sfdt-color-error-text)';
           tdErrors.style.fontWeight = '500';

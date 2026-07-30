@@ -805,7 +805,7 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
         status.textContent = 'Failed';
         const errorPanel = doc.createElement('div');
         errorPanel.style.cssText =
-          'margin-top: 10px; border: 1px solid var(--sfdt-color-error-border); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px;';
+          'margin-top: 10px; border: 1px solid var(--sfdt-color-error-border); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
         errorPanel.textContent = message(err);
         results.appendChild(errorPanel);
       } finally {

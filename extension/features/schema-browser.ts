@@ -129,7 +129,10 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
 
     const countLabel = doc.createElement('div');
     countLabel.setAttribute('aria-live', 'polite');
-    countLabel.style.cssText = 'padding: 4px 10px; font-size: 11px; color: var(--sfdt-color-text-weak);';
+    // Doubles as the failure line, which carries the org's annotated message —
+    // so the guidance must not collapse onto the end of it.
+    countLabel.style.cssText =
+      'padding: 4px 10px; font-size: 11px; color: var(--sfdt-color-text-weak); white-space: pre-line;';
     leftPane.appendChild(countLabel);
 
     const listScroll = doc.createElement('div');
@@ -196,7 +199,11 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
         return;
       }
       if (global.status === 'error' || !global.data) {
-        countLabel.textContent = 'Failed to load objects.';
+        // Say why. The org's own reason is the only thing that tells the user
+        // whether to fix a permission, wait for an API limit, or log in again.
+        countLabel.textContent = global.error
+          ? `Failed to load objects — ${global.error}`
+          : 'Failed to load objects.';
         return;
       }
 
@@ -301,8 +308,11 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
       }
       if (describe.status === 'error' || !describe.data) {
         const err = doc.createElement('div');
-        err.textContent = 'Failed to load object describe.';
-        err.style.cssText = 'color: var(--sfdt-color-error-text);';
+        err.textContent = describe.error
+          ? `Failed to load object describe — ${describe.error}`
+          : 'Failed to load object describe.';
+        err.style.cssText =
+          'color: var(--sfdt-color-error-text); white-space: pre-line; line-height: 1.4;';
         rightPane.appendChild(err);
         return;
       }
