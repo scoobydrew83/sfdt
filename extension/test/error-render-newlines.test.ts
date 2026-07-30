@@ -26,11 +26,16 @@ const SCANNED_DIRS = ['features', 'ui'];
 
 // `foo.textContent = <expression referencing an error value>`.
 //
-// The alternation is deliberately just the error nouns. `message`/`msg` were in
-// an earlier draft and only produced noise: a thrown error is always reached
-// through `err`/`error` (`err.message`, `${global.error}`), while a bare
-// `opts.message` is a dialog prompt, not an org error.
-const RENDERS_ERROR = /(\w+)\.textContent\s*=\s*([^;\n]*\b(?:err|error|errors|errorMsg)\b[^;\n]*)/i;
+// `message`/`msg` ARE included. An earlier draft left them out on the reasoning
+// that a thrown error is always reached through `err`/`error`, and that was
+// wrong: the org-error funnel for the SOQL runner, the REST explorer and the
+// SOAP explorer is `function showError(message: string)`, so the assignment
+// that actually renders the org's text is `errorPanel.textContent = message`.
+// Excluding them meant the guard did not hold the very surface the reported bug
+// appeared on. The LITERAL_ONLY filter below is what keeps static copy out, so
+// widening here costs nothing.
+const RENDERS_ERROR =
+  /(\w+)\.textContent\s*=\s*([^;\n]*\b(?:err|error|errors|errorMsg|message|msg)\b[^;\n]*)/i;
 const HAS_WHITE_SPACE = /white-space:\s*(?:pre|pre-line|pre-wrap)\b/;
 
 // Literal, non-dynamic copy — "Could not copy to clipboard", "Navigation
@@ -41,11 +46,34 @@ const LITERAL_ONLY = /=\s*['"`][^'"`]*['"`]\s*;?\s*$/;
 // A COUNT of errors is a number, not a message: `${result.errors.length} flows
 // could not be loaded` has no newline to preserve. Strip those references and
 // see whether any error value is still being rendered.
-const ERROR_COUNT = /\b(?:err|error|errors|errorMsg)\b\s*\.\s*length/gi;
-const ERROR_VALUE = /\b(?:err|error|errors|errorMsg)\b/i;
+const ERROR_COUNT = /\b(?:err|error|errors|errorMsg|message|msg)\b\s*\.\s*length/gi;
+const ERROR_VALUE = /\b(?:err|error|errors|errorMsg|message|msg)\b/i;
 
 function rendersAnErrorValue(expression: string): boolean {
   return ERROR_VALUE.test(expression.replace(ERROR_COUNT, ''));
+}
+
+// Sites the widened alternation matches that provably cannot receive a thrown
+// error. Including `message`/`msg` is what buys coverage of the `showError`
+// funnels, and this is the price: a generic dialog whose parameter happens to
+// be called `message` is not locally distinguishable from an error funnel.
+//
+// An exemption is a REVIEWED decision, not a silent skip — that distinction is
+// the whole lesson of ui/health-modal.ts. Each entry names the file, the
+// identifier, and why it cannot carry a multiline error; and a test below
+// asserts every entry still matches real source, so a stale exemption fails
+// loudly instead of quietly widening the hole it was cut for.
+const EXEMPT: { file: string; name: string; because: string }[] = [
+  {
+    file: 'features/debug-log-viewer.ts',
+    name: 'msg',
+    because:
+      "generic confirm dialog: `opts.message` is a prompt, and its one caller passes the literal `Delete ${n} logs?`. It never receives a thrown error.",
+  },
+];
+
+function isExempt(relFile: string, name: string): boolean {
+  return EXEMPT.some((e) => e.file === relFile && e.name === name);
 }
 
 function sourceFiles(): string[] {
@@ -89,14 +117,17 @@ describe('a rendered Salesforce error keeps its newlines', () => {
         if (!rendersAnErrorValue(match[2]!)) return;
 
         const name = match[1]!;
+        if (isExempt(path.relative(ROOT, file), name)) return;
         if (setsWhiteSpaceDirectly(source, name)) return;
 
+        // An element with NO cssText is not exempt. An earlier draft skipped
+        // those as "a judgement call we are not making", and that skip is
+        // precisely what hid ui/health-modal.ts — it styled itself through
+        // `msg.style.marginTop`, so there was no cssText to inspect and the
+        // guard silently passed a live offender. Declining to judge is itself a
+        // judgement, and it was the wrong one.
         const css = cssTextFor(source, name);
-        // No cssText at all means the element inherits; that is a judgement
-        // call we are not making here, so only flag ones that DO style
-        // themselves and omit the rule.
-        if (css === null) return;
-        if (HAS_WHITE_SPACE.test(css)) return;
+        if (css !== null && HAS_WHITE_SPACE.test(css)) return;
 
         offenders.push(`${path.relative(ROOT, file)}:${i + 1} (${name})`);
       });
@@ -106,6 +137,43 @@ describe('a rendered Salesforce error keeps its newlines', () => {
       offenders,
       `elements that render a Salesforce error but would collapse its guidance line:\n${offenders.join('\n')}`,
     ).toEqual([]);
+  });
+
+  it('holds the showError() funnels the org error actually flows through', () => {
+    // These three are where a Salesforce error reaches the screen on the
+    // surfaces the bug was reported against. They satisfy the rule today; the
+    // point is that the guard now HOLDS them to it, so dropping the rule fails
+    // here rather than shipping.
+    for (const rel of [
+      'features/soql-runner.ts',
+      'features/rest-explore.ts',
+      'features/soap-explore.ts',
+    ]) {
+      const source = readFileSync(path.join(ROOT, rel), 'utf8');
+      expect(source, rel).toMatch(/errorPanel\.textContent\s*=\s*message/);
+      expect(cssTextFor(source, 'errorPanel'), rel).toMatch(HAS_WHITE_SPACE);
+    }
+  });
+
+  it('holds the health-check modal, which styles itself without cssText', () => {
+    // The 16th surface. It was invisible while the guard skipped elements with
+    // no cssText; it is reached from flow-health-check with a Tooling error.
+    const source = readFileSync(path.join(ROOT, 'ui', 'health-modal.ts'), 'utf8');
+    expect(cssTextFor(source, 'msg')).toMatch(HAS_WHITE_SPACE);
+  });
+
+  it('every exemption still matches real source', () => {
+    // Stops the exemption list rotting into a hole. If the identifier or file
+    // moves, the entry must be re-justified rather than silently persisting.
+    for (const entry of EXEMPT) {
+      const abs = path.join(ROOT, entry.file);
+      const source = readFileSync(abs, 'utf8');
+      expect(
+        new RegExp(`\\b${entry.name}\\.textContent\\s*=`).test(source),
+        `stale exemption: ${entry.file} no longer assigns ${entry.name}.textContent`,
+      ).toBe(true);
+      expect(entry.because.length, `${entry.file} exemption needs a reason`).toBeGreaterThan(40);
+    }
   });
 
   it('the shared toast preserves them', () => {
