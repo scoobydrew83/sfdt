@@ -23,24 +23,33 @@ the real starting position, not a blank page. Today it has:
   and we throw that away;
 - no clone, no delete.
 
-Three infrastructure facts constrain the design, and two of them are latent bugs that this
-item must fix rather than inherit:
+One infrastructure defect sits inside this item's scope, because it exists only to serve
+AC-1 and has no value independent of it:
 
-1. **Field-level errors are destroyed before a feature can see them.**
-   `salesforce-api.ts:72` `buildRequestError()` collapses the Salesforce error body
-   (`[{message, errorCode, fields:[…]}]`) into a single human string via
-   `extractErrorDetail()`. `fields` and `errorCode` are dropped. AC-1 ("server field errors
-   render on the exact field") is *not implementable* without changing this.
-2. **Writes silently time out after 5 s and report the wrong cause.**
-   `salesforce-api.ts:16` sets `SEND_MESSAGE_TIMEOUT_MS = 5000`, and `apiRequest()` (`:221`)
-   calls `sendMessage()` without a timeout override, so it takes the default. A PATCH still
-   in flight at 5 s resolves `null` and throws **`No Salesforce session available`** — a
-   message that is both wrong and, for a write, dangerous: the save may well have committed.
-   This affects existing features too; P4-1 is where it surfaces first as a correctness bug.
-3. **`enabledByDefault` is declared but never consumed.** `feature-registry.ts:15` declares
-   it and it is emitted into `lib/feature-manifests.json`, but `isFeatureEnabled()`
-   (`settings.ts:107`) returns `true` for any id with no stored entry. A new feature id is
-   therefore **on** by default today — which is exactly what AC-4 forbids for delete.
+- **Field-level errors are destroyed before a feature can see them.**
+  `salesforce-api.ts:72` `buildRequestError()` collapses the Salesforce error body
+  (`[{message, errorCode, fields:[…]}]`) into a single human string via
+  `extractErrorDetail()` (`:50`). `fields` and `errorCode` are dropped. AC-1 ("server field
+  errors render on the exact field") is *not implementable* without changing this. Nothing
+  else in the tree reads those attributes or wants to, so fixing it is P4-1's job rather
+  than a standalone concern — see [External prerequisites](#external-prerequisites) for the
+  two defects that went the other way.
+
+## External prerequisites
+
+Two further defects surfaced while writing this plan. Both were ruled out of P4-1's own PR
+chain on 2026-07-30 and dispatched as standalone work, because both are live risk on already
+shipped features and neither depends on whether P4-1 is ever approved. **P4-1 consumes them;
+it does not contain them.**
+
+| Branch | Defect | Guarantee P4-1 relies on |
+|---|---|---|
+| `ext/fix-write-timeout` | `salesforce-api.ts:16` sets `SEND_MESSAGE_TIMEOUT_MS = 5000` and `apiRequest()` (`:221`) calls `sendMessage()` with **no timeout argument**, so it inherits the default. A PATCH still in flight at 5 s resolves `null` and throws `No Salesforce session available` — wrong, and for a write dangerous: the save may well have committed. Already live on `data-import`, `field-creator`, `apex-anonymous`. | Writes are not capped at 5 s, **and** a transport failure (timeout, status 0) is distinguishable at the call site from a server rejection. |
+| `ext/enabled-by-default-authoritative` | `feature-registry.ts:15` declares `enabledByDefault` and it is emitted into `lib/feature-manifests.json`, but `isFeatureEnabled()` (`settings.ts:107`) returns `true` for any id with no stored entry — the flag is never consulted, so a new feature id is **on** by default. | The runtime reads `manifest.enabledByDefault ?? true`, so a manifest declaring `false` is genuinely off until the user opts in. |
+
+**Sequencing consequence: P4-1's PR-1 must rebase onto both once they merge, and cannot start
+until they do.** The rebase is not cosmetic in either case — see PR-1 and PR-4 below for what
+each changes about the work.
 
 ## Decisions (2026-07-30, recorded — these are settled, not open questions)
 
@@ -54,13 +63,17 @@ item must fix rather than inherit:
    `isInspectMenuEnabled(settings, disabledRemote)` is the pure-gate template). It stays out
    of the ⚡ menu and the command palette for free, because both filter feature candidates
    through `FEATURE_ICONS` and we add no icon entry.
-2. **Default-off becomes real, in one contained change.** `settings.ts` gains
-   `DEFAULT_OFF_FEATURE_IDS = new Set(['record-delete'])`, consulted by `isFeatureEnabled()`
-   before its `return true` fallback. `isFeatureEnabled(settings, id)` keeps its signature
-   (it has 14 call sites; widening it to take a manifest is not worth it). A parity test
-   asserts the set and every manifest carrying `enabledByDefault: false` agree, so the two
-   can never drift. Rejected alternative: threading the manifest into `isFeatureEnabled` —
-   larger blast radius for the same result.
+2. **`record-delete` is default-off by simply declaring it.** Once
+   `ext/enabled-by-default-authoritative` lands, the manifest flag is authoritative: the
+   feature declares `enabledByDefault: false` and is genuinely off until the user opts in.
+   P4-1 adds **no** settings-layer machinery of its own for this. *Considered and rejected:*
+   a `DEFAULT_OFF_FEATURE_IDS` set in `settings.ts` keeping `isFeatureEnabled`'s signature
+   intact, on the theory that threading a manifest through ~14 call sites was too much blast
+   radius for one feature. Measurement killed it — all 44 entries in
+   `generated/chrome-features.json` are `enabledByDefault: true` and nothing in `extension/`
+   declares `false`, so honoring the flag is behavior-preserving for every existing feature.
+   With the blast radius at zero, a second parallel source of truth for the same question was
+   never worth having.
 3. **A single PATCH is atomic, and the UI says so in exactly three states.** See
    [Partial-success semantics](#partial-success-semantics). The short version: success →
    "Saved N fields", and we **re-GET the record** rather than trusting our own echo; a server
@@ -136,10 +149,14 @@ one of three things, and never anything in between:
 | **Unknown** | no HTTP response — bus timeout, status 0, network error | "**Save outcome unknown — the record has been reloaded.**" | Forced re-GET; save bar recomputed against whatever the server now holds |
 
 The "Rejected" claim is only truthful because the response *arrived*. That is why the third
-row exists and why decision 3 fixes the 5 s write timeout: today a slow-but-successful PATCH
-lands in the "Rejected" wording via a bogus `No Salesforce session available`, telling the
-user nothing was saved when it was. Writes get their own longer timeout (30 s) and a
-transport failure is distinguishable from a server rejection at the call site.
+row exists — and why this contract is unimplementable until `ext/fix-write-timeout` merges.
+Against today's `develop` a slow-but-successful PATCH lands in the "Rejected" wording via a
+bogus `No Salesforce session available`, telling the user nothing was saved when it was. The
+prerequisite supplies both halves P4-1 needs: writes that are not capped at 5 s, and a
+transport failure that is distinguishable from a server rejection at the call site. **If that
+PR delivers only the timeout bump and not the distinguishability, PR-2 must add the narrow
+distinguishing piece itself** — the three-state contract is not negotiable, only where the
+plumbing for it lives.
 
 Documented caveat (AC-1 asks us to document the behaviour): a rollback does **not** unpublish
 platform events published with *Publish Immediately*, and does not un-enqueue jobs from a
@@ -228,8 +245,10 @@ are excluded from the POST body.
 
 ## Work plan (one PR per item, per repo convention)
 
-Dependency order is strict: PR-1 → PR-2 → {PR-3, PR-4}. PR-3 and PR-4 are independent of
-each other. Branch names follow the plan: `ext/p4-1-<slug>`.
+Dependency order is strict: `ext/fix-write-timeout` + `ext/enabled-by-default-authoritative`
+(external, both must merge first) → PR-1 → PR-2 → {PR-3, PR-4}. PR-3 and PR-4 are independent
+of each other. Four PRs, unchanged in count: removing the two prerequisites thinned PR-1 and
+PR-4 but emptied neither. Branch names follow the plan: `ext/p4-1-<slug>`.
 
 ### PR-1 — Editability model + typed API errors (no user-visible change)
 
@@ -242,19 +261,21 @@ each other. Branch names follow the plan: `ext/p4-1-<slug>`.
   string, `''` → `null`, boolean coercion, datetime to ISO UTC), only considers fields
   classified editable, and **omits fields absent from the original GET payload** — an
   FLS-hidden field arrives as `undefined` and must never enter a PATCH body.
-- `extension/lib/salesforce-api.ts`: add `SalesforceRestError` (above); give mutating calls
-  (`POST`/`PATCH`/`PUT`/`DELETE`) an explicit 30 s bus timeout and a distinguishable
-  transport-failure error so a timeout can never again be reported as "no session".
+- `extension/lib/salesforce-api.ts`: add `SalesforceRestError` (above) — and **only** that.
+  The write-timeout work that an earlier draft of this plan put here now arrives from
+  `ext/fix-write-timeout`; PR-1 rebases onto it and asserts the guarantee rather than
+  implementing it. The error-body fix stays because it is the one piece of API-layer work
+  that serves nothing but AC-1's per-field rendering.
 - `extension/lib/describe-cache.ts`: declare the additive describe attributes the model reads
   (`updateable`, `createable`, `nillable`, `autoNumber`, `htmlFormatted`, `encrypted`,
   `restrictedPicklist`, `dependentPicklist`, `controllerName`) on `FieldDescribe`. The cache
   already passes the payload through wholesale (`describe-cache.ts:12`) — this is types only,
   and it is how inspect-record stops keeping its own private `FieldDescribe` interface.
-- Vitest: diff builder, per-type coercion round-trips, classification table, error mapping
-  (including the not-rendered-field and no-field cases), and a regression test asserting a
-  write timeout does not surface as a session error.
+- Vitest: diff builder, per-type coercion round-trips, classification table, and error mapping
+  (including the not-rendered-field and no-field cases).
 - **Scope boundary:** touches no feature file. Ships as an unused-but-tested model, the same
-  contract-first shape as the manifest-builder plan's PR-3.
+  contract-first shape as the manifest-builder plan's PR-3. Does **not** touch the write
+  timeout or the settings layer — both belong to the external prerequisites.
 
 ### PR-2 — Edit mode in inspect-record (AC-1, AC-2, part of AC-5)
 
@@ -289,8 +310,11 @@ each other. Branch names follow the plan: `ext/p4-1-<slug>`.
   (`id: 'record-delete'`, `enabledByDefault: false`, contexts matching inspect-record) plus a
   pure `isRecordDeleteEnabled(settings, disabledRemote)` gate, modeled line-for-line on
   `context-menu-inspect.ts:85`. No injected UI, no icon entry — so it never appears in the ⚡
-  menu or the palette.
-- `extension/lib/settings.ts`: `DEFAULT_OFF_FEATURE_IDS` + the parity test (decision 2).
+  menu or the palette. **`enabledByDefault: false` is the entire opt-in mechanism** — no
+  settings-layer change, because `ext/enabled-by-default-authoritative` has already made the
+  flag authoritative. Rebase consequence: that PR threads the enabled-check call sites, so
+  `context-menu-inspect.ts`'s gate — the template being copied here — will itself have moved.
+  Copy the post-rebase shape, not the one this document quotes.
 - **New** `extension/ui/confirm-dialog.ts`: `confirmTyped({ phrase, … })`, extracted from the
   best existing implementation (`flow-version-manager.ts:104`/`:136`) and made a11y-complete
   per the P0-8 checklist. **It migrates exactly one caller — flow-version-manager — to prove
@@ -303,9 +327,9 @@ each other. Branch names follow the plan: `ext/p4-1-<slug>`.
   (`SFDT_WRITE_MANIFESTS=1`) and `npm run generate:catalogs`, update options-page copy,
   `extension/CHANGELOG.md`, `PRIVACY.md` (no permission change — an explicit "delete is
   opt-in, default off" line), and the docs-site MDX.
-- Vitest: the gate truth table (user toggle × kill switch × both), default-off before any
-  stored setting, typed-confirm gating (wrong phrase never enables the button), the DELETE
-  call shape, and the manifest/`DEFAULT_OFF_FEATURE_IDS` parity assertion.
+- Vitest: the gate truth table (user toggle × kill switch × both), **default-off with no
+  stored setting at all** (the assertion that proves the manifest flag is being honored),
+  typed-confirm gating (wrong phrase never enables the button), and the DELETE call shape.
 - **Scope boundary:** single-record delete from the inspector only. Bulk delete is P4-2 and
   gets its own opt-in and its own backup-CSV guard rail; nothing here is shared with it yet.
 
@@ -323,6 +347,8 @@ each other. Branch names follow the plan: `ext/p4-1-<slug>`.
   never hand-edited; CI fails on drift.
 - **Telemetry never throws**; the feature-registry gate already swallows teardown errors.
 - **One feature per session:** PR-1 … PR-4 are four sessions, four PRs against `develop`.
+  The two external prerequisites are their own sessions on their own branches and are not
+  folded back into this chain under any schedule pressure.
 - **Global DoD** applies per PR: a11y checklist item-by-item, both themes, Vitest, CHANGELOG
   under `[Unreleased]`, docs-site MDX for the user-facing PRs (2, 3, 4).
 
@@ -347,12 +373,17 @@ Manual smoke (unpacked `extension/.output/chrome-mv3` against a real org), per P
    (e) confirm a formula field, an audit field and an FLS-restricted field each render
    read-only with the right reason; (f) close with unsaved edits → prompted.
 2. **PR-2 (outcome-unknown path):** throttle the network so the PATCH exceeds the old 5 s
-   window; the UI must show "Save outcome unknown" and reload — never "no session".
+   window; the UI must show "Save outcome unknown" and reload — never "no session". This
+   doubles as P4-1's acceptance check on `ext/fix-write-timeout`: if it fails here, the
+   prerequisite did not deliver what the table above says it guarantees, and PR-2 stops
+   rather than papering over it.
 3. **PR-3:** clone a record with a required lookup and a unique field; confirm the staged form
    prefills only createable fields, that a rejected create maps errors per field, and that a
    successful create shows the new Id with working Open/Inspect links.
-4. **PR-4:** with the toggle **off** (the default on a fresh profile), Delete is absent.
-   Enable it → Delete appears; the wrong phrase never enables the button; the right phrase
+4. **PR-4:** on a **fresh browser profile with no stored settings at all**, Delete is absent —
+   that specific starting state, not a profile where the toggle was set off by hand, is what
+   proves the manifest flag is authoritative. Enable the toggle in options → Delete appears;
+   the wrong phrase never enables the button; the right phrase
    deletes and toasts. Then add `record-delete` to the bridge's `disabledFeatures` and
    confirm Delete disappears **while `inspect-record` keeps working** — that single
    observation is the proof of decision 1.
