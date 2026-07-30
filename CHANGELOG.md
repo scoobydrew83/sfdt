@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-30
+
+> **The bridge contract changed — `PROTOCOL_VERSION` moves `1.2` → `1.3`.** The two additive
+> `manifest.discover` / `manifest.render` request kinds (B-3) are a **minor** protocol bump, so a
+> `1.2` client is warned about the minor mismatch and keeps working — it is never refused, and no
+> kind was removed or renamed. `PROTOCOL_VERSION` lives in
+> `packages/flow-core/src/bridge-contract.ts`; `@sfdt/flow-core` ships at **0.10.0** in this
+> release (bumped `0.9.7 → 0.10.0` with the contract change, consumer ranges moved to `^0.10.0` in
+> lockstep). The client that speaks `1.3` is `@sfdt/extension` **0.10.0**, which needs this CLI
+> (>= 0.21.0) for its bridge path and falls back to its offline SOAP path against an older one.
+>
+> **Breaking for anyone opted into the legacy analyzer (see Removed).** `quality
+> --allow-legacy-analyzer`, the `quality.analyzer.allowLegacyV4` config key, and
+> `SFDT_ANALYZER_ALLOW_LEGACY` are **gone** — passing the flag is now an unknown-option error, and
+> the env var is ignored. A lingering `quality.analyzer.allowLegacyV4` key in an existing
+> `.sfdt/config.json` is ignored rather than a hard error, so no config edit is required to
+> upgrade. Salesforce Code Analyzer **v5 is the only supported engine**; on a machine without v5
+> the static scan reports `skipped` with install guidance, never a fabricated clean result.
+> Shipped as a minor bump under this project's pre-1.0 (`0.x`) versioning, where the minor slot
+> carries breaking changes.
+
 ### Added
 - **Chrome extension: Metadata Retrieve & Deploy rides the manifest bridge kinds (B-4, delivers extension-plan P5-4/P5-5).** The extension's metadata browser now sources its type/member tree from `manifest.discover` and all manifest XML from `manifest.render` whenever a bridge is connected — the single-writer rule holds end to end (only `renderPackageXml` produces XML on the bridge path; the extension's private SOAP writer survives strictly as the offline fallback). It also gains the Additive | Destructive mode toggle (paired `destructiveChanges.xml` + empty `package.xml` output with warning styling) and per-org selection persistence with clear-all. Details in `extension/CHANGELOG.md`; no new extension permissions.
 - **SOQL Console — the `sfdt soql` family as a dashboard page (D-4).** A new GUI page (deep-linkable at `/soql`) surfaces the query/schema lifecycle: search sObjects and browse fields/relationships (describe with picklists, reference targets, parent/child relationships), validate a query (local checks plus the org `LIMIT 0` round-trip — an unreachable org degrades to a local-only verdict, never a fabricated pass), fetch query plans (REST explain; the query is never executed), and run SOQL/SOSL with the configured row bound. Seven thin `/api/soql/*` routes wrap the existing `src/lib/soql-runner.js` — the single engine shared with the CLI, MCP, and VS Code, so bounds (`soql.defaultLimit` clamped to `soql.maxLimit`), bound/truncated metadata, and error messages are identical across surfaces; the routes never accept an output path and never write files. Results export client-side as raw JSON (the `writeExport` shape) or the runner's own `toCsv` shaping returned by the server (dot-path parent columns) — no second export format. Errors surface the real sf/org message, never an empty result. No new config keys, no new dependencies.

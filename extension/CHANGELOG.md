@@ -4,6 +4,16 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-30
+
+> **Minimum `@sfdt/cli`: 0.21.0** — the bridge path added below speaks the `manifest.discover` /
+> `manifest.render` request kinds and wire protocol **1.3**, both of which ship in `@sfdt/cli`
+> 0.21.0 (`@sfdt/flow-core` 0.10.0). Against an older CLI the probe simply fails and the tool
+> reports "sfdt bridge unavailable — using the Salesforce SOAP API directly", so Metadata Retrieve
+> & Deploy stays fully functional on its offline SOAP path; nothing breaks, the CLI-rendered
+> manifest just isn't available. CLI 0.21.0 publishes to npm with this release, so it is on npm
+> before this version clears Web Store review. No new manifest permissions in this version.
+
 ### Fixed
 - **Restoring a member-level selection no longer truncates that metadata type's tree.** `restoreSelections()` seeds the persisted member into the type's children, but the member-fetch guard in `toggleExpand()` tested *emptiness* (`childXmlNames.length === 0`) rather than *completeness* — so after reopening the tool, a type with a restored member showed **only** that member, forever: collapsing and re-expanding never re-fetched, and there is no refresh affordance, so the only way to see the type's other members was to drop the saved selection. Load state is now tracked explicitly (`membersLoaded`, set only by a successful bridge/SOAP member fetch), so a node whose children came from storage — or from an imported `package.xml`, which had the same defect — still fetches its real member list on expand, while a genuinely loaded node does not re-fetch. The restored ticks survive that fetch: they are merged onto the fetched list, and a selected member the org no longer returns is **kept** (with a log line naming it) rather than silently dropped, since not losing the user's selection is the entire point of persistence. A restored type is also left **collapsed** rather than expanded, so a one-member list is never *presented* as the type's complete membership and the first expand does the real fetch — no hidden collapse-then-expand needed; the type row carries a **partial tick** (`indeterminate`, labelled "some members selected") so the restored selection is still plainly visible while collapsed. Fixed on both the bridge and offline SOAP paths. Wildcard restores were never affected (they set the type's own tick and never touch the child list).
 - **A `manifest.discover` reply missing its `members` array is treated as a failure, not an empty metadata type.** The bridge branch coerced a non-array payload to `[]` *and* marked the node loaded, so a malformed `ok: true` response produced a fabricated empty tree that then never re-fetched — precisely the failure the "never a fabricated empty tree" invariant exists to prevent. Such a response now surfaces as an error, collapses the node, and leaves it re-fetchable with its seeded children and ticks intact. (The offline SOAP path has no equivalent hole: `apiSoap` throws on every transport error and SOAP fault, so a falsy `listMetadata` result genuinely means the type has zero members — that is now documented in place.)
