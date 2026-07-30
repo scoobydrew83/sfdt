@@ -4,6 +4,8 @@ import {
   configureSalesforceApi,
   getSalesforceApi,
   sfApiErrorKind,
+  SalesforceRestError,
+  parseRestErrorDetails,
   workerTimeoutError,
   WORKER_TIMEOUT_ERROR_NAME,
   _resetSalesforceApiSingletonForTests,
@@ -220,6 +222,102 @@ describe('extension/lib/salesforce-api (thin client over sfApiFetch)', () => {
       await expect(client.apiGet('services/data')).rejects.toThrow(/must start with/);
       await expect(client.apiRequest('POST', 'services/data', {})).rejects.toThrow(/must start with/);
       await expect(client.apiGetText('services/data')).rejects.toThrow(/must start with/);
+    });
+  });
+
+  // The org tells us WHICH field it rejected. Before P4-1 that was flattened
+  // into one prose string and thrown away, so no caller could render an error
+  // against the field it belongs to. The records are now carried alongside the
+  // message — additively: `.message`, `sfdtKind` and `.status` are unchanged.
+  describe('SalesforceRestError (structured rejection bodies)', () => {
+    function restFailure(errorText: string, status = 400): MessageBus {
+      return makeBus({
+        proxy: { ok: false, errors: [{ baseUrl: 'https://x.my.salesforce.com', status, errorText }] },
+      });
+    }
+
+    async function failWith(errorText: string, status = 400): Promise<Error> {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const client = new SalesforceApiClient({
+        win: fakeWin(WIN),
+        messageBus: restFailure(errorText, status),
+      });
+      const err: Error = await client
+        .apiRequest('PATCH', '/services/data/v62.0/sobjects/Account/001', {})
+        .then(
+          () => {
+            throw new Error('expected reject');
+          },
+          (e: Error) => e,
+        );
+      consoleSpy.mockRestore();
+      return err;
+    }
+
+    it('carries the fields[] and errorCode the org attributed the failure to', async () => {
+      const err = await failWith(
+        '[{"message":"Value too long","errorCode":"STRING_TOO_LONG","fields":["Name"]}]',
+      );
+      expect(err).toBeInstanceOf(SalesforceRestError);
+      expect((err as SalesforceRestError).details).toEqual([
+        { message: 'Value too long', errorCode: 'STRING_TOO_LONG', fields: ['Name'] },
+      ]);
+      expect((err as SalesforceRestError).status).toBe(400);
+    });
+
+    it('keeps the short .message and the http-error tag byte-for-byte', async () => {
+      // Every existing caller reads only `.message`; this must stay additive.
+      const err = await failWith(
+        '[{"message":"Value too long","errorCode":"STRING_TOO_LONG","fields":["Name"]}]',
+      );
+      expect(err.message).toBe('Salesforce PATCH request failed (HTTP 400): Value too long');
+      expect(sfApiErrorKind(err)).toBe('http-error');
+      expect(err).toBeInstanceOf(Error);
+    });
+
+    it('normalises a record with no fields[] to an empty array, not undefined', async () => {
+      // Object-level validation rules and trigger addError() on the record.
+      const err = await failWith(
+        '[{"message":"Close date must be in the future","errorCode":"FIELD_CUSTOM_VALIDATION_EXCEPTION"}]',
+      );
+      expect((err as SalesforceRestError).details).toEqual([
+        {
+          message: 'Close date must be in the future',
+          errorCode: 'FIELD_CUSTOM_VALIDATION_EXCEPTION',
+          fields: [],
+        },
+      ]);
+    });
+
+    it('keeps every record when the org returns more than one', async () => {
+      const err = await failWith(
+        '[{"message":"a","errorCode":"A","fields":["X__c"]},{"message":"b","errorCode":"B","fields":[]}]',
+      );
+      expect((err as SalesforceRestError).details).toHaveLength(2);
+    });
+
+    it('degrades to an empty details list for a non-JSON body', async () => {
+      const err = await failWith('<html>503 Service Unavailable</html>', 503);
+      expect(err).toBeInstanceOf(SalesforceRestError);
+      expect((err as SalesforceRestError).details).toEqual([]);
+      expect(err.message).toContain('HTTP 503');
+    });
+
+    it('parseRestErrorDetails tolerates every shape the wire can produce', () => {
+      expect(parseRestErrorDetails('')).toEqual([]);
+      expect(parseRestErrorDetails('not json')).toEqual([]);
+      expect(parseRestErrorDetails('[]')).toEqual([]);
+      expect(parseRestErrorDetails('null')).toEqual([]);
+      // Some endpoints answer with a bare object rather than an array.
+      expect(parseRestErrorDetails('{"message":"nope","errorCode":"E"}')).toEqual([
+        { message: 'nope', errorCode: 'E', fields: [] },
+      ]);
+      // Entries without a message are not errors we can render.
+      expect(parseRestErrorDetails('[{"errorCode":"E"}]')).toEqual([]);
+      // Non-string entries in fields[] are dropped rather than stringified.
+      expect(parseRestErrorDetails('[{"message":"m","fields":["A",7,null]}]')).toEqual([
+        { message: 'm', errorCode: '', fields: ['A'] },
+      ]);
     });
   });
 

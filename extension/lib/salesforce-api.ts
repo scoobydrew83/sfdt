@@ -76,6 +76,77 @@ function isWorkerTimeout(err: unknown): boolean {
 // ---------------------------------------------------------------------------
 export type SfApiErrorKind = 'timeout' | 'no-session' | 'http-error';
 
+// ---------------------------------------------------------------------------
+// Structured REST error bodies
+//
+// A Salesforce REST rejection body is an array of records like
+//   [{ "message": "…", "errorCode": "FIELD_CUSTOM_VALIDATION_EXCEPTION",
+//      "fields": ["Foo__c"] }]
+// and `fields` is the only thing that says *which field* the org rejected.
+// extractErrorDetail() below flattens all of that to one human string for the
+// `.message`, which is all any caller has ever read — but a caller that wants
+// to render an error against the exact field it belongs to needs the records
+// themselves, so they are carried here alongside the unchanged message.
+//
+// This is purely additive: buildRequestError() still produces byte-identical
+// `.message` text and the same `sfdtKind`/`status` tags, it just returns this
+// subclass instead of a bare Error. No existing call site changes.
+// ---------------------------------------------------------------------------
+export interface SalesforceRestErrorDetail {
+  message: string;
+  // '' when the body did not carry one — never undefined, so a consumer can
+  // render it without a null check.
+  errorCode: string;
+  // Field API names the org attributed the failure to. Empty for object-level
+  // failures (validation rules with no field binding, row locks, trigger
+  // addError() on the record itself).
+  fields: string[];
+}
+
+export class SalesforceRestError extends Error {
+  readonly sfdtKind: SfApiErrorKind = 'http-error';
+  readonly status: number;
+  readonly details: SalesforceRestErrorDetail[];
+
+  constructor(message: string, status: number, details: SalesforceRestErrorDetail[]) {
+    super(message);
+    this.name = 'SalesforceRestError';
+    this.status = status;
+    this.details = details;
+  }
+}
+
+function toErrorDetail(entry: unknown): SalesforceRestErrorDetail | null {
+  if (!entry || typeof entry !== 'object') return null;
+  const rec = entry as Record<string, unknown>;
+  if (typeof rec.message !== 'string') return null;
+  return {
+    message: rec.message,
+    errorCode: typeof rec.errorCode === 'string' ? rec.errorCode : '',
+    fields: Array.isArray(rec.fields) ? rec.fields.filter((f): f is string => typeof f === 'string') : [],
+  };
+}
+
+// Parses a REST rejection body into its records. Returns [] for anything that
+// is not the documented shape (HTML error pages, empty bodies, plain text) —
+// the caller falls back to `.message`, which is unaffected.
+export function parseRestErrorDetails(errorText: string): SalesforceRestErrorDetail[] {
+  if (!errorText) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(errorText);
+  } catch {
+    return [];
+  }
+  const entries = Array.isArray(parsed) ? parsed : [parsed];
+  const details: SalesforceRestErrorDetail[] = [];
+  for (const entry of entries) {
+    const detail = toErrorDetail(entry);
+    if (detail) details.push(detail);
+  }
+  return details;
+}
+
 export interface SfApiError extends Error {
   readonly sfdtKind: SfApiErrorKind;
   // 'timeout' only: the budget that elapsed, and whether the call could have
@@ -179,9 +250,12 @@ function buildRequestError(operation: string, endpoint: string, errors: RequestF
   );
   const detail = extractErrorDetail(primary.errorText);
   const summary = primary.status > 0 ? `HTTP ${primary.status}` : 'network error';
-  return tagError(
-    new Error(`Salesforce ${operation} failed (${summary})${detail ? `: ${detail}` : ''}`),
-    { sfdtKind: 'http-error' as const, status: primary.status },
+  // Message text and tags are unchanged; only the concrete class is new, and it
+  // carries the parsed records for callers that render per-field errors.
+  return new SalesforceRestError(
+    `Salesforce ${operation} failed (${summary})${detail ? `: ${detail}` : ''}`,
+    primary.status,
+    parseRestErrorDetails(primary.errorText),
   );
 }
 
