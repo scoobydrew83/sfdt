@@ -899,11 +899,29 @@ describe('metadata-retrieve — bridge-connected path', () => {
     await flush();
     await flush();
 
-    const renderCalls = call.mock.calls.filter((c: any[]) => c[0].kind === 'manifest.render');
-    expect(renderCalls.length).toBeGreaterThan(0);
-    for (const c of renderCalls) {
-      expect(c[0].items).toEqual([{ type: 'ApexClass', member: '*' }]);
-    }
+    // Expanding is browsing: it changes no selection, so it fires no render …
+    expect(call.mock.calls.filter((c: any[]) => c[0].kind === 'manifest.render').length).toBe(0);
+    // … and the children render ticked.
+    const betaTick = Array.from(document.querySelectorAll('span'))
+      .find((s) => s.textContent === 'Beta')!
+      .parentElement!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(betaTick.checked).toBe(true);
+
+    // The next real selection change proves ApexClass is STILL a wildcard
+    // after expansion rather than an explicit member list.
+    const objChk = document.querySelectorAll('.sfdt-tree-chk')[1] as HTMLInputElement;
+    objChk.checked = true;
+    objChk.dispatchEvent(new Event('change'));
+    await flush();
+    const afterExpand = call.mock.calls.filter((c: any[]) => c[0].kind === 'manifest.render');
+    expect(afterExpand.length).toBe(1);
+    expect(afterExpand[0]![0].items).toEqual([
+      { type: 'ApexClass', member: '*' },
+      { type: 'CustomObject', member: '*' },
+    ]);
+    objChk.checked = false;
+    objChk.dispatchEvent(new Event('change'));
+    await flush();
 
     // Unticking one member narrows `*` to the remaining explicit members.
     const betaChk = Array.from(document.querySelectorAll('span'))
@@ -1133,7 +1151,13 @@ describe('metadata-retrieve — per-org selection persistence', () => {
     await second.onActivate?.();
 
     expect(document.body.textContent).toContain('Restored 1 saved selection');
-    expect(document.body.textContent).toContain('Alpha');
+    // The restored node stays collapsed (so a partial list is never presented
+    // as complete); the selection is visible as a partial tick on the type row
+    // and in the rendered manifest.
+    const typeChk = Array.from(document.querySelectorAll('span'))
+      .find((s) => s.textContent === 'ApexClass')!
+      .parentElement!.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    expect(typeChk.indeterminate).toBe(true);
     expect(call).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'manifest.render',
@@ -1225,5 +1249,443 @@ describe('metadata-retrieve — per-org selection persistence', () => {
 
     expect(document.body.textContent).toContain('Restored 1 saved selection');
     expect(mainTextarea().value).toContain('<members>*</members>');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B-4 follow-up (CI review bot on #297):
+//   1. restoring a member-level selection must not truncate that type's tree —
+//      a seeded node still fetches its real member list on expand, and the
+//      restored ticks survive the merge (both paths).
+//   2. plain expand/collapse must not fire a manifest.render round-trip.
+// ---------------------------------------------------------------------------
+
+describe('metadata-retrieve — seeded member restore does not truncate the tree', () => {
+  it('fetches the full member list on expand and keeps the restored tick (bridge path)', async () => {
+    setSalesforceUrl();
+    const { call, factory } = fakeBridge();
+    const first = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await first.onActivate?.();
+
+    // Tick one member, then reopen the tool so the selection is restored.
+    expandType('ApexClass');
+    await flush();
+    await flush();
+    const alphaChk = Array.from(document.querySelectorAll('span'))
+      .find((s) => s.textContent === 'Alpha')!
+      .parentElement!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    alphaChk.checked = true;
+    alphaChk.dispatchEvent(new Event('change'));
+    await flush();
+
+    clearBody();
+    call.mockClear();
+    const second = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await second.onActivate?.();
+    expect(document.body.textContent).toContain('Restored 1 saved selection');
+    // The seeded node is collapsed, so no partial member list is presented.
+    expect(document.body.textContent).not.toContain('Alpha');
+    expect(document.body.textContent).not.toContain('Beta');
+
+    // The FIRST expand does the real fetch (no hidden collapse-then-expand).
+    expandType('ApexClass');
+    await flush();
+    await flush();
+
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'manifest.discover', type: 'ApexClass' }),
+      expect.anything(),
+    );
+    // Full member list is visible …
+    expect(document.body.textContent).toContain('Alpha');
+    expect(document.body.textContent).toContain('Beta');
+
+    // … and the restored tick survived the merge (Alpha ticked, Beta not).
+    const tickState = (name: string) =>
+      (Array.from(document.querySelectorAll('span'))
+        .find((s) => s.textContent === name)!
+        .parentElement!.querySelector('input[type="checkbox"]') as HTMLInputElement).checked;
+    expect(tickState('Alpha')).toBe(true);
+    expect(tickState('Beta')).toBe(false);
+
+    // The manifest still carries exactly the restored member.
+    const renderCalls = call.mock.calls.filter((c: any[]) => c[0].kind === 'manifest.render');
+    for (const c of renderCalls) {
+      expect(c[0].items).toEqual([{ type: 'ApexClass', member: 'Alpha' }]);
+    }
+  });
+
+  it('fetches the full member list on expand and keeps the restored tick (offline path)', async () => {
+    setSalesforceUrl();
+    const { factory } = offlineBridgeFactory();
+    const listApi = () =>
+      fakeApi({
+        apiSoap: vi.fn(async (_w: string, method: string) => {
+          if (method === 'describeMetadata') {
+            return { metadataObjects: [{ xmlName: 'ApexClass', directoryName: 'classes', inFolder: false }] };
+          }
+          if (method === 'listMetadata') {
+            return [
+              { fullName: 'Alpha', fileName: 'classes/Alpha.cls', type: 'ApexClass', id: '1' },
+              { fullName: 'Beta', fileName: 'classes/Beta.cls', type: 'ApexClass', id: '2' },
+            ];
+          }
+          return {};
+        }) as unknown as SalesforceApiClient['apiSoap'],
+      });
+
+    const first = createMetadataRetrieveFeature({ api: listApi(), bridgeFactory: factory });
+    await first.onActivate?.();
+    expandType('ApexClass');
+    await flush();
+    await flush();
+    const alphaChk = Array.from(document.querySelectorAll('span'))
+      .find((s) => s.textContent === 'Alpha')!
+      .parentElement!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    alphaChk.checked = true;
+    alphaChk.dispatchEvent(new Event('change'));
+    await flush();
+
+    clearBody();
+    const secondApi = listApi();
+    const second = createMetadataRetrieveFeature({ api: secondApi, bridgeFactory: factory });
+    await second.onActivate?.();
+    expect(document.body.textContent).toContain('Restored 1 saved selection');
+    expect(document.body.textContent).not.toContain('Beta');
+
+    expandType('ApexClass'); // first expand → SOAP listMetadata
+    await flush();
+    await flush();
+
+    expect(secondApi.apiSoap).toHaveBeenCalledWith(
+      'Metadata',
+      'listMetadata',
+      expect.objectContaining({ queries: expect.objectContaining({ type: 'ApexClass' }) }),
+    );
+    expect(document.body.textContent).toContain('Beta');
+    const tickState = (name: string) =>
+      (Array.from(document.querySelectorAll('span'))
+        .find((s) => s.textContent === name)!
+        .parentElement!.querySelector('input[type="checkbox"]') as HTMLInputElement).checked;
+    expect(tickState('Alpha')).toBe(true);
+    expect(tickState('Beta')).toBe(false);
+    // The offline preview still lists only the restored member.
+    expect(mainTextarea().value).toContain('<members>Alpha</members>');
+    expect(mainTextarea().value).not.toContain('<members>Beta</members>');
+  });
+
+  it('keeps a restored member the org no longer lists rather than dropping the selection', async () => {
+    setSalesforceUrl();
+    // Persist a member that the discover response does not contain.
+    await new Promise<void>((resolve) => {
+      chrome.storage.local.set(
+        { 'sfdt-manifest-selections:x.lightning.force.com': { items: [{ type: 'ApexClass', member: 'Gone' }] } },
+        () => resolve(),
+      );
+    });
+    const { call, factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+    expect(document.body.textContent).toContain('Restored 1 saved selection');
+
+    expandType('ApexClass'); // first expand → fetch
+    await flush();
+    await flush();
+
+    expect(document.body.textContent).toContain('were not returned by the org');
+    expect(document.body.textContent).toContain('Gone');
+    const renderCalls = call.mock.calls.filter((c: any[]) => c[0].kind === 'manifest.render');
+    for (const c of renderCalls) {
+      expect(c[0].items).toEqual([{ type: 'ApexClass', member: 'Gone' }]);
+    }
+  });
+
+  it('does not re-fetch a genuinely loaded member list on re-expand', async () => {
+    setSalesforceUrl();
+    const { call, factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    expandType('ApexClass');
+    await flush();
+    await flush();
+    const discoverCount = () =>
+      call.mock.calls.filter((c: any[]) => c[0].kind === 'manifest.discover' && c[0].type === 'ApexClass').length;
+    expect(discoverCount()).toBe(1);
+
+    expandType('ApexClass'); // collapse
+    await flush();
+    expandType('ApexClass'); // expand again — already loaded
+    await flush();
+    await flush();
+    expect(discoverCount()).toBe(1);
+  });
+});
+
+describe('metadata-retrieve — expand/collapse is browsing, not selecting', () => {
+  it('fires no manifest.render for a plain expand/collapse, even with a live selection', async () => {
+    setSalesforceUrl();
+    const { call, factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    // A selection exists on another type, so an unconditional re-render would
+    // be a real (wasted) round-trip rather than a no-op empty render.
+    const objChk = document.querySelectorAll('.sfdt-tree-chk')[1] as HTMLInputElement;
+    objChk.checked = true;
+    objChk.dispatchEvent(new Event('change'));
+    await flush();
+
+    call.mockClear();
+    expandType('ApexClass'); // expand → discover only
+    await flush();
+    await flush();
+    expandType('ApexClass'); // collapse
+    await flush();
+
+    const kinds = call.mock.calls.map((c: any[]) => c[0].kind);
+    expect(kinds).toContain('manifest.discover');
+    expect(kinds).not.toContain('manifest.render');
+  });
+
+  it('writes no storage entry for a plain expand/collapse with nothing selected', async () => {
+    setSalesforceUrl();
+    const { call, factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    call.mockClear();
+    expandType('ApexClass');
+    await flush();
+    await flush();
+    expandType('ApexClass');
+    await flush();
+
+    expect(call.mock.calls.map((c: any[]) => c[0].kind)).not.toContain('manifest.render');
+    const stored = await new Promise<unknown>((resolve) => {
+      chrome.storage.local.get('sfdt-manifest-selections:x.lightning.force.com', (items: any) =>
+        resolve(items?.['sfdt-manifest-selections:x.lightning.force.com']),
+      );
+    });
+    expect(stored).toBeUndefined();
+  });
+
+  it('still renders on every real selection change (AC preserved)', async () => {
+    setSalesforceUrl();
+    const { call, factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    expandType('ApexClass');
+    await flush();
+    await flush();
+    call.mockClear();
+
+    // Type tick → render.
+    const typeChk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    typeChk.checked = true;
+    typeChk.dispatchEvent(new Event('change'));
+    await flush();
+    expect(call.mock.calls.filter((c: any[]) => c[0].kind === 'manifest.render').length).toBe(1);
+
+    // Member untick (narrowing the sticky wildcard) → another render.
+    const betaChk = Array.from(document.querySelectorAll('span'))
+      .find((s) => s.textContent === 'Beta')!
+      .parentElement!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    betaChk.checked = false;
+    betaChk.dispatchEvent(new Event('change'));
+    await flush();
+    expect(call.mock.calls.filter((c: any[]) => c[0].kind === 'manifest.render').length).toBe(2);
+
+    // Expanding a wildcard-selected type does not re-render (sticky `*`).
+    expandType('ApexClass'); // collapse
+    await flush();
+    expandType('ApexClass'); // expand (already loaded)
+    await flush();
+    expect(call.mock.calls.filter((c: any[]) => c[0].kind === 'manifest.render').length).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B-4 follow-up, review round 2 (PR #298 review, non-blocking notes 1 + 3a):
+//   - a restored node must not PRESENT a partial member list as complete: it
+//     stays collapsed, with a partial tick so the selection is still visible;
+//   - an ok:true manifest.discover without a `members` array must not become a
+//     permanent fabricated empty tree.
+// ---------------------------------------------------------------------------
+
+describe('metadata-retrieve — restored nodes stay collapsed but visibly selected', () => {
+  async function seedStoredMember(member = 'Alpha'): Promise<void> {
+    await new Promise<void>((resolve) => {
+      chrome.storage.local.set(
+        { 'sfdt-manifest-selections:x.lightning.force.com': { items: [{ type: 'ApexClass', member }] } },
+        () => resolve(),
+      );
+    });
+  }
+
+  function typeRowCheckbox(name: string): HTMLInputElement {
+    return Array.from(document.querySelectorAll('span'))
+      .find((s) => s.textContent === name)!
+      .parentElement!.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+  }
+
+  function expandButton(name: string): HTMLButtonElement {
+    return Array.from(document.querySelectorAll('span'))
+      .find((s) => s.textContent === name)!
+      .parentElement!.querySelector('button') as HTMLButtonElement;
+  }
+
+  it('renders a restored type collapsed, so no partial list is presented as complete', async () => {
+    setSalesforceUrl();
+    await seedStoredMember();
+    const { call, factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    // Collapsed: the control offers "Expand", and no member rows are rendered.
+    expect(expandButton('ApexClass').getAttribute('aria-label')).toBe('Expand ApexClass');
+    expect(expandButton('ApexClass').getAttribute('aria-expanded')).toBe('false');
+    expect(document.body.textContent).not.toContain('Alpha');
+
+    // One expand click — not a collapse-then-expand — loads the real list.
+    call.mockClear();
+    expandType('ApexClass');
+    await flush();
+    await flush();
+    expect(
+      call.mock.calls.filter((c: any[]) => c[0].kind === 'manifest.discover' && c[0].type === 'ApexClass').length,
+    ).toBe(1);
+    expect(document.body.textContent).toContain('Alpha');
+    expect(document.body.textContent).toContain('Beta');
+  });
+
+  it('shows a partial tick on the collapsed type so the restored selection is not hidden', async () => {
+    setSalesforceUrl();
+    await seedStoredMember();
+    const { factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    const chk = typeRowCheckbox('ApexClass');
+    expect(chk.checked).toBe(false);
+    expect(chk.indeterminate).toBe(true);
+    expect(chk.getAttribute('aria-label')).toBe('Select all ApexClass (some members selected)');
+    // The preview already carries the restored member too.
+    expect(mainTextarea().value).toBe(SERVER_ADDITIVE_XML);
+
+    // A whole-type tick is a full tick, never partial.
+    chk.checked = true;
+    chk.dispatchEvent(new Event('change'));
+    await flush();
+    expect(typeRowCheckbox('ApexClass').indeterminate).toBe(false);
+    expect(typeRowCheckbox('ApexClass').checked).toBe(true);
+  });
+
+  it('clear-all removes the partial tick and the stored selection', async () => {
+    setSalesforceUrl();
+    await seedStoredMember();
+    const { factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+    expect(typeRowCheckbox('ApexClass').indeterminate).toBe(true);
+
+    btnExact('Clear all')!.click();
+    await flush();
+
+    expect(typeRowCheckbox('ApexClass').indeterminate).toBe(false);
+    expect(typeRowCheckbox('ApexClass').checked).toBe(false);
+    expect(mainTextarea().value).toBe('');
+
+    clearBody();
+    const reopened = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await reopened.onActivate?.();
+    expect(document.body.textContent).not.toContain('Restored');
+  });
+
+  it('does not show a partial tick for a wildcard restore (the type itself is ticked)', async () => {
+    setSalesforceUrl();
+    await new Promise<void>((resolve) => {
+      chrome.storage.local.set(
+        { 'sfdt-manifest-selections:x.lightning.force.com': { items: [{ type: 'ApexClass', member: '*' }] } },
+        () => resolve(),
+      );
+    });
+    const { factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    const chk = typeRowCheckbox('ApexClass');
+    expect(chk.checked).toBe(true);
+    expect(chk.indeterminate).toBe(false);
+  });
+});
+
+describe('metadata-retrieve — a members-less discover response is a failure, not an empty type', () => {
+  it('never marks the node loaded, so it stays re-fetchable (no permanent empty tree)', async () => {
+    setSalesforceUrl();
+    let breakPayload = true;
+    const { call, factory } = fakeBridge((req) => {
+      // ok:true but no `members` array — a contract violation.
+      if (req.kind === 'manifest.discover' && req.type && breakPayload) {
+        return { ok: true, requestId: 'r', data: { org: 'devhub', type: req.type } };
+      }
+      return undefined;
+    });
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    expandType('ApexClass');
+    await flush();
+    await flush();
+
+    // Surfaced as an error, and the node collapsed rather than showing empty.
+    expect(document.body.textContent).toContain('Failed to load members');
+    expect(document.body.textContent).toContain('missing its "members" array');
+    const expBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.getAttribute('aria-label') === 'Expand ApexClass',
+    );
+    expect(expBtn).not.toBeUndefined();
+
+    // The very next expand re-fetches — the failure did not stick.
+    breakPayload = false;
+    expandType('ApexClass');
+    await flush();
+    await flush();
+    expect(
+      call.mock.calls.filter((c: any[]) => c[0].kind === 'manifest.discover' && c[0].type === 'ApexClass').length,
+    ).toBe(2);
+    expect(document.body.textContent).toContain('Alpha');
+    expect(document.body.textContent).toContain('Beta');
+  });
+
+  it('keeps a seeded selection intact through a members-less response', async () => {
+    setSalesforceUrl();
+    await new Promise<void>((resolve) => {
+      chrome.storage.local.set(
+        { 'sfdt-manifest-selections:x.lightning.force.com': { items: [{ type: 'ApexClass', member: 'Alpha' }] } },
+        () => resolve(),
+      );
+    });
+    const { factory } = fakeBridge((req) => {
+      if (req.kind === 'manifest.discover' && req.type) {
+        return { ok: true, requestId: 'r', data: { org: 'devhub', type: req.type } };
+      }
+      return undefined;
+    });
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    expandType('ApexClass');
+    await flush();
+    await flush();
+
+    expect(document.body.textContent).toContain('missing its "members" array');
+    // The seeded tick (and therefore the manifest) survived the bad response.
+    const chk = Array.from(document.querySelectorAll('span'))
+      .find((s) => s.textContent === 'ApexClass')!
+      .parentElement!.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    expect(chk.indeterminate).toBe(true);
+    expect(mainTextarea().value).toBe(SERVER_ADDITIVE_XML);
   });
 });

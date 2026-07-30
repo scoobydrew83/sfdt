@@ -43,6 +43,11 @@ interface MetadataObject {
   icon?: string;
   directoryName?: string;
   inFolder?: boolean;
+  // True only once this type's real member list has been fetched from the org
+  // (bridge or SOAP). Children seeded from a persisted selection or an
+  // imported package.xml leave it false, so expanding still fetches — a
+  // length check alone would truncate the tree to the seeded members forever.
+  membersLoaded?: boolean;
 }
 
 interface FileProperty {
@@ -56,6 +61,7 @@ interface FileProperty {
   expanded?: boolean;
   childXmlNames?: any[];
   isFolder?: boolean;
+  membersLoaded?: boolean;
 }
 
 type BridgeReq = Omit<SfdtRequest, 'requestId'>;
@@ -262,7 +268,10 @@ export function createMetadataRetrieveFeature(options: {
 
   /** Re-apply the stored per-org selection onto the freshly loaded type list.
    *  Member selections seed children directly (the same convention as
-   *  importing a package.xml), so they are visible without an org round-trip. */
+   *  importing a package.xml), so they are visible without an org round-trip.
+   *  Seeded nodes deliberately leave `membersLoaded` false — expanding one
+   *  still fetches the type's real member list and merges these ticks into
+   *  it, so a restored selection never truncates the tree. */
   async function restoreSelections(): Promise<void> {
     const stored = (await storageGet(selectionStoreKey())) as
       | { items?: Array<{ type?: unknown; member?: unknown }> }
@@ -281,7 +290,13 @@ export function createMetadataRetrieveFeature(options: {
         restored++;
         continue;
       }
-      match.expanded = true;
+      // Deliberately left COLLAPSED. An expanded seeded node would present a
+      // one-member list as if it were the type's complete membership, and the
+      // only way to load the rest would be an undiscoverable
+      // collapse-then-expand. Collapsed, the first expand does the real fetch
+      // and merges these ticks; the tree still shows the selection exists via
+      // the partial-tick (indeterminate) state on the type row.
+      match.expanded = false;
       const existing = (match.childXmlNames ?? []).find(
         (c: FileProperty) => c.fullName === member,
       );
@@ -436,10 +451,64 @@ export function createMetadataRetrieveFeature(options: {
     }
   }
 
+  /** Stable signature of the effective manifest selection, used to tell a
+   *  genuine selection change from a pure browse action (expand/collapse). */
+  function selectionSignature(): string {
+    return collectSelectedItems()
+      .map(({ type, member }) => `${type}:${member}`)
+      .join('|');
+  }
+
+  /** Members the user had ticked before a member-list fetch replaces the
+   *  node's children — their ticks must survive the merge (that is the whole
+   *  point of persistence). */
+  function selectedMemberNames(meta: any): Set<string> {
+    const names = new Set<string>();
+    for (const child of (meta.childXmlNames ?? []) as FileProperty[]) {
+      if (child.selected && child.fullName) names.add(child.fullName);
+    }
+    return names;
+  }
+
+  /** Re-attach ticks the fetch would otherwise have dropped, and keep any
+   *  previously-selected member the org no longer lists rather than silently
+   *  discarding the user's selection. */
+  function mergeRestoredSelection(anyMeta: any, previouslySelected: Set<string>): void {
+    if (previouslySelected.size === 0) return;
+    const fetched = new Set<string>();
+    for (const child of anyMeta.childXmlNames as FileProperty[]) {
+      fetched.add(child.fullName);
+      if (previouslySelected.has(child.fullName)) child.selected = true;
+    }
+    const missing = [...previouslySelected].filter((name) => !fetched.has(name));
+    for (const name of missing) {
+      anyMeta.childXmlNames.push({
+        fullName: name,
+        fileName: name,
+        type: anyMeta.xmlName,
+        id: '',
+        selected: true,
+        expanded: false,
+        childXmlNames: [],
+      });
+    }
+    if (missing.length > 0) {
+      addLog(
+        'info',
+        `${missing.length} selected ${anyMeta.xmlName} member(s) were not returned by the org and are kept as-is: ${missing.join(', ')}.`,
+      );
+    }
+  }
+
   async function toggleExpand(meta: MetadataObject | FileProperty): Promise<void> {
     const anyMeta = meta as any;
+    const signatureBefore = selectionSignature();
     anyMeta.expanded = !anyMeta.expanded;
-    if (anyMeta.expanded && (!anyMeta.childXmlNames || anyMeta.childXmlNames.length === 0)) {
+    // Fetch on completeness, not on emptiness: a node whose children were
+    // seeded from storage (or an imported package.xml) has entries but has
+    // never been loaded, and must still fetch its real member list.
+    if (anyMeta.expanded && !anyMeta.membersLoaded) {
+      const previouslySelected = selectedMemberNames(anyMeta);
       isWorking = true;
       updateSpinner();
       addLog('working', `Fetching components for ${anyMeta.xmlName ?? anyMeta.fullName}...`);
@@ -457,7 +526,19 @@ export function createMetadataRetrieveFeature(options: {
             throw new Error(res.error);
           }
           const data = getBridgeData<ManifestDiscoverResponseData>(res);
-          const members = Array.isArray(data.members) ? data.members : [];
+          // An ok:true response without a `members` array is a contract
+          // violation, NOT an empty type. Coercing it to [] and marking the
+          // node loaded would make a fabricated empty tree permanent — the
+          // exact failure mode the "never a fabricated empty tree" invariant
+          // exists to prevent. Treat it as a failure: the node collapses,
+          // stays re-fetchable, and its seeded children/ticks are untouched.
+          if (!Array.isArray(data.members)) {
+            anyMeta.expanded = false;
+            throw new Error(
+              `Bridge returned no member list for ${anyMeta.xmlName} — the response is missing its "members" array.`,
+            );
+          }
+          const members = data.members;
           anyMeta.childXmlNames = members
             .filter((m): m is string => typeof m === 'string' && m.length > 0)
             .map((fullName) => ({
@@ -469,6 +550,8 @@ export function createMetadataRetrieveFeature(options: {
               expanded: false,
               childXmlNames: [],
             }));
+          anyMeta.membersLoaded = true;
+          mergeRestoredSelection(anyMeta, previouslySelected);
           addLog('success', `Loaded ${anyMeta.childXmlNames.length} members for ${anyMeta.xmlName} from the sfdt bridge.`);
         } else {
           const cleanVersion = cleanApiVersion();
@@ -481,6 +564,10 @@ export function createMetadataRetrieveFeature(options: {
             asOfVersion: cleanVersion,
           });
 
+          // No bridge-style hole on this path: `apiSoap` throws on every
+          // transport error and SOAP fault, so reaching here with a falsy
+          // `res` genuinely means the type has zero members — marking it
+          // loaded is correct rather than a fabricated empty tree.
           anyMeta.childXmlNames = [];
           if (res) {
             const resArray = asArray(res);
@@ -510,16 +597,24 @@ export function createMetadataRetrieveFeature(options: {
               return valA.localeCompare(valB);
             });
           }
+          anyMeta.membersLoaded = true;
+          mergeRestoredSelection(anyMeta, previouslySelected);
           addLog('success', `Loaded ${anyMeta.childXmlNames.length} members for ${anyMeta.xmlName ?? anyMeta.fullName}.`);
         }
       } catch (err: any) {
+        // membersLoaded stays false so a retry re-fetches rather than showing
+        // a partial tree; the seeded children (and their ticks) are untouched.
         addLog('error', `Failed to load members: ${err.message}`);
       } finally {
         isWorking = false;
         updateSpinner();
       }
     }
-    onSelectionChanged();
+    // Expand/collapse is browsing, not selecting — only persist + re-render
+    // when the effective selection actually moved (a seeded-member merge can
+    // move it, a plain expand cannot). Keeps the live-preview-on-every-
+    // selection-change contract without a bridge round-trip per click.
+    if (selectionSignature() !== signatureBefore) onSelectionChanged();
     renderTree();
   }
 
@@ -640,11 +735,14 @@ export function createMetadataRetrieveFeature(options: {
         return;
       }
 
-      // Reset tree selections first
+      // Reset tree selections first. Clearing children also clears the
+      // loaded flag, so an imported type re-fetches its real member list on
+      // the next expand instead of showing only the imported members.
       metadataObjects.forEach(o => {
         o.selected = false;
         o.expanded = false;
         o.childXmlNames = [];
+        o.membersLoaded = false;
       });
 
       const types = xmlDoc.getElementsByTagName('types');
@@ -906,7 +1004,19 @@ export function createMetadataRetrieveFeature(options: {
       chk.type = 'checkbox';
       chk.className = 'sfdt-tree-chk';
       chk.checked = !!obj.selected;
-      chk.setAttribute('aria-label', `Select all ${obj.xmlName}`);
+      // Partial tick when individual members are selected without the
+      // whole-type tick. This is what makes a restored member-level selection
+      // visible on a collapsed node — the selection is never hidden just
+      // because the member list hasn't been fetched yet.
+      const partiallySelected =
+        !obj.selected && (obj.childXmlNames ?? []).some((c: FileProperty) => c.selected);
+      chk.indeterminate = partiallySelected;
+      chk.setAttribute(
+        'aria-label',
+        partiallySelected
+          ? `Select all ${obj.xmlName} (some members selected)`
+          : `Select all ${obj.xmlName}`,
+      );
       chk.addEventListener('change', (e) => {
         e.stopPropagation();
         selectMetaItem(obj, chk.checked);
