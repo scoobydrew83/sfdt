@@ -6,6 +6,8 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-30
+
 ### Added
 
 - **`SFDT: Open Manifest Builder`** — opens the embedded dashboard deep-linked
