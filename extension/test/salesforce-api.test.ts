@@ -265,12 +265,18 @@ describe('extension/lib/salesforce-api (thin client over sfApiFetch)', () => {
       expect((err as SalesforceRestError).status).toBe(400);
     });
 
-    it('keeps the short .message and the http-error tag byte-for-byte', async () => {
-      // Every existing caller reads only `.message`; this must stay additive.
+    it('leads with the org text unchanged, then adds the code, field and advice', async () => {
+      // Every caller reads only `.message`, so the guidance has to live there to
+      // reach a user. The org's own first line is preserved byte-for-byte and is
+      // never replaced — our text is only ever appended below it.
       const err = await failWith(
         '[{"message":"Value too long","errorCode":"STRING_TOO_LONG","fields":["Name"]}]',
       );
-      expect(err.message).toBe('Salesforce PATCH request failed (HTTP 400): Value too long');
+      const [headline, ...rest] = err.message.split('\n');
+      expect(headline).toBe('Salesforce PATCH request failed (HTTP 400): Value too long');
+      expect(rest.join('\n')).toContain('STRING_TOO_LONG');
+      expect(rest.join('\n')).toContain('field: Name');
+      expect(rest.join('\n')).toContain('Shorten it');
       expect(sfApiErrorKind(err)).toBe('http-error');
       expect(err).toBeInstanceOf(Error);
     });
