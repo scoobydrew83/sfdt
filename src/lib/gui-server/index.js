@@ -43,6 +43,10 @@ import {
 } from './handlers.js';
 import { logAuditEvent, redactSensitiveData } from '../audit-logger.js';
 import { runFlowScan, runFlowConflicts, runFlowGraph } from '../flow-analyzer.js';
+import {
+  searchSObjects, describeSObject, discoverRelationships,
+  validateQuery, explainQuery, runQuery, runSearch, toCsv,
+} from '../soql-runner.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2694,6 +2698,182 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── SOQL console: schema browse, validation, plans, bounded execution ──────
+  //
+  // Thin wrappers over src/lib/soql-runner.js — the single query/schema engine
+  // shared with `sfdt soql`, MCP, and VS Code (no logic reimplemented here).
+  // Responses are the runner's RAW result shapes: the sf-native
+  // {status, result, warnings} envelope is a stdout-only contract (golden
+  // principle #6). Failures surface the runner's real message — never a
+  // fabricated empty result. Execution inherits the runner's row bounds
+  // (soql.defaultLimit clamped to soql.maxLimit, bound/truncated metadata);
+  // exports are client-side downloads, so these routes never accept an output
+  // path and never write files.
+
+  const SOQL_ORG_RE = /^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/;
+  const SOQL_SOBJECT_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
+  const SOQL_MAX_QUERY_CHARS = 100_000; // REST caps SOQL well below this; guard the process, not the grammar
+
+  /** Validate an optional org alias param. Returns false after responding 400. */
+  function checkSoqlOrg(org, res) {
+    if (org === undefined || org === null || org === '') return true;
+    if (typeof org !== 'string' || !SOQL_ORG_RE.test(org)) {
+      res.status(400).json({ error: 'Invalid org alias' });
+      return false;
+    }
+    return true;
+  }
+
+  /** Validate a required query/search string. Returns false after responding. */
+  function checkSoqlQueryText(query, res) {
+    if (typeof query !== 'string' || !query.trim()) {
+      res.status(400).json({ error: 'query is required' });
+      return false;
+    }
+    if (query.length > SOQL_MAX_QUERY_CHARS) {
+      res.status(413).json({ error: `Query too long (max ${SOQL_MAX_QUERY_CHARS} characters)` });
+      return false;
+    }
+    return true;
+  }
+
+  /** Input-shaped runner errors → 400; everything else → 500. Real message either way. */
+  function soqlErrorStatus(err) {
+    return /^Invalid SO(QL|SL)|^--limit must be|^--category must be|^--direction must be|^--format must be|executes SO(QL|SL)|^No org specified|^Provide an sObject/i
+      .test(err.message ?? '') ? 400 : 500;
+  }
+
+  app.get('/api/soql/sobjects', apiLimiter, async (req, res) => {
+    try {
+      const { org, term, category = 'all', limit } = req.query;
+      if (!checkSoqlOrg(org, res)) return;
+      if (!['all', 'custom', 'standard'].includes(String(category))) {
+        return res.status(400).json({ error: 'category must be one of: all, custom, standard' });
+      }
+      const result = await searchSObjects(config, term ? String(term) : undefined, {
+        org: org || undefined,
+        category: String(category),
+        limit: limit ? String(limit) : undefined,
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/soql/describe', apiLimiter, async (req, res) => {
+    try {
+      const { org, name, filter, tooling } = req.query;
+      if (!checkSoqlOrg(org, res)) return;
+      if (typeof name !== 'string' || !SOQL_SOBJECT_RE.test(name)) {
+        return res.status(400).json({ error: 'Invalid sObject name' });
+      }
+      const result = await describeSObject(config, name, {
+        org: org || undefined,
+        filter: filter ? String(filter) : undefined,
+        tooling: tooling === '1' || tooling === 'true',
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/soql/relationships', apiLimiter, async (req, res) => {
+    try {
+      const { org, name, direction = 'both' } = req.query;
+      if (!checkSoqlOrg(org, res)) return;
+      if (typeof name !== 'string' || !SOQL_SOBJECT_RE.test(name)) {
+        return res.status(400).json({ error: 'Invalid sObject name' });
+      }
+      if (!['parent', 'child', 'both'].includes(String(direction))) {
+        return res.status(400).json({ error: 'direction must be one of: parent, child, both' });
+      }
+      const result = await discoverRelationships(config, name, {
+        org: org || undefined,
+        direction: String(direction),
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/soql/validate', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { query, org, tooling = false, localOnly = false } = req.body ?? {};
+      if (!checkSoqlOrg(org, res)) return;
+      if (!checkSoqlQueryText(query, res)) return;
+      // validateQuery only throws on unexpected failures — an invalid query is
+      // a 200 with { valid: false, errors } (the org's verdict, verbatim).
+      const result = await validateQuery(config, query, {
+        org: org || undefined,
+        tooling: Boolean(tooling),
+        localOnly: Boolean(localOnly),
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/soql/plan', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { query, org, apiVersion } = req.body ?? {};
+      if (!checkSoqlOrg(org, res)) return;
+      if (!checkSoqlQueryText(query, res)) return;
+      if (apiVersion !== undefined && !/^\d+(\.\d+)?$/.test(String(apiVersion))) {
+        return res.status(400).json({ error: 'Invalid apiVersion. Expected e.g. "64.0".' });
+      }
+      const result = await explainQuery(config, query, {
+        org: org || undefined,
+        apiVersion: apiVersion ? String(apiVersion) : undefined,
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/soql/query', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { query, org, limit, tooling = false, allRows = false } = req.body ?? {};
+      if (!checkSoqlOrg(org, res)) return;
+      if (!checkSoqlQueryText(query, res)) return;
+      // No `out`/`format` here on purpose: the runner's file export is a CLI
+      // concern. The GUI downloads client-side; `csv` below reuses the runner's
+      // own CSV shaping so there is exactly one export format per kind.
+      const result = await runQuery(config, query, {
+        org: org || undefined,
+        limit: limit ?? undefined,
+        tooling: Boolean(tooling),
+        allRows: Boolean(allRows),
+      });
+      res.json({ ...result, csv: toCsv(result.records) });
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/soql/sosl', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { query, org, limit } = req.body ?? {};
+      if (!checkSoqlOrg(org, res)) return;
+      if (!checkSoqlQueryText(query, res)) return;
+      const result = await runSearch(config, query, {
+        org: org || undefined,
+        limit: limit ?? undefined,
+      });
+      res.json({ ...result, csv: toCsv(result.records) });
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
     }
   });
 

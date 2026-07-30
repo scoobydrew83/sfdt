@@ -294,6 +294,21 @@ export const api = {
   docs:                   () => fetchJson('/docs'),
   /** Org-wide Apex coverage + per-class. @returns {Promise<{org:string|null, threshold:number|null, orgWide:number|null, belowThreshold:boolean, classes:Array<{name:string, covered:number, uncovered:number, total:number, pct:number|null}>}>} */
   coverageOrgWide:        () => fetchJson('/coverage'),
+  // ── SOQL console (thin wrappers over soql-runner.js — the single engine) ──
+  /** Find sObjects by name substring. @returns {Promise<{org:string, term:string|null, category:string, totalScanned:number, totalMatched:number, truncated:boolean, matches:string[]}>} */
+  soqlSObjects:           (org, { term, category, limit } = {}) => fetchJson(`/soql/sobjects?org=${encodeURIComponent(org)}${term ? `&term=${encodeURIComponent(term)}` : ''}${category ? `&category=${encodeURIComponent(category)}` : ''}${limit ? `&limit=${encodeURIComponent(limit)}` : ''}`),
+  /** Describe an sObject (fields + child relationships). @returns {Promise<{org:string, name:string, label:string, custom:boolean, queryable:boolean, keyPrefix:string|null, fieldCount:number, filter:string|null, fields:Array, childRelationships:Array}>} */
+  soqlDescribe:           (org, name, { filter, tooling } = {}) => fetchJson(`/soql/describe?org=${encodeURIComponent(org)}&name=${encodeURIComponent(name)}${filter ? `&filter=${encodeURIComponent(filter)}` : ''}${tooling ? '&tooling=1' : ''}`),
+  /** Parent lookups (dot notation) + child relationships (subqueries). @returns {Promise<{org:string, sobject:string, direction:string, parents?:Array, children?:Array}>} */
+  soqlRelationships:      (org, name, { direction } = {}) => fetchJson(`/soql/relationships?org=${encodeURIComponent(org)}&name=${encodeURIComponent(name)}${direction ? `&direction=${encodeURIComponent(direction)}` : ''}`),
+  /** Validate a query (local checks + org LIMIT 0 round-trip; degrades to local-only, never a fabricated pass). @returns {Promise<{query:string, valid:boolean, mode:'local'|'org', kind:string, errors:string[], warnings:string[]}>} */
+  soqlValidate:           (body) => postJson('/soql/validate', body),
+  /** Org query plans via the REST explain endpoint (the query is never executed). @returns {Promise<{org:string, apiVersion:string, query:string, plans:Array}>} */
+  soqlPlan:               (body) => postJson('/soql/plan', body),
+  /** Bounded SOQL execution — the runner enforces soql.defaultLimit/maxLimit; `csv` is the runner's own CSV shaping. @returns {Promise<{org:string, query:string, requestedQuery:string, bound:{limit:number,max:number,action:string}, totalSize:number, returned:number, truncated:boolean, records:Array<object>, csv:string}>} */
+  soqlQuery:              (body) => postJson('/soql/query', body),
+  /** Bounded SOSL execution. @returns {Promise<{org:string, query:string, requestedQuery:string, bound:{limit:number,max:number,action:string}, returned:number, records:Array<object>, csv:string}>} */
+  soqlSosl:               (body) => postJson('/soql/sosl', body),
 };
 
 // ─── SSE helpers ──────────────────────────────────────────────────────────────

@@ -107,6 +107,11 @@
       "group": "Analyze"
     },
     {
+      "id": "soql",
+      "label": "SOQL Console",
+      "group": "Analyze"
+    },
+    {
       "id": "scratch",
       "label": "Scratch Orgs",
       "group": "Analyze"

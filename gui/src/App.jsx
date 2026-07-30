@@ -28,11 +28,12 @@ import DataPage from './pages/Data.jsx';
 import DocsPage from './pages/Docs.jsx';
 import AgentTestPage from './pages/AgentTest.jsx';
 import RetrofitPage from './pages/Retrofit.jsx';
+import SoqlConsolePage from './pages/SoqlConsole.jsx';
 import {
   IconHome, IconList, IconCheck, IconRefresh, IconCompare,
   IconSun, IconMoon, IconFileText, IconActivity, IconCloudDown,
   IconRocket, IconCode, IconSearch, IconSettings, IconClock, IconGraph,
-  IconPackage,
+  IconPackage, IconTerminal,
 } from './Icons.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 import ChatDrawer from './components/ChatDrawer.jsx';
@@ -65,6 +66,7 @@ const ICONS = {
   explain: IconSearch,
   flows: IconGraph,
   dependency: IconGraph,
+  soql: IconTerminal,
   scratch: IconCloudDown,
   data: IconList,
   docs: IconFileText,
@@ -94,6 +96,7 @@ const PAGES = {
   explain: ExplainPage,
   flows: FlowsPage,
   dependency: DependencyPage,
+  soql: SoqlConsolePage,
   scratch: ScratchPage,
   data: DataPage,
   docs: DocsPage,

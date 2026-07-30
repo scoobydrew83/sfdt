@@ -1355,7 +1355,7 @@ The extension polls the bridge ping endpoint and stops loading any feature whose
 
 ## Web Dashboard
 
-The dashboard has eight pages:
+The dashboard's main pages:
 
 | Page | What it shows | Data source |
 |---|---|---|
@@ -1368,6 +1368,7 @@ The dashboard has eight pages:
 | **Explain** | AI-powered deployment log analysis | `logs/explain-latest.json` |
 | **Release Hub** | Release manifest artifacts and release notes | `logs/release/` |
 | **Manifest Builder** | Changeset-style builder: browse metadata by type (org inventory or local source), tick components (or a whole type → `*` wildcard), watch a live server-rendered XML preview, and save `rl-<name>-package.xml` — or, in destructive mode, the `rl-<name>-destructiveChanges.xml` + empty `package.xml` pair (deploy timing: `SFDT_DESTRUCTIVE_TIMING`, see `docs/ENV-VARS.md`). Selections persist per org. | `/api/manifest/discover-org` (cached by `logs/scan-latest.json`), `/api/manifest/discover`, `/api/manifest/render`, `/api/manifest/save` |
+| **SOQL Console** | The `sfdt soql` family as a page: search sObjects and browse fields/relationships, validate a query (local checks + org `LIMIT 0` round-trip), fetch query plans (never executed), and run SOQL/SOSL with the configured row bound (`soql.defaultLimit` clamped to `soql.maxLimit`, bound/truncated metadata shown). Results export as raw JSON or the runner-shaped CSV — same engine as the CLI (`soql-runner.js`), no logic reimplemented. Deep-linkable at `/soql`. | `/api/soql/sobjects`, `/api/soql/describe`, `/api/soql/relationships`, `/api/soql/validate`, `/api/soql/plan`, `/api/soql/query`, `/api/soql/sosl` |
 
 **Live command runner:** The Test Runs, Preflight, and Drift pages each have a "Run" button that triggers the corresponding shell script via a Server-Sent Events stream. Output appears line-by-line in the UI in real time, the same as running the CLI command directly.
 
