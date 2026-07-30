@@ -334,6 +334,7 @@ describe('buildDirtyDiff', () => {
         fld({ name: 'Opens__c', type: 'time' }),
         fld({ name: 'CloseDate', type: 'date' }),
         fld({ name: 'Amount', type: 'currency' }),
+        fld({ name: 'Tags__c', type: 'multipicklist' }),
         fld({ name: 'IsActive__c', type: 'boolean' }),
         fld({ name: 'Name', type: 'string' }),
       ],
@@ -343,6 +344,8 @@ describe('buildDirtyDiff', () => {
       Opens__c: '09:30:45.500Z',
       CloseDate: '2026-07-30',
       Amount: 1234.5,
+      // Stored order differs from picklist-definition order on purpose.
+      Tags__c: 'C;A',
       IsActive__c: true,
       Name: 'Acme',
     };
@@ -369,6 +372,29 @@ describe('buildDirtyDiff', () => {
     expect(diff.patchBody.When__c).toBe(new Date(edited).toISOString());
     // The seconds survived the edit rather than being zeroed on the way through.
     expect(diff.patchBody.When__c).toContain(':45.000Z');
+  });
+
+  it('multipicklist: a reorder is not a change (order is not part of the value)', () => {
+    // A <select multiple> reads back in DOM order, which is picklist-definition
+    // order — not the order the record happened to store.
+    const mp = { fields: [fld({ name: 'Tags__c', type: 'multipicklist' })] };
+    expect(buildDirtyDiff(mp, { Tags__c: 'C;A' }, { Tags__c: ['A', 'C'] }).changedFieldNames).toEqual(
+      [],
+    );
+    expect(buildDirtyDiff(mp, { Tags__c: 'C;A' }, { Tags__c: 'A;C' }).changedFieldNames).toEqual([]);
+  });
+
+  it('multipicklist: adding or removing a value IS a change, written in control order', () => {
+    const mp = { fields: [fld({ name: 'Tags__c', type: 'multipicklist' })] };
+    expect(buildDirtyDiff(mp, { Tags__c: 'C;A' }, { Tags__c: ['A', 'B', 'C'] }).patchBody).toEqual({
+      Tags__c: 'A;B;C',
+    });
+    expect(buildDirtyDiff(mp, { Tags__c: 'C;A' }, { Tags__c: ['A'] }).patchBody).toEqual({
+      Tags__c: 'A',
+    });
+    expect(buildDirtyDiff(mp, { Tags__c: 'C;A' }, { Tags__c: [] }).patchBody).toEqual({
+      Tags__c: null,
+    });
   });
 
   it('clearing a value emits an explicit null', () => {

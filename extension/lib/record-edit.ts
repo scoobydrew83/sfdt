@@ -354,6 +354,24 @@ export interface DescribeLike {
   fields: FieldDescribe[];
 }
 
+// A multipicklist's ORDER is not part of its value. Salesforce stores and
+// returns the selected values in picklist-definition order, and a
+// <select multiple> reads its selection back in DOM order — so a record whose
+// stored order differs from the definition order comes back "changed" on every
+// save, for a field nobody touched. That is exactly the phantom-dirty class
+// this module exists to remove, so multipicklists compare as SETS.
+//
+// A real change (a value added or removed) still writes the control's own
+// order verbatim; this only decides equality, it never rewrites a value.
+function multipicklistKey(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .split(';')
+    .filter((part) => part !== '')
+    .sort()
+    .join(';');
+}
+
 // The single source of truth for "what changed" — the save bar and the PATCH
 // body are the same computation, so they cannot disagree. (Before P4-1,
 // inspect-record ran two independent `!==` loops for these two questions.)
@@ -375,7 +393,7 @@ export interface DescribeLike {
 //
 //  3. Only values that actually differ once both sides are in canonical wire
 //     form — so re-serialising a number or an instant is not mistaken for an
-//     edit.
+//     edit, and a reordered multipicklist is not either.
 export function buildDirtyDiff(
   describe: DescribeLike | null | undefined,
   original: Record<string, unknown>,
@@ -396,7 +414,11 @@ export function buildDirtyDiff(
 
     const before = coerceForWire(field, original[field.name]);
     const after = coerceForWire(field, edited[field.name]);
-    if (before === after) continue;
+    if (field.type === 'multipicklist') {
+      if (multipicklistKey(before) === multipicklistKey(after)) continue;
+    } else if (before === after) {
+      continue;
+    }
 
     patchBody[field.name] = after;
     changedFieldNames.push(field.name);
