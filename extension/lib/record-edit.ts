@@ -1,11 +1,14 @@
 // Pure editability model for record edit / clone (P4-1, PR-1).
 //
 // No DOM, no chrome.*, no I/O. Every function here is total over its declared
-// argument types, and the two that walk arrays — buildDirtyDiff and
-// mapSaveErrors — additionally skip malformed elements rather than throwing,
-// because both sit on paths (a save, an error render) where a throw would cost
-// the user their edits. The leaf functions keep precise signatures and are not
-// defensive: TypeScript is the guard there.
+// argument types. Three of them go further and tolerate malformed input rather
+// than throwing, because all three sit on paths where a throw costs the user
+// something they cannot get back: buildDirtyDiff (a save), mapSaveErrors (the
+// render of the error explaining why the save failed), and
+// classifyFieldEditability (called per field inside PR-2's render loop, where
+// one bad field would otherwise take out the whole inspector). formatForInput
+// and coerceForWire are the leaf functions and stay undefensive — they are
+// called with a value, not a shape, and TypeScript is the guard there.
 //
 // The UI layers (inspect-record's edit mode in PR-2, the clone form in PR-3)
 // render what these decide; the *decisions* all live here so there is exactly
@@ -164,7 +167,13 @@ export function classifyFieldEditability(
   // merely vague but wrong, sending the user hunting through profiles for a
   // permission that does not exist. `no-permission` is reserved for the case
   // where the cause genuinely is unverifiable; here it is verifiable.
-  if (SYSTEM_FIELD_SET.has(field.name.toLowerCase()) && !permitted) {
+  //
+  // `String(… ?? '')` rather than `.toLowerCase()` on the raw name: `name` is
+  // required by FieldDescribe and a real describe always sends it, but this is
+  // the function PR-2 calls per field inside a render loop, and a throw there
+  // takes out the whole inspector rather than one row. Same reasoning that got
+  // the array walkers their guards — the cost of being wrong is asymmetric.
+  if (SYSTEM_FIELD_SET.has(String(field.name ?? '').toLowerCase()) && !permitted) {
     return {
       editable: false,
       reason: 'system',

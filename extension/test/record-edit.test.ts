@@ -153,6 +153,20 @@ describe('classifyFieldEditability', () => {
     expect(classifyFieldEditability(bare)).toMatchObject({ editable: false, reason: 'no-permission' });
   });
 
+  it('does not throw on a field with a missing or non-string name', () => {
+    // PR-2 calls this per field inside a render loop: a throw takes out the
+    // whole inspector, not one row. Unreachable from a real describe, but the
+    // cost of being wrong is asymmetric enough to guard.
+    for (const bad of [{ type: 'string' }, {}, { name: 42, type: 'string' }]) {
+      expect(() => classifyFieldEditability(bad as unknown as FieldDescribe), JSON.stringify(bad))
+        .not.toThrow();
+    }
+    expect(classifyFieldEditability({ type: 'string' } as unknown as FieldDescribe)).toMatchObject({
+      editable: false,
+      reason: 'no-permission',
+    });
+  });
+
   it('leaves compound components individually editable', () => {
     const street = fld({ name: 'BillingStreet', type: 'textarea', compoundFieldName: 'BillingAddress' });
     expect(classifyFieldEditability(street)).toMatchObject({ editable: true });
