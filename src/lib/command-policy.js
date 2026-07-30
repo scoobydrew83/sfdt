@@ -472,7 +472,7 @@ export const COMMAND_POLICY = {
     requiresOrg: true, // `validate --local-only` works offline, but the primary path queries the org
     supportsJson: true,
     docsCategory: 'metadata',
-    surfaces: { gui: false, vscode: true, chrome: false },
+    surfaces: { gui: true, vscode: true, chrome: false }, // gui = the SOQL Console page (D-4)
     mcpTools: {
       sfdt_soql_search: { mutating: false },
       sfdt_soql_describe: { mutating: false },
