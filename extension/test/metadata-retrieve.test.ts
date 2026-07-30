@@ -677,3 +677,385 @@ describe('metadata-retrieve — toolbar & overlay', () => {
     expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// B-4: bridge-connected path. The bridge is mocked at the bridge-client
+// boundary (bridgeFactory → { call }), the same seam bridge-tools tests use.
+// Server XML is returned as sentinels so the tests can assert the
+// single-writer rule literally: the preview shows the CLI's bytes verbatim,
+// never anything the extension assembled itself.
+// ---------------------------------------------------------------------------
+
+const SERVER_ADDITIVE_XML = 'SERVER-ADDITIVE-XML';
+const SERVER_DESTRUCTIVE_XML = 'SERVER-DESTRUCTIVE-XML';
+const SERVER_EMPTY_PAIR_XML = 'SERVER-EMPTY-PAIR-XML';
+
+function fakeBridge(onCall?: (req: any) => any) {
+  const call = vi.fn(async (req: any) => {
+    if (onCall) {
+      const out = onCall(req);
+      if (out !== undefined) return out;
+    }
+    if (req.kind === 'manifest.discover' && req.type === undefined) {
+      return { ok: true, requestId: 'r', data: { org: 'devhub', types: ['CustomObject', 'ApexClass'] } };
+    }
+    if (req.kind === 'manifest.discover') {
+      return { ok: true, requestId: 'r', data: { org: 'devhub', type: req.type, members: ['Alpha', 'Beta'] } };
+    }
+    if (req.kind === 'manifest.render') {
+      if (req.mode === 'destructive') {
+        return {
+          ok: true,
+          requestId: 'r',
+          data: {
+            mode: 'destructive',
+            destructiveChangesXml: SERVER_DESTRUCTIVE_XML,
+            emptyPackageXml: SERVER_EMPTY_PAIR_XML,
+          },
+        };
+      }
+      return { ok: true, requestId: 'r', data: { mode: 'additive', xml: SERVER_ADDITIVE_XML } };
+    }
+    return { ok: false, requestId: 'r', error: `unexpected kind ${req.kind}`, code: 'NOT_IMPLEMENTED' };
+  });
+  const factory = async () => ({ call });
+  return { call, factory };
+}
+
+function offlineBridgeFactory() {
+  const call = vi.fn(async (_req: any) => ({
+    ok: false as const,
+    requestId: 'r',
+    error: 'sfdt is not running',
+    code: 'BRIDGE_OFFLINE' as const,
+  }));
+  return { call, factory: async () => ({ call }) };
+}
+
+function mainTextarea(): HTMLTextAreaElement {
+  return document.querySelector('#sfdt-meta-xml-textarea') as HTMLTextAreaElement;
+}
+
+function pairTextarea(): HTMLTextAreaElement {
+  return document.querySelector('#sfdt-meta-pair-textarea') as HTMLTextAreaElement;
+}
+
+describe('metadata-retrieve — bridge-connected path', () => {
+  it('discovers types over the bridge and never calls the SOAP describe', async () => {
+    setSalesforceUrl();
+    const api = fakeApi();
+    const { call, factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api, bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    // The type list came from manifest.discover (no `type` field) …
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'manifest.discover' }),
+      expect.anything(),
+    );
+    expect(document.body.textContent).toContain('ApexClass');
+    expect(document.body.textContent).toContain('CustomObject');
+    expect(document.body.textContent).toContain('sfdt bridge connected');
+
+    // … and the SOAP path was not touched at all.
+    expect(api.apiSoap).not.toHaveBeenCalled();
+
+    // Managed-package filtering is a SOAP-describe concept — hidden on the bridge path.
+    const managedLabel = Array.from(document.querySelectorAll('label')).find(
+      (l) => l.textContent?.includes('Managed'),
+    ) as HTMLLabelElement;
+    expect(managedLabel.style.display).toBe('none');
+  });
+
+  it('expands a type through manifest.discover and renders its members', async () => {
+    setSalesforceUrl();
+    const { call, factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    expandType('ApexClass');
+    await flush();
+    await flush();
+
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'manifest.discover', type: 'ApexClass' }),
+      expect.anything(),
+    );
+    expect(document.body.textContent).toContain('Alpha');
+    expect(document.body.textContent).toContain('Beta');
+  });
+
+  it('renders the preview via manifest.render — server XML shown verbatim (single writer)', async () => {
+    setSalesforceUrl();
+    const { call, factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    const chk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    chk.checked = true;
+    chk.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'manifest.render',
+        items: [{ type: 'ApexClass', member: '*' }],
+        mode: 'additive',
+        apiVersion: '62.0',
+      }),
+    );
+    // The preview is byte-for-byte what the bridge returned — the extension
+    // did not assemble any XML itself on this path.
+    expect(mainTextarea().value).toBe(SERVER_ADDITIVE_XML);
+  });
+
+  it('sends explicit members (not the wildcard) when children are ticked', async () => {
+    setSalesforceUrl();
+    const { call, factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    expandType('ApexClass');
+    await flush();
+    await flush();
+
+    // Tick just the "Alpha" child.
+    const alphaChk = Array.from(document.querySelectorAll('span'))
+      .find((s) => s.textContent === 'Alpha')!
+      .parentElement!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    alphaChk.checked = true;
+    alphaChk.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'manifest.render',
+        items: [{ type: 'ApexClass', member: 'Alpha' }],
+      }),
+    );
+  });
+
+  it('destructive mode renders the pair, shows the warning banner, and disables retrieve', async () => {
+    setSalesforceUrl();
+    const { call, factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    const chk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    chk.checked = true;
+    chk.dispatchEvent(new Event('change'));
+    await flush();
+
+    btnExact('Destructive')!.click();
+    await flush();
+
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'manifest.render', mode: 'destructive' }),
+    );
+    expect(mainTextarea().value).toBe(SERVER_DESTRUCTIVE_XML);
+    expect(pairTextarea().value).toBe(SERVER_EMPTY_PAIR_XML);
+
+    const banner = document.querySelector('[role="alert"]') as HTMLDivElement;
+    expect(banner.style.display).toBe('block');
+    expect(banner.textContent).toContain('DELETES');
+    expect(banner.textContent).toContain('SFDT_DESTRUCTIVE_TIMING');
+
+    const retrieveBtn = btnExact('Retrieve Zip')!;
+    expect(retrieveBtn.disabled).toBe(true);
+
+    // Switching back to additive re-renders and re-enables retrieve.
+    btnExact('Additive')!.click();
+    await flush();
+    expect(mainTextarea().value).toBe(SERVER_ADDITIVE_XML);
+    expect(retrieveBtn.disabled).toBe(false);
+    expect(banner.style.display).toBe('none');
+  });
+
+  it('surfaces a member-discovery failure and collapses the node (no fabricated tree)', async () => {
+    setSalesforceUrl();
+    const { factory } = fakeBridge((req) => {
+      if (req.kind === 'manifest.discover' && req.type) {
+        return { ok: false, requestId: 'r', error: 'org unreachable', code: 'INTERNAL_ERROR' };
+      }
+      return undefined;
+    });
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    expandType('ApexClass');
+    await flush();
+    await flush();
+
+    expect(document.body.textContent).toContain('Failed to load members: org unreachable');
+    // The node collapsed back — nothing pretends the type is empty.
+    const expBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.getAttribute('aria-label') === 'Expand ApexClass',
+    );
+    expect(expBtn).not.toBeUndefined();
+  });
+
+  it('logs a render failure without clobbering the last good preview', async () => {
+    setSalesforceUrl();
+    let failRender = false;
+    const { factory } = fakeBridge((req) => {
+      if (req.kind === 'manifest.render' && failRender) {
+        return { ok: false, requestId: 'r', error: 'render boom', code: 'INTERNAL_ERROR' };
+      }
+      return undefined;
+    });
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    const chk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    chk.checked = true;
+    chk.dispatchEvent(new Event('change'));
+    await flush();
+    expect(mainTextarea().value).toBe(SERVER_ADDITIVE_XML);
+
+    failRender = true;
+    btnExact('Destructive')!.click();
+    await flush();
+
+    expect(document.body.textContent).toContain('Manifest render failed: render boom');
+    expect(mainTextarea().value).toBe(SERVER_ADDITIVE_XML);
+  });
+});
+
+describe('metadata-retrieve — offline fallback', () => {
+  it('falls back to the SOAP describe when the bridge is offline', async () => {
+    setSalesforceUrl();
+    const api = fakeApi();
+    const { factory } = offlineBridgeFactory();
+    const feature = createMetadataRetrieveFeature({ api, bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    expect(api.apiSoap).toHaveBeenCalledWith('Metadata', 'describeMetadata', { apiVersion: '62.0' });
+    expect(document.body.textContent).toContain('sfdt bridge unavailable');
+    expect(document.body.textContent).toContain('ApexClass');
+
+    // Selection renders through the kept private writer.
+    const chk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    chk.checked = true;
+    chk.dispatchEvent(new Event('change'));
+    expect(mainTextarea().value).toContain('<members>*</members>');
+    expect(mainTextarea().value).toContain('<name>ApexClass</name>');
+  });
+
+  it('builds the destructive pair locally when offline', async () => {
+    setSalesforceUrl();
+    const { factory } = offlineBridgeFactory();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    const chk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    chk.checked = true;
+    chk.dispatchEvent(new Event('change'));
+    btnExact('Destructive')!.click();
+    await flush();
+
+    // destructiveChanges.xml lists the members …
+    expect(mainTextarea().value).toContain('<members>*</members>');
+    expect(mainTextarea().value).toContain('<name>ApexClass</name>');
+    // … and the paired package.xml is empty (version only, no <types>).
+    expect(pairTextarea().value).toContain('<version>62.0</version>');
+    expect(pairTextarea().value).not.toContain('<types>');
+  });
+});
+
+describe('metadata-retrieve — per-org selection persistence', () => {
+  it('persists a wildcard selection and restores it in a fresh instance', async () => {
+    setSalesforceUrl();
+    const { factory } = fakeBridge();
+    const first = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await first.onActivate?.();
+
+    const chk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    chk.checked = true;
+    chk.dispatchEvent(new Event('change'));
+    await flush();
+
+    // Simulate closing and reopening the tool in a brand-new feature instance.
+    clearBody();
+    const second = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await second.onActivate?.();
+
+    expect(document.body.textContent).toContain('Restored 1 saved selection');
+    const restoredChk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    expect(restoredChk.checked).toBe(true);
+    expect(mainTextarea().value).toBe(SERVER_ADDITIVE_XML);
+  });
+
+  it('persists member-level selections and seeds them back into the tree', async () => {
+    setSalesforceUrl();
+    const { call, factory } = fakeBridge();
+    const first = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await first.onActivate?.();
+
+    expandType('ApexClass');
+    await flush();
+    await flush();
+    const alphaChk = Array.from(document.querySelectorAll('span'))
+      .find((s) => s.textContent === 'Alpha')!
+      .parentElement!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    alphaChk.checked = true;
+    alphaChk.dispatchEvent(new Event('change'));
+    await flush();
+
+    clearBody();
+    call.mockClear();
+    const second = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await second.onActivate?.();
+
+    expect(document.body.textContent).toContain('Restored 1 saved selection');
+    expect(document.body.textContent).toContain('Alpha');
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'manifest.render',
+        items: [{ type: 'ApexClass', member: 'Alpha' }],
+      }),
+    );
+  });
+
+  it('clear-all wipes both the tree and the stored selection', async () => {
+    setSalesforceUrl();
+    const { factory } = fakeBridge();
+    const first = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await first.onActivate?.();
+
+    const chk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    chk.checked = true;
+    chk.dispatchEvent(new Event('change'));
+    await flush();
+
+    btnExact('Clear all')!.click();
+    await flush();
+
+    expect((document.querySelector('.sfdt-tree-chk') as HTMLInputElement).checked).toBe(false);
+    expect(mainTextarea().value).toBe('');
+
+    // A fresh instance restores nothing.
+    clearBody();
+    const second = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await second.onActivate?.();
+    expect(document.body.textContent).not.toContain('Restored');
+  });
+
+  it('persists offline selections too (storage is path-independent)', async () => {
+    setSalesforceUrl();
+    const { factory } = offlineBridgeFactory();
+    const first = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await first.onActivate?.();
+
+    const chk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    chk.checked = true;
+    chk.dispatchEvent(new Event('change'));
+    await flush();
+
+    clearBody();
+    const second = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await second.onActivate?.();
+
+    expect(document.body.textContent).toContain('Restored 1 saved selection');
+    expect(mainTextarea().value).toContain('<members>*</members>');
+  });
+});
