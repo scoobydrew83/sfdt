@@ -15,6 +15,7 @@ import {
   guidanceForErrorCode,
   guidanceForStatus,
 } from './sf-error-guidance.js';
+import { parseRestErrorDetails, type SalesforceRestErrorDetail } from './sf-error-body.js';
 import { SOAP_SID_SENTINEL, type SfApiFetchResponse } from './sf-api-proxy.js';
 import { XML } from './xml.js';
 
@@ -84,29 +85,17 @@ export type SfApiErrorKind = 'timeout' | 'no-session' | 'http-error';
 // ---------------------------------------------------------------------------
 // Structured REST error bodies
 //
-// A Salesforce REST rejection body is an array of records like
-//   [{ "message": "…", "errorCode": "FIELD_CUSTOM_VALIDATION_EXCEPTION",
-//      "fields": ["Foo__c"] }]
-// and `fields` is the only thing that says *which field* the org rejected.
-// extractErrorDetail() below flattens all of that to one human string for the
-// `.message`, which is all any caller has ever read — but a caller that wants
-// to render an error against the exact field it belongs to needs the records
-// themselves, so they are carried here alongside the unchanged message.
+// The body SHAPE — the record type and its parser — lives in lib/sf-error-body.ts
+// because the worker proxy needs the same knowledge and cannot import this file.
+// Both are re-exported here so this stays the one public entry point callers
+// already import from.
 //
-// This is purely additive: buildRequestError() still produces byte-identical
-// `.message` text and the same `sfdtKind`/`status` tags, it just returns this
-// subclass instead of a bare Error. No existing call site changes.
+// extractErrorDetail() below flattens a rejection to one human string for the
+// `.message`; a caller that wants to render an error against the exact field it
+// belongs to reads the records off `SalesforceRestError.details` instead.
 // ---------------------------------------------------------------------------
-export interface SalesforceRestErrorDetail {
-  message: string;
-  // '' when the body did not carry one — never undefined, so a consumer can
-  // render it without a null check.
-  errorCode: string;
-  // Field API names the org attributed the failure to. Empty for object-level
-  // failures (validation rules with no field binding, row locks, trigger
-  // addError() on the record itself).
-  fields: string[];
-}
+export type { SalesforceRestErrorDetail } from './sf-error-body.js';
+export { parseRestErrorDetails } from './sf-error-body.js';
 
 export class SalesforceRestError extends Error {
   readonly sfdtKind: SfApiErrorKind = 'http-error';
@@ -119,37 +108,6 @@ export class SalesforceRestError extends Error {
     this.status = status;
     this.details = details;
   }
-}
-
-function toErrorDetail(entry: unknown): SalesforceRestErrorDetail | null {
-  if (!entry || typeof entry !== 'object') return null;
-  const rec = entry as Record<string, unknown>;
-  if (typeof rec.message !== 'string') return null;
-  return {
-    message: rec.message,
-    errorCode: typeof rec.errorCode === 'string' ? rec.errorCode : '',
-    fields: Array.isArray(rec.fields) ? rec.fields.filter((f): f is string => typeof f === 'string') : [],
-  };
-}
-
-// Parses a REST rejection body into its records. Returns [] for anything that
-// is not the documented shape (HTML error pages, empty bodies, plain text) —
-// the caller falls back to `.message`, which is unaffected.
-export function parseRestErrorDetails(errorText: string): SalesforceRestErrorDetail[] {
-  if (!errorText) return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(errorText);
-  } catch {
-    return [];
-  }
-  const entries = Array.isArray(parsed) ? parsed : [parsed];
-  const details: SalesforceRestErrorDetail[] = [];
-  for (const entry of entries) {
-    const detail = toErrorDetail(entry);
-    if (detail) details.push(detail);
-  }
-  return details;
 }
 
 export interface SfApiError extends Error {
@@ -645,9 +603,11 @@ export class SalesforceApiClient {
       const faultCode = extractFaultCode(primary.errorText);
       // The fault string usually already begins with the code, so only the
       // guidance is appended — never a restatement of what the org just said.
-      const advice = faultCode
-        ? guidanceForErrorCode(faultCode)
-        : guidanceForStatus(primary.status);
+      // An UNRECOGNISED faultcode falls back to the status advice rather than
+      // yielding nothing, matching the REST path: not knowing the code is not a
+      // reason to leave the user with no next step.
+      const advice =
+        (faultCode ? guidanceForErrorCode(faultCode) : '') || guidanceForStatus(primary.status);
       throw soapError(advice ? `${headline}\n${advice}` : headline, primary.status, 'http-error');
     }
 

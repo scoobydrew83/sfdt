@@ -404,6 +404,70 @@ describe('a definitive org error is never displaced by a fallback host (regressi
     expect(resp.errors.map((e) => e.status)).toContain(401);
   });
 
+  // "The org answered" is a claim about the BODY, not the status. An
+  // intermediary that returns 4xx with its own page never reached Salesforce,
+  // so its failure says nothing about whether the org would have accepted the
+  // request — and the other candidate must still be tried.
+  it('falls through on an opaque WAF 403 that no Salesforce body explains', async () => {
+    const deps = warmCacheDeps({
+      [MY]: { status: 403, body: '<html><body>Blocked by corporate policy</body></html>' },
+      [ORIGIN]: { status: 200, body: '{"records":[]}' },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(true);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls through on a routing 404 with no Salesforce body', async () => {
+    const deps = warmCacheDeps({
+      [MY]: { status: 404, body: 'Not Found' },
+      [ORIGIN]: { status: 200, body: '{"records":[]}' },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(true);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls through on an empty-bodied 4xx', async () => {
+    const deps = warmCacheDeps({
+      [MY]: { status: 400, body: '' },
+      [ORIGIN]: { status: 200, body: '{"records":[]}' },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(true);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats a Salesforce-explained 404 as final, unlike an opaque one', async () => {
+    // Same status, opposite handling — which is exactly why the status alone
+    // cannot decide this.
+    const deps = warmCacheDeps({
+      [MY]: {
+        status: 404,
+        body: JSON.stringify([
+          { message: 'The requested resource does not exist', errorCode: 'NOT_FOUND' },
+        ]),
+      },
+      [ORIGIN]: { status: 200, body: '{"records":[]}' },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(false);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a 4xx SOAP fault as the org answering', async () => {
+    const deps = warmCacheDeps({
+      [MY]: {
+        status: 400,
+        body: '<soapenv:Envelope><soapenv:Body><soapenv:Fault><faultcode>sf:INVALID_FIELD</faultcode><faultstring>INVALID_FIELD: no such column</faultstring></soapenv:Fault></soapenv:Body></soapenv:Envelope>',
+      },
+      [ORIGIN]: { status: 200, body: 'ok' },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(false);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('a genuine 401 on every candidate is still reported as 401', async () => {
     // The fix must not make real session failures unreportable.
     const deps = warmCacheDeps({

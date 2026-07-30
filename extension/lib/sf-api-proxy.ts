@@ -10,6 +10,7 @@
 // core stays unit-testable without a browser.
 
 import { mySalesforceHostname } from './hostname.js';
+import { isSalesforceErrorBody } from './sf-error-body.js';
 
 // Placeholder the client stamps in place of the SOAP <sessionId>. The worker
 // swaps it for the real sid inside the SessionHeader before sending, so the
@@ -215,20 +216,35 @@ function isPure401(errors: SfApiFetchFailure['errors']): boolean {
 }
 
 // Did the ORG answer this request, as opposed to the transport failing around
-// it? A non-401 4xx is Salesforce itself rejecting what was asked —
-// MALFORMED_QUERY, INVALID_FIELD, INVALID_TYPE, NOT_FOUND, an FLS denial. Both
-// candidate base URLs are two names for the SAME org, so a second host cannot
-// answer such a request differently; it can only fail differently. Retrying it
-// there therefore cannot help, and it actively hurts: `.lightning.force.com`
-// routinely answers 401, so the fallback's session error would stand in place
-// of the real, actionable one.
+// it? Salesforce rejecting what was asked — MALFORMED_QUERY, INVALID_FIELD,
+// INVALID_TYPE, an FLS denial — is a final answer. Both candidate base URLs are
+// two names for the SAME org, so a second host cannot answer such a request
+// differently; it can only fail differently. Retrying there cannot help, and it
+// actively hurts: `.lightning.force.com` routinely answers 401, so the
+// fallback's session error would stand in place of the real, actionable one.
 //
-// 401 (re-resolve the session), 5xx and network errors (status 0) are NOT
-// definitive — those say something about the host, not the request — so they
-// still fall through to the other candidates.
+// The test is the BODY, not the status. A status code cannot distinguish the
+// org from an intermediary — a 403 is Salesforce denying access when Salesforce
+// sends it and a block page when a corporate proxy sends it, and the two want
+// opposite handling. Requiring a body that actually parses as a Salesforce
+// error record (or a SOAP fault) means an opaque HTML 403 from a WAF, or a
+// routing 404 the org never saw, keeps the old fall-through to the other
+// candidate — while every error the org itself explained is still returned
+// verbatim.
+//
+// 401 (re-resolve the session), 5xx and network errors (status 0) are likewise
+// never definitive, whatever their body: those say something about the host,
+// not about the request.
 function isDefinitiveOrgFailure(errors: SfApiFetchFailure['errors']): boolean {
   return (
-    errors.length > 0 && errors.every((e) => e.status >= 400 && e.status < 500 && e.status !== 401)
+    errors.length > 0 &&
+    errors.every(
+      (e) =>
+        e.status >= 400 &&
+        e.status < 500 &&
+        e.status !== 401 &&
+        isSalesforceErrorBody(e.errorText),
+    )
   );
 }
 

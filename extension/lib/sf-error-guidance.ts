@@ -19,7 +19,7 @@
 // SOQL error panel, data-import's per-row column, the field-creator form) gets
 // the same text.
 
-import type { SalesforceRestErrorDetail } from './salesforce-api.js';
+import type { SalesforceRestErrorDetail } from './sf-error-body.js';
 
 // Keyed by the org's errorCode. Each entry is a single "what to do" sentence —
 // it must add an action the org's own message does not already state, and must
@@ -33,16 +33,24 @@ const CODE_GUIDANCE: Readonly<Record<string, string>> = {
     'That object does not exist, or your user has no access to it. Check the API name (custom objects end in __c) and the object permissions on your profile.',
   INVALID_SESSION_ID:
     'Your Salesforce session is no longer valid. Reload the Salesforce tab, or log in again, then retry.',
+  // Salesforce returns this for TWO different limits: the rolling 24-hour
+  // request allowance and the concurrent long-running request cap
+  // (ConcurrentPerOrgLongTxn). Naming only the first sends anyone who hit the
+  // second to a page showing plenty of headroom, from which the only available
+  // conclusion is that the extension is wrong.
   REQUEST_LIMIT_EXCEEDED:
-    "The org has spent its rolling 24-hour API request allowance. Wait for the window to roll over, or check Setup › Company Information › 'API Requests, Last 24 Hours'.",
+    "The org hit either its rolling 24-hour API request allowance or its cap on concurrent long-running requests. Check Setup › Company Information › 'API Requests, Last 24 Hours' — if that shows headroom, it is the concurrent limit, so let running queries finish and retry.",
   INSUFFICIENT_ACCESS:
     'Your user does not have access to this record, object or field. Ask an admin to check your profile and permission sets, field-level security, and sharing rules.',
   INSUFFICIENT_ACCESS_OR_READONLY:
     'Your user cannot edit this — it is read-only for you, or the record is locked by an approval process. Check your field-level security and the record’s approval status.',
   INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY:
     'The record is fine, but you lack access to something it points at (a lookup target or its parent). Ask an admin about access to the related record.',
+  // Apex `addError()` on a field produces this code too, so it must not send
+  // anyone hunting through Setup › Validation Rules for a rule that is not
+  // there. Kept consistent with CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY below.
   FIELD_CUSTOM_VALIDATION_EXCEPTION:
-    "A validation rule on the object rejected the value — the message above is the rule's own error text, written by your admin.",
+    'A validation rule or an Apex trigger on the object rejected the value — the message above is that rule or code’s own error text, not the extension’s.',
   REQUIRED_FIELD_MISSING:
     'A required field was not supplied. Add the field named above to the record (or map a CSV column to it) and retry.',
   DUPLICATE_VALUE:
@@ -79,6 +87,10 @@ const CODE_GUIDANCE: Readonly<Record<string, string>> = {
 // status means and stops short of asserting why.
 const STATUS_GUIDANCE: Readonly<Record<number, string>> = {
   0: 'The request never reached Salesforce. Check your network connection and any VPN or proxy.',
+  // The most common status on these paths, so a 400 whose body did not parse
+  // (an HTML page from an intermediary, a truncated reply) still gets a next
+  // step rather than a bare headline.
+  400: 'Salesforce rejected the request as malformed. Check the query or request body — the object and field API names, and the value types.',
   401: 'Salesforce rejected the request as unauthenticated. Reload the Salesforce tab, or log in again, then retry.',
   403: 'Salesforce refused the request. This is usually a permission, an org-level API restriction, or an IP/login-range policy.',
   404: 'Nothing is served at that path. Check the endpoint and the API version.',
