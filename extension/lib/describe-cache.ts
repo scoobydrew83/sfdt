@@ -27,6 +27,36 @@ export interface FieldDescribe {
   // Component fields of an address/geolocation compound point back at their
   // parent via compoundFieldName — the viewmodel uses it to flatten compounds.
   compoundFieldName?: string | null;
+  // Additive (P4-1): the attributes lib/record-edit.ts reads to decide whether a
+  // field may be written, and how. All present on the wire already — the cache
+  // stores `data` wholesale — so this declaration adds no fetch and no mapping,
+  // it just stops consumers from re-declaring a private FieldDescribe to see
+  // them. Optional for the same reason as the block above: existing consumers
+  // and test fixtures built against the base shape must keep compiling.
+  //
+  // Because these are optional, a consumer must read every one of them as
+  // `=== true`, never `!== false` — but note the two groups differ in what that
+  // buys, so `=== true` is a rule about being explicit, not a single fail-safe
+  // direction:
+  //   PERMIT flags (updateable, createable) — `=== true` fails CLOSED: an
+  //     absent or non-boolean value denies the write.
+  //   DENY flags (autoNumber, htmlFormatted, encrypted, and the pre-existing
+  //     calculated) — `=== true` fails OPEN: absence means "not excluded".
+  //     Unreachable from a real describe, which always sends booleans, but it
+  //     is why these must never be inferred from anything but the payload.
+  updateable?: boolean;
+  createable?: boolean;
+  autoNumber?: boolean;
+  // A `textarea` with htmlFormatted:true is a rich-text area — its value is
+  // markup, not text.
+  htmlFormatted?: boolean;
+  // Classic encrypted field: the value we read back is masked.
+  encrypted?: boolean;
+  // Picklist metadata. A restricted picklist rejects values outside
+  // picklistValues; a dependent one is controlled by `controllerName`.
+  restrictedPicklist?: boolean;
+  dependentPicklist?: boolean;
+  controllerName?: string | null;
 }
 
 export interface ChildRelationship {

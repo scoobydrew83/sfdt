@@ -130,7 +130,7 @@ describe('data-import — UI Flow & Mock SOAP', () => {
         { '$xsi:type': 'Account', Name: 'Test Account 1', fieldsToNull: [] },
         { '$xsi:type': 'Account', Name: 'Test Account 2', fieldsToNull: [] },
       ],
-    }));
+    }), { mutating: true });
 
     const succeededCell = Array.from(document.querySelectorAll('span')).find(s => s.textContent?.includes('Succeeded: 2'));
     expect(succeededCell).not.toBeUndefined();
@@ -212,6 +212,6 @@ describe('data-import — UI Flow & Mock SOAP', () => {
     // Id column index is derived from columnMappings, so the mapped cell value is sent
     expect(api.apiSoap).toHaveBeenCalledWith('Partner', 'delete', expect.objectContaining({
       ID: ['Some Account'],
-    }));
+    }), { mutating: true });
   });
 });

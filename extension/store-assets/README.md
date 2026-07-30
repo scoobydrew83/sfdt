@@ -24,7 +24,9 @@ The extension's **runtime** icons live in `../public/icon/{16,32,48,128}.png` �
 `final_01`–`final_05` (May 23) cover flow/setup-era features. `final_06`–`final_16` were captured for 0.3.0 (1280×800, cover-cropped from 2× Retina originals kept locally in `_raw/`, which is gitignored):
 
 - **0.3.0 Workspace:** `final_06` home, `final_07` Execute Anonymous Apex, `final_08` Debug Log Viewer, `final_09` Multi-Org Switcher, `final_10` Saved SOQL.
-- **0.1.0 + 0.2.0:** `final_11` inspect-record, `final_12` data-import, `final_13` field-creator, `final_14` metadata-retrieve, `final_15` soap-explore, `final_16` event-monitor.
+- **0.1.0 + 0.2.0:** `final_11` inspect-record, `final_12` data-import, `final_13` field-creator, `final_16` event-monitor.
+
+`final_14` (metadata-retrieve) and `final_15` (soap-explore) were **deleted pending recapture** — `final_14` showed a live `Invalid Api version specified on URL : /m/v62.0` error (the SOAP bare-version bug, since fixed in `lib/salesforce-api.ts`), and `final_15` exposed a real org id, company name, and email. Recapture both against a scratch org before the next store submission.
 
 > CWS displays a max of **5** screenshots; the set above is a source pool.
 >
@@ -37,7 +39,7 @@ The extension's **runtime** icons live in `../public/icon/{16,32,48,128}.png` �
 >
 > The newest 0.3.2 **Org Health** panel does not have a screenshot yet (see Optional enhancements); once captured as `final_19` it's a candidate to swap into slot 5.
 >
-> **Avoid** for the featured 5: `final_14` (shows an API-version error), `final_15` (leaks a real email/org in the SOAP response), and the empty-state shots `final_04` / `final_08` / `final_16`.
+> **Avoid** for the featured 5: the empty-state shots `final_04` / `final_08` / `final_16`.
 
 ## Optional enhancements (not blocking submission)
 

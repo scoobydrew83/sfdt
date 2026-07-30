@@ -99,3 +99,41 @@ describe('describe-cache — listeners', () => {
     expect(onUpdate).toHaveBeenCalled();
   });
 });
+
+// P4-1 declares the edit-relevant describe attributes on FieldDescribe. That is
+// a types-only change, and the claim it rests on is behavioural: the cache
+// stores the describe payload wholesale, so the attributes are already there.
+// This pins that claim so a future "mapping" refactor cannot quietly drop them.
+describe('describe-cache — edit-relevant field attributes (P4-1)', () => {
+  it('passes the whole field payload through untouched', async () => {
+    const wireField = {
+      name: 'Status__c',
+      label: 'Status',
+      type: 'picklist',
+      relationshipName: null,
+      referenceTo: [],
+      picklistValues: [{ value: 'Open', label: 'Open' }],
+      nillable: true,
+      calculated: false,
+      updateable: true,
+      createable: true,
+      autoNumber: false,
+      htmlFormatted: false,
+      encrypted: false,
+      restrictedPicklist: true,
+      dependentPicklist: true,
+      controllerName: 'Type__c',
+    };
+    const apiGet = vi
+      .fn()
+      .mockResolvedValue({ name: 'Account', label: 'Account', fields: [wireField] });
+    const cache = new DescribeCache(fakeApi({ apiGet }));
+
+    cache.getSObject('rest', 'Account');
+    await tick();
+
+    const entry = cache.getSObject('rest', 'Account');
+    expect(entry.status).toBe('ready');
+    expect(entry.data?.fields[0]).toEqual(wireField);
+  });
+});

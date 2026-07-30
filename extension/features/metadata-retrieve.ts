@@ -398,7 +398,8 @@ export function createMetadataRetrieveFeature(options: {
     addLog('working', 'Loading metadata describe details...');
     try {
       const cleanVersion = cleanApiVersion();
-      const res = await api.apiSoap<any>('Metadata', 'describeMetadata', { apiVersion: cleanVersion });
+      // Pure read: describes the org's metadata types, changes nothing.
+      const res = await api.apiSoap<any>('Metadata', 'describeMetadata', { apiVersion: cleanVersion }, { mutating: false });
       if (res && res.metadataObjects) {
         const objs = asArray(res.metadataObjects).map((obj: any) => ({
           xmlName: obj.xmlName,
@@ -556,13 +557,14 @@ export function createMetadataRetrieveFeature(options: {
         } else {
           const cleanVersion = cleanApiVersion();
           const folderProof = getMetaFolderProof(anyMeta);
+          // Pure read: enumerates existing components, changes nothing.
           const res = await api.apiSoap<any>('Metadata', 'listMetadata', {
             queries: {
               type: folderProof.xmlName,
               folder: folderProof.directoryName !== '*' ? folderProof.directoryName : undefined,
             },
             asOfVersion: cleanVersion,
-          });
+          }, { mutating: false });
 
           // No bridge-style hole on this path: `apiSoap` throws on every
           // transport error and SOAP fault, so reaching here with a falsy
@@ -813,7 +815,9 @@ export function createMetadataRetrieveFeature(options: {
         },
       };
 
-      const result = await api.apiSoap<any>('Metadata', 'retrieve', { retrieveRequest });
+      // Starts a read-only export job — it reads metadata out of the org and
+      // writes nothing into it, so a timeout here cannot have changed anything.
+      const result = await api.apiSoap<any>('Metadata', 'retrieve', { retrieveRequest }, { mutating: false });
       if (!result || !result.id) {
         throw new Error('No retrieve ID returned from SOAP API');
       }
@@ -834,7 +838,8 @@ export function createMetadataRetrieveFeature(options: {
         checkCount++;
         await new Promise(r => setTimeout(r, pollDelayMs));
         addLog('working', `Checking retrieve status (attempt ${checkCount})...`);
-        const statusRes = await api.apiSoap<any>('Metadata', 'checkRetrieveStatus', { id: jobId });
+        // Status poll in a loop: a read. Must not carry the write framing.
+        const statusRes = await api.apiSoap<any>('Metadata', 'checkRetrieveStatus', { id: jobId }, { mutating: false });
         if (statusRes.done === 'true' || statusRes.done === true) {
           done = true;
           if (statusRes.success === 'true' || statusRes.success === true) {
@@ -899,10 +904,12 @@ export function createMetadataRetrieveFeature(options: {
         reqOpts.runTests = deployOptions.runTests.split(',').map(s => s.trim()).filter(Boolean);
       }
 
+      // The genuine write on this feature: a timeout here really may have
+      // started a deploy that lands.
       const result = await api.apiSoap<any>('Metadata', 'deploy', {
         zipFile: zipBase64,
         deployOptions: reqOpts,
-      });
+      }, { mutating: true });
 
       if (!result || !result.id) {
         throw new Error('No deployment job ID returned from SOAP API');
@@ -924,10 +931,13 @@ export function createMetadataRetrieveFeature(options: {
         checkCount++;
         await new Promise(r => setTimeout(r, pollDelayMs));
         addLog('working', `Checking deploy status (attempt ${checkCount})...`);
+        // Status poll in a loop, with no try/catch around it: a read. Declaring
+        // this mutating told the user their change "may already have been saved"
+        // once per poll of a slow deploy, for a call that wrote nothing.
         const statusRes = await api.apiSoap<any>('Metadata', 'checkDeployStatus', {
           id: jobId,
           includeDetails: true,
-        });
+        }, { mutating: false });
 
         if (statusRes.done === 'true' || statusRes.done === true) {
           done = true;
