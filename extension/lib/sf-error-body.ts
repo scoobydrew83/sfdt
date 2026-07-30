@@ -80,6 +80,22 @@ export function looksLikeSoapFault(errorText: string): boolean {
 // Status codes cannot answer this. A 403 is `MALFORMED_QUERY`-adjacent when
 // Salesforce sends it and a WAF block when zScaler does, and the two want
 // opposite handling.
+//
+// CLASSIFICATION requires a non-empty `errorCode`; RENDERING does not. That
+// asymmetry is deliberate. Every documented Salesforce rejection body carries
+// an errorCode, but plenty of intermediaries answer in JSON with a bare
+// `message` — AWS API Gateway's `{"message":"Forbidden"}` and
+// `{"message":"Missing Authentication Token"}`, Azure APIM's
+// `{"statusCode":403,"message":"Access denied"}`. Reading those as "the org
+// answered" would dead-end a request the other host could have served, which is
+// the exact failure this predicate exists to prevent.
+//
+// parseRestErrorDetails stays permissive on purpose: if a body without an
+// errorCode does reach a user, its message must still be shown in full. The
+// stricter rule applies only to the routing decision.
 export function isSalesforceErrorBody(errorText: string): boolean {
-  return parseRestErrorDetails(errorText).length > 0 || looksLikeSoapFault(errorText);
+  return (
+    parseRestErrorDetails(errorText).some((d) => d.errorCode !== '') ||
+    looksLikeSoapFault(errorText)
+  );
 }

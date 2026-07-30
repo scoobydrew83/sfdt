@@ -309,6 +309,16 @@ describe('extension/lib/salesforce-api (thin client over sfApiFetch)', () => {
       expect(err.message).toContain('HTTP 503');
     });
 
+    it('renders a body with no errorCode in full, even though it is not the org', () => {
+      // Classification is strict (isSalesforceErrorBody requires an errorCode
+      // so a gateway's bare `message` does not dead-end a request); RENDERING
+      // stays permissive, so if such a body ever does reach a user its text is
+      // still shown rather than dropped.
+      expect(parseRestErrorDetails('[{"message":"Forbidden"}]')).toEqual([
+        { message: 'Forbidden', errorCode: '', fields: [] },
+      ]);
+    });
+
     it('parseRestErrorDetails tolerates every shape the wire can produce', () => {
       expect(parseRestErrorDetails('')).toEqual([]);
       expect(parseRestErrorDetails('not json')).toEqual([]);

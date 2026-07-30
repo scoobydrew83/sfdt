@@ -468,6 +468,22 @@ describe('a definitive org error is never displaced by a fallback host (regressi
     expect(deps.fetchSpy).toHaveBeenCalledTimes(1);
   });
 
+  // A JSON-speaking intermediary is not the org. Every documented Salesforce
+  // rejection carries an errorCode; an API gateway's bare `message` does not.
+  it.each([
+    ['AWS API Gateway 403', '{"message":"Forbidden"}'],
+    ['AWS API Gateway 404', '{"message":"Missing Authentication Token"}'],
+    ['Azure APIM', '{"statusCode":403,"message":"Access denied due to invalid subscription key"}'],
+  ])('falls through on a JSON body from an intermediary (%s)', async (_label, body) => {
+    const deps = warmCacheDeps({
+      [MY]: { status: 403, body },
+      [ORIGIN]: { status: 200, body: '{"records":[]}' },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(true);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('a genuine 401 on every candidate is still reported as 401', async () => {
     // The fix must not make real session failures unreportable.
     const deps = warmCacheDeps({
