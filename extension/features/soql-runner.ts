@@ -685,12 +685,15 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       btn.style.cssText =
         'padding: 4px 12px; border: 1px solid var(--sfdt-color-border); cursor: pointer; font-size: 12px;' +
         (value === 'soql' ? ' border-radius: 4px 0 0 4px;' : ' border-radius: 0 4px 4px 0;');
-      btn.addEventListener('click', () => setLang(value));
+      btn.addEventListener('click', () => setLang(value, { explicit: true }));
       // Arrow keys move the selection inside the group, as a radiogroup must.
+      // The target is computed from the CURRENT selection, not from the button
+      // the key landed on, so it stays correct if focus is ever moved
+      // programmatically to the unselected radio.
       btn.addEventListener('keydown', (e) => {
         if (['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
           e.preventDefault();
-          setLang(value === 'soql' ? 'sosl' : 'soql', { focus: true });
+          setLang(lang === 'soql' ? 'sosl' : 'soql', { focus: true, explicit: true });
         }
       });
       langGroup.appendChild(btn);
@@ -699,13 +702,42 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
 
     const restBtn = doc.createElement('button');
     const toolingBtn = doc.createElement('button');
-    const setMode = (next: ApiMode): void => {
-      mode = next;
-      const isRest = next === 'rest';
+    const TRANSPORT_SOSL_TITLE =
+      'Not available in SOSL mode — the Search resource is REST-only. Your SOQL choice is restored when you switch back.';
+
+    // The transport actually used for a run. `mode` is the user's SOQL
+    // transport CHOICE and is never overwritten by the language toggle; SOSL
+    // simply has no Tooling variant of the Search resource, so it runs REST
+    // regardless. Keeping the two apart is what lets a Tooling user paste a
+    // FIND query and get their Tooling selection back afterwards.
+    function effectiveMode(): ApiMode {
+      return lang === 'sosl' ? 'rest' : mode;
+    }
+
+    // Paint the transport toggle from the effective transport, and mark the
+    // whole control unavailable (genuinely disabled, not hidden) in SOSL mode.
+    function paintModeToggle(): void {
+      const isRest = effectiveMode() === 'rest';
       restBtn.style.background = isRest ? 'var(--sfdt-color-brand)' : 'var(--sfdt-color-surface)';
       restBtn.style.color = isRest ? 'var(--sfdt-color-on-accent)' : 'var(--sfdt-color-text-strong)';
       toolingBtn.style.background = isRest ? 'var(--sfdt-color-surface)' : 'var(--sfdt-color-brand)';
       toolingBtn.style.color = isRest ? 'var(--sfdt-color-text-strong)' : 'var(--sfdt-color-on-accent)';
+      restBtn.setAttribute('aria-pressed', String(isRest));
+      toolingBtn.setAttribute('aria-pressed', String(!isRest));
+      const sosl = lang === 'sosl';
+      restBtn.disabled = sosl;
+      toolingBtn.disabled = sosl;
+      restBtn.title = sosl ? TRANSPORT_SOSL_TITLE : '';
+      toolingBtn.title = sosl ? TRANSPORT_SOSL_TITLE : '';
+    }
+
+    const setMode = (next: ApiMode): void => {
+      // The transport control is unavailable in SOSL mode; ignore programmatic
+      // or stray activations there rather than silently recording a choice the
+      // user can't see taking effect.
+      if (lang === 'sosl') return;
+      mode = next;
+      paintModeToggle();
       void runAutocomplete();
     };
     const togStyle =
@@ -719,12 +751,22 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     toolbar.appendChild(restBtn);
     toolbar.appendChild(toolingBtn);
 
+    // Explicit-choice latch. `langExplicit` records that the user *chose* the
+    // current language (clicked the toggle, or restored a stored entry);
+    // `langChoiceBaseline` is what the editor text detected as at that moment.
+    // Together they encode "this choice holds until the query itself changes
+    // language" — see syncLangFromText().
+    let langExplicit = false;
+    let langChoiceBaseline: QueryLang | null = null;
+
     // Switch query language. Drives the editor affordances that differ between
     // the two languages: SOSL has no Tooling variant of the Search resource, no
     // query plan (same as the GUI console, which disables Plan for a FIND
     // query), and no SOQL field/object autocomplete.
-    function setLang(next: QueryLang, opts: { focus?: boolean } = {}): void {
+    function setLang(next: QueryLang, opts: { focus?: boolean; explicit?: boolean } = {}): void {
       lang = next;
+      langExplicit = opts.explicit === true;
+      langChoiceBaseline = langExplicit ? detectedLang(textarea.value) : null;
       const sosl = next === 'sosl';
       for (const [value, btn] of langButtons) {
         const on = value === next;
@@ -737,24 +779,45 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       textarea.placeholder = sosl
         ? 'FIND {Acme} IN ALL FIELDS RETURNING Account(Id, Name), Contact(Id, Name)'
         : 'SELECT Id, Name FROM Account LIMIT 10';
-      // The Tooling API has no search resource — SOSL always runs on REST.
-      toolingBtn.disabled = sosl;
-      toolingBtn.title = sosl ? 'SOSL runs on the REST Search resource — the Tooling API has no search endpoint' : '';
-      if (sosl && mode !== 'rest') setMode('rest');
+      // The transport control is unavailable in SOSL (no Tooling Search
+      // resource) but the user's SOQL choice is preserved, not reset.
+      paintModeToggle();
       explainBtn.disabled = sosl;
       explainBtn.title = sosl ? 'Query plans are SOQL-only' : EXPLAIN_TITLE;
       autocompleteBox.style.display = sosl ? 'none' : 'flex';
       void runAutocomplete();
     }
 
+    // What the editor text says the language is, or null when it doesn't say —
+    // an empty or half-typed query settles nothing and must not move the toggle.
+    function detectedLang(text: string): QueryLang | null {
+      if (isSoslQuery(text)) return 'sosl';
+      if (/^\s*select\b/i.test(text)) return 'soql';
+      return null;
+    }
+
     // Keep the toggle honest when the user types or pastes: a query whose first
     // keyword is FIND is SOSL, a SELECT is SOQL — the same auto-routing the GUI
-    // console does. The toggle stays the source of truth for anything the text
-    // does not settle (a half-typed query keeps the current mode).
+    // console does.
+    //
+    // Precedence: an explicit click is a stronger signal than inference, so a
+    // chosen mode is NOT reverted by text the user did not just change. The
+    // latch only lifts when the query's own language moves away from what it
+    // was when the choice was made — e.g. choose SOSL over a leftover SELECT
+    // and it sticks through further edits of that SELECT, but pasting a real
+    // FIND (or later going back to a SELECT after the choice) hands control
+    // back to detection.
     function syncLangFromText(): void {
-      const text = textarea.value;
-      if (lang !== 'sosl' && isSoslQuery(text)) setLang('sosl');
-      else if (lang !== 'soql' && /^\s*select\b/i.test(text)) setLang('soql');
+      const detected = detectedLang(textarea.value);
+      if (detected === null) return; // text settles nothing — keep the current mode
+      if (langExplicit && detected === langChoiceBaseline) return; // user's choice wins
+      if (detected !== lang) setLang(detected);
+      else {
+        // Detection now agrees with the current mode on its own merits; the
+        // latch has done its job and is released.
+        langExplicit = false;
+        langChoiceBaseline = null;
+      }
     }
 
     let historyMenu: HTMLDivElement | null = null;
@@ -883,7 +946,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       }
       const name = win.prompt('Enter a name for this bookmark:', 'My Saved Query');
       if (name) {
-        await pushSavedQuery({ name, q, api: mode, lang });
+        await pushSavedQuery({ name, q, api: effectiveMode(), lang });
         showToast('Query bookmarked successfully', { doc, kind: 'success' });
       }
     });
@@ -1263,8 +1326,12 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         spacer.style.cssText = 'flex: 1;';
         head.appendChild(spacer);
         const groupActions = createResultActions({
+          // The sObject name is org-supplied and reaches a download filename
+          // here — real API names are already [A-Za-z0-9_], so this only ever
+          // bites on a malformed describe, but the filename is not the place to
+          // find that out.
+          filePrefix: `sosl-${group.sobject.replace(/[^A-Za-z0-9_]+/g, '_')}`,
           getRecords: () => group.records,
-          filePrefix: `sosl-${group.sobject}`,
           scope: group.sobject,
         });
         for (const btn of groupActions.all) head.appendChild(btn);
@@ -1309,9 +1376,12 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         item.appendChild(text);
         item.addEventListener('click', () => {
           textarea.value = entry.q;
-          setMode(entry.api);
-          // After setMode: SOSL forces REST, so the language wins the tie.
-          setLang(entryMode);
+          // Language first (it decides whether the transport control is even
+          // available), then the recorded transport for a SOQL entry. A SOSL
+          // entry leaves the user's SOQL transport choice untouched — it ran on
+          // REST because SOSL always does, not because they chose REST.
+          setLang(entryMode, { explicit: true });
+          if (entryMode === 'soql') setMode(entry.api);
           if (historyMenu) historyMenu.style.display = 'none';
           textarea.focus();
         });
@@ -1379,8 +1449,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
 
         item.addEventListener('click', () => {
           textarea.value = entry.q;
-          setMode(entry.api);
-          setLang(entryMode);
+          setLang(entryMode, { explicit: true });
+          if (entryMode === 'soql') setMode(entry.api);
           savedQueriesMenu.style.display = 'none';
           textarea.focus();
         });
@@ -1414,7 +1484,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
           } object${found.length === 1 ? '' : 's'}`;
           renderGroupedResults();
         } else {
-          const envelope = await runQuery(api, soql, mode);
+          const envelope = await runQuery(api, soql, effectiveMode());
           const elapsed = Date.now() - t0;
           const total = envelope.totalSize ?? envelope.size ?? envelope.records.length;
           groups = [];
@@ -1427,7 +1497,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
           renderResults();
         }
         if (historyEnabled) {
-          await pushSoqlHistory({ q: soql, api: mode, lang, ts: Date.now() });
+          await pushSoqlHistory({ q: soql, api: effectiveMode(), lang, ts: Date.now() });
         }
       } catch (err) {
         showError(err instanceof Error ? err.message : String(err));
@@ -1522,7 +1592,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       status.textContent = 'Explaining…';
       const t0 = Date.now();
       try {
-        const plans = await explainQuery(api, soql, mode);
+        const plans = await explainQuery(api, soql, effectiveMode());
         renderPlan(plans);
         status.textContent = `⏱ ${Date.now() - t0} ms · query plan`;
       } catch (err) {
@@ -2210,7 +2280,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       const prevStatus = status.textContent;
       status.textContent = 'Exporting all… fetching page 1';
       try {
-        const first = await runQuery(api, soql, mode);
+        const first = await runQuery(api, soql, effectiveMode());
         // The worker-proxied page-1 fetch can't be aborted mid-flight; guarantee
         // the data-correctness half — a Cancel during page 1 yields NO download.
         if (!owns()) return; // superseded by a new run/loadMore/explain — stay silent
@@ -2286,7 +2356,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     }
 
     textarea.focus();
-    setMode(mode);
+    // setLang paints the transport toggle too (and marks it unavailable when
+    // the staged entry is SOSL), so this one call establishes both controls.
     setLang(lang);
   }
 

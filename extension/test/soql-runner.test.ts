@@ -1804,15 +1804,132 @@ describe('soql-runner — SOSL mode in the runner UI', () => {
     expect(langButton('SOQL').getAttribute('aria-checked')).toBe('true');
   });
 
-  it('disables Explain and the Tooling toggle in SOSL mode', async () => {
+  it('disables Explain and the whole transport toggle in SOSL mode', async () => {
     await openWith(fakeApi());
     expect(findButton('🔎 Explain')?.disabled).toBe(false);
     langButton('SOSL').click();
     expect(findButton('🔎 Explain')?.disabled).toBe(true);
+    // Genuinely disabled, not hidden, and labelled as unavailable-in-this-mode.
     expect(findButton('Tooling')?.disabled).toBe(true);
+    expect(findButton('REST')?.disabled).toBe(true);
+    expect(findButton('Tooling')?.title).toContain('Not available in SOSL mode');
+    expect(findButton('Tooling')?.style.display).not.toBe('none');
     langButton('SOQL').click();
     expect(findButton('🔎 Explain')?.disabled).toBe(false);
     expect(findButton('Tooling')?.disabled).toBe(false);
+    expect(findButton('REST')?.disabled).toBe(false);
+    expect(findButton('Tooling')?.title).toBe('');
+  });
+
+  it('preserves and restores the Tooling transport across a SOSL round trip', async () => {
+    const apiGet = vi.fn().mockResolvedValue(twoObjectSearch);
+    const toolingQuery = vi.fn().mockResolvedValue({ size: 0, done: true, records: [] });
+    const query = vi.fn().mockResolvedValue({ totalSize: 0, done: true, records: [] });
+    const textarea = await openWith(fakeApi({ apiGet, toolingQuery, query } as never));
+
+    findButton('Tooling')!.click();
+    expect(findButton('Tooling')?.getAttribute('aria-pressed')).toBe('true');
+
+    // Merely PASTING a FIND query must not spend the user's transport choice.
+    textarea.value = 'FIND {Acme} IN ALL FIELDS';
+    textarea.dispatchEvent(new Event('input'));
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+    // In SOSL the control reads REST — that IS the transport in effect — and
+    // is disabled rather than silently reassigning the user's choice.
+    expect(findButton('REST')?.getAttribute('aria-pressed')).toBe('true');
+    expect(findButton('Tooling')?.disabled).toBe(true);
+
+    // ...and the SOSL run really goes over the REST search resource.
+    findButton('▶ Run')?.click();
+    await flush();
+    expect(apiGet).toHaveBeenCalledWith(
+      '/services/data/v62.0/search',
+      expect.objectContaining({ q: 'FIND {Acme} IN ALL FIELDS' }),
+    );
+    expect(toolingQuery).not.toHaveBeenCalled();
+    // History records the transport that actually ran, not the stashed choice.
+    expect((await readSoqlHistory())[0]).toMatchObject({ api: 'rest', lang: 'sosl' });
+
+    // Back to SOQL: the choice comes back on its own, no re-click needed.
+    textarea.value = 'SELECT Id FROM Account';
+    textarea.dispatchEvent(new Event('input'));
+    expect(langButton('SOQL').getAttribute('aria-checked')).toBe('true');
+    expect(findButton('Tooling')?.getAttribute('aria-pressed')).toBe('true');
+    expect(findButton('Tooling')?.disabled).toBe(false);
+
+    findButton('▶ Run')?.click();
+    await flush();
+    expect(toolingQuery).toHaveBeenCalledWith('SELECT Id FROM Account');
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('an explicit toggle click survives further edits of the same query', async () => {
+    // Regression: the click used to be reverted by the very next keystroke,
+    // because detection re-ran against text the user had not just changed.
+    const textarea = await openWith(fakeApi());
+    textarea.value = 'SELECT Id FROM Account';
+    textarea.dispatchEvent(new Event('input'));
+    expect(langButton('SOQL').getAttribute('aria-checked')).toBe('true');
+
+    langButton('SOSL').click();
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+
+    // Keep editing the leftover SELECT — the explicit choice holds.
+    textarea.value = 'SELECT Id, Name FROM Account';
+    textarea.dispatchEvent(new Event('input'));
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+    textarea.dispatchEvent(new KeyboardEvent('keyup', { key: 'e', bubbles: true }));
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('hands control back to detection once the query itself changes language', async () => {
+    const textarea = await openWith(fakeApi());
+    textarea.value = 'SELECT Id FROM Account';
+    textarea.dispatchEvent(new Event('input'));
+    langButton('SOSL').click();
+
+    // The query becomes real SOSL — detection agrees, latch releases.
+    textarea.value = 'FIND {Acme}';
+    textarea.dispatchEvent(new Event('input'));
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+    // ...so a later SELECT is free to switch the mode back.
+    textarea.value = 'SELECT Id FROM Contact';
+    textarea.dispatchEvent(new Event('input'));
+    expect(langButton('SOQL').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('an explicit SOQL choice survives edits of a leftover FIND query', async () => {
+    const textarea = await openWith(fakeApi());
+    textarea.value = 'FIND {Acme}';
+    textarea.dispatchEvent(new Event('input'));
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+
+    langButton('SOQL').click();
+    textarea.value = 'FIND {Acme Corp}';
+    textarea.dispatchEvent(new Event('input'));
+    expect(langButton('SOQL').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('leaves the mode alone for text that settles nothing', async () => {
+    const textarea = await openWith(fakeApi());
+    langButton('SOSL').click();
+    for (const half of ['', '  ', 'FIN', 'SELEC']) {
+      textarea.value = half;
+      textarea.dispatchEvent(new Event('input'));
+      expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+    }
+  });
+
+  it('moves the selection from the current radio, whichever one has focus', async () => {
+    await openWith(fakeApi());
+    // Focus the UNSELECTED radio and press an arrow: selection moves to the
+    // other language relative to the current selection, not to this button's.
+    langButton('SOSL').focus();
+    langButton('SOSL').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+    );
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+    expect(langButton('SOQL').getAttribute('aria-checked')).toBe('false');
   });
 
   it('runs SOSL through the search resource and renders one section per object', async () => {
@@ -1969,6 +2086,37 @@ describe('soql-runner — SOSL mode in the runner UI', () => {
     const textarea = await openWith(fakeApi());
     expect(textarea.value).toBe('FIND {Universal}');
     expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('restores a Tooling SOQL entry from SOSL mode, and a SOSL entry leaves the transport choice alone', async () => {
+    await clearSoqlHistory();
+    await pushSoqlHistory({ q: 'FIND {Acme}', api: 'rest', lang: 'sosl', ts: 1 });
+    await pushSoqlHistory({ q: 'SELECT Id FROM Flow', api: 'tooling', lang: 'soql', ts: 2 });
+    await openWith(fakeApi());
+
+    // Pick the Tooling SOQL entry while sitting in SOSL mode: the language
+    // re-enables the transport control, then the recorded transport applies.
+    langButton('SOSL').click();
+    findButton('▸ History ▾')?.click();
+    await flush();
+    const soqlSpan = Array.from(document.querySelectorAll('span')).find(
+      (x) => x.textContent === 'SELECT Id FROM Flow',
+    );
+    (soqlSpan?.parentElement as HTMLElement | undefined)?.click();
+    expect(langButton('SOQL').getAttribute('aria-checked')).toBe('true');
+    expect(findButton('Tooling')?.getAttribute('aria-pressed')).toBe('true');
+
+    // Now pick the SOSL entry: it ran on REST because SOSL always does, so it
+    // must not be read as the user choosing REST for their SOQL work.
+    findButton('▸ History ▾')?.click();
+    await flush();
+    const soslSpan = Array.from(document.querySelectorAll('span')).find(
+      (x) => x.textContent === 'FIND {Acme}',
+    );
+    (soslSpan?.parentElement as HTMLElement | undefined)?.click();
+    expect(langButton('SOSL').getAttribute('aria-checked')).toBe('true');
+    langButton('SOQL').click();
+    expect(findButton('Tooling')?.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('restores SOSL for a pre-P4-3 entry that has no recorded language', async () => {
