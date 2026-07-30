@@ -129,7 +129,10 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
 
     const countLabel = doc.createElement('div');
     countLabel.setAttribute('aria-live', 'polite');
-    countLabel.style.cssText = 'padding: 4px 10px; font-size: 11px; color: var(--sfdt-color-text-weak);';
+    // Doubles as the failure line, which carries the org's annotated message —
+    // so the guidance must not collapse onto the end of it.
+    countLabel.style.cssText =
+      'padding: 4px 10px; font-size: 11px; color: var(--sfdt-color-text-weak); white-space: pre-line;';
     leftPane.appendChild(countLabel);
 
     const listScroll = doc.createElement('div');
