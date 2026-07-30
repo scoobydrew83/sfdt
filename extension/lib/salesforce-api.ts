@@ -22,14 +22,19 @@ import { XML } from './xml.js';
 // healthy requests. 30s clears those with margin while still failing fast
 // enough to be actionable.
 //
-// WRITE (POST/PATCH/PUT/DELETE + every SOAP call): cutting a write short is
-// the dangerous case — the request may already have committed server-side, so
-// an early give-up produces a false failure and invites a duplicate retry. The
-// budget is therefore set at the platform's own ceiling for the longest
-// synchronous operation these paths trigger: Apex's 120s cumulative callout
-// timeout, which bounds an `apex-anonymous` run, a Tooling CustomField create,
-// and a Partner-SOAP `create`/`upsert` batch from `data-import`. Anything
-// slower than that is genuinely wedged, not merely slow.
+// WRITE (POST/PATCH/PUT/DELETE, plus any SOAP call its caller declares
+// `mutating`): cutting a write short is the dangerous case — the request may
+// already have committed server-side, so an early give-up produces a false
+// failure and invites a duplicate retry. The budget is therefore set at the
+// platform's own ceiling for the longest synchronous operation these paths
+// trigger: Apex's 120s cumulative callout timeout, which bounds an
+// `apex-anonymous` run, a Tooling CustomField create, and a Partner-SOAP
+// `create`/`upsert` batch from `data-import`. Anything slower than that is
+// genuinely wedged, not merely slow.
+//
+// SOAP is split per call site rather than treated wholesale — see apiSoap.
+// A polled `checkDeployStatus` is a read and must not inherit the write
+// framing, or "may have committed" stops meaning anything.
 const READ_MESSAGE_TIMEOUT_MS = 30_000;
 const WRITE_MESSAGE_TIMEOUT_MS = 120_000;
 
@@ -392,12 +397,27 @@ export class SalesforceApiClient {
     return this.apiRequest<T>('PATCH', endpoint, body);
   }
 
+  // `mutating` declares whether this SOAP operation can change data. Unlike
+  // apiRequest — where the HTTP method decides it — SOAP tunnels reads and
+  // writes through one POST, so only the caller knows. It selects the timeout
+  // budget AND the `mutating` flag on a timeout error, which is the sole signal
+  // that says "this may have committed". Declaring a read/poll as mutating is
+  // not merely noisy: it makes `sfdtKind === 'timeout' && mutating === true`
+  // mean "or a status poll was slow", which destroys the discriminant for the
+  // callers that need it.
+  //
+  // Undeclared defaults to `true` — the safe direction. A new call site that
+  // forgets to declare over-warns (a retry the user didn't need to think twice
+  // about) rather than under-warns (a duplicate record). soap-explore is the
+  // one deliberate user of the default: it sends an arbitrary user-chosen
+  // operation, so it genuinely cannot know.
   async apiSoap<T = unknown>(
     apiName: 'Partner' | 'Metadata' | 'Tooling' | 'Enterprise' | 'Apex',
     method: string,
     args: unknown,
-    options: { headers?: Record<string, unknown> } = {},
+    options: { headers?: Record<string, unknown>; mutating?: boolean } = {},
   ): Promise<T> {
+    const mutating = options.mutating ?? true;
     const wsdls = {
       Enterprise: {
         servicePortAddress: '/services/Soap/c/' + this.apiVersion,
@@ -457,12 +477,6 @@ export class SalesforceApiClient {
       },
     });
 
-    // SOAP carries both reads (Metadata.describeMetadata/listMetadata) and
-    // writes (Metadata.deploy; the Partner create/update/upsert that backs
-    // data-import) behind one signature, and nothing at this layer can tell
-    // them apart. Classified `mutating` deliberately: over-warning on a
-    // describe costs the user a moment's doubt, while under-warning on a
-    // create costs them duplicate records.
     const resp = await this.sendProxied<SfApiFetchResponse>(
       {
         action: 'sfApiFetch',
@@ -478,7 +492,7 @@ export class SalesforceApiClient {
         soap: { sentinel: SOAP_SID_SENTINEL },
         targetOrigin: this.targetOrigin ?? undefined,
       },
-      { operation: `${apiName} ${method} SOAP call`, mutating: true },
+      { operation: `${apiName} ${method} SOAP call`, mutating },
     );
 
     const soapError = (msgText: string, status: number, kind: SfApiErrorKind): Error => {

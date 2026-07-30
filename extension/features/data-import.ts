@@ -836,7 +836,10 @@ export function createDataImportFeature(options: {
       }
 
       const soapMethod = selectedOperation === 'create' ? 'create' : selectedOperation;
-      const res = await api.apiSoap<any>('Partner', soapMethod, importArgs);
+      // Every operation reachable here (create/update/upsert/delete) writes, so
+      // a timeout genuinely may have committed this chunk — the one case where
+      // "check before retrying" is the correct thing to tell the user.
+      const res = await api.apiSoap<any>('Partner', soapMethod, importArgs, { mutating: true });
       const results = asArray(res);
 
       for (let i = 0; i < chunk.length; i++) {

@@ -248,13 +248,59 @@ describe('extension/lib/salesforce-api (thin client over sfApiFetch)', () => {
         expect(err.message).not.toMatch(/\bfailed\b/);
       });
 
-      it('applies the same treatment to SOAP, which is how data-import writes', async () => {
+      it('applies the same treatment to a declared-mutating SOAP call (the data-import write)', async () => {
         const bus = timingOutBus();
         const client = new SalesforceApiClient({ win: fakeWin(WIN), messageBus: bus });
-        const err = await reject(client.apiSoap('Partner', 'create', { sObjects: [] }));
+        const err = await reject(
+          client.apiSoap('Partner', 'create', { sObjects: [] }, { mutating: true }),
+        );
         expect(bus.budgets).toEqual([WRITE_TIMEOUT_MS]);
         expect(err.message).not.toContain('No Salesforce session');
         expect(err.message).toContain('Partner create SOAP call');
+        expect(err.message).toContain('may already have been saved');
+      });
+    });
+
+    // SOAP tunnels reads and writes through one POST, so `mutating` is declared
+    // per call site. Getting this wrong on a *read* is not merely noisy: it
+    // makes `timeout + mutating` mean "or a status poll was slow", which is the
+    // whole precision the discriminant exists to provide.
+    describe('SOAP reads and polls', () => {
+      it('a declared-read SOAP call never claims a possible commit', async () => {
+        const bus = timingOutBus();
+        const client = new SalesforceApiClient({ win: fakeWin(WIN), messageBus: bus });
+        const err = await reject(
+          client.apiSoap('Metadata', 'checkDeployStatus', { id: '0Af' }, { mutating: false }),
+        );
+        expect(bus.budgets).toEqual([READ_TIMEOUT_MS]);
+        expect(err.message).toContain('Metadata checkDeployStatus SOAP call');
+        expect(err.message).toContain('timed out after 30s');
+        expect(err.message).toContain('retry the request');
+        // The three phrases that would be lies about a status poll.
+        expect(err.message).not.toContain('may already have been saved');
+        expect(err.message).not.toContain('the result is unknown');
+        expect(err.message).not.toContain('No Salesforce session');
+        expect(sfApiErrorKind(err)).toBe('timeout');
+        expect((err as { mutating?: boolean }).mutating).toBe(false);
+      });
+
+      it('a declared-read SOAP call keeps mutating=false through the discriminant', async () => {
+        const client = new SalesforceApiClient({ win: fakeWin(WIN), messageBus: timingOutBus() });
+        for (const method of ['describeMetadata', 'listMetadata', 'retrieve', 'checkRetrieveStatus']) {
+          const err = await reject(client.apiSoap('Metadata', method, {}, { mutating: false }));
+          expect(sfApiErrorKind(err)).toBe('timeout');
+          expect((err as { mutating?: boolean }).mutating).toBe(false);
+        }
+      });
+
+      it('an undeclared SOAP caller over-warns rather than under-warns', async () => {
+        // soap-explore sends a user-typed operation and cannot know. The safe
+        // default is mutating: a needless double-check beats a duplicate record.
+        const bus = timingOutBus();
+        const client = new SalesforceApiClient({ win: fakeWin(WIN), messageBus: bus });
+        const err = await reject(client.apiSoap('Partner', 'whateverTheUserTyped', {}));
+        expect(bus.budgets).toEqual([WRITE_TIMEOUT_MS]);
+        expect((err as { mutating?: boolean }).mutating).toBe(true);
         expect(err.message).toContain('may already have been saved');
       });
     });
@@ -325,7 +371,9 @@ describe('extension/lib/salesforce-api (thin client over sfApiFetch)', () => {
 
       it('tags SOAP failures too, and returns null for unrelated errors', async () => {
         const c = new SalesforceApiClient({ win: fakeWin(WIN), messageBus: timingOutBus() });
-        expect(sfApiErrorKind(await reject(c.apiSoap('Metadata', 'deploy', {})))).toBe('timeout');
+        expect(
+          sfApiErrorKind(await reject(c.apiSoap('Metadata', 'deploy', {}, { mutating: true }))),
+        ).toBe('timeout');
         expect(sfApiErrorKind(new Error('something else'))).toBeNull();
         expect(sfApiErrorKind('not an error')).toBeNull();
       });
