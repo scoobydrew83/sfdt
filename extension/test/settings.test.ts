@@ -217,13 +217,35 @@ describe('isFeatureEnabled honours manifest enabledByDefault', () => {
 
   it('a legacy camelCase stored preference still beats the manifest default', async () => {
     registerFeatureDefault('setup-tabs', false);
+    try {
+      chrome.storage.local.set({
+        'sfdt.settings': { features: { setupTabs: true } },
+      } as any);
+      const s = await loadSettings();
+      expect(isFeatureEnabled(s, 'setup-tabs')).toBe(true);
+    } finally {
+      // Must restore even if the expect above throws — otherwise 'setup-tabs'
+      // stays seeded false and cascades into unrelated failures later in the file.
+      registerFeatureDefault('setup-tabs', true);
+    }
+  });
+
+  it('a legacy camelCase stored `false` also beats an on-by-default manifest', async () => {
     chrome.storage.local.set({
-      'sfdt.settings': { features: { setupTabs: true } },
+      'sfdt.settings': { features: { setupTabs: false } },
     } as any);
     const s = await loadSettings();
-    expect(isFeatureEnabled(s, 'setup-tabs')).toBe(true);
-    // Restore the real manifest default for any later test in this file.
-    registerFeatureDefault('setup-tabs', true);
+    expect(isFeatureEnabled(s, 'setup-tabs')).toBe(false);
+  });
+
+  it('a canonical stored preference wins over a conflicting legacy one', async () => {
+    // hasOwnProperty on the canonical id short-circuits before the legacy loop,
+    // so this is deterministic rather than dependent on Object.entries order.
+    chrome.storage.local.set({
+      'sfdt.settings': { features: { 'setup-tabs': false, setupTabs: true } },
+    } as any);
+    const s = await loadSettings();
+    expect(isFeatureEnabled(s, 'setup-tabs')).toBe(false);
   });
 });
 

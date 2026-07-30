@@ -17,6 +17,24 @@
 //
 // test/feature-manifests.test.ts already pins (1) against the real factory
 // manifests 1:1, so the two sources cannot silently diverge.
+//
+// SIZE — deliberate, measured, revisit-if. Importing the whole manifest array
+// to read one boolean per feature inlines it into every entrypoint that reaches
+// settings: ~+9 kB each to background.js (74.3 → 83 kB) and content.js
+// (544 → 552.7 kB). A derived id→boolean map was measured at 1,002 B vs the
+// 11,778 B source — ~8 kB/bundle recoverable, and the gap grows with each new
+// feature. Kept as-is anyway: that is 0.65% of the 1.22 MB extension for no
+// user-perceptible effect, and the alternative is a SECOND generated artifact
+// deriving from the first, i.e. another regenerate-both step and another drift
+// guard to maintain, purely for bytes. Revisit if the manifest grows materially
+// or a bundle budget lands — at which point generate the compact map from
+// collectEntries() in the same SFDT_WRITE_MANIFESTS pass and assert it in the
+// same parity describe, so authoring stays single-source.
+//
+// Do NOT "optimise" this by seeding only the ids that are false. Today that
+// list is empty, which would make a completely dead seed indistinguishable from
+// a correct one — the exact hole the membership + value fixtures exist to close
+// (test/feature-defaults.test.ts, test/feature-manifests.test.ts).
 
 import manifests from './feature-manifests.json';
 
@@ -30,6 +48,14 @@ interface ManifestDefaultEntry {
 // been regenerated yet, and silently switching such a feature off would be a
 // user-visible regression. Only an explicit `enabledByDefault: false` turns one
 // off.
+//
+// Failing OPEN is only safe because of the parity test: the residual risk is a
+// feature that declares `enabledByDefault: false` in code, is gated from a
+// registry-free surface, and whose entry has not been regenerated into
+// feature-manifests.json — it would ship on. `feature-manifests.json parity` in
+// test/feature-manifests.test.ts fails on exactly that skew, and it runs in the
+// standard suite (not behind a flag). The two are coupled; do not weaken one
+// without re-reading the other.
 const UNKNOWN_FEATURE_DEFAULT = true;
 
 const declaredDefaults = new Map<string, boolean>(
