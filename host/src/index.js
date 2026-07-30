@@ -50,6 +50,24 @@ async function loadContract() {
   return _contract;
 }
 
+// The host ships inside the published @sfdt/cli package (host/src/ sits next
+// to the CLI's src/ — see the root package.json "files" list), so the CLI's
+// own libraries are importable by relative path. Loading them this way keeps
+// the single-writer rule: manifest XML comes from the CLI's renderPackageXml
+// and org discovery from the CLI's org-inventory helpers — never a private
+// reimplementation. Lazy, like loadContract, so the host still boots (and
+// answers with a useful error) if the CLI tree is somehow absent.
+async function loadCliLib(relFile) {
+  try {
+    return await import(new URL(`../../src/lib/${relFile}`, import.meta.url).href);
+  } catch (err) {
+    throw new Error(
+      `Could not load the sfdt CLI's ${relFile} next to the native host. ` +
+        `Is the @sfdt/cli installation intact? Underlying error: ${err.message}`,
+    );
+  }
+}
+
 const HOST_VERSION = (() => {
   try {
     return require('../package.json').version;
@@ -400,6 +418,87 @@ async function dispatch(request) {
         targetOnly: items.filter((i) => i.status === 'target-only').length,
         both: items.filter((i) => i.status === 'both').length,
         items,
+      });
+    }
+    case 'manifest.discover': {
+      // Read-only org metadata discovery — mirrors the HTTP bridge: the same
+      // org-inventory helpers, loaded from the CLI tree the host ships inside,
+      // so both transports see the same type/member tree. The org falls back
+      // to the configured project's defaultOrg when the request omits it.
+      let org = request.org;
+      if (!org) {
+        const ctx = await resolveProjectContext();
+        if (ctx) {
+          const projectConfig = await readJsonIfExists(
+            path.join(ctx.projectRoot, '.sfdt', 'config.json'),
+          );
+          org = projectConfig?.defaultOrg;
+        }
+      }
+      if (!org) {
+        return makeErrorResponse(
+          request.requestId,
+          'No org specified and no default org configured for manifest.discover',
+          'REQUEST_INVALID',
+        );
+      }
+      try {
+        const { listMetadataTypes, listMetadataMembers } = await loadCliLib('org-inventory.js');
+        if (request.type === undefined) {
+          const types = await listMetadataTypes(org);
+          return makeSuccessResponse(request.requestId, { org, types: [...types].sort() });
+        }
+        const members = await listMetadataMembers(org, request.type);
+        if (members === null) {
+          // Never degrade a listMetadata failure into a fabricated empty tree.
+          return makeErrorResponse(
+            request.requestId,
+            `Could not list ${request.type} members from ${org}. The type may not be listable, or the org is unreachable.`,
+            'INTERNAL_ERROR',
+          );
+        }
+        return makeSuccessResponse(request.requestId, {
+          org,
+          type: request.type,
+          members: members.map((m) => m.name).sort(),
+        });
+      } catch (err) {
+        return makeErrorResponse(request.requestId, `Discover failed: ${err.message}`, 'INTERNAL_ERROR');
+      }
+    }
+    case 'manifest.render': {
+      // Pure render — no org round-trip, no project required. XML goes
+      // through the CLI's renderPackageXml (metadata-mapper.js), the single
+      // manifest writer, so host output is byte-identical to the HTTP bridge,
+      // the GUI builder, and `sfdt manifest`.
+      const { collapseManifestItems } = await loadContract();
+      const metadata = collapseManifestItems(request.items);
+      if (Object.keys(metadata).length === 0) {
+        return makeErrorResponse(request.requestId, 'No valid items to render', 'REQUEST_INVALID');
+      }
+      const { renderPackageXml } = await loadCliLib('metadata-mapper.js');
+      let resolvedVersion = request.apiVersion;
+      if (!resolvedVersion) {
+        const ctx = await resolveProjectContext();
+        if (ctx) {
+          const projectConfig = await readJsonIfExists(
+            path.join(ctx.projectRoot, '.sfdt', 'config.json'),
+          );
+          resolvedVersion = projectConfig?.sourceApiVersion;
+        }
+      }
+      resolvedVersion = resolvedVersion ?? '63.0';
+      const mode = request.mode ?? 'additive';
+      if (mode === 'destructive') {
+        return makeSuccessResponse(request.requestId, {
+          mode,
+          destructiveChangesXml: renderPackageXml(metadata, resolvedVersion),
+          emptyPackageXml: renderPackageXml({}, resolvedVersion),
+        });
+      }
+      return makeSuccessResponse(request.requestId, {
+        mode,
+        xml: renderPackageXml(metadata, resolvedVersion),
       });
     }
     case 'deploy':

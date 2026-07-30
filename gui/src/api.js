@@ -241,7 +241,16 @@ export const api = {
   /** @returns {Promise<{ ok: boolean }>} */
   removeManifestComponent:(relPath, type, member) => postJson('/manifest/remove-component', { relPath, type, member }),
   addManifestComponent:   (relPath, type, member) => postJson('/manifest/add-component',    { relPath, type, member }),
-  discoverComponents:     (type, exclude = []) => fetchJson(`/manifest/discover?type=${encodeURIComponent(type)}${exclude.length ? `&exclude=${encodeURIComponent(exclude.join(','))}` : ''}`),
+  /** Discover local components of one type. `pkg` scopes to a packageDirectory name ('all' = default source path). @returns {Promise<{ members: string[] }>} */
+  discoverComponents:     (type, exclude = [], pkg) => fetchJson(`/manifest/discover?type=${encodeURIComponent(type)}${exclude.length ? `&exclude=${encodeURIComponent(exclude.join(','))}` : ''}${pkg && pkg !== 'all' ? `&package=${encodeURIComponent(pkg)}` : ''}`),
+  /** List metadata types in an org (cached scan snapshot when fresh). @returns {Promise<{ org: string, types: string[], cached: boolean, timestamp?: string }>} */
+  discoverOrgTypes:       (org, { refresh = false } = {}) => fetchJson(`/manifest/discover-org?org=${encodeURIComponent(org)}&types=1${refresh ? '&refresh=1' : ''}`),
+  /** List members of one metadata type in an org. @returns {Promise<{ org: string, type: string, members: string[], cached: boolean, timestamp?: string }>} */
+  discoverOrgMembers:     (org, type, { refresh = false } = {}) => fetchJson(`/manifest/discover-org?org=${encodeURIComponent(org)}&type=${encodeURIComponent(type)}${refresh ? '&refresh=1' : ''}`),
+  /** Render selections to manifest XML server-side (single writer: renderPackageXml). @returns {Promise<{ mode: string, xml?: string, destructiveChangesXml?: string, emptyPackageXml?: string }>} */
+  renderManifest:         ({ items, mode = 'additive', apiVersion } = {}) => postJson('/manifest/render', { items, mode, ...(apiVersion ? { apiVersion } : {}) }),
+  /** Batch-save: new rl-<name> file(s) in manifestDir, or batch-add items into an existing manifest via relPath. @returns {Promise<{ ok: boolean, added?: number, path?: string, files?: Array<{filename: string, path: string}>, xml?: string, destructiveChangesXml?: string, emptyPackageXml?: string }>} */
+  saveManifest:           (body) => postJson('/manifest/save', body),
   /** @returns {Promise<{ prompts: Array<{key:string, label:string, description:string, feature:string, default:string, current:string, overridden:boolean}> }>} */
   listPrompts:            () => fetchJson('/prompts'),
   /** @returns {Promise<{ ok: boolean, key: string }>} */
@@ -285,6 +294,21 @@ export const api = {
   docs:                   () => fetchJson('/docs'),
   /** Org-wide Apex coverage + per-class. @returns {Promise<{org:string|null, threshold:number|null, orgWide:number|null, belowThreshold:boolean, classes:Array<{name:string, covered:number, uncovered:number, total:number, pct:number|null}>}>} */
   coverageOrgWide:        () => fetchJson('/coverage'),
+  // ── SOQL console (thin wrappers over soql-runner.js — the single engine) ──
+  /** Find sObjects by name substring. @returns {Promise<{org:string, term:string|null, category:string, totalScanned:number, totalMatched:number, truncated:boolean, matches:string[]}>} */
+  soqlSObjects:           (org, { term, category, limit } = {}) => fetchJson(`/soql/sobjects?org=${encodeURIComponent(org)}${term ? `&term=${encodeURIComponent(term)}` : ''}${category ? `&category=${encodeURIComponent(category)}` : ''}${limit ? `&limit=${encodeURIComponent(limit)}` : ''}`),
+  /** Describe an sObject (fields + child relationships). @returns {Promise<{org:string, name:string, label:string, custom:boolean, queryable:boolean, keyPrefix:string|null, fieldCount:number, filter:string|null, fields:Array, childRelationships:Array}>} */
+  soqlDescribe:           (org, name, { filter, tooling } = {}) => fetchJson(`/soql/describe?org=${encodeURIComponent(org)}&name=${encodeURIComponent(name)}${filter ? `&filter=${encodeURIComponent(filter)}` : ''}${tooling ? '&tooling=1' : ''}`),
+  /** Parent lookups (dot notation) + child relationships (subqueries). @returns {Promise<{org:string, sobject:string, direction:string, parents?:Array, children?:Array}>} */
+  soqlRelationships:      (org, name, { direction } = {}) => fetchJson(`/soql/relationships?org=${encodeURIComponent(org)}&name=${encodeURIComponent(name)}${direction ? `&direction=${encodeURIComponent(direction)}` : ''}`),
+  /** Validate a query (local checks + org LIMIT 0 round-trip; degrades to local-only, never a fabricated pass). @returns {Promise<{query:string, valid:boolean, mode:'local'|'org', kind:string, errors:string[], warnings:string[]}>} */
+  soqlValidate:           (body) => postJson('/soql/validate', body),
+  /** Org query plans via the REST explain endpoint (the query is never executed). @returns {Promise<{org:string, apiVersion:string, query:string, plans:Array}>} */
+  soqlPlan:               (body) => postJson('/soql/plan', body),
+  /** Bounded SOQL execution — the runner enforces soql.defaultLimit/maxLimit; `csv` is the runner's own CSV shaping. @returns {Promise<{org:string, query:string, requestedQuery:string, bound:{limit:number,max:number,action:string}, totalSize:number, returned:number, truncated:boolean, records:Array<object>, csv:string}>} */
+  soqlQuery:              (body) => postJson('/soql/query', body),
+  /** Bounded SOSL execution. @returns {Promise<{org:string, query:string, requestedQuery:string, bound:{limit:number,max:number,action:string}, returned:number, records:Array<object>, csv:string}>} */
+  soqlSosl:               (body) => postJson('/soql/sosl', body),
 };
 
 // ─── SSE helpers ──────────────────────────────────────────────────────────────

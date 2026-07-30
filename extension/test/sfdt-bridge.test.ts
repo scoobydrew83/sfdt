@@ -20,7 +20,7 @@ describe('createBridgeClient.getServerInfo', () => {
         data: {
           pong: true,
           serverVersion: '0.9.0',
-          protocolVersion: '1.2',
+          protocolVersion: '1.3',
           transport: 'localhost',
           disabledFeatures: ['canvas-search'],
         },
@@ -29,7 +29,7 @@ describe('createBridgeClient.getServerInfo', () => {
     const info = await client.getServerInfo();
     expect(info).toEqual({
       serverVersion: '0.9.0',
-      protocolVersion: '1.2',
+      protocolVersion: '1.3',
       negotiation: { ok: true, severity: 'ok' },
       transport: 'localhost',
       disabledFeatures: ['canvas-search'],
@@ -51,7 +51,7 @@ describe('createBridgeClient.getServerInfo', () => {
       preferredTransport: 'localhost',
       sendMessageImpl: fakeSendMessage({
         ok: true,
-        data: { pong: true, serverVersion: '0.8.1', protocolVersion: '1.2', transport: 'localhost' },
+        data: { pong: true, serverVersion: '0.8.1', protocolVersion: '1.3', transport: 'localhost' },
       }),
     });
     const info = await client.getServerInfo();
@@ -77,7 +77,7 @@ describe('createBridgeClient.getServerInfo', () => {
         data: {
           pong: true,
           serverVersion: '0.9.0',
-          protocolVersion: '1.2',
+          protocolVersion: '1.3',
           transport: 'localhost',
           disabledFeatures: ['canvas-search'],
         },
@@ -91,7 +91,7 @@ describe('createBridgeClient.getServerInfo', () => {
     const info = await client.getServerInfo();
     expect(info).toEqual({
       serverVersion: '0.9.0',
-      protocolVersion: '1.2',
+      protocolVersion: '1.3',
       negotiation: { ok: true, severity: 'ok' },
       transport: 'localhost',
       disabledFeatures: ['canvas-search'],
@@ -112,7 +112,7 @@ describe('createBridgeClient — protocol negotiation', () => {
         data: {
           pong: true,
           serverVersion: '0.9.0',
-          protocolVersion: '1.3',
+          protocolVersion: '1.4',
           transport: 'localhost',
           disabledFeatures: [],
         },
@@ -236,6 +236,25 @@ describe('createBridgeClient — retries and per-call timeout', () => {
     const res = await client.send({ requestId: 'r1', kind: 'version' });
     expect(res.ok).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries the read-only manifest kinds once after a transport failure', async () => {
+    // manifest.discover and manifest.render are read-only/pure per the bridge
+    // contract, so they belong to the idempotent (retry-once) set.
+    for (const kind of ['manifest.discover', 'manifest.render'] as const) {
+      const fetchSpy = vi.fn(async () => {
+        if (fetchSpy.mock.calls.length === 1) throw new Error('network down');
+        return okResponse('r1');
+      });
+      const client = createBridgeClient({
+        token: 'token-x',
+        preferredTransport: 'localhost',
+        fetchImpl: fetchSpy as unknown as typeof fetch,
+      });
+      const res = await client.send({ requestId: 'r1', kind } as never);
+      expect(res.ok).toBe(true);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    }
   });
 
   it('gives up after the single retry when the transport keeps failing', async () => {
@@ -472,7 +491,7 @@ function nativePong(req: { requestId: string }) {
     data: {
       pong: true,
       serverVersion: '0.9.0',
-      protocolVersion: '1.2',
+      protocolVersion: '1.3',
       transport: 'native',
       disabledFeatures: [],
     },
@@ -754,7 +773,7 @@ describe('createBridgeClient — default chrome.runtime transport (no sendMessag
           data: {
             pong: true,
             serverVersion: '0.9.0',
-            protocolVersion: '1.2',
+            protocolVersion: '1.3',
             transport: 'localhost',
             disabledFeatures: [],
           },
@@ -818,7 +837,7 @@ describe('createBridgeClient — call() and getServerInfo native fallback', () =
     const info = await client.getServerInfo();
     expect(info).toEqual({
       serverVersion: '0.9.0',
-      protocolVersion: '1.2',
+      protocolVersion: '1.3',
       negotiation: { ok: true, severity: 'ok' },
       transport: 'native',
       disabledFeatures: [],

@@ -18,12 +18,14 @@ This guide covers every sfdt command in depth: what it does, when to use it, all
 6. [Commands: Testing and Quality](#commands-testing-and-quality)
    - [sfdt test](#sfdt-test)
    - [sfdt agent-test](#sfdt-agent-test)
+   - [sfdt apex](#sfdt-apex)
    - [sfdt quality](#sfdt-quality)
 7. [Commands: Metadata and Source Control](#commands-metadata-and-source-control)
    - [sfdt manifest](#sfdt-manifest)
    - [sfdt pull](#sfdt-pull)
    - [sfdt drift](#sfdt-drift)
    - [sfdt compare](#sfdt-compare)
+   - [sfdt soql](#sfdt-soql)
 8. [Commands: Release Management](#commands-release-management)
    - [sfdt release](#sfdt-release)
    - [sfdt changelog](#sfdt-changelog)
@@ -381,11 +383,13 @@ Test results are written to `logs/test-results/` as JSON files and are visible i
 Runs static code quality analysis and optionally generates an AI fix plan. Can analyze code structure, test quality, or both.
 
 ```bash
-sfdt quality                    # code analyzer only (default)
+sfdt quality                    # code analyzer + additive ApexGuru org-side check (default)
 sfdt quality --api67            # API v67 (Summer '26) user-mode readiness scan only
 sfdt quality --test-hints       # flag @IsTest classes lacking @IsTest(testFor=...) hints
+sfdt quality --apexguru         # ApexGuru org-side analysis only
 sfdt quality --tests            # test analyzer only
-sfdt quality --all              # both analyzers
+sfdt quality --all              # both analyzers (+ ApexGuru)
+sfdt quality --skip-apexguru    # analyzer run without the org-side check
 sfdt quality --fix-plan         # run analyzer + AI fix plan
 sfdt quality --generate-stubs   # generate @IsTest stub classes for untested Apex
 sfdt quality --generate-stubs --dry-run  # preview stubs without writing files
@@ -397,13 +401,18 @@ sfdt quality --generate-stubs --dry-run  # preview stubs without writing files
 |---|---|
 | `--tests` | Run `quality/test-analyzer.sh` only |
 | `--all` | Run both `quality/code-analyzer.sh` and `quality/test-analyzer.sh` |
+| `--apexguru` | Run **only** the ApexGuru org-side analysis check (honours `--json`) |
+| `--skip-apexguru` | Skip the additive ApexGuru check during analyzer runs |
+| `--org <alias>` | Target org for the ApexGuru check (default: `config.defaultOrg`) |
 | `--fix-plan` | After analysis, send the output to AI for a prioritized, file-specific fix plan |
 | `--include-fixes` | Ask **Code Analyzer v5** for actionable fixes/suggestions in the scan output (`--include-fixes --include-suggestions`); the richer output feeds `--fix-plan` |
-| `--output-file <path>` | Also write the Code Analyzer v5 results to a file; the format follows the extension (e.g. `.sarif` for GitHub code-scanning upload). Requires v5 — v4 logs a warning and skips |
+| `--output-file <path>` | Also write the Code Analyzer v5 results to a file; the format follows the extension (e.g. `.sarif` for GitHub code-scanning upload) |
 | `--generate-stubs` | Generate `@IsTest` stub classes for Apex classes that have no test class |
 | `--dry-run` | Preview `--generate-stubs` output without writing any files |
 
-**Code Analyzer engine:** `sfdt quality` runs **Salesforce Code Analyzer v5** (`sf code-analyzer run`, a just-in-time plugin that auto-installs on a modern `sf` CLI). It falls back to the retired v4 (`sf scanner run`) if only that is present, and otherwise reports the scan as **SKIPPED** (never a fabricated clean result). Install manually with `sf plugins install code-analyzer` if needed.
+**Code Analyzer engine:** `sfdt quality` runs **Salesforce Code Analyzer v5** (`sf code-analyzer run`, a just-in-time plugin that auto-installs on a modern `sf` CLI) — the only supported engine. If v5 is unavailable the scan is reported as **SKIPPED** (never a fabricated clean result). Install manually with `sf plugins install code-analyzer` if needed. Legacy Code Analyzer v4 support (and its `--allow-legacy-analyzer` opt-in) was removed at 1.0.
+
+**ApexGuru org-side analysis:** alongside the local Code Analyzer v5 scan, `sfdt quality` submits your largest non-test Apex classes (up to 10) to **ApexGuru**, Salesforce's org-side performance/anti-pattern service, via the org REST API (`apexguru/validate` → `apexguru/request` → poll for the report). ApexGuru is **license/edition-gated** and must be enabled by an org admin, so the check follows the established gated-org-check policy: with no org, no license, or the feature disabled it degrades to **skipped** (loudly — never a fabricated pass), and an enabled-but-incomplete analysis degrades to **warn**. It never reports `error` and it is **advisory**: whatever ApexGuru returns, the `sfdt quality` exit code stays what the local analyzers alone would produce. Results print in the CLI, feed the `--fix-plan` context, and are persisted raw to `logs/apexguru-latest.json` (archived under `logs/apexguru-results/`, indexed in `sfdt history` as type `apexguru`).
 
 **AI fix plan:** The fix plan groups issues by severity (critical, high, medium, low) and provides file locations, descriptions, and concrete code suggestions. It focuses on Salesforce-specific concerns: governor limits, CRUD/FLS enforcement, bulk-safe patterns, and test coverage gaps.
 
@@ -431,6 +440,54 @@ sfdt agent-test --spec MyAgentEval --notify --pr-comment
 | `--pr-comment` | Post the pass/fail result to the current PR (via the `gh` CLI) |
 
 The pass rate is computed from the `sf agent test run --json` result (both the legacy and Agentforce Studio result shapes), mirroring how the `sf` agent plugin itself counts passing cases: a case passes when every one of its scorer/test results passes.
+
+
+### sfdt apex
+
+Apex observability: manage debug **trace flags**, retrieve and **watch debug logs**, and execute **Anonymous Apex** — the debugging loop that complements `sfdt test` (which owns test execution). Debug logs go through the `sf apex` commands; trace flags use the Tooling API, since the `sf` CLI has no first-class trace-flag command. If the `sf apex` plugin is unavailable, commands fail with an actionable install hint (`sf plugins install @salesforce/plugin-apex`) rather than a fabricated result.
+
+```bash
+# Trace flags (mutating — they write TraceFlag records)
+sfdt apex trace start                          # trace the authenticated user for 60 minutes
+sfdt apex trace start --user u@x.com --duration 30
+sfdt apex trace start --level SFDC_DevConsole  # use an existing DebugLevel
+sfdt apex trace list                           # read-only
+sfdt apex trace stop                           # delete the authenticated user's USER_DEBUG flags
+sfdt apex trace stop --all                     # delete every USER_DEBUG flag in the org
+
+# Debug logs (read-only)
+sfdt apex logs list --limit 10
+sfdt apex logs get 07L5g00000AbCdEEAV          # print the raw body
+sfdt apex logs get 07L5g00000AbCdEEAV --output debug.log
+sfdt apex logs watch                           # tail new logs for 5 minutes (CI-safe default)
+sfdt apex logs watch --duration 0              # until interrupted (interactive)
+sfdt apex logs watch --duration 60 --max 3 --no-body
+
+# Anonymous Apex (mutating — the code runs in the org)
+sfdt apex run --file scripts/apex/reset-flags.apex
+echo 'System.debug(UserInfo.getUserName());' | sfdt apex run
+```
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--org <alias>` | Target org (default: `config.defaultOrg`); available on every subcommand |
+| `--json` | Emit the structured JSON envelope on stdout; available on every subcommand |
+| `trace start --user <username>` | Username to trace (default: the org's authenticated user) |
+| `trace start --duration <minutes>` | Trace window in minutes (default 60, capped at 1440 = the Salesforce 24 h limit) |
+| `trace start --level <developerName>` | DebugLevel DeveloperName. Default: the sfdt-managed `SFDT_Trace`, created on demand; any other missing name is an error — sfdt never silently invents a level you named |
+| `trace stop --user <username>` / `--all` | Whose USER_DEBUG flags to delete (default: the authenticated user), or all of them |
+| `logs list --limit <n>` / `--user <name>` | Cap the list (default 20) / only logs from one user |
+| `logs get <logId> --output <file>` | Write the raw log body to a file (the file stays raw; the JSON envelope is stdout-only) |
+| `logs watch --interval <seconds>` | Poll interval (default 5) |
+| `logs watch --duration <seconds>` | Total watch window (default 300; `0` = until interrupted). Bounded by default so it is safe in CI |
+| `logs watch --max <n>` / `--no-body` | Stop after n new logs / report metadata without fetching bodies |
+| `run --file <path>` | Apex file to execute; without it, code is read from stdin (piped input) |
+
+`apex run` reports the full compile/execution diagnostics (`compiled`, `compileProblem`, `exceptionMessage`, stack trace, and the debug log) and exits non-zero when the Apex failed — in `--json` mode the envelope still carries the diagnostics, so CI can branch on `result.success`.
+
+Only logs generated *after* `apex logs watch` starts are streamed; pre-existing logs are skipped.
 
 ---
 
@@ -587,6 +644,41 @@ sfdt compare --output deploy/missing.xml     # write source-only items as packag
 **Output:** Results are visible in the web dashboard's Compare page, where you can filter by status and trigger an XML diff of individual components that exist in both sides.
 
 **See also:** [Drift vs Compare](#drift-vs-compare-choosing-the-right-tool)
+
+---
+
+### sfdt soql
+
+The SOQL/SOSL toolkit — the query and schema lifecycle in one command family: find sObjects, describe their fields and relationships, validate a query without running it, check the org's query plans, and finally execute it with a row bound enforced (never an unbounded dump). All subcommands are read-only against the org and support `--json`.
+
+```bash
+sfdt soql search invoice --category custom          # which objects match "invoice"?
+sfdt soql describe Account --filter phone           # field inventory (filtered)
+sfdt soql relationships Contact                     # parent lookups + child subqueries
+sfdt soql validate "SELECT Id FROM Account"         # local checks + org LIMIT 0 round-trip
+sfdt soql plan "SELECT Id FROM Case WHERE Status='Open'"   # REST explain: cost/selectivity
+sfdt soql query "SELECT Id, Name FROM Account" --limit 50  # bounded execution
+sfdt soql query "SELECT Id FROM Contact" --out contacts.csv # export raw rows (csv/json)
+sfdt soql sosl "FIND {Acme} IN ALL FIELDS RETURNING Account(Id, Name)"
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|---|---|
+| `search [term]` | Find sObjects by case-insensitive name substring (`--category all\|custom\|standard`, `--limit <n>`) |
+| `describe <sobject>` | Fields (type, picklists, references), key prefix, and child relationships (`--filter <term>`, `--tooling`) |
+| `relationships <sobject>` | Parent lookups (dot notation) and child relationships (subqueries) (`--direction parent\|child\|both`) |
+| `validate <query>` | Local static checks plus an org `LIMIT 0` round-trip; exits non-zero when invalid (`--local-only`, `--tooling`) |
+| `plan <query>` | Org query plans via the REST explain endpoint — the query is never executed (`--api-version <ver>`) |
+| `query <soql>` | Bounded SOQL execution (`--limit <n>`, `--tooling`, `--all-rows`, `--out <file>`, `--format json\|csv`) |
+| `sosl <search>` | Bounded SOSL execution (`--limit <n>`, `--out <file>`, `--format json\|csv`) |
+
+**Bounded execution:** `query`/`sosl` never run unbounded. The effective row cap is `--limit`, defaulting to `soql.defaultLimit` (200) and clamped to `soql.maxLimit` (2000) — both configurable in `.sfdt/config.json`. A `LIMIT` already in the query is kept only when it is at or under the cap; results carry `bound` and `truncated` metadata so CI consumers can tell a complete result from a capped one.
+
+**Validation degrades gracefully:** with no reachable org, `validate` reports its local-only verdict with a warning — it never fabricates an org pass. `--out` exports write the **raw** records to disk (the `{status, result, warnings}` envelope exists on stdout only).
+
+All read-only pieces are exposed to MCP as `sfdt_soql_search`, `sfdt_soql_describe`, `sfdt_soql_validate`, `sfdt_soql_plan`, and `sfdt_soql_query` (see [MCP.md](MCP.md)), and the family appears in the VS Code command tree as "SOQL Toolkit".
 
 ---
 
@@ -1263,7 +1355,7 @@ The extension polls the bridge ping endpoint and stops loading any feature whose
 
 ## Web Dashboard
 
-The dashboard has eight pages:
+The dashboard's main pages:
 
 | Page | What it shows | Data source |
 |---|---|---|
@@ -1275,6 +1367,8 @@ The dashboard has eight pages:
 | **Review** | AI-powered code review results for the current branch | `logs/review-latest.json` |
 | **Explain** | AI-powered deployment log analysis | `logs/explain-latest.json` |
 | **Release Hub** | Release manifest artifacts and release notes | `logs/release/` |
+| **Manifest Builder** | Changeset-style builder: browse metadata by type (org inventory or local source), tick components (or a whole type → `*` wildcard), watch a live server-rendered XML preview, and save `rl-<name>-package.xml` — or, in destructive mode, the `rl-<name>-destructiveChanges.xml` + empty `package.xml` pair (deploy timing: `SFDT_DESTRUCTIVE_TIMING`, see `docs/ENV-VARS.md`). Selections persist per org. | `/api/manifest/discover-org` (cached by `logs/scan-latest.json`), `/api/manifest/discover`, `/api/manifest/render`, `/api/manifest/save` |
+| **SOQL Console** | The `sfdt soql` family as a page: search sObjects and browse fields/relationships, validate a query (local checks + org `LIMIT 0` round-trip), fetch query plans (never executed), and run SOQL/SOSL with the configured row bound (`soql.defaultLimit` clamped to `soql.maxLimit`, bound/truncated metadata shown). Results export as raw JSON or the runner-shaped CSV — same engine as the CLI (`soql-runner.js`), no logic reimplemented. Deep-linkable at `/soql`. | `/api/soql/sobjects`, `/api/soql/describe`, `/api/soql/relationships`, `/api/soql/validate`, `/api/soql/plan`, `/api/soql/query`, `/api/soql/sosl` |
 
 **Live command runner:** The Test Runs, Preflight, and Drift pages each have a "Run" button that triggers the corresponding shell script via a Server-Sent Events stream. Output appears line-by-line in the UI in real time, the same as running the CLI command directly.
 

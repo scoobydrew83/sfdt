@@ -7,6 +7,7 @@ import { print, emitJson, emitJsonError } from '../lib/output.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { scanApexReadiness, shouldFailBuild, API_V67 } from '../lib/api-readiness.js';
 import { runTestForHintsCheck } from '../lib/smart-deploy.js';
+import { runApexGuruCheck, persistApexGuruSnapshot } from '../lib/apexguru-runner.js';
 import {
   buildProjectContext,
   readLatestTestRuns,
@@ -91,6 +92,84 @@ async function runTestHintsScan(options) {
   }
 }
 
+/**
+ * Print an ApexGuru check result. The check is ADVISORY: whatever its status
+ * (ok / warn / skipped), it never touches process.exitCode — a license/edition
+ * gate or missing org must not change what Code Analyzer v5 alone would exit
+ * with (gated-org-check policy).
+ */
+function renderApexGuruResult(check) {
+  if (check.status === 'skipped') {
+    print.warning(`ApexGuru: SKIPPED — ${check.summary}.`);
+    print.warning('No org-side analysis was performed; this is NOT a clean result. ApexGuru is license/edition-gated and must be enabled in the org (advisory — does not affect the quality exit code).');
+    return;
+  }
+  if (check.status === 'ok') {
+    print.success(check.summary);
+    return;
+  }
+  // warn — findings or a degraded (enabled-but-incomplete) analysis.
+  print.warning(check.summary);
+  for (const f of check.findings) {
+    const where = `${f.file}${f.line != null ? `:${f.line}` : ''}`;
+    console.log(chalk.yellow(`    [${f.type}] ${where}  ${f.description}`));
+  }
+  for (const d of check.degraded ?? []) {
+    console.log(chalk.dim(`    (not analyzed) ${d.file} — ${d.error}`));
+  }
+}
+
+/**
+ * Run the ApexGuru org-side check additively after the Code Analyzer run.
+ * Never throws and never sets an exit code — the snapshot write is itself
+ * best-effort inside persistApexGuruSnapshot.
+ */
+async function runApexGuruSection(config, options) {
+  try {
+    const orgAlias = options.org ?? config.defaultOrg ?? '';
+    print.info('Running ApexGuru org-side analysis...');
+    const check = await runApexGuruCheck(orgAlias, config);
+    renderApexGuruResult(check);
+    await persistApexGuruSnapshot(config, check);
+    return check;
+  } catch (err) {
+    // Defensive: even an unexpected bug in the check must not alter the
+    // quality exit code.
+    print.warning(`ApexGuru check skipped (unexpected failure): ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * `quality --apexguru`: run ONLY the ApexGuru org-side check (like --api67 /
+ * --test-hints). Honors --json. Exit code stays 0 for ok/warn/skipped — the
+ * check is advisory and never errors by policy.
+ */
+async function runApexGuruOnly(options) {
+  const jsonMode = !!options.json;
+  try {
+    const config = await loadConfig();
+    const orgAlias = options.org ?? config.defaultOrg ?? '';
+    const check = await runApexGuruCheck(orgAlias, config);
+    await persistApexGuruSnapshot(config, check);
+    if (jsonMode) {
+      emitJson(check);
+      return;
+    }
+    print.header('ApexGuru org-side analysis');
+    renderApexGuruResult(check);
+  } catch (err) {
+    // Only infrastructure failures land here (e.g. unreadable .sfdt config) —
+    // runApexGuruCheck itself never throws.
+    if (jsonMode) {
+      emitJsonError(err);
+    } else {
+      print.error(`ApexGuru check failed: ${err.message}`);
+    }
+    process.exitCode = resolveExitCode(err);
+  }
+}
+
 async function runApi67Scan(options) {
   const jsonMode = !!options.json;
   try {
@@ -166,12 +245,14 @@ export function registerQualityCommand(program) {
     .option('--generate-stubs', 'Generate @IsTest stub classes for untested Apex classes')
     .option('--include-fixes', 'Ask Code Analyzer v5 for actionable fixes/suggestions in the scan output (feeds the AI fix plan)')
     .option('--output-file <path>', 'Also write the Code Analyzer v5 results to a file; the format follows the extension (e.g. .sarif for code-scanning upload)')
-    .option('--allow-legacy-analyzer', 'Permit the legacy Code Analyzer v4 (sf scanner run) when v5 is unavailable — results are non-authoritative (also: config quality.analyzer.allowLegacyV4)')
     .option('--dry-run', 'Preview --generate-stubs output without writing files')
     .option('--agent', 'Non-interactive agent mode (do not block waiting on the AI fix-plan session)')
     .option('--api67', "Run only the API v67 (Summer '26) user-mode readiness scan of local Apex sources")
     .option('--test-hints', "Run only the RunRelevantTests hint check: flag @IsTest classes with no @IsTest(testFor=...) annotation (Spring '26)")
-    .option('--json', 'Emit structured JSON to stdout (only honoured with --api67 / --test-hints)')
+    .option('--apexguru', 'Run only the ApexGuru org-side analysis check (license/edition-gated; degrades to skipped, never an error)')
+    .option('--skip-apexguru', 'Skip the additive ApexGuru org-side check during analyzer runs')
+    .option('--org <alias>', 'Target org for the ApexGuru check (defaults to defaultOrg from .sfdt/config.json)')
+    .option('--json', 'Emit structured JSON to stdout (only honoured with --api67 / --test-hints / --apexguru)')
     .action(async (options) => {
       if (options.api67) {
         await runApi67Scan(options);
@@ -179,6 +260,10 @@ export function registerQualityCommand(program) {
       }
       if (options.testHints) {
         await runTestHintsScan(options);
+        return;
+      }
+      if (options.apexguru) {
+        await runApexGuruOnly(options);
         return;
       }
       try {
@@ -189,15 +274,11 @@ export function registerQualityCommand(program) {
 
         let qualityOutput = '';
 
-        // --include-fixes/--output-file/--allow-legacy-analyzer only affect the
-        // Code Analyzer run (test-analyzer ignores them); the shell script reads
-        // the SFDT_ vars. Legacy v4 is opt-in via flag or config (J-1 policy).
-        const allowLegacy =
-          options.allowLegacyAnalyzer || config.quality?.analyzer?.allowLegacyV4 === true;
+        // --include-fixes/--output-file only affect the Code Analyzer run
+        // (test-analyzer ignores them); the shell script reads the SFDT_ vars.
         const analyzerEnv = {
           ...(options.includeFixes ? { SFDT_ANALYZER_INCLUDE_FIXES: 'true' } : {}),
           ...(options.outputFile ? { SFDT_ANALYZER_OUTPUT_FILE: options.outputFile } : {}),
-          ...(allowLegacy ? { SFDT_ANALYZER_ALLOW_LEGACY: 'true' } : {}),
         };
 
         const runAnalyzer = async (scriptPath, label, extraEnv = {}) => {
@@ -238,6 +319,16 @@ export function registerQualityCommand(program) {
           await runAnalyzer('quality/test-analyzer.sh', 'Test Analyzer');
         } else {
           await runAnalyzer('quality/code-analyzer.sh', 'Code Analyzer', analyzerEnv);
+        }
+
+        // Additive ApexGuru org-side pass alongside Code Analyzer v5 (not in
+        // the --tests-only path). Advisory: a skipped/unavailable/finding-laden
+        // ApexGuru never changes the exit code the analyzers produced.
+        if (!options.tests && !options.skipApexguru) {
+          const apexGuru = await runApexGuruSection(config, options);
+          if (apexGuru) {
+            qualityOutput += `\n--- ApexGuru ---\n${JSON.stringify(apexGuru, null, 2)}\n`;
+          }
         }
 
         // AI fix plan

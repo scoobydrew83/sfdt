@@ -34,6 +34,8 @@ const IDEMPOTENT_KINDS: ReadonlySet<string> = new Set([
   'scan',
   'compare',
   'org-health',
+  'manifest.discover',
+  'manifest.render',
 ]);
 
 function sleep(ms: number): Promise<void> {

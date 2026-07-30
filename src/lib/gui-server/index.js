@@ -20,7 +20,7 @@ import { setNestedValue, coerceConfigValue } from '../config-utils.js';
 import { loadConfig } from '../config.js';
 import { getPrompt, getAllPrompts, setPromptOverride, resetPromptOverride, interpolate } from '../prompts.js';
 import { buildScriptEnv } from '../script-runner.js';
-import { fetchOrgInventory, fetchInventory } from '../org-inventory.js';
+import { fetchOrgInventory, fetchInventory, listMetadataTypes, listMetadataMembers } from '../org-inventory.js';
 import { isSafeGitRef, resolveBaseRef } from '../git-utils.js';
 import { buildSourceDirArgs } from '../source-dirs.js';
 import { initCache, getDelta, updateCache } from '../pull-cache.js';
@@ -43,6 +43,10 @@ import {
 } from './handlers.js';
 import { logAuditEvent, redactSensitiveData } from '../audit-logger.js';
 import { runFlowScan, runFlowConflicts, runFlowGraph } from '../flow-analyzer.js';
+import {
+  searchSObjects, describeSObject, discoverRelationships,
+  validateQuery, explainQuery, runQuery, runSearch, toCsv,
+} from '../soql-runner.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2428,6 +2432,448 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       res.json({ members: [...new Set(members)] });
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Manifest builder: org discovery, render, batch save ───────────────────
+  //
+  // These three routes back the Manifest Builder GUI page (and, in PR-3, the
+  // matching bridge kinds). All XML rendering goes through renderPackageXml
+  // (metadata-mapper.js) — the single manifest writer across every surface.
+
+  // How long a logs/scan-latest.json snapshot may serve discover-org requests
+  // before the route re-queries the org. `?refresh=1` always bypasses it.
+  const SCAN_CACHE_TTL_MS = 15 * 60 * 1000;
+
+  /**
+   * Collapse `[{type, member}]` request items into the `{type: members[]}`
+   * map renderPackageXml consumes. Invalid entries are skipped (same policy
+   * as POST /api/compare/manifest); members containing XML-special or control
+   * characters are rejected so request payloads cannot inject markup into the
+   * rendered manifest. A `*` member collapses the whole type to the wildcard.
+   */
+  function collectManifestItems(items) {
+    const metaMap = new Map();
+    for (const { type, member } of items) {
+      if (typeof type !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(type)) continue;
+      if (typeof member !== 'string' || !member.trim()) continue;
+      if (/[<>&"']/.test(member) || [...member].some((c) => c.charCodeAt(0) < 0x20)) continue;
+      if (!metaMap.has(type)) metaMap.set(type, new Set());
+      metaMap.get(type).add(member.trim());
+    }
+    const out = {};
+    for (const [type, members] of metaMap) {
+      out[type] = members.has('*') ? ['*'] : [...members];
+    }
+    return out;
+  }
+
+  app.get('/api/manifest/discover-org', apiLimiter, async (req, res) => {
+    try {
+      const { org, type, types, refresh } = req.query;
+      const orgAlias = typeof org === 'string' ? org.trim() : '';
+      if (!orgAlias) return res.status(400).json({ error: 'org is required' });
+      if (!/^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/.test(orgAlias)) {
+        return res.status(400).json({ error: 'Invalid org alias' });
+      }
+
+      const wantTypes = types === '1' || types === 'true';
+      const wantRefresh = refresh === '1' || refresh === 'true';
+
+      // Serve from the scan snapshot when it is fresh for this org.
+      let cached = null;
+      if (!wantRefresh) {
+        const scan = await tryReadJson(path.join(logDir, 'scan-latest.json'));
+        if (
+          scan?.org === orgAlias &&
+          scan.inventory &&
+          Date.now() - new Date(scan.timestamp).getTime() < SCAN_CACHE_TTL_MS
+        ) {
+          cached = scan;
+        }
+      }
+
+      if (wantTypes) {
+        if (cached) {
+          return res.json({
+            org: orgAlias,
+            types: Object.keys(cached.inventory).sort(),
+            cached: true,
+            timestamp: cached.timestamp,
+          });
+        }
+        // Throws on sf failure → 500 with the real message. Never degrade a
+        // listMetadata failure into a fabricated empty tree.
+        const typeList = await listMetadataTypes(orgAlias);
+        return res.json({ org: orgAlias, types: [...typeList].sort(), cached: false });
+      }
+
+      const metadataType = typeof type === 'string' ? type.trim() : '';
+      if (!metadataType) {
+        return res.status(400).json({ error: 'type is required (or pass types=1 to list types)' });
+      }
+      if (!/^[A-Za-z][A-Za-z0-9]*$/.test(metadataType)) {
+        return res.status(400).json({ error: 'Invalid metadata type' });
+      }
+
+      if (cached && Object.prototype.hasOwnProperty.call(cached.inventory, metadataType)) {
+        const cachedMembers = cached.inventory[metadataType];
+        return res.json({
+          org: orgAlias,
+          type: metadataType,
+          members: [...cachedMembers].sort(),
+          cached: true,
+          timestamp: cached.timestamp,
+        });
+      }
+
+      const members = await listMetadataMembers(orgAlias, metadataType);
+      if (members === null) {
+        // sf could not list this type — surface it as an error state.
+        return res.status(502).json({
+          error: `Could not list ${metadataType} members from ${orgAlias}. The type may not be listable, or the org is unreachable.`,
+        });
+      }
+      res.json({
+        org: orgAlias,
+        type: metadataType,
+        members: members.map((m) => m.name).sort(),
+        cached: false,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/manifest/render', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { items, mode = 'additive', apiVersion } = req.body ?? {};
+      if (mode !== 'additive' && mode !== 'destructive') {
+        return res.status(400).json({ error: 'mode must be "additive" or "destructive"' });
+      }
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'items is required' });
+      }
+      if (items.length > 20_000) {
+        return res.status(413).json({ error: 'Too many items (max 20000)' });
+      }
+      if (apiVersion !== undefined && !/^\d+\.\d+$/.test(String(apiVersion))) {
+        return res.status(400).json({ error: 'Invalid apiVersion. Expected e.g. "63.0".' });
+      }
+
+      const metadata = collectManifestItems(items);
+      if (Object.keys(metadata).length === 0) {
+        return res.status(400).json({ error: 'No valid items to render' });
+      }
+
+      const { renderPackageXml } = await import('../metadata-mapper.js');
+      const resolvedVersion = apiVersion ?? config.sourceApiVersion ?? '63.0';
+
+      if (mode === 'destructive') {
+        // Destructive deploys need the pair: the destructiveChanges.xml plus
+        // an empty package.xml submitted alongside it.
+        return res.json({
+          mode,
+          destructiveChangesXml: renderPackageXml(metadata, resolvedVersion),
+          emptyPackageXml: renderPackageXml({}, resolvedVersion),
+        });
+      }
+      res.json({ mode, xml: renderPackageXml(metadata, resolvedVersion) });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/manifest/save', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { items, mode = 'additive', apiVersion, name, relPath } = req.body ?? {};
+      if (mode !== 'additive' && mode !== 'destructive') {
+        return res.status(400).json({ error: 'mode must be "additive" or "destructive"' });
+      }
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'items is required' });
+      }
+      if (items.length > 20_000) {
+        return res.status(413).json({ error: 'Too many items (max 20000)' });
+      }
+      if (apiVersion !== undefined && !/^\d+\.\d+$/.test(String(apiVersion))) {
+        return res.status(400).json({ error: 'Invalid apiVersion. Expected e.g. "63.0".' });
+      }
+
+      const metadata = collectManifestItems(items);
+      if (Object.keys(metadata).length === 0) {
+        return res.status(400).json({ error: 'No valid items to save' });
+      }
+
+      const projectRoot = config._projectRoot ?? process.cwd();
+      const manifestBase = path.resolve(projectRoot, config.manifestDir ?? 'manifest/release');
+      const deployedDir = path.join(manifestBase, 'deployed');
+
+      // Existing-file mode: batch-add every item into one manifest in a single
+      // round trip (replaces the former per-component add-component loop).
+      if (relPath !== undefined && relPath !== null) {
+        if (typeof relPath !== 'string' || path.isAbsolute(relPath) || relPath.includes('..')) {
+          return res.status(400).json({ error: 'Invalid path' });
+        }
+        const absPath = path.resolve(projectRoot, relPath);
+        if (!absPath.startsWith(projectRoot + path.sep)) {
+          return res.status(403).json({ error: 'Forbidden' });
+        }
+        if (absPath.startsWith(deployedDir + path.sep) || absPath === deployedDir) {
+          return res.status(403).json({ error: 'Deployed manifests are read-only' });
+        }
+        let xml = await fs.readFile(absPath, 'utf8');
+        let added = 0;
+        for (const [type, members] of Object.entries(metadata)) {
+          for (const member of members) {
+            xml = addComponentToXml(xml, type, member);
+            added++;
+          }
+        }
+        await fs.writeFile(absPath, xml);
+        return res.json({ ok: true, added, path: path.relative(projectRoot, absPath) });
+      }
+
+      // New-file mode: write to manifestDir with the rl-… release naming.
+      if (typeof name !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)) {
+        return res.status(400).json({ error: 'Invalid release label. Must start with alphanumeric.' });
+      }
+
+      const { renderPackageXml } = await import('../metadata-mapper.js');
+      const resolvedVersion = apiVersion ?? config.sourceApiVersion ?? '63.0';
+
+      const packageFilename = path.basename(`rl-${name}-package.xml`);
+      const packagePath = path.join(manifestBase, packageFilename);
+      const destructiveFilename = path.basename(`rl-${name}-destructiveChanges.xml`);
+      const destructivePath = path.join(manifestBase, destructiveFilename);
+
+      for (const p of [packagePath, destructivePath]) {
+        const resolved = path.resolve(p);
+        if (!resolved.startsWith(manifestBase + path.sep)) {
+          return res.status(400).json({ error: 'Invalid manifest path' });
+        }
+        if (resolved.startsWith(deployedDir + path.sep) || resolved === deployedDir) {
+          return res.status(403).json({ error: 'Deployed manifests are read-only' });
+        }
+      }
+
+      // Conflict-check every file before writing any (no orphaned halves).
+      if (await fs.pathExists(packagePath)) {
+        return res.status(409).json({ error: `${packageFilename} already exists. Delete it or use a different name.` });
+      }
+      if (mode === 'destructive' && await fs.pathExists(destructivePath)) {
+        return res.status(409).json({ error: `${destructiveFilename} already exists. Delete it or use a different name.` });
+      }
+
+      await fs.ensureDir(manifestBase);
+
+      if (mode === 'destructive') {
+        // The pair: destructiveChanges.xml + an empty package.xml with the
+        // same rl-<name> prefix so the deploy script finds them together.
+        const destructiveChangesXml = renderPackageXml(metadata, resolvedVersion);
+        const emptyPackageXml = renderPackageXml({}, resolvedVersion);
+        await fs.writeFile(destructivePath, destructiveChangesXml);
+        await fs.writeFile(packagePath, emptyPackageXml);
+        return res.json({
+          ok: true,
+          mode,
+          destructiveChangesXml,
+          emptyPackageXml,
+          files: [
+            { filename: destructiveFilename, path: path.relative(projectRoot, destructivePath) },
+            { filename: packageFilename, path: path.relative(projectRoot, packagePath) },
+          ],
+        });
+      }
+
+      const xml = renderPackageXml(metadata, resolvedVersion);
+      await fs.writeFile(packagePath, xml);
+      res.json({
+        ok: true,
+        mode,
+        xml,
+        files: [{ filename: packageFilename, path: path.relative(projectRoot, packagePath) }],
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── SOQL console: schema browse, validation, plans, bounded execution ──────
+  //
+  // Thin wrappers over src/lib/soql-runner.js — the single query/schema engine
+  // shared with `sfdt soql`, MCP, and VS Code (no logic reimplemented here).
+  // Responses are the runner's RAW result shapes: the sf-native
+  // {status, result, warnings} envelope is a stdout-only contract (golden
+  // principle #6). Failures surface the runner's real message — never a
+  // fabricated empty result. Execution inherits the runner's row bounds
+  // (soql.defaultLimit clamped to soql.maxLimit, bound/truncated metadata);
+  // exports are client-side downloads, so these routes never accept an output
+  // path and never write files.
+
+  const SOQL_ORG_RE = /^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/;
+  const SOQL_SOBJECT_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
+  const SOQL_MAX_QUERY_CHARS = 100_000; // REST caps SOQL well below this; guard the process, not the grammar
+
+  /** Validate an optional org alias param. Returns false after responding 400. */
+  function checkSoqlOrg(org, res) {
+    if (org === undefined || org === null || org === '') return true;
+    if (typeof org !== 'string' || !SOQL_ORG_RE.test(org)) {
+      res.status(400).json({ error: 'Invalid org alias' });
+      return false;
+    }
+    return true;
+  }
+
+  /** Validate a required query/search string. Returns false after responding. */
+  function checkSoqlQueryText(query, res) {
+    if (typeof query !== 'string' || !query.trim()) {
+      res.status(400).json({ error: 'query is required' });
+      return false;
+    }
+    if (query.length > SOQL_MAX_QUERY_CHARS) {
+      res.status(413).json({ error: `Query too long (max ${SOQL_MAX_QUERY_CHARS} characters)` });
+      return false;
+    }
+    return true;
+  }
+
+  /** Input-shaped runner errors → 400; everything else → 500. Real message either way. */
+  function soqlErrorStatus(err) {
+    return /^Invalid SO(QL|SL)|^--limit must be|^--category must be|^--direction must be|^--format must be|executes SO(QL|SL)|^No org specified|^Provide an sObject/i
+      .test(err.message ?? '') ? 400 : 500;
+  }
+
+  app.get('/api/soql/sobjects', apiLimiter, async (req, res) => {
+    try {
+      const { org, term, category = 'all', limit } = req.query;
+      if (!checkSoqlOrg(org, res)) return;
+      if (!['all', 'custom', 'standard'].includes(String(category))) {
+        return res.status(400).json({ error: 'category must be one of: all, custom, standard' });
+      }
+      const result = await searchSObjects(config, term ? String(term) : undefined, {
+        org: org || undefined,
+        category: String(category),
+        limit: limit ? String(limit) : undefined,
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/soql/describe', apiLimiter, async (req, res) => {
+    try {
+      const { org, name, filter, tooling } = req.query;
+      if (!checkSoqlOrg(org, res)) return;
+      if (typeof name !== 'string' || !SOQL_SOBJECT_RE.test(name)) {
+        return res.status(400).json({ error: 'Invalid sObject name' });
+      }
+      const result = await describeSObject(config, name, {
+        org: org || undefined,
+        filter: filter ? String(filter) : undefined,
+        tooling: tooling === '1' || tooling === 'true',
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/soql/relationships', apiLimiter, async (req, res) => {
+    try {
+      const { org, name, direction = 'both' } = req.query;
+      if (!checkSoqlOrg(org, res)) return;
+      if (typeof name !== 'string' || !SOQL_SOBJECT_RE.test(name)) {
+        return res.status(400).json({ error: 'Invalid sObject name' });
+      }
+      if (!['parent', 'child', 'both'].includes(String(direction))) {
+        return res.status(400).json({ error: 'direction must be one of: parent, child, both' });
+      }
+      const result = await discoverRelationships(config, name, {
+        org: org || undefined,
+        direction: String(direction),
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/soql/validate', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { query, org, tooling = false, localOnly = false } = req.body ?? {};
+      if (!checkSoqlOrg(org, res)) return;
+      if (!checkSoqlQueryText(query, res)) return;
+      // validateQuery only throws on unexpected failures — an invalid query is
+      // a 200 with { valid: false, errors } (the org's verdict, verbatim).
+      const result = await validateQuery(config, query, {
+        org: org || undefined,
+        tooling: Boolean(tooling),
+        localOnly: Boolean(localOnly),
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/soql/plan', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { query, org, apiVersion } = req.body ?? {};
+      if (!checkSoqlOrg(org, res)) return;
+      if (!checkSoqlQueryText(query, res)) return;
+      if (apiVersion !== undefined && !/^\d+(\.\d+)?$/.test(String(apiVersion))) {
+        return res.status(400).json({ error: 'Invalid apiVersion. Expected e.g. "64.0".' });
+      }
+      const result = await explainQuery(config, query, {
+        org: org || undefined,
+        apiVersion: apiVersion ? String(apiVersion) : undefined,
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/soql/query', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { query, org, limit, tooling = false, allRows = false } = req.body ?? {};
+      if (!checkSoqlOrg(org, res)) return;
+      if (!checkSoqlQueryText(query, res)) return;
+      // No `out`/`format` here on purpose: the runner's file export is a CLI
+      // concern. The GUI downloads client-side; `csv` below reuses the runner's
+      // own CSV shaping so there is exactly one export format per kind.
+      const result = await runQuery(config, query, {
+        org: org || undefined,
+        limit: limit ?? undefined,
+        tooling: Boolean(tooling),
+        allRows: Boolean(allRows),
+      });
+      res.json({ ...result, csv: toCsv(result.records) });
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/soql/sosl', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    try {
+      const { query, org, limit } = req.body ?? {};
+      if (!checkSoqlOrg(org, res)) return;
+      if (!checkSoqlQueryText(query, res)) return;
+      const result = await runSearch(config, query, {
+        org: org || undefined,
+        limit: limit ?? undefined,
+      });
+      res.json({ ...result, csv: toCsv(result.records) });
+    } catch (err) {
+      res.status(soqlErrorStatus(err)).json({ error: err.message });
     }
   });
 

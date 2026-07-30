@@ -13,6 +13,7 @@ export const GUI_ROUTES = [
   { id: 'coverage', label: 'Coverage', group: 'Observe' },
   { id: 'logs', label: 'Logs', pageLabel: 'Log History', group: 'Observe' },
   { id: 'release', label: 'Release Hub', group: 'Release' },
+  { id: 'manifest-builder', label: 'Manifest Builder', group: 'Release' },
   { id: 'retrofit', label: 'Retrofit', group: 'Release' },
   { id: 'compare', label: 'Compare', group: 'Analyze' },
   { id: 'scan', label: 'Scan', group: 'Analyze' },
@@ -25,9 +26,26 @@ export const GUI_ROUTES = [
   { id: 'explain', label: 'Explain', group: 'Analyze' },
   { id: 'flows', label: 'Flow Intelligence', group: 'Analyze' },
   { id: 'dependency', label: 'Dependency Graph', group: 'Analyze' },
+  { id: 'soql', label: 'SOQL Console', group: 'Analyze' },
   { id: 'scratch', label: 'Scratch Orgs', group: 'Analyze' },
   { id: 'data', label: 'Data Sets', group: 'Analyze' },
   { id: 'docs', label: 'Documentation', group: 'Analyze' },
   { id: 'notifications', label: 'Notifications', group: 'Config' },
   { id: 'settings', label: 'Settings', group: 'Config' },
 ];
+
+/**
+ * Resolve the page to boot on from the URL path, so deep links like
+ * `/manifest-builder` (built by the VS Code extension's `dashboardPageUrl`)
+ * land on the right page instead of always opening the dashboard. The first
+ * path segment is matched against GUI_ROUTES; anything unknown (including
+ * `/`) falls back to 'dashboard'. Pure so it can be unit-tested.
+ *
+ * @param {string} pathname  window.location.pathname (e.g. "/audit")
+ * @param {Array<{id: string}>} [routes]  route registry (defaults to GUI_ROUTES)
+ * @returns {string} a valid page id
+ */
+export function initialPageFromPath(pathname, routes = GUI_ROUTES) {
+  const segment = (pathname ?? '').replace(/^\/+/, '').split('/')[0];
+  return routes.some(({ id }) => id === segment) ? segment : 'dashboard';
+}

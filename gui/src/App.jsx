@@ -11,6 +11,7 @@ import MonitorPage from './pages/Monitor.jsx';
 import ComparePage from './pages/Compare.jsx';
 import ScanPage from './pages/Scan.jsx';
 import ManifestsPage from './pages/Manifests.jsx';
+import ManifestBuilderPage from './pages/ManifestBuilder.jsx';
 import QualityPage from './pages/Quality.jsx';
 import PullPage from './pages/Pull.jsx';
 import ReleaseHubPage from './pages/ReleaseHub/index.jsx';
@@ -27,14 +28,16 @@ import DataPage from './pages/Data.jsx';
 import DocsPage from './pages/Docs.jsx';
 import AgentTestPage from './pages/AgentTest.jsx';
 import RetrofitPage from './pages/Retrofit.jsx';
+import SoqlConsolePage from './pages/SoqlConsole.jsx';
 import {
   IconHome, IconList, IconCheck, IconRefresh, IconCompare,
   IconSun, IconMoon, IconFileText, IconActivity, IconCloudDown,
   IconRocket, IconCode, IconSearch, IconSettings, IconClock, IconGraph,
+  IconPackage, IconTerminal,
 } from './Icons.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 import ChatDrawer from './components/ChatDrawer.jsx';
-import { GUI_ROUTES } from './routes.js';
+import { GUI_ROUTES, initialPageFromPath } from './routes.js';
 
 export const ChatContext = createContext(null);
 
@@ -50,6 +53,7 @@ const ICONS = {
   coverage: IconActivity,
   logs: IconClock,
   release: IconRocket,
+  'manifest-builder': IconPackage,
   retrofit: IconRefresh,
   compare: IconCompare,
   scan: IconList,
@@ -62,6 +66,7 @@ const ICONS = {
   explain: IconSearch,
   flows: IconGraph,
   dependency: IconGraph,
+  soql: IconTerminal,
   scratch: IconCloudDown,
   data: IconList,
   docs: IconFileText,
@@ -78,6 +83,7 @@ const PAGES = {
   coverage: CoveragePage,
   logs: LogsPage,
   release: ReleaseHubPage,
+  'manifest-builder': ManifestBuilderPage,
   retrofit: RetrofitPage,
   compare: ComparePage,
   scan: ScanPage,
@@ -90,6 +96,7 @@ const PAGES = {
   explain: ExplainPage,
   flows: FlowsPage,
   dependency: DependencyPage,
+  soql: SoqlConsolePage,
   scratch: ScratchPage,
   data: DataPage,
   docs: DocsPage,
@@ -114,7 +121,9 @@ const PAGE_LABELS = Object.fromEntries(
   GUI_ROUTES.map(({ id, label, pageLabel }) => [id, pageLabel ?? label]));
 
 export default function App() {
-  const [page, setPage]           = useState('dashboard');
+  // Boot on the page named by the URL path (e.g. /manifest-builder from the
+  // VS Code extension's deep link); unknown paths fall back to the dashboard.
+  const [page, setPage]           = useState(() => initialPageFromPath(window.location.pathname));
   const [project, setProject]     = useState(null);
   const [dark, setDark]           = useState(() =>
     resolveInitialTheme(window.location.search, localStorage.getItem('sfdt-theme')));

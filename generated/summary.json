@@ -1,8 +1,8 @@
 {
   "cli": {
-    "topLevelCommands": 44,
-    "jsonCapableCommands": 21,
-    "mutatingCommands": 16
+    "topLevelCommands": 46,
+    "jsonCapableCommands": 23,
+    "mutatingCommands": 17
   },
   "chrome": {
     "registeredFeatures": 44,
@@ -13,20 +13,20 @@
     "syntheticMenuItems": 1
   },
   "gui": {
-    "pages": 25
+    "pages": 27
   },
   "vscode": {
-    "contributedCommands": 30,
-    "cliCatalogEntries": 106
+    "contributedCommands": 31,
+    "cliCatalogEntries": 119
   },
   "mcp": {
-    "tools": 31,
-    "confirmGated": 10
+    "tools": 39,
+    "confirmGated": 12
   },
   "bridge": {
-    "protocolVersion": "1.2",
-    "kinds": 11,
-    "nativeHostKinds": 8
+    "protocolVersion": "1.3",
+    "kinds": 13,
+    "nativeHostKinds": 10
   },
   "ci": {
     "providers": 4,

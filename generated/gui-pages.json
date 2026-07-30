@@ -42,6 +42,11 @@
       "group": "Release"
     },
     {
+      "id": "manifest-builder",
+      "label": "Manifest Builder",
+      "group": "Release"
+    },
+    {
       "id": "retrofit",
       "label": "Retrofit",
       "group": "Release"
@@ -99,6 +104,11 @@
     {
       "id": "dependency",
       "label": "Dependency Graph",
+      "group": "Analyze"
+    },
+    {
+      "id": "soql",
+      "label": "SOQL Console",
       "group": "Analyze"
     },
     {
