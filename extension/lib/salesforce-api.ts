@@ -13,9 +13,106 @@ import { SF_API_VERSION } from './api-version.js';
 import { SOAP_SID_SENTINEL, type SfApiFetchResponse } from './sf-api-proxy.js';
 import { XML } from './xml.js';
 
-const SEND_MESSAGE_TIMEOUT_MS = 5000;
+// How long we wait for the background worker to answer an `sfApiFetch`.
+//
+// READ (GET): a read is safe to abandon and safe to retry, so it gets the
+// tighter bound — but the old blanket 5s sat *below* the normal duration of
+// several reads we actually make (a describe on a large org, a multi-MB
+// ApexLog body, a wide SOQL page over a slow link), so it was cutting off
+// healthy requests. 30s clears those with margin while still failing fast
+// enough to be actionable.
+//
+// WRITE (POST/PATCH/PUT/DELETE, plus any SOAP call its caller declares
+// `mutating`): cutting a write short is the dangerous case — the request may
+// already have committed server-side, so an early give-up produces a false
+// failure and invites a duplicate retry. The budget is therefore set at the
+// platform's own ceiling for the longest synchronous operation these paths
+// trigger: Apex's 120s cumulative callout timeout, which bounds an
+// `apex-anonymous` run, a Tooling CustomField create, and a Partner-SOAP
+// `create`/`upsert` batch from `data-import`. Anything slower than that is
+// genuinely wedged, not merely slow.
+//
+// SOAP is split per call site rather than treated wholesale — see apiSoap.
+// A polled `checkDeployStatus` is a read and must not inherit the write
+// framing, or "may have committed" stops meaning anything.
+const READ_MESSAGE_TIMEOUT_MS = 30_000;
+const WRITE_MESSAGE_TIMEOUT_MS = 120_000;
+
+// A bus timeout is NOT "no session" — it means the worker never answered, which
+// says nothing about whether a sid exists. The two are reported differently
+// (see buildTimeoutError), so the bus signals a timeout by *rejecting* with an
+// error carrying this name, and reserves a `null` resolution for "the worker
+// answered, with nothing".
+export const WORKER_TIMEOUT_ERROR_NAME = 'SfWorkerTimeoutError';
+
+// Constructor for that signal, exported so an alternative MessageBus (or a test
+// double) can produce a timeout the client recognises.
+export function workerTimeoutError(timeoutMs: number): Error {
+  const err = new Error(`Background worker did not respond within ${timeoutMs}ms`);
+  err.name = WORKER_TIMEOUT_ERROR_NAME;
+  return err;
+}
+
+function isWorkerTimeout(err: unknown): boolean {
+  return err instanceof Error && err.name === WORKER_TIMEOUT_ERROR_NAME;
+}
+
+// ---------------------------------------------------------------------------
+// Machine-readable failure kinds
+//
+// Every error this client throws carries a stable `sfdtKind` discriminant so a
+// caller can branch on *why* a call failed without matching on prose. This is
+// purely additive — the `message` text of the no-session and HTTP-error cases
+// is unchanged, so callers that only render `err.message` keep working.
+//
+//  'timeout'    — the background worker never answered inside the budget. The
+//                 request's outcome is UNKNOWN. When `mutating` is true it may
+//                 already have committed server-side; a blind retry can
+//                 duplicate it.
+//  'no-session' — the worker answered but could not produce a session (no sid
+//                 for any candidate host). The request definitely did not run.
+//  'http-error' — Salesforce answered with a failing status. `status` carries
+//                 it; the request definitely did not succeed.
+// ---------------------------------------------------------------------------
+export type SfApiErrorKind = 'timeout' | 'no-session' | 'http-error';
+
+export interface SfApiError extends Error {
+  readonly sfdtKind: SfApiErrorKind;
+  // 'timeout' only: the budget that elapsed, and whether the call could have
+  // changed data (the pair a caller needs to decide "failed" vs "unknown").
+  readonly timeoutMs?: number;
+  readonly mutating?: boolean;
+  // 'http-error' (and 0 for 'timeout'/'no-session' on the SOAP path).
+  readonly status?: number;
+}
+
+// Returns the discriminant for an error thrown by this client, or null for
+// anything else (a caller's own error, a JSON.parse failure, …).
+export function sfApiErrorKind(err: unknown): SfApiErrorKind | null {
+  if (!(err instanceof Error)) return null;
+  const kind = (err as Partial<SfApiError>).sfdtKind;
+  return kind === 'timeout' || kind === 'no-session' || kind === 'http-error' ? kind : null;
+}
+
+function tagError<T extends Record<string, unknown>>(err: Error, fields: T): Error {
+  Object.assign(err, fields);
+  return err;
+}
+
+// The single constructor for the no-session diagnosis. Message text is
+// deliberately byte-identical to what shipped, so existing UI copy and tests
+// are unaffected; only the discriminant is new.
+function buildNoSessionError(): Error {
+  return tagError(new Error('No Salesforce session available'), {
+    sfdtKind: 'no-session' as const,
+    status: 0,
+  });
+}
 
 // Lets tests mock messaging without pulling in chrome.runtime / window.location.
+// Contract: resolve the worker's reply, resolve `null` when the worker answered
+// with nothing (or the port is gone), and REJECT with workerTimeoutError() when
+// `timeoutMs` elapses with no answer at all.
 export interface MessageBus {
   sendMessage<T = unknown>(message: unknown, timeoutMs?: number): Promise<T | null>;
 }
@@ -82,7 +179,40 @@ function buildRequestError(operation: string, endpoint: string, errors: RequestF
   );
   const detail = extractErrorDetail(primary.errorText);
   const summary = primary.status > 0 ? `HTTP ${primary.status}` : 'network error';
-  return new Error(`Salesforce ${operation} failed (${summary})${detail ? `: ${detail}` : ''}`);
+  return tagError(
+    new Error(`Salesforce ${operation} failed (${summary})${detail ? `: ${detail}` : ''}`),
+    { sfdtKind: 'http-error' as const, status: primary.status },
+  );
+}
+
+// A worker that never answered is a different diagnosis from a worker that
+// answered "no session", and the two must never share a message: telling a user
+// their session is gone when it is fine sends them off to re-authenticate for
+// nothing. For a *mutating* call the message additionally refuses to claim the
+// operation failed — we did not hear back, so the request may well have
+// committed, and a blind retry is how you end up with two records.
+function buildTimeoutError(operation: string, timeoutMs: number, mutating: boolean): Error {
+  const seconds = Math.round(timeoutMs / 1000);
+  const err = new Error(
+    mutating
+      ? `Salesforce ${operation} timed out after ${seconds}s — the extension's background worker ` +
+        `did not answer, so the result is unknown. This is a timeout, not a lost session: the ` +
+        `change may already have been saved in Salesforce, so check before retrying to avoid ` +
+        `duplicating it.`
+      : `Salesforce ${operation} timed out after ${seconds}s — the extension's background worker ` +
+        `did not answer. This is a timeout, not a lost session; retry the request.`,
+  );
+  err.name = 'SfRequestTimeoutError';
+  // `sfdtKind: 'timeout'` + `mutating` is the pair a caller branches on to
+  // distinguish "definitely failed" from "outcome unknown". `status`/`detail`
+  // keep the shape apiSoap's callers already read off its errors.
+  return tagError(err, {
+    sfdtKind: 'timeout' as const,
+    timeoutMs,
+    mutating,
+    status: 0,
+    detail: err.message,
+  });
 }
 
 // SOAP responses may namespace-prefix every element (<soapenv:Envelope>
@@ -106,16 +236,19 @@ function extractFaultString(text: string): string {
 
 function defaultMessageBus(): MessageBus {
   return {
-    sendMessage(message, timeoutMs = SEND_MESSAGE_TIMEOUT_MS) {
-      return new Promise((resolve) => {
+    sendMessage(message, timeoutMs = READ_MESSAGE_TIMEOUT_MS) {
+      return new Promise((resolve, reject) => {
         let done = false;
-        const finish = (value: unknown): void => {
+        const settle = (settler: () => void): void => {
           if (done) return;
           done = true;
           clearTimeout(timer);
-          resolve(value as never);
+          settler();
         };
-        const timer = setTimeout(() => finish(null), timeoutMs);
+        const finish = (value: unknown): void => settle(() => resolve(value as never));
+        // Timeout REJECTS (not resolve-null) so the client can tell "the worker
+        // never answered" apart from "the worker answered with nothing".
+        const timer = setTimeout(() => settle(() => reject(workerTimeoutError(timeoutMs))), timeoutMs);
         try {
           chrome.runtime.sendMessage(message, (resp) => {
             if (chrome.runtime.lastError) {
@@ -158,8 +291,25 @@ export class SalesforceApiClient {
     return params.get('flowId');
   }
 
+  // Single choke point for every worker round-trip. It applies the read/write
+  // timeout budget (the whole point of `mutating`) and translates a bus timeout
+  // into a message that says what actually happened, instead of letting it fall
+  // through to the `!resp` branch and be misreported as a lost session.
+  private async sendProxied<T>(
+    message: Record<string, unknown>,
+    ctx: { operation: string; mutating: boolean },
+  ): Promise<T | null> {
+    const timeoutMs = ctx.mutating ? WRITE_MESSAGE_TIMEOUT_MS : READ_MESSAGE_TIMEOUT_MS;
+    try {
+      return await this.bus.sendMessage<T>(message, timeoutMs);
+    } catch (err) {
+      if (isWorkerTimeout(err)) throw buildTimeoutError(ctx.operation, timeoutMs, ctx.mutating);
+      throw err;
+    }
+  }
+
   // Sends a proxied call to the worker and normalises the result:
-  //  - bus returns null (timeout / port closed) → no session
+  //  - bus returns null (worker answered with nothing / port closed) → no session
   //  - ok:false with no errors → no session (worker couldn't read a sid)
   //  - ok:false with errors → short buildRequestError
   //  - ok:true → the raw response text for the caller to parse
@@ -168,14 +318,17 @@ export class SalesforceApiClient {
     endpoint: string,
     message: Record<string, unknown>,
   ): Promise<string> {
-    const resp = await this.bus.sendMessage<SfApiFetchResponse>({
-      action: 'sfApiFetch',
-      targetOrigin: this.targetOrigin ?? undefined,
-      ...message,
-    });
-    if (!resp) throw new Error('No Salesforce session available');
+    const resp = await this.sendProxied<SfApiFetchResponse>(
+      {
+        action: 'sfApiFetch',
+        targetOrigin: this.targetOrigin ?? undefined,
+        ...message,
+      },
+      { operation, mutating: false },
+    );
+    if (!resp) throw buildNoSessionError();
     if (!resp.ok) {
-      if (!resp.errors.length) throw new Error('No Salesforce session available');
+      if (!resp.errors.length) throw buildNoSessionError();
       throw buildRequestError(operation, endpoint, resp.errors);
     }
     return resp.bodyText;
@@ -218,18 +371,22 @@ export class SalesforceApiClient {
     if (!endpoint.startsWith('/')) {
       throw new Error(`apiRequest: endpoint must start with "/". Got: ${endpoint}`);
     }
-    const resp = await this.bus.sendMessage<SfApiFetchResponse>({
-      action: 'sfApiFetch',
-      kind: 'json',
-      method,
-      endpoint,
-      body: body !== null ? JSON.stringify(body) : undefined,
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      targetOrigin: this.targetOrigin ?? undefined,
-    });
-    if (!resp) throw new Error('No Salesforce session available');
+    // Every method that reaches here mutates, so this is always the write budget.
+    const resp = await this.sendProxied<SfApiFetchResponse>(
+      {
+        action: 'sfApiFetch',
+        kind: 'json',
+        method,
+        endpoint,
+        body: body !== null ? JSON.stringify(body) : undefined,
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        targetOrigin: this.targetOrigin ?? undefined,
+      },
+      { operation: `${method} request`, mutating: true },
+    );
+    if (!resp) throw buildNoSessionError();
     if (!resp.ok) {
-      if (!resp.errors.length) throw new Error('No Salesforce session available');
+      if (!resp.errors.length) throw buildNoSessionError();
       throw buildRequestError(`${method} request`, endpoint, resp.errors);
     }
     if (resp.status === 204) return null;
@@ -240,12 +397,27 @@ export class SalesforceApiClient {
     return this.apiRequest<T>('PATCH', endpoint, body);
   }
 
+  // `mutating` declares whether this SOAP operation can change data. Unlike
+  // apiRequest — where the HTTP method decides it — SOAP tunnels reads and
+  // writes through one POST, so only the caller knows. It selects the timeout
+  // budget AND the `mutating` flag on a timeout error, which is the sole signal
+  // that says "this may have committed". Declaring a read/poll as mutating is
+  // not merely noisy: it makes `sfdtKind === 'timeout' && mutating === true`
+  // mean "or a status poll was slow", which destroys the discriminant for the
+  // callers that need it.
+  //
+  // Undeclared defaults to `true` — the safe direction. A new call site that
+  // forgets to declare over-warns (a retry the user didn't need to think twice
+  // about) rather than under-warns (a duplicate record). soap-explore is the
+  // one deliberate user of the default: it sends an arbitrary user-chosen
+  // operation, so it genuinely cannot know.
   async apiSoap<T = unknown>(
     apiName: 'Partner' | 'Metadata' | 'Tooling' | 'Enterprise' | 'Apex',
     method: string,
     args: unknown,
-    options: { headers?: Record<string, unknown> } = {},
+    options: { headers?: Record<string, unknown>; mutating?: boolean } = {},
   ): Promise<T> {
+    const mutating = options.mutating ?? true;
     const wsdls = {
       Enterprise: {
         servicePortAddress: '/services/Soap/c/' + this.apiVersion,
@@ -305,36 +477,39 @@ export class SalesforceApiClient {
       },
     });
 
-    const resp = await this.bus.sendMessage<SfApiFetchResponse>({
-      action: 'sfApiFetch',
-      kind: 'soap',
-      method: 'POST',
-      endpoint: `${wsdl.servicePortAddress}?cache=${Math.random()}`,
-      headers: {
-        'Content-Type': 'text/xml',
-        SOAPAction: '""',
-        CallOptions: 'client:SalesforceInspectorReloaded',
+    const resp = await this.sendProxied<SfApiFetchResponse>(
+      {
+        action: 'sfApiFetch',
+        kind: 'soap',
+        method: 'POST',
+        endpoint: `${wsdl.servicePortAddress}?cache=${Math.random()}`,
+        headers: {
+          'Content-Type': 'text/xml',
+          SOAPAction: '""',
+          CallOptions: 'client:SalesforceInspectorReloaded',
+        },
+        body: requestBody,
+        soap: { sentinel: SOAP_SID_SENTINEL },
+        targetOrigin: this.targetOrigin ?? undefined,
       },
-      body: requestBody,
-      soap: { sentinel: SOAP_SID_SENTINEL },
-      targetOrigin: this.targetOrigin ?? undefined,
-    });
+      { operation: `${apiName} ${method} SOAP call`, mutating },
+    );
 
-    const soapError = (msgText: string, status: number): Error => {
+    const soapError = (msgText: string, status: number, kind: SfApiErrorKind): Error => {
       const err = new Error(msgText) as Error & { status?: number; detail?: string };
       err.name = 'SalesforceSoapError';
       err.status = status;
       err.detail = msgText;
-      return err;
+      return tagError(err, { sfdtKind: kind });
     };
 
-    if (!resp) throw soapError('No Salesforce session available', 0);
+    if (!resp) throw soapError('No Salesforce session available', 0, 'no-session');
     if (!resp.ok) {
-      if (!resp.errors.length) throw soapError('No Salesforce session available', 0);
+      if (!resp.errors.length) throw soapError('No Salesforce session available', 0, 'no-session');
       const primary = resp.errors.find((e) => e.status >= 400 && e.status !== 401) ?? resp.errors[0]!;
       const fault = extractFaultString(primary.errorText);
       const detail = fault || primary.errorText;
-      throw soapError(detail || `SOAP error ${primary.status}`, primary.status);
+      throw soapError(detail || `SOAP error ${primary.status}`, primary.status, 'http-error');
     }
 
     const doc = new DOMParser().parseFromString(resp.bodyText, 'text/xml');

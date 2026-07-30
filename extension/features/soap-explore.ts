@@ -352,6 +352,10 @@ export function createSoapExploreFeature(options: {
       const t0 = Date.now();
 
       try {
+        // `mutating` is deliberately left undeclared here: the operation is
+        // whatever the user typed, so this call site genuinely cannot know
+        // whether it writes. It therefore takes apiSoap's safe default
+        // (mutating), and a timeout over-warns rather than under-warns.
         const res = await api.apiSoap(wsdl, operation, parsedPayload);
         const elapsed = Date.now() - t0;
         statusPanel.textContent = `⏱ ${elapsed} ms · OK`;
