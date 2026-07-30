@@ -250,10 +250,10 @@ describe('getLog', () => {
     expect(out).toMatchObject({ id: 'L1', log: 'BODY', lengthBytes: 4, outputFile: null });
     expect(execa).toHaveBeenCalledWith('sf', ['apex', 'get', 'log', '--log-id', 'L1', '--target-org', 'dev', '--json']);
   });
-  it('handles the object result shape and writes --output raw', async () => {
+  it('handles the object result shape and writes --output raw, owner-only', async () => {
     execa.mockResolvedValueOnce(envelope({ log: 'BODY' }));
     const out = await getLog('dev', 'L1', { outputFile: '/tmp/x.log' });
-    expect(fs.outputFile).toHaveBeenCalledWith('/tmp/x.log', 'BODY');
+    expect(fs.outputFile).toHaveBeenCalledWith('/tmp/x.log', 'BODY', { mode: 0o600 });
     expect(out.outputFile).toBe('/tmp/x.log');
   });
   it('requires a log id', async () => {

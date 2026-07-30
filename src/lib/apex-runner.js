@@ -275,7 +275,9 @@ export async function getLog(orgAlias, logId, { outputFile } = {}) {
   // plugin-apex has returned both [{ log }] and { log } shapes across versions.
   const body = Array.isArray(result) ? (result[0]?.log ?? '') : (result?.log ?? '');
   if (outputFile) {
-    await fs.outputFile(outputFile, body);
+    // 0600: a debug log can carry org data, and --output is often pointed at a
+    // shared dir (/tmp). Default 0644 would leave it world-readable there.
+    await fs.outputFile(outputFile, body, { mode: 0o600 });
   }
   return { org: orgAlias, id: logId, lengthBytes: Buffer.byteLength(body, 'utf8'), log: body, outputFile: outputFile ?? null };
 }
