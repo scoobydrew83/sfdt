@@ -207,7 +207,7 @@ function expandType(name: string): void {
 }
 
 describe('metadata-retrieve — tree expansion & package.xml', () => {
-  it('maps Report to ReportFolder, filters managed members, and folds selected children into package.xml', async () => {
+  it('maps Report to ReportFolder, filters managed members, and keeps the whole-type wildcard sticky', async () => {
     setSalesforceUrl();
     const api = fakeApi({
       apiSoap: vi.fn(async (_w: string, method: string) => {
@@ -247,7 +247,8 @@ describe('metadata-retrieve — tree expansion & package.xml', () => {
     expect(document.body.textContent).toContain('MyReport');
     expect(document.body.textContent).not.toContain('Pkg__Report');
 
-    // Selecting the parent cascades to children -> members listed explicitly
+    // Selecting the parent cascades to children in the tree, but the manifest
+    // keeps the sticky whole-type wildcard (expanding never narrows it).
     const reportChk = Array.from(document.querySelectorAll('span'))
       .find((s) => s.textContent === 'Report')!
       .parentElement!.querySelector('input[type="checkbox"]') as HTMLInputElement;
@@ -256,7 +257,16 @@ describe('metadata-retrieve — tree expansion & package.xml', () => {
 
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     expect(textarea.value).toContain('<name>Report</name>');
-    expect(textarea.value).toContain('<members>MyReport</members>');
+    expect(textarea.value).toContain('<members>*</members>');
+
+    // Unticking one member narrows the wildcard to the remaining explicit list.
+    const memberChk = Array.from(document.querySelectorAll('span'))
+      .find((s) => s.textContent === 'MyReport')!
+      .parentElement!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    memberChk.checked = false;
+    memberChk.dispatchEvent(new Event('change'));
+    expect(textarea.value).not.toContain('<members>*</members>');
+    expect(textarea.value).not.toContain('<name>Report</name>');
   });
 
   it('maps Dashboard/EmailTemplate to *Folder proofs, includes folder children, and sorts members', async () => {
@@ -871,6 +881,122 @@ describe('metadata-retrieve — bridge-connected path', () => {
     expect(banner.style.display).toBe('none');
   });
 
+  it('keeps the whole-type wildcard sticky when the type is expanded (bridge path)', async () => {
+    setSalesforceUrl();
+    const { call, factory } = fakeBridge();
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    // Tick the whole type, then expand it — the children render ticked, but
+    // the manifest (and the persisted selection) stay the `*` wildcard.
+    const chk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    chk.checked = true;
+    chk.dispatchEvent(new Event('change'));
+    await flush();
+
+    call.mockClear();
+    expandType('ApexClass');
+    await flush();
+    await flush();
+
+    const renderCalls = call.mock.calls.filter((c: any[]) => c[0].kind === 'manifest.render');
+    expect(renderCalls.length).toBeGreaterThan(0);
+    for (const c of renderCalls) {
+      expect(c[0].items).toEqual([{ type: 'ApexClass', member: '*' }]);
+    }
+
+    // Unticking one member narrows `*` to the remaining explicit members.
+    const betaChk = Array.from(document.querySelectorAll('span'))
+      .find((s) => s.textContent === 'Beta')!
+      .parentElement!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    betaChk.checked = false;
+    betaChk.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'manifest.render',
+        items: [{ type: 'ApexClass', member: 'Alpha' }],
+      }),
+    );
+  });
+
+  it('discards a stale manifest.render response that resolves after a newer one', async () => {
+    setSalesforceUrl();
+    // Deferred render responses so the test controls resolution order.
+    const pendingRenders: Array<{ items: any; resolve: (r: any) => void }> = [];
+    const { factory } = fakeBridge((req) => {
+      if (req.kind === 'manifest.render') {
+        return new Promise((resolve) => {
+          pendingRenders.push({ items: req.items, resolve });
+        });
+      }
+      return undefined;
+    });
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    // Selection 1 (ApexClass) starts render A; selection 2 (CustomObject too)
+    // starts render B while A is still in flight.
+    const checks = document.querySelectorAll('.sfdt-tree-chk');
+    (checks[0] as HTMLInputElement).checked = true;
+    checks[0]!.dispatchEvent(new Event('change'));
+    await flush();
+    (document.querySelectorAll('.sfdt-tree-chk')[1] as HTMLInputElement).checked = true;
+    document.querySelectorAll('.sfdt-tree-chk')[1]!.dispatchEvent(new Event('change'));
+    await flush();
+    expect(pendingRenders.length).toBe(2);
+
+    // Resolve out of order: newer render B first, then stale render A.
+    pendingRenders[1]!.resolve({
+      ok: true,
+      requestId: 'r',
+      data: { mode: 'additive', xml: 'XML-FOR-NEWER-SELECTION' },
+    });
+    await flush();
+    expect(mainTextarea().value).toBe('XML-FOR-NEWER-SELECTION');
+
+    pendingRenders[0]!.resolve({
+      ok: true,
+      requestId: 'r',
+      data: { mode: 'additive', xml: 'XML-FOR-STALE-SELECTION' },
+    });
+    await flush();
+
+    // The stale response must NOT clobber the newer preview.
+    expect(mainTextarea().value).toBe('XML-FOR-NEWER-SELECTION');
+  });
+
+  it('an in-flight render cannot repopulate a preview cleared by Clear all', async () => {
+    setSalesforceUrl();
+    const pendingRenders: Array<(r: any) => void> = [];
+    const { factory } = fakeBridge((req) => {
+      if (req.kind === 'manifest.render') {
+        return new Promise((resolve) => {
+          pendingRenders.push(resolve);
+        });
+      }
+      return undefined;
+    });
+    const feature = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
+    await feature.onActivate?.();
+
+    const chk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    chk.checked = true;
+    chk.dispatchEvent(new Event('change'));
+    await flush();
+    expect(pendingRenders.length).toBe(1);
+
+    // Clear all while the render is still in flight, then let it resolve.
+    btnExact('Clear all')!.click();
+    await flush();
+    expect(mainTextarea().value).toBe('');
+
+    pendingRenders[0]!({ ok: true, requestId: 'r', data: { mode: 'additive', xml: 'LATE-XML' } });
+    await flush();
+    expect(mainTextarea().value).toBe('');
+  });
+
   it('surfaces a member-discovery failure and collapses the node (no fabricated tree)', async () => {
     setSalesforceUrl();
     const { factory } = fakeBridge((req) => {
@@ -1038,6 +1164,48 @@ describe('metadata-retrieve — per-org selection persistence', () => {
     const second = createMetadataRetrieveFeature({ api: fakeApi(), bridgeFactory: factory });
     await second.onActivate?.();
     expect(document.body.textContent).not.toContain('Restored');
+  });
+
+  it('keys the stored selection by Salesforce host — another org restores nothing', async () => {
+    setSalesforceUrl();
+    // happy-dom refuses cross-origin history rewrites, so the second org is
+    // modelled through the feature's `win` seam instead.
+    function winForHost(hostname: string): Window {
+      return { location: { hostname }, navigator: window.navigator } as unknown as Window;
+    }
+    const { factory } = fakeBridge();
+    const first = createMetadataRetrieveFeature({
+      api: fakeApi(),
+      bridgeFactory: factory,
+      win: winForHost('org-a.my.salesforce.com'),
+    });
+    await first.onActivate?.();
+
+    const chk = document.querySelector('.sfdt-tree-chk') as HTMLInputElement;
+    chk.checked = true;
+    chk.dispatchEvent(new Event('change'));
+    await flush();
+
+    // A different org host sees no restored selection …
+    clearBody();
+    const otherOrg = createMetadataRetrieveFeature({
+      api: fakeApi(),
+      bridgeFactory: factory,
+      win: winForHost('org-b.my.salesforce.com'),
+    });
+    await otherOrg.onActivate?.();
+    expect(document.body.textContent).not.toContain('Restored');
+    expect((document.querySelector('.sfdt-tree-chk') as HTMLInputElement).checked).toBe(false);
+
+    // … while the original host still restores its selection.
+    clearBody();
+    const sameOrg = createMetadataRetrieveFeature({
+      api: fakeApi(),
+      bridgeFactory: factory,
+      win: winForHost('org-a.my.salesforce.com'),
+    });
+    await sameOrg.onActivate?.();
+    expect(document.body.textContent).toContain('Restored 1 saved selection');
   });
 
   it('persists offline selections too (storage is path-independent)', async () => {

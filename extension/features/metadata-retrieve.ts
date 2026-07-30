@@ -228,18 +228,21 @@ export function createMetadataRetrieveFeature(options: {
   // -------------------------------------------------------------------------
 
   /** Flatten the tree selection into the [{type, member}] shape the bridge
-   *  render kind takes — explicit members when any child is ticked, the `*`
-   *  wildcard when the whole type is ticked with no explicit children
-   *  (P5-4 AC-2). */
+   *  render kind takes (P5-4 AC-2). A ticked type means "entire type" and
+   *  stays the `*` wildcard even after the node is expanded (the wildcard is
+   *  sticky, matching the GUI builder — expanding never narrows a selection);
+   *  explicit members are sent only when individual children are ticked
+   *  without the whole-type tick. */
   function collectSelectedItems(): Array<{ type: string; member: string }> {
     const items: Array<{ type: string; member: string }> = [];
     for (const meta of metadataObjects) {
-      const children: FileProperty[] = meta.childXmlNames ?? [];
-      const active = children.filter((c) => c.selected);
-      if (active.length > 0) {
-        for (const c of active) items.push({ type: meta.xmlName, member: c.fullName });
-      } else if (meta.selected) {
+      if (meta.selected) {
         items.push({ type: meta.xmlName, member: '*' });
+        continue;
+      }
+      const children: FileProperty[] = meta.childXmlNames ?? [];
+      for (const c of children) {
+        if (c.selected) items.push({ type: meta.xmlName, member: c.fullName });
       }
     }
     return items;
@@ -936,6 +939,9 @@ export function createMetadataRetrieveFeature(options: {
             childChk.setAttribute('aria-label', `Select ${obj.xmlName} ${child.fullName}`);
             childChk.addEventListener('change', () => {
               child.selected = childChk.checked;
+              // Unticking a member while the whole type is ticked narrows the
+              // sticky `*` wildcard down to the remaining explicit members.
+              if (!childChk.checked && obj.selected) obj.selected = false;
               onSelectionChanged();
               renderTree();
             });
