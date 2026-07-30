@@ -1692,7 +1692,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         if (globalDesc.status === 'error') {
           renderAutocompleteUI({
             sobjectName: '',
-            title: 'Loading SObjects failed. Click to retry.',
+            title: globalDesc.error
+              ? `Loading SObjects failed: ${globalDesc.error}`
+              : 'Loading SObjects failed. Click to retry.',
             results: [{ value: 'Retry', title: 'Retry', autocompleteType: 'retry', suffix: '' }]
           });
           return;
@@ -1772,7 +1774,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       if (sobjectDesc.status === 'error') {
         renderAutocompleteUI({
           sobjectName,
-          title: `Loading ${sobjectName} metadata failed. Click to retry.`,
+          title: sobjectDesc.error
+            ? `Loading ${sobjectName} metadata failed: ${sobjectDesc.error}`
+            : `Loading ${sobjectName} metadata failed. Click to retry.`,
           results: [{ value: 'Retry', title: 'Retry', autocompleteType: 'retry', suffix: '' }]
         });
         return;
@@ -1802,6 +1806,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       let contextSobjectDescribes = [sobjectDesc.data!];
       const contextPath = query.substring(0, contextEnd).match(/[a-zA-Z0-9_.]*$/)?.[0] ?? '';
       const sobjectStatuses = new Map<string, string>();
+      // Why the last relationship-target describe failed, so the autocomplete
+      // can say more than "failed" when a lookup's target object is unreadable
+      // (the usual cause: the user has no access to the referenced object).
+      let describeError = '';
 
       if (contextPath) {
         const contextFields = contextPath.split('.');
@@ -1819,6 +1827,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
                   newContextSobjectDescribes.push(res.data);
                 } else {
                   sobjectStatuses.set(res.status, referencedSobjectName);
+                  if (res.status === 'error' && res.error) describeError = res.error;
                 }
               }
             }
@@ -1835,7 +1844,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         if (sobjectStatuses.has('error')) {
           renderAutocompleteUI({
             sobjectName,
-            title: `Loading ${sobjectStatuses.get('error')} metadata failed. Click to retry.`,
+            title: describeError
+              ? `Loading ${sobjectStatuses.get('error')} metadata failed: ${describeError}`
+              : `Loading ${sobjectStatuses.get('error')} metadata failed. Click to retry.`,
             results: [{ value: 'Retry', title: 'Retry', autocompleteType: 'retry', suffix: '' }]
           });
           return;

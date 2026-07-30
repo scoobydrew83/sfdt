@@ -196,7 +196,11 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
         return;
       }
       if (global.status === 'error' || !global.data) {
-        countLabel.textContent = 'Failed to load objects.';
+        // Say why. The org's own reason is the only thing that tells the user
+        // whether to fix a permission, wait for an API limit, or log in again.
+        countLabel.textContent = global.error
+          ? `Failed to load objects — ${global.error}`
+          : 'Failed to load objects.';
         return;
       }
 
@@ -301,8 +305,11 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
       }
       if (describe.status === 'error' || !describe.data) {
         const err = doc.createElement('div');
-        err.textContent = 'Failed to load object describe.';
-        err.style.cssText = 'color: var(--sfdt-color-error-text);';
+        err.textContent = describe.error
+          ? `Failed to load object describe — ${describe.error}`
+          : 'Failed to load object describe.';
+        err.style.cssText =
+          'color: var(--sfdt-color-error-text); white-space: pre-line; line-height: 1.4;';
         rightPane.appendChild(err);
         return;
       }

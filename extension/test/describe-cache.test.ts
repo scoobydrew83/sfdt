@@ -137,3 +137,65 @@ describe('describe-cache — edit-relevant field attributes (P4-1)', () => {
     expect(entry.data?.fields[0]).toEqual(wireField);
   });
 });
+
+// A failed describe used to record only `status: 'error'`, so every consumer
+// (schema-browser, the SOQL runner's autocomplete) could say no more than
+// "failed to load" — the org's reason was thrown away at the cache boundary.
+describe('describe-cache keeps WHY a describe failed', () => {
+  it('carries the org error message on a failed global describe', async () => {
+    const apiGet = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          'Salesforce GET request failed (HTTP 403): You do not have permission\nINSUFFICIENT_ACCESS — ask an admin',
+        ),
+      );
+    const cache = new DescribeCache(fakeApi({ apiGet }));
+
+    cache.getGlobal('rest');
+    await tick();
+
+    const entry = cache.getGlobal('rest');
+    expect(entry.status).toBe('error');
+    expect(entry.error).toContain('You do not have permission');
+    expect(entry.error).toContain('INSUFFICIENT_ACCESS');
+  });
+
+  it('carries the org error message on a failed sobject describe', async () => {
+    const apiGet = vi
+      .fn()
+      .mockRejectedValue(
+        new Error('Salesforce GET request failed (HTTP 404): The requested resource does not exist'),
+      );
+    const cache = new DescribeCache(fakeApi({ apiGet }));
+
+    cache.getSObject('rest', 'Invoice__c');
+    await tick();
+
+    const entry = cache.getSObject('rest', 'Invoice__c');
+    expect(entry.status).toBe('error');
+    expect(entry.error).toContain('The requested resource does not exist');
+  });
+
+  it('degrades to a usable string for a non-Error rejection', async () => {
+    const apiGet = vi.fn().mockRejectedValue({ weird: true });
+    const cache = new DescribeCache(fakeApi({ apiGet }));
+
+    cache.getSObject('rest', 'Account');
+    await tick();
+
+    const entry = cache.getSObject('rest', 'Account');
+    expect(entry.status).toBe('error');
+    expect(entry.error).toBe('Unknown error');
+  });
+
+  it('leaves a successful describe with no error field', async () => {
+    const apiGet = vi.fn().mockResolvedValue({ name: 'Account', label: 'Account', fields: [] });
+    const cache = new DescribeCache(fakeApi({ apiGet }));
+
+    cache.getSObject('rest', 'Account');
+    await tick();
+
+    expect(cache.getSObject('rest', 'Account').error).toBeUndefined();
+  });
+});

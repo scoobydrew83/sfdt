@@ -77,7 +77,19 @@ export interface GlobalDescribe {
   sobjects: { name: string; label: string; keyPrefix: string | null }[];
 }
 
-type CacheEntry<T> = { status: 'loading' | 'ready' | 'error'; data?: T };
+// `error` carries WHY a describe failed, for the 'error' status only. Without
+// it every consumer could say no more than "failed to load", so an org error
+// that is perfectly actionable — INSUFFICIENT_ACCESS on the object,
+// INVALID_TYPE, an API limit — arrived at the user as a dead end. The string is
+// the thrown error's message, which lib/salesforce-api.ts has already annotated
+// with the org's errorCode and guidance.
+type CacheEntry<T> = { status: 'loading' | 'ready' | 'error'; data?: T; error?: string };
+
+function failureMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  const text = String(err);
+  return text && text !== '[object Object]' ? text : 'Unknown error';
+}
 
 export class DescribeCache {
   private api: SalesforceApiClient;
@@ -128,7 +140,7 @@ export class DescribeCache {
       })
       .catch(err => {
         console.error('Failed to describe global', err);
-        this.globalCache.set(mode, { status: 'error' });
+        this.globalCache.set(mode, { status: 'error', error: failureMessage(err) });
         this.notify();
       });
 
@@ -154,7 +166,7 @@ export class DescribeCache {
       })
       .catch(err => {
         console.error('Failed to describe sobject', name, err);
-        this.sobjectCache.set(key, { status: 'error' });
+        this.sobjectCache.set(key, { status: 'error', error: failureMessage(err) });
         this.notify();
       });
 
