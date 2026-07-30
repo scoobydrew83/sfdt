@@ -238,6 +238,25 @@ describe('createBridgeClient — retries and per-call timeout', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('retries the read-only manifest kinds once after a transport failure', async () => {
+    // manifest.discover and manifest.render are read-only/pure per the bridge
+    // contract, so they belong to the idempotent (retry-once) set.
+    for (const kind of ['manifest.discover', 'manifest.render'] as const) {
+      const fetchSpy = vi.fn(async () => {
+        if (fetchSpy.mock.calls.length === 1) throw new Error('network down');
+        return okResponse('r1');
+      });
+      const client = createBridgeClient({
+        token: 'token-x',
+        preferredTransport: 'localhost',
+        fetchImpl: fetchSpy as unknown as typeof fetch,
+      });
+      const res = await client.send({ requestId: 'r1', kind } as never);
+      expect(res.ok).toBe(true);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    }
+  });
+
   it('gives up after the single retry when the transport keeps failing', async () => {
     const fetchSpy = vi.fn(async () => {
       throw new Error('network down');
