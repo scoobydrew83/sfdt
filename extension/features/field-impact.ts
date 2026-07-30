@@ -149,23 +149,45 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
     runAnalysis = null;
   }
 
-  function close(): void {
-    teardown();
-    view?.close();
-    view = null;
+  /**
+   * Sole owner of the focus-restore side effect (CONVENTIONS item 4). Both
+   * teardown routes call it and `view.close()` re-enters through `onClose`, so
+   * it is written to be idempotent rather than relying on call ordering.
+   */
+  function restoreFocus(): void {
     if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
     previouslyFocused = null;
   }
 
+  function close(): void {
+    teardown(); // before view.close(), while `view` still owns the trap listener
+    view?.close(); // re-enters via onClose; restoreFocus() tolerates that
+    view = null;
+    restoreFocus();
+  }
+
   // ---- org fetching -------------------------------------------------------
 
-  async function resolveCustomFieldId(object: string, field: string): Promise<string | null> {
-    if (!/__c$/i.test(field)) return null; // standard fields have no CustomField row
+  /**
+   * Resolve a CUSTOM field to its `CustomField` Id — the key the dependency
+   * query needs.
+   *
+   * A refusal is NOT "not found". Swallowing it would make a permissions or
+   * licence failure indistinguishable from an org that genuinely has no
+   * dependency edge, and that difference is load-bearing twice over: it decides
+   * what the Scan-scope panel asserts about the org, AND it silently switches
+   * flow adjudication to the strict rule. So the error is returned, not eaten.
+   */
+  async function resolveCustomFieldId(
+    object: string,
+    field: string,
+  ): Promise<{ id: string | null; error: string | null }> {
+    if (!/__c$/i.test(field)) return { id: null, error: null }; // no CustomField row exists
     try {
       const result = await api.toolingQuery<{ Id?: string }>(customFieldIdQuery(object, field));
-      return result.records[0]?.Id ?? null;
-    } catch {
-      return null;
+      return { id: result.records[0]?.Id ?? null, error: null };
+    } catch (err) {
+      return { id: null, error: message(err) };
     }
   }
 
@@ -176,11 +198,24 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
 
   async function fetchFlowCandidates(object: string, field: string): Promise<FlowFetch> {
     const notes: string[] = [];
-    const fieldId = await resolveCustomFieldId(object, field);
+    const { id: fieldId, error: fieldIdError } = await resolveCustomFieldId(object, field);
     let versionIds: string[] = [];
     // Provenance decides how much benefit of the doubt each candidate's writes
     // get downstream (see FlowCandidate.discovery in lib/field-impact.ts).
     let discovery: FlowCandidate['discovery'] = 'dependency';
+    // Did we actually establish that no dependency edge exists, or were we just
+    // unable to look? The fallback note must not assert the former for the
+    // latter — a refused query is not evidence about the user's org.
+    let edgeLookupFailed = false;
+
+    if (fieldIdError) {
+      edgeLookupFailed = true;
+      notes.push(
+        `The CustomField lookup for ${object}.${field} was refused (${fieldIdError}), so its ` +
+          `dependency edges could NOT be checked. Whether flows are linked to this field is ` +
+          `unknown here — this is a failed query, not a finding about your org.`,
+      );
+    }
 
     if (fieldId) {
       try {
@@ -191,26 +226,43 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
           .map((r) => r.MetadataComponentId)
           .filter((id): id is string => typeof id === 'string' && id.length > 0);
       } catch (err) {
+        edgeLookupFailed = true;
         notes.push(
           `Flow candidates could not be narrowed via MetadataComponentDependency (${message(err)}).`,
+        );
+      }
+      if (versionIds.length > 0) {
+        // Symmetry with the broad-scan precision note below. The two paths
+        // adjudicate differently, so BOTH must say which rule they applied —
+        // otherwise the user cannot tell that two answers aren't comparable.
+        notes.push(
+          `${versionIds.length} flow(s) are linked to ${object}.${field} by a dependency edge, so ` +
+            `writes in them that cannot be bound to an object are listed as inferred leads rather ` +
+            `than dropped. A field with no such edge is scanned under a stricter rule, and results ` +
+            `from the two are not directly comparable.`,
         );
       }
     }
 
     if (!fieldId || versionIds.length === 0) {
       // No dependency edge (a standard field has no CustomField row; some orgs
-      // record none) — fall back to a broad sweep of the most recently modified
-      // ACTIVE flows. Because nothing ties these flows to the field, they are
-      // adjudicated STRICTLY: only a write bound to `object` in the flow's own
-      // metadata counts. Both the breadth AND that precision rule are disclosed.
+      // record none; or the lookup above was refused) — fall back to a broad
+      // sweep of the most recently modified ACTIVE flows. Because nothing ties
+      // these flows to the field, they are adjudicated STRICTLY: only a write
+      // bound to `object` in the flow's own metadata counts. Both the breadth
+      // AND that precision rule are disclosed.
       discovery = 'broad-scan';
+      // Only claim "no dependency edge" when we actually established it.
+      const cause = edgeLookupFailed
+        ? `Because the dependency lookup above failed, no dependency edge could be used for ${object}.${field}`
+        : `No dependency edge for ${object}.${field}`;
       try {
         const flows = await api.toolingQuery<{ Id?: string }>(recentActiveFlowsQuery());
         versionIds = flows.records
           .map((r) => r.Id)
           .filter((id): id is string => typeof id === 'string' && id.length > 0);
         notes.push(
-          `No dependency edge for ${object}.${field}, so Flow coverage is a broad scan of the ` +
+          `${cause}, so Flow coverage is a broad scan of the ` +
             `${versionIds.length} most recently modified active flow(s) — not every flow in the org.`,
         );
         notes.push(
@@ -278,12 +330,46 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
         discovery,
       });
     }
+    // The parser's OWN bound, distinct from either scan's bound. flow-core
+    // models Create/Update Records inputAssignments and `<record>.<Field>`
+    // Assignments; a flow writing the field only through a construct it does
+    // not model produces no writes at all, so it is dropped with no row and no
+    // other note — on BOTH the dependency and broad-scan paths. Stated whenever
+    // any flow was actually parsed, so the Scan-scope panel is not read as an
+    // exhaustive account of the gaps when it is missing this class entirely.
+    if (candidates.some((c) => c.metadata != null)) {
+      notes.push(
+        `Flow analysis covers Create/Update Records field assignments and ` +
+          `\`<record>.${field}\`-style Assignment elements. Transform elements, invocable and quick ` +
+          `actions, and the bodies of called subflows are NOT parsed, so a flow that writes ` +
+          `${object}.${field} only through one of those is missing from these results.`,
+      );
+    }
     return { candidates, notes };
   }
 
   interface WorkflowFetch {
     candidates: WorkflowFieldUpdateCandidate[];
     notes: string[];
+  }
+
+  /**
+   * A field update whose `Metadata` came back unreadable becomes an `inferred`
+   * row against WHATEVER field the user asked about — pure noise unless its
+   * cause is stated. Neither path may return it silently.
+   */
+  function noteUnreadableFieldUpdates(
+    candidates: readonly WorkflowFieldUpdateCandidate[],
+    object: string,
+    notes: string[],
+  ): void {
+    const unreadable = candidates.filter((c) => c.unresolved).length;
+    if (unreadable === 0) return;
+    notes.push(
+      `${unreadable} workflow field update(s) on ${object} returned no readable Metadata, so the ` +
+        `field each one targets is unknown. They are listed as inferred rows — that is a gap in ` +
+        `what could be read, not evidence they write this field.`,
+    );
   }
 
   async function fetchWorkflowFieldUpdates(object: string): Promise<WorkflowFetch> {
@@ -297,19 +383,23 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
         TableEnumOrId?: string;
         Metadata?: { field?: string };
       }>(workflowFieldUpdateQuery(object, true));
-      return {
-        candidates: bulk.records.map((r) => ({
-          id: r.Id ?? '',
-          name: r.Name ?? r.Id ?? '',
-          label: r.Name ?? null,
-          object: r.TableEnumOrId ?? object,
-          field: r.Metadata?.field ?? null,
-          unresolved: !r.Metadata?.field,
-        })),
-        notes,
-      };
-    } catch {
-      // fall through to the per-row path
+      const candidates = bulk.records.map((r) => ({
+        id: r.Id ?? '',
+        name: r.Name ?? r.Id ?? '',
+        label: r.Name ?? null,
+        object: r.TableEnumOrId ?? object,
+        field: r.Metadata?.field ?? null,
+        unresolved: !r.Metadata?.field,
+      }));
+      noteUnreadableFieldUpdates(candidates, object, notes);
+      return { candidates, notes };
+    } catch (err) {
+      // Fall through to the per-row path — but say that we did, because the two
+      // paths have different caps and the per-row one can truncate.
+      notes.push(
+        `The bulk workflow field update query was refused (${message(err)}); each update was read ` +
+          `individually instead, which is subject to a cap of ${WORKFLOW_METADATA_CAP}.`,
+      );
     }
 
     let listed: Array<{ Id?: string; Name?: string; TableEnumOrId?: string }> = [];
@@ -353,6 +443,7 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
           `read individually (cap ${WORKFLOW_METADATA_CAP}); they are listed as inferred.`,
       );
     }
+    noteUnreadableFieldUpdates(candidates, object, notes);
     return { candidates, notes };
   }
 
@@ -389,8 +480,13 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
         return {
           hits,
           notes: [
-            `The Apex text search matched ${total} classes/triggers; the first ${APEX_HIT_CAP} ` +
-              `(by type, then name) are listed. Others exist.`,
+            // NOT a match count: `total` is measured after the server-side
+            // per-object LIMITs in the SOSL, so it is itself capped and an org
+            // with 300 matching classes reports the cap, not 300. Say what the
+            // number actually is.
+            `The Apex text search RETURNED ${total} classes/triggers — itself a capped result, ` +
+              `not the true number of matches; the first ${APEX_HIT_CAP} (by type, then name) are ` +
+              `listed. More may exist.`,
           ],
         };
       }
@@ -486,10 +582,21 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
 
     const thead = doc.createElement('thead');
     const headRow = doc.createElement('tr');
-    for (const heading of ['Source', 'Type', 'Component', 'Evidence', '']) {
+    // The last column holds the Open link and shows no visible heading. An empty
+    // `scope="col"` header is an UNNAMED column header, so it carries an
+    // accessible name instead (CONVENTIONS item 10).
+    const columns: ReadonlyArray<readonly [text: string, accessibleName: string]> = [
+      ['Source', 'Source'],
+      ['Type', 'Type'],
+      ['Component', 'Component'],
+      ['Evidence', 'Evidence'],
+      ['', 'Actions'],
+    ];
+    for (const [heading, accessibleName] of columns) {
       const th = doc.createElement('th');
       th.textContent = heading;
       th.setAttribute('scope', 'col');
+      if (!heading) th.setAttribute('aria-label', accessibleName);
       th.style.cssText =
         CELL +
         ' background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; color: var(--sfdt-color-text-strong);';
@@ -607,8 +714,7 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
       onClose: () => {
         teardown();
         view = null;
-        if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
-        previouslyFocused = null;
+        restoreFocus();
       },
     });
 
@@ -626,11 +732,25 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
       status.textContent = `Analysing ${object.trim()}.${field.trim()}…`;
       try {
         const { vm } = await analyse(object.trim(), field.trim());
-        status.textContent =
-          vm.counts.total === 0
-            ? `Nothing found that writes ${vm.object}.${vm.field}.`
-            : `${vm.counts.total} source(s) for ${vm.object}.${vm.field} — ` +
-              `${vm.counts.confirmed} confirmed, ${vm.counts.inferred} inferred.`;
+        // A bare "nothing found" is the most dangerous sentence this panel can
+        // produce, and it is the ONLY one announced: the summary is the
+        // `role="status"` live region, while every caveat sits in the
+        // `role="note"` panel OUTSIDE it. So when the scan was bounded — a
+        // strict broad scan, a refused query, a construct class the parser does
+        // not model — the negative result must carry its qualifier with it,
+        // rather than leaving it to a panel a screen-reader user is never told
+        // about.
+        if (vm.counts.total === 0) {
+          status.textContent =
+            vm.notes.length > 0
+              ? `Nothing found that writes ${vm.object}.${vm.field} in the scanned set — this was ` +
+                `a partial scan that can exclude real writers; see Scan scope below.`
+              : `Nothing found that writes ${vm.object}.${vm.field}.`;
+        } else {
+          status.textContent =
+            `${vm.counts.total} source(s) for ${vm.object}.${vm.field} — ` +
+            `${vm.counts.confirmed} confirmed, ${vm.counts.inferred} inferred.`;
+        }
         const notes = buildNotes(vm.notes);
         if (notes) results.appendChild(notes);
         if (vm.counts.total > 0) results.appendChild(buildTable(vm));
