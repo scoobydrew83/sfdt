@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`@sfdt/flow-core`: field-write extraction (`extractFieldWrites` / `filterFieldWrites`).** New `packages/flow-core/src/field-writes.ts` answers "what writes this field?" from a Tooling `Flow.Metadata` payload, covering the only three constructs that write in a Flow: `recordCreates` and `recordUpdates` `inputAssignments`, and `assignments` whose `assignToReference` targets `<recordRef>.<Field>` (the before-save `$Record.Field__c` pattern). Reads — Get Records, entry criteria, element `filters`, formulas — deliberately produce nothing, which is precisely what separates a *write* from the *reference* the Tooling `MetadataComponentDependency` API records. Object binding is resolved from the flow's own metadata (`start.object` behind `$Record`/`$Record__Prior`, a declared sObject variable's `objectType`, an element's `object`, a loop variable's collection), and each write is stamped with the **same `confirmed`/`inferred` status vocabulary as the dependency gaps report** (`sfdt dependencies --gaps`, `GET /api/dependencies/gaps`, the GUI Gaps panel): `confirmed` when the metadata states the object, `inferred` when the field write is real but could not be bound to one. Purely additive — no existing export changed; `RawVariable` gained an optional `objectType` field. The first consumer is the Chrome extension's Field Impact Analysis (P4-4); the CLI and GUI can adopt it without a second parser. Ships in the next coupled CLI/flow-core release (flow-core is published with the CLI's release commit, per RELEASING.md).
+
 ## [0.21.0] - 2026-07-30
 
 > **The bridge contract changed — `PROTOCOL_VERSION` moves `1.2` → `1.3`.** The two additive

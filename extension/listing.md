@@ -71,6 +71,7 @@ Features include:
 - Org Health (Live) — run org-health checks live against the org (Apex coverage, inactive users, licenses, API versions, limits) with no CLI snapshot needed
 - Show API Names — toggle inline field API names and object/18-char-Id header on record pages; copy the record Id, an Apex insert, or SOQL for the current record
 - Schema Browser — searchable two-pane explorer for the org's objects, fields, and relationships (Workspace or record page)
+- Field Impact Analysis — "what writes this field?": the Flows (parsed, not guessed), workflow field updates, and Apex classes/triggers that write a given field, each labelled confirmed or inferred, with open links
 - Dependency Explorer — "what references this / what does this reference" across Apex, Flow, fields, pages, and LWC via MetadataComponentDependency
 - Command Palette — keyboard-driven launcher to find and open any SFDT tool
 - Apex Test Runner — run Apex tests asynchronously and view pass/fail results in the browser

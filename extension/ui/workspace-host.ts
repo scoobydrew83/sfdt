@@ -29,6 +29,7 @@ import { createRestExploreFeature } from '../features/rest-explore.js';
 import { createSoapExploreFeature } from '../features/soap-explore.js';
 import { createInspectRecordFeature } from '../features/inspect-record.js';
 import { createSchemaBrowserFeature } from '../features/schema-browser.js';
+import { createFieldImpactFeature } from '../features/field-impact.js';
 import { createOrgLimitsFeature } from '../features/org-limits.js';
 import { createEventMonitorFeature } from '../features/event-monitor.js';
 import { createDataImportFeature } from '../features/data-import.js';
@@ -256,6 +257,10 @@ export function bootHost(root: HTMLElement, orgHost: string, opts: HostOptions):
   const soqlRunner = createSoqlRunnerFeature(common);
   const exportForPrompt = createExportForPromptFeature({ doc: document, win: syntheticWin });
 
+  // Created eagerly so the Schema Browser's per-field "What writes this?" action
+  // can drive it (P4-4). Field Impact is also a Workspace tool in its own right.
+  const fieldImpact = createFieldImpactFeature(common);
+
   // Saved SOQL hands a chosen query to the runner, then asks us to open it.
   const factories: Record<string, () => Feature> = {
     'soql-runner': () => soqlRunner,
@@ -280,7 +285,9 @@ export function bootHost(root: HTMLElement, orgHost: string, opts: HostOptions):
         ...common,
         insertFieldIntoDraft: (field) => soqlRunner.insertFieldIntoDraft(field),
         exportForPrompt: (name, fields) => exportForPrompt.exportObject(name, fields),
+        analyzeFieldImpact: (name, field) => void fieldImpact.openFor(name, field),
       }),
+    'field-impact': () => fieldImpact,
     'org-limits': () => createOrgLimitsFeature(common),
     'event-monitor': () => createEventMonitorFeature(common),
     'data-import': () => createDataImportFeature(common),

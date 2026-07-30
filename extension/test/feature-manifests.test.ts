@@ -42,6 +42,7 @@ import { createSubflowGraphFeature } from '../features/subflow-graph.js';
 import { createTriggerConflictsFeature } from '../features/trigger-conflicts.js';
 import { createInspectRecordFeature } from '../features/inspect-record.js';
 import { createSchemaBrowserFeature } from '../features/schema-browser.js';
+import { createFieldImpactFeature } from '../features/field-impact.js';
 import { createShowApiNamesFeature } from '../features/show-api-names.js';
 import { createDataImportFeature } from '../features/data-import.js';
 import { createFieldCreatorFeature } from '../features/field-creator.js';
@@ -132,6 +133,9 @@ function instantiateAllFeatures(): Feature[] {
     createInspectRecordFeature(),
     createSchemaBrowserFeature(),
     createShowApiNamesFeature(),
+    // field-impact (P4-4): one analysis surface driven by the Schema Browser's
+    // per-field action and the Show API Names panel; also a Workspace tool.
+    createFieldImpactFeature(),
     createDataImportFeature(),
     createFieldCreatorFeature(),
     createMetadataRetrieveFeature(),

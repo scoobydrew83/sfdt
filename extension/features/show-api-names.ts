@@ -262,6 +262,9 @@ export interface ShowApiNamesOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
+  /** Open "What writes this field?" for a field of the current record's object
+   * (P4-4). When absent, the panel's field-impact row is hidden. */
+  analyzeFieldImpact?: (objectName: string, fieldApiName: string) => void | Promise<void>;
 }
 
 interface RecordPageContext {
@@ -273,6 +276,7 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
+  const analyzeFieldImpact = options.analyzeFieldImpact;
 
   let active = false;
   let observer: MutationObserver | null = null;
@@ -490,6 +494,66 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
       }
     });
     body.appendChild(buttonRow);
+
+    // P4-4 entry point: pick any field of this record's object and ask what
+    // writes it. The analysis lives in features/field-impact.ts; this panel only
+    // launches it. Hidden entirely when the hook isn't wired or we're not on a
+    // record page (no object to scope the picker to).
+    if (analyzeFieldImpact && ctx) {
+      const impactRow = doc.createElement('div');
+      impactRow.style.cssText = 'display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap;';
+
+      const selectWrap = doc.createElement('div');
+      selectWrap.style.cssText = 'display: flex; flex-direction: column; gap: 4px; min-width: 200px;';
+      const selectLabel = doc.createElement('label');
+      selectLabel.textContent = 'Field impact';
+      selectLabel.htmlFor = 'sfdt-show-api-names-impact-field';
+      selectLabel.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak);';
+      const fieldSelect = doc.createElement('select');
+      fieldSelect.id = 'sfdt-show-api-names-impact-field';
+      fieldSelect.setAttribute('aria-label', `Choose a ${ctx.sobjectName} field to analyse`);
+      fieldSelect.style.cssText =
+        'padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
+      const loadingOption = doc.createElement('option');
+      loadingOption.value = '';
+      loadingOption.textContent = 'Loading fields…';
+      fieldSelect.appendChild(loadingOption);
+      fieldSelect.disabled = true;
+      selectWrap.append(selectLabel, fieldSelect);
+
+      const impactBtn = doc.createElement('button');
+      impactBtn.type = 'button';
+      impactBtn.textContent = 'What writes this field?';
+      impactBtn.disabled = true;
+      impactBtn.style.cssText =
+        'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      impactBtn.addEventListener('click', () => {
+        if (!fieldSelect.value) return;
+        void analyzeFieldImpact(ctx.sobjectName, fieldSelect.value);
+      });
+
+      impactRow.append(selectWrap, impactBtn);
+      body.appendChild(impactRow);
+
+      void fetchDescribe(ctx.sobjectName)
+        .then((describe) => {
+          const fields = [...(describe.fields ?? [])].sort((a, b) =>
+            (a.label || a.name).localeCompare(b.label || b.name),
+          );
+          fieldSelect.removeChild(loadingOption);
+          for (const f of fields) {
+            const option = doc.createElement('option');
+            option.value = f.name;
+            option.textContent = f.label && f.label !== f.name ? `${f.label} (${f.name})` : f.name;
+            fieldSelect.appendChild(option);
+          }
+          fieldSelect.disabled = fields.length === 0;
+          impactBtn.disabled = fields.length === 0;
+        })
+        .catch(() => {
+          loadingOption.textContent = 'Could not load fields';
+        });
+    }
 
     view = presentView({
       title: '🏷️ Show API Names',
