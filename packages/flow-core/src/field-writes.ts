@@ -3,14 +3,29 @@
 //
 // Reads are deliberately NOT writes: Get Records elements, entry criteria,
 // element `filters`, formula resources and decision conditions all reference
-// fields without changing them, and none of them produce a row here. Only three
-// constructs write a field in a Flow, and each is handled below:
+// fields without changing them, and none of them produce a row here.
+//
+// THREE CONSTRUCTS ARE MODELLED — they are the common ones, not the only ones:
 //
 //   1. Create Records  (`recordCreates[].inputAssignments[].field`)
 //   2. Update Records  (`recordUpdates[].inputAssignments[].field`)
 //   3. Assignment      (`assignments[].assignmentItems[].assignToReference`,
 //                       when the target is `<recordRef>.<Field>` — the
 //                       before-save `$Record.Field__c` pattern)
+//
+// NOT MODELLED (a flow writing a field only through one of these yields `[]`,
+// so a caller must disclose the bound rather than present an empty result as
+// proof of no writer):
+//
+//   - Transform elements
+//     (`transforms[].transformValues[].transformValueActions[].outputFieldApiName`,
+//      API 59+), whose output is committed by a downstream Create/Update Records
+//      element via `inputReference`.
+//   - Invocable actions: `actionCalls[].inputParameters[].name` — quick actions
+//     and invocable Apex both write fields the flow never names in an
+//     inputAssignment.
+//   - Subflow bodies: a `subflows[]` call is not followed, so writes performed
+//     by the called flow belong to that flow's own metadata, not this one's.
 //
 // This module is the single Flow-parsing engine for the field-impact feature:
 // the Chrome extension consumes it rather than re-implementing a second parser.
@@ -43,7 +58,13 @@ export type FieldWriteStatus = 'confirmed' | 'inferred';
 export interface FlowFieldWrite {
   /** Object API name the written field belongs to, or `null` when unresolved. */
   object: string | null;
-  /** Field API name written (bare, e.g. `Status__c`). */
+  /**
+   * Field API name written, as the metadata states it — normally bare
+   * (`Status__c`). Create/Update Records `inputAssignments[].field` is emitted
+   * verbatim, so a relationship-target assignment can arrive dotted
+   * (`Account.Industry__c`); `filterFieldWrites` is an exact match, so such a
+   * value simply never matches a bare field query.
+   */
   field: string;
   kind: FieldWriteKind;
   /** API name of the Flow element performing the write. */
@@ -130,16 +151,21 @@ function buildObjectResolver(metadata: RawFlowMetadata): (reference: string) => 
     for (const element of asRecords(metadata[key])) put(element.name, element.object);
   }
 
-  // A loop variable takes the object of the collection it iterates. Two passes
-  // so a loop over another loop's output still resolves; deeper chains are rare
-  // and degrade to `inferred` rather than to a wrong object.
+  // A loop variable takes the object of the collection it iterates. Iterated to
+  // a FIXED POINT rather than a fixed pass count, so a chain of loops resolves
+  // whatever order they are declared in. It terminates: a pass only sets
+  // `changed` by adding an entry to a map bounded by the loop count.
   const loops = asRecords(metadata.loops);
-  for (let pass = 0; pass < 2; pass++) {
+  for (let changed = true; changed; ) {
+    changed = false;
     for (const loop of loops) {
       const collection = str(loop.collectionReference);
-      if (!collection) continue;
+      const key = str(loop.name).toLowerCase();
+      if (!collection || !key || map.has(key)) continue;
       const resolved = map.get(headOf(collection).toLowerCase());
-      if (resolved) put(loop.name, resolved);
+      if (!resolved) continue;
+      put(loop.name, resolved);
+      changed = true;
     }
   }
 
