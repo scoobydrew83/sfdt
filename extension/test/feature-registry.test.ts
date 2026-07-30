@@ -1,5 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createFeatureRegistry, type Feature } from '../lib/feature-registry.js';
+import {
+  _clearFeatureDefaultForTests,
+  isEnabledByDefault,
+} from '../lib/feature-defaults.js';
+import { isFeatureEnabled, SettingsSchema, type Settings } from '../lib/settings.js';
 
 function makeLogger() {
   return {
@@ -375,5 +380,91 @@ describe('extension/lib/feature-registry', () => {
       isUserEnabled: () => true,
     });
     expect(track).toHaveBeenCalledWith('feature.disabled.remote', { featureId: 'alpha' });
+  });
+});
+
+// End-to-end over the real gate the content script builds: manifest default →
+// stored preference → remote kill switch, in that order of increasing
+// precedence. `register()` is what publishes a manifest's default into
+// lib/feature-defaults, so these go through the registry rather than poking the
+// defaults map directly.
+describe('feature-registry — enabledByDefault, stored preference, and kill-switch precedence', () => {
+  const OFF_ID = '__registry-off-by-default__';
+  const ON_ID = '__registry-on-by-default__';
+
+  afterEach(() => {
+    _clearFeatureDefaultForTests(OFF_ID);
+    _clearFeatureDefaultForTests(ON_ID);
+  });
+
+  function registerPair(reg: ReturnType<typeof createFeatureRegistry>, spies: {
+    off: () => void;
+    on: () => void;
+  }) {
+    reg.register({
+      manifest: { id: OFF_ID, name: OFF_ID, contexts: [], enabledByDefault: false },
+      init: spies.off,
+    });
+    reg.register({
+      manifest: { id: ON_ID, name: ON_ID, contexts: [], enabledByDefault: true },
+      init: spies.on,
+    });
+  }
+
+  it('register() publishes the manifest default so isFeatureEnabled can see it', () => {
+    const reg = createFeatureRegistry({ logger: makeLogger() });
+    registerPair(reg, { off: () => {}, on: () => {} });
+    expect(isEnabledByDefault(OFF_ID)).toBe(false);
+    expect(isEnabledByDefault(ON_ID)).toBe(true);
+  });
+
+  it('does not init an enabledByDefault:false feature when the user has no stored preference', async () => {
+    const reg = createFeatureRegistry({ logger: makeLogger() });
+    const off = vi.fn();
+    const on = vi.fn();
+    registerPair(reg, { off, on });
+    const settings = SettingsSchema.parse({}) as Settings;
+    await reg.initForCurrentRoute([OFF_ID, ON_ID], {
+      disabledRemote: new Set(),
+      isUserEnabled: (id) => isFeatureEnabled(settings, id),
+    });
+    expect(off).not.toHaveBeenCalled();
+    expect(on).toHaveBeenCalledOnce();
+  });
+
+  it('inits an enabledByDefault:false feature the user explicitly switched on', async () => {
+    const reg = createFeatureRegistry({ logger: makeLogger() });
+    const off = vi.fn();
+    registerPair(reg, { off, on: () => {} });
+    const settings = SettingsSchema.parse({ features: { [OFF_ID]: true } }) as Settings;
+    await reg.initForCurrentRoute([OFF_ID], {
+      disabledRemote: new Set(),
+      isUserEnabled: (id) => isFeatureEnabled(settings, id),
+    });
+    expect(off).toHaveBeenCalledOnce();
+  });
+
+  it('the kill switch still wins over a user opt-in to an off-by-default feature', async () => {
+    const reg = createFeatureRegistry({ logger: makeLogger() });
+    const off = vi.fn();
+    registerPair(reg, { off, on: () => {} });
+    const settings = SettingsSchema.parse({ features: { [OFF_ID]: true } }) as Settings;
+    await reg.initForCurrentRoute([OFF_ID], {
+      disabledRemote: new Set([OFF_ID]),
+      isUserEnabled: (id) => isFeatureEnabled(settings, id),
+    });
+    expect(off).not.toHaveBeenCalled();
+  });
+
+  it('the kill switch still wins over an on-by-default feature with no stored preference', async () => {
+    const reg = createFeatureRegistry({ logger: makeLogger() });
+    const on = vi.fn();
+    registerPair(reg, { off: () => {}, on });
+    const settings = SettingsSchema.parse({}) as Settings;
+    await reg.initForCurrentRoute([ON_ID], {
+      disabledRemote: new Set([ON_ID]),
+      isUserEnabled: (id) => isFeatureEnabled(settings, id),
+    });
+    expect(on).not.toHaveBeenCalled();
   });
 });

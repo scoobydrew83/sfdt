@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @sfdt/host — Chrome Native Messaging host for the SFDT SF Helper
+ * @sfdt/host — Chrome Native Messaging host for SFDT for Salesforce
  * extension.
  *
  * Protocol (https://developer.chrome.com/docs/apps/nativeMessaging):

@@ -177,7 +177,7 @@ export function renderPopup(
   const heading = doc.createElement('h1');
   heading.id = 'sfdt-popup-title';
   heading.className = 'sfdt-popup-title';
-  heading.textContent = '⚡ SFDT SF Helper';
+  heading.textContent = '⚡ SFDT for Salesforce';
   root.appendChild(heading);
 
   const body = doc.createElement('div');

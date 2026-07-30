@@ -1,4 +1,4 @@
-# Privacy Policy — SFDT SF Helper (`@sfdt/extension`)
+# Privacy Policy — SFDT for Salesforce (`@sfdt/extension`)
 
 **Last updated: 2026-06-25**
 
@@ -29,7 +29,7 @@ All extension state lives in `chrome.storage.local` inside your Chrome profile. 
 | `sfdt.killswitch.cache` | The most-recent server-disabled feature list from the local bridge ping | After every successful bridge ping |
 | `sfdt.telemetry` | Opt-in local feature-use counters (see below) | Only when you've enabled telemetry |
 
-You can clear all of it from `chrome://extensions` → SFDT SF Helper → Site data → Remove all.
+You can clear all of it from `chrome://extensions` → SFDT for Salesforce → Site data → Remove all.
 
 ---
 

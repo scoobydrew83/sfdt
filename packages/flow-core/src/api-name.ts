@@ -125,7 +125,7 @@ export class ApiNameLibrary {
   exportAsJson(): string {
     const file: PrefixFile = {
       version: 1,
-      description: 'Custom API name prefixes for SFDT SF Helper.',
+      description: 'Custom API name prefixes for SFDT for Salesforce.',
       prefixes: this.prefixes,
     };
     return JSON.stringify(file, null, 2);

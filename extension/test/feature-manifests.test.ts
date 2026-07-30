@@ -16,6 +16,8 @@ import path from 'node:path';
 
 import type { Feature } from '../lib/feature-registry.js';
 import { FEATURE_ICONS, WORKSPACE_TOOLS } from '../lib/feature-icons.js';
+import { isFeatureEnabled, SettingsSchema, type Settings } from '../lib/settings.js';
+import { _knownFeatureDefaultIdsForTests } from '../lib/feature-defaults.js';
 
 // --- Factories, imported exactly as entrypoints/content.ts does ---
 import { createAiAssistantFeature } from '../features/ai-assistant.js';
@@ -180,8 +182,9 @@ function collectEntries(): ManifestEntry[] {
       id: manifest.id,
       name: manifest.name,
       contexts: [...manifest.contexts],
-      // Registry semantics: an omitted enabledByDefault means enabled —
-      // settings.ts isFeatureEnabled() returns true without an explicit entry.
+      // Registry semantics: an omitted enabledByDefault means enabled. This is
+      // the same `?? true` that lib/feature-defaults.ts applies at runtime, and
+      // the "no existing feature ships off" suite below pins the two together.
       enabledByDefault: manifest.enabledByDefault ?? true,
       workspace: WORKSPACE_TOOLS.includes(manifest.id),
       sideButton: Object.prototype.hasOwnProperty.call(FEATURE_ICONS, manifest.id),
@@ -230,5 +233,59 @@ describe('feature-manifests.json parity', () => {
 
   it('matches the real manifests 1:1 (same id set; per id: name, contexts, enabledByDefault, workspace, sideButton, bridgeRequired; sorted by id)', () => {
     expect(checkedIn).toEqual(computed);
+  });
+});
+
+// `enabledByDefault` became authoritative at runtime — before this, an absent
+// stored preference meant "enabled" no matter what the manifest said. Honouring
+// the flag is only behaviour-preserving because no shipped feature declares
+// false; these tests make that a checked invariant instead of an assumption, so
+// a future `enabledByDefault: false` cannot silently switch a feature off for
+// existing users without someone updating this file on purpose.
+describe('enabledByDefault is authoritative without flipping any shipped feature off', () => {
+  const noStoredPreferences = SettingsSchema.parse({}) as Settings;
+  const realManifests = instantiateAllFeatures().map((f) => f.manifest);
+
+  it('has no shipped feature declaring enabledByDefault: false', () => {
+    const shipsOff = realManifests
+      .filter((m) => m.enabledByDefault === false)
+      .map((m) => m.id);
+    expect(shipsOff).toEqual([]);
+  });
+
+  it('resolves every shipped feature to enabled for a user with no stored preferences', () => {
+    const resolvedOff = realManifests
+      .map((m) => m.id)
+      .filter((id) => !isFeatureEnabled(noStoredPreferences, id));
+    expect(resolvedOff).toEqual([]);
+  });
+
+  it('covers every feature in the checked-in manifest JSON, not just a subset', () => {
+    const jsonIds = (JSON.parse(readFileSync(MANIFESTS_PATH, 'utf8')) as ManifestEntry[]).map(
+      (e) => e.id,
+    );
+    // Guards the test above against silently shrinking to zero features.
+    expect(jsonIds.length).toBeGreaterThan(0);
+    expect(new Set(realManifests.map((m) => m.id))).toEqual(new Set(jsonIds));
+    for (const id of jsonIds) {
+      expect(isFeatureEnabled(noStoredPreferences, id)).toBe(true);
+    }
+  });
+
+  // Without this, the assertions above would still pass if the JSON seeding
+  // broke entirely: an id with no recorded default falls back to enabled, so
+  // "everything resolves enabled" is exactly what a dead lookup looks like.
+  // Assert the defaults map really knows each shipped id.
+  it('seeds a default for every shipped feature from the manifest JSON', () => {
+    const known = new Set(_knownFeatureDefaultIdsForTests());
+    const missing = realManifests.map((m) => m.id).filter((id) => !known.has(id));
+    expect(missing).toEqual([]);
+  });
+
+  it('still lets a user disable any shipped feature', () => {
+    for (const { id } of realManifests) {
+      const off = SettingsSchema.parse({ features: { [id]: false } }) as Settings;
+      expect(isFeatureEnabled(off, id)).toBe(false);
+    }
   });
 });
