@@ -208,3 +208,17 @@ export {
   extractFlowRefs,
 } from './dependency-parsers.js';
 export type { InferredRef, InferredRefKind } from './dependency-parsers.js';
+
+// "What writes this field?" (P4-4) — the single Flow parsing engine for field
+// writes, consumed by the Chrome extension's Field Impact Analysis.
+export {
+  extractFieldWrites,
+  filterFieldWrites,
+  FIELD_WRITE_KIND_LABELS,
+} from './field-writes.js';
+export type {
+  FieldWriteKind,
+  FieldWriteQuery,
+  FieldWriteStatus,
+  FlowFieldWrite,
+} from './field-writes.js';
