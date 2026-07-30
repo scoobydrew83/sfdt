@@ -373,6 +373,19 @@ export function coerceForWire(field: FieldDescribe, value: unknown): unknown {
 
 export interface DirtyDiff {
   // Exactly the body to PATCH. Empty object means nothing to save.
+  //
+  // NOTE: this is a NULL-PROTOTYPE object (see buildDirtyDiff for why). Every
+  // way it is actually used works — `JSON.stringify` (which is how it reaches
+  // the wire), `Object.keys`, spread, `in`, property access, `for…in`. But two
+  // things that work on an ordinary object THROW on this one:
+  //
+  //   patchBody.hasOwnProperty('Name')   // TypeError: not a function
+  //   `${patchBody}` / String(patchBody) // TypeError: cannot convert to primitive
+  //
+  // Use `Object.prototype.hasOwnProperty.call(patchBody, name)` and
+  // `JSON.stringify(patchBody)` respectively. Called out because a future
+  // logging statement is exactly how this gets discovered the hard way, in a
+  // module whose header promises the save path does not throw.
   patchBody: Record<string, unknown>;
   // The same fields, in describe order — what the save bar counts and what the
   // UI highlights. Always `Object.keys(patchBody)`; both exist so neither

@@ -541,6 +541,17 @@ describe('buildDirtyDiff', () => {
     // assertion is made on the serialised body the PATCH would actually send.
     expect(JSON.stringify(diff.patchBody)).toBe('{"__proto__":"b"}');
   });
+
+  it('patchBody supports every access the save path uses', () => {
+    // It is null-prototype, which is a real sharp edge for a consumer — this
+    // pins the supported surface so the documented list stays true.
+    const diff = buildDirtyDiff(describeStub, { Name: 'A' }, { Name: 'B' });
+    expect(JSON.stringify(diff.patchBody)).toBe('{"Name":"B"}');
+    expect(Object.keys(diff.patchBody)).toEqual(['Name']);
+    expect({ ...diff.patchBody }).toEqual({ Name: 'B' });
+    expect('Name' in diff.patchBody).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(diff.patchBody, 'Name')).toBe(true);
+  });
 });
 
 describe('mapSaveErrors', () => {
