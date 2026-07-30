@@ -439,6 +439,21 @@ describe('buildDirtyDiff', () => {
     expect(buildDirtyDiff(mp, { Tags__c: 'C;A' }, { Tags__c: 'A;C' }).changedFieldNames).toEqual([]);
   });
 
+  it('multipicklist: duplicates collapse, so "compare as sets" is literally true', () => {
+    // Unreachable in both directions (Salesforce returns no duplicates and a
+    // <select multiple> cannot produce them). Decided toward "not a change"
+    // because the org dedupes on save, so writing one over the other would be
+    // a phantom write — the thing this module exists to avoid.
+    const mp = { fields: [fld({ name: 'Tags__c', type: 'multipicklist' })] };
+    expect(buildDirtyDiff(mp, { Tags__c: 'A;B' }, { Tags__c: ['A', 'A', 'B'] }).changedFieldNames)
+      .toEqual([]);
+    expect(buildDirtyDiff(mp, { Tags__c: 'A;A;B' }, { Tags__c: ['A', 'B'] }).changedFieldNames)
+      .toEqual([]);
+    // A genuine set difference is still a change.
+    expect(buildDirtyDiff(mp, { Tags__c: 'A;A;B' }, { Tags__c: ['A'] }).changedFieldNames)
+      .toEqual(['Tags__c']);
+  });
+
   it('multipicklist: adding or removing a value IS a change, written in control order', () => {
     const mp = { fields: [fld({ name: 'Tags__c', type: 'multipicklist' })] };
     expect(buildDirtyDiff(mp, { Tags__c: 'C;A' }, { Tags__c: ['A', 'B', 'C'] }).patchBody).toEqual({

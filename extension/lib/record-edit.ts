@@ -406,13 +406,20 @@ export interface DescribeLike {
 //
 // A real change (a value added or removed) still writes the control's own
 // order verbatim; this only decides equality, it never rewrites a value.
+//
+// Duplicates are collapsed, so the name is literally true: 'A;B' and 'A;A;B'
+// are the same set and therefore not a change. Unreachable either way —
+// Salesforce does not return duplicates and a <select multiple> cannot produce
+// them — so the choice is between two unreachable behaviours, and it goes the
+// way every other decision in this module goes: if the org would treat the two
+// values as identical (it dedupes on save), then writing one over the other is
+// a phantom write, and this module exists to not do those.
 function multipicklistKey(value: unknown): string {
   if (value === null || value === undefined) return '';
-  return String(value)
+  const parts = String(value)
     .split(';')
-    .filter((part) => part !== '')
-    .sort()
-    .join(';');
+    .filter((part) => part !== '');
+  return [...new Set(parts)].sort().join(';');
 }
 
 // The single source of truth for "what changed" — the save bar and the PATCH
