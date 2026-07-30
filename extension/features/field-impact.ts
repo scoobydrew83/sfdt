@@ -254,7 +254,7 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
       discovery = 'broad-scan';
       // Only claim "no dependency edge" when we actually established it.
       const cause = edgeLookupFailed
-        ? `Because the dependency lookup above failed, no dependency edge could be used for ${object}.${field}`
+        ? `Because the lookup above failed, the scan for ${object}.${field} could not be narrowed`
         : `No dependency edge for ${object}.${field}`;
       try {
         const flows = await api.toolingQuery<{ Id?: string }>(recentActiveFlowsQuery());

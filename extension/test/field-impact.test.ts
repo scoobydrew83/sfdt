@@ -419,6 +419,23 @@ describe('features/field-impact — rendered surface', () => {
     expect(document.body.textContent).toContain(STATUS_LEGEND.inferred);
   });
 
+  it('names every column header, including the actions column with no visible text', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: stubApi() });
+    await feature.openFor('Account', 'Industry__c');
+    await tick();
+
+    const headers = [...document.querySelectorAll('th')];
+    expect(headers.length).toBe(5);
+    for (const th of headers) {
+      expect(th.getAttribute('scope')).toBe('col');
+      // A `scope="col"` header with neither text nor an accessible name is an
+      // unnamed column (CONVENTIONS item 10).
+      const name = (th.textContent ?? '').trim() || th.getAttribute('aria-label');
+      expect(name).toBeTruthy();
+    }
+    expect(headers[4]!.getAttribute('aria-label')).toBe('Actions');
+  });
+
   it('gives every row an Open link with an accessible name', async () => {
     const feature = createFieldImpactFeature({ win: fakeWin(), api: stubApi() });
     await feature.openFor('Account', 'Industry__c');
@@ -433,7 +450,9 @@ describe('features/field-impact — rendered surface', () => {
     }
   });
 
-  it('reports a read-only flow as "nothing found" rather than listing it', async () => {
+  // N1: named for what it asserts. A read-only flow is EXCLUDED from the result
+  // set — the other two sources still report, so the count drops from 3 to 2.
+  it('excludes a read-only flow from the results rather than listing it', async () => {
     const feature = createFieldImpactFeature({ win: fakeWin(), api: stubApi({ flowWrites: false }) });
     await feature.openFor('Account', 'Industry__c');
     await tick();
@@ -667,6 +686,305 @@ describe('features/field-impact — broad-scan precision (standard fields)', () 
   });
 });
 
+// ---------------------------------------------------------------------------
+// The empty result is the dangerous one. A strict broad scan that just DROPPED
+// a real writer renders no table at all, so the only thing left is the
+// `role="status" aria-live="polite"` summary — the one region a screen reader
+// announces, and the one a hurried user reads. The Scan-scope panel sits
+// OUTSIDE the live region, so an unqualified "Nothing found" here is the
+// "asks, sees nothing, edits the field, breaks a flow" path.
+// ---------------------------------------------------------------------------
+describe('features/field-impact — the empty result carries its own caveat', () => {
+  // The org's one recently-modified flow DOES write Status, through a reference
+  // the parser cannot bind to an object. Strict adjudication drops it, and the
+  // user is left with zero rows.
+  const writesStatusUnbindably = {
+    label: 'Order Wrapper Builder',
+    variables: [{ name: 'wrapper', dataType: 'Apex', apexClass: 'OrderWrapper' }],
+    assignments: [
+      {
+        name: 'Fill',
+        label: 'Fill Wrapper',
+        assignmentItems: [{ assignToReference: 'wrapper.Status', operator: 'Assign', value: {} }],
+      },
+    ],
+  };
+
+  function emptyResultApi(): SalesforceApiClient {
+    const toolingQuery = vi.fn(async (soql: string) => {
+      if (soql.includes("Status = 'Active'")) {
+        return { records: [{ Id: '301ccc' }], size: 1, done: true };
+      }
+      if (soql.includes('FROM Flow WHERE Id')) {
+        return {
+          records: [
+            {
+              Id: '301ccc',
+              MasterLabel: 'Order Wrapper Builder',
+              Status: 'Active',
+              Definition: { DeveloperName: 'Order_Wrapper_Builder' },
+              Metadata: writesStatusUnbindably,
+            },
+          ],
+          size: 1,
+          done: true,
+        };
+      }
+      return { records: [], size: 0, done: true };
+    });
+    return {
+      apiVersion: 'v62.0',
+      orgOrigin: ORIGIN,
+      apiGet: vi.fn(async () => ({})),
+      query: vi.fn(),
+      toolingQuery,
+      apiRequest: vi.fn(),
+    } as unknown as SalesforceApiClient;
+  }
+
+  it('produces no rows at all in this scenario (the premise of the rest)', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: emptyResultApi() });
+    await feature.openFor('Case', 'Status');
+    await tick();
+    expect(document.querySelectorAll('tbody tr').length).toBe(0);
+    expect(document.querySelector('table')).toBeNull();
+  });
+
+  it('HEDGES the announced summary rather than stating a flat negative', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: emptyResultApi() });
+    await feature.openFor('Case', 'Status');
+    await tick();
+
+    const summary = document.querySelector('[role="status"]')!;
+    // It is the live region that must carry the qualifier — the note panel is
+    // never announced.
+    expect(summary.getAttribute('aria-live')).toBe('polite');
+    const text = summary.textContent!;
+    expect(text).toContain('in the scanned set');
+    expect(text).toContain('partial scan');
+    expect(text).toContain('see Scan scope');
+    // The unqualified sentence must NOT be what gets announced.
+    expect(text).not.toBe('Nothing found that writes Case.Status.');
+    expect(text).not.toMatch(/writes Case\.Status\.$/);
+  });
+
+  it('still renders the Scan scope note when there are zero rows', async () => {
+    // buildNotes() sits OUTSIDE the `counts.total > 0` guard on purpose; an
+    // empty result is exactly when the caveats matter most. Pinned so a later
+    // refactor cannot quietly move it inside.
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: emptyResultApi() });
+    await feature.openFor('Case', 'Status');
+    await tick();
+
+    const note = document.querySelector('[role="note"]');
+    expect(note).not.toBeNull();
+    expect(note!.getAttribute('aria-label')).toBe('Scan scope');
+    expect(note!.textContent).toContain('not every flow in the org');
+    expect(note!.textContent).toContain('are therefore missing from these results');
+  });
+
+  it('still renders the legend when there are zero rows', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: emptyResultApi() });
+    await feature.openFor('Case', 'Status');
+    await tick();
+    expect(document.body.textContent).toContain(STATUS_LEGEND.confirmed);
+    expect(document.body.textContent).toContain(STATUS_LEGEND.inferred);
+  });
+
+  it('leaves a populated result unhedged — the qualifier is not boilerplate', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: stubApi() });
+    await feature.openFor('Account', 'Industry__c');
+    await tick();
+    const text = document.querySelector('[role="status"]')!.textContent!;
+    expect(text).toContain('source(s)');
+    expect(text).not.toContain('in the scanned set');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B2 — a refused query is a failed query, not a finding about the org. It also
+// silently switches adjudication to the strict rule, so misattributing it is
+// two wrongs compounding into one confident false story.
+// ---------------------------------------------------------------------------
+describe('features/field-impact — a refused query is never reported as a finding', () => {
+  function refusedApi(which: 'customField' | 'dependency'): SalesforceApiClient {
+    const toolingQuery = vi.fn(async (soql: string) => {
+      if (soql.includes('FROM CustomField')) {
+        if (which === 'customField') throw new Error('INSUFFICIENT_ACCESS_OR_READONLY');
+        return { records: [{ Id: '00Nxx1' }], size: 1, done: true };
+      }
+      if (soql.includes('MetadataComponentDependency')) {
+        throw new Error('sObject type MetadataComponentDependency is not supported');
+      }
+      return { records: [], size: 0, done: true };
+    });
+    return {
+      apiVersion: 'v62.0',
+      orgOrigin: ORIGIN,
+      apiGet: vi.fn(async () => ({})),
+      query: vi.fn(),
+      toolingQuery,
+      apiRequest: vi.fn(),
+    } as unknown as SalesforceApiClient;
+  }
+
+  it('names a refused CustomField lookup and the reason it failed', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: refusedApi('customField') });
+    await feature.openFor('Account', 'Industry__c');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    expect(note).toContain('The CustomField lookup for Account.Industry__c was refused');
+    expect(note).toContain('INSUFFICIENT_ACCESS_OR_READONLY');
+    expect(note).toContain('this is a failed query, not a finding about your org');
+  });
+
+  it('does NOT claim "No dependency edge" when the lookup was refused', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: refusedApi('customField') });
+    await feature.openFor('Account', 'Industry__c');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    // Case-insensitive: the panel must not assert the absence of an edge in ANY
+    // casing when the query that would have found one never ran.
+    expect(note.toLowerCase()).not.toContain('dependency edge for');
+    // …and the strictness is attributed to the real cause instead.
+    expect(note).toContain('Because the lookup above failed');
+    expect(note).toContain('could not be narrowed');
+  });
+
+  it('applies the same rule when MetadataComponentDependency itself is refused', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: refusedApi('dependency') });
+    await feature.openFor('Account', 'Industry__c');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    expect(note).toContain('could not be narrowed via MetadataComponentDependency');
+    expect(note.toLowerCase()).not.toContain('dependency edge for');
+  });
+
+  it('still says "No dependency edge" when that was actually ESTABLISHED', async () => {
+    // A standard field genuinely has no CustomField row — nothing was refused,
+    // so the confident statement is the true one here.
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: stubApi() });
+    await feature.openFor('Account', 'Industry');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    expect(note).toContain('No dependency edge for Account.Industry');
+    expect(note).not.toContain('was refused');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B1's user-facing half + the symmetric disclosure the lenient path was missing.
+// ---------------------------------------------------------------------------
+describe('features/field-impact — the parser states its OWN bound', () => {
+  it('names the constructs it does not model whenever a flow was parsed', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: stubApi() });
+    await feature.openFor('Account', 'Industry__c');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    expect(note).toContain('Transform elements');
+    expect(note).toContain('invocable and quick actions');
+    expect(note).toContain('bodies of called subflows');
+    expect(note).toContain('are NOT parsed');
+  });
+
+  it('states it on the broad-scan path too — the class is invisible on BOTH', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: stubApi() });
+    await feature.openFor('Account', 'Industry');
+    await tick();
+    expect(document.querySelector('[role="note"]')!.textContent).toContain('Transform elements');
+  });
+
+  it('omits it when no flow was parsed at all — nothing to caveat', async () => {
+    const toolingQuery = vi.fn(async () => ({ records: [], size: 0, done: true }));
+    const api = {
+      apiVersion: 'v62.0',
+      orgOrigin: ORIGIN,
+      apiGet: vi.fn(async () => ({})),
+      query: vi.fn(),
+      toolingQuery,
+      apiRequest: vi.fn(),
+    } as unknown as SalesforceApiClient;
+    const feature = createFieldImpactFeature({ win: fakeWin(), api });
+    await feature.openFor('Account', 'Industry');
+    await tick();
+    expect(document.querySelector('[role="note"]')!.textContent).not.toContain('Transform elements');
+  });
+
+  it('discloses the LENIENT rule too, so the two paths are comparable', async () => {
+    // Disclosing only the strict side is what makes the asymmetry confusing:
+    // the same flow can be an inferred lead for a custom field and dropped for a
+    // standard one, with nothing telling the user the rule changed.
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: stubApi() });
+    await feature.openFor('Account', 'Industry__c');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    expect(note).toContain('linked to Account.Industry__c by a dependency edge');
+    expect(note).toContain('inferred leads rather than dropped');
+    expect(note).toContain('not directly comparable');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S1 — unreadable workflow `Metadata` turns EVERY field update on the object
+// into an inferred row against whatever field was asked about. That noise needs
+// a stated cause on both the bulk and the per-row path.
+// ---------------------------------------------------------------------------
+describe('features/field-impact — unreadable workflow metadata explains itself', () => {
+  function workflowApi(options: { refuseBulk?: boolean } = {}): SalesforceApiClient {
+    const toolingQuery = vi.fn(async (soql: string) => {
+      if (soql.includes('WorkflowFieldUpdate')) {
+        if (soql.includes('Metadata') && soql.includes('TableEnumOrId =')) {
+          if (options.refuseBulk) throw new Error('Metadata projection not supported');
+          // Bulk succeeds but the rows carry no readable Metadata.
+          return {
+            records: [
+              { Id: '04Yxx1', Name: 'Set Something', TableEnumOrId: 'Account', Metadata: null },
+              { Id: '04Yxx2', Name: 'Set Other', TableEnumOrId: 'Account', Metadata: null },
+            ],
+            size: 2,
+            done: true,
+          };
+        }
+        return {
+          records: [{ Id: '04Yxx1', Name: 'Set Something', TableEnumOrId: 'Account' }],
+          size: 1,
+          done: true,
+        };
+      }
+      return { records: [], size: 0, done: true };
+    });
+    return {
+      apiVersion: 'v62.0',
+      orgOrigin: ORIGIN,
+      apiGet: vi.fn(async () => ({})),
+      query: vi.fn(),
+      toolingQuery,
+      apiRequest: vi.fn(),
+    } as unknown as SalesforceApiClient;
+  }
+
+  it('counts and explains rows whose Metadata came back unreadable', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: workflowApi() });
+    await feature.openFor('Account', 'Industry');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    expect(note).toContain('2 workflow field update(s) on Account returned no readable Metadata');
+    expect(note).toContain('not evidence they write this field');
+  });
+
+  it('says when the bulk projection was refused and it fell back per row', async () => {
+    const feature = createFieldImpactFeature({
+      win: fakeWin(),
+      api: workflowApi({ refuseBulk: true }),
+    });
+    await feature.openFor('Account', 'Industry');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    expect(note).toContain('The bulk workflow field update query was refused');
+    expect(note).toContain('Metadata projection not supported');
+  });
+});
+
 describe('features/field-impact — the Apex cap is a real bound', () => {
   function manyApexHitsApi(count: number): SalesforceApiClient {
     // SOSL applies a statement-trailing LIMIT per returned sObject type, so two
@@ -697,14 +1015,18 @@ describe('features/field-impact — the Apex cap is a real bound', () => {
     expect(rows.length).toBe(25);
   });
 
-  it('discloses the true bound as a scope note when it truncates', async () => {
+  it('discloses the truncation as a scope note without claiming a true match count', async () => {
     const feature = createFieldImpactFeature({ win: fakeWin(), api: manyApexHitsApi(50) });
     await feature.openFor('Account', 'Industry__c');
     await tick();
     const note = document.querySelector('[role="note"]')!.textContent!;
-    expect(note).toContain('matched 50 classes/triggers');
+    expect(note).toContain('RETURNED 50 classes/triggers');
     expect(note).toContain('the first 25');
-    expect(note).toContain('Others exist');
+    expect(note).toContain('More may exist');
+    // The count is measured AFTER the server-side per-object LIMITs, so it is
+    // min(actual, 50) — never assert it as the number of matches (N5).
+    expect(note).not.toContain('matched 50');
+    expect(note).toContain('not the true number of matches');
   });
 
   it('adds no cap note when the result set is under the bound', async () => {
@@ -712,7 +1034,7 @@ describe('features/field-impact — the Apex cap is a real bound', () => {
     await feature.openFor('Account', 'Industry__c');
     await tick();
     expect(document.querySelectorAll('tbody tr').length).toBe(4);
-    expect(document.body.textContent).not.toContain('Others exist');
+    expect(document.body.textContent).not.toContain('More may exist');
   });
 
   it('truncates deterministically (by type, then name)', async () => {
