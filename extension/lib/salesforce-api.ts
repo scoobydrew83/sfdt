@@ -418,31 +418,36 @@ export class SalesforceApiClient {
     options: { headers?: Record<string, unknown>; mutating?: boolean } = {},
   ): Promise<T> {
     const mutating = options.mutating ?? true;
+    // SOAP service paths take a BARE version ("62.0"); only REST paths carry the
+    // `v` prefix that SF_API_VERSION ships with. Concatenating apiVersion raw
+    // yields /services/Soap/m/v62.0, which SF rejects with
+    // "Invalid Api version specified on URL".
+    const soapVersion = this.apiVersion.replace(/^v/i, '');
     const wsdls = {
       Enterprise: {
-        servicePortAddress: '/services/Soap/c/' + this.apiVersion,
+        servicePortAddress: '/services/Soap/c/' + soapVersion,
         targetNamespaces:
           ' xmlns="urn:enterprise.soap.sforce.com" xmlns:sf="urn:sobject.enterprise.soap.sforce.com"',
         apiName: 'Enterprise',
       },
       Partner: {
-        servicePortAddress: '/services/Soap/u/' + this.apiVersion,
+        servicePortAddress: '/services/Soap/u/' + soapVersion,
         targetNamespaces:
           ' xmlns="urn:partner.soap.sforce.com" xmlns:sf="urn:sobject.partner.soap.sforce.com"',
         apiName: 'Partner',
       },
       Apex: {
-        servicePortAddress: '/services/Soap/s/' + this.apiVersion,
+        servicePortAddress: '/services/Soap/s/' + soapVersion,
         targetNamespaces: ' xmlns="http://soap.sforce.com/2006/08/apex"',
         apiName: 'Apex',
       },
       Metadata: {
-        servicePortAddress: '/services/Soap/m/' + this.apiVersion,
+        servicePortAddress: '/services/Soap/m/' + soapVersion,
         targetNamespaces: ' xmlns="http://soap.sforce.com/2006/04/metadata"',
         apiName: 'Metadata',
       },
       Tooling: {
-        servicePortAddress: '/services/Soap/T/' + this.apiVersion,
+        servicePortAddress: '/services/Soap/T/' + soapVersion,
         targetNamespaces:
           ' xmlns="urn:tooling.soap.sforce.com" xmlns:sf="urn:sobject.tooling.soap.sforce.com" xmlns:mns="urn:metadata.tooling.soap.sforce.com"',
         apiName: 'Tooling',

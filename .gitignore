@@ -53,6 +53,7 @@ logs/
 .stfolder/
 /pr-analysis/
 /docs/superpowers/
+/graphify-out/
 conductor/
 admin/
 loops/*

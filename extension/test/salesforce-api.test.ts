@@ -100,6 +100,41 @@ describe('extension/lib/salesforce-api (thin client over sfApiFetch)', () => {
       expect(JSON.stringify(sent).toLowerCase()).not.toContain('bearer');
     });
 
+    // SOAP service paths take a bare version ("62.0"); REST paths take the "v"
+    // prefix. Concatenating apiVersion raw shipped /services/Soap/m/v62.0, which
+    // SF rejects with "Invalid Api version specified on URL".
+    it.each([
+      ['Enterprise', 'c'],
+      ['Partner', 'u'],
+      ['Apex', 's'],
+      ['Metadata', 'm'],
+      ['Tooling', 'T'],
+    ] as const)('builds the %s SOAP path with a bare version, no "v"', async (apiName, slug) => {
+      const bus = makeBus({
+        proxy: {
+          ok: true,
+          status: 200,
+          bodyText:
+            `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">` +
+            `<soapenv:Body><describeMetadataResponse><result/></describeMetadataResponse></soapenv:Body>` +
+            `</soapenv:Envelope>`,
+          contentType: 'text/xml',
+          baseUrl: 'https://x.my.salesforce.com',
+        },
+      });
+      const client = new SalesforceApiClient({ win: fakeWin(WIN), messageBus: bus });
+      await client.apiSoap(apiName, 'describeMetadata', {}, { mutating: false });
+
+      const sent = (bus.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<
+        string,
+        unknown
+      >;
+      expect(sent.endpoint).toMatch(
+        new RegExp(`^/services/Soap/${slug}/62\\.0(\\?|$)`),
+      );
+      expect(sent.endpoint).not.toContain('/v62.0');
+    });
+
     it('serialises the request body for apiRequest', async () => {
       const bus = makeBus({ proxy: jsonOk({ id: '001new', success: true }, 201) });
       const client = new SalesforceApiClient({ win: fakeWin(WIN), messageBus: bus });
