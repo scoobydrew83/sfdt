@@ -453,6 +453,34 @@ export function buildDirtyDiff(
     if (original[field.name] === undefined) continue;
     if (!Object.prototype.hasOwnProperty.call(edited, field.name)) continue;
 
+    // Untouched-identity check. If the control still holds byte-for-byte what
+    // we rendered into it, the user did not edit this field — full stop, no
+    // value comparison needed.
+    //
+    // It exists for the one round-trip infidelity that cannot be fixed in
+    // coerceForWire: DST fall-back. On the transition date 01:30 local occurs
+    // TWICE, so a local-time string in the repeated hour is genuinely
+    // ambiguous and `new Date(local)` resolves it to the earlier occurrence.
+    // Rendering the LATER instant and reading it straight back therefore lands
+    // an hour off — an untouched field, false-dirty, PATCHed an hour away.
+    // Inherent to a local-time control; no amount of precision fixes it.
+    //
+    // THIS IS NOT the control-precision tolerance rejected when B1 was fixed.
+    // That would have had buildDirtyDiff encode how coarse the control is (a
+    // `step`-shaped fact owned by the UI) and ignore differences below it —
+    // a second source of truth about comparison. This admits no difference at
+    // all: it is an identity check against this module's own output, calls
+    // nothing outside this file, and stays correct whatever `step` PR-2 picks.
+    //
+    // Residual, stated honestly: the UA rewrites `input.value` on readback
+    // (zero seconds dropped, trailing fraction zeros stripped), so for a
+    // DST-ambiguous value with zero seconds the readback differs from what we
+    // rendered, this check does not fire, and the hour shift returns. PR-2's
+    // DOM-level property test — render, read back, diff, assert empty — is the
+    // guard that closes that, because it tests the property rather than any
+    // one mechanism.
+    if (formatForInput(field, original[field.name]) === edited[field.name]) continue;
+
     const before = coerceForWire(field, original[field.name]);
     const after = coerceForWire(field, edited[field.name]);
     if (field.type === 'multipicklist') {

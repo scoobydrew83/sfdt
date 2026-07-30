@@ -389,6 +389,28 @@ describe('buildDirtyDiff', () => {
     expect(buildDirtyDiff(d, record, edited)).toEqual({ patchBody: {}, changedFieldNames: [] });
   });
 
+  // DST fall-back: 01:30 local happens TWICE on the transition date, so a local
+  // string in the repeated hour is genuinely ambiguous and `new Date(local)`
+  // resolves it to the earlier (still-DST) occurrence. Rendering the LATER
+  // occurrence and reading it straight back therefore lands an hour off.
+  //
+  // Strongest under TZ=America/Los_Angeles (DST ends 2026-11-01), where these
+  // two instants render to the identical local string; in a zone with no DST it
+  // passes trivially. The suite is run across both — see the TZ sweep.
+  it('datetime: a value inside a repeated DST hour is not dirty when untouched', () => {
+    const f = fld({ name: 'When__c', type: 'datetime' });
+    for (const wire of [
+      '2026-11-01T08:30:45.000Z', // 01:30:45 PDT — the first occurrence
+      '2026-11-01T09:30:45.000Z', // 01:30:45 PST — the second, the ambiguous one
+      '2026-11-01T09:30:00.000Z', // …and with zero seconds
+      '2026-03-08T10:30:45.000Z', // spring-forward date, for symmetry
+    ]) {
+      const rendered = formatForInput(f, wire);
+      const diff = buildDirtyDiff({ fields: [f] }, { When__c: wire }, { When__c: rendered });
+      expect(diff.changedFieldNames, wire).toEqual([]);
+    }
+  });
+
   it('datetime: a real edit writes the edited instant with its seconds intact', () => {
     const f = fld({ name: 'When__c', type: 'datetime' });
     const original = '2026-07-30T14:35:45.000Z';
