@@ -290,7 +290,13 @@ export function createMetadataRetrieveFeature(options: {
         restored++;
         continue;
       }
-      match.expanded = true;
+      // Deliberately left COLLAPSED. An expanded seeded node would present a
+      // one-member list as if it were the type's complete membership, and the
+      // only way to load the rest would be an undiscoverable
+      // collapse-then-expand. Collapsed, the first expand does the real fetch
+      // and merges these ticks; the tree still shows the selection exists via
+      // the partial-tick (indeterminate) state on the type row.
+      match.expanded = false;
       const existing = (match.childXmlNames ?? []).find(
         (c: FileProperty) => c.fullName === member,
       );
@@ -520,7 +526,19 @@ export function createMetadataRetrieveFeature(options: {
             throw new Error(res.error);
           }
           const data = getBridgeData<ManifestDiscoverResponseData>(res);
-          const members = Array.isArray(data.members) ? data.members : [];
+          // An ok:true response without a `members` array is a contract
+          // violation, NOT an empty type. Coercing it to [] and marking the
+          // node loaded would make a fabricated empty tree permanent — the
+          // exact failure mode the "never a fabricated empty tree" invariant
+          // exists to prevent. Treat it as a failure: the node collapses,
+          // stays re-fetchable, and its seeded children/ticks are untouched.
+          if (!Array.isArray(data.members)) {
+            anyMeta.expanded = false;
+            throw new Error(
+              `Bridge returned no member list for ${anyMeta.xmlName} — the response is missing its "members" array.`,
+            );
+          }
+          const members = data.members;
           anyMeta.childXmlNames = members
             .filter((m): m is string => typeof m === 'string' && m.length > 0)
             .map((fullName) => ({
@@ -546,6 +564,10 @@ export function createMetadataRetrieveFeature(options: {
             asOfVersion: cleanVersion,
           });
 
+          // No bridge-style hole on this path: `apiSoap` throws on every
+          // transport error and SOAP fault, so reaching here with a falsy
+          // `res` genuinely means the type has zero members — marking it
+          // loaded is correct rather than a fabricated empty tree.
           anyMeta.childXmlNames = [];
           if (res) {
             const resArray = asArray(res);
@@ -982,7 +1004,19 @@ export function createMetadataRetrieveFeature(options: {
       chk.type = 'checkbox';
       chk.className = 'sfdt-tree-chk';
       chk.checked = !!obj.selected;
-      chk.setAttribute('aria-label', `Select all ${obj.xmlName}`);
+      // Partial tick when individual members are selected without the
+      // whole-type tick. This is what makes a restored member-level selection
+      // visible on a collapsed node — the selection is never hidden just
+      // because the member list hasn't been fetched yet.
+      const partiallySelected =
+        !obj.selected && (obj.childXmlNames ?? []).some((c: FileProperty) => c.selected);
+      chk.indeterminate = partiallySelected;
+      chk.setAttribute(
+        'aria-label',
+        partiallySelected
+          ? `Select all ${obj.xmlName} (some members selected)`
+          : `Select all ${obj.xmlName}`,
+      );
       chk.addEventListener('change', (e) => {
         e.stopPropagation();
         selectMetaItem(obj, chk.checked);
