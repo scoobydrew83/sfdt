@@ -93,7 +93,15 @@ npm run build:ext      # builds flow-core + extension
 
 ### From the Chrome Web Store
 
-(Pending submission.)
+The extension is published to the Chrome Web Store as **SFDT for Salesforce**. (The store item
+was previously titled "SFDT SF Helper"; see [`listing.md`](./listing.md) for the store copy.)
+
+Publishing is automated rather than manual: merging an `extension/package.json` version bump to
+`main` makes [`.github/workflows/extension.yml`](../.github/workflows/extension.yml) tag
+`ext-vX.Y.Z`, attach the built zip to a GitHub Release, and upload to the Web Store with
+`--auto-publish`. **Store review takes days**, so the version live on the store can lag this
+repo — [`CHANGELOG.md`](./CHANGELOG.md) is the source of truth for what a given version
+contains.
 
 ---
 

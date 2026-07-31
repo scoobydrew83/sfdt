@@ -13,7 +13,7 @@ Everything the CWS dashboard needs, version-controlled so it's diffable per rele
 ## Keeping it in sync
 
 - `listing.md` carries a **Store-sync status** note at the top — update it whenever the live store and this file diverge (e.g. after a release that adds features).
-- This is the copy you paste into the CWS dashboard during the **manual upload** (the publish step in `.github/workflows/extension.yml` is a stub until CWS API secrets are configured).
+- This is the copy you paste into the CWS dashboard. The **zip upload and publish are automated** — `.github/workflows/extension.yml` runs `chrome-webstore-upload-cli` with `--auto-publish` when an `extension/package.json` version bump lands on `main`, using the `CWS_*` secrets in the `extension-release` environment (validate them anytime with the manual `cws-verify` dispatch job, which uploads a draft only). What the workflow **cannot** set is everything in this folder: the listing text, the item title, the screenshots, the promo tile, and the permission justifications are all dashboard fields and still have to be pasted by hand.
 
 ## Do NOT move the runtime icons here
 
