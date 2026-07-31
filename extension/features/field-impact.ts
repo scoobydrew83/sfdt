@@ -14,7 +14,10 @@
 //                          them actually WRITE it. A parsed write is confirmed.
 //                          A candidate we could not analyse stays inferred.
 //   Workflow field updates Tooling WorkflowFieldUpdate.Metadata names the target
-//                          field outright → confirmed.
+//                          field outright → confirmed. Neither the object nor the
+//                          field can be filtered on in the query (see
+//                          workflowFieldUpdateListQuery), so this is an org-wide
+//                          list plus bounded per-row reads, matched client-side.
 //   Apex                   Tooling SOSL text search over class/trigger source.
 //                          A text hit is not a write → always inferred.
 //
@@ -43,7 +46,12 @@ import { escapeSoql } from '@sfdt/flow-core';
 const FLOW_CANDIDATE_CAP = 50;
 /** Flows whose `Metadata` we fetch — Tooling returns Metadata one row at a time. */
 const FLOW_ANALYSE_CAP = 15;
-const WORKFLOW_METADATA_CAP = 15;
+/** Field updates listed in one query (Id + Name only — the cheap projection). */
+const WORKFLOW_LIST_CAP = 200;
+/** Field updates whose `FullName`/`Metadata` we fetch — one row per query. */
+const WORKFLOW_METADATA_CAP = 50;
+/** Concurrent per-row detail fetches (same shape subflow-graph uses). */
+const WORKFLOW_DETAIL_CONCURRENCY = 5;
 const APEX_HIT_CAP = 25;
 
 export interface FieldImpactOptions {
@@ -83,10 +91,20 @@ export function flowCandidateQuery(fieldId: string): string {
   );
 }
 
-/** Fallback candidate set when no dependency edge exists (standard fields). */
+/**
+ * Fallback candidate set when no dependency edge exists (standard fields).
+ *
+ * Enumerated through `FlowDefinition.ActiveVersionId`, not `Flow WHERE Status =
+ * 'Active'`. The two are not equivalent in practice: the `Flow` filter came back
+ * empty against orgs that plainly have active flows, and the panel reported a
+ * scan of "0 active flow(s)" as if that were a finding. `FlowDefinition` is the
+ * enumeration every other flow feature here already uses (trigger-conflicts,
+ * subflow-graph, scheduled-flow-explorer, the CLI's flow-analyzer), and it names
+ * the active version id outright rather than inferring it from a status value.
+ */
 export function recentActiveFlowsQuery(): string {
   return (
-    `SELECT Id, MasterLabel, Status, Definition.DeveloperName FROM Flow WHERE Status = 'Active'` +
+    `SELECT Id, DeveloperName, ActiveVersionId FROM FlowDefinition WHERE ActiveVersionId != null` +
     ` ORDER BY LastModifiedDate DESC LIMIT ${FLOW_ANALYSE_CAP}`
   );
 }
@@ -98,9 +116,44 @@ export function flowMetadataQuery(versionId: string): string {
   );
 }
 
-export function workflowFieldUpdateQuery(object: string, withMetadata: boolean): string {
-  const fields = withMetadata ? 'Id, Name, TableEnumOrId, Metadata' : 'Id, Name, TableEnumOrId';
-  return `SELECT ${fields} FROM WorkflowFieldUpdate WHERE TableEnumOrId = '${escapeSoql(object)}'`;
+/**
+ * List every workflow field update — Id and Name only.
+ *
+ * The object filter CANNOT be pushed into this query. `TableEnumOrId` is a
+ * column on `WorkflowRule`, not on `WorkflowFieldUpdate`; asking for it made
+ * Salesforce reject the request outright ("No such column 'TableEnumOrId' on
+ * entity 'WorkflowFieldUpdate'"), and because the previous per-row fallback
+ * built its SOQL from the same builder it failed for the identical reason — so
+ * workflow field updates were never covered on any org, while the panel claimed
+ * it had read them individually.
+ *
+ * The target object lives in `FullName` (`Object.UpdateName`), and Tooling only
+ * serves `FullName`/`Metadata` under a single-record filter. So the object is
+ * resolved per row and matched client-side (`workflowRow` drops the rest).
+ *
+ * ponytail: org-wide list capped at WORKFLOW_LIST_CAP with an arbitrary (name)
+ * ordering — on an org with more legacy field updates than the cap, which ones
+ * get read is not relevance-driven. Both bounds are disclosed as scope notes. If
+ * that truncation starts mattering, narrow first through
+ * `WorkflowRule WHERE TableEnumOrId = '<object>'` and walk each rule's
+ * `Metadata.actions[]` instead of listing the org.
+ */
+export function workflowFieldUpdateListQuery(): string {
+  return `SELECT Id, Name FROM WorkflowFieldUpdate ORDER BY Name LIMIT ${WORKFLOW_LIST_CAP}`;
+}
+
+/** One field update's `FullName` (target object) and `Metadata` (target field). */
+export function workflowFieldUpdateDetailQuery(id: string): string {
+  return (
+    `SELECT Id, FullName, Metadata FROM WorkflowFieldUpdate` +
+    ` WHERE Id = '${escapeSoql(id)}' LIMIT 1`
+  );
+}
+
+/** `Account.Set_Industry` → `Account`; anything without a prefix is unbindable. */
+export function objectFromFullName(fullName: string | null | undefined): string | null {
+  const dot = (fullName ?? '').indexOf('.');
+  return dot > 0 ? fullName!.slice(0, dot) : null;
 }
 
 /**
@@ -267,21 +320,31 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
               `could be looked up`
             : `No dependency edge was found for ${object}.${field}`;
       try {
-        const flows = await api.toolingQuery<{ Id?: string }>(recentActiveFlowsQuery());
+        const flows = await api.toolingQuery<{ ActiveVersionId?: string }>(recentActiveFlowsQuery());
         versionIds = flows.records
-          .map((r) => r.Id)
+          .map((r) => r.ActiveVersionId)
           .filter((id): id is string => typeof id === 'string' && id.length > 0);
+        // An empty result is not "a scan that found nothing" — nothing was
+        // scanned. Reported as its own sentence, because "a broad scan of the 0
+        // most recently modified active flow(s)" reads like a cap bug and buries
+        // the fact that Flow coverage here is ZERO.
         notes.push(
-          `${cause}, so Flow coverage is a broad scan of the ` +
-            `${versionIds.length} most recently modified active flow(s) — not every flow in the org.`,
+          versionIds.length === 0
+            ? `${cause}, so Flow coverage fell back to a broad scan — but that query returned no ` +
+                `active flow versions, so NO flow was examined. Flow coverage here is empty: this ` +
+                `says nothing about whether a flow writes ${object}.${field}.`
+            : `${cause}, so Flow coverage is a broad scan of the ` +
+                `${versionIds.length} most recently modified active flow(s) — not every flow in the org.`,
         );
-        notes.push(
-          `On that broad scan a flow is only reported when its metadata binds the write to ` +
-            `${object} itself. A write into an untyped or Apex-defined variable is SKIPPED rather ` +
-            `than guessed at, because matching on the field name alone would attribute any flow ` +
-            `writing some other object's "${field}" to this one. Flows that do write ${object}.${field} ` +
-            `through such an unbindable reference are therefore missing from these results.`,
-        );
+        if (versionIds.length > 0) {
+          notes.push(
+            `On that broad scan a flow is only reported when its metadata binds the write to ` +
+              `${object} itself. A write into an untyped or Apex-defined variable is SKIPPED rather ` +
+              `than guessed at, because matching on the field name alone would attribute any flow ` +
+              `writing some other object's "${field}" to this one. Flows that do write ${object}.${field} ` +
+              `through such an unbindable reference are therefore missing from these results.`,
+          );
+        }
       } catch (err) {
         notes.push(`Flows could not be listed (${message(err)}).`);
       }
@@ -420,76 +483,92 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
 
   async function fetchWorkflowFieldUpdates(object: string): Promise<WorkflowFetch> {
     const notes: string[] = [];
-    // Preferred: one query with Metadata. Some orgs/API versions refuse a
-    // multi-row Metadata projection, so fall back to list + per-row fetch.
-    try {
-      const bulk = await api.toolingQuery<{
-        Id?: string;
-        Name?: string;
-        TableEnumOrId?: string;
-        Metadata?: { field?: string };
-      }>(workflowFieldUpdateQuery(object, true));
-      const candidates = bulk.records.map((r) => ({
-        id: r.Id ?? '',
-        name: r.Name ?? r.Id ?? '',
-        label: r.Name ?? null,
-        object: r.TableEnumOrId ?? object,
-        field: r.Metadata?.field ?? null,
-        unresolved: !r.Metadata?.field,
-      }));
-      noteUnreadableFieldUpdates(candidates, object, notes);
-      return { candidates, notes };
-    } catch (err) {
-      // Fall through to the per-row path — but say that we did, because the two
-      // paths have different caps and the per-row one can truncate.
-      notes.push(
-        `The bulk workflow field update query was refused (${message(err)}); each update was read ` +
-          `individually instead, which is subject to a cap of ${WORKFLOW_METADATA_CAP}.`,
-      );
-    }
 
-    let listed: Array<{ Id?: string; Name?: string; TableEnumOrId?: string }> = [];
+    let listed: Array<{ Id?: string; Name?: string }> = [];
     try {
-      const list = await api.toolingQuery<{ Id?: string; Name?: string; TableEnumOrId?: string }>(
-        workflowFieldUpdateQuery(object, false),
+      const list = await api.toolingQuery<{ Id?: string; Name?: string }>(
+        workflowFieldUpdateListQuery(),
       );
-      listed = list.records;
+      listed = list.records.filter((r) => typeof r.Id === 'string' && r.Id.length > 0);
     } catch (err) {
-      notes.push(`Workflow field updates could not be read (${message(err)}).`);
+      notes.push(
+        `Workflow field updates could not be listed (${message(err)}), so NONE were checked — ` +
+          `that is a failed query, not a finding that nothing updates ${object}.`,
+      );
       return { candidates: [], notes };
+    }
+    if (listed.length === 0) return { candidates: [], notes };
+
+    // Which rows get read is not relevance-driven (see the query builder), so
+    // both bounds are stated before any result is.
+    const read = listed.slice(0, WORKFLOW_METADATA_CAP);
+    const unread = listed.length - read.length;
+    if (unread > 0 || listed.length >= WORKFLOW_LIST_CAP) {
+      const listCap =
+        listed.length >= WORKFLOW_LIST_CAP ? ` (list cap ${WORKFLOW_LIST_CAP} — there may be more)` : '';
+      notes.push(
+        `Workflow field updates cannot be filtered by object in a query, so all ${listed.length} in ` +
+          `the org were listed${listCap} and the first ${read.length} read individually (cap ` +
+          `${WORKFLOW_METADATA_CAP}). ${unread} were not read at all; any of them could target ${object}.`,
+      );
     }
 
     const candidates: WorkflowFieldUpdateCandidate[] = [];
-    for (const [index, row] of listed.entries()) {
-      const base: WorkflowFieldUpdateCandidate = {
-        id: row.Id ?? '',
-        name: row.Name ?? row.Id ?? '',
-        label: row.Name ?? null,
-        object: row.TableEnumOrId ?? object,
-        field: null,
-        unresolved: true,
-      };
-      if (index >= WORKFLOW_METADATA_CAP || !row.Id) {
-        candidates.push(base);
-        continue;
-      }
-      try {
-        const detail = await api.toolingQuery<{ Metadata?: { field?: string } }>(
-          `SELECT Id, Metadata FROM WorkflowFieldUpdate WHERE Id = '${escapeSoql(row.Id)}' LIMIT 1`,
-        );
-        const target = detail.records[0]?.Metadata?.field ?? null;
-        candidates.push({ ...base, field: target, unresolved: !target });
-      } catch {
-        candidates.push(base);
-      }
-    }
-    if (listed.length > WORKFLOW_METADATA_CAP) {
+    /** Read, but `FullName` was unavailable — the target object stays unknown. */
+    let unbound = 0;
+    const queue = [...read];
+    await Promise.all(
+      Array.from({ length: Math.min(WORKFLOW_DETAIL_CONCURRENCY, queue.length) }, async () => {
+        while (queue.length > 0) {
+          const row = queue.shift();
+          if (!row?.Id) continue;
+          let detail: { FullName?: string; Metadata?: { field?: string } } | undefined;
+          try {
+            const result = await api.toolingQuery<{
+              FullName?: string;
+              Metadata?: { field?: string };
+            }>(workflowFieldUpdateDetailQuery(row.Id));
+            detail = result.records[0];
+          } catch {
+            detail = undefined;
+          }
+          const target = objectFromFullName(detail?.FullName);
+          // No object → no row, the same call flowRow makes on the broad-scan
+          // path. The list is ORG-WIDE now, so an unbound update is not "an
+          // update on this object whose field we could not read" — it may belong
+          // to any object at all, and listing it would drop every unreadable
+          // field update in the org into THIS field's results. Counted and
+          // disclosed below; never silently discarded.
+          if (!target) {
+            unbound++;
+            continue;
+          }
+          candidates.push({
+            id: row.Id,
+            name: detail?.FullName ?? row.Name ?? row.Id,
+            label: row.Name ?? null,
+            object: target,
+            field: detail?.Metadata?.field ?? null,
+            unresolved: !detail?.Metadata?.field,
+          });
+        }
+      }),
+    );
+
+    if (unbound > 0) {
       notes.push(
-        `${listed.length - WORKFLOW_METADATA_CAP} workflow field update(s) on ${object} were not ` +
-          `read individually (cap ${WORKFLOW_METADATA_CAP}); they are listed as inferred.`,
+        `${unbound} workflow field update(s) were read but carried no FullName, so the object each ` +
+          `one targets is unknown. They are NOT listed — nothing tied them to ${object} — but any ` +
+          `of them could update it.`,
       );
     }
-    noteUnreadableFieldUpdates(candidates, object, notes);
+    // Only the ones that survive the object match reach the table, so only those
+    // are what the "unreadable Metadata" note is accounting for.
+    noteUnreadableFieldUpdates(
+      candidates.filter((c) => (c.object ?? '').toLowerCase() === object.toLowerCase()),
+      object,
+      notes,
+    );
     return { candidates, notes };
   }
 
@@ -907,7 +986,9 @@ export function _fieldImpactTestApi() {
     flowCandidateQuery,
     recentActiveFlowsQuery,
     flowMetadataQuery,
-    workflowFieldUpdateQuery,
+    workflowFieldUpdateListQuery,
+    workflowFieldUpdateDetailQuery,
+    objectFromFullName,
     apexSearchSosl,
   };
 }

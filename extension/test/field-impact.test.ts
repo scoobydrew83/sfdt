@@ -25,7 +25,9 @@ import {
   flowCandidateQuery,
   flowMetadataQuery,
   recentActiveFlowsQuery,
-  workflowFieldUpdateQuery,
+  workflowFieldUpdateListQuery,
+  workflowFieldUpdateDetailQuery,
+  objectFromFullName,
   apexSearchSosl,
 } from '../features/field-impact.js';
 import { createSchemaBrowserFeature } from '../features/schema-browser.js';
@@ -297,16 +299,48 @@ describe('features/field-impact — query construction', () => {
   });
 
   it('falls back to a bounded, most-recent active flow list', () => {
-    expect(recentActiveFlowsQuery()).toMatch(/Status = 'Active'.*ORDER BY LastModifiedDate DESC LIMIT \d+/);
+    expect(recentActiveFlowsQuery()).toMatch(
+      /FROM FlowDefinition WHERE ActiveVersionId != null ORDER BY LastModifiedDate DESC LIMIT \d+/,
+    );
+  });
+
+  // Regression: `Flow WHERE Status = 'Active'` returned nothing against orgs
+  // that plainly had active flows, and the panel reported "a broad scan of the 0
+  // most recently modified active flow(s)" as though that were a result.
+  it('enumerates flows the way every other flow feature does, not by Flow.Status', () => {
+    expect(recentActiveFlowsQuery()).not.toContain("Status = 'Active'");
+    expect(recentActiveFlowsQuery()).toContain('ActiveVersionId');
   });
 
   it('fetches flow metadata one version at a time', () => {
     expect(flowMetadataQuery('301xx1')).toContain("WHERE Id = '301xx1' LIMIT 1");
   });
 
-  it('queries workflow field updates with and without Metadata', () => {
-    expect(workflowFieldUpdateQuery('Account', true)).toContain('Metadata');
-    expect(workflowFieldUpdateQuery('Account', false)).not.toContain('Metadata');
+  // Regression: `TableEnumOrId` is a column on WorkflowRule, NOT on
+  // WorkflowFieldUpdate. Asking for it made Salesforce reject the request, and
+  // the per-row "fallback" built its SOQL from the same builder — so it failed
+  // identically and field updates were never covered on any org.
+  it('never asks WorkflowFieldUpdate for TableEnumOrId', () => {
+    expect(workflowFieldUpdateListQuery()).not.toContain('TableEnumOrId');
+    expect(workflowFieldUpdateDetailQuery('04Yxx1')).not.toContain('TableEnumOrId');
+  });
+
+  it('lists field updates cheaply, then reads FullName + Metadata one row at a time', () => {
+    expect(workflowFieldUpdateListQuery()).toMatch(
+      /^SELECT Id, Name FROM WorkflowFieldUpdate ORDER BY Name LIMIT \d+$/,
+    );
+    const detail = workflowFieldUpdateDetailQuery("O'Brien");
+    expect(detail).toContain('FullName');
+    expect(detail).toContain('Metadata');
+    expect(detail).toContain("WHERE Id = 'O\\'Brien' LIMIT 1");
+  });
+
+  it('takes the target object from the FullName prefix, and refuses to guess without one', () => {
+    expect(objectFromFullName('Account.Set_Industry')).toBe('Account');
+    expect(objectFromFullName('My_Obj__c.Stamp')).toBe('My_Obj__c');
+    expect(objectFromFullName('Set_Industry')).toBeNull();
+    expect(objectFromFullName('.Leading')).toBeNull();
+    expect(objectFromFullName(undefined)).toBeNull();
   });
 
   it('caps the Apex search per RETURNING object, not just at the statement end', () => {
@@ -335,8 +369,8 @@ function stubApi(options: StubOptions = {}): SalesforceApiClient {
     if (soql.includes('MetadataComponentDependency')) {
       return { records: [{ MetadataComponentId: '301xx1' }], size: 1, done: true };
     }
-    if (soql.includes("Status = 'Active'")) {
-      return { records: [{ Id: '301xx1' }], size: 1, done: true };
+    if (soql.includes('FROM FlowDefinition')) {
+      return { records: [{ ActiveVersionId: '301xx1' }], size: 1, done: true };
     }
     if (soql.includes('FROM Flow WHERE Id')) {
       return {
@@ -353,14 +387,17 @@ function stubApi(options: StubOptions = {}): SalesforceApiClient {
         done: true,
       };
     }
-    if (soql.includes('WorkflowFieldUpdate')) {
+    if (soql.includes("WorkflowFieldUpdate WHERE Id = '04Yxx1'")) {
       return {
         records: [
-          { Id: '04Yxx1', Name: 'Set Industry', TableEnumOrId: 'Account', Metadata: { field: 'Industry__c' } },
+          { Id: '04Yxx1', FullName: 'Account.Set_Industry', Metadata: { field: 'Industry__c' } },
         ],
         size: 1,
         done: true,
       };
+    }
+    if (soql.includes('FROM WorkflowFieldUpdate')) {
+      return { records: [{ Id: '04Yxx1', Name: 'Set Industry' }], size: 1, done: true };
     }
     return { records: [], size: 0, done: true };
   });
@@ -493,8 +530,8 @@ describe('features/field-impact — rendered surface', () => {
       if (soql.includes('MetadataComponentDependency')) {
         return { records: [{ MetadataComponentId: '301xx1' }], size: 1, done: true };
       }
-      if (soql.includes("Status = 'Active'")) {
-        return { records: [{ Id: '301xx1' }], size: 1, done: true };
+      if (soql.includes('FROM FlowDefinition')) {
+        return { records: [{ ActiveVersionId: '301xx1' }], size: 1, done: true };
       }
       if (soql.includes('FROM Flow WHERE Id')) {
         return {
@@ -602,8 +639,8 @@ describe('features/field-impact — broad-scan precision (standard fields)', () 
 
   function broadScanApi(): SalesforceApiClient {
     const toolingQuery = vi.fn(async (soql: string) => {
-      if (soql.includes("Status = 'Active'")) {
-        return { records: [{ Id: '301aaa' }, { Id: '301bbb' }], size: 2, done: true };
+      if (soql.includes('FROM FlowDefinition')) {
+        return { records: [{ ActiveVersionId: '301aaa' }, { ActiveVersionId: '301bbb' }], size: 2, done: true };
       }
       if (soql.includes("FROM Flow WHERE Id = '301aaa'")) {
         return {
@@ -654,7 +691,33 @@ describe('features/field-impact — broad-scan precision (standard fields)', () 
     await tick();
     const queries = (api.toolingQuery as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
     expect(queries.some((q: string) => q.includes('FROM CustomField'))).toBe(false);
-    expect(queries.some((q: string) => q.includes("Status = 'Active'"))).toBe(true);
+    expect(queries.some((q: string) => q.includes('FROM FlowDefinition'))).toBe(true);
+  });
+
+  // An empty fallback is not "a scan that found nothing" — nothing was scanned.
+  // The old wording ("a broad scan of the 0 most recently modified active
+  // flow(s)") read like a cap bug and buried the fact that Flow coverage was
+  // ZERO, so a "nothing writes this field" verdict looked scanned-for.
+  it('says NO flow was examined when the fallback list comes back empty', async () => {
+    const api = {
+      apiVersion: 'v62.0',
+      orgOrigin: ORIGIN,
+      apiGet: vi.fn(async () => ({})),
+      query: vi.fn(),
+      toolingQuery: vi.fn(async () => ({ records: [], size: 0, done: true })),
+      apiRequest: vi.fn(),
+    } as unknown as SalesforceApiClient;
+    const feature = createFieldImpactFeature({ win: fakeWin(), api });
+    await feature.openFor('Case', 'Status');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    expect(note).toContain('that query returned no active flow versions, so NO flow was examined');
+    expect(note).toContain('says nothing about whether a flow writes Case.Status');
+    expect(note).not.toContain('broad scan of the 0');
+    // The precision rule describes how scanned flows are adjudicated. With none
+    // scanned there is nothing for it to describe, and printing it implies a
+    // scan happened.
+    expect(note).not.toContain('a flow is only reported when its metadata binds');
   });
 
   it('reports the flow that binds the write to the queried object', async () => {
@@ -712,8 +775,8 @@ describe('features/field-impact — the empty result carries its own caveat', ()
 
   function emptyResultApi(): SalesforceApiClient {
     const toolingQuery = vi.fn(async (soql: string) => {
-      if (soql.includes("Status = 'Active'")) {
-        return { records: [{ Id: '301ccc' }], size: 1, done: true };
+      if (soql.includes('FROM FlowDefinition')) {
+        return { records: [{ ActiveVersionId: '301ccc' }], size: 1, done: true };
       }
       if (soql.includes('FROM Flow WHERE Id')) {
         return {
@@ -940,8 +1003,8 @@ describe('features/field-impact — an unreadable flow never implies a reference
       if (soql.includes('MetadataComponentDependency')) {
         return { records: [{ MetadataComponentId: '301zzz' }], size: 1, done: true };
       }
-      if (soql.includes("Status = 'Active'")) {
-        return { records: [{ Id: '301zzz' }], size: 1, done: true };
+      if (soql.includes('FROM FlowDefinition')) {
+        return { records: [{ ActiveVersionId: '301zzz' }], size: 1, done: true };
       }
       if (soql.includes('FROM Flow WHERE Id')) {
         if (mode === 'throws') throw new Error('METADATA_TOO_LARGE');
@@ -987,8 +1050,8 @@ describe('features/field-impact — an unreadable flow never implies a reference
         if (soql.includes('MetadataComponentDependency')) {
           return { records: [{ MetadataComponentId: '301qqq' }], size: 1, done: true };
         }
-        if (soql.includes("Status = 'Active'")) {
-          return { records: [{ Id: '301qqq' }], size: 1, done: true };
+        if (soql.includes('FROM FlowDefinition')) {
+          return { records: [{ ActiveVersionId: '301qqq' }], size: 1, done: true };
         }
         // The candidate exists as an id, but the version row is gone.
         if (soql.includes('FROM Flow WHERE Id')) return { records: [], size: 0, done: true };
@@ -1149,29 +1212,43 @@ describe('features/field-impact — the parser states its OWN bound', () => {
 });
 
 // ---------------------------------------------------------------------------
-// S1 — unreadable workflow `Metadata` turns EVERY field update on the object
-// into an inferred row against whatever field was asked about. That noise needs
-// a stated cause on both the bulk and the per-row path.
+// S1 — unreadable workflow `Metadata` turns a field update on the object into an
+// inferred row against whatever field was asked about. That noise needs a stated
+// cause. The list is ORG-WIDE (no object filter is possible), so the same
+// section pins down what happens to rows that cannot be tied to an object at
+// all — they must not land in this field's results.
 // ---------------------------------------------------------------------------
 describe('features/field-impact — unreadable workflow metadata explains itself', () => {
-  function workflowApi(options: { refuseBulk?: boolean } = {}): SalesforceApiClient {
+  /**
+   * @param detail  per-Id behaviour: 'no-metadata' (FullName only), 'unbound'
+   *                (neither), or 'refused' (the detail query throws).
+   */
+  function workflowApi(
+    detail: 'no-metadata' | 'unbound' | 'refused' = 'no-metadata',
+    listFailure?: string,
+  ): SalesforceApiClient {
     const toolingQuery = vi.fn(async (soql: string) => {
-      if (soql.includes('WorkflowFieldUpdate')) {
-        if (soql.includes('Metadata') && soql.includes('TableEnumOrId =')) {
-          if (options.refuseBulk) throw new Error('Metadata projection not supported');
-          // Bulk succeeds but the rows carry no readable Metadata.
-          return {
-            records: [
-              { Id: '04Yxx1', Name: 'Set Something', TableEnumOrId: 'Account', Metadata: null },
-              { Id: '04Yxx2', Name: 'Set Other', TableEnumOrId: 'Account', Metadata: null },
-            ],
-            size: 2,
-            done: true,
-          };
-        }
+      if (soql.includes("WHERE Id = '04Y")) {
+        if (detail === 'refused') throw new Error('Metadata projection not supported');
+        const id = soql.slice(soql.indexOf("'04Y") + 1, soql.indexOf("' LIMIT"));
         return {
-          records: [{ Id: '04Yxx1', Name: 'Set Something', TableEnumOrId: 'Account' }],
+          records: [
+            detail === 'unbound'
+              ? { Id: id }
+              : { Id: id, FullName: `Account.${id}`, Metadata: null },
+          ],
           size: 1,
+          done: true,
+        };
+      }
+      if (soql.includes('FROM WorkflowFieldUpdate')) {
+        if (listFailure) throw new Error(listFailure);
+        return {
+          records: [
+            { Id: '04Yxx1', Name: 'Set Something' },
+            { Id: '04Yxx2', Name: 'Set Other' },
+          ],
+          size: 2,
           done: true,
         };
       }
@@ -1196,16 +1273,44 @@ describe('features/field-impact — unreadable workflow metadata explains itself
     expect(note).toContain('not evidence they write this field');
   });
 
-  it('says when the bulk projection was refused and it fell back per row', async () => {
+  // The list is org-wide, so an update with no FullName may belong to ANY
+  // object. Rendering it would drop every unreadable field update in the org
+  // into this field's results.
+  it('drops updates whose object could not be bound, and says so instead', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: workflowApi('unbound') });
+    await feature.openFor('Account', 'Industry');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    expect(note).toContain('2 workflow field update(s) were read but carried no FullName');
+    expect(note).toContain('They are NOT listed');
+    expect(note).not.toContain('returned no readable Metadata');
+    expect(document.body.textContent).not.toContain('Set Something');
+  });
+
+  it('treats a refused detail read the same as an unbindable one', async () => {
+    const feature = createFieldImpactFeature({ win: fakeWin(), api: workflowApi('refused') });
+    await feature.openFor('Account', 'Industry');
+    await tick();
+    const note = document.querySelector('[role="note"]')!.textContent!;
+    expect(note).toContain('carried no FullName');
+  });
+
+  // Regression: the old code queried a `TableEnumOrId` column that does not
+  // exist on WorkflowFieldUpdate, then "fell back" to a second query built from
+  // the same builder — which failed identically while the panel claimed each
+  // update had been read individually.
+  it('reports a failed list as a failed query, never as "nothing updates this"', async () => {
     const feature = createFieldImpactFeature({
       win: fakeWin(),
-      api: workflowApi({ refuseBulk: true }),
+      api: workflowApi('no-metadata', "No such column 'TableEnumOrId'"),
     });
     await feature.openFor('Account', 'Industry');
     await tick();
     const note = document.querySelector('[role="note"]')!.textContent!;
-    expect(note).toContain('The bulk workflow field update query was refused');
-    expect(note).toContain('Metadata projection not supported');
+    expect(note).toContain('Workflow field updates could not be listed');
+    expect(note).toContain('so NONE were checked');
+    expect(note).toContain('not a finding that nothing updates Account');
+    expect(note).not.toContain('read individually');
   });
 });
 
