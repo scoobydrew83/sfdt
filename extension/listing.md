@@ -1,27 +1,38 @@
 # Chrome Web Store Listing
 
-> **Store-sync status:** Updated for **v0.8.0** (44 features). Since the last
-> manual store upload (0.3.x era) this adds Apex tooling (Test Runner, Code
-> Coverage, Trace Flags), a **Schema Browser**, **Dependency Explorer**, **API
-> Version Audit**, in-browser **Flow Scanner**, **Org Health (Live)**, an **Org
-> Release** badge, a **Command Palette**, a right-click record inspector, and the
-> bridge tools **Org Compare / Drift Check / Metadata Scan**. As of the last
-> manual upload the *live* CWS listing still reflects the older 29-feature copy —
-> this file is ahead of the store. Paste the sections below into the CWS dashboard
-> during the v0.8.0 upload, then this file and the store are back in sync.
+> **Store-sync status:** Updated for **v0.11.0** (45 features — the count is read from
+> `generated/chrome-features.json`, never counted by hand; re-derive it each release
+> instead of incrementing it). Since the last manual store upload (0.3.x era) this adds
+> Apex tooling (Test Runner, Code Coverage, Trace Flags), a **Schema Browser**, **Field
+> Impact Analysis**, **Dependency Explorer**, **API Version Audit**, in-browser **Flow
+> Scanner**, **Org Health (Live)**, an **Org Release** badge, a **Command Palette**, a
+> docked **side panel**, **SOSL** mode in the SOQL Runner, and a right-click record
+> inspector, plus the bridge tools **Org Compare / Drift Check / Metadata Scan**. As of
+> the last manual upload the *live* CWS listing still reflects the older 29-feature copy —
+> this file is ahead of the store. Paste the sections below into the CWS dashboard during
+> the v0.11.0 upload, then this file and the store are back in sync.
+>
+> **The item name changed in 0.11.0.** The packaged manifest now reads "SFDT for
+> Salesforce"; it was "SFDT SF Helper". The store's *item title* is a dashboard field
+> rather than a manifest field, so it has to be renamed by hand in CWS during the same
+> upload or the store keeps showing the old name.
 >
 > **Permission justifications must be pasted into the item's Privacy practices
 > tab** (not just the description) — the store rejects auto-publish until every
 > permission below has a justification saved. `contextMenus` + `sidePanel` were
-> the two that blocked the v0.8.0 auto-publish.
+> the two that blocked the v0.8.0 auto-publish. The permission set is **unchanged in
+> 0.11.0** — `storage`, `clipboardWrite`, `cookies`, `contextMenus`, `sidePanel` plus the
+> ten host permissions, verified against the built `.output/chrome-mv3/manifest.json`.
 >
 > Screenshots, the store icon, and the small promo tile live alongside this file in
-> `extension/store-assets/` (`store-icon-128.png`, `promo-small-440x280.png`, and
-> `final_01`–`final_16`). The set was refreshed for 0.3.0: `final_01`–`final_05`
-> (flow/setup era) plus `final_06`–`final_16` (Workspace tools + schema/data tooling).
-> CWS shows up to 5 — featured set: `final_06`, `final_01`, `final_07`, `final_11`,
-> and `final_18` (Org Limits). The Org Health screenshot is still pending (future
-> `final_19`). See this folder's README for the full rationale and which shots to avoid.
+> `extension/store-assets/` (`store-icon-128.png`, `promo-small-440x280.png`, and the
+> `final_*` shots). **The screenshot set is 0.3.x-era and has not been recaptured since.**
+> `final_14` and `final_15` were deleted pending recapture (one showed a live API-version
+> error, the other leaked a real org id and email), and nothing that shipped after 0.3.x
+> has a shot at all — no Schema Browser, Command Palette, Trace Flags, Field Impact
+> Analysis, side panel, or SOSL mode. `final_06`, the hero shot, shows a Workspace nav
+> from when there were 13 tools. Recapturing is a human task; see this folder's README for
+> the featured-5 rationale and which shots to avoid.
 
 ## Item name
 SFDT for Salesforce
@@ -36,7 +47,7 @@ Developer Tools (alt: Workflow & Planning)
 English (United States)
 
 ## Detailed description
-SFDT for Salesforce adds 44 productivity features for Salesforce admins and developers across Flow Builder, Setup, Object Manager, and record pages — now including a standalone Workspace tab that runs SOQL, Apex, and other tools in their own browser tab so they never disturb the Salesforce page you're on. Features span flow analysis, schema and dependency exploration, data tooling, SOQL/REST/SOAP exploration, anonymous Apex, Apex test running and coverage, debug-log/trace-flag and event monitoring, org health diagnostics, and optional AI assistance. Every feature is opt-in via the options page, and any feature can be remotely disabled without a Web Store re-review.
+SFDT for Salesforce adds 45 productivity features for Salesforce admins and developers across Flow Builder, Setup, Object Manager, and record pages — now including a standalone Workspace tab that runs SOQL, Apex, and other tools in their own browser tab so they never disturb the Salesforce page you're on. Features span flow analysis, schema and dependency exploration, data tooling, SOQL/REST/SOAP exploration, anonymous Apex, Apex test running and coverage, debug-log/trace-flag and event monitoring, org health diagnostics, and optional AI assistance. Every feature is opt-in via the options page, and any feature can be remotely disabled without a Web Store re-review.
 
 Features include:
 - Setup Tabs — adds an Automation Home tab plus reorderable, groupable tabs to the Setup tab bar
@@ -51,7 +62,7 @@ Features include:
 - Flow Deploy — deploy the current Flow via the local sfdt CLI bridge
 - Comparison Exporter — export org-vs-org compare reports from the canvas
 - AI Assistant — surface answers about the current Flow via Claude, Gemini, or OpenAI through the bridge
-- SOQL Query Runner — run SOQL (REST or Tooling) with field/object autocomplete, query history, CSV export, and a LangGraph node generator
+- SOQL Query Runner — run SOQL (REST or Tooling) or SOSL text searches with field/object autocomplete, query history and bookmarks, CSV export, query plans, and a LangGraph node generator; SOSL results are grouped per object with per-object copy and export
 - Org Limits — current org limit utilization at a glance
 - REST API Explorer — explore the REST API of the current org
 - Subflow Caller Graph — visualize which Flows call the current Flow
