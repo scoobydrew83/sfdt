@@ -95,6 +95,7 @@ All on the release ref, before the release PR merges:
 - [ ] **API-version registry current** — when Salesforce has shipped a new GA release since the last sfdt release, curate it in `src/lib/data/api-version-registry.json` (facts only from the official release notes; empty change lists are fine, wrong facts are not). `test/lib/api-version-registry.test.js` fails automatically when the registry falls behind the GA version.
 - [ ] `npm run build:gui`, `npm run build:ext`, `npm run build:plugin` succeed.
 - [ ] Version-bump commit includes a synced lockfile: `npm install --package-lock-only`, stage `package-lock.json` — or CI's `npm ci` fails on the release commit.
+- [ ] **`@sfdt/flow-core` bumped at its OWN semver level, not the CLI's.** flow-core has no standalone trigger (§1) — it rides the CLI's release commit — so a patch-level CLI release will silently republish it as a patch even when it gained public API. Diff `packages/flow-core/src/index.ts` against the last released tag: any **new export** is a MINOR bump for flow-core (independently of what the CLI is doing), a **changed or removed** export is MAJOR. Move consumer ranges (`extension/`, `vscode/`, `packages/plugin/`, root) to the new `^` range in the same commit.
 - [ ] `/pre-release-cli-test` run — smoke-tests `--help` for every registered command, derived from the Commander tree (never a hardcoded list or count).
 - [ ] `/pre-release-security` run if anything outside docs/tests changed.
 - [ ] `/pre-release-ui-test` run if anything in `gui/` changed.

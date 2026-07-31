@@ -311,6 +311,192 @@ describe('sfApiFetch session cache (AC2)', () => {
   });
 });
 
+// ── The reported bug: a real org error replaced by the fallback host's 401 ──
+//
+// A warm session cache (the steady state after any prior successful call) sends
+// the request to the cached `.my.salesforce.com` host. When the ORG rejects the
+// request itself — a bad-type WHERE clause is HTTP 400 MALFORMED_QUERY — the
+// old code treated that like a dead host and fell through to the remaining
+// candidate. `.lightning.force.com` routinely answers 401, and only THAT error
+// was returned, so the user was told their session had expired when it had not
+// and never saw the field the org had named.
+describe('a definitive org error is never displaced by a fallback host (regression)', () => {
+  const MALFORMED = JSON.stringify([
+    {
+      message:
+        "value of filter criterion for field 'Invoice_Status_Type__c' must be of type double and should not be enclosed in quotes",
+      errorCode: 'MALFORMED_QUERY',
+    },
+  ]);
+  const SESSION_EXPIRED = JSON.stringify([
+    { message: 'Session expired or invalid', errorCode: 'INVALID_SESSION_ID' },
+  ]);
+
+  function warmCacheDeps(routes: Record<string, { status: number; body: string }>) {
+    return makeDeps(
+      { [MY]: '00DORG1!secret', [ORIGIN]: '00DORG1!secret' },
+      routes,
+      memoryCache({ 'acme.lightning.force.com': { baseUrl: MY, orgId: '00DORG1' } }),
+    );
+  }
+
+  it('surfaces the org MALFORMED_QUERY, not the other host session error', async () => {
+    const deps = warmCacheDeps({
+      [MY]: { status: 400, body: MALFORMED },
+      [ORIGIN]: { status: 401, body: SESSION_EXPIRED },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+
+    expect(resp.ok).toBe(false);
+    if (resp.ok) return;
+    expect(resp.errors).toHaveLength(1);
+    expect(resp.errors[0]!.status).toBe(400);
+    expect(resp.errors[0]!.errorText).toContain('MALFORMED_QUERY');
+    // The session error must not appear anywhere in the reported failure.
+    expect(JSON.stringify(resp.errors)).not.toContain('INVALID_SESSION_ID');
+    expect(JSON.stringify(resp.errors)).not.toContain('Session expired');
+    // And the org's answer is final: no pointless second round trip.
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the session cache intact — the session was never the problem', async () => {
+    const cache = memoryCache({ 'acme.lightning.force.com': { baseUrl: MY, orgId: '00DORG1' } });
+    const deps = makeDeps(
+      { [MY]: '00DORG1!secret', [ORIGIN]: '00DORG1!secret' },
+      { [MY]: { status: 400, body: MALFORMED }, [ORIGIN]: { status: 401, body: SESSION_EXPIRED } },
+      cache,
+    );
+    await sfApiFetch(REQ, deps);
+    expect(cache.store.get('acme.lightning.force.com')).toEqual({ baseUrl: MY, orgId: '00DORG1' });
+  });
+
+  it('a mutating call rejected by the org is not re-sent to the other host', async () => {
+    // The old fallthrough re-POSTed a body the org had already rejected.
+    const deps = warmCacheDeps({
+      [MY]: { status: 400, body: MALFORMED },
+      [ORIGIN]: { status: 401, body: SESSION_EXPIRED },
+    });
+    await sfApiFetch({ ...REQ, method: 'POST', body: '{"Name":"x"}' }, deps);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('still falls through on a 5xx — that is the host failing, not the org answering', async () => {
+    const deps = warmCacheDeps({
+      [MY]: { status: 503, body: '<html>Service Unavailable</html>' },
+      [ORIGIN]: { status: 200, body: '{"records":[]}' },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(true);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the fast-path failure alongside the fallback failure when it does fall through', async () => {
+    // 503 then 401: the fallthrough is correct here, but the first failure must
+    // still be reported rather than being replaced by the second.
+    const deps = warmCacheDeps({
+      [MY]: { status: 503, body: 'unavailable' },
+      [ORIGIN]: { status: 401, body: SESSION_EXPIRED },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(false);
+    if (resp.ok) return;
+    expect(resp.errors.map((e) => e.status)).toContain(503);
+    expect(resp.errors.map((e) => e.status)).toContain(401);
+  });
+
+  // "The org answered" is a claim about the BODY, not the status. An
+  // intermediary that returns 4xx with its own page never reached Salesforce,
+  // so its failure says nothing about whether the org would have accepted the
+  // request — and the other candidate must still be tried.
+  it('falls through on an opaque WAF 403 that no Salesforce body explains', async () => {
+    const deps = warmCacheDeps({
+      [MY]: { status: 403, body: '<html><body>Blocked by corporate policy</body></html>' },
+      [ORIGIN]: { status: 200, body: '{"records":[]}' },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(true);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls through on a routing 404 with no Salesforce body', async () => {
+    const deps = warmCacheDeps({
+      [MY]: { status: 404, body: 'Not Found' },
+      [ORIGIN]: { status: 200, body: '{"records":[]}' },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(true);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls through on an empty-bodied 4xx', async () => {
+    const deps = warmCacheDeps({
+      [MY]: { status: 400, body: '' },
+      [ORIGIN]: { status: 200, body: '{"records":[]}' },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(true);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats a Salesforce-explained 404 as final, unlike an opaque one', async () => {
+    // Same status, opposite handling — which is exactly why the status alone
+    // cannot decide this.
+    const deps = warmCacheDeps({
+      [MY]: {
+        status: 404,
+        body: JSON.stringify([
+          { message: 'The requested resource does not exist', errorCode: 'NOT_FOUND' },
+        ]),
+      },
+      [ORIGIN]: { status: 200, body: '{"records":[]}' },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(false);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a 4xx SOAP fault as the org answering', async () => {
+    const deps = warmCacheDeps({
+      [MY]: {
+        status: 400,
+        body: '<soapenv:Envelope><soapenv:Body><soapenv:Fault><faultcode>sf:INVALID_FIELD</faultcode><faultstring>INVALID_FIELD: no such column</faultstring></soapenv:Fault></soapenv:Body></soapenv:Envelope>',
+      },
+      [ORIGIN]: { status: 200, body: 'ok' },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(false);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // A JSON-speaking intermediary is not the org. Every documented Salesforce
+  // rejection carries an errorCode; an API gateway's bare `message` does not.
+  it.each([
+    ['AWS API Gateway 403', '{"message":"Forbidden"}'],
+    ['AWS API Gateway 404', '{"message":"Missing Authentication Token"}'],
+    ['Azure APIM', '{"statusCode":403,"message":"Access denied due to invalid subscription key"}'],
+  ])('falls through on a JSON body from an intermediary (%s)', async (_label, body) => {
+    const deps = warmCacheDeps({
+      [MY]: { status: 403, body },
+      [ORIGIN]: { status: 200, body: '{"records":[]}' },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(true);
+    expect(deps.fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('a genuine 401 on every candidate is still reported as 401', async () => {
+    // The fix must not make real session failures unreportable.
+    const deps = warmCacheDeps({
+      [MY]: { status: 401, body: SESSION_EXPIRED },
+      [ORIGIN]: { status: 401, body: SESSION_EXPIRED },
+    });
+    const resp = await sfApiFetch(REQ, deps);
+    expect(resp.ok).toBe(false);
+    if (resp.ok) return;
+    expect(resp.errors.every((e) => e.status === 401)).toBe(true);
+  });
+});
+
 // ── AC2: the wiring uses chrome.storage.session, NEVER chrome.storage.local ──
 describe('background worker wiring', () => {
   const bg = readFileSync(

@@ -9,6 +9,8 @@ import {
   deleteSavedQuery,
   readSoqlHistory,
   writePendingQuery,
+  entryLang,
+  type QueryLang,
   type SavedQuery,
 } from './soql-runner.js';
 import { SOQL_TEMPLATES } from './soql-templates.js';
@@ -41,8 +43,8 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
     view = null;
   }
 
-  async function loadInRunner(q: string, api: SavedQuery['api']): Promise<void> {
-    await writePendingQuery({ q, api });
+  async function loadInRunner(q: string, api: SavedQuery['api'], lang: QueryLang): Promise<void> {
+    await writePendingQuery({ q, api, lang });
     close();
     if (options.onLoadQuery) {
       options.onLoadQuery();
@@ -77,10 +79,21 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       return t;
     }
 
-    function queryRow(q: string, apiMode: SavedQuery['api'], onDelete?: () => void): HTMLDivElement {
+    function queryRow(
+      q: string,
+      apiMode: SavedQuery['api'],
+      lang: QueryLang,
+      onDelete?: () => void,
+    ): HTMLDivElement {
       const row = doc.createElement('div');
       row.style.cssText =
         'display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--sfdt-color-surface-shade-3); border-radius: 4px;';
+      // Query language first — it decides how the entry runs; the API mode
+      // (REST/Tooling) only applies to SOQL.
+      const langBadge = doc.createElement('span');
+      langBadge.textContent = lang === 'sosl' ? 'SOSL' : 'SOQL';
+      langBadge.style.cssText =
+        'min-width: 44px; text-align: center; font-size: 10px; padding: 2px 4px; border-radius: 3px; background: var(--sfdt-color-surface-shade-3); color: var(--sfdt-color-text-weak);';
       const badge = doc.createElement('span');
       badge.textContent = apiMode === 'tooling' ? 'Tooling' : 'REST';
       badge.style.cssText =
@@ -93,7 +106,8 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       loadBtn.textContent = 'Load';
       loadBtn.style.cssText =
         'padding: 4px 10px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 11px;';
-      loadBtn.addEventListener('click', () => void loadInRunner(q, apiMode));
+      loadBtn.addEventListener('click', () => void loadInRunner(q, apiMode, lang));
+      row.appendChild(langBadge);
       row.appendChild(badge);
       row.appendChild(text);
       row.appendChild(loadBtn);
@@ -133,7 +147,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
         nameLabel.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak); margin-top: 2px;';
         savedList.appendChild(nameLabel);
         savedList.appendChild(
-          queryRow(item.q, item.api, async () => {
+          queryRow(item.q, item.api, entryLang(item), async () => {
             await deleteSavedQuery(item.name);
             await renderSaved();
           }),
@@ -181,7 +195,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       desc.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak);';
       wrap.appendChild(nameRow);
       wrap.appendChild(desc);
-      wrap.appendChild(queryRow(tpl.q, tpl.api));
+      wrap.appendChild(queryRow(tpl.q, tpl.api, entryLang(tpl)));
       tplList.appendChild(wrap);
     }
 
@@ -203,7 +217,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
         histList.appendChild(empty);
       } else {
         for (const entry of history) {
-          histList.appendChild(queryRow(entry.q, entry.api));
+          histList.appendChild(queryRow(entry.q, entry.api, entryLang(entry)));
         }
       }
     }

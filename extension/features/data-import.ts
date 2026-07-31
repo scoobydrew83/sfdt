@@ -714,7 +714,11 @@ export function createDataImportFeature(options: {
 
         const tdErrors = doc.createElement('td');
         tdErrors.textContent = row.errors || '-';
-        tdErrors.style.cssText = 'padding: 6px 10px;';
+        // A batch-level failure puts the whole annotated error in this cell —
+        // the org's message, then the "what to do" line — so the newline has to
+        // survive, or the two run together into one sentence. This is one of
+        // the two paths users actually reported.
+        tdErrors.style.cssText = 'padding: 6px 10px; white-space: pre-line;';
         if (row.errors) {
           tdErrors.style.color = 'var(--sfdt-color-error-text)';
           tdErrors.style.fontWeight = '500';
@@ -836,7 +840,10 @@ export function createDataImportFeature(options: {
       }
 
       const soapMethod = selectedOperation === 'create' ? 'create' : selectedOperation;
-      const res = await api.apiSoap<any>('Partner', soapMethod, importArgs);
+      // Every operation reachable here (create/update/upsert/delete) writes, so
+      // a timeout genuinely may have committed this chunk — the one case where
+      // "check before retrying" is the correct thing to tell the user.
+      const res = await api.apiSoap<any>('Partner', soapMethod, importArgs, { mutating: true });
       const results = asArray(res);
 
       for (let i = 0; i < chunk.length; i++) {

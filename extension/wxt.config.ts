@@ -3,13 +3,20 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   srcDir: '.',
   outDir: '.output',
+  // ponytail: preload hints buy nothing for chunks read off local disk, and Vite
+  // stamps `crossorigin` on them — which puts the preload fetch in CORS mode while
+  // the real `import` resolves in the extension's own world. Chrome can't match the
+  // two, discards the preloaded copy, re-fetches, and logs "cross-world extension
+  // resource mismatch" once per chunk on every page. Cosmetic, but it buries real
+  // errors during an in-Chrome smoke test.
+  vite: () => ({ build: { modulePreload: false } }),
   // Manifest is a function so the docked panel wires up per-browser: Chrome uses
   // `side_panel` + the `sidePanel` permission; Firefox uses `sidebar_action`
   // (no extra permission) pointed at the same page. Everything else is identical.
   manifest: ({ browser }) => {
     const isFirefox = browser === 'firefox';
     return {
-      name: 'SFDT SF Helper',
+      name: 'SFDT for Salesforce',
       description:
         'Productivity tools for Salesforce admins & developers — Flow, Setup, Object Manager, record pages, SOQL/REST/SOAP & AI.',
       // `sidePanel` (P2-3, ledgered): host the extension's own docked tool panel
@@ -45,7 +52,7 @@ export default defineConfig({
       incognito: 'split',
       // The toolbar button opens the thin action popup (entrypoints/popup/).
       action: {
-        default_title: 'SFDT SF Helper',
+        default_title: 'SFDT for Salesforce',
         default_popup: 'popup.html',
       },
       // Declared keyboard shortcuts. They're registered by the browser (not our

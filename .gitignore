@@ -53,6 +53,7 @@ logs/
 .stfolder/
 /pr-analysis/
 /docs/superpowers/
+/graphify-out/
 conductor/
 admin/
 loops/*
@@ -62,3 +63,5 @@ images/*.jpg
 TODO.md
 # Local 2x screenshot originals (re-croppable backup, not version-controlled)
 extension/store-assets/_raw/
+
+__pycache__/

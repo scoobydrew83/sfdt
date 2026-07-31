@@ -145,7 +145,11 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     title.textContent = 'Health Check Failed';
     const msg = doc.createElement('div');
     msg.className = 'sfdt-health-error-message';
-    msg.style.marginTop = '8px';
+    // flow-health-check hands this a Tooling error's `.message`, which since
+    // lib/sf-error-guidance.ts carries the org's text and the "what to do" line
+    // separated by a newline. The class is only ever used as a test selector —
+    // there is no stylesheet behind it — so the rule has to be set here.
+    msg.style.cssText = 'margin-top: 8px; white-space: pre-line;';
     msg.textContent = message || 'Unknown error';
     wrap.appendChild(title);
     wrap.appendChild(msg);

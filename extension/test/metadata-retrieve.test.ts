@@ -91,7 +91,7 @@ describe('metadata-retrieve — UI & Operations', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     // Verify describe was called
-    expect(api.apiSoap).toHaveBeenCalledWith('Metadata', 'describeMetadata', { apiVersion: '62.0' });
+    expect(api.apiSoap).toHaveBeenCalledWith('Metadata', 'describeMetadata', { apiVersion: '62.0' }, { mutating: false });
 
     // Renders the metadata types in the tree
     expect(document.body.textContent).toContain('ApexClass');
@@ -171,8 +171,8 @@ describe('metadata-retrieve — UI & Operations', () => {
     await new Promise((r) => setTimeout(r, 2050));
     await new Promise((r) => setTimeout(r, 2050));
 
-    expect(api.apiSoap).toHaveBeenCalledWith('Metadata', 'retrieve', expect.any(Object));
-    expect(api.apiSoap).toHaveBeenLastCalledWith('Metadata', 'checkRetrieveStatus', { id: 'ret123' });
+    expect(api.apiSoap).toHaveBeenCalledWith('Metadata', 'retrieve', expect.any(Object), { mutating: false });
+    expect(api.apiSoap).toHaveBeenLastCalledWith('Metadata', 'checkRetrieveStatus', { id: 'ret123' }, { mutating: false });
     expect(checkCount).toBe(2);
   });
 });
@@ -241,6 +241,7 @@ describe('metadata-retrieve — tree expansion & package.xml', () => {
       'Metadata',
       'listMetadata',
       expect.objectContaining({ queries: expect.objectContaining({ type: 'ReportFolder' }) }),
+      { mutating: false },
     );
 
     // Managed (namespaced) member excluded; unmanaged member rendered
@@ -302,6 +303,7 @@ describe('metadata-retrieve — tree expansion & package.xml', () => {
       'Metadata',
       'listMetadata',
       expect.objectContaining({ queries: expect.objectContaining({ type: 'DashboardFolder' }) }),
+      { mutating: false },
     );
 
     expandType('EmailTemplate');
@@ -311,6 +313,7 @@ describe('metadata-retrieve — tree expansion & package.xml', () => {
       'Metadata',
       'listMetadata',
       expect.objectContaining({ queries: expect.objectContaining({ type: 'EmailFolder' }) }),
+      { mutating: false },
     );
   });
 
@@ -431,7 +434,7 @@ describe('metadata-retrieve — retrieve polling outcomes', () => {
           expect.objectContaining({ name: 'ApexClass', members: ['*'] }),
         ]) }),
       }),
-    }));
+    }), { mutating: false });
     expect(createObjSpy).toHaveBeenCalled();
     expect(document.body.textContent).toContain('zip downloaded successfully');
     createObjSpy.mockRestore();
@@ -573,8 +576,22 @@ describe('metadata-retrieve — deploy flow', () => {
         testLevel: 'RunSpecifiedTests',
         runTests: ['TestA', 'TestB'],
       }),
-    }));
+    }), { mutating: true });
     expect(document.body.textContent).toContain('Deployment completed successfully');
+
+    // The polled status check is a READ. It must not declare itself mutating:
+    // this loop has no try/catch, so a slow deploy would otherwise tell the
+    // user once per poll that their change "may already have been saved" — for
+    // a call that wrote nothing — and would break the guarantee that
+    // `timeout + mutating` uniquely means "may have committed".
+    const soapCalls = (api.apiSoap as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const polls = soapCalls.filter((c) => c[1] === 'checkDeployStatus');
+    expect(polls.length).toBeGreaterThan(0);
+    for (const call of polls) expect(call[3]).toEqual({ mutating: false });
+
+    // …and exactly one call in the whole deploy flow is declared mutating.
+    const mutatingCalls = soapCalls.filter((c) => (c[3] as { mutating?: boolean } | undefined)?.mutating === true);
+    expect(mutatingCalls.map((c) => c[1])).toEqual(['deploy']);
   });
 
   it('errors when deploy returns no job id', async () => {
@@ -1073,7 +1090,7 @@ describe('metadata-retrieve — offline fallback', () => {
     const feature = createMetadataRetrieveFeature({ api, bridgeFactory: factory });
     await feature.onActivate?.();
 
-    expect(api.apiSoap).toHaveBeenCalledWith('Metadata', 'describeMetadata', { apiVersion: '62.0' });
+    expect(api.apiSoap).toHaveBeenCalledWith('Metadata', 'describeMetadata', { apiVersion: '62.0' }, { mutating: false });
     expect(document.body.textContent).toContain('sfdt bridge unavailable');
     expect(document.body.textContent).toContain('ApexClass');
 
@@ -1361,6 +1378,7 @@ describe('metadata-retrieve — seeded member restore does not truncate the tree
       'Metadata',
       'listMetadata',
       expect.objectContaining({ queries: expect.objectContaining({ type: 'ApexClass' }) }),
+      { mutating: false },
     );
     expect(document.body.textContent).toContain('Beta');
     const tickState = (name: string) =>

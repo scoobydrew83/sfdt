@@ -226,6 +226,20 @@
       "bridgeRequired": false
     },
     {
+      "id": "field-impact",
+      "name": "Field Impact Analysis",
+      "contexts": [
+        "record_page",
+        "setup_other",
+        "setup_flows",
+        "workspace"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
       "id": "flow-deploy",
       "name": "Deploy or Rollback…",
       "contexts": [

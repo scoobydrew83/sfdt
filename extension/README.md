@@ -1,4 +1,4 @@
-# @sfdt/extension — SFDT SF Helper
+# @sfdt/extension — SFDT for Salesforce
 
 A Chrome extension that augments Salesforce Flow Builder and Setup with productivity features for admins and developers. Works standalone; an optional local bridge to the [`@sfdt/cli`](../README.md) unlocks deploy, rollback, quality scoring, and AI-powered analysis directly from the canvas.
 
@@ -13,9 +13,9 @@ This is one of four workspaces in the [`sfdt` monorepo](../README.md):
 ## Workspace tab
 
 Click the ⚡ side button on any Salesforce page and choose **Open Workspace ↗** to launch a
-standalone full-page tab (`chrome-extension://…/app.html`). The Workspace hosts the tools below —
-SOQL first — in their own browser tab, so opening a query runner or executing Apex never disturbs
-the Salesforce page you were on, and closing a tool's modal no longer loses your place.
+standalone full-page tab (`chrome-extension://…/app.html`). The Workspace hosts the extension's
+tools — SOQL first — in their own browser tab, so opening a query runner or executing Apex never
+disturbs the Salesforce page you were on, and closing a tool's modal no longer loses your place.
 
 - **Org targeting** — the Workspace opens against the org you launched it from. With no org in the
   URL it falls back to your last-used org, then to an **org picker** listing every Salesforce org
@@ -28,51 +28,55 @@ window that reports the chosen org's URL, so the existing tools run unchanged.
 
 ---
 
-## Features (40)
+## Features
 
-Every feature is opt-in (toggle off in the options page), and any feature can be remotely disabled without a Web Store re-review via `sfdt feature-flags disable <id>`.
+Every feature is opt-in (toggle it off in the options page), and any feature can be remotely
+disabled without a Web Store re-review via `sfdt feature-flags disable <id>`.
 
-| Id | What it does | Where it lives |
-|---|---|---|
-| `setup-tabs` | Adds Automation Home + reorderable tabs to the Setup tab bar | classic + lightning Setup |
-| `missing-description-flags` | Flags Flow nodes / fields without descriptions inline | Setup Flows |
-| `canvas-search` | Cmd/Ctrl+Shift+F search across nodes on the Flow canvas | Flow Builder |
-| `flow-version-manager` | Side panel listing active/draft Flow versions with one-click activate / rollback (requires bridge) | Setup Flows |
-| `api-name-generator` | Auto-generates API names from labels using configurable case style | Flow Builder, Object Manager |
-| `scheduled-flow-explorer` | List + calendar view of all scheduled Flow runs in the org | Setup Flows |
-| `flow-trigger-explorer-enhancer` | Adds bulk fetch + visual grouping to the native Trigger Explorer | Setup Flows |
-| `flow-list-search` | Fuzzy search over the Flow Definitions list | Setup Flows |
-| `flow-health-check` | Scores the currently-open Flow against the `@sfdt/flow-core` rules engine | Flow Builder |
-| `flow-deploy` | Deploy the current Flow via the bridge (CLI's `sfdt deploy --metadata Flow:...`) | Flow Builder |
-| `comparison-exporter` | Export org-vs-org compare reports from the canvas | Setup Flows |
-| `ai-assistant` | Surface AI provider answers about the current Flow (Claude / Gemini / OpenAI via bridge) | Flow Builder |
-| `subflow-graph` | SVG graph of subflow invocation relationships | Setup Flows |
-| `trigger-conflicts` | Detects overlapping record-triggered Flows that would fire on the same change | Setup Flows |
-| `soql-runner` | Run SOQL against the current org (REST or Tooling), with field/object autocomplete, history, CSV export, and a LangGraph node generator | Setup + Flow Builder + Trigger Explorer |
-| `org-limits` | Live view of the org's governor-limit usage (sorted by pressure, colour-banded) | Setup + Flow Builder + Trigger Explorer |
-| `rest-explore` | Fire arbitrary GET/POST/PATCH/PUT/DELETE against `/services/data/...` with response viewer + history | Setup + Flow Builder + Trigger Explorer |
-| `inspect-record` | Inspect a record's complete field set (including empty/system fields) via the REST API | Record page + Setup + Flow Builder |
-| `show-api-names` | Toggle inline field API names + object/18-char-id header annotation on record pages; copy Id / Apex `insert` / SOQL for the current record | Record page |
-| `data-import` | Guided CSV data import into the org | Record page + Setup + Flow Builder |
-| `field-creator` | Bulk-create multiple custom fields at once | Record page + Object Manager + Flow Builder |
-| `metadata-retrieve` | Retrieve and deploy metadata directly from the browser | Record page + Setup + Flow Builder |
-| `soap-explore` | Build and send SOAP API requests with a payload editor + response viewer | Record page + Setup + Flow Builder |
-| `event-monitor` | Subscribe to and monitor platform/streaming events live | Record page + Setup + Flow Builder |
-| `export-for-prompt` | Copy a dense Markdown schema for an object to the clipboard for pasting into an LLM prompt | Record page + Object Manager |
-| `apex-anonymous` | Execute anonymous Apex with compile/runtime result and saved snippets | Workspace + Setup |
-| `debug-log-viewer` | List recent `ApexLog` records and view full log bodies | Workspace + Setup |
-| `saved-soql` | Browse bookmarked + recent SOQL and load any query straight into the runner | Workspace |
-| `org-switcher` | Switch the Workspace between logged-in orgs | Workspace |
-| `org-health` | Side panel surfacing the CLI's audit/monitor snapshots (status dots, findings, Copy JSON) via the bridge's `org-health` request | Setup + Flow Builder |
-| `org-health-live` | Runs org-health checks live against the org (Apex coverage, inactive users, licenses, API versions, limits) — no CLI snapshot needed | Workspace |
-| `api-version-audit` | The org's max API version + release, with per-type API-version histograms (Apex classes/triggers, active Flows, LWC, Aura); below-floor versions are banded amber and expand to name the components behind — read live from the org, no bridge | Setup + Trigger Explorer |
-| `code-coverage` | Apex code coverage: org-wide % + per-class bands (worst-covered first, 75% deploy line flagged), read live from the org | Workspace |
-| `dependency-explorer` | "What references this / what does this reference" via `MetadataComponentDependency` (Apex/Flow/field/page/LWC) | Workspace |
-| `apex-test-runner` | Run Apex tests asynchronously and view pass/fail results | Workspace |
-| `flow-quality` | Score any Flow against the `@sfdt/flow-core` rules engine, run Direct in-browser (no bridge required) | Flow Builder + Workspace |
-| `bridge-tools` | Surfaces the bridge request kinds (drift / scan / compare / quality) as Workspace tools | Workspace |
+**The authoritative list — every feature id, its display name, the Salesforce contexts it runs
+in, and whether it needs the bridge — is [`generated/chrome-features.json`](../generated/chrome-features.json).**
+That file is generated from `lib/feature-manifests.json` by `npm run generate:catalogs`, and it
+is what the docs site and the skills pack consume, so it cannot disagree with what actually
+ships. This README deliberately does **not** restate it. A hand-copied feature table and a
+hand-incremented count are precisely the things that drift between releases: until 0.11.0 this
+section carried both, and by then the count was wrong and several shipped features were missing
+from the table. A number that has to be updated by hand is wrong again by the next release, so
+there is no number here. `generated/` is never hand-edited (root [`CLAUDE.md`](../CLAUDE.md),
+invariant #2); regenerate it with `npm run generate:catalogs` and commit the diff instead.
 
-Adding the next feature is a one-file change — see the existing modules in [`extension/features/`](./features/) and the registry in [`extension/lib/feature-registry.ts`](./lib/feature-registry.ts).
+For a reader-friendly view of the same list, open the extension's **options page** — it is
+registry-driven, so every shipped feature appears there with its toggle and settings.
+
+What those features cover, described in categories that outlive any individual feature:
+
+- **Navigation and workspace** — Setup tab customisation and grouping, a keyboard-driven command
+  palette, multi-org switching, and the standalone Workspace tab / docked side panel above.
+- **Flow tooling** — inline missing-description flags and health scoring on the canvas, search
+  across canvas nodes, Flow version management, scheduled-Flow and trigger-explorer views,
+  subflow graphs, trigger-conflict detection, and API-name generation from labels.
+- **Schema and dependency exploration** — browsing objects, fields and relationships; tracing
+  what references a component; tracing what *writes* a given field; and exporting a dense
+  Markdown schema for an LLM prompt.
+- **Query and API consoles** — SOQL and SOSL with autocomplete, history, bookmarks and CSV
+  export, plus REST and SOAP explorers against the org you are already authenticated to.
+- **Apex, logs and events** — anonymous Apex execution, asynchronous test runs, code coverage,
+  debug-log retrieval and profiling, trace-flag / debug-level management, and live
+  platform-event monitoring.
+- **Record and data tooling** — full record inspection (including from a right-click), inline
+  field API names on record pages, guided CSV import, bulk custom-field creation, and metadata
+  retrieve / deploy.
+- **Org diagnostics** — governor-limit pressure, per-type API-version audits, live org-health
+  checks, and the org's release information.
+- **Bridge-backed tools** — deploy, rollback, org compare, drift check, metadata scan and AI
+  analysis, which need the local `@sfdt/cli` bridge described below.
+
+Adding the next feature is a one-file change — see the existing modules in
+[`extension/features/`](./features/) and the registry in
+[`extension/lib/feature-registry.ts`](./lib/feature-registry.ts). A new feature must also be
+declared in `lib/feature-manifests.json` (parity-tested) so it reaches the catalog above.
+Keeping this README, [`PRIVACY.md`](./PRIVACY.md), the store listing and the screenshots honest
+against what shipped is the release doc-staleness sweep's job — see
+[`RELEASING.md`](../RELEASING.md) §5, "Chrome extension".
 
 ---
 
@@ -89,7 +93,15 @@ npm run build:ext      # builds flow-core + extension
 
 ### From the Chrome Web Store
 
-(Pending submission.)
+The extension is published to the Chrome Web Store as **SFDT for Salesforce**. (The store item
+was previously titled "SFDT SF Helper"; see [`listing.md`](./listing.md) for the store copy.)
+
+Publishing is automated rather than manual: merging an `extension/package.json` version bump to
+`main` makes [`.github/workflows/extension.yml`](../.github/workflows/extension.yml) tag
+`ext-vX.Y.Z`, attach the built zip to a GitHub Release, and upload to the Web Store with
+`--auto-publish`. **Store review takes days**, so the version live on the store can lag this
+repo — [`CHANGELOG.md`](./CHANGELOG.md) is the source of truth for what a given version
+contains.
 
 ---
 

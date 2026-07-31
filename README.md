@@ -56,7 +56,7 @@ For in-depth command walkthroughs and workflow examples, see [docs/USAGE.md](doc
 | Workspace | What it is | Status |
 |---|---|---|
 | **`@sfdt/cli`** (`/src`, `/bin`, `/scripts`) | The npm CLI documented below. | Published to npm |
-| **`@sfdt/extension`** (`/extension`) | Chrome extension for Salesforce Flow Builder + Setup productivity. Talks to the CLI via the local bridge for deploy / rollback / quality / AI features. See [extension/README.md](extension/README.md) and [extension/PRIVACY.md](extension/PRIVACY.md). | Pre-Web-Store |
+| **`@sfdt/extension`** (`/extension`) | Chrome extension for Salesforce Flow Builder + Setup productivity. Talks to the CLI via the local bridge for deploy / rollback / quality / AI features. See [extension/README.md](extension/README.md) and [extension/PRIVACY.md](extension/PRIVACY.md). | Published to the Chrome Web Store |
 | **`sfdt-devtools`** (`/vscode`) | VS Code extension — a CLI-backed command center (Org Health sidebar, command palette, CodeLens, diagnostics, embedded dashboard); it drives the `sfdt` binary and reimplements no logic. See [vscode/README.md](vscode/README.md). | [Published to the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools) |
 | **`@sfdt/host`** (`/host`) | Native messaging host used as the extension's fallback transport when `sfdt ui` isn't running. Installed with `sfdt extension install-host`. | Bundled with CLI |
 | **`@sfdt/flow-core`** (`/packages/flow-core`) | Shared TypeScript library — Flow normalization, rules engine, scoring, and the versioned bridge contract. Consumed by both CLI and extension. | Published to npm (publishes alongside the CLI) |

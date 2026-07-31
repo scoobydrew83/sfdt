@@ -233,7 +233,14 @@ export function createFieldCreatorFeature(options: {
       }
     } catch (err) {
       console.error(err);
-      showToast('Failed to load SObject list', { doc, kind: 'error' });
+      // The org's reason is the whole message here: a describe can fail because
+      // API access is off, because the user's profile cannot see any object, or
+      // because the session really did expire — and the user can only act on
+      // one of those if we say which.
+      showToast(
+        `Failed to load SObject list — ${err instanceof Error ? err.message : String(err)}`,
+        { doc, kind: 'error' },
+      );
     }
 
     sobjSelect.addEventListener('change', () => {

@@ -418,8 +418,14 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         } else {
           showToast('Could not resolve SObject for referenced ID', { doc, kind: 'error' });
         }
-      } catch {
-        showToast('Navigation failed', { doc, kind: 'error' });
+      } catch (err) {
+        // Following a lookup fails most often because the user cannot read the
+        // referenced record. "Navigation failed" hid exactly the sentence that
+        // said so.
+        showToast(`Navigation failed — ${err instanceof Error ? err.message : String(err)}`, {
+          doc,
+          kind: 'error',
+        });
       }
     }
 

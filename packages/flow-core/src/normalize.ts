@@ -76,6 +76,9 @@ export interface RawVariable {
   isOutput?: boolean;
   value?: unknown;
   apexClass?: string;
+  /** sObject API name for `dataType: 'SObject'` variables — how field-writes.ts
+   * binds `myRecordVar.Field__c` to a concrete object. */
+  objectType?: string;
 }
 
 export interface RawFormula {

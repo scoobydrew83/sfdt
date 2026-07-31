@@ -35,6 +35,9 @@ export interface SchemaBrowserOptions {
   /** Copy an object's schema (optionally a field subset) to the clipboard for an
    * LLM prompt (P2-1 PR-3). When absent, the field-selection + export UI is hidden. */
   exportForPrompt?: (objectName: string, fieldNames?: readonly string[]) => void | Promise<void>;
+  /** Open "What writes this field?" for a field (P4-4). When absent, the
+   * per-field action is hidden — same wiring pattern as insertFieldIntoDraft. */
+  analyzeFieldImpact?: (objectName: string, fieldApiName: string) => void | Promise<void>;
 }
 
 /** The Schema Browser feature, plus an imperative opener for cross-links / the ⚡ menu. */
@@ -50,6 +53,7 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
   const cache = getDescribeCache(api);
   const insertField = options.insertFieldIntoDraft;
   const exportForPrompt = options.exportForPrompt;
+  const analyzeFieldImpact = options.analyzeFieldImpact;
   // Per-object field selection for "Export selected for prompt": object API name →
   // set of chosen field API names. Default = every field selected (users unselect
   // what they don't want). Persists across reopens for the feature instance.
@@ -125,7 +129,10 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
 
     const countLabel = doc.createElement('div');
     countLabel.setAttribute('aria-live', 'polite');
-    countLabel.style.cssText = 'padding: 4px 10px; font-size: 11px; color: var(--sfdt-color-text-weak);';
+    // Doubles as the failure line, which carries the org's annotated message —
+    // so the guidance must not collapse onto the end of it.
+    countLabel.style.cssText =
+      'padding: 4px 10px; font-size: 11px; color: var(--sfdt-color-text-weak); white-space: pre-line;';
     leftPane.appendChild(countLabel);
 
     const listScroll = doc.createElement('div');
@@ -192,7 +199,11 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
         return;
       }
       if (global.status === 'error' || !global.data) {
-        countLabel.textContent = 'Failed to load objects.';
+        // Say why. The org's own reason is the only thing that tells the user
+        // whether to fix a permission, wait for an API limit, or log in again.
+        countLabel.textContent = global.error
+          ? `Failed to load objects — ${global.error}`
+          : 'Failed to load objects.';
         return;
       }
 
@@ -297,8 +308,11 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
       }
       if (describe.status === 'error' || !describe.data) {
         const err = doc.createElement('div');
-        err.textContent = 'Failed to load object describe.';
-        err.style.cssText = 'color: var(--sfdt-color-error-text);';
+        err.textContent = describe.error
+          ? `Failed to load object describe — ${describe.error}`
+          : 'Failed to load object describe.';
+        err.style.cssText =
+          'color: var(--sfdt-color-error-text); white-space: pre-line; line-height: 1.4;';
         rightPane.appendChild(err);
         return;
       }
@@ -497,6 +511,22 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
           showToast(`Inserted ${field.name} into query`, { doc, kind: 'success' });
         });
         tdActions.appendChild(insertBtn);
+      }
+
+      // P4-4 entry point: hand the field to Field Impact Analysis. The analysis
+      // itself lives in features/field-impact.ts (flow-core does the Flow
+      // parsing) — the Schema Browser only launches it.
+      if (analyzeFieldImpact) {
+        const impactBtn = doc.createElement('button');
+        impactBtn.type = 'button';
+        impactBtn.textContent = 'What writes this?';
+        impactBtn.title = `Find what writes ${selectedName}.${field.name}`;
+        impactBtn.setAttribute('aria-label', `What writes field ${field.name} on ${selectedName}?`);
+        impactBtn.style.cssText = actionStyle;
+        impactBtn.addEventListener('click', () => {
+          void analyzeFieldImpact(selectedName, field.name);
+        });
+        tdActions.appendChild(impactBtn);
       }
 
       const cells = [tdLabel, tdApi, tdType, tdLength, tdRequired, tdDetails, tdActions];

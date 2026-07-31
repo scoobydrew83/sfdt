@@ -43,6 +43,7 @@ import { createTriggerConflictsFeature } from '../features/trigger-conflicts.js'
 import { createInspectRecordFeature } from '../features/inspect-record.js';
 import { createSchemaBrowserFeature } from '../features/schema-browser.js';
 import { createShowApiNamesFeature } from '../features/show-api-names.js';
+import { createFieldImpactFeature } from '../features/field-impact.js';
 import { createDataImportFeature } from '../features/data-import.js';
 import { createFieldCreatorFeature } from '../features/field-creator.js';
 import { createMetadataRetrieveFeature } from '../features/metadata-retrieve.js';
@@ -162,12 +163,23 @@ export default defineContentScript({
     // Export for Prompt kept as a reference so the Schema Browser can export a
     // chosen field subset for an object (P2-1 PR-3).
     const exportForPrompt = createExportForPromptFeature();
+    // Field Impact (P4-4) — "what writes this field?". Kept as a reference so
+    // BOTH its entry points (the Schema Browser's per-field action and the Show
+    // API Names panel) drive the one analysis surface rather than each growing
+    // their own. Flow parsing is @sfdt/flow-core's extractFieldWrites.
+    const fieldImpact = createFieldImpactFeature();
     const schemaBrowser = createSchemaBrowserFeature({
       insertFieldIntoDraft: (field) => soqlRunner.insertFieldIntoDraft(field),
       exportForPrompt: (name, fields) => exportForPrompt.exportObject(name, fields),
+      analyzeFieldImpact: (name, field) => void fieldImpact.openFor(name, field),
     });
     registry.register(schemaBrowser);
-    registry.register(createShowApiNamesFeature());
+    registry.register(
+      createShowApiNamesFeature({
+        analyzeFieldImpact: (name, field) => void fieldImpact.openFor(name, field),
+      }),
+    );
+    registry.register(fieldImpact);
     registry.register(createDataImportFeature());
     registry.register(createFieldCreatorFeature());
     registry.register(createMetadataRetrieveFeature());

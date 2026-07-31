@@ -28,10 +28,112 @@ const HISTORY_STORAGE_KEY = 'soqlRunner.history';
 const HISTORY_CAP = 20;
 const PAGE_CAP = 10;
 
+/**
+ * Which query language the editor is in. SOQL is `SELECT … FROM …` against one
+ * object; SOSL is `FIND {term} …`, a text search that returns rows from many
+ * objects at once (hence the per-object result grouping).
+ */
+export type QueryLang = 'soql' | 'sosl';
+
+/**
+ * Is this query text SOSL? A query whose first keyword is FIND is SOSL —
+ * the same rule the CLI uses (`validateLocal()` in `src/lib/soql-runner.js`
+ * sets `kind: 'sosl'` on `/^find\b/i`) and the same rule the GUI console uses
+ * to route a query to the SOSL endpoint (`isSosl` in
+ * `gui/src/pages/SoqlConsole.jsx`). Semantics stay identical across the three
+ * surfaces; only the transport differs (the extension goes through the
+ * worker-proxied REST Search resource, never the CLI).
+ */
+export function isSoslQuery(text: string | null | undefined): boolean {
+  return /^\s*find\b/i.test(text ?? '');
+}
+
+/** The language a query text is written in — the auto-detect half of the toggle. */
+export function detectQueryLang(text: string | null | undefined): QueryLang {
+  return isSoslQuery(text) ? 'sosl' : 'soql';
+}
+
+/** One returned sObject's slice of a SOSL result set. */
+export interface SoslGroup {
+  sobject: string;
+  records: Array<Record<string, unknown>>;
+}
+
+/** Bucket for search rows whose `attributes.type` is missing or unusable. */
+const UNKNOWN_SOBJECT = 'Unknown';
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The rows of a REST Search reply. The documented shape is
+ * `{ searchRecords: [...] }`; a bare array is accepted too so a caller holding
+ * an already-unwrapped list can reuse the grouping. Anything else — an error
+ * body, `null`, a reply with no `searchRecords` — yields zero rows rather than
+ * a throw, so a malformed response renders as "no matches" and never as a
+ * fabricated row.
+ */
+export function searchRecordsFrom(raw: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(raw)) return raw.filter(isPlainRecord);
+  if (isPlainRecord(raw) && Array.isArray(raw.searchRecords)) {
+    return raw.searchRecords.filter(isPlainRecord);
+  }
+  return [];
+}
+
+/**
+ * Map a REST Search reply to one group per returned sObject, in the order the
+ * objects first appear in the response (Salesforce returns the RETURNING
+ * clause's objects in order). Each row keeps its fields but drops the
+ * Salesforce `attributes` envelope, so a group's records are exactly the shape
+ * the shared CSV/TSV/JSON serialisers already take for SOQL rows.
+ *
+ * An empty (or unusable) response yields NO groups — never a group with an
+ * empty record list, so the UI can't present a fabricated object heading.
+ */
+export function groupSearchRecords(raw: unknown): SoslGroup[] {
+  const groups: SoslGroup[] = [];
+  const byName = new Map<string, SoslGroup>();
+  for (const record of searchRecordsFrom(raw)) {
+    const attributes = record.attributes;
+    const type =
+      isPlainRecord(attributes) && typeof attributes.type === 'string' && attributes.type.length > 0
+        ? attributes.type
+        : UNKNOWN_SOBJECT;
+    let group = byName.get(type);
+    if (!group) {
+      group = { sobject: type, records: [] };
+      byName.set(type, group);
+      groups.push(group);
+    }
+    const { attributes: _attributes, ...fields } = record;
+    group.records.push(fields);
+  }
+  return groups;
+}
+
+/** Total rows across every group — the number the status line reports. */
+export function soslRowCount(groups: ReadonlyArray<SoslGroup>): number {
+  return groups.reduce((sum, g) => sum + g.records.length, 0);
+}
+
 interface HistoryEntry {
   q: string;
   api: ApiMode;
+  /** Query language. Absent on entries written before P4-3 — see {@link entryLang}. */
+  lang?: QueryLang;
   ts: number;
+}
+
+/**
+ * The language a stored history/saved/pending entry was recorded in. Entries
+ * written before the SOSL toggle shipped carry no `lang`, so fall back to
+ * detecting it from the query text — an old `FIND {…}` bookmark still restores
+ * into SOSL mode.
+ */
+export function entryLang(entry: { q: string; lang?: QueryLang } | null | undefined): QueryLang {
+  return entry?.lang ?? detectQueryLang(entry?.q);
 }
 
 interface HistoryRecord {
@@ -56,7 +158,9 @@ export async function writeSoqlHistory(entries: HistoryEntry[]): Promise<void> {
 
 export async function pushSoqlHistory(entry: HistoryEntry): Promise<void> {
   const existing = await readSoqlHistory();
-  const deduped = existing.filter((e) => !(e.q === entry.q && e.api === entry.api));
+  const deduped = existing.filter(
+    (e) => !(e.q === entry.q && e.api === entry.api && entryLang(e) === entryLang(entry)),
+  );
   await writeSoqlHistory([entry, ...deduped]);
 }
 
@@ -73,6 +177,8 @@ export interface SavedQuery {
   name: string;
   q: string;
   api: ApiMode;
+  /** Query language. Absent on bookmarks saved before P4-3 — see {@link entryLang}. */
+  lang?: QueryLang;
 }
 
 export async function readSavedQueries(): Promise<SavedQuery[]> {
@@ -111,6 +217,8 @@ const PENDING_QUERY_STORAGE_KEY = 'soqlRunner.pendingQuery';
 export interface PendingQuery {
   q: string;
   api: ApiMode;
+  /** Query language, so a staged SOSL query opens the runner in SOSL mode. */
+  lang?: QueryLang;
 }
 
 export async function writePendingQuery(entry: PendingQuery): Promise<void> {
@@ -333,6 +441,24 @@ function triggerDownload(doc: Document, filename: string, text: string, mime: st
   downloadBlob(doc, filename, new Blob([text], { type: mime }));
 }
 
+/**
+ * Execute a SOSL search through the worker-proxied REST Search resource and
+ * map the reply to one group per returned sObject.
+ *
+ * Transport note: the CLI runs SOSL via `sf data search` (`runSearch` in
+ * `src/lib/soql-runner.js`) and returns the flat `searchRecords` list; the
+ * extension calls the same underlying REST resource through `sfApiFetch` and
+ * groups the rows here. Same result rows, same detection rule — only the
+ * presentation differs, because the extension has a table to draw and the CLI
+ * has an envelope to print.
+ *
+ * There is no Tooling variant of the Search resource, so SOSL is REST-only.
+ */
+async function runSearch(api: SalesforceApiClient, sosl: string): Promise<SoslGroup[]> {
+  const raw = await api.apiGet<unknown>(`/services/data/${api.apiVersion}/search`, { q: sosl });
+  return groupSearchRecords(raw);
+}
+
 async function runQuery(
   api: SalesforceApiClient,
   soql: string,
@@ -341,11 +467,15 @@ async function runQuery(
   const trimmed = soql.trim();
   const apiVersion = api.apiVersion;
 
-  // SOSL search mode
-  if (trimmed.toLowerCase().startsWith('find')) {
-    const results = await api.apiGet<Record<string, unknown>[]>(`/services/data/${apiVersion}/search`, { q: soql });
+  // SOSL search mode. The runner's SOSL mode calls runSearch() directly to keep
+  // the per-object grouping; this branch is the flat view of the same rows, for
+  // callers that only want an envelope (and for a FIND query typed while the
+  // toggle somehow still says SOQL). Both go through groupSearchRecords, so
+  // there is exactly one SOSL response mapping.
+  if (isSoslQuery(trimmed)) {
+    const groups = await runSearch(api, soql);
     return {
-      records: results,
+      records: groups.flatMap((g) => g.records),
       done: true,
     };
   }
@@ -440,6 +570,9 @@ async function explainQuery(
   return Array.isArray(resp?.plans) ? resp.plans : [];
 }
 
+const EXPLAIN_TITLE =
+  'Show the query plan (cost, cardinality, leading operation) without running the query';
+
 export interface SoqlRunnerOptions {
   doc?: Document;
   win?: Window;
@@ -516,6 +649,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       historyEnabled: true,
     }) as z.infer<typeof SOQL_RUNNER_SETTINGS_SCHEMA>;
     let mode: ApiMode = config.defaultApi;
+    let lang: QueryLang = 'soql';
     const historyEnabled = config.historyEnabled;
 
     const body = doc.createElement('div');
@@ -523,15 +657,87 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
 
     const toolbar = doc.createElement('div');
     toolbar.style.cssText = 'display: flex; gap: 8px; align-items: center;';
+
+    // --- SOQL / SOSL language toggle ---
+    // A real radiogroup (roles + aria-checked + roving tabindex + arrow keys),
+    // because two <button>s styled as a segmented control are otherwise
+    // indistinguishable from unrelated buttons to a screen reader
+    // (CONVENTIONS.md items 9 and 11).
+    const langGroup = doc.createElement('div');
+    langGroup.setAttribute('role', 'radiogroup');
+    langGroup.setAttribute('aria-label', 'Query language');
+    langGroup.style.cssText = 'display: inline-flex;';
+    const soqlLangBtn = doc.createElement('button');
+    const soslLangBtn = doc.createElement('button');
+    const langButtons: Array<[QueryLang, HTMLButtonElement]> = [
+      ['soql', soqlLangBtn],
+      ['sosl', soslLangBtn],
+    ];
+    const LANG_TITLES: Record<QueryLang, string> = {
+      soql: 'SOQL — SELECT … FROM one object',
+      sosl: 'SOSL — FIND {term} … text search across many objects',
+    };
+    for (const [value, btn] of langButtons) {
+      btn.type = 'button';
+      btn.setAttribute('role', 'radio');
+      btn.textContent = value.toUpperCase();
+      btn.title = LANG_TITLES[value];
+      btn.style.cssText =
+        'padding: 4px 12px; border: 1px solid var(--sfdt-color-border); cursor: pointer; font-size: 12px;' +
+        (value === 'soql' ? ' border-radius: 4px 0 0 4px;' : ' border-radius: 0 4px 4px 0;');
+      btn.addEventListener('click', () => setLang(value, { explicit: true }));
+      // Arrow keys move the selection inside the group, as a radiogroup must.
+      // The target is computed from the CURRENT selection, not from the button
+      // the key landed on, so it stays correct if focus is ever moved
+      // programmatically to the unselected radio.
+      btn.addEventListener('keydown', (e) => {
+        if (['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+          e.preventDefault();
+          setLang(lang === 'soql' ? 'sosl' : 'soql', { focus: true, explicit: true });
+        }
+      });
+      langGroup.appendChild(btn);
+    }
+    toolbar.appendChild(langGroup);
+
     const restBtn = doc.createElement('button');
     const toolingBtn = doc.createElement('button');
-    const setMode = (next: ApiMode): void => {
-      mode = next;
-      const isRest = next === 'rest';
+    const TRANSPORT_SOSL_TITLE =
+      'Not available in SOSL mode — the Search resource is REST-only. Your SOQL choice is restored when you switch back.';
+
+    // The transport actually used for a run. `mode` is the user's SOQL
+    // transport CHOICE and is never overwritten by the language toggle; SOSL
+    // simply has no Tooling variant of the Search resource, so it runs REST
+    // regardless. Keeping the two apart is what lets a Tooling user paste a
+    // FIND query and get their Tooling selection back afterwards.
+    function effectiveMode(): ApiMode {
+      return lang === 'sosl' ? 'rest' : mode;
+    }
+
+    // Paint the transport toggle from the effective transport, and mark the
+    // whole control unavailable (genuinely disabled, not hidden) in SOSL mode.
+    function paintModeToggle(): void {
+      const isRest = effectiveMode() === 'rest';
       restBtn.style.background = isRest ? 'var(--sfdt-color-brand)' : 'var(--sfdt-color-surface)';
       restBtn.style.color = isRest ? 'var(--sfdt-color-on-accent)' : 'var(--sfdt-color-text-strong)';
       toolingBtn.style.background = isRest ? 'var(--sfdt-color-surface)' : 'var(--sfdt-color-brand)';
       toolingBtn.style.color = isRest ? 'var(--sfdt-color-text-strong)' : 'var(--sfdt-color-on-accent)';
+      restBtn.setAttribute('aria-pressed', String(isRest));
+      toolingBtn.setAttribute('aria-pressed', String(!isRest));
+      const sosl = lang === 'sosl';
+      restBtn.disabled = sosl;
+      toolingBtn.disabled = sosl;
+      restBtn.title = sosl ? TRANSPORT_SOSL_TITLE : '';
+      toolingBtn.title = sosl ? TRANSPORT_SOSL_TITLE : '';
+    }
+
+    const setMode = (next: ApiMode): void => {
+      // The transport control is unavailable in SOSL mode; ignore programmatic
+      // or stray activations there rather than silently recording a choice the
+      // user can't see taking effect.
+      if (lang === 'sosl') return;
+      mode = next;
+      paintModeToggle();
       void runAutocomplete();
     };
     const togStyle =
@@ -544,6 +750,75 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     toolingBtn.addEventListener('click', () => setMode('tooling'));
     toolbar.appendChild(restBtn);
     toolbar.appendChild(toolingBtn);
+
+    // Explicit-choice latch. `langExplicit` records that the user *chose* the
+    // current language (clicked the toggle, or restored a stored entry);
+    // `langChoiceBaseline` is what the editor text detected as at that moment.
+    // Together they encode "this choice holds until the query itself changes
+    // language" — see syncLangFromText().
+    let langExplicit = false;
+    let langChoiceBaseline: QueryLang | null = null;
+
+    // Switch query language. Drives the editor affordances that differ between
+    // the two languages: SOSL has no Tooling variant of the Search resource, no
+    // query plan (same as the GUI console, which disables Plan for a FIND
+    // query), and no SOQL field/object autocomplete.
+    function setLang(next: QueryLang, opts: { focus?: boolean; explicit?: boolean } = {}): void {
+      lang = next;
+      langExplicit = opts.explicit === true;
+      langChoiceBaseline = langExplicit ? detectedLang(textarea.value) : null;
+      const sosl = next === 'sosl';
+      for (const [value, btn] of langButtons) {
+        const on = value === next;
+        btn.setAttribute('aria-checked', String(on));
+        btn.tabIndex = on ? 0 : -1;
+        btn.style.background = on ? 'var(--sfdt-color-brand)' : 'var(--sfdt-color-surface)';
+        btn.style.color = on ? 'var(--sfdt-color-on-accent)' : 'var(--sfdt-color-text-strong)';
+        if (opts.focus && on) btn.focus();
+      }
+      textarea.placeholder = sosl
+        ? 'FIND {Acme} IN ALL FIELDS RETURNING Account(Id, Name), Contact(Id, Name)'
+        : 'SELECT Id, Name FROM Account LIMIT 10';
+      // The transport control is unavailable in SOSL (no Tooling Search
+      // resource) but the user's SOQL choice is preserved, not reset.
+      paintModeToggle();
+      explainBtn.disabled = sosl;
+      explainBtn.title = sosl ? 'Query plans are SOQL-only' : EXPLAIN_TITLE;
+      autocompleteBox.style.display = sosl ? 'none' : 'flex';
+      void runAutocomplete();
+    }
+
+    // What the editor text says the language is, or null when it doesn't say —
+    // an empty or half-typed query settles nothing and must not move the toggle.
+    function detectedLang(text: string): QueryLang | null {
+      if (isSoslQuery(text)) return 'sosl';
+      if (/^\s*select\b/i.test(text)) return 'soql';
+      return null;
+    }
+
+    // Keep the toggle honest when the user types or pastes: a query whose first
+    // keyword is FIND is SOSL, a SELECT is SOQL — the same auto-routing the GUI
+    // console does.
+    //
+    // Precedence: an explicit click is a stronger signal than inference, so a
+    // chosen mode is NOT reverted by text the user did not just change. The
+    // latch only lifts when the query's own language moves away from what it
+    // was when the choice was made — e.g. choose SOSL over a leftover SELECT
+    // and it sticks through further edits of that SELECT, but pasting a real
+    // FIND (or later going back to a SELECT after the choice) hands control
+    // back to detection.
+    function syncLangFromText(): void {
+      const detected = detectedLang(textarea.value);
+      if (detected === null) return; // text settles nothing — keep the current mode
+      if (langExplicit && detected === langChoiceBaseline) return; // user's choice wins
+      if (detected !== lang) setLang(detected);
+      else {
+        // Detection now agrees with the current mode on its own merits; the
+        // latch has done its job and is released.
+        langExplicit = false;
+        langChoiceBaseline = null;
+      }
+    }
 
     let historyMenu: HTMLDivElement | null = null;
     if (historyEnabled) {
@@ -656,7 +931,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
     const explainBtn = doc.createElement('button');
     explainBtn.textContent = '🔎 Explain';
-    explainBtn.title = 'Show the query plan (cost, cardinality, leading operation) without running the query';
+    explainBtn.title = EXPLAIN_TITLE;
     explainBtn.style.cssText =
       'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-text); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 13px;';
     const bookmarkBtn = doc.createElement('button');
@@ -671,7 +946,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       }
       const name = win.prompt('Enter a name for this bookmark:', 'My Saved Query');
       if (name) {
-        await pushSavedQuery({ name, q, api: mode });
+        await pushSavedQuery({ name, q, api: effectiveMode(), lang });
         showToast('Query bookmarked successfully', { doc, kind: 'success' });
       }
     });
@@ -703,19 +978,82 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       'border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 360px; display: none;';
     body.appendChild(resultsWrap);
 
+    // Result-set state. Declared before the toolbar factory below because its
+    // buttons read whichever set they were built for.
+    // `records` is the flat SOQL result set; `groups` is the SOSL one (one
+    // entry per returned sObject). Exactly one of them is populated at a time —
+    // whichever the last run produced.
+    let records: Array<Record<string, unknown>> = [];
+    let groups: SoslGroup[] = [];
+    let lastEnvelope: QueryEnvelope<Record<string, unknown>> | null = null;
+    let pagesLoaded = 0;
+    // Tracks an in-flight "Export all" so a new run/loadMore/error can supersede
+    // it: the running export compares against this and stays silent once null'd.
+    let exportController: AbortController | null = null;
+
+    const ACTION_BTN_CSS =
+      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-strong); border-radius: 4px; cursor: pointer; font-size: 12px;';
+
+    /**
+     * The shared result toolbar: Copy CSV / Export CSV / Copy JSON / Copy for
+     * Excel over a record set. ONE definition, used twice — once for the flat
+     * SOQL result set in the footer, and once per SOSL object group, so
+     * copy/export apply per group without a second toolbar or a second
+     * serialiser (the P1-3 `recordsToCsv`/`recordsToJson`/`recordsToTsv` are
+     * the only serialisers in either path).
+     *
+     * `scope` names the record set for accessible labels and toasts ("Copy
+     * Account rows as CSV") — the visible button text stays identical in both
+     * places so the toolbar reads the same wherever it appears.
+     */
+    function createResultActions(opts: {
+      getRecords: () => Array<Record<string, unknown>>;
+      filePrefix: string;
+      scope?: string;
+    }): { copyCsv: HTMLButtonElement; exportCsv: HTMLButtonElement; copyJson: HTMLButtonElement; copyExcel: HTMLButtonElement; all: HTMLButtonElement[] } {
+      const { getRecords, filePrefix, scope } = opts;
+      const of = scope ? `${scope} ` : '';
+      const mk = (label: string, ariaLabel: string, onClick: () => void | Promise<void>): HTMLButtonElement => {
+        const btn = doc.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.setAttribute('aria-label', ariaLabel);
+        btn.style.cssText = ACTION_BTN_CSS;
+        btn.addEventListener('click', () => void onClick());
+        return btn;
+      };
+      const copyText = async (text: string, what: string): Promise<void> => {
+        const n = getRecords().length;
+        try {
+          await win.navigator.clipboard.writeText(text);
+          showToast(`Copied ${n} ${of}row${n === 1 ? '' : 's'} ${what}`, { doc, kind: 'success' });
+        } catch {
+          showToast('Could not copy to clipboard', { doc, kind: 'error' });
+        }
+      };
+      const copyCsv = mk('Copy CSV', `Copy ${of}rows as CSV`, () =>
+        copyText(recordsToCsv(getRecords()), 'as CSV'));
+      const exportCsv = mk('Export CSV', `Download ${of}rows as a CSV file`, () => {
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        triggerDownload(doc, `${filePrefix}-${stamp}.csv`, recordsToCsv(getRecords()), 'text/csv');
+      });
+      const copyJson = mk('Copy JSON', `Copy ${of}rows as JSON`, () =>
+        copyText(recordsToJson(getRecords()), 'as JSON'));
+      const copyExcel = mk('Copy for Excel', `Copy ${of}rows for Excel`, () =>
+        copyText(recordsToTsv(getRecords()), 'for Excel'));
+      return { copyCsv, exportCsv, copyJson, copyExcel, all: [copyCsv, exportCsv, copyJson, copyExcel] };
+    }
+
+    const mainActions = createResultActions({ getRecords: () => records, filePrefix: 'soql' });
+    const { copyCsv: copyCsvBtn, exportCsv: exportCsvBtn, copyJson: copyJsonBtn, copyExcel: copyExcelBtn } =
+      mainActions;
+    for (const btn of mainActions.all) btn.style.display = 'none';
+
     const footer = doc.createElement('div');
     footer.style.cssText = 'display: flex; gap: 8px; align-items: center;';
     const loadMoreBtn = doc.createElement('button');
     loadMoreBtn.textContent = 'Load more';
     loadMoreBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
-    const copyCsvBtn = doc.createElement('button');
-    copyCsvBtn.textContent = 'Copy CSV';
-    copyCsvBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
-    const exportCsvBtn = doc.createElement('button');
-    exportCsvBtn.textContent = 'Export CSV';
-    exportCsvBtn.style.cssText =
       'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     const exportAllBtn = doc.createElement('button');
     exportAllBtn.textContent = 'Export all as CSV';
@@ -727,14 +1065,6 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     cancelExportBtn.setAttribute('aria-label', 'Cancel export');
     cancelExportBtn.style.cssText =
       'padding: 6px 12px; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-surface); color: var(--sfdt-color-error-text); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
-    const copyJsonBtn = doc.createElement('button');
-    copyJsonBtn.textContent = 'Copy JSON';
-    copyJsonBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-strong); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
-    const copyExcelBtn = doc.createElement('button');
-    copyExcelBtn.textContent = 'Copy for Excel';
-    copyExcelBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-strong); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
     const langGraphBtn = doc.createElement('button');
     langGraphBtn.textContent = 'LangGraph Node';
     langGraphBtn.style.cssText =
@@ -769,13 +1099,6 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       onClose: () => { view = null; activeTextarea = null; unsubscribeDescribe(); },
     });
 
-    let records: Array<Record<string, unknown>> = [];
-    let lastEnvelope: QueryEnvelope<Record<string, unknown>> | null = null;
-    let pagesLoaded = 0;
-    // Tracks an in-flight "Export all" so a new run/loadMore/error can supersede
-    // it: the running export compares against this and stays silent once null'd.
-    let exportController: AbortController | null = null;
-
     // Cancel any in-flight export and reset its UI. Idempotent; the running
     // handler's owns()-guard skips its own cleanup once superseded here.
     function abortExport(): void {
@@ -794,7 +1117,26 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     function setBusy(next: boolean): void {
       busy = next;
       runBtn.disabled = next;
-      explainBtn.disabled = next;
+      // Explain stays disabled in SOSL mode regardless of the busy flag —
+      // there is no query plan for a FIND query.
+      explainBtn.disabled = next || lang === 'sosl';
+    }
+
+    // Hide every footer action that belongs to a result set (the shared
+    // toolbar's four, plus the pagination/export-all/LangGraph extras).
+    function hideResultActions(): void {
+      for (const btn of [
+        loadMoreBtn,
+        copyCsvBtn,
+        exportCsvBtn,
+        exportAllBtn,
+        cancelExportBtn,
+        copyJsonBtn,
+        copyExcelBtn,
+        langGraphBtn,
+      ]) {
+        btn.style.display = 'none';
+      }
     }
 
     function showError(message: string): void {
@@ -803,14 +1145,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       errorPanel.style.display = 'block';
       resultsWrap.style.display = 'none';
       explainPanel.style.display = 'none';
-      loadMoreBtn.style.display = 'none';
-      copyCsvBtn.style.display = 'none';
-      exportCsvBtn.style.display = 'none';
-      exportAllBtn.style.display = 'none';
-      cancelExportBtn.style.display = 'none';
-      copyJsonBtn.style.display = 'none';
-      copyExcelBtn.style.display = 'none';
-      langGraphBtn.style.display = 'none';
+      hideResultActions();
     }
 
     function clearError(): void {
@@ -883,18 +1218,18 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       doc.addEventListener('click', outsideClick);
     }
 
-    function renderResults(): void {
-      explainPanel.style.display = 'none';
-      while (resultsWrap.firstChild) resultsWrap.removeChild(resultsWrap.firstChild);
-      if (records.length === 0) {
-        const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon); font-size: 13px;';
-        empty.textContent = 'No rows.';
-        resultsWrap.appendChild(empty);
-        resultsWrap.style.display = 'block';
-        return;
-      }
-      const cols = columnsFromRecords(records);
+    function emptyNote(text: string): HTMLDivElement {
+      const empty = doc.createElement('div');
+      empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon); font-size: 13px;';
+      empty.textContent = text;
+      return empty;
+    }
+
+    // Build the result table for a record set. Shared by the flat SOQL view and
+    // each SOSL object group so the two never drift (record-Id cells, the
+    // 200-char cell clamp, and the sticky header behave identically).
+    function buildRecordsTable(rows: ReadonlyArray<Record<string, unknown>>): HTMLTableElement {
+      const cols = columnsFromRecords(rows);
       const table = doc.createElement('table');
       table.style.cssText = 'border-collapse: collapse; width: 100%; font-size: 12px;';
       const thead = doc.createElement('thead');
@@ -909,7 +1244,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       thead.appendChild(headRow);
       table.appendChild(thead);
       const tbody = doc.createElement('tbody');
-      for (const r of records) {
+      for (const r of rows) {
         const tr = doc.createElement('tr');
         for (const c of cols) {
           const td = doc.createElement('td');
@@ -934,7 +1269,20 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         tbody.appendChild(tr);
       }
       table.appendChild(tbody);
-      resultsWrap.appendChild(table);
+      return table;
+    }
+
+    // Flat SOQL result set.
+    function renderResults(): void {
+      explainPanel.style.display = 'none';
+      while (resultsWrap.firstChild) resultsWrap.removeChild(resultsWrap.firstChild);
+      if (records.length === 0) {
+        hideResultActions();
+        resultsWrap.appendChild(emptyNote('No rows.'));
+        resultsWrap.style.display = 'block';
+        return;
+      }
+      resultsWrap.appendChild(buildRecordsTable(records));
       resultsWrap.style.display = 'block';
       copyCsvBtn.style.display = 'inline-block';
       exportCsvBtn.style.display = 'inline-block';
@@ -945,6 +1293,53 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       const canPaginate =
         !!lastEnvelope && lastEnvelope.done === false && !!lastEnvelope.nextRecordsUrl;
       loadMoreBtn.style.display = canPaginate && pagesLoaded < PAGE_CAP ? 'inline-block' : 'none';
+    }
+
+    // SOSL result set: one section per returned sObject, each with its own copy
+    // of the shared result toolbar scoped to that group's rows. The footer
+    // actions stay hidden — they act on the flat SOQL set, and SOSL has no
+    // queryMore to paginate or export-all.
+    function renderGroupedResults(): void {
+      explainPanel.style.display = 'none';
+      hideResultActions();
+      while (resultsWrap.firstChild) resultsWrap.removeChild(resultsWrap.firstChild);
+      if (groups.length === 0) {
+        resultsWrap.appendChild(emptyNote('No matches.'));
+        resultsWrap.style.display = 'block';
+        return;
+      }
+      for (const group of groups) {
+        const section = doc.createElement('section');
+        section.setAttribute('aria-label', `${group.sobject} results`);
+        section.style.cssText = 'border-bottom: 1px solid var(--sfdt-color-border);';
+
+        const head = doc.createElement('div');
+        head.style.cssText =
+          'display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 10px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border);';
+        const heading = doc.createElement('h3');
+        const n = group.records.length;
+        heading.textContent = `${group.sobject} · ${n} row${n === 1 ? '' : 's'}`;
+        heading.style.cssText =
+          'margin: 0; font-size: 12px; font-weight: 600; color: var(--sfdt-color-text-strong);';
+        head.appendChild(heading);
+        const spacer = doc.createElement('span');
+        spacer.style.cssText = 'flex: 1;';
+        head.appendChild(spacer);
+        const groupActions = createResultActions({
+          // The sObject name is org-supplied and reaches a download filename
+          // here — real API names are already [A-Za-z0-9_], so this only ever
+          // bites on a malformed describe, but the filename is not the place to
+          // find that out.
+          filePrefix: `sosl-${group.sobject.replace(/[^A-Za-z0-9_]+/g, '_')}`,
+          getRecords: () => group.records,
+          scope: group.sobject,
+        });
+        for (const btn of groupActions.all) head.appendChild(btn);
+        section.appendChild(head);
+        section.appendChild(buildRecordsTable(group.records));
+        resultsWrap.appendChild(section);
+      }
+      resultsWrap.style.display = 'block';
     }
 
     async function renderHistoryMenu(): Promise<void> {
@@ -962,6 +1357,11 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         const item = doc.createElement('div');
         item.style.cssText =
           'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--sfdt-color-bg); font-family: ui-monospace, monospace; font-size: 11px;';
+        const entryMode = entryLang(entry);
+        const langBadge = doc.createElement('span');
+        langBadge.textContent = entryMode === 'sosl' ? 'SOSL ' : 'SOQL ';
+        langBadge.style.cssText =
+          'color: var(--sfdt-color-text-weak); font-weight: 600; margin-right: 6px;';
         const badge = doc.createElement('span');
         badge.textContent = entry.api === 'tooling' ? 'TOOL ' : 'REST ';
         badge.style.cssText =
@@ -971,11 +1371,17 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         const text = doc.createElement('span');
         const trimmed = entry.q.length > 200 ? entry.q.slice(0, 200) + '…' : entry.q;
         text.textContent = trimmed;
+        item.appendChild(langBadge);
         item.appendChild(badge);
         item.appendChild(text);
         item.addEventListener('click', () => {
           textarea.value = entry.q;
-          setMode(entry.api);
+          // Language first (it decides whether the transport control is even
+          // available), then the recorded transport for a SOQL entry. A SOSL
+          // entry leaves the user's SOQL transport choice untouched — it ran on
+          // REST because SOSL always does, not because they chose REST.
+          setLang(entryMode, { explicit: true });
+          if (entryMode === 'soql') setMode(entry.api);
           if (historyMenu) historyMenu.style.display = 'none';
           textarea.focus();
         });
@@ -1001,13 +1407,19 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         const contentWrap = doc.createElement('div');
         contentWrap.style.cssText = 'display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
         
+        const entryMode = entryLang(entry);
+        const langBadge = doc.createElement('span');
+        langBadge.textContent = entryMode === 'sosl' ? 'SOSL ' : 'SOQL ';
+        langBadge.style.cssText =
+          'color: var(--sfdt-color-text-weak); font-weight: 600; margin-right: 6px; flex-shrink: 0;';
+
         const badge = doc.createElement('span');
         badge.textContent = entry.api === 'tooling' ? 'TOOL ' : 'REST ';
         badge.style.cssText =
           entry.api === 'tooling'
             ? 'color: var(--sfdt-color-warning-text); font-weight: 600; margin-right: 6px; flex-shrink: 0;'
             : 'color: var(--sfdt-color-brand-text); font-weight: 600; margin-right: 6px; flex-shrink: 0;';
-        
+
         const titleText = doc.createElement('strong');
         titleText.textContent = `${entry.name}: `;
         titleText.style.cssText = 'margin-right: 4px; flex-shrink: 0;';
@@ -1015,6 +1427,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         const qText = doc.createElement('span');
         qText.textContent = entry.q.length > 100 ? entry.q.slice(0, 100) + '…' : entry.q;
         
+        contentWrap.appendChild(langBadge);
         contentWrap.appendChild(badge);
         contentWrap.appendChild(titleText);
         contentWrap.appendChild(qText);
@@ -1036,7 +1449,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
 
         item.addEventListener('click', () => {
           textarea.value = entry.q;
-          setMode(entry.api);
+          setLang(entryMode, { explicit: true });
+          if (entryMode === 'soql') setMode(entry.api);
           savedQueriesMenu.style.display = 'none';
           textarea.focus();
         });
@@ -1057,18 +1471,33 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       status.textContent = 'Running…';
       const t0 = Date.now();
       try {
-        const envelope = await runQuery(api, soql, mode);
-        const elapsed = Date.now() - t0;
-        const total = envelope.totalSize ?? envelope.size ?? envelope.records.length;
-        records = [...envelope.records];
-        lastEnvelope = envelope;
-        pagesLoaded = 1;
-        status.textContent = `⏱ ${elapsed} ms · ${records.length}${
-          envelope.done ? '' : ` of ${total}+`
-        } row${records.length === 1 ? '' : 's'}`;
-        renderResults();
+        if (lang === 'sosl') {
+          const found = await runSearch(api, soql);
+          const elapsed = Date.now() - t0;
+          groups = found;
+          records = [];
+          lastEnvelope = null;
+          pagesLoaded = 0;
+          const rows = soslRowCount(found);
+          status.textContent = `⏱ ${elapsed} ms · ${rows} row${rows === 1 ? '' : 's'} across ${
+            found.length
+          } object${found.length === 1 ? '' : 's'}`;
+          renderGroupedResults();
+        } else {
+          const envelope = await runQuery(api, soql, effectiveMode());
+          const elapsed = Date.now() - t0;
+          const total = envelope.totalSize ?? envelope.size ?? envelope.records.length;
+          groups = [];
+          records = [...envelope.records];
+          lastEnvelope = envelope;
+          pagesLoaded = 1;
+          status.textContent = `⏱ ${elapsed} ms · ${records.length}${
+            envelope.done ? '' : ` of ${total}+`
+          } row${records.length === 1 ? '' : 's'}`;
+          renderResults();
+        }
         if (historyEnabled) {
-          await pushSoqlHistory({ q: soql, api: mode, ts: Date.now() });
+          await pushSoqlHistory({ q: soql, api: effectiveMode(), lang, ts: Date.now() });
         }
       } catch (err) {
         showError(err instanceof Error ? err.message : String(err));
@@ -1163,7 +1592,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       status.textContent = 'Explaining…';
       const t0 = Date.now();
       try {
-        const plans = await explainQuery(api, soql, mode);
+        const plans = await explainQuery(api, soql, effectiveMode());
         renderPlan(plans);
         status.textContent = `⏱ ${Date.now() - t0} ms · query plan`;
       } catch (err) {
@@ -1208,6 +1637,13 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     // --- AUTOCOMPLETE STATE & ENGINE ---
     let autocompleteState = '';
     async function runAutocomplete(ctrlSpace = false) {
+      // The suggestion engine parses SELECT/FROM/WHERE — SOSL has none of that
+      // grammar, so the box is hidden (setLang) and the engine stays idle
+      // rather than emitting SOQL suggestions for a FIND query.
+      if (lang === 'sosl') {
+        autocompleteState = '';
+        return;
+      }
       let selStart = textarea.selectionStart;
       const selEnd = textarea.selectionEnd;
       const query = textarea.value;
@@ -1256,7 +1692,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         if (globalDesc.status === 'error') {
           renderAutocompleteUI({
             sobjectName: '',
-            title: 'Loading SObjects failed. Click to retry.',
+            title: globalDesc.error
+              ? `Loading SObjects failed: ${globalDesc.error}`
+              : 'Loading SObjects failed. Click to retry.',
             results: [{ value: 'Retry', title: 'Retry', autocompleteType: 'retry', suffix: '' }]
           });
           return;
@@ -1336,7 +1774,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       if (sobjectDesc.status === 'error') {
         renderAutocompleteUI({
           sobjectName,
-          title: `Loading ${sobjectName} metadata failed. Click to retry.`,
+          title: sobjectDesc.error
+            ? `Loading ${sobjectName} metadata failed: ${sobjectDesc.error}`
+            : `Loading ${sobjectName} metadata failed. Click to retry.`,
           results: [{ value: 'Retry', title: 'Retry', autocompleteType: 'retry', suffix: '' }]
         });
         return;
@@ -1366,6 +1806,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       let contextSobjectDescribes = [sobjectDesc.data!];
       const contextPath = query.substring(0, contextEnd).match(/[a-zA-Z0-9_.]*$/)?.[0] ?? '';
       const sobjectStatuses = new Map<string, string>();
+      // Why the last relationship-target describe failed, so the autocomplete
+      // can say more than "failed" when a lookup's target object is unreadable
+      // (the usual cause: the user has no access to the referenced object).
+      let describeError = '';
 
       if (contextPath) {
         const contextFields = contextPath.split('.');
@@ -1383,6 +1827,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
                   newContextSobjectDescribes.push(res.data);
                 } else {
                   sobjectStatuses.set(res.status, referencedSobjectName);
+                  if (res.status === 'error' && res.error) describeError = res.error;
                 }
               }
             }
@@ -1399,7 +1844,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         if (sobjectStatuses.has('error')) {
           renderAutocompleteUI({
             sobjectName,
-            title: `Loading ${sobjectStatuses.get('error')} metadata failed. Click to retry.`,
+            title: describeError
+              ? `Loading ${sobjectStatuses.get('error')} metadata failed: ${describeError}`
+              : `Loading ${sobjectStatuses.get('error')} metadata failed. Click to retry.`,
             results: [{ value: 'Retry', title: 'Retry', autocompleteType: 'retry', suffix: '' }]
           });
           return;
@@ -1798,10 +2245,15 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     explainBtn.addEventListener('click', () => void explain());
     loadMoreBtn.addEventListener('click', () => void loadMore());
     
-    // Wire up autocomplete events
-    textarea.addEventListener('input', () => void runAutocomplete());
+    // Wire up autocomplete events (and keep the language toggle in step with
+    // whatever the user has typed).
+    textarea.addEventListener('input', () => {
+      syncLangFromText();
+      void runAutocomplete();
+    });
     textarea.addEventListener('keyup', (e) => {
       if (e.key !== 'Control' && e.key !== 'Meta' && e.key !== 'Shift' && e.key !== 'Alt') {
+        syncLangFromText();
         void runAutocomplete();
       }
     });
@@ -1819,20 +2271,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       }
     });
 
-    copyCsvBtn.addEventListener('click', async () => {
-      const csv = recordsToCsv(records);
-      try {
-        await win.navigator.clipboard.writeText(csv);
-        showToast(`Copied ${records.length} rows as CSV`, { doc, kind: 'success' });
-      } catch {
-        showToast('Could not copy to clipboard', { doc, kind: 'error' });
-      }
-    });
-    exportCsvBtn.addEventListener('click', () => {
-      const csv = recordsToCsv(records);
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      triggerDownload(doc, `soql-${stamp}.csv`, csv, 'text/csv');
-    });
+    // Copy CSV / Export CSV / Copy JSON / Copy for Excel are wired by
+    // createResultActions() above — the same code path the per-object SOSL
+    // toolbars use.
 
     cancelExportBtn.addEventListener('click', () => exportController?.abort());
     exportAllBtn.addEventListener('click', async () => {
@@ -1850,7 +2291,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       const prevStatus = status.textContent;
       status.textContent = 'Exporting all… fetching page 1';
       try {
-        const first = await runQuery(api, soql, mode);
+        const first = await runQuery(api, soql, effectiveMode());
         // The worker-proxied page-1 fetch can't be aborted mid-flight; guarantee
         // the data-correctness half — a Cancel during page 1 yields NO download.
         if (!owns()) return; // superseded by a new run/loadMore/explain — stay silent
@@ -1890,23 +2331,6 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         }
       }
     });
-    copyJsonBtn.addEventListener('click', async () => {
-      try {
-        await win.navigator.clipboard.writeText(recordsToJson(records));
-        showToast(`Copied ${records.length} rows as JSON`, { doc, kind: 'success' });
-      } catch {
-        showToast('Could not copy to clipboard', { doc, kind: 'error' });
-      }
-    });
-    copyExcelBtn.addEventListener('click', async () => {
-      try {
-        await win.navigator.clipboard.writeText(recordsToTsv(records));
-        showToast(`Copied ${records.length} rows for Excel`, { doc, kind: 'success' });
-      } catch {
-        showToast('Could not copy to clipboard', { doc, kind: 'error' });
-      }
-    });
-
     langGraphBtn.addEventListener('click', async () => {
       const currentSoql = textarea.value.trim();
       const code = generateLangGraphNode(currentSoql, records);
@@ -1925,11 +2349,13 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       }
     });
 
-    // A Saved SOQL panel selection pre-fills the editor (and the API mode).
+    // A Saved SOQL panel selection pre-fills the editor (and the API mode +
+    // query language, so a staged SOSL bookmark opens in SOSL mode).
     const pending = await takePendingQuery();
     if (pending) {
       textarea.value = pending.q;
       mode = pending.api;
+      lang = entryLang(pending);
     }
 
     // Expose the live textarea so insertFieldIntoDraft() targets it, and drain
@@ -1941,7 +2367,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     }
 
     textarea.focus();
-    setMode(mode);
+    // setLang paints the transport toggle too (and marks it unavailable when
+    // the staged entry is SOSL), so this one call establishes both controls.
+    setLang(lang);
   }
 
   return {
@@ -1988,8 +2416,15 @@ export function _soqlRunnerTestApi() {
     deleteSavedQuery,
     DescribeCache,
     runQuery,
+    runSearch,
     explainQuery,
     insertFieldIntoQuery,
+    isSoslQuery,
+    detectQueryLang,
+    entryLang,
+    searchRecordsFrom,
+    groupSearchRecords,
+    soslRowCount,
     HISTORY_CAP,
     PAGE_CAP,
   };
