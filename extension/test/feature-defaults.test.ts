@@ -4,7 +4,7 @@
 // every shipped manifest declares `enabledByDefault: true`, so NO assertion
 // made over the real manifests can distinguish a correct
 // `m.enabledByDefault ?? true` mapping from a constant `true`. A seed that
-// registers all 44 ids but silently drops the flag passes the entire rest of
+// registers every shipped id but silently drops the flag passes the entire rest of
 // the suite — including the parity test and the "seeds a default for every
 // shipped feature" membership check, which asserts ids, not values.
 //
