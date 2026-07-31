@@ -711,7 +711,7 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
     // `scope="col"` header is an UNNAMED column header, so it carries an
     // accessible name instead (CONVENTIONS item 10).
     const columns: ReadonlyArray<readonly [text: string, accessibleName: string]> = [
-      ['Source', 'Source'],
+      ['Status', 'Status'],
       ['Type', 'Type'],
       ['Component', 'Component'],
       ['Evidence', 'Evidence'],
