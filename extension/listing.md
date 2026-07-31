@@ -34,6 +34,31 @@
 > from when there were 13 tools. Recapturing is a human task; see this folder's README for
 > the featured-5 rationale and which shots to avoid.
 
+## Dashboard field map
+
+Everything below is ready to paste. This table says **which dashboard tab each field lives in**,
+so the whole listing can be staged before the `ext-v0.11.0` zip is uploaded. Lengths were
+measured from this file's own sections — the headroom column is what's left before the store
+truncates or rejects.
+
+| Field | CWS tab | Chars | Limit | Source |
+|---|---|---|---|---|
+| Item name | Store listing | 19 | 75 | **dashboard only — not the manifest** |
+| Short description | Store listing | 119 | 132 | matches manifest `description` byte-for-byte |
+| Category / Language | Store listing | — | — | dashboard only |
+| Detailed description | Store listing | 5,987 | 16,000 | this file |
+| Screenshots (5) | Store listing | — | 1280×800 | `store-assets/` |
+| Single purpose | Privacy practices | 287 | 1,000 | this file |
+| Permission justifications (8) | Privacy practices | ≤403 each | 1,000 each | this file |
+| Data usage + certifications | Privacy practices | — | — | see below |
+| Visibility / Regions / Pricing | Distribution | — | — | dashboard only |
+
+**Four fields never come from the zip** and are the ones that silently keep showing stale values:
+the item name, the category, the data-usage disclosures, and the distribution settings.
+
+The **item name is the live one this release** — the packaged manifest reads "SFDT for
+Salesforce" but the store will keep displaying "SFDT SF Helper" until it is retyped here by hand.
+
 ## Item name
 SFDT for Salesforce
 
@@ -134,6 +159,76 @@ Extends the same Salesforce-only support to orgs served on non-standard domains:
 
 ### host_permissions: http://localhost/*, http://127.0.0.1/*
 Optional connection to the user's local sfdt CLI HTTP bridge (default port 7654) for Flow Deploy, Rollback, and AI Assistant features. Disabled until the user starts the bridge themselves.
+
+## Privacy practices — data usage & certifications
+
+The **Privacy practices** tab is what actually blocks auto-publish, and none of it comes from
+the zip. Alongside the Single purpose and the eight permission justifications above, the tab
+asks for the following. Answers verified against the built manifest and the code on this ref,
+not from memory:
+
+### Are you using remote code?
+**No — all code is bundled in the package.** Verified: the built manifest declares no
+`content_security_policy`, no `sandbox`, no `web_accessible_resources` and no
+`externally_connectable`, and there is no `<script src="http…">`, no `import()` of a URL, and
+no `eval`/`new Function` anywhere in `entrypoints/`, `features/`, `ui/` or `lib/`.
+
+### Data usage — what the item collects
+Chrome's definition of *collect* is transmitting data **off the user's device to a server you
+or a third party control**. On that definition the answer is **none of the listed categories**:
+
+| Category | Answer |
+|---|---|
+| Personally identifiable information | No |
+| Health information | No |
+| Financial and payment information | No |
+| Authentication information | No |
+| Personal communications | No |
+| Location | No |
+| Web history | No |
+| User activity | No |
+| Website content | No |
+
+All Salesforce traffic goes to **the user's own org** — the same origin they are already
+authenticated to — or to **localhost** when they have started the sfdt CLI themselves. Session
+cookies are read locally to resolve the org session and never leave the device
+(`test/sid-never-leaves-worker.test.ts` enforces this with zero allowlisted exceptions).
+Telemetry is off by default, local-only, and has no network egress (`test/telemetry.test.ts`,
+11/11 passing on this ref).
+
+> **One answer needs your call before you save the tab — the AI Assistant.** When a user
+> explicitly enables it, Flow content is sent to Claude / Gemini / OpenAI **through the local
+> CLI bridge, using an API key the user supplies and is billed for**. `PRIVACY.md`'s "Third
+> parties" section states the position: the extension is a pass-through and we neither see,
+> log, nor store prompts or completions. Because the developer operates no server and the
+> destination is the user's own provider account, "No" to *Website content* is defensible and
+> is the answer this file records. The opposing reading is that content does leave the device
+> to a third party, opt-in or not. It is a disclosure decision rather than a technical one, so
+> confirm it rather than pasting it unread — an under-disclosure here is the kind of thing
+> that gets an item pulled after the fact, not rejected at review.
+
+### The three certification checkboxes
+All three are truthful for this item and must be ticked or the submission will not save:
+
+- [ ] Data is not being sold to third parties, outside of approved use cases
+- [ ] Data is not being used or transferred for purposes unrelated to the item's single purpose
+- [ ] Data is not being used or transferred to determine creditworthiness or for lending purposes
+
+## Screenshots — upload plan
+
+**Specs:** 1280×800 (all 15 present frames already conform), PNG, max 5 shown as the featured
+set, and **slot 1 is the hero**. The featured-5 order and the rationale for it live in
+`store-assets/README.md` — that file is the source of truth, not duplicated here.
+
+**These are 0.3.x-era and this is the release's weakest point.** Nothing that shipped after
+0.3.x has a frame at all — no Schema Browser, Command Palette, Trace Flags, Field Impact
+Analysis, side panel, or SOSL mode — and `final_06`, the hero, shows a Workspace nav from when
+there were 13 tools. `final_14` and `final_15` are deleted pending recapture (one captured the
+now-fixed SOAP API-version error live, the other leaked a real org id, company name and email).
+
+The listing can be fully pre-positioned without touching these — the store keeps the existing
+screenshots if none are uploaded. Recapturing is a separate human task against a scratch org,
+never a production one, given what `final_15` leaked.
 
 ## Distribution
 - Visibility: Public
