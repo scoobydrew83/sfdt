@@ -94,7 +94,7 @@ export interface WorkflowFieldUpdateCandidate {
   /** Developer name. */
   name: string;
   label?: string | null;
-  /** Target object (`TableEnumOrId`). */
+  /** Target object, taken from the `Object.UpdateName` prefix of `FullName`. */
   object?: string | null;
   /** Target field from its `Metadata.field`; `null` when unread. */
   field: string | null;

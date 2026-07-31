@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
-"""Regenerate promo-small-440x280.png, the Chrome Web Store small promo tile.
+"""Regenerate the Chrome Web Store promo tiles.
 
-The tile bakes the item name and the feature count into pixels, so both go stale
-silently — a dashboard edit cannot fix them. This script rebuilds it from the
+The tiles bake the item name and the feature count into pixels, so both go stale
+silently — a dashboard edit cannot fix them. This script rebuilds them from the
 runtime icon plus two inputs that are read, never typed:
 
   * the feature count, from generated/chrome-features.json
   * the item name, from extension/listing.md's "## Item name" section
 
-Geometry was measured off the 0.10.0-era tile so the regenerated art keeps the
-same layout rather than drifting each time it is rebuilt.
+Two sizes, both required by CWS to be 24-bit RGB with no alpha:
 
-Usage:  python3 make-promo-tile.py [--check]
-        --check verifies the committed PNG matches what this script produces
-                (byte-identical), and exits non-zero if it has drifted.
+  small    440x280  — shown in search results and category pages (required)
+  marquee  1400x560 — only shown if Google features the listing (optional)
 
-CWS requires the small promo tile to be 440x280, 24-bit RGB with no alpha.
+The small tile's geometry was measured off the 0.10.0-era art so rebuilds keep
+that layout rather than drifting. The marquee is authored, not scaled: 2.5:1 is
+a different composition from 1.57:1, so its numbers stand on their own.
+
+Usage:  python3 make-promo-tile.py [--check] [--size small|marquee|all]
+        --check verifies the committed PNGs match what this script produces
+                (byte-identical), and exits non-zero if any has drifted.
 """
 
 import argparse
@@ -31,29 +35,50 @@ HERE = pathlib.Path(__file__).resolve().parent
 EXT = HERE.parent
 REPO = EXT.parent
 
-OUT = HERE / "promo-small-440x280.png"
 ICON = EXT / "public" / "icon" / "128.png"
 CATALOG = REPO / "generated" / "chrome-features.json"
 LISTING = EXT / "listing.md"
 
-W, H = 440, 280
-
 # The background is a bilinear blend of four corner colours, not a simple
 # diagonal ramp. These were least-squares fitted to the 0.10.0 tile's clean
-# background pixels (rmse 4.7; a naive diagonal ramp scored 19.7).
+# background pixels (rmse 4.7; a naive diagonal ramp scored 19.7). Colours are
+# size-independent, so both tiles share them.
 GRAD_TL, GRAD_TR = (0x4D, 0x3E, 0xC3), (0x85, 0x6E, 0xF3)
 GRAD_BL, GRAD_BR = (0x58, 0x4F, 0xE1), (0x7C, 0x4B, 0xEE)
 
-# Soft drop shadow under the white tile, profiled off the original: ~0.81
-# brightness right at the lower edge, back to 1.0 by ~18px below.
-SHADOW_OFFSET, SHADOW_BLUR, SHADOW_ALPHA = (0, 6), 10, 80
-
-# Measured off the previous tile — keep these stable so rebuilds don't drift.
-PILL = (40, 36, 190, 66)  # x0, y0, x1, y1 — fully rounded
-TILE_XY, TILE_WH, TILE_R = (40, 92), 96, 22  # white rounded square
-ICON_XY, ICON_WH = (58, 110), 60
-TEXT_X = 161
-Y_WORDMARK, Y_NAME, Y_TAG1, Y_TAG2 = 95, 143, 185, 206
+SPECS = {
+    # Measured off the shipped 0.10.0 tile — keep stable so rebuilds don't drift.
+    "small": dict(
+        out="promo-small-440x280.png",
+        size=(440, 280),
+        pill=(40, 36, 190, 66),          # x0, y0, x1, y1 — fully rounded
+        tile_xy=(40, 92), tile_wh=96, tile_r=22,   # white rounded square
+        icon_xy=(58, 110), icon_wh=60,
+        # Soft drop shadow under the white tile, profiled off the original: ~0.81
+        # brightness right at the lower edge, back to 1.0 by ~18px below.
+        shadow_offset=(0, 6), shadow_blur=10, shadow_alpha=80,
+        text_x=161, pill_pad=7,
+        y_wordmark=95, y_name=143, y_tag1=185, y_tag2=206,
+        f_pill=13, f_wordmark=40, f_name=24, f_tag=15,
+        dots_y=232, dots_x=16, dots_step=12, dots_r=2,
+    ),
+    # Authored for 2.5:1, not scaled from the small tile. The lockup centres on
+    # both axes — left-anchoring it the way the 440x280 does leaves the right
+    # half of a 1400px canvas visibly empty — and runs bigger, since the marquee
+    # is only ever displayed large.
+    "marquee": dict(
+        out="promo-marquee-1400x560.png",
+        size=(1400, 560),
+        pill=(623, 128, 899, 172),
+        tile_xy=(413, 192), tile_wh=176, tile_r=40,
+        icon_xy=(446, 225), icon_wh=110,
+        shadow_offset=(0, 11), shadow_blur=18, shadow_alpha=80,
+        text_x=623, pill_pad=10,
+        y_wordmark=190, y_name=282, y_tag1=356, y_tag2=394,
+        f_pill=22, f_wordmark=76, f_name=44, f_tag=26,
+        dots_y=470, dots_x=28, dots_step=20, dots_r=3,
+    ),
+}
 
 FONTS_BOLD = [
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
@@ -89,102 +114,125 @@ def item_name() -> str:
     return m.group(1).strip()
 
 
-def gradient() -> Image.Image:
+def gradient(size) -> Image.Image:
     """Bilinear blend of the four fitted corner colours."""
-    img = Image.new("RGB", (W, H))
+    w, h = size
+    img = Image.new("RGB", size)
     px = img.load()
-    for y in range(H):
-        v = y / (H - 1)
+    for y in range(h):
+        v = y / (h - 1)
         top = [a + (b - a) * v for a, b in zip(GRAD_TL, GRAD_BL)]
         bot = [a + (b - a) * v for a, b in zip(GRAD_TR, GRAD_BR)]
-        for x in range(W):
-            u = x / (W - 1)
+        for x in range(w):
+            u = x / (w - 1)
             px[x, y] = tuple(round(a + (b - a) * u) for a, b in zip(top, bot))
     return img
 
 
-def rounded(size, radius, fill):
+def rounded(size, box, radius, fill):
     """An RGBA layer holding one rounded rectangle, for alpha compositing."""
-    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ImageDraw.Draw(layer).rounded_rectangle(size, radius=radius, fill=fill)
+    layer = Image.new("RGBA", size, (0, 0, 0, 0))
+    ImageDraw.Draw(layer).rounded_rectangle(box, radius=radius, fill=fill)
     return layer
 
 
-def build() -> Image.Image:
+def build(spec) -> Image.Image:
     name, count = item_name(), feature_count()
     # "SFDT for Salesforce" renders as a bold wordmark plus a lighter qualifier.
     wordmark, _, qualifier = name.partition(" ")
 
-    img = gradient()
+    size = spec["size"]
+    w, h = size
+    pill = spec["pill"]
+    img = gradient(size)
 
     # Dot texture along the lower band — subtle, matches the original art.
-    dots = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    dots = Image.new("RGBA", size, (0, 0, 0, 0))
     d = ImageDraw.Draw(dots)
-    for gy in range(232, H, 12):
-        for gx in range(16, W, 12):
-            d.ellipse([gx, gy, gx + 2, gy + 2], fill=(255, 255, 255, 26))
+    step, r = spec["dots_step"], spec["dots_r"]
+    for gy in range(spec["dots_y"], h, step):
+        for gx in range(spec["dots_x"], w, step):
+            d.ellipse([gx, gy, gx + r, gy + r], fill=(255, 255, 255, 26))
     img = Image.alpha_composite(img.convert("RGBA"), dots)
 
-    img = Image.alpha_composite(img, rounded(PILL, (PILL[3] - PILL[1]) // 2,
+    img = Image.alpha_composite(img, rounded(size, pill, (pill[3] - pill[1]) // 2,
                                              (255, 255, 255, 48)))
-    tx, ty = TILE_XY
-    box = [tx, ty, tx + TILE_WH, ty + TILE_WH]
+    tx, ty = spec["tile_xy"]
+    tw = spec["tile_wh"]
+    box = [tx, ty, tx + tw, ty + tw]
 
-    ox, oy = SHADOW_OFFSET
-    shadow = rounded([box[0] + ox, box[1] + oy, box[2] + ox, box[3] + oy],
-                     TILE_R, (0, 0, 0, SHADOW_ALPHA))
+    ox, oy = spec["shadow_offset"]
+    shadow = rounded(size, [box[0] + ox, box[1] + oy, box[2] + ox, box[3] + oy],
+                     spec["tile_r"], (0, 0, 0, spec["shadow_alpha"]))
     img = Image.alpha_composite(img, shadow.filter(
-        ImageFilter.GaussianBlur(SHADOW_BLUR)))
+        ImageFilter.GaussianBlur(spec["shadow_blur"])))
 
-    img = Image.alpha_composite(img, rounded(box, TILE_R, (255, 255, 255, 255)))
+    img = Image.alpha_composite(img, rounded(size, box, spec["tile_r"],
+                                             (255, 255, 255, 255)))
 
-    icon = Image.open(ICON).convert("RGBA").resize(
-        (ICON_WH, ICON_WH), Image.LANCZOS
-    )
-    img.alpha_composite(icon, ICON_XY)
+    iw = spec["icon_wh"]
+    icon = Image.open(ICON).convert("RGBA").resize((iw, iw), Image.LANCZOS)
+    img.alpha_composite(icon, spec["icon_xy"])
 
     draw = ImageDraw.Draw(img)
     pill_text = f"{count} features · opt-in"
-    f_pill = font(FONTS_REG, 13)
+    f_pill = font(FONTS_REG, spec["f_pill"])
     pw = draw.textlength(pill_text, font=f_pill)
-    draw.text(((PILL[0] + PILL[2]) / 2 - pw / 2, PILL[1] + 7), pill_text,
-              font=f_pill, fill=(255, 255, 255, 235))
+    draw.text(((pill[0] + pill[2]) / 2 - pw / 2, pill[1] + spec["pill_pad"]),
+              pill_text, font=f_pill, fill=(255, 255, 255, 235))
 
-    draw.text((TEXT_X, Y_WORDMARK), wordmark, font=font(FONTS_BOLD, 40),
+    x = spec["text_x"]
+    draw.text((x, spec["y_wordmark"]), wordmark, font=font(FONTS_BOLD, spec["f_wordmark"]),
               fill=(255, 255, 255, 255))
-    draw.text((TEXT_X, Y_NAME), qualifier, font=font(FONTS_REG, 24),
+    draw.text((x, spec["y_name"]), qualifier, font=font(FONTS_REG, spec["f_name"]),
               fill=(255, 255, 255, 224))
-    f_tag = font(FONTS_REG, 15)
-    draw.text((TEXT_X, Y_TAG1), "Productivity tools for Salesforce",
+    f_tag = font(FONTS_REG, spec["f_tag"])
+    draw.text((x, spec["y_tag1"]), "Productivity tools for Salesforce",
               font=f_tag, fill=(255, 255, 255, 200))
-    draw.text((TEXT_X, Y_TAG2), "admins & developers",
+    draw.text((x, spec["y_tag2"]), "admins & developers",
               font=f_tag, fill=(255, 255, 255, 200))
 
     return img.convert("RGB")  # CWS: 24-bit RGB, no alpha
 
 
+def render(spec) -> bytes:
+    buf = io.BytesIO()
+    build(spec).save(buf, "PNG", optimize=True)
+    return buf.getvalue()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true",
-                    help="fail if the committed PNG differs from a fresh build")
+                    help="fail if a committed PNG differs from a fresh build")
+    ap.add_argument("--size", choices=[*SPECS, "all"], default="all")
     args = ap.parse_args()
 
-    img = build()
-    buf = io.BytesIO()
-    img.save(buf, "PNG", optimize=True)
-    fresh = buf.getvalue()
+    names = list(SPECS) if args.size == "all" else [args.size]
+    stale = []
+    for n in names:
+        spec = SPECS[n]
+        out = HERE / spec["out"]
+        fresh = render(spec)
 
+        if args.check:
+            if not out.exists():
+                stale.append(f"{out.name} is missing")
+            elif out.read_bytes() != fresh:
+                stale.append(f"{out.name} is stale")
+            else:
+                print(f"{out.name} is current")
+            continue
+
+        out.write_bytes(fresh)
+        w, h = spec["size"]
+        print(f"wrote {out.relative_to(REPO)} — {w}x{h} RGB, {len(fresh):,} bytes")
+
+    if stale:
+        sys.exit("; ".join(stale) +
+                 f" — re-run: python3 {pathlib.Path(__file__).name}")
     if args.check:
-        if not OUT.exists():
-            sys.exit(f"{OUT.name} is missing")
-        if OUT.read_bytes() != fresh:
-            sys.exit(f"{OUT.name} is stale — re-run: python3 {pathlib.Path(__file__).name}")
-        print(f"{OUT.name} is current ({item_name()}, {feature_count()} features)")
-        return
-
-    OUT.write_bytes(fresh)
-    print(f"wrote {OUT.relative_to(REPO)} — {img.size[0]}x{img.size[1]} {img.mode}, "
-          f"{len(fresh):,} bytes ({item_name()}, {feature_count()} features)")
+        print(f"({item_name()}, {feature_count()} features)")
 
 
 if __name__ == "__main__":
