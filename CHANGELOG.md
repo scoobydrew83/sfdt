@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-08-03
+
+> **Action may be required.** `.sfdt/config.json` is now treated as untrusted input, and four
+> settings in it are refused unless you opt in. If you use `plugins[]`, `mcp.salesforce.command`,
+> or a remote `ai.baseURL`, see **Security** below — the CLI tells you exactly what it refused and
+> how to allow it, but it will not silently keep loading them.
+
+### Security
+
+- **`.sfdt/config.json` is no longer trusted.** `sfdt init` recommends gitignoring only
+  `.sfdt/*.local.json`, so `config.json` is meant to be committed — which means it arrives with
+  whatever repository you cloned, from whoever wrote it. Several of its keys are code-execution or
+  data-exfiltration primitives, and they were being honoured without question. `loadConfig()` now
+  refuses them at load time, naming each one and how to allow it:
+  - **`plugins[]`** — entries are dynamically `import()`ed at CLI startup, *before* command
+    parsing, so cloning a repo and running any command at all — including `sfdt --version` — could
+    execute its code silently, with no prompt and no log line. A guard added in 0.20.0 blocked
+    path-shaped specifiers only; a plain package name still resolved out of the cloned repo's own
+    `node_modules/`, so the hole remained open.
+  - **`pluginOptions.autoDiscover`** — reaches the same `import()` by two further routes: every
+    `sfdt-plugin-*` in the project's `node_modules/` and every file in `.sfdt/plugins/`. Guarding
+    `plugins[]` alone would have left both open to the identical attack — a cloned repo need only
+    flip this one boolean and vendor a matching package.
+  - **`mcp.salesforce.command` / `args`** — spawned as a process, with no allowlist and every
+    failure swallowed, so the spawn was invisible.
+  - **`ai.baseURL`** (non-loopback) — chooses where prompts *and* any secrets named by
+    `ai.apiKeyEnv` / `ai.headersEnv` are sent. Storing env-var **names** rather than values keeps
+    the config safe to commit, but the name is itself the dangerous primitive: whoever writes the
+    config picks which variable is read *and* where it goes.
+  - **A notification channel's `headersEnv`** beside a hardcoded remote `webhookUrl`/`url` — the
+    webhook form of the same thing.
+
+  **What still works with no opt-in:** `ai.apiKeyEnv` and `ai.headersEnv` load normally (they are
+  inert once the destination is gone), a **loopback `ai.baseURL` is allowed** so Ollama, LM Studio,
+  llama.cpp and vLLM are unaffected, a channel using `webhookUrlEnv` is never flagged, an ordinary
+  Slack `webhookUrl` with no `headersEnv` is never flagged, and `defaultOrg` is untouched.
+
+  **To allow the refused settings**, export `SFDT_ALLOW_UNSAFE_CONFIG=1`. The opt-in is an
+  environment variable by necessity: a flag inside `config.json` would be set by the same person
+  who set the dangerous key. See [ENV-VARS](docs/ENV-VARS.md) and
+  [ARCHITECTURE §18](docs/ARCHITECTURE.md#18-threat-boundaries).
+
+- **AI provider sandboxes are no longer disabled by an empty tool list.** `allowedTools: []` means
+  "no tools at all" — the most restrictive request a caller can make — but the providers gated
+  their read-only sandbox on `allowedTools.length > 0`, so `[]` read as "unrestricted" and dropped
+  `-s read-only` (codex) and `--approval-mode plan` (gemini) entirely. The notifier's AI snapshot
+  summary passes `[]` while feeding the model org-derived text, which is exactly where a prompt
+  injection would land. The gate is now on the list *existing*.
+
+### Changed
+
+- **`@sfdt/flow-core` 0.10.0 → 0.11.0** (see Added below). Consumer ranges move to `^0.11.0` in
+  lockstep across the CLI, the Chrome extension, and the VS Code extension — a caret range pins the
+  minor on `0.x`, so this is required, not cosmetic.
+- **`prepublishOnly` no longer re-runs the test suite.** Both publish jobs already declare
+  `needs: [test, gui-build]`, so the suite is a hard gate before publishing starts; running it
+  again inside `npm publish` added no signal and one more chance for an order-dependent test to
+  fail *after* the version bump had merged. It now runs `lint` plus `check:all-contracts`, which is
+  deterministic and additionally catches catalog drift. Rationale recorded in `RELEASING.md`.
+
 ### Added
 - **`@sfdt/flow-core`: field-write extraction (`extractFieldWrites` / `filterFieldWrites`).** New `packages/flow-core/src/field-writes.ts` answers "what writes this field?" from a Tooling `Flow.Metadata` payload, covering the three constructs this module models: `recordCreates` and `recordUpdates` `inputAssignments`, and `assignments` whose `assignToReference` targets `<recordRef>.<Field>` (the before-save `$Record.Field__c` pattern). Those are the common write constructs, **not the only ones** — Transform elements (`transforms[].transformValues[].transformValueActions[].outputFieldApiName`, API 59+), invocable/quick actions (`actionCalls[].inputParameters[].name`) and subflow bodies are not modelled, and a flow writing a field only that way yields `[]`; consumers disclose the bound rather than treat an empty result as proof of no writer. Reads — Get Records, entry criteria, element `filters`, formulas — deliberately produce nothing, which is precisely what separates a *write* from the *reference* the Tooling `MetadataComponentDependency` API records. Object binding is resolved from the flow's own metadata (`start.object` behind `$Record`/`$Record__Prior`, a declared sObject variable's `objectType`, an element's `object`, a loop variable's collection), and each write is stamped with the **same `confirmed`/`inferred` status vocabulary as the dependency gaps report** (`sfdt dependencies --gaps`, `GET /api/dependencies/gaps`, the GUI Gaps panel): `confirmed` when the metadata states the object, `inferred` when the field write is real but could not be bound to one. Purely additive — no existing export changed; `RawVariable` gained an optional `objectType` field. `filterFieldWrites` takes an opt-in `requireResolvedObject` flag: by default an unbindable write is kept (correct when the caller already knows the flow references the field, e.g. it was narrowed by a `MetadataComponentDependency` edge), but a caller sweeping flows with no such backing sets the flag so a bare field-NAME match can never be attributed to an object it was not bound to. The first consumer is the Chrome extension's Field Impact Analysis (P4-4); the CLI and GUI can adopt it without a second parser. Ships in the next coupled CLI/flow-core release (flow-core is published with the CLI's release commit, per RELEASING.md): that release bumps `@sfdt/flow-core` **0.10.0 → 0.11.0** — a MINOR bump, since three new public exports were added and nothing changed — and moves consumer ranges to `^0.11.0` in lockstep. `RELEASING.md` §2 now gates this so a patch-level CLI release cannot ship the new exports as `0.10.1`.
 

@@ -244,7 +244,13 @@ async function runGeminiPrompt(prompt, options) {
   // Claude's allowedTools are read-only patterns (`Bash(git log:*)`, `Read`, `Grep`).
   // Gemini does not honour the same patterns, so we map any presence of an
   // allowedTools restriction to Gemini's `plan` approval mode (read-only).
-  if (Array.isArray(allowedTools) && allowedTools.length > 0) {
+  //
+  // Gated on the array *existing*, not on it being non-empty: `allowedTools: []`
+  // means "no tools at all" — the most restrictive request a caller can make —
+  // and a `.length > 0` test silently turned that into no sandbox at all.
+  // `buildSnapshotSummary` in notifier.js passes `[]` while feeding the model
+  // org-derived text, which is exactly where prompt injection would land.
+  if (Array.isArray(allowedTools)) {
     args.unshift('--approval-mode', 'plan');
   }
   const result = await execa('gemini', args, execOptions);
@@ -265,8 +271,10 @@ async function runOpenAiPrompt(prompt, options) {
   const execOptions = { cwd, reject: false, timeout: 300_000 };
   if (interactive) execOptions.stdio = 'inherit';
   const args = [];
-  // Mirror Gemini: read-only sandbox when caller restricted tools.
-  if (Array.isArray(allowedTools) && allowedTools.length > 0) {
+  // Mirror Gemini: read-only sandbox when caller restricted tools — including
+  // an empty restriction. Without this, `allowedTools: []` dropped `-s read-only`
+  // and codex ran in its default workspace-write sandbox. See runGeminiPrompt.
+  if (Array.isArray(allowedTools)) {
     args.push('-s', 'read-only');
   }
   args.push(prompt);

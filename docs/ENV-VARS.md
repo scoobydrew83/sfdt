@@ -50,3 +50,18 @@
 > Note: for the opt-in enforce flags (`enforceTests`, `enforceBranchNaming`, `enforceChangelog`, `enforceUntrackedFiles`), "is set" means **truthy** — `false` is indistinguishable from omitting the key, and both leave the check as a non-fatal WARN (they never actively suppress it). Only `enforceGitClean`/`enforceSfdxProject` are default-on (`!== false`). All preflight flags are editable from the GUI Settings page (an inline caution is shown; they are no longer API-locked).
 
 When adding a new env var, update both `buildScriptEnv()` in `script-runner.js` and this table.
+
+## Env vars read directly (not flattened into scripts)
+
+These are read by the CLI itself rather than passed to shell scripts, so they are not in
+`buildScriptEnv()`.
+
+| Variable | Effect |
+|----------|--------|
+| `SFDT_ALLOW_UNSAFE_CONFIG` | Set to exactly `1` to load the `.sfdt/config.json` keys that are otherwise refused: `plugins[]`, `pluginOptions.autoDiscover`, `mcp.salesforce.command`/`args`, a non-loopback `ai.baseURL`, and a notification channel's `headersEnv` beside a literal remote URL. See [ARCHITECTURE §18](./ARCHITECTURE.md#18-threat-boundaries) |
+
+`config.json` is committed by convention (`sfdt init` gitignores only `*.local.json`), so it
+arrives with whatever repository was cloned. The keys above execute code or choose where
+env-var-named secrets are sent, so they are stripped at load time with a message naming what was
+refused. **The opt-in has to be an environment variable**: a flag inside `config.json` would be set
+by the same attacker who set the dangerous key. Anything else in the config loads normally.
