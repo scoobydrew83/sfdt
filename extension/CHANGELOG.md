@@ -4,6 +4,8 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-03
+
 ### Added
 
 - **Design system foundation in `lib/`.** Colour was already centralised in `lib/tokens.ts`; everything else was not — 800+ inline `element.style.cssText` assignments and four independently hand-rolled stylesheets, so every surface reinvented its own card and button. Three additions close that:
@@ -46,7 +48,7 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 - **Feature interiors rebuilt onto the shared layers** — Inspect Record, Execute Anonymous, Debug Logs, Schema Browser, the SOQL runner, trace flags, the event monitor, and the REST/SOAP explorers. Buttons through `button()`, inputs through `.sfdt-field`, tables through `.sfdt-table`, filter rows through `toolbar()`. Inline `style.cssText` went 591 → 207 sites across the extension, and what remains carries **zero** raw colours, zero hex and zero bare form controls. Per-type emoji maps were deleted rather than converted where the type name was already in the row; the autocomplete chips keep theirs, because there the glyph is the only thing separating an object from a field.
 - **The Flow Health Check modal is on the shared component layer.** Its severity and metric cards are now the same `.sfdt-tile` the Workspace overview and the governor-limit strip use, in an auto-fit grid rather than five fixed columns — "Dependencies" used to wrap to three lines in the 720px modal and push the number it labelled out of view. Issue families sit on `.sfdt-panel`, the severity badge on `.sfdt-pill`, and the footer on the shared toolbar strip.
 - **Status colour goes through `setTone()`.** 44 inline colour writes across 15 features, several using a *fill* token as a foreground — which renders low-contrast in dark mode. Five independent band → colour maps (`org-limits`, `org-health`, `code-coverage`, `apex-test-runner`, org health live) collapsed into one `BAND_CLASS`/`BAND_TONE`, so a summary tile and its detail view cannot disagree about what "warning" looks like.
-- **The Workspace sidebar shows seven tools, not twenty-five.** The long tail moved behind an "All tools" disclosure (a real `aria-expanded` button), with a Recent group above. A flat 25-row list isn't navigation — you can't scan it. Curated set is `WORKSPACE_PRIMARY` in `lib/feature-icons.ts`; membership is a curation call and says nothing about whether a tool works.
+- **The Workspace sidebar shows six tools, not twenty-five.** The long tail moved behind an "All tools" disclosure (a real `aria-expanded` button), with a Recent group above. A flat 25-row list isn't navigation — you can't scan it. Curated set is `WORKSPACE_PRIMARY` in `lib/feature-icons.ts`; membership is a curation call and says nothing about whether a tool works.
 
 ### Fixed
 
