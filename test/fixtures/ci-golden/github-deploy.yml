@@ -20,4 +20,6 @@ jobs:
         env:
           SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
       - name: Smart delta validation
-        run: npx --yes @sfdt/cli@latest deploy --smart --org golden-org --delta-base "origin/${{ github.event.pull_request.base.ref }}" --dry-run
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: npx --yes @sfdt/cli@latest deploy --smart --org golden-org --delta-base "origin/$BASE_REF" --dry-run
