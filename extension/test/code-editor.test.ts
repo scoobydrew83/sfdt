@@ -13,8 +13,12 @@ function roundTrip(src: string): string {
     .join('');
 }
 
-function classOf(src: string, text: string): string | undefined {
-  return tokenizeCode(src).find((t) => t.text === text)?.cls;
+function classOf(
+  src: string,
+  text: string,
+  keywords: ReadonlySet<string> = APEX_KEYWORDS,
+): string | undefined {
+  return tokenizeCode(src, keywords).find((t) => t.text === text)?.cls;
 }
 
 describe('tokenizeCode', () => {
@@ -47,14 +51,33 @@ describe('tokenizeCode', () => {
     expect(classOf(src, 'Integer')).toBe('t');
   });
 
-  it('treats uppercase-initial words as types, not keywords', () => {
-    // Apex is case-insensitive, so a case-insensitive keyword match would paint
-    // Set/Date/Delete as keywords. Those appear far more often as types.
+  it('treats CAPITALIZED words as types, not keywords', () => {
+    // Apex is case-insensitive, so a fully case-insensitive keyword match would
+    // paint Set/Date/Delete as keywords. Those appear far more often as types.
     expect(classOf('Set<Id> ids;', 'Set')).toBe('t');
     expect(classOf('Date d;', 'Date')).toBe('t');
     expect(classOf('set { x = 1; }', 'set')).toBe('k');
     expect(APEX_KEYWORDS.has('set')).toBe(true);
     expect(APEX_KEYWORDS.has('Set')).toBe(false);
+  });
+
+  it('DOES claim a shouted keyword, which is how SOQL is written', () => {
+    // Exact-matching the lowercase set left `SELECT Id FROM Account` — the
+    // conventional spelling of every query — with no highlighting whatsoever,
+    // because each keyword was uppercase and fell through to the type rule.
+    // Uniform case is the discriminator: shouted or quiet is a keyword,
+    // Capitalized is a type or an sObject.
+    expect(classOf('SELECT Id FROM Account', 'FROM', SOQL_KEYWORDS)).toBe('k');
+    expect(classOf('SELECT Id FROM Account', 'SELECT', SOQL_KEYWORDS)).toBe('k');
+    expect(classOf('select id from account', 'from', SOQL_KEYWORDS)).toBe('k');
+    // …and the sObjects whose names ARE keywords stay sObjects, which is the
+    // whole reason this is not just a `toLowerCase()` on both sides.
+    expect(classOf('SELECT Id FROM Order', 'Order', SOQL_KEYWORDS)).toBe('t');
+    expect(classOf('SELECT Id FROM Group', 'Group', SOQL_KEYWORDS)).toBe('t');
+    // Apex gains the same fix for its inline SOQL, and keeps its type rule.
+    expect(classOf('List<Account> a = [SELECT Id FROM Account];', 'SELECT')).toBe('k');
+    expect(classOf('Delete d;', 'Delete')).toBe('t');
+    expect(classOf('DELETE accounts;', 'DELETE')).toBe('k');
   });
 
   it('does not let an apostrophe inside a comment open a string', () => {

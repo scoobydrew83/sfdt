@@ -97,7 +97,23 @@ export function tokenizeCode(
     else if (m[2]) cls = 's';
     else if (m[3]) cls = 'a';
     else if (m[4]) cls = 'n';
-    else if (m[5]) cls = keywords.has(text) ? 'k' : /^[A-Z]/.test(text) ? 't' : '';
+    else if (m[5]) {
+      // Case-insensitive, but ONLY for a token written in uniform case.
+      //
+      // Matching the lowercase set exactly was right for Apex and wrong for
+      // SOQL, where the convention is `SELECT Id FROM Account` — every keyword
+      // shouted, so nothing in a query highlighted at all. Matching fully
+      // case-insensitively is wrong the other way: it paints `Set<Id>`, `Date`
+      // and `Delete` in Apex, and `Order` and `Group` in SOQL, all of which are
+      // far more often types and sObjects.
+      //
+      // Uniform case separates them cleanly. A keyword is shouted (`FROM`) or
+      // quiet (`from`); a type or an sObject is Capitalized (`Order`), and the
+      // API never spells one any other way.
+      const lower = text.toLowerCase();
+      const uniformCase = text === lower || text === text.toUpperCase();
+      cls = uniformCase && keywords.has(lower) ? 'k' : /^[A-Z]/.test(text) ? 't' : '';
+    }
 
     out.push({ text, cls });
     last = m.index + text.length;

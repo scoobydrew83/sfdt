@@ -992,6 +992,83 @@ describe('soql-runner — insertFieldIntoDraft (P2-1 PR-3)', () => {
   });
 });
 
+describe('soql-runner — the query editor', () => {
+  function setSalesforceUrl(): void {
+    window.history.replaceState(
+      {},
+      '',
+      'https://x.lightning.force.com/lightning/setup/Flows/home',
+    );
+  }
+
+  // The <textarea> became lib/code-editor.ts's line-numbered, highlighted
+  // editor. `editor.input` is still a real textarea, so everything above works
+  // unchanged — what these pin is the part that CAN silently break: the
+  // highlight and gutter only repaint on an 'input' event, and every
+  // programmatic edit (a history pick, a saved query, a pending hand-off,
+  // autocomplete's setRangeText) mutates the value without firing one.
+  const hl = (): string => document.querySelector('.sfdt-editor-hl')?.textContent ?? '';
+  const gutter = (): string => document.querySelector('.sfdt-editor-gutter')?.textContent ?? '';
+
+  it('mounts the editor with a name the textarea never had', async () => {
+    setSalesforceUrl();
+    const feature = createSoqlRunnerFeature({ api: fakeApi() });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    expect(textarea.className).toContain('sfdt-editor-input');
+    // A placeholder is not an accessible name — it vanishes on the first
+    // keystroke, and this field never had a <label>.
+    expect(textarea.getAttribute('aria-label')).toBe('SOQL query');
+    expect(document.querySelector('.sfdt-editor')).not.toBeNull();
+  });
+
+  it('repaints when a pending query is handed off', async () => {
+    setSalesforceUrl();
+    await writePendingQuery({ q: 'SELECT Id\nFROM Lead', api: 'rest' });
+    const feature = createSoqlRunnerFeature({ api: fakeApi() });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('SELECT Id\nFROM Lead');
+    // The highlight layer must carry the same text, or the caret sits over
+    // stale glyphs; the gutter must count the same logical lines.
+    expect(hl()).toContain('SELECT Id\nFROM Lead');
+    expect(gutter()).toBe('1\n2');
+  });
+
+  // The History and Saved Queries pickers set the draft through the same
+  // `editor.setValue` the pending hand-off above uses, so they are covered by
+  // that case rather than by re-driving each menu.
+
+  it('repaints after a field is inserted into the draft', async () => {
+    setSalesforceUrl();
+    const feature = createSoqlRunnerFeature({ api: fakeApi() });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id FROM Account';
+    feature.insertFieldIntoDraft('Name');
+
+    expect(textarea.value).toBe('SELECT Id, Name FROM Account');
+    expect(hl()).toContain('SELECT Id, Name FROM Account');
+  });
+
+  it('highlights SOQL keywords, not Apex ones', async () => {
+    setSalesforceUrl();
+    await writePendingQuery({ q: 'SELECT Id FROM Account', api: 'rest' });
+    const feature = createSoqlRunnerFeature({ api: fakeApi() });
+    await feature.onActivate?.();
+
+    const keywords = Array.from(document.querySelectorAll('.sfdt-tok-k')).map(
+      (el) => el.textContent,
+    );
+    expect(keywords).toContain('FROM');
+    // 'Account' is a type-shaped word, not a keyword — the case-sensitive rule.
+    expect(keywords).not.toContain('Account');
+  });
+});
+
 describe('soql-runner — DescribeCache extra branches', () => {
   it('targets the tooling endpoints in tooling mode', async () => {
     const apiGet = vi.fn().mockResolvedValue({ sobjects: [] });

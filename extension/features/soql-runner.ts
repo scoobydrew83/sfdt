@@ -21,6 +21,7 @@ import { openMenu, type MenuAction } from '../ui/menu.js';
 import { button, setLabel, toolbar } from '../lib/ui-controls.js';
 import { createHistory } from '../lib/history.js';
 import { copyToClipboard } from '../ui/clipboard.js';
+import { createCodeEditor, SOQL_KEYWORDS } from '../lib/code-editor.js';
 
 const SOQL_RUNNER_SETTINGS_SCHEMA = z.object({
   defaultApi: z.enum(['rest', 'tooling']).default('rest'),
@@ -765,6 +766,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       textarea.placeholder = sosl
         ? 'FIND {Acme} IN ALL FIELDS RETURNING Account(Id, Name), Contact(Id, Name)'
         : 'SELECT Id, Name FROM Account LIMIT 10';
+      // The accessible name follows the language too. A placeholder is not a
+      // name — it disappears the moment anything is typed.
+      textarea.setAttribute('aria-label', sosl ? 'SOSL search' : 'SOQL query');
       // The transport control is unavailable in SOSL (no Tooling Search
       // resource) but the user's SOQL choice is preserved, not reset.
       paintModeToggle();
@@ -875,11 +879,20 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     main.className = 'sfdt-view-main';
     body.appendChild(main);
 
-    const textarea = doc.createElement('textarea');
-    textarea.placeholder = 'SELECT Id, Name FROM Account LIMIT 10';
-    textarea.className = 'sfdt-field sfdt-mono';
-    textarea.classList.add('sfdt-taller');
-    main.appendChild(textarea);
+    // The line-numbered, highlighted editor rather than a bare <textarea>.
+    // `editor.input` IS a real textarea — the caret, selection, undo stack, IME
+    // and native find are the browser's, and every call site below (including
+    // `setRangeText` for autocomplete) works on it unchanged. What it adds:
+    // line numbers for the "Malformed query at line 3" the org reports back, and
+    // an accessible name the textarea never had.
+    const editor = createCodeEditor({
+      ariaLabel: 'SOQL query',
+      placeholder: 'SELECT Id, Name FROM Account LIMIT 10',
+      keywords: SOQL_KEYWORDS,
+      doc,
+    });
+    const textarea = editor.input;
+    main.appendChild(editor.root);
 
     // --- AUTOCOMPLETE UI SETUP ---
     let expandAutocomplete = false;
@@ -1155,7 +1168,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
           onSelect: () => {
             const fromMatch = /from\s+([a-z0-9_]+)/i.exec(textarea.value);
             const sobj = fromMatch ? fromMatch[1] : 'SObject';
-            textarea.value = `SELECT Id FROM ${sobj} WHERE Id = '${id}'`;
+            editor.setValue(`SELECT Id FROM ${sobj} WHERE Id = '${id}'`);
             textarea.focus();
             void runAutocomplete();
           },
@@ -1346,7 +1359,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         item.appendChild(badge);
         item.appendChild(text);
         item.addEventListener('click', () => {
-          textarea.value = entry.q;
+          editor.setValue(entry.q);
           // Language first (it decides whether the transport control is even
           // available), then the recorded transport for a SOQL entry. A SOSL
           // entry leaves the user's SOQL transport choice untouched — it ran on
@@ -1424,7 +1437,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         item.appendChild(deleteBtn);
 
         item.addEventListener('click', () => {
-          textarea.value = entry.q;
+          editor.setValue(entry.q);
           setLang(entryMode, { explicit: true });
           if (entryMode === 'soql') setMode(entry.api);
           savedQueriesMenu.style.display = 'none';
@@ -2036,6 +2049,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         if (allMatching.length > 0) {
           textarea.focus();
           textarea.setRangeText(allMatching.join(', ') + (isAfterFrom ? ' ' : ''), replaceStart - contextPath.length, selEnd, 'end');
+          // setRangeText mutates the value without firing 'input', so the
+          // highlight and gutter have to be told.
+          editor.refresh();
         }
         void runAutocomplete();
         return;
@@ -2208,6 +2224,8 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       if (item.value.startsWith('FIELDS') && !textarea.value.toLowerCase().includes('limit')) {
         textarea.value += ' LIMIT 200';
       }
+      // Both branches above mutate the value without an 'input' event.
+      editor.refresh();
 
       void runAutocomplete();
     }
@@ -2333,7 +2351,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     // query language, so a staged SOSL bookmark opens in SOSL mode).
     const pending = await takePendingQuery();
     if (pending) {
-      textarea.value = pending.q;
+      editor.setValue(pending.q);
       mode = pending.api;
       lang = entryLang(pending);
     }
@@ -2342,7 +2360,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     // any field fragment stashed while the runner was closed.
     activeTextarea = textarea;
     if (pendingFieldFragment) {
-      textarea.value = insertFieldIntoQuery(textarea.value, pendingFieldFragment);
+      editor.setValue(insertFieldIntoQuery(textarea.value, pendingFieldFragment));
       pendingFieldFragment = null;
     }
 

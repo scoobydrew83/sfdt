@@ -125,13 +125,22 @@ function fromPanelBuilder(source: string, name: string): boolean {
 }
 
 function setsWhiteSpaceByClass(source: string, name: string): boolean {
+  // EVERY argument, not just the first. `classList.add('a', 'b')` is the normal
+  // shape once a file carries both an identity class and a component class, and
+  // an earlier version of this matcher read only the leading string — so
+  // ui/health-modal.ts, which puts its test selector first and '.sfdt-msg'
+  // second, read as unstyled and the guard fired on a file that had just become
+  // more correct. The blind spot was in the guard, not the feature.
   const pattern = new RegExp(
-    `\\b${name}\\.(?:className\\s*=|classList\\.add\\()\\s*'([^']*)'`,
+    `\\b${name}\\.(?:className\\s*=\\s*('[^']*')|classList\\.add\\(([^)]*)\\))`,
     'g',
   );
   for (const m of source.matchAll(pattern)) {
-    for (const cls of m[1]!.trim().split(/\s+/)) {
-      if (WHITE_SPACE_CLASSES.has(cls)) return true;
+    const args = m[1] ?? m[2] ?? '';
+    for (const quoted of args.matchAll(/'([^']*)'/g)) {
+      for (const cls of quoted[1]!.trim().split(/\s+/)) {
+        if (WHITE_SPACE_CLASSES.has(cls)) return true;
+      }
     }
   }
   return false;
@@ -204,11 +213,19 @@ describe('a rendered Salesforce error keeps its newlines', () => {
     }
   });
 
-  it('holds the health-check modal, which styles itself without cssText', () => {
-    // The 16th surface. It was invisible while the guard skipped elements with
-    // no cssText; it is reached from flow-health-check with a Tooling error.
+  it('holds the health-check modal, however it declares the rule', () => {
+    // The 16th surface, reached from flow-health-check with a Tooling error. It
+    // was invisible while the guard skipped elements with no cssText, and this
+    // case was then written to assert cssText SPECIFICALLY — which made the
+    // modal's migration onto '.sfdt-msg' look like a regression. Same lesson as
+    // the funnels above, learned twice: assert the union, not the mechanism.
     const source = readFileSync(path.join(ROOT, 'ui', 'health-modal.ts'), 'utf8');
-    expect(cssTextFor(source, 'msg')).toMatch(HAS_WHITE_SPACE);
+    const css = cssTextFor(source, 'msg');
+    const covered =
+      (css !== null && HAS_WHITE_SPACE.test(css)) ||
+      setsWhiteSpaceDirectly(source, 'msg') ||
+      setsWhiteSpaceByClass(source, 'msg');
+    expect(covered).toBe(true);
   });
 
   it('every exemption still matches real source', () => {
@@ -271,6 +288,12 @@ describe('a rendered Salesforce error keeps its newlines', () => {
     expect(setsWhiteSpaceByClass("p.className = 'sfdt-card';\n", 'p')).toBe(false);
     // A class on a DIFFERENT element must not vouch for this one.
     expect(setsWhiteSpaceByClass("q.className = 'sfdt-console';\n", 'p')).toBe(false);
+    // …and it must read PAST the first argument of a multi-class add, which is
+    // where the identity class sits once a file is migrated.
+    expect(setsWhiteSpaceByClass("p.classList.add('sfdt-my-thing', 'sfdt-msg');\n", 'p')).toBe(true);
+    expect(setsWhiteSpaceByClass("p.classList.add('sfdt-my-thing', 'sfdt-card');\n", 'p')).toBe(
+      false,
+    );
   });
 
   it('ignores fixed single-line copy, which cannot wrap', () => {

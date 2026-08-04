@@ -13,14 +13,22 @@ entrypoints/     content.ts (injected on SF pages), background.ts (service worke
                  app/ (Workspace tab), options/ (settings page), popup/ (toolbar popup)
 features/        one file per registry feature (soql-runner, inspect-record, apex-anonymous,
                  event-monitor, setup-tabs, flow-quality, …) — the injected tools
-ui/              shared injected UI: side-button, present-view (page-mode overlays), toast,
-                 modals, and the shadow-DOM host
-lib/             tokens.ts (design tokens + dark palette), theme.ts (watchTheme/applyTheme),
-                 settings.ts, salesforce-api.ts (thin client), sf-api-proxy.ts (worker fetch),
+ui/              shared injected UI: side-button, present-view (the shell every feature view
+                 is presented in), menu, panels (error/loading/empty/busy), confirm-dialog,
+                 clipboard, meter-card, node-graph, toast, and the shadow-DOM host
+lib/             tokens.ts (colour + spacing/radius/type scales), ui-styles.ts (the component
+                 sheet), ui-controls.ts (button()/field()/toolbar()/setTone()), icons.ts,
+                 code-editor.ts, theme.ts (watchTheme/applyTheme), settings.ts,
+                 storage.ts (the only path to chrome.storage), history.ts, download.ts,
+                 salesforce-api.ts (thin client), sf-api-proxy.ts (worker fetch),
                  sf-stream-worker.ts (worker CometD Port), commands.ts, org-list.ts, api-version.ts
 test/            vitest (happy-dom), one suite per feature/lib module
 wxt.config.ts    manifest (permissions, commands, host_permissions)
+UI-SYSTEM.md     the design system's state: what is centralised, what deliberately isn't,
+                 the decisions not to relitigate, and the traps. Read before touching ui/ or
+                 anything in lib/ named above as a UI layer.
 CONVENTIONS.md   the a11y/overlay/keyboard/theme/shadow-root checklist reviewers apply verbatim
+DESIGN.md        the Stitch design-system reference the layouts came from
 ```
 
 ## Non-negotiable rules
@@ -31,13 +39,15 @@ CONVENTIONS.md   the a11y/overlay/keyboard/theme/shadow-root checklist reviewers
 
 3. **Colours go through design tokens.** No hard-coded hex in `features/`, `ui/`, or `entrypoints/`. Use `var(--sfdt-color-*)` from `lib/tokens.ts`. **Foreground text** uses the foreground variants (`-text`, `-on-accent`, `-strong`); **fills/backgrounds/borders** use the base tokens (`brand`, `error`, `success`, `surface`, …). This split exists so dark mode is correct — a fill token used as `.style.color` renders wrong (low-contrast) in dark. `ensureTokens(document)` defines the `:root` token block (light + `[data-sfdt-theme="dark"]`) on the host document; custom properties inherit into shadow trees, so shadow-mounted UI just uses `var(--sfdt-*)`. `watchTheme()` boots the theme on every surface (returns `{ setSetting, stop }`; use `setSetting` for live preview).
 
-4. **Feature-registry pattern.** A new capability is a registry feature (or an extension of one): a manifest with `contexts`/`permissions`/kill-switch id, and an opt-in toggle on the options page. Register it on the surfaces it belongs to (`content.ts` for SF pages, the Workspace app, etc.). New Chrome feature ⇒ also add it to `lib/feature-manifests.json` (parity-tested).
+4. **Reach for the highest shared layer that fits.** Buttons and inputs come from `lib/ui-controls.ts` (`button()`, `field()`, `toolbar()`, `setLabel()`, `setTone()`) — never `createElement('button')` + a `style.cssText` string; cards, tables, pills and toolbars from `lib/ui-styles.ts`; glyphs from `lib/icons.ts`, never emoji; error/loading/empty/busy blocks from `ui/panels.ts`; overlays, Escape, focus trap and focus restore from `ui/present-view.ts` and `ui/menu.ts` rather than a per-feature copy. `npm run audit:ui` reports where a file stands and `test/ui-styles.test.ts` fails a migrated file that grows a hand-rolled button. `UI-SYSTEM.md` says what each layer owns and which duplications are already resolved — a fourth copy of one of them should be deleted, not fixed.
 
-5. **Least-privilege permissions.** Do not add a manifest permission or host pattern without it being ledgered and human-reviewed; a permission change also updates `PRIVACY.md` + the store listing draft in the same PR.
+5. **Feature-registry pattern.** A new capability is a registry feature (or an extension of one): a manifest with `contexts`/`permissions`/kill-switch id, and an opt-in toggle on the options page. Register it on the surfaces it belongs to (`content.ts` for SF pages, the Workspace app, etc.). New Chrome feature ⇒ also add it to `lib/feature-manifests.json` (parity-tested).
 
-6. **Package-internal paths via `import.meta.url`**, never `process.cwd()`.
+6. **Least-privilege permissions.** Do not add a manifest permission or host pattern without it being ledgered and human-reviewed; a permission change also updates `PRIVACY.md` + the store listing draft in the same PR.
 
-7. **Telemetry is local-only.** No network egress; `test/telemetry.test.ts` enforces it.
+7. **Package-internal paths via `import.meta.url`**, never `process.cwd()`.
+
+8. **Telemetry is local-only.** No network egress; `test/telemetry.test.ts` enforces it.
 
 ## Testing & gates
 
@@ -49,6 +59,11 @@ npx tsc --noEmit
 npx eslint .
 npx wxt build   # built manifest version must equal extension/package.json version
 ```
+
+Plus, from the repo root, `npm run generate:catalogs && npm run check:all-contracts` — a new
+or renamed feature that isn't reflected in `generated/*` fails CI on catalog drift.
+`npm run audit:ui` (from `extension/`) reports UI-layer adoption per file; it is a report,
+not a gate — `npx vitest run` is what fails.
 
 Injected-UI changes are also driven in a loaded unpacked build (`.output/chrome-mv3`) against a real org.
 

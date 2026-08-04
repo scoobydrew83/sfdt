@@ -2,7 +2,7 @@
 
 Working reference for the design-system consolidation started 2026-07-31.
 Read this **before** touching anything in `ui/`, `lib/tokens.ts`, `lib/ui-styles.ts`,
-`lib/icons.ts`, or adding a new surface. It records what is centralised, what
+`lib/ui-controls.ts`, `lib/icons.ts`, or adding a new surface. It records what is centralised, what
 deliberately is not, and the order the remaining work should happen in.
 
 Companion docs: `CONVENTIONS.md` (the a11y/overlay checklist reviewers apply
@@ -94,7 +94,7 @@ its header.
 it into the closed shadow root for injected UI.
 
 **Every selector must start with `.sfdt-`** — enforced by `test/ui-styles.test.ts`
-(21 tests). This sheet lands on live Salesforce pages; a bare `button {}` rule
+(30 tests). This sheet lands on live Salesforce pages; a bare `button {}` rule
 would restyle Salesforce itself.
 
 **Adopted sheets vs. inherited properties — the distinction that bit us:**
@@ -195,9 +195,9 @@ restore**, so features stop hand-rolling them:
   defeats this check by closing before the modal below can evaluate it — that is
   why `apex-log-analyzer`'s was removed rather than left as a duplicate.
 
-Six features still hand-roll a doc-level Esc (`schema-browser`, `field-impact`,
-`debug-log-viewer`, `ai-assistant`, `canvas-search`, `flow-version-manager`).
-They are redundant now, not harmful — each closes its own view, idempotently.
+Three features still hand-roll their own Esc (`ai-assistant`, `canvas-search`,
+`inspect-record`). They are redundant now, not harmful — each closes its own
+view, idempotently.
 Delete one when you're already in the file; a capture-phase one that opens a
 nested view is the case that actually breaks.
 
@@ -215,11 +215,11 @@ nested view is the case that actually breaks.
 | Command palette (`ui/command-palette.ts`) | ✅ | ✅ | ✅ | |
 | Feature view shell (`ui/present-view.ts`) | ✅ | ✅ | ✅ | Card, header, Esc, focus restore — shared by all 38 `presentView` sites |
 | Inspect Record (`features/inspect-record.ts`) | ✅ | ✅ | ✅ | Migrated 2026-08-01; 31 → 12 `cssText`, all chrome buttons on the factory |
-| SOQL runner (`features/soql-runner.ts`) | ✅ | ✅ | ✅ | Buttons + both segmented toggles migrated; editor still a plain textarea — `createCodeEditor()` now exists for it (§4b) |
+| SOQL runner (`features/soql-runner.ts`) | ✅ | ✅ | ✅ | Buttons + both segmented toggles migrated; on `createCodeEditor()` since 2026-08-03 (§4b) |
 | Execute Anonymous (`features/apex-anonymous.ts`) | ✅ | ✅ | ✅ | Migrated 2026-08-01; 13 → 0 `cssText`, first `createCodeEditor()` consumer, inline governor-limit tiles |
 | Debug Logs (`features/debug-log-viewer.ts`) | ✅ | ✅ | ✅ | Migrated 2026-08-01; 28 → 1 `cssText`, real `.sfdt-table`, in-memory filter, tinted log pane, limit strip |
 | Schema Browser (`features/schema-browser.ts`) | ✅ | ✅ | ✅ | Migrated 2026-08-01; 42 → 1 `cssText`, 3-column split, flag columns, object rail, relationship graph, Generate SOQL |
-| Other `features/*` interiors | ✅ | partial | partial | 56 of 64 UI files migrated; 7 left, 39 hand-rolled buttons — see §4a |
+| Other `features/*` interiors | ✅ | ✅ | ✅ | All 66 UI files migrated as of 2026-08-03: 0 hand-rolled buttons, 0 emoji, 0 inline styling. Confirm with `npm run audit:ui`, never from this table — see §4a |
 
 `data-sfdt-surface="tab" | "panel"` drives the structural difference between the
 Workspace tab and the docked panel from **identical DOM**. A panel is not a
@@ -233,17 +233,42 @@ a squeezed shell. It gets its own rail.
 | Suite | Tests | Guards |
 |---|--:|---|
 | `test/tokens.test.ts` | 26 | no raw hex, WCAG contrast, light/dark parity |
-| `test/ui-styles.test.ts` | 21 | every selector `.sfdt-`-prefixed; no hand-rolled button CSS in a migrated file |
+| `test/ui-styles.test.ts` | 30 | every selector `.sfdt-`-prefixed; no hand-rolled button CSS **and no non-dynamic `el.style.<prop>`** in a migrated file |
 | `test/icons.test.ts` | 11 | `FEATURE_ICONS` ↔ `ICON_FOR_FEATURE` parity; no emoji in 49 guarded files |
 | `test/menu.test.ts` | 13 | listener teardown, focus, Esc, shadow mount |
 | `test/theme.test.ts` | 16 | every own-page surface resolves `settings.theme` |
 | `test/activity-log.test.ts` | 18 | truncation cap, ring bound, never throws |
 | `test/storage.test.ts` | 12 | invalidated-context degradation |
 | `test/workspace-host.test.ts` | 52 | kill switches, tool order, brand-checked accessors |
-| `test/present-view.test.ts` | 12 | dialog naming, header slots, Esc closes **topmost only**, focus restore |
+| `test/present-view.test.ts` | 17 | dialog naming, header slots, Esc closes **topmost only**, focus restore |
 | `test/ui-controls.test.ts` | 12 | unnamed button **throws**, glyph survives `setLabel`, variant classes |
 | `test/workspace-tabs.test.ts` | 9 | subtitle/actions reach the pane; no head when neither is supplied |
-| `test/soql-runner.test.ts` | 127 | |
+| `test/code-editor.test.ts` | 13 | tokenizer is **lossless**; gutter tracks logical lines; shouted keywords |
+| `test/apex-log-console.test.ts` | 9 | `pre.textContent === log` (select-all-copy keeps newlines) |
+| `test/node-graph.test.ts` | 10 | layout, cycle tinting, caller-supplied `cycles` |
+| `test/options-layout.test.ts` | 9 | |
+| `test/page-sheet-overlap.test.ts` | 3 | own-page sheets don't restate the component sheet |
+| `test/soql-runner.test.ts` | 131 | editor repaints on every programmatic edit |
+
+The eight consolidated modules got their own suites on 2026-08-03. Each exists
+*because* the code it replaced carried a bug, so each suite leads with the bug
+rather than the API:
+
+| Suite | Tests | The regression it pins |
+|---|--:|---|
+| `test/download.test.ts` | 8 | `revokeObjectURL` is called; the binary path preserves bytes |
+| `test/history.test.ts` | 11 | routed through `lib/storage.ts` (orphaned tab); `cap: Infinity` really is uncapped |
+| `test/trace-flag.test.ts` | 8 | the 24h window is measured from the back-dated start; renew moves **both** dates |
+| `test/clipboard.test.ts` | 7 | a blocked write reports, and the failure message keeps its label |
+| `test/panels.test.ts` | 13 | `role="alert"`/`status`; `busyOverlay` mounts in the content root, not `body` |
+| `test/confirm-dialog.test.ts` | 16 | Esc cancels and never confirms; topmost-only; focus starts on the safe control |
+| `test/meter-card.test.ts` | 8 | `pct` clamps; tone is a class, never an inline colour |
+| `test/apex-limit-tiles.test.ts` | 14 | per-execution snapshot beats the cumulative roll-up |
+
+Each of the five load-bearing assertions was **verified by mutation**: the fix
+was reverted in the source, the suite was watched to fail, and the source
+restored. A test written after the fix, never seen red, is the same vacuity trap
+as a regex guard matching nothing.
 
 **Every file-scan or regex guard must be paired with a non-vacuity test** that
 proves it actually fires. This is not optional — during this work, four guards
@@ -262,24 +287,32 @@ reverting the fix and watching it fail.
 
 ## 4. What's left, in order
 
-### 4a. `features/` interiors — 733 inline `cssText` sites
+As of 2026-08-03 the numbered backlog is **closed**: 4b shipped, 4c was decided
+against, 4d is done both halves. What remains is 4a, which is deliberately never
+"finished" — it pays down as files are touched — and the sections after it are
+the record of what was consolidated and why, not a queue.
+
+The one thing genuinely outstanding is not in this list, because it is not a
+code change: **an in-Chrome smoke test against a live org** before release. See
+§7.
+
+### 4a. `features/` interiors — the remaining inline `cssText` (199 sites)
 
 Incremental by design. Do **not** attempt a sweep; migrate a file when you're
-already in it for another reason. Ranked by size:
+already in it for another reason. Ranked by size, as of 2026-08-03:
 
 ```
- 67  field-creator      42  schema-browser     24  field-impact
- 59  metadata-retrieve  34  event-monitor      23  saved-soql
- 57  soql-runner        28  trace-flags        20  soap-explore
- 46  data-import        28  debug-log-viewer   18  rest-explore
-                        25  flow-quality       17  subflow-graph
-                                               17  org-health
+ 22  soql-runner        11  field-impact        9  metadata-retrieve
+ 16  data-import        11  field-creator       9  inspect-record
+                        11  event-monitor       8  command-palette
+                                                8  trace-flags · flow-quality
+                                                8  api-version-audit
 ```
 
-`ui/` still has 91, concentrated in `health-modal.ts` (28) and
-`apex-log-analyzer.ts` (27). `present-view.ts` is down to 2 (the overlay's
-fixed positioning and the card's width/max-height — both single-site layout,
-not components).
+`present-view.ts` is down to 2 (the overlay's fixed positioning and the card's
+width/max-height — both single-site layout, not components). Read §4d-ter before
+treating any of these as a to-do: the remaining sites are one-off layout, not
+drift.
 
 Inspect Record is the worked example of a full migration: buttons → `.sfdt-btn`,
 inputs → `.sfdt-field`, table → `.sfdt-table`, filter row → `.sfdt-toolbar`,
@@ -308,16 +341,17 @@ the report can never disagree with the guards, and a stale hand-written
 checklist can never quietly claim a file is done. It is a report, not a gate —
 `npx vitest run` is what fails CI.
 
-As of 2026-08-01: **all 63 UI files done.** 0 hand-rolled buttons, 0 emoji,
-0 inline styling. Batches A–E are complete.
+As of 2026-08-03: **all 66 UI files done.** 0 hand-rolled buttons, 0 emoji,
+0 inline styling. Batches A–E are complete; the table below is kept as the
+record of how they were sequenced, not as work outstanding.
 
 | Batch | Files | State |
 |---|---|---|
 | ~~**A — emoji only**~~ | `app/main`, `options/main`, `sidepanel/main`, `missing-description-flags`, `canvas-search`, `flow-list-search`, `apex-log-analyzer` | **Done.** The `⚡` in page titles became a real `bolt` glyph — `workspace-host` was already rendering one and stripping the character every caller sent, so the strip regex is gone too. |
 | ~~**B — 1–2 buttons**~~ | 20 files, `flow-deploy` … `ai-assistant` | **Done.** Two of them (`show-api-names`, `ai-assistant`) had their own local `makeBtn` factory — replacing the body meant every call site inherited at once. |
-| **C — 3–5 buttons** | `event-monitor`, `trace-flags`, `soap-explore`, `rest-explore` | In progress — `apex-anonymous` and `schema-browser` done. `trace-flags` is the natural next one: it is the Debug Logs viewer's sibling and already cross-linked from its toolbar. |
-| **D — the big two** | `field-creator` (9 btn, 10 inputs, 67 cssText, 11 emoji), `metadata-retrieve` (8 btn, 8 inputs, 59 cssText) | Effectively a rebuild of each interior. Last. `debug-log-viewer` was the third and is done. |
-| **E — page sheets** | `ui/workspace-host.ts` | 3 button rules live in its own `<style>` template, not inline — the fix is a class on the element, not a `button()` call. |
+| ~~**C — 3–5 buttons**~~ | `event-monitor`, `trace-flags`, `soap-explore`, `rest-explore`, `apex-anonymous`, `schema-browser` | **Done.** `trace-flags` went with Debug Logs — they are siblings and already cross-linked from each other's toolbar. |
+| ~~**D — the big two**~~ | `field-creator` (was 9 btn, 10 inputs, 67 cssText, 11 emoji), `metadata-retrieve` (was 8 btn, 8 inputs, 59 cssText) | **Done.** Effectively a rebuild of each interior, which is why they went last; `debug-log-viewer` was the third of that size. |
+| ~~**E — page sheets**~~ | `ui/workspace-host.ts` | **Done.** Its 3 button rules lived in its own `<style>` template, not inline — the fix was a class on the element, not a `button()` call. |
 
 Two things worth stealing from batch B:
 
@@ -343,16 +377,35 @@ the one that measures work.
 sizing, `display` toggles) that no component owns or should. Migrating it for
 its own sake is how you turn a design system into a second, worse layout engine.
 
-### 4b. SOQL editor chrome — **unblocked; the editor now exists**
+### 4b. SOQL editor chrome — **done 2026-08-03**
 
 The blocker was syntax highlighting: a hand-written tokenizer or a
 CodeMirror-class dependency, with bundle-size and CSP consequences. That
 decision was taken on 2026-08-01 — **hand-written tokenizer, no dependency** —
-and shipped as `lib/code-editor.ts` for Execute Anonymous.
+and shipped as `lib/code-editor.ts` for Execute Anonymous. The SOQL runner is
+its second consumer.
 
-`createCodeEditor({ ariaLabel, value, placeholder, keywords })` returns a
-line-numbered, highlighted editor. `SOQL_KEYWORDS` is already exported for the
-runner; swapping its `<textarea>` for this is now a small change, not a project.
+`editor.input` IS the textarea, so the swap touched no read site and none of the
+127 runner tests: `setRangeText` for autocomplete, `selectionStart`, `.value`
+and `document.querySelector('textarea')` all still work. Two things it did need:
+
+- **Every programmatic edit needs `refresh()` or `setValue()`.** The highlight
+  and gutter repaint on the textarea's `input` event, and nothing that sets
+  `.value` from code fires one — a history pick, a saved query, the pending
+  hand-off from Saved SOQL or the Schema Browser, and autocomplete's
+  `setRangeText` all mutate it silently. Miss one and the caret sits over stale
+  glyphs. `test/soql-runner.test.ts` pins the three distinct paths.
+- **The keyword match had to learn about shouting.** Matching the lowercase set
+  exactly is right for Apex and useless for SOQL, where `SELECT Id FROM Account`
+  is the conventional spelling — every keyword uppercase, so *nothing in a query
+  highlighted at all*. It now matches case-insensitively but only for a token in
+  uniform case, so `FROM`/`from` are keywords while `Order` and `Group` stay
+  sObjects. Apex gains the same fix for its inline SOQL and keeps `Set`, `Date`
+  and `Delete` as types.
+
+The textarea also had **no accessible name** before the swap — only a
+placeholder, which disappears on the first keystroke. It now carries one, and it
+follows the language toggle (`SOQL query` / `SOSL search`).
 
 Still open from the original sample, and still worth asking about before
 building: the org-context side panel (Total Records / Storage / API Remaining)
@@ -378,29 +431,64 @@ Keyword matching is **case-sensitive against a lowercase set**, even though Apex
 is case-insensitive. Matching case-insensitively paints `Set<Id>`, `Date` and
 `Delete` as keywords, and those appear far more often as types.
 
-### 4c. Popup 2×2 quick-action tile grid
+### 4c. Popup 2×2 quick-action tile grid — **decided against, 2026-08-03**
 
-From the second Stitch folder. Offered, not started, awaiting a decision.
-Constraint: keep `statusRow()` — dot + text label, `role="status"`, colour never
-the sole signal. The Stitch design drops status entirely, which would be both an
-a11y and a utility regression.
+From the second Stitch folder. Not built, and not pending: see the entry in §6.
 
-### 4d. Modal migration — `present-view` done, `health-modal` left
+The deciding fact is that **the popup never has four actions.** The list is
+computed per render (`lib/popup.ts:254-267`) and comes to between one and three:
+
+| Context | Actions |
+|---|--:|
+| Salesforce tab, Chrome | 3 — Workspace, side panel, Quick menu |
+| Non-Salesforce tab, Chrome | 2 |
+| Firefox (no `chrome.sidePanel`) | 1–2 |
+
+A 2×2 whose fourth cell is always empty is a list with extra steps. Settings is
+the only candidate to fill it and it is deliberately in the footer
+(`popup.ts:270-276`), pinned so the action list can grow without pushing the
+version off the bottom edge.
+
+Two further reasons, either of which would stand alone:
+
+- **The labels are verb phrases.** "Open side panel" is one line and a glyph as
+  a row; in a ~150px square it wraps to three. Tiles suit short nouns.
+- **The Stitch source drops `statusRow()` entirely** (`popup.ts:118`, used at
+  228 and 233). It is dot + text + `role="status"`, so colour is never the sole
+  signal — dropping it costs the a11y property *and* the popup's actual job:
+  is my session alive, is the bridge running.
+
+If this is ever revisited, the thing that would change the answer is a fourth
+action that genuinely belongs at the top level — not a re-reading of the mockup.
+
+### 4d. Modal migration — **both done**
 
 `ui/present-view.ts` is folded onto `.sfdt-card` + `.sfdt-panel-head` (see §1,
-layer 4). `ui/health-modal.ts` still predates the sheet; fold it on when next
-touched.
+layer 4). `ui/health-modal.ts` followed on 2026-08-03: 9 → 1 `cssText`, cards
+onto `.sfdt-tile` in a `.sfdt-tiles` auto-fit grid, the family disclosures onto
+`.sfdt-panel`, the severity badge onto `.sfdt-pill`, and the footer onto
+`toolbar(doc, foot)`.
+
+It carried a live dark-mode defect, which is the reason this kind of fold is
+worth doing rather than cosmetic: `severityColour()` and `ratingColour()`
+returned **fill** tokens (`--sfdt-color-error`) and the results were written to
+`.style.color` — the foreground/fill inversion `CLAUDE.md` rule 3 exists to
+prevent. They are `setTone()` calls now, resolving to the `-text` variants.
+
+The one `cssText` left is the score's hero size, at `--sfdt-type-metric`. Its
+`.sfdt-health-*` classes are all kept: 18 tests query them BY NAME, and they are
+added with `classList.add()` for exactly the reason §4d-ter gives.
 
 ---
 
 ### 4d-ter. Where the cssText sweep stopped, and why
 
-`cssText` went **591 → 213** across the migration. The sweep stopped when the
+`cssText` went **591 → 199** across the migration. The sweep stopped when the
 distribution said there was nothing left to combine:
 
 | | start | end |
 |---|---:|---:|
-| sites | 591 | 213 |
+| sites | 591 | 199 |
 | distinct shapes | — | 148 |
 | shapes appearing exactly once | — | 119 |
 | largest cluster | ~30 | **2** |
@@ -413,7 +501,7 @@ this codebase have already proved that: one deleted five identity classes by
 assigning `.className` over them, and only a test querying a class BY NAME
 caught it. Everything since uses `classList.add()`, which cannot clobber.
 
-What the remaining 213 are NOT: they contain **zero** raw colour values, zero
+What the remaining 199 are NOT: they contain **zero** raw colour values, zero
 hard-coded hex, zero fill-tokens-as-foregrounds, and zero bare form controls.
 They are verbose, tokenised and correct, and they pay down when a file is next
 edited. The guards stop new ones appearing.
@@ -480,8 +568,8 @@ Two things worth keeping in mind from doing it:
 
 ### 4d-quinquies. `.sfdt-view-body` is not for every view
 
-17 of the 25 `presentView` surfaces use the full shell
-(`.sfdt-view-body` + `toolbar()` + `.sfdt-view-main`). The other 8 use
+19 of the 35 files that call `presentView` use the full shell
+(`.sfdt-view-body` + `toolbar()` + `.sfdt-view-main`). The other 16 use
 `.sfdt-view-main` alone, and that is CORRECT — not a backlog.
 
 The distinction is whether the view has controls that must stay put while its
@@ -511,9 +599,13 @@ away. Five features had their own download dance and **two never called
   metadata zip, which is routinely tens of megabytes.
 
 All five now go through `lib/download.ts`. `triggerDownloadBlob` is separate
-from `triggerDownload` rather than widening the parameter: `new Blob([text])`
-over a `Uint8Array` stringifies it, which fails silently and writes a corrupt
-zip.
+from `triggerDownload` rather than widening the parameter, and the guarantee is
+at the TYPE level: `triggerDownload` declares `text: string`, so a byte payload
+cannot reach the path that would have to stringify it on the way in — four bytes
+become nine characters and the zip will not open. (`Blob` itself handles a
+`BufferSource` correctly; an earlier draft of this section blamed the Blob
+constructor, which `test/download.test.ts` disproves in the case beside the
+one it pins.)
 
 That is the shape of every consolidation worth doing in this codebase — the
 duplicated code was not merely repetitive, it was repetitively WRONG, and the
@@ -614,8 +706,18 @@ and `style.whiteSpace` — so moving `apex-anonymous`'s panes onto `.sfdt-consol
 made it report two false offenders on a file that had just become *more*
 correct. The fix belongs in the guard, not the feature: it now also derives the
 qualifying class names **from `SFDT_COMPONENT_CSS` itself**, so it can never
-vouch for a class after someone deletes the declaration from the rule. Expect
-the same shape from any other style-reading check as batches C–E land.
+vouch for a class after someone deletes the declaration from the rule.
+
+It went blind a **second** time, more subtly, when `health-modal` migrated: the
+class recognizer read only the FIRST argument of `classList.add()`. A migrated
+element carries its identity class first and its component class second — the
+normal shape — so the guard saw `sfdt-health-error-message` and never the
+`sfdt-msg` beside it, and fired on a file that had just become more correct.
+The case pinning the health modal specifically had the same rot: it asserted
+`cssText` even though the three `showError` funnels two cases above it had
+already been converted to assert the union. Same lesson twice — when a check
+reads HOW a rule is declared, every new way of declaring it is a fresh blind
+spot. Assert the union, and expect this from any style-reading check.
 
 **A WebIDL method held as a property and called as `this.x()` throws.**
 `fetch`, like `scrollY` and friends, brand-checks its receiver. Stored on an
@@ -678,6 +780,7 @@ but rendered beside the *new* file. Line numbers do not map. Don't chase them.
 | Flag columns show a glyph only when TRUE | Three columns of negative marks is noise, and empty already reads as false. The glyph is `aria-hidden`, so the meaning rides on `.sfdt-sr` text — without it the column is decorative and a screen reader gets an empty cell either way. |
 | The object list gets two glyphs, not a per-sObject icon map | No API says what an sObject *means*. A map would be the dozen standard ones and a shrug for the rest. Custom vs standard is knowable and is the distinction that helps when scanning. |
 | One view = one implementation, two presentations | There is exactly ONE Inspect Record (`features/inspect-record.ts`), reached from the SOQL-runner Id menu, the command palette, the page context menu and the Workspace. "Make the popup match" is never a second implementation — `presentView` already owns the surface split. |
+| **No 2×2 quick-action tile grid in the popup** | The action count is 1–3, never 4 (`lib/popup.ts:254-267`), so the grid's fourth cell is always empty and it degrades to a list with extra steps. The labels are verb phrases that wrap in a square. And the Stitch source drops `statusRow()`, which is both an a11y regression (colour would become the sole signal) and a utility one — session and bridge state is what the popup is FOR. Revisit only if a fourth top-level action appears, not on a re-reading of the mockup. See §4c. |
 
 ---
 
