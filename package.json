@@ -69,7 +69,7 @@
     "dev:ui": "npm run build:gui && npm link && echo '\\n✓ GUI built and linked. cd into your SF project and run: sfdt ui'",
     "postinstall": "node scripts/postinstall.js",
     "prepack": "npm run build:gui",
-    "prepublishOnly": "npm test && npm run lint"
+    "prepublishOnly": "npm run lint && npm run check:all-contracts"
   },
   "keywords": [
     "salesforce",
