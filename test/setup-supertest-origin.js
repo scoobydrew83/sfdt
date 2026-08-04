@@ -81,13 +81,44 @@ Test.prototype.end = function patchedEnd(fn) {
     req.set('Authorization', `Bearer ${launchToken}`);
   }
 
+  // A failed token fetch used to fall through silently, sending the real
+  // request with no `X-SFDT-CSRF` header. The server then correctly answered
+  // 403 — and the test failed asserting some unrelated status, with nothing
+  // pointing at the token fetch. That turned any transient hiccup here into a
+  // mystery flake (seen intermittently in bridge-routes-extra, gui-server-routes3
+  // and gui-server-manifest-builder). `/api/csrf-token` is itself rate-limited
+  // (10/min), so a burst of cache misses against one app is a plausible trigger.
+  //
+  // So: retry once, and if it still fails, say so loudly instead of letting the
+  // request go out unauthenticated and fail somewhere confusing.
+  const attach = (token) => {
+    if (key) tokenCache.set(key, token);
+    self.set('X-SFDT-CSRF', token);
+  };
+
   req.end((err, tokenRes) => {
     const token = tokenRes?.body?.token;
     if (!err && token) {
-      if (key) tokenCache.set(key, token);
-      self.set('X-SFDT-CSRF', token);
+      attach(token);
+      return originalEnd.call(self, fn);
     }
-    originalEnd.call(self, fn);
+
+    const retry = request(self.app).get('/api/csrf-token');
+    if (launchToken) retry.set('Authorization', `Bearer ${launchToken}`);
+    retry.end((retryErr, retryRes) => {
+      const retryToken = retryRes?.body?.token;
+      if (!retryErr && retryToken) {
+        attach(retryToken);
+      } else {
+        console.error(
+          `[setup-supertest-origin] could not obtain a CSRF token for ${self.method} ${self.url} — ` +
+            `the request will be sent without one and the server will answer 403. ` +
+            `first attempt: status=${tokenRes?.status} err=${err?.message}; ` +
+            `retry: status=${retryRes?.status} err=${retryErr?.message}`,
+        );
+      }
+      originalEnd.call(self, fn);
+    });
   });
   return self;
 };
