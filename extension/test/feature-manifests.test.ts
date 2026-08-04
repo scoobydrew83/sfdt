@@ -33,7 +33,6 @@ import { createFlowTriggerExplorerEnhancerFeature } from '../features/flow-trigg
 import { createFlowVersionManagerFeature } from '../features/flow-version-manager.js';
 import { createMissingDescriptionFlagsFeature } from '../features/missing-description-flags.js';
 import { createOrgLimitsFeature } from '../features/org-limits.js';
-import { createOrgHealthLiveFeature } from '../features/org-health-live.js';
 import { createOrgHealthFeature } from '../features/org-health.js';
 import { createCodeCoverageFeature } from '../features/code-coverage.js';
 import { createRestExploreFeature } from '../features/rest-explore.js';
@@ -64,6 +63,7 @@ import { createCommandPaletteFeature } from '../features/command-palette.js';
 import { createContextMenuInspectFeature } from '../features/context-menu-inspect.js';
 // --- Workspace-only factories (entrypoints/app/main.ts) ---
 import { createApexTestRunnerFeature } from '../features/apex-test-runner.js';
+import { BRIDGE_REQUIRED } from '../lib/feature-defaults.js';
 import {
   createDriftFeature,
   createScanFeature,
@@ -75,23 +75,9 @@ const MANIFESTS_PATH = path.resolve(
   '../lib/feature-manifests.json',
 );
 
-// Features that cannot function without the CLI bridge (`sfdt ui` running).
-// Kept here (not derivable from the manifests) and baked into the JSON:
-// - flow-deploy: deploy/rollback runs entirely through the bridge.
-// - org-health: reads the CLI's audit/monitor snapshots via the bridge
-//   (org-health-live is the no-bridge live-query counterpart).
-// - drift-check / metadata-scan / org-compare: bridge-tools.ts — "dev-only:
-//   they need `sfdt ui` running to answer the bridge".
-// NOT listed: ai-assistant (metadata clean/summarise/copy works in-browser;
-// only the optional AI run uses the bridge) and trigger-conflicts (conflict
-// detection is a live Tooling query; only the rollback action uses the bridge).
-const BRIDGE_REQUIRED = new Set([
-  'flow-deploy',
-  'org-health',
-  'drift-check',
-  'metadata-scan',
-  'org-compare',
-]);
+// BRIDGE_REQUIRED moved to lib/feature-defaults.ts — the options page needs it
+// to badge the feature list, and a test cannot be imported by the product.
+// Still asserted against the JSON seed below, so the two cannot drift.
 
 // FEATURE_ICONS ids that are intentionally NOT registered features. Currently
 // none — every icon id must correspond to a registered feature.
@@ -128,7 +114,6 @@ function instantiateAllFeatures(): Feature[] {
     createFlowDeployFeature(),
     createSoqlRunnerFeature(),
     createOrgLimitsFeature(),
-    createOrgHealthLiveFeature(),
     createOrgHealthFeature(),
     createCodeCoverageFeature(),
     createRestExploreFeature(),

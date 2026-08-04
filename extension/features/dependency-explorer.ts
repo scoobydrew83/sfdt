@@ -14,6 +14,7 @@ import {
   METADATA_TYPES,
   type DependencyGroup,
 } from '@sfdt/flow-core';
+import { button, toolbar } from '../lib/ui-controls.js';
 
 // Resolution/grouping/query logic now lives in @sfdt/flow-core so the Chrome
 // explorer, the GUI Dependency page, and `sfdt dependencies` resolve and group
@@ -67,7 +68,7 @@ export function createDependencyExplorerFeature(
 
     if (count === 0) {
       const empty = doc.createElement('div');
-      empty.style.cssText = 'padding: 6px 0; color: var(--sfdt-color-text-icon); font-size: 12px;';
+      empty.classList.add('sfdt-prose', 'sfdt-muted');
       empty.textContent = 'None.';
       section.appendChild(empty);
       return section;
@@ -76,8 +77,7 @@ export function createDependencyExplorerFeature(
     for (const group of groups) {
       for (const name of group.names) {
         const row = doc.createElement('div');
-        row.style.cssText =
-          'display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px;';
+        row.classList.add('sfdt-row', 'sfdt-snug', 'sfdt-prose');
         row.appendChild(typeBadge(group.type));
         const label = doc.createElement('span');
         label.style.cssText = 'word-break: break-all;';
@@ -107,7 +107,7 @@ export function createDependencyExplorerFeature(
       if (!id) {
         status.textContent = '';
         const msg = doc.createElement('div');
-        msg.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon);';
+        msg.classList.add('sfdt-prose', 'sfdt-muted');
         msg.textContent = `No ${type} named "${name.trim()}" found in this org.`;
         results.appendChild(msg);
         return;
@@ -135,7 +135,7 @@ export function createDependencyExplorerFeature(
 
       if (refs.records.length === 0 && refBy.records.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon);';
+        empty.classList.add('sfdt-prose', 'sfdt-muted');
         empty.textContent = 'No metadata dependencies recorded for this component.';
         results.appendChild(empty);
         return;
@@ -145,8 +145,7 @@ export function createDependencyExplorerFeature(
       results.appendChild(renderSection('Referenced by (others → this)', refByGroups));
     } catch (err) {
       const errorPanel = doc.createElement('div');
-      errorPanel.style.cssText =
-        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
+      errorPanel.classList.add('sfdt-console', 'sfdt-error');
       errorPanel.textContent = err instanceof Error ? err.message : String(err);
       results.appendChild(errorPanel);
       status.textContent = 'Failed';
@@ -157,23 +156,18 @@ export function createDependencyExplorerFeature(
     close();
 
     const body = doc.createElement('div');
-    body.style.cssText =
-      'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column;';
-
-    // Search row — name input + type picker + Find, plus a status span. Lives in
-    // the body since presentView's header is title + × only.
-    const searchRow = doc.createElement('div');
-    searchRow.style.cssText = 'display: flex; align-items: center; gap: 8px; flex-wrap: wrap;';
-
+    body.className = 'sfdt-view-body';
+    // The search row IS this view's toolbar — presentView's header is title + ×
+    // only, so the controls live at the top of the body as a real strip.
+    const searchRow = toolbar(doc);
+    searchRow.classList.add('sfdt-wrap');
     const nameInput = doc.createElement('input');
     nameInput.type = 'text';
     nameInput.placeholder = 'Component name';
-    nameInput.style.cssText =
-      'flex: 1; min-width: 180px; padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
-
+    nameInput.className = 'sfdt-field';
+    nameInput.classList.add('sfdt-search');
     const typeSelect = doc.createElement('select');
-    typeSelect.style.cssText =
-      'padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
+    typeSelect.className = 'sfdt-field sfdt-auto';
     for (const t of METADATA_TYPES) {
       const opt = doc.createElement('option');
       opt.value = t;
@@ -181,22 +175,23 @@ export function createDependencyExplorerFeature(
       typeSelect.appendChild(opt);
     }
 
-    const findBtn = doc.createElement('button');
-    findBtn.textContent = 'Find';
-    findBtn.style.cssText =
-      'padding: 5px 14px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 13px;';
+    const findBtn = button({ label: 'Find', iconName: 'search', variant: 'primary', small: true, doc });
 
     const status = doc.createElement('span');
     status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px; margin-left: 4px;';
 
     searchRow.append(nameInput, typeSelect, findBtn, status);
     body.appendChild(searchRow);
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
 
     const results = doc.createElement('div');
-    body.appendChild(results);
+    main.appendChild(results);
 
     view = presentView({
-      title: '🔗 Dependency Explorer',
+      title: 'Dependency Explorer',
+      iconName: 'graph',
       body,
       doc,
       width: '720px',

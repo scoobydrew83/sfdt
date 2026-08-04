@@ -91,3 +91,33 @@ export function _knownFeatureDefaultIdsForTests(): string[] {
 export function _clearFeatureDefaultForTests(featureId: string): void {
   declaredDefaults.delete(featureId);
 }
+
+/**
+ * Features that cannot function without the CLI bridge (`sfdt ui` running).
+ *
+ * Not derivable from a manifest — it is a statement about what each feature
+ * DOES, so it is maintained by hand and baked into lib/feature-manifests.json
+ * by the parity test.
+ *
+ * It lived in that test until the options page needed it to badge the feature
+ * list. A test is the wrong home for a fact the product has to act on: the UI
+ * could not reach it, so the page either duplicated the list or said nothing.
+ *
+ * - flow-deploy: deploy/rollback runs entirely through the bridge.
+ * - org-health: the CLI-only DEPTH. The five in-browser checks always run
+ *   without it (features/org-health-checks.ts); the bridge adds `sfdt audit`'s
+ *   twelve on top. Listed because the deeper half is what the entry promises.
+ * - drift-check / metadata-scan / org-compare: bridge-tools.ts — they need
+ *   `sfdt ui` running to answer the bridge at all.
+ *
+ * NOT listed: ai-assistant (metadata clean/summarise/copy works in-browser;
+ * only the optional AI run uses the bridge) and trigger-conflicts (detection is
+ * a live Tooling query; only the rollback action uses the bridge).
+ */
+export const BRIDGE_REQUIRED: ReadonlySet<string> = new Set([
+  'flow-deploy',
+  'org-health',
+  'drift-check',
+  'metadata-scan',
+  'org-compare',
+]);

@@ -84,7 +84,7 @@ describe('Event Streaming Monitor UI Feature', () => {
 
     expect(document.querySelector('.sfdt-view-overlay')).not.toBeNull();
 
-    const closeBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '×');
+    const closeBtn = document.querySelector('button[aria-label="Close"]') as HTMLButtonElement | null;
     expect(closeBtn).not.toBeUndefined();
     closeBtn?.click();
 

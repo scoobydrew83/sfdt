@@ -6,6 +6,7 @@ import { loadSettings } from '../lib/settings.js';
 import { createBridgeClient, getBridgeData, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.js';
 import { showToast } from '../ui/toast.js';
 import { presentView } from '../ui/present-view.js';
+import { button } from '../lib/ui-controls.js';
 
 async function dispatchBridge(
   kind: 'deploy' | 'rollback',
@@ -137,34 +138,27 @@ function showDeployModal(
   onChoice: (action: 'deploy' | 'rollback') => void | Promise<void>,
 ): void {
   const body = doc.createElement('div');
-  body.style.cssText = 'padding: 16px;';
-
+  body.classList.add('sfdt-prose', 'sfdt-flush-x');
   const intro = doc.createElement('p');
-  intro.style.cssText = 'margin: 0 0 12px; font-size: 13px; color: var(--sfdt-color-text-weak);';
+  intro.classList.add('sfdt-muted');
   intro.textContent = 'sfdt re-validates against the target org before pushing.';
   body.appendChild(intro);
 
   const buttons = doc.createElement('div');
-  buttons.style.cssText = 'display: flex; gap: 8px; justify-content: flex-end;';
-  const deployBtn = doc.createElement('button');
-  deployBtn.textContent = 'Deploy';
-  deployBtn.style.cssText =
-    'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer;';
+  buttons.classList.add('sfdt-row');
+  const deployBtn = button({ label: 'Deploy', iconName: 'rocket', variant: 'primary', doc });
   deployBtn.addEventListener('click', async () => {
     view.close();
     await onChoice('deploy');
   });
-  const rollbackBtn = doc.createElement('button');
-  rollbackBtn.textContent = 'Rollback';
-  rollbackBtn.style.cssText =
-    'padding: 6px 12px; background: var(--sfdt-color-error); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer;';
+  const rollbackBtn = button({ label: 'Rollback', iconName: 'history', variant: 'danger', doc });
   rollbackBtn.addEventListener('click', async () => {
     view.close();
     await onChoice('rollback');
   });
   const cancelBtn = doc.createElement('button');
   cancelBtn.textContent = 'Cancel';
-  cancelBtn.style.cssText = 'padding: 6px 12px;';
+  cancelBtn.classList.add('sfdt-prose', 'sfdt-flush-x');
   cancelBtn.addEventListener('click', () => view.close());
 
   buttons.appendChild(cancelBtn);

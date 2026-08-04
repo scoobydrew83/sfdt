@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
-  createOrgHealthLiveFeature,
   _orgHealthLiveTestApi,
   type OrgHealthLiveOptions,
-} from '../features/org-health-live.js';
+} from '../features/org-health-checks.js';
+// The five in-browser checks are no longer a feature of their own — they are the
+// no-setup half of Org Health. These tests drive the module directly.
+import { createOrgHealthFeature } from '../features/org-health.js';
 import { setWorkspaceViewSink } from '../ui/present-view.js';
 import type { SalesforceApiClient } from '../lib/salesforce-api.js';
 
@@ -176,7 +178,7 @@ describe('org-health-live feature', () => {
       return envelope([]); // no inactive users
     });
     const limits = vi.fn(async () => ({ DailyApiRequests: { Max: 100, Remaining: 90 } }));
-    const feature = createOrgHealthLiveFeature({ api: fakeApi({ toolingQuery, query, limits }) });
+    const feature = createOrgHealthFeature({ api: fakeApi({ toolingQuery, query, limits }) });
     await feature.onActivate?.();
     await flush();
 
@@ -196,7 +198,7 @@ describe('org-health-live feature', () => {
       if (soql.includes('ApexOrgWideCoverage')) throw new Error('INVALID_TYPE: coverage');
       return envelope([{ ApiVersion: 62 }]);
     });
-    const feature = createOrgHealthLiveFeature({ api: fakeApi({ toolingQuery }) });
+    const feature = createOrgHealthFeature({ api: fakeApi({ toolingQuery }) });
     await feature.onActivate?.();
     await flush();
 

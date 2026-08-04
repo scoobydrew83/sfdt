@@ -11,6 +11,7 @@
 
 import { salesforceHostFromUrl } from './sf-tab.js';
 import { mySalesforceHostname } from './hostname.js';
+import { icon } from './icons.js';
 
 export type SessionStatus = 'active' | 'logged-out';
 export type BridgeStatus = 'connected' | 'disconnected';
@@ -100,11 +101,13 @@ export interface PopupHandlers {
   onOpenOptions: () => void;
 }
 
-const TOKEN_FOR_STATUS: Record<SessionStatus | BridgeStatus, string> = {
-  active: 'var(--sfdt-color-success)',
-  connected: 'var(--sfdt-color-success)',
-  'logged-out': 'var(--sfdt-color-text-icon)',
-  disconnected: 'var(--sfdt-color-text-icon)',
+// Status → dot CLASS. Was a token string set as an inline background; the
+// colours now live with every other threshold colour in lib/ui-styles.ts.
+const CLASS_FOR_STATUS: Record<SessionStatus | BridgeStatus, string> = {
+  active: 'sfdt-ok',
+  connected: 'sfdt-ok',
+  'logged-out': 'sfdt-idle',
+  disconnected: 'sfdt-idle',
 };
 
 /**
@@ -123,8 +126,7 @@ function statusRow(
   row.setAttribute('role', 'status');
 
   const dot = doc.createElement('span');
-  dot.className = 'sfdt-popup-dot';
-  dot.style.background = colour;
+  dot.className = `sfdt-popup-dot ${colour}`;
   dot.setAttribute('aria-hidden', 'true');
 
   const text = doc.createElement('span');
@@ -139,18 +141,40 @@ function statusRow(
   return row;
 }
 
+/**
+ * A command row: icon + label, the whole row clickable. Replaces the stack of
+ * full-width bordered buttons — four of those read as a form, not a launcher.
+ *
+ * `primary` keeps its meaning (the leading action, promoted per defaultSurface)
+ * and keeps the `primary` class the tests and the ordering logic rely on; it now
+ * shows as accent colour and weight rather than a filled block.
+ */
 function button(
   doc: Document,
   label: string,
   onClick: () => void,
   primary = false,
+  iconName = 'grid',
 ): HTMLButtonElement {
   const b = doc.createElement('button');
   b.type = 'button';
-  b.className = primary ? 'sfdt-popup-btn primary' : 'sfdt-popup-btn';
-  b.textContent = label;
+  b.className = primary ? 'sfdt-nav-item sfdt-popup-btn primary' : 'sfdt-nav-item sfdt-popup-btn';
+  b.appendChild(glyph(doc, iconName));
+  const text = doc.createElement('span');
+  text.className = 'sfdt-nav-label';
+  text.textContent = label;
+  b.appendChild(text);
   b.addEventListener('click', onClick);
   return b;
+}
+
+/** A decorative icon in the wrapper the component sheet expects. */
+function glyph(doc: Document, name: string, size = 20): HTMLElement {
+  const span = doc.createElement('span');
+  span.className = 'sfdt-glyph';
+  span.setAttribute('aria-hidden', 'true');
+  span.appendChild(icon(name, size, doc));
+  return span;
 }
 
 const SESSION_LABEL: Record<SessionStatus, string> = {
@@ -174,11 +198,18 @@ export function renderPopup(
 ): void {
   while (root.firstChild) root.removeChild(root.firstChild);
 
+  const head = doc.createElement('div');
+  // Shared with the ⚡ side menu (lib/ui-styles.ts). Both surfaces used to
+  // declare this row's padding/border/gap independently and identically.
+  head.className = 'sfdt-panel-head';
+  head.appendChild(glyph(doc, 'bolt'));
   const heading = doc.createElement('h1');
   heading.id = 'sfdt-popup-title';
-  heading.className = 'sfdt-popup-title';
-  heading.textContent = '⚡ SFDT for Salesforce';
-  root.appendChild(heading);
+  heading.className = 'sfdt-panel-title';
+  // The ⚡ moved into the icon beside it — two bolts side by side otherwise.
+  heading.textContent = 'SFDT for Salesforce';
+  head.appendChild(heading);
+  root.appendChild(head);
 
   const body = doc.createElement('div');
   body.className = 'sfdt-popup-body';
@@ -194,12 +225,12 @@ export function renderPopup(
 
     if (state.session) {
       body.appendChild(
-        statusRow(doc, 'Session', SESSION_LABEL[state.session], TOKEN_FOR_STATUS[state.session]),
+        statusRow(doc, 'Session', SESSION_LABEL[state.session], CLASS_FOR_STATUS[state.session]),
       );
     }
     if (state.bridge) {
       body.appendChild(
-        statusRow(doc, 'sfdt bridge', BRIDGE_LABEL[state.bridge], TOKEN_FOR_STATUS[state.bridge]),
+        statusRow(doc, 'sfdt bridge', BRIDGE_LABEL[state.bridge], CLASS_FOR_STATUS[state.bridge]),
       );
     }
   } else {
@@ -222,23 +253,30 @@ export function renderPopup(
   // otherwise the Workspace leads as before.
   const panelPreferred = state.defaultSurface === 'panel' && state.hasSidePanel;
   if (panelPreferred) {
-    actions.appendChild(button(doc, 'Open side panel', handlers.onOpenPanel, true));
-    actions.appendChild(button(doc, 'Open Workspace', handlers.onOpenWorkspace));
+    actions.appendChild(button(doc, 'Open side panel', handlers.onOpenPanel, true, 'panel'));
+    actions.appendChild(button(doc, 'Open Workspace', handlers.onOpenWorkspace, false, 'external'));
   } else {
-    actions.appendChild(button(doc, 'Open Workspace', handlers.onOpenWorkspace, true));
+    actions.appendChild(button(doc, 'Open Workspace', handlers.onOpenWorkspace, true, 'external'));
     if (state.hasSidePanel) {
-      actions.appendChild(button(doc, 'Open side panel', handlers.onOpenPanel));
+      actions.appendChild(button(doc, 'Open side panel', handlers.onOpenPanel, false, 'panel'));
     }
   }
   // The palette (⚡ menu) only exists on a Salesforce page's content script.
   if (state.isSalesforceTab) {
-    actions.appendChild(button(doc, 'Quick menu', handlers.onOpenPalette));
+    actions.appendChild(button(doc, 'Quick menu', handlers.onOpenPalette, false, 'search'));
   }
-  actions.appendChild(button(doc, 'Settings', handlers.onOpenOptions));
   root.appendChild(actions);
 
+  // Settings + version pinned to the bottom edge, so the action list above can
+  // grow without pushing the version off or leaving it floating mid-card.
+  const foot = doc.createElement('div');
+  foot.className = 'sfdt-popup-foot';
+  const settings = button(doc, 'Settings', handlers.onOpenOptions, false, 'settings');
+  settings.classList.add('sfdt-popup-settings');
+  foot.appendChild(settings);
   const version = doc.createElement('div');
   version.className = 'sfdt-popup-version';
   version.textContent = `v${state.version}`;
-  root.appendChild(version);
+  foot.appendChild(version);
+  root.appendChild(foot);
 }

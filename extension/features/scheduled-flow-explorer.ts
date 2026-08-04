@@ -14,6 +14,8 @@ import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-ap
 import { registerSettingsShape } from '../lib/settings.js';
 import { presentView } from '../ui/present-view.js';
 import { z } from 'zod';
+import { setTone } from '../lib/ui-controls.js';
+import { busyOverlay } from '../ui/panels.js';
 
 const SCHEDULED_FLOW_EXPLORER_SETTINGS_SCHEMA = z.object({
   defaultView: z.enum(['list', 'calendar']).default('list'),
@@ -118,30 +120,28 @@ export async function discoverScheduledFlows(
 // tests) can mount it via presentView.
 function buildModal(doc: Document, result: DiscoveryResult, now: Date): HTMLDivElement {
   const body = doc.createElement('div');
-  body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1;';
-
+  body.className = 'sfdt-view-main';
   const summary = doc.createElement('div');
-  summary.style.cssText = 'font-weight: 600; margin-bottom: 12px;';
+  summary.classList.add('sfdt-subhead');
   summary.textContent = `Scheduled Flow Explorer — ${result.flows.length} flow${result.flows.length === 1 ? '' : 's'}`;
   body.appendChild(summary);
 
   if (result.flows.length === 0) {
     const empty = doc.createElement('div');
     empty.textContent = 'No active Schedule-Triggered Flows in this org.';
-    empty.style.color = 'var(--sfdt-color-text-icon)';
+    setTone(empty, 'muted');
     body.appendChild(empty);
   } else {
     const list = doc.createElement('div');
     for (const entry of result.flows) {
       const next = calculateNextRun(entry.parsedSchedule, entry.activationDate, now);
       const row = doc.createElement('div');
-      row.style.cssText =
-        'padding: 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; margin-bottom: 8px;';
+      row.classList.add('sfdt-panel', 'sfdt-below');
       const title = doc.createElement('div');
-      title.style.fontWeight = '600';
+      title.classList.add('sfdt-strong');
       title.textContent = entry.label;
       const meta = doc.createElement('div');
-      meta.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; margin-top: 4px;';
+      meta.classList.add('sfdt-faint');
       meta.textContent = `${entry.parsedSchedule.frequency} · ${entry.parsedSchedule.targetObject ?? 'no target object'}`;
       const nextRun = doc.createElement('div');
       nextRun.style.cssText = 'margin-top: 4px; font-size: 13px;';
@@ -195,14 +195,10 @@ export function createScheduledFlowExplorerFeature(
       const ctx = detectContext({ location: { href: win.location.href } }, doc);
       if (ctx === CONTEXTS.NONE) return;
 
-      const loadingOverlay = doc.createElement('div');
-      loadingOverlay.style.cssText =
-        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: var(--sfdt-color-on-accent); font-family: system-ui, sans-serif;';
-      loadingOverlay.textContent = 'Discovering scheduled flows…';
-      doc.body.appendChild(loadingOverlay);
+      const loadingOverlay = busyOverlay('Discovering scheduled flows…', doc);
       try {
         const result = await discoverScheduledFlows(api);
-        loadingOverlay.remove();
+        loadingOverlay.close();
         presentView({
           title: 'Scheduled Flow Explorer',
           body: buildModal(doc, result, now()),
@@ -210,8 +206,8 @@ export function createScheduledFlowExplorerFeature(
           width: '720px',
         });
       } catch (err) {
-        loadingOverlay.textContent = `Failed: ${err instanceof Error ? err.message : String(err)}`;
-        setTimeout(() => loadingOverlay.remove(), 3000);
+        loadingOverlay.setMessage(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+        setTimeout(() => loadingOverlay.close(), 3000);
       }
     },
   };

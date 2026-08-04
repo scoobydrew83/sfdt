@@ -28,6 +28,8 @@ export function buildField<T>(schema: ZodTypeAny, initial: T): Field<T> {
     const looksHex =
       typeof initial === 'string' && initial.length === 7 && initial.startsWith('#');
     input.type = looksHex ? 'color' : 'text';
+    // A colour swatch is a UA-drawn widget; '.sfdt-field' would box it oddly.
+    if (!looksHex) input.className = 'sfdt-field';
     input.value = typeof initial === 'string' ? initial : '';
     return {
       node: input,
@@ -37,6 +39,7 @@ export function buildField<T>(schema: ZodTypeAny, initial: T): Field<T> {
   if (schema instanceof z.ZodNumber) {
     const input = document.createElement('input');
     input.type = 'number';
+    input.className = 'sfdt-field';
     input.value = typeof initial === 'number' ? String(initial) : '';
     return {
       node: input,
@@ -45,6 +48,7 @@ export function buildField<T>(schema: ZodTypeAny, initial: T): Field<T> {
   }
   if (schema instanceof z.ZodEnum) {
     const select = document.createElement('select');
+    select.className = 'sfdt-field';
     const values = (schema._def as { values: readonly string[] }).values;
     for (const v of values) {
       const opt = document.createElement('option');
@@ -60,8 +64,7 @@ export function buildField<T>(schema: ZodTypeAny, initial: T): Field<T> {
   }
   if (schema instanceof z.ZodObject) {
     const fieldset = document.createElement('fieldset');
-    fieldset.style.border = '0';
-    fieldset.style.padding = '0';
+    fieldset.classList.add('sfdt-fieldset');
     const shape = (schema._def as { shape: () => Record<string, ZodTypeAny> }).shape();
     const children: Record<string, Field<unknown>> = {};
     for (const [key, childSchema] of Object.entries(shape)) {
@@ -73,10 +76,10 @@ export function buildField<T>(schema: ZodTypeAny, initial: T): Field<T> {
       children[key] = child;
       const label = document.createElement('label');
       label.style.display = 'block';
-      label.style.padding = '4px 0';
+      label.classList.add('sfdt-field-row');
       const span = document.createElement('span');
       span.textContent = key;
-      span.style.marginRight = '8px';
+      span.classList.add('sfdt-field-name');
       label.appendChild(span);
       label.appendChild(child.node);
       fieldset.appendChild(label);

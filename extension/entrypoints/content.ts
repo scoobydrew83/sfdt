@@ -17,6 +17,7 @@ import { showToast } from '../ui/toast.js';
 import { ensureTokens } from '../lib/tokens.js';
 import { watchTheme } from '../lib/theme.js';
 import { FEATURE_ICONS } from '../lib/feature-icons.js';
+import { ICON_FOR_FEATURE } from '../lib/icons.js';
 import { enabledFeatureIds } from '../lib/palette-sources.js';
 import { createAiAssistantFeature } from '../features/ai-assistant.js';
 import { createApiNameGeneratorFeature } from '../features/api-name-generator.js';
@@ -31,13 +32,12 @@ import { createFlowTriggerExplorerEnhancerFeature } from '../features/flow-trigg
 import { createFlowVersionManagerFeature } from '../features/flow-version-manager.js';
 import { createMissingDescriptionFlagsFeature } from '../features/missing-description-flags.js';
 import { createOrgLimitsFeature } from '../features/org-limits.js';
-import { createOrgHealthLiveFeature } from '../features/org-health-live.js';
 import { createOrgHealthFeature } from '../features/org-health.js';
 import { createCodeCoverageFeature } from '../features/code-coverage.js';
 import { createRestExploreFeature } from '../features/rest-explore.js';
 import { createScheduledFlowExplorerFeature } from '../features/scheduled-flow-explorer.js';
 import { createSetupTabsFeature } from '../features/setup-tabs.js';
-import { createSoqlRunnerFeature } from '../features/soql-runner.js';
+import { createSoqlRunnerFeature, writePendingQuery } from '../features/soql-runner.js';
 import { createSubflowGraphFeature } from '../features/subflow-graph.js';
 import { createTriggerConflictsFeature } from '../features/trigger-conflicts.js';
 import { createInspectRecordFeature } from '../features/inspect-record.js';
@@ -146,8 +146,7 @@ export default defineContentScript({
     // Org Health & Apex Coverage query the org's Tooling/REST API directly (via
     // getSalesforceApi(), same as SOQL Runner) rather than reading static CLI
     // snapshots — so they show live, org-specific data on the current page.
-    registry.register(createOrgHealthLiveFeature());
-    // Org Health (bridge): the CLI's audit/monitor snapshots via the local
+        // Org Health (bridge): the CLI's audit/monitor snapshots via the local
     // bridge or native host (the `org-health` request kind). Distinct from the
     // live-query tool above; surfaces the governance snapshots the CLI produces.
     registry.register(createOrgHealthFeature());
@@ -172,6 +171,13 @@ export default defineContentScript({
       insertFieldIntoDraft: (field) => soqlRunner.insertFieldIntoDraft(field),
       exportForPrompt: (name, fields) => exportForPrompt.exportObject(name, fields),
       analyzeFieldImpact: (name, field) => void fieldImpact.openFor(name, field),
+      // "Generate SOQL" reuses the pending-query hand-off that Saved SOQL
+      // already uses, rather than adding a second setter to the runner: stage
+      // the query, then activate the runner, which consumes it on open.
+      runQueryInRunner: async (soql) => {
+        await writePendingQuery({ q: soql, api: 'rest', lang: 'soql' });
+        await soqlRunner.onActivate?.();
+      },
     });
     registry.register(schemaBrowser);
     registry.register(
@@ -274,14 +280,37 @@ export default defineContentScript({
       openSchemaBrowser: (name) => schemaBrowser.openFor(name),
     });
 
+    /**
+     * Fire-and-forget message to the background worker.
+     *
+     * The try/catch is the point: on an INVALIDATED context (Chrome updated the
+     * extension under this tab) `sendMessage` throws SYNCHRONOUSLY, so the
+     * callback never runs and the `lastError` read never happens — the throw
+     * escapes as an uncaught error on the Salesforce page. lib/salesforce-api.ts
+     * and features/org-switcher.ts already guard their sends this way; these two
+     * were the only unguarded ones left.
+     *
+     * Failing silently is right here: both callers are "open a tab for me", and
+     * the orphaned script cannot do anything about a dead worker anyway.
+     */
+    const tellWorker = (message: Record<string, unknown>): void => {
+      try {
+        chrome.runtime.sendMessage(message, () => void chrome.runtime?.lastError);
+      } catch {
+        // Invalidated context — the page is about to be reloaded by the user.
+      }
+    };
+
     const menuItemsProvider = (): MenuItem[] => {
       // Always offer the Workspace first — it works on any Salesforce page.
+      // The two entries below are not registry features, so their glyphs are
+      // named here rather than resolved through ICON_FOR_FEATURE.
       const items: MenuItem[] = [
-        { featureId: OPEN_WORKSPACE_ID, icon: '↗', label: 'Open Workspace ↗' },
+        { featureId: OPEN_WORKSPACE_ID, iconName: 'external', label: 'Open Workspace' },
       ];
       // Bridge to the exhaustive palette (only when it's enabled-for-context).
       if (palette.isEnabled()) {
-        items.push({ featureId: OPEN_PALETTE_ID, icon: '⌘', label: 'View all features' });
+        items.push({ featureId: OPEN_PALETTE_ID, iconName: 'grid', label: 'View all features' });
       }
       // Same enabled-for-context filter the command palette uses (AC-3), factored
       // into lib/palette-sources so the two surfaces can't drift.
@@ -294,7 +323,13 @@ export default defineContentScript({
       for (const featureId of enabled) {
         const entry = ICONS[featureId];
         if (!entry) continue;
-        items.push({ featureId, icon: entry.icon, label: entry.label });
+        // Label still comes from FEATURE_ICONS; the glyph comes from the line-icon
+        // map, which test/icons.test.ts keeps in lockstep with it.
+        items.push({
+          featureId,
+          iconName: ICON_FOR_FEATURE[featureId] ?? 'grid',
+          label: entry.label,
+        });
       }
       return items;
     };
@@ -304,10 +339,7 @@ export default defineContentScript({
       handlers: {
         onActivate: (item) => {
           if (item.featureId === OPEN_WORKSPACE_ID) {
-            chrome.runtime.sendMessage(
-              { action: 'openApp', org: window.location.hostname },
-              () => void chrome.runtime.lastError,
-            );
+            tellWorker({ action: 'openApp', org: window.location.hostname });
             return;
           }
           if (item.featureId === OPEN_PALETTE_ID) {
@@ -317,9 +349,7 @@ export default defineContentScript({
           return registry.dispatch(item.featureId, item.action ?? 'activate');
         },
         onOpenSettings: () => {
-          chrome.runtime.sendMessage({ action: 'openSettings' }, () => {
-            void chrome.runtime.lastError;
-          });
+          tellWorker({ action: 'openSettings' });
         },
       },
     });

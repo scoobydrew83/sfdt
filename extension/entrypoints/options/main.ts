@@ -10,7 +10,10 @@ import { createFeatureRegistry } from '../../lib/feature-registry.js';
 import { validateCustomShortcuts } from '../../lib/custom-shortcuts.js';
 import { buildField } from '../../lib/zod-to-dom.js';
 import { createTelemetry } from '../../lib/telemetry.js';
+import { clearActivity } from '../../lib/activity-log.js';
 import { SFDT_TOKENS_CSS } from '../../lib/tokens.js';
+import { SFDT_COMPONENT_CSS } from '../../lib/ui-styles.js';
+import { icon } from '../../lib/icons.js';
 import { watchTheme, OWN_PAGE_COLOR_SCHEME_CSS, type ThemeSetting } from '../../lib/theme.js';
 
 // Pull every feature factory in so each module's top-level
@@ -37,105 +40,114 @@ import { createDebugLogViewerFeature } from '../../features/debug-log-viewer.js'
 import { createSavedSoqlFeature } from '../../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../../features/org-switcher.js';
 import { createContextMenuInspectFeature } from '../../features/context-menu-inspect.js';
+import { BRIDGE_REQUIRED } from '../../lib/feature-defaults.js';
 
 
+// Options-page LAYOUT only. Card, button and glyph primitives come from
+// lib/ui-styles.ts (SFDT_COMPONENT_CSS), injected alongside this — the `section`
+// and `button` rules that used to live here restated the shared components with
+// slightly different radii and padding, which is the drift this consolidation
+// exists to stop.
+//
+// Bare element selectors are fine on THIS surface (it owns its whole document,
+// unlike the content-script sheet), so form controls stay element-scoped.
 const STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font: var(--sfdt-type-body-md);
     background: var(--sfdt-color-surface-alt);
     color: var(--sfdt-color-text-strong);
     margin: 0;
-    padding: 32px 24px;
+    padding: var(--sfdt-space-8) var(--sfdt-space-6);
   }
-  .wrap { max-width: 720px; margin: 0 auto; }
+  /* 720px was right for one column; two need room to be two. Below the
+     .sfdt-bento breakpoint it collapses back to a single column anyway. */
+  .wrap { max-width: 1100px; margin: 0 auto; }
   h1 {
-    font-size: 22px;
-    margin: 0 0 4px;
+    /* The 22px this replaced was arbitrary — one step off the scale for no
+       reason, which is the whole failure mode a type scale prevents. */
+    font: var(--sfdt-type-headline-lg);
+    margin: 0 0 var(--sfdt-space-1);
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sfdt-space-2);
   }
-  .subtitle { color: var(--sfdt-color-text-weak); font-size: 13px; margin: 0 0 24px; }
-  section {
-    background: var(--sfdt-color-surface);
-    border: 1px solid var(--sfdt-color-border);
-    border-radius: 4px;
-    padding: 16px 20px;
-    margin-bottom: 16px;
-  }
-  section h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
-  section p.section-help { color: var(--sfdt-color-text-weak); font-size: 12px; margin: 0 0 12px; }
+  .subtitle { color: var(--sfdt-color-text-weak); font: var(--sfdt-type-body-sm); margin: 0 0 var(--sfdt-space-6); }
+
+  /* Cards carry '.sfdt-card-section' for the page padding and rhythm; the
+     surface, border, radius and elevation all come from '.sfdt-card'. */
+  section h2 { font: var(--sfdt-type-headline-md); margin: 0 0 var(--sfdt-space-1); }
+  section p.section-help { color: var(--sfdt-color-text-weak); font: var(--sfdt-type-body-sm); margin: 0 0 var(--sfdt-space-3); }
+
   label.row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 8px 0;
+    gap: var(--sfdt-space-3);
+    padding: var(--sfdt-space-2) 0;
     border-top: 1px solid var(--sfdt-color-bg);
   }
   label.row:first-of-type { border-top: 0; }
   label.row .label-text { flex: 1; }
-  label.row .label-text strong { display: block; font-weight: 500; font-size: 13px; }
-  label.row .label-text span { color: var(--sfdt-color-text-icon); font-size: 12px; }
+  label.row .label-text strong { display: block; font-weight: 500; font: var(--sfdt-type-body-md); font-weight: 600; }
+  label.row .label-text span { color: var(--sfdt-color-text-icon); font: var(--sfdt-type-body-sm); }
+
   input[type="text"], input[type="number"], select, input[type="password"] {
     border: 1px solid var(--sfdt-color-border);
-    border-radius: 3px;
-    padding: 6px 8px;
-    font-size: 13px;
-    font-family: inherit;
+    border-radius: var(--sfdt-radius);
+    padding: 6px var(--sfdt-space-2);
+    font: var(--sfdt-type-body-sm);
     min-width: 200px;
+    background: var(--sfdt-color-surface);
+    color: var(--sfdt-color-text);
+  }
+  input[type="text"]:focus-visible, input[type="number"]:focus-visible,
+  select:focus-visible, input[type="password"]:focus-visible {
+    outline: 2px solid var(--sfdt-color-info);
+    outline-offset: 1px;
   }
   input[type="color"] {
     width: 36px; height: 28px;
     border: 1px solid var(--sfdt-color-border);
-    border-radius: 3px;
+    border-radius: var(--sfdt-radius);
     padding: 0;
     cursor: pointer;
   }
-  input[type="checkbox"] { transform: scale(1.1); cursor: pointer; }
-  button {
-    padding: 6px 14px;
-    border-radius: 3px;
-    border: 1px solid var(--sfdt-color-border);
-    background: var(--sfdt-color-surface);
-    color: var(--sfdt-color-text-strong);
-    cursor: pointer;
-    font-size: 13px;
-    font-family: inherit;
-  }
-  button.primary { background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-color: var(--sfdt-color-brand); }
-  button:hover { background: var(--sfdt-color-bg); }
-  button.primary:hover { background: var(--sfdt-color-brand-active); }
-  .actions { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
-  .shortcut-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
+  input[type="checkbox"] { transform: scale(1.1); cursor: pointer; accent-color: var(--sfdt-color-brand); }
+
+  .actions { margin-top: var(--sfdt-space-3); display: flex; gap: var(--sfdt-space-2); align-items: center; }
+  .shortcut-row { display: flex; gap: var(--sfdt-space-2); align-items: center; padding: 6px 0; }
   .shortcut-row input[type="text"] { flex: 1; min-width: 0; }
+
+  /* Deliberately NOT .sfdt-pill: these are transient sentences ("Saved",
+     "Cleared"), and the pill is an uppercase status badge — reusing it would
+     shout SAVED at the user after every keystroke-free save. */
   .status {
-    font-size: 12px;
-    padding: 4px 8px;
-    border-radius: 3px;
+    font: var(--sfdt-type-body-sm);
+    padding: var(--sfdt-space-1) var(--sfdt-space-2);
+    border-radius: var(--sfdt-radius);
     display: none;
   }
   .status.show { display: inline-block; }
   .status.ok { background: var(--sfdt-color-success-bg); color: var(--sfdt-color-success-text); }
   .status.warn { background: var(--sfdt-color-warning-bg-6); color: var(--sfdt-color-warning-text); }
   .status.error { background: var(--sfdt-color-error-bg-4); color: var(--sfdt-color-error-text); }
+
   .hint {
     background: var(--sfdt-color-surface-shade);
     border-left: 3px solid var(--sfdt-color-brand);
-    padding: 8px 12px;
-    font-size: 12px;
+    padding: var(--sfdt-space-2) var(--sfdt-space-3);
+    font: var(--sfdt-type-body-sm);
     color: var(--sfdt-color-text-weak);
-    margin: 12px 0;
-    border-radius: 0 3px 3px 0;
+    margin: var(--sfdt-space-3) 0;
+    border-radius: 0 var(--sfdt-radius) var(--sfdt-radius) 0;
   }
   .hint code {
     background: var(--sfdt-color-surface);
     border: 1px solid var(--sfdt-color-border);
-    border-radius: 2px;
-    padding: 1px 4px;
-    font-family: ui-monospace, monospace;
-    font-size: 11px;
+    border-radius: var(--sfdt-radius-sm);
+    padding: 1px var(--sfdt-space-1);
+    font: var(--sfdt-type-code-sm);
   }
 `;
 
@@ -194,7 +206,9 @@ async function render(): Promise<void> {
   if (!root) return;
 
   const styleTag = document.createElement('style');
-  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${OWN_PAGE_COLOR_SCHEME_CSS}\n${STYLES}`;
+  // Order matters: tokens define the custom properties the component sheet
+  // consumes, and STYLES layers this page's own layout on top of both.
+  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${OWN_PAGE_COLOR_SCHEME_CSS}\n${SFDT_COMPONENT_CSS}\n${STYLES}`;
   document.head.appendChild(styleTag);
   const themeController = watchTheme(document);
 
@@ -227,8 +241,15 @@ async function render(): Promise<void> {
 
   const wrap = el('div', { class: 'wrap' });
 
+  // Bolt glyph beside the words, matching the Workspace app bar and the org
+  // picker — the mark is an SVG on every surface now, not a pictograph baked
+  // into a string on some of them.
   const title = el('h1');
-  title.textContent = '⚡ SFDT for Salesforce';
+  title.classList.add('sfdt-row');
+  title.appendChild(icon('bolt', 26));
+  const titleText = el('span');
+  titleText.textContent = 'SFDT for Salesforce';
+  title.appendChild(titleText);
   wrap.appendChild(title);
 
   const subtitle = el('p', { class: 'subtitle' });
@@ -236,7 +257,18 @@ async function render(): Promise<void> {
     'Settings sync to chrome.storage.local. Changes apply immediately — no reload needed.';
   wrap.appendChild(subtitle);
 
-  const bridgeSection = el('section');
+  // Two columns. The split is by WEIGHT, not by topic: the left column holds
+  // the things you scroll and read (bridge setup, 44 feature toggles, every
+  // per-feature schema), the right holds the short preference cards. A single
+  // 720px column put nineteen cards in one stack, so the small ones — theme,
+  // telemetry — sat below a very long list and were effectively unfindable.
+  const bento = el('div', { class: 'sfdt-bento' });
+  const mainCol = el('div', { class: 'sfdt-bento-col' });
+  const sideCol = el('div', { class: 'sfdt-bento-col' });
+  bento.append(mainCol, sideCol);
+  wrap.appendChild(bento);
+
+  const bridgeSection = el('section', { class: 'sfdt-card sfdt-card-section' });
   bridgeSection.appendChild(el('h2', {}, 'sfdt bridge'));
   const bridgeHelp = el('p', { class: 'section-help' });
   bridgeHelp.textContent =
@@ -270,7 +302,7 @@ async function render(): Promise<void> {
     row('Localhost port', 'Default 7654 — match the port sfdt ui is on.', portInput),
   );
 
-  const testButton = el('button', { class: 'primary' });
+  const testButton = el('button', { class: 'sfdt-btn sfdt-primary' });
   testButton.textContent = 'Test connection';
   const testStatus = el('span', { class: 'status' });
   testButton.addEventListener('click', async () => {
@@ -295,10 +327,10 @@ async function render(): Promise<void> {
   actions.appendChild(testButton);
   actions.appendChild(testStatus);
   bridgeSection.appendChild(actions);
-  wrap.appendChild(bridgeSection);
+  mainCol.appendChild(bridgeSection);
 
   // --- Custom shortcuts (command palette) ---
-  const shortcutsSection = el('section');
+  const shortcutsSection = el('section', { class: 'sfdt-card sfdt-card-section' });
   shortcutsSection.appendChild(el('h2', {}, 'Custom shortcuts'));
   const shortcutsHelp = el('p', { class: 'section-help' });
   shortcutsHelp.textContent =
@@ -339,7 +371,7 @@ async function render(): Promise<void> {
   const shortcutActions = el('div', { class: 'actions' });
   shortcutActions.appendChild(addShortcutBtn);
   shortcutsSection.appendChild(shortcutActions);
-  wrap.appendChild(shortcutsSection);
+  sideCol.appendChild(shortcutsSection);
 
   // Collect + validate the shortcut rows for the shared Save handler. Throws with
   // a user-facing message on a duplicate name or a malformed URL (the caller's
@@ -347,7 +379,7 @@ async function render(): Promise<void> {
   const collectShortcuts = (): Array<{ name: string; url: string }> =>
     validateCustomShortcuts(shortcutRows.map((r) => ({ name: r.nameInput.value, url: r.urlInput.value })));
 
-  const featuresSection = el('section');
+  const featuresSection = el('section', { class: 'sfdt-card sfdt-card-section' });
   featuresSection.appendChild(el('h2', {}, 'Features'));
   const featuresHelp = el('p', { class: 'section-help' });
   featuresHelp.textContent =
@@ -360,14 +392,68 @@ async function render(): Promise<void> {
   }
   const featureRows: FeatureRow[] = [];
 
-  for (const manifest of registry.listManifests()) {
+  // Forty-four rows is a list you hunt through, not one you scan. The filter
+  // matches the name AND the contexts, so "flow" finds the Flow tools and
+  // "record_page" finds everything that runs on one.
+  const featureFilter = el('input', {
+    type: 'search',
+    class: 'sfdt-field sfdt-search',
+    placeholder: 'Filter features…',
+    'aria-label': 'Filter features',
+  }) as HTMLInputElement;
+  const featureCount = el('p', { class: 'section-help' });
+  featuresSection.append(featureFilter, featureCount);
+
+  const manifests = registry.listManifests();
+  const featureEls: Array<{ el: HTMLElement; haystack: string }> = [];
+
+  for (const manifest of manifests) {
     const checkbox = el('input', { type: 'checkbox' });
     checkbox.checked = isFeatureEnabled(settings, manifest.id);
     const description = `${manifest.contexts.length} context(s): ${manifest.contexts.join(', ') || '—'}`;
-    featuresSection.appendChild(row(manifest.name, description, checkbox));
+    const rowEl = row(manifest.name, description, checkbox);
+
+    // Badges from data the manifests ALREADY carry — not an invented maturity
+    // scale. "Needs CLI" is the one that actually changes what a user should
+    // expect, because those features are inert without `sfdt ui` running.
+    const badges = el('span', { class: 'sfdt-row sfdt-tight' });
+    if (BRIDGE_REQUIRED.has(manifest.id)) {
+      const b = el('span', { class: 'sfdt-pill sfdt-warning' });
+      b.textContent = 'Needs CLI';
+      badges.appendChild(b);
+    }
+    if (manifest.enabledByDefault === false) {
+      const b = el('span', { class: 'sfdt-pill' });
+      b.textContent = 'Off by default';
+      badges.appendChild(b);
+    }
+    if (badges.firstChild) rowEl.insertBefore(badges, rowEl.lastChild);
+
+    featuresSection.appendChild(rowEl);
     featureRows.push({ id: manifest.id, checkbox });
+    featureEls.push({
+      el: rowEl,
+      haystack: `${manifest.name} ${manifest.id} ${manifest.contexts.join(' ')}`.toLowerCase(),
+    });
   }
-  wrap.appendChild(featuresSection);
+
+  const applyFeatureFilter = (): void => {
+    const term = featureFilter.value.trim().toLowerCase();
+    let shown = 0;
+    for (const f of featureEls) {
+      const match = !term || f.haystack.includes(term);
+      f.el.style.display = match ? '' : 'none';
+      if (match) shown += 1;
+    }
+    // Say BOTH numbers while filtering: "12 features" alone reads as the total.
+    featureCount.textContent =
+      shown === featureEls.length
+        ? `${featureEls.length} features`
+        : `${shown} of ${featureEls.length} features`;
+  };
+  featureFilter.addEventListener('input', applyFeatureFilter);
+  applyFeatureFilter();
+  mainCol.appendChild(featuresSection);
 
   interface FeatureFieldGroup {
     id: string;
@@ -377,7 +463,7 @@ async function render(): Promise<void> {
 
   for (const manifest of registry.listManifests()) {
     if (!manifest.settingsSchema) continue;
-    const section = el('section');
+    const section = el('section', { class: 'sfdt-card sfdt-card-section' });
     section.appendChild(el('h2', {}, manifest.name));
     const help = el('p', { class: 'section-help' });
     help.textContent = `Feature-specific configuration for ${manifest.name}.`;
@@ -402,10 +488,10 @@ async function render(): Promise<void> {
         return out;
       },
     });
-    wrap.appendChild(section);
+    mainCol.appendChild(section);
   }
 
-  const appearanceSection = el('section');
+  const appearanceSection = el('section', { class: 'sfdt-card sfdt-card-section' });
   appearanceSection.appendChild(el('h2', {}, 'Appearance'));
   const appearanceHelp = el('p', { class: 'section-help' });
   appearanceHelp.textContent =
@@ -455,9 +541,39 @@ async function render(): Promise<void> {
       surfaceSelect,
     ),
   );
-  wrap.appendChild(appearanceSection);
+  sideCol.appendChild(appearanceSection);
 
-  const telemetrySection = el('section');
+  const activitySection = el('section', { class: 'sfdt-card sfdt-card-section' });
+  activitySection.appendChild(el('h2', {}, 'Activity log'));
+  const activityHelp = el('p', { class: 'section-help' });
+  activityHelp.textContent =
+    'The Workspace Overview shows the last 100 things you ran. Stored in this browser profile only — never synced, never transmitted. Unlike telemetry it can include Salesforce data: the first 120 characters of a SOQL statement or the name of a class you deployed. Turn it off if that data should not be written to disk.';
+  activitySection.appendChild(activityHelp);
+
+  const activityCb = el('input', { type: 'checkbox' });
+  activityCb.checked = settings.activityLog?.enabled ?? true;
+  activitySection.appendChild(
+    row('Record recent activity', 'On by default. Clear the log from the Overview panel.', activityCb),
+  );
+
+  const clearActivityBtn = el('button', { class: 'sfdt-btn' });
+  clearActivityBtn.textContent = 'Clear activity log now';
+  const clearActivityStatus = el('span', { class: 'status' });
+  clearActivityBtn.addEventListener('click', async () => {
+    await clearActivity();
+    clearActivityStatus.className = 'status show ok';
+    clearActivityStatus.textContent = 'Cleared';
+    setTimeout(() => {
+      clearActivityStatus.className = 'status';
+    }, 2000);
+  });
+  const clearActivityRow = el('div', { class: 'actions' });
+  clearActivityRow.appendChild(clearActivityBtn);
+  clearActivityRow.appendChild(clearActivityStatus);
+  activitySection.appendChild(clearActivityRow);
+  sideCol.appendChild(activitySection);
+
+  const telemetrySection = el('section', { class: 'sfdt-card sfdt-card-section' });
   telemetrySection.appendChild(el('h2', {}, 'Telemetry'));
   const telemetryHelp = el('p', { class: 'section-help' });
   telemetryHelp.textContent =
@@ -483,13 +599,12 @@ async function render(): Promise<void> {
       const c = snapshot.counters[id];
       if (!c) continue;
       const line = el('div');
-      line.style.fontSize = '12px';
-      line.style.padding = '2px 0';
+      line.classList.add('sfdt-kv');
       line.textContent = `${id} — activated ${c.activated}, errors ${c.errored}, remote-disabled ${c.disabled_remote}`;
       telemetrySection.appendChild(line);
     }
   }
-  wrap.appendChild(telemetrySection);
+  sideCol.appendChild(telemetrySection);
 
   // Best-effort push of the current telemetry snapshot to the bridge so
   // `sfdt extension stats` has fresh data. Only fires when telemetry is
@@ -516,8 +631,12 @@ async function render(): Promise<void> {
     })();
   }
 
-  const saveBar = el('section');
-  const saveBtn = el('button', { class: 'primary' });
+  // Pinned, not a card at the end of the page. With nineteen sections above it
+  // you had to scroll past all of them to commit a toggle made at the top —
+  // the same "action scrolled out of reach" problem the SOQL runner and the
+  // data importer had.
+  const saveBar = el('div', { class: 'sfdt-savebar' });
+  const saveBtn = el('button', { class: 'sfdt-btn sfdt-primary' });
   saveBtn.textContent = 'Save changes';
   const saveStatus = el('span', { class: 'status' });
   saveBtn.addEventListener('click', async () => {
@@ -543,6 +662,7 @@ async function render(): Promise<void> {
           localhostPort: Number.isFinite(portValue) && portValue > 0 ? portValue : 7654,
         },
         telemetry: { enabled: telemetryCb.checked },
+        activityLog: { enabled: activityCb.checked },
         theme: themeSelect.value as ThemeSetting,
         defaultSurface: surfaceSelect.value as Settings['defaultSurface'],
       };
@@ -561,9 +681,9 @@ async function render(): Promise<void> {
   saveActions.appendChild(saveBtn);
   saveActions.appendChild(saveStatus);
   saveBar.appendChild(saveActions);
-  wrap.appendChild(saveBar);
-
   root.appendChild(wrap);
+  // Outside .wrap so it spans the window rather than the 1100px content column.
+  root.appendChild(saveBar);
 }
 
 void render();

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { SFDT_COMPONENT_CSS } from '../lib/ui-styles.js';
 
 // Since lib/sf-error-guidance.ts, a Salesforce error's `.message` is
 // multi-line: the org's own text, then the "what to do" line. HTML collapses a
@@ -63,14 +64,7 @@ function rendersAnErrorValue(expression: string): boolean {
 // identifier, and why it cannot carry a multiline error; and a test below
 // asserts every entry still matches real source, so a stale exemption fails
 // loudly instead of quietly widening the hole it was cut for.
-const EXEMPT: { file: string; name: string; because: string }[] = [
-  {
-    file: 'features/debug-log-viewer.ts',
-    name: 'msg',
-    because:
-      "generic confirm dialog: `opts.message` is a prompt, and its one caller passes the literal `Delete ${n} logs?`. It never receives a thrown error.",
-  },
-];
+const EXEMPT: { file: string; name: string; because: string }[] = [];
 
 function isExempt(relFile: string, name: string): boolean {
   return EXEMPT.some((e) => e.file === relFile && e.name === name);
@@ -102,6 +96,47 @@ function setsWhiteSpaceDirectly(source: string, name: string): boolean {
   return new RegExp(`\\b${name}\\.style\\.whiteSpace\\s*=`).test(source);
 }
 
+// …and, since the design-system migration, by wearing a shared class instead of
+// carrying any inline style at all. Reading the class names out of the sheet
+// rather than listing them here is the point: a guard that vouches for
+// `.sfdt-console` from a hardcoded list keeps vouching for it after someone
+// deletes the `white-space` declaration from the rule.
+const WHITE_SPACE_CLASSES: ReadonlySet<string> = (() => {
+  const out = new Set<string>();
+  for (const rule of SFDT_COMPONENT_CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    if (!HAS_WHITE_SPACE.test(rule[2]!)) continue;
+    for (const sel of rule[1]!.matchAll(/\.(sfdt-[\w-]+)/g)) out.add(sel[1]!);
+  }
+  return out;
+})();
+
+// …or by coming out of a shared panel builder. ui/panels.ts owns the class, so
+// an element assigned from one is covered by construction — and the guard has
+// to know that, or centralising the panel makes this check MORE likely to fire.
+// Named builders only, not any call: `const p = renderThing()` says nothing.
+const PANEL_BUILDERS = /\b(?:build)?(?:errorPanel|loadingPanel|emptyPanel|ErrorPanel|LoadingPanel|EmptyPanel)\s*\(/;
+
+function fromPanelBuilder(source: string, name: string): boolean {
+  const pattern = new RegExp(`\\b(?:const|let|var)\\s+${name}\\s*=\\s*[^;]*`, 'g');
+  for (const m of source.matchAll(pattern)) {
+    if (PANEL_BUILDERS.test(m[0])) return true;
+  }
+  return false;
+}
+
+function setsWhiteSpaceByClass(source: string, name: string): boolean {
+  const pattern = new RegExp(
+    `\\b${name}\\.(?:className\\s*=|classList\\.add\\()\\s*'([^']*)'`,
+    'g',
+  );
+  for (const m of source.matchAll(pattern)) {
+    for (const cls of m[1]!.trim().split(/\s+/)) {
+      if (WHITE_SPACE_CLASSES.has(cls)) return true;
+    }
+  }
+  return false;
+}
+
 describe('a rendered Salesforce error keeps its newlines', () => {
   it('every element assigned an error message declares a white-space rule', () => {
     const offenders: string[] = [];
@@ -119,6 +154,8 @@ describe('a rendered Salesforce error keeps its newlines', () => {
         const name = match[1]!;
         if (isExempt(path.relative(ROOT, file), name)) return;
         if (setsWhiteSpaceDirectly(source, name)) return;
+        if (setsWhiteSpaceByClass(source, name)) return;
+        if (fromPanelBuilder(source, name)) return;
 
         // An element with NO cssText is not exempt. An earlier draft skipped
         // those as "a judgement call we are not making", and that skip is
@@ -144,6 +181,12 @@ describe('a rendered Salesforce error keeps its newlines', () => {
     // surfaces the bug was reported against. They satisfy the rule today; the
     // point is that the guard now HOLDS them to it, so dropping the rule fails
     // here rather than shipping.
+    //
+    // HOW they satisfy it differs now, and that is the whole point of asserting
+    // the union rather than the cssText: rest-explore takes its panel from
+    // ui/panels.ts, the others still declare the rule locally. A test that
+    // insisted on cssText would have made migrating them look like a
+    // regression.
     for (const rel of [
       'features/soql-runner.ts',
       'features/rest-explore.ts',
@@ -151,7 +194,13 @@ describe('a rendered Salesforce error keeps its newlines', () => {
     ]) {
       const source = readFileSync(path.join(ROOT, rel), 'utf8');
       expect(source, rel).toMatch(/errorPanel\.textContent\s*=\s*message/);
-      expect(cssTextFor(source, 'errorPanel'), rel).toMatch(HAS_WHITE_SPACE);
+      const css = cssTextFor(source, 'errorPanel');
+      const covered =
+        (css !== null && HAS_WHITE_SPACE.test(css)) ||
+        setsWhiteSpaceDirectly(source, 'errorPanel') ||
+        setsWhiteSpaceByClass(source, 'errorPanel') ||
+        fromPanelBuilder(source, 'errorPanel');
+      expect(covered, rel).toBe(true);
     }
   });
 
@@ -196,6 +245,32 @@ describe('a rendered Salesforce error keeps its newlines', () => {
 
     const fixed = source.replace("'padding: 8px;'", "'padding: 8px; white-space: pre-line;'");
     expect(HAS_WHITE_SPACE.test(cssTextFor(fixed, 'p')!)).toBe(true);
+  });
+
+  it('sees through the shared panel builders, but not through any call', () => {
+    // Centralising the error panel must not make this guard fire on every file
+    // that adopted it — and must not become a blanket pass for any assignment.
+    expect(fromPanelBuilder("const p = errorPanel(msg, doc);\n", 'p')).toBe(true);
+    expect(fromPanelBuilder("const p = loadingPanel();\n", 'p')).toBe(true);
+    expect(fromPanelBuilder("const p = doc.createElement('div');\n", 'p')).toBe(false);
+    expect(fromPanelBuilder("const p = renderSomething();\n", 'p')).toBe(false);
+    // A builder assigned to a DIFFERENT name must not vouch for this one.
+    expect(fromPanelBuilder("const q = errorPanel(msg);\n", 'p')).toBe(false);
+  });
+
+  it('accepts a shared class only while its rule actually declares the property', () => {
+    // The class recognizer is derived from the sheet, so it must both find the
+    // classes that qualify and reject the ones that do not — a set that
+    // swallowed every `.sfdt-*` name would silently exempt the whole codebase.
+    expect(WHITE_SPACE_CLASSES.has('sfdt-console')).toBe(true);
+    expect(WHITE_SPACE_CLASSES.has('sfdt-card')).toBe(false);
+    expect(WHITE_SPACE_CLASSES.has('sfdt-btn')).toBe(false);
+
+    const src = "p.className = 'sfdt-console sfdt-error';\np.textContent = err.message;\n";
+    expect(setsWhiteSpaceByClass(src, 'p')).toBe(true);
+    expect(setsWhiteSpaceByClass("p.className = 'sfdt-card';\n", 'p')).toBe(false);
+    // A class on a DIFFERENT element must not vouch for this one.
+    expect(setsWhiteSpaceByClass("q.className = 'sfdt-console';\n", 'p')).toBe(false);
   });
 
   it('ignores fixed single-line copy, which cannot wrap', () => {

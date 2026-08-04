@@ -4,6 +4,12 @@ import {
   createApexAnonymousFeature,
   type ExecuteAnonymousResult,
 } from '../features/apex-anonymous.js';
+import { parseApexLog } from '../lib/apex-log/index.js';
+import {
+  formatLimitValue,
+  limitFillClass,
+  pickLimitSnapshot,
+} from '../ui/apex-limit-tiles.js';
 import type { SalesforceApiClient } from '../lib/salesforce-api.js';
 import { loadSettings, saveSettings, type Settings } from '../lib/settings.js';
 
@@ -302,7 +308,7 @@ describe('apex-anonymous — execute (log capture off)', () => {
     await flush();
     expect(apiGet).toHaveBeenCalledWith(expect.stringContaining('executeAnonymous'), expect.objectContaining({ anonymousBody: expect.any(String) }));
     const overlayText = document.querySelector('.sfdt-view-overlay')?.textContent ?? '';
-    expect(overlayText).toContain('✓ Success');
+    expect(overlayText).toContain('Success');
     expect(overlayText).toContain('Compiled and executed successfully.');
     // historyEnabled true → the run is recorded.
     expect((await readApexHistory()).length).toBe(1);
@@ -318,7 +324,7 @@ describe('apex-anonymous — execute (log capture off)', () => {
     Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find((b) => b.textContent === 'Execute')!.click();
     await flush();
     const text = document.querySelector('.sfdt-view-overlay')?.textContent ?? '';
-    expect(text).toContain('✗ Failed');
+    expect(text).toContain('Failed');
     expect(text).toContain('bad token');
   });
 
@@ -420,7 +426,7 @@ describe('apex-anonymous — execute with log capture', () => {
     const overlayText = document.querySelector('.sfdt-view-overlay')?.textContent ?? '';
     expect(overlayText).toContain('log ready');
     const openLogBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find(
-      (b) => b.textContent === '🪵 Open log',
+      (b) => b.textContent === 'Open log',
     )!;
     expect(openLogBtn.style.display).not.toBe('none');
 
@@ -614,7 +620,7 @@ function fastWin(): Window {
 function runAnalyzeBtn(): HTMLButtonElement {
   return Array.from(
     document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button'),
-  ).find((b) => b.textContent === '📊 Run & analyze')!;
+  ).find((b) => b.textContent === 'Run & analyze')!;
 }
 
 describe('apex-anonymous — Run & analyze', () => {
@@ -755,5 +761,164 @@ describe('apex-anonymous — Run & analyze', () => {
     await flush();
     expect(document.querySelectorAll('.sfdt-view-overlay').length).toBe(1);
     expect(document.activeElement).toBe(analyzeBtn);
+  });
+});
+
+// A log carrying both a cumulative roll-up and the per-execution snapshot that
+// follows it — the shape a real executeAnonymous log has.
+const LIMITS_LOG_BODY = [
+  '64.0 APEX_CODE,FINEST',
+  '10:00:00.0 (1)|EXECUTION_STARTED',
+  '10:00:00.0 (2)|CUMULATIVE_LIMIT_USAGE',
+  '10:00:00.0 (2)|LIMIT_USAGE_FOR_NS|(default)|',
+  '  Number of SOQL queries: 99 out of 100',
+  '10:00:00.0 (3)|CUMULATIVE_LIMIT_USAGE_END',
+  '10:00:00.0 (4)|LIMIT_USAGE_FOR_NS|(default)|',
+  '  Number of SOQL queries: 3 out of 100',
+  '  Number of DML statements: 1 out of 150',
+  '  Maximum CPU time: 90 out of 10000',
+  '  Maximum heap size: 3145728 out of 6291456',
+  '10:00:00.0 (5)|EXECUTION_FINISHED',
+].join('\n');
+
+describe('apex-anonymous — governor limits', () => {
+  it('formats heap in binary units and leaves counters alone', () => {
+    // "6291456" is the one metric whose raw value is strictly less readable
+    // than a rounded one.
+    expect(formatLimitValue(6291456, 'B')).toBe('6.0 MB');
+    expect(formatLimitValue(4096, 'B')).toBe('4 KB');
+    expect(formatLimitValue(512, 'B')).toBe('512 B');
+    expect(formatLimitValue(90, 'ms')).toBe('90 ms');
+    expect(formatLimitValue(3, '')).toBe('3');
+  });
+
+  it('prefers the per-execution snapshot over the cumulative roll-up', () => {
+    // A cumulative block folds in limits the snippet never consumed, so leading
+    // with it over-reports what this run actually cost.
+    const parsed = parseApexLog(LIMITS_LOG_BODY);
+    const snap = pickLimitSnapshot(parsed.limits);
+    expect(snap?.cumulative).toBe(false);
+    expect(snap?.metrics.soqlQueries).toEqual({ used: 3, max: 100 });
+  });
+
+  it('falls back to a cumulative block when that is all there is', () => {
+    const parsed = parseApexLog(
+      [
+        '64.0 APEX_CODE,FINEST',
+        '10:00:00.0 (1)|CUMULATIVE_LIMIT_USAGE',
+        '10:00:00.0 (1)|LIMIT_USAGE_FOR_NS|(default)|',
+        '  Number of SOQL queries: 7 out of 100',
+        '10:00:00.0 (2)|CUMULATIVE_LIMIT_USAGE_END',
+      ].join('\n'),
+    );
+    expect(pickLimitSnapshot(parsed.limits)?.metrics.soqlQueries).toEqual({ used: 7, max: 100 });
+  });
+
+  it('skips a metric-less block rather than rendering an empty panel', () => {
+    expect(
+      pickLimitSnapshot([
+        { namespace: '(default)', cumulative: false, metrics: {} },
+        { namespace: 'myns', cumulative: true, metrics: { soqlQueries: { used: 1, max: 100 } } },
+      ])?.namespace,
+    ).toBe('myns');
+    expect(pickLimitSnapshot([])).toBeNull();
+  });
+
+  it('colours the bar by headroom, not by a gradient', () => {
+    // Returns a CLASS now — the colour moved to the sheet so a palette change
+    // reaches every meter, and the threshold stayed in code where it is policy.
+    expect(limitFillClass(0.1)).toBe('sfdt-ok');
+    expect(limitFillClass(0.7)).toBe('sfdt-warn');
+    expect(limitFillClass(0.9)).toBe('sfdt-bad');
+  });
+
+  it('renders tiles from the run’s own log, fetched once', async () => {
+    clearBody();
+    setSetupUrl();
+    await seedSettings({ 'apex-anonymous': { captureLogs: true, historyEnabled: false } });
+    let apexLogCalls = 0;
+    const api = fakeApi({
+      apiGet: vi.fn(async (endpoint: string) => {
+        if (endpoint.includes('userinfo')) return { user_id: '005xx0000000001' };
+        return okResult();
+      }) as unknown as SalesforceApiClient['apiGet'],
+      toolingQuery: vi.fn(async (soql: string) => {
+        if (soql.includes('FROM ApexLog')) {
+          apexLogCalls += 1;
+          return { records: [{ Id: apexLogCalls === 1 ? '07Lold' : '07Lnew' }], size: 1, done: true };
+        }
+        return { records: [], size: 0, done: true };
+      }) as unknown as SalesforceApiClient['toolingQuery'],
+      apiGetText: vi.fn(async () => LIMITS_LOG_BODY) as unknown as SalesforceApiClient['apiGetText'],
+    });
+    const feature = createApexAnonymousFeature({ api, win: fastWin() });
+    await feature.onActivate?.();
+    await flush();
+
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find(
+      (b) => b.textContent === 'Execute',
+    )!.click();
+    await flush();
+
+    const tiles = Array.from(document.querySelectorAll('.sfdt-tiles .sfdt-tile'));
+    expect(tiles.map((t) => t.querySelector('.sfdt-tile-label')?.textContent)).toEqual([
+      'Heap',
+      'CPU time',
+      'DML',
+      'SOQL',
+    ]);
+    // Values come from the per-execution block, not the 99/100 cumulative one.
+    expect(tiles[3]?.textContent).toContain('3');
+    expect(tiles[3]?.textContent).toContain('/ 100');
+    expect(tiles[0]?.textContent).toContain('3.0 MB');
+
+    // Opening the log pane reuses that fetch instead of pulling the immutable
+    // body down a second time.
+    expect(api.apiGetText).toHaveBeenCalledTimes(1);
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find(
+      (b) => b.textContent === 'Open log',
+    )!.click();
+    await flush();
+    expect(api.apiGetText).toHaveBeenCalledTimes(1);
+    // The pane is the second console in the view (the result pane is first).
+    const consoles = document.querySelectorAll('.sfdt-view-overlay .sfdt-console');
+    expect(consoles[consoles.length - 1]?.textContent).toContain('LIMIT_USAGE_FOR_NS');
+  });
+
+  it('reports the run normally when the log body cannot be read', async () => {
+    clearBody();
+    setSetupUrl();
+    await seedSettings({ 'apex-anonymous': { captureLogs: true, historyEnabled: false } });
+    let apexLogCalls = 0;
+    const api = fakeApi({
+      apiGet: vi.fn(async (endpoint: string) => {
+        if (endpoint.includes('userinfo')) return { user_id: '005xx0000000001' };
+        return okResult();
+      }) as unknown as SalesforceApiClient['apiGet'],
+      toolingQuery: vi.fn(async (soql: string) => {
+        if (soql.includes('FROM ApexLog')) {
+          apexLogCalls += 1;
+          return { records: [{ Id: apexLogCalls === 1 ? '07Lold' : '07Lnew' }], size: 1, done: true };
+        }
+        return { records: [], size: 0, done: true };
+      }) as unknown as SalesforceApiClient['toolingQuery'],
+      apiGetText: vi.fn(async () => {
+        throw new Error('body unavailable');
+      }) as unknown as SalesforceApiClient['apiGetText'],
+    });
+    const feature = createApexAnonymousFeature({ api, win: fastWin() });
+    await feature.onActivate?.();
+    await flush();
+
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-view-overlay button')).find(
+      (b) => b.textContent === 'Execute',
+    )!.click();
+    await flush();
+
+    // The extras degrade; the successful run is still reported as a success.
+    const overlayText = document.querySelector('.sfdt-view-overlay')?.textContent ?? '';
+    expect(overlayText).toContain('Success');
+    expect(overlayText).toContain('body unavailable');
+    expect(document.querySelector('.sfdt-tiles')?.querySelector('.sfdt-tile')).toBeNull();
   });
 });

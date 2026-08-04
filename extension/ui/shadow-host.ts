@@ -8,9 +8,18 @@
 // shadow boundary, so `var(--sfdt-color-*)` used inside this root still resolves
 // against the `:root { --sfdt-* }` block that `ensureTokens(document)` injects on
 // the HOST document — and re-themes live when `applyTheme` (lib/theme.ts) flips
-// `data-sfdt-theme` on the host <html>. So tokens stay on the host; we only adopt
-// a tiny reset here. (Deliberately NOT re-injecting tokens into the root — doing
-// so would shadow the host definitions and break the theme toggle.)
+// `data-sfdt-theme` on the host <html>. So tokens stay on the host.
+// (Deliberately NOT re-injecting tokens into the root — doing so would shadow
+// the host definitions and break the theme toggle.)
+//
+// STYLESHEETS, unlike custom properties, do NOT cross the boundary: a rule set
+// on the host document simply does not apply in here. So the shared component
+// sheet (lib/ui-styles.ts) has to be ADOPTED into this root, or injected UI
+// would reference `.sfdt-nav-item` / `.sfdt-card` and get nothing. That is the
+// exact inverse of the tokens rule above, and the distinction is load-bearing:
+// adopt rules that CONSUME `var(--sfdt-*)`, never the block that DEFINES it.
+
+import { SFDT_COMPONENT_CSS } from '../lib/ui-styles.js';
 
 const HOST_ID = 'sfdt-shadow-host';
 const CONTENT_CLASS = 'sfdt-shadow-content';
@@ -65,9 +74,14 @@ export function getShadowHost(doc: Document = document): ShadowHost {
   host.style.cssText = 'all: initial;';
 
   const root = host.attachShadow({ mode: 'closed' });
-  const sheet = new CSSStyleSheet();
-  sheet.replaceSync(BASE_CSS);
-  root.adoptedStyleSheets = [sheet];
+  const base = new CSSStyleSheet();
+  base.replaceSync(BASE_CSS);
+  // Component rules second, so they win over the reset's `all: initial` baseline
+  // for the elements they target. Both only consume `var(--sfdt-*)`; neither
+  // defines it, so the host's theme attribute still drives both.
+  const components = new CSSStyleSheet();
+  components.replaceSync(SFDT_COMPONENT_CSS);
+  root.adoptedStyleSheets = [base, components];
 
   const mount = doc.createElement('div');
   mount.className = CONTENT_CLASS;

@@ -333,7 +333,7 @@ describe('rest-explore — modal interactions', () => {
     copyBtn.click();
     await flush();
     expect(writeText).toHaveBeenCalledWith('{\n  "name": "Account"\n}');
-    expect(document.body.textContent).toContain('Response copied');
+    expect(document.body.textContent).toContain('Copied response');
   });
 
   it('reports a clipboard failure via toast', async () => {
@@ -358,7 +358,7 @@ describe('rest-explore — modal interactions', () => {
     ) as HTMLButtonElement;
     copyBtn.click();
     await flush();
-    expect(document.body.textContent).toContain('Could not copy to clipboard');
+    expect(document.body.textContent).toContain('Could not copy response');
   });
 });
 
@@ -368,7 +368,7 @@ describe('rest-explore — history menu', () => {
   }
   const flush = () => new Promise((r) => setTimeout(r, 0));
   const historyButton = () =>
-    Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '▸ History ▾') as HTMLButtonElement;
+    Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'History') as HTMLButtonElement;
 
   it('renders the empty state when there is no history', async () => {
     setSalesforceUrl();
@@ -387,10 +387,13 @@ describe('rest-explore — history menu', () => {
     historyButton().click();
     await flush();
 
-    const badge = Array.from(document.querySelectorAll('span')).find((s) => s.textContent === 'POST');
-    const item = badge?.parentElement as HTMLDivElement;
+    // The dropdown is ui/menu.ts now: rows are real buttons in a role="menu".
+    const item = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.sfdt-menu-surface button'),
+    ).find((b) => b.textContent?.includes('/services/data/v62.0/sobjects/Account'))!;
     expect(item).toBeTruthy();
     item.click();
+    await flush();
 
     const select = document.querySelector('select') as HTMLSelectElement;
     const path = document.querySelector('input[type="text"]') as HTMLInputElement;

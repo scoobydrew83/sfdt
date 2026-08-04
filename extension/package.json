@@ -14,7 +14,8 @@
     "compile": "tsc --noEmit",
     "lint": "eslint entrypoints features lib ui test",
     "postinstall": "wxt prepare || true",
-    "test": "vitest run"
+    "test": "vitest run",
+    "audit:ui": "node scripts/ui-audit.mjs"
   },
   "dependencies": {
     "@sfdt/flow-core": "^0.10.0",

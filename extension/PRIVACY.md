@@ -28,8 +28,23 @@ All extension state lives in `chrome.storage.local` inside your Chrome profile. 
 | `sfdt.settings` | Your per-feature toggles, AI provider preferences, bridge token | When you save the options page |
 | `sfdt.killswitch.cache` | The most-recent server-disabled feature list from the local bridge ping | After every successful bridge ping |
 | `sfdt.telemetry` | Opt-in local feature-use counters (see below) | Only when you've enabled telemetry |
+| `sfdt.activity` | The last 100 operations you ran — timestamp, tool, outcome, and a truncated description of the target (see below) | After a SOQL/SOSL run, an anonymous Apex execution, a metadata deploy or retrieve, or a bridge tool run |
 
 You can clear all of it from `chrome://extensions` → SFDT for Salesforce → Site data → Remove all.
+
+### The activity log (`sfdt.activity`)
+
+This is the only local key that can contain Salesforce data, so it is worth
+being precise about.
+
+- **What it stores:** a timestamp, the tool id, a short action label ("SOQL Query", "Deploy"), the outcome (success/failed), and a `resource` string describing what was acted on — the **first 120 characters** of your SOQL statement or Apex snippet, a class name, or a deploy job id.
+- **What it never stores:** query *results*. No records, no field values returned by Salesforce, ever.
+- **Why 120 characters:** enough to recognise a run in the Workspace Overview, not enough to be a data export. A `WHERE` clause can contain personal data, and the cap is applied before anything is written to disk (whitespace is collapsed first, so it cannot be padded past the limit).
+- **Bounded:** 100 entries. The oldest falls off as new ones arrive.
+- **Turn it off:** Options → Activity log → uncheck "Record recent activity". Nothing is written while it's off.
+- **Clear it:** the "Clear" action on the Workspace Overview panel, or Options → Activity log → "Clear activity log now".
+
+Like everything else here, it stays in this browser profile — it is not synced and never leaves your device.
 
 ---
 

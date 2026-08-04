@@ -57,6 +57,13 @@ export interface FieldDescribe {
   restrictedPicklist?: boolean;
   dependentPicklist?: boolean;
   controllerName?: string | null;
+  // Additive (Schema Browser): the three flag columns and the help-text column.
+  // Already on the wire — the cache stores `data` wholesale — so declaring them
+  // adds no fetch and no mapping. Optional for the same reason as the groups
+  // above, and they are DENY-shaped: read as `=== true`, absence means "no".
+  unique?: boolean;
+  externalId?: boolean;
+  inlineHelpText?: string | null;
 }
 
 export interface ChildRelationship {
@@ -71,6 +78,17 @@ export interface SObjectDescribe {
   fields: FieldDescribe[];
   // Additive (P2-1): mapped from the describe payload's childRelationships.
   childRelationships?: ChildRelationship[];
+  // Additive (Schema Browser): the object-metadata rail. Same story as the
+  // FieldDescribe block — all present in the payload we already cache.
+  labelPlural?: string;
+  keyPrefix?: string | null;
+  custom?: boolean;
+  customSetting?: boolean;
+  searchable?: boolean;
+  queryable?: boolean;
+  createable?: boolean;
+  updateable?: boolean;
+  deletable?: boolean;
 }
 
 export interface GlobalDescribe {

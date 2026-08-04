@@ -114,3 +114,42 @@ export function mySalesforceHostname(hostname: string): string | null {
   }
   return null;
 }
+
+/**
+ * The short, human-facing name for an org host — the leading subdomain with any
+ * environment segment kept.
+ *
+ *   wise-goat-4iv2wx-dev-ed.trailblaze.lightning.force.com → wise-goat-4iv2wx-dev-ed
+ *   acme.my.salesforce.com                                 → acme
+ *   acme.sandbox.my.salesforce.com                         → acme.sandbox
+ *
+ * Purely for display. Every UI that showed the raw hostname wrapped it over
+ * three or four lines in a narrow column (the side panel header rendered a
+ * 50-character host as four lines of 16px text), and the suffix is the part
+ * carrying no information — every org has it. Callers should keep the full host
+ * available as a `title` so nothing is actually lost.
+ */
+export function orgDisplayName(hostname: string): string {
+  const host = hostname.trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0] ?? '';
+  if (!host) return hostname;
+  // Strip the known public suffixes, longest first so `.my.salesforce.com` wins
+  // over `.salesforce.com` and we don't leave a stray `.my` behind.
+  const SUFFIXES = [
+    '.lightning.force.com',
+    '.my.salesforce.com',
+    '.my.salesforce-setup.com',
+    '.lightning.force.mil',
+    '.my.salesforce.mil',
+    '.lightning.sfcrmapps.cn',
+    '.my.sfcrmapps.cn',
+    '.salesforce.com',
+    '.force.com',
+  ].sort((a, b) => b.length - a.length);
+  for (const suffix of SUFFIXES) {
+    if (host.endsWith(suffix)) {
+      const short = host.slice(0, -suffix.length);
+      return short || host;
+    }
+  }
+  return host;
+}

@@ -7,9 +7,11 @@ import {
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { loadSettings, patchSettings, registerSettingsShape } from '../lib/settings.js';
-import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { z } from 'zod';
+import { button } from '../lib/ui-controls.js';
+import { storageGet, storageSet, storageRemove } from '../lib/storage.js';
+import { copyToClipboard } from '../ui/clipboard.js';
 
 const API_NAME_GENERATOR_SETTINGS_SCHEMA = z.object({
   namingPattern: z.enum(['Snake_Case', 'PascalCase', 'camelCase']).default('camelCase'),
@@ -19,22 +21,19 @@ registerSettingsShape('api-name-generator', API_NAME_GENERATOR_SETTINGS_SCHEMA);
 
 const STORAGE_KEY = 'apiNameGenerator.customPrefixes';
 
+// A thin shim over lib/storage.ts, which is what absorbs the invalidated
+// context. The hand-rolled promise wrappers this replaces called chrome.* on
+// the raw handle, so an orphaned tab threw synchronously on the first read.
 function chromeStorageAdapter() {
   return {
     async get<T = unknown>(key: string): Promise<T | null> {
-      return new Promise((resolve) => {
-        chrome.storage.local.get(key, (result) => resolve((result?.[key] as T) ?? null));
-      });
+      return (await storageGet<T>(key)) ?? null;
     },
     async set<T = unknown>(key: string, value: T): Promise<void> {
-      return new Promise((resolve) => {
-        chrome.storage.local.set({ [key]: value }, () => resolve());
-      });
+      await storageSet(key, value);
     },
     async remove(key: string): Promise<void> {
-      return new Promise((resolve) => {
-        chrome.storage.local.remove(key, () => resolve());
-      });
+      await storageRemove(key);
     },
   };
 }
@@ -68,17 +67,24 @@ export function createApiNameGeneratorFeature(
     const pattern: NamingPattern = apiNameConfig.namingPattern;
     const prefixes: readonly PrefixEntry[] = library.isCustom() ? library.getAll() : DEFAULT_PREFIXES;
 
+    // '.sfdt-stack' supplies the column and the gap, so the controls below stop
+    // carrying their own margin-bottom.
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; display: flex; flex-direction: column;';
+    body.className = 'sfdt-view-main sfdt-stack';
 
     const labelInput = doc.createElement('input');
     labelInput.type = 'text';
     labelInput.placeholder = 'Element or resource label';
-    labelInput.style.cssText = 'width: 100%; padding: 6px; margin-bottom: 8px;';
+    // Was a bare UA-styled input: no border, no background, no colour. On an
+    // injected modal — which declares no color-scheme — Chrome renders that as a
+    // white box with black text, i.e. a glaring rectangle on the dark palette.
+    labelInput.className = 'sfdt-field';
+    labelInput.setAttribute('aria-label', 'Element or resource label');
     body.appendChild(labelInput);
 
     const typeSelect = doc.createElement('select');
-    typeSelect.style.cssText = 'width: 100%; padding: 6px; margin-bottom: 8px;';
+    typeSelect.className = 'sfdt-field';
+    typeSelect.setAttribute('aria-label', 'Element type');
     for (const entry of prefixes) {
       const opt = doc.createElement('option');
       opt.value = entry.type;
@@ -88,7 +94,8 @@ export function createApiNameGeneratorFeature(
     body.appendChild(typeSelect);
 
     const patternSelect = doc.createElement('select');
-    patternSelect.style.cssText = 'width: 100%; padding: 6px; margin-bottom: 8px;';
+    patternSelect.className = 'sfdt-field';
+    patternSelect.setAttribute('aria-label', 'Naming pattern');
     for (const p of ['Snake_Case', 'PascalCase', 'camelCase'] as const) {
       const opt = doc.createElement('option');
       opt.value = p;
@@ -99,8 +106,7 @@ export function createApiNameGeneratorFeature(
     body.appendChild(patternSelect);
 
     const preview = doc.createElement('div');
-    preview.style.cssText =
-      'font-family: monospace; padding: 8px; background: var(--sfdt-color-surface-alt); border: 1px solid var(--sfdt-color-border); border-radius: 4px; margin-bottom: 12px; min-height: 20px;';
+    preview.className = 'sfdt-console';
     body.appendChild(preview);
 
     const update = () => {
@@ -121,19 +127,15 @@ export function createApiNameGeneratorFeature(
     });
 
     const footer = doc.createElement('div');
-    footer.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px;';
+    footer.classList.add('sfdt-row');
     const cancel = doc.createElement('button');
     cancel.textContent = 'Close';
-    cancel.style.cssText = 'padding: 6px 12px;';
+    cancel.classList.add('sfdt-prose', 'sfdt-flush-x');
     cancel.addEventListener('click', close);
-    const copy = doc.createElement('button');
-    copy.textContent = 'Copy';
-    copy.style.cssText =
-      'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer;';
+    const copy = button({ label: 'Copy', iconName: 'clipboard', variant: 'primary', doc });
     copy.addEventListener('click', async () => {
       if (!preview.textContent) return;
-      await navigator.clipboard.writeText(preview.textContent);
-      showToast(`API Name copied: ${preview.textContent}`, { doc, kind: 'success' });
+      await copyToClipboard(preview.textContent, { doc, label: `API Name copied: ${preview.textContent}` });
     });
     footer.appendChild(cancel);
     footer.appendChild(copy);

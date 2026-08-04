@@ -1,6 +1,17 @@
 # Mini-plan: Visual Manifest Builder (GUI · VS Code · Chrome)
 
-**Date:** 2026-07-29 · **Status:** Approved design, implementation not started
+**Date:** 2026-07-29 · **Status:** SHIPPED — all four PRs landed. Kept for the
+decision record and the architecture diagram; the design is no longer pending.
+
+| PR | Deliverable | Where it lives now |
+|----|-------------|--------------------|
+| PR-1 | GUI builder page | `gui/src/pages/ManifestBuilder.jsx` |
+| PR-2 | VS Code inheritance | `sfdt.manifestBuilder` command (`vscode/package.json`) |
+| PR-3 | Bridge kinds | `manifest.discover` / `manifest.render` (`packages/flow-core/src/bridge-contract.ts`, contract 1.3) |
+| PR-4 | Chrome extension | `extension/features/metadata-retrieve.ts` — "Metadata Retrieve & Deploy" |
+
+The extension surface is named for what it does, not for this plan, which is why
+searching for "manifest builder" in `extension/` finds only the header comment.
 **Satisfies:** Chrome Extension Execution Plan items P5-4 (package.xml builder) and P5-5
 (destructiveChanges.xml builder), pulled forward ahead of Phase 4 by decision 2026-07-29,
 with scope broadened to the GUI and VS Code. P5-4 is an "L — mini-plan first" item; this

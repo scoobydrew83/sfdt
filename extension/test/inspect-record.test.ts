@@ -7,7 +7,7 @@ import {
 import { _resetSettingsShapesForTests, _clearSettingsCacheForTests } from '../lib/settings.js';
 import type { SalesforceApiClient } from '../lib/salesforce-api.js';
 
-const { getIconForType, isRecordId } = _inspectRecordTestApi();
+const { isRecordId } = _inspectRecordTestApi();
 
 function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
   return {
@@ -72,18 +72,6 @@ describe('inspect-record — context parser & helpers', () => {
     });
   });
 
-  describe('getIconForType', () => {
-    it('returns custom emojis for SObject data types', () => {
-      expect(getIconForType('id')).toBe('🔑');
-      expect(getIconForType('reference')).toBe('🔍');
-      expect(getIconForType('boolean')).toBe('🌗');
-      expect(getIconForType('picklist')).toBe('📋');
-      expect(getIconForType('string')).toBe('📝');
-      expect(getIconForType('int')).toBe('🔢');
-      expect(getIconForType('date')).toBe('📅');
-      expect(getIconForType('unknown')).toBe('🔹');
-    });
-  });
 });
 
 describe('inspect-record — UI activation & inspection', () => {
@@ -275,6 +263,96 @@ describe('inspect-record — UI activation & inspection', () => {
     expect(document.querySelectorAll('tbody tr')).toHaveLength(0);
   });
 
+  it('accounts for every field it is not showing, by reason', async () => {
+    // Both the filter and the null toggle remove rows silently. With 200+ fields
+    // on a real object, "Fields: 1 of 3" plus the reason is the difference
+    // between a filtered view and one that looks empty because the record is.
+    setSalesforceUrl('https://x.lightning.force.com/lightning/r/Account/001800000000001AAA/view');
+
+    const apiGetMock = vi.fn(async (path: string) => {
+      if (path.includes('/sobjects/Account/describe')) {
+        return {
+          name: 'Account',
+          label: 'Account Label',
+          fields: [
+            { name: 'Id', label: 'Record ID', type: 'id', updateable: false, relationshipName: null, referenceTo: [] },
+            { name: 'Name', label: 'Account Name', type: 'string', updateable: true, relationshipName: null, referenceTo: [] },
+            { name: 'Phone', label: 'Phone Number', type: 'phone', updateable: true, relationshipName: null, referenceTo: [] },
+          ],
+        };
+      }
+      if (path.includes('/sobjects/Account/001800000000001AAA')) {
+        return { Id: '001800000000001AAA', Name: 'Acme Test Corp', Phone: null };
+      }
+      if (path.includes('/sobjects/')) return { sobjects: [{ name: 'Account', label: 'Account', keyPrefix: '001' }] };
+      return {};
+    });
+
+    const feature = createInspectRecordFeature({
+      api: fakeApi({ apiGet: apiGetMock as unknown as SalesforceApiClient['apiGet'] }),
+    });
+    await feature.onActivate?.();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const status = () =>
+      Array.from(document.querySelectorAll('.sfdt-toolbar-foot .sfdt-caps'))
+        .map((s) => s.textContent)
+        .join(' | ');
+
+    // Nothing hidden: the total alone, no "of".
+    expect(status()).toContain('Fields: 3');
+    expect(status()).not.toContain('Hidden');
+
+    // Nulls hidden — counted as null, not as filtered.
+    const checkbox = document.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new Event('change'));
+    expect(status()).toContain('Fields: 2 of 3');
+    expect(status()).toContain('1 null');
+    expect(status()).not.toContain('filtered');
+
+    // Filter on top of that — the two reasons stay separate, and they add up.
+    const filterInput = document.querySelector('input[placeholder="Filter fields by label, API name, or value..."]') as HTMLInputElement;
+    filterInput.value = 'Record ID';
+    filterInput.dispatchEvent(new Event('input'));
+    expect(status()).toContain('Fields: 1 of 3');
+    expect(status()).toContain('1 null');
+    expect(status()).toContain('1 filtered');
+  });
+
+  it('states the record in the view header, not just the table', async () => {
+    setSalesforceUrl('https://x.lightning.force.com/lightning/r/Account/001800000000001AAA/view');
+
+    const apiGetMock = vi.fn(async (path: string) => {
+      if (path.includes('/sobjects/Account/describe')) {
+        return {
+          name: 'Account',
+          label: 'Account Label',
+          fields: [{ name: 'Name', label: 'Account Name', type: 'string', updateable: true, relationshipName: null, referenceTo: [] }],
+        };
+      }
+      if (path.includes('/sobjects/Account/001800000000001AAA')) return { Name: 'Acme Test Corp' };
+      if (path.includes('/sobjects/')) return { sobjects: [{ name: 'Account', label: 'Account', keyPrefix: '001' }] };
+      return {};
+    });
+
+    const feature = createInspectRecordFeature({
+      api: fakeApi({ apiGet: apiGetMock as unknown as SalesforceApiClient['apiGet'] }),
+    });
+    await feature.onActivate?.();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Rendered by the shared shell, so it reads identically as a modal on a
+    // Salesforce page and as a Workspace tab.
+    const sub = document.querySelector('.sfdt-panel-sub') as HTMLElement;
+    expect(sub.textContent).toBe('Account · 001800000000001AAA');
+    // The view toggle sits in the header, and only once a record is loaded.
+    const segment = document.querySelector('.sfdt-panel-head .sfdt-segment') as HTMLElement;
+    expect(segment.style.display).not.toBe('none');
+  });
+
   it('handles in-place editing and saves changes via PATCH', async () => {
     setSalesforceUrl('https://x.lightning.force.com/lightning/r/Account/001800000000001AAA/view');
 
@@ -311,8 +389,10 @@ describe('inspect-record — UI activation & inspection', () => {
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
 
-    // Double-click value span to start edit
-    const valSpan = document.querySelector('tbody tr td span') as HTMLSpanElement;
+    // Click the VALUE cell's span to start editing. Column-qualified on
+    // purpose: the label and type cells now carry spans of their own, so a bare
+    // `td span` picks the label and silently tests nothing.
+    const valSpan = document.querySelector('tbody tr td:nth-child(4) span') as HTMLSpanElement;
     valSpan.click();
 
     const input = document.querySelector('tbody tr td input[type="text"]') as HTMLInputElement;
@@ -362,7 +442,9 @@ describe('inspect-record — UI activation & inspection', () => {
       return {};
     });
 
-    const feature = createInspectRecordFeature({ api: fakeApi({ apiGet: apiGetMock }) });
+    const feature = createInspectRecordFeature({
+      api: fakeApi({ apiGet: apiGetMock as unknown as SalesforceApiClient['apiGet'] }),
+    });
     await feature.openFor('001800000000001AAA', 'Account');
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));

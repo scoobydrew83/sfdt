@@ -10,6 +10,7 @@
 import {
   setWorkspaceViewSink,
   presentAsModal,
+  buildViewHead,
   type PresentOpts,
   type ViewHandle,
 } from './present-view.js';
@@ -111,6 +112,13 @@ export function createWorkspaceTabs(opts: WorkspaceTabsOptions): WorkspaceTabs {
     // gets a modal.
     pendingPane = null;
     pendingToolId = null;
+    // The tab chip already carries the tool's title and its ×, so the pane head
+    // renders only what the chip cannot: the context line and the view's own
+    // controls. No subtitle and no actions ⇒ no head at all, which is every
+    // feature that hasn't opted in.
+    if (view.subtitle !== undefined || view.headerActions) {
+      pane.appendChild(buildViewHead(view, view.doc ?? doc, { title: false }));
+    }
     if (!view.body.style.flex) view.body.style.flex = '1';
     pane.appendChild(view.body);
     if (view.footer) pane.appendChild(view.footer);

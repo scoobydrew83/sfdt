@@ -20,7 +20,9 @@ import {
   type PaletteSourceInputs,
 } from '../lib/palette-sources.js';
 import { fuzzyScoreFields, stableSortByScore } from '../lib/fuzzy.js';
+import { icon } from '../lib/icons.js';
 import { getContentRoot } from './content-root.js';
+import { setTone } from '../lib/ui-controls.js';
 
 /** A describe-cache sobject, narrowed to what the Objects category needs. */
 export interface PaletteObject {
@@ -62,13 +64,13 @@ const OVERLAY_ID = 'sfdt-command-palette';
 const OVERLAY_STYLE = [
   'position: fixed',
   'inset: 0',
-  'background: rgba(0,0,0,0.4)',
+  'background: var(--sfdt-color-scrim)',
   'z-index: 100030',
   'display: flex',
   'align-items: flex-start',
   'justify-content: center',
   'padding-top: 12vh',
-  'font-family: system-ui, -apple-system, sans-serif',
+  'font: var(--sfdt-type-body-md)',
 ].join('; ');
 
 const CARD_STYLE = [
@@ -78,8 +80,8 @@ const CARD_STYLE = [
   'max-width: 92vw',
   'max-height: 70vh',
   'border: 1px solid var(--sfdt-color-border)',
-  'border-radius: 8px',
-  'box-shadow: 0 8px 32px rgba(0,0,0,0.25)',
+  'border-radius: var(--sfdt-radius-xl)',
+  'box-shadow: var(--sfdt-shadow-2)',
   'display: flex',
   'flex-direction: column',
   'overflow: hidden',
@@ -88,8 +90,8 @@ const CARD_STYLE = [
 const HEADER_STYLE = [
   'display: flex',
   'align-items: center',
-  'gap: 8px',
-  'padding: 10px 12px',
+  'gap: var(--sfdt-space-2)',
+  'padding: var(--sfdt-space-3)',
   'border-bottom: 1px solid var(--sfdt-color-border)',
 ].join('; ');
 
@@ -99,19 +101,19 @@ const INPUT_STYLE = [
   'outline: none',
   'background: transparent',
   'color: var(--sfdt-color-text)',
-  'font-size: 15px',
-  'padding: 4px 2px',
+  'font: var(--sfdt-type-headline-md)',
+  'font-weight: 400',
+  'padding: var(--sfdt-space-1) 2px',
 ].join('; ');
 
-const LIST_STYLE = ['flex: 1', 'overflow-y: auto', 'padding: 4px 0'].join('; ');
+const LIST_STYLE = ['flex: 1', 'overflow-y: auto', 'padding: var(--sfdt-space-1) 0'].join('; ');
 
 const HEADER_ROW_STYLE = [
-  'padding: 8px 14px 2px',
-  'font-size: 11px',
-  'font-weight: 600',
+  'padding: var(--sfdt-space-2) var(--sfdt-space-4) 2px',
+  'font: var(--sfdt-type-label-caps)',
   'text-transform: uppercase',
-  'letter-spacing: 0.04em',
-  'color: var(--sfdt-color-text-icon)',
+  'letter-spacing: var(--sfdt-tracking-caps)',
+  'color: var(--sfdt-color-text-muted)',
 ].join('; ');
 
 const OPTION_STYLE = [
@@ -198,8 +200,10 @@ export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteH
   header.style.cssText = HEADER_STYLE;
 
   const searchIcon = doc.createElement('span');
-  searchIcon.textContent = '🔍';
+  searchIcon.className = 'sfdt-glyph';
+  setTone(searchIcon, 'muted');
   searchIcon.setAttribute('aria-hidden', 'true');
+  searchIcon.appendChild(icon('search', 18, doc));
 
   const listId = 'sfdt-cp-listbox';
   const input = doc.createElement('input');
@@ -216,10 +220,9 @@ export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteH
 
   const closeBtn = doc.createElement('button');
   closeBtn.type = 'button';
-  closeBtn.textContent = '×';
+  closeBtn.className = 'sfdt-btn sfdt-ghost';
   closeBtn.setAttribute('aria-label', 'Close');
-  closeBtn.style.cssText =
-    'background: none; border: 0; font-size: 20px; line-height: 1; cursor: pointer; color: var(--sfdt-color-text-icon);';
+  closeBtn.appendChild(icon('close', 18, doc));
 
   header.append(searchIcon, input, closeBtn);
 
@@ -244,12 +247,12 @@ export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteH
     const prev = visible[activeIndex];
     if (prev) {
       prev.el.setAttribute('aria-selected', 'false');
-      prev.el.style.background = 'transparent';
+      prev.el.classList.remove('sfdt-row-active');
     }
     activeIndex = next;
     const cur = visible[next]!;
     cur.el.setAttribute('aria-selected', 'true');
-    cur.el.style.background = 'var(--sfdt-color-surface-shade)';
+    cur.el.classList.add('sfdt-row-active');
     input.setAttribute('aria-activedescendant', cur.el.id);
     cur.el.scrollIntoView({ block: 'nearest' });
   }
@@ -291,14 +294,16 @@ export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteH
         option.setAttribute('aria-selected', 'false');
         option.style.cssText = OPTION_STYLE;
 
-        if (candidate.icon) {
-          const icon = doc.createElement('span');
-          icon.textContent = candidate.icon;
-          icon.setAttribute('aria-hidden', 'true');
-          option.appendChild(icon);
+        if (candidate.iconName) {
+          const glyph = doc.createElement('span');
+          glyph.className = 'sfdt-glyph';
+          setTone(glyph, 'muted');
+          glyph.setAttribute('aria-hidden', 'true');
+          glyph.appendChild(icon(candidate.iconName, 18, doc));
+          option.appendChild(glyph);
         }
         const label = doc.createElement('span');
-        label.style.flex = '1';
+        label.classList.add('sfdt-grow');
         label.textContent = candidate.label;
         option.appendChild(label);
 
@@ -306,7 +311,7 @@ export function openCommandPalette(opts: CommandPaletteOptions): CommandPaletteH
         // accessible name and the visible row both carry the match key.
         if (candidate.apiName && candidate.apiName !== candidate.label) {
           const hint = doc.createElement('span');
-          hint.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-icon);';
+          hint.className = 'sfdt-faint';
           hint.textContent = candidate.apiName;
           option.appendChild(hint);
         }

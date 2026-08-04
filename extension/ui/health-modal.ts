@@ -3,6 +3,8 @@
 
 import type { IssueFamily, Rating, ScoreSummary, Severity } from '@sfdt/flow-core';
 import { presentView, type ViewHandle } from './present-view.js';
+import { button } from '../lib/ui-controls.js';
+import { copyToClipboard } from './clipboard.js';
 
 export interface HealthReportMeta {
   flowLabel: string;
@@ -85,9 +87,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
   // helpers swap their contents. The overlay/card/header (+ ×) chrome is
   // supplied by presentView, so the modal looks identical to every other view.
   const body = doc.createElement('div');
-  body.className = 'sfdt-modal-body sfdt-health-modal-body';
-  body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1;';
-
+  body.className = 'sfdt-view-main sfdt-modal-body sfdt-health-modal-body';
   const footer = doc.createElement('div');
   footer.className = 'sfdt-modal-footer sfdt-health-modal-footer';
   footer.style.cssText =
@@ -122,12 +122,11 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     clear(footer);
     const wrap = styledDiv(doc, 'sfdt-health-loading', 'text-align: center; padding: 24px;');
     const title = doc.createElement('div');
-    title.className = 'sfdt-health-loading-title';
-    title.style.cssText = 'font-size: 16px; font-weight: 600;';
+    title.className = 'sfdt-health-loading-title sfdt-subhead';
     title.textContent = 'Running Health Check';
     const sub = doc.createElement('div');
     sub.className = 'sfdt-health-loading-subtitle';
-    sub.style.cssText = 'color: var(--sfdt-color-text-icon); margin-top: 4px;';
+    sub.classList.add('sfdt-faint');
     sub.textContent = flowLabel;
     wrap.appendChild(title);
     wrap.appendChild(sub);
@@ -141,7 +140,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     const wrap = styledDiv(doc, 'sfdt-health-error', 'padding: 16px;');
     const title = doc.createElement('div');
     title.className = 'sfdt-health-section-title';
-    title.style.cssText = 'font-size: 16px; font-weight: 600; color: var(--sfdt-color-error-text);';
+    title.classList.add('sfdt-subhead');
     title.textContent = 'Health Check Failed';
     const msg = doc.createElement('div');
     msg.className = 'sfdt-health-error-message';
@@ -169,7 +168,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     lbl.textContent = label;
     const val = doc.createElement('div');
     val.className = 'sfdt-health-card-value';
-    val.style.cssText = 'font-size: 22px; font-weight: 700; margin-top: 4px;';
+    val.classList.add('sfdt-subhead');
     val.textContent = String(value);
     card.appendChild(lbl);
     card.appendChild(val);
@@ -184,11 +183,10 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     );
     const lbl = doc.createElement('div');
     lbl.className = 'sfdt-health-metric-label';
-    lbl.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-icon); font-weight: 500;';
+    lbl.classList.add('sfdt-faint');
     lbl.textContent = label;
     const val = doc.createElement('div');
-    val.className = 'sfdt-health-metric-value';
-    val.style.cssText = 'font-size: 16px; font-weight: 600;';
+    val.className = 'sfdt-health-metric-value sfdt-subhead';
     val.textContent = String(value);
     card.appendChild(lbl);
     card.appendChild(val);
@@ -211,12 +209,11 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
 
     const titleSpan = doc.createElement('span');
     titleSpan.className = 'sfdt-health-family-title';
-    titleSpan.style.flex = '1';
+    titleSpan.classList.add('sfdt-grow');
     titleSpan.textContent = family.title;
 
     const countSpan = doc.createElement('span');
-    countSpan.className = 'sfdt-health-family-count';
-    countSpan.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px;';
+    countSpan.className = 'sfdt-health-family-count sfdt-faint';
     countSpan.textContent = `(${family.instanceCount})`;
 
     summary.appendChild(sevBadge);
@@ -229,13 +226,13 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
 
     const impact = doc.createElement('div');
     impact.className = 'sfdt-health-family-impact';
-    impact.style.cssText = 'color: var(--sfdt-color-text-icon); margin-bottom: 6px;';
+    impact.classList.add('sfdt-faint');
     impact.textContent = `Score impact: -${family.scoreImpact}`;
     familyBody.appendChild(impact);
 
     const list = doc.createElement('ul');
     list.className = 'sfdt-health-affected-list';
-    list.style.cssText = 'margin: 0; padding-left: 18px;';
+    list.classList.add('sfdt-list', 'sfdt-flush-x');
     if (family.affectedItems.length === 0) {
       const li = doc.createElement('li');
       li.textContent = 'No specific items listed.';
@@ -260,14 +257,13 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
 
     const headerBlock = styledDiv(doc, 'sfdt-health-header-block', 'margin-bottom: 16px;');
     const flowName = doc.createElement('div');
-    flowName.className = 'sfdt-health-flow-name';
-    flowName.style.cssText = 'font-size: 18px; font-weight: 600;';
+    flowName.className = 'sfdt-health-flow-name sfdt-subhead';
     flowName.textContent = report.meta.flowLabel;
     headerBlock.appendChild(flowName);
 
     const metaLine = doc.createElement('div');
     metaLine.className = 'sfdt-health-flow-meta';
-    metaLine.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; display: flex; gap: 12px;';
+    metaLine.classList.add('sfdt-row');
     const flowTypeSpan = doc.createElement('span');
     flowTypeSpan.textContent = report.meta.flowType;
     metaLine.appendChild(flowTypeSpan);
@@ -290,7 +286,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     scoreNum.textContent = String(report.summary.overallScore);
     const scoreRating = doc.createElement('div');
     scoreRating.className = 'sfdt-health-rating';
-    scoreRating.style.cssText = 'color: var(--sfdt-color-text-weak); font-weight: 600;';
+    scoreRating.classList.add('sfdt-label');
     scoreRating.textContent = report.summary.rating;
     scoreWrap.appendChild(scoreNum);
     scoreWrap.appendChild(scoreRating);
@@ -312,13 +308,12 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     const familiesSection = styledDiv(doc, 'sfdt-health-section', 'margin-bottom: 16px;');
     const familiesTitle = doc.createElement('div');
     familiesTitle.className = 'sfdt-health-section-title';
-    familiesTitle.style.cssText = 'font-weight: 600; margin-bottom: 8px;';
+    familiesTitle.classList.add('sfdt-subhead');
     familiesTitle.textContent = 'Issue Families';
     familiesSection.appendChild(familiesTitle);
     if (report.issueFamilies.length === 0) {
       const empty = doc.createElement('div');
-      empty.className = 'sfdt-health-empty';
-      empty.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 13px;';
+      empty.className = 'sfdt-health-empty sfdt-faint';
       empty.textContent = 'No issues detected — your flow is in excellent shape.';
       familiesSection.appendChild(empty);
     } else {
@@ -331,7 +326,7 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     const profileSection = styledDiv(doc, 'sfdt-health-section');
     const profileTitle = doc.createElement('div');
     profileTitle.className = 'sfdt-health-section-title';
-    profileTitle.style.cssText = 'font-weight: 600; margin-bottom: 8px;';
+    profileTitle.classList.add('sfdt-subhead');
     profileTitle.textContent = 'Flow Profile';
     profileSection.appendChild(profileTitle);
     const metricsGrid = styledDiv(
@@ -347,16 +342,13 @@ export function mountHealthModal(options: MountHealthModalOptions = {}): HealthM
     profileSection.appendChild(metricsGrid);
     body.appendChild(profileSection);
 
-    const copyBtn = doc.createElement('button');
-    copyBtn.className = 'sfdt-health-btn';
-    copyBtn.textContent = 'Copy JSON';
-    copyBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer;';
+    const copyBtn = button({ label: 'Copy JSON', iconName: 'clipboard', doc });
+    copyBtn.classList.add('sfdt-health-btn');
     copyBtn.addEventListener('click', () => {
       if (options.onCopyJson) {
         void options.onCopyJson(report.rawJson);
       } else {
-        void navigator.clipboard.writeText(report.rawJson);
+        void copyToClipboard(report.rawJson, { doc });
       }
     });
     footer.appendChild(copyBtn);

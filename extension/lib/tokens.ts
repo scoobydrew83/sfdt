@@ -90,8 +90,26 @@ export const SFDT_TOKENS: Record<string, string> = {
   'color-warning-bg-5': '#fef4ec',
   'color-warning-bg-6': '#fef1e1',
 
+  // The dim behind a modal. A token because three overlays declared it inline
+  // and had already drifted (0.3 vs 0.4), so a dialog raised from another
+  // dialog dimmed the page by a different amount than the one under it.
+  'color-scrim': 'rgba(0, 0, 0, 0.4)',
+
   // Code / editor
   'color-code-bg': '#1e1e1e',
+
+  // Syntax-highlight scheme for lib/code-editor.ts. These are the one place the
+  // palette needs hues it doesn't otherwise carry: six token roles have to stay
+  // mutually distinguishable, and reusing brand/error/success/warning for them
+  // would make a string literal look like a success message. Values are the
+  // GitHub light scheme, which is designed for a near-white surface and is
+  // already contrast-tested against one.
+  'color-code-keyword': '#cf222e',
+  'color-code-type': '#8250df',
+  'color-code-string': '#0a3069',
+  'color-code-comment': '#6e7781',
+  'color-code-number': '#0550ae',
+  'color-code-annotation': '#953800',
 
   // Foreground-on-accent + coloured-text aliases (see header note). Light
   // values equal the token each split from, so light rendering is unchanged.
@@ -172,8 +190,22 @@ export const SFDT_TOKENS_DARK: Record<string, string> = {
   'color-warning-bg-5': '#2f2510',
   'color-warning-bg-6': '#2e2410',
 
+  // Heavier in dark: the same 40% over a near-black page barely separates the
+  // modal from what is behind it.
+  'color-scrim': 'rgba(0, 0, 0, 0.6)',
+
   // Code / editor — keep dark.
   'color-code-bg': '#0d0d0d',
+
+  // Syntax-highlight scheme, GitHub dark. The light values are unreadable here
+  // (a #0a3069 string on a #141416 editor is very nearly invisible), so this is
+  // a real re-pick rather than a lightened copy.
+  'color-code-keyword': '#ff7b72',
+  'color-code-type': '#d2a8ff',
+  'color-code-string': '#a5d6ff',
+  'color-code-comment': '#8b949e',
+  'color-code-number': '#79c0ff',
+  'color-code-annotation': '#ffa657',
 
   // Foreground-on-accent + coloured-text aliases.
   'color-on-accent': '#ffffff',
@@ -181,6 +213,81 @@ export const SFDT_TOKENS_DARK: Record<string, string> = {
   'color-brand-text': '#4aa3f5',
   'color-error-text': '#ff8a82',
   'color-success-text': '#3fce8b',
+};
+
+/**
+ * Non-colour scales — spacing, radius, typography, layout. Theme-invariant, so
+ * unlike the palettes there is exactly one map.
+ *
+ * Ported from the "High-Utility Developer Hub" design system (extension/DESIGN.md).
+ * Before these existed, every surface hard-coded `padding: 10px 16px`,
+ * `border-radius: 4px`, `font-size: 13px` inline — 800+ `style.cssText` sites
+ * with no shared rhythm, which is why the UI drifted a little further off-grid
+ * with each feature. Colour was centralised here from the start; this closes the
+ * rest of the gap.
+ *
+ * The type scale is emitted as `font:` shorthand values so a rule is one
+ * declaration (`font: var(--sfdt-type-body-md)`) rather than three. Letter
+ * spacing can't ride in the shorthand, hence the separate `--sfdt-tracking-caps`.
+ */
+export const SFDT_SCALES: Record<string, string> = {
+  // Spacing — 4px base unit. The names are multipliers, not t-shirt sizes, so
+  // `space-3` is unambiguously 12px at a glance.
+  'space-1': '4px',
+  'space-2': '8px',
+  'space-3': '12px',
+  'space-4': '16px',
+  'space-5': '20px',
+  'space-6': '24px',
+  'space-8': '32px',
+
+  // Radius — 4px is the workhorse; `xl` is for top-level panels, `pill` for
+  // status badges and meters.
+  'radius-sm': '2px',
+  radius: '4px',
+  'radius-md': '6px',
+  'radius-lg': '8px',
+  'radius-xl': '12px',
+  'radius-pill': '9999px',
+
+  // Families. Deliberately the system stack rather than Inter/JetBrains Mono:
+  // a webfont in an MV3 extension must be a bundled woff2 (a Google Fonts link
+  // is blocked by CSP and would be a third-party request from a tool that
+  // markets local-only telemetry), and the system UI face is close enough that
+  // ~100 KB of variable font buys almost nothing.
+  'font-sans': '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+  'font-mono': 'ui-monospace, SFMono-Regular, Menlo, monospace',
+
+  // Type scale, as `font:` shorthand.
+  'type-display': '600 30px/38px var(--sfdt-font-sans)',
+  'type-metric': '600 32px/38px var(--sfdt-font-sans)',
+  'type-headline-lg': '600 20px/28px var(--sfdt-font-sans)',
+  'type-headline-md': '600 16px/24px var(--sfdt-font-sans)',
+  'type-body-md': '400 14px/20px var(--sfdt-font-sans)',
+  'type-body-sm': '400 12px/18px var(--sfdt-font-sans)',
+  'type-code-sm': '400 12px/16px var(--sfdt-font-mono)',
+  'type-label-caps': '700 11px/16px var(--sfdt-font-sans)',
+  'tracking-caps': '0.05em',
+
+  // Layout constants shared by the Workspace tab and the docked side panel.
+  'sidebar-w': '240px',
+  'sidebar-collapsed': '64px',
+  'topbar-h': '64px',
+};
+
+/**
+ * Shadows are the one non-colour scale that must vary by theme: an ambient
+ * shadow tuned for a white surface reads as a grey smudge on a near-black one,
+ * so the dark values go deeper and more opaque.
+ */
+export const SFDT_SHADOWS: Record<string, string> = {
+  'shadow-1': '0 1px 2px rgba(0, 0, 0, 0.06)',
+  'shadow-2': '0 4px 12px rgba(0, 0, 0, 0.16)',
+};
+
+export const SFDT_SHADOWS_DARK: Record<string, string> = {
+  'shadow-1': '0 1px 2px rgba(0, 0, 0, 0.4)',
+  'shadow-2': '0 4px 12px rgba(0, 0, 0, 0.5)',
 };
 
 const TOKENS_STYLE_ID = 'sfdt-design-tokens';
@@ -196,10 +303,14 @@ function declarations(tokens: Record<string, string>, indent = '  '): string {
 
 /**
  * The full token stylesheet:
- *   1. `:root { … }`                              — light (default; byte-identical to P0-1)
+ *   1. `:root { … }`                              — light palette + the theme-invariant
+ *                                                   scales + light shadows
  *   2. `:root[data-sfdt-theme="dark"] { … }`      — explicit dark (manual override wins)
  *   3. `@media (prefers-color-scheme: dark)`      — `auto` fallback before JS resolves it,
  *        `:root:not([data-sfdt-theme])`             and never overriding an explicit choice
+ *
+ * Only the palette and the shadows appear in the dark blocks; the spacing,
+ * radius and type scales are theme-invariant and are declared once.
  *
  * JS (`applyTheme` in lib/theme.ts) sets the attribute to the resolved
  * light|dark value, so post-boot rendering is attribute-driven; the media
@@ -207,13 +318,21 @@ function declarations(tokens: Record<string, string>, indent = '  '): string {
  */
 export const SFDT_TOKENS_CSS = `:root {
 ${declarations(SFDT_TOKENS)}
+
+${declarations(SFDT_SCALES)}
+
+${declarations(SFDT_SHADOWS)}
 }
 :root[${THEME_ATTR}="dark"] {
 ${declarations(SFDT_TOKENS_DARK)}
+
+${declarations(SFDT_SHADOWS_DARK)}
 }
 @media (prefers-color-scheme: dark) {
   :root:not([${THEME_ATTR}]) {
 ${declarations(SFDT_TOKENS_DARK, '    ')}
+
+${declarations(SFDT_SHADOWS_DARK, '    ')}
   }
 }`;
 

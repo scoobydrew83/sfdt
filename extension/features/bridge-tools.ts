@@ -21,8 +21,10 @@ import {
 import { createBridgeClient, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.js';
 import { loadSettings } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
+import { recordActivity } from '../lib/activity-log.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import type { SfdtRequest, SfdtResponse } from '@sfdt/flow-core/bridge-contract';
+import { button, toolbar } from '../lib/ui-controls.js';
 
 type BridgeReq = Omit<SfdtRequest, 'requestId'>;
 
@@ -71,6 +73,8 @@ interface ToolSpec {
   id: string;
   name: string;
   title: string;
+  /** Leading glyph for the view header (lib/icons.ts). */
+  iconName: string;
   width: string;
   runLabel: string;
   /** Append input controls to `controls`; return a getRequest() that builds the
@@ -103,11 +107,18 @@ function createBridgeToolFeature(spec: ToolSpec, options: BridgeToolOptions): Fe
 
   function renderError(results: HTMLElement, status: HTMLSpanElement, message: string): void {
     const panel = doc.createElement('div');
-    panel.style.cssText =
-      'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
+    panel.classList.add('sfdt-console', 'sfdt-error');
     panel.textContent = message;
     results.appendChild(panel);
     status.textContent = 'Failed';
+    // The single failure sink for runOnce — every early return routes through
+    // here, so one call covers a bad request, a !ok bridge reply, and a throw.
+    void recordActivity({
+      featureId: spec.id,
+      action: spec.name,
+      resource: message,
+      status: 'failed',
+    });
   }
 
   async function runOnce(
@@ -133,6 +144,7 @@ function createBridgeToolFeature(spec: ToolSpec, options: BridgeToolOptions): Fe
       }
       spec.render(doc, results, response.data);
       status.textContent = 'Done';
+      void recordActivity({ featureId: spec.id, action: spec.name, status: 'success' });
     } catch (err) {
       renderError(results, status, err instanceof Error ? err.message : String(err));
     }
@@ -142,28 +154,27 @@ function createBridgeToolFeature(spec: ToolSpec, options: BridgeToolOptions): Fe
     close();
 
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column;';
-
-    const toolbar = doc.createElement('div');
-    toolbar.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;';
+    body.className = 'sfdt-view-body';
+    const bar = toolbar(doc);
     const controls = doc.createElement('div');
     controls.style.cssText = 'display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1;';
-    const runBtn = doc.createElement('button');
-    runBtn.textContent = spec.runLabel;
-    runBtn.style.cssText =
-      'padding: 5px 14px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 13px;';
+    const runBtn = button({ label: spec.runLabel, iconName: 'play', variant: 'primary', small: true, doc });
     const status = doc.createElement('span');
-    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
-    toolbar.append(controls, runBtn, status);
-    body.appendChild(toolbar);
+    status.className = 'sfdt-muted';
+    bar.append(controls, runBtn, status);
+    body.appendChild(bar);
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
 
     const results = doc.createElement('div');
-    body.appendChild(results);
+    main.appendChild(results);
 
     const getRequest = spec.setupInputs(doc, controls, api);
 
     view = presentView({
       title: spec.title,
+      iconName: spec.iconName,
       body,
       doc,
       width: spec.width,
@@ -208,8 +219,8 @@ function textInput(doc: Document, placeholder: string): HTMLInputElement {
   const input = doc.createElement('input');
   input.type = 'text';
   input.placeholder = placeholder;
-  input.style.cssText =
-    'flex: 1; min-width: 160px; padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
+  input.className = 'sfdt-field';
+  input.classList.add('sfdt-search');
   return input;
 }
 
@@ -222,14 +233,15 @@ export function createDriftFeature(options: BridgeToolOptions = {}): Feature {
     {
       id: 'drift-check',
       name: 'Drift Check',
-      title: '🌊 Drift Check',
+      title: 'Drift Check',
+    iconName: 'wave',
       width: '720px',
       runLabel: 'Check drift',
       setupInputs(doc, controls) {
         const input = textInput(doc, 'Component, e.g. Account.MyField__c');
         controls.appendChild(input);
         const live = doc.createElement('label');
-        live.style.cssText = 'display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--sfdt-color-text-weak);';
+        live.classList.add('sfdt-row', 'sfdt-tight');
         const cb = doc.createElement('input');
         cb.type = 'checkbox';
         live.append(cb, doc.createTextNode('Run live (slower)'));
@@ -252,13 +264,13 @@ export function createScanFeature(options: BridgeToolOptions = {}): Feature {
     {
       id: 'metadata-scan',
       name: 'Metadata Scan',
-      title: '🔬 Metadata Scan',
+      title: 'Metadata Scan',
+    iconName: 'layers',
       width: '720px',
       runLabel: 'Scan',
       setupInputs(doc, controls) {
         const select = doc.createElement('select');
-        select.style.cssText =
-          'padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
+        select.className = 'sfdt-field sfdt-auto';
         for (const [value, label] of [
           ['scheduled', 'Scheduled flows only'],
           ['all', 'All flows'],
@@ -282,7 +294,8 @@ export function createCompareFeature(options: BridgeToolOptions = {}): Feature {
     {
       id: 'org-compare',
       name: 'Org Compare',
-      title: '🔀 Org Compare',
+      title: 'Org Compare',
+    iconName: 'compare',
       width: '720px',
       runLabel: 'Compare',
       setupInputs(doc, controls) {

@@ -14,6 +14,8 @@ import { loadSettings, onSettingsChange, patchSettings, registerSettingsShape } 
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { z } from 'zod';
+import { button } from '../lib/ui-controls.js';
+import { copyToClipboard } from '../ui/clipboard.js';
 
 // The display toggle lives in featureSettings — deliberately NOT
 // settings.features['show-api-names'], which would hide the side-button menu
@@ -404,15 +406,6 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
     else if (!on && active) deactivate();
   }
 
-  async function copyToClipboard(text: string, successMessage: string): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(text);
-      showToast(successMessage, { doc, kind: 'success' });
-    } catch {
-      showToast('Copy failed — please allow clipboard access.', { doc, kind: 'error' });
-    }
-  }
-
   function closePanel(): void {
     view?.close();
     view = null;
@@ -423,8 +416,7 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
     const ctx = getContext();
 
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; display: flex; flex-direction: column; gap: 14px; font-size: 13px;';
-
+    body.classList.add('sfdt-stack', 'sfdt-loose', 'sfdt-prose');
     const toggleLabel = doc.createElement('label');
     toggleLabel.style.cssText = 'display: inline-flex; align-items: center; gap: 8px; cursor: pointer;';
     const toggle = doc.createElement('input');
@@ -436,21 +428,16 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
     body.appendChild(toggleLabel);
 
     const hint = doc.createElement('div');
-    hint.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
+    hint.className = 'sfdt-muted';
     hint.textContent = ctx
       ? `Current record: ${ctx.sobjectName} · ${ctx.recordId}`
       : 'Open a Lightning record page to use the copy helpers.';
     body.appendChild(hint);
 
     const buttonRow = doc.createElement('div');
-    buttonRow.style.cssText = 'display: flex; gap: 8px; flex-wrap: wrap;';
+    buttonRow.classList.add('sfdt-row', 'sfdt-wrap');
     const makeButton = (label: string, onClick: () => Promise<void>): HTMLButtonElement => {
-      const btn = doc.createElement('button');
-      btn.textContent = label;
-      btn.disabled = !ctx;
-      btn.style.cssText =
-        'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;' +
-        (ctx ? '' : ' opacity: 0.5; cursor: not-allowed;');
+      const btn = button({ label, variant: 'primary', small: true, disabled: !ctx, doc });
       btn.addEventListener('click', () => void onClick());
       buttonRow.appendChild(btn);
       return btn;
@@ -458,7 +445,7 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
 
     makeButton('Copy 18-char Id', async () => {
       if (!ctx) return;
-      await copyToClipboard(getLongId(ctx.recordId) || ctx.recordId, 'Record Id copied.');
+      await copyToClipboard(getLongId(ctx.recordId) || ctx.recordId, { doc, label: 'Record Id copied.' });
     });
     makeButton('Copy Apex insert', async () => {
       if (!ctx) return;
@@ -469,7 +456,7 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
           showToast('No createable field values found on this record.', { doc, kind: 'warning' });
           return;
         }
-        await copyToClipboard(statement, 'Apex insert statement copied.');
+        await copyToClipboard(statement, { doc, label: 'Apex insert statement copied.' });
       } catch (err) {
         showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
       }
@@ -488,7 +475,7 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
           showToast('No queryable fields found on this record.', { doc, kind: 'warning' });
           return;
         }
-        await copyToClipboard(statement, 'SOQL query copied.');
+        await copyToClipboard(statement, { doc, label: 'SOQL query copied.' });
       } catch (err) {
         showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
       }
@@ -501,19 +488,17 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
     // record page (no object to scope the picker to).
     if (analyzeFieldImpact && ctx) {
       const impactRow = doc.createElement('div');
-      impactRow.style.cssText = 'display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap;';
-
+      impactRow.classList.add('sfdt-row', 'sfdt-wrap', 'sfdt-bottom');
       const selectWrap = doc.createElement('div');
-      selectWrap.style.cssText = 'display: flex; flex-direction: column; gap: 4px; min-width: 200px;';
+      selectWrap.classList.add('sfdt-stack', 'sfdt-tight');
       const selectLabel = doc.createElement('label');
       selectLabel.textContent = 'Field impact';
       selectLabel.htmlFor = 'sfdt-show-api-names-impact-field';
-      selectLabel.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak);';
+      selectLabel.className = 'sfdt-muted';
       const fieldSelect = doc.createElement('select');
       fieldSelect.id = 'sfdt-show-api-names-impact-field';
       fieldSelect.setAttribute('aria-label', `Choose a ${ctx.sobjectName} field to analyse`);
-      fieldSelect.style.cssText =
-        'padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
+      fieldSelect.className = 'sfdt-field sfdt-auto';
       const loadingOption = doc.createElement('option');
       loadingOption.value = '';
       loadingOption.textContent = 'Loading fields…';
@@ -521,12 +506,14 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
       fieldSelect.disabled = true;
       selectWrap.append(selectLabel, fieldSelect);
 
-      const impactBtn = doc.createElement('button');
-      impactBtn.type = 'button';
-      impactBtn.textContent = 'What writes this field?';
-      impactBtn.disabled = true;
-      impactBtn.style.cssText =
-        'padding: 6px 12px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+      const impactBtn = button({
+        label: 'What writes this field?',
+        iconName: 'link',
+        variant: 'primary',
+        small: true,
+        disabled: true,
+        doc,
+      });
       impactBtn.addEventListener('click', () => {
         if (!fieldSelect.value) return;
         void analyzeFieldImpact(ctx.sobjectName, fieldSelect.value);
@@ -556,7 +543,8 @@ export function createShowApiNamesFeature(options: ShowApiNamesOptions = {}): Fe
     }
 
     view = presentView({
-      title: '🏷️ Show API Names',
+      title: 'Show API Names',
+      iconName: 'tag',
       body,
       doc,
       width: '480px',

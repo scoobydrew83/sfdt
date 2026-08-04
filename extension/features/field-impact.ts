@@ -37,8 +37,9 @@ import {
   type FlowCandidate,
   type WorkflowFieldUpdateCandidate,
 } from '../lib/field-impact.js';
-import { presentView, inWorkspace, type ViewHandle } from '../ui/present-view.js';
+import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { escapeSoql } from '@sfdt/flow-core';
+import { button, toolbar } from '../lib/ui-controls.js';
 
 // Bounded scans: every one of these costs org round-trips, and an unbounded
 // sweep of a big org would hang the panel. Whatever a cap excludes is reported
@@ -187,18 +188,10 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
   const api = options.api ?? getSalesforceApi();
 
   let view: ViewHandle | null = null;
-  let escHandler: ((e: KeyboardEvent) => void) | null = null;
-  let trapHandler: ((e: KeyboardEvent) => void) | null = null;
   let previouslyFocused: Element | null = null;
   let runAnalysis: ((object: string, field: string) => Promise<void>) | null = null;
 
   function teardown(): void {
-    if (escHandler) {
-      doc.removeEventListener('keydown', escHandler, true);
-      escHandler = null;
-    }
-    if (trapHandler && view) view.root.removeEventListener('keydown', trapHandler, true);
-    trapHandler = null;
     runAnalysis = null;
   }
 
@@ -664,11 +657,10 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
 
   function buildLegend(): HTMLElement {
     const legend = doc.createElement('p');
-    legend.style.cssText =
-      'margin: 8px 0 0; font-size: 11px; color: var(--sfdt-color-text-weak); display: flex; gap: 12px; flex-wrap: wrap;';
+    legend.classList.add('sfdt-row', 'sfdt-wrap');
     for (const status of ['confirmed', 'inferred'] as const) {
       const item = doc.createElement('span');
-      item.style.cssText = 'display: inline-flex; align-items: center; gap: 6px;';
+      item.classList.add('sfdt-row', 'sfdt-snug');
       item.appendChild(statusBadge(status));
       const text = doc.createElement('span');
       text.textContent = STATUS_LEGEND[status];
@@ -687,10 +679,10 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
       'margin: 10px 0; padding: 8px 12px; border: 1px solid var(--sfdt-color-warning-border); background: var(--sfdt-color-warning-bg); border-radius: 4px; font-size: 12px; color: var(--sfdt-color-warning-text-2);';
     const heading = doc.createElement('div');
     heading.textContent = 'Scan scope';
-    heading.style.cssText = 'font-weight: 600; margin-bottom: 4px;';
+    heading.classList.add('sfdt-subhead');
     wrap.appendChild(heading);
     const list = doc.createElement('ul');
-    list.style.cssText = 'margin: 0; padding-left: 18px;';
+    list.classList.add('sfdt-list', 'sfdt-flush-x');
     for (const note of notes) {
       const li = doc.createElement('li');
       li.textContent = note;
@@ -733,8 +725,7 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
     const tbody = doc.createElement('tbody');
     for (const row of vm.rows) {
       const tr = doc.createElement('tr');
-      tr.style.cssText = 'border-bottom: 1px solid var(--sfdt-color-bg);';
-
+      tr.classList.add('sfdt-divider');
       const tdStatus = doc.createElement('td');
       tdStatus.style.cssText = CELL;
       tdStatus.appendChild(statusBadge(row.status));
@@ -786,26 +777,26 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
     previouslyFocused = doc.activeElement;
 
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; font-size: 13px;';
-
-    const form = doc.createElement('div');
-    form.style.cssText = 'display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap;';
-
+    body.className = 'sfdt-view-body';
+    // The object/field inputs and Analyze are this view's controls — pinned, so
+    // they stay reachable while a long impact report scrolls under them.
+    const form = toolbar(doc);
+    form.classList.add('sfdt-wrap', 'sfdt-bottom');
     const makeInput = (id: string, label: string, placeholder: string): HTMLInputElement => {
       const wrap = doc.createElement('div');
-      wrap.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+      wrap.classList.add('sfdt-stack', 'sfdt-tight');
       const lab = doc.createElement('label');
       lab.textContent = label;
       lab.htmlFor = id;
-      lab.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak);';
+      lab.className = 'sfdt-muted';
       const input = doc.createElement('input');
       input.type = 'text';
       input.id = id;
       input.placeholder = placeholder;
       input.setAttribute('autocomplete', 'off');
       input.setAttribute('spellcheck', 'false');
-      input.style.cssText =
-        'padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; min-width: 180px;';
+      input.className = 'sfdt-field sfdt-auto';
+      input.classList.add('sfdt-search');
       wrap.append(lab, input);
       form.appendChild(wrap);
       return input;
@@ -814,25 +805,25 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
     const objectInput = makeInput('sfdt-field-impact-object', 'Object API name', 'Account');
     const fieldInput = makeInput('sfdt-field-impact-field', 'Field API name', 'Industry');
 
-    const runBtn = doc.createElement('button');
-    runBtn.type = 'button';
-    runBtn.textContent = 'What writes this field?';
-    runBtn.style.cssText =
-      'padding: 6px 14px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 13px;';
+    const runBtn = button({ label: 'What writes this field?', iconName: 'search', variant: 'primary', doc });
     form.appendChild(runBtn);
     body.appendChild(form);
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
 
     const status = doc.createElement('div');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    status.style.cssText = 'margin-top: 10px; font-size: 12px; color: var(--sfdt-color-text-weak);';
-    body.appendChild(status);
+    status.classList.add('sfdt-muted');
+    main.appendChild(status);
 
     const results = doc.createElement('div');
-    body.appendChild(results);
+    main.appendChild(results);
 
     view = presentView({
-      title: '✍️ Field Impact — what writes this field?',
+      title: 'Field Impact — what writes this field?',
+      iconName: 'link',
       body,
       doc,
       width: '900px',
@@ -883,8 +874,7 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
       } catch (err) {
         status.textContent = 'Failed';
         const errorPanel = doc.createElement('div');
-        errorPanel.style.cssText =
-          'margin-top: 10px; border: 1px solid var(--sfdt-color-error-border); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
+        errorPanel.classList.add('sfdt-console', 'sfdt-error');
         errorPanel.textContent = message(err);
         results.appendChild(errorPanel);
       } finally {
@@ -908,31 +898,11 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
     // --- A11y (CONVENTIONS items 1, 3, 4, 8): Esc closes in the capture phase
     // and the listener is removed on close; focus is trapped in modal mode only
     // (a Workspace tab pane is a persistent surface) and restored on close. ---
-    escHandler = (e) => {
-      if (e.key === 'Escape' && view) close();
-    };
-    doc.addEventListener('keydown', escHandler, true);
-
-    if (!inWorkspace()) {
-      trapHandler = (e) => {
-        if (e.key !== 'Tab' || !view) return;
-        const focusables = view.root.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        );
-        if (focusables.length === 0) return;
-        const first = focusables[0]!;
-        const last = focusables[focusables.length - 1]!;
-        const activeEl = doc.activeElement;
-        if (e.shiftKey && activeEl === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && activeEl === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      };
-      view.root.addEventListener('keydown', trapHandler, true);
-    }
+    // Esc and the focus trap are NOT wired here. ui/present-view.ts owns both,
+    // and it checks that this overlay is the topmost one before acting. The
+    // capture-phase document listener that used to live here skipped that check,
+    // so an Escape meant for a dialog opened ON TOP of this view closed this one
+    // too — third instance of that bug in this codebase.
 
     // Pre-fill whatever the caller knew. Both known (Schema Browser / Show API
     // Names) → analyse immediately; object only (record page) → land the user on

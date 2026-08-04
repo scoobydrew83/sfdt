@@ -12,6 +12,9 @@ import {
   type RawClassCoverageRow,
   type ClassCoverageRow,
 } from '@sfdt/flow-core';
+import { button, toolbar } from '../lib/ui-controls.js';
+import { meterCard, meterGrid, type MeterTone } from '../ui/meter-card.js';
+import { emptyPanel } from '../ui/panels.js';
 
 // Per-class coverage shaping/banding now lives in @sfdt/flow-core so the Chrome
 // viewer, the GUI Coverage page, and `sfdt coverage` band identically. These
@@ -21,11 +24,15 @@ export const coverageBand = classCoverageBand;
 export type RawCoverageRow = RawClassCoverageRow;
 export type CoverageRow = ClassCoverageRow;
 
-const BAND_COLOUR: Record<'green' | 'amber' | 'red' | 'none', string> = {
-  green: 'var(--sfdt-color-success)',
-  amber: 'var(--sfdt-color-warning)',
-  red: 'var(--sfdt-color-error)',
-  none: 'var(--sfdt-color-text-disabled)',
+// Band → meter tone. Coverage INVERTS the usual reading: high is healthy here,
+// where a high API-limit figure is an incident. That is why meterCard() takes a
+// tone rather than deriving one — the shared usageTone() would paint 95%
+// coverage red.
+const BAND_TONE: Record<'green' | 'amber' | 'red' | 'none', MeterTone> = {
+  green: 'ok',
+  amber: 'warn',
+  red: 'bad',
+  none: 'idle',
 };
 
 export interface CodeCoverageOptions {
@@ -67,57 +74,52 @@ export function createCodeCoverageFeature(options: CodeCoverageOptions = {}): Fe
       const orgPct = orgWide.records[0]?.PercentCovered;
       status.textContent = `${rows.length} component${rows.length === 1 ? '' : 's'}`;
 
-      // Org-wide summary banner.
-      const summary = doc.createElement('div');
+      // Org-wide summary, as the same card as everything below it — the version
+      // this replaces was a bespoke banner with its own border, radius and type
+      // scale, so the headline number looked unrelated to the figures it summed.
       const orgFrac = typeof orgPct === 'number' ? orgPct / 100 : null;
-      summary.style.cssText = `margin-bottom: 14px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--sfdt-color-border); border-left: 4px solid ${BAND_COLOUR[coverageBand(orgFrac)]}; display: flex; align-items: baseline; gap: 10px;`;
-      const big = doc.createElement('span');
-      big.style.cssText = 'font-size: 22px; font-weight: 700;';
-      big.textContent = typeof orgPct === 'number' ? `${orgPct}%` : '—';
-      const cap = doc.createElement('span');
-      cap.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
-      cap.textContent = 'org-wide Apex coverage (75% required to deploy)';
-      summary.appendChild(big);
-      summary.appendChild(cap);
+      const summary = meterCard({
+        doc,
+        label: 'Org-wide Apex coverage',
+        value: typeof orgPct === 'number' ? `${orgPct}%` : '—',
+        sub: '· 75% required to deploy',
+        pct: orgFrac ?? 0,
+        tone: BAND_TONE[coverageBand(orgFrac)],
+      });
+      summary.classList.add('sfdt-below');
       results.appendChild(summary);
 
       if (rows.length === 0) {
-        const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon);';
-        empty.textContent = 'No coverage data. Run Apex tests in this org first.';
-        results.appendChild(empty);
+        // Says WHY it is empty: ApexCodeCoverageAggregate only holds the last
+        // test run's results, so no rows means nobody has run tests — not that
+        // coverage is zero.
+        results.appendChild(
+          emptyPanel('No coverage data yet.', {
+            hint: 'Salesforce only reports coverage from the last test run. Run Apex tests in this org first.',
+            iconName: 'gauge',
+            doc,
+          }),
+        );
         return;
       }
 
-      const grid = doc.createElement('div');
-      grid.style.cssText =
-        'display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px;';
+      const grid = meterGrid(doc);
       for (const r of rows) {
-        const card = doc.createElement('div');
-        card.style.cssText =
-          'border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 10px; display: flex; flex-direction: column; gap: 6px;';
-        const title = doc.createElement('div');
-        title.style.cssText = 'font-weight: 600; font-size: 12px; word-break: break-all;';
-        title.textContent = r.name;
-        const bar = doc.createElement('div');
-        bar.style.cssText = 'height: 6px; background: var(--sfdt-color-bg); border-radius: 3px; overflow: hidden;';
-        const fill = doc.createElement('div');
-        const band = coverageBand(r.pct);
-        fill.style.cssText = `height: 100%; width: ${((r.pct ?? 0) * 100).toFixed(1)}%; background: ${BAND_COLOUR[band]};`;
-        bar.appendChild(fill);
-        const usage = doc.createElement('div');
-        usage.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak);';
-        usage.textContent = `${pctLabel(r.pct)} — ${r.covered}/${r.total} lines`;
-        card.appendChild(title);
-        card.appendChild(bar);
-        card.appendChild(usage);
-        grid.appendChild(card);
+        grid.appendChild(
+          meterCard({
+            doc,
+            label: r.name,
+            value: pctLabel(r.pct),
+            sub: `· ${r.covered}/${r.total} lines`,
+            pct: r.pct ?? 0,
+            tone: BAND_TONE[coverageBand(r.pct)],
+          }),
+        );
       }
       results.appendChild(grid);
     } catch (err) {
       const errorPanel = doc.createElement('div');
-      errorPanel.style.cssText =
-        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
+      errorPanel.classList.add('sfdt-console', 'sfdt-error');
       errorPanel.textContent = err instanceof Error ? err.message : String(err);
       results.appendChild(errorPanel);
       status.textContent = 'Failed';
@@ -128,27 +130,27 @@ export function createCodeCoverageFeature(options: CodeCoverageOptions = {}): Fe
     close();
 
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column;';
-
+    body.className = 'sfdt-view-body';
     // Toolbar (status + refresh) lives at the top of the body so it shows in both
     // the modal and the workspace tab — presentView's header is title + × only.
-    const toolbar = doc.createElement('div');
-    toolbar.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 12px;';
+    const bar = toolbar(doc);
     const status = doc.createElement('span');
-    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
-    const refreshBtn = doc.createElement('button');
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.style.cssText =
-      'margin-left: auto; padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
-    toolbar.appendChild(status);
-    toolbar.appendChild(refreshBtn);
-    body.appendChild(toolbar);
+    status.className = 'sfdt-muted';
+    const refreshBtn = button({ label: 'Refresh', iconName: 'refresh', small: true, doc });
+    refreshBtn.classList.add('sfdt-toolbar-end');
+    bar.appendChild(status);
+    bar.appendChild(refreshBtn);
+    body.appendChild(bar);
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
 
     const results = doc.createElement('div');
-    body.appendChild(results);
+    main.appendChild(results);
 
     view = presentView({
-      title: '📊 Apex Code Coverage',
+      title: 'Apex Code Coverage',
+      iconName: 'gauge',
       body,
       doc,
       width: '820px',

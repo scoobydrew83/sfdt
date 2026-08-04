@@ -9,6 +9,7 @@ import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-ap
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { runFlowQuality, type FlowQualityReport } from '@sfdt/flow-core';
+import { button, toolbar } from '../lib/ui-controls.js';
 
 function bandColour(score: number | null): string {
   if (score === null) return 'var(--sfdt-color-text-disabled)';
@@ -66,8 +67,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
 
   function sectionHeading(text: string): HTMLElement {
     const h = doc.createElement('div');
-    h.style.cssText =
-      'margin: 16px 0 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--sfdt-color-text-weak);';
+    h.classList.add('sfdt-caps', 'sfdt-below');
     h.textContent = text;
     return h;
   }
@@ -95,17 +95,16 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
     name.style.cssText = 'flex: 1; font-weight: 600; color: var(--sfdt-color-text-strong);';
     name.textContent = family.title ?? family.scoreFamily ?? 'Issue';
     const meta = doc.createElement('span');
-    meta.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-muted);';
+    meta.className = 'sfdt-faint';
     meta.textContent = `${count} · −${impact}`;
     summary.append(sevBadge(severity), name, meta);
     details.appendChild(summary);
 
     const inner = doc.createElement('div');
-    inner.style.cssText = 'padding: 4px 12px 10px; font-size: 12px; color: var(--sfdt-color-text);';
-
+    inner.classList.add('sfdt-prose');
     if (affected.length > 0) {
       const ul = doc.createElement('ul');
-      ul.style.cssText = 'margin: 4px 0; padding-left: 18px;';
+      ul.classList.add('sfdt-list', 'sfdt-flush-x');
       for (const item of affected.slice(0, 20)) {
         const li = doc.createElement('li');
         li.textContent = item.apiName && item.apiName !== item.label ? `${item.label} (${item.apiName})` : item.label;
@@ -113,7 +112,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
       }
       if (affected.length > 20) {
         const li = doc.createElement('li');
-        li.style.cssText = 'color: var(--sfdt-color-text-muted);';
+        li.classList.add('sfdt-faint');
         li.textContent = `…and ${affected.length - 20} more`;
         ul.appendChild(li);
       }
@@ -125,7 +124,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
     if (rec) {
       const p = doc.createElement('p');
       p.style.cssText = 'margin: 6px 0 0; padding: 6px 8px; background: var(--sfdt-color-surface-shade-2); border-radius: 4px;';
-      p.textContent = `💡 ${rec}`;
+      p.textContent = rec;
       inner.appendChild(p);
     }
     details.appendChild(inner);
@@ -137,10 +136,10 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
     const banner = doc.createElement('div');
     banner.style.cssText = `margin-bottom: 14px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--sfdt-color-border); border-left: 4px solid ${bandColour(score)}; display: flex; align-items: baseline; gap: 10px;`;
     const big = doc.createElement('span');
-    big.style.cssText = 'font-size: 22px; font-weight: 700;';
+    big.classList.add('sfdt-subhead');
     big.textContent = score === null ? '—' : String(score);
     const cap = doc.createElement('span');
-    cap.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
+    cap.className = 'sfdt-muted';
     const fams = report.issueFamilies.length;
     cap.textContent = `${report.summary.rating ?? 'quality score'} · ${fams} issue famil${fams === 1 ? 'y' : 'ies'}`;
     banner.append(big, cap);
@@ -150,7 +149,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
     const entries = Object.entries(counts).filter(([, n]) => n > 0);
     if (entries.length > 0) {
       const chips = doc.createElement('div');
-      chips.style.cssText = 'display: flex; flex-wrap: wrap; gap: 6px;';
+      chips.classList.add('sfdt-row', 'sfdt-wrap');
       for (const [sev, n] of entries) {
         const chip = doc.createElement('span');
         chip.style.cssText = `font-size: 11px; color: var(--sfdt-color-text); border: 1px solid ${severityColour(sev)}; border-radius: 10px; padding: 1px 8px;`;
@@ -170,8 +169,8 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
       for (const family of families) results.appendChild(renderFamily(family));
     } else {
       const clean = doc.createElement('p');
-      clean.style.cssText = 'margin: 12px 0; color: var(--sfdt-color-success-text); font-size: 13px;';
-      clean.textContent = '✓ No quality issues detected.';
+      clean.classList.add('sfdt-muted');
+      clean.textContent = 'No quality issues detected.';
       results.appendChild(clean);
     }
 
@@ -182,8 +181,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
       results.appendChild(sectionHeading('Dependencies'));
       for (const dep of deps) {
         const row = doc.createElement('div');
-        row.style.cssText =
-          'display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; color: var(--sfdt-color-text);';
+        row.classList.add('sfdt-row', 'sfdt-snug', 'sfdt-prose');
         const label = doc.createElement('span');
         label.style.cssText = 'flex: 1; word-break: break-all;';
         label.textContent = dep.count > 1 ? `${dep.type}: ${dep.name} ×${dep.count}` : `${dep.type}: ${dep.name}`;
@@ -191,11 +189,14 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
 
         const metadataType = DEP_TYPE_TO_METADATA[dep.type];
         if (onExploreDependency && metadataType) {
-          const explore = doc.createElement('button');
-          explore.textContent = '🔗 Explore';
-          explore.title = `Open ${dep.name} in the Dependency Explorer`;
-          explore.style.cssText =
-            'flex: none; padding: 2px 8px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-text); border-radius: 4px; cursor: pointer; font-size: 11px;';
+          const explore = button({
+            label: 'Explore',
+            iconName: 'graph',
+            title: `Open ${dep.name} in the Dependency Explorer`,
+            small: true,
+            doc,
+          });
+          explore.classList.add('sfdt-nogrow');
           explore.addEventListener('click', () => onExploreDependency({ type: metadataType, name: dep.name }));
           row.appendChild(explore);
         }
@@ -208,29 +209,28 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
     close();
 
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column;';
-
-    const toolbar = doc.createElement('div');
-    toolbar.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 12px;';
+    body.className = 'sfdt-view-body';
+    const bar = toolbar(doc);
     const input = doc.createElement('input');
     input.type = 'text';
     input.placeholder = 'Flow API name, e.g. My_Flow';
-    input.style.cssText =
-      'flex: 1; min-width: 180px; padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
-    const runBtn = doc.createElement('button');
-    runBtn.textContent = 'Scan';
-    runBtn.style.cssText =
-      'padding: 5px 14px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 13px;';
+    input.className = 'sfdt-field';
+    input.classList.add('sfdt-search');
+    const runBtn = button({ label: 'Scan', iconName: 'search', variant: 'primary', small: true, doc });
     const status = doc.createElement('span');
-    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
-    toolbar.append(input, runBtn, status);
-    body.appendChild(toolbar);
+    status.className = 'sfdt-muted';
+    bar.append(input, runBtn, status);
+    body.appendChild(bar);
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
 
     const results = doc.createElement('div');
-    body.appendChild(results);
+    main.appendChild(results);
 
     view = presentView({
-      title: '🔍 Flow Scanner',
+      title: 'Flow Scanner',
+      iconName: 'check',
       body,
       doc,
       width: '720px',
@@ -255,8 +255,7 @@ export function createFlowQualityFeature(options: FlowQualityFeatureOptions = {}
         status.textContent = 'Done';
       } catch (err) {
         const panel = doc.createElement('div');
-        panel.style.cssText =
-          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
+        panel.classList.add('sfdt-console', 'sfdt-error');
         panel.textContent = err instanceof Error ? err.message : String(err);
         results.appendChild(panel);
         status.textContent = 'Failed';

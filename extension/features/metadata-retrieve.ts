@@ -31,7 +31,12 @@ import {
   LONG_RUNNING_TIMEOUT_MS,
 } from '../lib/sfdt-bridge.js';
 import { showToast } from '../ui/toast.js';
+import { recordActivity } from '../lib/activity-log.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { glyph, setTone, toolbar } from '../lib/ui-controls.js';
+import { SF_API_VERSION } from '../lib/api-version.js';
+import { copyToClipboard } from '../ui/clipboard.js';
+import { triggerDownload, triggerDownloadBlob } from '../lib/download.js';
 
 interface MetadataObject {
   xmlName: string;
@@ -205,21 +210,24 @@ export function createMetadataRetrieveFeature(options: {
     if (!logsContainer) return;
     logsContainer.replaceChildren();
     for (const msg of logMessages) {
+      // Glyph + tone, not an emoji prefix. The glyph is aria-hidden and the
+      // tone is colour, so the LEVEL is also spelled out in the text — colour
+      // is never the only signal (CONVENTIONS.md).
       const item = doc.createElement('div');
-      item.style.cssText = 'padding: 2px 0; font-family: monospace; font-size: 11px; border-bottom: 1px solid var(--sfdt-color-bg);';
-      if (msg.level === 'error') {
-        item.style.color = 'var(--sfdt-color-error-text)';
-        item.textContent = `❌ ${msg.text}`;
-      } else if (msg.level === 'success') {
-        item.style.color = 'var(--sfdt-color-success-text)';
-        item.textContent = `✅ ${msg.text}`;
-      } else if (msg.level === 'working') {
-        item.style.color = 'var(--sfdt-color-brand-text)';
-        item.textContent = `⏳ ${msg.text}`;
-      } else {
-        item.style.color = 'var(--sfdt-color-text-weak)';
-        item.textContent = `ℹ️ ${msg.text}`;
-      }
+      item.className = 'sfdt-row sfdt-mono';
+      const level =
+        msg.level === 'error'
+          ? { tone: 'bad' as const, icon: 'alert', word: 'Error' }
+          : msg.level === 'success'
+            ? { tone: 'ok' as const, icon: 'check', word: 'Done' }
+            : msg.level === 'working'
+              ? { tone: 'info' as const, icon: 'clock', word: 'Working' }
+              : { tone: 'muted' as const, icon: 'panel', word: 'Info' };
+      setTone(item, level.tone);
+      item.appendChild(glyph(level.icon, 12, doc));
+      const text = doc.createElement('span');
+      text.textContent = `${level.word}: ${msg.text}`;
+      item.appendChild(text);
       logsContainer.appendChild(item);
     }
     logsContainer.scrollTop = logsContainer.scrollHeight;
@@ -844,6 +852,12 @@ export function createMetadataRetrieveFeature(options: {
           done = true;
           if (statusRes.success === 'true' || statusRes.success === true) {
             addLog('success', 'Retrieve job completed successfully.');
+            void recordActivity({
+              featureId: 'metadata-retrieve',
+              action: 'Retrieve',
+              resource: `job ${jobId}`,
+              status: 'success',
+            });
             // Download zipFile
             if (statusRes.zipFile) {
               const binaryString = atob(statusRes.zipFile);
@@ -851,19 +865,22 @@ export function createMetadataRetrieveFeature(options: {
               for (let i = 0; i < binaryString.length; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
               }
-              const blob = new Blob([bytes], { type: 'application/zip' });
-              const a = doc.createElement('a');
-              a.href = URL.createObjectURL(blob);
-              a.download = `metadata_retrieve_${jobId}.zip`;
-              doc.body.appendChild(a);
-              a.click();
-              a.remove();
+              // Was a hand-rolled blob/anchor with NO revokeObjectURL — and a
+              // retrieved metadata zip is routinely tens of megabytes, pinned for
+              // the life of the tab. lib/download.ts revokes.
+              triggerDownloadBlob(doc, `metadata_retrieve_${jobId}.zip`, bytes, 'application/zip');
               addLog('success', 'Metadata zip downloaded successfully.');
             } else {
               addLog('error', 'Completed retrieve status contains no zipFile payload.');
             }
           } else {
             addLog('error', `Retrieve job failed. Status: ${statusRes.status || 'Unknown'}`);
+            void recordActivity({
+              featureId: 'metadata-retrieve',
+              action: 'Retrieve',
+              resource: `job ${jobId}`,
+              status: 'failed',
+            });
           }
         }
       }
@@ -944,8 +961,20 @@ export function createMetadataRetrieveFeature(options: {
           const details = statusRes.details;
           if (statusRes.success === 'true' || statusRes.success === true) {
             addLog('success', 'Deployment completed successfully!');
+            void recordActivity({
+              featureId: 'metadata-retrieve',
+              action: 'Deploy',
+              resource: `job ${jobId}`,
+              status: 'success',
+            });
           } else {
             addLog('error', 'Deployment failed.');
+            void recordActivity({
+              featureId: 'metadata-retrieve',
+              action: 'Deploy',
+              resource: `job ${jobId}`,
+              status: 'failed',
+            });
             if (details && details.componentFailures) {
               const failures = asArray(details.componentFailures);
               failures.forEach(f => {
@@ -986,7 +1015,7 @@ export function createMetadataRetrieveFeature(options: {
     if (filtered.length === 0) {
       const empty = doc.createElement('li');
       empty.textContent = 'No matching metadata types';
-      empty.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; padding: 4px;';
+      empty.classList.add('sfdt-prose', 'sfdt-muted');
       list.appendChild(empty);
       treeContainer.appendChild(list);
       return;
@@ -1003,7 +1032,7 @@ export function createMetadataRetrieveFeature(options: {
       expBtn.textContent = obj.expanded ? '▼' : '▶';
       expBtn.setAttribute('aria-label', `${obj.expanded ? 'Collapse' : 'Expand'} ${obj.xmlName}`);
       expBtn.setAttribute('aria-expanded', obj.expanded ? 'true' : 'false');
-      expBtn.style.cssText = 'background: none; border: 0; padding: 0; font-size: 10px; cursor: pointer; width: 16px; color: var(--sfdt-color-text-weak);';
+      expBtn.className = 'sfdt-btn sfdt-ghost sfdt-sm sfdt-icon';
       expBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         void toggleExpand(obj);
@@ -1051,8 +1080,7 @@ export function createMetadataRetrieveFeature(options: {
           .filter(c => c.fullName.toLowerCase().includes(metadataFilter))
           .forEach(child => {
             const childLi = doc.createElement('li');
-            childLi.style.cssText = 'display: flex; align-items: center; gap: 6px; margin: 2px 0;';
-
+            childLi.classList.add('sfdt-row', 'sfdt-snug');
             const childChk = doc.createElement('input');
             childChk.type = 'checkbox';
             childChk.checked = !!child.selected;
@@ -1069,7 +1097,7 @@ export function createMetadataRetrieveFeature(options: {
 
             const childLabel = doc.createElement('span');
             childLabel.textContent = child.fullName;
-            childLabel.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak);';
+            childLabel.className = 'sfdt-muted';
             childLi.appendChild(childLabel);
 
             childList.appendChild(childLi);
@@ -1091,7 +1119,7 @@ export function createMetadataRetrieveFeature(options: {
   }
 
   // Mode/bridge-dependent DOM handles
-  let bridgeStatusEl: HTMLDivElement | null = null;
+  let bridgeStatusEl: HTMLElement | null = null;
   let managedLabelEl: HTMLLabelElement | null = null;
   let warningBannerEl: HTMLDivElement | null = null;
   let pairSectionEl: HTMLDivElement | null = null;
@@ -1104,7 +1132,7 @@ export function createMetadataRetrieveFeature(options: {
   function updateBridgeDom(): void {
     if (bridgeStatusEl) {
       bridgeStatusEl.textContent = bridge
-        ? `🔗 sfdt bridge connected${bridgeOrg ? ` (org: ${bridgeOrg})` : ''} — discovery and XML come from the sfdt CLI.`
+        ? `sfdt bridge connected${bridgeOrg ? ` (org: ${bridgeOrg})` : ''} — discovery and XML come from the sfdt CLI.`
         : 'sfdt bridge offline — using the Salesforce SOAP API directly. Run `sfdt ui` in your project to connect.';
     }
     // Managed-package filtering is a SOAP-describe concept; the bridge path
@@ -1115,12 +1143,11 @@ export function createMetadataRetrieveFeature(options: {
   function applyModeDom(): void {
     const destructive = manifestMode === 'destructive';
     if (modeAdditiveBtnEl && modeDestructiveBtnEl) {
+      // '.sfdt-segment' already paints the pressed row — the aria state IS the
+      // style hook, so setting both an attribute and four colours was saying the
+      // same thing twice and only one of them was theme-correct.
       modeAdditiveBtnEl.setAttribute('aria-pressed', destructive ? 'false' : 'true');
       modeDestructiveBtnEl.setAttribute('aria-pressed', destructive ? 'true' : 'false');
-      modeAdditiveBtnEl.style.background = destructive ? 'none' : 'var(--sfdt-color-brand)';
-      modeAdditiveBtnEl.style.color = destructive ? 'var(--sfdt-color-text-weak)' : 'var(--sfdt-color-on-accent)';
-      modeDestructiveBtnEl.style.background = destructive ? 'var(--sfdt-color-error)' : 'none';
-      modeDestructiveBtnEl.style.color = destructive ? 'var(--sfdt-color-on-accent)' : 'var(--sfdt-color-text-weak)';
     }
     if (warningBannerEl) warningBannerEl.style.display = destructive ? 'block' : 'none';
     if (pairSectionEl) pairSectionEl.style.display = destructive ? 'flex' : 'none';
@@ -1139,13 +1166,7 @@ export function createMetadataRetrieveFeature(options: {
   }
 
   function downloadFile(filename: string, content: string): void {
-    const blob = new Blob([content], { type: 'text/xml' });
-    const a = doc.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    doc.body.appendChild(a);
-    a.click();
-    a.remove();
+    triggerDownload(doc, filename, content, 'text/xml');
   }
 
   async function open(): Promise<void> {
@@ -1155,63 +1176,60 @@ export function createMetadataRetrieveFeature(options: {
 
     // Body wrapper presented into a Workspace tab (or a modal on a Salesforce page).
     const body = doc.createElement('div');
-    body.style.cssText = 'flex: 1; display: flex; flex-direction: column; overflow: hidden;';
+    body.className = 'sfdt-view-body';
 
-    // Spinner (shown while a SOAP job is in flight). Lived in the old modal
-    // header next to the title; presentView owns the header now, so it is pinned
-    // to the top of the body instead.
-    const spinnerRow = doc.createElement('div');
-    spinnerRow.style.cssText = 'padding: 6px 16px 0; display: flex; justify-content: flex-end;';
-    spinnerEl = doc.createElement('div');
-    spinnerEl.style.cssText = 'border: 2px solid var(--sfdt-color-bg); border-top: 2px solid var(--sfdt-color-brand); border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; display: none;';
-    const style = doc.createElement('style');
-    style.textContent = '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
-    doc.head.appendChild(style);
-    spinnerRow.appendChild(spinnerEl);
-    body.appendChild(spinnerRow);
-
-    // Tab Header
+    // Tabs. '.sfdt-tab', NOT '.sfdt-nav-item' — see the note in lib/ui-styles.ts:
+    // a nav item is a vertical sidebar row and marks "current" with a LEFT
+    // border, which in a horizontal strip stretches every tab and puts the
+    // indicator on the wrong edge.
     const tabsRow = doc.createElement('div');
-    tabsRow.style.cssText = 'display: flex; border-bottom: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface-alt);';
+    tabsRow.className = 'sfdt-tabs';
+    tabsRow.setAttribute('role', 'tablist');
     const rTab = doc.createElement('button');
+    rTab.type = 'button';
     rTab.textContent = 'Retrieve';
-    rTab.style.cssText = 'padding: 10px 20px; border: 0; background: var(--sfdt-color-surface); border-right: 1px solid var(--sfdt-color-border); border-bottom: 2px solid var(--sfdt-color-brand); font-weight: 600; cursor: pointer;';
+    rTab.className = 'sfdt-tab';
+    rTab.setAttribute('aria-current', 'page');
     const dTab = doc.createElement('button');
+    dTab.type = 'button';
     dTab.textContent = 'Deploy';
-    dTab.style.cssText = 'padding: 10px 20px; border: 0; background: none; border-right: 1px solid var(--sfdt-color-border); font-weight: 600; cursor: pointer; color: var(--sfdt-color-text-weak);';
+    dTab.className = 'sfdt-tab';
 
-    tabsRow.appendChild(rTab);
-    tabsRow.appendChild(dTab);
+    // The busy indicator sits with the tabs rather than in its own strip: it
+    // marks the WHOLE tool as working, and a row that exists only to hold a
+    // 14px dot is a row of empty space the rest of the time.
+    spinnerEl = doc.createElement('div');
+    spinnerEl.className = 'sfdt-spinner sfdt-toolbar-end';
+    spinnerEl.setAttribute('role', 'status');
+    spinnerEl.setAttribute('aria-label', 'Working');
+    spinnerEl.style.display = 'none';
+
+    tabsRow.append(rTab, dTab, spinnerEl);
     body.appendChild(tabsRow);
-
-    // Bridge status line (which data path is active)
-    bridgeStatusEl = doc.createElement('div');
-    bridgeStatusEl.style.cssText = 'padding: 6px 16px; font-size: 11px; color: var(--sfdt-color-text-weak); border-bottom: 1px solid var(--sfdt-color-border-2);';
-    bridgeStatusEl.textContent = 'Checking for a connected sfdt bridge...';
-    body.appendChild(bridgeStatusEl);
 
     // Main Content wrapper
     const mainWrap = doc.createElement('div');
-    mainWrap.style.cssText = 'flex: 1; overflow: hidden; display: flex; flex-direction: column;';
+    mainWrap.className = 'sfdt-split-main';
     body.appendChild(mainWrap);
 
-    // Retrieve Panel
+    // Retrieve Panel — two equal columns: pick on the left, see the manifest
+    // you built on the right.
     const rPanel = doc.createElement('div');
-    rPanel.style.cssText = 'flex: 1; display: flex; overflow: hidden; padding: 16px; gap: 16px;';
+    rPanel.className = 'sfdt-split';
     mainWrap.appendChild(rPanel);
 
     // Left half (Tree & Filter)
     const treeDiv = doc.createElement('div');
-    treeDiv.style.cssText = 'flex: 1; display: flex; flex-direction: column; gap: 10px; border-right: 1px solid var(--sfdt-color-border-2); padding-right: 16px; overflow: hidden;';
+    treeDiv.className = 'sfdt-split-half sfdt-stack';
     rPanel.appendChild(treeDiv);
 
     const filterRow = doc.createElement('div');
-    filterRow.style.cssText = 'display: flex; gap: 8px; align-items: center;';
+    filterRow.classList.add('sfdt-row');
     const search = doc.createElement('input');
     search.type = 'text';
     search.placeholder = 'Filter metadata type or member...';
     search.setAttribute('aria-label', 'Filter metadata type or member');
-    search.style.cssText = 'flex: 1; padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
+    search.className = 'sfdt-field';
     search.addEventListener('input', () => {
       metadataFilter = search.value.toLowerCase();
       renderTree();
@@ -1219,7 +1237,7 @@ export function createMetadataRetrieveFeature(options: {
     filterRow.appendChild(search);
 
     managedLabelEl = doc.createElement('label');
-    managedLabelEl.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak); display: flex; align-items: center; gap: 4px; cursor: pointer;';
+    managedLabelEl.className = 'sfdt-check';
     const managedChk = doc.createElement('input');
     managedChk.type = 'checkbox';
     managedChk.checked = includeManagedPackage;
@@ -1238,7 +1256,7 @@ export function createMetadataRetrieveFeature(options: {
     const clearAllBtn = doc.createElement('button');
     clearAllBtn.textContent = 'Clear all';
     clearAllBtn.setAttribute('aria-label', 'Clear all selections');
-    clearAllBtn.style.cssText = 'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); cursor: pointer; font-size: 11px; color: var(--sfdt-color-text-weak);';
+    clearAllBtn.className = 'sfdt-btn sfdt-sm';
     clearAllBtn.addEventListener('click', () => {
       clearAllSelections();
     });
@@ -1247,26 +1265,26 @@ export function createMetadataRetrieveFeature(options: {
     treeDiv.appendChild(filterRow);
 
     treeContainer = doc.createElement('div');
-    treeContainer.style.cssText = 'flex: 1; overflow-y: auto; border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 8px;';
+    treeContainer.className = 'sfdt-scroll sfdt-frame';
     treeDiv.appendChild(treeContainer);
 
     // Right half (XML Output)
     const xmlDiv = doc.createElement('div');
-    xmlDiv.style.cssText = 'width: 400px; display: flex; flex-direction: column; gap: 10px; overflow: hidden;';
+    xmlDiv.className = 'sfdt-split-half sfdt-stack';
     rPanel.appendChild(xmlDiv);
 
     // Mode toggle: Additive (package.xml) | Destructive (destructiveChanges.xml pair)
     const modeRow = doc.createElement('div');
     modeRow.setAttribute('role', 'group');
     modeRow.setAttribute('aria-label', 'Manifest mode');
-    modeRow.style.cssText = 'display: flex; gap: 4px;';
+    modeRow.classList.add('sfdt-row', 'sfdt-tight');
     modeAdditiveBtnEl = doc.createElement('button');
     modeAdditiveBtnEl.textContent = 'Additive';
-    modeAdditiveBtnEl.style.cssText = 'flex: 1; padding: 5px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+    modeAdditiveBtnEl.classList.add('sfdt-grow');
     modeAdditiveBtnEl.addEventListener('click', () => setManifestMode('additive'));
     modeDestructiveBtnEl = doc.createElement('button');
     modeDestructiveBtnEl.textContent = 'Destructive';
-    modeDestructiveBtnEl.style.cssText = 'flex: 1; padding: 5px 10px; border: 1px solid var(--sfdt-color-error); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+    modeDestructiveBtnEl.classList.add('sfdt-grow');
     modeDestructiveBtnEl.addEventListener('click', () => setManifestMode('destructive'));
     modeRow.appendChild(modeAdditiveBtnEl);
     modeRow.appendChild(modeDestructiveBtnEl);
@@ -1275,7 +1293,8 @@ export function createMetadataRetrieveFeature(options: {
     // Destructive warning banner (P5-5): deploying the pair DELETES components.
     warningBannerEl = doc.createElement('div');
     warningBannerEl.setAttribute('role', 'alert');
-    warningBannerEl.style.cssText = 'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 10px; border-radius: 4px; font-size: 11px; line-height: 1.5;';
+    warningBannerEl.classList.add('sfdt-console', 'sfdt-error');
+    warningBannerEl.style.display = 'none';
     const warnStrong = doc.createElement('strong');
     warnStrong.textContent = 'Destructive manifest — deploying this pair DELETES the listed components from the org. ';
     warningBannerEl.appendChild(warnStrong);
@@ -1287,14 +1306,14 @@ export function createMetadataRetrieveFeature(options: {
     warnLink.href = DESTRUCTIVE_DOCS_URL;
     warnLink.target = '_blank';
     warnLink.rel = 'noreferrer noopener';
-    warnLink.style.cssText = 'color: var(--sfdt-color-error-text); text-decoration: underline;';
+    warnLink.classList.add('sfdt-link', 'sfdt-text-bad');
     warningBannerEl.appendChild(warnLink);
     warningBannerEl.appendChild(doc.createTextNode('.'));
     xmlDiv.appendChild(warningBannerEl);
 
     xmlLabelEl = doc.createElement('span');
     xmlLabelEl.textContent = 'package.xml preview';
-    xmlLabelEl.style.cssText = 'font-size: 12px; font-weight: 600; color: var(--sfdt-color-text);';
+    xmlLabelEl.className = 'sfdt-label';
     xmlDiv.appendChild(xmlLabelEl);
 
     const xmlTextarea = doc.createElement('textarea');
@@ -1303,32 +1322,34 @@ export function createMetadataRetrieveFeature(options: {
     xmlTextarea.value = packageXml;
     xmlTextarea.placeholder = 'Select components to preview the manifest.';
     xmlTextarea.setAttribute('aria-label', 'Manifest XML preview');
-    xmlTextarea.style.cssText = 'flex: 1; padding: 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-family: monospace; font-size: 11px; background: var(--sfdt-color-surface-alt); resize: none; outline: none;';
+    xmlTextarea.className = 'sfdt-field sfdt-mono';
     xmlTextareaEl = xmlTextarea;
     xmlDiv.appendChild(xmlTextarea);
 
     // The destructive deploy pair: an empty package.xml deployed alongside.
     pairSectionEl = doc.createElement('div');
-    pairSectionEl.style.cssText = 'display: none; flex-direction: column; gap: 4px; height: 110px;';
+    pairSectionEl.className = 'sfdt-stack sfdt-tight';
+    pairSectionEl.style.display = 'none';
+    pairSectionEl.style.height = '110px';
     const pairLabel = doc.createElement('span');
     pairLabel.textContent = 'package.xml (empty deploy pair)';
-    pairLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    pairLabel.className = 'sfdt-label';
     pairSectionEl.appendChild(pairLabel);
     pairTextareaEl = doc.createElement('textarea');
     pairTextareaEl.id = 'sfdt-meta-pair-textarea';
     pairTextareaEl.readOnly = true;
     pairTextareaEl.setAttribute('aria-label', 'Empty package.xml deploy pair preview');
-    pairTextareaEl.style.cssText = 'flex: 1; padding: 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-family: monospace; font-size: 11px; background: var(--sfdt-color-surface-alt); resize: none; outline: none;';
+    pairTextareaEl.className = 'sfdt-field sfdt-mono sfdt-grow sfdt-fixed';
     pairSectionEl.appendChild(pairTextareaEl);
     xmlDiv.appendChild(pairSectionEl);
 
     const rActions = doc.createElement('div');
-    rActions.style.cssText = 'display: flex; gap: 8px;';
+    rActions.classList.add('sfdt-row');
     const copyXmlBtn = doc.createElement('button');
     copyXmlBtn.textContent = 'Copy XML';
-    copyXmlBtn.style.cssText = 'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); cursor: pointer; font-size: 12px;';
+    copyXmlBtn.className = 'sfdt-btn sfdt-sm';
     copyXmlBtn.addEventListener('click', () => {
-      void win.navigator.clipboard.writeText(packageXml);
+      void copyToClipboard(packageXml, { doc, win, label: 'package.xml' });
       showToast(
         manifestMode === 'destructive'
           ? 'destructiveChanges.xml copied to clipboard'
@@ -1338,7 +1359,7 @@ export function createMetadataRetrieveFeature(options: {
     });
     const downloadXmlBtn = doc.createElement('button');
     downloadXmlBtn.textContent = 'Download XML';
-    downloadXmlBtn.style.cssText = 'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); cursor: pointer; font-size: 12px;';
+    downloadXmlBtn.className = 'sfdt-btn sfdt-sm';
     downloadXmlBtn.addEventListener('click', () => {
       if (manifestMode === 'destructive') {
         // The pair only makes sense together — download both files.
@@ -1368,14 +1389,14 @@ export function createMetadataRetrieveFeature(options: {
 
     const importXmlBtn = doc.createElement('button');
     importXmlBtn.textContent = 'Import XML';
-    importXmlBtn.style.cssText = 'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); cursor: pointer; font-size: 12px;';
+    importXmlBtn.className = 'sfdt-btn sfdt-sm';
     importXmlBtn.addEventListener('click', () => {
       fileUploadXml.click();
     });
 
     retrieveBtnEl = doc.createElement('button');
     retrieveBtnEl.textContent = 'Retrieve Zip';
-    retrieveBtnEl.style.cssText = 'padding: 6px 16px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; margin-left: auto;';
+    retrieveBtnEl.className = 'sfdt-btn sfdt-primary sfdt-sm sfdt-toolbar-end';
     retrieveBtnEl.addEventListener('click', () => {
       void runRetrieve();
     });
@@ -1388,7 +1409,7 @@ export function createMetadataRetrieveFeature(options: {
 
     // Deploy Panel (initially hidden)
     const dPanel = doc.createElement('div');
-    dPanel.style.cssText = 'flex: 1; display: none; flex-direction: column; padding: 16px; gap: 16px; overflow-y: auto;';
+    dPanel.classList.add('sfdt-view-main');
     mainWrap.appendChild(dPanel);
 
     const deployForm = doc.createElement('div');
@@ -1396,14 +1417,16 @@ export function createMetadataRetrieveFeature(options: {
     dPanel.appendChild(deployForm);
 
     const fileRow = doc.createElement('div');
-    fileRow.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+    fileRow.classList.add('sfdt-stack', 'sfdt-tight');
     const fileLabel = doc.createElement('label');
     fileLabel.textContent = 'Select Metadata ZIP File';
-    fileLabel.style.cssText = 'font-size: 12px; font-weight: 600; color: var(--sfdt-color-text);';
+    fileLabel.classList.add('sfdt-subhead');
     const fileInput = doc.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = '.zip';
-    fileInput.style.cssText = 'font-size: 13px;';
+    // A file input's chooser button is UA-drawn, but the filename beside it takes
+    // the inherited colour — which was unset, so it rendered dark-on-dark.
+    fileInput.className = 'sfdt-field sfdt-auto';
     fileRow.appendChild(fileLabel);
     fileRow.appendChild(fileInput);
     deployForm.appendChild(fileRow);
@@ -1437,12 +1460,12 @@ export function createMetadataRetrieveFeature(options: {
     });
 
     const testLevelRow = doc.createElement('div');
-    testLevelRow.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+    testLevelRow.classList.add('sfdt-stack', 'sfdt-tight');
     const testLevelLabel = doc.createElement('label');
     testLevelLabel.textContent = 'Test Level';
-    testLevelLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    testLevelLabel.className = 'sfdt-label';
     const testLevelSelect = doc.createElement('select');
-    testLevelSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    testLevelSelect.className = 'sfdt-field sfdt-auto';
     ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg'].forEach(v => {
       const opt = doc.createElement('option');
       opt.value = v;
@@ -1458,11 +1481,11 @@ export function createMetadataRetrieveFeature(options: {
     runTestsRow.style.cssText = 'display: none; flex-direction: column; gap: 4px;';
     const runTestsLabel = doc.createElement('label');
     runTestsLabel.textContent = 'Specified Tests (comma-separated class names)';
-    runTestsLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    runTestsLabel.className = 'sfdt-label';
     const runTestsInput = doc.createElement('input');
     runTestsInput.type = 'text';
     runTestsInput.placeholder = 'MyTestClass1, MyTestClass2';
-    runTestsInput.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    runTestsInput.className = 'sfdt-field sfdt-auto';
     runTestsInput.addEventListener('input', () => {
       deployOptions.runTests = runTestsInput.value;
     });
@@ -1477,7 +1500,8 @@ export function createMetadataRetrieveFeature(options: {
 
     const deployBtn = doc.createElement('button');
     deployBtn.textContent = 'Deploy ZIP';
-    deployBtn.style.cssText = 'padding: 8px 16px; background: var(--sfdt-color-success); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; align-self: flex-start;';
+    deployBtn.className = 'sfdt-btn sfdt-primary';
+    deployBtn.classList.add('sfdt-selfstart');
     deployBtn.addEventListener('click', () => {
       if (!fileInput.files?.length) {
         showToast('Please select a metadata ZIP file first.', { doc, kind: 'warning' });
@@ -1496,49 +1520,63 @@ export function createMetadataRetrieveFeature(options: {
     deployForm.appendChild(deployBtn);
 
     // Logs Container (Shared bottom panel)
+    // Execution log — a fixed-height bottom pane, like a terminal drawer. The
+    // header is a real toolbar so its Clear action matches every other toolbar
+    // action in the product.
     const logsWrap = doc.createElement('div');
-    logsWrap.style.cssText = 'border-top: 1px solid var(--sfdt-color-border); height: 140px; padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; background: var(--sfdt-color-surface-alt);';
+    logsWrap.className = 'sfdt-stack sfdt-tight sfdt-drawer';
+    logsWrap.style.height = '150px';
     body.appendChild(logsWrap);
 
-    const logsLabel = doc.createElement('div');
-    logsLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak); display: flex; justify-content: space-between;';
+    const logsLabel = toolbar(doc);
     logsLabel.textContent = 'Execution Log';
     const clearLogsBtn = doc.createElement('button');
     clearLogsBtn.textContent = 'Clear Logs';
-    clearLogsBtn.style.cssText = 'background: none; border: 0; color: var(--sfdt-color-brand-text); font-size: 11px; cursor: pointer; padding: 0;';
+    clearLogsBtn.className = 'sfdt-btn sfdt-ghost sfdt-sm sfdt-toolbar-end';
     clearLogsBtn.addEventListener('click', clearLogs);
     logsLabel.appendChild(clearLogsBtn);
     logsWrap.appendChild(logsLabel);
 
     logsContainer = doc.createElement('div');
-    logsContainer.style.cssText = 'flex: 1; overflow-y: auto; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 6px;';
+    logsContainer.className = 'sfdt-console sfdt-scroll';
+    logsContainer.style.maxHeight = 'none';
     logsWrap.appendChild(logsContainer);
 
+    // Status bar: which data path is live, and against which API. The bridge
+    // line used to be a loose row under the tabs, where it read as content
+    // rather than as chrome.
+    const statusBar = toolbar(doc, true);
+    const bridgeLine = doc.createElement('span');
+    bridgeLine.className = 'sfdt-muted';
+    bridgeLine.textContent = 'Checking for a connected sfdt bridge...';
+    bridgeStatusEl = bridgeLine;
+    const apiLine = doc.createElement('span');
+    apiLine.className = 'sfdt-muted sfdt-toolbar-end';
+    apiLine.textContent = `Salesforce API ${SF_API_VERSION}`;
+    statusBar.append(bridgeLine, apiLine);
+    body.appendChild(statusBar);
+
     // Tab Event listeners
+    // The tab pair is a '.sfdt-nav-item' group; 'aria-current' is both the
+    // accessible state and the style hook, so switching tabs is one attribute
+    // each rather than six colour writes.
     rTab.addEventListener('click', () => {
-      rTab.style.background = 'var(--sfdt-color-surface)';
-      rTab.style.borderBottom = '2px solid var(--sfdt-color-brand)';
-      rTab.style.color = 'var(--sfdt-color-text)';
-      dTab.style.background = 'none';
-      dTab.style.borderBottom = '0';
-      dTab.style.color = 'var(--sfdt-color-text-weak)';
+      rTab.setAttribute('aria-current', 'page');
+      dTab.removeAttribute('aria-current');
       rPanel.style.display = 'flex';
       dPanel.style.display = 'none';
     });
 
     dTab.addEventListener('click', () => {
-      dTab.style.background = 'var(--sfdt-color-surface)';
-      dTab.style.borderBottom = '2px solid var(--sfdt-color-brand)';
-      dTab.style.color = 'var(--sfdt-color-text)';
-      rTab.style.background = 'none';
-      rTab.style.borderBottom = '0';
-      rTab.style.color = 'var(--sfdt-color-text-weak)';
+      dTab.setAttribute('aria-current', 'page');
+      rTab.removeAttribute('aria-current');
       dPanel.style.display = 'flex';
       rPanel.style.display = 'none';
     });
 
     view = presentView({
-      title: '📦 Metadata Retrieve & Deploy',
+      title: 'Metadata Retrieve & Deploy',
+      iconName: 'metadata-retrieve',
       body,
       doc,
       width: '960px',

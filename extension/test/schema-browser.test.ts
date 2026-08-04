@@ -63,7 +63,12 @@ function makeApi(fixtures: Fixtures): SalesforceApiClient {
   } as unknown as SalesforceApiClient;
 }
 
-function fakeWin(href = SETUP_URL, writeText = vi.fn(async () => {})): Window {
+// `writeText` takes its argument so a test can assert on what was COPIED, not
+// merely that copying happened — which is the whole point for the export menu.
+function fakeWin(
+  href = SETUP_URL,
+  writeText: (text: string) => Promise<void> = vi.fn(async () => {}),
+): Window {
   return {
     location: { href },
     navigator: { clipboard: { writeText } },
@@ -241,7 +246,7 @@ describe('schema-browser — field table (AC-2)', () => {
   });
 
   it('copies the field API name via navigator.clipboard', async () => {
-    const writeText = vi.fn(async () => {});
+    const writeText = vi.fn(async (_text: string) => {});
     const api = makeApi(fixtures);
     const feature = createSchemaBrowserFeature({ win: fakeWin(SETUP_URL, writeText), api });
     await feature.openFor('Account');
@@ -387,7 +392,7 @@ describe('schema-browser — SOQL insert + export selection (P2-1 PR-3)', () => 
     industry.checked = false;
     industry.dispatchEvent(new Event('change'));
 
-    byText('📋 Export selected for prompt')!.click();
+    byText('Export selected for prompt')!.click();
     expect(exportForPrompt).toHaveBeenCalledWith('Account', ['Name', 'Phone']);
   });
 
@@ -404,7 +409,7 @@ describe('schema-browser — SOQL insert + export selection (P2-1 PR-3)', () => 
     expect(boxes.some((b) => b.checked)).toBe(false);
 
     // Exporting with nothing selected warns and does not call the hook.
-    byText('📋 Export selected for prompt')!.click();
+    byText('Export selected for prompt')!.click();
     expect(exportForPrompt).not.toHaveBeenCalled();
 
     byText('Select all')!.click();
@@ -412,7 +417,7 @@ describe('schema-browser — SOQL insert + export selection (P2-1 PR-3)', () => 
     boxes = Array.from(document.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
     expect(boxes.every((b) => b.checked)).toBe(true);
 
-    byText('📋 Export selected for prompt')!.click();
+    byText('Export selected for prompt')!.click();
     expect(exportForPrompt).toHaveBeenCalledWith('Account', ['Name', 'Industry', 'Phone']);
   });
 
@@ -422,6 +427,393 @@ describe('schema-browser — SOQL insert + export selection (P2-1 PR-3)', () => 
     await feature.openFor('Account');
     await tick();
     expect(document.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
-    expect(byText('📋 Export selected for prompt')).toBeUndefined();
+    expect(byText('Export selected for prompt')).toBeUndefined();
+  });
+});
+
+describe('schema-browser — field table columns and rail', () => {
+  const RICH: Fixtures = {
+    sobjects: [{ name: 'Account', label: 'Account', keyPrefix: '001' }],
+    describes: {
+      Account: {
+        name: 'Account',
+        label: 'Account',
+        labelPlural: 'Accounts',
+        keyPrefix: '001',
+        custom: false,
+        searchable: true,
+        queryable: true,
+        createable: true,
+        updateable: true,
+        deletable: false,
+        fields: [
+          field({ name: 'Name', label: 'Account Name', type: 'string', length: 255, nillable: false }),
+          {
+            ...field({ name: 'AccountNumber', label: 'Account Number', type: 'string', length: 40 }),
+            unique: true,
+            externalId: true,
+            inlineHelpText: 'Unique ID used for financial tracking.',
+          },
+          field({
+            name: 'ParentId',
+            label: 'Parent Account',
+            type: 'reference',
+            referenceTo: ['Account'],
+          }),
+          field({ name: 'OwnerId', label: 'Owner', type: 'reference', referenceTo: ['User'] }),
+        ],
+        childRelationships: [
+          { childSObject: 'Contact', field: 'AccountId', relationshipName: 'Contacts' },
+        ],
+      },
+    },
+  };
+
+  function makeRichApi(over: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
+    const base = makeApi(RICH) as unknown as Record<string, unknown>;
+    const apiGet = base.apiGet as (e: string) => Promise<unknown>;
+    return {
+      ...base,
+      apiGet: vi.fn(async (endpoint: string) => {
+        if (endpoint.includes('/limits/recordCount')) {
+          return { sObjects: [{ name: 'Account', count: 1402892 }] };
+        }
+        return apiGet(endpoint);
+      }),
+      ...over,
+    } as unknown as SalesforceApiClient;
+  }
+
+  function cellsOf(rowText: string): string[] {
+    const tr = Array.from(document.querySelectorAll('tbody tr')).find((r) =>
+      r.textContent?.includes(rowText),
+    )!;
+    return Array.from(tr.querySelectorAll('td')).map((td) => td.textContent ?? '');
+  }
+
+  it('renders the type with its precision, and length beside it', async () => {
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api: makeRichApi() });
+    await feature.openFor('Account');
+    await tick();
+    expect(cellsOf('AccountNumber')).toContain('Text(40)');
+    expect(cellsOf('ParentId')).toContain('Lookup');
+  });
+
+  it('marks Req/Unq/Ext with a labelled glyph, and leaves a false flag empty', async () => {
+    // The glyph is aria-hidden, so the meaning has to ride on hidden text —
+    // otherwise a screen reader gets an empty cell either way.
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api: makeRichApi() });
+    await feature.openFor('Account');
+    await tick();
+
+    const nameRow = Array.from(document.querySelectorAll('tbody tr')).find((r) =>
+      r.textContent?.includes('Account Name'),
+    )!;
+    expect(nameRow.querySelector('.sfdt-sr')?.textContent).toBe('Required');
+
+    const numberRow = Array.from(document.querySelectorAll('tbody tr')).find((r) =>
+      r.textContent?.includes('AccountNumber'),
+    )!;
+    const flags = Array.from(numberRow.querySelectorAll('.sfdt-sr')).map((s) => s.textContent);
+    expect(flags).toEqual(['Unique', 'External Id']);
+
+    // ParentId has none of the three — three empty cells, no stray glyphs.
+    const parentRow = Array.from(document.querySelectorAll('tbody tr')).find((r) =>
+      r.textContent?.includes('ParentId'),
+    )!;
+    expect(parentRow.querySelectorAll('.sfdt-sr')).toHaveLength(0);
+  });
+
+  it('shows the admin help text', async () => {
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api: makeRichApi() });
+    await feature.openFor('Account');
+    await tick();
+    expect(cellsOf('AccountNumber')).toContain('Unique ID used for financial tracking.');
+  });
+
+  it('fills the object-metadata rail from the describe already fetched', async () => {
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api: makeRichApi() });
+    await feature.openFor('Account');
+    await tick();
+    const rail = document.querySelector('.sfdt-split-end')!;
+    expect(rail.textContent).toContain('Key prefix');
+    expect(rail.textContent).toContain('001');
+    expect(rail.textContent).toContain('Object metadata');
+  });
+
+  it('states the custom-field ceiling is an assumption, not measured data', async () => {
+    // The mockup's "88th percentile" had nothing behind it. This replaces it
+    // with a real count against an edition constant — and says which constant.
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api: makeRichApi() });
+    await feature.openFor('Account');
+    await tick();
+    const rail = document.querySelector('.sfdt-split-end')!;
+    expect(rail.textContent).toContain('Custom field budget');
+    expect(rail.textContent).toContain('Professional orgs cap at 100');
+  });
+
+  it('says why a standard object has no audit trail instead of showing dashes', async () => {
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api: makeRichApi() });
+    await feature.openFor('Account');
+    await tick();
+    const rail = document.querySelector('.sfdt-split-end')!;
+    expect(rail.textContent).toContain('Standard objects carry no audit trail');
+  });
+
+  it('loads the record count and marks it approximate', async () => {
+    const api = makeRichApi();
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api });
+    await feature.openFor('Account');
+    await tick();
+    await tick();
+    const rail = document.querySelector('.sfdt-split-end')!;
+    expect(rail.textContent).toContain('1,402,892');
+    expect(rail.textContent).toContain('Approximate');
+  });
+
+  it('keeps the rest of the rail when the record count fails', async () => {
+    // The usual cause is no "View All Data", which the user cannot fix here —
+    // so it degrades one section rather than the view.
+    const api = makeRichApi({
+      apiGet: vi.fn(async (endpoint: string) => {
+        if (endpoint.includes('/limits/recordCount')) throw new Error('INSUFFICIENT_ACCESS');
+        if (endpoint.endsWith('/sobjects/')) return { sobjects: RICH.sobjects };
+        const m = /\/sobjects\/([^/]+)\/describe/.exec(endpoint);
+        return m ? RICH.describes[m[1]!] : {};
+      }) as unknown as SalesforceApiClient['apiGet'],
+    });
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api });
+    await feature.openFor('Account');
+    await tick();
+    await tick();
+    const rail = document.querySelector('.sfdt-split-end')!;
+    expect(rail.textContent).toContain('INSUFFICIENT_ACCESS');
+    expect(rail.textContent).toContain('Key prefix');
+  });
+
+  it('draws the relationship graph and lets a node navigate', async () => {
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api: makeRichApi() });
+    await feature.openFor('Account');
+    await tick();
+    // Scope by the node role, not by 'svg' — every rail section heading also
+    // renders an icon <svg>, so a bare selector picks one of those.
+    const nodes = Array.from(document.querySelectorAll('.sfdt-split-end g[role="button"]'));
+    // Contact (child) + Account (root) + User (lookup target). The Account
+    // self-reference on ParentId is deliberately not a node.
+    expect(nodes).toHaveLength(3);
+
+    const userNode = nodes.find((g) => g.getAttribute('aria-label') === 'User')!;
+    userNode.dispatchEvent(new MouseEvent('click'));
+    await tick();
+    expect(document.querySelector('h2')?.textContent).toBe('User');
+  });
+});
+
+describe('schema-browser — Generate SOQL', () => {
+  const SIMPLE: Fixtures = {
+    sobjects: [{ name: 'Account', label: 'Account', keyPrefix: '001' }],
+    describes: {
+      Account: {
+        name: 'Account',
+        label: 'Account',
+        fields: [
+          field({ name: 'Name', label: 'Name', type: 'string' }),
+          field({ name: 'Industry', label: 'Industry', type: 'picklist' }),
+          field({ name: 'Phone', label: 'Phone', type: 'phone' }),
+        ],
+        childRelationships: [],
+      },
+    },
+  };
+
+  const byText = (text: string) =>
+    Array.from(document.querySelectorAll('button')).find((b) => b.textContent === text) as
+      | HTMLButtonElement
+      | undefined;
+
+  it('builds a query from the checked fields, in describe order', async () => {
+    // Describe order, not click order: the query should read like the table.
+    const runQueryInRunner = vi.fn();
+    const feature = createSchemaBrowserFeature({
+      win: fakeWin(),
+      api: makeApi(SIMPLE),
+      runQueryInRunner,
+    });
+    await feature.openFor('Account');
+    await tick();
+
+    const boxes = Array.from(document.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+    const name = boxes.find((b) => b.getAttribute('aria-label')?.includes('Name'))!;
+    name.checked = false;
+    name.dispatchEvent(new Event('change'));
+
+    byText('Generate SOQL')!.click();
+    expect(runQueryInRunner).toHaveBeenCalledWith('SELECT Industry, Phone\nFROM Account\nLIMIT 200');
+  });
+
+  it('refuses to build an empty query', async () => {
+    const runQueryInRunner = vi.fn();
+    const feature = createSchemaBrowserFeature({
+      win: fakeWin(),
+      api: makeApi(SIMPLE),
+      runQueryInRunner,
+    });
+    await feature.openFor('Account');
+    await tick();
+    byText('Clear all')!.click();
+    await tick();
+    byText('Generate SOQL')!.click();
+    expect(runQueryInRunner).not.toHaveBeenCalled();
+  });
+
+  it('is hidden when no runner hook is wired', async () => {
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api: makeApi(SIMPLE) });
+    await feature.openFor('Account');
+    await tick();
+    expect(byText('Generate SOQL')).toBeUndefined();
+  });
+
+  it('offers selection when only the runner hook is wired, with no export button', async () => {
+    // Selection feeds BOTH features now, so it must not depend on the export
+    // hook the way it did when export was its only consumer.
+    const feature = createSchemaBrowserFeature({
+      win: fakeWin(),
+      api: makeApi(SIMPLE),
+      runQueryInRunner: vi.fn(),
+    });
+    await feature.openFor('Account');
+    await tick();
+    expect(document.querySelectorAll('input[type="checkbox"]').length).toBe(3);
+    expect(byText('Export selected for prompt')).toBeUndefined();
+  });
+});
+
+describe('schema-browser — export menu and graph re-centring', () => {
+  const TWO: Fixtures = {
+    sobjects: [
+      { name: 'Account', label: 'Account', keyPrefix: '001' },
+      { name: 'User', label: 'User', keyPrefix: '005' },
+    ],
+    describes: {
+      Account: {
+        name: 'Account',
+        label: 'Account',
+        fields: [
+          field({ name: 'Name', label: 'Account Name', type: 'string', length: 255, nillable: false }),
+          field({ name: 'OwnerId', label: 'Owner', type: 'reference', referenceTo: ['User'] }),
+        ],
+        childRelationships: [{ childSObject: 'Contact', field: 'AccountId', relationshipName: 'Contacts' }],
+      },
+      User: {
+        name: 'User',
+        label: 'User',
+        fields: [field({ name: 'Username', label: 'Username', type: 'string', length: 80 })],
+        childRelationships: [{ childSObject: 'Account', field: 'OwnerId', relationshipName: 'Accounts' }],
+      },
+    },
+  };
+
+  const byText = (text: string) =>
+    Array.from(document.querySelectorAll('button')).find((b) => b.textContent === text) as
+      | HTMLButtonElement
+      | undefined;
+
+  const menuItem = (fragment: string) =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-menu-surface button')).find((b) =>
+      b.textContent?.includes(fragment),
+    );
+
+  it('offers formats instead of performing one unadvertised action', async () => {
+    // The button used to copy AI markdown silently. A noun that performs one
+    // hidden verb is the complaint this fixes.
+    const feature = createSchemaBrowserFeature({
+      win: fakeWin(),
+      api: makeApi(TWO),
+      exportForPrompt: vi.fn(),
+    });
+    await feature.openFor('Account');
+    await tick();
+
+    byText('Export schema')!.click();
+    await tick();
+    for (const label of ['Copy for AI', 'Copy as JSON', 'Copy as CSV', 'Download JSON', 'Download CSV']) {
+      expect(menuItem(label), label).toBeTruthy();
+    }
+  });
+
+  it('copies CSV of the SELECTED fields, in describe order', async () => {
+    const writeText = vi.fn(async (_text: string) => {});
+    const feature = createSchemaBrowserFeature({
+      win: fakeWin(SETUP_URL, writeText),
+      api: makeApi(TWO),
+      exportForPrompt: vi.fn(),
+    });
+    await feature.openFor('Account');
+    await tick();
+
+    const boxes = Array.from(document.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+    const owner = boxes.find((b) => b.getAttribute('aria-label')?.includes('OwnerId'))!;
+    owner.checked = false;
+    owner.dispatchEvent(new Event('change'));
+
+    byText('Export schema')!.click();
+    await tick();
+    menuItem('Copy as CSV')!.click();
+    await tick();
+
+    const csv = writeText.mock.calls[0]![0];
+    expect(csv).toContain('Label,API Name,Type');
+    expect(csv).toContain('Account Name');
+    // The unselected field is gone; the header row is not mistaken for data.
+    expect(csv).not.toContain('OwnerId');
+    expect(csv.trim().split('\n')).toHaveLength(2);
+  });
+
+  it('re-centres the expanded graph on the clicked node', async () => {
+    // The regression: the modal rendered once from a captured viewmodel, so a
+    // node click updated the list BEHIND it while the graph kept showing the
+    // previous object — the picture and the thing it described diverged.
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api: makeApi(TWO) });
+    await feature.openFor('Account');
+    await tick();
+
+    byText('Expand graph')!.click();
+    await tick();
+
+    const overlays = () => document.querySelectorAll('.sfdt-view-overlay');
+    expect(overlays()).toHaveLength(2);
+    const modal = overlays()[1]!;
+    expect(modal.querySelector('h2')?.textContent).toBe('Account relationships');
+
+    const userNode = Array.from(modal.querySelectorAll('g[role="button"]')).find(
+      (g) => g.getAttribute('aria-label') === 'User',
+    )!;
+    userNode.dispatchEvent(new MouseEvent('click'));
+    await tick();
+    await tick();
+
+    // The graph itself re-rooted — not just the browser underneath it.
+    expect(modal.querySelector('h2')?.textContent).toBe('User relationships');
+    const labels = Array.from(modal.querySelectorAll('g[role="button"]')).map((g) =>
+      g.getAttribute('aria-label'),
+    );
+    expect(labels).toContain('User');
+    expect(labels).toContain('Account');
+    // …and the browser behind it followed.
+    expect(document.querySelector('h2')?.textContent).toBe('User');
+  });
+
+  it('shows a loading state while the clicked object is still being described', async () => {
+    // The object just clicked is normally NOT in the cache, so the view has to
+    // paint something and repaint when the fetch lands rather than render an
+    // empty box.
+    const feature = createSchemaBrowserFeature({ win: fakeWin(), api: makeApi(TWO) });
+    await feature.openFor('Account');
+    await tick();
+    byText('Expand graph')!.click();
+    await tick();
+    const modal = document.querySelectorAll('.sfdt-view-overlay')[1]!;
+    expect(modal.textContent).toContain('Account relationships');
+    expect(modal.querySelector('g[role="button"]')).not.toBeNull();
   });
 });

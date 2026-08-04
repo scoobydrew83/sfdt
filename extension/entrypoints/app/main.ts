@@ -12,7 +12,11 @@
 // navigation.
 
 import { SFDT_TOKENS_CSS } from '../../lib/tokens.js';
+import { SFDT_COMPONENT_CSS } from '../../lib/ui-styles.js';
 import { watchTheme, OWN_PAGE_COLOR_SCHEME_CSS } from '../../lib/theme.js';
+import { isFeatureEnabled, loadSettings } from '../../lib/settings.js';
+import { loadRecents, pushRecent } from '../../lib/palette-recents.js';
+import { loadActivity, clearActivity } from '../../lib/activity-log.js';
 import { readLastOrg } from '../../features/org-switcher.js';
 import {
   bootHost,
@@ -31,7 +35,9 @@ function reloadWithOrg(host: string): void {
 
 async function main(): Promise<void> {
   const styleTag = document.createElement('style');
-  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${OWN_PAGE_COLOR_SCHEME_CSS}\n${HOST_STYLES}`;
+  // Order matters: tokens define the custom properties the component sheet
+  // consumes, and HOST_STYLES layers this surface's layout on top of both.
+  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${OWN_PAGE_COLOR_SCHEME_CSS}\n${SFDT_COMPONENT_CSS}\n${HOST_STYLES}`;
   document.head.appendChild(styleTag);
   watchTheme(document);
 
@@ -40,9 +46,20 @@ async function main(): Promise<void> {
 
   const org = resolveOrgFromUrl() ?? (await readLastOrg());
   if (org && isAllowedSfHost(org)) {
-    bootHost(root, org, { title: '⚡ SFDT Workspace', onSwitchOrg: reloadWithOrg });
+    // Read settings once up front: bootHost is synchronous, and the kill-switch
+    // gate has to be answerable at the moment a tool is registered.
+    const settings = await loadSettings();
+    bootHost(root, org, {
+      title: 'SFDT Workspace',
+      onSwitchOrg: reloadWithOrg,
+      isEnabled: (id) => isFeatureEnabled(settings, id),
+      loadRecents,
+      onToolOpened: (id) => void pushRecent(id),
+      loadActivity,
+      clearActivity,
+    });
   } else {
-    renderOrgPicker(root, { title: '⚡ SFDT Workspace', onSelect: reloadWithOrg });
+    renderOrgPicker(root, { title: 'SFDT Workspace', onSelect: reloadWithOrg });
   }
 }
 

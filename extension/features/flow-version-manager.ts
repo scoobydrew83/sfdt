@@ -1,5 +1,6 @@
 import type { Feature } from '../lib/feature-registry.js';
 import { CONTEXTS } from '../lib/context-detector.js';
+import { confirmDialog } from '../ui/confirm-dialog.js';
 
 const SELECTORS = {
   versionsTable: 'table.list[id="view:lists:versions"]',
@@ -66,83 +67,23 @@ function injectCheckboxColumn(doc: Document, table: Element): void {
   headerRow.insertBefore(th, firstHeader);
 }
 
+/**
+ * Type-to-confirm gate for the destructive multi-version delete.
+ *
+ * The dialog itself is ui/confirm-dialog.ts. This function survives only to
+ * describe WHAT is being deleted; the chrome, the focus trap, Esc-cancels and
+ * focus restore now come from the shared component — the copy that used to live
+ * here had the typed gate but none of the a11y.
+ */
 async function confirmModal(doc: Document, selected: RowMeta[]): Promise<boolean> {
-  return new Promise((resolve) => {
-    const backdrop = doc.createElement('div');
-    backdrop.className = 'sfdt-version-manager-backdrop';
-    backdrop.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center;';
-
-    const modal = doc.createElement('div');
-    modal.className = 'sfdt-version-manager-modal';
-    modal.setAttribute('role', 'dialog');
-    modal.style.cssText =
-      'background: var(--sfdt-color-surface); border-radius: 4px; padding: 16px; min-width: 360px; max-width: 480px; font-family: system-ui, sans-serif;';
-
-    const title = doc.createElement('h2');
-    title.textContent = 'Delete Selected Versions';
-    title.style.cssText = 'margin: 0 0 8px; font-size: 16px;';
-    modal.appendChild(title);
-
-    const intro = doc.createElement('p');
-    intro.style.cssText = 'margin: 0 0 8px; font-size: 13px;';
-    intro.textContent =
-      'Type DELETE to confirm. Active versions cannot be deleted; interviews in progress may fail.';
-    modal.appendChild(intro);
-
-    const list = doc.createElement('ul');
-    list.style.cssText = 'max-height: 120px; overflow: auto; font-size: 12px; margin: 8px 0;';
-    for (const s of selected) {
-      const li = doc.createElement('li');
-      li.textContent = `${s.versionLabel} — ${s.status}`;
-      list.appendChild(li);
-    }
-    modal.appendChild(list);
-
-    const input = doc.createElement('input');
-    input.type = 'text';
-    input.placeholder = 'DELETE';
-    input.autocomplete = 'off';
-    input.style.cssText = 'width: 100%; padding: 6px; margin: 8px 0;';
-    modal.appendChild(input);
-
-    const footer = doc.createElement('div');
-    footer.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;';
-    const cancel = doc.createElement('button');
-    cancel.type = 'button';
-    cancel.textContent = 'Cancel';
-    cancel.style.cssText = 'padding: 6px 12px;';
-    const confirm = doc.createElement('button');
-    confirm.type = 'button';
-    confirm.textContent = 'Delete Selected Versions';
-    confirm.disabled = true;
-    confirm.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-error); color: var(--sfdt-color-on-accent); border: 0;';
-    footer.appendChild(cancel);
-    footer.appendChild(confirm);
-    modal.appendChild(footer);
-
-    const cleanup = (result: boolean) => {
-      backdrop.remove();
-      resolve(result);
-    };
-    cancel.addEventListener('click', () => cleanup(false));
-    confirm.addEventListener('click', () => {
-      if (!confirm.disabled) cleanup(true);
-    });
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop) cleanup(false);
-    });
-    input.addEventListener('input', () => {
-      confirm.disabled = input.value.trim() !== 'DELETE';
-    });
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') cleanup(false);
-      else if (e.key === 'Enter' && !confirm.disabled) cleanup(true);
-    });
-
-    backdrop.appendChild(modal);
-    doc.body.appendChild(backdrop);
-    setTimeout(() => input.focus(), 0);
+  return confirmDialog({
+    doc,
+    title: 'Delete Selected Versions',
+    message:
+      'Type DELETE to confirm. Active versions cannot be deleted; interviews in progress may fail.',
+    details: selected.map((s) => `${s.versionLabel} — ${s.status}`),
+    confirmLabel: 'Delete Selected Versions',
+    requireTyped: 'DELETE',
   });
 }
 
@@ -244,7 +185,7 @@ export function createFlowVersionManagerFeature(
     btn.value = 'Delete Selected Versions';
     btn.className = `btnDisabled ${DELETE_BTN_CLASS}`;
     btn.disabled = true;
-    btn.style.marginLeft = '4px';
+    btn.classList.add('sfdt-toolbar-end');
     btn.addEventListener('click', () => void handleBulkDelete());
     bar.appendChild(btn);
     toolbarBtn = btn;
@@ -284,7 +225,10 @@ export function createFlowVersionManagerFeature(
         toolbarBtn = null;
       }
       doc.querySelectorAll(`.${TAB_CLASS}`).forEach((el) => el.remove());
-      doc.querySelector('.sfdt-version-manager-backdrop')?.remove();
+      // The confirm dialog is ui/confirm-dialog.ts now, so the stranded-overlay
+      // sweep has to look for ITS class. A teardown still hunting for the old
+      // private one would silently stop cleaning up.
+      doc.querySelectorAll('.sfdt-confirm-overlay').forEach((el) => el.remove());
       selected.clear();
       rowMap.clear();
     },

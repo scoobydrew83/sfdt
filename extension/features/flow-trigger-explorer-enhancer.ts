@@ -16,6 +16,7 @@ import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { button, toolbar } from '../lib/ui-controls.js';
 
 // FlowDefinitionView is a standard, read-only object queryable via the Data API.
 // Only record-triggered flows carry these TriggerType values.
@@ -168,11 +169,11 @@ function renderGroups(doc: Document, results: HTMLElement, groups: ObjectGroup[]
       badge.textContent = flow.timingLabel;
 
       const name = doc.createElement('span');
-      name.style.cssText = 'font-weight: 600; font-size: 12px;';
+      name.className = 'sfdt-subhead';
       name.textContent = flow.label;
 
       const meta = doc.createElement('span');
-      meta.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 11px;';
+      meta.className = 'sfdt-muted';
       meta.textContent = [flow.event, flow.processType].filter(Boolean).join(' · ');
 
       row.append(badge, name, meta);
@@ -229,7 +230,7 @@ export function createFlowTriggerExplorerEnhancerFeature(
       status.textContent = `${total} flow${total === 1 ? '' : 's'} · ${groups.length} object${groups.length === 1 ? '' : 's'}`;
       if (total === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon);';
+        empty.classList.add('sfdt-prose', 'sfdt-muted');
         empty.textContent = 'No active record-triggered flows in this org.';
         results.appendChild(empty);
         return;
@@ -237,8 +238,7 @@ export function createFlowTriggerExplorerEnhancerFeature(
       renderGroups(doc, results, groups, win.location.origin);
     } catch (err) {
       const panel = doc.createElement('div');
-      panel.style.cssText =
-        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
+      panel.classList.add('sfdt-console', 'sfdt-error');
       panel.textContent = err instanceof Error ? err.message : String(err);
       results.appendChild(panel);
       status.textContent = 'Failed';
@@ -249,24 +249,24 @@ export function createFlowTriggerExplorerEnhancerFeature(
     close();
 
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column;';
-
-    const toolbar = doc.createElement('div');
-    toolbar.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 12px;';
+    body.className = 'sfdt-view-body';
+    const bar = toolbar(doc);
     const status = doc.createElement('span');
-    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
-    const refreshBtn = doc.createElement('button');
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.style.cssText =
-      'margin-left: auto; padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
-    toolbar.append(status, refreshBtn);
-    body.appendChild(toolbar);
+    status.className = 'sfdt-muted';
+    const refreshBtn = button({ label: 'Refresh', iconName: 'refresh', small: true, doc });
+    refreshBtn.classList.add('sfdt-toolbar-end');
+    bar.append(status, refreshBtn);
+    body.appendChild(bar);
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
 
     const results = doc.createElement('div');
-    body.appendChild(results);
+    main.appendChild(results);
 
     view = presentView({
-      title: '🧭 Flow Trigger Explorer',
+      title: 'Flow Trigger Explorer',
+      iconName: 'compass',
       body,
       doc,
       width: '820px',

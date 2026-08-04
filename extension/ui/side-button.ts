@@ -7,10 +7,20 @@
 // a Salesforce page — ui/shadow-host.ts + ui/content-root.ts), else document.body.
 
 import { getContentRoot } from './content-root.js';
+import { icon } from '../lib/icons.js';
 
 export interface MenuItem {
   featureId: string;
-  icon: string;
+  /**
+   * Name of a glyph in lib/icons.ts — NOT an emoji, and not raw markup.
+   *
+   * Renamed from `icon` when the injected UI moved to the line-icon set: the
+   * field's meaning changed from "character to print" to "glyph to look up", and
+   * a rename makes a stale caller a compile error instead of a silent fallback
+   * dot. Unknown names resolve to a neutral dot; nothing here is ever parsed as
+   * HTML, so a hostile value is inert either way.
+   */
+  iconName: string;
   label: string;
   action?: 'activate' | 'refresh';
 }
@@ -44,18 +54,25 @@ const BUTTON_STYLE = [
   'transform: translateY(-50%)',
   'width: 32px',
   'height: 48px',
+  // A native <button> brings a UA border and its own font; strip both so the
+  // launcher looks identical to the <div> it replaced.
+  'border: 0',
+  'padding: 0',
+  'font: inherit',
   'background: var(--sfdt-color-brand)',
   'color: var(--sfdt-color-on-accent)',
-  'border-radius: 4px 0 0 4px',
+  'border-radius: var(--sfdt-radius-md) 0 0 var(--sfdt-radius-md)',
   'display: flex',
   'align-items: center',
   'justify-content: center',
   'cursor: pointer',
   'z-index: 100000',
-  'box-shadow: 0 0 6px rgba(0,0,0,0.2)',
+  'box-shadow: var(--sfdt-shadow-2)',
   'user-select: none',
 ].join('; ');
 
+// Matches the toolbar popup: header, scrollable command list, pinned footer.
+// Width tracks the popup's 320px so the two launchers feel like one thing.
 const MENU_STYLE = [
   'position: fixed',
   'top: 50%',
@@ -63,13 +80,13 @@ const MENU_STYLE = [
   'transform: translateY(-50%)',
   'background: var(--sfdt-color-surface)',
   'border: 1px solid var(--sfdt-color-border)',
-  'border-radius: 4px',
-  'box-shadow: 0 2px 8px rgba(0,0,0,0.15)',
-  'min-width: 240px',
-  'max-width: 320px',
+  'border-radius: var(--sfdt-radius-xl)',
+  'box-shadow: var(--sfdt-shadow-2)',
+  'width: 320px',
+  'max-width: calc(100vw - 56px)',
+  'overflow: hidden',
   'z-index: 100000',
-  'font-family: system-ui, -apple-system, sans-serif',
-  'font-size: 13px',
+  'font: var(--sfdt-type-body-md)',
   'display: none',
 ].join('; ');
 
@@ -117,45 +134,77 @@ export function mountSideButton(opts: {
   mount.querySelector(`#${BUTTON_ID}`)?.remove();
   mount.querySelector(`#${MENU_ID}`)?.remove();
 
-  const button = styled(doc, 'div', BUTTON_STYLE, { id: BUTTON_ID, title: 'SFDT for Salesforce' });
+  // A real <button>, not a <div> with a click handler: the launcher for every
+  // on-page tool was previously unreachable by keyboard, which made the whole
+  // injected menu mouse-only.
+  const button = styled(doc, 'button', BUTTON_STYLE, {
+    id: BUTTON_ID,
+    type: 'button',
+    title: 'SFDT for Salesforce',
+    'aria-label': 'Open SFDT menu',
+    'aria-haspopup': 'menu',
+    'aria-expanded': 'false',
+    'aria-controls': MENU_ID,
+  });
   button.className = 'sfdt-side-button';
   const buttonIcon = doc.createElement('span');
-  buttonIcon.className = 'sfdt-side-button-icon';
-  buttonIcon.textContent = '⚡';
+  buttonIcon.className = 'sfdt-side-button-icon sfdt-glyph';
+  buttonIcon.setAttribute('aria-hidden', 'true');
+  buttonIcon.appendChild(icon('bolt', 20, doc));
   button.appendChild(buttonIcon);
 
   const menu = styled(doc, 'div', MENU_STYLE, { id: MENU_ID });
   menu.className = `sfdt-menu ${MENU_HIDDEN_CLASS}`;
 
   const header = doc.createElement('div');
-  header.className = 'sfdt-menu-header';
-  header.style.cssText =
-    'padding: 10px 14px; border-bottom: 1px solid var(--sfdt-color-border); display: flex; justify-content: space-between; align-items: center;';
+  // Shared with the toolbar popup (lib/ui-styles.ts). This row's padding,
+  // border and gap were previously an inline cssText string here and a
+  // byte-identical rule in the popup's stylesheet.
+  header.className = 'sfdt-menu-header sfdt-panel-head';
+  const headerIcon = doc.createElement('span');
+  headerIcon.className = 'sfdt-glyph';
+  headerIcon.setAttribute('aria-hidden', 'true');
+  headerIcon.appendChild(icon('bolt', 20, doc));
   const headerTitle = doc.createElement('span');
-  headerTitle.className = 'sfdt-menu-title';
-  headerTitle.style.fontWeight = '600';
+  headerTitle.className = 'sfdt-menu-title sfdt-panel-title';
   headerTitle.textContent = 'SFDT for Salesforce';
-  const headerClose = doc.createElement('span');
-  headerClose.className = 'sfdt-menu-close';
-  headerClose.style.cssText = 'cursor: pointer; font-size: 18px; color: var(--sfdt-color-text-icon);';
-  headerClose.textContent = '×';
+  // A real <button>, not a styled <span>: the close affordance has to be
+  // reachable and activatable from the keyboard (CONVENTIONS.md a11y checklist).
+  const headerClose = doc.createElement('button');
+  headerClose.type = 'button';
+  headerClose.className = 'sfdt-menu-close sfdt-btn sfdt-ghost';
+  headerClose.setAttribute('aria-label', 'Close menu');
+  headerClose.appendChild(icon('close', 18, doc));
+  header.appendChild(headerIcon);
   header.appendChild(headerTitle);
   header.appendChild(headerClose);
 
   const content = doc.createElement('div');
   content.id = 'sfdt-menu-content';
   content.className = 'sfdt-menu-content';
-  content.style.cssText = 'max-height: 60vh; overflow-y: auto;';
+  content.style.cssText = 'max-height: 60vh; overflow-y: auto; padding: var(--sfdt-space-2) 0;';
 
   const footer = doc.createElement('div');
   footer.className = 'sfdt-menu-footer';
-  footer.style.cssText = 'padding: 8px 14px; border-top: 1px solid var(--sfdt-color-border);';
-  const settingsLink = doc.createElement('a');
-  settingsLink.href = '#';
+  footer.style.cssText =
+    'border-top: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface-alt);';
+  // Was an <a href="#"> whose only job was to be clicked — a button that
+  // performs an in-page action, spelled as a link, with a fake target.
+  const settingsLink = doc.createElement('button');
+  settingsLink.type = 'button';
   settingsLink.id = 'sfdt-settings-link';
-  settingsLink.className = 'sfdt-menu-settings-link';
-  settingsLink.style.cssText = 'color: var(--sfdt-color-brand-text); text-decoration: none; font-size: 12px;';
-  settingsLink.textContent = '⚙ Settings';
+  settingsLink.className = 'sfdt-menu-settings-link sfdt-nav-item';
+  settingsLink.style.cssText =
+    'padding-left: var(--sfdt-space-4); padding-right: var(--sfdt-space-4); color: var(--sfdt-color-brand-text); font-weight: 600;';
+  const settingsIcon = doc.createElement('span');
+  settingsIcon.className = 'sfdt-glyph';
+  settingsIcon.setAttribute('aria-hidden', 'true');
+  settingsIcon.appendChild(icon('settings', 18, doc));
+  const settingsLabel = doc.createElement('span');
+  settingsLabel.className = 'sfdt-nav-label';
+  settingsLabel.textContent = 'Settings';
+  settingsLink.appendChild(settingsIcon);
+  settingsLink.appendChild(settingsLabel);
   footer.appendChild(settingsLink);
 
   menu.appendChild(header);
@@ -172,19 +221,22 @@ export function mountSideButton(opts: {
     while (content.firstChild) content.removeChild(content.firstChild);
   }
 
-  function buildMenuItemNode(item: MenuItem): HTMLDivElement {
-    const node = doc.createElement('div');
-    node.className = 'sfdt-menu-item';
+  function buildMenuItemNode(item: MenuItem): HTMLButtonElement {
+    // A real <button>: these were <div>s with click handlers, so the menu had no
+    // keyboard path at all — you could open it and then not reach anything in it.
+    const node = doc.createElement('button');
+    node.type = 'button';
+    node.className = 'sfdt-menu-item sfdt-nav-item';
     node.dataset.feature = item.featureId;
     node.dataset.action = item.action ?? 'activate';
     node.style.cssText =
-      'padding: 10px 14px; cursor: pointer; display: flex; align-items: center; gap: 10px;';
+      'padding-left: var(--sfdt-space-4); padding-right: var(--sfdt-space-4);';
     const iconNode = doc.createElement('span');
-    iconNode.className = 'sfdt-menu-item-icon';
-    iconNode.style.fontSize = '16px';
-    iconNode.textContent = item.icon;
+    iconNode.className = 'sfdt-menu-item-icon sfdt-glyph';
+    iconNode.setAttribute('aria-hidden', 'true');
+    iconNode.appendChild(icon(item.iconName, 20, doc));
     const labelNode = doc.createElement('span');
-    labelNode.className = 'sfdt-menu-item-label';
+    labelNode.className = 'sfdt-menu-item-label sfdt-nav-label';
     labelNode.textContent = item.label;
     node.appendChild(iconNode);
     node.appendChild(labelNode);
@@ -199,7 +251,8 @@ export function mountSideButton(opts: {
   function buildEmptyState(): HTMLDivElement {
     const empty = doc.createElement('div');
     empty.className = 'sfdt-menu-empty';
-    empty.style.cssText = 'padding: 16px; text-align: center; color: var(--sfdt-color-text-icon);';
+    empty.style.cssText =
+      'padding: var(--sfdt-space-4); text-align: center; color: var(--sfdt-color-text-weak); font: var(--sfdt-type-body-sm);';
     empty.textContent = 'No tools available for this page.';
     return empty;
   }
@@ -221,6 +274,10 @@ export function mountSideButton(opts: {
     menu.style.display = state ? 'block' : 'none';
     menu.classList.toggle(MENU_HIDDEN_CLASS, !state);
     menu.classList.toggle(MENU_VISIBLE_CLASS, state);
+    button.setAttribute('aria-expanded', String(state));
+    // Move focus into the menu on open, so a keyboard user lands on the first
+    // command instead of having to tab through the whole host page to reach it.
+    if (state) content.querySelector<HTMLElement>('.sfdt-menu-item')?.focus();
   }
 
   button.addEventListener('click', (e) => {
@@ -231,11 +288,20 @@ export function mountSideButton(opts: {
     e.stopPropagation();
     setOpen(false);
   });
-  settingsLink.addEventListener('click', (e) => {
-    e.preventDefault();
+  settingsLink.addEventListener('click', () => {
     opts.handlers.onOpenSettings();
     setOpen(false);
   });
+
+  // Esc closes the menu and returns focus to the launcher — the overlay rule
+  // from CONVENTIONS.md, which this menu previously did not honour.
+  const keyHandler = (e: KeyboardEvent): void => {
+    if (!isOpen || e.key !== 'Escape') return;
+    e.stopPropagation();
+    setOpen(false);
+    button.focus();
+  };
+  doc.addEventListener('keydown', keyHandler);
 
   const docClickHandler = (e: MouseEvent): void => {
     if (!isOpen) return;
@@ -258,6 +324,7 @@ export function mountSideButton(opts: {
       if (destroyed) return;
       destroyed = true;
       doc.removeEventListener('click', docClickHandler);
+      doc.removeEventListener('keydown', keyHandler);
       button.remove();
       menu.remove();
     },

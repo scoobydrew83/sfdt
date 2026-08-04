@@ -14,6 +14,7 @@ import {
   type SavedQuery,
 } from './soql-runner.js';
 import { SOQL_TEMPLATES } from './soql-templates.js';
+import { button } from '../lib/ui-controls.js';
 
 const SAVED_SOQL_SETTINGS_SCHEMA = z.object({
   showHistory: z.boolean().default(true),
@@ -61,9 +62,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
     }) as z.infer<typeof SAVED_SOQL_SETTINGS_SCHEMA>;
 
     const bodyEl = doc.createElement('div');
-    bodyEl.style.cssText =
-      'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px;';
-
+    bodyEl.classList.add('sfdt-view-main');
     view = presentView({
       title: '⭐ Saved SOQL',
       body: bodyEl,
@@ -75,7 +74,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
     function sectionTitle(text: string): HTMLDivElement {
       const t = doc.createElement('div');
       t.textContent = text;
-      t.style.cssText = 'font-weight: 600; font-size: 13px; color: var(--sfdt-color-text-strong);';
+      t.classList.add('sfdt-subhead');
       return t;
     }
 
@@ -102,20 +101,15 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       text.textContent = q;
       text.style.cssText =
         'flex: 1; font-family: ui-monospace, monospace; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
-      const loadBtn = doc.createElement('button');
-      loadBtn.textContent = 'Load';
-      loadBtn.style.cssText =
-        'padding: 4px 10px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 11px;';
+      const loadBtn = button({ label: 'Load', variant: 'primary', small: true, doc });
       loadBtn.addEventListener('click', () => void loadInRunner(q, apiMode, lang));
       row.appendChild(langBadge);
       row.appendChild(badge);
       row.appendChild(text);
       row.appendChild(loadBtn);
       if (onDelete) {
-        const delBtn = doc.createElement('button');
-        delBtn.textContent = '🗑';
-        delBtn.style.cssText =
-          'padding: 4px 8px; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 11px;';
+        // Was a bare '🗑' with no accessible name.
+        const delBtn = button({ iconName: 'trash', ariaLabel: `Delete bookmark ${q}`, variant: 'danger', small: true, doc });
         delBtn.addEventListener('click', onDelete);
         row.appendChild(delBtn);
       }
@@ -124,10 +118,10 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
 
     // --- Saved (bookmarked) queries ---
     const savedSection = doc.createElement('div');
-    savedSection.style.cssText = 'display: flex; flex-direction: column; gap: 6px;';
+    savedSection.classList.add('sfdt-stack', 'sfdt-snug');
     savedSection.appendChild(sectionTitle('Bookmarks'));
     const savedList = doc.createElement('div');
-    savedList.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+    savedList.classList.add('sfdt-stack', 'sfdt-tight');
     savedSection.appendChild(savedList);
     bodyEl.appendChild(savedSection);
 
@@ -136,15 +130,15 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       const saved = await readSavedQueries();
       if (saved.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px;';
-        empty.textContent = 'No bookmarks yet. Save queries from the SOQL Runner (★ Save).';
+        empty.className = 'sfdt-faint';
+        empty.textContent = 'No bookmarks yet. Save queries from the SOQL Runner using Save.';
         savedList.appendChild(empty);
         return;
       }
       for (const item of saved) {
         const nameLabel = doc.createElement('div');
         nameLabel.textContent = item.name;
-        nameLabel.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak); margin-top: 2px;';
+        nameLabel.classList.add('sfdt-muted');
         savedList.appendChild(nameLabel);
         savedList.appendChild(
           queryRow(item.q, item.api, entryLang(item), async () => {
@@ -158,16 +152,16 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
 
     // --- Built-in templates (read-only, no delete affordance) ---
     const tplSection = doc.createElement('div');
-    tplSection.style.cssText = 'display: flex; flex-direction: column; gap: 6px;';
+    tplSection.classList.add('sfdt-stack', 'sfdt-snug');
     tplSection.appendChild(sectionTitle('Templates'));
     const tplHint = doc.createElement('div');
     tplHint.textContent = 'Built-in admin & dev queries — click Load to copy into the runner.';
-    tplHint.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 11px;';
+    tplHint.className = 'sfdt-faint';
     tplSection.appendChild(tplHint);
     const tplList = doc.createElement('div');
     tplList.setAttribute('role', 'list');
     tplList.setAttribute('aria-label', 'Built-in SOQL templates');
-    tplList.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
+    tplList.classList.add('sfdt-stack', 'sfdt-snug');
     tplSection.appendChild(tplList);
     bodyEl.appendChild(tplSection);
 
@@ -180,10 +174,10 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       wrap.style.cssText =
         'display: flex; flex-direction: column; gap: 2px; padding-left: 8px; border-left: 3px solid var(--sfdt-color-brand);';
       const nameRow = doc.createElement('div');
-      nameRow.style.cssText = 'display: flex; gap: 6px; align-items: center;';
+      nameRow.classList.add('sfdt-row');
       const nameLabel = doc.createElement('span');
       nameLabel.textContent = tpl.name;
-      nameLabel.style.cssText = 'font-size: 12px; font-weight: 600; color: var(--sfdt-color-text-strong);';
+      nameLabel.classList.add('sfdt-subhead');
       const tag = doc.createElement('span');
       tag.textContent = 'Built-in';
       tag.style.cssText =
@@ -192,7 +186,7 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
       nameRow.appendChild(tag);
       const desc = doc.createElement('div');
       desc.textContent = tpl.description;
-      desc.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak);';
+      desc.className = 'sfdt-muted';
       wrap.appendChild(nameRow);
       wrap.appendChild(desc);
       wrap.appendChild(queryRow(tpl.q, tpl.api, entryLang(tpl)));
@@ -202,17 +196,17 @@ export function createSavedSoqlFeature(options: SavedSoqlOptions = {}): Feature 
     // --- Recent history ---
     if (config.showHistory) {
       const histSection = doc.createElement('div');
-      histSection.style.cssText = 'display: flex; flex-direction: column; gap: 6px;';
+      histSection.classList.add('sfdt-stack', 'sfdt-snug');
       histSection.appendChild(sectionTitle('Recent'));
       const histList = doc.createElement('div');
-      histList.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+      histList.classList.add('sfdt-stack', 'sfdt-tight');
       histSection.appendChild(histList);
       bodyEl.appendChild(histSection);
 
       const history = await readSoqlHistory();
       if (history.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px;';
+        empty.className = 'sfdt-faint';
         empty.textContent = 'No recent queries.';
         histList.appendChild(empty);
       } else {

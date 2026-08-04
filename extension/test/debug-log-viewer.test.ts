@@ -150,9 +150,9 @@ describe('debug-log-viewer — log table', () => {
     await feature.onActivate?.();
     await flush();
     // The clickable row is inside the table; click the one containing the operation.
-    const rows = Array.from(document.querySelectorAll<HTMLElement>('.sfdt-view-overlay div')).filter(
-      (d) => d.textContent?.includes('/apex/run') && d.style.cursor === 'pointer',
-    );
+    const rows = Array.from(
+      document.querySelectorAll<HTMLElement>('.sfdt-view-overlay tbody tr'),
+    ).filter((tr) => tr.textContent?.includes('/apex/run'));
     expect(rows.length).toBeGreaterThan(0);
     rows[0]!.click();
     await flush();
@@ -171,9 +171,7 @@ describe('debug-log-viewer — log table', () => {
     const feature = createDebugLogViewerFeature({ api });
     await feature.onActivate?.();
     await flush();
-    const row = Array.from(document.querySelectorAll<HTMLElement>('.sfdt-view-overlay div')).find(
-      (d) => d.style.cursor === 'pointer',
-    )!;
+    const row = document.querySelector<HTMLElement>('.sfdt-view-overlay tbody tr')!;
     row.click();
     await flush();
     expect(document.querySelector('.sfdt-view-overlay pre')?.textContent).toBe('body gone');
@@ -186,7 +184,7 @@ describe('debug-log-viewer — log table', () => {
     await feature.onActivate?.();
     await flush();
     expect(toolingQuery).toHaveBeenCalledTimes(1);
-    const refresh = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '↻ Refresh')!;
+    const refresh = document.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!;
     refresh.click();
     await flush();
     expect(toolingQuery).toHaveBeenCalledTimes(2);
@@ -393,5 +391,153 @@ describe('debug-log-viewer — bulk delete', () => {
     expect(query).toHaveBeenCalledWith('SELECT Id FROM ApexLog');
     expect(document.querySelector('.sfdt-confirm-overlay')).toBeNull();
     expect(apiRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('debug-log-viewer — filter, selection and limits', () => {
+  beforeEach(() => {
+    clearBody();
+    setSetupUrl();
+  });
+
+  function rows(): HTMLTableRowElement[] {
+    return Array.from(document.querySelectorAll('.sfdt-view-overlay tbody tr'));
+  }
+
+  function filterInput(): HTMLInputElement {
+    return document.querySelector<HTMLInputElement>('input[aria-label="Filter debug logs"]')!;
+  }
+
+  function threeLogs(): SalesforceApiClient {
+    return fakeApi({
+      toolingQuery: vi.fn(async () => ({
+        records: [
+          logRow(),
+          logRow({ Id: '07L2', Operation: '/apex/two', LogUser: { Name: 'Grace Hopper' } }),
+          logRow({ Id: '07L3', Operation: 'BatchApex', Status: 'Skipped' }),
+        ],
+        size: 3,
+        done: true,
+      })) as unknown as SalesforceApiClient['toolingQuery'],
+    });
+  }
+
+  it('filters the loaded page in memory, without re-querying', async () => {
+    // A Tooling round-trip per keystroke would be the obvious wrong shape here.
+    const api = threeLogs();
+    const feature = createDebugLogViewerFeature({ api });
+    await feature.onActivate?.();
+    await flush();
+    expect(rows()).toHaveLength(3);
+
+    filterInput().value = 'grace';
+    filterInput().dispatchEvent(new Event('input'));
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]?.textContent).toContain('/apex/two');
+    expect(api.toolingQuery).toHaveBeenCalledTimes(1);
+
+    // The count reports both numbers while a filter is narrowing the view.
+    expect(document.querySelector('.sfdt-view-overlay')?.textContent).toContain('1 of 3 logs');
+
+    filterInput().value = '';
+    filterInput().dispatchEvent(new Event('input'));
+    expect(rows()).toHaveLength(3);
+  });
+
+  it('says a filter matched nothing, distinctly from having no logs at all', async () => {
+    const feature = createDebugLogViewerFeature({ api: threeLogs() });
+    await feature.onActivate?.();
+    await flush();
+    filterInput().value = 'zzzz';
+    filterInput().dispatchEvent(new Event('input'));
+    const text = document.querySelector('.sfdt-view-overlay')?.textContent ?? '';
+    expect(text).toContain('No logs match "zzzz"');
+    expect(text).not.toContain('Enable a trace flag');
+  });
+
+  it('marks the row whose log is showing, and only that row', async () => {
+    const api = fakeApi({
+      toolingQuery: vi.fn(async () => ({
+        records: [logRow(), logRow({ Id: '07L2', Operation: '/apex/two' })],
+        size: 2,
+        done: true,
+      })) as unknown as SalesforceApiClient['toolingQuery'],
+      apiGetText: vi.fn(async () => 'EXECUTION_STARTED') as unknown as SalesforceApiClient['apiGetText'],
+    });
+    const feature = createDebugLogViewerFeature({ api });
+    await feature.onActivate?.();
+    await flush();
+
+    rows()[0]!.click();
+    await flush();
+    expect(rows()[0]!.getAttribute('aria-current')).toBe('true');
+    expect(rows()[1]!.getAttribute('aria-current')).toBeNull();
+
+    // Selecting another row moves the marker rather than accumulating one.
+    rows()[1]!.click();
+    await flush();
+    expect(rows()[0]!.getAttribute('aria-current')).toBeNull();
+    expect(rows()[1]!.getAttribute('aria-current')).toBe('true');
+  });
+
+  it('tints the log body by event type', async () => {
+    const api = fakeApi({
+      toolingQuery: vi.fn(async () => ({ records: [logRow()], size: 1, done: true })) as unknown as SalesforceApiClient['toolingQuery'],
+      apiGetText: vi.fn(
+        async () => '19:55:30.0 (1)|EXECUTION_STARTED\n19:55:30.0 (2)|USER_DEBUG|[1]|DEBUG|hi',
+      ) as unknown as SalesforceApiClient['apiGetText'],
+    });
+    const feature = createDebugLogViewerFeature({ api });
+    await feature.onActivate?.();
+    await flush();
+    rows()[0]!.click();
+    await flush();
+    const pane = document.querySelector('.sfdt-view-overlay pre')!;
+    expect(pane.querySelector('.sfdt-log-debug')?.textContent).toContain('hi');
+    expect(pane.querySelector('.sfdt-log-frame')?.textContent).toContain('EXECUTION_STARTED');
+  });
+
+  it('shows governor limits for the selected log, from the same fetch', async () => {
+    const apiGetText = vi.fn(async () =>
+      [
+        '64.0 APEX_CODE,FINEST',
+        '10:00:00.0 (1)|LIMIT_USAGE_FOR_NS|(default)|',
+        '  Number of SOQL queries: 3 out of 100',
+        '  Maximum heap size: 3145728 out of 6291456',
+        '10:00:00.0 (2)|EXECUTION_FINISHED',
+      ].join('\n'),
+    );
+    const api = fakeApi({
+      toolingQuery: vi.fn(async () => ({ records: [logRow()], size: 1, done: true })) as unknown as SalesforceApiClient['toolingQuery'],
+      apiGetText: apiGetText as unknown as SalesforceApiClient['apiGetText'],
+    });
+    const feature = createDebugLogViewerFeature({ api });
+    await feature.onActivate?.();
+    await flush();
+    rows()[0]!.click();
+    await flush();
+
+    const tiles = Array.from(document.querySelectorAll('.sfdt-tiles .sfdt-tile'));
+    expect(tiles.map((t) => t.querySelector('.sfdt-tile-label')?.textContent)).toEqual([
+      'Heap',
+      'SOQL',
+    ]);
+    expect(tiles[0]?.textContent).toContain('3.0 MB');
+    // The body was fetched once — the limits ride on the pane's fetch.
+    expect(apiGetText).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the limit strip for a log that carries no limit block', async () => {
+    const api = fakeApi({
+      toolingQuery: vi.fn(async () => ({ records: [logRow()], size: 1, done: true })) as unknown as SalesforceApiClient['toolingQuery'],
+      apiGetText: vi.fn(async () => '64.0 APEX_CODE,FINEST\n10:00:00.0 (1)|EXECUTION_FINISHED') as unknown as SalesforceApiClient['apiGetText'],
+    });
+    const feature = createDebugLogViewerFeature({ api });
+    await feature.onActivate?.();
+    await flush();
+    rows()[0]!.click();
+    await flush();
+    expect(document.querySelectorAll('.sfdt-tiles .sfdt-tile')).toHaveLength(0);
+    expect(document.querySelector<HTMLElement>('.sfdt-tiles')?.style.display).toBe('none');
   });
 });

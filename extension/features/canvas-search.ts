@@ -2,6 +2,7 @@ import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { loadSettings, onSettingsChange, registerSettingsShape } from '../lib/settings.js';
 import { z } from 'zod';
+import { icon } from '../lib/icons.js';
 
 const CANVAS_SEARCH_SETTINGS_SCHEMA = z.object({
   shortcut: z.string().default('Ctrl+Shift+F'),
@@ -200,10 +201,13 @@ export function scrollCanvasToElement(el: Element, options: ScrollCanvasOptions 
   const dx = canvasRect.left + canvasRect.width / 2 - (elRect.left + elRect.width / 2);
   const dy = canvasRect.top + canvasRect.height / 2 - (elRect.top + elRect.height / 2);
 
-  flowContainer.style.transition = 'transform 0.35s ease';
+  // Class toggle, not an inline transition: the duration in the sheet and the
+  // 400ms timeout below have to agree, and two numbers in two files is how they
+  // stop agreeing. The transform itself stays inline — it is a computed matrix.
+  flowContainer.classList.add('sfdt-animating');
   flowContainer.style.transform = `matrix(${scale}, 0, 0, ${scale}, ${tx + dx}, ${ty + dy})`;
   setTimeout(() => {
-    flowContainer.style.transition = '';
+    flowContainer.classList.remove('sfdt-animating');
   }, 400);
 }
 
@@ -315,14 +319,19 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
     const container = doc.createElement('div');
     container.className = 'sfdt-canvas-search-bar';
 
-    const icon = doc.createElement('span');
-    icon.className = 'sfdt-canvas-search-bar-icon';
-    icon.textContent = '🔍';
-    container.appendChild(icon);
+    const searchIcon = doc.createElement('span');
+    searchIcon.className = 'sfdt-canvas-search-bar-icon';
+    searchIcon.setAttribute('aria-hidden', 'true');
+    searchIcon.appendChild(icon('search', 16, doc));
+    container.appendChild(searchIcon);
 
     const inputEl = doc.createElement('input');
     inputEl.type = 'text';
-    inputEl.className = 'sfdt-canvas-search-bar-input';
+    // The bar sits on Salesforce's Flow canvas, which declares no color-scheme,
+    // so a bare input renders as a white box on the dark palette. The
+    // '-bar-input' class is a test hook with no rule behind it; '.sfdt-field'
+    // is what actually paints it.
+    inputEl.className = 'sfdt-field sfdt-canvas-search-bar-input';
     inputEl.placeholder = 'Search elements…';
     inputEl.setAttribute('autocomplete', 'off');
     inputEl.setAttribute('spellcheck', 'false');
@@ -356,7 +365,8 @@ export function createCanvasSearchFeature(options: CanvasSearchOptions = {}): Fe
 
     const closeBtn = doc.createElement('button');
     closeBtn.className = 'sfdt-canvas-search-bar-close';
-    closeBtn.textContent = '✕';
+    closeBtn.setAttribute('aria-label', 'Close search');
+    closeBtn.appendChild(icon('close', 14, doc));
     closeBtn.title = 'Close (Escape)';
     closeBtn.addEventListener('click', (e) => {
       e.preventDefault();

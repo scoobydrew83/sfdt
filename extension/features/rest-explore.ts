@@ -10,6 +10,11 @@ import { SF_API_VERSION } from '../lib/api-version.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { button, toolbar } from '../lib/ui-controls.js';
+import { openMenu } from '../ui/menu.js';
+import { errorPanel as buildErrorPanel } from '../ui/panels.js';
+import { createHistory } from '../lib/history.js';
+import { copyToClipboard } from '../ui/clipboard.js';
 
 const REST_EXPLORE_SETTINGS_SCHEMA = z.object({
   defaultMethod: z.enum(['GET', 'POST', 'PATCH', 'PUT', 'DELETE']).default('GET'),
@@ -30,39 +35,19 @@ interface HistoryEntry {
   ts: number;
 }
 
-interface HistoryRecord {
-  entries: HistoryEntry[];
-}
+// One shared capped ring (lib/history.ts) instead of a private read/write/push/
+// clear quartet. It also routes through lib/storage.ts, so recording a request
+// in a tab whose extension was updated underneath it fails quietly rather than
+// throwing onto the page.
+const history = createHistory<HistoryEntry>(HISTORY_STORAGE_KEY, {
+  cap: HISTORY_CAP,
+  sameAs: (a, b) => a.method === b.method && a.path === b.path && (a.body ?? '') === (b.body ?? ''),
+});
 
-export async function readRestHistory(): Promise<HistoryEntry[]> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(HISTORY_STORAGE_KEY, (result) => {
-      const raw = result?.[HISTORY_STORAGE_KEY] as HistoryRecord | undefined;
-      resolve(Array.isArray(raw?.entries) ? raw.entries : []);
-    });
-  });
-}
-
-export async function writeRestHistory(entries: HistoryEntry[]): Promise<void> {
-  const record: HistoryRecord = { entries: entries.slice(0, HISTORY_CAP) };
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [HISTORY_STORAGE_KEY]: record }, () => resolve());
-  });
-}
-
-export async function pushRestHistory(entry: HistoryEntry): Promise<void> {
-  const existing = await readRestHistory();
-  const deduped = existing.filter(
-    (e) => !(e.method === entry.method && e.path === entry.path && (e.body ?? '') === (entry.body ?? '')),
-  );
-  await writeRestHistory([entry, ...deduped]);
-}
-
-export async function clearRestHistory(): Promise<void> {
-  return new Promise((resolve) => {
-    chrome.storage.local.remove(HISTORY_STORAGE_KEY, () => resolve());
-  });
-}
+export const readRestHistory = (): Promise<HistoryEntry[]> => history.read();
+export const writeRestHistory = (entries: HistoryEntry[]): Promise<void> => history.write(entries);
+export const pushRestHistory = (entry: HistoryEntry): Promise<void> => history.push(entry);
+export const clearRestHistory = (): Promise<void> => history.clear();
 
 export function prettyJson(value: unknown): string {
   if (value === null || value === undefined) return '';
@@ -105,13 +90,12 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     const historyEnabled = config.historyEnabled;
 
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px;';
+    body.className = 'sfdt-view-body';
 
-    const form = doc.createElement('div');
-    form.style.cssText = 'display: flex; gap: 8px; align-items: center;';
+    const form = toolbar(doc);
     const methodSelect = doc.createElement('select');
-    methodSelect.style.cssText =
-      'padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
+    methodSelect.className = 'sfdt-field sfdt-auto';
+    methodSelect.setAttribute('aria-label', 'HTTP method');
     for (const m of ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] as const) {
       const opt = doc.createElement('option');
       opt.value = m;
@@ -123,96 +107,108 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     pathInput.type = 'text';
     pathInput.value = `/services/data/${SF_API_VERSION}/`;
     pathInput.placeholder = `/services/data/${SF_API_VERSION}/sobjects/Account/describe`;
-    pathInput.style.cssText =
-      'flex: 1; padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-family: ui-monospace, monospace; font-size: 12px;';
-    const sendBtn = doc.createElement('button');
-    sendBtn.textContent = 'Send';
-    sendBtn.style.cssText =
-      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+    pathInput.className = 'sfdt-field sfdt-mono sfdt-toolbar-grow';
+    const sendBtn = button({ label: 'Send', iconName: 'play', variant: 'primary', doc });
+
     form.appendChild(methodSelect);
     form.appendChild(pathInput);
     form.appendChild(sendBtn);
     body.appendChild(form);
 
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
+
     const bodyTextarea = doc.createElement('textarea');
     bodyTextarea.placeholder = 'JSON body (POST / PATCH / PUT)';
-    bodyTextarea.style.cssText =
-      'width: 100%; min-height: 100px; font-family: ui-monospace, monospace; font-size: 12px; padding: 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; resize: vertical; display: none;';
+    bodyTextarea.className = 'sfdt-field sfdt-mono';
+    bodyTextarea.classList.add('sfdt-tall');
+    bodyTextarea.style.display = 'none';
 
     function syncBodyVisibility(): void {
       bodyTextarea.style.display = METHODS_WITH_BODY.has(methodSelect.value as HttpMethod) ? 'block' : 'none';
     }
     methodSelect.addEventListener('change', syncBodyVisibility);
     syncBodyVisibility();
-    body.appendChild(bodyTextarea);
+    main.appendChild(bodyTextarea);
 
     const status = doc.createElement('div');
-    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
-    body.appendChild(status);
+    status.className = 'sfdt-muted';
+    main.appendChild(status);
 
-    const errorPanel = doc.createElement('div');
-    errorPanel.style.cssText =
-      'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
-    body.appendChild(errorPanel);
+    const errorPanel = buildErrorPanel('', doc);
+    errorPanel.style.display = 'none';
+    main.appendChild(errorPanel);
 
     const responsePane = doc.createElement('pre');
-    responsePane.style.cssText =
-      'margin: 0; padding: 10px; background: var(--sfdt-color-surface-alt); border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 360px; font-family: ui-monospace, monospace; font-size: 12px; display: none; white-space: pre-wrap;';
-    body.appendChild(responsePane);
+    responsePane.className = 'sfdt-console';
+    responsePane.style.display = 'none';
+    main.appendChild(responsePane);
 
     let lastResponse: unknown = null;
 
     const footer = doc.createElement('div');
-    footer.style.cssText = 'display: flex; gap: 8px; align-items: center;';
-    const copyBtn = doc.createElement('button');
-    copyBtn.textContent = 'Copy response';
-    copyBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    footer.className = 'sfdt-toolbar sfdt-toolbar-foot';
+    const copyBtn = button({ label: 'Copy response', iconName: 'clipboard', small: true, doc });
+    copyBtn.style.display = 'none';
     footer.appendChild(copyBtn);
 
-    let historyMenu: HTMLDivElement | null = null;
     if (historyEnabled) {
-      const historyBtn = doc.createElement('button');
-      historyBtn.textContent = '▸ History ▾';
-      historyBtn.style.cssText =
-        'padding: 6px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
-      const histWrap = doc.createElement('div');
-      histWrap.style.cssText = 'position: relative; margin-left: auto;';
-      histWrap.appendChild(historyBtn);
-      historyMenu = doc.createElement('div');
-      historyMenu.style.cssText =
-        'display: none; position: absolute; top: 100%; right: 0; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; min-width: 420px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
-      histWrap.appendChild(historyMenu);
-      historyBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (!historyMenu) return;
-        if (historyMenu.style.display === 'block') {
-          historyMenu.style.display = 'none';
-          return;
-        }
-        await renderHistoryMenu();
-        historyMenu.style.display = 'block';
+      // The dropdown is ui/menu.ts now. The hand-rolled one it replaces added a
+      // document click listener on every open and never removed it — the exact
+      // leak attachDismiss() was written to stop — and it had no Esc, no roles
+      // and no focus return.
+      const historyBtn = button({
+        label: 'History',
+        iconName: 'history',
+        small: true,
+        doc,
       });
-      doc.addEventListener('click', (e) => {
-        if (historyMenu && !histWrap.contains(e.target as Node)) {
-          historyMenu.style.display = 'none';
-        }
+      historyBtn.setAttribute('aria-haspopup', 'menu');
+      historyBtn.addEventListener('click', () => {
+        void (async () => {
+          const entries = await readRestHistory();
+          openMenu({
+            anchor: historyBtn,
+            label: 'REST request history',
+            doc,
+            win,
+            items: entries.length
+              ? entries.map((entry) => ({
+                  label: `${entry.method}  ${entry.path}`,
+                  iconName: 'api',
+                  onSelect: () => {
+                    methodSelect.value = entry.method;
+                    pathInput.value = entry.path;
+                    if (entry.body !== undefined) bodyTextarea.value = entry.body;
+                    syncBodyVisibility();
+                  },
+                }))
+              : [{ label: 'No requests yet.', iconName: 'history', onSelect: () => {} }],
+          });
+        })();
       });
-      const clearBtn = doc.createElement('button');
-      clearBtn.textContent = 'Clear history';
-      clearBtn.style.cssText =
-        'padding: 6px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
-      clearBtn.addEventListener('click', async () => {
-        await clearRestHistory();
-        showToast('History cleared', { doc, kind: 'success' });
+      const clearBtn = button({
+        label: 'Clear history',
+        iconName: 'trash',
+        variant: 'danger',
+        small: true,
+        doc,
+        onClick: () => {
+          void (async () => {
+            await clearRestHistory();
+            showToast('History cleared', { doc, kind: 'success' });
+          })();
+        },
       });
-      footer.appendChild(histWrap);
+      footer.appendChild(historyBtn);
       footer.appendChild(clearBtn);
     }
     body.appendChild(footer);
 
     view = presentView({
-      title: '🛠 REST API Explorer',
+      title: 'REST API Explorer',
+      iconName: 'rest-explore',
       body,
       doc,
       width: '860px',
@@ -229,40 +225,6 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     function clearError(): void {
       errorPanel.textContent = '';
       errorPanel.style.display = 'none';
-    }
-
-    async function renderHistoryMenu(): Promise<void> {
-      if (!historyMenu) return;
-      while (historyMenu.firstChild) historyMenu.removeChild(historyMenu.firstChild);
-      const entries = await readRestHistory();
-      if (entries.length === 0) {
-        const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 10px; color: var(--sfdt-color-text-icon); font-size: 12px;';
-        empty.textContent = 'No requests yet.';
-        historyMenu.appendChild(empty);
-        return;
-      }
-      for (const entry of entries) {
-        const item = doc.createElement('div');
-        item.style.cssText =
-          'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--sfdt-color-bg); font-family: ui-monospace, monospace; font-size: 11px;';
-        const badge = doc.createElement('span');
-        badge.textContent = entry.method;
-        badge.style.cssText =
-          'display: inline-block; min-width: 50px; padding: 1px 4px; border-radius: 3px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-on-accent); font-weight: 600; margin-right: 6px; text-align: center;';
-        const text = doc.createElement('span');
-        text.textContent = entry.path;
-        item.appendChild(badge);
-        item.appendChild(text);
-        item.addEventListener('click', () => {
-          methodSelect.value = entry.method;
-          pathInput.value = entry.path;
-          if (entry.body !== undefined) bodyTextarea.value = entry.body;
-          syncBodyVisibility();
-          if (historyMenu) historyMenu.style.display = 'none';
-        });
-        historyMenu.appendChild(item);
-      }
     }
 
     async function send(): Promise<void> {
@@ -348,12 +310,7 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
       }
     });
     copyBtn.addEventListener('click', async () => {
-      try {
-        await win.navigator.clipboard.writeText(prettyJson(lastResponse));
-        showToast('Response copied', { doc, kind: 'success' });
-      } catch {
-        showToast('Could not copy to clipboard', { doc, kind: 'error' });
-      }
+      await copyToClipboard(prettyJson(lastResponse), { doc, win, label: 'response' });
     });
 
     pathInput.focus();

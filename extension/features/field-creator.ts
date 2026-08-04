@@ -6,6 +6,7 @@ import {
 } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { button, setLabel, setTone } from '../lib/ui-controls.js';
 
 interface GlobalDescribe {
   sobjects: { name: string; label: string; keyPrefix: string | null; queryable: boolean; createable: boolean; updateable: boolean }[];
@@ -133,37 +134,30 @@ export function createFieldCreatorFeature(options: {
 
     // Body presented into a Workspace tab (or a modal on a Salesforce page).
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px;';
-
+    body.classList.add('sfdt-view-main');
     // Top Controls
     const topRow = doc.createElement('div');
     topRow.style.cssText = 'display: flex; gap: 16px; align-items: center; border-bottom: 1px solid var(--sfdt-color-border-2); padding-bottom: 16px;';
     body.appendChild(topRow);
 
     const sobjDiv = doc.createElement('div');
-    sobjDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px; min-width: 250px;';
+    sobjDiv.classList.add('sfdt-stack', 'sfdt-tight');
     const sobjLabel = doc.createElement('label');
     sobjLabel.textContent = 'Select Target SObject';
-    sobjLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    sobjLabel.className = 'sfdt-label';
     const sobjSelect = doc.createElement('select');
-    sobjSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    sobjSelect.className = 'sfdt-field sfdt-auto';
     sobjDiv.appendChild(sobjLabel);
     sobjDiv.appendChild(sobjSelect);
     topRow.appendChild(sobjDiv);
 
     const buttonGroup = doc.createElement('div');
-    buttonGroup.style.cssText = 'display: flex; gap: 8px; margin-top: auto;';
+    buttonGroup.classList.add('sfdt-row', 'sfdt-snug');
     topRow.appendChild(buttonGroup);
 
-    const addFieldBtn = doc.createElement('button');
-    addFieldBtn.textContent = '➕ Add Field';
-    addFieldBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-brand-text); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
-    const permAllBtn = doc.createElement('button');
-    permAllBtn.textContent = '🔒 Permissions for All';
-    permAllBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
-    const clearBtn = doc.createElement('button');
-    clearBtn.textContent = '🗑 Clear All';
-    clearBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-error-text); border: 1px solid var(--sfdt-color-error); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+    const addFieldBtn = button({ label: 'Add Field', iconName: 'plus', doc });
+    const permAllBtn = button({ label: 'Permissions for All', iconName: 'setup-tabs', doc });
+    const clearBtn = button({ label: 'Clear All', iconName: 'trash', variant: 'danger', doc });
 
     buttonGroup.appendChild(addFieldBtn);
     buttonGroup.appendChild(permAllBtn);
@@ -171,18 +165,18 @@ export function createFieldCreatorFeature(options: {
 
     // Table Container
     const tableContainer = doc.createElement('div');
-    tableContainer.style.cssText = 'border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 40vh;';
+    tableContainer.classList.add('sfdt-frame');
     body.appendChild(tableContainer);
 
     const table = doc.createElement('table');
-    table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;';
+    table.classList.add('sfdt-table');
     const thead = doc.createElement('thead');
     const headTr = doc.createElement('tr');
     const cols = ['Actions', 'Label', 'Developer Name (__c)', 'Data Type', 'Options', 'FLS', 'Status'];
     for (const c of cols) {
       const th = doc.createElement('th');
       th.textContent = c;
-      th.style.cssText = 'padding: 8px 12px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1;';
+      th.classList.add('sfdt-sticky-head');
       headTr.appendChild(th);
     }
     thead.appendChild(headTr);
@@ -197,14 +191,13 @@ export function createFieldCreatorFeature(options: {
     actionRow.style.cssText = 'display: flex; gap: 10px; justify-content: flex-end; align-items: center; border-top: 1px solid var(--sfdt-color-border-2); padding-top: 16px;';
     body.appendChild(actionRow);
 
-    const deployBtn = doc.createElement('button');
-    deployBtn.textContent = 'Deploy Fields';
-    deployBtn.style.cssText = 'padding: 8px 20px; background: var(--sfdt-color-success); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    const deployBtn = button({ label: 'Deploy Fields', iconName: 'rocket', variant: 'primary', doc });
     deployBtn.disabled = true;
     actionRow.appendChild(deployBtn);
 
     view = presentView({
-      title: '🛠 Bulk Field Creator',
+      title: 'Bulk Field Creator',
+      iconName: 'field-creator',
       body,
       doc,
       width: '1000px',
@@ -282,24 +275,29 @@ export function createFieldCreatorFeature(options: {
 
       fields.forEach((field, idx) => {
         const tr = doc.createElement('tr');
-        tr.style.cssText = 'border-bottom: 1px solid var(--sfdt-color-bg);';
-
+        tr.classList.add('sfdt-divider');
         // Actions
         const tdActions = doc.createElement('td');
-        tdActions.style.cssText = 'padding: 8px 12px; display: flex; gap: 6px;';
-        const cloneRowBtn = doc.createElement('button');
-        cloneRowBtn.textContent = '📋';
-        cloneRowBtn.title = 'Clone field definition';
-        cloneRowBtn.style.cssText = 'background: none; border: 0; cursor: pointer; font-size: 14px;';
+        tdActions.classList.add('sfdt-row', 'sfdt-snug', 'sfdt-prose');
+        const cloneRowBtn = button({
+          iconName: 'clipboard',
+          variant: 'ghost',
+          small: true,
+          title: 'Clone field definition',
+          doc,
+        });
         cloneRowBtn.addEventListener('click', () => {
           fields.push({ ...field, deploymentStatus: undefined, deploymentError: undefined });
           renderRows();
           validateReady();
         });
-        const delRowBtn = doc.createElement('button');
-        delRowBtn.textContent = '❌';
-        delRowBtn.title = 'Delete field definition';
-        delRowBtn.style.cssText = 'background: none; border: 0; cursor: pointer; font-size: 12px;';
+        const delRowBtn = button({
+          iconName: 'trash',
+          variant: 'ghost',
+          small: true,
+          title: 'Delete field definition',
+          doc,
+        });
         delRowBtn.addEventListener('click', () => {
           fields.splice(idx, 1);
           if (fields.length === 0) {
@@ -313,12 +311,12 @@ export function createFieldCreatorFeature(options: {
 
         // Label
         const tdLabel = doc.createElement('td');
-        tdLabel.style.cssText = 'padding: 8px 12px;';
+        tdLabel.classList.add('sfdt-prose', 'sfdt-flush-x');
         const labelInput = doc.createElement('input');
         labelInput.type = 'text';
         labelInput.value = field.label;
         labelInput.placeholder = 'Field Label...';
-        labelInput.style.cssText = 'width: 140px; padding: 4px 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
+        labelInput.className = 'sfdt-field sfdt-auto';
         labelInput.addEventListener('input', () => {
           field.label = labelInput.value;
           field.name = formatApiName(labelInput.value);
@@ -329,12 +327,12 @@ export function createFieldCreatorFeature(options: {
 
         // Name
         const tdName = doc.createElement('td');
-        tdName.style.cssText = 'padding: 8px 12px;';
+        tdName.classList.add('sfdt-prose', 'sfdt-flush-x');
         const nameInput = doc.createElement('input');
         nameInput.type = 'text';
         nameInput.value = field.name;
         nameInput.placeholder = 'Developer_Name';
-        nameInput.style.cssText = 'width: 140px; padding: 4px 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
+        nameInput.className = 'sfdt-field sfdt-auto';
         nameInput.addEventListener('input', () => {
           field.name = nameInput.value;
           validateReady();
@@ -343,9 +341,9 @@ export function createFieldCreatorFeature(options: {
 
         // Type
         const tdType = doc.createElement('td');
-        tdType.style.cssText = 'padding: 8px 12px;';
+        tdType.classList.add('sfdt-prose', 'sfdt-flush-x');
         const typeSelect = doc.createElement('select');
-        typeSelect.style.cssText = 'padding: 4px 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
+        typeSelect.className = 'sfdt-field sfdt-auto';
         const types = [
           'Text', 'Checkbox', 'Currency', 'Date', 'DateTime', 'Email',
           'Location', 'Number', 'Percent', 'Phone', 'Picklist',
@@ -365,10 +363,8 @@ export function createFieldCreatorFeature(options: {
 
         // Options
         const tdOpt = doc.createElement('td');
-        tdOpt.style.cssText = 'padding: 8px 12px;';
-        const optBtn = doc.createElement('button');
-        optBtn.textContent = '⚙️ Options';
-        optBtn.style.cssText = 'padding: 4px 8px; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 11px;';
+        tdOpt.classList.add('sfdt-prose', 'sfdt-flush-x');
+        const optBtn = button({ label: 'Options', iconName: 'settings', small: true, doc });
         optBtn.addEventListener('click', () => {
           openOptionsModal(field);
         });
@@ -376,14 +372,11 @@ export function createFieldCreatorFeature(options: {
 
         // FLS
         const tdFLS = doc.createElement('td');
-        tdFLS.style.cssText = 'padding: 8px 12px;';
-        const flsBtn = doc.createElement('button');
-        flsBtn.textContent = '🔒 FLS';
-        flsBtn.style.cssText = 'padding: 4px 8px; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 11px;';
+        tdFLS.classList.add('sfdt-prose', 'sfdt-flush-x');
+        const flsBtn = button({ label: 'FLS', iconName: 'setup-tabs', small: true, doc });
         if (field.profiles && field.profiles.length > 0) {
-          flsBtn.textContent = `🔒 FLS (${field.profiles.length})`;
-          flsBtn.style.color = 'var(--sfdt-color-success-text)';
-          flsBtn.style.borderColor = 'var(--sfdt-color-success)';
+          setLabel(flsBtn, `FLS (${field.profiles.length})`);
+          setTone(flsBtn, 'ok');
         }
         flsBtn.addEventListener('click', () => {
           openFLSModal(field, () => {
@@ -394,20 +387,20 @@ export function createFieldCreatorFeature(options: {
 
         // Status
         const tdStatus = doc.createElement('td');
-        tdStatus.style.cssText = 'padding: 8px 12px; font-weight: bold;';
+        tdStatus.classList.add('sfdt-prose', 'sfdt-flush-x', 'sfdt-strong');
         if (field.deploymentStatus === 'pending') {
-          tdStatus.textContent = '⏳ Pending';
-          tdStatus.style.color = 'var(--sfdt-color-brand-text)';
+          tdStatus.textContent = 'Pending';
+          setTone(tdStatus, 'info');
         } else if (field.deploymentStatus === 'success') {
-          tdStatus.textContent = '✅ Success';
-          tdStatus.style.color = 'var(--sfdt-color-success-text)';
+          tdStatus.textContent = 'Success';
+          setTone(tdStatus, 'ok');
         } else if (field.deploymentStatus === 'error') {
-          tdStatus.textContent = '❌ Error';
-          tdStatus.style.color = 'var(--sfdt-color-error-text)';
+          tdStatus.textContent = 'Error';
+          setTone(tdStatus, 'bad');
           tdStatus.title = field.deploymentError || 'Unknown error';
         } else {
           tdStatus.textContent = '-';
-          tdStatus.style.color = 'var(--sfdt-color-text-icon)';
+          setTone(tdStatus, 'muted');
         }
         tr.appendChild(tdActions);
         tr.appendChild(tdLabel);
@@ -423,10 +416,12 @@ export function createFieldCreatorFeature(options: {
 
     function openOptionsModal(field: CustomFieldDefinition) {
       const optOverlay = doc.createElement('div');
-      optOverlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 100030; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
+      optOverlay.className = 'sfdt-overlay';
       
       const optModal = doc.createElement('div');
-      optModal.style.cssText = 'background: var(--sfdt-color-surface); border-radius: 4px; width: 450px; max-height: 80vh; display: flex; flex-direction: column; padding: 16px; gap: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);';
+      optModal.className = 'sfdt-card sfdt-stack sfdt-modal-card';
+      optModal.style.width = '450px';
+      optModal.style.maxHeight = '80vh';
       
       const optTitle = doc.createElement('span');
       optTitle.textContent = `Configure Field: ${field.label || 'New Field'} (${field.type})`;
@@ -440,17 +435,17 @@ export function createFieldCreatorFeature(options: {
       // Common: Description, Help Text, Required, Unique, External ID
       const createInput = (labelVal: string, typeVal: string, key: keyof CustomFieldDefinition, defaultVal: any) => {
         const row = doc.createElement('div');
-        row.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
+        row.classList.add('sfdt-stack', 'sfdt-tight');
         const lbl = doc.createElement('label');
         lbl.textContent = labelVal;
-        lbl.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+        lbl.className = 'sfdt-label';
         row.appendChild(lbl);
 
         if (typeVal === 'text') {
           const inp = doc.createElement('input');
           inp.type = 'text';
           inp.value = String(field[key] ?? defaultVal);
-          inp.style.cssText = 'padding: 4px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
+          inp.className = 'sfdt-field sfdt-auto';
           inp.addEventListener('input', () => {
             (field as any)[key] = inp.value;
           });
@@ -459,19 +454,17 @@ export function createFieldCreatorFeature(options: {
           const inp = doc.createElement('input');
           inp.type = 'number';
           inp.value = String(field[key] ?? defaultVal);
-          inp.style.cssText = 'padding: 4px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
+          inp.className = 'sfdt-field sfdt-auto';
           inp.addEventListener('input', () => {
             (field as any)[key] = parseInt(inp.value) || 0;
           });
           row.appendChild(inp);
         } else if (typeVal === 'checkbox') {
-          row.style.flexDirection = 'row';
-          row.style.alignItems = 'center';
-          row.style.gap = '8px';
+          row.classList.add('sfdt-row');
           const inp = doc.createElement('input');
           inp.type = 'checkbox';
           inp.checked = !!(field[key] ?? defaultVal);
-          inp.style.cssText = 'cursor: pointer;';
+          inp.classList.add('sfdt-clickable');
           inp.addEventListener('change', () => {
             (field as any)[key] = inp.checked;
           });
@@ -499,12 +492,12 @@ export function createFieldCreatorFeature(options: {
         createInput('Decimal Places', 'number', 'decimal', 0);
       } else if (field.type === 'Checkbox') {
         const row = doc.createElement('div');
-        row.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
+        row.classList.add('sfdt-stack', 'sfdt-tight');
         const lbl = doc.createElement('label');
         lbl.textContent = 'Default Value';
-        lbl.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+        lbl.className = 'sfdt-label';
         const sel = doc.createElement('select');
-        sel.style.cssText = 'padding: 4px 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
+        sel.className = 'sfdt-field sfdt-auto';
         const optUnchecked = doc.createElement('option');
         optUnchecked.value = 'unchecked';
         optUnchecked.textContent = 'Unchecked';
@@ -523,12 +516,12 @@ export function createFieldCreatorFeature(options: {
       } else if (field.type === 'Location') {
         createInput('Decimal Places', 'number', 'decimal', 0);
         const row = doc.createElement('div');
-        row.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
+        row.classList.add('sfdt-stack', 'sfdt-tight');
         const lbl = doc.createElement('label');
         lbl.textContent = 'Display Format';
-        lbl.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+        lbl.className = 'sfdt-label';
         const sel = doc.createElement('select');
-        sel.style.cssText = 'padding: 4px 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px;';
+        sel.className = 'sfdt-field sfdt-auto';
         const optDec = doc.createElement('option');
         optDec.value = 'decimal';
         optDec.textContent = 'Decimal Degrees';
@@ -546,14 +539,15 @@ export function createFieldCreatorFeature(options: {
         fieldsContainer.appendChild(row);
       } else if (['Picklist', 'MultiselectPicklist'].includes(field.type)) {
         const row = doc.createElement('div');
-        row.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
+        row.classList.add('sfdt-stack', 'sfdt-tight');
         const lbl = doc.createElement('label');
         lbl.textContent = 'Picklist Values (Enter values, one per line)';
-        lbl.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+        lbl.className = 'sfdt-label';
         const area = doc.createElement('textarea');
         area.value = field.picklistvalues || '';
         area.placeholder = 'Value1\nValue2\nValue3';
-        area.style.cssText = 'height: 80px; padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px; resize: vertical;';
+        area.className = 'sfdt-field sfdt-auto';
+        area.style.height = '80px';
         area.addEventListener('input', () => {
           field.picklistvalues = area.value;
         });
@@ -574,9 +568,7 @@ export function createFieldCreatorFeature(options: {
 
       const buttons = doc.createElement('div');
       buttons.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--sfdt-color-border-2); padding-top: 12px; margin-top: 8px;';
-      const saveBtn = doc.createElement('button');
-      saveBtn.textContent = 'Save';
-      saveBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+      const saveBtn = button({ label: 'Save', iconName: 'save', variant: 'primary', doc });
       saveBtn.addEventListener('click', () => {
         optOverlay.remove();
       });
@@ -589,10 +581,12 @@ export function createFieldCreatorFeature(options: {
 
     function openFLSModal(targetField: CustomFieldDefinition | null, callback?: () => void) {
       const flsOverlay = doc.createElement('div');
-      flsOverlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 100030; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
+      flsOverlay.className = 'sfdt-overlay';
       
       const flsModal = doc.createElement('div');
-      flsModal.style.cssText = 'background: var(--sfdt-color-surface); border-radius: 4px; width: 650px; height: 80vh; display: flex; flex-direction: column; padding: 16px; gap: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);';
+      flsModal.className = 'sfdt-card sfdt-stack sfdt-modal-card';
+      flsModal.style.width = '650px';
+      flsModal.style.height = '80vh';
       
       const title = doc.createElement('span');
       title.textContent = targetField 
@@ -603,7 +597,7 @@ export function createFieldCreatorFeature(options: {
 
       const searchInp = doc.createElement('input');
       searchInp.placeholder = 'Search Profiles or Permission Sets...';
-      searchInp.style.cssText = 'padding: 6px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px; outline: none;';
+      searchInp.className = 'sfdt-field sfdt-auto';
       flsModal.appendChild(searchInp);
 
       const tableDiv = doc.createElement('div');
@@ -611,21 +605,18 @@ export function createFieldCreatorFeature(options: {
       flsModal.appendChild(tableDiv);
 
       const flsTable = doc.createElement('table');
-      flsTable.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 11px; text-align: left;';
-      
+      flsTable.classList.add('sfdt-table');
       const flsThead = doc.createElement('thead');
       const trHead = doc.createElement('tr');
       const thName = doc.createElement('th');
       thName.textContent = 'Name';
-      thName.style.cssText = 'padding: 6px 10px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1;';
-      
+      thName.classList.add('sfdt-sticky-head');
       const thType = doc.createElement('th');
       thType.textContent = 'Type';
-      thType.style.cssText = 'padding: 6px 10px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1;';
-
+      thType.classList.add('sfdt-sticky-head');
       const thRead = doc.createElement('th');
       thRead.textContent = 'Visible';
-      thRead.style.cssText = 'padding: 6px 10px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1; text-align: center;';
+      thRead.classList.add('sfdt-sticky-head');
       const readAll = doc.createElement('input');
       readAll.type = 'checkbox';
       thRead.appendChild(doc.createElement('br'));
@@ -633,7 +624,7 @@ export function createFieldCreatorFeature(options: {
 
       const thEdit = doc.createElement('th');
       thEdit.textContent = 'Read-Write';
-      thEdit.style.cssText = 'padding: 6px 10px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1; text-align: center;';
+      thEdit.classList.add('sfdt-sticky-head');
       const editAll = doc.createElement('input');
       editAll.type = 'checkbox';
       thEdit.appendChild(doc.createElement('br'));
@@ -694,16 +685,14 @@ export function createFieldCreatorFeature(options: {
 
         filtered.forEach(([name, profile]) => {
           const tr = doc.createElement('tr');
-          tr.style.cssText = 'border-bottom: 1px solid var(--sfdt-color-bg);';
-
+          tr.classList.add('sfdt-divider');
           const tdName = doc.createElement('td');
           tdName.textContent = profile || name;
           tdName.style.cssText = 'padding: 6px 10px; font-weight: 500;';
 
           const tdType = doc.createElement('td');
           tdType.textContent = profile ? 'Profile' : 'Permission Set';
-          tdType.style.cssText = 'padding: 6px 10px; color: var(--sfdt-color-text-weak);';
-
+          tdType.classList.add('sfdt-prose', 'sfdt-muted');
           const tdReadVal = doc.createElement('td');
           tdReadVal.style.cssText = 'padding: 6px 10px; text-align: center;';
           const chkRead = doc.createElement('input');
@@ -773,16 +762,12 @@ export function createFieldCreatorFeature(options: {
       const buttons = doc.createElement('div');
       buttons.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--sfdt-color-border-2); padding-top: 12px; margin-top: 8px;';
       
-      const cancelBtn = doc.createElement('button');
-      cancelBtn.textContent = 'Cancel';
-      cancelBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 12px;';
+      const cancelBtn = button({ label: 'Cancel', doc });
       cancelBtn.addEventListener('click', () => {
         flsOverlay.remove();
       });
 
-      const saveBtn = doc.createElement('button');
-      saveBtn.textContent = 'Save Permissions';
-      saveBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;';
+      const saveBtn = button({ label: 'Save Permissions', iconName: 'save', variant: 'primary', doc });
       saveBtn.addEventListener('click', () => {
         const mappedProfiles = Object.entries(permissionsLocal)
           .filter(([_, perm]) => perm.read || perm.edit)

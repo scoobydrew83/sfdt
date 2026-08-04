@@ -115,11 +115,11 @@ describe('flow-version-manager teardown', () => {
     await feature.init?.();
     // Simulate an open confirmation modal by manually injecting the backdrop
     const backdrop = document.createElement('div');
-    backdrop.className = 'sfdt-version-manager-backdrop';
+    backdrop.className = 'sfdt-confirm-overlay';
     document.body.appendChild(backdrop);
-    expect(document.querySelector('.sfdt-version-manager-backdrop')).not.toBeNull();
+    expect(document.querySelector('.sfdt-confirm-overlay')).not.toBeNull();
     await feature.teardown?.();
-    expect(document.querySelector('.sfdt-version-manager-backdrop')).toBeNull();
+    expect(document.querySelector('.sfdt-confirm-overlay')).toBeNull();
   });
 });
 
@@ -225,7 +225,7 @@ describe('flow-version-manager — decorate, select, and bulk delete', () => {
 
     document.querySelector<HTMLInputElement>('.sfdt-version-manager-delete-btn')!.click();
 
-    const backdrop = document.querySelector('.sfdt-version-manager-backdrop');
+    const backdrop = document.querySelector('.sfdt-confirm-overlay');
     expect(backdrop).not.toBeNull();
 
     const confirmBtn = Array.from(backdrop!.querySelectorAll('button')).find(
@@ -243,7 +243,7 @@ describe('flow-version-manager — decorate, select, and bulk delete', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(deleteLinkClicks).toBe(1);
-    expect(document.querySelector('.sfdt-version-manager-backdrop')).toBeNull();
+    expect(document.querySelector('.sfdt-confirm-overlay')).toBeNull();
 
     await feature.teardown?.();
   });
@@ -266,7 +266,7 @@ describe('flow-version-manager — decorate, select, and bulk delete', () => {
     checkbox.dispatchEvent(new Event('change'));
     document.querySelector<HTMLInputElement>('.sfdt-version-manager-delete-btn')!.click();
 
-    const backdrop = document.querySelector('.sfdt-version-manager-backdrop')!;
+    const backdrop = document.querySelector('.sfdt-confirm-overlay')!;
     const cancelBtn = Array.from(backdrop.querySelectorAll('button')).find(
       (b) => b.textContent === 'Cancel',
     ) as HTMLButtonElement;
@@ -274,7 +274,7 @@ describe('flow-version-manager — decorate, select, and bulk delete', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(deleteLinkClicks).toBe(0);
-    expect(document.querySelector('.sfdt-version-manager-backdrop')).toBeNull();
+    expect(document.querySelector('.sfdt-confirm-overlay')).toBeNull();
 
     await feature.teardown?.();
   });
@@ -313,7 +313,7 @@ describe('flow-version-manager — decorate, select, and bulk delete', () => {
     }
     document.querySelector<HTMLInputElement>('.sfdt-version-manager-delete-btn')!.click();
 
-    const backdrop = document.querySelector('.sfdt-version-manager-backdrop')!;
+    const backdrop = document.querySelector('.sfdt-confirm-overlay')!;
     const input = backdrop.querySelector<HTMLInputElement>('input')!;
     input.value = 'DELETE';
     input.dispatchEvent(new Event('input'));

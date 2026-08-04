@@ -37,9 +37,26 @@ describe('ui/shadow-host', () => {
     // Mount wrapper is inside the root.
     expect(h.mount.className).toBe('sfdt-shadow-content');
     expect(h.mount.getRootNode()).toBe(h.root);
-    // Styles are ADOPTED (not <style> nodes) and carry the isolation reset.
-    expect(h.root.adoptedStyleSheets).toHaveLength(1);
+    // Styles are ADOPTED (not <style> nodes): the isolation reset, then the
+    // shared component sheet. Stylesheets do not cross a shadow boundary the way
+    // custom properties do, so the components have to be adopted in here or
+    // every `.sfdt-nav-item` in injected UI would render unstyled.
+    expect(h.root.adoptedStyleSheets).toHaveLength(2);
     expect(h.root.querySelectorAll('style')).toHaveLength(0);
+  });
+
+  it('adopts the component rules but NOT the token definitions', () => {
+    // The distinction is load-bearing. Component rules CONSUME `var(--sfdt-*)`
+    // and must be adopted; the `:root { --sfdt-*: … }` block DEFINES them and
+    // must not be — re-defining tokens inside the root would shadow the host's
+    // and freeze injected UI in whichever theme was active at mount.
+    const h = getShadowHost(document);
+    const css = h.root.adoptedStyleSheets
+      .flatMap((s) => [...s.cssRules].map((r) => r.cssText))
+      .join('\n');
+    expect(css).toContain('.sfdt-nav-item');
+    expect(css).not.toMatch(/:root\s*\{[^}]*--sfdt-color-/);
+    expect(css).not.toContain('data-sfdt-theme');
   });
 
   it('forces <button> to inherit the themed colour (no dark-on-dark buttons)', () => {
@@ -113,7 +130,7 @@ describe('ui/shadow-host', () => {
     ensureTokens(document);
     setContentRoot(getShadowHost(document).mount);
     mountSideButton({
-      menuItemsProvider: () => [{ featureId: 'x', icon: '⚡', label: 'X' }],
+      menuItemsProvider: () => [{ featureId: 'x', iconName: 'bolt', label: 'X' }],
       handlers: noopHandlers(),
     });
     const root = getShadowHost(document);

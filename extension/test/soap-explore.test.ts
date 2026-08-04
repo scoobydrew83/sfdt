@@ -253,9 +253,7 @@ describe('soap-explore — UI', () => {
     const overlay = document.querySelector('.sfdt-view-overlay') as HTMLDivElement;
     expect(overlay).not.toBeNull();
 
-    const closeBtn = Array.from(document.querySelectorAll('button')).find(
-      (b) => b.textContent === '×',
-    ) as HTMLButtonElement;
+    const closeBtn = document.querySelector('button[aria-label="Close"]') as HTMLButtonElement;
     closeBtn.click(); // hits close() with docClickHandler set
     expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
@@ -329,7 +327,7 @@ describe('soap-explore — history menu', () => {
   }
   const flush = () => new Promise((r) => setTimeout(r, 0));
   const historyButton = () =>
-    Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '▸ History ▾') as HTMLButtonElement;
+    Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'History') as HTMLButtonElement;
 
   it('renders the empty state', async () => {
     setSalesforceUrl();
@@ -348,10 +346,13 @@ describe('soap-explore — history menu', () => {
     historyButton().click();
     await flush();
 
-    const badge = Array.from(document.querySelectorAll('span')).find((s) => s.textContent === 'Tooling');
-    const item = badge?.parentElement as HTMLDivElement;
+    // The dropdown is ui/menu.ts now: rows are real buttons in a role="menu".
+    const item = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.sfdt-menu-surface button'),
+    ).find((b) => b.textContent?.includes('Tooling'))!;
     expect(item).toBeTruthy();
     item.click();
+    await flush();
 
     const wsdlSelect = document.querySelectorAll('select')[0] as HTMLSelectElement;
     const opInput = document.querySelector('input[placeholder*="Operation"]') as HTMLInputElement;

@@ -17,7 +17,11 @@
 // on its last org rather than blanking.
 
 import { SFDT_TOKENS_CSS } from '../../lib/tokens.js';
+import { SFDT_COMPONENT_CSS } from '../../lib/ui-styles.js';
 import { watchTheme, OWN_PAGE_COLOR_SCHEME_CSS } from '../../lib/theme.js';
+import { isFeatureEnabled, loadSettings } from '../../lib/settings.js';
+import { loadRecents, pushRecent } from '../../lib/palette-recents.js';
+import { loadActivity, clearActivity } from '../../lib/activity-log.js';
 import { readLastOrg } from '../../features/org-switcher.js';
 import { salesforceHostFromUrl } from '../../lib/sf-tab.js';
 import { shouldRebindPanel, panelOrgForUrl } from '../../lib/sf-panel.js';
@@ -29,7 +33,7 @@ import {
   HOST_STYLES,
 } from '../../ui/workspace-host.js';
 
-const PANEL_TITLE = '⚡ SFDT Panel';
+const PANEL_TITLE = 'SFDT Panel';
 
 // Bind-on-open: the org of the tab the panel was opened from. Returns null on a
 // non-Salesforce tab (the caller then falls back to last-used org / picker).
@@ -52,7 +56,9 @@ function reloadWithOrg(host: string): void {
 
 async function main(): Promise<void> {
   const styleTag = document.createElement('style');
-  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${OWN_PAGE_COLOR_SCHEME_CSS}\n${HOST_STYLES}`;
+  // Order matters: tokens define the custom properties the component sheet
+  // consumes, and HOST_STYLES layers this surface's layout on top of both.
+  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${OWN_PAGE_COLOR_SCHEME_CSS}\n${SFDT_COMPONENT_CSS}\n${HOST_STYLES}`;
   document.head.appendChild(styleTag);
   watchTheme(document);
 
@@ -65,9 +71,25 @@ async function main(): Promise<void> {
   // The org the panel is currently bound to (null while the picker is showing).
   let boundOrg: string | null = null;
 
+  // Read once, up front: bootHost is synchronous and org-follow can re-bind at
+  // any moment, so the kill-switch answer has to already be in hand. A settings
+  // change mid-session is picked up on the next panel open — re-rendering here
+  // would discard the user's open tool tabs.
+  const settings = await loadSettings();
+
   function bindTo(host: string): void {
     boundOrg = host;
-    bootHost(root!, host, { title: PANEL_TITLE, onSwitchOrg: reloadWithOrg });
+    bootHost(root!, host, {
+      title: PANEL_TITLE,
+      // ~400px dock: icon rail, compact header, 2-up tiles. See HostOptions.variant.
+      variant: 'panel',
+      onSwitchOrg: reloadWithOrg,
+      isEnabled: (id) => isFeatureEnabled(settings, id),
+      loadRecents,
+      onToolOpened: (id) => void pushRecent(id),
+      loadActivity,
+      clearActivity,
+    });
   }
 
   if (org && isAllowedSfHost(org)) {

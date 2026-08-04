@@ -19,6 +19,7 @@ import {
 import type { ParsedLog, RawLineIndex } from '../lib/apex-log/types.js';
 import { buildFlameChart, type FlameChartHandle } from './apex-log-flame-chart.js';
 import { presentView, type ViewHandle } from './present-view.js';
+import { icon } from '../lib/icons.js';
 
 export interface ApexLogAnalyzerOptions {
   /** The already-parsed log (parser is the single source of truth — no re-parse). */
@@ -31,19 +32,15 @@ export interface ApexLogAnalyzerOptions {
   onClose?: () => void;
 }
 
-const HEADING_CSS =
-  'margin: 12px 0 6px; font-size: 13px; font-weight: 600; color: var(--sfdt-color-text);';
-const TABLE_CSS =
-  'border-collapse: collapse; width: 100%; font-size: 12px; color: var(--sfdt-color-text);';
-const CELL_CSS =
-  'padding: 4px 8px; border-bottom: 1px solid var(--sfdt-color-border); text-align: left;';
-const NUM_CELL_CSS = CELL_CSS + ' text-align: right; font-variant-numeric: tabular-nums;';
-const MUTED_CSS = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
+// The five private CSS constants that used to live here (HEADING/TABLE/CELL/
+// NUM_CELL/MUTED) are gone — each was a hand-rolled version of a class the
+// component sheet already had. That is the whole point of the sheet: this file
+// no longer has an opinion about what a table cell looks like.
 
-function cell(doc: Document, tag: 'td' | 'th', text: string, css: string): HTMLTableCellElement {
+function cell(doc: Document, tag: 'td' | 'th', text: string, cls = ''): HTMLTableCellElement {
   const c = doc.createElement(tag);
   c.textContent = text;
-  c.style.cssText = css;
+  if (cls) c.className = cls;
   return c;
 }
 
@@ -54,9 +51,7 @@ export function presentApexLogAnalyzer(opts: ApexLogAnalyzerOptions): ViewHandle
   const previouslyFocused = doc.activeElement as HTMLElement | null;
 
   const body = doc.createElement('div');
-  body.style.cssText =
-    'padding: 12px 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 4px;';
-
+  body.classList.add('sfdt-view-main');
   if (vm.truncated) body.appendChild(buildTruncationBanner(doc, vm));
 
   // Raw-log pane is built first so the inventory jump controls can target its
@@ -82,7 +77,7 @@ export function presentApexLogAnalyzer(opts: ApexLogAnalyzerOptions): ViewHandle
   const flameSection = doc.createElement('section');
   const flameHeading = doc.createElement('h3');
   flameHeading.textContent = 'Flame chart';
-  flameHeading.style.cssText = HEADING_CSS;
+  flameHeading.className = 'sfdt-subhead';
   flameSection.append(flameHeading, flame.element);
   body.appendChild(flameSection);
 
@@ -101,12 +96,13 @@ export function presentApexLogAnalyzer(opts: ApexLogAnalyzerOptions): ViewHandle
 
   const rawHeading = doc.createElement('h3');
   rawHeading.textContent = 'Raw log';
-  rawHeading.style.cssText = HEADING_CSS;
+  rawHeading.className = 'sfdt-subhead';
   body.appendChild(rawHeading);
   body.appendChild(rawPane);
 
   const handle = presentView({
-    title: `📊 Analyze — ${opts.title ?? 'Debug log'}`,
+    title: `Analyze — ${opts.title ?? 'Debug log'}`,
+    iconName: 'chart',
     body,
     doc,
     width: '960px',
@@ -116,21 +112,18 @@ export function presentApexLogAnalyzer(opts: ApexLogAnalyzerOptions): ViewHandle
     },
   });
 
-  // Esc closes + focus restore (CONVENTIONS 1 & 4) — presentView itself doesn't
-  // wire Esc, so the overlay owns it. Capture phase so it fires from inside a
-  // Salesforce-owned widget; removed on close so it can't leak across SPA navs.
-  const onKeydown = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      handle.close();
-    }
-  };
-  doc.addEventListener('keydown', onKeydown, true);
+  // Esc + focus restore are the modal shell's job now (presentAsModal), so the
+  // hand-rolled capture-phase handler that used to live here is gone. It had to
+  // go rather than merely duplicate: firing in the CAPTURE phase, it closed this
+  // overlay before the modal underneath could ask "am I the top one?" — so one
+  // Escape collapsed the whole stack instead of just the analyzer.
+  //
+  // The focus restore stays: cleanup also runs when the Workspace closes this
+  // as a tab, where there is no modal shell to do it.
   let cleanedUp = false;
   function cleanup(): void {
     if (cleanedUp) return;
     cleanedUp = true;
-    doc.removeEventListener('keydown', onKeydown, true);
     flame?.destroy();
     previouslyFocused?.focus?.();
   }
@@ -144,10 +137,17 @@ export function presentApexLogAnalyzer(opts: ApexLogAnalyzerOptions): ViewHandle
 function buildTruncationBanner(doc: Document, vm: AnalyzerViewModel): HTMLElement {
   const banner = doc.createElement('div');
   banner.setAttribute('role', 'alert');
-  banner.style.cssText =
-    'padding: 8px 12px; border: 1px solid var(--sfdt-color-warning-border); background: var(--sfdt-color-warning-bg); color: var(--sfdt-color-warning-text); border-radius: 4px; font-size: 12px;';
+  banner.classList.add('sfdt-callout', 'sfdt-warn', 'sfdt-row');
+  // role="alert" above already announces this; the glyph is decoration, and
+  // the sentence carries the meaning on its own.
+  const mark = doc.createElement('span');
+  mark.setAttribute('aria-hidden', 'true');
+  mark.style.display = 'flex';
+  mark.appendChild(icon('alert', 14, doc));
   const reason = vm.truncationReason ?? 'unknown reason';
-  banner.textContent = `⚠ This log was truncated (${reason}). Timings and inventories below may be incomplete.`;
+  const text = doc.createElement('span');
+  text.textContent = `This log was truncated (${reason}). Timings and inventories below may be incomplete.`;
+  banner.append(mark, text);
   return banner;
 }
 
@@ -173,13 +173,13 @@ function buildMethodTable(
   const section = doc.createElement('section');
   const heading = doc.createElement('h3');
   heading.textContent = 'Method timings';
-  heading.style.cssText = HEADING_CSS;
+  heading.className = 'sfdt-subhead';
   section.appendChild(heading);
 
   if (vm.methods.length === 0) {
     const empty = doc.createElement('div');
     empty.textContent = 'No method or code-unit frames in this log.';
-    empty.style.cssText = MUTED_CSS;
+    empty.className = 'sfdt-muted';
     section.appendChild(empty);
     // A disabled placeholder button keeps the focus contract simple when empty.
     const placeholder = doc.createElement('button');
@@ -196,12 +196,12 @@ function buildMethodTable(
   let highlightedKey: string | null = null;
 
   const table = doc.createElement('table');
-  table.style.cssText = TABLE_CSS;
+  table.className = 'sfdt-table';
   const thead = doc.createElement('thead');
   const headRow = doc.createElement('tr');
 
-  headRow.appendChild(cell(doc, 'th', 'Method', CELL_CSS));
-  headRow.appendChild(cell(doc, 'th', 'Namespace', CELL_CSS));
+  headRow.appendChild(cell(doc, 'th', 'Method'));
+  headRow.appendChild(cell(doc, 'th', 'Namespace'));
 
   let sortKey: MethodSortKey = 'total';
   const tbody = doc.createElement('tbody');
@@ -216,13 +216,12 @@ function buildMethodTable(
   for (const col of sortableCols) {
     const th = doc.createElement('th');
     th.setAttribute('aria-sort', 'none');
-    th.style.cssText = CELL_CSS + ' text-align: right;';
+    th.className = 'sfdt-num';
     const btn = doc.createElement('button');
     btn.type = 'button';
     btn.textContent = col.label;
     btn.setAttribute('aria-label', `Sort by ${col.label.toLowerCase()} descending`);
-    btn.style.cssText =
-      'background: none; border: 0; padding: 0; cursor: pointer; font: inherit; font-weight: 600; color: var(--sfdt-color-brand-text);';
+    btn.className = 'sfdt-link sfdt-strong';
     btn.addEventListener('click', () => {
       sortKey = col.key;
       renderRows();
@@ -256,7 +255,7 @@ function buildMethodTable(
     // The method name is a button so table→chart selection is keyboard-reachable
     // (the table stays the fully accessible representation — CONVENTIONS a11y).
     const nameCell = doc.createElement('td');
-    nameCell.style.cssText = CELL_CSS;
+    
     const nameBtn = doc.createElement('button');
     nameBtn.type = 'button';
     nameBtn.textContent = row.name;
@@ -267,21 +266,21 @@ function buildMethodTable(
     nameCell.appendChild(nameBtn);
     tr.appendChild(nameCell);
 
-    tr.appendChild(cell(doc, 'td', row.namespace ?? '—', CELL_CSS));
-    const total = cell(doc, 'td', formatNanosMs(row.totalNanos), NUM_CELL_CSS);
+    tr.appendChild(cell(doc, 'td', row.namespace ?? '—'));
+    const total = cell(doc, 'td', formatNanosMs(row.totalNanos), 'sfdt-num');
     total.title = `${row.totalNanos} ns`;
     tr.appendChild(total);
-    const self = cell(doc, 'td', formatNanosMs(row.selfNanos), NUM_CELL_CSS);
+    const self = cell(doc, 'td', formatNanosMs(row.selfNanos), 'sfdt-num');
     self.title = `${row.selfNanos} ns`;
     tr.appendChild(self);
-    tr.appendChild(cell(doc, 'td', String(row.count), NUM_CELL_CSS));
+    tr.appendChild(cell(doc, 'td', String(row.count), 'sfdt-num'));
     tbody.appendChild(tr);
   }
 
   function applyHighlight(): void {
     for (const [key, tr] of rowByKey) {
       const on = key === highlightedKey;
-      tr.style.background = on ? 'var(--sfdt-color-warning-bg)' : '';
+      tr.classList.toggle('sfdt-row-flagged', on);
     }
   }
 
@@ -300,13 +299,13 @@ function buildLimitsSection(doc: Document, vm: AnalyzerViewModel): HTMLElement {
   const section = doc.createElement('section');
   const heading = doc.createElement('h3');
   heading.textContent = 'Governor limits';
-  heading.style.cssText = HEADING_CSS;
+  heading.className = 'sfdt-subhead';
   section.appendChild(heading);
 
   if (vm.limits.length === 0) {
     const empty = doc.createElement('div');
     empty.textContent = 'No governor-limit snapshot in this log.';
-    empty.style.cssText = MUTED_CSS;
+    empty.className = 'sfdt-muted';
     section.appendChild(empty);
     return section;
   }
@@ -314,16 +313,16 @@ function buildLimitsSection(doc: Document, vm: AnalyzerViewModel): HTMLElement {
   for (const snap of vm.limits) {
     const nsLabel = doc.createElement('div');
     nsLabel.textContent = snap.namespace || '(default)';
-    nsLabel.style.cssText = 'margin: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    nsLabel.className = 'sfdt-label';
     section.appendChild(nsLabel);
 
     const table = doc.createElement('table');
-    table.style.cssText = TABLE_CSS;
+    table.className = 'sfdt-table';
     const tbody = doc.createElement('tbody');
     for (const [metric, pair] of Object.entries(snap.metrics)) {
       const tr = doc.createElement('tr');
-      tr.appendChild(cell(doc, 'td', metric, CELL_CSS));
-      tr.appendChild(cell(doc, 'td', `${pair.used} / ${pair.max}`, NUM_CELL_CSS));
+      tr.appendChild(cell(doc, 'td', metric));
+      tr.appendChild(cell(doc, 'td', `${pair.used} / ${pair.max}`, 'sfdt-num'));
       tbody.appendChild(tr);
     }
     table.appendChild(tbody);
@@ -346,19 +345,19 @@ function buildInventorySection<T extends HasLine>(
   const section = doc.createElement('section');
   const heading = doc.createElement('h3');
   heading.textContent = `${title} (${entries.length})`;
-  heading.style.cssText = HEADING_CSS;
+  heading.className = 'sfdt-subhead';
   section.appendChild(heading);
 
   if (entries.length === 0) {
     const empty = doc.createElement('div');
     empty.textContent = `No ${title.toLowerCase()}.`;
-    empty.style.cssText = MUTED_CSS;
+    empty.className = 'sfdt-muted';
     section.appendChild(empty);
     return section;
   }
 
   const list = doc.createElement('ul');
-  list.style.cssText = 'list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px;';
+  list.className = 'sfdt-stack sfdt-tight sfdt-bare';
   for (const entry of entries) {
     const li = doc.createElement('li');
     li.style.cssText =
@@ -375,7 +374,7 @@ function buildInventorySection<T extends HasLine>(
 
     const payload = doc.createElement('span');
     payload.textContent = describe(entry);
-    payload.style.cssText = 'font-family: ui-monospace, monospace; color: var(--sfdt-color-text); word-break: break-word;';
+    payload.className = 'sfdt-mono sfdt-msg';
 
     li.append(jump, payload);
     list.appendChild(li);
@@ -415,10 +414,10 @@ function buildRawLogPane(doc: Document, rawText: string): RawLogPane {
     const target = lineEls[line];
     if (!target) return;
     if (highlighted && highlighted !== target) {
-      highlighted.style.background = '';
+      highlighted.classList.remove('sfdt-row-flagged');
       highlighted.removeAttribute('data-sfdt-highlighted');
     }
-    target.style.background = 'var(--sfdt-color-warning-bg)';
+    target.classList.add('sfdt-row-flagged');
     target.setAttribute('data-sfdt-highlighted', 'true');
     highlighted = target;
     target.scrollIntoView?.({ block: 'center' });
