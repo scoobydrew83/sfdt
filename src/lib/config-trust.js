@@ -75,6 +75,21 @@ export function findUnsafeConfigSettings(config) {
     });
   }
 
+  // `pluginOptions.autoDiscover` is the same primitive wearing a different hat:
+  // it makes the loader sweep the project's `node_modules/` for `sfdt-plugin-*`
+  // AND import every `.js`/`.mjs` in `.sfdt/plugins/`. Guarding `plugins[]`
+  // alone leaves both of those open to exactly the attack `plugins[]` was
+  // guarded against — a cloned repo can vendor `node_modules/sfdt-plugin-evil/`
+  // or drop a file in `.sfdt/plugins/` and flip this one boolean. Verified: both
+  // executed before this was added.
+  if (config.pluginOptions?.autoDiscover === true) {
+    found.push({
+      path: 'pluginOptions.autoDiscover',
+      why: 'imports every sfdt-plugin-* in node_modules/ and every file in .sfdt/plugins/ at CLI startup',
+      detail: 'true',
+    });
+  }
+
   // ── Process spawn ───────────────────────────────────────────────────────
   const mcpCommand = config.mcp?.salesforce?.command;
   if (typeof mcpCommand === 'string' && mcpCommand.trim()) {
@@ -139,6 +154,9 @@ export function sanitizeUntrustedConfig(config, options = {}) {
   for (const finding of found) {
     if (finding.path === 'plugins') {
       delete next.plugins;
+    } else if (finding.path === 'pluginOptions.autoDiscover') {
+      next.pluginOptions = { ...next.pluginOptions };
+      delete next.pluginOptions.autoDiscover;
     } else if (finding.path === 'mcp.salesforce.command') {
       // Drop `args` with the command: on its own it is inert, and leaving it
       // behind would apply attacker-chosen arguments to the default `sf` binary.
