@@ -85,6 +85,31 @@ Then bump the Homebrew tap manually (`shasum -a 256` of the npm tarball → upda
 and dispatch `docker-publish.yml` with the version. Prefer letting CI self-heal on the next
 push to `main` over doing any of this by hand.
 
+### Why `prepublishOnly` does not run the test suite
+
+`prepublishOnly` is `npm run lint && npm run check:all-contracts` — deliberately **not**
+`npm test`.
+
+Both `publish` and `publish-beta` declare `needs: [test, gui-build]`, so the full suite is
+already a hard gate that must pass before either job starts. Re-running all ~5,200 tests inside
+`npm publish` added no new signal — it only added a second opportunity for an order-dependent
+test to flake, at the worst possible moment: *after* the version-bump commit has merged to
+`main`, where a failure leaves a tagged release with nothing on npm.
+
+That is not hypothetical. `test/lib/bridge-routes-extra.test.js` and
+`test/lib/gui-server-routes3.test.js` each fail intermittently under full-suite load (roughly 1
+run in 8), asserting a status code while a security guard legitimately returns 403. The product
+fails *safe* in both cases — these are test-isolation defects, not product defects — but either
+one could have failed a publish.
+
+What replaced it is deterministic and catches things the test job does not: `check:all-contracts`
+fails on catalog drift (which would otherwise ship a `generated/` snapshot that disagrees with
+the code), license-string inconsistency, Node-version claims, and package-internal path
+resolution. `prepack` still runs `build:gui`, so the tarball contents are unaffected.
+
+Do not "restore" `npm test` here without first fixing the flakes and explaining what new signal
+the second run provides.
+
 ## 2. Pre-release gates
 
 All on the release ref, before the release PR merges:
