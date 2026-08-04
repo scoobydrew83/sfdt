@@ -171,6 +171,43 @@ describe('runAiPrompt', () => {
     expect(result.stdout).toBe('codex result');
   });
 
+  // `allowedTools: []` means "no tools at all" — the most restrictive request a
+  // caller can make. Both providers gated the sandbox on `.length > 0`, so an
+  // empty array silently read as "no restriction" and dropped the sandbox
+  // entirely. `buildSnapshotSummary` (notifier.js) passes `[]` while feeding the
+  // model org-derived text, which is exactly where prompt injection lands.
+  it('keeps gemini in plan mode when allowedTools is an EMPTY array', async () => {
+    execa.mockResolvedValue({ exitCode: 0, stdout: 'gemini result', stderr: '' });
+
+    await runAiPrompt('test prompt', {
+      config: { ai: { provider: 'gemini' } },
+      allowedTools: [],
+    });
+
+    const promptCall = execa.mock.calls.find(
+      (call) => call[0] === 'gemini' && call[1]?.includes('-p'),
+    );
+    expect(promptCall).toBeDefined();
+    expect(promptCall[1]).toContain('--approval-mode');
+    expect(promptCall[1]).toContain('plan');
+  });
+
+  it('keeps codex in the read-only sandbox when allowedTools is an EMPTY array', async () => {
+    execa.mockResolvedValue({ exitCode: 0, stdout: 'codex result', stderr: '' });
+
+    await runAiPrompt('test prompt', {
+      config: { ai: { provider: 'openai' } },
+      allowedTools: [],
+    });
+
+    const promptCall = execa.mock.calls.find(
+      (call) => call[0] === 'codex' && call[1]?.[0] !== '--version',
+    );
+    expect(promptCall).toBeDefined();
+    expect(promptCall[1]).toContain('-s');
+    expect(promptCall[1]).toContain('read-only');
+  });
+
   it('defaults the claude provider to a read-only allowedTools sandbox', async () => {
     execa.mockResolvedValue({ exitCode: 0, stdout: 'claude result', stderr: '' });
 

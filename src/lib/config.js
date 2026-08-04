@@ -4,6 +4,7 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
+import { sanitizeUntrustedConfig, formatRefusals } from './config-trust.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -188,7 +189,16 @@ export async function loadConfig(startDir) {
   merged.manifestLayout = merged.manifestLayout || 'flat';
   merged.changelogDir = merged.changelogDir || 'changelogs';
 
-  return merged;
+  // `.sfdt/config.json` is committed and therefore arrives with whatever repo
+  // was cloned. Strip the keys that would execute code or choose where secrets
+  // get sent before any consumer — including the plugin loader in bin/sfdt.js,
+  // which runs before command parsing — can act on them. See config-trust.js.
+  const { config: safe, refused } = sanitizeUntrustedConfig(merged);
+  if (refused.length > 0) {
+    console.warn(formatRefusals(refused, configPath));
+  }
+
+  return safe;
 }
 
 /**

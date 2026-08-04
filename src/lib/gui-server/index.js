@@ -220,6 +220,13 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
   //     shape — defaultOrg is a string, not a nested object).
   //   - `defaultOrgFoo` is NOT blocked (different key entirely; the dot
   //     boundary prevents over-broad matching).
+  // Companion to `src/lib/config-trust.js`, which applies the same threat model
+  // one layer lower — at config *load* time, where the committed file crosses
+  // the trust boundary. This list stays because the two guard different things:
+  // that one refuses what a cloned repo supplies (overridable by the operator
+  // via SFDT_ALLOW_UNSAFE_CONFIG), this one refuses what the HTTP API may
+  // *write*, which nothing should override. `defaultOrg` is API-blocked here but
+  // deliberately not load-blocked there — every project legitimately sets it.
   const BLOCKED_CONFIG_KEY_PREFIXES = [
     'mcp.salesforce.command',
     'mcp.salesforce.args',
