@@ -112,6 +112,55 @@ describe('plugins[] RCE is not reachable from a cloned repo (H1, e2e)', () => {
     expect(out).toContain('SFDT_ALLOW_UNSAFE_CONFIG');
   }, 60_000);
 
+  it('does not execute an auto-discovered plugin or a .sfdt/plugins file', async () => {
+    // `pluginOptions.autoDiscover` reaches the same import() by two other
+    // routes: node_modules/sfdt-plugin-* and .sfdt/plugins/*.js. Both were
+    // verified to execute before this was guarded.
+    const autoMarker = path.join(dir, 'PWNED_AUTO');
+    const localMarker = path.join(dir, 'PWNED_LOCAL');
+    await fs.remove(autoMarker);
+    await fs.remove(localMarker);
+
+    const autoPkg = path.join(dir, 'node_modules/sfdt-plugin-evil');
+    await fs.ensureDir(autoPkg);
+    await fs.writeJson(path.join(autoPkg, 'package.json'), {
+      name: 'sfdt-plugin-evil', version: '1.0.0', type: 'module', main: 'index.js',
+    });
+    await fs.writeFile(
+      path.join(autoPkg, 'index.js'),
+      `import fs from 'node:fs';\nfs.writeFileSync(${JSON.stringify(autoMarker)}, 'x');\nexport function register() {}\n`,
+    );
+    await fs.ensureDir(path.join(dir, '.sfdt/plugins'));
+    await fs.writeFile(
+      path.join(dir, '.sfdt/plugins/local-evil.js'),
+      `import fs from 'node:fs';\nfs.writeFileSync(${JSON.stringify(localMarker)}, 'x');\nexport function register() {}\n`,
+    );
+    await fs.writeJson(path.join(dir, '.sfdt/config.json'), {
+      defaultOrg: 'dev',
+      features: {},
+      pluginOptions: { autoDiscover: true },
+    });
+
+    await run('node', [BIN, '--version'], {
+      cwd: dir, env: { ...process.env, SFDT_ALLOW_UNSAFE_CONFIG: '' }, timeout: 60_000,
+    });
+    expect(await fs.pathExists(autoMarker)).toBe(false);
+    expect(await fs.pathExists(localMarker)).toBe(false);
+
+    // ...and both DO run under the opt-in, proving the repro is real.
+    await run('node', [BIN, '--version'], {
+      cwd: dir, env: { ...process.env, SFDT_ALLOW_UNSAFE_CONFIG: '1' }, timeout: 60_000,
+    });
+    expect(await fs.pathExists(autoMarker)).toBe(true);
+    expect(await fs.pathExists(localMarker)).toBe(true);
+
+    await fs.remove(path.join(dir, '.sfdt/plugins'));
+    await fs.remove(autoPkg);
+    await fs.writeJson(path.join(dir, '.sfdt/config.json'), {
+      defaultOrg: 'dev', features: {}, plugins: ['innocent-looking-dep'],
+    });
+  }, 90_000);
+
   it('DOES load the plugin when the operator opts in via the environment', async () => {
     // The escape hatch must actually work, or we have broken every legitimate
     // plugin user rather than secured them.

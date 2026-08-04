@@ -33,6 +33,42 @@ describe('config trust boundary', () => {
     });
   });
 
+  describe('pluginOptions.autoDiscover — the other code-execution path (H1b)', () => {
+    // Guarding plugins[] alone left this wide open: a cloned repo can vendor
+    // node_modules/sfdt-plugin-evil/ or drop a file in .sfdt/plugins/ and flip
+    // this single boolean. Both were verified to execute before it was guarded.
+    it('refuses autoDiscover:true', () => {
+      const { config, refused } = sanitizeUntrustedConfig(
+        { pluginOptions: { autoDiscover: true } },
+        { allow: false },
+      );
+      expect(refused.map((r) => r.path)).toEqual(['pluginOptions.autoDiscover']);
+      expect(config.pluginOptions.autoDiscover).toBeUndefined();
+    });
+
+    it('leaves other pluginOptions keys intact', () => {
+      const { config } = sanitizeUntrustedConfig(
+        { pluginOptions: { autoDiscover: true, somethingElse: 'keep me' } },
+        { allow: false },
+      );
+      expect(config.pluginOptions.somethingElse).toBe('keep me');
+    });
+
+    it('does not flag autoDiscover when false or absent', () => {
+      expect(findUnsafeConfigSettings({ pluginOptions: { autoDiscover: false } })).toEqual([]);
+      expect(findUnsafeConfigSettings({ pluginOptions: {} })).toEqual([]);
+      expect(findUnsafeConfigSettings({})).toEqual([]);
+    });
+
+    it('is refused independently of plugins[] — both are separate entries', () => {
+      const { refused } = sanitizeUntrustedConfig(
+        { plugins: ['evil'], pluginOptions: { autoDiscover: true } },
+        { allow: false },
+      );
+      expect(refused.map((r) => r.path).sort()).toEqual(['pluginOptions.autoDiscover', 'plugins']);
+    });
+  });
+
   describe('mcp.salesforce.command — process spawn (H2)', () => {
     it('refuses the command and drops its args with it', () => {
       const { config, refused } = sanitizeUntrustedConfig(

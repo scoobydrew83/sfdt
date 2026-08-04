@@ -38,11 +38,34 @@ List package names in `.sfdt/config.json`:
 
 Packages are resolved from the **project's** `node_modules/`, not the global sfdt install.
 
+> **Since 0.22.0: `plugins[]` requires an opt-in.**
+>
+> `.sfdt/config.json` is normally committed, so it arrives with whatever repository was cloned —
+> and these entries are `import()`ed at CLI startup, before any command runs. sfdt therefore
+> **refuses them by default**, printing what it skipped and how to allow it. To load them, export:
+>
+> ```bash
+> export SFDT_ALLOW_UNSAFE_CONFIG=1
+> ```
+>
+> The opt-in is an environment variable rather than a config key on purpose: a key inside
+> `config.json` would be set by whoever wrote that file, which defeats the point. Put the export in
+> your shell profile, or in the CI job that needs the plugin — never in the repo's own config.
+>
+> Nothing else about plugin authoring changed. See
+> [ARCHITECTURE §18](./ARCHITECTURE.md#18-threat-boundaries) for the full list of guarded keys.
+
 ### 2. Auto-discovered packages (`pluginOptions.autoDiscover`)
 
 Opt in by setting `pluginOptions.autoDiscover: true` in `.sfdt/config.json`. When enabled, sfdt scans `node_modules/` for packages whose name starts with `sfdt-plugin-` (including scoped: `@org/sfdt-plugin-*`) and loads them automatically.
 
 **Auto-discovery is off by default.** It executes arbitrary project-local code before CLI parsing — only enable it when you control the packages in your project.
+
+> **Since 0.22.0, `pluginOptions.autoDiscover` also requires `SFDT_ALLOW_UNSAFE_CONFIG=1`.**
+> Setting it in `.sfdt/config.json` alone is no longer enough, and for the same reason as
+> `plugins[]` above: that file is committed, so a cloned repository could flip this one boolean
+> while vendoring its own `node_modules/sfdt-plugin-*` or dropping a file in `.sfdt/plugins/` —
+> reaching the same `import()` by two more routes. Both sources are covered by the opt-in.
 
 ### 3. Local files (`.sfdt/plugins/*.js`)
 

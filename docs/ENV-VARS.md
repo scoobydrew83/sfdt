@@ -58,7 +58,7 @@ These are read by the CLI itself rather than passed to shell scripts, so they ar
 
 | Variable | Effect |
 |----------|--------|
-| `SFDT_ALLOW_UNSAFE_CONFIG` | Set to exactly `1` to load the `.sfdt/config.json` keys that are otherwise refused: `plugins[]`, `mcp.salesforce.command`/`args`, a non-loopback `ai.baseURL`, and a notification channel's `headersEnv` beside a literal remote URL. See [ARCHITECTURE §18](./ARCHITECTURE.md#18-threat-boundaries) |
+| `SFDT_ALLOW_UNSAFE_CONFIG` | Set to exactly `1` to load the `.sfdt/config.json` keys that are otherwise refused: `plugins[]`, `pluginOptions.autoDiscover`, `mcp.salesforce.command`/`args`, a non-loopback `ai.baseURL`, and a notification channel's `headersEnv` beside a literal remote URL. See [ARCHITECTURE §18](./ARCHITECTURE.md#18-threat-boundaries) |
 
 `config.json` is committed by convention (`sfdt init` gitignores only `*.local.json`), so it
 arrives with whatever repository was cloned. The keys above execute code or choose where
