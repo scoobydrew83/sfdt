@@ -84,7 +84,7 @@ describe('ai-assistant — panel toggle', () => {
     const feature = createAiAssistantFeature({ api: fakeApi(), library: fakeLibrary() });
     feature.onActivate?.();
     await flush();
-    const closeBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '×')!;
+    const closeBtn = document.querySelector('button[aria-label="Close"]') as HTMLButtonElement;
     closeBtn.click();
     expect(document.querySelector('.sfdt-view-overlay')).toBeNull();
   });
@@ -163,7 +163,7 @@ describe('ai-assistant — populated panel', () => {
     const feature = createAiAssistantFeature({ api: fakeApi(), library: fakeLibrary() });
     feature.onActivate?.();
     await flush();
-    const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '📋 Copy Raw')!;
+    const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Copy Raw')!;
     btn.click();
     await flush();
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(JSON.stringify({ label: 'Demo', start: {} }, null, 2));
@@ -174,7 +174,7 @@ describe('ai-assistant — populated panel', () => {
     const feature = createAiAssistantFeature({ api: fakeApi(), library });
     feature.onActivate?.();
     await flush();
-    const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '📋 Copy Prompt')!;
+    const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Copy Prompt')!;
     btn.click();
     await flush();
     expect(library.assemble).toHaveBeenCalledWith('review', expect.any(String));
@@ -186,7 +186,7 @@ describe('ai-assistant — populated panel', () => {
     feature.onActivate?.();
     await flush();
     const labels = Array.from(document.querySelectorAll('.sfdt-ai-panel-body button')).map((b) => b.textContent);
-    expect(labels).toEqual(['📋 Copy Raw', '📋 Copy Clean', '📋 Copy Prompt', '🚀 Run via sfdt']);
+    expect(labels).toEqual(['Copy Raw', 'Copy Clean', 'Copy Prompt', 'Run via sfdt']);
   });
 });
 
@@ -205,7 +205,7 @@ describe('ai-assistant — Run via sfdt', () => {
     feature.onActivate?.();
     await flush();
     const runBtn = Array.from(document.querySelectorAll('button')).find(
-      (b) => b.textContent === '🚀 Run via sfdt',
+      (b) => b.textContent === 'Run via sfdt',
     ) as HTMLButtonElement;
     runBtn.click();
     await flush();
@@ -235,7 +235,7 @@ describe('ai-assistant — Run via sfdt', () => {
     const { factory } = fakeBridge({ ok: true, data: { response: 'answer text', provider: 'claude' } });
     await openAndRun(factory);
     const copyBtn = Array.from(document.querySelectorAll('button')).find(
-      (b) => b.textContent === '📋 Copy response',
+      (b) => b.textContent === 'Copy response',
     )!;
     copyBtn.click();
     await flush();
@@ -261,7 +261,7 @@ describe('ai-assistant — Run via sfdt', () => {
     feature.onActivate?.();
     await flush();
     const runBtn = Array.from(document.querySelectorAll('button')).find(
-      (b) => b.textContent === '🚀 Run via sfdt',
+      (b) => b.textContent === 'Run via sfdt',
     ) as HTMLButtonElement;
     runBtn.click();
     await flush();
@@ -270,7 +270,7 @@ describe('ai-assistant — Run via sfdt', () => {
     release({ ok: true, data: { response: 'done', provider: 'claude' } });
     await flush();
     expect(runBtn.disabled).toBe(false);
-    expect(runBtn.textContent).toBe('🚀 Run via sfdt');
+    expect(runBtn.textContent).toBe('Run via sfdt');
   });
 
   it('a second run replaces the previous result', async () => {
@@ -286,7 +286,7 @@ describe('ai-assistant — Run via sfdt', () => {
     feature.onActivate?.();
     await flush();
     const runBtn = Array.from(document.querySelectorAll('button')).find(
-      (b) => b.textContent === '🚀 Run via sfdt',
+      (b) => b.textContent === 'Run via sfdt',
     ) as HTMLButtonElement;
     runBtn.click();
     await flush();

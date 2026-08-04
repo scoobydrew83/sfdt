@@ -11,6 +11,7 @@ import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { mountHealthModal, type HealthModalHandle, type HealthReport } from '../ui/health-modal.js';
 import { showToast } from '../ui/toast.js';
+import { copyToClipboard } from '../ui/clipboard.js';
 
 const DEFAULT_RULES_CONFIG = {
   outdatedApiVersionThreshold: 6,
@@ -123,7 +124,7 @@ export function createFlowHealthCheckFeature(options: FlowHealthCheckOptions = {
         doc,
         onCopyJson: async (json) => {
           try {
-            await navigator.clipboard.writeText(json);
+            await copyToClipboard(json, { doc, label: 'health report' });
             showToast('JSON copied to clipboard ✓', { kind: 'success', doc });
           } catch {
             showToast('Could not copy to clipboard', { kind: 'error', doc });

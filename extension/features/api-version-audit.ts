@@ -159,7 +159,7 @@ function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
   ].join('; ');
 
   const summary = doc.createElement('div');
-  summary.style.cssText = 'font-weight: 700; font-size: 14px; margin-bottom: 10px;';
+  summary.classList.add('sfdt-subhead');
   summary.textContent = describeAuditPill(data).text;
   panel.appendChild(summary);
 
@@ -167,7 +167,7 @@ function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
   let listId = 0; // unique aria-controls targets within this panel
   for (const t of data.types) {
     const heading = doc.createElement('div');
-    heading.style.cssText = 'font-weight: 700; margin: 6px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--sfdt-color-text-weak);';
+    heading.classList.add('sfdt-caps', 'sfdt-below');
     heading.textContent = t.label;
     panel.appendChild(heading);
 
@@ -252,7 +252,7 @@ function buildPanel(doc: Document, data: AuditData): HTMLDivElement {
       ].join('; ');
       for (const name of bucket.names) {
         const li = doc.createElement('li');
-        li.style.cssText = 'padding: 1px 0;';
+        li.classList.add('sfdt-prose', 'sfdt-flush-x');
         li.textContent = name;
         names.appendChild(li);
       }

@@ -5,70 +5,82 @@
 // itself, so the credential stays in the worker.
 
 import { SFDT_TOKENS_CSS } from '../../lib/tokens.js';
+import { SFDT_COMPONENT_CSS } from '../../lib/ui-styles.js';
+import { watchTheme, OWN_PAGE_COLOR_SCHEME_CSS } from '../../lib/theme.js';
 import { loadPopupState, renderPopup, type PopupState } from '../../lib/popup.js';
 import { salesforceHostFromUrl } from '../../lib/sf-tab.js';
 import { loadSettings } from '../../lib/settings.js';
 
+// Popup-specific LAYOUT only. The card/button/nav-item/dot primitives come from
+// lib/ui-styles.ts (SFDT_COMPONENT_CSS), which this entrypoint injects — the
+// stack of bespoke `.sfdt-popup-btn` rules that used to live here is exactly the
+// duplication that sheet exists to end.
 const STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
   body {
     margin: 0;
-    width: 300px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    width: 320px;
+    font: var(--sfdt-type-body-md);
     background: var(--sfdt-color-surface);
     /* text-strong, not brand-deep: brand-deep is a navy FILL token, so using it
        as the popup's inherited foreground put navy-on-near-black in dark mode
        (the title inherits it). Light values are identical, so light is unchanged. */
     color: var(--sfdt-color-text-strong);
   }
-  #sfdt-popup-root { padding: 14px 16px; }
-  .sfdt-popup-title { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 6px; }
-  .sfdt-popup-body { font-size: 13px; margin-bottom: 12px; }
+  #sfdt-popup-root { display: flex; flex-direction: column; }
+
+  /* The header row is .sfdt-panel-head from lib/ui-styles.ts — shared with the
+     ⚡ side menu. Nothing popup-specific to add. */
+
+  /* Status strip: the popup's only answer to "why isn't the tool working". */
+  .sfdt-popup-body {
+    padding: var(--sfdt-space-3) var(--sfdt-space-4);
+    background: var(--sfdt-color-surface-shade-2);
+    border-bottom: 1px solid var(--sfdt-color-border);
+  }
   .sfdt-popup-org {
-    font-family: ui-monospace, monospace;
-    font-size: 12px;
+    font: var(--sfdt-type-code-sm);
     word-break: break-all;
-    margin-bottom: 8px;
+    margin-bottom: var(--sfdt-space-2);
     color: var(--sfdt-color-text);
   }
-  .sfdt-popup-org strong { font-family: -apple-system, system-ui, sans-serif; }
-  .sfdt-popup-status { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
-  .sfdt-popup-status-text { color: var(--sfdt-color-text-weak); }
+  .sfdt-popup-org strong { font: var(--sfdt-type-body-sm); font-weight: 600; }
+  .sfdt-popup-status { display: flex; align-items: center; gap: var(--sfdt-space-2); padding: 3px 0; }
+  .sfdt-popup-status-text { color: var(--sfdt-color-text-weak); font: var(--sfdt-type-body-sm); }
+  /* Sized here rather than reusing .sfdt-dot: the popup's dots sit on a tinted
+     strip and carry an inset ring so a pale status still reads against it. */
   .sfdt-popup-dot {
-    width: 9px; height: 9px; border-radius: 50%;
+    width: 9px; height: 9px; border-radius: var(--sfdt-radius-pill);
     flex: 0 0 auto;
     box-shadow: 0 0 0 1px rgba(0,0,0,0.08) inset;
   }
-  .sfdt-popup-empty { color: var(--sfdt-color-text-weak); font-size: 13px; line-height: 1.45; margin: 0; }
-  .sfdt-popup-actions { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
-  .sfdt-popup-btn {
-    width: 100%;
-    padding: 8px 12px;
-    border-radius: 4px;
-    border: 1px solid var(--sfdt-color-border);
-    background: var(--sfdt-color-surface);
-    color: var(--sfdt-color-brand-text);
-    cursor: pointer;
-    font-size: 13px;
-    font-family: inherit;
-    text-align: center;
+  /* The fill comes from the shared '.sfdt-ok' / '.sfdt-idle' threshold classes
+     the dot also carries, but those are scoped to '.sfdt-dot' in the component
+     sheet — so the popup's own variant restates the mapping here rather than
+     going back to an inline background. */
+  .sfdt-popup-dot.sfdt-ok { background: var(--sfdt-color-success); }
+  .sfdt-popup-dot.sfdt-warn { background: var(--sfdt-color-warning); }
+  .sfdt-popup-dot.sfdt-bad { background: var(--sfdt-color-error); }
+  .sfdt-popup-dot.sfdt-idle { background: var(--sfdt-color-text-icon); }
+  .sfdt-popup-empty { color: var(--sfdt-color-text-weak); font: var(--sfdt-type-body-sm); line-height: 1.45; margin: 0; }
+
+  .sfdt-popup-actions { padding: var(--sfdt-space-2) 0; }
+  /* .sfdt-nav-item supplies the row geometry, hover and focus ring; these only
+     adjust the horizontal padding to the popup's narrower gutter. */
+  .sfdt-popup-btn { padding-left: var(--sfdt-space-4); padding-right: var(--sfdt-space-4); }
+  .sfdt-popup-btn.primary { color: var(--sfdt-color-brand-text); font-weight: 600; }
+  .sfdt-popup-btn.primary .sfdt-glyph { color: var(--sfdt-color-brand-text); }
+
+  .sfdt-popup-foot {
+    display: flex; align-items: center;
+    border-top: 1px solid var(--sfdt-color-border);
+    background: var(--sfdt-color-surface-alt);
   }
-  .sfdt-popup-btn:hover { background: var(--sfdt-color-bg); }
-  .sfdt-popup-btn.primary {
-    background: var(--sfdt-color-brand);
-    color: var(--sfdt-color-on-accent);
-    border-color: var(--sfdt-color-brand);
-  }
-  .sfdt-popup-btn.primary:hover { background: var(--sfdt-color-brand-active); }
-  .sfdt-popup-btn:focus-visible {
-    outline: 2px solid var(--sfdt-color-info);
-    outline-offset: 2px;
-  }
+  .sfdt-popup-foot .sfdt-popup-settings { width: auto; flex: 1; }
   .sfdt-popup-version {
-    font-size: 11px;
+    padding-right: var(--sfdt-space-4);
+    font: var(--sfdt-type-code-sm);
     color: var(--sfdt-color-text-icon);
-    text-align: right;
-    font-family: ui-monospace, monospace;
   }
 `;
 
@@ -144,8 +156,17 @@ function bindHandlers(activeTabUrl: string | undefined, activeTabId: number | un
 
 async function main(): Promise<void> {
   const styleTag = document.createElement('style');
-  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${STYLES}`;
+  // Order matters: tokens define the custom properties the component sheet
+  // consumes, and STYLES layers this surface's layout on top of both.
+  styleTag.textContent = `${SFDT_TOKENS_CSS}\n${OWN_PAGE_COLOR_SCHEME_CSS}\n${SFDT_COMPONENT_CSS}\n${STYLES}`;
   document.head.appendChild(styleTag);
+  // Without this the popup only ever honoured the OS preference: the token
+  // sheet's `prefers-color-scheme` block is a pre-JS fallback, and nothing was
+  // resolving `settings.theme` into the `data-sfdt-theme` attribute. So a user
+  // who had explicitly chosen Dark while their OS was Light got a light popup —
+  // the one surface that ignored their setting. Every other own-page surface
+  // (Workspace, side panel, options) already did this.
+  watchTheme(document);
 
   const root = document.getElementById('sfdt-popup-root');
   if (!root) return;

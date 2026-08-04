@@ -1,12 +1,29 @@
 import { z } from 'zod';
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import { escapeSoql } from '../lib/escape.js';
+import {
+  TRACE_FLAG_DURATION_MS,
+  traceFlagWindow,
+  traceFlagCreatePayload,
+  renewTraceFlagPayload,
+  traceFlagIsActive,
+} from '../lib/trace-flag.js';
+
+export {
+  TRACE_FLAG_DURATION_MS,
+  traceFlagWindow,
+  traceFlagCreatePayload,
+  renewTraceFlagPayload,
+  traceFlagIsActive,
+};
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { SF_API_VERSION } from '../lib/api-version.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { setTone, button } from '../lib/ui-controls.js';
+import { storageGet, storageSet } from '../lib/storage.js';
 
 // --- Constants -------------------------------------------------------------
 
@@ -69,11 +86,6 @@ export const MANAGED_LEVEL_NAMES: Record<Preset, string> = {
   custom: 'SFDT_TF_Custom',
 };
 
-// DEVELOPER_LOG trace flags may span at most 24h from their start date.
-export const TRACE_FLAG_DURATION_MS = 24 * 60 * 60 * 1000;
-// Back-date the start so client/server clock skew can't push it "into the
-// future" and get the create/renew rejected.
-const TRACE_FLAG_START_BUFFER_MS = 60 * 1000;
 
 const CUSTOM_PRESET_STORAGE_KEY = 'traceFlags.customPreset';
 
@@ -169,34 +181,6 @@ export function debugLevelEndpoint(id: string): string {
   return `${debugLevelCollectionEndpoint()}/${id}`;
 }
 
-// A 24h-capped window from a back-dated start. nowMs is injected so the dates
-// are deterministic in tests.
-export function traceFlagWindow(nowMs: number): { StartDate: string; ExpirationDate: string } {
-  const start = nowMs - TRACE_FLAG_START_BUFFER_MS;
-  return {
-    StartDate: new Date(start).toISOString(),
-    ExpirationDate: new Date(start + TRACE_FLAG_DURATION_MS).toISOString(),
-  };
-}
-
-export function traceFlagCreatePayload(
-  entityId: string,
-  debugLevelId: string,
-  nowMs: number,
-): Record<string, string> {
-  return {
-    TracedEntityId: entityId,
-    DebugLevelId: debugLevelId,
-    LogType: 'DEVELOPER_LOG',
-    ...traceFlagWindow(nowMs),
-  };
-}
-
-// Renew = push the expiry forward. Both dates move so we never violate the 24h
-// cap (StartDate + 24h) that a stale StartDate would otherwise breach.
-export function renewTraceFlagPayload(nowMs: number): Record<string, string> {
-  return traceFlagWindow(nowMs);
-}
 
 export function debugLevelPayload(
   developerName: string,
@@ -234,19 +218,13 @@ function uniq(ids: readonly string[]): string[] {
 // --- Custom-preset persistence (round-trips exactly) -----------------------
 
 export async function readCustomPreset(): Promise<CategoryMap> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(CUSTOM_PRESET_STORAGE_KEY, (result) => {
-      const raw = result?.[CUSTOM_PRESET_STORAGE_KEY] as Partial<CategoryMap> | undefined;
-      // Merge onto Basic so a partial/older stored map still yields every category.
-      resolve({ ...PRESET_BASIC, ...(raw ?? {}) });
-    });
-  });
+  const raw = await storageGet<Partial<CategoryMap>>(CUSTOM_PRESET_STORAGE_KEY);
+  // Merge onto Basic so a partial/older stored map still yields every category.
+  return { ...PRESET_BASIC, ...(raw ?? {}) };
 }
 
 export async function writeCustomPreset(categories: CategoryMap): Promise<void> {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [CUSTOM_PRESET_STORAGE_KEY]: categories }, () => resolve());
-  });
+  await storageSet(CUSTOM_PRESET_STORAGE_KEY, categories);
 }
 
 // --- Feature ---------------------------------------------------------------
@@ -360,44 +338,35 @@ export function createTraceFlagsFeature(options: TraceFlagsOptions = {}): Featur
     );
 
     const body = doc.createElement('div');
-    body.style.cssText =
-      'padding: 14px 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px;';
-
+    body.className = 'sfdt-view-body';
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
     // ---- Start-session panel ----
     const startPanel = doc.createElement('div');
     startPanel.style.cssText =
       'display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--sfdt-color-border); border-radius: 6px; background: var(--sfdt-color-surface-alt);';
     const startTitle = doc.createElement('div');
     startTitle.textContent = 'Start debug session';
-    startTitle.style.cssText = 'font-size: 13px; font-weight: 600;';
+    startTitle.className = 'sfdt-subhead';
     startPanel.appendChild(startTitle);
 
     const startRow = doc.createElement('div');
-    startRow.style.cssText = 'display: flex; gap: 8px; align-items: center; flex-wrap: wrap;';
-
+    startRow.classList.add('sfdt-row', 'sfdt-wrap');
     const userSearch = doc.createElement('input');
     userSearch.type = 'search';
     userSearch.placeholder = 'Find a user by name or username…';
     userSearch.setAttribute('aria-label', 'Find a user by name or username');
-    userSearch.style.cssText =
-      'flex: 1; min-width: 200px; padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; background: var(--sfdt-color-surface); color: var(--sfdt-color-text);';
-
-    const meBtn = doc.createElement('button');
-    meBtn.type = 'button';
-    meBtn.textContent = 'Me';
-    meBtn.setAttribute('aria-label', 'Trace my own user');
-    meBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px; cursor: pointer; font-size: 12px;';
+    userSearch.className = 'sfdt-field';
+    userSearch.classList.add('sfdt-search');
+    const meBtn = button({ label: 'Me', iconName: 'user', ariaLabel: 'Trace my own user', doc });
 
     // Preset picker.
     const presetLabel = doc.createElement('label');
-    presetLabel.style.cssText =
-      'display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sfdt-color-text-weak);';
+    presetLabel.classList.add('sfdt-row', 'sfdt-snug');
     const presetLabelText = doc.createElement('span');
     presetLabelText.textContent = 'Level';
     const presetSelect = doc.createElement('select');
-    presetSelect.style.cssText =
-      'font-size: 12px; padding: 5px 6px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px;';
+    presetSelect.className = 'sfdt-field sfdt-auto';
     for (const [value, text] of [
       ['basic', 'Basic'],
       ['full', 'Full (FINEST)'],
@@ -416,7 +385,7 @@ export function createTraceFlagsFeature(options: TraceFlagsOptions = {}): Featur
 
     // Search results (buttons that start a session for the chosen user).
     const results = doc.createElement('div');
-    results.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
+    results.classList.add('sfdt-stack', 'sfdt-tight');
     startPanel.appendChild(results);
 
     // ---- Custom-preset editor (per-category selects) ----
@@ -426,14 +395,12 @@ export function createTraceFlagsFeature(options: TraceFlagsOptions = {}): Featur
     const customSelects = new Map<DebugCategory, HTMLSelectElement>();
     for (const cat of DEBUG_CATEGORIES) {
       const wrap = doc.createElement('label');
-      wrap.style.cssText =
-        'display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 11px; color: var(--sfdt-color-text-weak);';
+      wrap.classList.add('sfdt-row', 'sfdt-snug', 'sfdt-split');
       const name = doc.createElement('span');
       name.textContent = cat;
       const sel = doc.createElement('select');
       sel.setAttribute('aria-label', `${cat} log level`);
-      sel.style.cssText =
-        'font-size: 11px; padding: 3px 4px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px;';
+      sel.className = 'sfdt-field sfdt-auto';
       for (const lvl of DEBUG_LEVELS) {
         const o = doc.createElement('option');
         o.value = lvl;
@@ -474,27 +441,27 @@ export function createTraceFlagsFeature(options: TraceFlagsOptions = {}): Featur
     presetSelect.addEventListener('change', () => void syncCustomEditorVisibility());
     void syncCustomEditorVisibility();
 
-    body.appendChild(startPanel);
+    main.appendChild(startPanel);
 
     // ---- Toolbar + flag list ----
     const toolbar = doc.createElement('div');
-    toolbar.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+    toolbar.classList.add('sfdt-row');
     const status = doc.createElement('div');
-    status.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
-    const refreshBtn = doc.createElement('button');
-    refreshBtn.type = 'button';
-    refreshBtn.textContent = '↻ Refresh';
-    refreshBtn.style.cssText =
-      'margin-left: auto; padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px; cursor: pointer; font-size: 12px;';
+    status.className = 'sfdt-muted';
+    const refreshBtn = button({ label: 'Refresh', iconName: 'refresh', small: true, doc });
+    refreshBtn.classList.add('sfdt-toolbar-end');
     toolbar.append(status, refreshBtn);
-    body.appendChild(toolbar);
+    main.appendChild(toolbar);
 
     const table = doc.createElement('div');
-    table.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
-    body.appendChild(table);
+    table.classList.add('sfdt-stack', 'sfdt-tight');
+    main.appendChild(table);
+
+    body.appendChild(main);
 
     view = presentView({
-      title: '⚑ Trace Flags',
+      title: 'Trace Flags',
+      iconName: 'trace-flags',
       body,
       doc,
       width: '900px',
@@ -511,9 +478,7 @@ export function createTraceFlagsFeature(options: TraceFlagsOptions = {}): Featur
       for (const { span, exp } of countdowns) {
         const c = traceFlagCountdown(exp, now);
         span.textContent = c.label;
-        span.style.color = c.expired
-          ? 'var(--sfdt-color-error-text)'
-          : 'var(--sfdt-color-success-text)';
+        setTone(span, c.expired ? 'muted' : 'ok');
       }
     }
 
@@ -538,8 +503,7 @@ export function createTraceFlagsFeature(options: TraceFlagsOptions = {}): Featur
         status.textContent = `${flags.length} trace flag${flags.length === 1 ? '' : 's'}`;
         if (flags.length === 0) {
           const empty = doc.createElement('div');
-          empty.style.cssText =
-            'color: var(--sfdt-color-text-icon); font-size: 12px; padding: 8px;';
+          empty.classList.add('sfdt-prose', 'sfdt-muted');
           empty.textContent = 'No trace flags. Start a debug session above to create one.';
           table.appendChild(empty);
           return;
@@ -604,23 +568,26 @@ export function createTraceFlagsFeature(options: TraceFlagsOptions = {}): Featur
           const spacer = doc.createElement('span');
           spacer.style.cssText = 'flex: 1;';
 
-          const renewBtn = doc.createElement('button');
-          renewBtn.type = 'button';
-          renewBtn.textContent = 'Renew';
-          renewBtn.setAttribute('aria-label', `Renew trace flag for ${user.textContent}`);
-          renewBtn.style.cssText =
-            'padding: 3px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px; cursor: pointer; font-size: 12px;';
+          const renewBtn = button({
+            label: 'Renew',
+            iconName: 'refresh',
+            small: true,
+            ariaLabel: `Renew trace flag for ${user.textContent}`,
+            doc,
+          });
           renewBtn.addEventListener(
             'click',
             () => void runAction(() => renewFlag(flag.Id), 'Trace flag renewed.'),
           );
 
-          const stopBtn = doc.createElement('button');
-          stopBtn.type = 'button';
-          stopBtn.textContent = 'Stop';
-          stopBtn.setAttribute('aria-label', `Stop trace flag for ${user.textContent}`);
-          stopBtn.style.cssText =
-            'padding: 3px 10px; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-surface); color: var(--sfdt-color-error-text); border-radius: 4px; cursor: pointer; font-size: 12px;';
+          const stopBtn = button({
+            label: 'Stop',
+            iconName: 'close',
+            variant: 'danger',
+            small: true,
+            ariaLabel: `Stop trace flag for ${user.textContent}`,
+            doc,
+          });
           stopBtn.addEventListener(
             'click',
             () => void runAction(() => stopFlag(flag.Id), 'Trace flag stopped.'),
@@ -634,8 +601,7 @@ export function createTraceFlagsFeature(options: TraceFlagsOptions = {}): Featur
       } catch (err) {
         status.textContent = '';
         const errPanel = doc.createElement('div');
-        errPanel.style.cssText =
-          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
+        errPanel.classList.add('sfdt-console', 'sfdt-error');
         errPanel.textContent = err instanceof Error ? err.message : String(err);
         table.appendChild(errPanel);
       }
@@ -653,18 +619,19 @@ export function createTraceFlagsFeature(options: TraceFlagsOptions = {}): Featur
         const res = await api.query<UserRow>(buildUserSearchQuery(term.trim()));
         if (res.records.length === 0) {
           const none = doc.createElement('div');
-          none.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-icon); padding: 4px;';
+          none.classList.add('sfdt-prose', 'sfdt-muted');
           none.textContent = 'No matching active users.';
           results.appendChild(none);
           return;
         }
         for (const u of res.records) {
-          const btn = doc.createElement('button');
-          btn.type = 'button';
-          btn.textContent = `▶ ${u.Name}${u.Username ? ` · ${u.Username}` : ''}`;
-          btn.setAttribute('aria-label', `Start a debug session for ${u.Name}`);
-          btn.style.cssText =
-            'text-align: left; padding: 5px 8px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px; cursor: pointer; font-size: 12px;';
+          const btn = button({
+            label: `${u.Name}${u.Username ? ` · ${u.Username}` : ''}`,
+            iconName: 'play',
+            small: true,
+            ariaLabel: `Start a debug session for ${u.Name}`,
+            doc,
+          });
           btn.addEventListener('click', () =>
             void runAction(async () => {
               await startSession(u.Id, currentPreset());

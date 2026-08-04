@@ -3,6 +3,8 @@
 // palette-sources for recent-first ordering; the ordering logic itself stays
 // pure in palette-sources — this module only persists the id list.
 
+import { storageGet, storageSet } from './storage.js';
+
 const RECENTS_KEY = 'sfdt.palette.recents';
 const MAX_RECENTS = 20;
 
@@ -15,17 +17,10 @@ export function mergeRecent(list: readonly string[], id: string, max = MAX_RECEN
 }
 
 export async function loadRecents(): Promise<string[]> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(RECENTS_KEY, (result) => {
-      const raw = result?.[RECENTS_KEY];
-      resolve(Array.isArray(raw) ? (raw.filter((x) => typeof x === 'string') as string[]) : []);
-    });
-  });
+  const raw = await storageGet(RECENTS_KEY);
+  return Array.isArray(raw) ? (raw.filter((x) => typeof x === 'string') as string[]) : [];
 }
 
 export async function pushRecent(id: string): Promise<void> {
-  const next = mergeRecent(await loadRecents(), id);
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [RECENTS_KEY]: next }, () => resolve());
-  });
+  await storageSet(RECENTS_KEY, mergeRecent(await loadRecents(), id));
 }

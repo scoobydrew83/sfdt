@@ -6,9 +6,13 @@ import { SF_API_VERSION } from '../lib/api-version.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
-import { getContentRoot } from '../ui/content-root.js';
 import { parseApexLog } from '../lib/apex-log/index.js';
 import { presentApexLogAnalyzer } from '../ui/apex-log-analyzer.js';
+import { button, field, glyph, toolbar } from '../lib/ui-controls.js';
+import { createLimitTiles, pickLimitSnapshot } from '../ui/apex-limit-tiles.js';
+import { renderApexLogBody } from '../ui/apex-log-console.js';
+import { confirmDialog } from '../ui/confirm-dialog.js';
+import { errorPanel } from '../ui/panels.js';
 
 const DEBUG_LOG_SETTINGS_SCHEMA = z.object({
   pageSize: z.number().int().min(1).max(200).default(50),
@@ -80,93 +84,6 @@ export function importApexLogText(
   return presentApexLogAnalyzer({ parsed, rawText: text, title: fileName, doc });
 }
 
-// Small accessible count-confirm dialog for the destructive bulk delete.
-// role="dialog" + aria-modal, labelled by its title; Esc (capture phase, removed
-// on close) and backdrop click cancel; Tab is trapped between the two buttons;
-// focus is moved to Cancel on open and restored to the opener on close
-// (CONVENTIONS.md items 1–6, 8–10). Mounts into the shared shadow content root.
-function confirmDialog(
-  doc: Document,
-  opts: { title: string; message: string; confirmLabel: string },
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    const previouslyFocused = doc.activeElement as HTMLElement | null;
-
-    const overlay = doc.createElement('div');
-    overlay.className = 'sfdt-confirm-overlay';
-    overlay.style.cssText =
-      'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100025; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif;';
-
-    const card = doc.createElement('div');
-    card.setAttribute('role', 'dialog');
-    card.setAttribute('aria-modal', 'true');
-    const titleId = `sfdt-confirm-title-${Math.random().toString(36).slice(2)}`;
-    card.setAttribute('aria-labelledby', titleId);
-    card.style.cssText =
-      'background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px; padding: 16px; min-width: 320px; max-width: 460px;';
-
-    const title = doc.createElement('h2');
-    title.id = titleId;
-    title.textContent = opts.title;
-    title.style.cssText = 'margin: 0 0 8px; font-size: 16px;';
-
-    const msg = doc.createElement('p');
-    msg.textContent = opts.message;
-    msg.style.cssText = 'margin: 0 0 12px; font-size: 13px; color: var(--sfdt-color-text-weak);';
-
-    const footer = doc.createElement('div');
-    footer.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px;';
-    const cancelBtn = doc.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px; cursor: pointer; font-size: 13px;';
-    const confirmBtn = doc.createElement('button');
-    confirmBtn.type = 'button';
-    confirmBtn.textContent = opts.confirmLabel;
-    confirmBtn.style.cssText =
-      'padding: 6px 12px; border: 0; background: var(--sfdt-color-error); color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 13px;';
-    footer.append(cancelBtn, confirmBtn);
-
-    card.append(title, msg, footer);
-    overlay.appendChild(card);
-
-    const onKeydown = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        cleanup(false);
-      }
-    };
-    // Capture phase so Esc fires even when focus sits in a Salesforce widget,
-    // and removed on close so it can't leak across SPA navigations (item 1).
-    doc.addEventListener('keydown', onKeydown, true);
-
-    // Two-button focus trap: Tab/Shift-Tab only ever move between these two
-    // controls, so focus can never reach the page behind the dialog (item 3).
-    card.addEventListener('keydown', (e) => {
-      if (e.key !== 'Tab') return;
-      e.preventDefault();
-      (e.target === confirmBtn ? cancelBtn : confirmBtn).focus();
-    });
-
-    function cleanup(result: boolean): void {
-      doc.removeEventListener('keydown', onKeydown, true);
-      overlay.remove();
-      previouslyFocused?.focus?.();
-      resolve(result);
-    }
-
-    cancelBtn.addEventListener('click', () => cleanup(false));
-    confirmBtn.addEventListener('click', () => cleanup(true));
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) cleanup(false);
-    });
-
-    (getContentRoot() ?? doc.body).appendChild(overlay);
-    setTimeout(() => cancelBtn.focus(), 0);
-  });
-}
-
 export interface DebugLogViewerOptions {
   doc?: Document;
   win?: Window;
@@ -212,77 +129,134 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
     }) as z.infer<typeof DEBUG_LOG_SETTINGS_SCHEMA>;
 
     const body = doc.createElement('div');
-    body.style.cssText =
-      'padding: 12px 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px;';
+    body.className = 'sfdt-view-body';
 
-    // Toolbar (status + refresh) lives at the top of the body so it shows in both
-    // the modal and the workspace tab — presentView's header is title + × only.
-    const toolbar = doc.createElement('div');
-    toolbar.style.cssText = 'display: flex; align-items: center; gap: 10px;';
-    const status = doc.createElement('div');
-    status.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
+    // Toolbar lives at the top of the BODY, not in presentView's header, so it
+    // shows in both presentations — the workspace tab supplies its own chrome
+    // and would swallow anything put in the header there.
+    const bar = toolbar(doc);
+
+    const filterField = field({
+      placeholder: 'Filter logs…',
+      ariaLabel: 'Filter debug logs',
+      doc,
+    });
+    filterField.classList.add('sfdt-toolbar-grow');
 
     // Auto-refresh toggle — native checkbox in a <label> so it's labelled and
     // keyboard-operable for free. OFF by default; toggling on starts the poll.
     const autoLabel = doc.createElement('label');
-    autoLabel.style.cssText =
-      'margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--sfdt-color-text-weak); cursor: pointer;';
+    autoLabel.className = 'sfdt-check';
     const autoToggle = doc.createElement('input');
     autoToggle.type = 'checkbox';
     const autoText = doc.createElement('span');
     autoText.textContent = 'Auto-refresh (15s)';
     autoLabel.append(autoToggle, autoText);
 
-    const deleteBtn = doc.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.textContent = '🗑 Delete all logs';
-    deleteBtn.setAttribute('aria-label', 'Delete all debug logs');
-    deleteBtn.style.cssText =
-      'padding: 4px 10px; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-surface); color: var(--sfdt-color-error-text); border-radius: 4px; cursor: pointer; font-size: 12px;';
+    const deleteBtn = button({
+      label: 'Delete all logs',
+      iconName: 'trash',
+      variant: 'danger',
+      ariaLabel: 'Delete all debug logs',
+      small: true,
+      doc,
+    });
+    const refreshBtn = button({
+      iconName: 'refresh',
+      title: 'Refresh',
+      ariaLabel: 'Refresh',
+      small: true,
+      doc,
+    });
 
-    const refreshBtn = doc.createElement('button');
-    refreshBtn.textContent = '↻ Refresh';
-    refreshBtn.style.cssText =
-      'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
-    toolbar.appendChild(status);
-    toolbar.appendChild(autoLabel);
-    // Header entry into the Trace Flags manager (only when wired by the entrypoint).
+    bar.appendChild(filterField);
+    bar.appendChild(autoLabel);
+    // Entry into the Trace Flags manager (only when wired by the entrypoint).
+    // The two tools are siblings — a trace flag is what makes ApexLogs exist at
+    // all — so this is a cross-link, not a duplicate of that view.
     if (onManageTraceFlags) {
-      const traceBtn = doc.createElement('button');
-      traceBtn.type = 'button';
-      traceBtn.textContent = '⚑ Trace flags';
-      traceBtn.setAttribute('aria-label', 'Manage trace flags');
-      traceBtn.style.cssText =
-        'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px; cursor: pointer; font-size: 12px;';
-      traceBtn.addEventListener('click', () => onManageTraceFlags());
-      toolbar.appendChild(traceBtn);
+      bar.appendChild(
+        button({
+          label: 'Trace flags',
+          iconName: 'flag',
+          ariaLabel: 'Manage trace flags',
+          small: true,
+          onClick: () => onManageTraceFlags(),
+          doc,
+        }),
+      );
     }
-    toolbar.appendChild(deleteBtn);
-    toolbar.appendChild(refreshBtn);
-    body.appendChild(toolbar);
+    bar.appendChild(deleteBtn);
+    bar.appendChild(refreshBtn);
+    body.appendChild(bar);
+
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
 
     // Import-from-disk zone. Analyzes a LOCAL .log/.txt via the same analyzer as
     // an org log, with NO Salesforce call — so it works with no session at all.
     // The file input is natively labelled (wrapped in <label>) and keyboard-
     // operable (Enter/Space opens the picker); the zone is also a drop target.
     const importZone = doc.createElement('div');
-    importZone.style.cssText =
-      'display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px dashed var(--sfdt-color-border); border-radius: 4px; font-size: 12px; color: var(--sfdt-color-text-weak);';
+    importZone.className = 'sfdt-drop';
     const importLabel = doc.createElement('label');
-    importLabel.style.cssText =
-      'display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--sfdt-color-text);';
+    importLabel.className = 'sfdt-check';
+    importLabel.appendChild(glyph('upload', 16, doc));
     const importText = doc.createElement('span');
-    importText.textContent = '📂 Import log';
+    importText.textContent = 'Import log';
     const importInput = doc.createElement('input');
     importInput.type = 'file';
     importInput.accept = '.log,.txt';
     importInput.setAttribute('aria-label', 'Import a debug log file from disk');
-    importInput.style.cssText = 'font-size: 11px;';
     importLabel.append(importText, importInput);
     const importHint = doc.createElement('span');
     importHint.textContent = 'or drop a .log/.txt file here — analyzed locally, no org needed';
     importZone.append(importLabel, importHint);
-    body.appendChild(importZone);
+    main.appendChild(importZone);
+
+    const tableWrap = doc.createElement('div');
+    tableWrap.className = 'sfdt-scrollbox';
+    tableWrap.style.maxHeight = '320px';
+    const table = doc.createElement('table');
+    table.className = 'sfdt-table';
+    const thead = doc.createElement('thead');
+    const headRow = doc.createElement('tr');
+    for (const label of ['Time', 'User', 'Operation', 'Status', 'Size', 'Actions']) {
+      const th = doc.createElement('th');
+      th.scope = 'col';
+      th.textContent = label;
+      headRow.appendChild(th);
+    }
+    thead.appendChild(headRow);
+    const tbody = doc.createElement('tbody');
+    table.append(thead, tbody);
+    tableWrap.appendChild(table);
+    main.appendChild(tableWrap);
+
+    // Governor limits of whichever log is selected — the same component the
+    // Execute Anonymous runner uses, fed by the body fetch that populates the
+    // pane below rather than a second call.
+    // Org-side failure (session, permissions, a bad query). A div rather than a
+    // <pre> on purpose: the log pane below is the only <pre> in this view, and
+    // tests — like a user's eye — reach for it by that.
+    const errPanel = errorPanel('', doc);
+    errPanel.style.display = 'none';
+    main.appendChild(errPanel);
+
+    const limits = createLimitTiles(doc);
+    main.appendChild(limits.el);
+
+    const logPane = doc.createElement('pre');
+    logPane.className = 'sfdt-console';
+    logPane.style.display = 'none';
+    main.appendChild(logPane);
+
+    const statusBar = toolbar(doc, true);
+    const status = doc.createElement('span');
+    status.className = 'sfdt-muted';
+    statusBar.appendChild(status);
+    body.appendChild(statusBar);
 
     // Reads a user-picked/dropped file and opens the analyzer. Rejects oversized
     // files up front (before reading) with a visible toast — never an org call.
@@ -312,40 +286,47 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
     });
     importZone.addEventListener('dragover', (e) => {
       e.preventDefault();
-      importZone.style.background = 'var(--sfdt-color-bg)';
+      importZone.classList.add('sfdt-drop-over');
     });
-    importZone.addEventListener('dragleave', () => {
-      importZone.style.background = '';
-    });
+    importZone.addEventListener('dragleave', () => importZone.classList.remove('sfdt-drop-over'));
     importZone.addEventListener('drop', (e) => {
       e.preventDefault();
-      importZone.style.background = '';
+      importZone.classList.remove('sfdt-drop-over');
       void handleImportFile(e.dataTransfer?.files?.[0]);
     });
 
-    const table = doc.createElement('div');
-    table.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
-    body.appendChild(table);
-
-    const logPane = doc.createElement('pre');
-    logPane.style.cssText =
-      'margin: 0; padding: 10px; background: var(--sfdt-color-code-bg); color: var(--sfdt-color-border-3); border-radius: 4px; overflow: auto; max-height: 360px; font-family: ui-monospace, monospace; font-size: 11px; display: none; white-space: pre-wrap;';
-    body.appendChild(logPane);
-
     view = presentView({
-      title: '🪵 Debug Logs',
+      title: 'Debug Logs',
+      iconName: 'debug-log-viewer',
       body,
       doc,
       width: '960px',
       onClose: () => { view = null; },
     });
 
-    async function showLog(row: ApexLogRow): Promise<void> {
+    // The rows currently loaded, held for the client-side filter. Re-querying on
+    // each keystroke would put a Tooling round-trip behind every character; the
+    // page is at most 200 rows, so filtering in memory is instant and free.
+    let loaded: ApexLogRow[] = [];
+    let selectedRow: HTMLTableRowElement | null = null;
+
+    async function showLog(row: ApexLogRow, tr: HTMLTableRowElement): Promise<void> {
+      selectedRow?.removeAttribute('aria-current');
+      selectedRow = tr;
+      tr.setAttribute('aria-current', 'true');
       logPane.style.display = 'block';
+      logPane.className = 'sfdt-console';
       logPane.textContent = 'Loading log…';
+      limits.render(null);
       try {
-        logPane.textContent = await fetchBody(row.Id);
+        const raw = await fetchBody(row.Id);
+        renderApexLogBody(logPane, raw, doc);
+        // The body is already here, and parsing it is what the analyzer would do
+        // on click anyway — so the governor limits come for free rather than
+        // costing a second fetch behind a second button.
+        limits.render(pickLimitSnapshot(parseApexLog(raw).limits));
       } catch (err) {
+        logPane.className = 'sfdt-console sfdt-error';
         logPane.textContent = err instanceof Error ? err.message : String(err);
       }
     }
@@ -362,67 +343,123 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       }
     }
 
-    async function load(): Promise<void> {
-      status.textContent = 'Loading logs…';
-      while (table.firstChild) table.removeChild(table.firstChild);
-      try {
-        const result = await api.toolingQuery<ApexLogRow>(buildApexLogQuery(config.pageSize));
-        status.textContent = `${result.records.length} log${result.records.length === 1 ? '' : 's'}`;
-        if (result.records.length === 0) {
-          const empty = doc.createElement('div');
-          empty.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; padding: 8px;';
-          empty.textContent = 'No debug logs. Enable a trace flag in Setup to capture some.';
-          table.appendChild(empty);
-          return;
-        }
-        for (const row of result.records) {
-          const item = doc.createElement('div');
-          item.style.cssText =
-            'display: flex; gap: 10px; padding: 6px 8px; border-bottom: 1px solid var(--sfdt-color-bg); cursor: pointer; font-size: 12px; align-items: center;';
-          const time = doc.createElement('span');
-          time.textContent = new Date(row.StartTime).toLocaleString();
-          time.style.cssText = 'min-width: 170px; color: var(--sfdt-color-text-weak);';
-          const user = doc.createElement('span');
-          user.textContent = row.LogUser?.Name ?? '—';
-          user.style.cssText = 'min-width: 140px;';
-          const op = doc.createElement('span');
-          op.textContent = row.Operation;
-          op.style.cssText = 'flex: 1;';
-          const status2 = doc.createElement('span');
-          status2.textContent = row.Status;
-          status2.style.cssText = 'min-width: 90px;';
-          const size = doc.createElement('span');
-          size.textContent = formatBytes(row.LogLength);
-          size.style.cssText = 'min-width: 70px; text-align: right; color: var(--sfdt-color-text-icon);';
-          const analyzeBtn = doc.createElement('button');
-          analyzeBtn.type = 'button';
-          analyzeBtn.textContent = '📊 Analyze';
-          analyzeBtn.setAttribute('aria-label', `Analyze log: ${row.Operation}`);
-          analyzeBtn.style.cssText =
-            'flex: none; padding: 2px 8px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px; cursor: pointer; font-size: 11px;';
-          // stopPropagation so Analyze doesn't also trigger the row's show-body click.
-          analyzeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            void analyze(row);
-          });
-          item.appendChild(time);
-          item.appendChild(user);
-          item.appendChild(op);
-          item.appendChild(status2);
-          item.appendChild(size);
-          item.appendChild(analyzeBtn);
-          item.addEventListener('click', () => void showLog(row));
-          table.appendChild(item);
-        }
-      } catch (err) {
-        status.textContent = '';
-        const errPanel = doc.createElement('div');
-        errPanel.style.cssText =
-          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
-        errPanel.textContent = err instanceof Error ? err.message : String(err);
-        table.appendChild(errPanel);
+    function matchesFilter(row: ApexLogRow, needle: string): boolean {
+      if (!needle) return true;
+      // Match what is on screen, including the rendered timestamp — someone
+      // filtering "9:55" means the column they can see, not the ISO string.
+      return [
+        new Date(row.StartTime).toLocaleString(),
+        row.LogUser?.Name ?? '',
+        row.Operation,
+        row.Status,
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(needle);
+    }
+
+    function emptyRow(text: string): HTMLTableRowElement {
+      const tr = doc.createElement('tr');
+      const td = doc.createElement('td');
+      td.colSpan = 6;
+      td.className = 'sfdt-muted';
+      td.textContent = text;
+      tr.appendChild(td);
+      return tr;
+    }
+
+    function renderRows(): void {
+      const typed = filterField.value.trim();
+      const rows = loaded.filter((r) => matchesFilter(r, typed.toLowerCase()));
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      // The <tr> it pointed at is gone; holding the reference would leave the
+      // next removeAttribute() writing to a detached node.
+      selectedRow = null;
+
+      const noun = `log${loaded.length === 1 ? '' : 's'}`;
+      status.textContent =
+        rows.length === loaded.length
+          ? `${loaded.length} ${noun}`
+          : `${rows.length} of ${loaded.length} ${noun}`;
+
+      if (rows.length === 0) {
+        tbody.appendChild(
+          emptyRow(
+            loaded.length
+              ? `No logs match "${typed}".`
+              : 'No debug logs. Enable a trace flag in Setup to capture some.',
+          ),
+        );
+        return;
+      }
+
+      for (const row of rows) {
+        const tr = doc.createElement('tr');
+        tr.classList.add('sfdt-clickable');
+        const time = doc.createElement('td');
+        time.className = 'sfdt-cell-code';
+        time.textContent = new Date(row.StartTime).toLocaleString();
+
+        const user = doc.createElement('td');
+        user.textContent = row.LogUser?.Name ?? '—';
+
+        const op = doc.createElement('td');
+        op.className = 'sfdt-cell-code';
+        op.textContent = row.Operation;
+
+        const statusCell = doc.createElement('td');
+        const pill = doc.createElement('span');
+        // Anything that is not 'Success' is a failure code the user needs to
+        // read verbatim (a LimitException, 'Skipped'), so the raw value stays.
+        pill.className =
+          row.Status === 'Success' ? 'sfdt-pill sfdt-success' : 'sfdt-pill sfdt-error';
+        pill.textContent = row.Status;
+        statusCell.appendChild(pill);
+
+        const size = doc.createElement('td');
+        size.className = 'sfdt-cell-code';
+        size.textContent = formatBytes(row.LogLength);
+
+        const actions = doc.createElement('td');
+        actions.appendChild(
+          button({
+            label: 'Analyze',
+            iconName: 'chart',
+            small: true,
+            ariaLabel: `Analyze log: ${row.Operation}`,
+            // stopPropagation so Analyze doesn't also trigger the row's click.
+            onClick: (e) => {
+              e.stopPropagation();
+              void analyze(row);
+            },
+            doc,
+          }),
+        );
+
+        tr.append(time, user, op, statusCell, size, actions);
+        tr.addEventListener('click', () => void showLog(row, tr));
+        tbody.appendChild(tr);
       }
     }
+
+    async function load(): Promise<void> {
+      status.textContent = 'Loading logs…';
+      try {
+        const result = await api.toolingQuery<ApexLogRow>(buildApexLogQuery(config.pageSize));
+        loaded = result.records;
+        errPanel.style.display = 'none';
+        renderRows();
+      } catch (err) {
+        loaded = [];
+        while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+        selectedRow = null;
+        status.textContent = '';
+        errPanel.textContent = err instanceof Error ? err.message : String(err);
+        errPanel.style.display = 'block';
+      }
+    }
+
+    filterField.addEventListener('input', renderRows);
 
     // Fetch EVERY ApexLog Id in the org, following query pagination — the org's
     // log count routinely exceeds the 2000-row first page, so a single query
@@ -459,7 +496,8 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
         return;
       }
       const noun = `log${ids.length === 1 ? '' : 's'}`;
-      const ok = await confirmDialog(doc, {
+      const ok = await confirmDialog({
+        doc,
         title: 'Delete debug logs',
         message: `Delete ${ids.length} ${noun}?`,
         confirmLabel: 'Delete',
@@ -496,6 +534,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
     });
     deleteBtn.addEventListener('click', () => void deleteAll());
     refreshBtn.addEventListener('click', () => void load());
+    filterField.focus();
     await load();
   }
 

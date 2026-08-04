@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loadPopupState, renderPopup, type PopupDeps } from '../lib/popup.js';
+import {
+  loadPopupState,
+  renderPopup,
+  type PopupDeps,
+  type PopupState,
+} from '../lib/popup.js';
 
 const SF_URL = 'https://acme.lightning.force.com/lightning/setup/SetupOneHome/home';
 const CANONICAL = 'acme.my.salesforce.com';
@@ -254,5 +259,74 @@ describe('renderPopup', () => {
     );
     const headings = root().querySelectorAll('h1');
     expect(headings.length).toBe(1);
+  });
+
+  // The popup was rebuilt onto lib/ui-styles + lib/icons: a command list with a
+  // pinned footer, instead of four full-width bordered buttons that read as a
+  // form. These pin the structure the shared sheet styles.
+  describe('shared component layer', () => {
+    function render(over: Partial<PopupState> = {}): void {
+      renderPopup(
+        root(),
+        {
+          isSalesforceTab: true,
+          hasSidePanel: true,
+          orgHost: 'acme.lightning.force.com',
+          session: 'active',
+          bridge: 'connected',
+          defaultSurface: 'modal',
+          version: '0.7.0',
+          ...over,
+        },
+        handlers,
+      );
+    }
+
+    it('builds actions as shared nav-item rows, not bespoke popup buttons', () => {
+      render();
+      const actions = root().querySelectorAll('.sfdt-popup-actions button');
+      expect(actions.length).toBeGreaterThan(0);
+      for (const b of actions) expect(b.classList.contains('sfdt-nav-item')).toBe(true);
+    });
+
+    it('gives every action a decorative inline-SVG icon', () => {
+      render();
+      for (const b of root().querySelectorAll('.sfdt-popup-actions button')) {
+        const svg = b.querySelector('svg');
+        expect(svg).not.toBeNull();
+        // Decorative: the label carries the meaning, so the glyph is hidden from
+        // assistive tech rather than read out as a second, redundant name.
+        expect(b.querySelector('.sfdt-glyph')?.getAttribute('aria-hidden')).toBe('true');
+        expect(svg?.getAttribute('stroke')).toBe('currentColor');
+      }
+    });
+
+    it('pins Settings and the version into a footer, out of the action list', () => {
+      render();
+      const foot = root().querySelector('.sfdt-popup-foot');
+      expect(foot).not.toBeNull();
+      expect(foot?.querySelector('.sfdt-popup-version')?.textContent).toBe('v0.7.0');
+      expect(foot?.querySelector('button')?.textContent).toBe('Settings');
+      // Settings must not also appear in the main list.
+      const listLabels = Array.from(
+        root().querySelectorAll('.sfdt-popup-actions button'),
+      ).map((b) => b.textContent);
+      expect(listLabels).not.toContain('Settings');
+    });
+
+    it('keeps the status dots decorative with the meaning in text (a11y)', () => {
+      render();
+      for (const dot of root().querySelectorAll('.sfdt-popup-dot')) {
+        expect(dot.getAttribute('aria-hidden')).toBe('true');
+      }
+      expect(root().querySelector('.sfdt-popup-body')?.textContent).toContain('signed in');
+    });
+
+    it('still renders a footer on a non-Salesforce tab', () => {
+      render({ isSalesforceTab: false, orgHost: null, session: null, bridge: null });
+      expect(root().querySelector('.sfdt-popup-foot .sfdt-popup-version')?.textContent).toBe(
+        'v0.7.0',
+      );
+    });
   });
 });

@@ -1,16 +1,19 @@
 # Chrome Web Store Listing
 
-> **Store-sync status:** Updated for **v0.11.0** (45 features — the count is read from
+> **Store-sync status:** Updated for **v0.12.0** (44 features — the count is read from
 > `generated/chrome-features.json`, never counted by hand; re-derive it each release
 > instead of incrementing it). Since the last manual store upload (0.3.x era) this adds
 > Apex tooling (Test Runner, Code Coverage, Trace Flags), a **Schema Browser**, **Field
 > Impact Analysis**, **Dependency Explorer**, **API Version Audit**, in-browser **Flow
-> Scanner**, **Org Health (Live)**, an **Org Release** badge, a **Command Palette**, a
+> Scanner**, an **Org Release** badge, a **Command Palette**, a
 > docked **side panel**, **SOSL** mode in the SOQL Runner, and a right-click record
-> inspector, plus the bridge tools **Org Compare / Drift Check / Metadata Scan**. As of
-> the last manual upload the *live* CWS listing still reflects the older 29-feature copy —
-> this file is ahead of the store. Paste the sections below into the CWS dashboard during
-> the v0.11.0 upload, then this file and the store are back in sync.
+> inspector, plus the bridge tools **Org Compare / Drift Check / Metadata Scan**. 0.12.0
+> adds the **Workspace Overview** home (org-health tiles, quick actions, recent activity),
+> a line-numbered **syntax-highlighting editor** for SOQL and Apex, and a rebuilt design
+> system across every surface. As of the last manual upload the *live* CWS listing still
+> reflects the older 29-feature copy — this file is ahead of the store. Paste the sections
+> below into the CWS dashboard during the v0.12.0 upload, then this file and the store are
+> back in sync.
 >
 > **The item name changed in 0.11.0.** The packaged manifest now reads "SFDT for
 > Salesforce"; it was "SFDT SF Helper". The store's *item title* is a dashboard field
@@ -103,8 +106,7 @@ Features include:
 - Debug Logs — list ApexLog debug logs and view raw log bodies
 - Saved SOQL — bookmark and re-run SOQL queries and history
 - Switch Org — discover every org you're logged into and run any tool against it (multi-org)
-- Org Health — view native sfdt audit and monitor snapshots (org limits, license usage, MFA coverage, security health score, Apex job failures, and more) in a side panel via the local CLI bridge
-- Org Health (Live) — run org-health checks live against the org (Apex coverage, inactive users, licenses, API versions, limits) with no CLI snapshot needed
+- Org Health — five checks (Apex coverage, inactive users, licenses, API versions, limits) run live against the org with no setup, plus twelve more (MFA coverage, security health score, Apex job failures, and more) from native sfdt audit and monitor snapshots when the local CLI bridge is running
 - Show API Names — toggle inline field API names and object/18-char-Id header on record pages; copy the record Id, an Apex insert, or SOQL for the current record
 - Schema Browser — searchable two-pane explorer for the org's objects, fields, and relationships (Workspace or record page)
 - Field Impact Analysis — "what writes this field?": the Flows (parsed, not guessed), workflow field updates, and Apex classes/triggers that write a given field, each labelled confirmed or inferred, with open links

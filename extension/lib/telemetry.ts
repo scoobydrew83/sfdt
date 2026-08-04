@@ -1,6 +1,8 @@
 // Opt-in, local-only — no network egress. The data exists so the user
 // (or support) can see which features run in this browser profile.
 
+import { storageGet, storageSet } from './storage.js';
+
 const STORAGE_KEY = 'sfdt.telemetry';
 const MAX_FEATURE_IDS = 500;
 
@@ -66,26 +68,20 @@ function emptyCounter(): FeatureCounter {
 }
 
 async function read(): Promise<TelemetrySnapshot | null> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(STORAGE_KEY, (result) => {
-      const raw = result?.[STORAGE_KEY] as TelemetrySnapshot | undefined;
-      if (
-        !raw ||
-        typeof raw.monthKey !== 'string' ||
-        !raw.counters ||
-        typeof raw.counters !== 'object'
-      ) {
-        return resolve(null);
-      }
-      resolve(raw);
-    });
-  });
+  const raw = await storageGet<TelemetrySnapshot>(STORAGE_KEY);
+  if (
+    !raw ||
+    typeof raw.monthKey !== 'string' ||
+    !raw.counters ||
+    typeof raw.counters !== 'object'
+  ) {
+    return null;
+  }
+  return raw;
 }
 
 async function write(snapshot: TelemetrySnapshot): Promise<void> {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [STORAGE_KEY]: snapshot }, () => resolve());
-  });
+  await storageSet(STORAGE_KEY, snapshot);
 }
 
 export function createTelemetry(opts: {

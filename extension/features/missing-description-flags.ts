@@ -3,6 +3,7 @@ import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { isFeatureEnabled, loadSettings, onSettingsChange, patchSettings } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
+import { icon } from '../lib/icons.js';
 
 const ELEMENT_TYPE_KEYS: ReadonlyArray<readonly [string, string]> = [
   ['actionCalls', 'Action'],
@@ -139,10 +140,10 @@ function flagCanvas(doc: Document, missing: readonly MissingItem[]): number {
     flag.className = 'sfdt-desc-flag';
     flag.title = `"${text}" has no description`;
     flag.setAttribute('aria-label', `Warning: ${text} has no description`);
-    flag.textContent = '⚠';
+    flag.appendChild(icon('alert', 14, doc));
     flag.style.cssText =
-      'position: absolute; top: 4px; right: 4px; color: var(--sfdt-color-warning-text); font-size: 14px; z-index: 5;';
-    (card as HTMLElement).style.position = 'relative';
+      'position: absolute; top: 4px; right: 4px; color: var(--sfdt-color-warning-text); display: flex; z-index: 5;';
+    (card as HTMLElement).classList.add('sfdt-anchor');
     card.appendChild(flag);
     seen.add(cardKey);
     count += 1;
@@ -157,8 +158,8 @@ function flagCanvas(doc: Document, missing: readonly MissingItem[]): number {
       flag.className = 'sfdt-desc-flag-flow';
       flag.title = 'This flow has no description';
       flag.setAttribute('aria-label', 'Warning: This flow has no description');
-      flag.textContent = ' ⚠';
-      flag.style.cssText = 'color: var(--sfdt-color-warning-text); margin-left: 4px;';
+      flag.appendChild(icon('alert', 14, doc));
+      flag.style.cssText = 'color: var(--sfdt-color-warning-text); margin-left: 4px; display: inline-flex; vertical-align: text-bottom;';
       parent.appendChild(flag);
       count += 1;
     }

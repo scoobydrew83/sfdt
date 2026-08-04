@@ -772,6 +772,44 @@ describe('extension/lib/salesforce-api (thin client over sfApiFetch)', () => {
       await expect(client.toolingQuery('SELECT Id FROM Flow')).rejects.toThrow(/No Salesforce session/);
     });
 
+    // A null reply has two causes that used to report identically. Telling the
+    // user their Salesforce session is gone when the real fix is "reload the
+    // tab" sends them hunting in exactly the wrong direction — the session is
+    // usually fine, the extension was just swapped out from under the page.
+    it('says RELOAD THE TAB, not "no session", when the context is invalidated', async () => {
+      const runtime = chrome.runtime as { id?: string; sendMessage: unknown };
+      const realId = runtime.id;
+      runtime.sendMessage = () => {
+        throw new Error('Extension context invalidated.');
+      };
+      // Chrome drops runtime.id the moment the context dies — the standard tell.
+      runtime.id = undefined;
+      try {
+        const client = new SalesforceApiClient({ win: fakeWin(WIN) });
+        const err = await client.toolingQuery('SELECT Id FROM Flow').catch((e: unknown) => e);
+        expect((err as Error).message).toMatch(/Reload the tab/i);
+        expect((err as Error).message).toMatch(/session is unaffected/i);
+        expect((err as { contextInvalidated?: boolean }).contextInvalidated).toBe(true);
+        // Still the same discriminant, so existing branching on kind is unchanged.
+        expect((err as { sfdtKind?: string }).sfdtKind).toBe('no-session');
+      } finally {
+        runtime.id = realId;
+      }
+    });
+
+    it('keeps the plain no-session message while the context is alive', async () => {
+      // Non-vacuity for the guard above: with runtime.id present (a live
+      // context), a null reply must NOT be blamed on invalidation.
+      (chrome.runtime as { sendMessage: unknown }).sendMessage = (
+        _msg: unknown,
+        cb: (resp: unknown) => void,
+      ) => cb(undefined);
+      const client = new SalesforceApiClient({ win: fakeWin(WIN) });
+      const err = await client.toolingQuery('SELECT Id FROM Flow').catch((e: unknown) => e);
+      expect((err as Error).message).toBe('No Salesforce session available');
+      expect((err as { contextInvalidated?: boolean }).contextInvalidated).toBeUndefined();
+    });
+
     // The end-to-end proof of the fix: with the real bus wired up and a worker
     // that never calls back, a write survives well past the old 5s ceiling and
     // then fails as a timeout — not as a lost session.

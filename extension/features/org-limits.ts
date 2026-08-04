@@ -6,6 +6,9 @@ import {
 } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { button, toolbar } from '../lib/ui-controls.js';
+import { meterCard, meterGrid, type MeterTone } from '../ui/meter-card.js';
+import { copyToClipboard } from '../ui/clipboard.js';
 
 export interface LimitRow {
   name: string;
@@ -35,13 +38,34 @@ export function bandFor(pct: number): 'green' | 'amber' | 'red' {
   return 'green';
 }
 
-const BAND_COLOUR: Record<'green' | 'amber' | 'red', string> = {
-  green: 'var(--sfdt-color-success)',
-  amber: 'var(--sfdt-color-warning)',
-  red: 'var(--sfdt-color-error)',
+// Exported so the Workspace Overview's health tiles render the same bands and
+// labels as the full Org Limits tool — one definition, not two that drift.
+/**
+ * Band → meter-fill CLASS. Was a token string set as an inline background at
+ * each call site; the band thresholds are policy and stay here, the colours
+ * live in lib/ui-styles.ts so a palette change reaches every meter at once.
+ */
+/** Band → shared meter tone, for meterCard(). */
+export const BAND_TONE: Record<'green' | 'amber' | 'red' | 'grey' | 'none', MeterTone> = {
+  green: 'ok',
+  amber: 'warn',
+  red: 'bad',
+  grey: 'idle',
+  none: 'idle',
 };
 
-function humaniseName(camel: string): string {
+export const BAND_CLASS: Record<'green' | 'amber' | 'red' | 'grey' | 'none', string> = {
+  green: 'sfdt-ok',
+  amber: 'sfdt-warn',
+  red: 'sfdt-bad',
+  // Two spellings of "no data" because the five features that each had a
+  // private copy of this map spelled it differently. One map, both keys, rather
+  // than a sixth copy.
+  grey: 'sfdt-idle',
+  none: 'sfdt-idle',
+};
+
+export function humaniseName(camel: string): string {
   return camel.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
 }
 
@@ -72,42 +96,30 @@ export function createOrgLimitsFeature(options: OrgLimitsOptions = {}): Feature 
       status.textContent = `${rows.length} limits`;
       if (rows.length === 0) {
         const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon);';
+        empty.classList.add('sfdt-prose', 'sfdt-muted');
         empty.textContent = 'No limits returned.';
         body.appendChild(empty);
         return raw;
       }
-      const grid = doc.createElement('div');
-      grid.style.cssText =
-        'display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px;';
+      const grid = meterGrid(doc);
       for (const r of rows) {
-        const card = doc.createElement('div');
-        card.style.cssText =
-          'border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 10px; display: flex; flex-direction: column; gap: 6px;';
-        const title = doc.createElement('div');
-        title.style.cssText = 'font-weight: 600; font-size: 12px;';
-        title.textContent = humaniseName(r.name);
-        const usage = doc.createElement('div');
-        usage.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-weak);';
-        usage.textContent = `${r.used.toLocaleString()} / ${r.max.toLocaleString()}  (${(r.pct * 100).toFixed(1)}%)`;
-        const bar = doc.createElement('div');
-        bar.style.cssText =
-          'height: 6px; background: var(--sfdt-color-bg); border-radius: 3px; overflow: hidden;';
-        const fill = doc.createElement('div');
-        const band = bandFor(r.pct);
-        fill.style.cssText = `height: 100%; width: ${Math.min(100, r.pct * 100).toFixed(1)}%; background: ${BAND_COLOUR[band]};`;
-        bar.appendChild(fill);
-        card.appendChild(title);
-        card.appendChild(bar);
-        card.appendChild(usage);
-        grid.appendChild(card);
+        grid.appendChild(
+          meterCard({
+            doc,
+            label: humaniseName(r.name),
+            value: `${r.used.toLocaleString()} / ${r.max.toLocaleString()}`,
+            sub: `· ${(r.pct * 100).toFixed(1)}%`,
+            pct: r.pct,
+            // Org limits are usage: a full bar is bad, unlike coverage.
+            tone: BAND_TONE[bandFor(r.pct)],
+          }),
+        );
       }
       body.appendChild(grid);
       return raw;
     } catch (err) {
       const errorPanel = doc.createElement('div');
-      errorPanel.style.cssText =
-        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
+      errorPanel.classList.add('sfdt-console', 'sfdt-error');
       errorPanel.textContent = err instanceof Error ? err.message : String(err);
       body.appendChild(errorPanel);
       status.textContent = 'Failed';
@@ -119,35 +131,31 @@ export function createOrgLimitsFeature(options: OrgLimitsOptions = {}): Feature 
     close();
 
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column;';
-
+    body.className = 'sfdt-view-body';
     // Toolbar (status + actions) lives at the top of the body so it shows in both
     // the modal and the workspace tab — presentView's header is title + × only.
-    const toolbar = doc.createElement('div');
-    toolbar.style.cssText = 'display: flex; align-items: center; gap: 12px; margin-bottom: 12px;';
+    const bar = toolbar(doc);
     const status = doc.createElement('span');
-    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
+    status.className = 'sfdt-muted';
     const actions = doc.createElement('div');
     actions.style.cssText = 'display: flex; gap: 6px; margin-left: auto;';
-    const refreshBtn = doc.createElement('button');
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.style.cssText =
-      'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
-    const copyBtn = doc.createElement('button');
-    copyBtn.textContent = 'Copy JSON';
-    copyBtn.style.cssText =
-      'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
+    const refreshBtn = button({ label: 'Refresh', iconName: 'refresh', small: true, doc });
+    const copyBtn = button({ label: 'Copy JSON', iconName: 'clipboard', small: true, doc });
     actions.appendChild(refreshBtn);
     actions.appendChild(copyBtn);
-    toolbar.appendChild(status);
-    toolbar.appendChild(actions);
-    body.appendChild(toolbar);
+    bar.appendChild(status);
+    bar.appendChild(actions);
+    body.appendChild(bar);
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
 
     const results = doc.createElement('div');
-    body.appendChild(results);
+    main.appendChild(results);
 
     view = presentView({
-      title: '🚦 Org Limits',
+      title: 'Org Limits',
+      iconName: 'gauge',
       body,
       doc,
       width: '760px',
@@ -161,12 +169,7 @@ export function createOrgLimitsFeature(options: OrgLimitsOptions = {}): Feature 
       refreshBtn.disabled = false;
     });
     copyBtn.addEventListener('click', async () => {
-      try {
-        await win.navigator.clipboard.writeText(JSON.stringify(raw, null, 2));
-        showToast('Limits copied as JSON', { doc, kind: 'success' });
-      } catch {
-        showToast('Could not copy to clipboard', { doc, kind: 'error' });
-      }
+      await copyToClipboard(JSON.stringify(raw, null, 2), { doc, win: win, label: 'Limits copied as JSON' });
     });
   }
 

@@ -60,6 +60,11 @@ function makeStorageArea(bucket: StorageBucket, areaName: 'local' | 'sync') {
     },
   },
   runtime: {
+    // Real Chrome always exposes this in a content script / extension page; it
+    // goes undefined only when the context is invalidated. lib/salesforce-api.ts
+    // reads it to tell "extension was swapped under this tab" apart from "no
+    // Salesforce session", so a mock without it is an unfaithful mock.
+    id: 'sfdt-test-extension-id',
     sendMessage: vi.fn(),
     lastError: undefined,
     onMessage: { addListener: vi.fn(), removeListener: vi.fn() },

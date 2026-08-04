@@ -4,9 +4,10 @@ import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { loadSettings } from '../lib/settings.js';
 import { createBridgeClient, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.js';
-import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import type { SfdtRequest, SfdtResponse } from '@sfdt/flow-core/bridge-contract';
+import { button } from '../lib/ui-controls.js';
+import { copyToClipboard } from '../ui/clipboard.js';
 
 const STORAGE_KEY_DISABLED = 'aiPromptLibrary.disabledStandardIds';
 const STORAGE_KEY_CUSTOMS = 'aiPromptLibrary.customPrompts';
@@ -81,8 +82,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
     closePanel();
 
     const body = doc.createElement('div');
-    body.className = 'sfdt-ai-panel-body';
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1;';
+    body.className = 'sfdt-view-main sfdt-ai-panel-body';
     const loading = doc.createElement('div');
     loading.textContent = 'Fetching Flow metadata…';
     body.appendChild(loading);
@@ -93,7 +93,8 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
     doc.addEventListener('keydown', escHandler, true);
 
     view = presentView({
-      title: '⚡ Flow Metadata & AI Assistant',
+      title: 'Flow Metadata & AI Assistant',
+      iconName: 'sparkle',
       body,
       doc,
       width: '640px',
@@ -129,21 +130,22 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
 
       while (body.firstChild) body.removeChild(body.firstChild);
       const heading = doc.createElement('div');
-      heading.style.cssText = 'font-weight: 600; margin-bottom: 4px;';
+      heading.classList.add('sfdt-subhead');
       heading.textContent = summary?.label ?? 'Flow';
       body.appendChild(heading);
       const subline = doc.createElement('div');
-      subline.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; margin-bottom: 12px;';
+      subline.classList.add('sfdt-faint');
       subline.textContent = `${summary?.totalElements ?? 0} elements, ${summary?.totalResources ?? 0} resources · raw ~${rawTokens} tokens · cleaned ~${cleanTokens} tokens`;
       body.appendChild(subline);
 
       const promptRow = doc.createElement('div');
-      promptRow.style.cssText = 'display: flex; gap: 8px; align-items: center; margin: 8px 0;';
+      promptRow.classList.add('sfdt-row', 'sfdt-snug');
       const promptLabel = doc.createElement('label');
       promptLabel.textContent = 'Prompt template:';
-      promptLabel.style.fontSize = '13px';
+  
       const select = doc.createElement('select');
-      select.style.flex = '1';
+      select.className = 'sfdt-field sfdt-grow';
+      select.setAttribute('aria-label', 'Prompt template');
       const enabled: ResolvedPrompt[] = library.getEnabled();
       const defaultId = library.getDefaultPromptId();
       for (const t of enabled) {
@@ -158,7 +160,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       body.appendChild(promptRow);
 
       const description = doc.createElement('div');
-      description.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px; margin-bottom: 12px;';
+      description.classList.add('sfdt-muted');
       const updateDescription = () => {
         const sel = library.getById(select.value);
         description.textContent = sel?.description ?? '';
@@ -168,33 +170,30 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       body.appendChild(description);
 
       const buttons = doc.createElement('div');
-      buttons.style.cssText = 'display: flex; gap: 8px; flex-wrap: wrap;';
-      const makeBtn = (label: string, handler: () => Promise<void> | void): HTMLButtonElement => {
-        const btn = doc.createElement('button');
-        btn.textContent = label;
-        btn.style.cssText =
-          'padding: 6px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer;';
-        btn.addEventListener('click', () => void handler());
-        return btn;
-      };
+      buttons.classList.add('sfdt-row', 'sfdt-wrap');
+      // One factory feeding five call sites — the emoji prefixes each label
+      // used to carry ('📋 Copy Raw') are now glyphs the shared builder renders.
+      const makeBtn = (
+        label: string,
+        iconName: string,
+        handler: () => Promise<void> | void,
+      ): HTMLButtonElement =>
+        button({ label, iconName, small: true, doc, onClick: () => void handler() });
       buttons.appendChild(
-        makeBtn('📋 Copy Raw', async () => {
-          await navigator.clipboard.writeText(rawJson);
-          showToast('Raw metadata copied', { doc });
+        makeBtn('Copy Raw', 'clipboard', async () => {
+          await copyToClipboard(rawJson, { doc, label: 'raw metadata' });
         }),
       );
       buttons.appendChild(
-        makeBtn('📋 Copy Clean', async () => {
-          await navigator.clipboard.writeText(cleanJson);
-          showToast('Cleaned metadata copied', { doc });
+        makeBtn('Copy Clean', 'clipboard', async () => {
+          await copyToClipboard(cleanJson, { doc, label: 'cleaned metadata' });
         }),
       );
       buttons.appendChild(
-        makeBtn('📋 Copy Prompt', async () => {
+        makeBtn('Copy Prompt', 'clipboard', async () => {
           const assembled = library.assemble(select.value, cleanJson);
           if (assembled) {
-            await navigator.clipboard.writeText(assembled);
-            showToast('Prompt copied to clipboard', { doc });
+            await copyToClipboard(assembled, { doc, label: 'prompt' });
           }
         }),
       );
@@ -207,8 +206,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       const renderResultError = (message: string): void => {
         while (resultArea.firstChild) resultArea.removeChild(resultArea.firstChild);
         const panel = doc.createElement('div');
-        panel.style.cssText =
-          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
+        panel.classList.add('sfdt-console', 'sfdt-error');
         panel.textContent = message;
         resultArea.appendChild(panel);
       };
@@ -216,14 +214,12 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       const renderResult = (responseText: string, provider: string): void => {
         while (resultArea.firstChild) resultArea.removeChild(resultArea.firstChild);
         const header = doc.createElement('div');
-        header.style.cssText =
-          'display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px;';
+        header.classList.add('sfdt-row', 'sfdt-snug', 'sfdt-split', 'sfdt-below');
         const label = doc.createElement('span');
-        label.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak); font-weight: 600;';
+        label.className = 'sfdt-label';
         label.textContent = provider ? `AI response (${provider})` : 'AI response';
-        const copyBtn = makeBtn('📋 Copy response', async () => {
-          await navigator.clipboard.writeText(responseText);
-          showToast('AI response copied', { doc });
+        const copyBtn = makeBtn('Copy response', 'clipboard', async () => {
+          await copyToClipboard(responseText, { doc, label: 'AI response' });
         });
         header.append(label, copyBtn);
         const pre = doc.createElement('pre');
@@ -233,7 +229,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
         resultArea.append(header, pre);
       };
 
-      const runViaSfdt = makeBtn('🚀 Run via sfdt', async () => {
+      const runViaSfdt = makeBtn('Run via sfdt', 'rocket', async () => {
         const assembled = library.assemble(select.value, cleanJson);
         if (!assembled) return;
         runViaSfdt.disabled = true;

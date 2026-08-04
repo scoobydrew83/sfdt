@@ -1,11 +1,16 @@
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
+import { buildLiveChecks, renderCheckRow } from './org-health-checks.js';
+import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { loadSettings } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { describeFinding } from '@sfdt/flow-core';
 import type { OrgHealthResponseData, SfdtResponse } from '@sfdt/flow-core/bridge-contract';
+import { button, toolbar } from '../lib/ui-controls.js';
+import { BAND_CLASS } from './org-limits.js';
+import { copyToClipboard } from '../ui/clipboard.js';
 
 // ---------------------------------------------------------------------------
 // Snapshot shapes (mirror src/lib/audit-runner.js / monitor-runner.js output)
@@ -32,12 +37,6 @@ interface Snapshot {
 // Pure helpers (exported directly for tests)
 // ---------------------------------------------------------------------------
 
-const BAND_COLOUR: Record<'green' | 'amber' | 'red' | 'grey', string> = {
-  green: 'var(--sfdt-color-success)',
-  amber: 'var(--sfdt-color-warning)',
-  red: 'var(--sfdt-color-error)',
-  grey: 'var(--sfdt-color-text-icon)',
-};
 
 export function bandFor(status: string): 'green' | 'amber' | 'red' | 'grey' {
   if (status === 'ok') return 'green';
@@ -77,7 +76,29 @@ export interface OrgHealthOptions {
   doc?: Document;
   win?: Window;
   bridgeFactory?: () => Promise<BridgeLike>;
+  /** Injected for the in-browser checks; defaults to the shared client. */
+  api?: SalesforceApiClient;
 }
+
+/**
+ * Checks that only the CLI can run (`sfdt audit`), listed so the panel can say
+ * what it is missing. Titles, not ids — this is read by a person deciding
+ * whether the CLI is worth installing.
+ */
+const CLI_ONLY_CHECKS: readonly string[] = [
+  'MFA enforcement',
+  'MFA readiness',
+  'SOAP API logins',
+  'Setup audit trail',
+  'Connected apps',
+  'Unused permission sets',
+  'Unused Apex',
+  'Unreferenced Apex',
+  'Inactive flows',
+  'Inactive validation rules',
+  'Inactive workflow rules',
+  'Missing field descriptions',
+];
 
 export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature {
   const doc = options.doc ?? document;
@@ -94,6 +115,8 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
       });
     });
 
+  const live = buildLiveChecks({ doc, win, api: options.api ?? getSalesforceApi() });
+
   let view: ViewHandle | null = null;
 
   function close(): void {
@@ -101,12 +124,45 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     view = null;
   }
 
+  /**
+   * What the CLI adds, shown as a locked list rather than an error.
+   *
+   * The 12 CLI-only check titles are named explicitly. A bare "bridge offline"
+   * message tells the user something failed; this tells them what they are
+   * missing and exactly how to get it — which is the whole reason these two
+   * features were merged.
+   */
+  function buildDeeperChecksNotice(reason: string): HTMLElement {
+    const section = doc.createElement('div');
+    section.classList.add('sfdt-callout', 'sfdt-warn', 'sfdt-stack', 'sfdt-tight');
+
+    const heading = doc.createElement('div');
+    heading.classList.add('sfdt-subhead');
+    heading.textContent = `${CLI_ONLY_CHECKS.length} deeper checks need the sfdt CLI`;
+    section.appendChild(heading);
+
+    const how = doc.createElement('div');
+    how.classList.add('sfdt-msg');
+    how.textContent = `Run \`sfdt ui\` in your Salesforce project to include them. (${reason})`;
+    section.appendChild(how);
+
+    const list = doc.createElement('ul');
+    list.classList.add('sfdt-list', 'sfdt-flush-x');
+    for (const title of CLI_ONLY_CHECKS) {
+      const li = doc.createElement('li');
+      li.textContent = title;
+      list.appendChild(li);
+    }
+    section.appendChild(list);
+    return section;
+  }
+
   function renderSnapshot(container: HTMLElement, title: string, command: 'audit' | 'monitor', snapshot: Snapshot | null): void {
     const section = doc.createElement('div');
     section.style.cssText = 'margin-bottom: 16px;';
 
     const heading = doc.createElement('div');
-    heading.style.cssText = 'font-weight: 600; font-size: 13px; margin-bottom: 8px;';
+    heading.classList.add('sfdt-subhead');
     const org = snapshot?.org ? ` · ${snapshot.org}` : '';
     heading.textContent = `${title}${org}`;
     section.appendChild(heading);
@@ -114,7 +170,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     const checks = shapeChecks(snapshot);
     if (checks.length === 0) {
       const empty = doc.createElement('div');
-      empty.style.cssText = 'padding: 8px 0; color: var(--sfdt-color-text-icon); font-size: 12px;';
+      empty.classList.add('sfdt-prose', 'sfdt-muted');
       empty.textContent = `No data. Run \`sfdt ${command} all\` to populate.`;
       section.appendChild(empty);
       container.appendChild(section);
@@ -123,17 +179,16 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
 
     for (const c of checks) {
       const row = doc.createElement('div');
-      row.style.cssText = 'border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 8px 10px; margin-bottom: 6px;';
-
+      row.classList.add('sfdt-panel', 'sfdt-below');
       const head = doc.createElement('div');
-      head.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+      head.classList.add('sfdt-row');
       const dot = doc.createElement('span');
-      dot.style.cssText = `width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: ${BAND_COLOUR[bandFor(c.status)]};`;
+      dot.className = `sfdt-dot ${BAND_CLASS[bandFor(c.status)]}`;
       const titleEl = doc.createElement('span');
-      titleEl.style.cssText = 'font-weight: 600; font-size: 12px;';
+      titleEl.className = 'sfdt-subhead';
       titleEl.textContent = c.title;
       const summaryEl = doc.createElement('span');
-      summaryEl.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 11px;';
+      summaryEl.className = 'sfdt-muted';
       summaryEl.textContent = c.summary;
       head.appendChild(dot);
       head.appendChild(titleEl);
@@ -150,7 +205,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
         }
         if (c.findings.length > 25) {
           const li = doc.createElement('li');
-          li.style.fontStyle = 'italic';
+          li.classList.add('sfdt-italic');
           li.textContent = `… and ${c.findings.length - 25} more`;
           list.appendChild(li);
         }
@@ -162,8 +217,25 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
   }
 
   async function fetchAndRender(body: HTMLElement, status: HTMLSpanElement): Promise<unknown> {
-    status.textContent = 'Loading…';
+    status.textContent = 'Running checks…';
     while (body.firstChild) body.removeChild(body.firstChild);
+
+    // The five in-browser checks ALWAYS run and always render first. They need
+    // no setup, so the panel is never empty and never a dead end — which is what
+    // the separate "Org Health (Live)" feature existed to provide.
+    const liveSection = doc.createElement('div');
+    liveSection.classList.add('sfdt-below');
+    const liveHeading = doc.createElement('div');
+    liveHeading.classList.add('sfdt-subhead');
+    liveHeading.textContent = 'In-browser checks';
+    liveSection.appendChild(liveHeading);
+    body.appendChild(liveSection);
+
+    const liveRows = await live.run();
+    for (const r of liveRows) renderCheckRow(doc, liveSection, r);
+    const liveIssues = liveRows.filter((r) => r.status !== 'green').length;
+    status.textContent = `${liveIssues} issue${liveIssues === 1 ? '' : 's'}`;
+
     try {
       const bridge = await bridgeFactory();
       const response = await bridge.call({ kind: 'org-health' });
@@ -174,12 +246,10 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
             : response.code === 'BRIDGE_UNAUTHORIZED'
               ? ' — open extension settings and paste the bridge token from `~/.sfdt/bridge-token` (created when you run `sfdt ui`).'
               : '';
-        const errorPanel = doc.createElement('div');
-        errorPanel.style.cssText =
-          'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
-        errorPanel.textContent = `${response.error}${hint}`;
-        body.appendChild(errorPanel);
-        status.textContent = 'Failed';
+        // NOT an error state: the in-browser checks above already ran. This
+        // says what the CLI would ADD, so the depth difference is discoverable
+        // rather than being two tools the user has to know to compare.
+        body.appendChild(buildDeeperChecksNotice(`${response.error}${hint}`));
         return null;
       }
       const data = (response.data ?? {}) as OrgHealthResponseData;
@@ -198,12 +268,9 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
       }
       return data;
     } catch (err) {
-      const errorPanel = doc.createElement('div');
-      errorPanel.style.cssText =
-        'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
-      errorPanel.textContent = err instanceof Error ? err.message : String(err);
-      body.appendChild(errorPanel);
-      status.textContent = 'Failed';
+      body.appendChild(
+        buildDeeperChecksNotice(err instanceof Error ? err.message : String(err)),
+      );
       return null;
     }
   }
@@ -212,35 +279,29 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     close();
 
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 12px;';
-
-    // Header extras (status + refresh/copy) move to a toolbar at the top of the
-    // body — presentView's own header is just the title + ×.
-    const toolbar = doc.createElement('div');
-    toolbar.style.cssText = 'display: flex; gap: 12px; align-items: center;';
+    body.className = 'sfdt-view-body';
+    // Status + actions as a real pinned strip. presentView's own header is just
+    // the title + ×, so a view's controls belong at the top of its body — and as
+    // a toolbar rather than a row floating inside the scroll region, so they
+    // stay put while the checks scroll.
+    const bar = toolbar(doc);
     const status = doc.createElement('span');
-    status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
+    status.className = 'sfdt-muted';
     const actions = doc.createElement('div');
-    actions.style.cssText = 'display: flex; gap: 6px; margin-left: auto;';
-    const refreshBtn = doc.createElement('button');
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.style.cssText =
-      'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
-    const copyBtn = doc.createElement('button');
-    copyBtn.textContent = 'Copy JSON';
-    copyBtn.style.cssText =
-      'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
-    actions.appendChild(refreshBtn);
-    actions.appendChild(copyBtn);
-    toolbar.appendChild(status);
-    toolbar.appendChild(actions);
-    body.appendChild(toolbar);
+    actions.className = 'sfdt-row sfdt-snug sfdt-toolbar-end';
+    const refreshBtn = button({ label: 'Refresh', iconName: 'refresh', small: true, doc });
+    const copyBtn = button({ label: 'Copy JSON', iconName: 'clipboard', small: true, doc });
+    actions.append(refreshBtn, copyBtn);
+    bar.append(status, actions);
+    body.appendChild(bar);
 
     const content = doc.createElement('div');
+    content.className = 'sfdt-view-main';
     body.appendChild(content);
 
     view = presentView({
-      title: '🏥 Org Health',
+      title: 'Org Health',
+      iconName: 'heart',
       body,
       doc,
       width: '760px',
@@ -256,12 +317,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
       refreshBtn.disabled = false;
     });
     copyBtn.addEventListener('click', async () => {
-      try {
-        await win.navigator.clipboard.writeText(JSON.stringify(raw, null, 2));
-        showToast('Org health copied as JSON', { doc, kind: 'success' });
-      } catch {
-        showToast('Could not copy to clipboard', { doc, kind: 'error' });
-      }
+      await copyToClipboard(JSON.stringify(raw, null, 2), { doc, win: win, label: 'Org health copied as JSON' });
     });
   }
 

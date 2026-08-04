@@ -66,7 +66,7 @@ export function showToast(message: string, options: ToastOptions = {}): () => vo
     'color: var(--sfdt-color-on-accent)',
     'padding: 10px 14px',
     'border-radius: 4px',
-    'box-shadow: 0 2px 6px rgba(0,0,0,0.2)',
+    'box-shadow: var(--sfdt-shadow-2)',
     'font-family: system-ui, -apple-system, sans-serif',
     'font-size: 13px',
     'pointer-events: auto',

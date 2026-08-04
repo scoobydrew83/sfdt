@@ -6,6 +6,9 @@ import {
   SFDT_TOKENS,
   SFDT_TOKENS_DARK,
   SFDT_TOKENS_CSS,
+  SFDT_SCALES,
+  SFDT_SHADOWS,
+  SFDT_SHADOWS_DARK,
   THEME_ATTR,
 } from '../lib/tokens.js';
 
@@ -63,6 +66,58 @@ describe('extension/lib/tokens', () => {
     // Never emits a raw hex outside the custom-property declarations.
     expect(SFDT_TOKENS_CSS).toContain('--sfdt-color-surface: #fff;');
     expect(SFDT_TOKENS_CSS).toContain('--sfdt-color-surface: #202024;');
+  });
+
+  // The non-colour half of the design system. Before these existed every
+  // surface hard-coded its own spacing/radius/type inline, which is what let
+  // the UI drift off-grid feature by feature.
+  describe('non-colour scales', () => {
+    it('emits the spacing, radius, type and layout scales into :root', () => {
+      for (const [name, value] of Object.entries(SFDT_SCALES)) {
+        expect(SFDT_TOKENS_CSS).toContain(`--sfdt-${name}: ${value};`);
+      }
+    });
+
+    it('keeps the spacing/radius/type scales theme-invariant (declared exactly once)', () => {
+      // A scale repeated in the dark block would be a value that silently
+      // diverges by theme — the bug shadows legitimately need and these don't.
+      for (const name of Object.keys(SFDT_SCALES)) {
+        const occurrences = SFDT_TOKENS_CSS.split(`--sfdt-${name}:`).length - 1;
+        expect(occurrences, `--sfdt-${name} should be declared once`).toBe(1);
+      }
+    });
+
+    it('gives every shadow a dark override', () => {
+      expect(Object.keys(SFDT_SHADOWS_DARK).sort()).toEqual(Object.keys(SFDT_SHADOWS).sort());
+      for (const [name, value] of Object.entries(SFDT_SHADOWS_DARK)) {
+        expect(SFDT_TOKENS_CSS).toContain(`--sfdt-${name}: ${value};`);
+      }
+      // Once in :root, once in the explicit dark block, once in the auto media
+      // fallback — the same three-place pattern the palette uses.
+      for (const name of Object.keys(SFDT_SHADOWS)) {
+        const occurrences = SFDT_TOKENS_CSS.split(`--sfdt-${name}:`).length - 1;
+        expect(occurrences, `--sfdt-${name} should be declared three times`).toBe(3);
+      }
+    });
+
+    it('type tokens are usable as the `font:` shorthand', () => {
+      // `font:` requires at least a size and a family, else the whole
+      // declaration is dropped by the parser and the rule silently does nothing.
+      const typeTokens = Object.entries(SFDT_SCALES).filter(([name]) => name.startsWith('type-'));
+      expect(typeTokens.length).toBeGreaterThan(0);
+      for (const [name, value] of typeTokens) {
+        expect(value, `${name} needs a size/line-height`).toMatch(/\d+px\/\d+px/);
+        expect(value, `${name} needs a family`).toContain('var(--sfdt-font-');
+      }
+    });
+
+    it('every family referenced by a type token is itself defined', () => {
+      for (const value of Object.values(SFDT_SCALES)) {
+        for (const [, family] of value.matchAll(/var\(--sfdt-(font-[a-z]+)\)/g)) {
+          expect(SFDT_SCALES[family!], `${family} is referenced but undefined`).toBeDefined();
+        }
+      }
+    });
   });
 
   // AC3 — body text ≥ 4.5:1 (normal) / ≥ 3:1 (large), both themes.

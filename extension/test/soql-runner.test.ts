@@ -448,7 +448,7 @@ describe('soql-runner — modal execution', () => {
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     textarea.value = 'SELECT Id, Name FROM Account LIMIT 2';
     const runBtn = Array.from(document.querySelectorAll('button')).find(
-      (b) => b.textContent === '▶ Run',
+      (b) => b.textContent === 'Run',
     );
     runBtn?.click();
 
@@ -484,7 +484,7 @@ describe('soql-runner — modal execution', () => {
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     textarea.value = 'SELECT Id, DeveloperName FROM FlowDefinition';
     const runBtn = Array.from(document.querySelectorAll('button')).find(
-      (b) => b.textContent === '▶ Run',
+      (b) => b.textContent === 'Run',
     );
     runBtn?.click();
 
@@ -508,7 +508,7 @@ describe('soql-runner — modal execution', () => {
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     textarea.value = 'SELECT Foo FROM Account';
     const runBtn = Array.from(document.querySelectorAll('button')).find(
-      (b) => b.textContent === '▶ Run',
+      (b) => b.textContent === 'Run',
     );
     runBtn?.click();
 
@@ -540,7 +540,7 @@ describe('soql-runner — modal execution', () => {
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     textarea.value = 'SELECT Id FROM Account';
     const runBtn = Array.from(document.querySelectorAll('button')).find(
-      (b) => b.textContent === '▶ Run',
+      (b) => b.textContent === 'Run',
     );
     runBtn?.click();
     await new Promise((r) => setTimeout(r, 0));
@@ -598,7 +598,7 @@ describe('soql-runner — modal execution', () => {
       const feature = createSoqlRunnerFeature({ api });
       await feature.onActivate?.();
       (document.querySelector('textarea') as HTMLTextAreaElement).value = 'SELECT Id FROM Account';
-      btn('▶ Run')!.click();
+      btn('Run')!.click();
       await tick(); await tick();
       btn('Export all as CSV')!.click();
       await tick(); await tick(); // page-1 resolves, onProgress fires, now stalled on queryMore
@@ -612,7 +612,7 @@ describe('soql-runner — modal execution', () => {
       const cancelBtn = btn('Cancel')!;
       expect(cancelBtn.style.display).not.toBe('none'); // visible while exporting
 
-      btn('🔎 Explain')!.click();
+      btn('Explain')!.click();
       await tick(); await tick();
 
       expect(cancelBtn.style.display).toBe('none'); // abortExport() hid it
@@ -695,31 +695,102 @@ describe('soql-runner — modal execution', () => {
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     textarea.value = 'SELECT Id, Name FROM Account LIMIT 1';
     const runBtn = Array.from(document.querySelectorAll('button')).find(
-      (b) => b.textContent === '▶ Run',
+      (b) => b.textContent === 'Run',
     );
     runBtn?.click();
 
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
 
-    const link = document.querySelector('tbody tr td a') as HTMLAnchorElement;
+    // The Id cell is a <button>, not an <a href="#">: it opens a menu rather
+    // than navigating, and the fake href was a keyboard trap that looked like a
+    // link and went nowhere.
+    const link = document.querySelector('tbody tr td button') as HTMLButtonElement;
     expect(link).toBeTruthy();
+    expect(link.tagName).toBe('BUTTON');
+    expect(link.getAttribute('aria-haspopup')).toBe('menu');
     expect(link.textContent).toBe('001800000000001AAA');
 
     link.click();
 
-    const menu = document.querySelector('.sfdt-soql-cell-menu');
+    const menu = document.querySelector('.sfdt-menu-surface');
     expect(menu).toBeTruthy();
+    expect(menu?.getAttribute('role')).toBe('menu');
 
-    const menuItems = menu?.querySelectorAll('div');
-    expect(menuItems?.length).toBe(3);
+    // Copy Id / Query this record / Open in Salesforce. "View all fields" is
+    // absent because no inspectRecord hook was injected into this instance.
+    const menuItems = Array.from(menu?.querySelectorAll('[role="menuitem"]') ?? []);
+    expect(menuItems.length).toBe(3);
+    for (const item of menuItems) expect(item.tagName).toBe('BUTTON');
+    expect(menuItems.map((i) => i.textContent)).not.toContain('View all fields');
 
-    const queryRecordItem = Array.from(menuItems ?? []).find(el => el.textContent?.includes('Query Record'));
+    const queryRecordItem = menuItems.find((el) =>
+      el.textContent?.includes('Query this record'),
+    ) as HTMLElement;
     expect(queryRecordItem).toBeTruthy();
-    queryRecordItem?.click();
+    queryRecordItem.click();
 
     expect(textarea.value).toContain("WHERE Id = '001800000000001AAA'");
-    expect(document.querySelector('.sfdt-soql-cell-menu')).toBeNull();
+    expect(document.querySelector('.sfdt-menu-surface')).toBeNull();
+  });
+
+  it('offers "View all fields" only when the host wires Inspect Record in', async () => {
+    const api = fakeApi({
+      query: (vi.fn() as any).mockResolvedValue(({
+        totalSize: 1,
+        done: true,
+        records: [{ Id: '001800000000001AAA', Name: 'Acme' }],
+      })) as unknown as SalesforceApiClient['query'],
+    });
+    const inspectRecord = vi.fn();
+    const feature = createSoqlRunnerFeature({ api, inspectRecord });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id, Name FROM Account LIMIT 1';
+    Array.from(document.querySelectorAll('button'))
+      .find((b) => b.textContent === 'Run')
+      ?.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    (document.querySelector('tbody tr td button') as HTMLButtonElement).click();
+    const items = Array.from(
+      document.querySelectorAll<HTMLElement>('.sfdt-menu-surface [role="menuitem"]'),
+    );
+    const viewAll = items.find((i) => i.textContent?.includes('View all fields'));
+    expect(viewAll).toBeTruthy();
+
+    viewAll!.click();
+    expect(inspectRecord).toHaveBeenCalledWith('001800000000001AAA');
+  });
+
+  it('closes the row menu on Esc and returns focus to the Id cell', async () => {
+    const api = fakeApi({
+      query: (vi.fn() as any).mockResolvedValue(({
+        totalSize: 1,
+        done: true,
+        records: [{ Id: '001800000000001AAA', Name: 'Acme' }],
+      })) as unknown as SalesforceApiClient['query'],
+    });
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id FROM Account LIMIT 1';
+    Array.from(document.querySelectorAll('button'))
+      .find((b) => b.textContent === 'Run')
+      ?.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const cell = document.querySelector('tbody tr td button') as HTMLButtonElement;
+    cell.click();
+    expect(document.querySelector('.sfdt-menu-surface')).toBeTruthy();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.querySelector('.sfdt-menu-surface')).toBeNull();
+    expect(document.activeElement).toBe(cell);
   });
 });
 
@@ -921,6 +992,83 @@ describe('soql-runner — insertFieldIntoDraft (P2-1 PR-3)', () => {
   });
 });
 
+describe('soql-runner — the query editor', () => {
+  function setSalesforceUrl(): void {
+    window.history.replaceState(
+      {},
+      '',
+      'https://x.lightning.force.com/lightning/setup/Flows/home',
+    );
+  }
+
+  // The <textarea> became lib/code-editor.ts's line-numbered, highlighted
+  // editor. `editor.input` is still a real textarea, so everything above works
+  // unchanged — what these pin is the part that CAN silently break: the
+  // highlight and gutter only repaint on an 'input' event, and every
+  // programmatic edit (a history pick, a saved query, a pending hand-off,
+  // autocomplete's setRangeText) mutates the value without firing one.
+  const hl = (): string => document.querySelector('.sfdt-editor-hl')?.textContent ?? '';
+  const gutter = (): string => document.querySelector('.sfdt-editor-gutter')?.textContent ?? '';
+
+  it('mounts the editor with a name the textarea never had', async () => {
+    setSalesforceUrl();
+    const feature = createSoqlRunnerFeature({ api: fakeApi() });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    expect(textarea.className).toContain('sfdt-editor-input');
+    // A placeholder is not an accessible name — it vanishes on the first
+    // keystroke, and this field never had a <label>.
+    expect(textarea.getAttribute('aria-label')).toBe('SOQL query');
+    expect(document.querySelector('.sfdt-editor')).not.toBeNull();
+  });
+
+  it('repaints when a pending query is handed off', async () => {
+    setSalesforceUrl();
+    await writePendingQuery({ q: 'SELECT Id\nFROM Lead', api: 'rest' });
+    const feature = createSoqlRunnerFeature({ api: fakeApi() });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('SELECT Id\nFROM Lead');
+    // The highlight layer must carry the same text, or the caret sits over
+    // stale glyphs; the gutter must count the same logical lines.
+    expect(hl()).toContain('SELECT Id\nFROM Lead');
+    expect(gutter()).toBe('1\n2');
+  });
+
+  // The History and Saved Queries pickers set the draft through the same
+  // `editor.setValue` the pending hand-off above uses, so they are covered by
+  // that case rather than by re-driving each menu.
+
+  it('repaints after a field is inserted into the draft', async () => {
+    setSalesforceUrl();
+    const feature = createSoqlRunnerFeature({ api: fakeApi() });
+    await feature.onActivate?.();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = 'SELECT Id FROM Account';
+    feature.insertFieldIntoDraft('Name');
+
+    expect(textarea.value).toBe('SELECT Id, Name FROM Account');
+    expect(hl()).toContain('SELECT Id, Name FROM Account');
+  });
+
+  it('highlights SOQL keywords, not Apex ones', async () => {
+    setSalesforceUrl();
+    await writePendingQuery({ q: 'SELECT Id FROM Account', api: 'rest' });
+    const feature = createSoqlRunnerFeature({ api: fakeApi() });
+    await feature.onActivate?.();
+
+    const keywords = Array.from(document.querySelectorAll('.sfdt-tok-k')).map(
+      (el) => el.textContent,
+    );
+    expect(keywords).toContain('FROM');
+    // 'Account' is a type-shaped word, not a keyword — the case-sensitive rule.
+    expect(keywords).not.toContain('Account');
+  });
+});
+
 describe('soql-runner — DescribeCache extra branches', () => {
   it('targets the tooling endpoints in tooling mode', async () => {
     const apiGet = vi.fn().mockResolvedValue({ sobjects: [] });
@@ -1077,7 +1225,7 @@ describe('soql-runner — Explain modal', () => {
 
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     textarea.value = 'SELECT Id FROM Account';
-    findButton('🔎 Explain')?.click();
+    findButton('Explain')?.click();
     await flush();
 
     expect(api.apiGet).toHaveBeenCalledWith('/services/data/v62.0/query', {
@@ -1110,7 +1258,7 @@ describe('soql-runner — Explain modal', () => {
 
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     textarea.value = 'FIND {Acme} IN ALL FIELDS';
-    findButton('🔎 Explain')?.click();
+    findButton('Explain')?.click();
     await flush();
 
     const alert = document.querySelector('[role="alert"]') as HTMLElement | null;
@@ -1126,7 +1274,7 @@ describe('soql-runner — Explain modal', () => {
     const api = fakeApi();
     const feature = createSoqlRunnerFeature({ api });
     await feature.onActivate?.();
-    findButton('🔎 Explain')?.click();
+    findButton('Explain')?.click();
     await flush();
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       'Enter a SOQL query to explain.',
@@ -1149,12 +1297,12 @@ describe('soql-runner — Explain modal', () => {
 
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     textarea.value = 'SELECT Id, Name FROM Account';
-    findButton('▶ Run')?.click();
+    findButton('Run')?.click();
     await flush();
     // Results + footer actions are visible after a query.
     expect(findButton('Copy CSV')?.style.display).not.toBe('none');
 
-    findButton('🔎 Explain')?.click();
+    findButton('Explain')?.click();
     await flush();
     // The plan replaced the table; the table's footer actions are hidden so they
     // can't act on the now-hidden stale result set.
@@ -1176,8 +1324,8 @@ describe('soql-runner — Explain modal', () => {
 
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     textarea.value = 'SELECT Id FROM Account';
-    const runBtn = findButton('▶ Run')!;
-    const explainBtn = findButton('🔎 Explain')!;
+    const runBtn = findButton('Run')!;
+    const explainBtn = findButton('Explain')!;
     runBtn.click();
     await flush();
 
@@ -1228,7 +1376,7 @@ describe('soql-runner — modal menus & exports', () => {
   async function runSomething(): Promise<void> {
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     textarea.value = 'SELECT Id, Name FROM Account';
-    findButton('▶ Run')?.click();
+    findButton('Run')?.click();
     await flush();
   }
 
@@ -1246,7 +1394,7 @@ describe('soql-runner — modal menus & exports', () => {
 
   it('shows an error when running an empty query', async () => {
     await openWith(fakeApi());
-    findButton('▶ Run')?.click();
+    findButton('Run')?.click();
     await flush();
     expect(document.body.textContent).toContain('Enter a SOQL query to run.');
   });
@@ -1254,7 +1402,7 @@ describe('soql-runner — modal menus & exports', () => {
   it('renders the history menu, including a tooling badge, and fills on click', async () => {
     await pushSoqlHistory({ q: 'SELECT Id FROM Flow', api: 'tooling', ts: 1 });
     await openWith(fakeApi());
-    findButton('▸ History ▾')?.click();
+    findButton('History')?.click();
     await flush();
     const menuText = document.body.textContent ?? '';
     expect(menuText).toContain('TOOL');
@@ -1272,7 +1420,7 @@ describe('soql-runner — modal menus & exports', () => {
   it('shows the empty-history placeholder', async () => {
     await clearSoqlHistory();
     await openWith(fakeApi());
-    findButton('▸ History ▾')?.click();
+    findButton('History')?.click();
     await flush();
     expect(document.body.textContent).toContain('No queries yet.');
   });
@@ -1293,14 +1441,16 @@ describe('soql-runner — modal menus & exports', () => {
     const originalConfirm = window.confirm;
     window.confirm = vi.fn(() => true);
     await openWith(fakeApi());
-    findButton('★ Bookmarks ▾')?.click();
+    findButton('Bookmarks')?.click();
     await flush();
     expect(document.body.textContent).toContain('Mine:');
-    // Two '×' buttons exist (modal close + bookmark delete); the delete is last.
-    const closeButtons = Array.from(document.querySelectorAll('button')).filter(
-      (b) => b.textContent === '×',
-    );
-    (closeButtons[closeButtons.length - 1] as HTMLButtonElement).click();
+    // Named, not positional: this used to pick "the last of the two '×'
+    // buttons", which happened to be the delete only because the modal's close
+    // sorted first. The delete now says what it deletes.
+    const del = document.querySelector(
+      'button[aria-label="Delete bookmark Mine"]',
+    ) as HTMLButtonElement;
+    del.click();
     await flush();
     expect(await readSavedQueries()).toEqual([]);
     window.confirm = originalConfirm;
@@ -1309,14 +1459,14 @@ describe('soql-runner — modal menus & exports', () => {
   it('shows the empty-bookmarks placeholder', async () => {
     await writeSavedQueries([]);
     await openWith(fakeApi());
-    findButton('★ Bookmarks ▾')?.click();
+    findButton('Bookmarks')?.click();
     await flush();
     expect(document.body.textContent).toContain('No bookmarked queries yet.');
   });
 
   it('warns when saving a bookmark with an empty query', async () => {
     await openWith(fakeApi());
-    findButton('★ Save')?.click();
+    findButton('Save')?.click();
     await flush();
     expect(document.querySelector('.sfdt-toast')?.textContent).toBe(
       'Enter a query to bookmark first',
@@ -1330,7 +1480,7 @@ describe('soql-runner — modal menus & exports', () => {
     await openWith(fakeApi());
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     textarea.value = 'SELECT Id FROM Account';
-    findButton('★ Save')?.click();
+    findButton('Save')?.click();
     await flush();
     expect(await readSavedQueries()).toEqual([
       { name: 'Named', q: 'SELECT Id FROM Account', api: 'rest', lang: 'soql' },
@@ -1388,7 +1538,7 @@ describe('soql-runner — modal menus & exports', () => {
     await runSomething();
     findButton('Copy CSV')?.click();
     await flush();
-    expect(document.querySelector('.sfdt-toast')?.textContent).toBe('Could not copy to clipboard');
+    expect(document.querySelector('.sfdt-toast')?.textContent).toBe('Could not copy 1 row as CSV');
   });
 
   it('closes the modal on Escape', async () => {
@@ -1764,7 +1914,7 @@ describe('soql-runner — SOSL mode in the runner UI', () => {
     );
     textarea.value = 'FIND {Acme} IN ALL FIELDS RETURNING Account(Id, Name), Contact(Id, Name)';
     textarea.dispatchEvent(new Event('input'));
-    findButton('▶ Run')?.click();
+    findButton('Run')?.click();
     await flush();
     return textarea;
   }
@@ -1806,16 +1956,16 @@ describe('soql-runner — SOSL mode in the runner UI', () => {
 
   it('disables Explain and the whole transport toggle in SOSL mode', async () => {
     await openWith(fakeApi());
-    expect(findButton('🔎 Explain')?.disabled).toBe(false);
+    expect(findButton('Explain')?.disabled).toBe(false);
     langButton('SOSL').click();
-    expect(findButton('🔎 Explain')?.disabled).toBe(true);
+    expect(findButton('Explain')?.disabled).toBe(true);
     // Genuinely disabled, not hidden, and labelled as unavailable-in-this-mode.
     expect(findButton('Tooling')?.disabled).toBe(true);
     expect(findButton('REST')?.disabled).toBe(true);
     expect(findButton('Tooling')?.title).toContain('Not available in SOSL mode');
     expect(findButton('Tooling')?.style.display).not.toBe('none');
     langButton('SOQL').click();
-    expect(findButton('🔎 Explain')?.disabled).toBe(false);
+    expect(findButton('Explain')?.disabled).toBe(false);
     expect(findButton('Tooling')?.disabled).toBe(false);
     expect(findButton('REST')?.disabled).toBe(false);
     expect(findButton('Tooling')?.title).toBe('');
@@ -1840,7 +1990,7 @@ describe('soql-runner — SOSL mode in the runner UI', () => {
     expect(findButton('Tooling')?.disabled).toBe(true);
 
     // ...and the SOSL run really goes over the REST search resource.
-    findButton('▶ Run')?.click();
+    findButton('Run')?.click();
     await flush();
     expect(apiGet).toHaveBeenCalledWith(
       '/services/data/v62.0/search',
@@ -1857,7 +2007,7 @@ describe('soql-runner — SOSL mode in the runner UI', () => {
     expect(findButton('Tooling')?.getAttribute('aria-pressed')).toBe('true');
     expect(findButton('Tooling')?.disabled).toBe(false);
 
-    findButton('▶ Run')?.click();
+    findButton('Run')?.click();
     await flush();
     expect(toolingQuery).toHaveBeenCalledWith('SELECT Id FROM Account');
     expect(query).not.toHaveBeenCalled();
@@ -2056,7 +2206,7 @@ describe('soql-runner — SOSL mode in the runner UI', () => {
     textarea.dispatchEvent(new Event('input'));
     expect(langButton('SOQL').getAttribute('aria-checked')).toBe('true');
 
-    findButton('▸ History ▾')?.click();
+    findButton('History')?.click();
     await flush();
     expect(document.body.textContent).toContain('SOSL');
     const textSpan = Array.from(document.querySelectorAll('span')).find((s) =>
@@ -2072,7 +2222,7 @@ describe('soql-runner — SOSL mode in the runner UI', () => {
       { name: 'Find Acme', q: 'FIND {Acme} IN ALL FIELDS', api: 'rest', lang: 'sosl' },
     ]);
     await openWith(fakeApi());
-    findButton('★ Bookmarks ▾')?.click();
+    findButton('Bookmarks')?.click();
     await flush();
     const qSpan = Array.from(document.querySelectorAll('span')).find(
       (s) => s.textContent === 'FIND {Acme} IN ALL FIELDS',
@@ -2097,7 +2247,7 @@ describe('soql-runner — SOSL mode in the runner UI', () => {
     // Pick the Tooling SOQL entry while sitting in SOSL mode: the language
     // re-enables the transport control, then the recorded transport applies.
     langButton('SOSL').click();
-    findButton('▸ History ▾')?.click();
+    findButton('History')?.click();
     await flush();
     const soqlSpan = Array.from(document.querySelectorAll('span')).find(
       (x) => x.textContent === 'SELECT Id FROM Flow',
@@ -2108,7 +2258,7 @@ describe('soql-runner — SOSL mode in the runner UI', () => {
 
     // Now pick the SOSL entry: it ran on REST because SOSL always does, so it
     // must not be read as the user choosing REST for their SOQL work.
-    findButton('▸ History ▾')?.click();
+    findButton('History')?.click();
     await flush();
     const soslSpan = Array.from(document.querySelectorAll('span')).find(
       (x) => x.textContent === 'FIND {Acme}',
@@ -2124,7 +2274,7 @@ describe('soql-runner — SOSL mode in the runner UI', () => {
     // Written before the toggle existed: no `lang` key at all.
     await writeSoqlHistory([{ q: 'FIND {Legacy}', api: 'rest', ts: 1 }]);
     const textarea = await openWith(fakeApi());
-    findButton('▸ History ▾')?.click();
+    findButton('History')?.click();
     await flush();
     const textSpan = Array.from(document.querySelectorAll('span')).find(
       (s) => s.textContent === 'FIND {Legacy}',

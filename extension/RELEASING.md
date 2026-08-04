@@ -18,6 +18,14 @@ two must always agree.
    tags `ext-vx.y.z`, creates a GitHub Release with the Chrome zip, and publishes
    to the Chrome Web Store.
 
+4. **Retype the dashboard-only listing fields** in the Chrome Web Store developer
+   console. Four fields never come from the zip and silently keep showing stale
+   values: **item name**, category, data-usage disclosures, and distribution
+   settings. The manifest `name` is *not* the store's item title — renaming the
+   extension in `wxt.config.ts` does nothing to the published title until it is
+   retyped here. See [`listing.md`](./listing.md) for the field-to-tab map and
+   the paste-ready copy.
+
 Prerelease versions (containing `-`) are rejected by the release job.
 
 ## Packaging (local + CI)

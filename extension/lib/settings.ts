@@ -4,6 +4,7 @@
 
 import { z } from 'zod';
 import { isEnabledByDefault } from './feature-defaults.js';
+import { storageGet, storageSet, onStorageChange } from './storage.js';
 
 export const SettingsSchema = z.object({
   // Only ids the user has explicitly toggled appear here. An absent entry falls
@@ -50,6 +51,19 @@ export const SettingsSchema = z.object({
   telemetry: z
     .object({
       enabled: z.boolean().default(false),
+    })
+    .default({}),
+
+  // Local "Recent activity" log shown on the Workspace Overview (lib/activity-log.ts).
+  // A global UI preference like telemetry/theme, not a kill-switchable content
+  // feature. Defaults ON because it backs a visible panel — off, the Overview
+  // ships permanently empty and nobody discovers it. Unlike telemetry (pure
+  // counters) this store can contain Salesforce data: a SOQL statement's WHERE
+  // clause. That's why `resource` is truncated at the write boundary, the log is
+  // bounded and clearable, and this switch exists. See PRIVACY.md.
+  activityLog: z
+    .object({
+      enabled: z.boolean().default(true),
     })
     .default({}),
 
@@ -175,15 +189,11 @@ function defaultSettings(): Settings {
 }
 
 async function readRaw(): Promise<unknown> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(STORAGE_KEY, (result) => resolve(result?.[STORAGE_KEY]));
-  });
+  return storageGet(STORAGE_KEY);
 }
 
 async function writeRaw(value: Settings): Promise<void> {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [STORAGE_KEY]: value }, () => resolve());
-  });
+  await storageSet(STORAGE_KEY, value);
 }
 
 export async function loadSettings(): Promise<Settings> {
@@ -225,24 +235,17 @@ export async function patchSettings(patch: Partial<Settings>): Promise<Settings>
 
 // Returns an unsubscribe function.
 export function onSettingsChange(callback: (settings: Settings) => void): () => void {
-  const listener = (
-    changes: Record<string, chrome.storage.StorageChange>,
-    namespace: string,
-  ): void => {
-    if (namespace !== 'local') return;
-    if (!changes[STORAGE_KEY]) return;
+  return onStorageChange(STORAGE_KEY, (newValue) => {
     // Use the composed schema (same as loadSettings/saveSettings) so dynamically
     // registered featureSettings.<id> entries survive a storage round-trip. The
     // base SettingsSchema would strip them, silently clearing per-feature
     // preferences on every other tab's onChanged fire.
-    const next = getComposedSchema().safeParse(changes[STORAGE_KEY].newValue ?? {});
+    const next = getComposedSchema().safeParse(newValue ?? {});
     if (next.success) {
       _cache = next.data as Settings;
       callback(next.data as Settings);
     }
-  };
-  chrome.storage.onChanged.addListener(listener);
-  return () => chrome.storage.onChanged.removeListener(listener);
+  });
 }
 
 export function _clearSettingsCacheForTests(): void {

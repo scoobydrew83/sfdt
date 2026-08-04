@@ -7,6 +7,8 @@
 // (pre-stamping writes, manual tampering) are treated as stale too: their
 // age is unknowable, and the next successful ping rewrites a stamped record.
 
+import { storageGet, storageSet } from './storage.js';
+
 const STORAGE_KEY = 'sfdt.killswitch.cache';
 
 /** Cache entries older than this are ignored on read. */
@@ -18,22 +20,14 @@ interface CacheRecord {
 }
 
 export async function readKillSwitchCache(now: number = Date.now()): Promise<readonly string[]> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(STORAGE_KEY, (result) => {
-      const raw = result?.[STORAGE_KEY] as CacheRecord | undefined;
-      if (!raw || !Array.isArray(raw.disabled)) return resolve([]);
-      // Stale or un-stamped → behave exactly as if no cache existed.
-      if (typeof raw.ts !== 'number' || now - raw.ts > KILL_SWITCH_CACHE_MAX_AGE_MS) {
-        return resolve([]);
-      }
-      resolve(raw.disabled.filter((v) => typeof v === 'string' && v.length > 0));
-    });
-  });
+  const raw = await storageGet<CacheRecord>(STORAGE_KEY);
+  if (!raw || !Array.isArray(raw.disabled)) return [];
+  // Stale or un-stamped → behave exactly as if no cache existed.
+  if (typeof raw.ts !== 'number' || now - raw.ts > KILL_SWITCH_CACHE_MAX_AGE_MS) return [];
+  return raw.disabled.filter((v) => typeof v === 'string' && v.length > 0);
 }
 
 export async function writeKillSwitchCache(disabled: readonly string[]): Promise<void> {
   const record: CacheRecord = { disabled: [...disabled], ts: Date.now() };
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [STORAGE_KEY]: record }, () => resolve());
-  });
+  await storageSet(STORAGE_KEY, record);
 }

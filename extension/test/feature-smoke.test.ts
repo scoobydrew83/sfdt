@@ -221,9 +221,10 @@ describe('extension/features — smoke', () => {
     const labelInput = document.querySelector<HTMLInputElement>('input[type="text"]');
     const typeSelect = document.querySelectorAll<HTMLSelectElement>('select')[0];
     const patternSelect = document.querySelectorAll<HTMLSelectElement>('select')[1];
-    const preview = document.querySelector<HTMLElement>(
-      'div[style*="monospace"]',
-    );
+    // By class, not by inline style: an assertion that reaches for
+    // `[style*="monospace"]` breaks the moment the element is migrated onto the
+    // design system, which is the opposite of what a smoke test should do.
+    const preview = document.querySelector<HTMLElement>('.sfdt-console');
     expect(labelInput).not.toBeNull();
     expect(typeSelect).not.toBeNull();
     expect(patternSelect).not.toBeNull();

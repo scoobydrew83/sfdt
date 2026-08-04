@@ -1,6 +1,7 @@
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { showToast } from '../ui/toast.js';
+import { triggerDownload } from '../lib/download.js';
 
 interface DiffRow {
   element: string;
@@ -37,18 +38,6 @@ function toTsv(rows: readonly DiffRow[]): string {
   return [header, ...lines].join('\n');
 }
 
-function triggerDownload(doc: Document, filename: string, text: string, mime: string): void {
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = doc.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.style.display = 'none';
-  doc.body.appendChild(a);
-  a.click();
-  doc.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
 
 export interface ComparisonExporterOptions {
   doc?: Document;

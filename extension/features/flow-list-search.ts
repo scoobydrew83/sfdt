@@ -1,5 +1,6 @@
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
+import { icon } from '../lib/icons.js';
 
 interface RowIndexEntry {
   row: HTMLElement;
@@ -317,11 +318,11 @@ export function createFlowListSearchFeature(options: FlowListSearchOptions = {})
     container.id = 'sfdt-flow-search-container';
     container.className = 'sfdt-flow-search-container';
 
-    const icon = doc.createElement('span');
-    icon.className = 'sfdt-flow-search-icon';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = '🔍';
-    container.appendChild(icon);
+    const searchIcon = doc.createElement('span');
+    searchIcon.className = 'sfdt-flow-search-icon';
+    searchIcon.setAttribute('aria-hidden', 'true');
+    searchIcon.appendChild(icon('search', 16, doc));
+    container.appendChild(searchIcon);
 
     searchInput = doc.createElement('input');
     searchInput.id = 'sfdt-flow-search-input';

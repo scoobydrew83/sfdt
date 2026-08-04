@@ -25,6 +25,7 @@
 import { layoutFlame, hitTestFlame, DEFAULT_ROW_HEIGHT, type FlameRect } from '../lib/apex-log/flame-layout.js';
 import { methodKey, formatNanosMs } from '../lib/apex-log/viewmodel.js';
 import type { InvocationNode } from '../lib/apex-log/types.js';
+import { button } from '../lib/ui-controls.js';
 
 const ROW_H = DEFAULT_ROW_HEIGHT;
 const DEFAULT_WIDTH = 900;
@@ -101,14 +102,8 @@ export function buildFlameChart(opts: FlameChartOptions): FlameChartHandle {
 
   // Controls row: Reset zoom + a static text summary (also the a11y summary).
   const controls = doc.createElement('div');
-  controls.style.cssText = 'display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--sfdt-color-text-weak);';
-
-  const resetBtn = doc.createElement('button');
-  resetBtn.type = 'button';
-  resetBtn.textContent = 'Reset zoom';
-  resetBtn.disabled = true;
-  resetBtn.style.cssText =
-    'background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 2px 8px; cursor: pointer; font: inherit; color: var(--sfdt-color-text);';
+  controls.classList.add('sfdt-row');
+  const resetBtn = button({ label: 'Reset zoom', iconName: 'refresh', small: true, disabled: true, doc });
 
   const summary = doc.createElement('span');
 
@@ -127,7 +122,7 @@ export function buildFlameChart(opts: FlameChartOptions): FlameChartHandle {
   const tooltip = doc.createElement('div');
   tooltip.setAttribute('role', 'status');
   tooltip.style.cssText =
-    'position: absolute; pointer-events: none; z-index: 5; display: none; max-width: 320px; padding: 4px 8px; border-radius: 4px; font-size: 11px; line-height: 1.4; background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border: 1px solid var(--sfdt-color-border); box-shadow: 0 2px 8px rgba(0,0,0,0.25); white-space: pre;';
+    'position: absolute; pointer-events: none; z-index: 5; display: none; max-width: 320px; padding: 4px 8px; border-radius: 4px; font-size: 11px; line-height: 1.4; background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border: 1px solid var(--sfdt-color-border); box-shadow: var(--sfdt-shadow-2); white-space: pre;';
   scroller.appendChild(tooltip);
 
   element.append(controls, scroller);

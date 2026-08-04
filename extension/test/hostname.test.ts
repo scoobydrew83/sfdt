@@ -3,6 +3,7 @@ import {
   lightningHostname,
   mySalesforceHostname,
   setupHostname,
+  orgDisplayName,
 } from '../lib/hostname.js';
 
 describe('extension/lib/hostname', () => {
@@ -140,5 +141,42 @@ describe('extension/lib/hostname', () => {
         'myorg.trailblaze.my.salesforce.com',
       );
     });
+  });
+});
+
+describe('orgDisplayName', () => {
+  it('drops the suffix that every org shares', () => {
+    // The real host from the side-panel bug report: 50 characters, wrapped over
+    // four lines of a 200px column.
+    expect(orgDisplayName('wise-goat-4iv2wx-dev-ed.trailblaze.lightning.force.com')).toBe(
+      'wise-goat-4iv2wx-dev-ed.trailblaze',
+    );
+    expect(orgDisplayName('acme.my.salesforce.com')).toBe('acme');
+    expect(orgDisplayName('acme.lightning.force.com')).toBe('acme');
+  });
+
+  it('keeps the environment segment, which does carry meaning', () => {
+    expect(orgDisplayName('acme.sandbox.my.salesforce.com')).toBe('acme.sandbox');
+    expect(orgDisplayName('acme.develop.lightning.force.com')).toBe('acme.develop');
+  });
+
+  it('handles GovCloud and China hosts', () => {
+    expect(orgDisplayName('acme.my.salesforce.mil')).toBe('acme');
+    expect(orgDisplayName('acme.lightning.sfcrmapps.cn')).toBe('acme');
+  });
+
+  it('prefers the longest matching suffix (no stray `.my` left behind)', () => {
+    // `.salesforce.com` also matches — sorting longest-first is what stops this
+    // returning "acme.my".
+    expect(orgDisplayName('acme.my.salesforce.com')).not.toContain('.my');
+  });
+
+  it('is forgiving about scheme, case and trailing path', () => {
+    expect(orgDisplayName('https://ACME.my.salesforce.com/lightning/setup')).toBe('acme');
+  });
+
+  it('returns the input unchanged when there is nothing to strip', () => {
+    expect(orgDisplayName('localhost')).toBe('localhost');
+    expect(orgDisplayName('')).toBe('');
   });
 });

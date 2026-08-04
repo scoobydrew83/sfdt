@@ -4,6 +4,7 @@ import {
   _metadataRetrieveTestApi,
 } from '../features/metadata-retrieve.js';
 import type { SalesforceApiClient } from '../lib/salesforce-api.js';
+import { SFDT_COMPONENT_CSS } from '../lib/ui-styles.js';
 
 const { asArray } = _metadataRetrieveTestApi();
 
@@ -1705,5 +1706,81 @@ describe('metadata-retrieve — a members-less discover response is a failure, n
       .parentElement!.querySelector('.sfdt-tree-chk') as HTMLInputElement;
     expect(chk.indeterminate).toBe(true);
     expect(mainTextarea().value).toBe(SERVER_ADDITIVE_XML);
+  });
+});
+
+describe('metadata-retrieve — shell layout', () => {
+  const flush = async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  };
+  const deps = (): { api: SalesforceApiClient } => ({ api: fakeApi() });
+
+  beforeEach(() => {
+    while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
+    window.history.replaceState({}, '', 'https://x.lightning.force.com/lightning/setup/SetupOneHome/home');
+  });
+
+  it('uses a horizontal tab strip, not vertical sidebar rows', async () => {
+    // '.sfdt-nav-item' is a SIDEBAR row: full-width, current marked with a LEFT
+    // border. Used in a horizontal strip every tab stretches and the indicator
+    // points the wrong way. A bulk migration matched on "row button with an
+    // active state" and missed that the axis is the whole difference.
+    const feature = createMetadataRetrieveFeature(deps());
+    await feature.onActivate?.();
+    await flush();
+
+    const tabs = document.querySelectorAll('.sfdt-tabs .sfdt-tab');
+    expect(tabs).toHaveLength(2);
+    expect(Array.from(tabs).map((t) => t.textContent)).toEqual(['Retrieve', 'Deploy']);
+    expect(document.querySelectorAll('.sfdt-tabs .sfdt-nav-item')).toHaveLength(0);
+    expect(tabs[0]!.getAttribute('aria-current')).toBe('page');
+    expect(tabs[1]!.getAttribute('aria-current')).toBeNull();
+  });
+
+  it('moves aria-current when the other tab is chosen', async () => {
+    const feature = createMetadataRetrieveFeature(deps());
+    await feature.onActivate?.();
+    await flush();
+    const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.sfdt-tabs .sfdt-tab'));
+    tabs[1]!.click();
+    expect(tabs[1]!.getAttribute('aria-current')).toBe('page');
+    expect(tabs[0]!.getAttribute('aria-current')).toBeNull();
+  });
+
+  it('declares the spin keyframes once in the sheet, not per open()', async () => {
+    // The version this replaces appended a <style> with its own @keyframes to
+    // doc.head on EVERY open and never removed it, so re-opening the tool ten
+    // times left ten identical keyframe blocks behind.
+    const before = document.head.querySelectorAll('style').length;
+    const feature = createMetadataRetrieveFeature(deps());
+    await feature.onActivate?.();
+    await flush();
+    feature.teardown?.();
+    await feature.onActivate?.();
+    await flush();
+    expect(document.head.querySelectorAll('style').length).toBe(before);
+    expect(document.querySelector('.sfdt-spinner')).not.toBeNull();
+  });
+
+  it('gives both columns min-width so the 50/50 cannot collapse', async () => {
+    // Same trap as the Schema Browser's left pane: a flex item defaults to
+    // min-width:auto and refuses to shrink below its content, so a long
+    // metadata type name silently turns 50/50 into 80/20.
+    const feature = createMetadataRetrieveFeature(deps());
+    await feature.onActivate?.();
+    await flush();
+    const halves = document.querySelectorAll('.sfdt-split .sfdt-split-half');
+    expect(halves).toHaveLength(2);
+    expect(SFDT_COMPONENT_CSS).toMatch(/\.sfdt-split-half\s*\{[^}]*min-width:\s*0/);
+  });
+
+  it('puts the bridge status in the footer status bar', async () => {
+    const feature = createMetadataRetrieveFeature(deps());
+    await feature.onActivate?.();
+    await flush();
+    const foot = document.querySelector('.sfdt-toolbar-foot');
+    expect(foot?.textContent).toContain('bridge');
+    expect(foot?.textContent).toContain('Salesforce API');
   });
 });

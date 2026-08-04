@@ -319,7 +319,7 @@
         "record_page"
       ],
       "enabledByDefault": true,
-      "workspace": true,
+      "workspace": false,
       "sideButton": true,
       "bridgeRequired": false
     },
@@ -389,20 +389,6 @@
       "workspace": true,
       "sideButton": true,
       "bridgeRequired": true
-    },
-    {
-      "id": "org-health-live",
-      "name": "Org Health (Live)",
-      "contexts": [
-        "setup_flows",
-        "setup_other",
-        "flow_builder",
-        "flow_trigger_explorer"
-      ],
-      "enabledByDefault": true,
-      "workspace": true,
-      "sideButton": true,
-      "bridgeRequired": false
     },
     {
       "id": "org-limits",

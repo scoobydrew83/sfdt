@@ -133,10 +133,39 @@ function tagError<T extends Record<string, unknown>>(err: Error, fields: T): Err
   return err;
 }
 
-// The single constructor for the no-session diagnosis. Message text is
-// deliberately byte-identical to what shipped, so existing UI copy and tests
-// are unaffected; only the discriminant is new.
+/**
+ * True when Chrome has swapped the extension out from under this tab. The
+ * orphaned content script keeps running but every `chrome.*` handle is dead;
+ * `chrome.runtime.id` going undefined is the standard tell.
+ */
+function contextInvalidated(): boolean {
+  try {
+    return typeof chrome !== 'undefined' && !!chrome.runtime && chrome.runtime.id === undefined;
+  } catch {
+    // Reading through a dead handle can itself throw — that IS the condition.
+    return true;
+  }
+}
+
+// The single constructor for the no-session diagnosis.
+//
+// A null reply from the worker has two very different causes and they used to
+// report identically. "No Salesforce session available" sends you hunting for a
+// login problem when the actual fix is to reload the tab — which is exactly the
+// wrong direction, because the session is usually fine. The message text for the
+// genuine no-session case is byte-identical to what shipped, so existing UI copy
+// and tests are unaffected.
 function buildNoSessionError(): Error {
+  if (contextInvalidated()) {
+    return tagError(
+      new Error(
+        'SFDT was updated while this tab was open, so the page is running an ' +
+          'orphaned copy of the extension. Reload the tab — your Salesforce ' +
+          'session is unaffected.',
+      ),
+      { sfdtKind: 'no-session' as const, status: 0, contextInvalidated: true },
+    );
+  }
   return tagError(new Error('No Salesforce session available'), {
     sfdtKind: 'no-session' as const,
     status: 0,

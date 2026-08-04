@@ -12,6 +12,8 @@ import { loadSettings } from '../lib/settings.js';
 import { createBridgeClient, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { setTone, button, setLabel } from '../lib/ui-controls.js';
+import { busyOverlay } from '../ui/panels.js';
 
 interface FlowDefinitionRecord {
   Id: string;
@@ -112,27 +114,25 @@ export function buildConflictsModal(
       : `Trigger Conflicts — ${groups.length} group${groups.length === 1 ? '' : 's'} (${totalFlows} flows)`;
 
   const body = doc.createElement('div');
-  body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1;';
-
+  body.className = 'sfdt-view-main';
   if (groups.length === 0) {
     const empty = doc.createElement('div');
-    empty.style.color = 'var(--sfdt-color-text-icon)';
+    setTone(empty, 'muted');
     empty.textContent =
       'No record-triggered flows in this org share the same object + timing + event.';
     body.appendChild(empty);
   } else {
     const intro = doc.createElement('div');
-    intro.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 13px; margin-bottom: 12px;';
+    intro.classList.add('sfdt-muted');
     intro.textContent =
       'These groups of record-triggered flows fire on the same object + timing + event. The order in which they run is not guaranteed, so behaviour can vary save-to-save. Use Deactivate to silence a conflicting flow without deleting it; Activate restores the latest version.';
     body.appendChild(intro);
 
     for (const group of groups) {
       const groupBox = doc.createElement('div');
-      groupBox.style.cssText =
-        'border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 10px; margin-bottom: 8px;';
+      groupBox.classList.add('sfdt-panel', 'sfdt-below');
       const title = doc.createElement('div');
-      title.style.cssText = 'font-weight: 600; margin-bottom: 6px;';
+      title.classList.add('sfdt-subhead');
       title.textContent = `${group.objectApiName} · ${group.triggerTiming} · ${group.triggerEvent}`;
       groupBox.appendChild(title);
 
@@ -148,10 +148,7 @@ export function buildConflictsModal(
   const footer = doc.createElement('div');
   footer.style.cssText =
     'padding: 12px 16px; border-top: 1px solid var(--sfdt-color-border); display: flex; justify-content: flex-end; gap: 8px;';
-  const closeFooter = doc.createElement('button');
-  closeFooter.textContent = 'Close';
-  closeFooter.style.cssText =
-    'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer;';
+  const closeFooter = button({ label: 'Close', doc });
   footer.appendChild(closeFooter);
 
   const view = presentView({ title, body, footer, doc, width: '720px' });
@@ -175,7 +172,7 @@ function buildFlowRow(
   labelLine.style.cssText = 'font-size: 13px;';
   const labelSpan = doc.createElement('span');
   labelSpan.textContent = flow.label;
-  labelSpan.style.fontWeight = '500';
+  labelSpan.classList.add('sfdt-strong');
   const stateBadge = doc.createElement('span');
   stateBadge.style.cssText =
     'margin-left: 8px; padding: 1px 6px; border-radius: 8px; font-size: 11px;';
@@ -183,32 +180,26 @@ function buildFlowRow(
   labelLine.appendChild(labelSpan);
   labelLine.appendChild(stateBadge);
   const criteria = doc.createElement('div');
-  criteria.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 12px; margin-top: 1px;';
+  criteria.classList.add('sfdt-faint');
   criteria.textContent = flow.entryCriteriaSummary ?? 'no entry criteria';
   left.appendChild(labelLine);
   left.appendChild(criteria);
   row.appendChild(left);
 
   const right = doc.createElement('div');
-  right.style.cssText = 'display: flex; gap: 4px; align-items: center;';
-
+  right.classList.add('sfdt-row', 'sfdt-tight');
   const statusSpan = doc.createElement('span');
   statusSpan.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-icon); min-width: 18px;';
   right.appendChild(statusSpan);
 
-  const activateBtn = doc.createElement('button');
-  const deactivateBtn = doc.createElement('button');
-
-  const baseBtnStyle =
-    'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 3px; font-size: 12px; cursor: pointer;';
-  activateBtn.style.cssText = baseBtnStyle;
-  deactivateBtn.style.cssText = baseBtnStyle;
+  const activateBtn = button({ label: 'Activate', iconName: 'check', small: true, doc });
+  const deactivateBtn = button({ label: 'Deactivate', iconName: 'close', small: true, doc });
 
   const latest = extra?.latestVersionNumber ?? null;
-  activateBtn.textContent = latest ? `Activate v${latest}` : 'Activate';
-  deactivateBtn.textContent = 'Deactivate';
-  deactivateBtn.style.color = 'var(--sfdt-color-error-text)';
-  deactivateBtn.style.borderColor = 'var(--sfdt-color-error-bg-5)';
+  // setLabel, not textContent: the latter wipes the button's glyph along with
+  // its text (lib/ui-controls.ts).
+  if (latest) setLabel(activateBtn, `Activate v${latest}`);
+  setTone(deactivateBtn, 'bad');
 
   const refresh = () => {
     const active = extra?.active ?? true;
@@ -217,26 +208,26 @@ function buildFlowRow(
     deactivateBtn.disabled = !active || !actions.onDeactivate;
     activateBtn.style.opacity = activateBtn.disabled ? '0.5' : '1';
     deactivateBtn.style.opacity = deactivateBtn.disabled ? '0.5' : '1';
-    activateBtn.style.cursor = activateBtn.disabled ? 'not-allowed' : 'pointer';
-    deactivateBtn.style.cursor = deactivateBtn.disabled ? 'not-allowed' : 'pointer';
+    // '.sfdt-btn[disabled]' already sets the cursor — declaring it per-state
+    // here just meant two places could disagree.
   };
   refresh();
 
   const setPending = (label: string) => {
     statusSpan.textContent = label;
-    statusSpan.style.color = 'var(--sfdt-color-text-weak)';
+    setTone(statusSpan, 'muted');
     activateBtn.disabled = true;
     deactivateBtn.disabled = true;
   };
   const setError = (msg: string) => {
-    statusSpan.textContent = '✗';
-    statusSpan.style.color = 'var(--sfdt-color-error-text)';
+    statusSpan.textContent = 'Inactive';
+    setTone(statusSpan, 'bad');
     statusSpan.title = msg;
     refresh();
   };
   const setOk = () => {
-    statusSpan.textContent = '✓';
-    statusSpan.style.color = 'var(--sfdt-color-success-text)';
+    statusSpan.textContent = 'Active';
+    setTone(statusSpan, 'ok');
     statusSpan.title = '';
     refresh();
   };
@@ -277,12 +268,11 @@ function buildFlowRow(
 function setBadgeState(badge: HTMLSpanElement, active: boolean): void {
   if (active) {
     badge.textContent = 'Active';
-    badge.style.background = 'var(--sfdt-color-success-bg)';
-    badge.style.color = 'var(--sfdt-color-success-text)';
+    badge.classList.add('sfdt-fill-ok');
+    setTone(badge, 'ok');
   } else {
     badge.textContent = 'Inactive';
-    badge.style.background = 'var(--sfdt-color-bg)';
-    badge.style.color = 'var(--sfdt-color-text-icon)';
+    setTone(badge, 'muted');
   }
 }
 
@@ -343,15 +333,11 @@ export function createTriggerConflictsFeature(
     },
 
     async onActivate() {
-      const loading = doc.createElement('div');
-      loading.style.cssText =
-        'position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100020; display: flex; align-items: center; justify-content: center; color: var(--sfdt-color-on-accent); font-family: system-ui, sans-serif;';
-      loading.textContent = 'Scanning flows for trigger conflicts…';
-      doc.body.appendChild(loading);
+      const loading = busyOverlay('Scanning flows for trigger conflicts…', doc);
       try {
         const { candidates, extras } = await fetchActiveFlows(api);
         const groups = detectTriggerConflicts(candidates);
-        loading.remove();
+        loading.close();
         buildConflictsModal(doc, groups, {
           extras,
           onActivate: async (flowApiName, toVersion) => {
@@ -376,7 +362,7 @@ export function createTriggerConflictsFeature(
           },
         });
       } catch (err) {
-        loading.remove();
+        loading.close();
         showToast(`Trigger conflicts failed: ${err instanceof Error ? err.message : String(err)}`, {
           kind: 'error',
           doc,

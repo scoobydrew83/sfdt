@@ -7,6 +7,8 @@ import {
 } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { setTone, button, toolbar } from '../lib/ui-controls.js';
+import { triggerDownload } from '../lib/download.js';
 
 interface GlobalDescribe {
   sobjects: { name: string; label: string; keyPrefix: string | null; queryable: boolean; createable: boolean; updateable: boolean }[];
@@ -170,33 +172,37 @@ export function createDataImportFeature(options: {
 
     // Body
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px;';
-
-    // Configuration Row
-    const configRow = doc.createElement('div');
-    configRow.style.cssText = 'display: flex; flex-wrap: wrap; gap: 16px; border-bottom: 1px solid var(--sfdt-color-border-2); padding-bottom: 16px;';
+    body.className = 'sfdt-view-body';
+    // Target/operation config is the toolbar: it defines what the import IS, so
+    // it stays visible while a long mapping list scrolls.
+    const configRow = toolbar(doc);
+    configRow.classList.add('sfdt-wrap', 'sfdt-loose');
     body.appendChild(configRow);
+
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
 
     // Target SObject Select
     const sobjDiv = doc.createElement('div');
-    sobjDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px; min-width: 180px;';
+    sobjDiv.classList.add('sfdt-stack', 'sfdt-tight');
     const sobjLabel = doc.createElement('label');
     sobjLabel.textContent = 'SObject Name';
-    sobjLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    sobjLabel.className = 'sfdt-label';
     const sobjSelect = doc.createElement('select');
-    sobjSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    sobjSelect.className = 'sfdt-field sfdt-auto';
     sobjDiv.appendChild(sobjLabel);
     sobjDiv.appendChild(sobjSelect);
     configRow.appendChild(sobjDiv);
 
     // Operation Select
     const opDiv = doc.createElement('div');
-    opDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px; min-width: 120px;';
+    opDiv.classList.add('sfdt-stack', 'sfdt-tight');
     const opLabel = doc.createElement('label');
     opLabel.textContent = 'Operation';
-    opLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    opLabel.className = 'sfdt-label';
     const opSelect = doc.createElement('select');
-    opSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    opSelect.className = 'sfdt-field sfdt-auto';
     const ops = [
       { v: 'create', l: 'Insert' },
       { v: 'update', l: 'Update' },
@@ -219,9 +225,9 @@ export function createDataImportFeature(options: {
     extIdDiv.style.cssText = 'display: none; flex-direction: column; gap: 4px; min-width: 150px;';
     const extIdLabel = doc.createElement('label');
     extIdLabel.textContent = 'External ID Field';
-    extIdLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    extIdLabel.className = 'sfdt-label';
     const extIdSelect = doc.createElement('select');
-    extIdSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    extIdSelect.className = 'sfdt-field sfdt-auto';
     extIdDiv.appendChild(extIdLabel);
     extIdDiv.appendChild(extIdSelect);
     configRow.appendChild(extIdDiv);
@@ -231,13 +237,13 @@ export function createDataImportFeature(options: {
     batchDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px; width: 80px;';
     const batchLabel = doc.createElement('label');
     batchLabel.textContent = 'Batch Size';
-    batchLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    batchLabel.className = 'sfdt-label';
     const batchInput = doc.createElement('input');
     batchInput.type = 'number';
     batchInput.min = '1';
     batchInput.max = '200';
     batchInput.value = '200';
-    batchInput.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    batchInput.className = 'sfdt-field sfdt-auto';
     batchDiv.appendChild(batchLabel);
     batchDiv.appendChild(batchInput);
     configRow.appendChild(batchDiv);
@@ -247,55 +253,53 @@ export function createDataImportFeature(options: {
     concDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px; width: 80px;';
     const concLabel = doc.createElement('label');
     concLabel.textContent = 'Threads';
-    concLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    concLabel.className = 'sfdt-label';
     const concInput = doc.createElement('input');
     concInput.type = 'number';
     concInput.min = '1';
     concInput.max = '10';
     concInput.value = '2';
-    concInput.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    concInput.className = 'sfdt-field sfdt-auto';
     concDiv.appendChild(concLabel);
     concDiv.appendChild(concInput);
     configRow.appendChild(concDiv);
 
     // Paste Text Area
     const pasteDiv = doc.createElement('div');
-    pasteDiv.style.cssText = 'display: flex; flex-direction: column; gap: 6px;';
+    pasteDiv.classList.add('sfdt-stack', 'sfdt-snug');
     const pasteLabel = doc.createElement('span');
     pasteLabel.textContent = 'Paste CSV / Excel Data (Tab or Comma delimited)';
-    pasteLabel.style.cssText = 'font-size: 12px; font-weight: 600; color: var(--sfdt-color-text);';
+    pasteLabel.classList.add('sfdt-subhead');
     const pasteArea = doc.createElement('textarea');
     pasteArea.placeholder = 'First row must contain headers. E.g.\nFirstName\tLastName\tEmail\nJohn\tDoe\tjohn.doe@example.com';
-    pasteArea.style.cssText = 'height: 100px; padding: 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-family: monospace; font-size: 12px; outline: none; resize: vertical;';
+    pasteArea.className = 'sfdt-field sfdt-mono sfdt-auto';
+    pasteArea.style.height = '100px';
     pasteDiv.appendChild(pasteLabel);
     pasteDiv.appendChild(pasteArea);
-    body.appendChild(pasteDiv);
+    main.appendChild(pasteDiv);
 
     // Mapping Grid Container
     const mappingContainer = doc.createElement('div');
     mappingContainer.style.cssText = 'display: none; flex-direction: column; gap: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 12px;';
     const mappingHeader = doc.createElement('span');
     mappingHeader.textContent = 'Field Mappings';
-    mappingHeader.style.cssText = 'font-weight: 600; font-size: 13px; color: var(--sfdt-color-text-strong);';
+    mappingHeader.classList.add('sfdt-subhead');
     mappingContainer.appendChild(mappingHeader);
     const mappingGrid = doc.createElement('div');
     mappingGrid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; max-height: 200px; overflow-y: auto; padding: 4px;';
     mappingContainer.appendChild(mappingGrid);
-    body.appendChild(mappingContainer);
+    main.appendChild(mappingContainer);
 
-    // Action Row (Import button, Cancel, Download error, etc.)
-    const actionRow = doc.createElement('div');
-    actionRow.style.cssText = 'display: flex; gap: 10px; justify-content: flex-end; align-items: center; border-top: 1px solid var(--sfdt-color-border-2); padding-top: 16px;';
-    body.appendChild(actionRow);
+    // Actions pin to the bottom rather than sitting mid-scroll. Start Import was
+    // previously between the mapping list and the progress panel, so on a wide
+    // paste it scrolled out of reach exactly when you wanted it.
+    const actionRow = toolbar(doc, true);
+    actionRow.classList.add('sfdt-split');
 
-    const importBtn = doc.createElement('button');
-    importBtn.textContent = 'Start Import';
-    importBtn.style.cssText = 'padding: 8px 20px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
-    importBtn.disabled = true;
+    const importBtn = button({ label: 'Start Import', iconName: 'upload', variant: 'primary', disabled: true, doc });
 
-    const downloadErrorsBtn = doc.createElement('button');
-    downloadErrorsBtn.textContent = 'Download Errors CSV';
-    downloadErrorsBtn.style.cssText = 'padding: 8px 14px; background: var(--sfdt-color-surface); color: var(--sfdt-color-error-text); border: 1px solid var(--sfdt-color-error); border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; display: none;';
+    const downloadErrorsBtn = button({ label: 'Download Errors CSV', iconName: 'export', variant: 'danger', doc });
+    downloadErrorsBtn.style.display = 'none';
 
     actionRow.appendChild(downloadErrorsBtn);
     actionRow.appendChild(importBtn);
@@ -308,7 +312,7 @@ export function createDataImportFeature(options: {
     const progressLabel = doc.createElement('span');
     progressLabel.textContent = 'Import Progress';
     const progressStats = doc.createElement('span');
-    progressStats.style.cssText = 'color: var(--sfdt-color-text-weak);';
+    progressStats.classList.add('sfdt-muted');
     progressInfo.appendChild(progressLabel);
     progressInfo.appendChild(progressStats);
     progressSection.appendChild(progressInfo);
@@ -324,16 +328,16 @@ export function createDataImportFeature(options: {
     statsGrid.style.cssText = 'display: flex; gap: 20px; font-size: 12px; justify-content: flex-start; background: var(--sfdt-color-surface-alt); padding: 10px; border-radius: 4px;';
     const queuedStat = doc.createElement('span');
     queuedStat.textContent = 'Queued: 0';
-    queuedStat.style.color = 'var(--sfdt-color-text-weak)';
+    setTone(queuedStat, 'muted');
     const processingStat = doc.createElement('span');
     processingStat.textContent = 'Processing: 0';
-    processingStat.style.color = 'var(--sfdt-color-brand-text)';
+    setTone(processingStat, 'info');
     const succeededStat = doc.createElement('span');
     succeededStat.textContent = 'Succeeded: 0';
-    succeededStat.style.color = 'var(--sfdt-color-success-text)';
+    setTone(succeededStat, 'ok');
     const failedStat = doc.createElement('span');
     failedStat.textContent = 'Failed: 0';
-    failedStat.style.color = 'var(--sfdt-color-error-text)';
+    setTone(failedStat, 'bad');
     statsGrid.appendChild(queuedStat);
     statsGrid.appendChild(processingStat);
     statsGrid.appendChild(succeededStat);
@@ -342,16 +346,17 @@ export function createDataImportFeature(options: {
 
     // Results Table Container
     const resultsContainer = doc.createElement('div');
-    resultsContainer.style.cssText = 'display: none; border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 250px;';
+    resultsContainer.classList.add('sfdt-frame');
+    resultsContainer.style.display = 'none';
     const resultsTable = doc.createElement('table');
-    resultsTable.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 11px; text-align: left;';
+    resultsTable.classList.add('sfdt-table');
     const resultsTHead = doc.createElement('thead');
     const headTr = doc.createElement('tr');
     const headerCols = ['Row #', 'Status', 'Operation / Action', 'Record ID', 'Message / Errors'];
     for (const hCol of headerCols) {
       const th = doc.createElement('th');
       th.textContent = hCol;
-      th.style.cssText = 'padding: 6px 10px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1;';
+      th.classList.add('sfdt-sticky-head');
       headTr.appendChild(th);
     }
     resultsTHead.appendChild(headTr);
@@ -361,10 +366,13 @@ export function createDataImportFeature(options: {
     resultsContainer.appendChild(resultsTable);
     progressSection.appendChild(resultsContainer);
 
-    body.appendChild(progressSection);
+    main.appendChild(progressSection);
+
+    body.appendChild(actionRow);
 
     view = presentView({
-      title: '📥 Data Import Wizard',
+      title: 'Data Import Wizard',
+      iconName: 'upload',
       body,
       doc,
       width: '1000px',
@@ -556,11 +564,10 @@ export function createDataImportFeature(options: {
         headerLabel.style.cssText = 'font-weight: 600; font-size: 11px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;';
         
         const select = doc.createElement('select');
-        select.style.cssText = 'padding: 4px; font-size: 11px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; outline: none;';
-        
+        select.className = 'sfdt-field sfdt-auto';
         const optSkip = doc.createElement('option');
         optSkip.value = '';
-        optSkip.textContent = '✖ Skip field';
+        optSkip.textContent = '— Skip field —';
         select.appendChild(optSkip);
 
         // Populate fields
@@ -674,11 +681,11 @@ export function createDataImportFeature(options: {
       const slice = importRows.slice(0, 1000);
       for (const row of slice) {
         const tr = doc.createElement('tr');
-        tr.style.cssText = 'border-bottom: 1px solid var(--sfdt-color-bg);';
+        tr.classList.add('sfdt-divider');
         if (row.status === 'Succeeded') {
-          tr.style.background = 'var(--sfdt-color-success-bg-2)';
+          tr.classList.add('sfdt-fill-ok');
         } else if (row.status === 'Failed') {
-          tr.style.background = 'var(--sfdt-color-error-bg-2)';
+          tr.classList.add('sfdt-fill-bad');
         }
 
         const tdIndex = doc.createElement('td');
@@ -687,17 +694,16 @@ export function createDataImportFeature(options: {
 
         const tdStatus = doc.createElement('td');
         tdStatus.textContent = row.status;
-        tdStatus.style.cssText = 'padding: 6px 10px; font-weight: 600;';
-        if (row.status === 'Succeeded') tdStatus.style.color = 'var(--sfdt-color-success-text)';
-        else if (row.status === 'Failed') tdStatus.style.color = 'var(--sfdt-color-error-text)';
-        else if (row.status === 'Processing') tdStatus.style.color = 'var(--sfdt-color-brand-text)';
+        tdStatus.classList.add('sfdt-prose', 'sfdt-flush-x', 'sfdt-strong');
+        if (row.status === 'Succeeded') setTone(tdStatus, 'ok');
+        else if (row.status === 'Failed') setTone(tdStatus, 'bad');
+        else if (row.status === 'Processing') setTone(tdStatus, 'info');
 
         const tdAction = doc.createElement('td');
         tdAction.textContent = row.action || '-';
-        tdAction.style.cssText = 'padding: 6px 10px; color: var(--sfdt-color-text-weak);';
-
+        tdAction.classList.add('sfdt-prose', 'sfdt-muted');
         const tdId = doc.createElement('td');
-        tdId.style.cssText = 'padding: 6px 10px;';
+        tdId.classList.add('sfdt-prose', 'sfdt-flush-x');
         if (row.resultId) {
           const idLink = doc.createElement('span');
           idLink.textContent = row.resultId;
@@ -720,8 +726,8 @@ export function createDataImportFeature(options: {
         // the two paths users actually reported.
         tdErrors.style.cssText = 'padding: 6px 10px; white-space: pre-line;';
         if (row.errors) {
-          tdErrors.style.color = 'var(--sfdt-color-error-text)';
-          tdErrors.style.fontWeight = '500';
+          setTone(tdErrors, 'bad');
+          tdErrors.classList.add('sfdt-strong');
         }
 
         tr.appendChild(tdIndex);
@@ -877,15 +883,15 @@ export function createDataImportFeature(options: {
       const csvHeader = [...headers, '__RowNumber', '__Errors'];
       const csvRows = failed.map(r => [...r.cells, String(r.index), r.errors]);
       
-      const serialized = csvSerialize([csvHeader, ...csvRows], ',');
-      const blob = new Blob([serialized], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = doc.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `${selectedSObject}_import_errors.csv`);
-      doc.body.appendChild(link);
-      link.click();
-      doc.body.removeChild(link);
+      // lib/download.ts — this was the fifth copy of the blob/anchor dance, and
+      // one of the two that never called revokeObjectURL, so every failed-row
+      // export pinned its blob for the life of the document.
+      triggerDownload(
+        doc,
+        `${selectedSObject}_import_errors.csv`,
+        csvSerialize([csvHeader, ...csvRows], ','),
+        'text/csv;charset=utf-8;',
+      );
     });
   }
 

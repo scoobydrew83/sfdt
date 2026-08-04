@@ -43,12 +43,32 @@ export class SalesforceBayeuxClient {
   private statusListener: ((status: string, isError: boolean) => void) | null = null;
   private connectAttempts = 0;
 
+  private readonly fetchImpl: typeof fetch;
+
   constructor(
     private readonly baseUrl: string,
     private readonly sessionId: string,
     private readonly apiVersion: string,
-    private readonly fetchImpl: typeof fetch = fetch,
-  ) {}
+    fetchImpl: typeof fetch = fetch,
+  ) {
+    // BOUND TO THE GLOBAL, deliberately.
+    //
+    // `fetch` is a WebIDL operation with a brand check on its receiver. Stored
+    // as a plain property and called as `this.fetchImpl(url)`, the receiver is
+    // this client instance, and Chrome throws:
+    //
+    //   Failed to execute 'fetch' on 'WorkerGlobalScope': Illegal invocation
+    //
+    // …which is what the Event Streaming Monitor reported. lib/sf-api-proxy.ts
+    // never hit it because it calls its copy BARE — `fetchImpl(url)` — where
+    // there is no receiver to fail the check. Same value, same worker, two
+    // call shapes, one of them broken.
+    //
+    // Binding here rather than at the call sites means a future `this.fetchImpl`
+    // is safe by construction, and a caller passing an unbound `fetch` (both of
+    // ours do) cannot reintroduce it.
+    this.fetchImpl = fetchImpl.bind(globalThis);
+  }
 
   onMessage(callback: (message: unknown) => void): void {
     this.messageListener = callback;

@@ -6,6 +6,8 @@ import {
 } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { setTone, button, setLabel } from '../lib/ui-controls.js';
+import { copyToClipboard } from '../ui/clipboard.js';
 
 interface GlobalDescribe {
   sobjects: { name: string; label: string; keyPrefix: string | null }[];
@@ -24,29 +26,6 @@ interface SObjectDescribe {
   name: string;
   label: string;
   fields: FieldDescribe[];
-}
-
-export function getIconForType(type: string): string {
-  switch (type.toLowerCase()) {
-    case 'id': return '🔑';
-    case 'reference': return '🔍';
-    case 'boolean': return '🌗';
-    case 'picklist':
-    case 'multipicklist': return '📋';
-    case 'string':
-    case 'textarea': return '📝';
-    case 'int':
-    case 'double':
-    case 'long':
-    case 'currency':
-    case 'percent': return '🔢';
-    case 'date':
-    case 'datetime': return '📅';
-    case 'phone': return '📞';
-    case 'url': return '🌐';
-    case 'email': return '✉️';
-    default: return '🔹';
-  }
 }
 
 export function isRecordId(id: string): boolean {
@@ -74,19 +53,10 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
   const api = options.api ?? getSalesforceApi();
 
   let view: ViewHandle | null = null;
-  let escHandler: ((e: KeyboardEvent) => void) | null = null;
   let globalDescribeCached: GlobalDescribe | null = null;
   const sobjectDescribesCached = new Map<string, SObjectDescribe>();
 
-  function teardown(): void {
-    if (escHandler) {
-      doc.removeEventListener('keydown', escHandler);
-      escHandler = null;
-    }
-  }
-
   function close(): void {
-    teardown();
     view?.close();
     view = null;
   }
@@ -121,97 +91,131 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     close();
 
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 12px;';
+    body.style.cssText = 'display: flex; flex-direction: column; flex: 1; min-height: 0;';
 
-    // Record identity line lives at the top of the body (presentView's header is title + × only).
+    // Record identity, shown as the view's subtitle. presentView renders it in
+    // the modal header and in the Workspace pane head, so the record being
+    // inspected is stated once and reads the same on every surface. The two
+    // spans concatenate to "Account · 001…" — one string, two type treatments.
     const recordInfo = doc.createElement('span');
-    recordInfo.style.cssText = 'font-weight: 600; font-size: 15px; display: flex; gap: 8px; align-items: center;';
-    body.appendChild(recordInfo);
+    const recordObj = doc.createElement('span');
+    recordObj.textContent = 'No record loaded';
+    const recordIdSpan = doc.createElement('span');
+    recordIdSpan.className = 'sfdt-mono';
+    setTone(recordIdSpan, 'info');
+    recordInfo.append(recordObj, recordIdSpan);
 
-    const searchRow = doc.createElement('div');
-    searchRow.style.cssText = 'display: flex; gap: 8px; align-items: center;';
-    const idInput = doc.createElement('input');
-    idInput.placeholder = 'Paste Salesforce Record ID (e.g. 001800000000001AAA)';
-    idInput.style.cssText = 'flex: 1; padding: 6px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
-    const inspectBtn = doc.createElement('button');
-    inspectBtn.textContent = 'Inspect';
-    inspectBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
-    searchRow.appendChild(idInput);
-    searchRow.appendChild(inspectBtn);
-    body.appendChild(searchRow);
-
-    // Fields / JSON view toggle (hidden until a record is loaded).
+    // Fields / JSON toggle. Lives in the header rather than the body: it selects
+    // between two renderings of the same record, which is identity, not content.
+    // Hidden until a record is loaded — there is nothing to toggle before that.
     const viewToggleRow = doc.createElement('div');
-    viewToggleRow.style.cssText = 'display: none; margin-top: 4px;';
+    viewToggleRow.className = 'sfdt-segment';
+    viewToggleRow.style.display = 'none';
     viewToggleRow.setAttribute('role', 'group');
     viewToggleRow.setAttribute('aria-label', 'Record view mode');
     const fieldsTabBtn = doc.createElement('button');
     fieldsTabBtn.type = 'button';
     fieldsTabBtn.textContent = 'Fields';
-    fieldsTabBtn.style.borderRadius = '4px 0 0 4px';
     const jsonTabBtn = doc.createElement('button');
     jsonTabBtn.type = 'button';
     jsonTabBtn.textContent = 'JSON';
-    jsonTabBtn.style.borderRadius = '0 4px 4px 0';
-    viewToggleRow.appendChild(fieldsTabBtn);
-    viewToggleRow.appendChild(jsonTabBtn);
-    body.appendChild(viewToggleRow);
+    viewToggleRow.append(fieldsTabBtn, jsonTabBtn);
 
-    const filterRow = doc.createElement('div');
-    filterRow.style.cssText = 'display: none; justify-content: space-between; align-items: center; gap: 12px; margin-top: 4px;';
+    const toolbar = doc.createElement('div');
+    toolbar.className = 'sfdt-toolbar';
+
+    // Filter + null toggle apply to a loaded record, so they appear with one.
+    const filterWrap = doc.createElement('div');
+    filterWrap.className = 'sfdt-toolbar-grow';
+    filterWrap.style.display = 'none';
     const filterInput = doc.createElement('input');
+    filterInput.className = 'sfdt-field';
+    filterInput.type = 'search';
+    filterInput.setAttribute('aria-label', 'Filter fields');
     filterInput.placeholder = 'Filter fields by label, API name, or value...';
-    filterInput.style.cssText = 'flex: 1; max-width: 400px; padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px; outline: none;';
+    filterWrap.appendChild(filterInput);
+
     const checkboxLabel = doc.createElement('label');
-    checkboxLabel.style.cssText = 'display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sfdt-color-text-weak); cursor: pointer;';
+    checkboxLabel.className = 'sfdt-check';
+    checkboxLabel.style.display = 'none';
     const showNullsCheckbox = doc.createElement('input');
     showNullsCheckbox.type = 'checkbox';
     showNullsCheckbox.checked = true;
     checkboxLabel.appendChild(showNullsCheckbox);
     checkboxLabel.appendChild(doc.createTextNode('Show null values'));
-    filterRow.appendChild(filterInput);
-    filterRow.appendChild(checkboxLabel);
-    body.appendChild(filterRow);
 
+    const idWrap = doc.createElement('div');
+    idWrap.className = 'sfdt-toolbar-end';
+    idWrap.classList.add('sfdt-row');
+    const idInput = doc.createElement('input');
+    idInput.className = 'sfdt-field sfdt-mono';
+    idInput.setAttribute('aria-label', 'Salesforce record Id');
+    idInput.placeholder = 'Paste Salesforce Record ID (e.g. 001800000000001AAA)';
+    idInput.style.width = '19ch';
+    const inspectBtn = button({ label: 'Inspect', iconName: 'search', variant: 'primary', doc });
+    idWrap.append(idInput, inspectBtn);
+
+    toolbar.append(filterWrap, checkboxLabel, idWrap);
+    body.appendChild(toolbar);
+
+    // The table owns the remaining height and scrolls inside it, so the sticky
+    // `.sfdt-table th` header stays put and the toolbar never scrolls away.
     const tableContainer = doc.createElement('div');
-    tableContainer.style.cssText = 'border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 50vh; display: none;';
+    tableContainer.style.cssText = 'flex: 1; min-height: 0; overflow: auto; display: none;';
     body.appendChild(tableContainer);
 
     // Raw-JSON view: the REST record payload, pretty-printed with a copy button.
     const jsonContainer = doc.createElement('div');
-    jsonContainer.style.cssText = 'display: none; flex-direction: column; gap: 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; padding: 8px; max-height: 50vh; overflow: auto;';
+    jsonContainer.style.cssText = 'display: none; flex-direction: column; gap: var(--sfdt-space-2); padding: var(--sfdt-space-4); flex: 1; min-height: 0; overflow: auto;';
     const jsonCopyRow = doc.createElement('div');
-    jsonCopyRow.style.cssText = 'display: flex; justify-content: flex-end;';
-    const jsonCopyBtn = doc.createElement('button');
-    jsonCopyBtn.type = 'button';
-    jsonCopyBtn.textContent = '📋 Copy JSON';
-    jsonCopyBtn.style.cssText = 'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak); border-radius: 4px; cursor: pointer; font-size: 12px;';
+    jsonCopyRow.classList.add('sfdt-row');
+    const jsonCopyBtn = button({ label: 'Copy JSON', iconName: 'clipboard', small: true, doc });
     jsonCopyRow.appendChild(jsonCopyBtn);
     const jsonPre = doc.createElement('pre');
-    jsonPre.style.cssText = 'margin: 0; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; color: var(--sfdt-color-text-strong);';
+    jsonPre.className = 'sfdt-mono';
+    jsonPre.style.cssText = 'margin: 0; white-space: pre-wrap; word-break: break-word; color: var(--sfdt-color-text-strong);';
     jsonContainer.appendChild(jsonCopyRow);
     jsonContainer.appendChild(jsonPre);
     body.appendChild(jsonContainer);
 
+    // Footer carries two strips: the save bar (only while dirty) above a
+    // permanent count line, so "how much am I not seeing?" is always answerable
+    // — the filter and the null toggle both hide rows silently otherwise.
+    const footer = doc.createElement('div');
     const saveBar = doc.createElement('div');
-    saveBar.style.cssText = 'display: none; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface-alt);';
-    const cancelChangesBtn = doc.createElement('button');
-    cancelChangesBtn.textContent = 'Cancel';
-    cancelChangesBtn.style.cssText = 'padding: 6px 12px; background: var(--sfdt-color-surface); color: var(--sfdt-color-text-weak); border: 1px solid var(--sfdt-color-border); border-radius: 4px; cursor: pointer; font-size: 13px;';
-    const saveChangesBtn = doc.createElement('button');
-    saveChangesBtn.textContent = 'Save Changes';
-    saveChangesBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-success); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
-    saveBar.appendChild(cancelChangesBtn);
-    saveBar.appendChild(saveChangesBtn);
+    saveBar.className = 'sfdt-toolbar sfdt-toolbar-foot';
+    saveBar.style.display = 'none';
+    const dirtyNote = doc.createElement('span');
+    dirtyNote.className = 'sfdt-caps';
+    const saveActions = doc.createElement('div');
+    saveActions.className = 'sfdt-toolbar-end';
+    saveActions.classList.add('sfdt-row');
+    const cancelChangesBtn = button({ label: 'Cancel', ariaLabel: 'Discard unsaved changes', small: true, doc });
+    const saveChangesBtn = button({ label: 'Save Changes', iconName: 'save', variant: 'primary', small: true, doc });
+    saveActions.append(cancelChangesBtn, saveChangesBtn);
+    saveBar.append(dirtyNote, saveActions);
+
+    const statusBar = doc.createElement('div');
+    statusBar.className = 'sfdt-toolbar sfdt-toolbar-foot';
+    statusBar.style.display = 'none';
+    const countNote = doc.createElement('span');
+    countNote.className = 'sfdt-caps';
+    countNote.setAttribute('role', 'status');
+    const hiddenNote = doc.createElement('span');
+    hiddenNote.className = 'sfdt-caps';
+    statusBar.append(countNote, hiddenNote);
+    footer.append(saveBar, statusBar);
 
     view = presentView({
-      title: '🔍 Inspect Record (Show All Data)',
+      title: 'Inspect Record',
+      iconName: 'record',
+      subtitle: recordInfo,
+      headerActions: viewToggleRow,
       body,
-      footer: saveBar,
+      footer,
       doc,
       width: '900px',
       onClose: () => {
-        teardown();
         view = null;
       },
     });
@@ -224,10 +228,10 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     let activeDescribe: SObjectDescribe | null = null;
     let currentView: 'fields' | 'json' = 'fields';
 
+    // `.sfdt-segment > button[aria-pressed="true"]` carries the appearance; this
+    // only has to state the truth the CSS selects on.
     function styleToggleBtn(btn: HTMLButtonElement, active: boolean): void {
       btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-      const radius = btn.style.borderRadius;
-      btn.style.cssText = `padding: 5px 14px; border: 1px solid var(--sfdt-color-border); cursor: pointer; font-size: 12px; font-weight: 600; border-radius: ${radius}; background: ${active ? 'var(--sfdt-color-brand)' : 'var(--sfdt-color-surface)'}; color: ${active ? 'var(--sfdt-color-on-accent)' : 'var(--sfdt-color-text-weak)'};`;
     }
 
     function renderJson(): void {
@@ -238,7 +242,9 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       const isJson = currentView === 'json';
       styleToggleBtn(fieldsTabBtn, !isJson);
       styleToggleBtn(jsonTabBtn, isJson);
-      filterRow.style.display = isJson ? 'none' : 'flex';
+      filterWrap.style.display = isJson ? 'none' : 'block';
+      checkboxLabel.style.display = isJson ? 'none' : 'inline-flex';
+      statusBar.style.display = isJson ? 'none' : 'flex';
       tableContainer.style.display = isJson ? 'none' : 'block';
       jsonContainer.style.display = isJson ? 'flex' : 'none';
       if (isJson) renderJson();
@@ -249,15 +255,14 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       while (tableContainer.firstChild) tableContainer.removeChild(tableContainer.firstChild);
 
       const table = doc.createElement('table');
-      table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;';
-      
+      table.className = 'sfdt-table';
+
       const thead = doc.createElement('thead');
       const headRow = doc.createElement('tr');
       const headers = ['Label', 'API Name', 'Type', 'Value'];
       for (const h of headers) {
         const th = doc.createElement('th');
         th.textContent = h;
-        th.style.cssText = 'padding: 8px 12px; background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); font-weight: 600; position: sticky; top: 0; z-index: 1;';
         headRow.appendChild(th);
       }
       thead.appendChild(headRow);
@@ -266,11 +271,16 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       const tbody = doc.createElement('tbody');
       const filterText = filterInput.value.toLowerCase().trim();
       const showNulls = showNullsCheckbox.checked;
+      let shown = 0;
+      let hiddenByNull = 0;
 
       for (const field of activeDescribe.fields) {
         const rawValue = editedRecordData[field.name];
         const isNull = rawValue === null || rawValue === undefined || rawValue === '';
-        if (isNull && !showNulls) continue;
+        if (isNull && !showNulls) {
+          hiddenByNull += 1;
+          continue;
+        }
 
         const valStr = String(rawValue ?? '');
         const matchesFilter = 
@@ -281,28 +291,36 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         
         if (filterText && !matchesFilter) continue;
 
+        shown += 1;
         const tr = doc.createElement('tr');
-        tr.style.cssText = 'border-bottom: 1px solid var(--sfdt-color-bg);';
 
         const tdLabel = doc.createElement('td');
-        tdLabel.textContent = field.label;
-        tdLabel.style.cssText = 'padding: 8px 12px; color: var(--sfdt-color-text-strong);';
+        const labelSpan = doc.createElement('span');
+        labelSpan.className = 'sfdt-cell-strong';
+        labelSpan.textContent = field.label;
+        tdLabel.appendChild(labelSpan);
 
         const tdApi = doc.createElement('td');
+        tdApi.className = 'sfdt-cell-code';
         tdApi.textContent = field.name;
-        tdApi.style.cssText = 'padding: 8px 12px; font-family: ui-monospace, monospace; color: var(--sfdt-color-text-weak);';
 
+        // The type name is the information; the chip is just the frame for it.
+        // (This replaced an emoji-per-type map — an emoji renders at the mercy
+        // of the platform font and carried nothing the word next to it didn't.)
         const tdType = doc.createElement('td');
-        const icon = getIconForType(field.type);
-        tdType.textContent = `${icon} ${field.type}`;
-        tdType.style.cssText = 'padding: 8px 12px; color: var(--sfdt-color-text-weak);';
+        const typePill = doc.createElement('span');
+        typePill.className = 'sfdt-pill sfdt-square';
+        typePill.textContent = field.type;
+        tdType.appendChild(typePill);
 
         const tdValue = doc.createElement('td');
-        tdValue.style.cssText = 'padding: 8px 12px; position: relative;';
+        tdValue.classList.add('sfdt-anchor');
 
         const isDirty = originalRecordData[field.name] !== rawValue;
         if (isDirty) {
-          tr.style.background = 'var(--sfdt-color-warning-bg-2)';
+          // Unsaved edit. Colour is a reinforcement here, not the signal — the
+          // save bar below states the count in words.
+          tr.classList.add('sfdt-row-flagged');
         }
 
         if (field.type === 'boolean') {
@@ -318,21 +336,25 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           tdValue.appendChild(chk);
         } else if (field.updateable) {
           const editWrapper = doc.createElement('div');
-          editWrapper.style.cssText = 'display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;';
+          editWrapper.style.cssText = 'display: flex; align-items: center; justify-content: space-between; gap: var(--sfdt-space-2); width: 100%;';
           const valSpan = doc.createElement('span');
           valSpan.textContent = isNull ? '(null)' : valStr;
-          valSpan.style.cssText = isNull ? 'color: var(--sfdt-color-error-text); font-style: italic; cursor: pointer; flex: 1;' : 'cursor: pointer; flex: 1;';
+          valSpan.style.cssText = isNull
+            ? 'color: var(--sfdt-color-text-muted); font-style: italic; cursor: pointer; flex: 1;'
+            : 'cursor: pointer; flex: 1;';
           if (isRecordId(valStr)) {
-            valSpan.style.color = 'var(--sfdt-color-brand-text)';
-            valSpan.style.textDecoration = 'underline';
+            setTone(valSpan, 'info');
+            valSpan.classList.add('sfdt-link');
           }
-          
+
           editWrapper.appendChild(valSpan);
 
           const editInput = doc.createElement('input');
+          editInput.className = 'sfdt-field';
           editInput.type = 'text';
+          editInput.setAttribute('aria-label', `${field.label} value`);
           editInput.value = isNull ? '' : valStr;
-          editInput.style.cssText = 'display: none; flex: 1; padding: 2px 6px; border: 1px solid var(--sfdt-color-brand); border-radius: 4px; font-size: 12px; outline: none;';
+          editInput.style.cssText = 'display: none; flex: 1; padding: 2px 6px; border-color: var(--sfdt-color-brand);';
           editWrapper.appendChild(editInput);
 
           const startEdit = () => {
@@ -365,6 +387,11 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           editInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') finishEdit();
             if (e.key === 'Escape') {
+              // Escape here means "abandon this cell edit", not "close the
+              // inspector" — presentAsModal now listens for Escape on the
+              // document, so without this the whole view would vanish and take
+              // every other unsaved edit with it.
+              e.stopPropagation();
               editInput.value = isNull ? '' : valStr;
               valSpan.style.display = 'inline-block';
               editInput.style.display = 'none';
@@ -377,7 +404,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           const readSpan = doc.createElement('span');
           readSpan.textContent = isNull ? '(null)' : valStr;
           if (isNull) {
-            readSpan.style.cssText = 'color: var(--sfdt-color-text-icon); font-style: italic;';
+            readSpan.style.cssText = 'color: var(--sfdt-color-text-muted); font-style: italic;';
           } else if (isRecordId(valStr)) {
             readSpan.style.cssText = 'color: var(--sfdt-color-brand-text); text-decoration: underline; cursor: pointer;';
             readSpan.addEventListener('click', () => void navigateToRecord(valStr));
@@ -394,17 +421,30 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       table.appendChild(tbody);
       tableContainer.appendChild(table);
       tableContainer.style.display = 'block';
+
+      const total = activeDescribe.fields.length;
+      countNote.textContent = shown === total
+        ? `Fields: ${total}`
+        : `Fields: ${shown} of ${total}`;
+      // Two ways a row can be missing, and they are fixed by different controls
+      // — so they are counted separately rather than lumped into "hidden".
+      const hiddenByFilter = total - shown - hiddenByNull;
+      const parts: string[] = [];
+      if (hiddenByNull) parts.push(`${hiddenByNull} null`);
+      if (hiddenByFilter > 0) parts.push(`${hiddenByFilter} filtered`);
+      hiddenNote.textContent = parts.length ? `Hidden: ${parts.join(' · ')}` : '';
+      statusBar.style.display = currentView === 'json' ? 'none' : 'flex';
     }
 
     function updateSaveBarVisibility(): void {
-      let dirty = false;
+      let dirtyCount = 0;
       for (const k of Object.keys(originalRecordData)) {
-        if (originalRecordData[k] !== editedRecordData[k]) {
-          dirty = true;
-          break;
-        }
+        if (originalRecordData[k] !== editedRecordData[k]) dirtyCount += 1;
       }
-      saveBar.style.display = dirty ? 'flex' : 'none';
+      saveBar.style.display = dirtyCount ? 'flex' : 'none';
+      dirtyNote.textContent = dirtyCount === 1
+        ? '1 unsaved change'
+        : `${dirtyCount} unsaved changes`;
     }
 
     async function navigateToRecord(targetId: string): Promise<void> {
@@ -436,7 +476,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         return;
       }
       inspectBtn.disabled = true;
-      inspectBtn.textContent = 'Loading…';
+      setLabel(inspectBtn, 'Loading…');
       try {
         let sobject = activeSobjectName;
         if (!sobject) {
@@ -467,21 +507,18 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           editedRecordData[field.name] = val;
         }
 
-        recordInfo.textContent = '🔍 Inspect Record: ';
-        const idSpan = doc.createElement('span');
-        idSpan.style.cssText = 'color:var(--sfdt-color-brand-text); font-family:ui-monospace, monospace; margin-left: 6px;';
-        idSpan.textContent = `${sobject} · ${recordId}`;
-        recordInfo.appendChild(idSpan);
-        
+        recordObj.textContent = `${sobject} · `;
+        recordIdSpan.textContent = recordId;
+
         renderFields();
         updateSaveBarVisibility();
-        viewToggleRow.style.display = 'flex';
+        viewToggleRow.style.display = 'inline-flex';
         applyView();
       } catch (err) {
         showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
       } finally {
         inspectBtn.disabled = false;
-        inspectBtn.textContent = 'Inspect';
+        setLabel(inspectBtn, 'Inspect');
       }
     }
 
@@ -509,12 +546,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       applyView();
     });
     jsonCopyBtn.addEventListener('click', async () => {
-      try {
-        await win.navigator.clipboard.writeText(JSON.stringify(rawRecordData, null, 2));
-        showToast('Record JSON copied to clipboard', { doc, kind: 'success' });
-      } catch {
-        showToast('Could not copy to clipboard', { doc, kind: 'error' });
-      }
+      await copyToClipboard(JSON.stringify(rawRecordData, null, 2), { doc, win: win, label: 'Record JSON copied to clipboard' });
     });
 
     cancelChangesBtn.addEventListener('click', () => {
@@ -533,7 +565,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       if (Object.keys(patchBody).length === 0) return;
 
       saveChangesBtn.disabled = true;
-      saveChangesBtn.textContent = 'Saving…';
+      setLabel(saveChangesBtn, 'Saving…');
       try {
         const apiVersion = api.apiVersion;
         await api.apiRequest(
@@ -550,7 +582,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         showToast(`Save failed: ${err instanceof Error ? err.message : String(err)}`, { doc, kind: 'error' });
       } finally {
         saveChangesBtn.disabled = false;
-        saveChangesBtn.textContent = 'Save Changes';
+        setLabel(saveChangesBtn, 'Save Changes');
       }
     });
 
@@ -564,12 +596,10 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       void loadRecord();
     }
 
-    escHandler = (e) => {
-      if (e.key === 'Escape' && view) {
-        close();
-      }
-    };
-    doc.addEventListener('keydown', escHandler);
+    // No Esc handler here: presentAsModal owns it, and it checks which overlay
+    // is on top first. A doc-level handler in this file closed the inspector
+    // AND whatever opened it — the SOQL runner's own handler is registered
+    // earlier, so one Escape from the inspector tore down the query underneath.
   }
 
   return {
@@ -603,7 +633,6 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
 
 export function _inspectRecordTestApi() {
   return {
-    getIconForType,
     isRecordId,
   };
 }

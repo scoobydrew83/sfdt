@@ -1,14 +1,31 @@
 import { z } from 'zod';
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import { escapeSoql } from '../lib/escape.js';
+// The 24h window, the back-dating buffer and the active test are Salesforce's
+// rules, owned by lib/trace-flag.ts. Re-exported so this module's public test
+// API is unchanged by the move.
+import {
+  traceFlagWindow,
+  traceFlagCreatePayload,
+  traceFlagIsActive,
+} from '../lib/trace-flag.js';
+
+export { traceFlagWindow, traceFlagCreatePayload, traceFlagIsActive };
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { SF_API_VERSION } from '../lib/api-version.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
+import { recordActivity } from '../lib/activity-log.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { parseApexLog } from '../lib/apex-log/index.js';
+import type { ParsedLog } from '../lib/apex-log/types.js';
 import { presentApexLogAnalyzer } from '../ui/apex-log-analyzer.js';
+import { button, setLabel, toolbar } from '../lib/ui-controls.js';
+import { createCodeEditor } from '../lib/code-editor.js';
+import { createLimitTiles, pickLimitSnapshot } from '../ui/apex-limit-tiles.js';
+import { renderApexLogBody } from '../ui/apex-log-console.js';
+import { createHistory } from '../lib/history.js';
 
 const APEX_ANONYMOUS_SETTINGS_SCHEMA = z.object({
   historyEnabled: z.boolean().default(true),
@@ -26,11 +43,6 @@ const HISTORY_CAP = 20;
 // DeveloperName for the DebugLevel this feature owns. Reused across runs so we
 // don't litter the org with a fresh DebugLevel every execution.
 const DEBUG_LEVEL_DEVELOPER_NAME = 'SFDT_Finest';
-// DEVELOPER_LOG trace flags may span at most 24h from their start date.
-const TRACE_FLAG_DURATION_MS = 24 * 60 * 60 * 1000;
-// Back-date the start a touch so client/server clock skew can't push it "into
-// the future" and get the create rejected.
-const TRACE_FLAG_START_BUFFER_MS = 60 * 1000;
 // ApexLog indexing lags execution by a beat; poll a few times before giving up.
 const LOG_POLL_ATTEMPTS = 6;
 const LOG_POLL_DELAY_MS = 700;
@@ -114,80 +126,28 @@ export function debugLevelCreatePayload(): Record<string, string> {
   };
 }
 
-// nowMs is injected so the computed dates are deterministic in tests. The window
-// is held to exactly TRACE_FLAG_DURATION_MS to respect the 24h DEVELOPER_LOG cap.
-export function traceFlagWindow(nowMs: number): { StartDate: string; ExpirationDate: string } {
-  const start = nowMs - TRACE_FLAG_START_BUFFER_MS;
-  return {
-    StartDate: new Date(start).toISOString(),
-    ExpirationDate: new Date(start + TRACE_FLAG_DURATION_MS).toISOString(),
-  };
-}
-
-export function traceFlagCreatePayload(
-  userId: string,
-  debugLevelId: string,
-  nowMs: number,
-): Record<string, string> {
-  return {
-    TracedEntityId: userId,
-    DebugLevelId: debugLevelId,
-    LogType: 'DEVELOPER_LOG',
-    ...traceFlagWindow(nowMs),
-  };
-}
-
-export function traceFlagIsActive(
-  row: { ExpirationDate?: string } | undefined | null,
-  nowMs: number,
-): boolean {
-  if (!row?.ExpirationDate) return false;
-  const exp = Date.parse(row.ExpirationDate);
-  return Number.isFinite(exp) && exp > nowMs;
-}
-
 // The just-run log is the newest one whose Id differs from the pre-run baseline.
 export function pickNewLogId(latestId: string | null, baselineId: string | null): string | null {
   if (!latestId) return null;
   return latestId === baselineId ? null : latestId;
 }
 
-export async function readApexHistory(): Promise<HistoryEntry[]> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(HISTORY_STORAGE_KEY, (result) => {
-      const raw = result?.[HISTORY_STORAGE_KEY] as { entries?: HistoryEntry[] } | undefined;
-      resolve(Array.isArray(raw?.entries) ? raw.entries : []);
-    });
-  });
-}
+// Both stores are the same shared ring. History is capped and de-duplicated by
+// code; snippets are keyed by NAME and uncapped — saving over a name replaces
+// it, and a cap here would quietly delete saved work.
+const apexHistory = createHistory<HistoryEntry>(HISTORY_STORAGE_KEY, {
+  cap: HISTORY_CAP,
+  sameAs: (a, b) => a.code === b.code,
+});
+const apexSnippets = createHistory<ApexSnippet>(SNIPPETS_STORAGE_KEY, {
+  cap: Number.POSITIVE_INFINITY,
+  sameAs: (a, b) => a.name === b.name,
+});
 
-export async function pushApexHistory(entry: HistoryEntry): Promise<void> {
-  const existing = await readApexHistory();
-  const deduped = existing.filter((e) => e.code !== entry.code);
-  const entries = [entry, ...deduped].slice(0, HISTORY_CAP);
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [HISTORY_STORAGE_KEY]: { entries } }, () => resolve());
-  });
-}
-
-export async function readApexSnippets(): Promise<ApexSnippet[]> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(SNIPPETS_STORAGE_KEY, (result) => {
-      const raw = result?.[SNIPPETS_STORAGE_KEY] as { entries?: ApexSnippet[] } | undefined;
-      resolve(Array.isArray(raw?.entries) ? raw.entries : []);
-    });
-  });
-}
-
-export async function pushApexSnippet(entry: ApexSnippet): Promise<void> {
-  const existing = await readApexSnippets();
-  const filtered = existing.filter((e) => e.name !== entry.name);
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [SNIPPETS_STORAGE_KEY]: { entries: [entry, ...filtered] } }, () =>
-      resolve(),
-    );
-  });
-}
+export const readApexHistory = (): Promise<HistoryEntry[]> => apexHistory.read();
+export const pushApexHistory = (entry: HistoryEntry): Promise<void> => apexHistory.push(entry);
+export const readApexSnippets = (): Promise<ApexSnippet[]> => apexSnippets.read();
+export const pushApexSnippet = (entry: ApexSnippet): Promise<void> => apexSnippets.push(entry);
 
 // The picked DebugLevel Id persists per browser profile (i.e. per user); empty
 // string means "use the feature-managed SFDT_Finest default".
@@ -362,36 +322,27 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     );
 
     const body = doc.createElement('div');
-    body.style.cssText =
-      'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px;';
+    body.className = 'sfdt-view-body';
 
-    const editor = doc.createElement('textarea');
-    editor.placeholder = 'System.debug(\'Hello\');';
-    editor.value = "System.debug('Hello from SFDT');";
-    editor.style.cssText =
-      'width: 100%; min-height: 180px; font-family: ui-monospace, monospace; font-size: 12px; padding: 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; resize: vertical;';
-    body.appendChild(editor);
-
-    const toolbar = doc.createElement('div');
-    toolbar.style.cssText = 'display: flex; gap: 8px; align-items: center;';
-    const runBtn = doc.createElement('button');
-    runBtn.textContent = 'Execute';
-    runBtn.style.cssText =
-      'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px;';
+    const bar = toolbar(doc);
+    const runBtn = button({
+      label: 'Execute',
+      iconName: 'play',
+      variant: 'primary',
+      title: 'Run this Apex (Ctrl/Cmd+Enter)',
+      doc,
+    });
     // Runs the Apex, then opens the produced log in the profiler view. Forces log
     // capture on for the run regardless of the captureLogs setting.
-    const analyzeBtn = doc.createElement('button');
-    analyzeBtn.textContent = '📊 Run & analyze';
-    analyzeBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
-    const saveBtn = doc.createElement('button');
-    saveBtn.textContent = 'Save snippet';
-    saveBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
-    const openLogBtn = doc.createElement('button');
-    openLogBtn.textContent = '🪵 Open log';
-    openLogBtn.style.cssText =
-      'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    const analyzeBtn = button({
+      label: 'Run & analyze',
+      iconName: 'chart',
+      title: 'Run, then open the produced debug log in the profiler',
+      doc,
+    });
+    const saveBtn = button({ label: 'Save snippet', iconName: 'save', doc });
+    const openLogBtn = button({ label: 'Open log', iconName: 'logs', doc });
+    openLogBtn.style.display = 'none';
     // Log-level picker: choose which org DebugLevel the trace flag uses so users
     // set log verbosity without a trip to Setup. A native <label>+<select> gives
     // implicit labelling and the full keyboard path for free. Only meaningful
@@ -399,15 +350,13 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     const debugSelect = doc.createElement('select');
     // Accessible name comes from the wrapping <label>'s visible "Log level" text
     // (no aria-label — it would override the visible label and fail WCAG 2.5.3).
-    debugSelect.style.cssText =
-      'font-size: 11px; padding: 4px 6px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); color: var(--sfdt-color-text); border-radius: 4px;';
+    debugSelect.className = 'sfdt-field sfdt-auto';
     const debugDefaultOpt = doc.createElement('option');
     debugDefaultOpt.value = '';
     debugDefaultOpt.textContent = 'SFDT Finest (auto)';
     debugSelect.appendChild(debugDefaultOpt);
     const debugLabel = doc.createElement('label');
-    debugLabel.style.cssText =
-      'display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--sfdt-color-text-weak);';
+    debugLabel.className = 'sfdt-check';
     const debugLabelText = doc.createElement('span');
     debugLabelText.textContent = 'Log level';
     debugLabel.appendChild(debugLabelText);
@@ -439,41 +388,87 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
 
     const hint = doc.createElement('span');
     hint.textContent = 'Ctrl/Cmd+Enter to run';
-    hint.style.cssText = 'color: var(--sfdt-color-text-icon); font-size: 11px; margin-left: auto;';
-    toolbar.appendChild(runBtn);
-    toolbar.appendChild(analyzeBtn);
-    toolbar.appendChild(saveBtn);
-    toolbar.appendChild(openLogBtn);
+    hint.className = 'sfdt-muted sfdt-toolbar-end';
+    bar.appendChild(runBtn);
+    bar.appendChild(analyzeBtn);
+    bar.appendChild(saveBtn);
+    bar.appendChild(openLogBtn);
     // Kick off population and hold the promise so execute() can await the
     // persisted-pick restore before reading debugSelect.value — otherwise a fast
     // Ctrl/Cmd+Enter would run with the still-default '' and lose the saved pick.
     let debugReady: Promise<void> | null = null;
     if (config.captureLogs) {
-      toolbar.appendChild(debugLabel);
+      bar.appendChild(debugLabel);
       debugReady = populateDebugLevels();
     }
-    toolbar.appendChild(hint);
-    body.appendChild(toolbar);
+    bar.appendChild(hint);
+    body.appendChild(bar);
 
-    const status = doc.createElement('div');
-    status.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
-    body.appendChild(status);
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
+
+    const editor = createCodeEditor({
+      ariaLabel: 'Anonymous Apex',
+      placeholder: "System.debug('Hello');",
+      value: "System.debug('Hello from SFDT');",
+      doc,
+    });
+    // Grow into whatever the panes below leave, never shrink under the 180px
+    // floor the component sheet sets.
+    editor.root.classList.add('sfdt-fill');
+    main.appendChild(editor.root);
+
+    // Governor limits from the run's own log. The parser has always extracted
+    // these; until now they were only reachable by clicking through to the
+    // analyzer, which is one click too many for the number a developer is most
+    // often running the snippet to check.
+    const limits = createLimitTiles(doc);
+    main.appendChild(limits.el);
 
     const resultPane = doc.createElement('pre');
-    resultPane.style.cssText =
-      'margin: 0; padding: 10px; background: var(--sfdt-color-surface-alt); border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 280px; font-family: ui-monospace, monospace; font-size: 12px; display: none; white-space: pre-wrap;';
-    body.appendChild(resultPane);
+    resultPane.className = 'sfdt-console';
+    resultPane.style.display = 'none';
+    main.appendChild(resultPane);
 
     const logPane = doc.createElement('pre');
-    logPane.style.cssText =
-      'margin: 0; padding: 10px; background: var(--sfdt-color-code-bg); color: var(--sfdt-color-border-3); border-radius: 4px; overflow: auto; max-height: 320px; font-family: ui-monospace, monospace; font-size: 11px; display: none; white-space: pre-wrap;';
-    body.appendChild(logPane);
+    logPane.className = 'sfdt-console';
+    logPane.style.display = 'none';
+    main.appendChild(logPane);
 
-    // The log captured by the most recent run, if any. Drives the Open log button.
+    const statusBar = toolbar(doc, true);
+    const statusPill = doc.createElement('span');
+    const statusText = doc.createElement('span');
+    statusText.className = 'sfdt-muted';
+    statusBar.appendChild(statusPill);
+    statusBar.appendChild(statusText);
+    body.appendChild(statusBar);
+
+    // One writer for the whole strip. With the pill and the detail written
+    // separately it is only a matter of time before a green SUCCESS pill is left
+    // standing beside the next run's error text, because every early-return path
+    // has to remember to clear both.
+    function setStatus(
+      kind: '' | 'success' | 'warning' | 'error',
+      label: string,
+      detail = '',
+    ): void {
+      statusPill.className = kind ? `sfdt-pill sfdt-${kind}` : 'sfdt-pill';
+      statusPill.textContent = label;
+      statusText.textContent = detail;
+    }
+    setStatus('', 'Ready');
+
+    // The log captured by the most recent run, if any. Drives the Open log
+    // button, the limits panel and the analyzer — all three read the same fetch
+    // rather than each pulling the body down again.
     let capturedLogId: string | null = null;
+    let capturedLogBody: string | null = null;
+    let capturedParsed: ParsedLog | null = null;
 
     view = presentView({
-      title: '⚡ Execute Anonymous Apex',
+      title: 'Execute Anonymous Apex',
+      iconName: 'apex-anonymous',
       body,
       doc,
       width: '860px',
@@ -482,19 +477,11 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       },
     });
 
-    // Fetch the produced log, parse it, and open the profiler view — same
-    // fetch/parse/present path the Debug Logs viewer's "Analyze" uses.
-    async function openAnalyzer(logId: string): Promise<void> {
-      const raw = await fetchLogBody(logId);
-      const parsed = parseApexLog(raw);
-      presentApexLogAnalyzer({ parsed, rawText: raw, title: 'Execute Anonymous', doc });
-    }
-
     // analyze=true is the "Run & analyze" action: force log capture on for this
     // run and, once the log is located, open it in the analyzer. If no log is
     // produced, the normal result view is already shown — we just add a notice.
     async function execute(analyze = false): Promise<void> {
-      const code = editor.value;
+      const code = editor.getValue();
       if (!code.trim()) {
         showToast('Enter some Apex to execute.', { doc, kind: 'warning' });
         return;
@@ -502,13 +489,16 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       const wantCapture = config.captureLogs || analyze;
       runBtn.disabled = true;
       analyzeBtn.disabled = true;
+      setLabel(runBtn, 'Running…');
       openLogBtn.style.display = 'none';
       logPane.style.display = 'none';
       capturedLogId = null;
+      capturedLogBody = null;
+      capturedParsed = null;
+      limits.render(null);
       resultPane.style.display = 'none';
-      resultPane.style.color = '';
-      status.style.color = 'var(--sfdt-color-text-weak)';
-      status.textContent = 'Executing…';
+      resultPane.className = 'sfdt-console';
+      setStatus('', 'Running');
 
       // Trace-flag setup is best-effort: failing to arm log capture must never
       // stop the Apex from running. captureNote carries any setup warning so it
@@ -517,7 +507,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       let baselineLogId: string | null = null;
       let captureNote = '';
       if (wantCapture) {
-        status.textContent = 'Preparing debug log…';
+        setStatus('', 'Running', 'Preparing debug log…');
         try {
           // Ensure the persisted pick has been restored into the select before
           // we read it (covers both the button and Ctrl/Cmd+Enter paths).
@@ -544,12 +534,21 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       }
 
       try {
-        status.textContent = 'Executing…';
+        setStatus('', 'Running', 'Executing…');
         const result = await run(code);
         const summary = summariseResult(result);
-        const head = summary.ok ? '✓ Success' : '✗ Failed';
-        status.textContent = head;
-        status.style.color = summary.ok ? 'var(--sfdt-color-success-text)' : 'var(--sfdt-color-error-text)';
+        // `summary.ok` already folds in compile errors and runtime exceptions —
+        // both come back as a 200, so a try/catch alone would log them as
+        // successes.
+        void recordActivity({
+          featureId: 'apex-anonymous',
+          action: 'Execute Anonymous',
+          resource: code,
+          status: summary.ok ? 'success' : 'failed',
+        });
+        const kind = summary.ok ? 'success' : 'error';
+        const head = summary.ok ? 'Success' : 'Failed';
+        setStatus(kind, head);
         const lines = [summary.message];
         if (result.exceptionStackTrace) lines.push('', result.exceptionStackTrace);
         resultPane.textContent = lines.join('\n');
@@ -557,30 +556,49 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         if (config.historyEnabled) await pushApexHistory({ code, ts: Date.now() });
 
         if (wantCapture && userId) {
-          status.textContent = `${head} · capturing log…`;
+          setStatus(kind, head, 'capturing log…');
           capturedLogId = await pollForNewLog(userId, baselineLogId);
           if (capturedLogId) {
             openLogBtn.style.display = '';
-            status.textContent = `${head} · log ready`;
+            setStatus(kind, head, 'log ready');
+            // One fetch, three consumers: the limits panel, the Open log pane
+            // and the analyzer. A log body is immutable once written, so
+            // re-fetching it per consumer was pure latency.
+            let logNote = 'log ready';
+            try {
+              capturedLogBody = await fetchLogBody(capturedLogId);
+              capturedParsed = parseApexLog(capturedLogBody);
+              limits.render(pickLimitSnapshot(capturedParsed.limits));
+            } catch {
+              // The run itself already succeeded and is already reported. A
+              // failure to read the log downgrades the extras, never the result.
+              logNote = 'log captured (body unavailable)';
+            }
+            setStatus(kind, head, logNote);
             if (analyze) {
-              try {
-                // Focus-restore: presentApexLogAnalyzer captures the current
-                // activeElement to restore focus to on close. analyzeBtn was
-                // disabled at the top of the run (which blurred it to <body>), so
-                // re-enable + refocus it before opening — otherwise focus would
-                // land on <body> when the analyzer closes.
-                analyzeBtn.disabled = false;
-                analyzeBtn.focus();
-                await openAnalyzer(capturedLogId);
-              } catch (err) {
-                showToast(err instanceof Error ? err.message : String(err), {
+              // Focus-restore: presentApexLogAnalyzer captures the current
+              // activeElement to restore focus to on close. analyzeBtn was
+              // disabled at the top of the run (which blurred it to <body>), so
+              // re-enable + refocus it before opening — otherwise focus would
+              // land on <body> when the analyzer closes.
+              analyzeBtn.disabled = false;
+              analyzeBtn.focus();
+              if (capturedParsed && capturedLogBody !== null) {
+                presentApexLogAnalyzer({
+                  parsed: capturedParsed,
+                  rawText: capturedLogBody,
+                  title: 'Execute Anonymous',
                   doc,
-                  kind: 'error',
+                });
+              } else {
+                showToast('Could not read the debug log — showing the result instead.', {
+                  doc,
+                  kind: 'warning',
                 });
               }
             }
           } else {
-            status.textContent = `${head} · no log captured`;
+            setStatus(kind, head, 'no log captured');
             // AC: analyze fell back — the result view above is still shown; notify why.
             if (analyze) {
               showToast('No debug log was produced — showing the result instead.', {
@@ -590,7 +608,7 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
             }
           }
         } else if (captureNote) {
-          status.textContent = `${head} · ${captureNote}`;
+          setStatus(kind, head, captureNote);
           if (analyze) {
             showToast(`Could not analyze — ${captureNote}. Showing the result instead.`, {
               doc,
@@ -599,19 +617,20 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
           }
         }
       } catch (err) {
-        status.textContent = '';
+        setStatus('error', 'Failed');
         resultPane.textContent = err instanceof Error ? err.message : String(err);
         resultPane.style.display = 'block';
-        resultPane.style.color = 'var(--sfdt-color-error-text)';
+        resultPane.className = 'sfdt-console sfdt-error';
       } finally {
         runBtn.disabled = false;
         analyzeBtn.disabled = false;
+        setLabel(runBtn, 'Execute');
       }
     }
 
     runBtn.addEventListener('click', () => void execute());
     analyzeBtn.addEventListener('click', () => void execute(true));
-    editor.addEventListener('keydown', (e) => {
+    editor.input.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         void execute();
@@ -620,21 +639,26 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     saveBtn.addEventListener('click', async () => {
       const name = win.prompt('Snippet name?');
       if (!name) return;
-      await pushApexSnippet({ name, code: editor.value });
+      await pushApexSnippet({ name, code: editor.getValue() });
       showToast(`Saved snippet "${name}"`, { doc, kind: 'success' });
     });
     openLogBtn.addEventListener('click', async () => {
       if (!capturedLogId) return;
       logPane.style.display = 'block';
+      if (capturedLogBody !== null) {
+        renderApexLogBody(logPane, capturedLogBody, doc);
+        return;
+      }
       logPane.textContent = 'Loading log…';
       try {
-        logPane.textContent = await fetchLogBody(capturedLogId);
+        capturedLogBody = await fetchLogBody(capturedLogId);
+        renderApexLogBody(logPane, capturedLogBody, doc);
       } catch (err) {
         logPane.textContent = err instanceof Error ? err.message : String(err);
       }
     });
 
-    editor.focus();
+    editor.input.focus();
   }
 
   return {

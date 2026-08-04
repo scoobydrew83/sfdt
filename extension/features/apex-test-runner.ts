@@ -11,6 +11,7 @@ import {
 } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { button, toolbar } from '../lib/ui-controls.js';
 
 // ---------------------------------------------------------------------------
 // Pure helpers (exported for tests)
@@ -62,7 +63,9 @@ export function shapeTestResults(rows: RawApexTestResultRow[]): ApexTestSummary 
   return { total: rows.length, passed, failed, skipped, failures };
 }
 
-const BAND_COLOUR = { green: 'var(--sfdt-color-success)', red: 'var(--sfdt-color-error)' } as const;
+// Pass/fail banner accent. The band→colour map that used to live here was the
+// fifth copy in the codebase; the colours are in lib/ui-styles.ts now.
+const BAND_CALLOUT = { green: 'sfdt-ok', red: 'sfdt-bad' } as const;
 
 // Test levels that need no class selection — RunSpecifiedTests is omitted
 // because it requires a class list the Workspace can't supply cleanly.
@@ -104,8 +107,7 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
 
   function renderError(results: HTMLElement, status: HTMLSpanElement, message: string): void {
     const panel = doc.createElement('div');
-    panel.style.cssText =
-      'border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-line;';
+    panel.classList.add('sfdt-console', 'sfdt-error');
     panel.textContent = message;
     results.appendChild(panel);
     status.textContent = 'Failed';
@@ -114,12 +116,12 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
   function renderSummary(results: HTMLElement, summary: ApexTestSummary, complete: boolean): void {
     const banner = doc.createElement('div');
     const band = summary.failed > 0 ? 'red' : 'green';
-    banner.style.cssText = `margin-bottom: 14px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--sfdt-color-border); border-left: 4px solid ${BAND_COLOUR[band]}; display: flex; align-items: baseline; gap: 10px;`;
+    banner.className = `sfdt-callout sfdt-below sfdt-row sfdt-baseline ${BAND_CALLOUT[band]}`;
     const big = doc.createElement('span');
-    big.style.cssText = 'font-size: 20px; font-weight: 700;';
+    big.classList.add('sfdt-subhead');
     big.textContent = `${summary.passed} passed · ${summary.failed} failed`;
     const cap = doc.createElement('span');
-    cap.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak);';
+    cap.className = 'sfdt-muted';
     cap.textContent =
       `${summary.total} method${summary.total === 1 ? '' : 's'}` +
       (summary.skipped > 0 ? `, ${summary.skipped} skipped` : '') +
@@ -147,12 +149,12 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
       }
     } else if (summary.total > 0) {
       const ok = doc.createElement('div');
-      ok.style.cssText = 'padding: 8px 0; color: var(--sfdt-color-success-text); font-size: 13px;';
-      ok.textContent = 'All tests passed. 🎉';
+      ok.classList.add('sfdt-prose');
+      ok.textContent = 'All tests passed.';
       results.appendChild(ok);
     } else {
       const empty = doc.createElement('div');
-      empty.style.cssText = 'padding: 8px 0; color: var(--sfdt-color-text-icon); font-size: 13px;';
+      empty.classList.add('sfdt-prose', 'sfdt-muted');
       empty.textContent = 'No test results returned for this run.';
       results.appendChild(empty);
     }
@@ -216,15 +218,11 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
     close();
 
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column;';
-
+    body.className = 'sfdt-view-body';
     // Toolbar at the top of the body (presentView's header is title + × only).
-    const toolbar = doc.createElement('div');
-    toolbar.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;';
-
+    const bar = toolbar(doc);
     const levelSelect = doc.createElement('select');
-    levelSelect.style.cssText =
-      'padding: 5px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px;';
+    levelSelect.className = 'sfdt-field sfdt-auto';
     for (const level of TEST_LEVELS) {
       const opt = doc.createElement('option');
       opt.value = level;
@@ -232,22 +230,23 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
       levelSelect.appendChild(opt);
     }
 
-    const runBtn = doc.createElement('button');
-    runBtn.textContent = 'Run';
-    runBtn.style.cssText =
-      'padding: 5px 16px; border: 1px solid var(--sfdt-color-brand); background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border-radius: 4px; cursor: pointer; font-size: 13px;';
+    const runBtn = button({ label: 'Run', iconName: 'play', variant: 'primary', small: true, doc });
 
     const status = doc.createElement('span');
     status.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px; margin-left: auto;';
 
-    toolbar.append(levelSelect, runBtn, status);
-    body.appendChild(toolbar);
+    bar.append(levelSelect, runBtn, status);
+    body.appendChild(bar);
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
 
     const results = doc.createElement('div');
-    body.appendChild(results);
+    main.appendChild(results);
 
     view = presentView({
-      title: '🧪 Apex Test Runner',
+      title: 'Apex Test Runner',
+      iconName: 'flask',
       body,
       doc,
       width: '760px',

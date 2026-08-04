@@ -80,7 +80,9 @@ describe('org-limits — modal', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(api.limits).toHaveBeenCalled();
-    const cards = document.querySelectorAll('.sfdt-view-overlay [style*="grid-template-columns"] > div');
+    // By class, not by inline style: an assertion reaching for `[style*=…]`
+    // breaks the moment the element is migrated onto the design system.
+    const cards = document.querySelectorAll('.sfdt-view-overlay .sfdt-tile');
     expect(cards.length).toBeGreaterThanOrEqual(2);
     const body = document.body.textContent ?? '';
     expect(body).toContain('Daily Api Requests');

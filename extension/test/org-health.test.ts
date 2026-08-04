@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createOrgHealthFeature, bandFor, shapeChecks } from '../features/org-health.js';
 import { describeFinding } from '@sfdt/flow-core';
 import type { SfdtResponse } from '@sfdt/flow-core/bridge-contract';
+import type { SalesforceApiClient } from '../lib/salesforce-api.js';
 
 function clearBody(): void {
   while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
@@ -16,6 +17,18 @@ function fakeBridge(response: SfdtResponse) {
 }
 
 beforeEach(() => clearBody());
+
+// Org Health now ALWAYS runs the five in-browser checks before reaching for the
+// bridge, so every test needs a Salesforce client — without one the real client
+// is used and the panel hangs waiting on it.
+function fakeLiveApi(): SalesforceApiClient {
+  return {
+    toolingQuery: vi.fn(async () => ({ records: [], size: 0, done: true })),
+    query: vi.fn(async () => ({ records: [], size: 0, done: true })),
+    apiGet: vi.fn(async () => ({})),
+    limits: vi.fn(async () => ({})),
+  } as unknown as SalesforceApiClient;
+}
 
 describe('org-health — pure helpers', () => {
   it('bandFor maps check status to colour bands', () => {
@@ -56,7 +69,7 @@ describe('org-health — modal', () => {
         },
       },
     });
-    const feature = createOrgHealthFeature({ bridgeFactory: async () => bridge });
+    const feature = createOrgHealthFeature({ bridgeFactory: async () => bridge, api: fakeLiveApi() });
     await feature.onActivate?.();
     await vi.waitFor(() => expect(document.body.textContent).toContain('Diagnostics & Audit'));
 
@@ -72,7 +85,7 @@ describe('org-health — modal', () => {
   it('shows an error panel with a hint when the bridge is offline', async () => {
     setSalesforceUrl();
     const bridge = fakeBridge({ ok: false, requestId: 'r1', error: 'bridge offline', code: 'BRIDGE_OFFLINE' });
-    const feature = createOrgHealthFeature({ bridgeFactory: async () => bridge });
+    const feature = createOrgHealthFeature({ bridgeFactory: async () => bridge, api: fakeLiveApi() });
     await feature.onActivate?.();
     await vi.waitFor(() => expect(document.body.textContent).toContain('bridge offline'));
 
@@ -84,7 +97,7 @@ describe('org-health — modal', () => {
   it('shows an empty hint when a snapshot has no checks', async () => {
     setSalesforceUrl();
     const bridge = fakeBridge({ ok: true, requestId: 'r1', data: { audit: null, monitor: null } });
-    const feature = createOrgHealthFeature({ bridgeFactory: async () => bridge });
+    const feature = createOrgHealthFeature({ bridgeFactory: async () => bridge, api: fakeLiveApi() });
     await feature.onActivate?.();
     await vi.waitFor(() => expect(document.body.textContent).toContain('Run `sfdt'));
 

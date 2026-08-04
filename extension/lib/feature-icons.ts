@@ -45,7 +45,6 @@ export const FEATURE_ICONS: Record<string, FeatureIcon> = {
   'saved-soql': { icon: '⭐', label: 'Saved SOQL' },
   'org-switcher': { icon: '🏢', label: 'Switch Org' },
   'apex-coverage': { icon: '📈', label: 'Apex Coverage' },
-  'org-health-live': { icon: '🏥', label: 'Org Health (Live)' },
   'dependency-explorer': { icon: '🔗', label: 'Dependency Explorer' },
   'apex-test-runner': { icon: '🧪', label: 'Apex Test Runner' },
   // Bridge-backed tools (need `sfdt ui` running, like flow-deploy).
@@ -59,6 +58,11 @@ export const FEATURE_ICONS: Record<string, FeatureIcon> = {
 // features a synthetic win that reports SETUP_OTHER, so getAvailableFeatures()
 // would surface every Setup tool indiscriminately — this allowlist keeps the
 // sidebar intentional. SOQL-first, then the new Workspace tools, then the rest.
+// NOT here: 'inspect-record'. It is reached in the Workspace from a SOQL result
+// row's Id menu — you inspect a record you just found, you do not open an empty
+// inspector and go looking for one. The popup keeps it, because there the
+// starting point IS a record: the tab you are on. Membership in this list is a
+// curation call about how a tool is REACHED, not whether it works.
 export const WORKSPACE_TOOLS: readonly string[] = [
   'soql-runner',
   'saved-soql',
@@ -67,12 +71,10 @@ export const WORKSPACE_TOOLS: readonly string[] = [
   'trace-flags',
   'rest-explore',
   'soap-explore',
-  'inspect-record',
   'schema-browser',
   'field-impact',
   'apex-coverage',
   'apex-test-runner',
-  'org-health-live',
   'org-health',
   'dependency-explorer',
   'flow-quality',
@@ -85,4 +87,27 @@ export const WORKSPACE_TOOLS: readonly string[] = [
   'field-creator',
   'metadata-retrieve',
   'export-for-prompt',
+];
+
+/**
+ * The tools the Workspace sidebar shows without being asked. Everything else in
+ * WORKSPACE_TOOLS lives behind the "All tools" disclosure.
+ *
+ * Twenty-five entries in a flat list is a wall of text, not navigation — you
+ * can't scan it, so you fall back to hunting. This is the everyday set; the
+ * Recent section above it covers "the thing I was just doing", and the
+ * disclosure covers the rest. Order is deliberate (query → run → inspect →
+ * ship), not alphabetical.
+ *
+ * Membership is a curation call, not a capability one: a tool being absent here
+ * says nothing about whether it works. Adding one is cheap; the cost of adding
+ * every one is the wall of text this exists to prevent.
+ */
+export const WORKSPACE_PRIMARY: readonly string[] = [
+  'soql-runner',
+  'apex-anonymous',
+  'debug-log-viewer',
+  'schema-browser',
+  'rest-explore',
+  'metadata-retrieve',
 ];

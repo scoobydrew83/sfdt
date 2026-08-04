@@ -44,6 +44,49 @@ describe('createWorkspaceTabs', () => {
     expect(document.querySelector('.sfdt-view-overlay')).toBeNull(); // not a modal
   });
 
+  it('carries the subtitle and header actions into the pane', () => {
+    // The tab chip supplies the tool's title, but nothing supplies "which
+    // record am I looking at" or the view's own Fields/JSON toggle. Without a
+    // pane head those are silently dropped in the Workspace and the tool looks
+    // like a different product depending on where it was opened.
+    const tabbar = document.createElement('div');
+    const panes = document.createElement('div');
+    const welcome = document.createElement('div');
+    document.body.append(tabbar, panes, welcome);
+
+    const actions = document.createElement('div');
+    actions.id = 'acts';
+    const dispatch = vi.fn(() => {
+      presentView({
+        title: 'Inspect Record',
+        subtitle: 'Account · 001800000000001AAA',
+        headerActions: actions,
+        body: document.createElement('div'),
+        doc: document,
+      });
+    });
+    const tabs = createWorkspaceTabs({
+      tabbar, panes, welcome, dispatch, labelFor: (id) => id.toUpperCase(),
+    });
+
+    tabs.openTool('inspect-record');
+
+    const head = panes.querySelector('.sfdt-panel-head') as HTMLElement;
+    expect(head).not.toBeNull();
+    expect(head.querySelector('.sfdt-panel-sub')?.textContent).toBe('Account · 001800000000001AAA');
+    expect(head.querySelector('#acts')).not.toBeNull();
+    // The chip already says "INSPECT-RECORD" and owns the ×; repeating either
+    // in the pane would be two titles and two close affordances.
+    expect(head.querySelector('.sfdt-panel-title')).toBeNull();
+    expect(head.querySelector('button[aria-label="Close"]')).toBeNull();
+  });
+
+  it('adds no pane head for a view that supplies neither', () => {
+    const { tabs, panes } = makeHost();
+    tabs.openTool('soql');
+    expect(panes.querySelector('.sfdt-panel-head')).toBeNull();
+  });
+
   it('mounts a tab (not a modal) when the tool presents on a later microtask', async () => {
     // Real tools like SOQL Runner `await loadSettings()` before calling
     // presentView, so the view arrives after openTool has returned. The sink must

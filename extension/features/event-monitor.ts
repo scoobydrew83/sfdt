@@ -9,6 +9,8 @@ import {
 import { registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { setTone, button, toolbar } from '../lib/ui-controls.js';
+import { copyToClipboard } from '../ui/clipboard.js';
 
 const EVENT_MONITOR_SETTINGS_SCHEMA = z.object({
   historyEnabled: z.boolean().default(true),
@@ -195,8 +197,7 @@ export function createEventMonitorFeature(options: {
       item.style.cssText = 'padding: 8px; border-bottom: 1px solid var(--sfdt-color-border); cursor: pointer; font-family: monospace; font-size: 11px; white-space: pre-wrap;';
       
       if (selectedEvent === e) {
-        item.style.background = 'var(--sfdt-color-bg)';
-        item.style.borderLeft = '3px solid var(--sfdt-color-brand)';
+        item.classList.add('sfdt-row-active');
       }
 
       item.textContent = JSON.stringify(e, null, 2);
@@ -240,7 +241,7 @@ export function createEventMonitorFeature(options: {
           const limit = res[k]!;
           const percentage = ((limit.Max - limit.Remaining) / limit.Max * 100).toFixed(1);
           const p = doc.createElement('p');
-          p.style.cssText = 'margin: 4px 0; font-size: 12px; color: var(--sfdt-color-text);';
+          p.classList.add('sfdt-muted');
           p.textContent = `${k}: Remaining ${limit.Remaining} out of ${limit.Max} (${percentage}% consumed)`;
           limitsContainer!.appendChild(p);
         });
@@ -255,7 +256,7 @@ export function createEventMonitorFeature(options: {
   function updateStatus(status: string, isError: boolean): void {
     if (statusLabel) {
       statusLabel.textContent = status;
-      statusLabel.style.color = isError ? 'var(--sfdt-color-error-text)' : 'var(--sfdt-color-text-weak)';
+      setTone(statusLabel, isError ? 'bad' : 'muted');
     }
   }
 
@@ -264,20 +265,24 @@ export function createEventMonitorFeature(options: {
 
     // Body
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px;';
-
-    // Filter Config Row
-    const configRow = doc.createElement('div');
-    configRow.style.cssText = 'display: grid; grid-template-columns: 1.5fr 1fr 1.5fr 100px; gap: 8px; border-bottom: 1px solid var(--sfdt-color-border-2); padding-bottom: 16px;';
+    body.className = 'sfdt-view-body';
+    // The channel/filter row is this view's toolbar — it stays put while the
+    // event stream scrolls under it, which is the whole point of a live monitor.
+    const configRow = toolbar(doc);
+    configRow.classList.add('sfdt-wrap');
     body.appendChild(configRow);
 
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
+
     const typeDiv = doc.createElement('div');
-    typeDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+    typeDiv.classList.add('sfdt-stack', 'sfdt-tight');
     const typeLabel = doc.createElement('label');
     typeLabel.textContent = 'Channel Type';
-    typeLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    typeLabel.className = 'sfdt-label';
     const typeSelect = doc.createElement('select');
-    typeSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    typeSelect.className = 'sfdt-field sfdt-auto';
     [
       { v: 'platformEvent', l: 'Custom Platform Event' },
       { v: 'standardPlatformEvent', l: 'Standard Platform Event' },
@@ -294,10 +299,10 @@ export function createEventMonitorFeature(options: {
     configRow.appendChild(typeDiv);
 
     const nameDiv = doc.createElement('div');
-    nameDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+    nameDiv.classList.add('sfdt-stack', 'sfdt-tight');
     const nameLabel = doc.createElement('label');
     nameLabel.textContent = 'Channel Name';
-    nameLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    nameLabel.className = 'sfdt-label';
     channelSelect = doc.createElement('select');
     channelSelect.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
     nameDiv.appendChild(nameLabel);
@@ -305,14 +310,14 @@ export function createEventMonitorFeature(options: {
     configRow.appendChild(nameDiv);
 
     const customDiv = doc.createElement('div');
-    customDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+    customDiv.classList.add('sfdt-stack', 'sfdt-tight');
     const customLabel = doc.createElement('label');
     customLabel.textContent = 'Or Custom Channel Path';
-    customLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    customLabel.className = 'sfdt-label';
     const customInput = doc.createElement('input');
     customInput.type = 'text';
     customInput.placeholder = '/event/MyCustomEvent__e';
-    customInput.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    customInput.className = 'sfdt-field sfdt-auto';
     customInput.addEventListener('input', () => {
       customChannelPath = customInput.value.trim();
     });
@@ -321,14 +326,14 @@ export function createEventMonitorFeature(options: {
     configRow.appendChild(customDiv);
 
     const replayDiv = doc.createElement('div');
-    replayDiv.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+    replayDiv.classList.add('sfdt-stack', 'sfdt-tight');
     const replayLabel = doc.createElement('label');
     replayLabel.textContent = 'Replay From';
-    replayLabel.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--sfdt-color-text-weak);';
+    replayLabel.className = 'sfdt-label';
     const replayInput = doc.createElement('input');
     replayInput.type = 'number';
     replayInput.value = '-1';
-    replayInput.style.cssText = 'padding: 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    replayInput.className = 'sfdt-field sfdt-auto';
     replayInput.addEventListener('change', () => {
       replayId = parseInt(replayInput.value, 10) || -1;
     });
@@ -349,25 +354,19 @@ export function createEventMonitorFeature(options: {
 
     // Streaming Control Actions Row
     const actionRow = doc.createElement('div');
-    actionRow.style.cssText = 'display: flex; gap: 8px; align-items: center;';
-    body.appendChild(actionRow);
+    actionRow.classList.add('sfdt-row');
+    main.appendChild(actionRow);
 
-    const subscribeBtn = doc.createElement('button');
-    subscribeBtn.textContent = 'Subscribe';
-    subscribeBtn.style.cssText = 'padding: 6px 16px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
-    
-    const unsubscribeBtn = doc.createElement('button');
-    unsubscribeBtn.textContent = 'Unsubscribe';
+    const subscribeBtn = button({ label: 'Subscribe', iconName: 'wave', variant: 'primary', doc });
+    const unsubscribeBtn = button({ label: 'Unsubscribe', iconName: 'close', doc });
     unsubscribeBtn.disabled = true;
-    unsubscribeBtn.style.cssText = 'padding: 6px 16px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); cursor: pointer; font-size: 13px; color: var(--sfdt-color-text);';
 
     statusLabel = doc.createElement('span');
-    statusLabel.style.cssText = 'font-size: 12px; color: var(--sfdt-color-text-weak); margin-left: 8px;';
+    statusLabel.className = 'sfdt-muted';
     statusLabel.textContent = 'Ready to stream';
 
-    const limitsBtn = doc.createElement('button');
-    limitsBtn.textContent = 'Limits Metrics';
-    limitsBtn.style.cssText = 'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); cursor: pointer; font-size: 12px; color: var(--sfdt-color-text-weak); margin-left: auto;';
+    const limitsBtn = button({ label: 'Limits Metrics', iconName: 'gauge', small: true, doc });
+    limitsBtn.classList.add('sfdt-toolbar-end');
     limitsBtn.addEventListener('click', () => {
       void toggleMetrics();
     });
@@ -380,7 +379,7 @@ export function createEventMonitorFeature(options: {
     // Limits pane
     limitsContainer = doc.createElement('div');
     limitsContainer.style.cssText = 'display: none; padding: 10px; background: var(--sfdt-color-warning-bg-4); border: 1px solid var(--sfdt-color-warning); border-radius: 4px; margin-bottom: 8px;';
-    body.appendChild(limitsContainer);
+    main.appendChild(limitsContainer);
 
     function setControlsDisabled(disabled: boolean): void {
       typeSelect.disabled = disabled;
@@ -460,7 +459,7 @@ export function createEventMonitorFeature(options: {
     // Content Display Area
     const contentRow = doc.createElement('div');
     contentRow.style.cssText = 'flex: 1; display: flex; gap: 16px; overflow: hidden; height: 350px;';
-    body.appendChild(contentRow);
+    main.appendChild(contentRow);
 
     // Left List Pane
     const listWrap = doc.createElement('div');
@@ -472,14 +471,12 @@ export function createEventMonitorFeature(options: {
     const filterInput = doc.createElement('input');
     filterInput.type = 'text';
     filterInput.placeholder = 'Filter events...';
-    filterInput.style.cssText = 'padding: 4px 6px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 12px; width: 150px;';
+    filterInput.className = 'sfdt-field sfdt-auto';
     filterInput.addEventListener('input', () => {
       eventFilter = filterInput.value.toLowerCase();
       renderEvents();
     });
-    const clearEventsBtn = doc.createElement('button');
-    clearEventsBtn.textContent = 'Clear';
-    clearEventsBtn.style.cssText = 'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); font-size: 11px; cursor: pointer; color: var(--sfdt-color-text-weak);';
+    const clearEventsBtn = button({ label: 'Clear', iconName: 'trash', small: true, doc });
     clearEventsBtn.addEventListener('click', () => {
       events.length = 0;
       selectedEvent = null;
@@ -504,14 +501,15 @@ export function createEventMonitorFeature(options: {
     detailsBar.style.cssText = 'background: var(--sfdt-color-surface-alt); border-bottom: 1px solid var(--sfdt-color-border); padding: 6px 12px; display: flex; align-items: center; justify-content: space-between;';
     const detailsTitle = doc.createElement('span');
     detailsTitle.textContent = 'Event Details';
-    detailsTitle.style.cssText = 'font-size: 12px; font-weight: 600; color: var(--sfdt-color-text);';
-    const copyJsonBtn = doc.createElement('button');
-    copyJsonBtn.textContent = 'Copy JSON';
-    copyJsonBtn.style.cssText = 'padding: 4px 10px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; background: var(--sfdt-color-surface); font-size: 11px; cursor: pointer; color: var(--sfdt-color-text-weak);';
+    detailsTitle.classList.add('sfdt-subhead');
+    const copyJsonBtn = button({ label: 'Copy JSON', iconName: 'clipboard', small: true, doc });
     copyJsonBtn.addEventListener('click', () => {
       if (selectedEvent) {
-        void win.navigator.clipboard.writeText(JSON.stringify(selectedEvent, null, 2));
-        showToast('Event payload copied', { doc, kind: 'success' });
+        void copyToClipboard(JSON.stringify(selectedEvent, null, 2), {
+          doc,
+          win,
+          label: 'event payload',
+        });
       }
     });
 
@@ -527,7 +525,8 @@ export function createEventMonitorFeature(options: {
     renderEventDetails();
 
     view = presentView({
-      title: '📡 Event Streaming Monitor',
+      title: 'Event Streaming Monitor',
+      iconName: 'event-monitor',
       body,
       doc,
       width: '960px',

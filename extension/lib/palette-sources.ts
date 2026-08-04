@@ -6,6 +6,10 @@
 // that talks to the browser.
 
 import { isRecordId } from '../features/inspect-record.js';
+// Data only — the icon *builder* stays out of this pure module; this is the
+// same feature-id → glyph map the side menu and the Workspace resolve through,
+// so the three surfaces cannot show different icons for the same tool.
+import { ICON_FOR_FEATURE } from './icons.js';
 import type { TabDefinition } from './setup-links.js';
 
 export type PaletteCategory = 'recent' | 'feature' | 'setup' | 'shortcut' | 'record' | 'object';
@@ -31,7 +35,12 @@ export interface PaletteCandidate {
   label: string;
   /** Secondary matchable key (feature id / setup tab id) — fed to fuzzyScoreFields. */
   apiName?: string;
-  icon?: string;
+  /**
+   * Name of a glyph in lib/icons.ts — NOT an emoji. Renamed from `icon` when the
+   * injected UI moved to the line-icon set, so a stale caller passing a
+   * character is a compile error rather than a silent fallback dot.
+   */
+  iconName?: string;
   action: PaletteAction;
 }
 
@@ -74,8 +83,13 @@ export interface CustomShortcut {
 
 export interface PaletteSourceInputs {
   gate: FeatureGate;
-  /** FEATURE_ICONS — icon + label per feature id. */
-  featureIcons: Record<string, { icon: string; label: string }>;
+  /**
+   * FEATURE_ICONS — used for the display LABEL and as the set of known feature
+   * ids. Its `icon` (an emoji) is deliberately not read: glyphs resolve through
+   * ICON_FOR_FEATURE above, so the declared shape is narrowed to what is
+   * actually consumed rather than implying this module renders that emoji.
+   */
+  featureIcons: Record<string, { label: string }>;
   /** Setup deep-link map (from lib/setup-links.ts), already assembled by the caller. */
   setupLinks: readonly TabDefinition[];
   /** Salesforce hostname used to materialise setup-link URLs. */
@@ -137,7 +151,7 @@ export function buildPaletteSources(inputs: PaletteSourceInputs): PaletteSection
       category: 'record',
       label: `Inspect record ${inputs.recordIdHint}`,
       apiName: inputs.recordIdHint,
-      icon: '🔍',
+      iconName: 'record',
       action: { kind: 'inspect-record', recordId: inputs.recordIdHint },
     });
   }
@@ -151,7 +165,7 @@ export function buildPaletteSources(inputs: PaletteSourceInputs): PaletteSection
       category: 'feature',
       label: meta.label,
       apiName: featureId,
-      icon: meta.icon,
+      iconName: ICON_FOR_FEATURE[featureId] ?? 'grid',
       action: { kind: 'feature', featureId },
     });
   }
@@ -163,7 +177,7 @@ export function buildPaletteSources(inputs: PaletteSourceInputs): PaletteSection
       category: 'setup',
       label: tab.label,
       apiName: tab.id,
-      icon: '📑',
+      iconName: 'panel',
       action: { kind: 'url', url: tab.buildUrl(inputs.hostname), newTab: tab.openInNewTab },
     });
   }
@@ -174,7 +188,7 @@ export function buildPaletteSources(inputs: PaletteSourceInputs): PaletteSection
       id: `shortcut:${sc.id}`,
       category: 'shortcut',
       label: sc.label,
-      icon: '⭐',
+      iconName: 'star',
       action: { kind: 'url', url: sc.url, newTab: sc.openInNewTab ?? false },
     });
   }
@@ -186,7 +200,7 @@ export function buildPaletteSources(inputs: PaletteSourceInputs): PaletteSection
       category: 'object',
       label: obj.label || obj.name,
       apiName: obj.name,
-      icon: '🗂',
+      iconName: 'table',
       action: { kind: 'object', objectName: obj.name },
     });
   }

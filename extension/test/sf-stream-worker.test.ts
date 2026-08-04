@@ -590,3 +590,60 @@ describe('handleStreamPort', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('SalesforceBayeuxClient — fetch receiver', () => {
+  // The bug this pins, as reported from a real org:
+  //
+  //   Connection failed: Failed to execute 'fetch' on 'WorkerGlobalScope':
+  //   Illegal invocation
+  //
+  // `fetch` is a WebIDL operation with a brand check on its receiver. Held as a
+  // plain property and called as `this.fetchImpl(url)`, the receiver is the
+  // client instance and Chrome refuses. lib/sf-api-proxy.ts never hit it
+  // because it calls its copy BARE, where there is no receiver to check —
+  // which is why REST worked and only the Event Streaming Monitor broke.
+  //
+  // Every other test in this file passed WITH the bug present, because a
+  // vi.fn() is an ordinary function and does not brand-check anything. These
+  // two assert the receiver directly.
+
+  it('never invokes fetch with the client as receiver', async () => {
+    const receivers: unknown[] = [];
+    // A non-arrow function so `this` is whatever the call site supplies.
+    const spy = function (this: unknown): Promise<Response> {
+      receivers.push(this);
+      return Promise.resolve({
+        ok: true,
+        json: async () => [{ successful: true, clientId: 'c1' }],
+      } as Response);
+    };
+
+    const client = new SalesforceBayeuxClient(
+      'https://test.salesforce.com',
+      'session-id',
+      'v62.0',
+      spy as unknown as typeof fetch,
+    );
+    await client.start('/event/Test__e', -1).catch(() => {});
+    await client.stop();
+
+    expect(receivers.length).toBeGreaterThan(0);
+    for (const r of receivers) {
+      expect(r).not.toBeInstanceOf(SalesforceBayeuxClient);
+      expect(r).toBe(globalThis);
+    }
+  });
+
+  it('binds the impl it was handed rather than storing it raw', () => {
+    // The guarantee is "bound at construction", so a caller passing an unbound
+    // global `fetch` — which both of ours do — cannot reintroduce the bug.
+    const raw = vi.fn();
+    const client = new SalesforceBayeuxClient(
+      'https://test.salesforce.com',
+      'session-id',
+      'v62.0',
+      raw as unknown as typeof fetch,
+    );
+    expect((client as unknown as { fetchImpl: unknown }).fetchImpl).not.toBe(raw);
+  });
+});

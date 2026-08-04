@@ -9,6 +9,10 @@ import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { SF_API_VERSION } from '../lib/api-version.js';
+import { button, toolbar } from '../lib/ui-controls.js';
+import { openMenu } from '../ui/menu.js';
+import { createHistory } from '../lib/history.js';
+import { copyToClipboard } from '../ui/clipboard.js';
 
 // SOAP request bodies carry the bare numeric version (e.g. "62.0"), not "v62.0".
 const SOAP_API_VERSION = SF_API_VERSION.replace(/^v/, '');
@@ -29,39 +33,19 @@ interface SoapHistoryEntry {
   ts: number;
 }
 
-interface SoapHistoryRecord {
-  entries: SoapHistoryEntry[];
-}
+// One shared capped ring (lib/history.ts) instead of a private read/write/push/
+// clear quartet. It also routes through lib/storage.ts, so recording a request
+// in a tab whose extension was updated underneath it fails quietly rather than
+// throwing onto the page.
+const history = createHistory<SoapHistoryEntry>(HISTORY_STORAGE_KEY, {
+  cap: HISTORY_CAP,
+  sameAs: (a, b) => a.wsdl === b.wsdl && a.operation === b.operation && a.payload === b.payload,
+});
 
-export async function readSoapHistory(): Promise<SoapHistoryEntry[]> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(HISTORY_STORAGE_KEY, (result) => {
-      const raw = result?.[HISTORY_STORAGE_KEY] as SoapHistoryRecord | undefined;
-      resolve(Array.isArray(raw?.entries) ? raw.entries : []);
-    });
-  });
-}
-
-export async function writeSoapHistory(entries: SoapHistoryEntry[]): Promise<void> {
-  const record: SoapHistoryRecord = { entries: entries.slice(0, HISTORY_CAP) };
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [HISTORY_STORAGE_KEY]: record }, () => resolve());
-  });
-}
-
-export async function pushSoapHistory(entry: SoapHistoryEntry): Promise<void> {
-  const existing = await readSoapHistory();
-  const deduped = existing.filter(
-    (e) => !(e.wsdl === entry.wsdl && e.operation === entry.operation && e.payload === entry.payload),
-  );
-  await writeSoapHistory([entry, ...deduped]);
-}
-
-export async function clearSoapHistory(): Promise<void> {
-  return new Promise((resolve) => {
-    chrome.storage.local.remove(HISTORY_STORAGE_KEY, () => resolve());
-  });
-}
+export const readSoapHistory = (): Promise<SoapHistoryEntry[]> => history.read();
+export const writeSoapHistory = (entries: SoapHistoryEntry[]): Promise<void> => history.write(entries);
+export const pushSoapHistory = (entry: SoapHistoryEntry): Promise<void> => history.push(entry);
+export const clearSoapHistory = (): Promise<void> => history.clear();
 
 const TEMPLATES: Record<string, Record<string, string>> = {
   Partner: {
@@ -121,18 +105,21 @@ export function createSoapExploreFeature(options: {
     const historyEnabled = config.historyEnabled;
 
     const body = doc.createElement('div');
-    body.style.cssText = 'padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 12px;';
-
-    // Working spinner lives at the top of the body (presentView's header is title + × only).
+    body.className = 'sfdt-view-body';
+    // '.sfdt-spinner' from the sheet — this had its own copy of the ring AND its
+    // own @keyframes, like metadata-retrieve did.
     const spinner = doc.createElement('div');
-    spinner.style.cssText = 'border: 2px solid var(--sfdt-color-bg); border-top: 2px solid var(--sfdt-color-brand); border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; display: none;';
+    spinner.className = 'sfdt-spinner';
+    spinner.setAttribute('role', 'status');
+    spinner.setAttribute('aria-label', 'Working');
+    spinner.style.display = 'none';
 
-    const configRow = doc.createElement('div');
-    configRow.style.cssText = 'display: flex; gap: 8px; align-items: center;';
+    // The config row IS this view's toolbar.
+    const configRow = toolbar(doc);
     configRow.appendChild(spinner);
 
     const wsdlSelect = doc.createElement('select');
-    wsdlSelect.style.cssText = 'padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    wsdlSelect.className = 'sfdt-field sfdt-auto';
     (['Partner', 'Metadata', 'Tooling', 'Enterprise', 'Apex'] as const).forEach(w => {
       const opt = doc.createElement('option');
       opt.value = w;
@@ -144,25 +131,28 @@ export function createSoapExploreFeature(options: {
     opInput.type = 'text';
     opInput.placeholder = 'Operation (e.g. getUserInfo)';
     opInput.value = 'getUserInfo';
-    opInput.style.cssText = 'flex: 1; padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    opInput.className = 'sfdt-field sfdt-toolbar-grow';
 
     const opSelect = doc.createElement('select');
-    opSelect.style.cssText = 'padding: 6px 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; font-size: 13px; outline: none;';
+    opSelect.className = 'sfdt-field sfdt-auto';
+    opSelect.setAttribute('aria-label', 'Operation');
     configRow.appendChild(wsdlSelect);
     configRow.appendChild(opSelect);
     configRow.appendChild(opInput);
 
-    const sendBtn = doc.createElement('button');
-    sendBtn.textContent = 'Send';
-    sendBtn.style.cssText = 'padding: 6px 14px; background: var(--sfdt-color-brand); color: var(--sfdt-color-on-accent); border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;';
+    const sendBtn = button({ label: 'Send', iconName: 'play', variant: 'primary', doc });
     configRow.appendChild(sendBtn);
     body.appendChild(configRow);
+    const main = doc.createElement('div');
+    main.className = 'sfdt-view-main';
+    body.appendChild(main);
 
     const payloadTextarea = doc.createElement('textarea');
     payloadTextarea.placeholder = 'JSON arguments';
     payloadTextarea.value = '{}';
-    payloadTextarea.style.cssText = 'width: 100%; min-height: 120px; font-family: monospace; font-size: 12px; padding: 8px; border: 1px solid var(--sfdt-color-border); border-radius: 4px; resize: vertical; outline: none;';
-    body.appendChild(payloadTextarea);
+    payloadTextarea.className = 'sfdt-field sfdt-mono';
+    payloadTextarea.classList.add('sfdt-taller');
+    main.appendChild(payloadTextarea);
 
     function syncOperations(): void {
       const wsdl = wsdlSelect.value;
@@ -211,67 +201,79 @@ export function createSoapExploreFeature(options: {
     syncOperations();
 
     const statusPanel = doc.createElement('div');
-    statusPanel.style.cssText = 'color: var(--sfdt-color-text-weak); font-size: 12px;';
-    body.appendChild(statusPanel);
+    statusPanel.className = 'sfdt-muted';
+    main.appendChild(statusPanel);
 
     const errorPanel = doc.createElement('div');
-    errorPanel.style.cssText = 'display: none; border: 1px solid var(--sfdt-color-error); background: var(--sfdt-color-error-bg); color: var(--sfdt-color-error-text); padding: 8px 12px; border-radius: 4px; font-size: 13px; white-space: pre-wrap;';
-    body.appendChild(errorPanel);
+    errorPanel.classList.add('sfdt-console', 'sfdt-error');
+    errorPanel.style.display = 'none';
+    main.appendChild(errorPanel);
 
     const responsePane = doc.createElement('pre');
     responsePane.style.cssText = 'margin: 0; padding: 10px; background: var(--sfdt-color-surface-alt); border: 1px solid var(--sfdt-color-border); border-radius: 4px; overflow: auto; max-height: 280px; font-family: monospace; font-size: 12px; display: none; white-space: pre-wrap;';
-    body.appendChild(responsePane);
+    main.appendChild(responsePane);
 
     let lastResponse: any = null;
 
     const footer = doc.createElement('div');
-    footer.style.cssText = 'display: flex; gap: 8px; align-items: center;';
-    const copyBtn = doc.createElement('button');
-    copyBtn.textContent = 'Copy response';
-    copyBtn.style.cssText = 'padding: 6px 12px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px; display: none;';
+    footer.className = 'sfdt-toolbar sfdt-toolbar-foot';
+    const copyBtn = button({ label: 'Copy response', iconName: 'clipboard', small: true, doc });
+    copyBtn.style.display = 'none';
     footer.appendChild(copyBtn);
 
-    let historyMenu: HTMLDivElement | null = null;
     if (historyEnabled) {
-      const historyBtn = doc.createElement('button');
-      historyBtn.textContent = '▸ History ▾';
-      historyBtn.style.cssText = 'padding: 6px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
-      const histWrap = doc.createElement('div');
-      histWrap.style.cssText = 'position: relative; margin-left: auto;';
-      histWrap.appendChild(historyBtn);
-      historyMenu = doc.createElement('div');
-      historyMenu.style.cssText = 'display: none; position: absolute; top: 100%; right: 0; background: var(--sfdt-color-surface); border: 1px solid var(--sfdt-color-border); border-radius: 4px; min-width: 420px; max-height: 280px; overflow-y: auto; z-index: 100021; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
-      histWrap.appendChild(historyMenu);
-      historyBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (!historyMenu) return;
-        if (historyMenu.style.display === 'block') {
-          historyMenu.style.display = 'none';
-          return;
-        }
-        await renderHistoryMenu();
-        historyMenu.style.display = 'block';
+      // ui/menu.ts owns the dropdown now. The hand-rolled version added a
+      // document click listener per open and only removed it via a teardown that
+      // had to remember to — attachDismiss() removes both listeners on every
+      // exit path, which is the bug it was written for.
+      const historyBtn = button({ label: 'History', iconName: 'history', small: true, doc });
+      historyBtn.setAttribute('aria-haspopup', 'menu');
+      historyBtn.addEventListener('click', () => {
+        void (async () => {
+          const entries = await readSoapHistory();
+          openMenu({
+            anchor: historyBtn,
+            label: 'SOAP request history',
+            doc,
+            win,
+            items: entries.length
+              ? entries.map((entry) => ({
+                  label: `${entry.wsdl}  ${entry.operation}`,
+                  iconName: 'api',
+                  onSelect: () => {
+                    wsdlSelect.value = entry.wsdl;
+                    syncOperations();
+                    opSelect.value = 'custom';
+                    opInput.value = entry.operation;
+                    opInput.style.display = 'block';
+                    payloadTextarea.value = entry.payload;
+                  },
+                }))
+              : [{ label: 'No requests yet.', iconName: 'history', onSelect: () => {} }],
+          });
+        })();
       });
-      docClickHandler = (e) => {
-        if (historyMenu && !histWrap.contains(e.target as Node)) {
-          historyMenu.style.display = 'none';
-        }
-      };
-      doc.addEventListener('click', docClickHandler);
-      const clearBtn = doc.createElement('button');
-      clearBtn.textContent = 'Clear history';
-      clearBtn.style.cssText = 'padding: 6px 10px; border: 1px solid var(--sfdt-color-border); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; font-size: 12px;';
-      clearBtn.addEventListener('click', async () => {
-        await clearSoapHistory();
-        showToast('History cleared', { doc, kind: 'success' });
+      const clearBtn = button({
+        label: 'Clear history',
+        iconName: 'trash',
+        variant: 'danger',
+        small: true,
+        doc,
+        onClick: () => {
+          void (async () => {
+            await clearSoapHistory();
+            showToast('History cleared', { doc, kind: 'success' });
+          })();
+        },
       });
-      footer.appendChild(histWrap);
+      footer.appendChild(historyBtn);
       footer.appendChild(clearBtn);
     }
-    body.appendChild(footer);
+    main.appendChild(footer);
 
     view = presentView({
-      title: '💬 SOAP API Explorer',
+      title: 'SOAP API Explorer',
+      iconName: 'soap-explore',
       body,
       doc,
       width: '860px',
@@ -291,40 +293,6 @@ export function createSoapExploreFeature(options: {
     function clearError(): void {
       errorPanel.textContent = '';
       errorPanel.style.display = 'none';
-    }
-
-    async function renderHistoryMenu(): Promise<void> {
-      if (!historyMenu) return;
-      historyMenu.replaceChildren();
-      const entries = await readSoapHistory();
-      if (entries.length === 0) {
-        const empty = doc.createElement('div');
-        empty.style.cssText = 'padding: 10px; color: var(--sfdt-color-text-icon); font-size: 12px;';
-        empty.textContent = 'No requests yet.';
-        historyMenu.appendChild(empty);
-        return;
-      }
-      entries.forEach(entry => {
-        const item = doc.createElement('div');
-        item.style.cssText = 'padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--sfdt-color-bg); font-family: monospace; font-size: 11px;';
-        const badge = doc.createElement('span');
-        badge.textContent = entry.wsdl;
-        badge.style.cssText = 'display: inline-block; min-width: 60px; padding: 1px 4px; border-radius: 3px; background: var(--sfdt-color-brand-deep); color: var(--sfdt-color-on-accent); font-weight: 600; margin-right: 6px; text-align: center;';
-        const text = doc.createElement('span');
-        text.textContent = entry.operation;
-        item.appendChild(badge);
-        item.appendChild(text);
-        item.addEventListener('click', () => {
-          wsdlSelect.value = entry.wsdl;
-          syncOperations();
-          opSelect.value = 'custom';
-          opInput.value = entry.operation;
-          opInput.style.display = 'block';
-          payloadTextarea.value = entry.payload;
-          if (historyMenu) historyMenu.style.display = 'none';
-        });
-        historyMenu.appendChild(item);
-      });
     }
 
     async function executeRequest(): Promise<void> {
@@ -388,7 +356,7 @@ export function createSoapExploreFeature(options: {
 
     copyBtn.addEventListener('click', async () => {
       try {
-        await win.navigator.clipboard.writeText(JSON.stringify(lastResponse, null, 2));
+        await copyToClipboard(JSON.stringify(lastResponse, null, 2), { doc, win, label: 'response' });
         showToast('Response copied', { doc, kind: 'success' });
       } catch {
         showToast('Could not copy response', { doc, kind: 'error' });

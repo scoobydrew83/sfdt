@@ -3,22 +3,17 @@ import type { Feature } from '../lib/feature-registry.js';
 import type { OrgEntry } from '../lib/org-list.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { storageGet, storageSet } from '../lib/storage.js';
 
 const LAST_ORG_STORAGE_KEY = 'sfdt.workspace.lastOrg';
 
 export async function readLastOrg(): Promise<string | null> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(LAST_ORG_STORAGE_KEY, (result) => {
-      const raw = result?.[LAST_ORG_STORAGE_KEY];
-      resolve(typeof raw === 'string' && raw ? raw : null);
-    });
-  });
+  const raw = await storageGet<string>(LAST_ORG_STORAGE_KEY);
+  return typeof raw === 'string' && raw ? raw : null;
 }
 
 export async function persistLastOrg(host: string): Promise<void> {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [LAST_ORG_STORAGE_KEY]: host }, () => resolve());
-  });
+  await storageSet(LAST_ORG_STORAGE_KEY, host);
 }
 
 // Ask the background service worker which orgs the user is logged in to.
@@ -82,15 +77,15 @@ export function createOrgSwitcherFeature(options: OrgSwitcherOptions = {}): Feat
     close();
 
     const list = doc.createElement('div');
-    list.style.cssText =
-      'padding: 8px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 4px;';
+    list.classList.add('sfdt-view-main');
     const loading = doc.createElement('div');
-    loading.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-weak); font-size: 12px;';
+    loading.classList.add('sfdt-prose', 'sfdt-muted');
     loading.textContent = 'Finding logged-in orgs…';
     list.appendChild(loading);
 
     view = presentView({
-      title: '🏢 Switch Org',
+      title: 'Switch Org',
+      iconName: 'building',
       body: list,
       doc,
       width: '480px',
@@ -103,19 +98,22 @@ export function createOrgSwitcherFeature(options: OrgSwitcherOptions = {}): Feat
     while (list.firstChild) list.removeChild(list.firstChild);
     if (orgs.length === 0) {
       const empty = doc.createElement('div');
-      empty.style.cssText = 'padding: 12px; color: var(--sfdt-color-text-icon); font-size: 12px;';
+      empty.classList.add('sfdt-prose', 'sfdt-muted');
       empty.textContent =
         'No logged-in Salesforce orgs found. Log in to an org in another tab, then retry.';
       list.appendChild(empty);
       return;
     }
     for (const org of orgs) {
+      // A list row, not chrome: '.sfdt-nav-item' is the shared full-width,
+      // left-aligned, hoverable row — the same one the popup and sidebar use.
       const item = doc.createElement('button');
-      item.style.cssText =
-        'text-align: left; padding: 10px 12px; border: 1px solid var(--sfdt-color-surface-shade-3); background: var(--sfdt-color-surface); border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; gap: 2px;';
+      item.type = 'button';
+      item.className = 'sfdt-nav-item';
+      item.style.cssText = 'flex-direction: column; align-items: flex-start; gap: 2px;';
       const name = doc.createElement('span');
       name.textContent = org.displayName;
-      name.style.cssText = 'font-weight: 600; font-size: 13px; color: var(--sfdt-color-text-strong);';
+      name.classList.add('sfdt-subhead');
       const host = doc.createElement('span');
       host.textContent = org.host;
       host.style.cssText = 'font-size: 11px; color: var(--sfdt-color-text-icon); font-family: ui-monospace, monospace;';
