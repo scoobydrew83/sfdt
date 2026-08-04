@@ -32,4 +32,10 @@ jobs:
       {{authSteps}}
       {{qualitySteps}}
       - name: Smart delta validation
-        run: npx --yes @sfdt/cli@latest deploy --smart --org {{org}} --delta-base "origin/${{ github.event.pull_request.base.ref }}" --dry-run
+        # base.ref goes through `env:` rather than straight into the `run:` text.
+        # Actions substitutes ${{ }} into the script *before* bash parses it, and
+        # a git ref may contain $, backticks, (, ), ; and | — so a branch named
+        # `main$(...)` would execute. As an env var it is only ever data.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: npx --yes @sfdt/cli@latest deploy --smart --org {{org}} --delta-base "origin/$BASE_REF" --dry-run
