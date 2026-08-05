@@ -62,6 +62,7 @@ import { createCommandPaletteFeature } from '../features/command-palette.js';
 // --- Background/options-only feature (entrypoints/background.ts + options) ---
 import { createContextMenuInspectFeature } from '../features/context-menu-inspect.js';
 import { createSoqlBulkDeleteFeature } from '../features/soql-bulk-delete.js';
+import { createSoqlNlGenerateFeature } from '../features/soql-nl-generate.js';
 // --- Workspace-only factories (entrypoints/app/main.ts) ---
 import { createApexTestRunnerFeature } from '../features/apex-test-runner.js';
 import { BRIDGE_REQUIRED } from '../lib/feature-defaults.js';
@@ -142,6 +143,10 @@ function instantiateAllFeatures(): Feature[] {
     // the SOQL runner's destructive result-toolbar action. Ships OFF — see the
     // SHIPS_OFF_BY_DESIGN allowlist below.
     createSoqlBulkDeleteFeature(),
+    // soql-nl-generate (C-P4-5): metadata-only kill switch + options toggle for
+    // the SOQL runner's "Generate query" prompt panel. Ships OFF — see the
+    // SHIPS_OFF_BY_DESIGN allowlist below.
+    createSoqlNlGenerateFeature(),
     // context-menu-inspect (P1-8): a worker-backed feature — its "Inspect this
     // record" menu lives in entrypoints/background.ts and its toggle in the
     // options page; it injects no content-script UI (no icon, no side button).
@@ -241,6 +246,12 @@ const SHIPS_OFF_BY_DESIGN: readonly string[] = [
   // other feature in the extension either reads, or writes something the user
   // typed into it. Opt-in is the whole point — see features/soql-bulk-delete.ts.
   'soql-bulk-delete',
+  // C-P4-5. It moves data OUT of the browser: the user's description plus the
+  // selected objects' field metadata go through the bridge to whatever provider
+  // the CLI is configured with. Nothing destructive happens, but an egress the
+  // user did not ask for is exactly the "did something you did not ask for"
+  // this list is about — see features/soql-nl-generate.ts.
+  'soql-nl-generate',
 ];
 
 describe('enabledByDefault is authoritative, and only the allowlisted features ship off', () => {

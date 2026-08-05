@@ -569,7 +569,9 @@ export function createSoqlBulkDeleteFeature(): Feature {
         CONTEXTS.FLOW_BUILDER,
         CONTEXTS.FLOW_TRIGGER_EXPLORER,
       ],
-      // Ships OFF. The one feature in the extension that does.
+      // Ships OFF. One of two features that do — the other is C-P4-5's
+      // soql-nl-generate; both are on SHIPS_OFF_BY_DESIGN in
+      // test/feature-manifests.test.ts, which is the list of record.
       enabledByDefault: false,
     },
   };

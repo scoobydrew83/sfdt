@@ -26,6 +26,17 @@ import { createCodeEditor, SOQL_KEYWORDS } from '../lib/code-editor.js';
 import { isRecordId } from '../lib/salesforce-id.js';
 import { triggerDownload, triggerDownloadBlob } from '../lib/download.js';
 import { confirmDialog } from '../ui/confirm-dialog.js';
+import { createBridgeClient, LONG_RUNNING_TIMEOUT_MS, getBridgeData } from '../lib/sfdt-bridge.js';
+import type { SfdtRequest, SfdtResponse } from '@sfdt/flow-core/bridge-contract';
+import {
+  SOQL_NL_GENERATE_ID,
+  PROMPT_DISCLOSURE,
+  UNAVAILABLE_GUIDANCE,
+  generateSoql,
+  parseObjectList,
+  recordValueLeak,
+  type AskAiResult,
+} from './soql-nl-generate.js';
 import {
   SOQL_BULK_DELETE_ID,
   REJECTION_MESSAGES,
@@ -607,10 +618,94 @@ async function explainQuery(
 const EXPLAIN_TITLE =
   'Show the query plan (cost, cardinality, leading operation) without running the query';
 
+// --- C-P4-5: the AI bridge seam ------------------------------------------
+//
+// Deliberately the SAME plumbing features/ai-assistant.ts uses — a
+// `createBridgeClient(...)` from lib/sfdt-bridge.ts, called with the contract's
+// existing `{ kind: 'ai', prompt }`. AC-1's hard constraint is that the
+// extension holds no LLM endpoint of its own, and the way to keep that true is
+// to add no transport: the bridge already had one, and the CLI on the other end
+// already owns the provider, the API key, and the redaction/anti-injection
+// preamble in `src/lib/ai.js`.
+
+const NL_GENERATE_TITLE = 'Describe a query in plain English and drop the generated SOQL into the editor';
+
+type BridgeReq = Omit<SfdtRequest, 'requestId'>;
+
+interface BridgeLike {
+  call<R extends BridgeReq>(request: R, options?: { timeoutMs?: number }): Promise<SfdtResponse>;
+}
+
+function defaultBridgeFactory(): () => Promise<BridgeLike> {
+  return async () => {
+    const settings = await loadSettings();
+    return createBridgeClient({
+      token: settings.bridge.token,
+      preferredTransport: settings.bridge.preferredTransport,
+      localhostPort: settings.bridge.localhostPort,
+      connectNativeImpl: chrome.runtime?.connectNative?.bind(chrome.runtime),
+    });
+  };
+}
+
+/**
+ * Which bridge failures get AC-3's "here is how to turn it on" copy rather than
+ * a bare error. `BRIDGE_OFFLINE` is "sfdt ui isn't running", `BRIDGE_UNAUTHORIZED`
+ * / `BRIDGE_FORBIDDEN` are "you haven't paired", and `REQUEST_INVALID` is what
+ * the CLI's own `ai` route answers when the project has `"features.ai": false`
+ * or no provider configured (`src/lib/bridge/routes.js`) — the three shapes of
+ * "not set up yet", all of which are fixed by following the same steps.
+ */
+const SETUP_CODES: ReadonlySet<string> = new Set([
+  'BRIDGE_OFFLINE',
+  'BRIDGE_UNAUTHORIZED',
+  'BRIDGE_FORBIDDEN',
+  'REQUEST_INVALID',
+]);
+
+/** Ask the bridge to run a prompt. The only egress this feature has. */
+export async function askAiViaBridge(
+  bridgeFactory: () => Promise<BridgeLike>,
+  prompt: string,
+): Promise<AskAiResult> {
+  let response: SfdtResponse;
+  try {
+    const bridge = await bridgeFactory();
+    response = await bridge.call({ kind: 'ai', prompt }, { timeoutMs: LONG_RUNNING_TIMEOUT_MS });
+  } catch (err) {
+    // A transport that threw is the same user problem as one that answered
+    // "offline" — keep the throwable so ui/panels.ts renders its structure.
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : String(err),
+      unavailable: true,
+      error: err,
+    };
+  }
+  if (response.ok) {
+    const data = getBridgeData<{ response?: string; provider?: string }>(response);
+    return { ok: true, response: data.response ?? '', provider: data.provider };
+  }
+  const code = (response as { code?: string }).code ?? '';
+  return {
+    ok: false,
+    message: response.error,
+    unavailable: SETUP_CODES.has(code),
+    error: response.error,
+  };
+}
+
 export interface SoqlRunnerOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
+  /**
+   * Bridge client factory for the NL→SOQL generator. Injected the same way
+   * features/ai-assistant.ts injects it, so a test drives the AI path without a
+   * running CLI; absent, the real localhost/native client is built lazily on
+   * the first Generate click.
+   */
+  bridgeFactory?: () => Promise<BridgeLike>;
   /**
    * Open the Inspect Record tool for a record Id — backs the row menu's "View
    * all fields". Injected rather than imported so this feature keeps no hard
@@ -646,6 +741,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
+  const bridgeFactory = options.bridgeFactory ?? defaultBridgeFactory();
 
   let view: ViewHandle | null = null;
   // The live query textarea while the runner is open (null once closed), plus a
@@ -690,6 +786,30 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     // same lifetime as `historyEnabled`: toggling it in Settings takes effect
     // the next time the runner is opened.
     const bulkDeleteEnabled = isFeatureEnabled(settings, SOQL_BULK_DELETE_ID);
+    // C-P4-5, and the same posture as the line above it. There is no
+    // `features.ai` key in this codebase — `settings.features` is keyed by
+    // feature id — so the AI gate for this control is its own registry id,
+    // exactly as C-P4-2 did. It ships `enabledByDefault: false`, so with no
+    // stored preference this is FALSE and neither the toolbar button nor the
+    // prompt panel is constructed. Not built-then-hidden: a hidden control is
+    // one `style.display` away from being usable, and this one moves org
+    // schema out of the browser. (The CLI's own `features.ai` flag lives in the
+    // project's .sfdt/config.json and is enforced bridge-side; when it is off
+    // the bridge answers REQUEST_INVALID and the panel renders AC-3's
+    // how-to-enable copy.)
+    const nlGenerateEnabled = isFeatureEnabled(settings, SOQL_NL_GENERATE_ID);
+    // Assigned in the toolbar / panel blocks below when the feature is on; they
+    // stay null otherwise, and every reader is null-guarded.
+    let nlGenerateBtn: HTMLButtonElement | null = null;
+    let nlPanel: HTMLElement | null = null;
+    let nlRequestInput: HTMLTextAreaElement | null = null;
+    let nlObjectsInput: HTMLInputElement | null = null;
+    let nlRunBtn: HTMLButtonElement | null = null;
+    let nlStatus: HTMLElement | null = null;
+    let nlErrorPanel: HTMLElement | null = null;
+    let nlPanelOpen = false;
+    let nlBusy = false;
+    let nlEscHandler: ((e: KeyboardEvent) => void) | null = null;
 
     const body = doc.createElement('div');
     body.className = 'sfdt-view-body';
@@ -788,6 +908,21 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     modeGroup.append(restBtn, toolingBtn);
     bar.appendChild(modeGroup);
 
+    // C-P4-5. Built ONLY when the feature is on (see nlGenerateEnabled above).
+    if (nlGenerateEnabled) {
+      nlGenerateBtn = button({
+        label: 'Generate query',
+        iconName: 'sparkle',
+        title: NL_GENERATE_TITLE,
+        small: true,
+        doc,
+        onClick: () => toggleNlPanel(),
+      });
+      nlGenerateBtn.setAttribute('aria-haspopup', 'true');
+      nlGenerateBtn.setAttribute('aria-expanded', 'false');
+      bar.appendChild(nlGenerateBtn);
+    }
+
     // Explicit-choice latch. `langExplicit` records that the user *chose* the
     // current language (clicked the toggle, or restored a stored entry);
     // `langChoiceBaseline` is what the editor text detected as at that moment.
@@ -822,6 +957,18 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       paintModeToggle();
       explainBtn.disabled = sosl;
       explainBtn.title = sosl ? 'Query plans are SOQL-only' : EXPLAIN_TITLE;
+      // The generator writes SELECT … FROM …; there is no SOSL mode for it, so
+      // the control goes genuinely unavailable rather than silently producing
+      // the wrong language (same treatment as Explain and the transport
+      // toggle). Closing an open panel first, so a disabled trigger never ends
+      // up as the focus-restore target.
+      if (nlGenerateBtn) {
+        if (sosl) closeNlPanel({ restoreFocus: false });
+        nlGenerateBtn.disabled = sosl;
+        nlGenerateBtn.title = sosl
+          ? 'Query generation is SOQL-only — switch to SOQL to use it.'
+          : NL_GENERATE_TITLE;
+      }
       autocompleteBox.style.display = sosl ? 'none' : 'flex';
       void runAutocomplete();
     }
@@ -976,6 +1123,376 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     autocompleteBox.appendChild(autocompleteResults);
 
     main.appendChild(autocompleteBox);
+
+    // ---- C-P4-5: "Generate query" prompt panel ---------------------------
+    //
+    // A disclosure inside the runner rather than a second modal on top of it:
+    // the whole point of the feature is that you read the generated query in
+    // the editor, and a dialog that covers the editor is the wrong shape for
+    // that. It sits ABOVE the editor so the flow reads top-to-bottom —
+    // describe, then review.
+    //
+    // Nothing in here runs a query. The only button that can is `Run`, which is
+    // where it has always been, and which the user presses.
+    if (nlGenerateEnabled) {
+      const panelId = `sfdt-nl-panel-${Math.random().toString(36).slice(2)}`;
+      const requestId = `${panelId}-request`;
+      const objectsId = `${panelId}-objects`;
+
+      const panel = doc.createElement('div');
+      panel.id = panelId;
+      panel.className = 'sfdt-frame sfdt-stack sfdt-snug';
+      // Padding/margin only — the border, radius and stack layout are the
+      // shared classes'. No colour is set here, so both themes come free.
+      panel.style.cssText = 'display: none; padding: 12px; margin-bottom: 8px;';
+      panel.setAttribute('role', 'group');
+      panel.setAttribute('aria-label', 'Generate SOQL from a description');
+      nlGenerateBtn?.setAttribute('aria-controls', panelId);
+
+      const requestLabel = doc.createElement('label');
+      requestLabel.className = 'sfdt-label';
+      requestLabel.htmlFor = requestId;
+      requestLabel.textContent = 'Describe the query you want';
+
+      const requestBox = doc.createElement('textarea');
+      requestBox.id = requestId;
+      requestBox.className = 'sfdt-field sfdt-tall';
+      requestBox.placeholder =
+        'Open opportunities over £50k closing this quarter, with the account name';
+      requestBox.setAttribute('aria-label', 'Describe the query you want');
+      requestBox.setAttribute('aria-describedby', `${panelId}-disclosure`);
+
+      const objectsRow = doc.createElement('div');
+      objectsRow.classList.add('sfdt-row', 'sfdt-snug');
+      const objectsLabel = doc.createElement('label');
+      objectsLabel.className = 'sfdt-label';
+      objectsLabel.htmlFor = objectsId;
+      objectsLabel.textContent = 'Objects';
+      const objectsBox = doc.createElement('input');
+      objectsBox.id = objectsId;
+      objectsBox.type = 'text';
+      objectsBox.className = 'sfdt-field sfdt-grow';
+      objectsBox.placeholder = 'Account, Contact — leave blank to infer from the description';
+      objectsBox.setAttribute(
+        'aria-label',
+        'Salesforce objects whose schema to send (optional — inferred from the description when blank)',
+      );
+      objectsRow.append(objectsLabel, objectsBox);
+
+      const actionsRow = doc.createElement('div');
+      actionsRow.classList.add('sfdt-row', 'sfdt-snug');
+      const generateRunBtn = button({
+        label: 'Generate',
+        ariaLabel: 'Generate SOQL from this description',
+        iconName: 'sparkle',
+        variant: 'primary',
+        small: true,
+        doc,
+        onClick: () => void runNlGenerate(),
+      });
+      const closeBtn = button({
+        label: 'Close',
+        ariaLabel: 'Close the query generator',
+        iconName: 'close',
+        small: true,
+        doc,
+        onClick: () => closeNlPanel({ restoreFocus: true }),
+      });
+      const generateStatus = doc.createElement('span');
+      generateStatus.className = 'sfdt-muted';
+      generateStatus.setAttribute('role', 'status');
+      generateStatus.setAttribute('aria-live', 'polite');
+      actionsRow.append(generateRunBtn, closeBtn, generateStatus);
+
+      // Errors go through the shared funnel (C-FIX-4). This file never builds
+      // the `.sfdt-console`+`.sfdt-error` pair itself.
+      const generateError = renderSfError(null, { doc });
+      generateError.style.display = 'none';
+
+      const disclosure = doc.createElement('div');
+      disclosure.id = `${panelId}-disclosure`;
+      disclosure.classList.add('sfdt-note', 'sfdt-msg');
+      disclosure.textContent = PROMPT_DISCLOSURE;
+
+      panel.append(requestLabel, requestBox, objectsRow, actionsRow, generateError, disclosure);
+      main.insertBefore(panel, editor.root);
+
+      nlPanel = panel;
+      nlRequestInput = requestBox;
+      nlObjectsInput = objectsBox;
+      nlRunBtn = generateRunBtn;
+      nlStatus = generateStatus;
+      nlErrorPanel = generateError;
+
+      // Enter submits from the single-line Objects box; the description box
+      // keeps Enter for newlines and uses Ctrl/Cmd+Enter, matching the editor.
+      objectsBox.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          void runNlGenerate();
+        }
+      });
+      requestBox.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          void runNlGenerate();
+        }
+      });
+    }
+
+    /** Clear the generator's own error block. */
+    function clearNlError(): void {
+      if (!nlErrorPanel) return;
+      clearSfError(nlErrorPanel);
+      nlErrorPanel.style.display = 'none';
+    }
+
+    /**
+     * Show a failure in the generator panel. Takes `unknown` and hands it
+     * straight to the shared funnel, which is what keeps a structured
+     * Salesforce/bridge error's guidance lines intact — flattening it to
+     * `err.message` here would discard exactly the part AC-3 needs.
+     */
+    function showNlError(error: unknown, guidance?: string): void {
+      if (!nlErrorPanel) return;
+      setSfError(nlErrorPanel, error, { doc, guidance });
+      nlErrorPanel.style.display = 'block';
+    }
+
+    function closeNlPanel(opts: { restoreFocus?: boolean } = {}): void {
+      if (!nlPanel || !nlPanelOpen) return;
+      nlPanelOpen = false;
+      nlPanel.style.display = 'none';
+      nlGenerateBtn?.setAttribute('aria-expanded', 'false');
+      if (nlEscHandler) {
+        doc.removeEventListener('keydown', nlEscHandler, true);
+        nlEscHandler = null;
+      }
+      // Only ever restore to the trigger, and only when it can actually take
+      // focus: `.focus()` on a disabled element is a specified no-op, which is
+      // how a keyboard user gets stranded on <body>.
+      if (opts.restoreFocus && nlGenerateBtn && !nlGenerateBtn.disabled) nlGenerateBtn.focus();
+    }
+
+    function openNlPanel(): void {
+      if (!nlPanel || !nlGenerateBtn || nlGenerateBtn.disabled || nlPanelOpen) return;
+      nlPanelOpen = true;
+      nlPanel.style.display = 'flex';
+      nlGenerateBtn.setAttribute('aria-expanded', 'true');
+      nlEscHandler = (e: KeyboardEvent): void => {
+        if (e.key !== 'Escape' || !nlPanelOpen || !nlPanel) return;
+        // Escape belongs to the innermost thing the user is IN. With focus in
+        // the editor it must still close the runner, as it always has — so this
+        // only claims the key when focus is inside the panel. composedPath()
+        // rather than e.target: inside the closed shadow root the target is
+        // retargeted to the host (CONVENTIONS.md item 13).
+        const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+        const inside =
+          path.includes(nlPanel) ||
+          (doc.activeElement !== null && nlPanel.contains(doc.activeElement));
+        if (!inside) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        closeNlPanel({ restoreFocus: true });
+      };
+      // Capture phase, and removed on close — CONVENTIONS.md item 1.
+      doc.addEventListener('keydown', nlEscHandler, true);
+      nlRequestInput?.focus();
+    }
+
+    function toggleNlPanel(): void {
+      if (nlPanelOpen) closeNlPanel({ restoreFocus: true });
+      else openNlPanel();
+    }
+
+    /** Every row currently on screen — SOQL rows or every SOSL group's rows. */
+    function onScreenRows(): Array<Record<string, unknown>> {
+      return records.length > 0 ? records : groups.flatMap((g) => g.records);
+    }
+
+    /**
+     * Turn the shared describe cache's synchronous, status-returning read into
+     * something awaitable.
+     *
+     * The cache is the right source — the autocomplete has usually warmed it
+     * already, so a Generate on an object you have been querying costs no round
+     * trip — but its API answers "loading" now and notifies later, which a
+     * one-shot assembly cannot use directly. `read` is called once up front (to
+     * kick the fetch off and to return immediately on a warm cache) and again
+     * on every notification until it settles.
+     */
+    function awaitDescribe<T>(read: () => T | undefined): Promise<T | null> {
+      const first = read();
+      if (first !== undefined) return Promise.resolve(first);
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = (value: T | null): void => {
+          if (settled) return;
+          settled = true;
+          unsubscribe();
+          clearTimeout(timer);
+          resolve(value);
+        };
+        const unsubscribe = describeCache.subscribe(() => {
+          const next = read();
+          if (next !== undefined) finish(next);
+        });
+        // A describe that never settles must not leave Generate spinning
+        // forever; treat it as "could not describe", which the caller reports.
+        const timer = setTimeout(() => finish(null), 20000);
+      });
+    }
+
+    async function describeForPrompt(name: string): Promise<SObjectDescribe | null> {
+      return awaitDescribe<SObjectDescribe | null>(() => {
+        const entry = describeCache.getSObject(effectiveMode(), name) as {
+          status: 'loading' | 'ready' | 'error';
+          data?: SObjectDescribe;
+        };
+        if (entry.status === 'loading') return undefined;
+        return entry.status === 'ready' ? (entry.data ?? null) : null;
+      });
+    }
+
+    /** The org's sObject API names, for object inference. */
+    async function knownObjectNames(): Promise<readonly string[]> {
+      const names = await awaitDescribe<string[]>(() => {
+        const global = describeCache.getGlobal(effectiveMode()) as {
+          status: 'loading' | 'ready' | 'error';
+          data?: { sobjects?: Array<{ name?: string }> };
+        };
+        if (global.status === 'loading') return undefined;
+        if (global.status !== 'ready') return [];
+        return (global.data?.sobjects ?? [])
+          .map((s) => s?.name)
+          .filter((n): n is string => typeof n === 'string' && n.length > 0);
+      });
+      return names ?? [];
+    }
+
+    /**
+     * The Generate click. Everything it can do on success is in the last five
+     * lines of the try block: put the text in the editor, resync the language
+     * toggle and the autocomplete, and tell the user to look at it. It does not
+     * call execute(), and nothing it calls can.
+     */
+    async function runNlGenerate(): Promise<void> {
+      if (!nlRunBtn || !nlRequestInput || nlBusy) return;
+      if (nlGenerateBtn?.disabled) return;
+      nlBusy = true;
+      // The trigger that opened the panel is NOT disabled — only this in-panel
+      // button is, and nothing restores focus to it while it is disabled.
+      nlRunBtn.disabled = true;
+      setLabel(nlRunBtn, 'Generating…');
+      clearNlError();
+      if (nlStatus) nlStatus.textContent = 'Reading schema…';
+      const request = nlRequestInput.value;
+      try {
+        const outcome = await generateSoql(
+          { request, objects: parseObjectList(nlObjectsInput?.value) },
+          {
+            describeObject: describeForPrompt,
+            knownObjects: knownObjectNames,
+            // AC-4's backstop, wired in as a gate the orchestrator must clear
+            // before it may send anything. The records live here, in the UI —
+            // the prompt assembler never receives them.
+            inspectPrompt: (prompt, requestText, context) => {
+              const leak = recordValueLeak(prompt, requestText, onScreenRows(), {
+                ignore: [...context.objects, ...context.fieldNames],
+              });
+              if (leak === null) return null;
+              return (
+                'Nothing was sent. A value from the results table appeared in the assembled ' +
+                'prompt, and the prompt is only allowed to carry schema. Please report this.'
+              );
+            },
+            askAi: (prompt) => askAiViaBridge(bridgeFactory, prompt),
+          },
+        );
+
+        if (nlStatus) nlStatus.textContent = '';
+        switch (outcome.status) {
+          case 'no-request':
+            showNlError('Describe the query you want first.');
+            nlRequestInput.focus();
+            return;
+          case 'no-objects':
+            showNlError(
+              'Could not tell which object you mean.',
+              'Type the object API names into the Objects box — for example "Opportunity, Account".',
+            );
+            nlObjectsInput?.focus();
+            return;
+          case 'no-schema':
+            showNlError(
+              `Could not describe ${outcome.objects.join(', ')}.`,
+              'Check the API names and that your user can see those objects.',
+            );
+            return;
+          case 'blocked':
+            showNlError(outcome.message);
+            return;
+          case 'unavailable':
+            showNlError(outcome.error ?? outcome.message, UNAVAILABLE_GUIDANCE);
+            return;
+          case 'failed':
+            showNlError(outcome.error ?? outcome.message);
+            return;
+          case 'not-soql':
+            showNlError(
+              'The assistant did not return a SOQL query.',
+              'Try naming the object and the fields you want in the description.',
+            );
+            return;
+          case 'invalid':
+            // Reported, not pasted: an unusable answer must not overwrite the
+            // draft the user already had in the editor.
+            showNlError(
+              `The generated query did not pass the local SOQL checks:\n${outcome.errors.join('\n')}`,
+              'Rephrase the description, or copy the query out of the description box and fix it by hand.',
+            );
+            return;
+          case 'generated':
+            break;
+        }
+
+        // --- The whole success path. Note what is absent: execute(). ---
+        editor.setValue(outcome.soql);
+        syncLangFromText();
+        void runAutocomplete();
+        closeNlPanel();
+        // Focus goes to the EDITOR, not back to the trigger: the next thing the
+        // user has to do is read what arrived.
+        textarea.focus();
+        textarea.setSelectionRange(outcome.soql.length, outcome.soql.length);
+        status.textContent = outcome.provider
+          ? `Generated by ${outcome.provider} — review it, then Run.`
+          : 'Generated — review it, then Run.';
+        showToast('Query generated — review it, then Run', { doc, kind: 'success' });
+        void recordActivity({
+          featureId: SOQL_NL_GENERATE_ID,
+          action: 'Generate SOQL',
+          // The objects, never the user's free text: the activity log is a
+          // stored, human-readable list and the description is the one field
+          // here that a user might type something personal into.
+          resource: outcome.objects.join(', '),
+          status: 'success',
+        });
+      } catch (err) {
+        // generateSoql() returns outcomes rather than throwing, so this covers
+        // the unexpected only — but an AI panel that swallows a crash silently
+        // is worse than one that shows it.
+        if (nlStatus) nlStatus.textContent = '';
+        showNlError(err);
+      } finally {
+        nlBusy = false;
+        if (nlRunBtn) {
+          nlRunBtn.disabled = false;
+          setLabel(nlRunBtn, 'Generate');
+        }
+      }
+    }
 
     const runRow = doc.createElement('div');
     runRow.classList.add('sfdt-row', 'sfdt-snug');
@@ -1469,6 +1986,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         // line and the failure report both live in a view that no longer
         // exists, so continuing would destroy rows with nowhere to report it.
         abortBulkDelete();
+        // Drops the generator panel's document-level Escape listener. Without
+        // this it outlives the view and swallows the next surface's Escape.
+        closeNlPanel();
       },
     });
 
