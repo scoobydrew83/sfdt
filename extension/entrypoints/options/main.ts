@@ -40,6 +40,7 @@ import { createDebugLogViewerFeature } from '../../features/debug-log-viewer.js'
 import { createSavedSoqlFeature } from '../../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../../features/org-switcher.js';
 import { createContextMenuInspectFeature } from '../../features/context-menu-inspect.js';
+import { createSoqlBulkDeleteFeature } from '../../features/soql-bulk-delete.js';
 import { BRIDGE_REQUIRED } from '../../lib/feature-defaults.js';
 
 
@@ -235,6 +236,10 @@ async function render(): Promise<void> {
   registry.register(createSavedSoqlFeature());
   registry.register(createOrgSwitcherFeature());
   registry.register(createContextMenuInspectFeature());
+  // C-P4-2. Metadata-only and OFF by default, so its row on this page carries
+  // the "Off by default" pill and is the only way the SOQL runner's Delete
+  // rows control ever appears.
+  registry.register(createSoqlBulkDeleteFeature());
 
   const settings = await loadSettings();
   while (root.firstChild) root.removeChild(root.firstChild);

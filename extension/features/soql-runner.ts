@@ -13,7 +13,7 @@ import {
   type FieldDescribe,
   type SObjectDescribe,
 } from '../lib/describe-cache.js';
-import { loadSettings, registerSettingsShape } from '../lib/settings.js';
+import { isFeatureEnabled, loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { recordActivity } from '../lib/activity-log.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
@@ -22,6 +22,26 @@ import { button, setLabel, toolbar } from '../lib/ui-controls.js';
 import { createHistory } from '../lib/history.js';
 import { copyToClipboard } from '../ui/clipboard.js';
 import { createCodeEditor, SOQL_KEYWORDS } from '../lib/code-editor.js';
+import { isRecordId } from '../lib/salesforce-id.js';
+import { triggerDownload, triggerDownloadBlob, exportFilename } from '../lib/download.js';
+import { confirmDialog } from '../ui/confirm-dialog.js';
+// Aliased because `open()` already has a local `errorPanel` element of its own
+// (the query-error block). This is the shared builder from ui/panels.ts, used
+// for the bulk-delete failure report so that report is not a fourth hand-rolled
+// '.sfdt-console .sfdt-error' div.
+import { errorPanel as errorBlock } from '../ui/panels.js';
+import {
+  SOQL_BULK_DELETE_ID,
+  REJECTION_MESSAGES,
+  buildDeleteEndpoint,
+  confirmPhrase,
+  describePlan,
+  formatBulkDeleteReport,
+  planBulkDelete,
+  runBulkDelete,
+  type BulkDeleteOutcome,
+  type BulkDeletePlan,
+} from './soql-bulk-delete.js';
 
 const SOQL_RUNNER_SETTINGS_SCHEMA = z.object({
   defaultApi: z.enum(['rest', 'tooling']).default('rest'),
@@ -409,20 +429,30 @@ ${safeSoql}
 `;
 }
 
-function downloadBlob(doc: Document, filename: string, blob: Blob): void {
-  const url = URL.createObjectURL(blob);
-  const a = doc.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.style.display = 'none';
-  doc.body.appendChild(a);
-  a.click();
-  doc.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-function triggerDownload(doc: Document, filename: string, text: string, mime: string): void {
-  downloadBlob(doc, filename, new Blob([text], { type: mime }));
+/**
+ * The pre-delete backup CSV (C-P4-2, AC-1).
+ *
+ * Exported so the wiring is testable on its own, and deliberately three lines:
+ * the rows go through the SAME `recordsToCsv` the Export CSV button uses (comma
+ * and quote handling included — P1-3), and the file goes out through the SAME
+ * `lib/download.ts` every other export uses. A backup written by a second,
+ * bespoke serialiser would be a backup that quotes differently from the export
+ * the user already trusts, which is the worst possible time to find that out.
+ *
+ * Throws only if the browser refuses to mint the blob URL — which is exactly
+ * what `runBulkDelete`'s backup gate treats as "no backup, delete nothing".
+ */
+export function downloadDeleteBackup(
+  doc: Document,
+  plan: BulkDeletePlan,
+  now = new Date(),
+): void {
+  triggerDownload(
+    doc,
+    exportFilename(`sfdt-delete-backup-${plan.sobject}`, 'csv', now),
+    recordsToCsv(plan.rows),
+    'text/csv',
+  );
 }
 
 /**
@@ -623,14 +653,6 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     activeTextarea = null;
   }
 
-  // Helper to check if a value is a Salesforce Record ID
-  function isRecordId(recordId: string): boolean {
-    return typeof recordId === 'string'
-      && /^[a-zA-Z0-9]{15,18}$/.test(recordId)
-      && !recordId.startsWith('000')
-      && /[0-9]/.test(recordId.slice(0, 5));
-  }
-
   async function open(): Promise<void> {
     close();
 
@@ -642,6 +664,12 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     let mode: ApiMode = config.defaultApi;
     let lang: QueryLang = 'soql';
     const historyEnabled = config.historyEnabled;
+    // C-P4-2. Its own registry feature, so this is the ordinary feature gate —
+    // and it ships `enabledByDefault: false`, so with no stored preference this
+    // is FALSE and no delete control is ever built. Read once per open(), the
+    // same lifetime as `historyEnabled`: toggling it in Settings takes effect
+    // the next time the runner is opened.
+    const bulkDeleteEnabled = isFeatureEnabled(settings, SOQL_BULK_DELETE_ID);
 
     const body = doc.createElement('div');
     body.className = 'sfdt-view-body';
@@ -962,6 +990,15 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     errorPanel.style.display = 'none';
     main.appendChild(errorPanel);
 
+    // Bulk-delete outcome (C-P4-2). Its own container rather than reusing
+    // `errorPanel`: a partial delete is not a query error, and showError()
+    // hides the results table — which is the last thing you want to lose while
+    // reading which of its rows failed to delete. Empty and hidden until a
+    // delete has actually run; the block inside is built by ui/panels.ts.
+    const deleteReport = doc.createElement('div');
+    deleteReport.style.display = 'none';
+    main.appendChild(deleteReport);
+
     // Query-plan (EXPLAIN) output panel — separate from the results table so a
     // plan and a result set don't clobber each other.
     const explainPanel = doc.createElement('div');
@@ -987,9 +1024,173 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     // it: the running export compares against this and stays silent once null'd.
     let exportController: AbortController | null = null;
 
+    // ---- Bulk delete (C-P4-2) --------------------------------------------
+    //
+    // Every gate lives in features/soql-bulk-delete.ts; this half is only the
+    // wiring — a backup that reuses recordsToCsv + lib/download.ts, a confirm
+    // that is ui/confirm-dialog.ts's typed gate, one DELETE per row through the
+    // worker proxy, and a report built by ui/panels.ts. There is deliberately
+    // no `api.apiRequest('DELETE', …)` anywhere else in this file: the only
+    // caller is the `deleteRecord` dep below, and `runBulkDelete` is the only
+    // thing that calls that.
+
+    function clearDeleteReport(): void {
+      while (deleteReport.firstChild) deleteReport.removeChild(deleteReport.firstChild);
+      deleteReport.style.display = 'none';
+    }
+
+    function showDeleteReport(text: string): void {
+      clearDeleteReport();
+      // errorPanel() carries role="alert" and '.sfdt-console' (pre-wrap), so the
+      // multi-line per-row report keeps its line breaks and is announced.
+      deleteReport.appendChild(errorBlock(text, doc));
+      deleteReport.style.display = 'block';
+    }
+
+    /**
+     * Show/label a delete button from the CURRENT rows, and answer whether it
+     * should be offered at all.
+     *
+     * The label is the AC-1 preview: `Delete 12 rows` on the button itself, so
+     * the count is on screen before anything is clicked, and again inside the
+     * typed phrase. Hidden entirely when the rows do not qualify (no Id column
+     * is the common case) rather than shown-and-disabled — a greyed Delete on a
+     * result set that can never be deleted is just noise.
+     */
+    function paintDeleteButton(
+      btn: HTMLButtonElement | null,
+      rows: ReadonlyArray<Record<string, unknown>>,
+      sobject?: string,
+    ): void {
+      if (!btn) return;
+      const planned = planBulkDelete(rows, { sobject });
+      if (!planned.ok) {
+        btn.style.display = 'none';
+        return;
+      }
+      const n = planned.plan.ids.length;
+      setLabel(btn, `Delete ${n} row${n === 1 ? '' : 's'}`);
+      btn.setAttribute('aria-label', `Delete ${describePlan(planned.plan)}`);
+      btn.title =
+        `Downloads a backup CSV of the ${n} row${n === 1 ? '' : 's'}, then asks you to type ` +
+        `"${confirmPhrase(planned.plan)}" before deleting.`;
+      btn.style.display = 'inline-block';
+    }
+
+    function reportDeleteOutcome(outcome: BulkDeleteOutcome, prevStatus: string | null): void {
+      if (outcome.status === 'ineligible') {
+        showToast(REJECTION_MESSAGES[outcome.reason], { doc, kind: 'warning' });
+        status.textContent = prevStatus;
+        return;
+      }
+      if (outcome.status === 'backup-failed') {
+        // The one failure worth a panel even though nothing happened: the user
+        // asked for a destructive thing and has to know it did NOT run.
+        showDeleteReport(`${outcome.message}\nNo records were deleted.`);
+        showToast('Backup failed — nothing was deleted.', { doc, kind: 'error' });
+        status.textContent = prevStatus;
+        return;
+      }
+      if (outcome.status === 'not-confirmed') {
+        // Cancelled at the dialog. Silent by design — the user just said no.
+        status.textContent = prevStatus;
+        return;
+      }
+      const report = formatBulkDeleteReport(outcome);
+      status.textContent =
+        `Deleted ${outcome.deleted} of ${outcome.total} · re-run the query to refresh the table`;
+      if (outcome.failures.length > 0) {
+        showDeleteReport(report);
+        showToast(`${outcome.failures.length} row(s) failed to delete`, { doc, kind: 'error' });
+      } else {
+        showToast(`Deleted ${outcome.deleted} ${outcome.sobject} record(s)`, {
+          doc,
+          kind: 'success',
+        });
+      }
+      void recordActivity({
+        featureId: SOQL_BULK_DELETE_ID,
+        action: 'Bulk delete',
+        resource: `${outcome.sobject} × ${outcome.total}`,
+        status: outcome.failures.length > 0 ? 'failed' : 'success',
+      });
+    }
+
+    async function startBulkDelete(
+      btn: HTMLButtonElement,
+      getRecords: () => ReadonlyArray<Record<string, unknown>>,
+      sobject?: string,
+    ): Promise<void> {
+      const rows = getRecords();
+      // Preview first so an ineligible set never opens a dialog at all. The
+      // authoritative check is still inside runBulkDelete — this one only
+      // decides whether it is worth starting.
+      const preview = planBulkDelete(rows, { sobject });
+      if (!preview.ok) {
+        showToast(REJECTION_MESSAGES[preview.reason], { doc, kind: 'warning' });
+        return;
+      }
+      clearDeleteReport();
+      clearError();
+      const prevStatus = status.textContent;
+      btn.disabled = true;
+      // Snapshot the transport at click time: a delete has to go to the same
+      // API the rows came from, and the toggle stays live while the dialog is up.
+      const transport = effectiveMode();
+      try {
+        const outcome = await runBulkDelete(rows, {
+          sobject,
+          // GATE: the backup. Returns true only if the download was handed to
+          // the browser without throwing; triggerDownload throws if the blob
+          // URL cannot be minted, and that becomes 'backup-failed'.
+          backup: (plan) => {
+            downloadDeleteBackup(doc, plan);
+            return true;
+          },
+          // GATE: the typed confirm. ui/confirm-dialog.ts owns the focus trap,
+          // Esc-cancels-never-confirms, focus restore, and the typed gate that
+          // keeps the Confirm button disabled until the phrase matches exactly.
+          confirm: (plan, phrase) =>
+            confirmDialog({
+              doc,
+              title: `Delete ${describePlan(plan)}?`,
+              message:
+                `This permanently deletes ${describePlan(plan)} from your org and cannot be ` +
+                `undone.\nA backup CSV of the affected rows has just been downloaded.\n\n` +
+                `Type ${phrase} to confirm.`,
+              details: previewIds(plan),
+              confirmLabel: `Delete ${describePlan(plan)}`,
+              requireTyped: phrase,
+            }),
+          deleteRecord: (id, plan) =>
+            api.apiRequest(
+              'DELETE',
+              buildDeleteEndpoint(api.apiVersion, plan.sobject, id, transport),
+            ),
+          onProgress: ({ deleted, failed, total }) => {
+            status.textContent = `Deleting… ${deleted + failed} of ${total}${
+              failed > 0 ? ` · ${failed} failed` : ''
+            }`;
+          },
+        });
+        reportDeleteOutcome(outcome, prevStatus);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    /** First few Ids for the dialog's detail list — enough to recognise, not a dump. */
+    function previewIds(plan: BulkDeletePlan): string[] {
+      const CAP = 5;
+      const shown = plan.ids.slice(0, CAP).map(String);
+      const rest = plan.ids.length - shown.length;
+      return rest > 0 ? [...shown, `…and ${rest} more`] : shown;
+    }
+
     /**
      * The shared result toolbar: Copy CSV / Export CSV / Copy JSON / Copy for
-     * Excel over a record set. ONE definition, used twice — once for the flat
+     * Excel over a record set — plus, when C-P4-2 is switched on and the rows
+     * qualify, Delete rows. ONE definition, used twice — once for the flat
      * SOQL result set in the footer, and once per SOSL object group, so
      * copy/export apply per group without a second toolbar or a second
      * serialiser (the P1-3 `recordsToCsv`/`recordsToJson`/`recordsToTsv` are
@@ -997,13 +1198,24 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
      *
      * `scope` names the record set for accessible labels and toasts ("Copy
      * Account rows as CSV") — the visible button text stays identical in both
-     * places so the toolbar reads the same wherever it appears.
+     * places so the toolbar reads the same wherever it appears. `sobject` names
+     * the object for row sets that don't carry `attributes` (the SOSL groups
+     * strip it), and is what the delete plan uses instead of guessing.
      */
     function createResultActions(opts: {
       getRecords: () => Array<Record<string, unknown>>;
       filePrefix: string;
       scope?: string;
-    }): { copyCsv: HTMLButtonElement; exportCsv: HTMLButtonElement; copyJson: HTMLButtonElement; copyExcel: HTMLButtonElement; all: HTMLButtonElement[] } {
+      sobject?: string;
+    }): {
+      copyCsv: HTMLButtonElement;
+      exportCsv: HTMLButtonElement;
+      copyJson: HTMLButtonElement;
+      copyExcel: HTMLButtonElement;
+      /** null whenever the feature is switched off — the control is never built. */
+      deleteRows: HTMLButtonElement | null;
+      all: HTMLButtonElement[];
+    } {
       const { getRecords, filePrefix, scope } = opts;
       const of = scope ? `${scope} ` : '';
       const mk = (
@@ -1027,12 +1239,37 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         copyText(recordsToJson(getRecords()), 'as JSON'));
       const copyExcel = mk('Copy for Excel', `Copy ${of}rows for Excel`, 'table', () =>
         copyText(recordsToTsv(getRecords()), 'for Excel'));
-      return { copyCsv, exportCsv, copyJson, copyExcel, all: [copyCsv, exportCsv, copyJson, copyExcel] };
+
+      // Built ONLY when the feature is enabled. Not built-then-hidden: a hidden
+      // button is one `style.display` away from being clickable, and this one
+      // deletes data. Off ⇒ the control does not exist in the DOM.
+      let deleteRows: HTMLButtonElement | null = null;
+      if (bulkDeleteEnabled) {
+        const btn: HTMLButtonElement = button({
+          label: 'Delete rows',
+          ariaLabel: `Delete ${of}rows`,
+          iconName: 'trash',
+          variant: 'danger',
+          small: true,
+          doc,
+          onClick: () => void startBulkDelete(btn, getRecords, opts.sobject),
+        });
+        deleteRows = btn;
+      }
+
+      const all = [copyCsv, exportCsv, copyJson, copyExcel];
+      if (deleteRows) all.push(deleteRows);
+      return { copyCsv, exportCsv, copyJson, copyExcel, deleteRows, all };
     }
 
     const mainActions = createResultActions({ getRecords: () => records, filePrefix: 'soql' });
-    const { copyCsv: copyCsvBtn, exportCsv: exportCsvBtn, copyJson: copyJsonBtn, copyExcel: copyExcelBtn } =
-      mainActions;
+    const {
+      copyCsv: copyCsvBtn,
+      exportCsv: exportCsvBtn,
+      copyJson: copyJsonBtn,
+      copyExcel: copyExcelBtn,
+      deleteRows: deleteRowsBtn,
+    } = mainActions;
     for (const btn of mainActions.all) btn.style.display = 'none';
 
     const footer = toolbar(doc, true);
@@ -1065,6 +1302,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     footer.appendChild(copyJsonBtn);
     footer.appendChild(copyExcelBtn);
     footer.appendChild(langGraphBtn);
+    // Last of the row-scoped actions, after every read-only one — the
+    // destructive control should never be the button next to your thumb.
+    if (deleteRowsBtn) footer.appendChild(deleteRowsBtn);
 
     if (historyEnabled) {
       const clearHistBtn = button({
@@ -1129,6 +1369,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         copyJsonBtn,
         copyExcelBtn,
         langGraphBtn,
+        ...(deleteRowsBtn ? [deleteRowsBtn] : []),
       ]) {
         btn.style.display = 'none';
       }
@@ -1276,6 +1517,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       copyJsonBtn.style.display = 'inline-block';
       copyExcelBtn.style.display = 'inline-block';
       langGraphBtn.style.display = 'inline-block';
+      // Only offered when these rows actually carry Ids (AC-1). Re-evaluated on
+      // every render, so a Load-more that adds rows re-counts the preview and a
+      // query without Id takes the button away again.
+      paintDeleteButton(deleteRowsBtn, records);
       const canPaginate =
         !!lastEnvelope && lastEnvelope.done === false && !!lastEnvelope.nextRecordsUrl;
       loadMoreBtn.style.display = canPaginate && pagesLoaded < PAGE_CAP ? 'inline-block' : 'none';
@@ -1317,8 +1562,14 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
           filePrefix: `sosl-${group.sobject.replace(/[^A-Za-z0-9_]+/g, '_')}`,
           getRecords: () => group.records,
           scope: group.sobject,
+          // SOSL rows have their `attributes` envelope stripped by
+          // groupSearchRecords, so the group's own heading is the only place
+          // the object name survives. Without this the delete plan would refuse
+          // the rows as 'unknown-object' rather than guess.
+          sobject: group.sobject,
         });
         for (const btn of groupActions.all) head.appendChild(btn);
+        paintDeleteButton(groupActions.deleteRows, group.records, group.sobject);
         section.appendChild(head);
         section.appendChild(buildRecordsTable(group.records));
         resultsWrap.appendChild(section);
@@ -1456,6 +1707,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       }
       abortExport(); // a fresh run supersedes any in-flight export
       clearError();
+      // The previous delete's report describes rows that are about to be
+      // replaced; leaving it up next to a fresh result set reads as if the new
+      // rows failed.
+      clearDeleteReport();
       setBusy(true);
       status.textContent = 'Running…';
       const t0 = Date.now();
@@ -1521,6 +1776,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       copyJsonBtn.style.display = 'none';
       copyExcelBtn.style.display = 'none';
       langGraphBtn.style.display = 'none';
+      // Same reason as the rest: a Delete bound to a result set that is no
+      // longer on screen is the worst possible stale button.
+      if (deleteRowsBtn) deleteRowsBtn.style.display = 'none';
       if (plans.length === 0) {
         const empty = doc.createElement('div');
         empty.classList.add('sfdt-prose', 'sfdt-muted');
@@ -2318,7 +2576,12 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
           return;
         }
         const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-        downloadBlob(doc, `soql-all-${stamp}.csv`, new Blob(result.parts, { type: 'text/csv' }));
+        triggerDownloadBlob(
+          doc,
+          `soql-all-${stamp}.csv`,
+          new Blob(result.parts, { type: 'text/csv' }),
+          'text/csv',
+        );
         status.textContent = `Exported ${result.rows} row${result.rows === 1 ? '' : 's'} across ${result.pages} page${result.pages === 1 ? '' : 's'}`;
         showToast(`Exported ${result.rows} rows as CSV`, { doc, kind: 'success' });
       } catch (err) {
@@ -2404,6 +2667,7 @@ export function _soqlRunnerTestApi() {
     recordsToJson,
     recordsToTsv,
     generateLangGraphNode,
+    downloadDeleteBackup,
     readSoqlHistory,
     writeSoqlHistory,
     pushSoqlHistory,
