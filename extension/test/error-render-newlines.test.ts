@@ -64,7 +64,18 @@ function rendersAnErrorValue(expression: string): boolean {
 // identifier, and why it cannot carry a multiline error; and a test below
 // asserts every entry still matches real source, so a stale exemption fails
 // loudly instead of quietly widening the hole it was cut for.
-const EXEMPT: { file: string; name: string; because: string }[] = [];
+const EXEMPT: { file: string; name: string; because: string }[] = [
+  {
+    file: 'ui/panels.ts',
+    name: 'el',
+    because:
+      "loadingPanel()'s `el.textContent = message` — a caller-supplied 'Loading …' line, never a " +
+      'thrown error; the error builder in the same file emits its parts as separate nodes and ' +
+      'assigns no textContent at all. This entry only became necessary when that builder stopped ' +
+      "reusing the name `el`: until then loadingPanel passed on the error panel's class, which is " +
+      'the same-name blind spot the guard warns about two comments up.',
+  },
+];
 
 function isExempt(relFile: string, name: string): boolean {
   return EXEMPT.some((e) => e.file === relFile && e.name === name);
@@ -114,7 +125,8 @@ const WHITE_SPACE_CLASSES: ReadonlySet<string> = (() => {
 // an element assigned from one is covered by construction — and the guard has
 // to know that, or centralising the panel makes this check MORE likely to fire.
 // Named builders only, not any call: `const p = renderThing()` says nothing.
-const PANEL_BUILDERS = /\b(?:build)?(?:errorPanel|loadingPanel|emptyPanel|ErrorPanel|LoadingPanel|EmptyPanel)\s*\(/;
+const PANEL_BUILDERS =
+  /\b(?:build)?(?:renderSfError|errorPanel|loadingPanel|emptyPanel|ErrorPanel|LoadingPanel|EmptyPanel)\s*\(/;
 
 function fromPanelBuilder(source: string, name: string): boolean {
   const pattern = new RegExp(`\\b(?:const|let|var)\\s+${name}\\s*=\\s*[^;]*`, 'g');
@@ -191,20 +203,26 @@ describe('a rendered Salesforce error keeps its newlines', () => {
     // point is that the guard now HOLDS them to it, so dropping the rule fails
     // here rather than shipping.
     //
-    // HOW they satisfy it differs now, and that is the whole point of asserting
-    // the union rather than the cssText: rest-explore takes its panel from
-    // ui/panels.ts, the others still declare the rule locally. A test that
-    // insisted on cssText would have made migrating them look like a
-    // regression.
+    // HOW they satisfy it has now changed twice, which is the whole point of
+    // asserting the union rather than one mechanism. They first declared the
+    // rule locally; rest-explore then took its panel from ui/panels.ts; all
+    // three now route the message through `setSfError`, which emits the org's
+    // text and the guidance as separate NODES so there is no newline left to
+    // collapse. A test pinned to `errorPanel.textContent = message` would have
+    // read the strongest of those three states as a regression.
     for (const rel of [
       'features/soql-runner.ts',
       'features/rest-explore.ts',
       'features/soap-explore.ts',
     ]) {
       const source = readFileSync(path.join(ROOT, rel), 'utf8');
-      expect(source, rel).toMatch(/errorPanel\.textContent\s*=\s*message/);
+      const fills = /setSfError\(errorPanel, message/.test(source);
+      expect(source, `${rel}: the org error must still reach a shared panel`).toMatch(
+        /errorPanel\.textContent\s*=\s*message|setSfError\(errorPanel, message/,
+      );
       const css = cssTextFor(source, 'errorPanel');
       const covered =
+        fills ||
         (css !== null && HAS_WHITE_SPACE.test(css)) ||
         setsWhiteSpaceDirectly(source, 'errorPanel') ||
         setsWhiteSpaceByClass(source, 'errorPanel') ||
@@ -268,6 +286,7 @@ describe('a rendered Salesforce error keeps its newlines', () => {
     // Centralising the error panel must not make this guard fire on every file
     // that adopted it — and must not become a blanket pass for any assignment.
     expect(fromPanelBuilder("const p = errorPanel(msg, doc);\n", 'p')).toBe(true);
+    expect(fromPanelBuilder("const p = renderSfError(err, { doc });\n", 'p')).toBe(true);
     expect(fromPanelBuilder("const p = loadingPanel();\n", 'p')).toBe(true);
     expect(fromPanelBuilder("const p = doc.createElement('div');\n", 'p')).toBe(false);
     expect(fromPanelBuilder("const p = renderSomething();\n", 'p')).toBe(false);

@@ -23,6 +23,7 @@ import { loadSettings } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { recordActivity } from '../lib/activity-log.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { renderSfError } from '../ui/panels.js';
 import type { SfdtRequest, SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 import { button, toolbar } from '../lib/ui-controls.js';
 
@@ -106,10 +107,7 @@ function createBridgeToolFeature(spec: ToolSpec, options: BridgeToolOptions): Fe
   }
 
   function renderError(results: HTMLElement, status: HTMLSpanElement, message: string): void {
-    const panel = doc.createElement('div');
-    panel.classList.add('sfdt-console', 'sfdt-error');
-    panel.textContent = message;
-    results.appendChild(panel);
+    results.appendChild(renderSfError(message, { doc }));
     status.textContent = 'Failed';
     // The single failure sink for runOnce — every early return routes through
     // here, so one call covers a bad request, a !ok bridge reply, and a throw.

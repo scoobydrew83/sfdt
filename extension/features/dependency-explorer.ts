@@ -6,6 +6,7 @@ import {
 } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { renderSfError } from '../ui/panels.js';
 import {
   resolveQueryFor,
   referencesQuery,
@@ -144,10 +145,7 @@ export function createDependencyExplorerFeature(
       results.appendChild(renderSection('References (this → others)', refGroups));
       results.appendChild(renderSection('Referenced by (others → this)', refByGroups));
     } catch (err) {
-      const errorPanel = doc.createElement('div');
-      errorPanel.classList.add('sfdt-console', 'sfdt-error');
-      errorPanel.textContent = err instanceof Error ? err.message : String(err);
-      results.appendChild(errorPanel);
+      results.appendChild(renderSfError(err, { doc }));
       status.textContent = 'Failed';
     }
   }

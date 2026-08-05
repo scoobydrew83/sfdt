@@ -12,7 +12,7 @@ import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { button, toolbar } from '../lib/ui-controls.js';
 import { openMenu } from '../ui/menu.js';
-import { errorPanel as buildErrorPanel } from '../ui/panels.js';
+import { clearSfError, renderSfError, setSfError } from '../ui/panels.js';
 import { createHistory } from '../lib/history.js';
 import { copyToClipboard } from '../ui/clipboard.js';
 
@@ -136,7 +136,7 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     status.className = 'sfdt-muted';
     main.appendChild(status);
 
-    const errorPanel = buildErrorPanel('', doc);
+    const errorPanel = renderSfError(null, { doc });
     errorPanel.style.display = 'none';
     main.appendChild(errorPanel);
 
@@ -216,14 +216,14 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     });
 
     function showError(message: string): void {
-      errorPanel.textContent = message;
+      setSfError(errorPanel, message, { doc });
       errorPanel.style.display = 'block';
       responsePane.style.display = 'none';
       copyBtn.style.display = 'none';
     }
 
     function clearError(): void {
-      errorPanel.textContent = '';
+      clearSfError(errorPanel);
       errorPanel.style.display = 'none';
     }
 

@@ -12,7 +12,7 @@ import { button, field, glyph, toolbar } from '../lib/ui-controls.js';
 import { createLimitTiles, pickLimitSnapshot } from '../ui/apex-limit-tiles.js';
 import { renderApexLogBody } from '../ui/apex-log-console.js';
 import { confirmDialog } from '../ui/confirm-dialog.js';
-import { errorPanel } from '../ui/panels.js';
+import { clearSfError, renderSfError, setSfError } from '../ui/panels.js';
 
 const DEBUG_LOG_SETTINGS_SCHEMA = z.object({
   pageSize: z.number().int().min(1).max(200).default(50),
@@ -240,7 +240,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
     // Org-side failure (session, permissions, a bad query). A div rather than a
     // <pre> on purpose: the log pane below is the only <pre> in this view, and
     // tests — like a user's eye — reach for it by that.
-    const errPanel = errorPanel('', doc);
+    const errPanel = renderSfError(null, { doc });
     errPanel.style.display = 'none';
     main.appendChild(errPanel);
 
@@ -316,6 +316,9 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       tr.setAttribute('aria-current', 'true');
       logPane.style.display = 'block';
       logPane.className = 'sfdt-console';
+      // The pane is reused, so a previous failure's role="alert" would still be
+      // on it — announcing the next log body as an error.
+      clearSfError(logPane);
       logPane.textContent = 'Loading log…';
       limits.render(null);
       try {
@@ -326,8 +329,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
         // costing a second fetch behind a second button.
         limits.render(pickLimitSnapshot(parseApexLog(raw).limits));
       } catch (err) {
-        logPane.className = 'sfdt-console sfdt-error';
-        logPane.textContent = err instanceof Error ? err.message : String(err);
+        setSfError(logPane, err, { doc });
       }
     }
 
@@ -447,6 +449,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       try {
         const result = await api.toolingQuery<ApexLogRow>(buildApexLogQuery(config.pageSize));
         loaded = result.records;
+        clearSfError(errPanel);
         errPanel.style.display = 'none';
         renderRows();
       } catch (err) {
@@ -454,7 +457,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
         while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
         selectedRow = null;
         status.textContent = '';
-        errPanel.textContent = err instanceof Error ? err.message : String(err);
+        setSfError(errPanel, err, { doc });
         errPanel.style.display = 'block';
       }
     }

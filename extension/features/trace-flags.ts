@@ -22,6 +22,7 @@ import { SF_API_VERSION } from '../lib/api-version.js';
 import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { renderSfError } from '../ui/panels.js';
 import { setTone, button } from '../lib/ui-controls.js';
 import { storageGet, storageSet } from '../lib/storage.js';
 
@@ -600,10 +601,7 @@ export function createTraceFlagsFeature(options: TraceFlagsOptions = {}): Featur
         tick = setInterval(refreshCountdowns, 1000);
       } catch (err) {
         status.textContent = '';
-        const errPanel = doc.createElement('div');
-        errPanel.classList.add('sfdt-console', 'sfdt-error');
-        errPanel.textContent = err instanceof Error ? err.message : String(err);
-        table.appendChild(errPanel);
+        table.appendChild(renderSfError(err, { doc }));
       }
     }
 
