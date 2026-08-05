@@ -5,7 +5,14 @@
 // used doc.body, which on a Salesforce page is OUTSIDE our closed shadow root.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { errorPanel, loadingPanel, emptyPanel, busyOverlay } from '../ui/panels.js';
+import {
+  renderSfError,
+  setSfError,
+  clearSfError,
+  loadingPanel,
+  emptyPanel,
+  busyOverlay,
+} from '../ui/panels.js';
 import { setContentRoot } from '../ui/content-root.js';
 
 beforeEach(() => {
@@ -16,25 +23,112 @@ afterEach(() => {
   setContentRoot(null);
 });
 
-describe('errorPanel()', () => {
+// A Salesforce error's `.message` is multi-line by construction since
+// lib/sf-error-guidance.ts: the org's own text, then everything we appended.
+const ORG_TEXT = "No such column 'Invoice_Statuss__c' on entity 'Invoice__c'.";
+const NOTE = 'INVALID_FIELD · field: Invoice_Statuss__c — That field is not on the object.';
+const COMPOSED = `${ORG_TEXT}\n${NOTE}`;
+
+describe('renderSfError()', () => {
   it('announces itself as an alert', () => {
-    const el = errorPanel('INVALID_FIELD: No such column');
+    // The a11y half of the item: 15 hand-rolled copies of this block set the
+    // classes and forgot the role, so a screen reader never announced a
+    // failure. A builder cannot forget.
+    const el = renderSfError(new Error(ORG_TEXT));
     expect(el.getAttribute('role')).toBe('alert');
-    expect(el.textContent).toBe('INVALID_FIELD: No such column');
+    expect(el.textContent).toBe(ORG_TEXT);
   });
 
   it('wears the class that preserves newlines', () => {
-    // Since lib/sf-error-guidance.ts a Salesforce error message is multi-line —
-    // the org's text, then the "what to do" line. Without a white-space rule the
-    // guidance runs into the org's own text; that shipped once, which is why
-    // test/error-render-newlines.test.ts exists.
-    expect(errorPanel('a\nb').className).toContain('sfdt-console');
+    expect(renderSfError(COMPOSED).className).toContain('sfdt-console');
+  });
+
+  it('renders the org text and the guidance as SEPARATE nodes', () => {
+    // The root cause of PR #308's 16 one-by-one fixes: with the two halves in
+    // one text node, whether they stayed apart depended on a `white-space` rule
+    // each surface had to remember. Separate element nodes cannot collapse.
+    const el = renderSfError(new Error(COMPOSED));
+    const parts = [...el.children].map((c) => c.textContent);
+    expect(parts).toEqual([ORG_TEXT, NOTE]);
+    expect(el.querySelector('.sfdt-sf-error-text')?.textContent).toBe(ORG_TEXT);
+    expect(el.querySelector('.sfdt-sf-error-note')?.textContent).toBe(NOTE);
+  });
+
+  it('never drops the org’s own text in favour of ours', () => {
+    // The other half of what #308 fixed: several surfaces kept the guidance and
+    // threw the org's real error away. The org's wording is always node one.
+    const el = renderSfError(new Error(COMPOSED), { guidance: 'Check field-level security.' });
+    expect(el.firstElementChild?.textContent).toBe(ORG_TEXT);
+    expect(el.textContent).toContain('Check field-level security.');
+  });
+
+  it('appends caller guidance as its own node, below the org’s', () => {
+    const el = renderSfError(ORG_TEXT, { guidance: 'Reload the tab and retry.' });
+    expect([...el.children].map((c) => c.textContent)).toEqual([
+      ORG_TEXT,
+      'Reload the tab and retry.',
+    ]);
+  });
+
+  it('takes whatever `catch` produced', () => {
+    expect(renderSfError('a plain string').textContent).toBe('a plain string');
+    expect(renderSfError(new Error('boom')).textContent).toBe('boom');
+    expect(renderSfError({ toString: () => 'weird' }).textContent).toBe('weird');
+    // null renders nothing rather than the word "null" — the pre-built,
+    // still-hidden panels four features mount at open() pass exactly this.
+    expect(renderSfError(null).textContent).toBe('');
+    expect(renderSfError(null).children).toHaveLength(0);
+  });
+
+  it('drops blank lines rather than emitting empty nodes', () => {
+    expect(renderSfError('a\n\nb').children).toHaveLength(2);
   });
 
   it('never interprets the org text as markup', () => {
-    const el = errorPanel('<img src=x onerror=alert(1)>');
-    expect(el.children).toHaveLength(0);
+    const el = renderSfError('<img src=x onerror=alert(1)>');
+    expect(el.querySelector('img')).toBeNull();
     expect(el.textContent).toBe('<img src=x onerror=alert(1)>');
+  });
+});
+
+describe('setSfError() / clearSfError()', () => {
+  it('turns a plain console pane into a real alert', () => {
+    // The debug-log and Execute Anonymous panes are a `<pre class="sfdt-console">`
+    // that renders output until it has to render a failure. Re-classing it by
+    // hand was the hand-roll; the role was what got left off.
+    const pane = document.createElement('pre');
+    pane.className = 'sfdt-console';
+    setSfError(pane, new Error(COMPOSED));
+    expect(pane.getAttribute('role')).toBe('alert');
+    expect(pane.classList.contains('sfdt-error')).toBe(true);
+    expect([...pane.children].map((c) => c.textContent)).toEqual([ORG_TEXT, NOTE]);
+  });
+
+  it('replaces the previous failure rather than appending to it', () => {
+    const pane = document.createElement('div');
+    setSfError(pane, 'first');
+    setSfError(pane, 'second');
+    expect(pane.textContent).toBe('second');
+  });
+
+  it('clears the alert role with the content', () => {
+    // A reused pane that keeps role="alert" announces the NEXT thing rendered
+    // into it as a failure — the success path's log body, in three of the four
+    // surfaces that reuse a pane.
+    const pane = document.createElement('div');
+    setSfError(pane, new Error('boom'));
+    clearSfError(pane);
+    expect(pane.getAttribute('role')).toBeNull();
+    expect(pane.classList.contains('sfdt-error')).toBe(false);
+    expect(pane.textContent).toBe('');
+  });
+
+  it('builds into a `<pre>` without nesting block elements inside it', () => {
+    // `<pre>` takes phrasing content; the parts are spans laid out as blocks by
+    // the shared sheet, not divs.
+    const pane = document.createElement('pre');
+    setSfError(pane, new Error(COMPOSED));
+    expect([...pane.children].every((c) => c.tagName === 'SPAN')).toBe(true);
   });
 });
 

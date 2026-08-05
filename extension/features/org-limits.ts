@@ -8,6 +8,7 @@ import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { button, toolbar } from '../lib/ui-controls.js';
 import { meterCard, meterGrid, type MeterTone } from '../ui/meter-card.js';
+import { renderSfError } from '../ui/panels.js';
 import { copyToClipboard } from '../ui/clipboard.js';
 
 export interface LimitRow {
@@ -118,10 +119,7 @@ export function createOrgLimitsFeature(options: OrgLimitsOptions = {}): Feature 
       body.appendChild(grid);
       return raw;
     } catch (err) {
-      const errorPanel = doc.createElement('div');
-      errorPanel.classList.add('sfdt-console', 'sfdt-error');
-      errorPanel.textContent = err instanceof Error ? err.message : String(err);
-      body.appendChild(errorPanel);
+      body.appendChild(renderSfError(err, { doc }));
       status.textContent = 'Failed';
       return null;
     }

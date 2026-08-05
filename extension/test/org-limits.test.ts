@@ -103,4 +103,32 @@ describe('org-limits — modal', () => {
 
     expect(document.body.textContent).toContain('boom');
   });
+
+  it('announces the failure to a screen reader', async () => {
+    // This feature was one of fifteen that hand-rolled the error block and set
+    // the classes without `role="alert"` — visually a red panel, silence to
+    // assistive tech. It now comes from ui/panels.ts, which cannot forget.
+    setSalesforceUrl();
+    const api = fakeApi({
+      limits: vi.fn(async () => {
+        throw new Error(
+          "REQUEST_LIMIT_EXCEEDED\nCheck Setup › Company Information › 'API Requests, Last 24 Hours'.",
+        );
+      }) as unknown as SalesforceApiClient['limits'],
+    });
+    await createOrgLimitsFeature({ api }).onActivate?.();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const panel = document.querySelector('.sfdt-console.sfdt-error');
+    expect(panel?.getAttribute('role')).toBe('alert');
+    // …and the org's text and the guidance are separate nodes, so neither can
+    // collapse into the other whatever CSS the surface carries.
+    expect(panel?.querySelector('.sfdt-sf-error-text')?.textContent).toBe(
+      'REQUEST_LIMIT_EXCEEDED',
+    );
+    expect(panel?.querySelector('.sfdt-sf-error-note')?.textContent).toContain(
+      'API Requests, Last 24 Hours',
+    );
+  });
 });

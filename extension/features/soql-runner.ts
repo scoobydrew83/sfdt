@@ -18,6 +18,7 @@ import { recordActivity } from '../lib/activity-log.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { openMenu, type MenuAction } from '../ui/menu.js';
+import { clearSfError, renderSfError, setSfError } from '../ui/panels.js';
 import { button, setLabel, toolbar } from '../lib/ui-controls.js';
 import { createHistory } from '../lib/history.js';
 import { copyToClipboard } from '../ui/clipboard.js';
@@ -1008,9 +1009,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     runRow.appendChild(status);
     main.appendChild(runRow);
 
-    const errorPanel = doc.createElement('div');
-    errorPanel.setAttribute('role', 'alert');
-    errorPanel.classList.add('sfdt-console', 'sfdt-error');
+    const errorPanel = renderSfError(null, { doc });
     errorPanel.style.display = 'none';
     main.appendChild(errorPanel);
 
@@ -1519,7 +1518,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
 
     function showError(message: string): void {
       abortExport();
-      errorPanel.textContent = message;
+      setSfError(errorPanel, message, { doc });
       errorPanel.style.display = 'block';
       resultsWrap.style.display = 'none';
       explainPanel.style.display = 'none';
@@ -1527,7 +1526,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     }
 
     function clearError(): void {
-      errorPanel.textContent = '';
+      clearSfError(errorPanel);
       errorPanel.style.display = 'none';
     }
 

@@ -16,6 +16,7 @@ import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { renderSfError } from '../ui/panels.js';
 import { button, toolbar } from '../lib/ui-controls.js';
 
 // FlowDefinitionView is a standard, read-only object queryable via the Data API.
@@ -237,10 +238,7 @@ export function createFlowTriggerExplorerEnhancerFeature(
       }
       renderGroups(doc, results, groups, win.location.origin);
     } catch (err) {
-      const panel = doc.createElement('div');
-      panel.classList.add('sfdt-console', 'sfdt-error');
-      panel.textContent = err instanceof Error ? err.message : String(err);
-      results.appendChild(panel);
+      results.appendChild(renderSfError(err, { doc }));
       status.textContent = 'Failed';
     }
   }
