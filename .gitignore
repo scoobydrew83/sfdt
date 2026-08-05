@@ -43,6 +43,7 @@ skills/*/evals/*
 
 # Git worktrees
 .worktrees/
+.claude/worktrees/
 .gemini_security/
 codex.js
 .superpowers/
