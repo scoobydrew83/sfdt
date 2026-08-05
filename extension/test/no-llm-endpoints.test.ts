@@ -7,13 +7,30 @@
 // provider, the API key, the redaction pass and the anti-injection preamble.
 //
 // That arrangement is worth exactly as much as the thing that stops the next
-// change from short-circuiting it. Adding an LLM endpoint to the extension
-// would need a provider host, a key, and (because of the manifest's
-// host_permissions allowlist) a new permission — so this file bans all three in
-// source, and test/version-match.test.ts + the built manifest cover the fourth.
+// change from short-circuiting it, so be honest about what that thing is.
 //
-// Golden principle #12: this file, and the docs that describe the rule, are
-// excluded from their own scan by name and with a reason.
+// It is NOT the manifest. An earlier version of this comment said adding an LLM
+// endpoint "would need a provider host, a key, and (because of the manifest's
+// host_permissions allowlist) a new permission". That claim was wrong and is
+// withdrawn — the same retraction is on PR #328. The built manifest declares no
+// content_security_policy, so there is no connect-src restriction, and a fetch
+// to a cooperating host answering `Access-Control-Allow-Origin: *` succeeds from
+// a content script or the worker regardless of host_permissions. That allowlist
+// is a real backstop against reading origins you have no permission for; it is
+// not one against a deliberately-added exfil call.
+//
+// What actually guards this today is a source-level lint over two files — the
+// fetch/XHR/WebSocket/EventSource ban below, scoped to features/ai-assistant.ts
+// and features/soql-nl-generate.ts — plus review. The same fetch added to a
+// non-AI feature passes every gate in this repo. Closing that properly means a
+// scoped no-restricted-globals fetch ban over features/** + ui/**, or a
+// connect-src CSP; neither exists yet, and this file must not imply otherwise.
+// The host_permissions assertion at the bottom still earns its keep as a
+// tripwire on the permission ledger — it is not an egress control.
+//
+// Golden principle #12: the only thing excluded from the scan is this file
+// itself, listed by name in DEFINING_ARTIFACTS with a reason. The docs that
+// describe the rule are not excluded — they are simply outside SCANNED_DIRS.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';

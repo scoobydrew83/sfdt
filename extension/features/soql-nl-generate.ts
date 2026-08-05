@@ -399,9 +399,17 @@ function collectRecordValues(
  *
  * `range` is the span {@link buildGeneratePrompt} interpolated the request at,
  * and it is verified against the prompt before it is trusted. Callers that
- * assembled the prompt some other way get a fallback that still removes exactly
- * one occurrence — the one under {@link REQUEST_HEADING} when there is a heading
- * — never all of them.
+ * assembled the prompt some other way get a fallback that removes exactly one
+ * occurrence — the one under {@link REQUEST_HEADING} — never all of them.
+ *
+ * That fallback needs the heading, and when the prompt has none it SUBTRACTS
+ * NOTHING (F1). With no marker there is no evidence of where the user's words
+ * are, and `indexOf(request, 0)` is a guess: the first occurrence can sit inside
+ * the leaked value, and removing it there breaks the value apart before the scan
+ * — N1's failure mode in miniature, unmasking nothing and hiding the leak.
+ * Returning the prompt whole fails CLOSED. The cost is a possible false block
+ * (the user's own words scanned back at them), and that is the right way round:
+ * a false block is a refusal the user can see and report, a missed leak is not.
  */
 function subtractRequest(
   prompt: string,
@@ -423,8 +431,9 @@ function subtractRequest(
     }
   }
   const heading = prompt.indexOf(REQUEST_HEADING);
-  const from = heading >= 0 ? heading + REQUEST_HEADING.length : 0;
-  const at = prompt.indexOf(request, from);
+  // No heading, no span: do not guess where the request is. Scan everything.
+  if (heading < 0) return prompt;
+  const at = prompt.indexOf(request, heading + REQUEST_HEADING.length);
   if (at < 0) return prompt;
   return `${prompt.slice(0, at)}\n${prompt.slice(at + request.length)}`;
 }

@@ -18,7 +18,12 @@
 // AI path has one file a reviewer can read end to end.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createSoqlRunnerFeature } from '../features/soql-runner.js';
+import {
+  createSoqlRunnerFeature,
+  nlGenerationIsStale,
+  type NlDispatchSnapshot,
+  type NlCurrentState,
+} from '../features/soql-runner.js';
 import { SOQL_NL_GENERATE_ID } from '../features/soql-nl-generate.js';
 import {
   _resetSettingsShapesForTests,
@@ -606,6 +611,58 @@ describe('a generation the user walked away from does not land (N4)', () => {
     release();
     await settle(10);
     expect(editorBox().value).toBe('SELECT Id FROM Account LIMIT 1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F2. The four tests above drive the guard through the UI, and between them
+// they only ever exercise ONE of its four clauses: every route to a changed
+// view or a changed language shuts the panel on the way past, so `!panelOpen`
+// fires first and the other three never get a chance to. Review confirmed it by
+// deleting them one at a time — three of the four could be removed with the
+// whole suite still green, and the guard could be reduced to `!panelOpen`
+// alone without reddening anything.
+//
+// That is a coverage hole, not a behaviour bug: the redundancy is real today
+// but it is held up by `setLang()` and `presentView`'s `onClose` both calling
+// `closeNlPanel()`, and an ordinary refactor of either could take it away
+// silently. So the predicate is pure and exported, and each clause gets a case
+// that varies ONLY that clause — drop any one of the four and exactly one of
+// these four goes red.
+describe('nlGenerationIsStale — one case per clause (F2)', () => {
+  const VIEW = { id: 'the view that asked' };
+  const PANEL = { id: 'the generator panel' };
+  /** Dispatched from VIEW, in SOQL, with the panel built and open. */
+  const AT: NlDispatchSnapshot = { view: VIEW, lang: 'soql' };
+  const FRESH: NlCurrentState = { view: VIEW, panel: PANEL, panelOpen: true, lang: 'soql' };
+
+  it('is not vacuous: nothing changed, so the answer may land', () => {
+    // Without this, every assertion below could pass by always returning true.
+    expect(nlGenerationIsStale(AT, FRESH)).toBe(false);
+  });
+
+  it('view identity — the runner was closed, or closed and reopened', () => {
+    expect(nlGenerationIsStale(AT, { ...FRESH, view: null })).toBe(true);
+    // The reopen case is the one the clause is really for: a DIFFERENT view is
+    // just as stale as no view, and "not null" is not the test.
+    expect(nlGenerationIsStale(AT, { ...FRESH, view: { id: 'a second view' } })).toBe(true);
+  });
+
+  it('panel existence — there is no panel to have asked from', () => {
+    expect(nlGenerationIsStale(AT, { ...FRESH, panel: null })).toBe(true);
+  });
+
+  it('panel-open state — the user pressed Close', () => {
+    expect(nlGenerationIsStale(AT, { ...FRESH, panelOpen: false })).toBe(true);
+  });
+
+  it('language — the editor is in SOSL now', () => {
+    expect(nlGenerationIsStale(AT, { ...FRESH, lang: 'sosl' })).toBe(true);
+    // Symmetrically: dispatched from SOSL and back in SOQL is equally stale, so
+    // the clause is a comparison and not a hard-coded "is it sosl".
+    expect(
+      nlGenerationIsStale({ view: VIEW, lang: 'sosl' }, { ...FRESH, lang: 'soql' }),
+    ).toBe(true);
   });
 });
 

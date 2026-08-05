@@ -737,6 +737,61 @@ export function insertFieldIntoQuery(query: string, field: string): string {
   return `${trimmed}${sep(trimmed)}${field} `;
 }
 
+/** What the runner looked like when a generation was dispatched. */
+export interface NlDispatchSnapshot {
+  /** The view that asked. */
+  view: unknown;
+  /** The editor language it asked in. */
+  lang: QueryLang;
+}
+
+/** What the runner looks like now, when the answer has come back. */
+export interface NlCurrentState {
+  /** The feature's live view, or null once it was closed. */
+  view: unknown;
+  /** The generator panel element, or null when it was never built. */
+  panel: unknown;
+  /** Whether that panel is open. */
+  panelOpen: boolean;
+  /** The editor language now. */
+  lang: QueryLang;
+}
+
+/**
+ * Has the runner moved on since a generation was dispatched?
+ *
+ * A generation is a multi-second round trip and the UI stays live for all of it,
+ * so by the time an answer comes back the user may have switched the editor to
+ * SOSL and typed a FIND query, dismissed the generator, or closed the runner
+ * outright. Landing a stale `SELECT …` in the editor then is not a late success
+ * — it destroys work the user did after they stopped waiting for us, and
+ * silently flips the language back under them.
+ *
+ * Each clause means "the state this answer was for is gone":
+ *
+ *   - `view` differs — the runner was closed (presentView's onClose nulls it) or
+ *     closed and reopened, so the editor we would write into is not the one the
+ *     user asked from;
+ *   - `!panel` — the panel was never built (feature off), which the caller also
+ *     guards, kept here so the predicate is complete on its own;
+ *   - `!panelOpen` — the user pressed Close, or SOSL closed it for them;
+ *   - `lang` differs — the editor is in a different language now.
+ *
+ * Only the third clause is reachable through the UI today, because every route
+ * to the other three closes the panel on the way past: `setLang()` calls
+ * `closeNlPanel()` before it flips, and `presentView`'s `close()` always runs
+ * `onClose`, which does the same. The other three are therefore belt-and-braces
+ * — and they are a pure function here, separately, precisely so that each one is
+ * pinned by its own test rather than by a structural accident that a later
+ * refactor could remove without reddening anything.
+ *
+ * Abandoning is silent on purpose. The user is mid-sentence in a query they
+ * chose instead; a toast about the thing they walked away from is noise.
+ */
+export function nlGenerationIsStale(at: NlDispatchSnapshot, now: NlCurrentState): boolean {
+  return at.view !== now.view || !now.panel || !now.panelOpen || now.lang !== at.lang;
+}
+
 export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRunnerFeature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
@@ -1310,31 +1365,14 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     }
 
     /**
-     * Has the runner moved on since a generation was dispatched?
-     *
-     * A generation is a multi-second round trip and the UI stays live for all of
-     * it, so by the time an answer comes back the user may have switched the
-     * editor to SOSL and typed a FIND query, dismissed the generator, or closed
-     * the runner outright. Landing a stale `SELECT …` in the editor then is not
-     * a late success — it destroys work the user did after they stopped waiting
-     * for us, and silently flips the language back under them.
-     *
-     * Every condition below means "the state this answer was for is gone":
-     *
-     *   - `viewAtDispatch !== view` — the runner was closed (presentView's
-     *     onClose nulls it) or closed and reopened, so the editor we would write
-     *     into is not the one the user asked from;
-     *   - `!nlPanel` — the panel was never built (feature off), which the caller
-     *     also guards, kept here so this predicate is complete on its own;
-     *   - `!nlPanelOpen` — the user pressed Close, or SOSL closed it for them;
-     *   - `lang !== langAtDispatch` — the editor is in a different language now.
-     *
-     * Abandoning is silent on purpose. The user is mid-sentence in a query they
-     * chose instead; a toast about the thing they walked away from is noise.
+     * The runner's half of {@link nlGenerationIsStale}: read the live state out
+     * of this closure and hand it, with the dispatch snapshot, to the pure
+     * predicate. The rules themselves live up there so each clause has a test.
      */
     function nlGenerationStale(langAtDispatch: QueryLang, viewAtDispatch: ViewHandle | null): boolean {
-      return (
-        viewAtDispatch !== view || !nlPanel || !nlPanelOpen || lang !== langAtDispatch
+      return nlGenerationIsStale(
+        { view: viewAtDispatch, lang: langAtDispatch },
+        { view, panel: nlPanel, panelOpen: nlPanelOpen, lang },
       );
     }
 

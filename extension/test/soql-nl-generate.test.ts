@@ -374,6 +374,24 @@ describe('the leak backstop (AC-4)', () => {
       expect(recordValueLeak(prompt, 'o', rows)).toBe(LEAKED);
     });
 
+    it('subtracts nothing when the prompt has no Request heading (F1)', () => {
+      // The fallback's other half, and the one place this function used to fail
+      // OPEN. With no `## Request` marker the old code searched from index 0,
+      // so `indexOf('o', 0)` found the `o` inside "Prosthetics" and took the
+      // leaked value apart before the scan — the gate then reported nothing.
+      // Fail closed instead: no marker, no guess, scan the whole prompt.
+      const prompt = `${LEAKED} is on the screen right now.\n\nDescribe: o`;
+      expect(recordValueLeak(prompt, 'o', rows)).toBe(LEAKED);
+
+      // The accepted cost, asserted rather than hidden: with no heading the
+      // user's own words are no longer excluded either, so typing the value can
+      // now produce a false block. A false block is a visible refusal; a missed
+      // leak is silent. This path has no caller in the tree — soql-runner.ts
+      // always passes a verified span — so the cost is paid by nobody today.
+      const ownWords = `Schema only, honestly.\n\nDescribe: ${LEAKED}`;
+      expect(recordValueLeak(ownWords, LEAKED, rows)).toBe(LEAKED);
+    });
+
     it('ignores a span that does not match the prompt it was given', () => {
       const { prompt } = leakyPrompt('o');
       for (const range of [[-5, -1], [0, 9999], [10, 4]] as Array<readonly [number, number]>) {
