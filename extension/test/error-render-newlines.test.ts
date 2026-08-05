@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { SFDT_COMPONENT_CSS } from '../lib/ui-styles.js';
 import {
+  carriesAnError,
   dynamicParts,
+  errorBoundNames,
   identifiersIn,
   readExpression,
   rendersAnErrorValue,
@@ -35,12 +37,18 @@ const SCANNED_DIRS = ['features', 'ui'];
 // line: a right-hand side long enough for Prettier to wrap it is still one
 // assignment, and reading only to the first newline sees a fragment.
 //
-// Whether the expression carries an error is `rendersAnErrorValue()` in
-// `./error-source-scan.ts` — the same definition `sf-error-panel-contract.test.ts`
-// uses. It used to be a private alternation here and a second, DIFFERENT
-// private alternation there, and every round of that guard's review found
-// another spelling one of them accepted and the other did not. One definition
-// is the fix for the generator; see the header of that module.
+// Whether the expression carries an error is `carriesAnError()` in
+// `./error-source-scan.ts` — the same call, with the same file's bindings, that
+// rule 2 of `sf-error-panel-contract.test.ts` makes. It used to be a private
+// alternation here and a second, DIFFERENT private alternation there, and every
+// round of that guard's review found another spelling one of them accepted and
+// the other did not. One definition is the fix for the generator; see the
+// header of that module.
+//
+// It was `rendersAnErrorValue(expression)` until #327's N2 — the same module,
+// but the SPELLING half of it only, with no `names` argument and no call to
+// `errorBoundNames()`. That made the module header's "both guards share one
+// definition" true of the plumbing and false of the question actually asked.
 //
 // `message`/`msg` are in it. An earlier draft left them out on the reasoning
 // that a thrown error is always reached through `err`/`error`, and that was
@@ -116,7 +124,14 @@ const HAS_WHITE_SPACE = /white-space:\s*(?:pre|pre-line|pre-wrap)\b/;
 // (file, name) pair alone would also exempt a FUTURE `el.textContent =
 // err.message` added to the same function, which is precisely the hole an
 // exemption must not open.
-const EXEMPT: { file: string; name: string; expression: string; because: string }[] = [
+interface Exemption {
+  file: string;
+  name: string;
+  expression: string;
+  because: string;
+}
+
+const EXEMPT: Exemption[] = [
   {
     file: 'ui/panels.ts',
     name: 'el',
@@ -130,11 +145,18 @@ const EXEMPT: { file: string; name: string; expression: string; because: string 
   },
 ];
 
-function isExempt(relFile: string, name: string, expression: string): boolean {
-  return EXEMPT.some(
+function isExempt(
+  exempt: readonly Exemption[],
+  relFile: string,
+  name: string,
+  expression: string,
+): boolean {
+  return exempt.some(
     (e) => e.file === relFile && e.name === name && expression.trim() === e.expression,
   );
 }
+
+const escapeForRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function sourceFiles(): string[] {
   const out: string[] = [];
@@ -213,39 +235,77 @@ function setsWhiteSpaceByClass(source: string, name: string): boolean {
   return false;
 }
 
+/**
+ * Every site the guard would report, given a candidate exemption list.
+ *
+ * Parameterised on the list rather than closing over `EXEMPT` so that the bite
+ * check below can run the REAL scan with one entry removed. That is the only
+ * way to ask the question an exemption actually claims — "this site would be
+ * reported without me" — and asking anything weaker is what let a decorative
+ * entry through review; see the test itself.
+ */
+function offendingSites(exempt: readonly Exemption[]): string[] {
+  return sourceFiles().flatMap((file) =>
+    offendingSitesIn(path.relative(ROOT, file), readFileSync(file, 'utf8'), exempt),
+  );
+}
+
+/**
+ * The same scan, on one source string.
+ *
+ * Split out so the guard's own wiring is reachable from a test. A rule that can
+ * only be exercised by whatever happens to be in the tree is a rule whose
+ * changes cannot be mutation-proved — and every widening in this guard's
+ * history has been argued for rather than demonstrated.
+ */
+function offendingSitesIn(rel: string, source: string, exempt: readonly Exemption[]): string[] {
+  const offenders: string[] = [];
+
+  // Masked, so an assignment inside a string literal or a comment is not
+  // scanned; length- and newline-preserving, so line numbers stay true.
+  const code = dynamicParts(source);
+  // …and the file's error BINDINGS, so this guard asks the same question the
+  // sweep does rather than only the spelling half of it (#327, N2). Its entry
+  // point used to be `rendersAnErrorValue(expression)`, which takes no names
+  // and never consults `errorBoundNames()` — so every structural gain of the
+  // shared module (the catch scan, the binding scan, the alias fixed point)
+  // reached rules 2 and 3 and stopped at this file's door, while the module
+  // header claimed both guards shared one definition of what an error is.
+  // Review measured the gap: a pane classed in another module, filled from
+  // `catch (glitch) { pane.textContent = String(glitch) }`, was scoped out of
+  // rule 2 for not being a `.sfdt-console` and invisible here for not being
+  // an error SPELLING — caught by neither. Measured tree-wide, closing it
+  // adds zero sites, so it is a claim made true rather than a widening.
+  const { holdsError } = errorBoundNames(source);
+
+  for (const match of code.matchAll(TEXT_CONTENT_ASSIGN)) {
+    const expression = readExpression(code, match.index + match[0].length);
+    if (!carriesAnError(expression, holdsError)) continue;
+
+    const name = match[1]!;
+    const line = code.slice(0, match.index).split('\n').length;
+    if (isExempt(exempt, rel, name, expression)) continue;
+    if (setsWhiteSpaceDirectly(source, name)) continue;
+    if (setsWhiteSpaceByClass(source, name)) continue;
+    if (fromPanelBuilder(source, name)) continue;
+
+    // An element with NO cssText is not exempt. An earlier draft skipped
+    // those as "a judgement call we are not making", and that skip is
+    // precisely what hid ui/health-modal.ts — it styled itself through
+    // `msg.style.marginTop`, so there was no cssText to inspect and the
+    // guard silently passed a live offender. Declining to judge is itself a
+    // judgement, and it was the wrong one.
+    const css = cssTextFor(source, name);
+    if (css !== null && HAS_WHITE_SPACE.test(css)) continue;
+
+    offenders.push(`${rel}:${line} (${name})`);
+  }
+  return offenders;
+}
+
 describe('a rendered Salesforce error keeps its newlines', () => {
   it('every element assigned an error message declares a white-space rule', () => {
-    const offenders: string[] = [];
-
-    for (const file of sourceFiles()) {
-      const source = readFileSync(file, 'utf8');
-      // Masked, so an assignment inside a string literal is not scanned;
-      // length- and newline-preserving, so line numbers stay true.
-      const code = dynamicParts(source);
-
-      for (const match of code.matchAll(TEXT_CONTENT_ASSIGN)) {
-        const expression = readExpression(code, match.index + match[0].length);
-        if (!rendersAnErrorValue(expression)) continue;
-
-        const name = match[1]!;
-        const line = code.slice(0, match.index).split('\n').length;
-        if (isExempt(path.relative(ROOT, file), name, expression)) continue;
-        if (setsWhiteSpaceDirectly(source, name)) continue;
-        if (setsWhiteSpaceByClass(source, name)) continue;
-        if (fromPanelBuilder(source, name)) continue;
-
-        // An element with NO cssText is not exempt. An earlier draft skipped
-        // those as "a judgement call we are not making", and that skip is
-        // precisely what hid ui/health-modal.ts — it styled itself through
-        // `msg.style.marginTop`, so there was no cssText to inspect and the
-        // guard silently passed a live offender. Declining to judge is itself a
-        // judgement, and it was the wrong one.
-        const css = cssTextFor(source, name);
-        if (css !== null && HAS_WHITE_SPACE.test(css)) continue;
-
-        offenders.push(`${path.relative(ROOT, file)}:${line} (${name})`);
-      }
-    }
+    const offenders = offendingSites(EXEMPT);
 
     expect(
       offenders,
@@ -317,31 +377,112 @@ describe('a rendered Salesforce error keeps its newlines', () => {
   });
 
   it('every exemption would actually be flagged without it', () => {
-    // The other half of principle #12, and the half this guard was missing.
-    // An entry that the check would not have flagged anyway buys no exemption
-    // and costs an assignment's worth of coverage, permanently and invisibly —
-    // which is precisely what `LITERAL_ONLY` turned out to be on the sibling
-    // guard's rule 2, where short-circuiting it left the whole suite green.
+    // The other half of principle #12. An entry that the check would not have
+    // flagged anyway buys no exemption and costs an assignment's worth of
+    // coverage, permanently and invisibly — which is precisely what
+    // `LITERAL_ONLY` turned out to be on the sibling guard's rule 2, where
+    // short-circuiting it left the whole suite green.
     //
-    // Read through the SAME scanner the check uses, so an entry cannot claim
-    // an expression the scan would never produce.
+    // #327 added this test and it did NOT check that. It asserted two weaker
+    // things — that the assignment still exists, and that
+    // `rendersAnErrorValue(entry.expression)` is true — and neither is the
+    // property an exemption claims. It never asked whether the site would be
+    // REPORTED, so it never ran `setsWhiteSpaceDirectly`, `setsWhiteSpaceByClass`,
+    // `fromPanelBuilder` or the `cssText` test. Any site whose expression was
+    // error-ish and which was already covered by one of those four sailed
+    // through: review added
+    //
+    //     { file: 'ui/toast.ts', name: 'toast', expression: 'message', … }
+    //
+    // and the suite stayed green, even though `ui/toast.ts:78` carries
+    // `white-space: pre-line` in its `cssText` and is provably not an offender.
+    // That is the same weaker-property mistake as the stale-exclusion test that
+    // vouched for `lib/ui-styles.ts` for two rounds — made in the check written
+    // to prevent it.
+    //
+    // The property, stated so it cannot be satisfied by anything less: run the
+    // REAL offender scan with the entry removed and require the site to appear
+    // in the report. The sibling `every exclusion would actually fail without
+    // it` on `sf-error-panel-contract.test.ts` has always had this shape; this
+    // is the same shape, on the same principle.
     for (const entry of EXEMPT) {
-      const source = readFileSync(path.join(ROOT, entry.file), 'utf8');
-      const code = dynamicParts(source);
-      const found = [...code.matchAll(TEXT_CONTENT_ASSIGN)].some(
-        (m) =>
-          m[1] === entry.name &&
-          readExpression(code, m.index + m[0].length).trim() === entry.expression,
-      );
-      expect(found, `${entry.file}: ${entry.name} no longer assigns ${entry.expression}`).toBe(
-        true,
+      const without = offendingSites(EXEMPT.filter((e) => e !== entry));
+      const site = new RegExp(
+        `^${escapeForRegExp(entry.file)}:\\d+ \\(${escapeForRegExp(entry.name)}\\)$`,
       );
       expect(
-        rendersAnErrorValue(entry.expression),
-        `${entry.file} (${entry.name}) is exempted from a check that would not flag it — ` +
-          'that is a hole, not an exemption. Delete the entry.',
-      ).toBe(true);
+        without.filter((s) => site.test(s)),
+        `${entry.file} (${entry.name} = ${entry.expression}) is exempted from a check that ` +
+          'would not report it anyway — that is a hole, not an exemption. Delete the entry.\n' +
+          `Sites reported with the entry removed:\n${without.join('\n') || '(none)'}`,
+      ).not.toEqual([]);
     }
+  });
+
+  it('knows an error by its BINDING here too, not only by its spelling', () => {
+    // #327's N2. This guard's entry point asked `rendersAnErrorValue()`, which
+    // consults the spelling list and nothing else, so the structural half of
+    // the shared module never reached it. `glitch` is on no list — it is an
+    // error because a `catch` bound it — and the pane is classed in another
+    // module, so rule 2 of the sibling guard scopes it out for not being a
+    // `.sfdt-console`. Review measured this exact shape as caught by neither.
+    const source = [
+      "const pane = doc.createElement('div');",
+      'try {',
+      '  refresh();',
+      '} catch (glitch) {',
+      '  pane.textContent = String(glitch);',
+      '}',
+      '',
+    ].join('\n');
+    expect(offendingSitesIn('features/probe.ts', source, [])).toEqual([
+      'features/probe.ts:5 (pane)',
+    ]);
+    // …and the spelling question on its own still says no, which is why the
+    // guard had to stop asking only that one.
+    expect(rendersAnErrorValue('String(glitch)')).toBe(false);
+
+    // The other half: declaring the rule still exempts it, however it is
+    // declared. A widening that could not be satisfied would be a widening that
+    // forces an exemption, which is the trade this guard refuses to make.
+    const styled = source.replace(
+      "const pane = doc.createElement('div');",
+      "const pane = doc.createElement('div');\npane.className = 'sfdt-console';",
+    );
+    expect(offendingSitesIn('features/probe.ts', styled, [])).toEqual([]);
+  });
+
+  it('the exemption bite check rejects a decorative entry', () => {
+    // Pins the test above against the exact entry that walked past its #327
+    // version. `ui/toast.ts:80` really does assign `toast.textContent = message`
+    // and `message` really is an error-ish spelling — both of the things that
+    // version asserted are TRUE here — but `ui/toast.ts:78` sets
+    // `white-space: pre-line` in its `cssText`, so the guard would never report
+    // the site and the exemption buys nothing.
+    const decorative: Exemption = {
+      file: 'ui/toast.ts',
+      name: 'toast',
+      expression: 'message',
+      because:
+        'decorative entry, kept here as a FIXTURE for the bite check above — it is not in ' +
+        'EXEMPT and must never be, because the guard does not report this site.',
+    };
+    // The two properties the old check asserted both hold …
+    const toast = readFileSync(path.join(ROOT, decorative.file), 'utf8');
+    const code = dynamicParts(toast);
+    expect(
+      [...code.matchAll(TEXT_CONTENT_ASSIGN)].some(
+        (m) =>
+          m[1] === decorative.name &&
+          readExpression(code, m.index + m[0].length).trim() === decorative.expression,
+      ),
+    ).toBe(true);
+    expect(rendersAnErrorValue(decorative.expression)).toBe(true);
+    // … and the site is still never reported, which is the property that counts.
+    const site = new RegExp(
+      `^${escapeForRegExp(decorative.file)}:\\d+ \\(${escapeForRegExp(decorative.name)}\\)$`,
+    );
+    expect(offendingSites([]).filter((s) => site.test(s))).toEqual([]);
   });
 
   it('the shared toast preserves them', () => {

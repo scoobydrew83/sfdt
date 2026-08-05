@@ -44,6 +44,8 @@
 // prose goes, its `${…}` holes stay. There is no spelling of a literal that can
 // smuggle a value past it, because a value is exactly what it keeps.
 
+import ts from 'typescript';
+
 /** Every identifier token in a fragment of source. */
 export function identifiersIn(expression: string): string[] {
   return [...expression.matchAll(/\b([A-Za-z_$][\w$]*)\b/g)].map((m) => m[1]!);
@@ -115,11 +117,12 @@ export function readExpression(source: string, from: number): string {
 
 /**
  * The parts of a fragment of source that can carry a runtime value: everything
- * except the TEXT inside its string literals, blanked out in place.
+ * except the TEXT inside its string and template literals, its regex literals
+ * and its COMMENTS, blanked out in place.
  *
  * A quoted string contributes nothing; a template literal contributes its
- * `${…}` holes and not a character of its prose. Nested templates recurse, so
- * prose one level down goes too.
+ * `${…}` holes and not a character of its prose. Nested templates fall out for
+ * free, because each one is its own run of literal tokens.
  *
  * Length- and newline-preserving on purpose. That makes it safe to run over a
  * WHOLE FILE before scanning it, which is the second thing it is for: a regex
@@ -132,71 +135,189 @@ export function readExpression(source: string, from: number): string {
  * real identifier to whatever the following prose happened to mention. Masking
  * first removes that whole class of phantom match while keeping every offset
  * and line number exactly where it was.
+ *
+ * ── Why this asks TypeScript instead of scanning characters ─────────────────
+ *
+ * The first version of this function walked the source itself, and it shipped a
+ * regression to `develop` in #327. Its template branch was
+ *
+ *     if (ch === '`') { i++; while (i < n && source[i] !== '`') { … } }
+ *
+ * — not newline-bounded, unlike the `'`/`"` branch above it. In real TypeScript
+ * a template literal cannot be left unterminated, so an unmatched backtick can
+ * only come from a COMMENT or a REGEX, and that scanner parsed neither. One
+ * backtick in one comment therefore opened a mask that ran to the next backtick
+ * anywhere in the file. Measured on `features/rest-explore.ts`: a backtick
+ * appended to the header comment at line 38 blanked 7,588 characters through to
+ * line 108 and took the file's only `.textContent =` with it, silently, with no
+ * test failing — blinding rule 2, rule 3 and the whole newlines guard over
+ * seventy lines of a live feature file. 93 of 125 scanned files carry backticks
+ * inside comments (1,819 of them); every one is balanced today by convention
+ * alone, and it takes one markdown fence or one `` don`t `` to go dark.
+ *
+ * Bounding the backtick scan by newline was not available: this codebase's real
+ * template literals (the CSS sheet, the Python template in `soql-runner.ts`)
+ * span lines, and stopping at the first newline puts the phantom-binding class
+ * straight back. Handling comments needs a scanner that knows strings; handling
+ * a backtick inside `` /[`]/ `` needs one that knows regex-versus-division. Any
+ * of those hand-rolled is one more pattern that has to guess, and this guard's
+ * whole history is patterns that guessed wrong in a way nobody could see.
+ *
+ * So it asks the compiler. `ts.createSourceFile()` is the language's own answer
+ * to where a literal starts and stops — it is not an approximation of the
+ * grammar, it IS the grammar, and it cannot be defeated by an odd backtick
+ * because it never has to guess what one means. Comments come second, on the
+ * already-blanked buffer, where a `//` or `/*` is unambiguous by construction:
+ * every string interior is spaces and every regex is gone, so no `/` that
+ * remains is inside a literal, and a `//` in JavaScript is never two divisions.
+ *
+ * `typescript` is already an extension devDependency (it is what `npx tsc
+ * --noEmit` runs), this module is test-only, and nothing here reaches the
+ * shipped bundle.
  */
 export function dynamicParts(source: string): string {
-  const out = source.split('');
-  const blank = (from: number, to: number): void => {
-    for (let k = from; k < to; k++) if (out[k] !== '\n') out[k] = ' ';
-  };
-  let i = 0;
-  const n = source.length;
-  while (i < n) {
-    const ch = source[i]!;
-    if (ch === "'" || ch === '"') {
-      const start = ++i;
-      while (i < n && source[i] !== ch && source[i] !== '\n') {
-        if (source[i] === '\\') i++;
-        i++;
-      }
-      blank(start, i);
-      i++;
-      continue;
-    }
-    if (ch === '`') {
-      i++;
-      while (i < n && source[i] !== '`') {
-        if (source[i] === '\\') {
-          blank(i, i + 2); // the escape too: `\n` must not leave an `n` behind
-          i += 2;
-          continue;
-        }
-        if (source[i] === '$' && source[i + 1] === '{') {
-          i += 2;
-          const hole = i;
-          let depth = 1;
-          while (i < n) {
-            const c = source[i]!;
-            if (c === '{') depth++;
-            else if (c === '}') {
-              depth--;
-              if (depth === 0) break;
-            } else if (c === "'" || c === '"' || c === '`') {
-              const q = c;
-              i++;
-              while (i < n && source[i] !== q) {
-                if (source[i] === '\\') i++;
-                i++;
-              }
-            }
-            i++;
-          }
-          // The hole is code: keep it, but mask ITS literals too, so prose one
-          // template deeper is dropped as well.
-          const inner = dynamicParts(source.slice(hole, i));
-          for (let k = 0; k < inner.length; k++) out[hole + k] = inner[k]!;
-          i++; // past the closing `}`
-          continue;
-        }
-        blank(i, i + 1);
-        i++;
-      }
-      i++;
-      continue;
-    }
-    i++;
+  const cached = MASKED.get(source);
+  if (cached !== undefined) return cached;
+  const masked = maskStaticText(source);
+  // The guards mask the same whole file several times over (once per rule, and
+  // again for the binding scan). Bounded so a long run of unique expression
+  // fragments cannot grow it without limit.
+  if (MASKED.size < 8192) MASKED.set(source, masked);
+  return masked;
+}
+
+const MASKED = new Map<string, string>();
+
+/** The literal kinds whose TEXT is static copy, and the delimiters to keep. */
+function literalInterior(kind: ts.SyntaxKind, start: number, end: number): [number, number] {
+  switch (kind) {
+    // `` `…${ `` and `` }…${ `` — two closing characters, not one.
+    case ts.SyntaxKind.TemplateHead:
+    case ts.SyntaxKind.TemplateMiddle:
+      return [start + 1, end - 2];
+    // A regex is not copy and not a value: blank it whole. This is also what
+    // keeps a backtick inside a character class from ever being read as one.
+    case ts.SyntaxKind.RegularExpressionLiteral:
+      return [start, end];
+    default:
+      return [start + 1, end - 1];
   }
+}
+
+/**
+ * Blank a range in place, keeping newlines.
+ *
+ * Every offset AND every line number is preserved, which is what lets both
+ * guards compute `file:line` from a masked buffer and then look the element up
+ * in the raw one.
+ */
+function blankInto(out: string[], from: number, to: number): void {
+  for (let k = Math.max(from, 0); k < Math.min(to, out.length); k++) {
+    if (out[k] !== '\n') out[k] = ' ';
+  }
+}
+
+/** The source with the TEXT of every literal emptied — the parser's answer. */
+function blankLiterals(source: string): string {
+  const cached = NO_LITERALS.get(source);
+  if (cached !== undefined) return cached;
+  const out = source.split('');
+  const file = ts.createSourceFile(
+    'scan.ts',
+    source,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.TS,
+  );
+  const visit = (node: ts.Node): void => {
+    switch (node.kind) {
+      case ts.SyntaxKind.StringLiteral:
+      case ts.SyntaxKind.NoSubstitutionTemplateLiteral:
+      case ts.SyntaxKind.TemplateHead:
+      case ts.SyntaxKind.TemplateMiddle:
+      case ts.SyntaxKind.TemplateTail:
+      case ts.SyntaxKind.RegularExpressionLiteral: {
+        const [from, to] = literalInterior(node.kind, node.getStart(file), node.end);
+        blankInto(out, from, to);
+        break;
+      }
+      default:
+        break;
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(file, visit);
+  const emptied = out.join('');
+  if (NO_LITERALS.size < 8192) NO_LITERALS.set(source, emptied);
+  return emptied;
+}
+
+const NO_LITERALS = new Map<string, string>();
+
+/**
+ * Where the comments are.
+ *
+ * Found on the literal-emptied buffer, where the question is decidable without
+ * context: a `/` inside a string is now a space, a regex is gone entirely, and
+ * a `//` in JavaScript is never two divisions. Reading comments off the RAW
+ * source instead is what makes a scanner need to know regex-from-division, and
+ * getting that wrong is how #327's masker could be opened by a backtick.
+ */
+function commentRanges(source: string): [number, number][] {
+  const emptied = blankLiterals(source);
+  const ranges: [number, number][] = [];
+  let i = 0;
+  while (i < emptied.length - 1) {
+    if (emptied[i] === '/' && emptied[i + 1] === '/') {
+      let end = i;
+      while (end < emptied.length && emptied[end] !== '\n') end++;
+      ranges.push([i, end]);
+      i = end;
+    } else if (emptied[i] === '/' && emptied[i + 1] === '*') {
+      const close = emptied.indexOf('*/', i + 2);
+      const end = close === -1 ? emptied.length : close + 2;
+      ranges.push([i, end]);
+      i = end;
+    } else {
+      i++;
+    }
+  }
+  return ranges;
+}
+
+function maskStaticText(source: string): string {
+  const out = blankLiterals(source).split('');
+  for (const [from, to] of commentRanges(source)) blankInto(out, from, to);
   return out.join('');
 }
+
+/**
+ * The source with its COMMENTS emptied and everything else — string literals
+ * included — left exactly where it was.
+ *
+ * For rule 1, which `dynamicParts()` cannot serve: that mask deletes the inside
+ * of every string literal, and a class name is a string literal. Reading rule 1
+ * through it makes `ui/panels.ts` stop tripping the rule it is excluded FOR.
+ * Measured: rule 1 over the mask flips exactly one file, and it is that one.
+ *
+ * What rule 1 does need is the comment half, because it reads raw source today
+ * and a commented-out hand-roll therefore reports as a live one. No such
+ * comment is in the tree — this is a latent false positive, not a hole, and it
+ * fires in the safe direction — but the machinery to remove it is already here,
+ * and it costs nothing: measured over every scanned file, no rule-1 verdict
+ * changes.
+ */
+export function withoutComments(source: string): string {
+  const cached = NO_COMMENTS.get(source);
+  if (cached !== undefined) return cached;
+  const out = source.split('');
+  for (const [from, to] of commentRanges(source)) blankInto(out, from, to);
+  const stripped = out.join('');
+  if (NO_COMMENTS.size < 8192) NO_COMMENTS.set(source, stripped);
+  return stripped;
+}
+
+const NO_COMMENTS = new Map<string, string>();
 
 // ── What an error is called ─────────────────────────────────────────────────
 
@@ -229,12 +350,20 @@ const ERROR_WORDS: ReadonlySet<string> = new Set([
 ]);
 
 function wordsOf(identifier: string): string[] {
-  return identifier
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-    .split(/[^A-Za-z0-9]+/)
-    .filter(Boolean)
-    .map((w) => w.toLowerCase());
+  return (
+    identifier
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+      // …and a DIGIT is a boundary too. Without this, `err2` is one word and is
+      // not `err`, so a numbered local — the ordinary thing to write in a catch
+      // sitting next to an outer `err` — was off the spelling list entirely.
+      // Review hit it as a control case and had to re-derive why it came back
+      // uncaught (#327, N3).
+      .replace(/([A-Za-z])(\d)/g, '$1 $2')
+      .split(/[^A-Za-z0-9]+/)
+      .filter(Boolean)
+      .map((w) => w.toLowerCase())
+  );
 }
 
 /** Is this identifier spelled like it holds an error? */
@@ -311,6 +440,38 @@ export function flattensAnError(
   return false;
 }
 
+/**
+ * The identifier a `catch` binds — in BOTH the spellings the language has.
+ *
+ * `try { … } catch (e) { … }` is the statement form. `.catch((e) => …)` is the
+ * promise form, and they are the same binding to a reader and to the language:
+ * `e` IS the thrown error in each. #327 shipped `\bcatch\s*\(\s*(\w+)` for
+ * this, and `\s*` does not match `(` — so the statement form was seen and the
+ * promise form was not, in the very mechanism that round advertised as having
+ * replaced spelling with structure.
+ *
+ * The parenthesised promise form is not a stylistic option here. Prettier 3
+ * defaults `arrowParens` to `"always"` and this repo's `.prettierrc` sets no
+ * override, so a single arrow parameter is ALWAYS parenthesised — `.catch((e)
+ * => …)` is the only shape `prettier --write` will ever emit, and the tree
+ * already writes it (`lib/spa-router.ts`, `entrypoints/background.ts`). Both of
+ * those happen to be spelled `err`, so the spelling fallback was covering them
+ * and the gap did not show; renaming one is all it took.
+ *
+ * `async` and `function` heads are skipped rather than captured for the same
+ * reason: `.catch(async (e) => …)` and `.catch(function (e) { … })` bind `e`,
+ * not the keyword in front of it.
+ *
+ * Deliberately NOT here: `.then(onOk, (e) => …)`. A rejection handler in
+ * `.then`'s second argument is a real binding this misses, but finding it means
+ * splitting an argument list on the comma that separates two arbitrary
+ * expressions — a different and much less reliable question than reading
+ * forward from the word `catch`. It is named in the PR body as open rather than
+ * closed by a pattern that would have to guess.
+ */
+const CATCH_BINDING =
+  /\bcatch\s*\(\s*(?:async\b\s*)?(?:function\b\s*\*?\s*(?:[A-Za-z_$][\w$]*\s*)?)?\(?\s*([A-Za-z_$][\w$]*)/g;
+
 export interface ErrorBindings {
   /** Holds an error in ANY form — the thrown object, or its text. */
   holdsError: Set<string>;
@@ -328,9 +489,11 @@ export interface ErrorBindings {
  * The identifiers in this file that hold an error, worked out from the code
  * rather than from a list of spellings.
  *
- *   - every `catch (X)` binding — X IS the thrown error, whatever it is called,
- *     which is what closes `ex`, `caught`, `reason`, `problem`, `thrown` and a
- *     bare `e` in one stroke instead of five alternation entries;
+ *   - every `catch` binding, in both the statement form `catch (X)` and the
+ *     promise form `.catch((X) => …)` — X IS the thrown error, whatever it is
+ *     called, which is what closes `ex`, `caught`, `reason`, `problem`,
+ *     `thrown` and a bare `e` in one stroke instead of five alternation
+ *     entries. See `CATCH_BINDING` for why the second form is not optional;
  *   - every `const`/`let`/`var X = <expression that flattens one>` — the
  *     ordinary refactor when the value is needed twice;
  *   - and aliases of either, to a fixed point, so `const detail = err.message;
@@ -352,7 +515,7 @@ export function errorBoundNames(source: string): ErrorBindings {
   // Masked, so a `X = …` written inside a string literal is not read as a
   // binding. `features/soql-runner.ts` embeds Python containing `query = """`.
   const code = dynamicParts(source);
-  for (const m of code.matchAll(/\bcatch\s*\(\s*([A-Za-z_$][\w$]*)/g)) holdsError.add(m[1]!);
+  for (const m of code.matchAll(CATCH_BINDING)) holdsError.add(m[1]!);
 
   // Declarations, and later writes to the same name. The `+=` accumulator —
   //

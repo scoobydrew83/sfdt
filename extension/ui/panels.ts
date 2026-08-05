@@ -71,6 +71,9 @@ export interface SfErrorOptions {
  * open() and fill it later; a live announcement region sitting empty in the
  * tree is what `clearSfError` exists to avoid, and building one would be the
  * same defect at the other end of the lifecycle.
+ *
+ * `null`/`undefined` ONLY, though. An error with an empty message is not a
+ * request to render nothing — see `setSfError`.
  */
 export function renderSfError(error: unknown, opts: SfErrorOptions = {}): HTMLElement {
   const doc = opts.doc ?? document;
@@ -96,6 +99,15 @@ export function renderSfError(error: unknown, opts: SfErrorOptions = {}): HTMLEl
  * Given nothing to say, it does the opposite — see `clearSfError`. An empty
  * panel is not a failure, and the three surfaces that mount one hidden at
  * `open()` must not park a live announcement region in the tree.
+ *
+ * "Nothing to say" means `null`/`undefined`, and the distinction is the whole
+ * point. An `Error` whose message is empty used to take the clear branch too,
+ * because `sfErrorParts()` falls back to `errorText()` and that is `''` — so a
+ * caught `new Error('')` rendered as no panel, no `role="alert"` and no text,
+ * from every call site that forwards a caught error. That is the #308 defect
+ * (a failure the user never sees) reintroduced through this helper's own null
+ * contract, and it is invisible to the sweep because the CALL SITE is correct.
+ * A thrown value always produces a panel now, whatever it had to say.
  */
 export function setSfError(el: HTMLElement, error: unknown, opts: SfErrorOptions = {}): HTMLElement {
   const doc = opts.doc ?? el.ownerDocument ?? document;
@@ -108,8 +120,19 @@ export function setSfError(el: HTMLElement, error: unknown, opts: SfErrorOptions
   if (opts.guidance) parts.push(sfErrorLine(doc, 'sfdt-sf-error-note', opts.guidance));
 
   if (parts.length === 0) {
-    clearSfError(el);
-    return el;
+    // Nothing thrown and nothing to say: the deliberate clear. See below.
+    if (error === null || error === undefined) {
+      clearSfError(el);
+      return el;
+    }
+    // Something WAS thrown and it had no text — `new Error('')`, or a bare
+    // `throw new Error()`. Rendering nothing for that is the #308 defect
+    // arriving through the null contract this helper introduced: the caller
+    // handled a failure, the user sees an empty pane, and every guard in
+    // `test/sf-error-panel-contract.test.ts` is satisfied because the call site
+    // is correct. A failure with no message is still a failure, so it gets the
+    // classes, the `role="alert"` and a line saying exactly that.
+    parts.push(sfErrorLine(doc, 'sfdt-sf-error-text', 'The request failed with no message.'));
   }
   el.classList.add(...SF_ERROR_CLASSES);
   el.setAttribute('role', 'alert');

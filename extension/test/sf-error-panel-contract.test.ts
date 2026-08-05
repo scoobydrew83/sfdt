@@ -87,6 +87,7 @@ import {
   flattensAnError,
   identifiersIn,
   readExpression,
+  withoutComments,
 } from './error-source-scan.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -214,7 +215,13 @@ const OBJECT_ASSIGN = /\bObject\.assign\(\s*([A-Za-z_$][\w$]*)\s*,/g;
  *   an adversary — it is trying to survive the next person writing a panel in a
  *   hurry, which is who wrote the sixteen.
  */
-export function classesByElement(source: string): Map<string, Set<string>> {
+export function classesByElement(rawSource: string): Map<string, Set<string>> {
+  // Comments out, string literals IN. Rule 1 reads class names, and a class
+  // name is a string literal — so this is the one scan that cannot use
+  // `dynamicParts()`; running rule 1 over that mask stops `ui/panels.ts`
+  // tripping the rule it is excluded for. `withoutComments()` is the half it
+  // can use, and without it a commented-out hand-roll reads as a live one.
+  const source = withoutComments(rawSource);
   const consts = constClassTokens(source);
   const out = new Map<string, Set<string>>();
 
@@ -590,6 +597,27 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
     }
   });
 
+  it('does not read a commented-out hand-roll as a live one', () => {
+    // Rule 1 reads class names, so it is the one scan that cannot run over
+    // `dynamicParts()` — that mask empties string literals, and a class name IS
+    // a string literal. (Measured: rule 1 over the full mask flips exactly one
+    // file, `ui/panels.ts`, which is the one file the rule must trip.) It can
+    // and now does use the comment half. A latent false positive rather than a
+    // hole — it fired in the safe direction — but the machinery was already
+    // here and, measured over every scanned file, no verdict changes.
+    expect(buildsSfErrorPanel("// p.classList.add('sfdt-console', 'sfdt-error');")).toBe(false);
+    expect(buildsSfErrorPanel('/* p.className = `sfdt-console sfdt-error`; */')).toBe(false);
+    // …and the live one one line below it is still caught.
+    expect(
+      buildsSfErrorPanel(
+        "// p.classList.add('sfdt-console', 'sfdt-error');\np.className = 'sfdt-console sfdt-error';",
+      ),
+    ).toBe(true);
+    // The helper still trips it through its own constant, which is a real
+    // declaration and not a comment.
+    expect(buildsSfErrorPanel(readFileSync(path.join(ROOT, 'ui/panels.ts'), 'utf8'))).toBe(true);
+  });
+
   it('does not flag the class pair spread across two different elements', () => {
     // `.sfdt-error` is also the red `.sfdt-pill`. A file with an output console
     // and a failure chip names both classes and hand-rolls nothing — flagging
@@ -737,10 +765,109 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
 
     // Compounds. `\\berr\\b` never matched any of these, so every one was a
     // hole a longer alternation would have closed one spelling at a time.
-    for (const name of ['errMsg', 'errMessage', 'sfError', 'errorText', 'errorDetail']) {
+    //
+    // The NUMBERED ones are #327's N3: `wordsOf()` split on case and on
+    // punctuation but not on a digit, so `err2` was one word, was not `err`,
+    // and was off the spelling list entirely — while being the ordinary thing
+    // to write for a second local in a catch sitting next to an outer `err`.
+    // These reach the rule by spelling alone (there is no binding in the
+    // fragment to find them by), which is the path N3 was about.
+    for (const name of [
+      'errMsg',
+      'errMessage',
+      'sfError',
+      'errorText',
+      'errorDetail',
+      'err2',
+      'error1',
+      'msg2',
+    ]) {
       const src = `${pane}preview.textContent = ${name};`;
       expect(rendersErrorIntoConsole(src), name).toEqual(['preview']);
     }
+  });
+
+  it('rule 2 knows a catch binding in its PROMISE form too', () => {
+    // The binding syntax the structural rewrite missed while claiming to have
+    // replaced spelling with structure. #327 matched `\bcatch\s*\(\s*(\w+)`,
+    // and `\s*` does not match `(` — so the statement form was seen and
+    // `.catch((e) => …)` was not.
+    //
+    // This is not an exotic spelling: Prettier 3 defaults `arrowParens` to
+    // `"always"` and this repo overrides nothing, so the parenthesised form is
+    // the ONLY one `prettier --write` will ever emit for a single parameter,
+    // and the tree already writes it. Every name below is off the spelling
+    // list on purpose — `e`, `reason`, `oops` are reached by the binding or
+    // not at all, so each of these fails the moment the `\(?` comes back out.
+    const pane = "preview.className = 'sfdt-console';\n";
+    for (const [label, handler] of [
+      ['.catch((e) => …)', '.catch((e) => {\n  preview.textContent = String(e);\n})'],
+      [
+        '.catch((reason) => …)',
+        '.catch((reason) => {\n  preview.textContent = String(reason);\n})',
+      ],
+      ['.catch(e => …)', '.catch(e => {\n  preview.textContent = String(e);\n})'],
+      ['.catch(async (e) => …)', '.catch(async (e) => {\n  preview.textContent = String(e);\n})'],
+      [
+        '.catch(function (e) { … })',
+        '.catch(function (e) {\n  preview.textContent = String(e);\n})',
+      ],
+      [
+        '.catch((e) => …) with the text interpolated',
+        '.catch((e) => {\n  preview.textContent = `Could not refresh: ${String(e)}`;\n})',
+      ],
+    ] as const) {
+      const src = `${pane}void Promise.resolve()${handler};`;
+      expect(rendersErrorIntoConsole(src), label).toEqual(['preview']);
+    }
+  });
+
+  it('rule 3 knows a catch binding in its PROMISE form too', () => {
+    // The same gap on the other rule — the binding scan is shared, so the fix
+    // has to land on both or the two disagree again.
+    const sink = "import { renderSfError } from '../ui/panels.js';\n";
+    for (const src of [
+      'void go().catch((oops) => {\n  renderSfError(oops.message, { doc });\n});',
+      'void go().catch(async (oops) => {\n  renderSfError(String(oops), { doc });\n});',
+    ]) {
+      expect(passesStringifiedError(sink + src), src).not.toEqual([]);
+    }
+  });
+
+  it('a stray backtick in a comment cannot blind rule 2', () => {
+    // B1 of the #327 review, reproduced as the reviewer constructed it. The
+    // masker every rule now scans through read EVERY backtick as a template
+    // delimiter, and its backtick branch — unlike the `'`/`"` branch two lines
+    // above it — was not newline-bounded. A backtick that opens no template
+    // (in a comment, in a regex character class) therefore started a mask that
+    // ran to the next backtick in the file, or to EOF, blinding rules 2 and 3
+    // and the newlines guard over an arbitrary span with nothing failing.
+    //
+    // It shipped to `develop` in #327 and it is a regression against `4ae470d`,
+    // which caught every one of these because rule 2 still matched raw source.
+    // Each case below is the canonical #308 defect — a `.sfdt-console` pane
+    // with no `.sfdt-error` and no `role="alert"`, handed a caught error — with
+    // one unbalanced backtick somewhere above it.
+    const defect = 'responsePane.textContent = err instanceof Error ? err.message : String(err);';
+    const pane = "responsePane.className = 'sfdt-console';\n";
+    const blinders: [string, string][] = [
+      ['one backtick in a line comment', '// The org returns a ` fenced block in its message.'],
+      ['three backticks in a line comment', '// Wrap the reply in ```json before showing it.'],
+      ['a backtick in a block comment', '/* The org sometimes sends a ` here. */'],
+      ['a backtick in a regex character class', "const clean = raw.replace(/[`]/g, '');"],
+      [
+        'a backtick in a comment, the defect 40 lines later',
+        `// The org returns a \` fenced block.\n${'const spacer = 1;\n'.repeat(40)}`,
+      ],
+    ];
+    for (const [label, blinder] of blinders) {
+      expect(rendersErrorIntoConsole(`${pane}${blinder}\n${defect}`), label).toEqual([
+        'responsePane',
+      ]);
+    }
+    // …and the control: the same defect with nothing above it. If this ever
+    // fails, the cases above are passing for the wrong reason.
+    expect(rendersErrorIntoConsole(pane + defect)).toEqual(['responsePane']);
   });
 
   it('rule 2 still declines the shapes that are not errors', () => {
