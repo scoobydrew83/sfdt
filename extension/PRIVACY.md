@@ -77,6 +77,8 @@ To reach the API of the org you're viewing — including orgs served through Mic
 
 When you use a feature that calls the local bridge (e.g. "Deploy this Flow"), the extension sends the Flow's developer name (e.g. `My_Flow`) to `http://127.0.0.1:7654` so the local sfdt CLI on your machine can run the deploy. The data goes from your browser to a process running on the same machine — it never leaves your device.
 
+**Generate query (SOQL Runner) — off by default.** When you switch this on and press Generate, the extension sends the description you typed plus a *schema table* for the objects involved — object and field API names, labels, data types, whether a field is required, and its inline help text — through the same local bridge. It does **not** send any record data: the prompt is assembled from the object describe only, and a check refuses the send outright if a value from the results table on screen ever appears in the assembled text. What the CLI then does with that prompt is the AI section below: it goes to whichever provider *you* configured, under your own API key. If you have not started the bridge, or the CLI project has `"features.ai": false`, nothing is sent and the panel tells you what to enable.
+
 ---
 
 ## Permissions

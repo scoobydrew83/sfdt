@@ -41,6 +41,7 @@ import { createSavedSoqlFeature } from '../../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../../features/org-switcher.js';
 import { createContextMenuInspectFeature } from '../../features/context-menu-inspect.js';
 import { createSoqlBulkDeleteFeature } from '../../features/soql-bulk-delete.js';
+import { createSoqlNlGenerateFeature } from '../../features/soql-nl-generate.js';
 import { BRIDGE_REQUIRED } from '../../lib/feature-defaults.js';
 
 
@@ -240,6 +241,10 @@ async function render(): Promise<void> {
   // the "Off by default" pill and is the only way the SOQL runner's Delete
   // rows control ever appears.
   registry.register(createSoqlBulkDeleteFeature());
+  // C-P4-5. Also OFF by default — it sends org schema through the bridge to an
+  // AI provider — so its row carries the "Off by default" pill and ticking it
+  // is the only way the runner's "Generate query" control is ever built.
+  registry.register(createSoqlNlGenerateFeature());
 
   const settings = await loadSettings();
   while (root.firstChild) root.removeChild(root.firstChild);

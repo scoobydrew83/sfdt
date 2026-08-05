@@ -109,6 +109,9 @@ export function _clearFeatureDefaultForTests(featureId: string): void {
  *   twelve on top. Listed because the deeper half is what the entry promises.
  * - drift-check / metadata-scan / org-compare: bridge-tools.ts — they need
  *   `sfdt ui` running to answer the bridge at all.
+ * - soql-nl-generate: C-P4-5. Unlike ai-assistant below, the AI run IS the
+ *   whole feature — there is no in-browser half — so with no bridge the panel
+ *   can only explain how to start one.
  *
  * NOT listed: ai-assistant (metadata clean/summarise/copy works in-browser;
  * only the optional AI run uses the bridge) and trigger-conflicts (detection is
@@ -120,4 +123,5 @@ export const BRIDGE_REQUIRED: ReadonlySet<string> = new Set([
   'drift-check',
   'metadata-scan',
   'org-compare',
+  'soql-nl-generate',
 ]);
