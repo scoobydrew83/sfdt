@@ -262,7 +262,13 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       // "Fetching…" line as unstyled body text, with no role="alert". It now
       // replaces that line where it still stands; if the view was already
       // rebuilt past it, the panel takes the body — announced either way.
-      const panel = renderSfError(err, { doc });
+      //
+      // `?? new Error(...)` because renderSfError deliberately renders NOTHING
+      // for null/undefined (an empty panel must not be a live alert region), and
+      // `throw undefined` is legal JavaScript — without this, swapping the
+      // "Fetching…" line for that empty panel would leave the view blank with no
+      // indication anything failed.
+      const panel = renderSfError(err ?? new Error('Could not load Flow metadata.'), { doc });
       if (loading.parentNode) loading.replaceWith(panel);
       else body.replaceChildren(panel);
     }

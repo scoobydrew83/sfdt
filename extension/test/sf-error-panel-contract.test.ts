@@ -37,6 +37,14 @@
 //      fails silently. There is no type that separates "our sentence" from "an
 //      error someone already stringified", so the check is here instead.
 //
+//      Rule 3 is a BACKSTOP, not a proof, and the difference matters enough to
+//      write down. It reads the call site and the local bindings feeding it, so
+//      it catches the flattening idioms written inline or one `const` earlier.
+//      It cannot see a helper in another module that returns a string, a
+//      flattened value passed through a function parameter, or an idiom nobody
+//      has thought of. Claiming it "closes the `unknown` hole" would be false;
+//      it closes the ordinary slip.
+//
 // Rule 1 is deliberately NOT a rule about `.sfdt-error` alone: that class is
 // also the red variant of `.sfdt-pill`, which several features legitimately
 // apply to a status chip. The PAIR is what identifies the panel.
@@ -57,10 +65,13 @@
 //
 // ── Golden principle #12 ────────────────────────────────────────────────────
 //
-// The check excludes the artifacts that define it: the helper's own
-// implementation and the stylesheet that declares the classes, each listed by
-// name WITH the reason it cannot be a violation, plus a test that fails a stale
-// exclusion. `test/` is not scanned at all — a test asserting on the rendered
+// The check excludes the artifact that defines it — `ui/panels.ts`, the one
+// place allowed to build the block — listed by name WITH the reason it cannot
+// be a violation, and with a test proving it WOULD trip a rule without the
+// exclusion. That proof is the whole discipline: an exclusion for a file that
+// trips nothing is not an exclusion, it is a hole, and this list carried one
+// (`lib/ui-styles.ts`) for two rounds on the strength of merely naming the
+// classes. `test/` is not scanned at all — a test asserting on the rendered
 // class pair is describing the contract, not violating it, and this file is the
 // proof.
 
@@ -78,16 +89,20 @@ const SCANNED_DIRS = ['features', 'ui', 'entrypoints', 'lib'];
 
 // The artifacts that DEFINE the rules, each with the reason it cannot be a
 // violation. Anything not on this list that trips a rule is one.
+//
+// An exclusion is only principle #12 if the file would OTHERWISE FAIL. A file
+// that trips nothing and is excluded anyway is not an exclusion — it is a hole,
+// permanently outside all three scans in exchange for nothing. This list held
+// exactly one of those: `lib/ui-styles.ts` was excluded as "the stylesheet that
+// declares the classes", but the class names live there inside a CSS template
+// string, and no rule reads CSS. It tripped rule1=false, rule2=[], rule3=[],
+// so removing it from the list costs nothing and puts the file back in the
+// scan. `every exclusion would actually fail without it` below now proves that
+// property for every entry, so the next one cannot be added on vibes.
 const DEFINING_ARTIFACTS: { file: string; because: string }[] = [
   {
     file: 'ui/panels.ts',
     because: 'the implementation — this is the one place allowed to build the block',
-  },
-  {
-    file: 'lib/ui-styles.ts',
-    because:
-      'the stylesheet that declares `.sfdt-console.sfdt-error`, and the comment at ' +
-      '`.sfdt-callout` that tells a caller which of the two to reach for',
   },
 ];
 
@@ -160,18 +175,49 @@ function sfdtTokens(expression: string): string[] {
 }
 
 /**
- * `const X = 'sfdt-console'` / `const X = ['sfdt-console', 'sfdt-error']`.
+ * `const X = 'sfdt-console'` / `const X = ['sfdt-console', 'sfdt-error']`, and
+ * the `let`/`var` forms.
  *
- * Without this, hoisting the class names into a constant — the tidiest-looking
+ * Without this, hoisting the class names into a variable — the tidiest-looking
  * way to write a hand-roll, and what `ui/panels.ts` itself does — hides it.
+ *
+ * `let`/`var` are included because the accumulator shape is the natural one for
+ * a conditional panel and would otherwise walk straight through:
+ *
+ *     let cls = 'sfdt-console';
+ *     if (failed) cls += ' sfdt-error';
+ *     pane.className = cls;
+ *
+ * (`error-render-newlines.test.ts` happens to catch that today, but only
+ * because its class recognizer needs a quoted literal on the element itself —
+ * one refactor from not catching it.)
+ *
+ * A reassigned variable therefore accumulates the UNION of everything ever
+ * assigned to it, which is the conservative reading and the one that matches
+ * how these guards treat element identifiers.
  */
 function constClassTokens(source: string): Map<string, string[]> {
   const out = new Map<string, string[]>();
-  for (const m of source.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]*)?=/g)) {
+  const declaration = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]*)?=/g;
+  for (const m of source.matchAll(declaration)) {
     const tokens = sfdtTokens(readExpression(source, m.index! + m[0].length));
-    if (tokens.length > 0) out.set(m[1]!, tokens);
+    if (tokens.length > 0) push(out, m[1]!, tokens);
+  }
+  // …and later writes to the same name: `cls += ' sfdt-error'`, `cls = other`.
+  // The lookbehind keeps this off property writes (`p.className = …`), and the
+  // `out.has` filter means only names already known to hold a class are read —
+  // so over-matching an ordinary assignment costs nothing.
+  const reassignment = /(?<![.\w$])([A-Za-z_$][\w$]*)\s*\+?=(?!=)/g;
+  for (const m of source.matchAll(reassignment)) {
+    if (!out.has(m[1]!)) continue;
+    const tokens = sfdtTokens(readExpression(source, m.index! + m[0].length));
+    if (tokens.length > 0) push(out, m[1]!, tokens);
   }
   return out;
+}
+
+function push(map: Map<string, string[]>, key: string, tokens: string[]): void {
+  map.set(key, [...(map.get(key) ?? []), ...tokens]);
 }
 
 // Every way the codebase puts a class on an element. `classList.remove` is
@@ -236,14 +282,28 @@ export function buildsSfErrorPanel(source: string): boolean {
   return false;
 }
 
-// Rule 2's matcher. The identifier alternation mirrors
-// `error-render-newlines.test.ts` so the two guards agree about what "renders
-// an error" means; the extra condition here is that the target is a CONSOLE — a
-// pane, not a status line or a table cell, both of which legitimately show an
-// error string inline.
+// Rule 2's matcher. The identifier alternation is copied from
+// `error-render-newlines.test.ts` VERBATIM, `/i` included, so the two guards
+// genuinely agree about what "renders an error" means.
+//
+// `message`/`msg` are the entries that matter, and leaving them out is a
+// mistake this codebase has now made twice. That file carries a nine-line
+// comment recording the first time: the org-error funnel for the SOQL runner
+// and the REST and SOAP explorers is `showError(message)`, so the assignment
+// that renders the org's text is spelled `message`, and a guard without it
+// "did not hold the very surface the reported bug appeared on". The first
+// version of THIS rule shipped the same short alternation while citing that
+// file as its source — and a `.sfdt-console` pane assigned from a
+// `const message` was invisible to all three rules and to both #308 guards.
+//
+// `LITERAL_ONLY` comes with the widening, for the same reason it exists there:
+// fixed single-line copy (`pane.textContent = 'Loading log…'`) cannot carry a
+// thrown error, and only assignments referencing an identifier can.
 const RENDERS_ERROR_VALUE =
-  /\b([A-Za-z_$][\w$]*)\s*\.\s*textContent\s*=\s*([^;\n]*\b(?:err|error|errorMsg)\b[^;\n]*)/g;
-const ERROR_COUNT = /\b(?:err|error|errors|errorMsg)\b\s*\.\s*length/gi;
+  /\b([A-Za-z_$][\w$]*)\s*\.\s*textContent\s*=\s*([^;\n]*\b(?:err|error|errors|errorMsg|message|msg)\b[^;\n]*)/gi;
+const ERROR_COUNT = /\b(?:err|error|errors|errorMsg|message|msg)\b\s*\.\s*length/gi;
+const ERROR_VALUE = /\b(?:err|error|errors|errorMsg|message|msg)\b/i;
+const LITERAL_ONLY = /=\s*['"`][^'"`]*['"`]\s*;?\s*$/;
 
 /** Rule 2: console panes handed a caught error's text directly. */
 export function rendersErrorIntoConsole(source: string): string[] {
@@ -254,10 +314,12 @@ export function rendersErrorIntoConsole(source: string): string[] {
   );
   const out: string[] = [];
   for (const m of source.matchAll(RENDERS_ERROR_VALUE)) {
-    const [, name, expression] = m;
+    const [whole, name, expression] = m;
     if (!consoles.has(name!)) continue;
+    // Fixed copy is single-line by construction and carries no error.
+    if (LITERAL_ONLY.test(whole!)) continue;
     // A COUNT of errors is a number, not a message.
-    if (!/\b(?:err|error|errorMsg)\b/i.test(expression!.replace(ERROR_COUNT, ''))) continue;
+    if (!ERROR_VALUE.test(expression!.replace(ERROR_COUNT, ''))) continue;
     out.push(name!);
   }
   return out;
@@ -300,20 +362,77 @@ export function errorSinks(source: string): string[] {
   return [...sinks];
 }
 
-// `err.message` / `error.message`, and the `instanceof Error ? … : String(…)`
-// idiom that is its longhand. `response.error` is NOT this — a bridge reply's
-// error field is a string that never was an Error object, so there is no
-// structure to lose.
-const STRINGIFIED_ERROR = /\binstanceof\s+Error\s*\?|\b(?:err|error|e)\s*\.\s*message\b/;
+// The flattening idioms: `.message` off anything, `instanceof Error ? …`,
+// `String(x)`, `x.toString()`, and a template literal that interpolates a bare
+// error identifier. `response.error` is NOT this — a bridge reply's error field
+// is a string that never was an Error object, so there is no structure to lose,
+// which is why the `.message` access is what is matched rather than the word
+// "error".
+const FLATTENING_IDIOM = new RegExp(
+  [
+    /\binstanceof\s+Error\s*\?/, // the longhand ternary
+    /[\w$)\]]\s*\??\s*\.\s*message\b/, // err.message, e?.message, (err as Error).message
+    /\bString\s*\(/, // String(err)
+    /\.\s*toString\s*\(\s*\)/, // err.toString()
+    // `${err}` — interpolating an Error object calls toString() on it. A
+    // PROPERTY access is deliberately not this: `${response.error}` is a
+    // bridge reply's string field, which never was an Error and has no
+    // structure to lose.
+    /\$\{\s*(?:err|error|errorMsg|ex|e|caught|reason)\s*\}/i,
+  ]
+    .map((r) => r.source)
+    .join('|'),
+);
 
-/** Rule 3: calls to an error sink that pass an already-flattened error. */
+// …applied to something that plausibly IS an error. Without this the rule fires
+// on `String(jobId)` in apex-test-runner — a Salesforce record id being
+// normalised, interpolated into our own prose, with no error anywhere near it.
+// Flagging that would mean editing correct code to satisfy a check.
+const ERRORISH = /\b(?:err|error|errors|errorMsg|ex|caught|reason)\b/i;
+
+function flattensAnError(expression: string): boolean {
+  if (!FLATTENING_IDIOM.test(expression)) return false;
+  // `catch (e)` is idiomatic enough to honour, but a bare `e` is too common to
+  // treat as error-ish on its own — only its `.message` counts.
+  return ERRORISH.test(expression) || /\be\s*\??\s*\.\s*message\b/.test(expression);
+}
+
+/**
+ * Rule 3: calls to an error sink that pass an already-flattened error.
+ *
+ * Scope, stated so it is not mistaken for more than it is: this catches the
+ * flattening written INSIDE the call. It does not catch flattening done a line
+ * earlier and passed by name where the intermediate is not a `const` this file
+ * can resolve, and it cannot catch a helper in another module that returns a
+ * string. It is a backstop for the ordinary slip, not a proof.
+ *
+ * The intermediate-const case IS covered, because that is the ordinary refactor
+ * when the expression is needed twice:
+ *
+ *     const msg = err instanceof Error ? err.message : String(err);
+ *     renderSfError(msg);            // ← caught
+ */
 export function passesStringifiedError(source: string): string[] {
+  // Names bound to a flattened error, so passing the name is passing the value.
+  const flattened = new Set<string>();
+  const binding = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]*)?=/g;
+  for (const m of source.matchAll(binding)) {
+    if (flattensAnError(readExpression(source, m.index! + m[0].length))) {
+      flattened.add(m[1]!);
+    }
+  }
+
   const out: string[] = [];
   for (const sink of errorSinks(source)) {
     const call = new RegExp(`\\b${sink}\\s*\\(`, 'g');
     for (const m of source.matchAll(call)) {
       const args = readExpression(source, m.index! + m[0].length);
-      if (STRINGIFIED_ERROR.test(args)) out.push(`${sink}(${args.trim().slice(0, 60)})`);
+      const viaName = [...args.matchAll(/\b([A-Za-z_$][\w$]*)\b/g)].some((id) =>
+        flattened.has(id[1]!),
+      );
+      if (flattensAnError(args) || viaName) {
+        out.push(`${sink}(${args.trim().slice(0, 60)})`);
+      }
     }
   }
   return out;
@@ -392,6 +511,19 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
       'setSfError(pane, err.message, { doc });',
       'function showError(message: unknown) { setSfError(p, message); }\nshowError(err.message);',
       'function showError(message: unknown) { setSfError(p, message); }\nshowError(e instanceof Error ? e.message : String(e));',
+      // The other flattening idioms — each one a way to reach a string.
+      'renderSfError(String(err), { doc });',
+      'renderSfError(err.toString(), { doc });',
+      'renderSfError(`${err}`, { doc });',
+      'renderSfError((err as Error).message, { doc });',
+      'renderSfError(err?.message, { doc });',
+      'renderSfError(caught.message, { doc });',
+      'renderSfError(ex.message, { doc });',
+      'renderSfError(reason.message, { doc });',
+      // …and the intermediate const, which is the ORDINARY refactor when the
+      // expression is needed twice, not an evasion.
+      'const msg = err instanceof Error ? err.message : String(err);\nrenderSfError(msg, { doc });',
+      'const text = String(error);\nsetSfError(pane, text, { doc });',
     ];
     for (const src of bad) {
       expect(passesStringifiedError(sink + src), src).not.toEqual([]);
@@ -405,8 +537,29 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
       // A bridge reply's `error` is a string that never was an Error object —
       // there is no structure to lose, so this is not the banned shape.
       'function renderError(message: unknown) { renderSfError(message); }\nrenderError(`Bridge: ${response.error}`);',
+      // `String(x)` on something that is not an error at all. apex-test-runner
+      // normalises a Salesforce record id this way and interpolates it into our
+      // own prose; flagging it would mean editing correct code.
+      'const parentJobId = String(jobId);\nrenderError(r, s, `Unexpected test run id: ${parentJobId}`);',
     ];
     for (const src of good) {
+      expect(passesStringifiedError(sink + src), src).toEqual([]);
+    }
+  });
+
+  it('rule 3 is a backstop, and these are the holes it does not close', () => {
+    // Documented rather than fixed, so the next reader knows the boundary is a
+    // decision. Each needs cross-module or dataflow analysis a regex guard
+    // cannot do; none is reachable by an ordinary slip, and the audit that
+    // motivated rule 3 found zero violations to begin with.
+    const sink = "import { renderSfError } from '../ui/panels.js';\n";
+    const open = [
+      // A helper in another module that returns a string.
+      'renderSfError(formatFailure(err), { doc });',
+      // Flattened behind a function parameter rather than a local binding.
+      'function report(text: string) { renderSfError(text); }\nreport(err.message);',
+    ];
+    for (const src of open) {
       expect(passesStringifiedError(sink + src), src).toEqual([]);
     }
   });
@@ -487,6 +640,14 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
         'wrapped assignment',
         "p.className =\n  bad\n    ? 'sfdt-console sfdt-error'\n    : 'sfdt-console';",
       ],
+      [
+        'let accumulator',
+        "let cls = 'sfdt-console';\nif (failed) cls += ' sfdt-error';\np.className = cls;",
+      ],
+      [
+        'var accumulator',
+        "var cls = 'sfdt-console';\ncls = cls + ' sfdt-error';\np.setAttribute('class', cls);",
+      ],
     ];
     for (const [name, src] of forms) {
       expect(buildsSfErrorPanel(src), `${name} must be caught`).toBe(true);
@@ -517,6 +678,34 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
       'logPane.textContent = err instanceof Error ? err.message : String(err);',
     ].join('\n');
     expect(rendersErrorIntoConsole(bare)).toEqual(['logPane']);
+
+    // …and the same defect spelled `message`, which is how the three
+    // showError() funnels name it. The first version of this rule omitted
+    // `message` from its alternation and was blind to exactly this, in a
+    // `.sfdt-console` pane, with no error class and no role — reproducing the
+    // omission `error-render-newlines.test.ts` had already documented and
+    // fixed. Every spelling that file accepts is pinned here.
+    for (const ident of ['message', 'msg', 'err', 'error', 'errorMsg', 'errors']) {
+      const src = [
+        "logPane.className = 'sfdt-console';",
+        `logPane.textContent = ${ident};`,
+      ].join('\n');
+      expect(rendersErrorIntoConsole(src), ident).toEqual(['logPane']);
+    }
+    // Case-insensitively, since the source alternation carries /i. (A word
+    // boundary still applies: `errMessage` is one identifier and is NOT `err`,
+    // which is the source guard's behaviour too.)
+    expect(
+      rendersErrorIntoConsole("p.className = 'sfdt-console';\np.textContent = ErrorMsg;"),
+    ).toEqual(['p']);
+    expect(
+      rendersErrorIntoConsole("p.className = 'sfdt-console';\np.textContent = renderedOutput;"),
+    ).toEqual([]);
+
+    // Fixed copy is not an error, however the pane is classed.
+    expect(
+      rendersErrorIntoConsole("logPane.className = 'sfdt-console';\nlogPane.textContent = 'Loading log…';"),
+    ).toEqual([]);
 
     // The migrated shape.
     expect(
@@ -566,26 +755,46 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
     }
   });
 
-  it('every defining artifact still exists and still defines something', () => {
-    // Stops the exclusion list rotting into a hole: an entry that no longer
-    // names the pair is an exclusion nobody needs, and one whose file has moved
-    // silently widens the scan's blind spot.
+  it('every exclusion would actually fail without it', () => {
+    // The property that separates a principle-#12 exclusion from a hole: the
+    // file must TRIP A RULE. An entry that trips nothing buys no exemption and
+    // costs a file's worth of coverage, permanently and invisibly.
+    //
+    // The earlier version of this test asserted only that the file still NAMED
+    // the two classes, which a stylesheet does by definition — so it happily
+    // vouched for `lib/ui-styles.ts`, which trips nothing. Checking the property
+    // the exclusion actually claims closes the whole class, not that instance.
     for (const entry of DEFINING_ARTIFACTS) {
       const source = readFileSync(path.join(ROOT, entry.file), 'utf8');
+      const trips = [
+        buildsSfErrorPanel(source) ? 'rule 1' : null,
+        rendersErrorIntoConsole(source).length > 0 ? 'rule 2' : null,
+        passesStringifiedError(source).length > 0 ? 'rule 3' : null,
+      ].filter(Boolean);
       expect(
-        source.includes(CONSOLE_CLASS) && source.includes(ERROR_CLASS),
-        `stale exclusion: ${entry.file} no longer names the error-panel classes`,
-      ).toBe(true);
+        trips,
+        `${entry.file} is excluded but trips no rule — that is a hole, not an exclusion. ` +
+          'Delete the entry.',
+      ).not.toEqual([]);
       expect(entry.because.length, `${entry.file} exclusion needs a reason`).toBeGreaterThan(30);
     }
   });
 
-  it('the helper itself would trip rule 1 — which is why it is excluded', () => {
-    // Proof that the exclusion is load-bearing rather than decorative: without
-    // it, the one legitimate implementation is the first thing flagged. It also
-    // pins the const-resolution path, since panels.ts applies the pair through
-    // `SF_ERROR_CLASSES` and never as two literals.
+  it('the helper trips rule 1 through its own constant', () => {
+    // Names the specific rule `ui/panels.ts` trips, so the generic proof above
+    // cannot start passing for the wrong reason. Also pins the const-resolution
+    // path: panels.ts applies the pair through `SF_ERROR_CLASSES` and never as
+    // two literals, so a guard that did not resolve constants would read the
+    // one legitimate implementation as clean.
     expect(buildsSfErrorPanel(readFileSync(path.join(ROOT, 'ui/panels.ts'), 'utf8'))).toBe(true);
+  });
+
+  it('the stylesheet is scanned like everything else', () => {
+    // It was excluded for two rounds on the strength of naming the classes. It
+    // declares them in CSS, which no rule reads, so it never needed exempting.
+    const rel = 'lib/ui-styles.ts';
+    expect(DEFINING_ARTIFACTS.map((a) => a.file)).not.toContain(rel);
+    expect(scannedSources().map((s) => s.rel)).toContain(rel);
   });
 });
 

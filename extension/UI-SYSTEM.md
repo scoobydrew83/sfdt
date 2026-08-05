@@ -222,7 +222,14 @@ supply — they pin what a correct panel looks like, and a fresh hand-roll can
 satisfy both. Rule 1 accumulates classes **per element**, not per statement: a
 first version matched one application at a time and was blind to
 `add('sfdt-console')` followed by `add('sfdt-error')`, which is the shape an
-author writing a reused pane produces first.
+author writing a reused pane produces first. Rule 2's identifier alternation is
+copied verbatim from `error-render-newlines.test.ts`, `/i` and `message`/`msg`
+included — a first version dropped those two spellings while citing that file
+as its source, which is exactly the omission that file's own comment records
+having already made once, and it left a `.sfdt-console` pane assigned from a
+`const message` invisible to all three rules. Rule 3 is a backstop rather than a
+proof: it reads the call site and the local bindings feeding it, so a helper in
+another module that returns a string still gets through.
 
 ### Layer 5 — behaviour (`ui/menu.ts`)
 

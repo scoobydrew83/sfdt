@@ -211,6 +211,14 @@ export function buildUserFacingParts(
 /**
  * An error that carried its composition with it rather than joining it away.
  * `SalesforceRestError` implements this; nothing else has to.
+ *
+ * This is an in-page property, not a wire field: `structuredClone` and
+ * `postMessage` do not carry it (they do not carry an Error's own properties at
+ * all), so it would be lost by anything crossing the worker boundary. Nothing
+ * does today — `buildRequestError` runs page-side, after the proxy has already
+ * resolved a plain `SfApiFetchResponse` — but a future move of error
+ * construction INTO the worker would silently drop the split and fall back to
+ * the flattened `.message`, which renders as one node rather than wrongly.
  */
 export interface CarriesUserFacingParts {
   readonly userFacing: SfErrorParts;
