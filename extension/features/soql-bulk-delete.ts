@@ -487,7 +487,7 @@ const KIND_LABELS: Readonly<Record<BulkDeleteFailure['kind'], string>> = {
  * The per-row failure report, as text.
  *
  * Text rather than DOM so it can be asserted exactly, and so the UI renders it
- * through the shared `errorPanel()` (whose `.sfdt-console` keeps newlines)
+ * through the shared `renderSfError()` (which gives every line its own node)
  * instead of hand-rolling a table. One line per failed row: the report's job is
  * to let the user re-run the delete against the rows that did not go, so every
  * Id has to be readable and copyable.

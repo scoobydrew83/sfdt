@@ -583,7 +583,7 @@ describe('the delete itself', () => {
     expect(report).toBeDefined();
     expect(report!.textContent).toContain('Deleted 1 of 2 Account records.');
     expect(report!.textContent).toContain('ENTITY_IS_DELETED');
-    // errorPanel() from ui/panels.ts, not a fourth hand-rolled console div.
+    // renderSfError() from ui/panels.ts (C-FIX-4), not a hand-rolled console div.
     expect(report!.className).toBe('sfdt-console sfdt-error');
   });
 

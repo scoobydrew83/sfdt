@@ -26,11 +26,6 @@ import { createCodeEditor, SOQL_KEYWORDS } from '../lib/code-editor.js';
 import { isRecordId } from '../lib/salesforce-id.js';
 import { triggerDownload, triggerDownloadBlob } from '../lib/download.js';
 import { confirmDialog } from '../ui/confirm-dialog.js';
-// Aliased because `open()` already has a local `errorPanel` element of its own
-// (the query-error block). This is the shared builder from ui/panels.ts, used
-// for the bulk-delete failure report so that report is not a fourth hand-rolled
-// '.sfdt-console .sfdt-error' div.
-import { errorPanel as errorBlock } from '../ui/panels.js';
 import {
   SOQL_BULK_DELETE_ID,
   REJECTION_MESSAGES,
@@ -1094,9 +1089,11 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
 
     function showDeleteReport(text: string): void {
       clearDeleteReport();
-      // errorPanel() carries role="alert" and '.sfdt-console' (pre-wrap), so the
-      // multi-line per-row report keeps its line breaks and is announced.
-      deleteReport.appendChild(errorBlock(text, doc));
+      // C-FIX-4's shared renderer, not a hand-rolled console block: it carries
+      // role="alert" so the report is announced, and it puts every line of a
+      // multi-line message in its own node — which is exactly the shape of a
+      // per-row failure report (a summary line, then one line per failed Id).
+      deleteReport.appendChild(renderSfError(text, { doc }));
       deleteReport.style.display = 'block';
     }
 
