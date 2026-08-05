@@ -1513,7 +1513,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       }
     }
 
-    function showError(message: string): void {
+    // `unknown`, not `string`: a failure from the API client carries the
+    // org's text and our appended guidance separately on `.userFacing`, and
+    // `err.message` at the call site flattens the two back together.
+    function showError(message: unknown): void {
       abortExport();
       setSfError(errorPanel, message, { doc });
       errorPanel.style.display = 'block';
@@ -1908,7 +1911,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
           resource: soql,
           status: 'failed',
         });
-        showError(err instanceof Error ? err.message : String(err));
+        showError(err);
         status.textContent = '';
       } finally {
         setBusy(false);
@@ -2007,7 +2010,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         renderPlan(plans);
         status.textContent = `⏱ ${Date.now() - t0} ms · query plan`;
       } catch (err) {
-        showError(err instanceof Error ? err.message : String(err));
+        showError(err);
         status.textContent = '';
       } finally {
         setBusy(false);
@@ -2039,7 +2042,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         } rows`;
         renderResults();
       } catch (err) {
-        showError(err instanceof Error ? err.message : String(err));
+        showError(err);
       } finally {
         loadMoreBtn.disabled = false;
       }

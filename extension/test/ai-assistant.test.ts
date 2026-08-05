@@ -130,7 +130,11 @@ describe('ai-assistant — metadata loading branches', () => {
     const feature = createAiAssistantFeature({ api, library: fakeLibrary() });
     feature.onActivate?.();
     await flush();
-    expect(document.querySelector('.sfdt-ai-panel-body')?.textContent).toContain('Error: 403 Forbidden');
+    // Was an unstyled `Error: …` line with no role; it is now the shared error
+    // panel, so the org's wording stands alone and the failure is announced.
+    const panel = document.querySelector('.sfdt-ai-panel-body .sfdt-console.sfdt-error');
+    expect(panel?.getAttribute('role')).toBe('alert');
+    expect(panel?.textContent).toBe('403 Forbidden');
   });
 });
 

@@ -215,7 +215,8 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
       onClose: () => { view = null; },
     });
 
-    function showError(message: string): void {
+    // `unknown`, not `string` — see the note on the SOQL runner's showError.
+    function showError(message: unknown): void {
       setSfError(errorPanel, message, { doc });
       errorPanel.style.display = 'block';
       responsePane.style.display = 'none';
@@ -286,7 +287,7 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
             await pushRestHistory(entry);
           }
         } catch (err) {
-          showError(err instanceof Error ? err.message : String(err));
+          showError(err);
           status.textContent = '';
         } finally {
           sendBtn.disabled = false;

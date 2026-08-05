@@ -19,7 +19,7 @@
 //
 // DOM discipline (CLAUDE.md rule 1): createElement + textContent throughout.
 
-import { errorText, splitUserFacingMessage } from '../lib/sf-error-guidance.js';
+import { sfErrorParts } from '../lib/sf-error-guidance.js';
 import { glyph } from '../lib/ui-controls.js';
 import { ensureComponentStyles } from '../lib/ui-styles.js';
 import { getContentRoot } from './content-root.js';
@@ -60,8 +60,17 @@ export interface SfErrorOptions {
  * half to keep because it no longer does the joining.
  *
  * Accepts whatever `catch` produced — an `Error`, a string, anything — because
- * that is what the call sites have. DOM discipline: `createElement` +
+ * that is what the call sites have. Pass the ERROR, not `err.message`: a
+ * failure raised by `lib/salesforce-api.ts` carries its composition on
+ * `.userFacing`, and stringifying it at the call site throws that away and
+ * leaves this with one undifferentiated blob. DOM discipline: `createElement` +
  * `textContent`, so an org message is never markup.
+ *
+ * Renders nothing at all for `null`/`undefined` — including the `role="alert"`,
+ * which an empty panel must not carry. Four surfaces mount a hidden panel at
+ * open() and fill it later; a live announcement region sitting empty in the
+ * tree is what `clearSfError` exists to avoid, and building one would be the
+ * same defect at the other end of the lifecycle.
  */
 export function renderSfError(error: unknown, opts: SfErrorOptions = {}): HTMLElement {
   const doc = opts.doc ?? document;
@@ -83,25 +92,41 @@ export function renderSfError(error: unknown, opts: SfErrorOptions = {}): HTMLEl
  * Applies the panel's classes and `role="alert"` too: a pane that was a plain
  * console a moment ago must become a real alert when it starts carrying a
  * failure, or a screen reader never announces it.
+ *
+ * Given nothing to say, it does the opposite — see `clearSfError`. An empty
+ * panel is not a failure, and the three surfaces that mount one hidden at
+ * `open()` must not park a live announcement region in the tree.
  */
 export function setSfError(el: HTMLElement, error: unknown, opts: SfErrorOptions = {}): HTMLElement {
   const doc = opts.doc ?? el.ownerDocument ?? document;
   ensureComponentStyles(doc);
+
+  const { orgText, notes } = sfErrorParts(error);
+  const parts: HTMLElement[] = [];
+  if (orgText !== '') parts.push(sfErrorLine(doc, 'sfdt-sf-error-text', orgText));
+  for (const note of notes) parts.push(sfErrorLine(doc, 'sfdt-sf-error-note', note));
+  if (opts.guidance) parts.push(sfErrorLine(doc, 'sfdt-sf-error-note', opts.guidance));
+
+  if (parts.length === 0) {
+    clearSfError(el);
+    return el;
+  }
   el.classList.add(...SF_ERROR_CLASSES);
   el.setAttribute('role', 'alert');
-  el.replaceChildren();
-
-  const { orgText, notes } = splitUserFacingMessage(errorText(error));
-  if (orgText !== '') el.appendChild(sfErrorLine(doc, 'sfdt-sf-error-text', orgText));
-  for (const note of notes) el.appendChild(sfErrorLine(doc, 'sfdt-sf-error-note', note));
-  if (opts.guidance) el.appendChild(sfErrorLine(doc, 'sfdt-sf-error-note', opts.guidance));
+  el.replaceChildren(...parts);
   return el;
 }
 
 /**
- * Clear a panel filled by `setSfError` back to empty, dropping the alert role
- * with it — an empty `role="alert"` region left in the tree is a live
- * announcement point for whatever lands in it next.
+ * Empty a panel and stop it being an alert.
+ *
+ * An empty `role="alert"` region left in the tree is a live announcement point
+ * for whatever lands in it next — which for the reused panes (the debug-log
+ * console, the Execute Anonymous result pane) is the SUCCESS path's output.
+ *
+ * `.sfdt-console` is deliberately left alone: for those panes it is the
+ * caller's own class, not part of the error chrome, and taking it off would
+ * unstyle the log body they are about to render.
  */
 export function clearSfError(el: HTMLElement): void {
   el.replaceChildren();

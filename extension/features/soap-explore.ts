@@ -283,7 +283,8 @@ export function createSoapExploreFeature(options: {
       },
     });
 
-    function showError(message: string): void {
+    // `unknown`, not `string` — see the note on the SOQL runner's showError.
+    function showError(message: unknown): void {
       setSfError(errorPanel, message, { doc });
       errorPanel.style.display = 'block';
       responsePane.style.display = 'none';
@@ -341,7 +342,7 @@ export function createSoapExploreFeature(options: {
           });
         }
       } catch (err: any) {
-        showError(err.message || String(err));
+        showError(err);
         statusPanel.textContent = '';
       } finally {
         isWorking = false;

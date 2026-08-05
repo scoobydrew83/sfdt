@@ -64,10 +64,15 @@ function rendersAnErrorValue(expression: string): boolean {
 // identifier, and why it cannot carry a multiline error; and a test below
 // asserts every entry still matches real source, so a stale exemption fails
 // loudly instead of quietly widening the hole it was cut for.
-const EXEMPT: { file: string; name: string; because: string }[] = [
+// `expression` narrows an entry to the one assignment it was written for: a
+// (file, name) pair alone would also exempt a FUTURE `el.textContent =
+// err.message` added to the same function, which is precisely the hole an
+// exemption must not open.
+const EXEMPT: { file: string; name: string; expression: string; because: string }[] = [
   {
     file: 'ui/panels.ts',
     name: 'el',
+    expression: 'message',
     because:
       "loadingPanel()'s `el.textContent = message` — a caller-supplied 'Loading …' line, never a " +
       'thrown error; the error builder in the same file emits its parts as separate nodes and ' +
@@ -77,8 +82,10 @@ const EXEMPT: { file: string; name: string; because: string }[] = [
   },
 ];
 
-function isExempt(relFile: string, name: string): boolean {
-  return EXEMPT.some((e) => e.file === relFile && e.name === name);
+function isExempt(relFile: string, name: string, expression: string): boolean {
+  return EXEMPT.some(
+    (e) => e.file === relFile && e.name === name && expression.trim() === e.expression,
+  );
 }
 
 function sourceFiles(): string[] {
@@ -173,7 +180,7 @@ describe('a rendered Salesforce error keeps its newlines', () => {
         if (!rendersAnErrorValue(match[2]!)) return;
 
         const name = match[1]!;
-        if (isExempt(path.relative(ROOT, file), name)) return;
+        if (isExempt(path.relative(ROOT, file), name, match[2]!)) return;
         if (setsWhiteSpaceDirectly(source, name)) return;
         if (setsWhiteSpaceByClass(source, name)) return;
         if (fromPanelBuilder(source, name)) return;
@@ -253,8 +260,8 @@ describe('a rendered Salesforce error keeps its newlines', () => {
       const abs = path.join(ROOT, entry.file);
       const source = readFileSync(abs, 'utf8');
       expect(
-        new RegExp(`\\b${entry.name}\\.textContent\\s*=`).test(source),
-        `stale exemption: ${entry.file} no longer assigns ${entry.name}.textContent`,
+        new RegExp(`\\b${entry.name}\\.textContent\\s*=\\s*${entry.expression}\\s*;`).test(source),
+        `stale exemption: ${entry.file} no longer assigns ${entry.name}.textContent = ${entry.expression}`,
       ).toBe(true);
       expect(entry.because.length, `${entry.file} exemption needs a reason`).toBeGreaterThan(40);
     }
