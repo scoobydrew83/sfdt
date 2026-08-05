@@ -134,6 +134,39 @@ describe('renderSfError()', () => {
     expect(el.classList.contains('sfdt-error')).toBe(false);
   });
 
+  it('still renders a panel for a thrown error with no message', () => {
+    // N5 of the #327 review, and the sharp edge of the null contract above.
+    // `sfErrorParts()` falls back to `errorText()`, which is `''` for
+    // `new Error('')` — so `parts.length === 0` and the empty-panel branch
+    // swallowed the failure whole: no panel, no `role="alert"`, no text, from
+    // every call site that forwards a caught error. That is #308 itself (a
+    // failure the user never sees), reached through the helper this PR line
+    // exists to centralise, and the sweep cannot see it because every call
+    // site is CORRECT.
+    //
+    // `null`/`undefined` still render nothing — that is a caller saying "there
+    // is no error", which is a different statement from an error saying
+    // nothing.
+    for (const thrown of [new Error(''), new Error(), '']) {
+      const el = renderSfError(thrown);
+      expect(el.getAttribute('role'), String(thrown)).toBe('alert');
+      expect(el.classList.contains('sfdt-error'), String(thrown)).toBe(true);
+      expect(el.textContent, String(thrown)).toMatch(/no message/);
+    }
+    // …and into a pane the caller owns, which is the path the funnels take.
+    const pane = document.createElement('pre');
+    pane.className = 'sfdt-console';
+    setSfError(pane, new Error(''));
+    expect(pane.getAttribute('role')).toBe('alert');
+    expect(pane.textContent).toMatch(/no message/);
+
+    for (const nothing of [null, undefined]) {
+      const el = renderSfError(nothing);
+      expect(el.getAttribute('role'), String(nothing)).toBeNull();
+      expect(el.textContent, String(nothing)).toBe('');
+    }
+  });
+
   it('drops blank notes rather than emitting empty nodes', () => {
     expect(renderSfError(orgError(ORG_TEXT, ['', '   ', NOTE])).children).toHaveLength(2);
   });
