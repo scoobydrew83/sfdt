@@ -22,7 +22,7 @@ to.
 | 1. Tokens | `lib/tokens.ts` | Colour, spacing, radius, type, shadow — as CSS custom properties | Everything |
 | 2. Components | `lib/ui-styles.ts` | 107 reusable classes | every UI file |
 | 3. Icons | `lib/icons.ts` | 53 inline SVGs + feature-id → glyph map | 8 files |
-| 4. Controls | `lib/ui-controls.ts`, `lib/code-editor.ts`, `ui/panels.ts`, `ui/confirm-dialog.ts`, `ui/meter-card.ts`, `ui/node-graph.ts`, `ui/apex-limit-tiles.ts`, `ui/apex-log-console.ts` | `button()`, `field()`, `glyph()`, `setLabel()`, `setTone()`, `toolbar()`, `createCodeEditor()`, `renderSfError()`, `setSfError()`, `loadingPanel()`, `emptyPanel()`, `busyOverlay()`, `confirmDialog()`, `meterCard()`, `buildNodeGraphSvg()`, `createLimitTiles()`, `renderApexLogBody()` | every UI file |
+| 4. Controls | `lib/ui-controls.ts`, `lib/code-editor.ts`, `ui/panels.ts`, `ui/confirm-dialog.ts`, `ui/meter-card.ts`, `ui/node-graph.ts`, `ui/apex-limit-tiles.ts`, `ui/apex-log-console.ts` | `button()`, `field()`, `glyph()`, `setLabel()`, `setTone()`, `toolbar()`, `createCodeEditor()`, `renderSfError()`, `setSfError()`, `clearSfError()`, `loadingPanel()`, `emptyPanel()`, `busyOverlay()`, `confirmDialog()`, `meterCard()`, `buildNodeGraphSvg()`, `createLimitTiles()`, `renderApexLogBody()` | every UI file |
 | 5. Behaviour | `ui/menu.ts`, `ui/shadow-host.ts`, `ui/present-view.ts` | Dismissal, **focus trap**, focus restore, mounting | Menus, injected UI, every feature view |
 
 **Layers 2 and 4 are not the same thing, and layer 2 alone did not work.** The
@@ -167,37 +167,69 @@ clearSfError(el)                            →  empty it, and drop role="alert"
 ```
 
 The same lesson as `button()`, learned the same way. `.sfdt-console.sfdt-error`
-had existed since the design-system pass and **sixteen** features still built
+had existed since the design-system pass and **fifteen** features still built
 the block by hand, because `createElement('div')` + `classList.add(…)` +
-`.textContent = err.message` was the shorter path. All sixteen omitted
+`.textContent = err.message` was the shorter path. All fifteen omitted
 `role="alert"`, so a failure was a red box to a sighted user and silence to a
-screen reader; PR #308 then had to fix each of them individually for a
+screen reader; PR #308 then had to fix sixteen surfaces individually for a
 *separate* defect — collapsing our guidance line into the org's own text, and in
 several cases discarding the org's error entirely.
 
-Two things these enforce that a class cannot:
+**Two further sites had no error styling at all** and neither #308 nor the
+class-pair rule below could see them: `apex-anonymous`'s openLogBtn handler and
+`ai-assistant`'s metadata catch each wrote a live org error as bare text, so a
+failure was indistinguishable from a log body. Rule 2 of the sweep exists
+because of them.
+
+Three things these enforce that a class cannot:
 
 - **`role="alert"` is not optional.** It comes with the block, including on
   `setSfError`, which is what a long-lived pane (the debug-log console, the
   Execute Anonymous result pane) uses when it turns into an error surface.
-  `clearSfError` takes the role back off, or the pane announces the *next*
-  thing rendered into it as a failure.
-- **The org's text and our guidance are separate NODES.** The joining happens in
-  `lib/sf-error-guidance.ts` (`buildUserFacingMessage`) and the splitting in the
-  same file (`splitUserFacingMessage`), so producer and consumer of the newline
-  contract sit next to each other. A caller no longer composes the string, so it
-  can no longer keep the wrong half — and a block box cannot run into the one
-  above it whatever `white-space` the surface carries.
+- **…and it comes back OFF when the panel is empty.** `clearSfError` and an
+  empty `setSfError` both drop it, because an empty `role="alert"` region is a
+  live announcement point for whatever lands in it next — which on a reused
+  pane is the success path's own output.
+- **The org's text and our guidance are separate NODES**, split by structure
+  rather than by re-reading the string. `lib/sf-error-guidance.ts` composes the
+  parts (`buildUserFacingParts`) and `SalesforceRestError` carries them on
+  `.userFacing`; `sfErrorParts()` reads them back. Splitting the flattened
+  `.message` on newlines was the obvious shortcut and it is wrong: the org's own
+  message can be multi-line (an Apex compile error is), so line-two-onward is
+  not reliably ours, and styling it as ours is the #308 defect inverted. Where
+  no structure travelled with the error, the renderer emits ONE node and guesses
+  nothing.
+
+**Pass the error, not `err.message`.** Stringifying at the call site throws the
+structure away. The three `showError()` funnels take `unknown` for this reason —
+and `unknown` accepts a string, so a wrong call site compiles clean and fails
+silently. There is no type that separates "our sentence" from "an error someone
+already stringified", so rule 3 of the sweep is what catches it. If a surface
+wants a line of its own beside the error, that is the `guidance` option, not
+string concatenation.
 
 `.sfdt-console.sfdt-error` is for the **org's** text. Our own prose — a
 destructive-mode caution, a truncation warning — is `.sfdt-callout`; the comment
 at that rule in `lib/ui-styles.ts` draws the line. The destructive-manifest
 banner in `metadata-retrieve` was on the wrong side of it and moved.
 
-Guarded by `test/sf-error-panel-contract.test.ts`: **no file outside
-`ui/panels.ts` may apply the class pair.** That is the piece the two behavioural
-guards (`error-render-newlines`, `sf-error-guidance`) could not supply — they
-pin what a correct panel looks like, and a fresh hand-roll can satisfy both.
+Guarded by `test/sf-error-panel-contract.test.ts`, in three rules: **no file
+outside `ui/panels.ts` may apply the class pair**, **no `.sfdt-console`
+element may be handed a caught error's text directly**, and **nothing may pass
+an already-stringified error to the renderer**. That is the piece the
+two behavioural guards (`error-render-newlines`, `sf-error-guidance`) could not
+supply — they pin what a correct panel looks like, and a fresh hand-roll can
+satisfy both. Rule 1 accumulates classes **per element**, not per statement: a
+first version matched one application at a time and was blind to
+`add('sfdt-console')` followed by `add('sfdt-error')`, which is the shape an
+author writing a reused pane produces first. Rule 2's identifier alternation is
+copied verbatim from `error-render-newlines.test.ts`, `/i` and `message`/`msg`
+included — a first version dropped those two spellings while citing that file
+as its source, which is exactly the omission that file's own comment records
+having already made once, and it left a `.sfdt-console` pane assigned from a
+`const message` invisible to all three rules. Rule 3 is a backstop rather than a
+proof: it reads the call site and the local bindings feeding it, so a helper in
+another module that returns a string still gets through.
 
 ### Layer 5 — behaviour (`ui/menu.ts`)
 

@@ -204,7 +204,10 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       resultArea.className = 'sfdt-ai-result';
       resultArea.style.cssText = 'margin-top: 12px;';
 
-      const renderResultError = (message: string): void => {
+      // Takes the error, not `err.message`: a failure raised by the API client
+      // carries its composition on `.userFacing`, and stringifying it here
+      // would flatten the org's text and our guidance back into one blob.
+      const renderResultError = (message: unknown): void => {
         resultArea.replaceChildren(renderSfError(message, { doc }));
       };
 
@@ -245,7 +248,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
             renderResultError(`Bridge: ${response.error}`);
           }
         } catch (err) {
-          renderResultError(err instanceof Error ? err.message : String(err));
+          renderResultError(err);
         } finally {
           runViaSfdt.disabled = false;
           runViaSfdt.textContent = originalLabel;
@@ -255,7 +258,19 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       body.appendChild(buttons);
       body.appendChild(resultArea);
     } catch (err) {
-      loading.textContent = `Error: ${err instanceof Error ? err.message : String(err)}`;
+      // Until C-FIX-4 this wrote the org's Tooling failure straight into the
+      // "Fetching…" line as unstyled body text, with no role="alert". It now
+      // replaces that line where it still stands; if the view was already
+      // rebuilt past it, the panel takes the body — announced either way.
+      //
+      // `?? new Error(...)` because renderSfError deliberately renders NOTHING
+      // for null/undefined (an empty panel must not be a live alert region), and
+      // `throw undefined` is legal JavaScript — without this, swapping the
+      // "Fetching…" line for that empty panel would leave the view blank with no
+      // indication anything failed.
+      const panel = renderSfError(err ?? new Error('Could not load Flow metadata.'), { doc });
+      if (loading.parentNode) loading.replaceWith(panel);
+      else body.replaceChildren(panel);
     }
   }
 

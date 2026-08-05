@@ -11,9 +11,11 @@
 import { escapeSoql } from './escape.js';
 import { SF_API_VERSION } from './api-version.js';
 import {
-  buildUserFacingMessage,
+  buildUserFacingParts,
   guidanceForErrorCode,
   guidanceForStatus,
+  type CarriesUserFacingParts,
+  type SfErrorParts,
 } from './sf-error-guidance.js';
 import { parseRestErrorDetails, type SalesforceRestErrorDetail } from './sf-error-body.js';
 import { SOAP_SID_SENTINEL, type SfApiFetchResponse } from './sf-api-proxy.js';
@@ -97,16 +99,29 @@ export type SfApiErrorKind = 'timeout' | 'no-session' | 'http-error';
 export type { SalesforceRestErrorDetail } from './sf-error-body.js';
 export { parseRestErrorDetails } from './sf-error-body.js';
 
-export class SalesforceRestError extends Error {
+export class SalesforceRestError extends Error implements CarriesUserFacingParts {
   readonly sfdtKind: SfApiErrorKind = 'http-error';
   readonly status: number;
   readonly details: SalesforceRestErrorDetail[];
+  /**
+   * `.message` before it was flattened: what the ORG said, and what we appended
+   * beside it. Renderers use this instead of re-splitting the string, because
+   * the org's own text can be multi-line (an Apex compile error is) and there
+   * is no way to tell its continuation lines from ours after the join.
+   */
+  readonly userFacing: SfErrorParts;
 
-  constructor(message: string, status: number, details: SalesforceRestErrorDetail[]) {
+  constructor(
+    message: string,
+    status: number,
+    details: SalesforceRestErrorDetail[],
+    userFacing: SfErrorParts = { orgText: message, notes: [] },
+  ) {
     super(message);
     this.name = 'SalesforceRestError';
     this.status = status;
     this.details = details;
+    this.userFacing = userFacing;
   }
 }
 
@@ -272,10 +287,12 @@ function buildRequestError(operation: string, endpoint: string, errors: RequestF
   const detail = extractErrorDetail(primary.errorText);
   const summary = primary.status > 0 ? `HTTP ${primary.status}` : 'network error';
   const headline = `Salesforce ${operation} failed (${summary})${detail ? `: ${detail}` : ''}`;
+  const userFacing = buildUserFacingParts(headline, details, primary.status);
   return new SalesforceRestError(
-    buildUserFacingMessage(headline, details, primary.status),
+    [userFacing.orgText, ...userFacing.notes].join('\n'),
     primary.status,
     details,
+    userFacing,
   );
 }
 

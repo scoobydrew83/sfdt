@@ -874,7 +874,7 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
         results.appendChild(buildLegend());
       } catch (err) {
         status.textContent = 'Failed';
-        results.appendChild(renderSfError(message(err), { doc }));
+        results.appendChild(renderSfError(err, { doc }));
       } finally {
         runBtn.disabled = false;
       }
