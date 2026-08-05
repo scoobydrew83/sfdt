@@ -12,13 +12,22 @@
  * The anchor is appended and removed rather than just constructed: a detached
  * <a> is not reliably clickable in Chrome, and this runs inside a content
  * script where the host page's own DOM is what we are borrowing.
+ *
+ * Returns the object URL it minted (already revoked by the time you get it, so
+ * it is a receipt, not a handle). Almost every caller ignores it. It exists for
+ * the one that cannot: the pre-delete backup in features/soql-bulk-delete.ts
+ * has to be able to tell "the browser accepted this blob and the anchor was
+ * clicked" from "nothing happened", because a delete is gated on it. Nothing
+ * here can report whether the file reached DISK — that needs the `downloads`
+ * permission, which the extension deliberately does not have — so this is the
+ * strongest handoff signal available, and callers must not describe it as more.
  */
 export function triggerDownload(
   doc: Document,
   filename: string,
   text: string,
   mime: string,
-): void {
+): string {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = doc.createElement('a');
@@ -30,6 +39,7 @@ export function triggerDownload(
   doc.body.removeChild(a);
   // Without this the blob is pinned until the document goes away.
   URL.revokeObjectURL(url);
+  return url;
 }
 
 /**

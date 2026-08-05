@@ -4,7 +4,7 @@
 // happened to have. These tests pin both halves, plus the rule that matters most
 // for a destructive dialog — no path may resolve `true` by accident.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { confirmDialog } from '../ui/confirm-dialog.js';
 import { setContentRoot } from '../ui/content-root.js';
 
@@ -109,6 +109,61 @@ describe('confirmDialog() — focus', () => {
     const answer = confirmDialog(OPTS);
     findButton('Cancel').click();
     await answer;
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it('consumes the Escape it handles, so the modal underneath does not also close', async () => {
+    // present-view.ts listens for Escape on the document too and only defers to
+    // other `.sfdt-view-overlay`s — it cannot see this dialog stacked over it.
+    // Before this, one Escape closed the confirm AND the view behind it, taking
+    // the user's unsaved input with it.
+    const behind = vi.fn();
+    document.addEventListener('keydown', behind); // bubble phase, like present-view
+
+    const answer = confirmDialog(OPTS);
+    pressEscape();
+    await answer;
+
+    expect(behind).not.toHaveBeenCalled();
+    document.removeEventListener('keydown', behind);
+  });
+
+  // The caller contract in confirm-dialog.ts's doc comment, pinned. A disabled
+  // element cannot take focus, so a caller that disables its trigger BEFORE
+  // opening the dialog silently strands the keyboard user on <body> — and no
+  // change inside confirmDialog can rescue it, because `.focus()` on a disabled
+  // element is a specified no-op. These two cases exist so the next caller
+  // learns that from a red test instead of a code review; C-P4-2 shipped the
+  // bug in review round 1 precisely because nothing asserted it.
+  it('cannot restore focus to a trigger the caller disabled — the documented failure mode', async () => {
+    const opener = document.createElement('button');
+    opener.textContent = 'Delete rows';
+    document.body.appendChild(opener);
+    opener.focus();
+
+    opener.disabled = true; // what a caller must NOT do
+    const answer = confirmDialog(OPTS);
+    findButton('Cancel').click();
+    await answer;
+
+    expect(document.activeElement).not.toBe(opener);
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('restores focus to a trigger that is still enabled while the dialog is up', async () => {
+    // The correct call-site shape: leave the trigger enabled across the dialog
+    // (the modal scrim and focus trap already make it unreachable) and disable
+    // it only once the destructive phase actually begins.
+    const opener = document.createElement('button');
+    opener.textContent = 'Delete rows';
+    document.body.appendChild(opener);
+    opener.focus();
+
+    const answer = confirmDialog(OPTS);
+    findButton('Cancel').click();
+    await answer;
+    opener.disabled = true; // disabling AFTER the restore is harmless
+
     expect(document.activeElement).toBe(opener);
   });
 
