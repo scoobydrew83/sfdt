@@ -174,3 +174,45 @@ export function buildUserFacingMessage(
 
   return lines.join('\n');
 }
+
+/** The two halves of a composed message: the org's own text, then our notes. */
+export interface SplitUserFacingMessage {
+  /** The org's own wording — line one, never ours, never truncated. */
+  orgText: string;
+  /** Everything buildUserFacingMessage appended: codes, fields, advice, `Also:` records. */
+  notes: string[];
+}
+
+/**
+ * The inverse of `buildUserFacingMessage`, and the reason it lives here rather
+ * than in the renderer: the newline is a RECORD SEPARATOR, not formatting, and
+ * a producer and consumer that agree about that by coincidence eventually stop
+ * agreeing. Both halves of the contract are now in one file.
+ *
+ * Every renderer that shows a Salesforce error splits here and emits each part
+ * as its own node, so the guidance cannot run into the org's own text no matter
+ * what CSS the surface happens to carry. Collapsing the two was the defect
+ * behind the 16 one-by-one fixes in PR #308.
+ */
+export function splitUserFacingMessage(message: unknown): SplitUserFacingMessage {
+  const text = typeof message === 'string' ? message : '';
+  const [head = '', ...rest] = text.split('\n');
+  // A blank line carries no record. Dropping it here rather than in the
+  // renderer keeps every surface's node count identical for the same error.
+  return { orgText: head, notes: rest.filter((line) => line.trim() !== '') };
+}
+
+/**
+ * Normalises whatever a `catch` caught into the string a panel renders.
+ *
+ * Fourteen features had their own `err instanceof Error ? err.message :
+ * String(err)`, which is how one of them ends up rendering `[object Object]`
+ * and nobody notices. `null`/`undefined` render as nothing rather than as the
+ * words "null"/"undefined".
+ */
+export function errorText(error: unknown): string {
+  if (error === null || error === undefined) return '';
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return String(error);
+}

@@ -4,6 +4,19 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Fixed
+
+- **A Salesforce error is announced to screen readers, on every surface.** Sixteen features built the org-error panel by hand — `createElement('div')`, `classList.add('sfdt-console', 'sfdt-error')`, `textContent = err.message` — and every one of them set the classes and left off `role="alert"`. A failed query, retrieve or test run was a red box to a sighted user and complete silence to anyone using a screen reader. All sixteen now come from one builder, which cannot forget the role. The panes that are *reused* (the debug-log console, the Execute Anonymous result pane) also give the role back when they stop carrying an error, or the next successful run would be announced as a failure.
+
+### Changed
+
+- **`renderSfError()` — one helper renders a Salesforce error, and nothing else may.** The previous shared builder took a single string, which was the affordance behind the sixteen one-by-one fixes in the last release: with the org's own text and our "what to do" line joined into one string, keeping them apart was a `white-space` rule each surface had to remember, and several instead resolved the ambiguity by throwing the org's real error away. `renderSfError()` / `setSfError()` emit the two as separate element nodes, so a block box cannot run into the one above it whatever CSS the host page brings, and a caller can no longer keep the wrong half because it no longer does the joining. The split (`splitUserFacingMessage`) now lives beside the join (`buildUserFacingMessage`) in `lib/sf-error-guidance.ts`: the newline between the org's records is a separator, not formatting, and a producer and consumer that agree about that by coincidence eventually stop agreeing. Our guidance also stops rendering in the org's alarm colour — advice in the same red as the failure reads as more of the failure rather than as the way out of it.
+- **The destructive-manifest banner is a callout, not an error console.** It carries our own warning prose, not an org error, which `lib/ui-styles.ts` has always distinguished at `.sfdt-callout`; wearing the error console's classes made the one *static* banner in the extension look like a live Salesforce failure and dragged it into every sweep aimed at the org-error path.
+
+### Added
+
+- **A contract sweep (`test/sf-error-panel-contract.test.ts`) that fails the seventeenth hand-roll.** The two guards that came out of the last release pin what a correct error panel *looks* like; a brand-new hand-rolled panel that happens to satisfy both still passes them, which is exactly how sixteen of them accumulated. This one pins the code *path*: `.sfdt-console` + `.sfdt-error` on one element is the Salesforce error block, and only `ui/panels.ts` may build it. The rule is the class **pair**, not `.sfdt-error` alone — that is also the red `.sfdt-pill`, which several features legitimately apply to a status chip. Per golden principle #12 the sweep excludes the artifacts that define it: the helper, the stylesheet declaring the classes, and this file, each listed by name with the reason it cannot be a violation, plus a test that fails a stale exclusion.
+
 ## [0.12.0] - 2026-08-03
 
 ### Added

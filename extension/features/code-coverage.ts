@@ -14,7 +14,7 @@ import {
 } from '@sfdt/flow-core';
 import { button, toolbar } from '../lib/ui-controls.js';
 import { meterCard, meterGrid, type MeterTone } from '../ui/meter-card.js';
-import { emptyPanel } from '../ui/panels.js';
+import { emptyPanel, renderSfError } from '../ui/panels.js';
 
 // Per-class coverage shaping/banding now lives in @sfdt/flow-core so the Chrome
 // viewer, the GUI Coverage page, and `sfdt coverage` band identically. These
@@ -118,10 +118,7 @@ export function createCodeCoverageFeature(options: CodeCoverageOptions = {}): Fe
       }
       results.appendChild(grid);
     } catch (err) {
-      const errorPanel = doc.createElement('div');
-      errorPanel.classList.add('sfdt-console', 'sfdt-error');
-      errorPanel.textContent = err instanceof Error ? err.message : String(err);
-      results.appendChild(errorPanel);
+      results.appendChild(renderSfError(err, { doc }));
       status.textContent = 'Failed';
     }
   }

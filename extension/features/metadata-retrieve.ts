@@ -1291,9 +1291,16 @@ export function createMetadataRetrieveFeature(options: {
     xmlDiv.appendChild(modeRow);
 
     // Destructive warning banner (P5-5): deploying the pair DELETES components.
+    //
+    // '.sfdt-callout.sfdt-bad', not the error console. It carries OUR prose, not
+    // an org error — the distinction lib/ui-styles.ts draws at '.sfdt-callout':
+    // the console is a monospace block for the org's own text. It had been
+    // wearing the error console's classes, which made it the one static banner
+    // that looked like a Salesforce failure and put it inside every sweep aimed
+    // at the org-error path.
     warningBannerEl = doc.createElement('div');
     warningBannerEl.setAttribute('role', 'alert');
-    warningBannerEl.classList.add('sfdt-console', 'sfdt-error');
+    warningBannerEl.classList.add('sfdt-callout', 'sfdt-bad');
     warningBannerEl.style.display = 'none';
     const warnStrong = doc.createElement('strong');
     warnStrong.textContent = 'Destructive manifest — deploying this pair DELETES the listed components from the org. ';

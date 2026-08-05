@@ -11,6 +11,7 @@ import {
 } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { renderSfError } from '../ui/panels.js';
 import { button, toolbar } from '../lib/ui-controls.js';
 
 // ---------------------------------------------------------------------------
@@ -106,10 +107,7 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
   }
 
   function renderError(results: HTMLElement, status: HTMLSpanElement, message: string): void {
-    const panel = doc.createElement('div');
-    panel.classList.add('sfdt-console', 'sfdt-error');
-    panel.textContent = message;
-    results.appendChild(panel);
+    results.appendChild(renderSfError(message, { doc }));
     status.textContent = 'Failed';
   }
 

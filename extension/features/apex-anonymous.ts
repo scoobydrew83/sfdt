@@ -18,6 +18,7 @@ import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { recordActivity } from '../lib/activity-log.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { clearSfError, setSfError } from '../ui/panels.js';
 import { parseApexLog } from '../lib/apex-log/index.js';
 import type { ParsedLog } from '../lib/apex-log/types.js';
 import { presentApexLogAnalyzer } from '../ui/apex-log-analyzer.js';
@@ -498,6 +499,9 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       limits.render(null);
       resultPane.style.display = 'none';
       resultPane.className = 'sfdt-console';
+      // Reused pane: drop the role="alert" a previous failure left on it, or
+      // this run's output is announced as an error.
+      clearSfError(resultPane);
       setStatus('', 'Running');
 
       // Trace-flag setup is best-effort: failing to arm log capture must never
@@ -618,9 +622,8 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         }
       } catch (err) {
         setStatus('error', 'Failed');
-        resultPane.textContent = err instanceof Error ? err.message : String(err);
+        setSfError(resultPane, err, { doc });
         resultPane.style.display = 'block';
-        resultPane.className = 'sfdt-console sfdt-error';
       } finally {
         runBtn.disabled = false;
         analyzeBtn.disabled = false;

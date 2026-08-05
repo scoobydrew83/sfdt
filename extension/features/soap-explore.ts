@@ -11,6 +11,7 @@ import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { SF_API_VERSION } from '../lib/api-version.js';
 import { button, toolbar } from '../lib/ui-controls.js';
 import { openMenu } from '../ui/menu.js';
+import { clearSfError, renderSfError, setSfError } from '../ui/panels.js';
 import { createHistory } from '../lib/history.js';
 import { copyToClipboard } from '../ui/clipboard.js';
 
@@ -204,8 +205,7 @@ export function createSoapExploreFeature(options: {
     statusPanel.className = 'sfdt-muted';
     main.appendChild(statusPanel);
 
-    const errorPanel = doc.createElement('div');
-    errorPanel.classList.add('sfdt-console', 'sfdt-error');
+    const errorPanel = renderSfError(null, { doc });
     errorPanel.style.display = 'none';
     main.appendChild(errorPanel);
 
@@ -284,14 +284,14 @@ export function createSoapExploreFeature(options: {
     });
 
     function showError(message: string): void {
-      errorPanel.textContent = message;
+      setSfError(errorPanel, message, { doc });
       errorPanel.style.display = 'block';
       responsePane.style.display = 'none';
       copyBtn.style.display = 'none';
     }
 
     function clearError(): void {
-      errorPanel.textContent = '';
+      clearSfError(errorPanel);
       errorPanel.style.display = 'none';
     }
 
