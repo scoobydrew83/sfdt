@@ -170,6 +170,53 @@ describe('Event Streaming Monitor UI Feature', () => {
     expect(bodyText).not.toContain('DailyApiRequests');
   });
 
+  it('announces a limits failure as an error, and stops announcing it on retry', async () => {
+    // Until C-FIX-4 round 4 this catch flattened the error into a template
+    // literal and wrote it as bare text into a hand-styled div: no class, no
+    // role="alert", no white-space rule. A live Platform-Event limits failure
+    // was visually and audibly indistinguishable from a status line, and the
+    // org's guidance line collapsed into its message.
+    const err = new Error('Org text here.\nWhat to do about it.');
+    const limits = vi
+      .fn<() => Promise<Record<string, { Max: number; Remaining: number }>>>()
+      .mockRejectedValueOnce(err)
+      .mockResolvedValueOnce({
+        HourlyPublishedPlatformEvents: { Max: 50000, Remaining: 42000 },
+      });
+
+    const feature = createEventMonitorFeature({
+      api: fakeApi({ limits }),
+      connect: makeConnect().connect,
+    });
+    await feature.onActivate?.();
+
+    const limitsBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Limits Metrics',
+    );
+    limitsBtn?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const alert = document.querySelector('[role="alert"]');
+    expect(alert, 'a failed limits fetch must be an announced alert').not.toBeNull();
+    expect(alert!.classList.contains('sfdt-error')).toBe(true);
+    // A plain Error carries no `.userFacing`, so it renders as ONE node — and
+    // that node must be the `pre-wrap` one, or the newline it arrived with is
+    // collapsed and the guidance runs into the org's text. That collapse is
+    // exactly what the old hand-styled div did.
+    const line = alert!.querySelector('.sfdt-sf-error-text');
+    expect(line, 'the org text must land in the pre-wrap node').not.toBeNull();
+    expect(line!.textContent).toBe('Org text here.\nWhat to do about it.');
+
+    // Toggle off, then on again: the retry succeeds and must not still be
+    // announced as the previous failure.
+    limitsBtn?.click();
+    limitsBtn?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(document.body.textContent).toContain('HourlyPublishedPlatformEvents');
+  });
+
   it('does not open a Port when no channel is selected and no custom path is provided', async () => {
     const { connect } = makeConnect();
     // fakeApi returns empty records, so the channel dropdown falls back to the

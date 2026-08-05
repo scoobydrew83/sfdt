@@ -80,6 +80,14 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { SFDT_COMPONENT_CSS } from '../lib/ui-styles.js';
+import {
+  carriesAnError,
+  dynamicParts,
+  errorBoundNames,
+  flattensAnError,
+  identifiersIn,
+  readExpression,
+} from './error-source-scan.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -111,54 +119,12 @@ const ERROR_CLASS = 'sfdt-error';
 
 // ── Reading class applications out of source ────────────────────────────────
 
-/**
- * Read one expression forward from `from`, respecting nesting and strings.
- *
- * Stops at the `)` that closes the call we are inside, or at the `;` of a bare
- * assignment. A depth-zero newline ends it too — but only when the NEXT line
- * does not open with a continuation token, because
- *
- *     statusPill.className =
- *       row.ok ? 'sfdt-pill sfdt-success' : 'sfdt-pill sfdt-error';
- *
- * is how a class assignment is formatted the moment it gets long, and reading
- * only as far as the first newline would see an empty expression and record no
- * classes at all. That is a blind spot the tree already contains (in
- * `debug-log-viewer.ts`), harmless there only because the classes happen to be
- * pill variants.
- */
-const CONTINUES_LINE = /^[?:.+&|,)\]}]/;
-
-function readExpression(source: string, from: number): string {
-  let depth = 0;
-  let quote: string | null = null;
-  for (let i = from; i < source.length; i++) {
-    const ch = source[i]!;
-    if (quote) {
-      if (ch === '\\') i++;
-      else if (ch === quote) quote = null;
-      continue;
-    }
-    if (ch === "'" || ch === '"' || ch === '`') {
-      quote = ch;
-      continue;
-    }
-    if (ch === '(' || ch === '[' || ch === '{') depth++;
-    else if (ch === ')' || ch === ']' || ch === '}') {
-      if (depth === 0) return source.slice(from, i); // the call's own closer
-      depth--;
-    } else if (depth === 0 && ch === ';') {
-      return source.slice(from, i);
-    } else if (depth === 0 && ch === '\n') {
-      const rest = source.slice(i + 1);
-      const nextLine = rest.replace(/^[ \t\r\n]*/, '');
-      if (source.slice(from, i).trim() !== '' && !CONTINUES_LINE.test(nextLine)) {
-        return source.slice(from, i);
-      }
-    }
-  }
-  return source.slice(from);
-}
+// `readExpression()` — the string- and nesting-aware reader that lets a class
+// application be read past the newline Prettier wraps it onto — now lives in
+// `./error-source-scan.ts`, shared with `error-render-newlines.test.ts`. The
+// blind spot it was written for is real and still in the tree:
+// `debug-log-viewer.ts` formats its `statusPill.className =` over two lines,
+// and a reader that stopped at the first newline recorded no classes at all.
 
 /**
  * The `.sfdt-*` names an expression mentions.
@@ -282,28 +248,28 @@ export function buildsSfErrorPanel(source: string): boolean {
   return false;
 }
 
-// Rule 2's matcher. The identifier alternation is copied from
-// `error-render-newlines.test.ts` VERBATIM, `/i` included, so the two guards
-// genuinely agree about what "renders an error" means.
+// Rule 2's matcher: the assignment, read as an EXPRESSION, and the question of
+// whether that expression carries an error asked by `carriesAnError()` in
+// `./error-source-scan.ts` — the same definition `error-render-newlines.test.ts`
+// uses, in one place, because the two guards disagreeing about what an error is
+// called is what produced three of the four holes this rule has now shipped.
 //
-// `message`/`msg` are the entries that matter, and leaving them out is a
-// mistake this codebase has now made twice. That file carries a nine-line
-// comment recording the first time: the org-error funnel for the SOQL runner
-// and the REST and SOAP explorers is `showError(message)`, so the assignment
-// that renders the org's text is spelled `message`, and a guard without it
-// "did not hold the very surface the reported bug appeared on". The first
-// version of THIS rule shipped the same short alternation while citing that
-// file as its source — and a `.sfdt-console` pane assigned from a
-// `const message` was invisible to all three rules and to both #308 guards.
+// Two of those holes were in the code this replaces, and both were structural
+// rather than a missing name:
 //
-// `LITERAL_ONLY` comes with the widening, for the same reason it exists there:
-// fixed single-line copy (`pane.textContent = 'Loading log…'`) cannot carry a
-// thrown error, and only assignments referencing an identifier can.
-const RENDERS_ERROR_VALUE =
-  /\b([A-Za-z_$][\w$]*)\s*\.\s*textContent\s*=\s*([^;\n]*\b(?:err|error|errors|errorMsg|message|msg)\b[^;\n]*)/gi;
-const ERROR_COUNT = /\b(?:err|error|errors|errorMsg|message|msg)\b\s*\.\s*length/gi;
-const ERROR_VALUE = /\b(?:err|error|errors|errorMsg|message|msg)\b/i;
-const LITERAL_ONLY = /=\s*['"`][^'"`]*['"`]\s*;?\s*$/;
+//   - `[^;\n]*` read ONE LINE. Rule 1 has been expression-scoped since it was
+//     rewritten; rule 2 was not, so the two shapes Prettier produces from a
+//     long assignment — a trailing `+` and an array `.join()` — walked through.
+//   - a `LITERAL_ONLY` suppressor excluded quote characters from its character
+//     class but not `$` or `{`, so an interpolating template literal read as
+//     fixed copy and `pane.textContent = \`Could not save: ${err.message}\``
+//     was suppressed outright. It was measured against the whole tree and
+//     suppressed NOTHING: with it short-circuited the suite stayed at 111 files
+//     / 2000 tests. An exclusion that excludes no false positive is not an
+//     exclusion, it is a hole — principle #12, one level up from the file list —
+//     so it is deleted rather than narrowed. `dynamicParts()` covers the intent
+//     it was reaching for, and cannot be fooled by a template literal.
+const TEXT_CONTENT_ASSIGN = /\b([A-Za-z_$][\w$]*)\s*\.\s*textContent\s*=\s*/g;
 
 /** Rule 2: console panes handed a caught error's text directly. */
 export function rendersErrorIntoConsole(source: string): string[] {
@@ -312,15 +278,16 @@ export function rendersErrorIntoConsole(source: string): string[] {
       .filter(([, classes]) => classes.has(CONSOLE_CLASS))
       .map(([name]) => name),
   );
+  const { holdsError } = errorBoundNames(source);
+  // Scanned over the masked source: an assignment written inside a string
+  // literal is not an assignment. See `dynamicParts()`.
+  const code = dynamicParts(source);
   const out: string[] = [];
-  for (const m of source.matchAll(RENDERS_ERROR_VALUE)) {
-    const [whole, name, expression] = m;
-    if (!consoles.has(name!)) continue;
-    // Fixed copy is single-line by construction and carries no error.
-    if (LITERAL_ONLY.test(whole!)) continue;
-    // A COUNT of errors is a number, not a message.
-    if (!ERROR_VALUE.test(expression!.replace(ERROR_COUNT, ''))) continue;
-    out.push(name!);
+  for (const m of code.matchAll(TEXT_CONTENT_ASSIGN)) {
+    const name = m[1]!;
+    if (!consoles.has(name)) continue;
+    if (!carriesAnError(readExpression(code, m.index! + m[0].length), holdsError)) continue;
+    out.push(name);
   }
   return out;
 }
@@ -362,49 +329,21 @@ export function errorSinks(source: string): string[] {
   return [...sinks];
 }
 
-// The flattening idioms: `.message` off anything, `instanceof Error ? …`,
-// `String(x)`, `x.toString()`, and a template literal that interpolates a bare
-// error identifier. `response.error` is NOT this — a bridge reply's error field
-// is a string that never was an Error object, so there is no structure to lose,
-// which is why the `.message` access is what is matched rather than the word
-// "error".
-const FLATTENING_IDIOM = new RegExp(
-  [
-    /\binstanceof\s+Error\s*\?/, // the longhand ternary
-    /[\w$)\]]\s*\??\s*\.\s*message\b/, // err.message, e?.message, (err as Error).message
-    /\bString\s*\(/, // String(err)
-    /\.\s*toString\s*\(\s*\)/, // err.toString()
-    // `${err}` — interpolating an Error object calls toString() on it. A
-    // PROPERTY access is deliberately not this: `${response.error}` is a
-    // bridge reply's string field, which never was an Error and has no
-    // structure to lose.
-    /\$\{\s*(?:err|error|errorMsg|ex|e|caught|reason)\s*\}/i,
-  ]
-    .map((r) => r.source)
-    .join('|'),
-);
-
-// …applied to something that plausibly IS an error. Without this the rule fires
-// on `String(jobId)` in apex-test-runner — a Salesforce record id being
-// normalised, interpolated into our own prose, with no error anywhere near it.
-// Flagging that would mean editing correct code to satisfy a check.
-const ERRORISH = /\b(?:err|error|errors|errorMsg|ex|caught|reason)\b/i;
-
-function flattensAnError(expression: string): boolean {
-  if (!FLATTENING_IDIOM.test(expression)) return false;
-  // `catch (e)` is idiomatic enough to honour, but a bare `e` is too common to
-  // treat as error-ish on its own — only its `.message` counts.
-  return ERRORISH.test(expression) || /\be\s*\??\s*\.\s*message\b/.test(expression);
-}
-
 /**
  * Rule 3: calls to an error sink that pass an already-flattened error.
  *
+ * `flattensAnError()` and the binding scan are the SAME ones rule 2 uses, from
+ * `./error-source-scan.ts`. Round 3 shipped them as two separate definitions in
+ * this one file that disagreed — rule 3's accepted `ex`/`caught`/`reason` and
+ * rule 2's did not — and a reviewer walked `catch (ex) { pane.textContent =
+ * String(ex); }` between them. Sharing the definition is the fix that closes
+ * the generator rather than the instance.
+ *
  * Scope, stated so it is not mistaken for more than it is: this catches the
- * flattening written INSIDE the call. It does not catch flattening done a line
- * earlier and passed by name where the intermediate is not a `const` this file
- * can resolve, and it cannot catch a helper in another module that returns a
- * string. It is a backstop for the ordinary slip, not a proof.
+ * flattening written INSIDE the call, or bound to a name this file can follow
+ * (a `catch` clause, a `const`/`let`/`var`, an alias of either). It cannot see
+ * a helper in another module that returns a string, or a value bound by a
+ * function PARAMETER. It is a backstop for the ordinary slip, not a proof.
  *
  * The intermediate-const case IS covered, because that is the ordinary refactor
  * when the expression is needed twice:
@@ -413,24 +352,17 @@ function flattensAnError(expression: string): boolean {
  *     renderSfError(msg);            // ← caught
  */
 export function passesStringifiedError(source: string): string[] {
-  // Names bound to a flattened error, so passing the name is passing the value.
-  const flattened = new Set<string>();
-  const binding = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]*)?=/g;
-  for (const m of source.matchAll(binding)) {
-    if (flattensAnError(readExpression(source, m.index! + m[0].length))) {
-      flattened.add(m[1]!);
-    }
-  }
-
+  const { holdsError, flattened } = errorBoundNames(source);
+  const code = dynamicParts(source);
   const out: string[] = [];
   for (const sink of errorSinks(source)) {
     const call = new RegExp(`\\b${sink}\\s*\\(`, 'g');
-    for (const m of source.matchAll(call)) {
-      const args = readExpression(source, m.index! + m[0].length);
-      const viaName = [...args.matchAll(/\b([A-Za-z_$][\w$]*)\b/g)].some((id) =>
-        flattened.has(id[1]!),
-      );
-      if (flattensAnError(args) || viaName) {
+    for (const m of code.matchAll(call)) {
+      const args = readExpression(code, m.index! + m[0].length);
+      // `flattened`, not `holdsError`: passing the raw error IS the correct
+      // call, and only a name already tied to its TEXT is the violation.
+      const viaName = identifiersIn(dynamicParts(args)).some((id) => flattened.has(id));
+      if (flattensAnError(args, holdsError) || viaName) {
         out.push(`${sink}(${args.trim().slice(0, 60)})`);
       }
     }
@@ -519,7 +451,11 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
       'renderSfError(err?.message, { doc });',
       'renderSfError(caught.message, { doc });',
       'renderSfError(ex.message, { doc });',
-      'renderSfError(reason.message, { doc });',
+      // `reason` is not an error SPELLING: ui/apex-log-analyzer.ts names a log
+      // TRUNCATION reason that, and claiming the word flags correct code. This
+      // is the structural half instead — bound by a catch clause, it is an
+      // error whatever it is called.
+      'try {\n  go();\n} catch (reason) {\n  renderSfError(reason.message, { doc });\n}',
       // …and the intermediate const, which is the ORDINARY refactor when the
       // expression is needed twice, not an evasion.
       'const msg = err instanceof Error ? err.message : String(err);\nrenderSfError(msg, { doc });',
@@ -580,9 +516,9 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
     }
     // The health modal's showError takes a `string` and renders a different
     // surface. Out of scope by design, not by oversight.
-    expect(errorSinks(readFileSync(path.join(ROOT, 'features/flow-health-check.ts'), 'utf8'))).not.toContain(
-      'showError',
-    );
+    expect(
+      errorSinks(readFileSync(path.join(ROOT, 'features/flow-health-check.ts'), 'utf8')),
+    ).not.toContain('showError');
   });
 
   it('scans the files it claims to', () => {
@@ -686,10 +622,9 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
     // omission `error-render-newlines.test.ts` had already documented and
     // fixed. Every spelling that file accepts is pinned here.
     for (const ident of ['message', 'msg', 'err', 'error', 'errorMsg', 'errors']) {
-      const src = [
-        "logPane.className = 'sfdt-console';",
-        `logPane.textContent = ${ident};`,
-      ].join('\n');
+      const src = ["logPane.className = 'sfdt-console';", `logPane.textContent = ${ident};`].join(
+        '\n',
+      );
       expect(rendersErrorIntoConsole(src), ident).toEqual(['logPane']);
     }
     // Case-insensitively, since the source alternation carries /i. (A word
@@ -704,7 +639,9 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
 
     // Fixed copy is not an error, however the pane is classed.
     expect(
-      rendersErrorIntoConsole("logPane.className = 'sfdt-console';\nlogPane.textContent = 'Loading log…';"),
+      rendersErrorIntoConsole(
+        "logPane.className = 'sfdt-console';\nlogPane.textContent = 'Loading log…';",
+      ),
     ).toEqual([]);
 
     // The migrated shape.
@@ -722,6 +659,134 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
     expect(
       rendersErrorIntoConsole(
         "p.className = 'sfdt-console';\np.textContent = `${r.errors.length} failed`;",
+      ),
+    ).toEqual([]);
+  });
+
+  it('rule 2 sees an error INTERPOLATED into a template literal', () => {
+    // The round-3 regression, pinned. A `LITERAL_ONLY` suppressor whose
+    // character class excluded quotes but not `$` or `{` classified every one
+    // of these as fixed copy and skipped them, so the #308 defect — a live org
+    // error in a `.sfdt-console` pane, no `.sfdt-error`, no `role="alert"` —
+    // left the suite at 111 files / 2000 tests. Round 2's rule 2, which had no
+    // suppressor, caught it; the fix for a missing alternation entry was paid
+    // for with a wider hole than it closed. Interpolation is the ORDINARY way
+    // to render an error with a lead-in, not an evasion.
+    const pane = "preview.className = 'sfdt-console';\n";
+    for (const assignment of [
+      'preview.textContent = `Could not save: ${err instanceof Error ? err.message : String(err)}`;',
+      'preview.textContent = `${err}`;',
+      'preview.textContent = `${String(err)} — settings not saved`;',
+      'const message = err instanceof Error ? err.message : String(err);\npreview.textContent = `${message}`;',
+      'preview.textContent = `Failed to load limits: ${message}`;',
+    ]) {
+      expect(rendersErrorIntoConsole(pane + assignment), assignment).toEqual(['preview']);
+    }
+  });
+
+  it('rule 2 reads the whole expression, not the first line', () => {
+    // Rule 1 has been expression-scoped since it was rewritten; rule 2 was
+    // still `[^;\n]*`, so both shapes Prettier produces from a long assignment
+    // walked through. Both of these are literally what `prettier --write`
+    // emits from an over-long one-liner.
+    const pane = "preview.className = 'sfdt-console';\n";
+    const wrapped = [
+      "preview.textContent =\n  'Could not save the naming pattern for this object type: ' +\n  (err instanceof Error ? err.message : String(err));",
+      "preview.textContent = [\n  'Could not save the naming pattern.',\n  err instanceof Error ? err.message : String(err),\n].join('\\n');",
+    ];
+    for (const assignment of wrapped) {
+      expect(rendersErrorIntoConsole(pane + assignment), assignment).toEqual(['preview']);
+    }
+  });
+
+  it('rule 2 knows an error by its binding, not only by its spelling', () => {
+    // The alternation was a NAME ALLOWLIST, and a name allowlist grows one
+    // reviewer-found spelling at a time: round 2 was missing `message`, round 3
+    // was missing `ex`/`caught`/`reason` — which rule 3 in this same file
+    // accepted — and neither ever had the compounds this codebase writes.
+    // `errorBoundNames()` derives the answer instead: a `catch` clause binds an
+    // error whatever it is called, and so does an assignment that flattens one.
+    const pane = "preview.className = 'sfdt-console';\n";
+
+    // A catch binding, whatever it is spelled.
+    for (const name of ['e', 'ex', 'caught', 'reason', 'problem', 'thrown', 'oops']) {
+      const src = `${pane}try {\n  save();\n} catch (${name}) {\n  preview.textContent = String(${name});\n}`;
+      expect(rendersErrorIntoConsole(src), `catch (${name})`).toEqual(['preview']);
+    }
+
+    // An intermediate binding whose name is off any plausible list — the
+    // ordinary refactor when the value is needed twice.
+    for (const name of ['detail', 'failure', 'text', 'bodyText', 'out']) {
+      const src = `${pane}const ${name} = err instanceof Error ? err.message : String(err);\npreview.textContent = ${name};`;
+      expect(rendersErrorIntoConsole(src), `const ${name} = …`).toEqual(['preview']);
+    }
+
+    // …and its alias, one more hop out.
+    expect(
+      rendersErrorIntoConsole(
+        `${pane}const detail = err.message;\nconst shown = detail;\npreview.textContent = shown;`,
+      ),
+    ).toEqual(['preview']);
+
+    // A `let` accumulator, which is the natural shape for a lead-in.
+    expect(
+      rendersErrorIntoConsole(
+        `${pane}let out = 'Save failed. ';\nout += err instanceof Error ? err.message : String(err);\npreview.textContent = out;`,
+      ),
+    ).toEqual(['preview']);
+
+    // Compounds. `\\berr\\b` never matched any of these, so every one was a
+    // hole a longer alternation would have closed one spelling at a time.
+    for (const name of ['errMsg', 'errMessage', 'sfError', 'errorText', 'errorDetail']) {
+      const src = `${pane}preview.textContent = ${name};`;
+      expect(rendersErrorIntoConsole(src), name).toEqual(['preview']);
+    }
+  });
+
+  it('rule 2 still declines the shapes that are not errors', () => {
+    // The other side of the widening. Each of these is correct code, and a
+    // guard that flagged it would mean editing correct code to satisfy a check.
+    const pane = "p.className = 'sfdt-console';\n";
+    for (const assignment of [
+      "p.textContent = 'Loading log…';", // fixed copy
+      'p.textContent = `Run finished in ${elapsed}ms`;', // a duration
+      'p.textContent = `${r.errors.length} failed`;', // a COUNT, not a message
+      'p.textContent = renderedOutput;', // not an error name
+      'p.textContent = `... and ${rows.length - 1000} more rows (errors will still download) ...`;',
+      'const parentJobId = String(jobId);\np.textContent = `Run id ${parentJobId}`;',
+    ]) {
+      expect(rendersErrorIntoConsole(pane + assignment), assignment).toEqual([]);
+    }
+  });
+
+  it('rule 2 and rule 3 agree about what an error is called', () => {
+    // The disagreement was the generator. Rule 3's `ERRORISH` accepted
+    // `ex`/`caught`/`reason`; rule 2's alternation did not, so the same catch
+    // variable was an error to one rule and not to the other in the SAME file.
+    // Both now consult `./error-source-scan.ts`, and this is the assertion that
+    // keeps them from drifting apart again.
+    const sink = "import { renderSfError } from '../ui/panels.js';\n";
+    const pane = "p.className = 'sfdt-console';\n";
+    for (const name of ['err', 'error', 'ex', 'caught', 'reason', 'problem', 'thrown', 'e']) {
+      const rule2 = rendersErrorIntoConsole(
+        `${pane}try {\n  go();\n} catch (${name}) {\n  p.textContent = String(${name});\n}`,
+      );
+      const rule3 = passesStringifiedError(
+        `${sink}try {\n  go();\n} catch (${name}) {\n  renderSfError(String(${name}), { doc });\n}`,
+      );
+      expect(rule2.length > 0, `rule 2 must know catch (${name})`).toBe(true);
+      expect(rule3.length > 0, `rule 3 must know catch (${name})`).toBe(true);
+    }
+  });
+
+  it('the two-hop in-file funnel is open, and that is a decision', () => {
+    // Closing it needs parameter-level dataflow: the value is bound at the CALL
+    // site, which neither the catch scan nor the binding scan can follow. Named
+    // here so round 5 finds a documented boundary rather than a surprise.
+    const pane = "preview.className = 'sfdt-console';\n";
+    expect(
+      rendersErrorIntoConsole(
+        `${pane}const show = (m: string): void => {\n  preview.textContent = m;\n};\nshow(err instanceof Error ? err.message : String(err));`,
       ),
     ).toEqual([]);
   });
@@ -747,6 +812,9 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
       'features/code-coverage.ts',
       'features/org-limits.ts',
       'features/schema-browser.ts',
+      // Added in C-FIX-4 round 4: the Platform-Event limits pane rendered a
+      // caught failure as bare text in a hand-styled div.
+      'features/event-monitor.ts',
     ]) {
       const source = readFileSync(path.join(ROOT, rel), 'utf8');
       expect(source, `${rel} must render org errors through ui/panels.ts`).toMatch(

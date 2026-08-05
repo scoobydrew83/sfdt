@@ -3,6 +3,12 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { SFDT_COMPONENT_CSS } from '../lib/ui-styles.js';
+import {
+  dynamicParts,
+  identifiersIn,
+  readExpression,
+  rendersAnErrorValue,
+} from './error-source-scan.js';
 
 // Since lib/sf-error-guidance.ts, a Salesforce error's `.message` is
 // multi-line: the org's own text, then the "what to do" line. HTML collapses a
@@ -25,45 +31,87 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 const SCANNED_DIRS = ['features', 'ui'];
 
-// `foo.textContent = <expression referencing an error value>`.
+// `foo.textContent = <expression>`, read as an EXPRESSION rather than as a
+// line: a right-hand side long enough for Prettier to wrap it is still one
+// assignment, and reading only to the first newline sees a fragment.
 //
-// `message`/`msg` ARE included. An earlier draft left them out on the reasoning
+// Whether the expression carries an error is `rendersAnErrorValue()` in
+// `./error-source-scan.ts` — the same definition `sf-error-panel-contract.test.ts`
+// uses. It used to be a private alternation here and a second, DIFFERENT
+// private alternation there, and every round of that guard's review found
+// another spelling one of them accepted and the other did not. One definition
+// is the fix for the generator; see the header of that module.
+//
+// `message`/`msg` are in it. An earlier draft left them out on the reasoning
 // that a thrown error is always reached through `err`/`error`, and that was
 // wrong: the org-error funnel for the SOQL runner, the REST explorer and the
 // SOAP explorer is `function showError(message: string)`, so the assignment
 // that actually renders the org's text is `errorPanel.textContent = message`.
 // Excluding them meant the guard did not hold the very surface the reported bug
-// appeared on. The LITERAL_ONLY filter below is what keeps static copy out, so
-// widening here costs nothing.
-const RENDERS_ERROR =
-  /(\w+)\.textContent\s*=\s*([^;\n]*\b(?:err|error|errors|errorMsg|message|msg)\b[^;\n]*)/i;
+// appeared on.
+const TEXT_CONTENT_ASSIGN = /(\w+)\.textContent\s*=\s*/g;
 const HAS_WHITE_SPACE = /white-space:\s*(?:pre|pre-line|pre-wrap)\b/;
 
-// Literal, non-dynamic copy — "Could not copy to clipboard", "Navigation
-// failed" — is single-line by construction. Only assignments that can carry a
-// thrown message matter, and those always reference an identifier.
-const LITERAL_ONLY = /=\s*['"`][^'"`]*['"`]\s*;?\s*$/;
+// ── What replaced LITERAL_ONLY, and why it had to go ────────────────────────
+//
+// Literal copy — "Could not copy to clipboard", "Navigation failed" — cannot
+// carry a thrown message, and this guard has to know that or it fires on every
+// static string containing the word "error". It used to know it like this:
+//
+//     const LITERAL_ONLY = /=\s*['"`][^'"`]*['"`]\s*;?\s*$/;
+//
+// The character class excludes quote characters but not `$` or `{`, so a
+// TEMPLATE LITERAL that interpolates an error read as static copy. That is not
+// a corner case; it is the ordinary way to render one, and it hid a live
+// offender in this very scan for a full release round:
+//
+//     limitsContainer.textContent = `Failed to load limits: ${message}`;
+//                                                 // features/event-monitor.ts
+//
+// `rendersAnErrorValue()` now asks the question of `dynamicParts()` — the
+// expression with the text inside its string literals removed — so static prose
+// is excluded by construction rather than by a pattern that has to guess where
+// the literal ends. A template literal keeps its `${…}` holes and loses its
+// prose, which is exactly the distinction the suppressor was reaching for and
+// exactly the one it got wrong.
+//
+// Measured on this tree, the swap surfaces four sites and needs NO replacement
+// suppressor for three of them:
+//
+//   features/field-creator.ts:398   `tdStatus.textContent = 'Error';`
+//   features/data-import.ts:745     `` `… and ${rows.length - 1000} more rows
+//                                      (errors will still download …)` ``
+//     Both are static prose. `dynamicParts()` leaves the first with nothing at
+//     all and the second with an arithmetic expression, so neither is flagged —
+//     structurally, not by exemption. This is the false positive LITERAL_ONLY
+//     was genuinely earning its keep on, and the reason the replacement is a
+//     narrower QUESTION rather than nothing.
+//
+//   features/event-monitor.ts:250   `` `Failed to load limits: ${message}` ``
+//   features/metadata-retrieve.ts:229 `` `${level.word}: ${msg.text}` ``
+//     Both are real. The first is the #308 defect verbatim, into a hand-styled
+//     div with no class and no role — fixed by routing through setSfError().
+//     The second was called a false positive on review, and is not: `addLog`
+//     is called with `` `Describe metadata failed: ${err.message}` `` at ten
+//     sites, so `msg.text` really does carry a thrown error's text, and since
+//     lib/sf-error-guidance.ts that text is multi-line. The log line now wears
+//     `.sfdt-msg`, the class that exists for exactly this.
 
-// A COUNT of errors is a number, not a message: `${result.errors.length} flows
-// could not be loaded` has no newline to preserve. Strip those references and
-// see whether any error value is still being rendered.
-const ERROR_COUNT = /\b(?:err|error|errors|errorMsg|message|msg)\b\s*\.\s*length/gi;
-const ERROR_VALUE = /\b(?:err|error|errors|errorMsg|message|msg)\b/i;
-
-function rendersAnErrorValue(expression: string): boolean {
-  return ERROR_VALUE.test(expression.replace(ERROR_COUNT, ''));
-}
-
-// Sites the widened alternation matches that provably cannot receive a thrown
-// error. Including `message`/`msg` is what buys coverage of the `showError`
-// funnels, and this is the price: a generic dialog whose parameter happens to
-// be called `message` is not locally distinguishable from an error funnel.
+// Sites the guard matches that provably cannot receive a thrown error.
+// Including `message`/`msg` is what buys coverage of the `showError` funnels,
+// and this is the price: a generic dialog whose parameter happens to be called
+// `message` is not locally distinguishable from an error funnel.
 //
 // An exemption is a REVIEWED decision, not a silent skip — that distinction is
 // the whole lesson of ui/health-modal.ts. Each entry names the file, the
-// identifier, and why it cannot carry a multiline error; and a test below
-// asserts every entry still matches real source, so a stale exemption fails
-// loudly instead of quietly widening the hole it was cut for.
+// identifier, and why it cannot carry a multiline error; and two tests below
+// hold the list to principle #12 in BOTH directions — that every entry still
+// matches real source, and that every entry would actually be flagged without
+// it. The second is the one this guard was missing, and its absence is what
+// this round is fixing: `LITERAL_ONLY` was an exemption of exactly this kind
+// with no such proof, and on rule 2 of the sibling guard it turned out to
+// suppress nothing at all while hiding a defect.
+//
 // `expression` narrows an entry to the one assignment it was written for: a
 // (file, name) pair alone would also exempt a FUTURE `el.textContent =
 // err.message` added to the same function, which is precisely the hole an
@@ -171,19 +219,20 @@ describe('a rendered Salesforce error keeps its newlines', () => {
 
     for (const file of sourceFiles()) {
       const source = readFileSync(file, 'utf8');
-      const lines = source.split('\n');
+      // Masked, so an assignment inside a string literal is not scanned;
+      // length- and newline-preserving, so line numbers stay true.
+      const code = dynamicParts(source);
 
-      lines.forEach((line, i) => {
-        const match = RENDERS_ERROR.exec(line);
-        if (!match) return;
-        if (LITERAL_ONLY.test(line)) return;
-        if (!rendersAnErrorValue(match[2]!)) return;
+      for (const match of code.matchAll(TEXT_CONTENT_ASSIGN)) {
+        const expression = readExpression(code, match.index + match[0].length);
+        if (!rendersAnErrorValue(expression)) continue;
 
         const name = match[1]!;
-        if (isExempt(path.relative(ROOT, file), name, match[2]!)) return;
-        if (setsWhiteSpaceDirectly(source, name)) return;
-        if (setsWhiteSpaceByClass(source, name)) return;
-        if (fromPanelBuilder(source, name)) return;
+        const line = code.slice(0, match.index).split('\n').length;
+        if (isExempt(path.relative(ROOT, file), name, expression)) continue;
+        if (setsWhiteSpaceDirectly(source, name)) continue;
+        if (setsWhiteSpaceByClass(source, name)) continue;
+        if (fromPanelBuilder(source, name)) continue;
 
         // An element with NO cssText is not exempt. An earlier draft skipped
         // those as "a judgement call we are not making", and that skip is
@@ -192,10 +241,10 @@ describe('a rendered Salesforce error keeps its newlines', () => {
         // guard silently passed a live offender. Declining to judge is itself a
         // judgement, and it was the wrong one.
         const css = cssTextFor(source, name);
-        if (css !== null && HAS_WHITE_SPACE.test(css)) return;
+        if (css !== null && HAS_WHITE_SPACE.test(css)) continue;
 
-        offenders.push(`${path.relative(ROOT, file)}:${i + 1} (${name})`);
-      });
+        offenders.push(`${path.relative(ROOT, file)}:${line} (${name})`);
+      }
     }
 
     expect(
@@ -267,6 +316,34 @@ describe('a rendered Salesforce error keeps its newlines', () => {
     }
   });
 
+  it('every exemption would actually be flagged without it', () => {
+    // The other half of principle #12, and the half this guard was missing.
+    // An entry that the check would not have flagged anyway buys no exemption
+    // and costs an assignment's worth of coverage, permanently and invisibly —
+    // which is precisely what `LITERAL_ONLY` turned out to be on the sibling
+    // guard's rule 2, where short-circuiting it left the whole suite green.
+    //
+    // Read through the SAME scanner the check uses, so an entry cannot claim
+    // an expression the scan would never produce.
+    for (const entry of EXEMPT) {
+      const source = readFileSync(path.join(ROOT, entry.file), 'utf8');
+      const code = dynamicParts(source);
+      const found = [...code.matchAll(TEXT_CONTENT_ASSIGN)].some(
+        (m) =>
+          m[1] === entry.name &&
+          readExpression(code, m.index + m[0].length).trim() === entry.expression,
+      );
+      expect(found, `${entry.file}: ${entry.name} no longer assigns ${entry.expression}`).toBe(
+        true,
+      );
+      expect(
+        rendersAnErrorValue(entry.expression),
+        `${entry.file} (${entry.name}) is exempted from a check that would not flag it — ` +
+          'that is a hole, not an exemption. Delete the entry.',
+      ).toBe(true);
+    }
+  });
+
   it('the shared toast preserves them', () => {
     // Every showToast() caller depends on this one rule.
     const toast = readFileSync(path.join(ROOT, 'ui', 'toast.ts'), 'utf8');
@@ -292,13 +369,13 @@ describe('a rendered Salesforce error keeps its newlines', () => {
   it('sees through the shared panel builders, but not through any call', () => {
     // Centralising the error panel must not make this guard fire on every file
     // that adopted it — and must not become a blanket pass for any assignment.
-    expect(fromPanelBuilder("const p = errorPanel(msg, doc);\n", 'p')).toBe(true);
-    expect(fromPanelBuilder("const p = renderSfError(err, { doc });\n", 'p')).toBe(true);
-    expect(fromPanelBuilder("const p = loadingPanel();\n", 'p')).toBe(true);
+    expect(fromPanelBuilder('const p = errorPanel(msg, doc);\n', 'p')).toBe(true);
+    expect(fromPanelBuilder('const p = renderSfError(err, { doc });\n', 'p')).toBe(true);
+    expect(fromPanelBuilder('const p = loadingPanel();\n', 'p')).toBe(true);
     expect(fromPanelBuilder("const p = doc.createElement('div');\n", 'p')).toBe(false);
-    expect(fromPanelBuilder("const p = renderSomething();\n", 'p')).toBe(false);
+    expect(fromPanelBuilder('const p = renderSomething();\n', 'p')).toBe(false);
     // A builder assigned to a DIFFERENT name must not vouch for this one.
-    expect(fromPanelBuilder("const q = errorPanel(msg);\n", 'p')).toBe(false);
+    expect(fromPanelBuilder('const q = errorPanel(msg);\n', 'p')).toBe(false);
   });
 
   it('accepts a shared class only while its rule actually declares the property', () => {
@@ -316,15 +393,76 @@ describe('a rendered Salesforce error keeps its newlines', () => {
     expect(setsWhiteSpaceByClass("q.className = 'sfdt-console';\n", 'p')).toBe(false);
     // …and it must read PAST the first argument of a multi-class add, which is
     // where the identity class sits once a file is migrated.
-    expect(setsWhiteSpaceByClass("p.classList.add('sfdt-my-thing', 'sfdt-msg');\n", 'p')).toBe(true);
+    expect(setsWhiteSpaceByClass("p.classList.add('sfdt-my-thing', 'sfdt-msg');\n", 'p')).toBe(
+      true,
+    );
     expect(setsWhiteSpaceByClass("p.classList.add('sfdt-my-thing', 'sfdt-card');\n", 'p')).toBe(
       false,
     );
   });
 
-  it('ignores fixed single-line copy, which cannot wrap', () => {
-    expect(LITERAL_ONLY.test("toast.textContent = 'Could not copy to clipboard';")).toBe(true);
-    expect(LITERAL_ONLY.test('p.textContent = err.message;')).toBe(false);
+  it('ignores fixed copy, and is not fooled by an interpolating template', () => {
+    // The regression this replaced. `LITERAL_ONLY`'s character class excluded
+    // quote characters but not `$` or `{`, so every one of the interpolated
+    // spellings below read as "fixed copy" and was suppressed — in this guard
+    // and in rule 2 of `sf-error-panel-contract.test.ts` at the same time. It
+    // is not a corner case: interpolation is the ordinary way to render an
+    // error with a lead-in, and it hid `features/event-monitor.ts:250` for a
+    // full round.
+    const suppressed = /=\s*['"`][^'"`]*['"`]\s*;?\s*$/;
+
+    for (const copy of [
+      "toast.textContent = 'Could not copy to clipboard';",
+      'status.textContent = "Navigation failed";',
+      'pane.textContent = `Loading log…`;',
+    ]) {
+      expect(rendersAnErrorValue(copy.split('=').slice(1).join('=')), copy).toBe(false);
+    }
+
+    for (const live of [
+      'p.textContent = err.message;',
+      'p.textContent = `Could not save: ${err instanceof Error ? err.message : String(err)}`;',
+      'p.textContent = `${err}`;',
+      'p.textContent = `${String(err)} — settings not saved`;',
+      'p.textContent = `Failed to load limits: ${message}`;',
+    ]) {
+      expect(rendersAnErrorValue(live.split('=').slice(1).join('=')), live).toBe(true);
+    }
+
+    // …and the four interpolated ones are exactly what the old suppressor
+    // called fixed copy. This is the assertion that keeps it from coming back.
+    for (const live of [
+      'p.textContent = `Could not save: ${err instanceof Error ? err.message : String(err)}`;',
+      'p.textContent = `${err}`;',
+      'p.textContent = `${String(err)} — settings not saved`;',
+      'p.textContent = `Failed to load limits: ${message}`;',
+    ]) {
+      expect(suppressed.test(live), `${live} — the shape LITERAL_ONLY got wrong`).toBe(true);
+    }
+  });
+
+  it('drops the prose inside a string but keeps what it interpolates', () => {
+    // `dynamicParts()` is what makes the check above structural rather than a
+    // pattern that has to guess where a literal ends.
+    // Length- and newline-preserving, so it can be run over a whole file
+    // without moving a single offset — assert on what SURVIVES, not on shape.
+    expect(identifiersIn(dynamicParts("'nothing here'"))).toEqual([]);
+    expect(identifiersIn(dynamicParts('`plain words only`'))).toEqual([]);
+    expect(dynamicParts("'abcd'")).toHaveLength(6);
+    expect(dynamicParts('`a ${err.message} b`')).toContain('err.message');
+    // A `X = …` written inside a string literal is not a binding — the Python
+    // code template in features/soql-runner.ts contains `query = """`.
+    expect(identifiersIn(dynamicParts('const py = `\\nquery = """\\n`;'))).toEqual(['const', 'py']);
+    // Prose that merely CONTAINS an error word is not a value — this is
+    // features/data-import.ts:745, which the old suppressor also let through
+    // only because the line happened to end in a backtick.
+    expect(
+      rendersAnErrorValue(
+        '`... and ${rows.length - 1000} more rows (errors will still download completely) ...`',
+      ),
+    ).toBe(false);
+    // …and a literal that IS an error word, which is features/field-creator.ts:398.
+    expect(rendersAnErrorValue("'Error'")).toBe(false);
   });
 
   it('distinguishes an error VALUE from an error COUNT', () => {

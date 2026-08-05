@@ -226,6 +226,12 @@ export function createMetadataRetrieveFeature(options: {
       setTone(item, level.tone);
       item.appendChild(glyph(level.icon, 12, doc));
       const text = doc.createElement('span');
+      // `.sfdt-msg` (white-space: pre-line) because this line really can carry
+      // a thrown error: addLog('error', `Describe metadata failed: ${err.message}`)
+      // is written at ten sites here, and since lib/sf-error-guidance.ts an org
+      // error's message is multi-line. Without the rule the guidance runs into
+      // the org's text — the #308 defect, in the retrieve log.
+      text.className = 'sfdt-msg';
       text.textContent = `${level.word}: ${msg.text}`;
       item.appendChild(text);
       logsContainer.appendChild(item);
