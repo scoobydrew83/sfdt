@@ -28,7 +28,7 @@ import { SF_API_VERSION } from '../lib/api-version.js';
 import { escapeSoql } from '../lib/escape.js';
 import { button, field, glyph, toolbar } from '../lib/ui-controls.js';
 import { buildNodeGraphSvg } from '../ui/node-graph.js';
-import { errorPanel, loadingPanel } from '../ui/panels.js';
+import { loadingPanel, renderSfError } from '../ui/panels.js';
 import { openMenu } from '../ui/menu.js';
 import { triggerDownload, exportFilename } from '../lib/download.js';
 import { recordsToCsv, recordsToJson } from './soql-runner.js';
@@ -662,9 +662,9 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
         }
         if (entry.status === 'error' || !entry.data) {
           canvas.appendChild(
-            errorPanel(
+            renderSfError(
               entry.error ? `Could not load ${root} — ${entry.error}` : `Could not load ${root}.`,
-              doc,
+              { doc },
             ),
           );
           return;
@@ -751,11 +751,11 @@ export function createSchemaBrowserFeature(options: SchemaBrowserOptions = {}): 
       }
       if (describe.status === 'error' || !describe.data) {
         fieldCountLine.textContent = '';
-        const err = errorPanel(
+        const err = renderSfError(
           describe.error
             ? `Failed to load object describe — ${describe.error}`
             : 'Failed to load object describe.',
-          doc,
+          { doc },
         );
 
         detailScroll.appendChild(err);

@@ -5,6 +5,7 @@ import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-ap
 import { loadSettings } from '../lib/settings.js';
 import { createBridgeClient, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { renderSfError } from '../ui/panels.js';
 import type { SfdtRequest, SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 import { button } from '../lib/ui-controls.js';
 import { copyToClipboard } from '../ui/clipboard.js';
@@ -204,11 +205,7 @@ export function createAiAssistantFeature(options: AiAssistantOptions = {}): Feat
       resultArea.style.cssText = 'margin-top: 12px;';
 
       const renderResultError = (message: string): void => {
-        while (resultArea.firstChild) resultArea.removeChild(resultArea.firstChild);
-        const panel = doc.createElement('div');
-        panel.classList.add('sfdt-console', 'sfdt-error');
-        panel.textContent = message;
-        resultArea.appendChild(panel);
+        resultArea.replaceChildren(renderSfError(message, { doc }));
       };
 
       const renderResult = (responseText: string, provider: string): void => {
