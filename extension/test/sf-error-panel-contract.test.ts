@@ -87,6 +87,7 @@ import {
   flattensAnError,
   identifiersIn,
   readExpression,
+  withoutComments,
 } from './error-source-scan.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -214,7 +215,13 @@ const OBJECT_ASSIGN = /\bObject\.assign\(\s*([A-Za-z_$][\w$]*)\s*,/g;
  *   an adversary — it is trying to survive the next person writing a panel in a
  *   hurry, which is who wrote the sixteen.
  */
-export function classesByElement(source: string): Map<string, Set<string>> {
+export function classesByElement(rawSource: string): Map<string, Set<string>> {
+  // Comments out, string literals IN. Rule 1 reads class names, and a class
+  // name is a string literal — so this is the one scan that cannot use
+  // `dynamicParts()`; running rule 1 over that mask stops `ui/panels.ts`
+  // tripping the rule it is excluded for. `withoutComments()` is the half it
+  // can use, and without it a commented-out hand-roll reads as a live one.
+  const source = withoutComments(rawSource);
   const consts = constClassTokens(source);
   const out = new Map<string, Set<string>>();
 
@@ -588,6 +595,27 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
     for (const [name, src] of forms) {
       expect(buildsSfErrorPanel(src), `${name} must be caught`).toBe(true);
     }
+  });
+
+  it('does not read a commented-out hand-roll as a live one', () => {
+    // Rule 1 reads class names, so it is the one scan that cannot run over
+    // `dynamicParts()` — that mask empties string literals, and a class name IS
+    // a string literal. (Measured: rule 1 over the full mask flips exactly one
+    // file, `ui/panels.ts`, which is the one file the rule must trip.) It can
+    // and now does use the comment half. A latent false positive rather than a
+    // hole — it fired in the safe direction — but the machinery was already
+    // here and, measured over every scanned file, no verdict changes.
+    expect(buildsSfErrorPanel("// p.classList.add('sfdt-console', 'sfdt-error');")).toBe(false);
+    expect(buildsSfErrorPanel('/* p.className = `sfdt-console sfdt-error`; */')).toBe(false);
+    // …and the live one one line below it is still caught.
+    expect(
+      buildsSfErrorPanel(
+        "// p.classList.add('sfdt-console', 'sfdt-error');\np.className = 'sfdt-console sfdt-error';",
+      ),
+    ).toBe(true);
+    // The helper still trips it through its own constant, which is a real
+    // declaration and not a comment.
+    expect(buildsSfErrorPanel(readFileSync(path.join(ROOT, 'ui/panels.ts'), 'utf8'))).toBe(true);
   });
 
   it('does not flag the class pair spread across two different elements', () => {

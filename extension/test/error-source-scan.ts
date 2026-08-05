@@ -204,15 +204,24 @@ function literalInterior(kind: ts.SyntaxKind, start: number, end: number): [numb
   }
 }
 
-function maskStaticText(source: string): string {
-  const out = source.split('');
-  const blank = (from: number, to: number): void => {
-    for (let k = Math.max(from, 0); k < Math.min(to, out.length); k++) {
-      // Newlines survive, so every offset AND every line number is preserved.
-      if (out[k] !== '\n') out[k] = ' ';
-    }
-  };
+/**
+ * Blank a range in place, keeping newlines.
+ *
+ * Every offset AND every line number is preserved, which is what lets both
+ * guards compute `file:line` from a masked buffer and then look the element up
+ * in the raw one.
+ */
+function blankInto(out: string[], from: number, to: number): void {
+  for (let k = Math.max(from, 0); k < Math.min(to, out.length); k++) {
+    if (out[k] !== '\n') out[k] = ' ';
+  }
+}
 
+/** The source with the TEXT of every literal emptied — the parser's answer. */
+function blankLiterals(source: string): string {
+  const cached = NO_LITERALS.get(source);
+  if (cached !== undefined) return cached;
+  const out = source.split('');
   const file = ts.createSourceFile(
     'scan.ts',
     source,
@@ -229,7 +238,7 @@ function maskStaticText(source: string): string {
       case ts.SyntaxKind.TemplateTail:
       case ts.SyntaxKind.RegularExpressionLiteral: {
         const [from, to] = literalInterior(node.kind, node.getStart(file), node.end);
-        blank(from, to);
+        blankInto(out, from, to);
         break;
       }
       default:
@@ -238,29 +247,77 @@ function maskStaticText(source: string): string {
     ts.forEachChild(node, visit);
   };
   ts.forEachChild(file, visit);
+  const emptied = out.join('');
+  if (NO_LITERALS.size < 8192) NO_LITERALS.set(source, emptied);
+  return emptied;
+}
 
-  // Comments, on the buffer the step above already emptied. Every `/` left in
-  // it is either a division or a comment opener — a literal cannot hide one any
-  // more — so this needs no lookbehind and no notion of context.
-  const partial = out.join('');
+const NO_LITERALS = new Map<string, string>();
+
+/**
+ * Where the comments are.
+ *
+ * Found on the literal-emptied buffer, where the question is decidable without
+ * context: a `/` inside a string is now a space, a regex is gone entirely, and
+ * a `//` in JavaScript is never two divisions. Reading comments off the RAW
+ * source instead is what makes a scanner need to know regex-from-division, and
+ * getting that wrong is how #327's masker could be opened by a backtick.
+ */
+function commentRanges(source: string): [number, number][] {
+  const emptied = blankLiterals(source);
+  const ranges: [number, number][] = [];
   let i = 0;
-  while (i < partial.length - 1) {
-    if (partial[i] === '/' && partial[i + 1] === '/') {
+  while (i < emptied.length - 1) {
+    if (emptied[i] === '/' && emptied[i + 1] === '/') {
       let end = i;
-      while (end < partial.length && partial[end] !== '\n') end++;
-      blank(i, end);
+      while (end < emptied.length && emptied[end] !== '\n') end++;
+      ranges.push([i, end]);
       i = end;
-    } else if (partial[i] === '/' && partial[i + 1] === '*') {
-      const close = partial.indexOf('*/', i + 2);
-      const end = close === -1 ? partial.length : close + 2;
-      blank(i, end);
+    } else if (emptied[i] === '/' && emptied[i + 1] === '*') {
+      const close = emptied.indexOf('*/', i + 2);
+      const end = close === -1 ? emptied.length : close + 2;
+      ranges.push([i, end]);
       i = end;
     } else {
       i++;
     }
   }
+  return ranges;
+}
+
+function maskStaticText(source: string): string {
+  const out = blankLiterals(source).split('');
+  for (const [from, to] of commentRanges(source)) blankInto(out, from, to);
   return out.join('');
 }
+
+/**
+ * The source with its COMMENTS emptied and everything else — string literals
+ * included — left exactly where it was.
+ *
+ * For rule 1, which `dynamicParts()` cannot serve: that mask deletes the inside
+ * of every string literal, and a class name is a string literal. Reading rule 1
+ * through it makes `ui/panels.ts` stop tripping the rule it is excluded FOR.
+ * Measured: rule 1 over the mask flips exactly one file, and it is that one.
+ *
+ * What rule 1 does need is the comment half, because it reads raw source today
+ * and a commented-out hand-roll therefore reports as a live one. No such
+ * comment is in the tree — this is a latent false positive, not a hole, and it
+ * fires in the safe direction — but the machinery to remove it is already here,
+ * and it costs nothing: measured over every scanned file, no rule-1 verdict
+ * changes.
+ */
+export function withoutComments(source: string): string {
+  const cached = NO_COMMENTS.get(source);
+  if (cached !== undefined) return cached;
+  const out = source.split('');
+  for (const [from, to] of commentRanges(source)) blankInto(out, from, to);
+  const stripped = out.join('');
+  if (NO_COMMENTS.size < 8192) NO_COMMENTS.set(source, stripped);
+  return stripped;
+}
+
+const NO_COMMENTS = new Map<string, string>();
 
 // ── What an error is called ─────────────────────────────────────────────────
 
