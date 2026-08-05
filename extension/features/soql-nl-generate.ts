@@ -270,6 +270,14 @@ export const PROMPT_INSTRUCTIONS = [
   '- The schema below is metadata only. You have not been given any record data; do not pretend to have seen any.',
 ].join('\n');
 
+/**
+ * The heading the user's request is interpolated under. Exported because
+ * {@link recordValueLeak}'s fallback locates the request relative to it, and a
+ * checker that hunts for a literal it does not own is a checker that silently
+ * stops working when the literal moves.
+ */
+export const REQUEST_HEADING = '## Request\n';
+
 export interface BuiltPrompt {
   /** What goes on the wire. */
   prompt: string;
@@ -279,6 +287,17 @@ export interface BuiltPrompt {
   objects: string[];
   /** Every field API name in the prompt — the leak gate's ignore list. */
   fieldNames: string[];
+  /**
+   * `[start, end)` of the user's request inside `prompt` — the exact span this
+   * function interpolated it at.
+   *
+   * The leak gate subtracts the user's own words before scanning, and it has to
+   * subtract the OCCURRENCE, not the characters: a global find-and-replace of a
+   * one-character description deletes that character from the entire prompt and
+   * the scan then finds nothing. Handing the gate the span removes the guesswork
+   * — we know where we put it.
+   */
+  requestRange: readonly [number, number];
 }
 
 /**
@@ -303,16 +322,13 @@ export function buildGeneratePrompt(input: {
     blocks.push(schemaMarkdown(schema));
   }
   const schemaBlock = blocks.join('\n\n');
-  const prompt = [
-    PROMPT_INSTRUCTIONS,
-    '',
-    '## Request',
-    request,
-    '',
-    '## Schema',
-    schemaBlock,
-  ].join('\n');
-  return { prompt, schemaBlock, objects, fieldNames };
+  // Assembled by index rather than by join() so the request's span is a fact we
+  // computed, not one a later reader has to re-derive by searching for it.
+  const head = `${PROMPT_INSTRUCTIONS}\n\n${REQUEST_HEADING}`;
+  const tail = `\n\n## Schema\n${schemaBlock}`;
+  const prompt = `${head}${request}${tail}`;
+  const requestRange: readonly [number, number] = [head.length, head.length + request.length];
+  return { prompt, schemaBlock, objects, fieldNames, requestRange };
 }
 
 // ---------------------------------------------------------------------------
@@ -322,26 +338,44 @@ export function buildGeneratePrompt(input: {
 /** Below this many characters a value is too generic to be evidence of a leak. */
 const LEAK_MIN_LENGTH = 8;
 
-/** How deep into a row's nested (relationship) objects to look. */
-const LEAK_MAX_DEPTH = 3;
-
+/**
+ * Walk a row and collect every scalar in it, however deeply nested.
+ *
+ * THERE IS NO DEPTH CAP, DELIBERATELY. There used to be one, at 3, which reached
+ * two relationship hops (`Owner.Manager.Name`) and stopped. That is shallower
+ * than SOQL goes: child-to-parent traversal is legal to five levels
+ * (`A__r.B__r.C__r.D__r.E__r.Name`), and a parent-to-child subquery nests a
+ * further `{ records: [...] }` envelope under its own key, so a single legal
+ * query can put a value eight or nine levels into the response object. Any fixed
+ * number is therefore a number a real result set can exceed, and a backstop with
+ * a blind spot you can reach by writing an ordinary query is not much of a
+ * backstop.
+ *
+ * Termination comes from a cycle guard instead of from a counter. The rows this
+ * is handed are `JSON.parse`d Salesforce responses, which are finite trees; the
+ * `seen` set is there for the case that is not true — a hand-built object with a
+ * back edge — so a malformed caller gets a wrong answer rather than a hung tab.
+ */
 function collectRecordValues(
   value: unknown,
-  depth: number,
   into: Set<string>,
+  seen: Set<object>,
 ): void {
-  if (depth > LEAK_MAX_DEPTH) return;
   if (Array.isArray(value)) {
-    for (const item of value) collectRecordValues(item, depth + 1, into);
+    if (seen.has(value)) return;
+    seen.add(value);
+    for (const item of value) collectRecordValues(item, into, seen);
     return;
   }
   if (isPlainRecord(value)) {
+    if (seen.has(value)) return;
+    seen.add(value);
     for (const key of Object.keys(value)) {
       // The Salesforce envelope carries the object's own API name as a VALUE
       // (`attributes.type: 'Account'`), which the schema block legitimately
       // contains. Skipping it is not a hole: it holds no field data.
       if (key.toLowerCase() === 'attributes') continue;
-      collectRecordValues(value[key], depth + 1, into);
+      collectRecordValues(value[key], into, seen);
     }
     return;
   }
@@ -349,6 +383,50 @@ function collectRecordValues(
     const text = String(value).trim();
     if (text.length >= LEAK_MIN_LENGTH) into.add(text);
   }
+}
+
+/**
+ * Remove the user's request from the prompt — the OCCURRENCE, not the
+ * characters.
+ *
+ * This is the whole of the N1 fix, so it is worth being explicit about what was
+ * wrong. The old line was `prompt.split(request).join('\n')`, a global
+ * find-and-replace. With `request = 'o'` that deletes every `o` in the prompt,
+ * including the ones inside `Zenith Prosthetics Consortium`, and the scan that
+ * follows then matches nothing — a one-character description switched the gate
+ * off. A minimum-length floor would only move the bypass to the first length the
+ * floor allows, so the fix is to stop doing a text substitution at all.
+ *
+ * `range` is the span {@link buildGeneratePrompt} interpolated the request at,
+ * and it is verified against the prompt before it is trusted. Callers that
+ * assembled the prompt some other way get a fallback that still removes exactly
+ * one occurrence — the one under {@link REQUEST_HEADING} when there is a heading
+ * — never all of them.
+ */
+function subtractRequest(
+  prompt: string,
+  request: string,
+  range: readonly [number, number] | undefined,
+): string {
+  if (request.length === 0) return prompt;
+  if (range) {
+    const [start, end] = range;
+    if (
+      Number.isInteger(start) &&
+      Number.isInteger(end) &&
+      start >= 0 &&
+      end - start === request.length &&
+      end <= prompt.length &&
+      prompt.slice(start, end) === request
+    ) {
+      return `${prompt.slice(0, start)}\n${prompt.slice(end)}`;
+    }
+  }
+  const heading = prompt.indexOf(REQUEST_HEADING);
+  const from = heading >= 0 ? heading + REQUEST_HEADING.length : 0;
+  const at = prompt.indexOf(request, from);
+  if (at < 0) return prompt;
+  return `${prompt.slice(0, at)}\n${prompt.slice(at + request.length)}`;
 }
 
 /**
@@ -365,10 +443,17 @@ function collectRecordValues(
  *     re-grouped) between the row and the prompt;
  *   - blind to anything in a result set that is not currently on screen.
  *
+ * It is NOT blind to a deeply nested value: see {@link collectRecordValues},
+ * which has no depth cap.
+ *
  * `requestText` is subtracted before the search, because the user's own words
  * are theirs: someone typing "accounts named Universal Containers" while that
  * name happens to be in the results table has not suffered a leak, and blocking
- * them would be a bug. Everything the ASSEMBLER produced is still searched.
+ * them would be a bug. Only the REGION the request was interpolated at is
+ * removed (`opts.requestRange`, from `buildGeneratePrompt`) — subtracting its
+ * characters globally, as this once did, let a one-character description erase
+ * the evidence from the whole prompt. Everything the ASSEMBLER produced is still
+ * searched.
  *
  * `ignore` takes the object and field API names in the prompt, which the schema
  * block legitimately contains and which a row can also carry as a value
@@ -378,17 +463,18 @@ export function recordValueLeak(
   prompt: string,
   requestText: string,
   records: ReadonlyArray<unknown> | null | undefined,
-  opts: { ignore?: Iterable<string> } = {},
+  opts: { ignore?: Iterable<string>; requestRange?: readonly [number, number] } = {},
 ): string | null {
   if (!records || records.length === 0) return null;
   const request = String(requestText ?? '');
-  // Subtract the user's own words, then search what is left.
-  const haystack = (request.length > 0 ? prompt.split(request).join('\n') : prompt).toLowerCase();
+  // Subtract the user's own words — the occurrence, not the characters.
+  const haystack = subtractRequest(prompt, request, opts.requestRange).toLowerCase();
   const ignore = new Set<string>();
   for (const name of opts.ignore ?? []) ignore.add(String(name).trim().toLowerCase());
 
   const values = new Set<string>();
-  for (const row of records) collectRecordValues(row, 0, values);
+  const seen = new Set<object>();
+  for (const row of records) collectRecordValues(row, values, seen);
   for (const value of values) {
     const lower = value.toLowerCase();
     if (ignore.has(lower)) continue;
@@ -497,7 +583,12 @@ export interface GenerateDeps {
   inspectPrompt?(
     prompt: string,
     requestText: string,
-    context: { objects: readonly string[]; fieldNames: readonly string[] },
+    context: {
+      objects: readonly string[];
+      fieldNames: readonly string[];
+      /** Where `requestText` sits in `prompt`, so a gate can exclude it by index. */
+      requestRange: readonly [number, number];
+    },
   ): string | null;
   /**
    * Send the prompt through the ai-assistant bridge plumbing. THE ONLY WAY OUT
@@ -576,6 +667,7 @@ export async function generateSoql(
       refusal = deps.inspectPrompt(built.prompt, request, {
         objects: built.objects,
         fieldNames: built.fieldNames,
+        requestRange: built.requestRange,
       });
     } catch (err) {
       refusal = err instanceof Error ? err.message : String(err);

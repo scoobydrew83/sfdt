@@ -308,6 +308,159 @@ describe('the leak backstop (AC-4)', () => {
     expect(recordValueLeak('anything', 'x', [])).toBeNull();
     expect(recordValueLeak('anything', 'x', null)).toBeNull();
   });
+
+  // -------------------------------------------------------------------------
+  // Regression: N1. The subtraction of the user's own words used to be
+  // `prompt.split(request).join('\n')` — a GLOBAL find-and-replace. A
+  // one-character description therefore deleted that character from the whole
+  // prompt, taking the leaked value apart with it, and the scan that followed
+  // found nothing. Same prompt, same rows, gate off, because the user typed "o".
+  //
+  // Every case below returns null against the unfixed implementation. A minimum
+  // length floor is not what fixes them, and `Zenith P` is in the list to prove
+  // it: eight characters clears the 8-character floor the gate already uses and
+  // gutted the haystack exactly as thoroughly as `o` did. A floor moves the
+  // bypass; it does not close it.
+  describe('a short description cannot switch the gate off (N1)', () => {
+    const LEAKED = 'Zenith Prosthetics Consortium';
+    const rows = [{ attributes: { type: 'Account' }, Name: LEAKED }];
+
+    /** A prompt with the value spliced into the SCHEMA half, as a real leak would be. */
+    const leakyPrompt = (request: string): { prompt: string; requestRange: readonly [number, number] } => {
+      const built = buildGeneratePrompt({ request, schemas: [ACCOUNT_SCHEMA] });
+      // The splice is what a regression would do: a row value ending up in the
+      // part of the prompt this module assembled.
+      const prompt = `${built.prompt}\n_Sample: ${LEAKED}_`;
+      return { prompt, requestRange: built.requestRange };
+    };
+
+    const DEFEATING_REQUESTS: Array<[string, string]> = [
+      ['a one-character description', 'o'],
+      ['a two-character description', 'os'],
+      ['a description that is a word of the value', 'Zenith'],
+      ['a description at the gate’s own 8-character floor', 'Zenith P'],
+    ];
+    for (const [label, request] of DEFEATING_REQUESTS) {
+      it(`catches the leak with ${label}`, () => {
+        const { prompt, requestRange } = leakyPrompt(request);
+        expect(recordValueLeak(prompt, request, rows, { requestRange })).toBe(LEAKED);
+      });
+    }
+
+    it('still does not flag the user’s own words, even when they ARE the value', () => {
+      // The other half of the property: subtracting by index must not have
+      // become "subtract nothing". Typing the customer's name is not a leak.
+      const built = buildGeneratePrompt({ request: LEAKED, schemas: [ACCOUNT_SCHEMA] });
+      expect(
+        recordValueLeak(built.prompt, LEAKED, rows, { requestRange: built.requestRange }),
+      ).toBeNull();
+    });
+
+    it('subtracts the request ONCE — a second copy elsewhere is still evidence', () => {
+      // N1's sibling (the reviewer's B7): when the request happens to be a
+      // record value, a global subtraction scrubbed it out of the schema half
+      // too. Only the Request section is the user's.
+      const built = buildGeneratePrompt({ request: LEAKED, schemas: [ACCOUNT_SCHEMA] });
+      const prompt = `${built.prompt}\n_Sample: ${LEAKED}_`;
+      expect(recordValueLeak(prompt, LEAKED, rows, { requestRange: built.requestRange })).toBe(
+        LEAKED,
+      );
+    });
+
+    it('falls back to the Request heading when the caller gives no span', () => {
+      // recordValueLeak is exported and callable without a BuiltPrompt. Even
+      // then it removes one occurrence, located under the heading — never all.
+      const { prompt } = leakyPrompt('o');
+      expect(recordValueLeak(prompt, 'o', rows)).toBe(LEAKED);
+    });
+
+    it('ignores a span that does not match the prompt it was given', () => {
+      const { prompt } = leakyPrompt('o');
+      for (const range of [[-5, -1], [0, 9999], [10, 4]] as Array<readonly [number, number]>) {
+        expect(recordValueLeak(prompt, 'o', rows, { requestRange: range })).toBe(LEAKED);
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Regression: N2. The walk used to stop at depth 3, which is two relationship
+  // hops. SOQL child-to-parent traversal is legal to five levels, and a
+  // parent-to-child subquery nests a further `{ records: [] }` envelope, so the
+  // cap was reachable with an ordinary query. There is no cap now.
+  describe('nesting depth (N2)', () => {
+    /** `A__r.B__r.C__r.D__r.E__r.Name` — the deepest parent traversal SOQL allows. */
+    const fiveHops = {
+      attributes: { type: 'Account' },
+      A__r: {
+        attributes: { type: 'A__c' },
+        B__r: { C__r: { D__r: { E__r: { Name: 'Marguerite Delacroix' } } } },
+      },
+    };
+
+    it('sees a value five parent hops down, which the old depth cap of 3 did not', () => {
+      expect(recordValueLeak('… Marguerite Delacroix …', 'find accounts', [fiveHops])).toBe(
+        'Marguerite Delacroix',
+      );
+    });
+
+    it('sees a value inside a parent-to-child subquery envelope', () => {
+      const withSubquery = {
+        attributes: { type: 'Account' },
+        Contacts: {
+          totalSize: 1,
+          done: true,
+          records: [{ attributes: { type: 'Contact' }, Name: 'Marguerite Delacroix' }],
+        },
+      };
+      expect(recordValueLeak('… Marguerite Delacroix …', 'find', [withSubquery])).toBe(
+        'Marguerite Delacroix',
+      );
+    });
+
+    it('keeps going to a depth no SOQL query reaches, so the number is not the limit', () => {
+      let deep: Record<string, unknown> = { Name: 'Marguerite Delacroix' };
+      for (let i = 0; i < 40; i += 1) deep = { [`L${i}__r`]: deep };
+      expect(recordValueLeak('… Marguerite Delacroix …', 'find', [deep])).toBe(
+        'Marguerite Delacroix',
+      );
+    });
+
+    it('terminates on a cyclic row rather than hanging the tab', () => {
+      // Not something a JSON response can be, which is exactly why the guard is
+      // here: an uncapped walk must not depend on the caller being well-behaved.
+      const cyclic: Record<string, unknown> = { Name: 'Marguerite Delacroix' };
+      cyclic.Self = cyclic;
+      cyclic.Ring = [cyclic];
+      expect(recordValueLeak('… Marguerite Delacroix …', 'find', [cyclic])).toBe(
+        'Marguerite Delacroix',
+      );
+      expect(recordValueLeak('… nothing to find here …', 'find', [cyclic])).toBeNull();
+    });
+  });
+});
+
+describe('the prompt reports where it put the request (N1)', () => {
+  it('hands back the exact span, so a gate can exclude it by index', () => {
+    const request = 'accounts by revenue';
+    const { prompt, requestRange } = buildGeneratePrompt({
+      request,
+      schemas: [ACCOUNT_SCHEMA],
+    });
+    expect(prompt.slice(requestRange[0], requestRange[1])).toBe(request);
+    expect(prompt.slice(0, requestRange[0])).toMatch(/## Request\n$/);
+  });
+
+  it('hands the span to the gate it wires up', async () => {
+    const inspectPrompt = vi.fn(() => null);
+    const d = deps({ inspectPrompt });
+    await generateSoql({ request: 'all accounts' }, d);
+    const [prompt, requestText, context] = inspectPrompt.mock.calls[0] as unknown as [
+      string,
+      string,
+      { requestRange: readonly [number, number] },
+    ];
+    expect(prompt.slice(context.requestRange[0], context.requestRange[1])).toBe(requestText);
+  });
 });
 
 // ---------------------------------------------------------------------------

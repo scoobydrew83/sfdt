@@ -918,7 +918,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         doc,
         onClick: () => toggleNlPanel(),
       });
-      nlGenerateBtn.setAttribute('aria-haspopup', 'true');
+      // No aria-haspopup. It is defined as "opens a menu", and this opens a
+      // `role="group"` form — promising a menu and delivering a set of text
+      // boxes is worse than promising nothing. aria-expanded + aria-controls is
+      // the disclosure pattern, and it is complete on its own.
       nlGenerateBtn.setAttribute('aria-expanded', 'false');
       bar.appendChild(nlGenerateBtn);
     }
@@ -1306,6 +1309,35 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       else openNlPanel();
     }
 
+    /**
+     * Has the runner moved on since a generation was dispatched?
+     *
+     * A generation is a multi-second round trip and the UI stays live for all of
+     * it, so by the time an answer comes back the user may have switched the
+     * editor to SOSL and typed a FIND query, dismissed the generator, or closed
+     * the runner outright. Landing a stale `SELECT …` in the editor then is not
+     * a late success — it destroys work the user did after they stopped waiting
+     * for us, and silently flips the language back under them.
+     *
+     * Every condition below means "the state this answer was for is gone":
+     *
+     *   - `viewAtDispatch !== view` — the runner was closed (presentView's
+     *     onClose nulls it) or closed and reopened, so the editor we would write
+     *     into is not the one the user asked from;
+     *   - `!nlPanel` — the panel was never built (feature off), which the caller
+     *     also guards, kept here so this predicate is complete on its own;
+     *   - `!nlPanelOpen` — the user pressed Close, or SOSL closed it for them;
+     *   - `lang !== langAtDispatch` — the editor is in a different language now.
+     *
+     * Abandoning is silent on purpose. The user is mid-sentence in a query they
+     * chose instead; a toast about the thing they walked away from is noise.
+     */
+    function nlGenerationStale(langAtDispatch: QueryLang, viewAtDispatch: ViewHandle | null): boolean {
+      return (
+        viewAtDispatch !== view || !nlPanel || !nlPanelOpen || lang !== langAtDispatch
+      );
+    }
+
     /** Every row currently on screen — SOQL rows or every SOSL group's rows. */
     function onScreenRows(): Array<Record<string, unknown>> {
       return records.length > 0 ? records : groups.flatMap((g) => g.records);
@@ -1388,6 +1420,14 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       clearNlError();
       if (nlStatus) nlStatus.textContent = 'Reading schema…';
       const request = nlRequestInput.value;
+      // The runner is NOT frozen while a generation is in flight: a round trip
+      // through the bridge to a model takes seconds, and in those seconds the
+      // user can switch to SOSL, close the panel, or close the whole view. The
+      // reply that arrives afterwards belongs to a runner state that no longer
+      // exists, so it is checked against this snapshot before it is allowed to
+      // touch anything. See nlGenerationStale().
+      const langAtDispatch = lang;
+      const viewAtDispatch = view;
       try {
         const outcome = await generateSoql(
           { request, objects: parseObjectList(nlObjectsInput?.value) },
@@ -1400,6 +1440,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
             inspectPrompt: (prompt, requestText, context) => {
               const leak = recordValueLeak(prompt, requestText, onScreenRows(), {
                 ignore: [...context.objects, ...context.fieldNames],
+                // The span the assembler put the description at. The gate
+                // excludes the user's own words by INDEX; excluding them by
+                // text let a one-character description gut the whole haystack.
+                requestRange: context.requestRange,
               });
               if (leak === null) return null;
               return (
@@ -1412,6 +1456,13 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         );
 
         if (nlStatus) nlStatus.textContent = '';
+
+        // The whole outcome is abandoned, not just the editor write: an error
+        // rendered into a panel the user closed is invisible, and a toast about
+        // an abandoned generation is noise. Nothing here has any side effect
+        // outside this view, so dropping it is complete.
+        if (nlGenerationStale(langAtDispatch, viewAtDispatch)) return;
+
         switch (outcome.status) {
           case 'no-request':
             showNlError('Describe the query you want first.');
@@ -1482,8 +1533,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       } catch (err) {
         // generateSoql() returns outcomes rather than throwing, so this covers
         // the unexpected only — but an AI panel that swallows a crash silently
-        // is worse than one that shows it.
+        // is worse than one that shows it. Unless the panel is gone, in which
+        // case there is nowhere to show it and nobody looking.
         if (nlStatus) nlStatus.textContent = '';
+        if (nlGenerationStale(langAtDispatch, viewAtDispatch)) return;
         showNlError(err);
       } finally {
         nlBusy = false;

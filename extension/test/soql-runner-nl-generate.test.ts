@@ -459,6 +459,16 @@ describe('accessibility and keyboard path (CONVENTIONS.md)', () => {
     expect(generateTrigger()!.disabled).toBe(false);
   });
 
+  it('does not promise a menu it cannot deliver', async () => {
+    // aria-haspopup="true" is defined as "opens a MENU". This opens a
+    // role="group" form. aria-expanded + aria-controls is the disclosure
+    // pattern and is complete without it.
+    await openRunner();
+    expect(generateTrigger()!.hasAttribute('aria-haspopup')).toBe(false);
+    expect(generateTrigger()!.getAttribute('aria-expanded')).toBe('false');
+    expect(generateTrigger()!.getAttribute('aria-controls')).toBe(panel()!.id);
+  });
+
   it('renders through the shared error funnel, with no hand-rolled console block', async () => {
     await openRunner({ bridgeResponse: { ok: false, requestId: 'r', error: 'nope', code: 'BRIDGE_OFFLINE' } });
     await generate();
@@ -479,6 +489,123 @@ describe('accessibility and keyboard path (CONVENTIONS.md)', () => {
       .join(' ');
     expect(inline).not.toMatch(/#[0-9a-f]{3,8}\b/i);
     expect(inline).not.toMatch(/\brgba?\(/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: N4. A generation is a multi-second round trip and the runner
+// stays live throughout it, so the user can walk away from it — switch the
+// editor to SOSL and type a FIND, dismiss the generator, close the runner.
+// The success path used to check `nlGenerateBtn.disabled` only at the START,
+// so whatever came back afterwards was written into the editor regardless,
+// destroying the query the user typed instead and silently flipping the
+// language back. Each test below fails against the unguarded success path.
+
+/** Open a runner whose bridge hangs until the returned `release()` is called. */
+async function openRunnerWithHungBridge(): Promise<{
+  release: () => void;
+  calls: unknown[];
+}> {
+  let release: (() => void) | null = null;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  const calls: unknown[] = [];
+  await patchSettings({ features: { [SOQL_NL_GENERATE_ID]: true } });
+  const bridge = {
+    call: vi.fn(async (request: unknown) => {
+      calls.push(request);
+      await gate;
+      return {
+        ok: true,
+        requestId: 'r',
+        data: { response: '```soql\nSELECT Id FROM Account LIMIT 1\n```', provider: 'claude' },
+      };
+    }),
+  };
+  const feature = createSoqlRunnerFeature({
+    api: fakeApi(),
+    bridgeFactory: async () => bridge as never,
+  });
+  await feature.onActivate?.();
+  await settle();
+
+  generateTrigger()!.click();
+  requestBox().value = 'all accounts';
+  byText('Generate')!.click();
+  await settle();
+  expect(calls).toHaveLength(1);
+  return { release: () => release!(), calls };
+}
+
+describe('a generation the user walked away from does not land (N4)', () => {
+  it('does not overwrite the SOSL query typed while it was in flight', async () => {
+    const { release } = await openRunnerWithHungBridge();
+
+    // The user gives up on the generator and writes a SOSL search by hand.
+    byText('SOSL')!.click();
+    await settle();
+    editorBox().value = 'FIND {Acme} IN ALL FIELDS';
+    expect(panel()!.style.display).toBe('none');
+
+    release();
+    await settle(10);
+
+    // Their query survives, and the language toggle did not flip back.
+    expect(editorBox().value).toBe('FIND {Acme} IN ALL FIELDS');
+    expect(byText('SOSL')!.getAttribute('aria-checked')).toBe('true');
+    expect(byText('SOQL')!.getAttribute('aria-checked')).toBe('false');
+    // The panel stayed shut and the trigger stayed unavailable — no half-open
+    // state left behind by an outcome that was never applied.
+    expect(panel()!.style.display).toBe('none');
+    expect(generateTrigger()!.disabled).toBe(true);
+  });
+
+  it('does not overwrite the draft after the user closed the generator', async () => {
+    const { release } = await openRunnerWithHungBridge();
+
+    editorBox().value = 'SELECT Id FROM Contact';
+    byText('Close')!.click();
+
+    release();
+    await settle(10);
+
+    expect(editorBox().value).toBe('SELECT Id FROM Contact');
+    expect(panel()!.style.display).toBe('none');
+  });
+
+  it('writes nothing anywhere after the runner was closed', async () => {
+    const { release } = await openRunnerWithHungBridge();
+
+    // Escape from the editor closes the whole view (the modal shell's own key).
+    editorBox().focus();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
+    await settle();
+    expect(document.querySelector('textarea.sfdt-editor-input')).toBeNull();
+
+    release();
+    await settle(10);
+
+    // Nothing was resurrected, and nothing threw on the way past. The toast is
+    // the load-bearing assertion: the editor write lands on a detached node and
+    // is invisible either way, but the success path also announces itself into
+    // the LIVE document, so an unguarded late success is still user-visible —
+    // a "Query generated" toast for a runner that is not on screen.
+    expect(document.querySelector('textarea.sfdt-editor-input')).toBeNull();
+    expect(panel()).toBeNull();
+    expect(document.body.textContent).not.toContain('Query generated');
+  });
+
+  it('is not vacuous: the untouched case still lands in the editor', async () => {
+    // Same harness, same hung bridge — the ONLY difference is that the user
+    // waited. If the guard were simply "never write", the three tests above
+    // would pass for the wrong reason and this one would fail.
+    const { release } = await openRunnerWithHungBridge();
+    release();
+    await settle(10);
+    expect(editorBox().value).toBe('SELECT Id FROM Account LIMIT 1');
   });
 });
 
