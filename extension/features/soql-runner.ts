@@ -23,7 +23,7 @@ import { createHistory } from '../lib/history.js';
 import { copyToClipboard } from '../ui/clipboard.js';
 import { createCodeEditor, SOQL_KEYWORDS } from '../lib/code-editor.js';
 import { isRecordId } from '../lib/salesforce-id.js';
-import { triggerDownload, triggerDownloadBlob, exportFilename } from '../lib/download.js';
+import { triggerDownload, triggerDownloadBlob } from '../lib/download.js';
 import { confirmDialog } from '../ui/confirm-dialog.js';
 // Aliased because `open()` already has a local `errorPanel` element of its own
 // (the query-error block). This is the shared builder from ui/panels.ts, used
@@ -33,11 +33,14 @@ import { errorPanel as errorBlock } from '../ui/panels.js';
 import {
   SOQL_BULK_DELETE_ID,
   REJECTION_MESSAGES,
+  backupCsvCoversPlan,
+  backupFilename,
   buildDeleteEndpoint,
   confirmPhrase,
   describePlan,
   formatBulkDeleteReport,
   planBulkDelete,
+  rowRecordId,
   runBulkDelete,
   type BulkDeleteOutcome,
   type BulkDeletePlan,
@@ -430,29 +433,50 @@ ${safeSoql}
 }
 
 /**
- * The pre-delete backup CSV (C-P4-2, AC-1).
+ * The pre-delete backup CSV (C-P4-2, AC-1). Returns the filename it handed to
+ * the browser, which the confirm dialog then shows the user.
  *
- * Exported so the wiring is testable on its own, and deliberately three lines:
- * the rows go through the SAME `recordsToCsv` the Export CSV button uses (comma
+ * The rows go through the SAME `recordsToCsv` the Export CSV button uses (comma
  * and quote handling included — P1-3), and the file goes out through the SAME
  * `lib/download.ts` every other export uses. A backup written by a second,
  * bespoke serialiser would be a backup that quotes differently from the export
- * the user already trusts, which is the worst possible time to find that out.
+ * the user already trusts, which is the worst possible moment to find that out.
  *
- * Throws only if the browser refuses to mint the blob URL — which is exactly
- * what `runBulkDelete`'s backup gate treats as "no backup, delete nothing".
+ * WHAT THIS CAN AND CANNOT PROVE. It throws — and so fails `runBulkDelete`'s
+ * backup gate, deleting nothing — on the three things it can actually observe:
+ *
+ *   1. the serialised CSV does not contain every Id in the plan (an empty or
+ *      wrong payload; a "download" that succeeded and backed up nothing);
+ *   2. the browser refused to mint a blob URL for it;
+ *   3. the download helper did not complete the handoff at all.
+ *
+ * It CANNOT prove the file reached the user's disk. Nothing in the extension
+ * can: that needs the `downloads` permission, which is deliberately not in the
+ * manifest. So the dialog names the file and asks the user — the only party who
+ * can actually check — rather than asserting a guarantee that is not ours to
+ * make. Read the dialog copy alongside this function; the two have to agree.
  */
 export function downloadDeleteBackup(
   doc: Document,
   plan: BulkDeletePlan,
   now = new Date(),
-): void {
-  triggerDownload(
-    doc,
-    exportFilename(`sfdt-delete-backup-${plan.sobject}`, 'csv', now),
-    recordsToCsv(plan.rows),
-    'text/csv',
-  );
+): string {
+  const csv = recordsToCsv(plan.rows);
+  // Verify the PAYLOAD, not just that the call returned. Checking the call is
+  // how a backup of nothing passes for a backup.
+  if (!backupCsvCoversPlan(csv, plan)) {
+    throw new Error(
+      `The backup CSV did not contain all ${plan.ids.length} row${
+        plan.ids.length === 1 ? '' : 's'
+      } about to be deleted.`,
+    );
+  }
+  const filename = backupFilename(plan, now);
+  const url = triggerDownload(doc, filename, csv, 'text/csv');
+  if (typeof url !== 'string' || url.length === 0) {
+    throw new Error('The browser did not accept the backup CSV for download.');
+  }
+  return filename;
 }
 
 /**
@@ -1026,6 +1050,36 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
 
     // ---- Bulk delete (C-P4-2) --------------------------------------------
     //
+    // One delete at a time, and always stoppable. `deleteInFlight` covers the
+    // whole operation including the dialog (so a second group's Delete button
+    // cannot start a parallel run over the same status line); `deleteController`
+    // is the live run's abort handle, checked by runBulkDelete between waves and
+    // tripped by the Cancel button, by closing the view, and by a fresh query.
+    let deleteInFlight = false;
+    let deleteController: AbortController | null = null;
+
+    const cancelDeleteBtn = button({
+      label: 'Cancel',
+      ariaLabel: 'Stop deleting',
+      iconName: 'close',
+      variant: 'danger',
+      small: true,
+      doc,
+      onClick: () => deleteController?.abort(),
+    });
+    cancelDeleteBtn.style.display = 'none';
+
+    /**
+     * Stop an in-flight delete between waves.
+     *
+     * A confirmed delete used to have no brake at all: the signal existed and
+     * was tested, but nothing ever passed one. Rows already sent are gone —
+     * this stops the NEXT wave, which on a few thousand rows is most of them.
+     */
+    function abortBulkDelete(): void {
+      deleteController?.abort();
+    }
+    //
     // Every gate lives in features/soql-bulk-delete.ts; this half is only the
     // wiring — a backup that reuses recordsToCsv + lib/download.ts, a confirm
     // that is ui/confirm-dialog.ts's typed gate, one DELETE per row through the
@@ -1119,8 +1173,16 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     async function startBulkDelete(
       btn: HTMLButtonElement,
       getRecords: () => ReadonlyArray<Record<string, unknown>>,
+      /** Drop the confirmed-deleted rows from the backing set and re-render. */
+      pruneDeleted: (ids: ReadonlySet<string>) => void,
       sobject?: string,
     ): Promise<void> {
+      // Re-entrancy guard, and the reason the trigger is NOT disabled here.
+      // It also serialises the SOSL groups: each object group has its own
+      // Delete button over the same `status` line and the same report panel, so
+      // two running at once would interleave progress and leave whichever
+      // finished last owning a report about the other one's rows.
+      if (deleteInFlight) return;
       const rows = getRecords();
       // Preview first so an ineligible set never opens a dialog at all. The
       // authoritative check is still inside runBulkDelete — this one only
@@ -1130,38 +1192,70 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         showToast(REJECTION_MESSAGES[preview.reason], { doc, kind: 'warning' });
         return;
       }
+      deleteInFlight = true;
       clearDeleteReport();
       clearError();
       const prevStatus = status.textContent;
-      btn.disabled = true;
       // Snapshot the transport at click time: a delete has to go to the same
       // API the rows came from, and the toggle stays live while the dialog is up.
       const transport = effectiveMode();
+      const controller = new AbortController();
+      deleteController = controller;
+      // The filename the backup actually went out under, captured from the
+      // backup gate so the confirm dialog can name it. Empty until gate 2 has
+      // run, which is exactly the ordering the dialog copy depends on.
+      let backupName = '';
       try {
         const outcome = await runBulkDelete(rows, {
           sobject,
-          // GATE: the backup. Returns true only if the download was handed to
-          // the browser without throwing; triggerDownload throws if the blob
-          // URL cannot be minted, and that becomes 'backup-failed'.
+          signal: controller.signal,
+          // GATE: the backup. Only `true` proceeds. downloadDeleteBackup throws
+          // — which runBulkDelete turns into 'backup-failed', deleting nothing —
+          // when the CSV does not contain every Id in the plan, when the browser
+          // will not mint a blob URL for it, or when the handoff did not happen.
+          // It cannot prove the file reached disk; see its doc comment and the
+          // dialog copy below, which are deliberately worded to match.
           backup: (plan) => {
-            downloadDeleteBackup(doc, plan);
+            backupName = downloadDeleteBackup(doc, plan);
             return true;
           },
           // GATE: the typed confirm. ui/confirm-dialog.ts owns the focus trap,
           // Esc-cancels-never-confirms, focus restore, and the typed gate that
           // keeps the Confirm button disabled until the phrase matches exactly.
+          //
+          // The copy states only what the extension can actually observe, and
+          // names the file so the user — the only party who CAN check whether it
+          // reached disk — is able to. It also says what the backup contains,
+          // because a CSV of the columns you happened to SELECT restores those
+          // columns and no others.
           confirm: (plan, phrase) =>
             confirmDialog({
               doc,
               title: `Delete ${describePlan(plan)}?`,
               message:
                 `This permanently deletes ${describePlan(plan)} from your org and cannot be ` +
-                `undone.\nA backup CSV of the affected rows has just been downloaded.\n\n` +
+                `undone.\n\nA backup CSV was generated and handed to your browser as ` +
+                `"${backupName}". SFDT cannot confirm it reached your disk — check your ` +
+                `downloads before continuing. It holds only the columns this query selected, ` +
+                `so restoring from it restores those columns and no others.\n\n` +
                 `Type ${phrase} to confirm.`,
               details: previewIds(plan),
               confirmLabel: `Delete ${describePlan(plan)}`,
               requireTyped: phrase,
             }),
+          // Both gates are behind us; the destructive phase starts now.
+          //
+          // This is where the trigger goes disabled, NOT at click time. A
+          // disabled element cannot receive focus, so disabling it before the
+          // dialog opens makes the dialog's focus-restore land on <body> and
+          // strands the keyboard user (ui/confirm-dialog.ts documents the
+          // contract; test/confirm-dialog.test.ts pins it). Re-entrancy in the
+          // meantime is covered by `deleteInFlight` above, and in any case the
+          // modal's own scrim and focus trap make the trigger unreachable.
+          onConfirmed: () => {
+            btn.disabled = true;
+            cancelDeleteBtn.style.display = 'inline-block';
+          },
           deleteRecord: (id, plan) =>
             api.apiRequest(
               'DELETE',
@@ -1174,8 +1268,24 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
           },
         });
         reportDeleteOutcome(outcome, prevStatus);
+        if (outcome.status === 'done' && outcome.deletedIds.length > 0) {
+          // Drop exactly the rows the org confirmed gone and re-render. Leaving
+          // them on screen is not cosmetic: the Delete button would recount
+          // them and re-issue DELETEs against Ids that no longer exist. Rows
+          // that FAILED — including the timed-out ones, whose outcome is
+          // unknown — deliberately stay, because they are what you re-check.
+          pruneDeleted(new Set(outcome.deletedIds));
+          // The trigger may have been re-rendered away (all rows gone, or the
+          // SOSL group's toolbar rebuilt). Focus was correctly restored to it
+          // when the dialog closed, so if it is no longer reachable, hand the
+          // keyboard user the view's primary control rather than <body>.
+          if (!btn.isConnected || btn.style.display === 'none') runBtn.focus();
+        }
       } finally {
         btn.disabled = false;
+        cancelDeleteBtn.style.display = 'none';
+        if (deleteController === controller) deleteController = null;
+        deleteInFlight = false;
       }
     }
 
@@ -1207,6 +1317,11 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       filePrefix: string;
       scope?: string;
       sobject?: string;
+      /**
+       * Remove the rows a completed delete confirmed gone, then re-render.
+       * Only needed by a toolbar that offers Delete; omitted elsewhere.
+       */
+      pruneDeleted?: (ids: ReadonlySet<string>) => void;
     }): {
       copyCsv: HTMLButtonElement;
       exportCsv: HTMLButtonElement;
@@ -1252,7 +1367,13 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
           variant: 'danger',
           small: true,
           doc,
-          onClick: () => void startBulkDelete(btn, getRecords, opts.sobject),
+          onClick: () =>
+            void startBulkDelete(
+              btn,
+              getRecords,
+              opts.pruneDeleted ?? (() => {}),
+              opts.sobject,
+            ),
         });
         deleteRows = btn;
       }
@@ -1262,7 +1383,17 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       return { copyCsv, exportCsv, copyJson, copyExcel, deleteRows, all };
     }
 
-    const mainActions = createResultActions({ getRecords: () => records, filePrefix: 'soql' });
+    const mainActions = createResultActions({
+      getRecords: () => records,
+      filePrefix: 'soql',
+      pruneDeleted: (ids) => {
+        records = records.filter((row) => {
+          const id = rowRecordId(row);
+          return id === null || !ids.has(id);
+        });
+        renderResults();
+      },
+    });
     const {
       copyCsv: copyCsvBtn,
       exportCsv: exportCsvBtn,
@@ -1304,7 +1435,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     footer.appendChild(langGraphBtn);
     // Last of the row-scoped actions, after every read-only one — the
     // destructive control should never be the button next to your thumb.
-    if (deleteRowsBtn) footer.appendChild(deleteRowsBtn);
+    if (deleteRowsBtn) {
+      footer.appendChild(deleteRowsBtn);
+      footer.appendChild(cancelDeleteBtn);
+    }
 
     if (historyEnabled) {
       const clearHistBtn = button({
@@ -1331,7 +1465,15 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       body,
       doc,
       width: '860px',
-      onClose: () => { view = null; activeTextarea = null; unsubscribeDescribe(); },
+      onClose: () => {
+        view = null;
+        activeTextarea = null;
+        unsubscribeDescribe();
+        // Closing the runner is the other way to stop a delete: the progress
+        // line and the failure report both live in a view that no longer
+        // exists, so continuing would destroy rows with nowhere to report it.
+        abortBulkDelete();
+      },
     });
 
     // Cancel any in-flight export and reset its UI. Idempotent; the running
@@ -1567,6 +1709,16 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
           // the object name survives. Without this the delete plan would refuse
           // the rows as 'unknown-object' rather than guess.
           sobject: group.sobject,
+          pruneDeleted: (ids) => {
+            group.records = group.records.filter((row) => {
+              const id = rowRecordId(row);
+              return id === null || !ids.has(id);
+            });
+            // Drop a group with nothing left rather than render an object
+            // heading over an empty table.
+            groups = groups.filter((g) => g.records.length > 0);
+            renderGroupedResults();
+          },
         });
         for (const btn of groupActions.all) head.appendChild(btn);
         paintDeleteButton(groupActions.deleteRows, group.records, group.sobject);
@@ -1706,6 +1858,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         return;
       }
       abortExport(); // a fresh run supersedes any in-flight export
+      // …and so does it supersede an in-flight delete: the new result set will
+      // replace the rows the delete is working through, and a progress line for
+      // rows that are no longer on screen is worse than no progress line.
+      abortBulkDelete();
       clearError();
       // The previous delete's report describes rows that are about to be
       // replaced; leaving it up next to a fresh result set reads as if the new

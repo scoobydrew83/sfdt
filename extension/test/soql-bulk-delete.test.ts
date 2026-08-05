@@ -13,6 +13,8 @@ import {
   DEFAULT_BATCH_SIZE,
   REJECTION_MESSAGES,
   SOQL_BULK_DELETE_ID,
+  backupCsvCoversPlan,
+  backupFilename,
   buildDeleteEndpoint,
   chunk,
   confirmPhrase,
@@ -20,6 +22,7 @@ import {
   describePlan,
   formatBulkDeleteReport,
   planBulkDelete,
+  rowRecordId,
   runBulkDelete,
   summariseFailures,
   type BulkDeleteDeps,
@@ -217,6 +220,45 @@ describe('the guard rails — there is no delete path without a backup and a typ
     expect(deleteRecord).toHaveBeenCalledTimes(2);
   });
 
+  it('never signals the destructive phase when a gate refuses', async () => {
+    // `onConfirmed` is what the UI hangs "the point of no return" on (it is
+    // where the runner disables its trigger). Firing it on a refused operation
+    // would leave the UI in a deleting state for a delete that never ran.
+    const onConfirmed = vi.fn();
+    const noBackup = passingDeps({ backup: () => false, onConfirmed });
+    await runBulkDelete(ACCOUNT_ROWS, { ...noBackup.deps, onConfirmed });
+    expect(onConfirmed).not.toHaveBeenCalled();
+
+    const noConfirm = passingDeps({ confirm: () => false, onConfirmed });
+    await runBulkDelete(ACCOUNT_ROWS, { ...noConfirm.deps, onConfirmed });
+    expect(onConfirmed).not.toHaveBeenCalled();
+
+    const ineligible = passingDeps({ onConfirmed });
+    await runBulkDelete([{ Name: 'no id' }], { ...ineligible.deps, onConfirmed });
+    expect(onConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('signals the destructive phase exactly once, after both gates, before any delete', async () => {
+    const calls: string[] = [];
+    await runBulkDelete(ACCOUNT_ROWS, {
+      backup: () => {
+        calls.push('backup');
+        return true;
+      },
+      confirm: () => {
+        calls.push('confirm');
+        return true;
+      },
+      onConfirmed: () => calls.push('onConfirmed'),
+      deleteRecord: async () => {
+        calls.push('delete');
+        return null;
+      },
+    });
+    expect(calls.slice(0, 3)).toEqual(['backup', 'confirm', 'onConfirmed']);
+    expect(calls.filter((c) => c === 'onConfirmed')).toHaveLength(1);
+  });
+
   it('is the only exported way to reach a delete — the module exposes no unguarded deleter', () => {
     // A structural check, not a behavioural one: if a future change adds a
     // second exported function that issues deletes, the guard rails above stop
@@ -227,6 +269,8 @@ describe('the guard rails — there is no delete path without a backup and a typ
       DEFAULT_BATCH_SIZE,
       REJECTION_MESSAGES,
       SOQL_BULK_DELETE_ID,
+      backupCsvCoversPlan,
+      backupFilename,
       buildDeleteEndpoint,
       chunk,
       confirmPhrase,
@@ -234,6 +278,7 @@ describe('the guard rails — there is no delete path without a backup and a typ
       describePlan,
       formatBulkDeleteReport,
       planBulkDelete,
+      rowRecordId,
       runBulkDelete,
       summariseFailures,
     });
@@ -370,6 +415,53 @@ describe('confirmPhrase / describePlan', () => {
     if (!result.ok) return;
     expect(confirmPhrase(result.plan)).toBe('DELETE 1 Account');
     expect(describePlan(result.plan)).toBe('1 Account record');
+  });
+});
+
+describe('the backup payload check (B2)', () => {
+  const plan = () => {
+    const result = planBulkDelete(ACCOUNT_ROWS);
+    if (!result.ok) throw new Error('fixture should be eligible');
+    return result.plan;
+  };
+
+  it('accepts a CSV that contains every Id in the plan', () => {
+    const csv = `Id,Name\n${ACCOUNT_ROWS.map((r) => `${r.Id},${r.Name}`).join('\n')}\n`;
+    expect(backupCsvCoversPlan(csv, plan())).toBe(true);
+  });
+
+  it('rejects an empty or missing payload — a backup of nothing is not a backup', () => {
+    expect(backupCsvCoversPlan('', plan())).toBe(false);
+    expect(backupCsvCoversPlan(undefined as unknown as string, plan())).toBe(false);
+  });
+
+  it('rejects a CSV that is missing even one of the rows about to be deleted', () => {
+    const csv = `Id,Name\n${ACCOUNT_ROWS.slice(0, 2).map((r) => `${r.Id},${r.Name}`).join('\n')}\n`;
+    expect(backupCsvCoversPlan(csv, plan())).toBe(false);
+  });
+
+  it('rejects a header-only CSV — the shape of a serialiser that dropped every row', () => {
+    expect(backupCsvCoversPlan('Id,Name\n', plan())).toBe(false);
+  });
+});
+
+describe('backupFilename', () => {
+  it('names the object and the day, so the user can find it in their downloads', () => {
+    const result = planBulkDelete(ACCOUNT_ROWS);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(backupFilename(result.plan, new Date('2026-08-05T09:00:00Z'))).toBe(
+      'sfdt-delete-backup-Account-2026-08-05.csv',
+    );
+  });
+});
+
+describe('rowRecordId', () => {
+  it('answers with the same Id the plan used, so the UI drops the right row', () => {
+    expect(rowRecordId({ Id: '001000000000001AAA' })).toBe('001000000000001AAA');
+    expect(rowRecordId({ id: '001000000000001AAA' })).toBe('001000000000001AAA');
+    expect(rowRecordId({ Id: 'not-an-id' })).toBeNull();
+    expect(rowRecordId({ Name: 'Acme' })).toBeNull();
   });
 });
 
@@ -520,6 +612,36 @@ describe('failure aggregation', () => {
       { id: '001000000000002AAA', kind: 'http-error', message: 'ENTITY_IS_DELETED' },
       { id: '001000000000003AAA', kind: 'timeout', message: 'worker did not respond' },
     ]);
+    // N7: a run that hit failures but was never aborted is NOT canceled. Without
+    // this, an implementation that gave up after the first failure and reported
+    // `canceled: true` would satisfy every other assertion here.
+    expect(outcome.canceled).toBe(false);
+    // Every id is accounted for exactly once, as either deleted or failed.
+    expect([...outcome.deletedIds, ...outcome.failures.map((f) => f.id)].sort()).toEqual(
+      rows.map((r) => r.Id).sort(),
+    );
+  });
+
+  it('names the rows the org confirmed gone, and never a timed-out one', async () => {
+    // `deletedIds` drives which rows the UI removes from the table, so a
+    // timed-out row — outcome unknown — must not be in it. Dropping it from the
+    // view would tell the user it is gone when nobody knows that.
+    const rows = Array.from({ length: 3 }, (_, i) => ({
+      attributes: { type: 'Account' },
+      Id: `00100000000000${i + 1}AAA`,
+    }));
+    const outcome = await runBulkDelete(rows, {
+      backup: () => true,
+      confirm: () => true,
+      deleteRecord: async (id) => {
+        if (id.endsWith('2AAA')) throw taggedError('no answer', 'timeout');
+        return null;
+      },
+    });
+    expect(outcome.status).toBe('done');
+    if (outcome.status !== 'done') return;
+    expect(outcome.deletedIds).toEqual(['001000000000001AAA', '001000000000003AAA']);
+    expect(outcome.deleted).toBe(outcome.deletedIds.length);
   });
 
   it('classifies each failure by sfApiErrorKind, not by matching the message text', async () => {

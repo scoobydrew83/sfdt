@@ -32,6 +32,31 @@ export interface ConfirmOpts {
   doc?: Document;
 }
 
+/**
+ * CALLER CONTRACT — do not disable the control that opens this dialog.
+ *
+ * On close, focus is restored to whatever was focused when the dialog opened,
+ * which is normally the button that opened it. A **disabled** element cannot
+ * receive focus, so a caller that does
+ *
+ *     btn.disabled = true;
+ *     await confirmDialog({ … });   // restore lands on <body>
+ *
+ * silently strands the keyboard user on `document.body`, and nothing in here
+ * can fix it: `.focus()` on a disabled element is a no-op by specification, so
+ * there is no version of this function that can restore focus to one. The fix
+ * belongs at the call site — disable the trigger AFTER the dialog resolves, or
+ * guard re-entrancy with a flag instead of `disabled`, which is what
+ * features/soql-runner.ts's bulk delete does via its `onConfirmed` hook.
+ *
+ * Guarding re-entrancy with `disabled` during the dialog is redundant anyway:
+ * this dialog is modal, mounts a full-viewport scrim over the trigger, and
+ * traps Tab inside itself, so the trigger cannot be reached by mouse or
+ * keyboard while it is open.
+ *
+ * `test/confirm-dialog.test.ts` pins both halves of this, so the next caller
+ * learns it from a red test rather than from a code review.
+ */
 export function confirmDialog(opts: ConfirmOpts): Promise<boolean> {
   const doc = opts.doc ?? document;
   ensureComponentStyles(doc);
@@ -116,6 +141,16 @@ export function confirmDialog(opts: ConfirmOpts): Promise<boolean> {
       const peers = overlay.parentNode?.querySelectorAll('.sfdt-confirm-overlay');
       if (peers?.length && peers[peers.length - 1] !== overlay) return;
       e.preventDefault();
+      // Consume it. ui/present-view.ts also listens for Escape on the document
+      // and only defers to other `.sfdt-view-overlay`s — it cannot see this
+      // dialog stacked above it, so without this an Escape aimed at the confirm
+      // ALSO closed the modal underneath, discarding whatever the user had
+      // typed into it (in the SOQL runner, their query). ui/menu.ts already
+      // does exactly this from the capture phase, and present-view's own
+      // comment names that as the reason it never sees a menu's Escape;
+      // this dialog simply never did the same.
+      e.stopPropagation();
+      e.stopImmediatePropagation();
       // Escape is a CANCEL, never a confirm — a destructive dialog must not be
       // dismissible into the destructive branch.
       cleanup(false);

@@ -35,6 +35,7 @@
 // reachable until the user ticks its box on the options page.
 
 import { CONTEXTS } from '../lib/context-detector.js';
+import { exportFilename } from '../lib/download.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { sfApiErrorKind, type SfApiErrorKind } from '../lib/salesforce-api.js';
 import { isRecordId } from '../lib/salesforce-id.js';
@@ -117,6 +118,18 @@ function idColumnValue(row: Record<string, unknown>): { present: boolean; value:
     if (/^id$/i.test(key)) return { present: true, value: row[key] };
   }
   return { present: false, value: undefined };
+}
+
+/**
+ * The row's record Id, or null when it has no usable one.
+ *
+ * Exported so the UI can drop deleted rows from a rendered result set using the
+ * SAME notion of "which row is this" that the delete plan used. Two different
+ * answers to that question is how a table ends up dropping the wrong row.
+ */
+export function rowRecordId(row: Record<string, unknown>): string | null {
+  const { value } = idColumnValue(row);
+  return typeof value === 'string' && isRecordId(value) ? value : null;
 }
 
 /** The row's own sObject name, from the Salesforce `attributes` envelope. */
@@ -212,6 +225,40 @@ export function describePlan(plan: BulkDeletePlan): string {
   return `${n} ${plan.sobject} record${n === 1 ? '' : 's'}`;
 }
 
+/**
+ * The backup file's name — `sfdt-delete-backup-Account-2026-08-05.csv`.
+ *
+ * Named here rather than at the download call site because the CONFIRM DIALOG
+ * has to show it. The extension cannot observe whether a download reached the
+ * user's disk (that needs the `downloads` permission, which it deliberately
+ * does not have), so the only entity that can confirm the backup exists is the
+ * user — and they can only check a file they have been told the name of. That
+ * turns an unverifiable claim into a checkable one.
+ */
+export function backupFilename(plan: BulkDeletePlan, now = new Date()): string {
+  return exportFilename(`sfdt-delete-backup-${plan.sobject}`, 'csv', now);
+}
+
+/**
+ * Does this CSV actually back up this plan?
+ *
+ * Checking that the download call did not throw says nothing about WHAT was
+ * downloaded. This checks the payload: every Id the delete is about to destroy
+ * has to appear in the text, or the file is not a backup of this operation and
+ * the gate must fail. Catches an empty serialisation, a column set that dropped
+ * Id, and a plan/rows mismatch — all of which would otherwise produce a
+ * cheerful "backup saved" and an unrecoverable delete.
+ *
+ * Substring rather than a CSV parse on purpose: a record Id is an 18-character
+ * opaque token that cannot occur by accident, so `includes` cannot pass a file
+ * that lacks the row, and a parser here would be a second CSV implementation —
+ * the exact thing this feature is not allowed to grow.
+ */
+export function backupCsvCoversPlan(csv: string, plan: BulkDeletePlan): boolean {
+  if (typeof csv !== 'string' || csv.length === 0) return false;
+  return plan.ids.every((id) => csv.includes(id));
+}
+
 /** REST (or Tooling) single-record DELETE path. */
 export function buildDeleteEndpoint(
   apiVersion: string,
@@ -280,6 +327,20 @@ export interface BulkDeleteDeps {
   confirm: (plan: BulkDeletePlan, phrase: string) => boolean | Promise<boolean>;
   /** Delete ONE record. Must reject on failure — a resolve counts as deleted. */
   deleteRecord: (id: string, plan: BulkDeletePlan) => Promise<unknown>;
+  /**
+   * Fires once, after BOTH gates have passed and before the first delete.
+   *
+   * Exists because "the destructive phase has begun" is a different moment from
+   * "the button was clicked", and the UI needs the first one. The runner
+   * disables its trigger here rather than at click time: a disabled element
+   * cannot receive focus, so disabling it before the confirm dialog opens sends
+   * the dialog's focus-restore to `<body>` instead of back to the button the
+   * user came from (see ui/confirm-dialog.ts's caller contract).
+   *
+   * Not a gate — its return value is ignored and a throw is not caught here, so
+   * it must not be used to do anything that can fail.
+   */
+  onConfirmed?: (plan: BulkDeletePlan) => void;
   onProgress?: (progress: BulkDeleteProgress) => void;
   batchSize?: number;
   /** Checked between waves; an in-flight wave is always allowed to finish. */
@@ -295,6 +356,17 @@ export type BulkDeleteOutcome =
       sobject: string;
       total: number;
       deleted: number;
+      /**
+       * The Ids the org confirmed gone, in delete order.
+       *
+       * `deleted` is the count; this is the identity. The UI needs the identity
+       * to drop exactly those rows from the table on screen — a result set that
+       * still lists records the org no longer has is not merely cosmetic, it
+       * offers a Delete button that would re-issue DELETEs against Ids that no
+       * longer exist. Deliberately excludes timed-out rows: their outcome is
+       * unknown, so they stay on screen to be re-checked.
+       */
+      deletedIds: string[];
       failures: BulkDeleteFailure[];
       canceled: boolean;
     };
@@ -353,12 +425,15 @@ export async function runBulkDelete(
   if (confirmed !== true) return { status: 'not-confirmed' };
 
   // ---- Deletes -------------------------------------------------------------
+  // Past every gate: from here on the operation is destructive.
+  deps.onConfirmed?.(plan);
+
   const total = plan.ids.length;
   const failures: BulkDeleteFailure[] = [];
-  let deleted = 0;
+  const deletedIds: string[] = [];
   let canceled = false;
 
-  deps.onProgress?.({ deleted, failed: 0, total });
+  deps.onProgress?.({ deleted: 0, failed: 0, total });
 
   for (const wave of chunk(plan.ids, deps.batchSize ?? DEFAULT_BATCH_SIZE)) {
     if (deps.signal?.aborted) {
@@ -368,13 +443,21 @@ export async function runBulkDelete(
     const settled = await Promise.allSettled(wave.map((id) => deps.deleteRecord(id, plan)));
     settled.forEach((result, index) => {
       const id = wave[index]!;
-      if (result.status === 'fulfilled') deleted += 1;
+      if (result.status === 'fulfilled') deletedIds.push(id);
       else failures.push(toFailure(id, result.reason));
     });
-    deps.onProgress?.({ deleted, failed: failures.length, total });
+    deps.onProgress?.({ deleted: deletedIds.length, failed: failures.length, total });
   }
 
-  return { status: 'done', sobject: plan.sobject, total, deleted, failures, canceled };
+  return {
+    status: 'done',
+    sobject: plan.sobject,
+    total,
+    deleted: deletedIds.length,
+    deletedIds,
+    failures,
+    canceled,
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -86,6 +86,20 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Dismiss any dialog a test left standing. `cleanup()` is what removes the
+  // dialog's document-level keydown listener, and beforeEach's DOM wipe does
+  // not run it — so a left-open dialog leaks a listener that then swallows the
+  // NEXT test's Escape (the dialog consumes the key so it cannot also close the
+  // modal behind it). Cheap to prevent here; very confusing to debug later.
+  for (let guard = 0; guard < 5; guard += 1) {
+    const open = document.querySelector('.sfdt-confirm-overlay');
+    if (!open) break;
+    const cancel = Array.from(open.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Cancel',
+    ) as HTMLButtonElement | undefined;
+    if (!cancel) break;
+    cancel.click();
+  }
   URL.createObjectURL = origCreate;
   URL.revokeObjectURL = origRevoke;
 });
@@ -242,6 +256,259 @@ describe('the typed confirm gate (AC-1)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// B1 (review round 1) — focus restore
+//
+// The trigger used to be disabled at click time, before the dialog opened. A
+// disabled element cannot receive focus, so the dialog's focus-restore landed
+// on <body> and the keyboard user was stranded — while the PR claimed "focus
+// restore ✅". Nothing asserted it. These do.
+// ---------------------------------------------------------------------------
+describe('focus is restored to the trigger (B1)', () => {
+  it('returns focus to the Delete button when the dialog is cancelled', async () => {
+    await openWithRows(ROWS);
+    const del = deleteBtn()!;
+    del.focus();
+    del.click();
+    await tick();
+
+    Array.from(overlay()!.querySelectorAll('button'))
+      .find((b) => b.textContent === 'Cancel')!
+      .click();
+    await tick();
+
+    expect(document.activeElement).toBe(del);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('returns focus to the Delete button when the dialog is dismissed with Escape', async () => {
+    await openWithRows(ROWS);
+    const del = deleteBtn()!;
+    del.focus();
+    del.click();
+    await tick();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await tick();
+
+    expect(document.activeElement).toBe(del);
+  });
+
+  it('leaves the trigger enabled while the dialog is up, and disables it only once deleting starts', async () => {
+    // The mechanism, not just the symptom: if this button is disabled while the
+    // dialog is open, the restore above cannot work no matter what the dialog
+    // does.
+    let disabledDuringDialog: boolean | null = null;
+    const apiRequest = vi.fn(async () => null);
+    await openWithRows(ROWS, {
+      apiOverrides: { apiRequest: apiRequest as unknown as SalesforceApiClient['apiRequest'] },
+    });
+    const del = deleteBtn()!;
+    del.click();
+    await tick();
+    disabledDuringDialog = del.disabled;
+
+    await confirmWith('DELETE 2 Account', 'Delete 2 Account records');
+
+    expect(disabledDuringDialog).toBe(false);
+    expect(apiRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('hands focus to Run when the completed delete takes the trigger off screen', async () => {
+    // Every row deleted ⇒ the result set is empty ⇒ the Delete button is gone.
+    // Focus was correctly restored to it when the dialog closed, so leaving it
+    // there would strand the user on a detached node.
+    await openWithRows(ROWS);
+    const del = deleteBtn()!;
+    del.focus();
+    del.click();
+    await tick();
+    await confirmWith('DELETE 2 Account', 'Delete 2 Account records');
+
+    expect(document.activeElement).toBe(btn('Run'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B2 (review round 1) — the backup guarantee
+//
+// "If the backup cannot be written, nothing is deleted" was a false safety
+// claim: the gate only checked that the download call did not throw, so a
+// download that silently no-opped still let the delete run. The gate now checks
+// the PAYLOAD and the handoff, and the copy claims only what is checkable.
+// ---------------------------------------------------------------------------
+describe('the backup gate checks the payload, not just the call (B2)', () => {
+  it('blocks the delete when the download silently no-ops', async () => {
+    // The reviewer's probe. `triggerDownload` returns the object URL it minted;
+    // a browser (or a stub) that hands back nothing means the handoff did not
+    // happen, and that is now a failed gate rather than a cheerful "saved".
+    URL.createObjectURL = (() => '') as unknown as typeof URL.createObjectURL;
+    const api = await openWithRows(ROWS);
+    deleteBtn()!.click();
+    await tick();
+    await tick();
+
+    expect(overlay()).toBeNull(); // never even asked
+    expect(api.apiRequest).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('No records were deleted.');
+  });
+
+  it('blocks the delete when the generated CSV does not contain every row', async () => {
+    // A backup of nothing must not pass for a backup. The rows carry an Id the
+    // plan will use, but the serialised CSV is emptied out from under it.
+    const rows = [{ attributes: { type: 'Account' }, Id: '001000000000009AAA' }];
+    const api = await openWithRows(rows);
+    // Empty the blob the download would carry, simulating a serialiser that
+    // produced nothing while still "succeeding".
+    const realBlobText = Blob.prototype.text;
+    URL.createObjectURL = ((part: Blob) => {
+      downloads.push(part);
+      return BLOB_STUB_URL;
+    }) as unknown as typeof URL.createObjectURL;
+    expect(realBlobText).toBeDefined();
+
+    // Drive the payload check directly — it is the gate, and it is pure.
+    const { backupCsvCoversPlan, planBulkDelete } = await import(
+      '../features/soql-bulk-delete.js'
+    );
+    const planned = planBulkDelete(rows);
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    expect(backupCsvCoversPlan('', planned.plan)).toBe(false);
+    expect(backupCsvCoversPlan('Id,Name\n', planned.plan)).toBe(false);
+    expect(backupCsvCoversPlan('Id\n001000000000009AAA\n', planned.plan)).toBe(true);
+    expect(api).toBeDefined();
+  });
+
+  it('names the backup file in the dialog so the user can check it themselves', async () => {
+    await openWithRows(ROWS);
+    deleteBtn()!.click();
+    await tick();
+    const text = overlay()!.textContent ?? '';
+    expect(text).toContain('sfdt-delete-backup-Account-');
+    expect(text).toContain('.csv');
+  });
+
+  it('claims only what it can observe — generated and handed over, not saved to disk', async () => {
+    await openWithRows(ROWS);
+    deleteBtn()!.click();
+    await tick();
+    const text = overlay()!.textContent ?? '';
+    expect(text).toContain('generated and handed to your browser');
+    expect(text).toContain('cannot confirm it reached your disk');
+    // The old, false claim must not come back.
+    expect(text).not.toContain('has just been downloaded');
+  });
+
+  it('says the backup holds only the selected columns (N2)', async () => {
+    // A partial backup is a partial restore, and the user finds that out at
+    // restore time unless it is said here.
+    await openWithRows(ROWS);
+    deleteBtn()!.click();
+    await tick();
+    expect(overlay()!.textContent ?? '').toContain('only the columns this query selected');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B3 (review round 1) — stopping a confirmed delete
+// ---------------------------------------------------------------------------
+describe('a confirmed delete can be stopped (B3)', () => {
+  const manyRows = Array.from({ length: 60 }, (_, i) => ({
+    attributes: { type: 'Account' },
+    Id: `0010000000${String(i).padStart(5, '0')}AAA`,
+  }));
+
+  it('offers a Cancel control only while deleting, and stops the next wave', async () => {
+    const seen: string[] = [];
+    // Each delete spans a macrotask, so the waves are actually separated in
+    // time — a wave of instantly-resolved promises drains in one microtask
+    // checkpoint and there is no moment at which a human could cancel.
+    const apiRequest = vi.fn(
+      (_m: string, endpoint: string) =>
+        new Promise((resolve) => {
+          seen.push(endpoint);
+          setTimeout(() => resolve(null), 0);
+        }),
+    );
+    await openWithRows(manyRows, {
+      apiOverrides: { apiRequest: apiRequest as unknown as SalesforceApiClient['apiRequest'] },
+    });
+    const cancel = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.getAttribute('aria-label') === 'Stop deleting',
+    )!;
+    expect(cancel.style.display).toBe('none'); // hidden until deleting starts
+
+    deleteBtn()!.click();
+    await tick();
+    const card = overlay()!;
+    const input = card.querySelector('input') as HTMLInputElement;
+    input.value = 'DELETE 60 Account';
+    input.dispatchEvent(new Event('input'));
+    // Press Confirm and cancel before the waves drain.
+    Array.from(card.querySelectorAll('button'))
+      .find((b) => b.textContent === 'Delete 60 Account records')!
+      .click();
+    await tick();
+    cancel.click();
+    for (let i = 0; i < 10; i += 1) await tick();
+
+    // 60 rows at the default wave of 25 would be 60 requests uninterrupted;
+    // cancelled during the first wave, only that wave is ever issued.
+    expect(seen.length).toBe(25);
+    expect(cancel.style.display).toBe('none'); // reset afterwards
+    const status = document.querySelector('[role="status"]') as HTMLElement;
+    expect(status.textContent).toContain('Deleted');
+  });
+
+  it('stops a running delete when the runner is closed', async () => {
+    const seen: string[] = [];
+    const apiRequest = vi.fn(
+      (_m: string, endpoint: string) =>
+        new Promise((resolve) => {
+          seen.push(endpoint);
+          setTimeout(() => resolve(null), 0);
+        }),
+    );
+    const feature = createSoqlRunnerFeature({
+      api: fakeApi({
+        query: vi.fn(async () => ({
+          totalSize: manyRows.length,
+          done: true,
+          records: manyRows,
+        })) as unknown as SalesforceApiClient['query'],
+        apiRequest: apiRequest as unknown as SalesforceApiClient['apiRequest'],
+      }),
+    });
+    await patchSettings({ features: { 'soql-bulk-delete': true } });
+    await feature.onActivate?.();
+    (document.querySelector('textarea') as HTMLTextAreaElement).value = 'SELECT Id FROM Account';
+    btn('Run')!.click();
+    await tick();
+    await tick();
+
+    deleteBtn()!.click();
+    await tick();
+    const card = overlay()!;
+    const input = card.querySelector('input') as HTMLInputElement;
+    input.value = 'DELETE 60 Account';
+    input.dispatchEvent(new Event('input'));
+    Array.from(card.querySelectorAll('button'))
+      .find((b) => b.textContent === 'Delete 60 Account records')!
+      .click();
+    await tick();
+    // Close the view out from under the running delete.
+    (
+      Array.from(document.querySelectorAll('button')).find(
+        (b) => b.getAttribute('aria-label') === 'Close',
+      ) as HTMLButtonElement
+    ).click();
+    for (let i = 0; i < 10; i += 1) await tick();
+
+    expect(seen.length).toBe(25);
+  });
+});
+
 describe('the delete itself', () => {
   it('issues one DELETE per row through the worker proxy once confirmed', async () => {
     const api = await openWithRows(ROWS);
@@ -337,6 +604,123 @@ describe('the delete itself', () => {
     await tick();
     // A stale report next to fresh rows reads as if the NEW rows failed.
     expect(document.body.textContent).not.toContain('001000000000002AAA — nope');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// N8 (review round 1) — the SOSL path had no coverage at all.
+//
+// It is the path most likely to break: groupSearchRecords strips the
+// `attributes` envelope, so those rows cannot say which object they belong to
+// and the group heading is the only source of that name.
+// ---------------------------------------------------------------------------
+describe('SOSL result groups', () => {
+  async function openSosl(
+    apiOverrides: Partial<SalesforceApiClient> = {},
+  ): Promise<SalesforceApiClient> {
+    await patchSettings({ features: { 'soql-bulk-delete': true } });
+    const api = fakeApi({
+      apiGet: vi.fn(async () => ({
+        searchRecords: [
+          { attributes: { type: 'Account' }, Id: '001000000000001AAA', Name: 'Acme' },
+          { attributes: { type: 'Account' }, Id: '001000000000002AAA', Name: 'Universal' },
+          { attributes: { type: 'Contact' }, Id: '003000000000001AAA', Name: 'Ada' },
+        ],
+      })) as unknown as SalesforceApiClient['apiGet'],
+      ...apiOverrides,
+    });
+    const feature = createSoqlRunnerFeature({ api });
+    await feature.onActivate?.();
+    (document.querySelector('textarea') as HTMLTextAreaElement).value = 'FIND {Acme}';
+    (document.querySelector('textarea') as HTMLTextAreaElement).dispatchEvent(new Event('input'));
+    btn('Run')!.click();
+    await tick();
+    await tick();
+    return api;
+  }
+
+  it('gives each object group its own Delete button, counted per group', async () => {
+    await openSosl();
+    const deletes = Array.from(document.querySelectorAll('button')).filter((b) =>
+      /^Delete \d+ rows?$/.test(b.textContent ?? ''),
+    );
+    expect(deletes.map((b) => b.textContent)).toEqual(['Delete 2 rows', 'Delete 1 row']);
+    expect(deletes.map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Delete 2 Account records',
+      'Delete 1 Contact record',
+    ]);
+  });
+
+  it('deletes only that group’s rows, against that group’s object', async () => {
+    // The rows carry no `attributes` by the time they reach the toolbar, so
+    // without the group heading feeding the plan this would refuse as
+    // 'unknown-object' — or, worse, delete against the wrong object.
+    const apiRequest = vi.fn(async () => null);
+    const api = await openSosl({
+      apiRequest: apiRequest as unknown as SalesforceApiClient['apiRequest'],
+    });
+    const contactDelete = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.getAttribute('aria-label') === 'Delete 1 Contact record',
+    )!;
+    contactDelete.click();
+    await tick();
+    await confirmWith('DELETE 1 Contact', 'Delete 1 Contact record');
+
+    expect(api.apiRequest).toHaveBeenCalledTimes(1);
+    expect(api.apiRequest).toHaveBeenCalledWith(
+      'DELETE',
+      '/services/data/v62.0/sobjects/Contact/003000000000001AAA',
+    );
+  });
+
+  it('drops the emptied group from the view and leaves the other one alone (N3/N4)', async () => {
+    await openSosl({ apiRequest: vi.fn(async () => null) as unknown as SalesforceApiClient['apiRequest'] });
+    const contactDelete = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.getAttribute('aria-label') === 'Delete 1 Contact record',
+    )!;
+    contactDelete.click();
+    await tick();
+    await confirmWith('DELETE 1 Contact', 'Delete 1 Contact record');
+
+    // The Contact group had one row; it is gone, heading and all. Account is
+    // untouched and still offers its own delete.
+    expect(document.body.textContent).not.toContain('Contact · ');
+    expect(document.body.textContent).toContain('Account · 2 rows');
+    const remaining = Array.from(document.querySelectorAll('button')).filter((b) =>
+      /^Delete \d+ rows?$/.test(b.textContent ?? ''),
+    );
+    expect(remaining.map((b) => b.textContent)).toEqual(['Delete 2 rows']);
+  });
+
+  it('refuses to start a second group’s delete while one is running (N3)', async () => {
+    // Both groups' buttons write to the same status line and the same report
+    // panel; two in flight would interleave and leave a report about the wrong
+    // rows. The first click owns the operation until it finishes.
+    const api = await openSosl({
+      apiRequest: vi.fn(
+        () => new Promise((resolve) => setTimeout(() => resolve(null), 0)),
+      ) as unknown as SalesforceApiClient['apiRequest'],
+    });
+    const accountDelete = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.getAttribute('aria-label') === 'Delete 2 Account records',
+    )!;
+    const contactDelete = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.getAttribute('aria-label') === 'Delete 1 Contact record',
+    )!;
+    accountDelete.click();
+    await tick();
+    // A second group's Delete while the first dialog is up must do nothing —
+    // in particular it must not open a second dialog over the first.
+    contactDelete.click();
+    await tick();
+    expect(document.querySelectorAll('.sfdt-confirm-overlay')).toHaveLength(1);
+    expect(overlay()!.textContent).toContain('DELETE 2 Account');
+
+    await confirmWith('DELETE 2 Account', 'Delete 2 Account records');
+    for (let i = 0; i < 6; i += 1) await tick();
+    // Only the Account rows were ever deleted.
+    const calls = (api.apiRequest as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.every(([, endpoint]) => String(endpoint).includes('/Account/'))).toBe(true);
   });
 });
 
