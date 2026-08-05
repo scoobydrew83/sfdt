@@ -15,7 +15,9 @@
 // correct panel LOOKS like, but a brand-new hand-roll that happens to satisfy
 // both still passes them. This one pins the code PATH.
 //
-// Two rules, because the hand-rolls had two distinct shapes:
+// Three rules. The first two are about the two shapes the hand-rolls had; the
+// third exists because the fix for the first two created a NEW way to get it
+// wrong that the type system cannot catch:
 //
 //   1. `.sfdt-console` + `.sfdt-error` on the same element is the Salesforce
 //      error block, and only `ui/panels.ts` may build it.
@@ -26,6 +28,14 @@
 //      shipped exactly that in its openLogBtn handler, and both #308 guards
 //      missed it because the pane's `.sfdt-console` satisfied the white-space
 //      rule they check.
+//   3. Nothing may hand a STRINGIFIED error to the shared renderer. The org's
+//      text and our guidance travel as structure on the error's `.userFacing`;
+//      `err.message` at the call site flattens them back into one blob and the
+//      renderer can no longer tell the halves apart. The renderer takes
+//      `unknown` because a caller legitimately passes its own prose too — and
+//      `unknown` accepts a string, so a wrong call site compiles clean and
+//      fails silently. There is no type that separates "our sentence" from "an
+//      error someone already stringified", so the check is here instead.
 //
 // Rule 1 is deliberately NOT a rule about `.sfdt-error` alone: that class is
 // also the red variant of `.sfdt-pill`, which several features legitimately
@@ -253,6 +263,62 @@ export function rendersErrorIntoConsole(source: string): string[] {
   return out;
 }
 
+// ── Rule 3: stringified errors reaching the renderer ────────────────────────
+
+const SHARED_RENDERERS = ['renderSfError', 'setSfError'] as const;
+
+/**
+ * The functions in this file that a stringified error must not reach: the two
+ * shared renderers, plus the local funnels that forward to them.
+ *
+ * A funnel is identified as "declared with an `unknown` parameter, in a file
+ * that imports a shared renderer". That is an approximation of "forwards its
+ * argument to the renderer" — but a deliberate one, and it is the exact set
+ * this PR widened. Reading each function body to prove the forwarding would
+ * buy precision the tree cannot currently use, and the approximation only ever
+ * over-includes, which shows up as a failure to look at rather than a hole.
+ *
+ * It also scopes the rule correctly: `features/flow-health-check.ts` calls a
+ * `showError(message: string)` on the health MODAL, which is a different
+ * surface with a different contract (`.sfdt-msg`, migrated in #308). Typed
+ * `string`, so it is not a sink here — deliberately out of scope rather than
+ * overlooked.
+ */
+export function errorSinks(source: string): string[] {
+  const sinks = new Set<string>();
+  const importsRenderer = SHARED_RENDERERS.some((n) =>
+    new RegExp(`import \\{[^}]*\\b${n}\\b[^}]*\\} from '.*ui/panels\\.js'`, 's').test(source),
+  );
+  for (const n of SHARED_RENDERERS) if (source.includes(`${n}(`)) sinks.add(n);
+  if (importsRenderer) {
+    const declaration =
+      /(?:function\s+([A-Za-z_$][\w$]*)\s*\(|const\s+([A-Za-z_$][\w$]*)\s*=\s*\()([^)]*)\)/g;
+    for (const m of source.matchAll(declaration)) {
+      if (/:\s*unknown\b/.test(m[3]!)) sinks.add((m[1] ?? m[2])!);
+    }
+  }
+  return [...sinks];
+}
+
+// `err.message` / `error.message`, and the `instanceof Error ? … : String(…)`
+// idiom that is its longhand. `response.error` is NOT this — a bridge reply's
+// error field is a string that never was an Error object, so there is no
+// structure to lose.
+const STRINGIFIED_ERROR = /\binstanceof\s+Error\s*\?|\b(?:err|error|e)\s*\.\s*message\b/;
+
+/** Rule 3: calls to an error sink that pass an already-flattened error. */
+export function passesStringifiedError(source: string): string[] {
+  const out: string[] = [];
+  for (const sink of errorSinks(source)) {
+    const call = new RegExp(`\\b${sink}\\s*\\(`, 'g');
+    for (const m of source.matchAll(call)) {
+      const args = readExpression(source, m.index! + m[0].length);
+      if (STRINGIFIED_ERROR.test(args)) out.push(`${sink}(${args.trim().slice(0, 60)})`);
+    }
+  }
+  return out;
+}
+
 function sourceFiles(): string[] {
   const out: string[] = [];
   const walk = (abs: string): void => {
@@ -301,6 +367,69 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
         `failure carries no error styling and no role="alert":\n${offenders.join('\n')}\n\n` +
         'Use setSfError(pane, err, { doc }) — and clearSfError(pane) on the success path.',
     ).toEqual([]);
+  });
+
+  it('nothing hands the renderer an already-stringified error', () => {
+    const offenders = scannedSources().flatMap(({ rel, source }) =>
+      passesStringifiedError(source).map((c) => `${rel}: ${c}`),
+    );
+
+    expect(
+      offenders,
+      'these flatten the error before the renderer sees it, so the org’s text and our ' +
+        `guidance arrive as one undifferentiated blob:\n${offenders.join('\n')}\n\n` +
+        'Pass the error itself. If you want to add a line of your own, that is the ' +
+        '`guidance` option — not string concatenation.',
+    ).toEqual([]);
+  });
+
+  it('rule 3 catches the shape `unknown` cannot', () => {
+    // The whole reason this rule exists: every one of these compiles, because
+    // the parameter is `unknown` and `unknown` accepts a string.
+    const sink = "import { setSfError, renderSfError } from '../ui/panels.js';\n";
+    const bad = [
+      'renderSfError(err instanceof Error ? err.message : String(err), { doc });',
+      'setSfError(pane, err.message, { doc });',
+      'function showError(message: unknown) { setSfError(p, message); }\nshowError(err.message);',
+      'function showError(message: unknown) { setSfError(p, message); }\nshowError(e instanceof Error ? e.message : String(e));',
+    ];
+    for (const src of bad) {
+      expect(passesStringifiedError(sink + src), src).not.toEqual([]);
+    }
+
+    const good = [
+      'renderSfError(err, { doc });',
+      'setSfError(pane, err, { doc });',
+      "renderSfError(err, { doc, guidance: 'Reload the tab and retry.' });",
+      "function showError(message: unknown) { setSfError(p, message); }\nshowError('Enter a query to run.');",
+      // A bridge reply's `error` is a string that never was an Error object —
+      // there is no structure to lose, so this is not the banned shape.
+      'function renderError(message: unknown) { renderSfError(message); }\nrenderError(`Bridge: ${response.error}`);',
+    ];
+    for (const src of good) {
+      expect(passesStringifiedError(sink + src), src).toEqual([]);
+    }
+  });
+
+  it('rule 3 finds the funnels this PR widened, and not the health modal', () => {
+    // The sink set is the load-bearing half — a rule that watches the wrong
+    // functions is decoration.
+    for (const [rel, expected] of [
+      ['features/soql-runner.ts', 'showError'],
+      ['features/soap-explore.ts', 'showError'],
+      ['features/rest-explore.ts', 'showError'],
+      ['features/bridge-tools.ts', 'renderError'],
+      ['features/apex-test-runner.ts', 'renderError'],
+      ['features/ai-assistant.ts', 'renderResultError'],
+    ] as const) {
+      const sinks = errorSinks(readFileSync(path.join(ROOT, rel), 'utf8'));
+      expect(sinks, `${rel} must treat ${expected} as an error sink`).toContain(expected);
+    }
+    // The health modal's showError takes a `string` and renders a different
+    // surface. Out of scope by design, not by oversight.
+    expect(errorSinks(readFileSync(path.join(ROOT, 'features/flow-health-check.ts'), 'utf8'))).not.toContain(
+      'showError',
+    );
   });
 
   it('scans the files it claims to', () => {

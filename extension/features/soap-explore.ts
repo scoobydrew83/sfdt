@@ -284,8 +284,10 @@ export function createSoapExploreFeature(options: {
     });
 
     // `unknown`, not `string` — see the note on the SOQL runner's showError.
-    function showError(message: unknown): void {
-      setSfError(errorPanel, message, { doc });
+    // `guidance` is OUR line, rendered as its own node below whatever the error
+    // itself said, so a caller never has to compose the two into one string.
+    function showError(message: unknown, guidance?: string): void {
+      setSfError(errorPanel, message, { doc, guidance });
       errorPanel.style.display = 'block';
       responsePane.style.display = 'none';
       copyBtn.style.display = 'none';
@@ -310,7 +312,7 @@ export function createSoapExploreFeature(options: {
       try {
         parsedPayload = JSON.parse(payloadTextarea.value);
       } catch (err: any) {
-        showError(`Payload is not valid JSON: ${err.message}`);
+        showError(err, 'The payload must be valid JSON.');
         return;
       }
 

@@ -211,7 +211,17 @@ describe('rest-explore — modal', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(api.rawRequest).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain('Body is not valid JSON');
+    // The parser's own words, then ours, as separate nodes. This used to be one
+    // concatenated string ("Body is not valid JSON: <parser message>"), which
+    // is the flattening C-FIX-4 removed: a call site that composes the two can
+    // keep the wrong half, and this one is reached through the same funnel a
+    // real Salesforce error uses.
+    const panel = document.querySelector('.sfdt-console.sfdt-error');
+    expect(panel?.getAttribute('role')).toBe('alert');
+    expect(panel?.querySelector('.sfdt-sf-error-text')?.textContent).toContain('JSON at position');
+    expect(panel?.querySelector('.sfdt-sf-error-note')?.textContent).toBe(
+      'The request body must be valid JSON.',
+    );
   });
 });
 

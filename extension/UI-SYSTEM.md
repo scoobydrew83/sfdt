@@ -201,16 +201,22 @@ Three things these enforce that a class cannot:
   nothing.
 
 **Pass the error, not `err.message`.** Stringifying at the call site throws the
-structure away. The three `showError()` funnels take `unknown` for this reason.
+structure away. The three `showError()` funnels take `unknown` for this reason —
+and `unknown` accepts a string, so a wrong call site compiles clean and fails
+silently. There is no type that separates "our sentence" from "an error someone
+already stringified", so rule 3 of the sweep is what catches it. If a surface
+wants a line of its own beside the error, that is the `guidance` option, not
+string concatenation.
 
 `.sfdt-console.sfdt-error` is for the **org's** text. Our own prose — a
 destructive-mode caution, a truncation warning — is `.sfdt-callout`; the comment
 at that rule in `lib/ui-styles.ts` draws the line. The destructive-manifest
 banner in `metadata-retrieve` was on the wrong side of it and moved.
 
-Guarded by `test/sf-error-panel-contract.test.ts`, in two rules: **no file
-outside `ui/panels.ts` may apply the class pair**, and **no `.sfdt-console`
-element may be handed a caught error's text directly**. That is the piece the
+Guarded by `test/sf-error-panel-contract.test.ts`, in three rules: **no file
+outside `ui/panels.ts` may apply the class pair**, **no `.sfdt-console`
+element may be handed a caught error's text directly**, and **nothing may pass
+an already-stringified error to the renderer**. That is the piece the
 two behavioural guards (`error-render-newlines`, `sf-error-guidance`) could not
 supply — they pin what a correct panel looks like, and a fresh hand-roll can
 satisfy both. Rule 1 accumulates classes **per element**, not per statement: a
