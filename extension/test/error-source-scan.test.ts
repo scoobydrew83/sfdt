@@ -595,6 +595,56 @@ describe('the mask every rule reads the tree through', () => {
     expect(viaConst.flattened.has('zsub')).toBe(false);
     expect(viaConst.holdsError.has('zsub')).toBe(true);
 
+    // ── B2: the split has to be the OUTERMOST operation ──────────────────────
+    //
+    // The SECOND blocking defect of this shape, and it shipped live on `develop`
+    // at `9d9f0a6`. `splitReceiver()` returned the prefix before the first
+    // depth-zero `.split(` without checking the split ENDED the chain, so
+    // `X.split('\n').map(f)` was read as tier 1 and every element marked
+    // `flattened` — while the elements are whatever `f` returns. Re-wrapping a
+    // newline-delimited org failure into one panel per line is an ordinary UI
+    // shape, and `renderSfError(sub)` is the CORRECT call for each element.
+    //
+    // This is the probe category the round-7 correct-code set had none of, which
+    // is exactly why that set could not fail. It has one now.
+    for (const head of [
+      "for (const zsub of (zq.stack ?? '').split('\\n').map((zl) => new Error(zl)))",
+      "for (const zsub of String(zq).split('\\n').map(toError))",
+      "for (const zsub of zq.stack.split('\\n').flatMap(parseFrame))",
+      "for (const zsub of String(zq).split('\\n').filter(Boolean).map(toError))",
+    ]) {
+      expect(inCatch(`  ${head} f(zsub);`).flattened.has('zsub'), head).toBe(false);
+    }
+    // …while the links that CANNOT change what an element is keep tier 1, which
+    // is the difference between fixing the category and disabling it. `filter`,
+    // `slice`, `reverse` and `sort` hand back elements the receiver already had.
+    for (const head of [
+      "for (const zt of String(zq).split('\\n').filter(Boolean))",
+      "for (const zt of String(zq).split('\\n').slice(1))",
+      "for (const zt of String(zq).split('\\n').reverse())",
+      "for (const zt of String(zq).split('\\n').filter(Boolean).slice(0, 5))",
+    ]) {
+      expect(inCatch(`  ${head} note(zt);`).flattened.has('zt'), head).toBe(true);
+    }
+    // A TERNARY does not become a string position because one of its arms holds
+    // a split. `splitReceiver()` returned `zparsed ? zqText` as the receiver —
+    // not a string expression at all — so this went flat=false at `d0b395d` to
+    // flat=true at `14dc83c`. It is the same defect wearing the other costume,
+    // and it lands where the module already says a ternary lands: nowhere.
+    const arm = inCatch("  for (const zx of zparsed ? zqText.split('\\n') : zq.errors) f(zx);");
+    expect(arm.flattened.has('zx')).toBe(false);
+    expect(arm.holdsError.has('zx')).toBe(false);
+
+    // N-F, pinned rather than left as an untested behaviour: `.match()` is tier 1
+    // on the same language guarantee as `.split()`, and narrowing the alternation
+    // to `(?:split)` alone used to leave the whole suite green.
+    expect(inCatch('  for (const zm of String(zq).match(zre)) note(zm);').flattened.has('zm')).toBe(
+      true,
+    );
+    expect(
+      inCatch('  for (const zm of String(zq).match(zre).map(toNode)) f(zm);').flattened.has('zm'),
+    ).toBe(false);
+
     // Every binder the head can carry, including the two with no occurrence in
     // the tree — excluding them would be a spelling decision in a structural
     // scanner, which is the mistake this module exists to stop making.
@@ -613,9 +663,20 @@ describe('the mask every rule reads the tree through', () => {
     // is how this could bind nothing while looking like it worked.
     expect(
       inCatch(
-        "  for (const zw of String(zq)\n    .split('\\n')\n    .map(trim)) note(zw);",
+        "  for (const zw of String(zq)\n    .split('\\n')\n    .filter(Boolean)) note(zw);",
       ).holdsError.has('zw'),
     ).toBe(true);
+    // The same head with a `.map()` on it binds nothing, and that is the B2 fix
+    // costing something rather than being free. `trim` does return a string, but
+    // NOTHING HERE CAN KNOW THAT — reading a callback's return type is exactly
+    // the argument-dependent guess that produced both defects in this series. The
+    // rule declines and the head goes unbound, which is the direction that fails
+    // safe: a missed defect, not a flagged correct call.
+    expect(
+      inCatch(
+        "  for (const zw of String(zq)\n    .split('\\n')\n    .map(trim)) note(zw);",
+      ).holdsError.has('zw'),
+    ).toBe(false);
 
     // An alias reaches through the head too, so the ordinary two-step refactor
     // is not a way out of the rule — as tier TWO, because a name bound to an

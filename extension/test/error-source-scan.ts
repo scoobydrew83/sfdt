@@ -772,6 +772,14 @@ function handlesSettledResults(code: string, source: string): boolean {
  * `agg.errors.filter((e) => e.message.split(',').length > 1)` is a filter over
  * error objects and not a split of anything — and reading it as the head's own
  * would be the same category error this function exists to fix.
+ *
+ * And the split has to be the OUTERMOST operation, which is the defect that
+ * shipped live on `develop` at `9d9f0a6`. Finding a depth-zero split answers
+ * "there is a split in here"; the caller reads the answer as "this iterable IS
+ * a split". Those differ the moment anything follows it, and
+ * `X.split('\n').map((l) => new Error(l))` yields Error OBJECTS while being
+ * marked `flattened` — B1's category error one direction over, with the tiers
+ * the right way round this time. See `ELEMENT_PRESERVING` for where the line is.
  */
 function splitReceiver(iterable: string): string | null {
   let depth = 0;
@@ -780,12 +788,67 @@ function splitReceiver(iterable: string): string | null {
     if (ch === '(' || ch === '[' || ch === '{') depth++;
     else if (ch === ')' || ch === ']' || ch === '}') depth--;
     else if (depth === 0 && (ch === '.' || ch === '?')) {
-      if (/^\??\s*\.\s*(?:split|match)\s*\(/.test(iterable.slice(i))) {
-        return iterable.slice(0, i);
+      const call = /^\??\s*\.\s*(?:split|match)\s*\(/.exec(iterable.slice(i));
+      if (call !== null) {
+        return elementPreservingTail(iterable, i + call[0].length) ? iterable.slice(0, i) : null;
       }
     }
   }
   return null;
+}
+
+/**
+ * Array methods that yield elements DRAWN FROM the receiver rather than computed
+ * from them, so a `string[]` stays a `string[]` whatever the arguments are.
+ *
+ * This is the same standard tier 1 already holds itself to — sound by the
+ * LANGUAGE rather than by a guess. `filter`, `slice`, `reverse` and `sort` can
+ * only ever hand back elements the receiver already had; `map` and `flatMap` are
+ * precisely the ones that can hand back anything at all, which is why the list is
+ * a list of what preserves elements and not a list of what is known to be bad.
+ * A method absent from this set makes the head bind NOTHING rather than bind
+ * wrongly, so a name added to the language is an under-claim and not a defect.
+ *
+ * `concat` is deliberately absent: its ARGUMENTS reach the result, and arguments
+ * never contribute to what a collection holds.
+ */
+const ELEMENT_PRESERVING = new Set(['filter', 'slice', 'reverse', 'sort']);
+
+/**
+ * Is everything after the split's own argument list element-preserving?
+ *
+ * `afterOpenParen` points just past the `(` of the `.split(`/`.match(` call, so
+ * the first job is to find that call's matching `)`. Depth counting is safe here
+ * for the same reason it is safe in the caller: every one of these reads happens
+ * on the MASKED buffer, where a literal's interior has already been blanked, so a
+ * bracket inside a string is not a bracket.
+ *
+ * An unbalanced remainder returns `false` — refusing to answer rather than
+ * guessing, which is what the mask contract does everywhere else in this module.
+ */
+function elementPreservingTail(iterable: string, afterOpenParen: number): boolean {
+  /** The offset just past the `)` that closes an argument list opened before `from`. */
+  const closeOf = (text: string, from: number): number => {
+    let depth = 1;
+    for (let i = from; i < text.length; i++) {
+      const ch = text[i]!;
+      if (ch === '(' || ch === '[' || ch === '{') depth++;
+      else if (ch === ')' || ch === ']' || ch === '}') depth--;
+      if (depth === 0) return i + 1;
+    }
+    return -1;
+  };
+  const end = closeOf(iterable, afterOpenParen);
+  if (end === -1) return false;
+  let rest = iterable.slice(end).trim();
+  while (rest !== '') {
+    const link = /^\??\s*\.\s*([A-Za-z_$][\w$]*)\s*\(/.exec(rest);
+    if (link === null || !ELEMENT_PRESERVING.has(link[1]!)) return false;
+    const next = closeOf(rest, link[0].length);
+    if (next === -1) return false;
+    rest = rest.slice(next).trim();
+  }
+  return true;
 }
 
 /**
