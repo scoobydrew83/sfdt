@@ -375,6 +375,94 @@ describe('debug-log-viewer — bulk delete', () => {
     expect(document.querySelector('.sfdt-confirm-overlay')).toBeNull();
   });
 
+  it('returns focus to the Delete button when the confirm is cancelled (C-FIX-5)', async () => {
+    // #326's B1, on the surface it was deferred from. The trigger used to be
+    // disabled across the count fetch AND the dialog, and `.focus()` on a
+    // disabled element is a specified no-op — so cancelling a destructive
+    // dialog dropped a keyboard user on <body>. The sweep in
+    // test/confirm-dialog-trigger-contract.test.ts catches the SHAPE; this
+    // catches the behaviour, because a shape rule can be satisfied by moving
+    // the disable into a helper without fixing anything.
+    const apiRequest = vi.fn(async () => null);
+    const feature = createDebugLogViewerFeature({
+      api: fakeApi({
+        query: vi.fn(async () => ({
+          records: [{ Id: '07L000000000001' }],
+          done: true,
+        })) as unknown as SalesforceApiClient['query'],
+        apiRequest: apiRequest as unknown as SalesforceApiClient['apiRequest'],
+      }),
+    });
+    await feature.onActivate?.();
+    await flush();
+
+    const btn = deleteButton();
+    btn.focus();
+    expect(document.activeElement).toBe(btn);
+    btn.click();
+    await flush();
+
+    const dialog = document.querySelector<HTMLElement>('.sfdt-confirm-overlay [role="dialog"]')!;
+    expect(dialog).not.toBeNull();
+    const cancel = Array.from(dialog.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Cancel',
+    )!;
+    cancel.click();
+    await flush();
+
+    expect(document.activeElement).toBe(btn);
+    expect(btn.disabled).toBe(false);
+    expect(apiRequest).not.toHaveBeenCalled();
+  });
+
+  it('keeps the trigger busy across the count, and focusable once the dialog is up', async () => {
+    // The reason a one-line move was not the fix. The count is a paginated
+    // fetch that genuinely needs a busy affordance; what it must not do is
+    // still hold it when the dialog opens. Both halves, in one run.
+    let release!: () => void;
+    const counted = new Promise<void>((r) => {
+      release = r;
+    });
+    const query = vi.fn(async () => {
+      await counted;
+      return { records: [{ Id: '07L000000000001' }], done: true };
+    });
+    const feature = createDebugLogViewerFeature({
+      api: fakeApi({ query: query as unknown as SalesforceApiClient['query'] }),
+    });
+    await feature.onActivate?.();
+    await flush();
+
+    const btn = deleteButton();
+    btn.focus();
+    btn.click();
+    await flush();
+
+    expect(btn.disabled, 'disabled while the org is being counted').toBe(true);
+    expect(document.querySelector('.sfdt-confirm-overlay')).toBeNull();
+
+    // Chrome moves focus to <body> when the focused element is disabled;
+    // happy-dom keeps `activeElement` on it (and makes `blur()` a no-op once
+    // disabled), so the test does it by hand. Without this line the feature's
+    // focus restore is unobservable here and the busy affordance would quietly
+    // re-create B1 in a real browser only.
+    document.body.focus();
+    expect(document.activeElement).toBe(document.body);
+
+    release();
+    await flush();
+
+    expect(document.querySelector('.sfdt-confirm-overlay')).not.toBeNull();
+    expect(btn.disabled, 'enabled again by the time the dialog is up').toBe(false);
+
+    const dialog = document.querySelector<HTMLElement>('.sfdt-confirm-overlay [role="dialog"]')!;
+    Array.from(dialog.querySelectorAll('button'))
+      .find((b) => b.textContent === 'Cancel')!
+      .click();
+    await flush();
+    expect(document.activeElement, 'the count did not cost the trigger its focus').toBe(btn);
+  });
+
   it('does nothing (no dialog, no delete) when the org has no logs', async () => {
     const apiRequest = vi.fn(async () => null);
     const query = vi.fn(async () => ({ records: [], done: true }));

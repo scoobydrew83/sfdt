@@ -476,11 +476,16 @@ export function summariseFailures(
     .map((kind) => ({ kind, count: counts.get(kind)! }));
 }
 
+// The summary reads `${count} ${label}` after a lead-in that already says how
+// many failed, so `unknown: 'failed'` produced "1 failed — 1 failed.": the
+// label collided with the word it was qualifying and told the reader nothing.
+// `unclassified` is what the kind actually means — `sfApiErrorKind` did not
+// recognise the error — and the per-row lines below carry the real message.
 const KIND_LABELS: Readonly<Record<BulkDeleteFailure['kind'], string>> = {
   timeout: 'timed out',
   'no-session': 'no Salesforce session',
   'http-error': 'rejected by Salesforce',
-  unknown: 'failed',
+  unknown: 'unclassified',
 };
 
 /**
@@ -511,10 +516,16 @@ export function formatBulkDeleteReport(outcome: BulkDeleteOutcome): string {
     return lines.join('\n');
   }
 
-  const summary = summariseFailures(failures)
-    .map(({ kind, count }) => `${count} ${KIND_LABELS[kind]}`)
-    .join(', ');
-  lines.push(`${failures.length} failed — ${summary}.`);
+  const breakdown = summariseFailures(failures);
+  // When `unclassified` is the only kind there is nothing to break down — the
+  // breakdown would just restate the count — so the lead-in stands alone and
+  // the per-row lines below do the explaining.
+  if (breakdown.length === 1 && breakdown[0]!.kind === 'unknown') {
+    lines.push(`${failures.length} failed.`);
+  } else {
+    const summary = breakdown.map(({ kind, count }) => `${count} ${KIND_LABELS[kind]}`).join(', ');
+    lines.push(`${failures.length} failed — ${summary}.`);
+  }
   lines.push('');
   for (const failure of failures) {
     lines.push(`${failure.id} — ${failure.message}`);

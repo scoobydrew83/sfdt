@@ -440,6 +440,16 @@ ${safeSoql}
 }
 
 /**
+ * Why an in-flight bulk delete was stopped.
+ *
+ * `signal.aborted` says THAT the run stopped and never why, and the three
+ * reasons want different reporting: `canceled` belongs against the table it
+ * was deleting from, `superseded` belongs nowhere near it (that table is
+ * already gone), and `closed` has no surface left at all.
+ */
+type DeleteStop = 'canceled' | 'superseded' | 'closed';
+
+/**
  * The pre-delete backup CSV (C-P4-2, AC-1). Returns the filename it handed to
  * the browser, which the confirm dialog then shows the user.
  *
@@ -1659,6 +1669,16 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     // tripped by the Cancel button, by closing the view, and by a fresh query.
     let deleteInFlight = false;
     let deleteController: AbortController | null = null;
+    /**
+     * Why the current run was stopped, if it was.
+     *
+     * Recorded before the abort, because the three reasons need different
+     * reporting and `signal.aborted` cannot tell them apart. The one that
+     * matters is `superseded`: by the time that outcome comes back the table
+     * the delete belongs to has already been replaced, so the status line and
+     * the report panel would describe rows that are no longer on screen.
+     */
+    let deleteStop: DeleteStop | null = null;
 
     const cancelDeleteBtn = button({
       label: 'Cancel',
@@ -1667,7 +1687,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       variant: 'danger',
       small: true,
       doc,
-      onClick: () => deleteController?.abort(),
+      onClick: () => stopBulkDelete('canceled'),
     });
     cancelDeleteBtn.style.display = 'none';
 
@@ -1678,8 +1698,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
      * was tested, but nothing ever passed one. Rows already sent are gone —
      * this stops the NEXT wave, which on a few thousand rows is most of them.
      */
-    function abortBulkDelete(): void {
-      deleteController?.abort();
+    function stopBulkDelete(reason: DeleteStop): void {
+      if (!deleteController) return;
+      deleteStop = reason;
+      deleteController.abort();
     }
     //
     // Every gate lives in features/soql-bulk-delete.ts; this half is only the
@@ -1729,13 +1751,23 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       const n = planned.plan.ids.length;
       setLabel(btn, `Delete ${n} row${n === 1 ? '' : 's'}`);
       btn.setAttribute('aria-label', `Delete ${describePlan(planned.plan)}`);
+      // The wording the B2 copy sweep settled on, and the one spot it missed:
+      // the extension can see that a CSV was generated and handed to the
+      // browser, and nothing after that. "Downloads" claimed the part it
+      // cannot observe, on the one control whose whole safety story is the
+      // backup. The dialog, features.mdx and privacy.mdx all say this already.
       btn.title =
-        `Downloads a backup CSV of the ${n} row${n === 1 ? '' : 's'}, then asks you to type ` +
+        `Generates a backup CSV of the ${n} row${n === 1 ? '' : 's'} and hands it to your ` +
+        `browser — SFDT cannot confirm it reached your disk — then asks you to type ` +
         `"${confirmPhrase(planned.plan)}" before deleting.`;
       btn.style.display = 'inline-block';
     }
 
-    function reportDeleteOutcome(outcome: BulkDeleteOutcome, prevStatus: string | null): void {
+    function reportDeleteOutcome(
+      outcome: BulkDeleteOutcome,
+      prevStatus: string | null,
+      stop: DeleteStop | null,
+    ): void {
       if (outcome.status === 'ineligible') {
         showToast(REJECTION_MESSAGES[outcome.reason], { doc, kind: 'warning' });
         status.textContent = prevStatus;
@@ -1754,23 +1786,55 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         status.textContent = prevStatus;
         return;
       }
-      const report = formatBulkDeleteReport(outcome);
-      status.textContent =
-        `Deleted ${outcome.deleted} of ${outcome.total} · re-run the query to refresh the table`;
-      if (outcome.failures.length > 0) {
-        showDeleteReport(report);
-        showToast(`${outcome.failures.length} row(s) failed to delete`, { doc, kind: 'error' });
+      const failed = outcome.failures.length;
+      if (stop === 'superseded') {
+        // The table this outcome belongs to has already been replaced. Writing
+        // `Deleted 25 of 60 · re-run the query to refresh the table` above a
+        // fresh result set describes rows that are no longer on screen and
+        // gives advice the user has just taken, and the report panel beside new
+        // rows reads as if THOSE failed — which is why `execute()` clears it.
+        // A toast is the one channel that is not anchored to the table.
+        showToast(
+          `Delete stopped by the new query — ${outcome.deleted} of ${outcome.total} ` +
+            `${outcome.sobject} record(s) had already been deleted` +
+            (failed > 0 ? `, ${failed} failed` : ''),
+          { doc, kind: 'warning' },
+        );
       } else {
-        showToast(`Deleted ${outcome.deleted} ${outcome.sobject} record(s)`, {
-          doc,
-          kind: 'success',
-        });
+        const report = formatBulkDeleteReport(outcome);
+        status.textContent =
+          `Deleted ${outcome.deleted} of ${outcome.total} · re-run the query to refresh the table`;
+        if (outcome.canceled) {
+          // A cancel is not a success, whatever the failure count says. The
+          // numbers in the old toast were honest and the table was
+          // authoritative, but a green tick is the wrong affect after someone
+          // stops a destructive operation — and with no failures the report was
+          // never shown at all, which left `formatBulkDeleteReport`'s
+          // "Canceled before the remaining rows were attempted." unreachable in
+          // the common case. Both halves are the same bug.
+          showDeleteReport(report);
+          showToast(
+            `Stopped after ${outcome.deleted} of ${outcome.total} ${outcome.sobject} record(s)` +
+              (failed > 0 ? ` · ${failed} failed` : ''),
+            { doc, kind: 'warning' },
+          );
+        } else if (failed > 0) {
+          showDeleteReport(report);
+          showToast(`${failed} row(s) failed to delete`, { doc, kind: 'error' });
+        } else {
+          showToast(`Deleted ${outcome.deleted} ${outcome.sobject} record(s)`, {
+            doc,
+            kind: 'success',
+          });
+        }
       }
       void recordActivity({
         featureId: SOQL_BULK_DELETE_ID,
-        action: 'Bulk delete',
+        action: outcome.canceled ? 'Bulk delete (stopped)' : 'Bulk delete',
         resource: `${outcome.sobject} × ${outcome.total}`,
-        status: outcome.failures.length > 0 ? 'failed' : 'success',
+        // `ActivityStatus` has two values, and a run the user stopped part-way
+        // is not the one that means "did what you asked".
+        status: failed > 0 || outcome.canceled ? 'failed' : 'success',
       });
     }
 
@@ -1797,6 +1861,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         return;
       }
       deleteInFlight = true;
+      deleteStop = null;
       clearDeleteReport();
       clearError();
       const prevStatus = status.textContent;
@@ -1866,13 +1931,20 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
               buildDeleteEndpoint(api.apiVersion, plan.sobject, id, transport),
             ),
           onProgress: ({ deleted, failed, total }) => {
+            // Once the run has been stopped the status line is no longer ours
+            // to write: a new query has already replaced the table and put its
+            // own count there, and a `Deleting… 25 of 60` landing on top of it
+            // describes rows that are no longer on screen. reportDeleteOutcome
+            // owns what the user is told from here.
+            if (deleteStop !== null) return;
             status.textContent = `Deleting… ${deleted + failed} of ${total}${
               failed > 0 ? ` · ${failed} failed` : ''
             }`;
           },
         });
-        reportDeleteOutcome(outcome, prevStatus);
-        if (outcome.status === 'done' && outcome.deletedIds.length > 0) {
+        const stop = deleteStop;
+        reportDeleteOutcome(outcome, prevStatus, stop);
+        if (outcome.status === 'done' && outcome.deletedIds.length > 0 && stop !== 'superseded') {
           // Drop exactly the rows the org confirmed gone and re-render. Leaving
           // them on screen is not cosmetic: the Delete button would recount
           // them and re-issue DELETEs against Ids that no longer exist. Rows
@@ -2076,7 +2148,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         // Closing the runner is the other way to stop a delete: the progress
         // line and the failure report both live in a view that no longer
         // exists, so continuing would destroy rows with nowhere to report it.
-        abortBulkDelete();
+        stopBulkDelete('closed');
         // Drops the generator panel's document-level Escape listener. Without
         // this it outlives the view and swallows the next surface's Escape.
         closeNlPanel();
@@ -2471,7 +2543,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       // …and so does it supersede an in-flight delete: the new result set will
       // replace the rows the delete is working through, and a progress line for
       // rows that are no longer on screen is worse than no progress line.
-      abortBulkDelete();
+      stopBulkDelete('superseded');
       clearError();
       // The previous delete's report describes rows that are about to be
       // replaced; leaving it up next to a fresh result set reads as if the new
