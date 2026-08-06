@@ -69,12 +69,39 @@
 // sets the INITIAL state of a toolbar button that `updateToolbar()` re-enables
 // the moment a row is selected. The trigger is enabled when the user can click
 // it, the click handler runs in a different turn, and flagging it would mean
-// editing correct code to satisfy a check. So the enclosing case additionally
-// requires the dialog call to sit inside an `await` in that same body: an
-// awaited expression is evaluated NOW, which is the grammatical version of
-// "this callback runs as part of this function". `void doIt(cb)` without the
-// `await` is therefore an open gap, named below rather than closed by a pattern
-// that would have to guess.
+// editing correct code to satisfy a check.
+//
+// So the enclosing case additionally requires the body to **`await` something
+// after the disable**:
+//
+//     scan.awaits.some((a) => a.inFn === from && a.start > disable.at)
+//
+// The condition is about CONTROL FLOW — this body disabled a control and then
+// suspended on something, so a callback it handed out may well have run in
+// between — and the first version of it was not. It asked whether the dialog
+// call sat lexically INSIDE the await expression's text range, which is a
+// FORMATTING fact wearing a control-flow fact's clothes, and the review of #332
+// found the hole that opens: hoisting the callback to a `const` on the line
+// above is a behaviour-preserving refactor that moves the text out of the range
+// while the callback still runs during the await.
+//
+//     btn.disabled = true;
+//     const deps = { confirm: (p, phrase) => confirmDialog({ … }) };  // ← moved
+//     await runBulkDelete(rows, deps);
+//
+// Both forms are the B1 regression on the real `soql-runner.ts`; the text-range
+// rule caught the inline one and went GREEN on the hoisted one, so on the next
+// surface — which by construction has no focus test yet — nothing would have
+// caught it. `detects the B1 shape` now pins both, and the narrower condition
+// declines `flow-version-manager.ts:187` for the reason that actually applies:
+// `ensureToolbarButton()` awaits nothing at all.
+//
+// What it over-approximates, named rather than discovered later: a body that
+// disables a control, awaits something unrelated, and only THEN registers a
+// listener would be flagged. That fires in the safe direction — it produces a
+// site to look at, not a rule that goes quiet — and there is no such site in
+// the tree. `void doIt(cb)` in a body with no `await` at all remains open, and
+// is asserted as open below.
 //
 // ── Why it asks the compiler, and why it still masks ────────────────────────
 //
@@ -206,6 +233,34 @@ function innermost(scan: Scan, at: number): Span {
 const encloses = (outer: Span, inner: Span): boolean =>
   outer.start <= inner.start && inner.end <= outer.end;
 
+const isStringLiteral = (node: ts.Node | undefined, text: string): boolean =>
+  node !== undefined && ts.isStringLiteralLike(node) && node.text === text;
+
+/**
+ * The receiver of a `… = true` assignment that disables a control, or null.
+ *
+ * Two spellings: `btn.disabled` and `btn['disabled']`. The review of #332 named
+ * the second (and `setAttribute('disabled', …)`, handled at the call site) as
+ * declined and unnamed. Both are caught rather than named, because both are
+ * exact AST shapes and neither costs anything: measured over the 125 scanned
+ * files, there are **zero** occurrences of either, so the false-positive cost
+ * is nil and the assertion below keeps that measurement honest.
+ *
+ * Still out, and named here: `btn.disabled = busy`. That is a state sync —
+ * `flow-version-manager.ts` writes `toolbarBtn.disabled = count === 0` on every
+ * toolbar repaint and it has nothing to do with a dialog — and claiming it
+ * would flag correct code all over the tree.
+ */
+function disabledTarget(left: ts.Expression): string | null {
+  if (ts.isPropertyAccessExpression(left) && left.name.text === 'disabled') {
+    return left.getText();
+  }
+  if (ts.isElementAccessExpression(left) && isStringLiteral(left.argumentExpression, 'disabled')) {
+    return left.getText();
+  }
+  return null;
+}
+
 /**
  * Read the file once, through the compiler.
  *
@@ -239,11 +294,22 @@ export function scanSource(source: string): Scan {
     } else if (
       ts.isBinaryExpression(node) &&
       node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-      ts.isPropertyAccessExpression(node.left) &&
-      node.left.name.text === 'disabled' &&
-      node.right.kind === ts.SyntaxKind.TrueKeyword
+      node.right.kind === ts.SyntaxKind.TrueKeyword &&
+      disabledTarget(node.left) !== null
     ) {
-      scan.disables.push({ at: node.getStart(file), receiver: node.left.getText(file) });
+      scan.disables.push({ at: node.getStart(file), receiver: disabledTarget(node.left)! });
+    } else if (
+      // `el.setAttribute('disabled', …)` — the third way to disable a control,
+      // and the value is irrelevant: any value of the attribute disables it.
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'setAttribute' &&
+      isStringLiteral(node.arguments[0], 'disabled')
+    ) {
+      scan.disables.push({
+        at: node.getStart(file),
+        receiver: node.expression.expression.getText(file),
+      });
     } else if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
       scan.calls.push({ at: node.getStart(file), name: node.expression.text });
     } else if (ts.isAwaitExpression(node)) {
@@ -313,9 +379,11 @@ export function disablesTriggerBeforeDialog(source: string): string[] {
       const opened = innermost(scan, call.at);
       if (from === opened) return true;
       if (!encloses(from, opened)) return false;
-      // The enclosing case, and only when the dialog is reached through
-      // something this body actually awaits. See the header.
-      return scan.awaits.some((a) => a.inFn === from && a.start <= call.at && call.at < a.end);
+      // The enclosing case, and only when this body suspends after the disable
+      // — a control-flow fact, deliberately NOT "the call sits inside the await
+      // expression's text", which a `const` hoist walks straight out of. See
+      // the header.
+      return scan.awaits.some((a) => a.inFn === from && a.start > disable.at);
     });
     if (!hit) continue;
     const line = source.slice(0, disable.at).split('\n').length;
@@ -421,7 +489,14 @@ describe('nothing disables the control that opens the confirm dialog', () => {
     // behavioural test in test/soql-runner-bulk-delete.test.ts catches it on
     // that one surface; this catches it on every surface, including the next
     // one nobody has written a focus test for.
-    const bad = [
+    //
+    // BOTH forms, because the review of #332 regressed B1 on the real
+    // soql-runner.ts twice and the first version of this rule only caught the
+    // first. Hoisting the deps object to a `const` is a behaviour-preserving
+    // refactor — the callback still runs during the await — and it walked out
+    // of a condition that asked where the call sat in the await's TEXT. On the
+    // next surface, with no focus test, nothing would have been left.
+    const inline = [
       'async function start(btn) {',
       '  btn.disabled = true;',
       '  await runBulkDelete(rows, {',
@@ -429,7 +504,29 @@ describe('nothing disables the control that opens the confirm dialog', () => {
       '  });',
       '}',
     ].join('\n');
-    expect(disablesTriggerBeforeDialog(bad)).toHaveLength(1);
+    const hoisted = [
+      'async function start(btn) {',
+      '  btn.disabled = true;',
+      '  const deps = {',
+      '    confirm: (plan, phrase) => confirmDialog({ doc, requireTyped: phrase }),',
+      '  };',
+      '  await runBulkDelete(rows, deps);',
+      '}',
+    ].join('\n');
+    const hoistedCallback = [
+      'async function start(btn) {',
+      '  btn.disabled = true;',
+      '  const ask = (plan, phrase) => confirmDialog({ doc, requireTyped: phrase });',
+      '  await runBulkDelete(rows, { confirm: ask });',
+      '}',
+    ].join('\n');
+    for (const [label, src] of [
+      ['callback inline', inline],
+      ['deps object hoisted to a const', hoisted],
+      ['the callback itself hoisted to a const', hoistedCallback],
+    ] as const) {
+      expect(disablesTriggerBeforeDialog(src), label).toHaveLength(1);
+    }
   });
 
   it('declines the correct order — disabled AFTER the dialog answers', () => {
@@ -493,6 +590,38 @@ describe('nothing disables the control that opens the confirm dialog', () => {
     expect(disablesTriggerBeforeDialog(good)).toEqual([]);
     // …and the real file agrees.
     expect(disablesTriggerBeforeDialog(read('features/flow-version-manager.ts'))).toEqual([]);
+
+    // The same thing in an ASYNC body, which is why the await condition is
+    // "awaits something AFTER the disable" and not merely "awaits something".
+    // A render function that fetches, then paints a toolbar, has an `await` in
+    // it — but it happened before the disable, so no callback can have run
+    // between the two. Dropping the `> disable.at` half survived every other
+    // assertion in this file, which is exactly the kind of silent widening
+    // this guard exists to refuse.
+    const asyncRender = [
+      'async function render() {',
+      '  await loadRows();',
+      '  btn.disabled = true;',
+      '  btn.addEventListener("click", () => void handleBulkDelete());',
+      '}',
+      'async function handleBulkDelete() {',
+      '  await confirmDialog({ doc });',
+      '}',
+    ].join('\n');
+    expect(disablesTriggerBeforeDialog(asyncRender)).toEqual([]);
+    // …and the same body with the await moved AFTER the disable is caught, so
+    // the decline above is about ordering and not about the shape at large.
+    const asyncRenderAwaitAfter = [
+      'async function render() {',
+      '  btn.disabled = true;',
+      '  await loadRows();',
+      '  btn.addEventListener("click", () => void handleBulkDelete());',
+      '}',
+      'async function handleBulkDelete() {',
+      '  await confirmDialog({ doc });',
+      '}',
+    ].join('\n');
+    expect(disablesTriggerBeforeDialog(asyncRenderAwaitAfter)).toHaveLength(1);
   });
 
   it('follows a local wrapper around the dialog', () => {
@@ -603,21 +732,55 @@ describe('nothing disables the control that opens the confirm dialog', () => {
 
   it('the AST and the mask agree about where the disables are', () => {
     // Two independent mechanisms over the same question, tree-wide. The AST
-    // finds `X.disabled = true` as a node; the masker finds it as text with
-    // every comment and string interior blanked. They can only disagree if one
-    // of them has started missing things — which is the failure this codebase
-    // cannot see any other way, because it fails GREEN.
-    const TEXTUAL = /\.\s*disabled\s*=\s*true\b/g;
+    // finds a disable as a node; the masker finds it as text with every comment
+    // and string interior blanked. They can only disagree if one of them has
+    // started missing things — which is the failure this codebase cannot see
+    // any other way, because it fails GREEN.
+    //
+    // All three spellings the scan knows, so widening it cannot quietly narrow
+    // the agreement: the counterpart of each is counted on the masked buffer.
+    const TEXTUAL = [
+      /\.\s*disabled\s*=\s*true\b/g,
+      /\[\s*['"]disabled['"]\s*\]\s*=\s*true\b/g,
+      /\.\s*setAttribute\s*\(\s*['"]disabled['"]/g,
+    ];
     const disagreements: string[] = [];
     for (const { rel, source } of scannedSources()) {
       const viaAst = scanSource(source).disables.length;
-      const viaMask = [...dynamicParts(source).matchAll(TEXTUAL)].length;
+      const masked = dynamicParts(source);
+      const viaMask = TEXTUAL.reduce((n, re) => n + [...masked.matchAll(re)].length, 0);
       if (viaAst !== viaMask) disagreements.push(`${rel}: ast=${viaAst} mask=${viaMask}`);
     }
     expect(disagreements).toEqual([]);
     // And the count is not zero, or the agreement is vacuous.
     const total = scannedSources().reduce((n, f) => n + scanSource(f.source).disables.length, 0);
     expect(total).toBeGreaterThan(30);
+  });
+
+  it('the two rarer disable spellings cost nothing, and that is measured', () => {
+    // `el['disabled'] = true` and `el.setAttribute('disabled', …)` were flagged
+    // by review as declined and unnamed. They are caught instead of named,
+    // which is only defensible because the false-positive cost is measurably
+    // nil: there is no occurrence of either in the tree, so widening the scan
+    // moved no verdict. If one appears later this assertion is the prompt to
+    // re-measure rather than to assume.
+    const rarer = [
+      /\[\s*['"]disabled['"]\s*\]\s*=\s*true\b/g,
+      /setAttribute\s*\(\s*['"]disabled['"]/g,
+    ];
+    const found = scannedSources().flatMap(({ rel, source }) => {
+      const masked = dynamicParts(source);
+      return rarer.flatMap((re) => [...masked.matchAll(re)].map(() => rel));
+    });
+    expect(found).toEqual([]);
+    // …and they ARE caught, so the zero above is a measurement and not a
+    // second way of saying the scan cannot see them.
+    for (const src of [
+      "async function f() { btn['disabled'] = true; await confirmDialog({ doc }); }",
+      "async function f() { btn.setAttribute('disabled', 'true'); await confirmDialog({ doc }); }",
+    ]) {
+      expect(disablesTriggerBeforeDialog(src), src).toHaveLength(1);
+    }
   });
 
   it('there is nothing to exempt', () => {
