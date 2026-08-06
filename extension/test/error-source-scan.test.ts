@@ -82,6 +82,85 @@ describe('the mask every rule reads the tree through', () => {
     expect(unstable).toEqual([]);
   });
 
+  it('masking its own output is always accepted, and always a no-op', () => {
+    // B1 of the round-6 review, stated as the PROPERTY it should always have
+    // been. The first version of the fail-closed refusal shipped a REGRESSION
+    // against `c7547e7`, and the PR body's defence of it — "this refuses
+    // nothing the guards legitimately ask" — was a measurement of that day's
+    // tree presented as a property of the trigger. It was not one.
+    //
+    // The mask MANUFACTURED the condition it refuses on. Blanking a string
+    // literal's interior turned every character into a space while preserving
+    // newlines (which the offset contract requires), and a backslash before a
+    // line break is a LineContinuation — the only thing holding a quoted string
+    // open across that break:
+    //
+    //     raw     const s = 'a\⏎ b';        parse diagnostics: 0
+    //     masked  const s = '  ⏎  ';        an unterminated string, invented here
+    //
+    // The guards mask their own output constantly — `readExpression()` cuts
+    // fragments out of the masked buffer and `flattensAnError()` masks them
+    // again — so the second pass threw. Review measured it: one three-line
+    // legal file dropped into `features/` took the three guard suites from
+    // 52 passed to 6 failed / 54 passed. `blankLiteralInto()` is the fix.
+    //
+    // The property, over legal source: whatever the mask ACCEPTS it must accept
+    // again, and the second answer must equal the first. That is what makes the
+    // refusal a statement about the input rather than about the tree.
+    const failures: string[] = [];
+    const check = (label: string, source: string): void => {
+      let once: string;
+      try {
+        once = dynamicParts(source);
+      } catch (e) {
+        failures.push(`${label}: refused its INPUT — ${(e as Error).message.split('\n')[0]}`);
+        return;
+      }
+      if (once.length !== source.length) failures.push(`${label}: length drifted`);
+      if (once.split('\n').length !== source.split('\n').length) {
+        failures.push(`${label}: line count drifted`);
+      }
+      try {
+        if (dynamicParts(once) !== once) failures.push(`${label}: not a no-op on its own output`);
+      } catch (e) {
+        failures.push(
+          `${label}: refused its own OUTPUT — ${(e as Error).message.split('\n')[0]}\n  ` +
+            `in:  ${JSON.stringify(source.slice(0, 90))}\n  out: ${JSON.stringify(once.slice(0, 90))}`,
+        );
+      }
+    };
+
+    // The corpus is checked LEGAL by the compiler first, so no member can
+    // quietly become an illegal-input test and make this pass for the wrong
+    // reason — which is the mistake the exemption bite check was fixing in #329.
+    for (const [label, source] of LEGAL_BUT_HOSTILE) {
+      const parsed = ts.createSourceFile(
+        'corpus.ts',
+        source,
+        ts.ScriptTarget.Latest,
+        false,
+        ts.ScriptKind.TS,
+      );
+      const diagnostics = (parsed as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] })
+        .parseDiagnostics;
+      expect(
+        (diagnostics ?? []).length,
+        `corpus member "${label}" is not legal source, so it proves nothing`,
+      ).toBe(0);
+      check(label, source);
+    }
+
+    // …and over the real tree, including every file with a line continuation
+    // spliced in — so the claim does not rest on today's tree happening not to
+    // contain one, which is precisely how this was got wrong the first time.
+    for (const { rel, source } of scannedSources()) {
+      check(rel, source);
+      check(`${rel} + continuation`, `const zc = 'a\\\n b';\n${source}`);
+    }
+
+    expect(failures, failures.join('\n')).toEqual([]);
+  }, 60_000);
+
   it('parses every file it masks, with no diagnostics at all', () => {
     // The mask trusts `ts.createSourceFile()` for where every literal starts
     // and stops. If the parser cannot read a file, the spans it reports are not
@@ -159,6 +238,11 @@ describe('the mask every rule reads the tree through', () => {
       "raw.replace( , ' ')",
       'errorPanel, message, { doc }',
       ' unknown>(key: string): Promise<T | null> {',
+      // …and the mask's OWN output for a line continuation, which is the exact
+      // fragment the first version of this refusal choked on. This list is the
+      // category the round-6 PR body claimed to have accounted for, so the
+      // member that broke it belongs in it.
+      "const s = ' \\\n  ';\nconst t = 1;\n",
     ]) {
       expect(() => dynamicParts(fragment), fragment).not.toThrow();
     }
@@ -206,17 +290,25 @@ describe('the mask every rule reads the tree through', () => {
     // from a backtick to the next one "anywhere in the file", so WHERE in the
     // file the probe lands is the axis that matters, and the old test could
     // only ever land at the top. Eight positions per file is 917 probes for
-    // about 5s, and it probes block comments, JSDoc and trailing comments —
-    // three shapes the header-comment-only version never reached.
+    // about 5s, spread across each file and stratified by comment kind, so it
+    // reaches JSDoc and trailing comments as well as line comments — shapes the
+    // header-comment-only version never touched. (Plain `/* … */` block
+    // comments it does NOT reach, because the tree contains none; see below.)
     //
     // Comment positions come from the compiler, not from this module's own
     // `commentRanges()`, so the probe is not asking the mask to check itself.
     const blinded: string[] = [];
+    const sampled: Record<string, number> = {};
+    const missedKind: string[] = [];
     let probed = 0;
     for (const { rel, source } of scannedSources()) {
       const masked = dynamicParts(source);
-      for (const at of probePositions(source, masked)) {
+      const present = new Set(commentKindsIn(source, masked));
+      const inSample = new Set<string>();
+      for (const { at, kind } of probePositions(source, masked)) {
         probed++;
+        sampled[kind] = (sampled[kind] ?? 0) + 1;
+        inSample.add(kind);
         const strayed = `${source.slice(0, at)}\`${source.slice(at)}`;
         const after = dynamicParts(strayed);
         // Compared as buffers around the injection point rather than as
@@ -231,8 +323,35 @@ describe('the mask every rule reads the tree through', () => {
           blinded.push(`${rel}@${at}`);
         }
       }
+      for (const kind of present) {
+        if (!inSample.has(kind)) {
+          missedKind.push(`${rel}: contains ${kind} comments, none of them sampled`);
+        }
+      }
     }
     expect(probed).toBeGreaterThan(600);
+    // The budget must not be spent entirely on whichever kind is commonest IN
+    // THAT FILE. Round 6 shipped an unstratified spread and review caught the
+    // claim this test made about it: the sample came out
+    // `line=784 jsdoc=133 block=0`, while the comment here said block comments
+    // were probed. Two separate things were wrong and only one was the sampler.
+    //
+    // The CLAIM. Measured over the tree: 4,522 line comments, 579 JSDoc, and
+    // ZERO plain `/* … */` block comments. `block=0` was never a sampling
+    // failure, it was a fact about the codebase — and `commentRanges()`'s `/*`
+    // branch, which is a different code path from its `//` branch, is exercised
+    // by the JSDoc ones. A plain block comment is covered directly by
+    // `keeps the code that follows an unbalanced backtick`, since the tree
+    // cannot cover it.
+    //
+    // The SAMPLER. An even spread over one pool can still miss a kind a file
+    // does contain, and which kinds get probed should not be luck. The property
+    // is therefore per-FILE, which is what stratifying actually buys: every
+    // comment kind a file contains appears in that file's own sample.
+    expect(missedKind, missedKind.join('\n')).toEqual([]);
+    // …and the tree-wide composition is pinned, so `block` appearing later is a
+    // visible change rather than a silent one.
+    expect(Object.keys(sampled).sort()).toEqual(['jsdoc', 'line']);
     expect(
       blinded,
       'one backtick inside a comment changed what these files look like to every rule:\n' +
@@ -314,6 +433,25 @@ describe('the mask every rule reads the tree through', () => {
     expect(
       errorBoundNames("if (s.status !== 'fulfilled') note(s.reason);").holdsError.has('reason'),
     ).toBe(true);
+
+    // The comparison is against the WHOLE state, closing quote included. A
+    // prefix match — which is what shipped in round 6 and what review caught —
+    // lets a domain state that merely starts with one of the two words scope
+    // `reason` for a whole file. None in the tree; the word is free.
+    expect(
+      errorBoundNames("if (s.status === 'rejectedByAdmin') note(s.reason);").holdsError.has(
+        'reason',
+      ),
+    ).toBe(false);
+    expect(
+      errorBoundNames("if (s.status === 'fulfilledAtStore') note(s.reason);").holdsError.has(
+        'reason',
+      ),
+    ).toBe(false);
+    // …and the quote style does not matter, only that the word is whole.
+    expect(
+      errorBoundNames('if (s.status === "rejected") note(s.reason);').holdsError.has('reason'),
+    ).toBe(true);
   });
 
   it('leaves the word `reason` alone in a file that settles nothing', () => {
@@ -380,6 +518,69 @@ describe('the mask every rule reads the tree through', () => {
   });
 });
 
+/**
+ * Legal source the mask has to survive, gathered from every way found so far of
+ * making a masker manufacture a token that was not in its input.
+ *
+ * Each member is asserted LEGAL against the compiler before it is used, so the
+ * corpus cannot rot into a set of illegal inputs that pass by being refused.
+ */
+const LEGAL_BUT_HOSTILE: readonly [string, string][] = [
+  ['line continuation, single quotes', "const s = 'a\\\n b';\nconst t = 1;\n"],
+  ['line continuation, double quotes', 'const s = "a\\\n b";\nconst t = 1;\n'],
+  ['line continuation, CRLF', "const s = 'a\\\r\n b';\nconst t = 1;\n"],
+  ['two line continuations', "const s = 'a\\\n b\\\n c';\nconst t = 1;\n"],
+  ['continuation then an ordinary escape', "const s = 'a\\\n b\\n c';\nconst t = 1;\n"],
+  ['escaped backslash before a continuation', "const s = 'a\\\\\\\n b';\nconst t = 1;\n"],
+  ['continuation in a template', 'const s = `a\\\n b`;\nconst t = 1;\n'],
+  ['continuation inside a line comment', '// a\\\nconst t = 1;\n'],
+  ['continuation carrying a quote', "const s = 'a\\\n it\\'s b';\nconst t = 1;\n"],
+  ['a quote inside a template hole', 'const s = `a ${x ? "y" : \'z\'} b`;\n'],
+  ['a template inside a template hole', 'const s = `a ${`inner ${y}`} b`;\n'],
+  ['a regex holding a quote and a slash', "const r = /['\\/`]/g;\nconst t = 1;\n"],
+  ['a block comment holding a quote', "/* it's fine */\nconst t = 1;\n"],
+  ['a string holding a comment opener', "const s = '/* not a comment */';\nconst t = 1;\n"],
+  ['a string holding a backtick', "const s = 'a ` b';\nconst t = 1;\n"],
+  ['division that is not a regex', 'const r = a / b / c;\nconst t = 1;\n'],
+];
+
+/**
+ * The comment kinds a file actually contains at a position the mask blanks.
+ *
+ * The same classification `probePositions()` buckets by, computed separately so
+ * the coverage property below is not the sampler grading its own homework.
+ */
+function commentKindsIn(source: string, masked: string): string[] {
+  const file = ts.createSourceFile(
+    'kinds.ts',
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const found = new Set<string>();
+  const note = (ranges: readonly ts.CommentRange[] | undefined): void => {
+    for (const r of ranges ?? []) {
+      if (masked[r.pos + 2] !== ' ') continue;
+      found.add(
+        r.kind === ts.SyntaxKind.SingleLineCommentTrivia
+          ? 'line'
+          : source.startsWith('/**', r.pos)
+            ? 'jsdoc'
+            : 'block',
+      );
+    }
+  };
+  note(ts.getLeadingCommentRanges(source, 0));
+  const visit = (node: ts.Node): void => {
+    note(ts.getLeadingCommentRanges(source, node.getFullStart()));
+    note(ts.getTrailingCommentRanges(source, node.getEnd()));
+    node.forEachChild(visit);
+  };
+  file.forEachChild(visit);
+  return [...found];
+}
+
 /** How many comment positions per file the backtick property injects at. */
 const PROBES_PER_FILE = 8;
 
@@ -406,7 +607,7 @@ const PROBES_PER_FILE = 8;
  * comment of every file are always among them — see the budget note in the
  * test for why the full set is measured but not paid for.
  */
-function probePositions(source: string, masked: string): number[] {
+function probePositions(source: string, masked: string): { at: number; kind: string }[] {
   const file = ts.createSourceFile(
     'probe.ts',
     source,
@@ -414,25 +615,59 @@ function probePositions(source: string, masked: string): number[] {
     true,
     ts.ScriptKind.TS,
   );
-  const starts = new Set<number>();
-  for (const r of ts.getLeadingCommentRanges(source, 0) ?? []) starts.add(r.pos);
+  const starts = new Map<number, ts.CommentKind>();
+  const note = (ranges: readonly ts.CommentRange[] | undefined): void => {
+    for (const r of ranges ?? []) starts.set(r.pos, r.kind);
+  };
+  note(ts.getLeadingCommentRanges(source, 0));
   const visit = (node: ts.Node): void => {
-    for (const r of ts.getLeadingCommentRanges(source, node.getFullStart()) ?? [])
-      starts.add(r.pos);
-    for (const r of ts.getTrailingCommentRanges(source, node.getEnd()) ?? []) starts.add(r.pos);
+    note(ts.getLeadingCommentRanges(source, node.getFullStart()));
+    note(ts.getTrailingCommentRanges(source, node.getEnd()));
     node.forEachChild(visit);
   };
   file.forEachChild(visit);
 
-  const usable = [...starts]
-    .sort((a, b) => a - b)
-    .map((pos) => pos + 2)
-    .filter((at) => masked[at] === ' ');
-  if (usable.length <= PROBES_PER_FILE) return usable;
-
-  const picked: number[] = [];
-  for (let i = 0; i < PROBES_PER_FILE; i++) {
-    picked.push(usable[Math.round((i * (usable.length - 1)) / (PROBES_PER_FILE - 1))]!);
+  // Bucketed BY KIND, because the budget is what decides what gets probed and
+  // an unstratified spread spends it all on whichever kind is commonest. Round
+  // 6 shipped exactly that mistake: the sample came out `line=784 jsdoc=133
+  // block=0`, while the test's own comment claimed block comments were probed.
+  // They were not — a tree written in `//` and `/** … */` has so few plain
+  // block comments that an even spread never lands on one, and the `/*` branch
+  // of `commentRanges()` is a different code path from the `//` branch.
+  const buckets = new Map<string, number[]>();
+  for (const [pos, kind] of [...starts].sort((a, b) => a[0] - b[0])) {
+    const at = pos + 2;
+    if (masked[at] !== ' ') continue;
+    const bucket =
+      kind === ts.SyntaxKind.SingleLineCommentTrivia
+        ? 'line'
+        : source.startsWith('/**', pos)
+          ? 'jsdoc'
+          : 'block';
+    (buckets.get(bucket) ?? buckets.set(bucket, []).get(bucket)!).push(at);
   }
-  return [...new Set(picked)];
+
+  // Evenly spaced WITHIN each kind — first and last always included — then
+  // round-robin across kinds until the budget is spent, so every kind a file
+  // contains is represented before any kind gets a second position.
+  const spread = (xs: number[], n: number): number[] =>
+    xs.length <= n
+      ? xs
+      : [
+          ...new Set(
+            Array.from({ length: n }, (_, i) => xs[Math.round((i * (xs.length - 1)) / (n - 1))]!),
+          ),
+        ];
+  const queues = [...buckets.values()].map((xs) => spread(xs, PROBES_PER_FILE));
+  const kinds = [...buckets.keys()];
+  const picked: { at: number; kind: string }[] = [];
+  for (let round = 0; picked.length < PROBES_PER_FILE; round++) {
+    if (queues.every((q) => round >= q.length)) break;
+    queues.forEach((q, i) => {
+      if (round < q.length && picked.length < PROBES_PER_FILE) {
+        picked.push({ at: q[round]!, kind: kinds[i]! });
+      }
+    });
+  }
+  return picked.sort((a, b) => a.at - b.at);
 }

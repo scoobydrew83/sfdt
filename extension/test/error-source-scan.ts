@@ -253,6 +253,68 @@ function blankInto(out: string[], from: number, to: number): void {
   }
 }
 
+/** A character that ends a line as far as the ECMAScript grammar is concerned. */
+const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+
+/**
+ * Blank a LITERAL's interior, keeping the line continuations that hold it open.
+ *
+ * `blankInto()` is the wrong tool inside a quoted string, and getting that
+ * wrong is how round 6 shipped a REGRESSION against `c7547e7`. A backslash
+ * immediately before a line break is a **LineContinuation** — legal ES and
+ * legal TS, `tsc --noEmit` and `eslint` both accept it — and it is the only
+ * thing keeping a single- or double-quoted string alive across that break.
+ * Blanking the backslash to a space while preserving the newline (which the
+ * offset contract requires) leaves the newline INSIDE the quotes with nothing
+ * holding them open:
+ *
+ *     raw    const s = 'a\⏎ b';   ← parses, zero diagnostics
+ *     masked const s = '  ⏎  ';   ← an unterminated string that was never written
+ *
+ * The mask then manufactured exactly the condition `refuseRunaway()` refuses
+ * on, so masking its own output threw — and the guards mask their own output
+ * constantly, because `readExpression()` cuts fragments out of the masked
+ * buffer and `flattensAnError()` masks them again. Measured by review: one
+ * three-line legal file dropped into `features/` took the three guard suites
+ * from 52 passed to 6 failed / 54 passed. A guard that breaks on legal source a
+ * contributor could write tomorrow is worse than the hole it was closing.
+ *
+ * So the continuation is kept verbatim — the backslash AND the terminator —
+ * which preserves every offset and every line number exactly as before and
+ * leaves a literal that still closes. Escapes are tracked properly on the way
+ * through, so `'a\\'` followed by a real newline is NOT read as a continuation:
+ * that one is genuinely unterminated in the raw source, and refusing on it is
+ * the right answer.
+ *
+ * The property this buys is asserted rather than asserted-about:
+ * `masking its own output is always accepted, and always a no-op` runs it over
+ * every scanned file and over a corpus of legal-but-hostile constructs whose
+ * legality is checked against the compiler first.
+ */
+function blankLiteralInto(out: string[], from: number, to: number): void {
+  const start = Math.max(from, 0);
+  const end = Math.min(to, out.length);
+  for (let k = start; k < end; k++) {
+    const ch = out[k]!;
+    if (ch === '\\') {
+      const next = out[k + 1];
+      if (next !== undefined && LINE_TERMINATOR.test(next)) {
+        // A LineContinuation. Keep the backslash and the terminator it escapes
+        // — CRLF counts as one terminator, so step over both.
+        k += next === '\r' && out[k + 2] === '\n' ? 2 : 1;
+        continue;
+      }
+      // Any other escape: blank the pair together, so the escaped character
+      // cannot be re-read as an opener on a later pass.
+      out[k] = ' ';
+      if (k + 1 < end && out[k + 1] !== '\n') out[k + 1] = ' ';
+      k += 1;
+      continue;
+    }
+    if (ch !== '\n') out[k] = ' ';
+  }
+}
+
 /**
  * Refuse to answer, loudly, rather than answer with silence.
  *
@@ -327,7 +389,12 @@ function blankLiterals(source: string): string {
           refuseRunaway(ts.SyntaxKind[node.kind]!, source, start);
         }
         const [from, to] = literalInterior(node.kind, start, node.end);
-        blankInto(out, from, to);
+        // A regex is blanked WHOLE, delimiters included, so there is no
+        // interior to keep alive and a preserved backslash would land in code
+        // position. Everything else keeps its line continuations — see
+        // `blankLiteralInto()`.
+        if (node.kind === ts.SyntaxKind.RegularExpressionLiteral) blankInto(out, from, to);
+        else blankLiteralInto(out, from, to);
         break;
       }
       default:
@@ -633,7 +700,8 @@ const CATCH_BINDING =
  * direction that produces a site to look at rather than a rule that goes quiet.
  */
 const ALL_SETTLED = /\bPromise\s*\.\s*allSettled\s*\(/;
-const SETTLED_NARROWING = /([A-Za-z_$][\w$]*)\s*\??\s*\.\s*status\s*(?:===|!==)\s*['"]/g;
+const SETTLED_NARROWING = /([A-Za-z_$][\w$]*)\s*\??\s*\.\s*status\s*(?:===|!==)\s*(['"])/g;
+const SETTLED_STATES = ['rejected', 'fulfilled'] as const;
 
 function handlesSettledResults(code: string, source: string): boolean {
   if (ALL_SETTLED.test(code)) return true;
@@ -643,8 +711,13 @@ function handlesSettledResults(code: string, source: string): boolean {
   // blanked in `code`, so the state name is only legible in `source`.
   for (const m of code.matchAll(SETTLED_NARROWING)) {
     const interior = m.index + m[0].length;
-    const literal = source.slice(interior, interior + 9);
-    if (literal.startsWith('rejected') || literal.startsWith('fulfilled')) return true;
+    // The CLOSING quote is part of the comparison. Matching a prefix would let
+    // `s.status === 'rejectedByAdmin'` — a domain state, not a settlement —
+    // scope `reason` for the whole file. None in the tree; a whole word costs
+    // nothing and the round-6 review was right that a prefix is not the test.
+    for (const state of SETTLED_STATES) {
+      if (source.startsWith(state + m[2]!, interior)) return true;
+    }
   }
   return false;
 }
