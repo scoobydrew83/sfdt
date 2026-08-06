@@ -7,7 +7,7 @@ This file is a map, not a manual (harness H-008). Read the doc that matches your
 ## Get bearings (start every session here)
 
 1. `pwd` — confirm you're in the sfdt package, not a target SF project.
-2. `git log --oneline -20` and, if present, MEMORY_BANK.md tail — what happened recently.
+2. `git log --oneline -20` and, if present, `.work/MEMORY_BANK.md` tail — what happened recently.
 3. FEATURES.json — the active phase's ground truth; pick ONE `passes:false` item.
 4. `npm test` and `npm run check:all-contracts` — confirm the tree is green before changing it.
 

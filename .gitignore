@@ -41,6 +41,9 @@ skills/*-workspace/
 skills/*/evals/*
 !skills/*/evals/evals.json
 
+# Private working notes — separate repo: scoobydrew83/sfdt-work
+.work/
+
 # Git worktrees
 .worktrees/
 .claude/worktrees/
