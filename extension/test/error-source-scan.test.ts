@@ -515,21 +515,85 @@ describe('the mask every rule reads the tree through', () => {
     const inCatch = (body: string): ReturnType<typeof errorBoundNames> =>
       errorBoundNames(`try {\n  go();\n} catch (zq) {\n${body}\n}\n`);
 
-    // Tier one: the iterable FLATTENS an error, so every element is a piece of
-    // that text — `flattened`, and therefore `holdsError` too.
+    // Tier one, asked in a STRING position: the receiver of a `.split()`, whose
+    // elements are strings by the language's own definition. Every element is a
+    // piece of that text — `flattened`, and therefore `holdsError` too.
     const flat = inCatch("  for (const zline of String(zq).split('\\n')) note(zline);");
     expect(flat.holdsError.has('zline')).toBe(true);
     expect(flat.flattened.has('zline')).toBe(true);
+    // …and the receiver question is `carriesAnError()`, not `flattensAnError()`,
+    // so a string that HOLDS an error without an idiom on it still counts.
+    expect(inCatch("  for (const zl of zq.stack.split('\\n')) note(zl);").flattened.has('zl')).toBe(
+      true,
+    );
 
-    // Tier two: the iterable merely CARRIES one, so every element is an error
-    // that has not been stringified yet. `flattened` stays a strict subset,
-    // because `for (const sub of err.errors) renderSfError(sub)` is the CORRECT
+    // Tier two, asked in a COLLECTION position: the last link that is not a
+    // call. Every element is an error that has not been stringified yet, so
+    // `flattened` stays a strict subset — `renderSfError(sub)` is the CORRECT
     // call and rule 3 must not flag it. This is the shape the round-6 review
     // first recorded as an unconfirmed `Promise.any` / AggregateError category
     // and its re-review identified as this finding wearing a costume.
     const held = inCatch('  for (const zsub of zq.errors) note(zsub);');
     expect(held.holdsError.has('zsub')).toBe(true);
     expect(held.flattened.has('zsub')).toBe(false);
+    // Arguments never contribute and the method name is not the collection, so
+    // a filtered collection of errors is still a collection of errors.
+    const filtered = inCatch(
+      "  for (const zsub of zq.errors.filter((err) => err.message !== '')) f(zsub);",
+    );
+    expect(filtered.holdsError.has('zsub')).toBe(true);
+    expect(filtered.flattened.has('zsub')).toBe(false);
+    // Both halves of "arguments never contribute", so that reading a call's
+    // ARGUMENT text as if it were the collection cannot pass unnoticed. The
+    // first has no error word anywhere in it and must still bind; the second is
+    // stuffed with them and must still decline, because what is being iterated
+    // is `fields`.
+    expect(
+      inCatch('  for (const zsub of zq.errors.filter(Boolean)) f(zsub);').holdsError.has('zsub'),
+    ).toBe(true);
+    expect(
+      inCatch(
+        "  for (const zf of zq.fields.filter((err) => err.message !== '')) f(zf);",
+      ).holdsError.has('zf'),
+    ).toBe(false);
+
+    // ── the BLOCKING defect the first version of this shipped ────────────────
+    //
+    // Tier one used to ask `flattensAnError(iterable)` — a function written for
+    // a SCALAR right-hand side, whose idioms match anywhere in the expression
+    // and one of which (`instanceof Error ?`) needs no subject at all. Applied
+    // to an ITERABLE it fired on how the collection was BUILT and answered about
+    // its ELEMENTS, marking each one `flattened`. Rule 3 then flagged
+    // `renderSfError(<a raw sub-error>)`: the exact call the two tiers exist to
+    // protect, on legal, lint-clean, type-clean code that is green at
+    // `84e6db8`. Every one of these must bind at most `holdsError`.
+    for (const head of [
+      'for (const zsub of zq instanceof Error ? [zq] : zq.errors)',
+      "for (const zsub of zq.errors.filter((err) => err.message !== ''))",
+      'for (const zsub of zq.errors.map((err) => err))',
+      'for (const zsub of zq.message ? zq.errors : [])',
+      "for (const zsub of zq.errors.filter((err) => err.message.split(',').length > 1))",
+    ]) {
+      expect(inCatch(`  ${head} f(zsub);`).flattened.has('zsub'), head).toBe(false);
+    }
+    // …including through a named intermediate, which is why an alias of a
+    // `flattened` NAME no longer makes the elements flattened. The declaration
+    // scan marks `zsubs` flattened because `instanceof Error ?` is in its
+    // right-hand side; that is a statement about the array, not about what
+    // iterating it yields.
+    const viaConst = errorBoundNames(
+      [
+        'try {',
+        '  go();',
+        '} catch (zq) {',
+        '  const zsubs = zq instanceof Error ? [zq] : zq.errors;',
+        '  for (const zsub of zsubs) f(zsub);',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    expect(viaConst.flattened.has('zsub')).toBe(false);
+    expect(viaConst.holdsError.has('zsub')).toBe(true);
 
     // Every binder the head can carry, including the two with no occurrence in
     // the tree — excluding them would be a spelling decision in a structural
@@ -554,25 +618,32 @@ describe('the mask every rule reads the tree through', () => {
     ).toBe(true);
 
     // An alias reaches through the head too, so the ordinary two-step refactor
-    // is not a way out of the rule.
-    expect(
-      errorBoundNames(
-        [
-          'try {',
-          '  go();',
-          '} catch (zq) {',
-          "  const zlines = String(zq).split('\\n');",
-          '  for (const zone of zlines) note(zone);',
-          '}',
-          '',
-        ].join('\n'),
-      ).flattened.has('zone'),
-    ).toBe(true);
+    // is not a way out of the rule — as tier TWO, because a name bound to an
+    // array says nothing about whether iterating it yields text. Rule 2 is what
+    // this shape needs and rule 2 asks `holdsError`.
+    const twoStep = errorBoundNames(
+      [
+        'try {',
+        '  go();',
+        '} catch (zq) {',
+        "  const zlines = String(zq).split('\\n');",
+        '  for (const zone of zlines) note(zone);',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    expect(twoStep.holdsError.has('zone')).toBe(true);
+    // The under-claim that buys, named rather than left to be discovered: rule 3
+    // does not see `renderSfError(zone)` here, where it would see it if the
+    // split were written in the head. Closing it needs the declaration scan to
+    // record WHICH names hold text rather than only that they hold an error,
+    // which is a fourth set and a second structural change.
+    expect(twoStep.flattened.has('zone')).toBe(false);
 
     // ── and the declines, which are the whole reason this measured free ──────
     //
-    // The iterable has to carry an error. 265 heads in the tree and not one of
-    // them does; these are the shapes they actually are.
+    // The iterable has to be one of the two shapes. 265 heads in the tree and
+    // not one of them is; these are the shapes they actually are.
     for (const head of [
       'for (const zx of rows)',
       'for (const zx of node.children)',
@@ -581,6 +652,20 @@ describe('the mask every rule reads the tree through', () => {
       "for (const zx of 'abc'.split(''))",
     ]) {
       expect(errorBoundNames(`${head} note(zx);\n`).holdsError.has('zx'), head).toBe(false);
+    }
+    // A property of an error is not a collection of errors. `fields` is a real
+    // Salesforce REST error field holding field API NAMES, and the round-7
+    // review demonstrated it red on rule 2 before receiver-precision — the
+    // reason tier 2 reads the last non-call link rather than any identifier
+    // anywhere in the iterable.
+    for (const head of [
+      'for (const zx of zq.fields)',
+      'for (const zx of Object.keys(zq))',
+      'for (const zx of Object.values(zq))',
+      'for (const zx of zq.fields.map(String))',
+      'for (const zx of zq.response.rows)',
+    ]) {
+      expect(inCatch(`  ${head} note(zx);`).holdsError.has('zx'), head).toBe(false);
     }
     // …in a file that binds nothing at all, so the decline is the head's own
     // and not an accident of there being no `catch` above it.
