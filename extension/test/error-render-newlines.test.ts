@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { SFDT_COMPONENT_CSS } from '../lib/ui-styles.js';
@@ -31,7 +31,19 @@ import {
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
-const SCANNED_DIRS = ['features', 'ui'];
+// `features` + `ui` for six rounds, which is where this guard's coverage hole
+// was. The sibling guards in `sf-error-panel-contract.test.ts` and
+// `error-source-scan.test.ts` both take `entrypoints` + `lib` as well, and this
+// one — the only one that checks the RENDERED RESULT, which is the half #308 was
+// actually about — took the smaller list. `lib/salesforce-api.ts:657` throws the
+// multi-line `${headline}\n${advice}` that this whole file exists for, and it
+// lived in a directory the guard did not read.
+//
+// Widening it surfaced two live sites, both in `entrypoints/options/main.ts`:
+// the bridge ping's `response.error` and the save handler's caught value, each
+// rendered into a `.status` span that declared no white-space rule. That is the
+// #308 defect, on the options page, found the first time anything looked.
+const SCANNED_DIRS = ['features', 'ui', 'entrypoints', 'lib'];
 
 // `foo.textContent = <expression>`, read as an EXPRESSION rather than as a
 // line: a right-hand side long enough for Prettier to wrap it is still one
@@ -158,14 +170,28 @@ function isExempt(
 
 const escapeForRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/**
+ * Every `.ts` file under the scanned directories, RECURSIVELY.
+ *
+ * This was `readdirSync` over each directory's own entries with no descent, so
+ * the guard read only the files sitting at the top of `features/` and `ui/`.
+ * Both of those happen to be flat, which is why it went six rounds looking
+ * correct — but every full-page surface is a subdirectory, so widening
+ * SCANNED_DIRS to `entrypoints` alone reported nothing at all. The two holes
+ * concealed each other exactly.
+ *
+ * The sibling guards both walk recursively; this is the same walk they use.
+ */
 function sourceFiles(): string[] {
   const out: string[] = [];
-  for (const dir of SCANNED_DIRS) {
-    const abs = path.join(ROOT, dir);
+  const walk = (abs: string): void => {
     for (const name of readdirSync(abs)) {
-      if (name.endsWith('.ts')) out.push(path.join(abs, name));
+      const p = path.join(abs, name);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (name.endsWith('.ts')) out.push(p);
     }
-  }
+  };
+  for (const dir of SCANNED_DIRS) walk(path.join(ROOT, dir));
   return out;
 }
 
@@ -189,14 +215,38 @@ function setsWhiteSpaceDirectly(source: string, name: string): boolean {
 // rather than listing them here is the point: a guard that vouches for
 // `.sfdt-console` from a hardcoded list keeps vouching for it after someone
 // deletes the `white-space` declaration from the rule.
-const WHITE_SPACE_CLASSES: ReadonlySet<string> = (() => {
+function whiteSpaceClasses(css: string, selector: RegExp): Set<string> {
   const out = new Set<string>();
-  for (const rule of SFDT_COMPONENT_CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+  for (const rule of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
     if (!HAS_WHITE_SPACE.test(rule[2]!)) continue;
-    for (const sel of rule[1]!.matchAll(/\.(sfdt-[\w-]+)/g)) out.add(sel[1]!);
+    for (const sel of rule[1]!.matchAll(selector)) out.add(sel[1]!);
   }
   return out;
-})();
+}
+
+const WHITE_SPACE_CLASSES: ReadonlySet<string> = whiteSpaceClasses(
+  SFDT_COMPONENT_CSS,
+  /\.(sfdt-[\w-]+)/g,
+);
+
+// …and the same declaration made in the file's OWN sheet, which is the third
+// legitimate way to satisfy this contract and was invisible until now.
+//
+// A full-page surface — the options page, the popup — owns its whole document
+// and styles it with a local `STYLES` template rather than the shared `sfdt-`
+// component vocabulary. Reading only `SFDT_COMPONENT_CSS` meant such a page
+// could not satisfy the guard AT ALL: `white-space: pre-line` on its own
+// `.status` rule counted for nothing, and the only ways to go green were to
+// rename to a shared class or to take an exemption for a site that genuinely
+// renders an org failure. Both are the guard bending the code rather than
+// describing it.
+//
+// Any class selector here, not just `sfdt-` ones, because on that surface the
+// file IS the stylesheet's owner. Precision comes from the element having to
+// WEAR the class, which `setsWhiteSpaceByClass` still requires.
+function ownWhiteSpaceClasses(source: string): Set<string> {
+  return whiteSpaceClasses(source, /\.([A-Za-z_-][\w-]*)/g);
+}
 
 // …or by coming out of a shared panel builder. ui/panels.ts owns the class, so
 // an element assigned from one is covered by construction — and the guard has
@@ -224,11 +274,12 @@ function setsWhiteSpaceByClass(source: string, name: string): boolean {
     `\\b${name}\\.(?:className\\s*=\\s*('[^']*')|classList\\.add\\(([^)]*)\\))`,
     'g',
   );
+  const own = ownWhiteSpaceClasses(source);
   for (const m of source.matchAll(pattern)) {
     const args = m[1] ?? m[2] ?? '';
     for (const quoted of args.matchAll(/'([^']*)'/g)) {
       for (const cls of quoted[1]!.trim().split(/\s+/)) {
-        if (WHITE_SPACE_CLASSES.has(cls)) return true;
+        if (WHITE_SPACE_CLASSES.has(cls) || own.has(cls)) return true;
       }
     }
   }
@@ -659,6 +710,47 @@ describe('a rendered Salesforce error keeps its newlines', () => {
     expect(setsWhiteSpaceByClass("p.classList.add('sfdt-my-thing', 'sfdt-card');\n", 'p')).toBe(
       false,
     );
+  });
+
+  it('reaches a NESTED file, which is where the surfaces with their own sheets live', () => {
+    // The walk was `readdirSync` with no recursion, so it saw only the `.ts`
+    // files sitting directly in each scanned directory. Every full-page surface
+    // is a subdirectory — `entrypoints/options/`, `entrypoints/popup/`,
+    // `entrypoints/app/` — so all of them were unreachable, and adding
+    // `entrypoints` to SCANNED_DIRS on its own changed NOTHING. Two holes in a
+    // row, each of which made the other invisible.
+    const scanned = sourceFiles().map((f) => path.relative(ROOT, f));
+    expect(scanned).toContain(path.join('entrypoints', 'options', 'main.ts'));
+    expect(scanned).toContain(path.join('lib', 'salesforce-api.ts'));
+    // …and the flat walk really was the thing hiding it: no nested file at all
+    // sits directly in `entrypoints/`.
+    expect(readdirSync(path.join(ROOT, 'entrypoints')).includes('options')).toBe(true);
+    expect(readdirSync(path.join(ROOT, 'entrypoints')).includes('main.ts')).toBe(false);
+  });
+
+  it("accepts a white-space rule from the file's OWN sheet, and still requires the class", () => {
+    // A page that owns its document styles itself with a local `STYLES`
+    // template. Before this it could not satisfy the contract by any honest
+    // means: the rule was there, on the class the element wore, and the guard
+    // only ever consulted the shared `sfdt-` sheet.
+    const sheet = (rule: string): string =>
+      `const STYLES = \`\n  .status { padding: 2px;${rule} }\n\`;\n`;
+    const site = "s.className = 'status show error';\ns.textContent = err.message;\n";
+
+    // With the declaration, the site is covered …
+    expect(setsWhiteSpaceByClass(sheet(' white-space: pre-line;') + site, 's')).toBe(true);
+    // … and the bite: delete the declaration and the same code is reported.
+    expect(setsWhiteSpaceByClass(sheet('') + site, 's')).toBe(false);
+    // The class still has to be WORN — a rule elsewhere in the sheet vouches for
+    // nothing on its own, which is what keeps this from exempting a whole file.
+    expect(
+      setsWhiteSpaceByClass(
+        sheet(' white-space: pre-line;') + "s.className = 'other';\ns.textContent = err.message;\n",
+        's',
+      ),
+    ).toBe(false);
+    // …and it is scoped to the element, exactly as the shared-class branch is.
+    expect(setsWhiteSpaceByClass(sheet(' white-space: pre-line;') + site, 'q')).toBe(false);
   });
 
   it('ignores fixed copy, and is not fooled by an interpolating template', () => {
