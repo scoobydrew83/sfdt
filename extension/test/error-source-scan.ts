@@ -290,6 +290,27 @@ const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
  * `masking its own output is always accepted, and always a no-op` runs it over
  * every scanned file and over a corpus of legal-but-hostile constructs whose
  * legality is checked against the compiler first.
+ *
+ * ── The escape-pair skip is DEFENSIVE, and it is unobservable ───────────────
+ *
+ * The `k += 1` below steps over the character an ordinary escape consumed, so a
+ * `\'` cannot have its second half re-read as an opener on the next iteration.
+ * The round-6 re-review found it unpinned — deleting it leaves the suite green —
+ * and asked for it to be pinned or proved unobservable. It is the second, and
+ * the argument is short enough to check: the branch has already written a space
+ * over `out[k + 1]`, so the next iteration reads a space either way. The one
+ * character it declines to overwrite is a `\n`, and a terminator after a
+ * backslash is a LineContinuation, which the branch above already took. So the
+ * `!== '\n'` guard is unreachable too, and no input can distinguish the two
+ * readings.
+ *
+ * Measured rather than only argued, by running both readings over every literal
+ * interior in the tree (125 files, 12,655 interiors) and over a generated corpus
+ * of 1,048 legal escape shapes — backslash runs of one to five, each escape
+ * tail, at each position in the interior, in all four literal kinds: **0
+ * differences over 1,173 inputs**. Nothing here is load-bearing today; it is
+ * insurance against a future edit that stops blanking the escaped character, and
+ * it is written down as that rather than as part of the fix.
  */
 function blankLiteralInto(out: string[], from: number, to: number): void {
   const start = Math.max(from, 0);
@@ -305,7 +326,8 @@ function blankLiteralInto(out: string[], from: number, to: number): void {
         continue;
       }
       // Any other escape: blank the pair together, so the escaped character
-      // cannot be re-read as an opener on a later pass.
+      // cannot be re-read as an opener on a later pass. Defensive and
+      // unobservable — see the note at the top of this function.
       out[k] = ' ';
       if (k + 1 < end && out[k + 1] !== '\n') out[k + 1] = ' ';
       k += 1;
@@ -393,6 +415,20 @@ function blankLiterals(source: string): string {
         // interior to keep alive and a preserved backslash would land in code
         // position. Everything else keeps its line continuations — see
         // `blankLiteralInto()`.
+        //
+        // The carve-out is DEFENCE AGAINST A SHAPE THE GRAMMAR FORBIDS, not a
+        // live case, and the round-6 re-review was right that the sentence above
+        // reads as though it were live. A `RegularExpressionLiteral` cannot
+        // contain a line terminator — one that runs to the end of the line is
+        // unterminated, and unterminated is refused three lines up — so
+        // `blankLiteralInto()` could never meet a continuation inside one, and
+        // on a regex the two functions produce the same buffer character for
+        // character. Removing the branch would change nothing today. It stays
+        // because it is the branch that keeps that true if `literalInterior()`
+        // ever stops blanking a regex whole, and because a masker that leaves a
+        // backslash in code position is the exact failure round 6 shipped.
+        // `a regex is blanked whole, and no backslash survives it` pins the
+        // consequence, which is the part a future edit could break.
         if (node.kind === ts.SyntaxKind.RegularExpressionLiteral) blankInto(out, from, to);
         else blankLiteralInto(out, from, to);
         break;
@@ -722,6 +758,83 @@ function handlesSettledResults(code: string, source: string): boolean {
   return false;
 }
 
+/**
+ * The name a `for-of` head binds — the declaration with no `=` in it.
+ *
+ * `errorBoundNames()`'s declaration scan is `(const|let|var) NAME … =`. It
+ * requires an assignment operator, and a for-of head has none:
+ *
+ *     for (const line of String(err).split('\n')) pane.textContent = line;
+ *
+ * `line` is a `const` the language binds to a piece of the flattened error, and
+ * before this it was a name the scanner had never seen — so all three rules went
+ * quiet on it, and the same value one line later through `const line = …` was
+ * caught. The gap was the head and nothing else.
+ *
+ * It is the largest one this guard has closed. Measured twice over the 125
+ * scanned files, and both measurements agree: **265** heads of the form
+ * `for ((const|let|var) IDENT of …)`, **303** counting every binder shape, of
+ * which **38** destructure. Zero `var` heads and zero `for await` heads; both
+ * are matched anyway, because they are the same head and excluding them would be
+ * a spelling decision in a structural scanner. (The merged body of #330 said
+ * 263 / 301 / 34 from a first pass; the round-6 reviewer measured 265 / 303 / 38
+ * independently and so does this, so the corrected figures are the ones here.)
+ *
+ * ── What the element inherits from the iterable ─────────────────────────────
+ *
+ * A declaration binds the VALUE of its right-hand side, so `flattensAnError()`
+ * is the right question to ask of it. A for-of head binds an ELEMENT of a
+ * COLLECTION, which is a different question, and the two tiers are:
+ *
+ *   - the iterable FLATTENS an error — `String(err).split('\n')` — so every
+ *     element is a piece of that text: `flattened`, and therefore also
+ *     `holdsError`;
+ *   - the iterable merely CARRIES one — `err.errors`, `aggregate.errors`, a
+ *     name already tied to an error — so every element is an error, but not one
+ *     that has been stringified yet: `holdsError` only.
+ *
+ * The second tier is what makes this more than a spelling. It is the shape the
+ * round-6 reviewer's `Promise.any` probe turned out to be — recorded there as an
+ * unconfirmed AggregateError category, and confirmed in the re-review to have
+ * been the for-of finding in a costume, because the probe only missed when it
+ * was routed through a for-of head.
+ *
+ * Keeping `flattened` a strict subset matters: rule 3 fires on an
+ * already-stringified error reaching the shared renderer, and
+ * `for (const sub of err.errors) renderSfError(sub)` is the CORRECT call.
+ *
+ * ── The false-positive cost, measured before the widening was committed to ───
+ *
+ * Every one of the 265 heads was read out of the masked buffer with its iterable
+ * and asked both questions. **Zero** carry an error and zero flatten one; the
+ * top iterables are `rows`, `fields`, `entries`, `node.children`. So tree-wide
+ * this adds nothing at all: the same 11 distinct binding names, the same
+ * per-file lists, `[]` for each of rules 1, 2 and 3, and the same 12
+ * `carriesAnError` sites across `features/` + `ui/`. Round 6 declined the
+ * object-literal-property widening on exactly this measurement coming out the
+ * other way (11 names to 30, seven false positives on correct code); this one
+ * measures free, which is why it ships and that one did not.
+ *
+ * A tree-wide zero is a fact about today's tree, so it is not what is asserted.
+ * `a for-of head over an error binds its element, in every file in the tree` and
+ * `a for-of head over anything else binds nothing, in every file in the tree`
+ * splice both shapes into all 125 files and assert the catch and the decline
+ * host by host.
+ *
+ * ── Named and left open ──────────────────────────────────────────────────────
+ *
+ * A DESTRUCTURING head — `for (const [first] of …)`, `for (const { message: m }
+ * of …)` — is not matched. 38 of them exist and none is error-carrying; it is
+ * the same category as the `catch ({ message: zz })` destructure that rounds 4,
+ * 5 and 6 each left open, and it belongs with those rather than here.
+ *
+ * `for (const k of Object.keys(err))` binds `k`, which is a property NAME and
+ * not an error. That is the over-claim this tier buys, it is the direction that
+ * produces a site to look at rather than a rule that goes quiet, and there is no
+ * such head in the tree.
+ */
+const FOR_OF_BINDING = /\bfor\s*(?:await\s+)?\(\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s+of\b/g;
+
 export interface ErrorBindings {
   /** Holds an error in ANY form — the thrown object, or its text. */
   holdsError: Set<string>;
@@ -803,6 +916,21 @@ export function errorBoundNames(source: string): ErrorBindings {
         } else if (isAlias && holdsError.has(alias)) {
           holdsError.add(name);
         }
+      }
+    }
+    // …and the declaration neither pattern above can see, because both of them
+    // require an `=` and a for-of head has none. See `FOR_OF_BINDING` for the
+    // two tiers and for the tree-wide measurement behind widening to it.
+    for (const m of code.matchAll(FOR_OF_BINDING)) {
+      const name = m[1]!;
+      const iterable = readExpression(code, m.index! + m[0].length);
+      const alias = iterable.trim();
+      const isAlias = /^[A-Za-z_$][\w$]*$/.test(alias);
+      if (flattensAnError(iterable, holdsError) || (isAlias && flattened.has(alias))) {
+        holdsError.add(name);
+        flattened.add(name);
+      } else if (carriesAnError(iterable, holdsError)) {
+        holdsError.add(name);
       }
     }
     if (holdsError.size + flattened.size === before) break;

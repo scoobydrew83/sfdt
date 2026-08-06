@@ -506,6 +506,133 @@ describe('the mask every rule reads the tree through', () => {
     expect([...errorBoundNames('go().catch((zz) => report(zz));').holdsError]).toEqual(['zz']);
   });
 
+  it('binds the name a `for-of` head declares, which has no `=` in it', () => {
+    // The round-6 review's largest named gap, closed. The declaration scan is
+    // `(const|let|var) NAME … =` and a for-of head has no `=`, so the element
+    // name was one this scanner had never seen — 265 heads in the tree, and the
+    // same value one line later through `const line = …` was caught. See
+    // `FOR_OF_BINDING` for the two tiers and the tree-wide cost measurement.
+    const inCatch = (body: string): ReturnType<typeof errorBoundNames> =>
+      errorBoundNames(`try {\n  go();\n} catch (zq) {\n${body}\n}\n`);
+
+    // Tier one: the iterable FLATTENS an error, so every element is a piece of
+    // that text — `flattened`, and therefore `holdsError` too.
+    const flat = inCatch("  for (const zline of String(zq).split('\\n')) note(zline);");
+    expect(flat.holdsError.has('zline')).toBe(true);
+    expect(flat.flattened.has('zline')).toBe(true);
+
+    // Tier two: the iterable merely CARRIES one, so every element is an error
+    // that has not been stringified yet. `flattened` stays a strict subset,
+    // because `for (const sub of err.errors) renderSfError(sub)` is the CORRECT
+    // call and rule 3 must not flag it. This is the shape the round-6 review
+    // first recorded as an unconfirmed `Promise.any` / AggregateError category
+    // and its re-review identified as this finding wearing a costume.
+    const held = inCatch('  for (const zsub of zq.errors) note(zsub);');
+    expect(held.holdsError.has('zsub')).toBe(true);
+    expect(held.flattened.has('zsub')).toBe(false);
+
+    // Every binder the head can carry, including the two with no occurrence in
+    // the tree — excluding them would be a spelling decision in a structural
+    // scanner, which is the mistake this module exists to stop making.
+    for (const head of [
+      'for (const zb of String(zq).split(sep))',
+      'for (let zb of String(zq).split(sep))',
+      'for (var zb of String(zq).split(sep))',
+      'for await (const zb of String(zq).split(sep))',
+      'for(const zb of String(zq).split(sep))',
+    ]) {
+      expect(inCatch(`  ${head} note(zb);`).holdsError.has('zb'), head).toBe(true);
+    }
+
+    // Prettier wraps a long head, and `readExpression()` has to read across the
+    // break — reading only to the first newline records an empty iterable, which
+    // is how this could bind nothing while looking like it worked.
+    expect(
+      inCatch(
+        "  for (const zw of String(zq)\n    .split('\\n')\n    .map(trim)) note(zw);",
+      ).holdsError.has('zw'),
+    ).toBe(true);
+
+    // An alias reaches through the head too, so the ordinary two-step refactor
+    // is not a way out of the rule.
+    expect(
+      errorBoundNames(
+        [
+          'try {',
+          '  go();',
+          '} catch (zq) {',
+          "  const zlines = String(zq).split('\\n');",
+          '  for (const zone of zlines) note(zone);',
+          '}',
+          '',
+        ].join('\n'),
+      ).flattened.has('zone'),
+    ).toBe(true);
+
+    // ── and the declines, which are the whole reason this measured free ──────
+    //
+    // The iterable has to carry an error. 265 heads in the tree and not one of
+    // them does; these are the shapes they actually are.
+    for (const head of [
+      'for (const zx of rows)',
+      'for (const zx of node.children)',
+      'for (const zx of Object.entries(map))',
+      'for (const zx of [1, 2, 3])',
+      "for (const zx of 'abc'.split(''))",
+    ]) {
+      expect(errorBoundNames(`${head} note(zx);\n`).holdsError.has('zx'), head).toBe(false);
+    }
+    // …in a file that binds nothing at all, so the decline is the head's own
+    // and not an accident of there being no `catch` above it.
+    expect(errorBoundNames('for (const zx of zqPending) note(zx);\n').holdsError.has('zx')).toBe(
+      false,
+    );
+
+    // The one direction that DOES claim without a binding is the spelling
+    // fallback, applied to the iterable — `errors` is an error word, so its
+    // elements are errors. Written down because it is the widening's over-claim
+    // and it is inherited rather than new: `pane.textContent = errors[0]` is
+    // already flagged by the same spelling, so declining the head would make the
+    // scanner disagree with itself about the same value.
+    expect(errorBoundNames('for (const zx of errors) note(zx);\n').holdsError.has('zx')).toBe(true);
+
+    // Evidence has to be CODE. A head in a comment or inside a template literal
+    // is not a head — the same property the mask buys every other pattern here.
+    expect(
+      inCatch('  // for (const zghost of String(zq)) note(zghost);').holdsError.has('zghost'),
+    ).toBe(false);
+    expect(
+      inCatch('  const zsql = `\n  for (const zghost of String(zq))\n  `;').holdsError.has(
+        'zghost',
+      ),
+    ).toBe(false);
+
+    // A DESTRUCTURING head is deliberately not matched, and that is the same
+    // decision rounds 4, 5 and 6 each took about `catch ({ message: zz })`.
+    // 38 of them in the tree, none error-carrying; it is that category, not
+    // this one, and it is not going in the same round.
+    expect(
+      inCatch(
+        "  for (const [zfirst] of String(zq).split('\\n').entries()) note(zfirst);",
+      ).holdsError.has('zfirst'),
+    ).toBe(false);
+    expect(
+      inCatch('  for (const { message: zm } of zq.errors) note(zm);').holdsError.has('zm'),
+    ).toBe(false);
+  });
+
+  it('a regex is blanked whole, and no backslash survives it', () => {
+    // The consequence of the regex carve-out in `blankLiterals()`, pinned. The
+    // carve-out itself is unreachable — a `RegularExpressionLiteral` cannot
+    // contain a line terminator, so the continuation branch it avoids can never
+    // be reached inside one — but a masker that leaves a backslash in CODE
+    // position is exactly the failure round 6 shipped, and this is the part a
+    // future edit to `literalInterior()` could break.
+    const source = "const zr = /['\\/`]/g;\nconst zt = 1;\n";
+    expect(dynamicParts(source)).toBe(`const zr = ${' '.repeat(9)};\nconst zt = 1;\n`);
+    expect(dynamicParts(source).includes('\\')).toBe(false);
+  });
+
   it('binds no phantom name from a comment or a template', () => {
     // What the mask buys the binding scan, asserted on the scan itself rather
     // than on the mask: prose that happens to spell an assignment is not one.
