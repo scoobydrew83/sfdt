@@ -996,35 +996,110 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
     ).toEqual([]);
   });
 
-  it('the for-of binding is open, and it is the LARGEST named gap', () => {
-    // Found by the round-6 review. `errorBoundNames()`'s declaration scan is
-    // `(const|let|var) NAME … =` — it requires an `=`, and a for-of head has
-    // none, so the name a `for (const X of …)` binds is not a binding this
-    // scanner has ever seen. MISSED at `c7547e7` and MISSED here: not a
-    // regression, but the biggest hole now named.
-    //
-    // Measured over the 125 scanned files: **263** heads of the form
-    // `for ((const|let) IDENT of …)`, 301 counting every binder shape and 34 of
-    // those destructuring. That is an order of magnitude more common than any
-    // category this guard has closed, which is exactly why it is not being
-    // closed in the same round as a masker fix and a blocking regression —
-    // rounds 2, 3 and 4 each opened the next hole by stacking a new match
-    // category on top of other structural change, and round 6 shipped a
-    // regression doing one thing at a time. This is its own change.
+  it('the for-of binding is CLOSED, and the contrast case still holds', () => {
+    // Found by the round-6 review, closed here. `errorBoundNames()`'s
+    // declaration scan is `(const|let|var) NAME … =` — it requires an `=`, and a
+    // for-of head has none, so the name a `for (const X of …)` bound was not a
+    // binding this scanner had ever seen and all three rules went quiet on it.
+    // 265 heads in the tree made it the largest named gap by an order of
+    // magnitude. See `FOR_OF_BINDING` in `./error-source-scan.ts`.
     const pane = "preview.className = 'sfdt-console';\n";
     expect(
       rendersErrorIntoConsole(
         `${pane}try {\n  go();\n} catch (zq) {\n  for (const zline of String(zq).split('\\n')) {\n    preview.textContent = zline;\n  }\n}`,
       ),
-    ).toEqual([]);
-    // The same value one line later, through a binding the scan DOES follow,
-    // is caught — so the gap is the for-of head and nothing else.
+    ).toEqual(['preview']);
+    // The CONTRAST case, kept from the version of this test that pinned the gap
+    // open: the same value one line later, through a binding the scan already
+    // followed. It was the proof that the gap was the head and nothing else, and
+    // it is now the proof that closing the head did not close it by widening
+    // something else into everything.
     expect(
       rendersErrorIntoConsole(
         `${pane}try {\n  go();\n} catch (zq) {\n  const zline = String(zq);\n  preview.textContent = zline;\n}`,
       ),
     ).toEqual(['preview']);
+    // The second tier: an iterable that CARRIES errors rather than flattening
+    // one. This is the `Promise.any` / AggregateError probe the round-6 review
+    // recorded as unconfirmed and its re-review identified as this same finding
+    // — it missed only because it was routed through a for-of head.
+    expect(
+      rendersErrorIntoConsole(
+        `${pane}try {\n  go();\n} catch (zqAgg) {\n  for (const zsub of zqAgg.errors) {\n    preview.textContent = zsub.detail;\n  }\n}`,
+      ),
+    ).toEqual(['preview']);
+    // …and rule 3 keeps the distinction that makes the two tiers worth having.
+    // A flattened element reaching the shared renderer is the violation; the
+    // raw sub-error reaching it is the CORRECT call, and flagging that would
+    // mean editing correct code to satisfy a check.
+    const sink = "import { renderSfError } from '../ui/panels.js';\n";
+    expect(
+      passesStringifiedError(
+        `${sink}try {\n  go();\n} catch (zq) {\n  for (const zline of String(zq).split('\\n')) {\n    renderSfError(zline, { doc });\n  }\n}`,
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(
+      passesStringifiedError(
+        `${sink}try {\n  go();\n} catch (zqAgg) {\n  for (const zsub of zqAgg.errors) {\n    renderSfError(zsub, { doc });\n  }\n}`,
+      ),
+    ).toEqual([]);
+    // The head is not a spelling. A for-of over an ordinary collection binds
+    // nothing, which is what the other 265 heads in the tree are.
+    expect(
+      rendersErrorIntoConsole(
+        `${pane}for (const zrow of zqRows) {\n  preview.textContent = zrow;\n}`,
+      ),
+    ).toEqual([]);
   });
+
+  it('a for-of head over an error is caught in EVERY file in the tree', () => {
+    // The tree-wide half, and the reason it is here rather than in the PR body.
+    // Measured over the 125 scanned files, the widening adds nothing: the same
+    // 11 distinct binding names, the same per-file lists, `[]` for each of
+    // rules 1-3 and the same 12 `carriesAnError` sites. That is a fact about
+    // today's tree, and round 6 shipped a regression precisely by stating such a
+    // fact as a property. So the property is asserted instead, host by host:
+    // splice the defect into every real file and it must be CAUGHT there, and
+    // splice the decline into every real file and it must be DECLINED there —
+    // with each host's own verdict unchanged either way, so a splice cannot pass
+    // by perturbing the file it landed in.
+    const DEFECT = [
+      "const zqPane = doc.createElement('div');",
+      "zqPane.className = 'sfdt-console';",
+      'try {',
+      '  zqGo();',
+      '} catch (zqErr) {',
+      "  for (const zqLine of String(zqErr).split('\\n')) {",
+      '    zqPane.textContent = zqLine;',
+      '  }',
+      '}',
+      '',
+    ].join('\n');
+    const DECLINE = [
+      "const zqOkPane = doc.createElement('div');",
+      "zqOkPane.className = 'sfdt-console';",
+      'for (const zqRow of zqRows) {',
+      '  zqOkPane.textContent = zqRow;',
+      '}',
+      '',
+    ].join('\n');
+
+    const failures: string[] = [];
+    for (const { rel, source } of scannedSources()) {
+      const own = rendersErrorIntoConsole(source);
+      const caught = rendersErrorIntoConsole(DEFECT + source);
+      if (!caught.includes('zqPane')) failures.push(`${rel}: the for-of defect was MISSED`);
+      if (!caught.every((n) => n === 'zqPane' || own.includes(n))) {
+        failures.push(`${rel}: the defect splice changed the host's own verdict`);
+      }
+      const declined = rendersErrorIntoConsole(DECLINE + source);
+      if (declined.includes('zqOkPane')) failures.push(`${rel}: a plain for-of was FLAGGED`);
+      if (!declined.every((n) => own.includes(n))) {
+        failures.push(`${rel}: the decline splice changed the host's own verdict`);
+      }
+    }
+    expect(failures, failures.join('\n')).toEqual([]);
+  }, 60_000);
 
   it('every migrated surface reaches the helper by import', () => {
     // The negative rules above are satisfiable by rendering no error at all.

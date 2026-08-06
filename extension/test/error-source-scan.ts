@@ -290,6 +290,27 @@ const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
  * `masking its own output is always accepted, and always a no-op` runs it over
  * every scanned file and over a corpus of legal-but-hostile constructs whose
  * legality is checked against the compiler first.
+ *
+ * ── The escape-pair skip is DEFENSIVE, and it is unobservable ───────────────
+ *
+ * The `k += 1` below steps over the character an ordinary escape consumed, so a
+ * `\'` cannot have its second half re-read as an opener on the next iteration.
+ * The round-6 re-review found it unpinned — deleting it leaves the suite green —
+ * and asked for it to be pinned or proved unobservable. It is the second, and
+ * the argument is short enough to check: the branch has already written a space
+ * over `out[k + 1]`, so the next iteration reads a space either way. The one
+ * character it declines to overwrite is a `\n`, and a terminator after a
+ * backslash is a LineContinuation, which the branch above already took. So the
+ * `!== '\n'` guard is unreachable too, and no input can distinguish the two
+ * readings.
+ *
+ * Measured rather than only argued, by running both readings over every literal
+ * interior in the tree (125 files, 12,655 interiors) and over a generated corpus
+ * of 1,048 legal escape shapes — backslash runs of one to five, each escape
+ * tail, at each position in the interior, in all four literal kinds: **0
+ * differences over 1,173 inputs**. Nothing here is load-bearing today; it is
+ * insurance against a future edit that stops blanking the escaped character, and
+ * it is written down as that rather than as part of the fix.
  */
 function blankLiteralInto(out: string[], from: number, to: number): void {
   const start = Math.max(from, 0);
@@ -305,7 +326,8 @@ function blankLiteralInto(out: string[], from: number, to: number): void {
         continue;
       }
       // Any other escape: blank the pair together, so the escaped character
-      // cannot be re-read as an opener on a later pass.
+      // cannot be re-read as an opener on a later pass. Defensive and
+      // unobservable — see the note at the top of this function.
       out[k] = ' ';
       if (k + 1 < end && out[k + 1] !== '\n') out[k + 1] = ' ';
       k += 1;
@@ -393,6 +415,20 @@ function blankLiterals(source: string): string {
         // interior to keep alive and a preserved backslash would land in code
         // position. Everything else keeps its line continuations — see
         // `blankLiteralInto()`.
+        //
+        // The carve-out is DEFENCE AGAINST A SHAPE THE GRAMMAR FORBIDS, not a
+        // live case, and the round-6 re-review was right that the sentence above
+        // reads as though it were live. A `RegularExpressionLiteral` cannot
+        // contain a line terminator — one that runs to the end of the line is
+        // unterminated, and unterminated is refused three lines up — so
+        // `blankLiteralInto()` could never meet a continuation inside one, and
+        // on a regex the two functions produce the same buffer character for
+        // character. Removing the branch would change nothing today. It stays
+        // because it is the branch that keeps that true if `literalInterior()`
+        // ever stops blanking a regex whole, and because a masker that leaves a
+        // backslash in code position is the exact failure round 6 shipped.
+        // `a regex is blanked whole, and no backslash survives it` pins the
+        // consequence, which is the part a future edit could break.
         if (node.kind === ts.SyntaxKind.RegularExpressionLiteral) blankInto(out, from, to);
         else blankLiteralInto(out, from, to);
         break;
@@ -722,6 +758,199 @@ function handlesSettledResults(code: string, source: string): boolean {
   return false;
 }
 
+/**
+ * The RECEIVER of a top-level `.split(…)` or `.match(…)`, or `null`.
+ *
+ * This is the one construction whose elements are strings by the LANGUAGE's own
+ * definition rather than by a guess about what a collection holds:
+ * `String.prototype.split` and `String.prototype.match` both yield strings, so
+ * for-of over either iterates pieces of the receiver's text. And the receiver of
+ * a `.split()` is a string by construction, which is what makes it a position
+ * `carriesAnError()` can be asked about at all.
+ *
+ * Depth-zero only. A `.split(` inside a call ARGUMENT belongs to that argument —
+ * `agg.errors.filter((e) => e.message.split(',').length > 1)` is a filter over
+ * error objects and not a split of anything — and reading it as the head's own
+ * would be the same category error this function exists to fix.
+ */
+function splitReceiver(iterable: string): string | null {
+  let depth = 0;
+  for (let i = 0; i < iterable.length; i++) {
+    const ch = iterable[i]!;
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') depth--;
+    else if (depth === 0 && (ch === '.' || ch === '?')) {
+      if (/^\??\s*\.\s*(?:split|match)\s*\(/.test(iterable.slice(i))) {
+        return iterable.slice(0, i);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * The `a.b.c(…).d(…)` chain an expression is, or `null` if it is not one.
+ *
+ * Split at depth zero, so a `.` inside a call argument stays with the argument.
+ * Each link is an identifier, optionally called; a call's arguments are reduced
+ * to `()` because they are exactly what must not contribute.
+ */
+function memberChain(expression: string): string[] | null {
+  const trimmed = expression.trim();
+  if (trimmed === '') return null;
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i]!;
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') depth--;
+    else if (depth === 0 && ch === '.') {
+      parts.push(trimmed.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(trimmed.slice(start));
+  const chain: string[] = [];
+  for (const raw of parts) {
+    // `a?.b` leaves the `?` on the end of the link before the dot.
+    const link = raw.trim().replace(/\?$/, '').trim();
+    const m = /^([A-Za-z_$][\w$]*)\s*(\([\s\S]*\))?$/.exec(link);
+    if (m === null) return null;
+    chain.push(m[2] === undefined ? m[1]! : `${m[1]!}()`);
+  }
+  return chain;
+}
+
+/**
+ * Is this iterable a COLLECTION OF ERRORS — `errs`, `err.errors`,
+ * `agg.errors.filter(Boolean)`?
+ *
+ * Receiver-precise, and that is the whole point. The thing being iterated is
+ * named by the last link that is not a call, because a call's ARGUMENTS never
+ * say what a collection holds and its METHOD name says how it was filtered, not
+ * what is in it. So `err.errors` is a collection of errors, `err.fields` is a
+ * collection of field names that happens to hang off an error, and
+ * `Object.keys(err)` is a collection of property names whose last non-call link
+ * is `Object`.
+ */
+function collectionOfErrors(iterable: string, errorish: (id: string) => boolean): boolean {
+  const chain = memberChain(iterable);
+  if (chain === null) return false;
+  let i = chain.length - 1;
+  while (i >= 0 && chain[i]!.endsWith('()')) i--;
+  return i >= 0 && errorish(chain[i]!);
+}
+
+/**
+ * The name a `for-of` head binds — the declaration with no `=` in it.
+ *
+ * `errorBoundNames()`'s declaration scan is `(const|let|var) NAME … =`. It
+ * requires an assignment operator, and a for-of head has none:
+ *
+ *     for (const line of String(err).split('\n')) pane.textContent = line;
+ *
+ * `line` is a `const` the language binds to a piece of the flattened error, and
+ * before this it was a name the scanner had never seen — so all three rules went
+ * quiet on it, and the same value one line later through `const line = …` was
+ * caught. The gap was the head and nothing else.
+ *
+ * It is the largest one this guard has closed. Measured twice over the 125
+ * scanned files, and both measurements agree: **265** heads of the form
+ * `for ((const|let|var) IDENT of …)`, **303** counting every binder shape, of
+ * which **38** destructure. Zero `var` heads and zero `for await` heads; both
+ * are matched anyway, because they are the same head and excluding them would be
+ * a spelling decision in a structural scanner. (The merged body of #330 said
+ * 263 / 301 / 34 from a first pass; the round-6 reviewer measured 265 / 303 / 38
+ * independently and so does this, so the corrected figures are the ones here.)
+ *
+ * ── What the element inherits from the iterable ─────────────────────────────
+ *
+ * A declaration binds the VALUE of its right-hand side, so `flattensAnError()`
+ * is the right question to ask of it. A for-of head binds an ELEMENT of a
+ * COLLECTION, which is a different question — and the first version of this
+ * shipped a BLOCKING defect by not taking that seriously enough.
+ *
+ * It asked `flattensAnError(iterable)`. That function was written for a scalar
+ * right-hand side: its idioms match anywhere in the expression, and
+ * `instanceof Error ?` needs no subject at all. Applied to an ITERABLE it fires
+ * on how the collection was BUILT and then answers about its ELEMENTS, so
+ *
+ *     for (const sub of raw instanceof Error ? [raw] : raw.errors)
+ *       renderSfError(sub, { doc });                    // ← FLAGGED. Correct code.
+ *     for (const sub of agg.errors.filter((e) => e.message !== ''))
+ *       renderSfError(sub, { doc });                    // ← FLAGGED. Correct code.
+ *
+ * marked every element `flattened` and rule 3 flagged the exact call the two
+ * tiers exist to protect. Legal, `tsc`-clean, `eslint`-clean, Prettier-clean,
+ * green at `84e6db8` and red at the first head. Both tiers are now asked in the
+ * position each question belongs to:
+ *
+ *   - **tier 1, a STRING position.** The iterable must be `X.split(…)` or
+ *     `X.match(…)` at depth zero — the only construction whose elements are
+ *     strings by the language's own definition — and the question is asked of
+ *     `X`, which is a string by construction: `carriesAnError(X)`, the same
+ *     question rules 2 and 3 ask of a `textContent` right-hand side, which is
+ *     also a string position. Every element is then a piece of that text:
+ *     `flattened`, and therefore `holdsError` too. See `splitReceiver()`.
+ *   - **tier 2, a COLLECTION position.** The iterable must be a member chain
+ *     whose last non-call link is error-ish — `errs`, `err.errors`,
+ *     `agg.errors.filter(Boolean)`. Arguments never contribute and a ternary is
+ *     not a collection name, so neither shape above can reach it. Every element
+ *     is then an error, but not one that has been stringified: `holdsError`
+ *     only. See `collectionOfErrors()`.
+ *
+ * Keeping `flattened` a strict subset is the point of the split, and it is only
+ * true if tier 1 cannot reach an element that is an object. It cannot: `.split`
+ * and `.match` yield strings.
+ *
+ * Receiver-precision is scoped HERE rather than pushed into `carriesAnError()`,
+ * which is the change #330 declined and which rules 2, 3 and the newlines guard
+ * all read. Same fix, no blast radius.
+ *
+ * ── The false-positive cost, measured before the widening was committed to ───
+ *
+ * Every one of the 265 heads was read out of the masked buffer with its iterable
+ * and asked both questions. **Zero** are tier 1 and zero are tier 2; the top
+ * iterables are `rows`, `fields`, `entries`, `node.children`. So tree-wide this
+ * adds nothing at all: the same 11 distinct binding names, the same per-file
+ * lists, `[]` for each of rules 1, 2 and 3, and the same 12 `carriesAnError`
+ * sites across `features/` + `ui/`. Round 6 declined the object-literal-property
+ * widening on exactly this measurement coming out the other way (11 names to 30,
+ * seven false positives on correct code).
+ *
+ * A tree-wide zero is a fact about today's tree, so it is not what is asserted,
+ * and today's tree has zero tier-1 heads so it could not discriminate anyway.
+ * `a for-of head over an error is caught in EVERY file in the tree` splices both
+ * a defect and a decline into all 125 files and asserts the catch and the
+ * decline host by host, and the corpus in
+ * `binds the name a for-of head declares…` asserts the tiers over constructed
+ * variants the tree does not contain — including every shape above.
+ *
+ * ── Named and left open ──────────────────────────────────────────────────────
+ *
+ * A DESTRUCTURING head — `for (const [first] of …)`, `for (const { message: m }
+ * of …)` — is not matched. 38 of them exist and none is error-carrying; it is
+ * the same category as the `catch ({ message: zz })` destructure that rounds 4,
+ * 5 and 6 each left open, and it belongs with those rather than here.
+ *
+ * An iterable that is neither of the two shapes binds NOTHING, and that is a
+ * deliberate under-claim rather than an oversight. `for (const sub of cond ? a :
+ * err.errors)`, `for (const v of Object.values(err))`, `for (const l of await
+ * lines(err))` and `for (const l of errs.map(String))` all iterate something
+ * derived from an error and none of them says, structurally, what its elements
+ * are. The first head of this kind to appear in the tree is the one that should
+ * decide how they are read — a rule guessing on their behalf today is how the
+ * blocking defect above got written.
+ *
+ * `for (const l of err.fields.join(',').split(','))` IS tier 1, because it is a
+ * split of a string that carries an error, and its elements are field names.
+ * That is the over-claim the string position buys; it fires in the direction
+ * that produces a site to look at rather than a rule that goes quiet, and there
+ * is no such head in the tree.
+ */
+const FOR_OF_BINDING = /\bfor\s*(?:await\s+)?\(\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s+of\b/g;
+
 export interface ErrorBindings {
   /** Holds an error in ANY form — the thrown object, or its text. */
   holdsError: Set<string>;
@@ -803,6 +1032,24 @@ export function errorBoundNames(source: string): ErrorBindings {
         } else if (isAlias && holdsError.has(alias)) {
           holdsError.add(name);
         }
+      }
+    }
+    // …and the declaration neither pattern above can see, because both of them
+    // require an `=` and a for-of head has none. See `FOR_OF_BINDING` for the
+    // two tiers and for the tree-wide measurement behind widening to it.
+    for (const m of code.matchAll(FOR_OF_BINDING)) {
+      const name = m[1]!;
+      const iterable = readExpression(code, m.index! + m[0].length);
+      // Tier 1, asked of a STRING: the receiver of a `.split()`/`.match()`.
+      const text = splitReceiver(iterable);
+      if (text !== null && carriesAnError(text, holdsError)) {
+        holdsError.add(name);
+        flattened.add(name);
+        continue;
+      }
+      // Tier 2, asked of a COLLECTION: the last link that is not a call.
+      if (collectionOfErrors(iterable, (id) => holdsError.has(id) || isErrorName(id))) {
+        holdsError.add(name);
       }
     }
     if (holdsError.size + flattened.size === before) break;

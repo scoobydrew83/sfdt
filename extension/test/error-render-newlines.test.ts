@@ -452,6 +452,60 @@ describe('a rendered Salesforce error keeps its newlines', () => {
     expect(offendingSitesIn('features/probe.ts', styled, [])).toEqual([]);
   });
 
+  it('knows the name a for-of head binds, which has no `=` in it', () => {
+    // The round-6 review's largest named gap reaches this guard too, because it
+    // asks `errorBoundNames()` the same question rules 2 and 3 do. A pane filled
+    // one line at a time out of a flattened error is the shape that most needs
+    // the white-space rule — the whole point of the rule is a multi-line org
+    // message — and the head that produces it bound nothing until now.
+    const source = [
+      "const pane = doc.createElement('div');",
+      'try {',
+      '  refresh();',
+      '} catch (zq) {',
+      "  for (const zline of String(zq).split('\\n')) {",
+      '    pane.textContent = zline;',
+      '  }',
+      '}',
+      '',
+    ].join('\n');
+    expect(offendingSitesIn('features/probe.ts', source, [])).toEqual([
+      'features/probe.ts:6 (pane)',
+    ]);
+    // The spelling question on its own still says no — `zline` is on no list —
+    // so this is the structural half and not a widened alternation.
+    expect(rendersAnErrorValue('zline')).toBe(false);
+
+    // Declaring the rule still exempts it. A widening that could not be
+    // satisfied would be a widening that forces an exemption.
+    expect(
+      offendingSitesIn(
+        'features/probe.ts',
+        source.replace(
+          "const pane = doc.createElement('div');",
+          "const pane = doc.createElement('div');\npane.className = 'sfdt-console';",
+        ),
+        [],
+      ),
+    ).toEqual([]);
+
+    // …and the other side. A for-of over an ordinary collection binds nothing,
+    // which is what all 265 heads in the tree are.
+    expect(
+      offendingSitesIn(
+        'features/probe.ts',
+        [
+          "const pane = doc.createElement('div');",
+          'for (const zrow of zqRows) {',
+          '  pane.textContent = zrow;',
+          '}',
+          '',
+        ].join('\n'),
+        [],
+      ),
+    ).toEqual([]);
+  });
+
   it('the struct-field funnel is open, and that is a MEASURED decision', () => {
     // The shape below is the #308 defect that shipped inside this guard's own
     // SCANNED_DIRS and rendered wrong on screen for four rounds:
