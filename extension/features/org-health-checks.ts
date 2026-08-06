@@ -158,7 +158,13 @@ export function renderCheckRow(doc: Document, results: HTMLElement, check: Check
     titleEl.className = 'sfdt-subhead';
     titleEl.textContent = check.title;
     const summaryEl = doc.createElement('span');
-    summaryEl.className = 'sfdt-muted';
+    // `.sfdt-msg` as well as `.sfdt-muted`: a check's summary is not always the
+    // check's own prose. When `run()` above settles a rejection it writes
+    // `Could not run: ${reason}` here, and a Salesforce error's message has been
+    // two lines since lib/sf-error-guidance.ts — the org's own text, then the
+    // "what to do" line. Without a white-space rule HTML collapses the newline
+    // and the guidance runs into the org's text, which is #308 exactly.
+    summaryEl.className = 'sfdt-muted sfdt-msg';
     summaryEl.textContent = check.summary;
     head.append(dot, titleEl, summaryEl);
     row.appendChild(head);

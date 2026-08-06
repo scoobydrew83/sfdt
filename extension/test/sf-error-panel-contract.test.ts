@@ -834,6 +834,57 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
     }
   });
 
+  it("rules 2 and 3 know a rejected settlement's reason", () => {
+    // #329's NB1, as the review constructed it. `Promise.allSettled` hands the
+    // thrown value back as `.reason` — a property name the language mandates,
+    // which is why no catch clause reaches it and why `reason` being off the
+    // spelling list left it uncovered. Both rules read the same binding scan,
+    // so both had the same hole and both close with it.
+    const pane = "sink.className = 'sfdt-console';\n";
+    for (const [label, body] of [
+      [
+        'rejected settlement, String()',
+        "const [r] = await Promise.allSettled([go()]);\nif (r.status === 'rejected') sink.textContent = String(r.reason);",
+      ],
+      [
+        'rejected settlement, interpolated',
+        "const [r] = await Promise.allSettled([go()]);\nif (r.status === 'rejected') sink.textContent = `Could not run: ${r.reason}`;",
+      ],
+      [
+        'narrowed the other way round',
+        "for (const s of settled) {\n  if (s.status !== 'fulfilled') sink.textContent = String(s.reason);\n}",
+      ],
+      [
+        'the reason bound to a const first',
+        "const [r] = await Promise.allSettled([go()]);\nconst why = r.status === 'rejected' ? String(r.reason) : '';\nsink.textContent = why;",
+      ],
+    ] as const) {
+      expect(rendersErrorIntoConsole(pane + body), label).toEqual(['sink']);
+    }
+
+    // Rule 3, same binding.
+    const sink = "import { renderSfError } from '../ui/panels.js';\n";
+    expect(
+      passesStringifiedError(
+        `${sink}const rs = await Promise.allSettled(jobs);\nfor (const r of rs) if (r.status === 'rejected') renderSfError(String(r.reason), { doc });`,
+      ),
+    ).not.toEqual([]);
+
+    // And the near-miss that made this look closed. `features/org-health-checks.ts`
+    // writes the `instanceof Error ?` form, which has `subject: 'always'`, so
+    // the site was caught on the IDIOM and the scan never had to know what
+    // `reason` meant. The simplification below is an entirely ordinary edit and
+    // it took the whole site dark before this round.
+    const simplified =
+      `${pane}const [r] = await Promise.allSettled([go()]);\n` +
+      "if (r.status === 'rejected') sink.textContent = String(r.reason);";
+    const idiomatic =
+      `${pane}const [r] = await Promise.allSettled([go()]);\n` +
+      "if (r.status === 'rejected') sink.textContent = r.reason instanceof Error ? r.reason.message : String(r.reason);";
+    expect(rendersErrorIntoConsole(idiomatic)).toEqual(['sink']);
+    expect(rendersErrorIntoConsole(simplified)).toEqual(['sink']);
+  });
+
   it('a stray backtick in a comment cannot blind rule 2', () => {
     // B1 of the #327 review, reproduced as the reviewer constructed it. The
     // masker every rule now scans through read EVERY backtick as a template
