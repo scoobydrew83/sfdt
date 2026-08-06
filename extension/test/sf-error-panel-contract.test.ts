@@ -834,6 +834,84 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
     }
   });
 
+  it("rules 2 and 3 know a rejected settlement's reason", () => {
+    // #329's NB1, as the review constructed it. `Promise.allSettled` hands the
+    // thrown value back as `.reason` — a property name the language mandates,
+    // which is why no catch clause reaches it and why `reason` being off the
+    // spelling list left it uncovered. Both rules read the same binding scan,
+    // so both had the same hole and both close with it.
+    const pane = "sink.className = 'sfdt-console';\n";
+    for (const [label, body] of [
+      [
+        'rejected settlement, String()',
+        "const [r] = await Promise.allSettled([go()]);\nif (r.status === 'rejected') sink.textContent = String(r.reason);",
+      ],
+      [
+        'rejected settlement, interpolated',
+        "const [r] = await Promise.allSettled([go()]);\nif (r.status === 'rejected') sink.textContent = `Could not run: ${r.reason}`;",
+      ],
+      [
+        'narrowed the other way round',
+        "for (const s of settled) {\n  if (s.status !== 'fulfilled') sink.textContent = String(s.reason);\n}",
+      ],
+      [
+        'the reason bound to a const first',
+        "const [r] = await Promise.allSettled([go()]);\nconst why = r.status === 'rejected' ? String(r.reason) : '';\nsink.textContent = why;",
+      ],
+    ] as const) {
+      expect(rendersErrorIntoConsole(pane + body), label).toEqual(['sink']);
+    }
+
+    // Rule 3, same binding.
+    const sink = "import { renderSfError } from '../ui/panels.js';\n";
+    expect(
+      passesStringifiedError(
+        `${sink}const rs = await Promise.allSettled(jobs);\nfor (const r of rs) if (r.status === 'rejected') renderSfError(String(r.reason), { doc });`,
+      ),
+    ).not.toEqual([]);
+
+    // And the near-miss that made this look closed. `features/org-health-checks.ts`
+    // writes the `instanceof Error ?` form, which has `subject: 'always'`, so
+    // the site was caught on the IDIOM and the scan never had to know what
+    // `reason` meant. The simplification below is an entirely ordinary edit and
+    // it took the whole site dark before this round.
+    const simplified =
+      `${pane}const [r] = await Promise.allSettled([go()]);\n` +
+      "if (r.status === 'rejected') sink.textContent = String(r.reason);";
+    const idiomatic =
+      `${pane}const [r] = await Promise.allSettled([go()]);\n` +
+      "if (r.status === 'rejected') sink.textContent = r.reason instanceof Error ? r.reason.message : String(r.reason);";
+    expect(rendersErrorIntoConsole(idiomatic)).toEqual(['sink']);
+    expect(rendersErrorIntoConsole(simplified)).toEqual(['sink']);
+  });
+
+  it('a line continuation in the source does not take the rules down', () => {
+    // The round-6 review's blocking finding, pinned where it was measured. A
+    // backslash before a line break is legal ES and legal TS — `tsc --noEmit`
+    // and `eslint` both accept it — and the first version of the mask's
+    // fail-closed refusal turned it into a hard error, because blanking the
+    // string's interior ate the backslash and kept the newline. Review dropped
+    // one three-line legal file into `features/` and the three guard suites
+    // went from 52 passed to 6 failed / 54 passed: a REGRESSION against
+    // `c7547e7`, shipped by the change that was closing a hole.
+    //
+    // A guard that breaks on source a contributor could write tomorrow is worse
+    // than the silence it replaced, so all three rules are held to answering.
+    const continued = "const banner = 'Could not reach the org — \\\n  try again.';\n";
+    const pane = "preview.className = 'sfdt-console';\n";
+    expect(() => buildsSfErrorPanel(continued)).not.toThrow();
+    expect(() => rendersErrorIntoConsole(continued)).not.toThrow();
+    expect(() => passesStringifiedError(continued)).not.toThrow();
+    // …and they must still SEE, not merely survive: the defect below the
+    // continuation is caught, and the continued string is not read as a value.
+    expect(
+      rendersErrorIntoConsole(
+        `${continued}${pane}try {\n  go();\n} catch (zq) {\n  preview.textContent = String(zq);\n}`,
+      ),
+    ).toEqual(['preview']);
+    expect(rendersErrorIntoConsole(`${continued}${pane}preview.textContent = banner;`)).toEqual([]);
+  });
+
   it('a stray backtick in a comment cannot blind rule 2', () => {
     // B1 of the #327 review, reproduced as the reviewer constructed it. The
     // masker every rule now scans through read EVERY backtick as a template
@@ -916,6 +994,36 @@ describe('only ui/panels.ts builds the Salesforce error panel', () => {
         `${pane}const show = (m: string): void => {\n  preview.textContent = m;\n};\nshow(err instanceof Error ? err.message : String(err));`,
       ),
     ).toEqual([]);
+  });
+
+  it('the for-of binding is open, and it is the LARGEST named gap', () => {
+    // Found by the round-6 review. `errorBoundNames()`'s declaration scan is
+    // `(const|let|var) NAME … =` — it requires an `=`, and a for-of head has
+    // none, so the name a `for (const X of …)` binds is not a binding this
+    // scanner has ever seen. MISSED at `c7547e7` and MISSED here: not a
+    // regression, but the biggest hole now named.
+    //
+    // Measured over the 125 scanned files: **263** heads of the form
+    // `for ((const|let) IDENT of …)`, 301 counting every binder shape and 34 of
+    // those destructuring. That is an order of magnitude more common than any
+    // category this guard has closed, which is exactly why it is not being
+    // closed in the same round as a masker fix and a blocking regression —
+    // rounds 2, 3 and 4 each opened the next hole by stacking a new match
+    // category on top of other structural change, and round 6 shipped a
+    // regression doing one thing at a time. This is its own change.
+    const pane = "preview.className = 'sfdt-console';\n";
+    expect(
+      rendersErrorIntoConsole(
+        `${pane}try {\n  go();\n} catch (zq) {\n  for (const zline of String(zq).split('\\n')) {\n    preview.textContent = zline;\n  }\n}`,
+      ),
+    ).toEqual([]);
+    // The same value one line later, through a binding the scan DOES follow,
+    // is caught — so the gap is the for-of head and nothing else.
+    expect(
+      rendersErrorIntoConsole(
+        `${pane}try {\n  go();\n} catch (zq) {\n  const zline = String(zq);\n  preview.textContent = zline;\n}`,
+      ),
+    ).toEqual(['preview']);
   });
 
   it('every migrated surface reaches the helper by import', () => {

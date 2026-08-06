@@ -452,6 +452,71 @@ describe('a rendered Salesforce error keeps its newlines', () => {
     expect(offendingSitesIn('features/probe.ts', styled, [])).toEqual([]);
   });
 
+  it('the struct-field funnel is open, and that is a MEASURED decision', () => {
+    // The shape below is the #308 defect that shipped inside this guard's own
+    // SCANNED_DIRS and rendered wrong on screen for four rounds:
+    //
+    //   lib/salesforce-api.ts:657     throw soapError(`${headline}\n${advice}`)
+    //   features/org-health-checks.ts run() → summary: `Could not run: ${reason}`
+    //   features/org-health-checks.ts renderCheckRow() → span.textContent = check.summary
+    //   lib/ui-styles.ts:243          .sfdt-muted declares font and colour, no white-space
+    //
+    // The rendering is fixed (both halves — the live rows and the CLI snapshot
+    // rows in features/org-health.ts) and pinned by rendered-DOM tests in
+    // test/org-health-checks.test.ts and test/org-health.test.ts. What is NOT
+    // fixed is this guard's ability to see the shape, and that is a decision
+    // with a measurement behind it rather than an argument.
+    //
+    // The value crosses a function boundary as a FIELD of a struct: written as
+    // an object-literal property in one function, read back as `check.summary`
+    // in another, through a parameter the caller binds. Teaching the binding
+    // scan to read an object-literal property as a declaration is the obvious
+    // widening, so it was built and measured tree-wide rather than reasoned
+    // about. With `/[{,]\s*([A-Za-z_$][\w$]*)\s*:/` added to the declaration
+    // loop in errorBoundNames():
+    //
+    //   - binding names tree-wide go from 11 to 30, gaining `id`, `title`,
+    //     `status`, `ok`, `fields`, `manifest`, `onActivate`, `sfdtKind`, `T`;
+    //   - rule 3's offender set goes from [] to SEVEN, every one of them
+    //     correct code — including `setSfError(errorPanel, message, { doc })`,
+    //     which is the call the whole contract exists to require;
+    //   - this guard gains the site below, and gains `titleEl.textContent =
+    //     check.title` three lines above it, which is a TITLE.
+    //
+    // So the widening does reach the defect, and it reaches it by claiming
+    // every named property in the tree. It also only reaches HALF of it: the
+    // CLI-snapshot copy in features/org-health.ts builds its summary in
+    // shapeChecks() from a bridge payload, so nothing in that file flattens an
+    // error and the same rendering stays invisible either way. A within-file
+    // property heuristic cannot close a funnel whose other end is a JSON
+    // document from another process.
+    //
+    // Left open, deliberately, with the shape pinned so the next round finds a
+    // documented boundary and this measurement instead of a surprise.
+    const source = [
+      'function build() {',
+      '  try {',
+      '    go();',
+      '  } catch (err) {',
+      '    return { summary: `Could not run: ${err instanceof Error ? err.message : String(err)}` };',
+      '  }',
+      '}',
+      'function render(check: { summary: string }) {',
+      "  const summaryEl = doc.createElement('span');",
+      "  summaryEl.className = 'sfdt-quiet';",
+      '  summaryEl.textContent = check.summary;',
+      '}',
+      '',
+    ].join('\n');
+    expect(offendingSitesIn('features/probe.ts', source, [])).toEqual([]);
+    // …and the reason is precisely that the field is not a binding this file
+    // can follow: the same assignment from a name the scan DOES follow is seen.
+    const bound = source.replace('check.summary', 'err');
+    expect(offendingSitesIn('features/probe.ts', bound, [])).toEqual([
+      'features/probe.ts:11 (summaryEl)',
+    ]);
+  });
+
   it('the exemption bite check rejects a decorative entry', () => {
     // Pins the test above against the exact entry that walked past its #327
     // version. `ui/toast.ts:80` really does assign `toast.textContent = message`

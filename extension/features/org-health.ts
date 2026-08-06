@@ -188,7 +188,12 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
       titleEl.className = 'sfdt-subhead';
       titleEl.textContent = c.title;
       const summaryEl = doc.createElement('span');
-      summaryEl.className = 'sfdt-muted';
+      // Same rule as the live rows in org-health-checks.ts: a check summary can
+      // be a failure message, and a Salesforce failure message is multi-line.
+      // These rows come from the CLI snapshot rather than from a settled
+      // rejection, but they are the same field rendered the same way, and half
+      // a fix is the shape this guard keeps shipping.
+      summaryEl.className = 'sfdt-muted sfdt-msg';
       summaryEl.textContent = c.summary;
       head.appendChild(dot);
       head.appendChild(titleEl);

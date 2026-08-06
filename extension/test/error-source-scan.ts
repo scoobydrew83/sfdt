@@ -114,6 +114,25 @@ export function readExpression(source: string, from: number): string {
 }
 
 // ── Static copy versus a runtime value ──────────────────────────────────────
+const CACHE_BUDGET_CHARS = 4 * 1024 * 1024;
+
+class MaskCache {
+  private readonly entries = new Map<string, string>();
+  private chars = 0;
+
+  get(key: string): string | undefined {
+    return this.entries.get(key);
+  }
+
+  set(key: string, value: string): void {
+    if (this.chars + key.length + value.length > CACHE_BUDGET_CHARS) {
+      this.entries.clear();
+      this.chars = 0;
+    }
+    this.entries.set(key, value);
+    this.chars += key.length + value.length;
+  }
+}
 
 /**
  * The parts of a fragment of source that can carry a runtime value: everything
@@ -180,13 +199,30 @@ export function dynamicParts(source: string): string {
   if (cached !== undefined) return cached;
   const masked = maskStaticText(source);
   // The guards mask the same whole file several times over (once per rule, and
-  // again for the binding scan). Bounded so a long run of unique expression
-  // fragments cannot grow it without limit.
-  if (MASKED.size < 8192) MASKED.set(source, masked);
+  // again for the binding scan). Bounded by BYTES, so neither a long run of
+  // unique expression fragments nor a tree-wide property test that masks a
+  // modified copy of every file can grow it without limit — see `MaskCache`.
+  MASKED.set(source, masked);
   return masked;
 }
 
-const MASKED = new Map<string, string>();
+const MASKED = new MaskCache();
+/**
+ * The three masking caches, bounded in BYTES and not only in entries.
+ *
+ * `MASKED.size < 8192` bounded the entry COUNT, which is the wrong quantity: a
+ * whole scanned file is tens of kilobytes, so 8192 of them is hundreds of
+ * megabytes per cache and there are three. The tree-wide backtick property
+ * masks one modified copy of every file per comment — thousands of unique
+ * buffers, none of which is ever asked for twice — and measured, that took the
+ * worker to 1.1 GB of resident memory and made the parse itself slower than the
+ * work it was avoiding. The reviewer of #329 named unbounded growth as the one
+ * thing about this module they had not profiled; this is that, bounded.
+ *
+ * A budget rather than an LRU. Every real caller masks the same handful of
+ * whole files over and over, so the cheap policy — clear when the budget is
+ * exceeded and start again — keeps the hit rate that matters and cannot leak.
+ */
 
 /** The literal kinds whose TEXT is static copy, and the delimiters to keep. */
 function literalInterior(kind: ts.SyntaxKind, start: number, end: number): [number, number] {
@@ -217,6 +253,115 @@ function blankInto(out: string[], from: number, to: number): void {
   }
 }
 
+/** A character that ends a line as far as the ECMAScript grammar is concerned. */
+const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+
+/**
+ * Blank a LITERAL's interior, keeping the line continuations that hold it open.
+ *
+ * `blankInto()` is the wrong tool inside a quoted string, and getting that
+ * wrong is how round 6 shipped a REGRESSION against `c7547e7`. A backslash
+ * immediately before a line break is a **LineContinuation** — legal ES and
+ * legal TS, `tsc --noEmit` and `eslint` both accept it — and it is the only
+ * thing keeping a single- or double-quoted string alive across that break.
+ * Blanking the backslash to a space while preserving the newline (which the
+ * offset contract requires) leaves the newline INSIDE the quotes with nothing
+ * holding them open:
+ *
+ *     raw    const s = 'a\⏎ b';   ← parses, zero diagnostics
+ *     masked const s = '  ⏎  ';   ← an unterminated string that was never written
+ *
+ * The mask then manufactured exactly the condition `refuseRunaway()` refuses
+ * on, so masking its own output threw — and the guards mask their own output
+ * constantly, because `readExpression()` cuts fragments out of the masked
+ * buffer and `flattensAnError()` masks them again. Measured by review: one
+ * three-line legal file dropped into `features/` took the three guard suites
+ * from 52 passed to 6 failed / 54 passed. A guard that breaks on legal source a
+ * contributor could write tomorrow is worse than the hole it was closing.
+ *
+ * So the continuation is kept verbatim — the backslash AND the terminator —
+ * which preserves every offset and every line number exactly as before and
+ * leaves a literal that still closes. Escapes are tracked properly on the way
+ * through, so `'a\\'` followed by a real newline is NOT read as a continuation:
+ * that one is genuinely unterminated in the raw source, and refusing on it is
+ * the right answer.
+ *
+ * The property this buys is asserted rather than asserted-about:
+ * `masking its own output is always accepted, and always a no-op` runs it over
+ * every scanned file and over a corpus of legal-but-hostile constructs whose
+ * legality is checked against the compiler first.
+ */
+function blankLiteralInto(out: string[], from: number, to: number): void {
+  const start = Math.max(from, 0);
+  const end = Math.min(to, out.length);
+  for (let k = start; k < end; k++) {
+    const ch = out[k]!;
+    if (ch === '\\') {
+      const next = out[k + 1];
+      if (next !== undefined && LINE_TERMINATOR.test(next)) {
+        // A LineContinuation. Keep the backslash and the terminator it escapes
+        // — CRLF counts as one terminator, so step over both.
+        k += next === '\r' && out[k + 2] === '\n' ? 2 : 1;
+        continue;
+      }
+      // Any other escape: blank the pair together, so the escaped character
+      // cannot be re-read as an opener on a later pass.
+      out[k] = ' ';
+      if (k + 1 < end && out[k + 1] !== '\n') out[k + 1] = ' ';
+      k += 1;
+      continue;
+    }
+    if (ch !== '\n') out[k] = ' ';
+  }
+}
+
+/**
+ * Refuse to answer, loudly, rather than answer with silence.
+ *
+ * `blankLiterals()` asked `ts.createSourceFile()` for the literal spans and
+ * never asked whether the parser had actually been able to READ the source.
+ * Review demonstrated the consequence:
+ *
+ *     dynamicParts('/* never closed\npane.textContent = err.message;')
+ *       →  '               \n                               '
+ *
+ * The whole buffer comes back blank, and a blank buffer is one every rule reads
+ * as containing no code at all. That is not a wrong answer, it is NO answer,
+ * delivered green — the same failure shape as `LITERAL_ONLY` and as #327's
+ * backtick, and this guard has now shipped that shape three times.
+ *
+ * It is unreachable today, and the reason is an ORDERING accident rather than a
+ * guarantee: `.github/workflows/extension.yml` runs `tsc --noEmit` before the
+ * tests, and a failing step stops the job, so a non-parsing file cannot reach
+ * the guard. Reorder the workflow, or run vitest by hand, and it can.
+ *
+ * What it refuses on is narrow on purpose. `dynamicParts()` is fed EXPRESSION
+ * FRAGMENTS as well as whole files — `readExpression()` hands it things like
+ * `(): boolean =>` and `> void`, and re-masking an already-masked fragment
+ * turns a blanked regex into `replace( , ' ')`. Measured across the whole
+ * extension suite: 385 masked inputs carry a parse diagnostic and every one of
+ * them is such a fragment. So "any diagnostic" is the wrong trigger; it would
+ * make the mask refuse to do its job.
+ *
+ * The trigger is the runaway itself, and the compiler reports it directly:
+ * a literal the scanner marks `isUnterminated`, or a block comment whose
+ * closing delimiter is never found. Those are the only two ways a mask can
+ * blank past the thing it was asked to blank, because the spans it uses come
+ * from the SCANNER — a stray brace makes the parser recover, it does not move a
+ * quote. Measured across the same suite: zero occurrences, so this refuses
+ * nothing the guards legitimately ask.
+ */
+function refuseRunaway(what: string, source: string, at: number): never {
+  const line = source.slice(0, at).split('\n').length;
+  throw new Error(
+    `error-source-scan: refusing to mask source with an unterminated ${what} (line ${line}). ` +
+      'Everything after it would be blanked, and a blanked region is one every rule reads as ' +
+      'containing no code — so the scan would go silent over it and the suite would stay ' +
+      'green. Fix the source, or the fragment being scanned; do not relax this check.\n' +
+      `--- first 200 characters of what was handed to the mask ---\n${source.slice(0, 200)}`,
+  );
+}
+
 /** The source with the TEXT of every literal emptied — the parser's answer. */
 function blankLiterals(source: string): string {
   const cached = NO_LITERALS.get(source);
@@ -237,8 +382,19 @@ function blankLiterals(source: string): string {
       case ts.SyntaxKind.TemplateMiddle:
       case ts.SyntaxKind.TemplateTail:
       case ts.SyntaxKind.RegularExpressionLiteral: {
-        const [from, to] = literalInterior(node.kind, node.getStart(file), node.end);
-        blankInto(out, from, to);
+        const start = node.getStart(file);
+        // Fail closed: an unterminated literal runs to the end of the buffer
+        // and takes every rule with it. See `refuseRunaway()`.
+        if ((node as ts.LiteralLikeNode).isUnterminated === true) {
+          refuseRunaway(ts.SyntaxKind[node.kind]!, source, start);
+        }
+        const [from, to] = literalInterior(node.kind, start, node.end);
+        // A regex is blanked WHOLE, delimiters included, so there is no
+        // interior to keep alive and a preserved backslash would land in code
+        // position. Everything else keeps its line continuations — see
+        // `blankLiteralInto()`.
+        if (node.kind === ts.SyntaxKind.RegularExpressionLiteral) blankInto(out, from, to);
+        else blankLiteralInto(out, from, to);
         break;
       }
       default:
@@ -248,11 +404,11 @@ function blankLiterals(source: string): string {
   };
   ts.forEachChild(file, visit);
   const emptied = out.join('');
-  if (NO_LITERALS.size < 8192) NO_LITERALS.set(source, emptied);
+  NO_LITERALS.set(source, emptied);
   return emptied;
 }
 
-const NO_LITERALS = new Map<string, string>();
+const NO_LITERALS = new MaskCache();
 
 /**
  * Where the comments are.
@@ -275,7 +431,10 @@ function commentRanges(source: string): [number, number][] {
       i = end;
     } else if (emptied[i] === '/' && emptied[i + 1] === '*') {
       const close = emptied.indexOf('*/', i + 2);
-      const end = close === -1 ? emptied.length : close + 2;
+      // The other runaway. `close === -1` used to mean "blank everything from
+      // here to EOF", silently. See `refuseRunaway()`.
+      if (close === -1) refuseRunaway('block comment', source, i);
+      const end = close + 2;
       ranges.push([i, end]);
       i = end;
     } else {
@@ -313,11 +472,11 @@ export function withoutComments(source: string): string {
   const out = source.split('');
   for (const [from, to] of commentRanges(source)) blankInto(out, from, to);
   const stripped = out.join('');
-  if (NO_COMMENTS.size < 8192) NO_COMMENTS.set(source, stripped);
+  NO_COMMENTS.set(source, stripped);
   return stripped;
 }
 
-const NO_COMMENTS = new Map<string, string>();
+const NO_COMMENTS = new MaskCache();
 
 // ── What an error is called ─────────────────────────────────────────────────
 
@@ -337,6 +496,14 @@ const NO_COMMENTS = new Map<string, string>();
 // `const detail = err instanceof Error ? …` by the binding scan. Structure
 // covers exactly the names spelling cannot afford to claim, which is why the
 // two halves are worth having separately.
+//
+// That last sentence was written as if it covered all of them, and for `reason`
+// it did not. `PromiseRejectedResult.reason` is a property name the LANGUAGE
+// mandates on a settled result — no catch clause reaches it, no declaration
+// binds it, and so nothing here reached it either. It is reached structurally
+// now, scoped to files that provably handle settled results; see
+// `handlesSettledResults()`. `reason` stays off this list, because the
+// apex-log-analyzer case above is exactly why it must.
 const ERROR_WORDS: ReadonlySet<string> = new Set([
   'err',
   'errs',
@@ -462,6 +629,21 @@ export function flattensAnError(
  * reason: `.catch(async (e) => …)` and `.catch(function (e) { … })` bind `e`,
  * not the keyword in front of it.
  *
+ * Deliberately LOOSE in one direction, named here rather than patched: a bare
+ * callback reference is read as if it were a parameter, so `.catch(handleError)`
+ * binds `handleError`, `.catch(reject)` binds `reject` and `.catch(console.error)`
+ * binds `console`. None of those is an identifier a `catch` binds. It is a
+ * false-positive direction only — an extra name in `holdsError` makes a rule
+ * fire, never go quiet — and it does not fire: measured over the tree, there
+ * are ZERO `.catch(<identifier>)` sites, and the binding scan produces 11
+ * distinct names across all 125 scanned files with nothing spurious among them
+ * (no `this`, `doc`, `el`, `pane`). Tightening it means deciding between three
+ * shapes —
+ * `=>` for an arrow, `)` `{` for a statement clause, `:` for an annotated one —
+ * which is one more pattern that has to guess, for a defect that has never
+ * occurred. `binds a bare callback reference too, and that is a decision` in
+ * `error-source-scan.test.ts` pins the behaviour so it cannot drift unnoticed.
+ *
  * Deliberately NOT here: `.then(onOk, (e) => …)`. A rejection handler in
  * `.then`'s second argument is a real binding this misses, but finding it means
  * splitting an argument list on the comma that separates two arbitrary
@@ -471,6 +653,74 @@ export function flattensAnError(
  */
 const CATCH_BINDING =
   /\bcatch\s*\(\s*(?:async\b\s*)?(?:function\b\s*\*?\s*(?:[A-Za-z_$][\w$]*\s*)?)?\(?\s*([A-Za-z_$][\w$]*)/g;
+
+/**
+ * A rejected settlement's `.reason` — the FOURTH way to hold a thrown error,
+ * and the only one that is not a name anybody chose.
+ *
+ * `reason` is deliberately off `ERROR_WORDS`, and the justification written
+ * there is that the absent words "as a `catch` binding are reached by the catch
+ * clause". That is true of `problem`, `thrown` and a bare `e`. It is false of
+ * this one: `PromiseRejectedResult.reason` is a property name the LANGUAGE
+ * mandates on a settled result. No `catch` clause binds it, no author picked
+ * it, and nothing in this module named it — so the thrown value arrived through
+ * a door with no lock on it.
+ *
+ * It was not a live hole, by accident and not by design.
+ * `features/org-health-checks.ts` happened to write
+ *
+ *     s.reason instanceof Error ? s.reason.message : String(s.reason)
+ *
+ * and `instanceof Error ?` has `subject: 'always'`, so the scan caught the site
+ * on the IDIOM and never had to know what `reason` was. Simplify that one line
+ * to `String(s.reason)` — an entirely ordinary edit, and the shape a reviewer
+ * constructed — and the site went dark on every rule at once. Measured, both
+ * before and after this: it did, and it no longer does.
+ *
+ * Scoped by EVIDENCE rather than added to the spelling list, because the
+ * spelling list is right to refuse the word: `ui/apex-log-analyzer.ts` names a
+ * log-TRUNCATION reason `reason` and interpolates it into a banner, which is
+ * correct code that a spelling claim would flag. `reason` means the rejection
+ * reason in a file that provably handles settled results, and means whatever
+ * its author wants everywhere else.
+ *
+ * Two markers, either sufficient:
+ *
+ *   - `Promise.allSettled(` — the only thing in the language that produces
+ *     settled results;
+ *   - `X.status === 'rejected'` / `!== 'fulfilled'` — the narrowing TypeScript
+ *     REQUIRES before `.reason` is reachable at all, so it is present wherever
+ *     a reason is actually read, whoever created the promise.
+ *
+ * Measured over the 125 scanned files: exactly two carry either marker
+ * (`features/org-health-checks.ts`, `features/soql-bulk-delete.ts`), and the
+ * widening reports zero new sites. Inside `soql-bulk-delete.ts` it also claims
+ * `planned.reason`, which is a domain rejection CODE and not a thrown error —
+ * over-claiming, confined to the two files that handle settlements, in the
+ * direction that produces a site to look at rather than a rule that goes quiet.
+ */
+const ALL_SETTLED = /\bPromise\s*\.\s*allSettled\s*\(/;
+const SETTLED_NARROWING = /([A-Za-z_$][\w$]*)\s*\??\s*\.\s*status\s*(?:===|!==)\s*(['"])/g;
+const SETTLED_STATES = ['rejected', 'fulfilled'] as const;
+
+function handlesSettledResults(code: string, source: string): boolean {
+  if (ALL_SETTLED.test(code)) return true;
+  // Matched on the MASKED buffer, so a mention inside a comment or a string is
+  // not evidence — then read back out of the RAW one at the same offset, which
+  // is what the mask's offset preservation is for. The literal's interior is
+  // blanked in `code`, so the state name is only legible in `source`.
+  for (const m of code.matchAll(SETTLED_NARROWING)) {
+    const interior = m.index + m[0].length;
+    // The CLOSING quote is part of the comparison. Matching a prefix would let
+    // `s.status === 'rejectedByAdmin'` — a domain state, not a settlement —
+    // scope `reason` for the whole file. None in the tree; a whole word costs
+    // nothing and the round-6 review was right that a prefix is not the test.
+    for (const state of SETTLED_STATES) {
+      if (source.startsWith(state + m[2]!, interior)) return true;
+    }
+  }
+  return false;
+}
 
 export interface ErrorBindings {
   /** Holds an error in ANY form — the thrown object, or its text. */
@@ -494,6 +744,9 @@ export interface ErrorBindings {
  *     called, which is what closes `ex`, `caught`, `reason`, `problem`,
  *     `thrown` and a bare `e` in one stroke instead of five alternation
  *     entries. See `CATCH_BINDING` for why the second form is not optional;
+ *   - `reason`, in a file that provably handles `Promise.allSettled` results —
+ *     the one binding the LANGUAGE makes rather than the author. See
+ *     `handlesSettledResults()`;
  *   - every `const`/`let`/`var X = <expression that flattens one>` — the
  *     ordinary refactor when the value is needed twice;
  *   - and aliases of either, to a fixed point, so `const detail = err.message;
@@ -516,6 +769,11 @@ export function errorBoundNames(source: string): ErrorBindings {
   // binding. `features/soql-runner.ts` embeds Python containing `query = """`.
   const code = dynamicParts(source);
   for (const m of code.matchAll(CATCH_BINDING)) holdsError.add(m[1]!);
+  // …and the binding the language makes rather than the author:
+  // `PromiseRejectedResult.reason`. See `handlesSettledResults()` for why this
+  // is scoped to files that provably handle settled results instead of going on
+  // the spelling list, and for the tree-wide measurement behind that scoping.
+  if (handlesSettledResults(code, source)) holdsError.add('reason');
 
   // Declarations, and later writes to the same name. The `+=` accumulator —
   //

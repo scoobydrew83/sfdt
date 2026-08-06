@@ -21,7 +21,13 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { dynamicParts, errorBoundNames, identifiersIn } from './error-source-scan.js';
+import ts from 'typescript';
+import {
+  carriesAnError,
+  dynamicParts,
+  errorBoundNames,
+  identifiersIn,
+} from './error-source-scan.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -76,6 +82,172 @@ describe('the mask every rule reads the tree through', () => {
     expect(unstable).toEqual([]);
   });
 
+  it('masking its own output is always accepted, and always a no-op', () => {
+    // B1 of the round-6 review, stated as the PROPERTY it should always have
+    // been. The first version of the fail-closed refusal shipped a REGRESSION
+    // against `c7547e7`, and the PR body's defence of it — "this refuses
+    // nothing the guards legitimately ask" — was a measurement of that day's
+    // tree presented as a property of the trigger. It was not one.
+    //
+    // The mask MANUFACTURED the condition it refuses on. Blanking a string
+    // literal's interior turned every character into a space while preserving
+    // newlines (which the offset contract requires), and a backslash before a
+    // line break is a LineContinuation — the only thing holding a quoted string
+    // open across that break:
+    //
+    //     raw     const s = 'a\⏎ b';        parse diagnostics: 0
+    //     masked  const s = '  ⏎  ';        an unterminated string, invented here
+    //
+    // The guards mask their own output constantly — `readExpression()` cuts
+    // fragments out of the masked buffer and `flattensAnError()` masks them
+    // again — so the second pass threw. Review measured it: one three-line
+    // legal file dropped into `features/` took the three guard suites from
+    // 52 passed to 6 failed / 54 passed. `blankLiteralInto()` is the fix.
+    //
+    // The property, over legal source: whatever the mask ACCEPTS it must accept
+    // again, and the second answer must equal the first. That is what makes the
+    // refusal a statement about the input rather than about the tree.
+    const failures: string[] = [];
+    const check = (label: string, source: string): void => {
+      let once: string;
+      try {
+        once = dynamicParts(source);
+      } catch (e) {
+        failures.push(`${label}: refused its INPUT — ${(e as Error).message.split('\n')[0]}`);
+        return;
+      }
+      if (once.length !== source.length) failures.push(`${label}: length drifted`);
+      if (once.split('\n').length !== source.split('\n').length) {
+        failures.push(`${label}: line count drifted`);
+      }
+      try {
+        if (dynamicParts(once) !== once) failures.push(`${label}: not a no-op on its own output`);
+      } catch (e) {
+        failures.push(
+          `${label}: refused its own OUTPUT — ${(e as Error).message.split('\n')[0]}\n  ` +
+            `in:  ${JSON.stringify(source.slice(0, 90))}\n  out: ${JSON.stringify(once.slice(0, 90))}`,
+        );
+      }
+    };
+
+    // The corpus is checked LEGAL by the compiler first, so no member can
+    // quietly become an illegal-input test and make this pass for the wrong
+    // reason — which is the mistake the exemption bite check was fixing in #329.
+    for (const [label, source] of LEGAL_BUT_HOSTILE) {
+      const parsed = ts.createSourceFile(
+        'corpus.ts',
+        source,
+        ts.ScriptTarget.Latest,
+        false,
+        ts.ScriptKind.TS,
+      );
+      const diagnostics = (parsed as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] })
+        .parseDiagnostics;
+      expect(
+        (diagnostics ?? []).length,
+        `corpus member "${label}" is not legal source, so it proves nothing`,
+      ).toBe(0);
+      check(label, source);
+    }
+
+    // …and over the real tree, including every file with a line continuation
+    // spliced in — so the claim does not rest on today's tree happening not to
+    // contain one, which is precisely how this was got wrong the first time.
+    for (const { rel, source } of scannedSources()) {
+      check(rel, source);
+      check(`${rel} + continuation`, `const zc = 'a\\\n b';\n${source}`);
+    }
+
+    expect(failures, failures.join('\n')).toEqual([]);
+  }, 60_000);
+
+  it('parses every file it masks, with no diagnostics at all', () => {
+    // The mask trusts `ts.createSourceFile()` for where every literal starts
+    // and stops. If the parser cannot read a file, the spans it reports are not
+    // the file's spans — and the guards would go on scanning it as if they
+    // were. Nothing anywhere asserted that the tree actually parses; the reason
+    // it does is that `.github/workflows/extension.yml` runs `tsc --noEmit`
+    // before `npm run test:extension` and a failed step stops the job. That is
+    // an ORDERING accident, not a guarantee, and it is invisible from here.
+    //
+    // So the suite states it itself. Cheap — one parse per file — and it turns
+    // "the mask read something it did not understand" from silence into a name.
+    const unreadable: string[] = [];
+    for (const { rel, source } of scannedSources()) {
+      const file = ts.createSourceFile(
+        rel,
+        source,
+        ts.ScriptTarget.Latest,
+        false,
+        ts.ScriptKind.TS,
+      );
+      const diagnostics = (file as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] })
+        .parseDiagnostics;
+      for (const d of diagnostics ?? []) {
+        unreadable.push(`${rel}: ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`);
+      }
+    }
+    expect(unreadable).toEqual([]);
+  });
+
+  it('refuses to answer rather than blanking a file it could not read', () => {
+    // The fail-OPEN the #329 review demonstrated: `blankLiterals()` never
+    // consulted the parser's own verdict, so an unterminated comment blanked
+    // the whole buffer and every rule read the result as containing no code —
+    // green, silent, and wrong. Same failure SHAPE as `LITERAL_ONLY` and as
+    // #327's backtick, which is three for three.
+    //
+    // What it refuses on is narrow and mechanical: a literal the scanner marks
+    // `isUnterminated`, or a block comment whose close is never found. Those
+    // are the only two ways the mask can blank past its target, because the
+    // spans it uses come from the SCANNER — a stray brace makes the PARSER
+    // recover, it does not move a quote.
+    expect(() => dynamicParts('/* never closed\npane.textContent = err.message;')).toThrow(
+      /unterminated block comment/,
+    );
+    expect(() => dynamicParts("const s = 'never closed\npane.textContent = err.message;")).toThrow(
+      /unterminated/,
+    );
+    expect(() => dynamicParts('const s = `never closed;')).toThrow(/unterminated/);
+    expect(() => dynamicParts('const r = /never-closed\npane.textContent = err.message;')).toThrow(
+      /unterminated/,
+    );
+    // …and the demonstration itself: before this, that first input came back as
+    // nothing but spaces and newlines, and nothing anywhere noticed.
+    let masked = '';
+    try {
+      masked = dynamicParts('/* never closed\npane.textContent = err.message;');
+    } catch {
+      masked = '(refused)';
+    }
+    expect(masked).toBe('(refused)');
+  });
+
+  it('still answers for the FRAGMENTS the guards legitimately hand it', () => {
+    // The reason the trigger is the runaway and not "any parse diagnostic".
+    // `dynamicParts()` is fed expression fragments as well as whole files —
+    // `readExpression()` produces them by cutting an expression out of the
+    // middle of a statement, and re-masking an already-masked fragment turns a
+    // blanked regex into `replace( , ' ')`. Measured across the whole extension
+    // suite: 385 masked inputs carry a parse diagnostic and every one is such a
+    // fragment; zero carry an unterminated literal or comment. Refusing on any
+    // diagnostic would make the mask refuse to do its job.
+    for (const fragment of [
+      '(): boolean =>',
+      '> void',
+      "raw.replace( , ' ')",
+      'errorPanel, message, { doc }',
+      ' unknown>(key: string): Promise<T | null> {',
+      // …and the mask's OWN output for a line continuation, which is the exact
+      // fragment the first version of this refusal choked on. This list is the
+      // category the round-6 PR body claimed to have accounted for, so the
+      // member that broke it belongs in it.
+      "const s = ' \\\n  ';\nconst t = 1;\n",
+    ]) {
+      expect(() => dynamicParts(fragment), fragment).not.toThrow();
+    }
+  });
+
   it('cannot be blinded by one stray backtick, in any file in the tree', () => {
     // This is B1 of the #327 review as a PROPERTY, and it is the assertion that
     // could not have been satisfied by the masker that shipped.
@@ -95,27 +267,99 @@ describe('the mask every rule reads the tree through', () => {
     // the file. Identifiers rather than raw output, because the injection
     // shifts every offset after it by one; a comment contributes no identifier
     // either way, so the two lists must be equal.
+    // ── How many positions, and why not all of them ─────────────────────────
+    //
+    // As shipped in #329 this probed ONE offset per file. `firstCommentBody()`
+    // returned on its first hit, so every probe landed in the header comment,
+    // near the top, in a line comment — 125 positions out of 4,899 usable ones
+    // (5,101 comments, less the few the mask does not blank), all of the
+    // same shape and all in the same place. The #329 review probed every
+    // comment offset the compiler reports and found nothing, so the narrow
+    // version was not hiding anything on the day; it was hiding the ability to
+    // notice.
+    //
+    // Every comment in every file was built and MEASURED here rather than
+    // guessed at: 4,899 probes, 0 failures, and **+40s of wall clock on a 45s
+    // suite** — the extension run goes to 85s, because each probe re-masks a
+    // whole file and a whole-file mask is ~4.8 ms of parse. That is not a price
+    // this property is worth, so it is not the price paid.
+    //
+    // What is paid instead is a fixed budget per file, spread EVENLY over that
+    // file's comments — first, last, and evenly spaced between. That is chosen,
+    // not arbitrary: the failure being guarded against is a blind that runs
+    // from a backtick to the next one "anywhere in the file", so WHERE in the
+    // file the probe lands is the axis that matters, and the old test could
+    // only ever land at the top. Eight positions per file is 917 probes for
+    // about 5s, spread across each file and stratified by comment kind, so it
+    // reaches JSDoc and trailing comments as well as line comments — shapes the
+    // header-comment-only version never touched. (Plain `/* … */` block
+    // comments it does NOT reach, because the tree contains none; see below.)
+    //
+    // Comment positions come from the compiler, not from this module's own
+    // `commentRanges()`, so the probe is not asking the mask to check itself.
     const blinded: string[] = [];
+    const sampled: Record<string, number> = {};
+    const missedKind: string[] = [];
     let probed = 0;
     for (const { rel, source } of scannedSources()) {
-      const at = firstCommentBody(source);
-      if (at === null) continue;
-      probed++;
-      const strayed = `${source.slice(0, at)}\`${source.slice(at)}`;
-      if (
-        identifiersIn(dynamicParts(strayed)).join(' ') !==
-        identifiersIn(dynamicParts(source)).join(' ')
-      ) {
-        blinded.push(rel);
+      const masked = dynamicParts(source);
+      const present = new Set(commentKindsIn(source, masked));
+      const inSample = new Set<string>();
+      for (const { at, kind } of probePositions(source, masked)) {
+        probed++;
+        sampled[kind] = (sampled[kind] ?? 0) + 1;
+        inSample.add(kind);
+        const strayed = `${source.slice(0, at)}\`${source.slice(at)}`;
+        const after = dynamicParts(strayed);
+        // Compared as buffers around the injection point rather than as
+        // identifier lists: the injection shifts every offset after it by one,
+        // and this says the mask's verdict is byte-identical on both sides of
+        // it. Stronger than the identifier comparison and much cheaper, which
+        // is what pays for the extra positions.
+        if (
+          after.slice(0, at) !== masked.slice(0, at) ||
+          after.slice(at + 1) !== masked.slice(at)
+        ) {
+          blinded.push(`${rel}@${at}`);
+        }
+      }
+      for (const kind of present) {
+        if (!inSample.has(kind)) {
+          missedKind.push(`${rel}: contains ${kind} comments, none of them sampled`);
+        }
       }
     }
-    expect(probed).toBeGreaterThan(100);
+    expect(probed).toBeGreaterThan(600);
+    // The budget must not be spent entirely on whichever kind is commonest IN
+    // THAT FILE. Round 6 shipped an unstratified spread and review caught the
+    // claim this test made about it: the sample came out
+    // `line=784 jsdoc=133 block=0`, while the comment here said block comments
+    // were probed. Two separate things were wrong and only one was the sampler.
+    //
+    // The CLAIM. Measured over the tree: 4,522 line comments, 579 JSDoc, and
+    // ZERO plain `/* … */` block comments. `block=0` was never a sampling
+    // failure, it was a fact about the codebase — and `commentRanges()`'s `/*`
+    // branch, which is a different code path from its `//` branch, is exercised
+    // by the JSDoc ones. A plain block comment is covered directly by
+    // `keeps the code that follows an unbalanced backtick`, since the tree
+    // cannot cover it.
+    //
+    // The SAMPLER. An even spread over one pool can still miss a kind a file
+    // does contain, and which kinds get probed should not be luck. The property
+    // is therefore per-FILE, which is what stratifying actually buys: every
+    // comment kind a file contains appears in that file's own sample.
+    expect(missedKind, missedKind.join('\n')).toEqual([]);
+    // …and the tree-wide composition is pinned, so `block` appearing later is a
+    // visible change rather than a silent one.
+    expect(Object.keys(sampled).sort()).toEqual(['jsdoc', 'line']);
     expect(
       blinded,
       'one backtick inside a comment changed what these files look like to every rule:\n' +
         blinded.join('\n'),
     ).toEqual([]);
-  });
+    // ~1,000 whole-file masks at ~4.8 ms each. Named explicitly rather than
+    // left to the 5 s default, so the budget above is visible at the call site.
+  }, 60_000);
 
   it('drops a comment rather than reading it as code', () => {
     // The mechanism behind the property above, stated directly. #327's masker
@@ -164,6 +408,104 @@ describe('the mask every rule reads the tree through', () => {
     expect(identifiersIn(dynamicParts('const py = `\nquery = """\n`;'))).toEqual(['const', 'py']);
   });
 
+  it("knows a rejected settlement's reason, which no catch clause binds", () => {
+    // #329's NB1. `reason` is off the spelling list on purpose, and the module
+    // justified that with "as a `catch` binding they are reached by the catch
+    // clause". True of `problem` and `thrown`; false of this one, because
+    // `PromiseRejectedResult.reason` is a property name the LANGUAGE mandates.
+    // Nothing bound it and nothing spelled it, so it was a fourth way to hold a
+    // thrown error with no door on it.
+    const settled = [
+      'const [r] = await Promise.allSettled([go()]);',
+      "if (r.status === 'rejected') pane.textContent = String(r.reason);",
+      '',
+    ].join('\n');
+    expect(errorBoundNames(settled).holdsError.has('reason')).toBe(true);
+    expect(carriesAnError('String(r.reason)', errorBoundNames(settled).holdsError)).toBe(true);
+
+    // Either marker on its own is enough. `allSettled` is the only thing that
+    // makes settled results; the `.status` narrowing is what TypeScript
+    // REQUIRES before `.reason` is reachable, so it is present wherever a
+    // reason is read whoever created the promise.
+    expect(
+      errorBoundNames('const rs = await Promise.allSettled(jobs);').holdsError.has('reason'),
+    ).toBe(true);
+    expect(
+      errorBoundNames("if (s.status !== 'fulfilled') note(s.reason);").holdsError.has('reason'),
+    ).toBe(true);
+
+    // The comparison is against the WHOLE state, closing quote included. A
+    // prefix match — which is what shipped in round 6 and what review caught —
+    // lets a domain state that merely starts with one of the two words scope
+    // `reason` for a whole file. None in the tree; the word is free.
+    expect(
+      errorBoundNames("if (s.status === 'rejectedByAdmin') note(s.reason);").holdsError.has(
+        'reason',
+      ),
+    ).toBe(false);
+    expect(
+      errorBoundNames("if (s.status === 'fulfilledAtStore') note(s.reason);").holdsError.has(
+        'reason',
+      ),
+    ).toBe(false);
+    // …and the quote style does not matter, only that the word is whole.
+    expect(
+      errorBoundNames('if (s.status === "rejected") note(s.reason);').holdsError.has('reason'),
+    ).toBe(true);
+  });
+
+  it('leaves the word `reason` alone in a file that settles nothing', () => {
+    // The other half, and the reason it is not simply on the spelling list.
+    // `ui/apex-log-analyzer.ts` names a log-TRUNCATION reason `reason` and
+    // interpolates it into a banner. Claiming that word everywhere would flag
+    // correct code, which is the trade this scanner refuses to make.
+    const truncation = [
+      "const reason = 'log truncated at 2 MB';",
+      'banner.textContent = `Partial log — ${reason}`;',
+      '',
+    ].join('\n');
+    expect(errorBoundNames(truncation).holdsError.has('reason')).toBe(false);
+    expect(
+      carriesAnError('`Partial log — ${reason}`', errorBoundNames(truncation).holdsError),
+    ).toBe(false);
+
+    // …and the evidence has to be CODE. A settled result mentioned in prose or
+    // inside a string is not a settled result — this is why the markers are
+    // matched on the masked buffer and the state name read back out of the raw
+    // one at the same offset.
+    const mentioned = [
+      "// we could Promise.allSettled(these) and read r.status === 'rejected'",
+      "const sql = `SELECT x WHERE s.status === 'rejected'`;",
+      "const reason = 'log truncated';",
+      '',
+    ].join('\n');
+    expect(errorBoundNames(mentioned).holdsError.has('reason')).toBe(false);
+  });
+
+  it('binds a bare callback reference too, and that is a decision', () => {
+    // #329's NB4. `CATCH_BINDING` reads the identifier after `catch (`, and a
+    // bare callback reference sits in exactly that position — so
+    // `.catch(handleError)` is read as if `handleError` were the parameter.
+    // None of these is an identifier a `catch` binds.
+    //
+    // It is a false-positive direction only: an extra name in `holdsError`
+    // makes a rule fire, never go quiet. And it does not fire — measured over
+    // the tree, there are zero `.catch(<identifier>)` sites, and the scan
+    // produces 11 distinct binding names across all 125 scanned files with
+    // nothing spurious among them. Tightening it means choosing between `=>`,
+    // `)` `{` and `:` to tell three shapes apart, which is one more pattern
+    // that has to guess, for a defect that has never occurred.
+    //
+    // Pinned rather than fixed, so the over-claim is a decision on the record
+    // instead of a surprise for whoever measures next.
+    expect([...errorBoundNames('go().catch(handleError);').holdsError]).toEqual(['handleError']);
+    expect([...errorBoundNames('go().catch(reject);').holdsError]).toEqual(['reject']);
+    expect([...errorBoundNames('go().catch(console.error);').holdsError]).toEqual(['console']);
+    // The shapes it is actually FOR, unchanged.
+    expect([...errorBoundNames('try { go(); } catch (zz) {}').holdsError]).toEqual(['zz']);
+    expect([...errorBoundNames('go().catch((zz) => report(zz));').holdsError]).toEqual(['zz']);
+  });
+
   it('binds no phantom name from a comment or a template', () => {
     // What the mask buys the binding scan, asserted on the scan itself rather
     // than on the mask: prose that happens to spell an assignment is not one.
@@ -177,25 +519,155 @@ describe('the mask every rule reads the tree through', () => {
 });
 
 /**
- * The offset just inside the first line comment of a file, or `null`.
+ * Legal source the mask has to survive, gathered from every way found so far of
+ * making a masker manufacture a token that was not in its input.
  *
- * Chosen from the RAW source (a line whose first non-space characters are
- * `//`), then required to be a position the mask already blanks — so the
- * injection lands on text the scanner has itself declared static. That is what
- * makes the assertion above non-circular: the mask decides what is static, and
- * the property is that adding a backtick to something it already called static
- * changes nothing it calls code.
+ * Each member is asserted LEGAL against the compiler before it is used, so the
+ * corpus cannot rot into a set of illegal inputs that pass by being refused.
  */
-function firstCommentBody(source: string): number | null {
-  const masked = dynamicParts(source);
-  let offset = 0;
-  for (const line of source.split('\n')) {
-    const indent = line.length - line.trimStart().length;
-    const at = offset + indent;
-    if (line.trimStart().startsWith('//') && !line.includes('`') && masked[at] === ' ') {
-      return at + 2;
+const LEGAL_BUT_HOSTILE: readonly [string, string][] = [
+  ['line continuation, single quotes', "const s = 'a\\\n b';\nconst t = 1;\n"],
+  ['line continuation, double quotes', 'const s = "a\\\n b";\nconst t = 1;\n'],
+  ['line continuation, CRLF', "const s = 'a\\\r\n b';\nconst t = 1;\n"],
+  ['two line continuations', "const s = 'a\\\n b\\\n c';\nconst t = 1;\n"],
+  ['continuation then an ordinary escape', "const s = 'a\\\n b\\n c';\nconst t = 1;\n"],
+  ['escaped backslash before a continuation', "const s = 'a\\\\\\\n b';\nconst t = 1;\n"],
+  ['continuation in a template', 'const s = `a\\\n b`;\nconst t = 1;\n'],
+  ['continuation inside a line comment', '// a\\\nconst t = 1;\n'],
+  ['continuation carrying a quote', "const s = 'a\\\n it\\'s b';\nconst t = 1;\n"],
+  ['a quote inside a template hole', 'const s = `a ${x ? "y" : \'z\'} b`;\n'],
+  ['a template inside a template hole', 'const s = `a ${`inner ${y}`} b`;\n'],
+  ['a regex holding a quote and a slash', "const r = /['\\/`]/g;\nconst t = 1;\n"],
+  ['a block comment holding a quote', "/* it's fine */\nconst t = 1;\n"],
+  ['a string holding a comment opener', "const s = '/* not a comment */';\nconst t = 1;\n"],
+  ['a string holding a backtick', "const s = 'a ` b';\nconst t = 1;\n"],
+  ['division that is not a regex', 'const r = a / b / c;\nconst t = 1;\n'],
+];
+
+/**
+ * The comment kinds a file actually contains at a position the mask blanks.
+ *
+ * The same classification `probePositions()` buckets by, computed separately so
+ * the coverage property below is not the sampler grading its own homework.
+ */
+function commentKindsIn(source: string, masked: string): string[] {
+  const file = ts.createSourceFile(
+    'kinds.ts',
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const found = new Set<string>();
+  const note = (ranges: readonly ts.CommentRange[] | undefined): void => {
+    for (const r of ranges ?? []) {
+      if (masked[r.pos + 2] !== ' ') continue;
+      found.add(
+        r.kind === ts.SyntaxKind.SingleLineCommentTrivia
+          ? 'line'
+          : source.startsWith('/**', r.pos)
+            ? 'jsdoc'
+            : 'block',
+      );
     }
-    offset += line.length + 1;
+  };
+  note(ts.getLeadingCommentRanges(source, 0));
+  const visit = (node: ts.Node): void => {
+    note(ts.getLeadingCommentRanges(source, node.getFullStart()));
+    note(ts.getTrailingCommentRanges(source, node.getEnd()));
+    node.forEachChild(visit);
+  };
+  file.forEachChild(visit);
+  return [...found];
+}
+
+/** How many comment positions per file the backtick property injects at. */
+const PROBES_PER_FILE = 8;
+
+/**
+ * Where to inject, asked of the COMPILER rather than of the mask.
+ *
+ * Every comment TypeScript itself attaches to a node — leading and trailing,
+ * line and block — offset two characters in, past the `//` or `/*` so the
+ * injection lands in the comment BODY and cannot turn the opener into a regex.
+ * (`ts.createScanner` looks like the simpler tool and is the wrong one: without
+ * the parser driving it, it re-enters a template literal after the first
+ * `${…}` hole and reports the CSS comments inside `ui/workspace-host.ts`'s
+ * stylesheet as real comments. Injecting a backtick into a template literal
+ * terminates it early, which is a probe bug that looks exactly like a mask bug.
+ * The comment-range API cannot make that mistake, because it is asked about
+ * node trivia and a template's interior contains no nodes.)
+ *
+ * Then filtered to positions the mask ALREADY blanks. That is what keeps the
+ * property non-circular: the mask decides what is static, and the property is
+ * that adding a backtick to something it has itself called static changes
+ * nothing it calls code.
+ *
+ * Finally thinned to `PROBES_PER_FILE`, evenly spaced so the first and last
+ * comment of every file are always among them — see the budget note in the
+ * test for why the full set is measured but not paid for.
+ */
+function probePositions(source: string, masked: string): { at: number; kind: string }[] {
+  const file = ts.createSourceFile(
+    'probe.ts',
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const starts = new Map<number, ts.CommentKind>();
+  const note = (ranges: readonly ts.CommentRange[] | undefined): void => {
+    for (const r of ranges ?? []) starts.set(r.pos, r.kind);
+  };
+  note(ts.getLeadingCommentRanges(source, 0));
+  const visit = (node: ts.Node): void => {
+    note(ts.getLeadingCommentRanges(source, node.getFullStart()));
+    note(ts.getTrailingCommentRanges(source, node.getEnd()));
+    node.forEachChild(visit);
+  };
+  file.forEachChild(visit);
+
+  // Bucketed BY KIND, because the budget is what decides what gets probed and
+  // an unstratified spread spends it all on whichever kind is commonest. Round
+  // 6 shipped exactly that mistake: the sample came out `line=784 jsdoc=133
+  // block=0`, while the test's own comment claimed block comments were probed.
+  // They were not — a tree written in `//` and `/** … */` has so few plain
+  // block comments that an even spread never lands on one, and the `/*` branch
+  // of `commentRanges()` is a different code path from the `//` branch.
+  const buckets = new Map<string, number[]>();
+  for (const [pos, kind] of [...starts].sort((a, b) => a[0] - b[0])) {
+    const at = pos + 2;
+    if (masked[at] !== ' ') continue;
+    const bucket =
+      kind === ts.SyntaxKind.SingleLineCommentTrivia
+        ? 'line'
+        : source.startsWith('/**', pos)
+          ? 'jsdoc'
+          : 'block';
+    (buckets.get(bucket) ?? buckets.set(bucket, []).get(bucket)!).push(at);
   }
-  return null;
+
+  // Evenly spaced WITHIN each kind — first and last always included — then
+  // round-robin across kinds until the budget is spent, so every kind a file
+  // contains is represented before any kind gets a second position.
+  const spread = (xs: number[], n: number): number[] =>
+    xs.length <= n
+      ? xs
+      : [
+          ...new Set(
+            Array.from({ length: n }, (_, i) => xs[Math.round((i * (xs.length - 1)) / (n - 1))]!),
+          ),
+        ];
+  const queues = [...buckets.values()].map((xs) => spread(xs, PROBES_PER_FILE));
+  const kinds = [...buckets.keys()];
+  const picked: { at: number; kind: string }[] = [];
+  for (let round = 0; picked.length < PROBES_PER_FILE; round++) {
+    if (queues.every((q) => round >= q.length)) break;
+    queues.forEach((q, i) => {
+      if (round < q.length && picked.length < PROBES_PER_FILE) {
+        picked.push({ at: q[round]!, kind: kinds[i]! });
+      }
+    });
+  }
+  return picked.sort((a, b) => a.at - b.at);
 }
