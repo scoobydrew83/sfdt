@@ -737,6 +737,34 @@ describe('formatBulkDeleteReport', () => {
     expect(report).toContain('may still have committed');
   });
 
+  it('does not summarise an unclassified failure as "failed" twice (C-FIX-5)', () => {
+    // The summary reads `${count} ${label}` under a lead-in that already gives
+    // the count, and `unknown`'s label was the word "failed" — so a single
+    // unrecognised error printed `1 failed — 1 failed.`, which told the reader
+    // nothing and read like a bug. Pre-existing from round 1.
+    const report = formatBulkDeleteReport(
+      done({
+        deleted: 2,
+        failures: [{ id: '001000000000003AAA', kind: 'unknown', message: 'boom' }],
+      }),
+    );
+    expect(report).not.toContain('1 failed — 1 failed');
+    expect(report).toContain('1 failed.');
+    expect(report).toContain('001000000000003AAA — boom');
+    // …and alongside a kind that DOES have something to say, the breakdown is
+    // still there and still names the unclassified one.
+    const mixed = formatBulkDeleteReport(
+      done({
+        deleted: 1,
+        failures: [
+          { id: '001000000000002AAA', kind: 'timeout', message: 'no answer' },
+          { id: '001000000000003AAA', kind: 'unknown', message: 'boom' },
+        ],
+      }),
+    );
+    expect(mixed).toContain('2 failed — 1 timed out, 1 unclassified.');
+  });
+
   it('notes a cancellation', () => {
     expect(formatBulkDeleteReport(done({ deleted: 2, canceled: true }))).toContain(
       'Canceled before the remaining rows were attempted',

@@ -26,6 +26,7 @@ import {
   patchSettings,
 } from '../lib/settings.js';
 import { _resetDescribeCachesForTests } from '../lib/describe-cache.js';
+import { clearActivity, loadActivity } from '../lib/activity-log.js';
 import type { SalesforceApiClient, QueryEnvelope } from '../lib/salesforce-api.js';
 
 function fakeApi(overrides: Partial<SalesforceApiClient> = {}): SalesforceApiClient {
@@ -298,19 +299,30 @@ describe('focus is restored to the trigger (B1)', () => {
     // The mechanism, not just the symptom: if this button is disabled while the
     // dialog is open, the restore above cannot work no matter what the dialog
     // does.
+    //
+    // Both halves, because for one round only the first was asserted and the
+    // mutation that stops `onConfirmed` disabling the trigger survived — a test
+    // whose NAME described behaviour nothing checked.
     let disabledDuringDialog: boolean | null = null;
-    const apiRequest = vi.fn(async () => null);
+    let disabledAtFirstDelete: boolean | null = null;
+    const trigger: { el: HTMLButtonElement | null } = { el: null };
+    const apiRequest = vi.fn(async () => {
+      if (disabledAtFirstDelete === null) disabledAtFirstDelete = trigger.el!.disabled;
+      return null;
+    });
     await openWithRows(ROWS, {
       apiOverrides: { apiRequest: apiRequest as unknown as SalesforceApiClient['apiRequest'] },
     });
     const del = deleteBtn()!;
+    trigger.el = del;
     del.click();
     await tick();
     disabledDuringDialog = del.disabled;
 
     await confirmWith('DELETE 2 Account', 'Delete 2 Account records');
 
-    expect(disabledDuringDialog).toBe(false);
+    expect(disabledDuringDialog, 'focusable while the dialog is up').toBe(false);
+    expect(disabledAtFirstDelete, 'disabled once the destructive phase starts').toBe(true);
     expect(apiRequest).toHaveBeenCalledTimes(2);
   });
 
@@ -398,6 +410,19 @@ describe('the backup gate checks the payload, not just the call (B2)', () => {
     expect(text).toContain('cannot confirm it reached your disk');
     // The old, false claim must not come back.
     expect(text).not.toContain('has just been downloaded');
+  });
+
+  it('the toolbar tooltip claims only what the extension can observe (C-FIX-5)', async () => {
+    // The one spot the B2 copy sweep missed. "Downloads a backup CSV" asserts
+    // the part that is structurally unobservable without the `downloads`
+    // permission — on the control whose entire safety story is the backup —
+    // while the dialog, features.mdx and privacy.mdx all say the honest thing.
+    await openWithRows(ROWS);
+    const title = deleteBtn()!.title;
+    expect(title).not.toContain('Downloads a backup');
+    expect(title).toContain('Generates a backup CSV of the 2 rows and hands it to your browser');
+    expect(title).toContain('SFDT cannot confirm it reached your disk');
+    expect(title).toContain('DELETE 2 Account');
   });
 
   it('says the backup holds only the selected columns (N2)', async () => {
@@ -506,6 +531,214 @@ describe('a confirmed delete can be stopped (B3)', () => {
     for (let i = 0; i < 10; i += 1) await tick();
 
     expect(seen.length).toBe(25);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C-FIX-5 — a stopped run is reported as stopped
+//
+// Round 2's N1. With zero failures a CANCELLED run took the else branch: a
+// GREEN "Deleted 25 Account record(s)" toast, no report panel at all, and
+// `recordActivity` logging `status: 'success'`. So round 1's N6 —
+// `formatBulkDeleteReport`'s "Canceled before the remaining rows were
+// attempted." being unreachable in production — did not fall out when the
+// signal was wired; it moved. The numbers were honest and the table was
+// authoritative; a green tick after someone presses Cancel is still wrong.
+// ---------------------------------------------------------------------------
+describe('a stopped run is reported as stopped (C-FIX-5)', () => {
+  const manyRows = Array.from({ length: 60 }, (_, i) => ({
+    attributes: { type: 'Account' },
+    Id: `0010000000${String(i).padStart(5, '0')}AAA`,
+  }));
+
+  const toastClasses = (): string[] =>
+    Array.from(document.querySelectorAll<HTMLElement>('.sfdt-toast')).map((t) => t.className);
+
+  /** Confirm a 60-row delete, then stop it part-way through the first wave. */
+  async function runAndStop(
+    stop: (runner: { cancel: HTMLButtonElement }) => void,
+  ): Promise<{ issued: number; cancelVisibleWhileDeleting: boolean }> {
+    let issued = 0;
+    let cancelVisibleWhileDeleting = false;
+    const seen: { cancel: HTMLButtonElement | null } = { cancel: null };
+    const apiRequest = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          issued += 1;
+          // The Cancel control has to be REACHABLE while the deletes run, not
+          // merely reset afterwards — the existing B3 test asserted 'none'
+          // before and after and clicked it in between, which a mutation that
+          // never showed it survived.
+          if (seen.cancel && seen.cancel.style.display !== 'none') {
+            cancelVisibleWhileDeleting = true;
+          }
+          setTimeout(() => resolve(null), 0);
+        }),
+    );
+    await openWithRows(manyRows, {
+      apiOverrides: { apiRequest: apiRequest as unknown as SalesforceApiClient['apiRequest'] },
+    });
+    seen.cancel = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.getAttribute('aria-label') === 'Stop deleting',
+    ) as HTMLButtonElement;
+    deleteBtn()!.click();
+    await tick();
+    const card = overlay()!;
+    const input = card.querySelector('input') as HTMLInputElement;
+    input.value = 'DELETE 60 Account';
+    input.dispatchEvent(new Event('input'));
+    Array.from(card.querySelectorAll('button'))
+      .find((b) => b.textContent === 'Delete 60 Account records')!
+      .click();
+    await tick();
+    stop({ cancel: seen.cancel });
+    for (let i = 0; i < 14; i += 1) await tick();
+    return { issued, cancelVisibleWhileDeleting };
+  }
+
+  it('warns rather than congratulating, and shows the report it used to hide', async () => {
+    await runAndStop(({ cancel }) => cancel.click());
+
+    expect(
+      toastClasses().some((c) => c.includes('sfdt-toast--success')),
+      'a cancelled destructive run must not show a success toast',
+    ).toBe(false);
+    expect(toastClasses().some((c) => c.includes('sfdt-toast--warning'))).toBe(true);
+    expect(document.body.textContent).toContain('Stopped after 25 of 60 Account record(s)');
+
+    const report = Array.from(document.querySelectorAll('[role="alert"]')).find((el) =>
+      (el.textContent ?? '').includes('Canceled before the remaining rows were attempted.'),
+    );
+    expect(report, 'the canceled branch of the report is reachable in production').toBeDefined();
+    expect(report!.textContent).toContain('Deleted 25 of 60 Account records.');
+  });
+
+  it('does not record the cancelled run as a success', async () => {
+    await clearActivity();
+    await runAndStop(({ cancel }) => cancel.click());
+    const entry = (await loadActivity()).find((e) => e.featureId === 'soql-bulk-delete');
+    expect(entry?.status).toBe('failed');
+    expect(entry?.action).toBe('Bulk delete (stopped)');
+  });
+
+  it('keeps the Cancel control visible while the delete is running', async () => {
+    const { cancelVisibleWhileDeleting } = await runAndStop(({ cancel }) => cancel.click());
+    expect(cancelVisibleWhileDeleting).toBe(true);
+  });
+
+  it('a new query stops the delete, and says so somewhere that is not the table', async () => {
+    // Documented in the CHANGELOG and on sfdt.dev, and until now entirely
+    // untested. The status line is the second half: `Deleted 25 of 60 · re-run
+    // the query to refresh the table` used to land ABOVE the new result set —
+    // describing rows that are no longer on screen, advising the user to do the
+    // thing they just did.
+    const { issued } = await runAndStop(() => btn('Run')!.click());
+
+    expect(issued, 'the new query aborted the run between waves').toBe(25);
+    const status = document.querySelector('[role="status"]') as HTMLElement;
+    expect(status.textContent).not.toContain('re-run the query to refresh the table');
+    expect(status.textContent).toContain('60 rows');
+    // …and the report panel is not left describing the replaced rows either.
+    expect(document.body.textContent).not.toContain(
+      'Canceled before the remaining rows were attempted.',
+    );
+    // The user is still told, through the one channel not anchored to a table.
+    expect(document.body.textContent).toContain('Delete stopped by the new query');
+    expect(document.body.textContent).toContain('25 of 60 Account record(s)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C-FIX-5 — the rest of round 2's mutation survivors.
+//
+// Every one is behaviour that is CORRECT today and was asserted by nothing, so
+// the mutation that broke it stayed green.
+// ---------------------------------------------------------------------------
+describe('pruning keeps every row the org did not confirm gone (C-FIX-5)', () => {
+  const THREE = [
+    { attributes: { type: 'Account' }, Id: '001000000000001AAA', Name: 'Gone' },
+    { attributes: { type: 'Account' }, Id: '001000000000002AAA', Name: 'Rejected' },
+    { attributes: { type: 'Account' }, Id: '001000000000003AAA', Name: 'Timed out' },
+  ];
+
+  const tableText = (): string =>
+    (document.querySelector('table.sfdt-table') as HTMLElement | null)?.textContent ?? '';
+
+  it('leaves the failed and the timed-out rows in the table', async () => {
+    // The entire point of N4's replacement: only the Ids the org CONFIRMED
+    // gone are dropped. The timed-out row especially — its outcome is unknown,
+    // and it is the one to re-check.
+    const apiRequest = vi.fn(async (_method: string, endpoint: string) => {
+      if (endpoint.endsWith('002AAA')) {
+        const err = new Error('ENTITY_IS_DELETED') as Error & { sfdtKind: string };
+        err.sfdtKind = 'http-error';
+        throw err;
+      }
+      if (endpoint.endsWith('003AAA')) {
+        const err = new Error('the request timed out') as Error & { sfdtKind: string };
+        err.sfdtKind = 'timeout';
+        throw err;
+      }
+      return null;
+    });
+    await openWithRows(THREE, {
+      apiOverrides: { apiRequest: apiRequest as unknown as SalesforceApiClient['apiRequest'] },
+    });
+    deleteBtn()!.click();
+    await tick();
+    await confirmWith('DELETE 3 Account', 'Delete 3 Account records');
+
+    expect(tableText()).not.toContain('001000000000001AAA');
+    expect(tableText(), 'a rejected row is still there to retry').toContain('001000000000002AAA');
+    expect(tableText(), 'a timed-out row is what you re-check').toContain('001000000000003AAA');
+    expect(deleteBtn()!.textContent).toBe('Delete 2 rows');
+  });
+
+  it('leaves rows that carry no usable Id exactly where they were', async () => {
+    // `planBulkDelete` skips an unusable Id rather than refusing the set, so a
+    // result set can legitimately mix deletable and undeletable rows. Pruning
+    // must not take the ones it never touched.
+    await openWithRows([
+      { attributes: { type: 'Account' }, Id: '001000000000001AAA', Name: 'Deletable' },
+      { attributes: { type: 'Account' }, Id: '', Name: 'NoIdHere' },
+    ]);
+    expect(deleteBtn()!.textContent).toBe('Delete 1 row');
+    deleteBtn()!.click();
+    await tick();
+    await confirmWith('DELETE 1 Account', 'Delete 1 Account record');
+
+    expect(tableText()).not.toContain('001000000000001AAA');
+    expect(tableText()).toContain('NoIdHere');
+    // Nothing deletable is left, so the control takes itself off screen.
+    expect(deleteBtn()!.style.display).toBe('none');
+  });
+});
+
+describe('the feature is usable again after a run (C-FIX-5)', () => {
+  it('a second delete works once the first has finished', async () => {
+    // `deleteInFlight = false` in the finally is what makes this true, and
+    // nothing asserted it — the mutation that leaves the flag latched high
+    // disables the whole feature after one use and survived green.
+    const FOUR = [
+      { attributes: { type: 'Account' }, Id: '001000000000001AAA', Name: 'A' },
+      { attributes: { type: 'Account' }, Id: '001000000000002AAA', Name: 'B' },
+    ];
+    const api = await openWithRows(FOUR);
+    deleteBtn()!.click();
+    await tick();
+    // Refuse the first one: even a run that deleted nothing must release the
+    // latch, or a mis-typed phrase costs the user the feature.
+    Array.from(overlay()!.querySelectorAll('button'))
+      .find((b) => b.textContent === 'Cancel')!
+      .click();
+    await tick();
+    expect(api.apiRequest).not.toHaveBeenCalled();
+
+    deleteBtn()!.click();
+    await tick();
+    expect(overlay(), 'a second delete can still open its dialog').not.toBeNull();
+    await confirmWith('DELETE 2 Account', 'Delete 2 Account records');
+    expect(api.apiRequest).toHaveBeenCalledTimes(2);
   });
 });
 
