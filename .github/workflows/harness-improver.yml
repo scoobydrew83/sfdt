@@ -25,9 +25,9 @@ concurrency:
 
 jobs:
   improve:
-    # Public repo only. Its findings ship as PRs against the public default
-    # branch, and the private mirror shares this branch — two schedules mining
-    # the same telemetry would open duplicate PRs.
+    # Public repo only. Its findings ship as PRs against the default branch,
+    # and other clones of this repo share it — two schedules mining the same
+    # telemetry would open duplicate PRs.
     if: github.repository == 'scoobydrew83/sfdt'
     runs-on: ubuntu-latest
     permissions:

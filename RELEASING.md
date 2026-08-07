@@ -81,9 +81,9 @@ git tag -f v0 vX.Y.Z && git push -f public v0                 # floating action 
 gh release create vX.Y.Z --repo scoobydrew83/sfdt --generate-notes
 ```
 
-> `origin` is the **private** mirror; `public` is the published repo. Never
-> `git push --tags` here — it would push every local tag, including any that
-> only exist privately. Push release tags by name. See `.work/RUNBOOK.md`.
+> Everything published ships from the `public` remote — check `git remote -v`
+> before pushing tags. Never `git push --tags`: it pushes every local tag, not
+> just the release you meant.
 
 Then bump the Homebrew tap manually (`shasum -a 256` of the npm tarball → update the tap repo)
 and dispatch `docker-publish.yml` with the version. Prefer letting CI self-heal on the next
@@ -140,18 +140,16 @@ Releases promote `develop` to `main` **wholesale** — CLI, flow-core, plugin, e
 VS Code together. Never cut a side release branch and never cherry-pick a subset; both
 re-drift the branches.
 
-This repo has two remotes: `origin` is the **private** mirror
-(`scoobydrew83/sfdt-private`), `public` is the published repo
-(`scoobydrew83/sfdt`). Releases happen on `public`, and a `pre-push` hook rejects
-anything but `develop`, `main`, and `v*`/`ext-v*`/`vscode-v*` tags going there.
-Full model: `.work/RUNBOOK.md` (private).
+Releases ship from the `public` remote (`scoobydrew83/sfdt`). A `pre-push` hook
+rejects anything but `develop`, `main`, and `v*`/`ext-v*`/`vscode-v*` tags going
+there, so there is no side release branch — `develop → main` is the only path
+into `main`.
 
-1. Land the version bump + CHANGELOG + lockfile sync on `develop`, then promote:
+1. Land the version bump + CHANGELOG + lockfile sync on `develop`, then publish it:
 
    ```bash
    git pull --ff-only public develop
    git push public develop
-   git push origin develop            # realign the mirror
    ```
 
 2. Open the promote PR `develop → main` **on public**. Merge it as a **merge commit — never squash**. Squashing rewrites the commits, so `develop` and `main` permanently disagree and every later PR shows CONFLICTING.
@@ -165,10 +163,10 @@ Full model: `.work/RUNBOOK.md` (private).
    ```bash
    git checkout develop && git pull --ff-only public develop
    git merge --ff-only public/main
-   git push public develop && git push origin develop
+   git push public develop
    ```
 
-4. Verify — against the **public** refs, which are the ones that shipped:
+4. Verify — against the `public` refs, which are the ones that shipped:
 
    ```bash
    git fetch public
@@ -246,8 +244,8 @@ publish flow-core at the required version immediately, then verify
 git tag -f v0 vX.Y.(Z-1) && git push -f public v0    # back to last-good
 ```
 
-`public`, not `origin` — consumers resolve `v0` from the published repo, so
-moving it on the private mirror would leave the broken release live.
+Push to `public` — consumers resolve `v0` from the published repo, so moving the
+tag anywhere else leaves the broken release live.
 
 Leave the immutable `vX.Y.Z` tag alone. Ship a patch release; its publish job moves `v0`
 forward again.

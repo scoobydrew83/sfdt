@@ -57,6 +57,10 @@ codex.js
 .superpowers/
 .playwright-mcp/
 logs/
+# Process skills live in the private .work/ repo; this is a symlink to them.
+# Both lines are needed: `skills/*` covers a real directory's contents, and
+# `skills` covers the symlink itself (git tracks a symlink as a file).
+.claude/skills
 .claude/skills/*
 .agents/
 .stfolder/

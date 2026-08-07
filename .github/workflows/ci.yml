@@ -11,9 +11,9 @@ on:
 
 jobs:
   test:
-    # develop is pushed to both remotes, so a push-triggered run would grade the
-    # same commit twice. Public owns push (develop/main); the private mirror runs
-    # on pull_request only, which is where feature work is reviewed.
+    # develop is pushed to more than one remote, so a push-triggered run would
+    # grade the same commit twice. This repo owns push (develop/main); elsewhere
+    # the suite runs on pull_request only.
     if: github.event_name != 'push' || github.repository == 'scoobydrew83/sfdt'
     runs-on: ubuntu-latest
     permissions:
