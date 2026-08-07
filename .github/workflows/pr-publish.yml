@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   publish-pr-beta:
-    if: github.event.action == 'labeled' && github.event.label.name == 'publish-beta'
+    if: github.repository == 'scoobydrew83/sfdt' && (github.event.action == 'labeled' && github.event.label.name == 'publish-beta')
     runs-on: ubuntu-latest
     environment: beta
     permissions:
@@ -127,7 +127,7 @@ jobs:
             }
 
   cleanup-pr-beta:
-    if: github.event.action == 'closed'
+    if: github.repository == 'scoobydrew83/sfdt' && (github.event.action == 'closed')
     runs-on: ubuntu-latest
     environment: beta
     permissions:

@@ -44,6 +44,11 @@ skills/*/evals/*
 # Private working notes — separate repo: scoobydrew83/sfdt-work
 .work/
 
+# Session verdict drop-box, consumed and deleted by the Stop hook in
+# .claude/settings.json. Never commit one: a stale file re-records the same
+# verdict every session and manufactures the >=3 occurrences the improver gates on.
+VERDICT.md
+
 # Git worktrees
 .worktrees/
 .claude/worktrees/

@@ -38,7 +38,7 @@ jobs:
     # Run for dispatch and workflow_call (event_name is the caller's event, e.g.
     # 'push'); for a `release` event only build CLI tags (`v*`), skipping
     # ext-v* / vscode-v* releases.
-    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
+    if: github.repository == 'scoobydrew83/sfdt' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

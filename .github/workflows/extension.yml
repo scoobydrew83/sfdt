@@ -52,7 +52,7 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.repository == 'scoobydrew83/sfdt' && (github.ref == 'refs/heads/main' && github.event_name == 'push')
     environment: extension-release
     permissions:
       contents: write
@@ -136,7 +136,7 @@ jobs:
   # Run from Actions → "Extension CI" → Run workflow. A green run proves the
   # CWS_* secrets in the `extension-release` environment are valid.
   cws-verify:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.repository == 'scoobydrew83/sfdt' && (github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     environment: extension-release
     permissions:

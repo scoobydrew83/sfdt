@@ -29,6 +29,9 @@ concurrency:
 
 jobs:
   publish:
+    # Publishing runs from the public repo only. The private mirror shares this
+    # branch, so without the guard a mirrored push would try to release too.
+    if: github.repository == 'scoobydrew83/sfdt'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production

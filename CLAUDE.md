@@ -10,6 +10,7 @@ This file is a map, not a manual (harness H-008). Read the doc that matches your
 2. `git log --oneline -20` and, if present, `.work/MEMORY_BANK.md` tail — what happened recently.
 3. FEATURES.json — the active phase's ground truth; pick ONE `passes:false` item.
 4. `npm test` and `npm run check:all-contracts` — confirm the tree is green before changing it.
+5. Close out by writing `VERDICT.md` (`VERDICT:` / `PHASE:` / `CRITERIA:`) — the Stop hook records it to `.harness/telemetry.jsonl`, deletes the file, and that JSONL is the only telemetry CI can see. Commit it. Format: `tools/record-verdict.mjs`.
 
 ## Directory map
 

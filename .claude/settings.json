@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "statusMessage": "Recording verdict",
+            "command": "d=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$d/VERDICT.md\" ] && node \"$d/tools/record-verdict.mjs\" --file \"$d/VERDICT.md\" --log-dir \"$d/logs\" && rm -f \"$d/VERDICT.md\" || true"
+          }
+        ]
+      }
+    ]
+  }
+}
