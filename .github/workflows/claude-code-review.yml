@@ -2,13 +2,11 @@ name: Claude Code Review
 
 on:
   pull_request:
+    # Release gate only. Feature work is reviewed in the private mirror
+    # (scoobydrew83/sfdt-private); this is the single review pass over the
+    # whole develop -> main promotion, not a per-feature commentary bot.
+    branches: [main]
     types: [opened, synchronize, ready_for_review, reopened]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
 
 jobs:
   claude-review:
