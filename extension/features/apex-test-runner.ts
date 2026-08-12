@@ -11,6 +11,7 @@ import {
 } from '../lib/salesforce-api.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { renderSfError } from '../ui/panels.js';
 import { button, toolbar } from '../lib/ui-controls.js';
 
 // ---------------------------------------------------------------------------
@@ -105,11 +106,10 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
     view = null;
   }
 
-  function renderError(results: HTMLElement, status: HTMLSpanElement, message: string): void {
-    const panel = doc.createElement('div');
-    panel.classList.add('sfdt-console', 'sfdt-error');
-    panel.textContent = message;
-    results.appendChild(panel);
+  // `unknown`, not `string`: an API-client failure carries the org's text and
+  // our guidance separately, and `err.message` here would flatten them.
+  function renderError(results: HTMLElement, status: HTMLSpanElement, message: unknown): void {
+    results.appendChild(renderSfError(message, { doc }));
     status.textContent = 'Failed';
   }
 
@@ -210,7 +210,7 @@ export function createApexTestRunnerFeature(options: ApexTestRunnerOptions = {})
         ? `${summary.failed} failure${summary.failed === 1 ? '' : 's'}`
         : 'Timed out waiting for completion';
     } catch (err) {
-      renderError(results, status, err instanceof Error ? err.message : String(err));
+      renderError(results, status, err);
     }
   }
 

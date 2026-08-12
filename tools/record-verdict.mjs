@@ -26,9 +26,10 @@
  */
 
 import path from 'path';
-import { readFileSync, appendFileSync, mkdirSync } from 'fs';
+import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { recordRun, queryRuns } from '../src/lib/run-history.js';
+import { mirrorHarnessRow } from '../src/lib/harness-telemetry.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -50,6 +51,13 @@ Options:
                      FAIL for the same phase triggers an escalation row.
   --telemetry <path> Tracked JSONL mirror of the rows, mined by the weekly
                      harness-improver in CI (default: <repo>/.harness/telemetry.jsonl).
+                     Verdict rows are REDACTED here — verbatim criterion text is
+                     replaced by a count, because this file ships in a public repo.
+  --private-telemetry <path>
+                     JSONL mirror that keeps the full criterion text
+                     (default: <repo>/.work/telemetry.jsonl). Written only when
+                     its directory already exists, so machines and CI runners
+                     without a .work checkout are left alone.
   --json             Emit the recorded row(s) as JSON.
   -h, --help         Show this help.
 
@@ -62,20 +70,15 @@ phase, also records a row of type 'escalation'.`,
 const logDir = opt('--log-dir', path.join(process.cwd(), 'logs'));
 const category = opt('--category', 'uncategorized');
 const telemetryPath = opt('--telemetry', path.join(REPO_ROOT, '.harness', 'telemetry.jsonl'));
+const privateTelemetryPath = opt(
+  '--private-telemetry',
+  path.join(REPO_ROOT, '.work', 'telemetry.jsonl'),
+);
 
-/**
- * Mirror a row into the tracked JSONL. Best-effort like recordRun — a telemetry
- * write must never fail a verdict. ponytail: append-only, no rotation; add a
- * prune if the file ever outgrows a reviewable diff.
- */
-function mirror(row) {
-  try {
-    mkdirSync(path.dirname(telemetryPath), { recursive: true });
-    appendFileSync(telemetryPath, JSON.stringify(row) + '\n');
-  } catch {
-    /* telemetry is advisory; the db row is the record of truth */
-  }
-}
+// Mirroring lives in src/lib/harness-telemetry.js so this tool and the
+// agent-fix path in agent-loop.js write the JSONL through one implementation —
+// including the public/private split and its redaction.
+const mirror = (row) => mirrorHarnessRow(row, { telemetryPath, privateTelemetryPath });
 
 // --- read the block ---
 const file = opt('--file', null);

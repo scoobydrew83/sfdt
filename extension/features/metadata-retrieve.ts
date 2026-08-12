@@ -226,6 +226,12 @@ export function createMetadataRetrieveFeature(options: {
       setTone(item, level.tone);
       item.appendChild(glyph(level.icon, 12, doc));
       const text = doc.createElement('span');
+      // `.sfdt-msg` (white-space: pre-line) because this line really can carry
+      // a thrown error: addLog('error', `Describe metadata failed: ${err.message}`)
+      // is written at ten sites here, and since lib/sf-error-guidance.ts an org
+      // error's message is multi-line. Without the rule the guidance runs into
+      // the org's text — the #308 defect, in the retrieve log.
+      text.className = 'sfdt-msg';
       text.textContent = `${level.word}: ${msg.text}`;
       item.appendChild(text);
       logsContainer.appendChild(item);
@@ -1291,9 +1297,16 @@ export function createMetadataRetrieveFeature(options: {
     xmlDiv.appendChild(modeRow);
 
     // Destructive warning banner (P5-5): deploying the pair DELETES components.
+    //
+    // '.sfdt-callout.sfdt-bad', not the error console. It carries OUR prose, not
+    // an org error — the distinction lib/ui-styles.ts draws at '.sfdt-callout':
+    // the console is a monospace block for the org's own text. It had been
+    // wearing the error console's classes, which made it the one static banner
+    // that looked like a Salesforce failure and put it inside every sweep aimed
+    // at the org-error path.
     warningBannerEl = doc.createElement('div');
     warningBannerEl.setAttribute('role', 'alert');
-    warningBannerEl.classList.add('sfdt-console', 'sfdt-error');
+    warningBannerEl.classList.add('sfdt-callout', 'sfdt-bad');
     warningBannerEl.style.display = 'none';
     const warnStrong = doc.createElement('strong');
     warnStrong.textContent = 'Destructive manifest — deploying this pair DELETES the listed components from the org. ';

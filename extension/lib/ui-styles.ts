@@ -856,6 +856,32 @@ export const SFDT_COMPONENT_CSS = `
 }
 .sfdt-console.sfdt-error { color: var(--sfdt-color-error-text); }
 
+/* The two parts of a rendered Salesforce error, emitted by renderSfError() in
+   ui/panels.ts. They are separate BLOCKS rather than one pre-wrapped string
+   because the newline between the org's text and our "what to do" line was
+   only ever preserved by a white-space rule, and 16 surfaces each hand-rolled
+   that rule until one of them didn't (PR #308). A block box cannot collapse
+   into the sibling above it whatever CSS the host page throws at us.
+
+   Both keep 'white-space: pre-wrap' anyway: an org message can be multi-line
+   inside a single record (Apex stack traces are), and the guard in
+   test/error-render-newlines.test.ts reads the property out of this sheet.
+
+   The note is body text, not error text: the red belongs to the org's wording,
+   and our advice sitting in the same alarm colour reads as more of the failure
+   rather than as the way out of it. Both tokens are theme-resolved, so this is
+   correct in light and dark without a special case. */
+.sfdt-sf-error-text {
+  display: block;
+  white-space: pre-wrap;
+}
+.sfdt-sf-error-note {
+  display: block;
+  white-space: pre-wrap;
+  margin-top: var(--sfdt-space-2);
+  color: var(--sfdt-color-text);
+}
+
 /* Per-line tinting for a raw Apex debug log. A log is line-oriented rather than
    token-oriented, so classification is by event type and the class goes on the
    whole line — there is nothing to highlight inside it.

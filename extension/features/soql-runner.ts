@@ -13,15 +13,45 @@ import {
   type FieldDescribe,
   type SObjectDescribe,
 } from '../lib/describe-cache.js';
-import { loadSettings, registerSettingsShape } from '../lib/settings.js';
+import { isFeatureEnabled, loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { recordActivity } from '../lib/activity-log.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { openMenu, type MenuAction } from '../ui/menu.js';
+import { clearSfError, renderSfError, setSfError } from '../ui/panels.js';
 import { button, setLabel, toolbar } from '../lib/ui-controls.js';
 import { createHistory } from '../lib/history.js';
 import { copyToClipboard } from '../ui/clipboard.js';
 import { createCodeEditor, SOQL_KEYWORDS } from '../lib/code-editor.js';
+import { isRecordId } from '../lib/salesforce-id.js';
+import { triggerDownload, triggerDownloadBlob } from '../lib/download.js';
+import { confirmDialog } from '../ui/confirm-dialog.js';
+import { createBridgeClient, LONG_RUNNING_TIMEOUT_MS, getBridgeData } from '../lib/sfdt-bridge.js';
+import type { SfdtRequest, SfdtResponse } from '@sfdt/flow-core/bridge-contract';
+import {
+  SOQL_NL_GENERATE_ID,
+  PROMPT_DISCLOSURE,
+  UNAVAILABLE_GUIDANCE,
+  generateSoql,
+  parseObjectList,
+  recordValueLeak,
+  type AskAiResult,
+} from './soql-nl-generate.js';
+import {
+  SOQL_BULK_DELETE_ID,
+  REJECTION_MESSAGES,
+  backupCsvCoversPlan,
+  backupFilename,
+  buildDeleteEndpoint,
+  confirmPhrase,
+  describePlan,
+  formatBulkDeleteReport,
+  planBulkDelete,
+  rowRecordId,
+  runBulkDelete,
+  type BulkDeleteOutcome,
+  type BulkDeletePlan,
+} from './soql-bulk-delete.js';
 
 const SOQL_RUNNER_SETTINGS_SCHEMA = z.object({
   defaultApi: z.enum(['rest', 'tooling']).default('rest'),
@@ -409,20 +439,61 @@ ${safeSoql}
 `;
 }
 
-function downloadBlob(doc: Document, filename: string, blob: Blob): void {
-  const url = URL.createObjectURL(blob);
-  const a = doc.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.style.display = 'none';
-  doc.body.appendChild(a);
-  a.click();
-  doc.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
+/**
+ * Why an in-flight bulk delete was stopped.
+ *
+ * `signal.aborted` says THAT the run stopped and never why, and the three
+ * reasons want different reporting: `canceled` belongs against the table it
+ * was deleting from, `superseded` belongs nowhere near it (that table is
+ * already gone), and `closed` has no surface left at all.
+ */
+type DeleteStop = 'canceled' | 'superseded' | 'closed';
 
-function triggerDownload(doc: Document, filename: string, text: string, mime: string): void {
-  downloadBlob(doc, filename, new Blob([text], { type: mime }));
+/**
+ * The pre-delete backup CSV (C-P4-2, AC-1). Returns the filename it handed to
+ * the browser, which the confirm dialog then shows the user.
+ *
+ * The rows go through the SAME `recordsToCsv` the Export CSV button uses (comma
+ * and quote handling included — P1-3), and the file goes out through the SAME
+ * `lib/download.ts` every other export uses. A backup written by a second,
+ * bespoke serialiser would be a backup that quotes differently from the export
+ * the user already trusts, which is the worst possible moment to find that out.
+ *
+ * WHAT THIS CAN AND CANNOT PROVE. It throws — and so fails `runBulkDelete`'s
+ * backup gate, deleting nothing — on the three things it can actually observe:
+ *
+ *   1. the serialised CSV does not contain every Id in the plan (an empty or
+ *      wrong payload; a "download" that succeeded and backed up nothing);
+ *   2. the browser refused to mint a blob URL for it;
+ *   3. the download helper did not complete the handoff at all.
+ *
+ * It CANNOT prove the file reached the user's disk. Nothing in the extension
+ * can: that needs the `downloads` permission, which is deliberately not in the
+ * manifest. So the dialog names the file and asks the user — the only party who
+ * can actually check — rather than asserting a guarantee that is not ours to
+ * make. Read the dialog copy alongside this function; the two have to agree.
+ */
+export function downloadDeleteBackup(
+  doc: Document,
+  plan: BulkDeletePlan,
+  now = new Date(),
+): string {
+  const csv = recordsToCsv(plan.rows);
+  // Verify the PAYLOAD, not just that the call returned. Checking the call is
+  // how a backup of nothing passes for a backup.
+  if (!backupCsvCoversPlan(csv, plan)) {
+    throw new Error(
+      `The backup CSV did not contain all ${plan.ids.length} row${
+        plan.ids.length === 1 ? '' : 's'
+      } about to be deleted.`,
+    );
+  }
+  const filename = backupFilename(plan, now);
+  const url = triggerDownload(doc, filename, csv, 'text/csv');
+  if (typeof url !== 'string' || url.length === 0) {
+    throw new Error('The browser did not accept the backup CSV for download.');
+  }
+  return filename;
 }
 
 /**
@@ -557,10 +628,94 @@ async function explainQuery(
 const EXPLAIN_TITLE =
   'Show the query plan (cost, cardinality, leading operation) without running the query';
 
+// --- C-P4-5: the AI bridge seam ------------------------------------------
+//
+// Deliberately the SAME plumbing features/ai-assistant.ts uses — a
+// `createBridgeClient(...)` from lib/sfdt-bridge.ts, called with the contract's
+// existing `{ kind: 'ai', prompt }`. AC-1's hard constraint is that the
+// extension holds no LLM endpoint of its own, and the way to keep that true is
+// to add no transport: the bridge already had one, and the CLI on the other end
+// already owns the provider, the API key, and the redaction/anti-injection
+// preamble in `src/lib/ai.js`.
+
+const NL_GENERATE_TITLE = 'Describe a query in plain English and drop the generated SOQL into the editor';
+
+type BridgeReq = Omit<SfdtRequest, 'requestId'>;
+
+interface BridgeLike {
+  call<R extends BridgeReq>(request: R, options?: { timeoutMs?: number }): Promise<SfdtResponse>;
+}
+
+function defaultBridgeFactory(): () => Promise<BridgeLike> {
+  return async () => {
+    const settings = await loadSettings();
+    return createBridgeClient({
+      token: settings.bridge.token,
+      preferredTransport: settings.bridge.preferredTransport,
+      localhostPort: settings.bridge.localhostPort,
+      connectNativeImpl: chrome.runtime?.connectNative?.bind(chrome.runtime),
+    });
+  };
+}
+
+/**
+ * Which bridge failures get AC-3's "here is how to turn it on" copy rather than
+ * a bare error. `BRIDGE_OFFLINE` is "sfdt ui isn't running", `BRIDGE_UNAUTHORIZED`
+ * / `BRIDGE_FORBIDDEN` are "you haven't paired", and `REQUEST_INVALID` is what
+ * the CLI's own `ai` route answers when the project has `"features.ai": false`
+ * or no provider configured (`src/lib/bridge/routes.js`) — the three shapes of
+ * "not set up yet", all of which are fixed by following the same steps.
+ */
+const SETUP_CODES: ReadonlySet<string> = new Set([
+  'BRIDGE_OFFLINE',
+  'BRIDGE_UNAUTHORIZED',
+  'BRIDGE_FORBIDDEN',
+  'REQUEST_INVALID',
+]);
+
+/** Ask the bridge to run a prompt. The only egress this feature has. */
+export async function askAiViaBridge(
+  bridgeFactory: () => Promise<BridgeLike>,
+  prompt: string,
+): Promise<AskAiResult> {
+  let response: SfdtResponse;
+  try {
+    const bridge = await bridgeFactory();
+    response = await bridge.call({ kind: 'ai', prompt }, { timeoutMs: LONG_RUNNING_TIMEOUT_MS });
+  } catch (err) {
+    // A transport that threw is the same user problem as one that answered
+    // "offline" — keep the throwable so ui/panels.ts renders its structure.
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : String(err),
+      unavailable: true,
+      error: err,
+    };
+  }
+  if (response.ok) {
+    const data = getBridgeData<{ response?: string; provider?: string }>(response);
+    return { ok: true, response: data.response ?? '', provider: data.provider };
+  }
+  const code = (response as { code?: string }).code ?? '';
+  return {
+    ok: false,
+    message: response.error,
+    unavailable: SETUP_CODES.has(code),
+    error: response.error,
+  };
+}
+
 export interface SoqlRunnerOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
+  /**
+   * Bridge client factory for the NL→SOQL generator. Injected the same way
+   * features/ai-assistant.ts injects it, so a test drives the AI path without a
+   * running CLI; absent, the real localhost/native client is built lazily on
+   * the first Generate click.
+   */
+  bridgeFactory?: () => Promise<BridgeLike>;
   /**
    * Open the Inspect Record tool for a record Id — backs the row menu's "View
    * all fields". Injected rather than imported so this feature keeps no hard
@@ -592,10 +747,66 @@ export function insertFieldIntoQuery(query: string, field: string): string {
   return `${trimmed}${sep(trimmed)}${field} `;
 }
 
+/** What the runner looked like when a generation was dispatched. */
+export interface NlDispatchSnapshot {
+  /** The view that asked. */
+  view: unknown;
+  /** The editor language it asked in. */
+  lang: QueryLang;
+}
+
+/** What the runner looks like now, when the answer has come back. */
+export interface NlCurrentState {
+  /** The feature's live view, or null once it was closed. */
+  view: unknown;
+  /** The generator panel element, or null when it was never built. */
+  panel: unknown;
+  /** Whether that panel is open. */
+  panelOpen: boolean;
+  /** The editor language now. */
+  lang: QueryLang;
+}
+
+/**
+ * Has the runner moved on since a generation was dispatched?
+ *
+ * A generation is a multi-second round trip and the UI stays live for all of it,
+ * so by the time an answer comes back the user may have switched the editor to
+ * SOSL and typed a FIND query, dismissed the generator, or closed the runner
+ * outright. Landing a stale `SELECT …` in the editor then is not a late success
+ * — it destroys work the user did after they stopped waiting for us, and
+ * silently flips the language back under them.
+ *
+ * Each clause means "the state this answer was for is gone":
+ *
+ *   - `view` differs — the runner was closed (presentView's onClose nulls it) or
+ *     closed and reopened, so the editor we would write into is not the one the
+ *     user asked from;
+ *   - `!panel` — the panel was never built (feature off), which the caller also
+ *     guards, kept here so the predicate is complete on its own;
+ *   - `!panelOpen` — the user pressed Close, or SOSL closed it for them;
+ *   - `lang` differs — the editor is in a different language now.
+ *
+ * Only the third clause is reachable through the UI today, because every route
+ * to the other three closes the panel on the way past: `setLang()` calls
+ * `closeNlPanel()` before it flips, and `presentView`'s `close()` always runs
+ * `onClose`, which does the same. The other three are therefore belt-and-braces
+ * — and they are a pure function here, separately, precisely so that each one is
+ * pinned by its own test rather than by a structural accident that a later
+ * refactor could remove without reddening anything.
+ *
+ * Abandoning is silent on purpose. The user is mid-sentence in a query they
+ * chose instead; a toast about the thing they walked away from is noise.
+ */
+export function nlGenerationIsStale(at: NlDispatchSnapshot, now: NlCurrentState): boolean {
+  return at.view !== now.view || !now.panel || !now.panelOpen || now.lang !== at.lang;
+}
+
 export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRunnerFeature {
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
+  const bridgeFactory = options.bridgeFactory ?? defaultBridgeFactory();
 
   let view: ViewHandle | null = null;
   // The live query textarea while the runner is open (null once closed), plus a
@@ -623,14 +834,6 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     activeTextarea = null;
   }
 
-  // Helper to check if a value is a Salesforce Record ID
-  function isRecordId(recordId: string): boolean {
-    return typeof recordId === 'string'
-      && /^[a-zA-Z0-9]{15,18}$/.test(recordId)
-      && !recordId.startsWith('000')
-      && /[0-9]/.test(recordId.slice(0, 5));
-  }
-
   async function open(): Promise<void> {
     close();
 
@@ -642,6 +845,36 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     let mode: ApiMode = config.defaultApi;
     let lang: QueryLang = 'soql';
     const historyEnabled = config.historyEnabled;
+    // C-P4-2. Its own registry feature, so this is the ordinary feature gate —
+    // and it ships `enabledByDefault: false`, so with no stored preference this
+    // is FALSE and no delete control is ever built. Read once per open(), the
+    // same lifetime as `historyEnabled`: toggling it in Settings takes effect
+    // the next time the runner is opened.
+    const bulkDeleteEnabled = isFeatureEnabled(settings, SOQL_BULK_DELETE_ID);
+    // C-P4-5, and the same posture as the line above it. There is no
+    // `features.ai` key in this codebase — `settings.features` is keyed by
+    // feature id — so the AI gate for this control is its own registry id,
+    // exactly as C-P4-2 did. It ships `enabledByDefault: false`, so with no
+    // stored preference this is FALSE and neither the toolbar button nor the
+    // prompt panel is constructed. Not built-then-hidden: a hidden control is
+    // one `style.display` away from being usable, and this one moves org
+    // schema out of the browser. (The CLI's own `features.ai` flag lives in the
+    // project's .sfdt/config.json and is enforced bridge-side; when it is off
+    // the bridge answers REQUEST_INVALID and the panel renders AC-3's
+    // how-to-enable copy.)
+    const nlGenerateEnabled = isFeatureEnabled(settings, SOQL_NL_GENERATE_ID);
+    // Assigned in the toolbar / panel blocks below when the feature is on; they
+    // stay null otherwise, and every reader is null-guarded.
+    let nlGenerateBtn: HTMLButtonElement | null = null;
+    let nlPanel: HTMLElement | null = null;
+    let nlRequestInput: HTMLTextAreaElement | null = null;
+    let nlObjectsInput: HTMLInputElement | null = null;
+    let nlRunBtn: HTMLButtonElement | null = null;
+    let nlStatus: HTMLElement | null = null;
+    let nlErrorPanel: HTMLElement | null = null;
+    let nlPanelOpen = false;
+    let nlBusy = false;
+    let nlEscHandler: ((e: KeyboardEvent) => void) | null = null;
 
     const body = doc.createElement('div');
     body.className = 'sfdt-view-body';
@@ -740,6 +973,24 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     modeGroup.append(restBtn, toolingBtn);
     bar.appendChild(modeGroup);
 
+    // C-P4-5. Built ONLY when the feature is on (see nlGenerateEnabled above).
+    if (nlGenerateEnabled) {
+      nlGenerateBtn = button({
+        label: 'Generate query',
+        iconName: 'sparkle',
+        title: NL_GENERATE_TITLE,
+        small: true,
+        doc,
+        onClick: () => toggleNlPanel(),
+      });
+      // No aria-haspopup. It is defined as "opens a menu", and this opens a
+      // `role="group"` form — promising a menu and delivering a set of text
+      // boxes is worse than promising nothing. aria-expanded + aria-controls is
+      // the disclosure pattern, and it is complete on its own.
+      nlGenerateBtn.setAttribute('aria-expanded', 'false');
+      bar.appendChild(nlGenerateBtn);
+    }
+
     // Explicit-choice latch. `langExplicit` records that the user *chose* the
     // current language (clicked the toggle, or restored a stored entry);
     // `langChoiceBaseline` is what the editor text detected as at that moment.
@@ -774,6 +1025,18 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       paintModeToggle();
       explainBtn.disabled = sosl;
       explainBtn.title = sosl ? 'Query plans are SOQL-only' : EXPLAIN_TITLE;
+      // The generator writes SELECT … FROM …; there is no SOSL mode for it, so
+      // the control goes genuinely unavailable rather than silently producing
+      // the wrong language (same treatment as Explain and the transport
+      // toggle). Closing an open panel first, so a disabled trigger never ends
+      // up as the focus-restore target.
+      if (nlGenerateBtn) {
+        if (sosl) closeNlPanel({ restoreFocus: false });
+        nlGenerateBtn.disabled = sosl;
+        nlGenerateBtn.title = sosl
+          ? 'Query generation is SOQL-only — switch to SOQL to use it.'
+          : NL_GENERATE_TITLE;
+      }
       autocompleteBox.style.display = sosl ? 'none' : 'flex';
       void runAutocomplete();
     }
@@ -929,6 +1192,409 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
 
     main.appendChild(autocompleteBox);
 
+    // ---- C-P4-5: "Generate query" prompt panel ---------------------------
+    //
+    // A disclosure inside the runner rather than a second modal on top of it:
+    // the whole point of the feature is that you read the generated query in
+    // the editor, and a dialog that covers the editor is the wrong shape for
+    // that. It sits ABOVE the editor so the flow reads top-to-bottom —
+    // describe, then review.
+    //
+    // Nothing in here runs a query. The only button that can is `Run`, which is
+    // where it has always been, and which the user presses.
+    if (nlGenerateEnabled) {
+      const panelId = `sfdt-nl-panel-${Math.random().toString(36).slice(2)}`;
+      const requestId = `${panelId}-request`;
+      const objectsId = `${panelId}-objects`;
+
+      const panel = doc.createElement('div');
+      panel.id = panelId;
+      panel.className = 'sfdt-frame sfdt-stack sfdt-snug';
+      // Padding/margin only — the border, radius and stack layout are the
+      // shared classes'. No colour is set here, so both themes come free.
+      panel.style.cssText = 'display: none; padding: 12px; margin-bottom: 8px;';
+      panel.setAttribute('role', 'group');
+      panel.setAttribute('aria-label', 'Generate SOQL from a description');
+      nlGenerateBtn?.setAttribute('aria-controls', panelId);
+
+      const requestLabel = doc.createElement('label');
+      requestLabel.className = 'sfdt-label';
+      requestLabel.htmlFor = requestId;
+      requestLabel.textContent = 'Describe the query you want';
+
+      const requestBox = doc.createElement('textarea');
+      requestBox.id = requestId;
+      requestBox.className = 'sfdt-field sfdt-tall';
+      requestBox.placeholder =
+        'Open opportunities over £50k closing this quarter, with the account name';
+      requestBox.setAttribute('aria-label', 'Describe the query you want');
+      requestBox.setAttribute('aria-describedby', `${panelId}-disclosure`);
+
+      const objectsRow = doc.createElement('div');
+      objectsRow.classList.add('sfdt-row', 'sfdt-snug');
+      const objectsLabel = doc.createElement('label');
+      objectsLabel.className = 'sfdt-label';
+      objectsLabel.htmlFor = objectsId;
+      objectsLabel.textContent = 'Objects';
+      const objectsBox = doc.createElement('input');
+      objectsBox.id = objectsId;
+      objectsBox.type = 'text';
+      objectsBox.className = 'sfdt-field sfdt-grow';
+      objectsBox.placeholder = 'Account, Contact — leave blank to infer from the description';
+      objectsBox.setAttribute(
+        'aria-label',
+        'Salesforce objects whose schema to send (optional — inferred from the description when blank)',
+      );
+      objectsRow.append(objectsLabel, objectsBox);
+
+      const actionsRow = doc.createElement('div');
+      actionsRow.classList.add('sfdt-row', 'sfdt-snug');
+      const generateRunBtn = button({
+        label: 'Generate',
+        ariaLabel: 'Generate SOQL from this description',
+        iconName: 'sparkle',
+        variant: 'primary',
+        small: true,
+        doc,
+        onClick: () => void runNlGenerate(),
+      });
+      const closeBtn = button({
+        label: 'Close',
+        ariaLabel: 'Close the query generator',
+        iconName: 'close',
+        small: true,
+        doc,
+        onClick: () => closeNlPanel({ restoreFocus: true }),
+      });
+      const generateStatus = doc.createElement('span');
+      generateStatus.className = 'sfdt-muted';
+      generateStatus.setAttribute('role', 'status');
+      generateStatus.setAttribute('aria-live', 'polite');
+      actionsRow.append(generateRunBtn, closeBtn, generateStatus);
+
+      // Errors go through the shared funnel (C-FIX-4). This file never builds
+      // the `.sfdt-console`+`.sfdt-error` pair itself.
+      const generateError = renderSfError(null, { doc });
+      generateError.style.display = 'none';
+
+      const disclosure = doc.createElement('div');
+      disclosure.id = `${panelId}-disclosure`;
+      disclosure.classList.add('sfdt-note', 'sfdt-msg');
+      disclosure.textContent = PROMPT_DISCLOSURE;
+
+      panel.append(requestLabel, requestBox, objectsRow, actionsRow, generateError, disclosure);
+      main.insertBefore(panel, editor.root);
+
+      nlPanel = panel;
+      nlRequestInput = requestBox;
+      nlObjectsInput = objectsBox;
+      nlRunBtn = generateRunBtn;
+      nlStatus = generateStatus;
+      nlErrorPanel = generateError;
+
+      // Enter submits from the single-line Objects box; the description box
+      // keeps Enter for newlines and uses Ctrl/Cmd+Enter, matching the editor.
+      objectsBox.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          void runNlGenerate();
+        }
+      });
+      requestBox.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          void runNlGenerate();
+        }
+      });
+    }
+
+    /** Clear the generator's own error block. */
+    function clearNlError(): void {
+      if (!nlErrorPanel) return;
+      clearSfError(nlErrorPanel);
+      nlErrorPanel.style.display = 'none';
+    }
+
+    /**
+     * Show a failure in the generator panel. Takes `unknown` and hands it
+     * straight to the shared funnel, which is what keeps a structured
+     * Salesforce/bridge error's guidance lines intact — flattening it to
+     * `err.message` here would discard exactly the part AC-3 needs.
+     */
+    function showNlError(error: unknown, guidance?: string): void {
+      if (!nlErrorPanel) return;
+      setSfError(nlErrorPanel, error, { doc, guidance });
+      nlErrorPanel.style.display = 'block';
+    }
+
+    function closeNlPanel(opts: { restoreFocus?: boolean } = {}): void {
+      if (!nlPanel || !nlPanelOpen) return;
+      nlPanelOpen = false;
+      nlPanel.style.display = 'none';
+      nlGenerateBtn?.setAttribute('aria-expanded', 'false');
+      if (nlEscHandler) {
+        doc.removeEventListener('keydown', nlEscHandler, true);
+        nlEscHandler = null;
+      }
+      // Only ever restore to the trigger, and only when it can actually take
+      // focus: `.focus()` on a disabled element is a specified no-op, which is
+      // how a keyboard user gets stranded on <body>.
+      if (opts.restoreFocus && nlGenerateBtn && !nlGenerateBtn.disabled) nlGenerateBtn.focus();
+    }
+
+    function openNlPanel(): void {
+      if (!nlPanel || !nlGenerateBtn || nlGenerateBtn.disabled || nlPanelOpen) return;
+      nlPanelOpen = true;
+      nlPanel.style.display = 'flex';
+      nlGenerateBtn.setAttribute('aria-expanded', 'true');
+      nlEscHandler = (e: KeyboardEvent): void => {
+        if (e.key !== 'Escape' || !nlPanelOpen || !nlPanel) return;
+        // Escape belongs to the innermost thing the user is IN. With focus in
+        // the editor it must still close the runner, as it always has — so this
+        // only claims the key when focus is inside the panel. composedPath()
+        // rather than e.target: inside the closed shadow root the target is
+        // retargeted to the host (CONVENTIONS.md item 13).
+        const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+        const inside =
+          path.includes(nlPanel) ||
+          (doc.activeElement !== null && nlPanel.contains(doc.activeElement));
+        if (!inside) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        closeNlPanel({ restoreFocus: true });
+      };
+      // Capture phase, and removed on close — CONVENTIONS.md item 1.
+      doc.addEventListener('keydown', nlEscHandler, true);
+      nlRequestInput?.focus();
+    }
+
+    function toggleNlPanel(): void {
+      if (nlPanelOpen) closeNlPanel({ restoreFocus: true });
+      else openNlPanel();
+    }
+
+    /**
+     * The runner's half of {@link nlGenerationIsStale}: read the live state out
+     * of this closure and hand it, with the dispatch snapshot, to the pure
+     * predicate. The rules themselves live up there so each clause has a test.
+     */
+    function nlGenerationStale(langAtDispatch: QueryLang, viewAtDispatch: ViewHandle | null): boolean {
+      return nlGenerationIsStale(
+        { view: viewAtDispatch, lang: langAtDispatch },
+        { view, panel: nlPanel, panelOpen: nlPanelOpen, lang },
+      );
+    }
+
+    /** Every row currently on screen — SOQL rows or every SOSL group's rows. */
+    function onScreenRows(): Array<Record<string, unknown>> {
+      return records.length > 0 ? records : groups.flatMap((g) => g.records);
+    }
+
+    /**
+     * Turn the shared describe cache's synchronous, status-returning read into
+     * something awaitable.
+     *
+     * The cache is the right source — the autocomplete has usually warmed it
+     * already, so a Generate on an object you have been querying costs no round
+     * trip — but its API answers "loading" now and notifies later, which a
+     * one-shot assembly cannot use directly. `read` is called once up front (to
+     * kick the fetch off and to return immediately on a warm cache) and again
+     * on every notification until it settles.
+     */
+    function awaitDescribe<T>(read: () => T | undefined): Promise<T | null> {
+      const first = read();
+      if (first !== undefined) return Promise.resolve(first);
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = (value: T | null): void => {
+          if (settled) return;
+          settled = true;
+          unsubscribe();
+          clearTimeout(timer);
+          resolve(value);
+        };
+        const unsubscribe = describeCache.subscribe(() => {
+          const next = read();
+          if (next !== undefined) finish(next);
+        });
+        // A describe that never settles must not leave Generate spinning
+        // forever; treat it as "could not describe", which the caller reports.
+        const timer = setTimeout(() => finish(null), 20000);
+      });
+    }
+
+    async function describeForPrompt(name: string): Promise<SObjectDescribe | null> {
+      return awaitDescribe<SObjectDescribe | null>(() => {
+        const entry = describeCache.getSObject(effectiveMode(), name) as {
+          status: 'loading' | 'ready' | 'error';
+          data?: SObjectDescribe;
+        };
+        if (entry.status === 'loading') return undefined;
+        return entry.status === 'ready' ? (entry.data ?? null) : null;
+      });
+    }
+
+    /** The org's sObject API names, for object inference. */
+    async function knownObjectNames(): Promise<readonly string[]> {
+      const names = await awaitDescribe<string[]>(() => {
+        const global = describeCache.getGlobal(effectiveMode()) as {
+          status: 'loading' | 'ready' | 'error';
+          data?: { sobjects?: Array<{ name?: string }> };
+        };
+        if (global.status === 'loading') return undefined;
+        if (global.status !== 'ready') return [];
+        return (global.data?.sobjects ?? [])
+          .map((s) => s?.name)
+          .filter((n): n is string => typeof n === 'string' && n.length > 0);
+      });
+      return names ?? [];
+    }
+
+    /**
+     * The Generate click. Everything it can do on success is in the last five
+     * lines of the try block: put the text in the editor, resync the language
+     * toggle and the autocomplete, and tell the user to look at it. It does not
+     * call execute(), and nothing it calls can.
+     */
+    async function runNlGenerate(): Promise<void> {
+      if (!nlRunBtn || !nlRequestInput || nlBusy) return;
+      if (nlGenerateBtn?.disabled) return;
+      nlBusy = true;
+      // The trigger that opened the panel is NOT disabled — only this in-panel
+      // button is, and nothing restores focus to it while it is disabled.
+      nlRunBtn.disabled = true;
+      setLabel(nlRunBtn, 'Generating…');
+      clearNlError();
+      if (nlStatus) nlStatus.textContent = 'Reading schema…';
+      const request = nlRequestInput.value;
+      // The runner is NOT frozen while a generation is in flight: a round trip
+      // through the bridge to a model takes seconds, and in those seconds the
+      // user can switch to SOSL, close the panel, or close the whole view. The
+      // reply that arrives afterwards belongs to a runner state that no longer
+      // exists, so it is checked against this snapshot before it is allowed to
+      // touch anything. See nlGenerationStale().
+      const langAtDispatch = lang;
+      const viewAtDispatch = view;
+      try {
+        const outcome = await generateSoql(
+          { request, objects: parseObjectList(nlObjectsInput?.value) },
+          {
+            describeObject: describeForPrompt,
+            knownObjects: knownObjectNames,
+            // AC-4's backstop, wired in as a gate the orchestrator must clear
+            // before it may send anything. The records live here, in the UI —
+            // the prompt assembler never receives them.
+            inspectPrompt: (prompt, requestText, context) => {
+              const leak = recordValueLeak(prompt, requestText, onScreenRows(), {
+                ignore: [...context.objects, ...context.fieldNames],
+                // The span the assembler put the description at. The gate
+                // excludes the user's own words by INDEX; excluding them by
+                // text let a one-character description gut the whole haystack.
+                requestRange: context.requestRange,
+              });
+              if (leak === null) return null;
+              return (
+                'Nothing was sent. A value from the results table appeared in the assembled ' +
+                'prompt, and the prompt is only allowed to carry schema. Please report this.'
+              );
+            },
+            askAi: (prompt) => askAiViaBridge(bridgeFactory, prompt),
+          },
+        );
+
+        if (nlStatus) nlStatus.textContent = '';
+
+        // The whole outcome is abandoned, not just the editor write: an error
+        // rendered into a panel the user closed is invisible, and a toast about
+        // an abandoned generation is noise. Nothing here has any side effect
+        // outside this view, so dropping it is complete.
+        if (nlGenerationStale(langAtDispatch, viewAtDispatch)) return;
+
+        switch (outcome.status) {
+          case 'no-request':
+            showNlError('Describe the query you want first.');
+            nlRequestInput.focus();
+            return;
+          case 'no-objects':
+            showNlError(
+              'Could not tell which object you mean.',
+              'Type the object API names into the Objects box — for example "Opportunity, Account".',
+            );
+            nlObjectsInput?.focus();
+            return;
+          case 'no-schema':
+            showNlError(
+              `Could not describe ${outcome.objects.join(', ')}.`,
+              'Check the API names and that your user can see those objects.',
+            );
+            return;
+          case 'blocked':
+            showNlError(outcome.message);
+            return;
+          case 'unavailable':
+            showNlError(outcome.error ?? outcome.message, UNAVAILABLE_GUIDANCE);
+            return;
+          case 'failed':
+            showNlError(outcome.error ?? outcome.message);
+            return;
+          case 'not-soql':
+            showNlError(
+              'The assistant did not return a SOQL query.',
+              'Try naming the object and the fields you want in the description.',
+            );
+            return;
+          case 'invalid':
+            // Reported, not pasted: an unusable answer must not overwrite the
+            // draft the user already had in the editor.
+            showNlError(
+              `The generated query did not pass the local SOQL checks:\n${outcome.errors.join('\n')}`,
+              'Rephrase the description, or copy the query out of the description box and fix it by hand.',
+            );
+            return;
+          case 'generated':
+            break;
+        }
+
+        // --- The whole success path. Note what is absent: execute(). ---
+        editor.setValue(outcome.soql);
+        syncLangFromText();
+        void runAutocomplete();
+        closeNlPanel();
+        // Focus goes to the EDITOR, not back to the trigger: the next thing the
+        // user has to do is read what arrived.
+        textarea.focus();
+        textarea.setSelectionRange(outcome.soql.length, outcome.soql.length);
+        status.textContent = outcome.provider
+          ? `Generated by ${outcome.provider} — review it, then Run.`
+          : 'Generated — review it, then Run.';
+        showToast('Query generated — review it, then Run', { doc, kind: 'success' });
+        void recordActivity({
+          featureId: SOQL_NL_GENERATE_ID,
+          action: 'Generate SOQL',
+          // The objects, never the user's free text: the activity log is a
+          // stored, human-readable list and the description is the one field
+          // here that a user might type something personal into.
+          resource: outcome.objects.join(', '),
+          status: 'success',
+        });
+      } catch (err) {
+        // generateSoql() returns outcomes rather than throwing, so this covers
+        // the unexpected only — but an AI panel that swallows a crash silently
+        // is worse than one that shows it. Unless the panel is gone, in which
+        // case there is nowhere to show it and nobody looking.
+        if (nlStatus) nlStatus.textContent = '';
+        if (nlGenerationStale(langAtDispatch, viewAtDispatch)) return;
+        showNlError(err);
+      } finally {
+        nlBusy = false;
+        if (nlRunBtn) {
+          nlRunBtn.disabled = false;
+          setLabel(nlRunBtn, 'Generate');
+        }
+      }
+    }
+
     const runRow = doc.createElement('div');
     runRow.classList.add('sfdt-row', 'sfdt-snug');
     const runBtn = button({ label: 'Run', iconName: 'play', variant: 'primary', doc });
@@ -956,11 +1622,18 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     runRow.appendChild(status);
     main.appendChild(runRow);
 
-    const errorPanel = doc.createElement('div');
-    errorPanel.setAttribute('role', 'alert');
-    errorPanel.classList.add('sfdt-console', 'sfdt-error');
+    const errorPanel = renderSfError(null, { doc });
     errorPanel.style.display = 'none';
     main.appendChild(errorPanel);
+
+    // Bulk-delete outcome (C-P4-2). Its own container rather than reusing
+    // `errorPanel`: a partial delete is not a query error, and showError()
+    // hides the results table — which is the last thing you want to lose while
+    // reading which of its rows failed to delete. Empty and hidden until a
+    // delete has actually run; the block inside is built by ui/panels.ts.
+    const deleteReport = doc.createElement('div');
+    deleteReport.style.display = 'none';
+    main.appendChild(deleteReport);
 
     // Query-plan (EXPLAIN) output panel — separate from the results table so a
     // plan and a result set don't clobber each other.
@@ -987,9 +1660,323 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     // it: the running export compares against this and stays silent once null'd.
     let exportController: AbortController | null = null;
 
+    // ---- Bulk delete (C-P4-2) --------------------------------------------
+    //
+    // One delete at a time, and always stoppable. `deleteInFlight` covers the
+    // whole operation including the dialog (so a second group's Delete button
+    // cannot start a parallel run over the same status line); `deleteController`
+    // is the live run's abort handle, checked by runBulkDelete between waves and
+    // tripped by the Cancel button, by closing the view, and by a fresh query.
+    let deleteInFlight = false;
+    let deleteController: AbortController | null = null;
+    /**
+     * Why the current run was stopped, if it was.
+     *
+     * Recorded before the abort, because the three reasons need different
+     * reporting and `signal.aborted` cannot tell them apart. The one that
+     * matters is `superseded`: by the time that outcome comes back the table
+     * the delete belongs to has already been replaced, so the status line and
+     * the report panel would describe rows that are no longer on screen.
+     */
+    let deleteStop: DeleteStop | null = null;
+
+    const cancelDeleteBtn = button({
+      label: 'Cancel',
+      ariaLabel: 'Stop deleting',
+      iconName: 'close',
+      variant: 'danger',
+      small: true,
+      doc,
+      onClick: () => stopBulkDelete('canceled'),
+    });
+    cancelDeleteBtn.style.display = 'none';
+
+    /**
+     * Stop an in-flight delete between waves.
+     *
+     * A confirmed delete used to have no brake at all: the signal existed and
+     * was tested, but nothing ever passed one. Rows already sent are gone —
+     * this stops the NEXT wave, which on a few thousand rows is most of them.
+     */
+    function stopBulkDelete(reason: DeleteStop): void {
+      if (!deleteController) return;
+      deleteStop = reason;
+      deleteController.abort();
+    }
+    //
+    // Every gate lives in features/soql-bulk-delete.ts; this half is only the
+    // wiring — a backup that reuses recordsToCsv + lib/download.ts, a confirm
+    // that is ui/confirm-dialog.ts's typed gate, one DELETE per row through the
+    // worker proxy, and a report built by ui/panels.ts. There is deliberately
+    // no `api.apiRequest('DELETE', …)` anywhere else in this file: the only
+    // caller is the `deleteRecord` dep below, and `runBulkDelete` is the only
+    // thing that calls that.
+
+    function clearDeleteReport(): void {
+      while (deleteReport.firstChild) deleteReport.removeChild(deleteReport.firstChild);
+      deleteReport.style.display = 'none';
+    }
+
+    function showDeleteReport(text: string): void {
+      clearDeleteReport();
+      // C-FIX-4's shared renderer, not a hand-rolled console block: it carries
+      // role="alert" so the report is announced, and it puts every line of a
+      // multi-line message in its own node — which is exactly the shape of a
+      // per-row failure report (a summary line, then one line per failed Id).
+      deleteReport.appendChild(renderSfError(text, { doc }));
+      deleteReport.style.display = 'block';
+    }
+
+    /**
+     * Show/label a delete button from the CURRENT rows, and answer whether it
+     * should be offered at all.
+     *
+     * The label is the AC-1 preview: `Delete 12 rows` on the button itself, so
+     * the count is on screen before anything is clicked, and again inside the
+     * typed phrase. Hidden entirely when the rows do not qualify (no Id column
+     * is the common case) rather than shown-and-disabled — a greyed Delete on a
+     * result set that can never be deleted is just noise.
+     */
+    function paintDeleteButton(
+      btn: HTMLButtonElement | null,
+      rows: ReadonlyArray<Record<string, unknown>>,
+      sobject?: string,
+    ): void {
+      if (!btn) return;
+      const planned = planBulkDelete(rows, { sobject });
+      if (!planned.ok) {
+        btn.style.display = 'none';
+        return;
+      }
+      const n = planned.plan.ids.length;
+      setLabel(btn, `Delete ${n} row${n === 1 ? '' : 's'}`);
+      btn.setAttribute('aria-label', `Delete ${describePlan(planned.plan)}`);
+      // The wording the B2 copy sweep settled on, and the one spot it missed:
+      // the extension can see that a CSV was generated and handed to the
+      // browser, and nothing after that. "Downloads" claimed the part it
+      // cannot observe, on the one control whose whole safety story is the
+      // backup. The dialog, features.mdx and privacy.mdx all say this already.
+      btn.title =
+        `Generates a backup CSV of the ${n} row${n === 1 ? '' : 's'} and hands it to your ` +
+        `browser — SFDT cannot confirm it reached your disk — then asks you to type ` +
+        `"${confirmPhrase(planned.plan)}" before deleting.`;
+      btn.style.display = 'inline-block';
+    }
+
+    function reportDeleteOutcome(
+      outcome: BulkDeleteOutcome,
+      prevStatus: string | null,
+      stop: DeleteStop | null,
+    ): void {
+      if (outcome.status === 'ineligible') {
+        showToast(REJECTION_MESSAGES[outcome.reason], { doc, kind: 'warning' });
+        status.textContent = prevStatus;
+        return;
+      }
+      if (outcome.status === 'backup-failed') {
+        // The one failure worth a panel even though nothing happened: the user
+        // asked for a destructive thing and has to know it did NOT run.
+        showDeleteReport(`${outcome.message}\nNo records were deleted.`);
+        showToast('Backup failed — nothing was deleted.', { doc, kind: 'error' });
+        status.textContent = prevStatus;
+        return;
+      }
+      if (outcome.status === 'not-confirmed') {
+        // Cancelled at the dialog. Silent by design — the user just said no.
+        status.textContent = prevStatus;
+        return;
+      }
+      const failed = outcome.failures.length;
+      if (stop === 'superseded') {
+        // The table this outcome belongs to has already been replaced. Writing
+        // `Deleted 25 of 60 · re-run the query to refresh the table` above a
+        // fresh result set describes rows that are no longer on screen and
+        // gives advice the user has just taken, and the report panel beside new
+        // rows reads as if THOSE failed — which is why `execute()` clears it.
+        // A toast is the one channel that is not anchored to the table.
+        showToast(
+          `Delete stopped by the new query — ${outcome.deleted} of ${outcome.total} ` +
+            `${outcome.sobject} record(s) had already been deleted` +
+            (failed > 0 ? `, ${failed} failed` : ''),
+          { doc, kind: 'warning' },
+        );
+      } else {
+        const report = formatBulkDeleteReport(outcome);
+        status.textContent =
+          `Deleted ${outcome.deleted} of ${outcome.total} · re-run the query to refresh the table`;
+        if (outcome.canceled) {
+          // A cancel is not a success, whatever the failure count says. The
+          // numbers in the old toast were honest and the table was
+          // authoritative, but a green tick is the wrong affect after someone
+          // stops a destructive operation — and with no failures the report was
+          // never shown at all, which left `formatBulkDeleteReport`'s
+          // "Canceled before the remaining rows were attempted." unreachable in
+          // the common case. Both halves are the same bug.
+          showDeleteReport(report);
+          showToast(
+            `Stopped after ${outcome.deleted} of ${outcome.total} ${outcome.sobject} record(s)` +
+              (failed > 0 ? ` · ${failed} failed` : ''),
+            { doc, kind: 'warning' },
+          );
+        } else if (failed > 0) {
+          showDeleteReport(report);
+          showToast(`${failed} row(s) failed to delete`, { doc, kind: 'error' });
+        } else {
+          showToast(`Deleted ${outcome.deleted} ${outcome.sobject} record(s)`, {
+            doc,
+            kind: 'success',
+          });
+        }
+      }
+      void recordActivity({
+        featureId: SOQL_BULK_DELETE_ID,
+        action: outcome.canceled ? 'Bulk delete (stopped)' : 'Bulk delete',
+        resource: `${outcome.sobject} × ${outcome.total}`,
+        // `ActivityStatus` has two values, and a run the user stopped part-way
+        // is not the one that means "did what you asked".
+        status: failed > 0 || outcome.canceled ? 'failed' : 'success',
+      });
+    }
+
+    async function startBulkDelete(
+      btn: HTMLButtonElement,
+      getRecords: () => ReadonlyArray<Record<string, unknown>>,
+      /** Drop the confirmed-deleted rows from the backing set and re-render. */
+      pruneDeleted: (ids: ReadonlySet<string>) => void,
+      sobject?: string,
+    ): Promise<void> {
+      // Re-entrancy guard, and the reason the trigger is NOT disabled here.
+      // It also serialises the SOSL groups: each object group has its own
+      // Delete button over the same `status` line and the same report panel, so
+      // two running at once would interleave progress and leave whichever
+      // finished last owning a report about the other one's rows.
+      if (deleteInFlight) return;
+      const rows = getRecords();
+      // Preview first so an ineligible set never opens a dialog at all. The
+      // authoritative check is still inside runBulkDelete — this one only
+      // decides whether it is worth starting.
+      const preview = planBulkDelete(rows, { sobject });
+      if (!preview.ok) {
+        showToast(REJECTION_MESSAGES[preview.reason], { doc, kind: 'warning' });
+        return;
+      }
+      deleteInFlight = true;
+      deleteStop = null;
+      clearDeleteReport();
+      clearError();
+      const prevStatus = status.textContent;
+      // Snapshot the transport at click time: a delete has to go to the same
+      // API the rows came from, and the toggle stays live while the dialog is up.
+      const transport = effectiveMode();
+      const controller = new AbortController();
+      deleteController = controller;
+      // The filename the backup actually went out under, captured from the
+      // backup gate so the confirm dialog can name it. Empty until gate 2 has
+      // run, which is exactly the ordering the dialog copy depends on.
+      let backupName = '';
+      try {
+        const outcome = await runBulkDelete(rows, {
+          sobject,
+          signal: controller.signal,
+          // GATE: the backup. Only `true` proceeds. downloadDeleteBackup throws
+          // — which runBulkDelete turns into 'backup-failed', deleting nothing —
+          // when the CSV does not contain every Id in the plan, when the browser
+          // will not mint a blob URL for it, or when the handoff did not happen.
+          // It cannot prove the file reached disk; see its doc comment and the
+          // dialog copy below, which are deliberately worded to match.
+          backup: (plan) => {
+            backupName = downloadDeleteBackup(doc, plan);
+            return true;
+          },
+          // GATE: the typed confirm. ui/confirm-dialog.ts owns the focus trap,
+          // Esc-cancels-never-confirms, focus restore, and the typed gate that
+          // keeps the Confirm button disabled until the phrase matches exactly.
+          //
+          // The copy states only what the extension can actually observe, and
+          // names the file so the user — the only party who CAN check whether it
+          // reached disk — is able to. It also says what the backup contains,
+          // because a CSV of the columns you happened to SELECT restores those
+          // columns and no others.
+          confirm: (plan, phrase) =>
+            confirmDialog({
+              doc,
+              title: `Delete ${describePlan(plan)}?`,
+              message:
+                `This permanently deletes ${describePlan(plan)} from your org and cannot be ` +
+                `undone.\n\nA backup CSV was generated and handed to your browser as ` +
+                `"${backupName}". SFDT cannot confirm it reached your disk — check your ` +
+                `downloads before continuing. It holds only the columns this query selected, ` +
+                `so restoring from it restores those columns and no others.\n\n` +
+                `Type ${phrase} to confirm.`,
+              details: previewIds(plan),
+              confirmLabel: `Delete ${describePlan(plan)}`,
+              requireTyped: phrase,
+            }),
+          // Both gates are behind us; the destructive phase starts now.
+          //
+          // This is where the trigger goes disabled, NOT at click time. A
+          // disabled element cannot receive focus, so disabling it before the
+          // dialog opens makes the dialog's focus-restore land on <body> and
+          // strands the keyboard user (ui/confirm-dialog.ts documents the
+          // contract; test/confirm-dialog.test.ts pins it). Re-entrancy in the
+          // meantime is covered by `deleteInFlight` above, and in any case the
+          // modal's own scrim and focus trap make the trigger unreachable.
+          onConfirmed: () => {
+            btn.disabled = true;
+            cancelDeleteBtn.style.display = 'inline-block';
+          },
+          deleteRecord: (id, plan) =>
+            api.apiRequest(
+              'DELETE',
+              buildDeleteEndpoint(api.apiVersion, plan.sobject, id, transport),
+            ),
+          onProgress: ({ deleted, failed, total }) => {
+            // Once the run has been stopped the status line is no longer ours
+            // to write: a new query has already replaced the table and put its
+            // own count there, and a `Deleting… 25 of 60` landing on top of it
+            // describes rows that are no longer on screen. reportDeleteOutcome
+            // owns what the user is told from here.
+            if (deleteStop !== null) return;
+            status.textContent = `Deleting… ${deleted + failed} of ${total}${
+              failed > 0 ? ` · ${failed} failed` : ''
+            }`;
+          },
+        });
+        const stop = deleteStop;
+        reportDeleteOutcome(outcome, prevStatus, stop);
+        if (outcome.status === 'done' && outcome.deletedIds.length > 0 && stop !== 'superseded') {
+          // Drop exactly the rows the org confirmed gone and re-render. Leaving
+          // them on screen is not cosmetic: the Delete button would recount
+          // them and re-issue DELETEs against Ids that no longer exist. Rows
+          // that FAILED — including the timed-out ones, whose outcome is
+          // unknown — deliberately stay, because they are what you re-check.
+          pruneDeleted(new Set(outcome.deletedIds));
+          // The trigger may have been re-rendered away (all rows gone, or the
+          // SOSL group's toolbar rebuilt). Focus was correctly restored to it
+          // when the dialog closed, so if it is no longer reachable, hand the
+          // keyboard user the view's primary control rather than <body>.
+          if (!btn.isConnected || btn.style.display === 'none') runBtn.focus();
+        }
+      } finally {
+        btn.disabled = false;
+        cancelDeleteBtn.style.display = 'none';
+        if (deleteController === controller) deleteController = null;
+        deleteInFlight = false;
+      }
+    }
+
+    /** First few Ids for the dialog's detail list — enough to recognise, not a dump. */
+    function previewIds(plan: BulkDeletePlan): string[] {
+      const CAP = 5;
+      const shown = plan.ids.slice(0, CAP).map(String);
+      const rest = plan.ids.length - shown.length;
+      return rest > 0 ? [...shown, `…and ${rest} more`] : shown;
+    }
+
     /**
      * The shared result toolbar: Copy CSV / Export CSV / Copy JSON / Copy for
-     * Excel over a record set. ONE definition, used twice — once for the flat
+     * Excel over a record set — plus, when C-P4-2 is switched on and the rows
+     * qualify, Delete rows. ONE definition, used twice — once for the flat
      * SOQL result set in the footer, and once per SOSL object group, so
      * copy/export apply per group without a second toolbar or a second
      * serialiser (the P1-3 `recordsToCsv`/`recordsToJson`/`recordsToTsv` are
@@ -997,13 +1984,29 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
      *
      * `scope` names the record set for accessible labels and toasts ("Copy
      * Account rows as CSV") — the visible button text stays identical in both
-     * places so the toolbar reads the same wherever it appears.
+     * places so the toolbar reads the same wherever it appears. `sobject` names
+     * the object for row sets that don't carry `attributes` (the SOSL groups
+     * strip it), and is what the delete plan uses instead of guessing.
      */
     function createResultActions(opts: {
       getRecords: () => Array<Record<string, unknown>>;
       filePrefix: string;
       scope?: string;
-    }): { copyCsv: HTMLButtonElement; exportCsv: HTMLButtonElement; copyJson: HTMLButtonElement; copyExcel: HTMLButtonElement; all: HTMLButtonElement[] } {
+      sobject?: string;
+      /**
+       * Remove the rows a completed delete confirmed gone, then re-render.
+       * Only needed by a toolbar that offers Delete; omitted elsewhere.
+       */
+      pruneDeleted?: (ids: ReadonlySet<string>) => void;
+    }): {
+      copyCsv: HTMLButtonElement;
+      exportCsv: HTMLButtonElement;
+      copyJson: HTMLButtonElement;
+      copyExcel: HTMLButtonElement;
+      /** null whenever the feature is switched off — the control is never built. */
+      deleteRows: HTMLButtonElement | null;
+      all: HTMLButtonElement[];
+    } {
       const { getRecords, filePrefix, scope } = opts;
       const of = scope ? `${scope} ` : '';
       const mk = (
@@ -1027,12 +2030,53 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         copyText(recordsToJson(getRecords()), 'as JSON'));
       const copyExcel = mk('Copy for Excel', `Copy ${of}rows for Excel`, 'table', () =>
         copyText(recordsToTsv(getRecords()), 'for Excel'));
-      return { copyCsv, exportCsv, copyJson, copyExcel, all: [copyCsv, exportCsv, copyJson, copyExcel] };
+
+      // Built ONLY when the feature is enabled. Not built-then-hidden: a hidden
+      // button is one `style.display` away from being clickable, and this one
+      // deletes data. Off ⇒ the control does not exist in the DOM.
+      let deleteRows: HTMLButtonElement | null = null;
+      if (bulkDeleteEnabled) {
+        const btn: HTMLButtonElement = button({
+          label: 'Delete rows',
+          ariaLabel: `Delete ${of}rows`,
+          iconName: 'trash',
+          variant: 'danger',
+          small: true,
+          doc,
+          onClick: () =>
+            void startBulkDelete(
+              btn,
+              getRecords,
+              opts.pruneDeleted ?? (() => {}),
+              opts.sobject,
+            ),
+        });
+        deleteRows = btn;
+      }
+
+      const all = [copyCsv, exportCsv, copyJson, copyExcel];
+      if (deleteRows) all.push(deleteRows);
+      return { copyCsv, exportCsv, copyJson, copyExcel, deleteRows, all };
     }
 
-    const mainActions = createResultActions({ getRecords: () => records, filePrefix: 'soql' });
-    const { copyCsv: copyCsvBtn, exportCsv: exportCsvBtn, copyJson: copyJsonBtn, copyExcel: copyExcelBtn } =
-      mainActions;
+    const mainActions = createResultActions({
+      getRecords: () => records,
+      filePrefix: 'soql',
+      pruneDeleted: (ids) => {
+        records = records.filter((row) => {
+          const id = rowRecordId(row);
+          return id === null || !ids.has(id);
+        });
+        renderResults();
+      },
+    });
+    const {
+      copyCsv: copyCsvBtn,
+      exportCsv: exportCsvBtn,
+      copyJson: copyJsonBtn,
+      copyExcel: copyExcelBtn,
+      deleteRows: deleteRowsBtn,
+    } = mainActions;
     for (const btn of mainActions.all) btn.style.display = 'none';
 
     const footer = toolbar(doc, true);
@@ -1065,6 +2109,12 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     footer.appendChild(copyJsonBtn);
     footer.appendChild(copyExcelBtn);
     footer.appendChild(langGraphBtn);
+    // Last of the row-scoped actions, after every read-only one — the
+    // destructive control should never be the button next to your thumb.
+    if (deleteRowsBtn) {
+      footer.appendChild(deleteRowsBtn);
+      footer.appendChild(cancelDeleteBtn);
+    }
 
     if (historyEnabled) {
       const clearHistBtn = button({
@@ -1091,7 +2141,18 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       body,
       doc,
       width: '860px',
-      onClose: () => { view = null; activeTextarea = null; unsubscribeDescribe(); },
+      onClose: () => {
+        view = null;
+        activeTextarea = null;
+        unsubscribeDescribe();
+        // Closing the runner is the other way to stop a delete: the progress
+        // line and the failure report both live in a view that no longer
+        // exists, so continuing would destroy rows with nowhere to report it.
+        stopBulkDelete('closed');
+        // Drops the generator panel's document-level Escape listener. Without
+        // this it outlives the view and swallows the next surface's Escape.
+        closeNlPanel();
+      },
     });
 
     // Cancel any in-flight export and reset its UI. Idempotent; the running
@@ -1129,14 +2190,18 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         copyJsonBtn,
         copyExcelBtn,
         langGraphBtn,
+        ...(deleteRowsBtn ? [deleteRowsBtn] : []),
       ]) {
         btn.style.display = 'none';
       }
     }
 
-    function showError(message: string): void {
+    // `unknown`, not `string`: a failure from the API client carries the
+    // org's text and our appended guidance separately on `.userFacing`, and
+    // `err.message` at the call site flattens the two back together.
+    function showError(message: unknown): void {
       abortExport();
-      errorPanel.textContent = message;
+      setSfError(errorPanel, message, { doc });
       errorPanel.style.display = 'block';
       resultsWrap.style.display = 'none';
       explainPanel.style.display = 'none';
@@ -1144,7 +2209,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
     }
 
     function clearError(): void {
-      errorPanel.textContent = '';
+      clearSfError(errorPanel);
       errorPanel.style.display = 'none';
     }
 
@@ -1276,6 +2341,10 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       copyJsonBtn.style.display = 'inline-block';
       copyExcelBtn.style.display = 'inline-block';
       langGraphBtn.style.display = 'inline-block';
+      // Only offered when these rows actually carry Ids (AC-1). Re-evaluated on
+      // every render, so a Load-more that adds rows re-counts the preview and a
+      // query without Id takes the button away again.
+      paintDeleteButton(deleteRowsBtn, records);
       const canPaginate =
         !!lastEnvelope && lastEnvelope.done === false && !!lastEnvelope.nextRecordsUrl;
       loadMoreBtn.style.display = canPaginate && pagesLoaded < PAGE_CAP ? 'inline-block' : 'none';
@@ -1317,8 +2386,24 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
           filePrefix: `sosl-${group.sobject.replace(/[^A-Za-z0-9_]+/g, '_')}`,
           getRecords: () => group.records,
           scope: group.sobject,
+          // SOSL rows have their `attributes` envelope stripped by
+          // groupSearchRecords, so the group's own heading is the only place
+          // the object name survives. Without this the delete plan would refuse
+          // the rows as 'unknown-object' rather than guess.
+          sobject: group.sobject,
+          pruneDeleted: (ids) => {
+            group.records = group.records.filter((row) => {
+              const id = rowRecordId(row);
+              return id === null || !ids.has(id);
+            });
+            // Drop a group with nothing left rather than render an object
+            // heading over an empty table.
+            groups = groups.filter((g) => g.records.length > 0);
+            renderGroupedResults();
+          },
         });
         for (const btn of groupActions.all) head.appendChild(btn);
+        paintDeleteButton(groupActions.deleteRows, group.records, group.sobject);
         section.appendChild(head);
         section.appendChild(buildRecordsTable(group.records));
         resultsWrap.appendChild(section);
@@ -1455,7 +2540,15 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         return;
       }
       abortExport(); // a fresh run supersedes any in-flight export
+      // …and so does it supersede an in-flight delete: the new result set will
+      // replace the rows the delete is working through, and a progress line for
+      // rows that are no longer on screen is worse than no progress line.
+      stopBulkDelete('superseded');
       clearError();
+      // The previous delete's report describes rows that are about to be
+      // replaced; leaving it up next to a fresh result set reads as if the new
+      // rows failed.
+      clearDeleteReport();
       setBusy(true);
       status.textContent = 'Running…';
       const t0 = Date.now();
@@ -1501,7 +2594,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
           resource: soql,
           status: 'failed',
         });
-        showError(err instanceof Error ? err.message : String(err));
+        showError(err);
         status.textContent = '';
       } finally {
         setBusy(false);
@@ -1521,6 +2614,9 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
       copyJsonBtn.style.display = 'none';
       copyExcelBtn.style.display = 'none';
       langGraphBtn.style.display = 'none';
+      // Same reason as the rest: a Delete bound to a result set that is no
+      // longer on screen is the worst possible stale button.
+      if (deleteRowsBtn) deleteRowsBtn.style.display = 'none';
       if (plans.length === 0) {
         const empty = doc.createElement('div');
         empty.classList.add('sfdt-prose', 'sfdt-muted');
@@ -1597,7 +2693,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         renderPlan(plans);
         status.textContent = `⏱ ${Date.now() - t0} ms · query plan`;
       } catch (err) {
-        showError(err instanceof Error ? err.message : String(err));
+        showError(err);
         status.textContent = '';
       } finally {
         setBusy(false);
@@ -1629,7 +2725,7 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
         } rows`;
         renderResults();
       } catch (err) {
-        showError(err instanceof Error ? err.message : String(err));
+        showError(err);
       } finally {
         loadMoreBtn.disabled = false;
       }
@@ -2318,7 +3414,12 @@ export function createSoqlRunnerFeature(options: SoqlRunnerOptions = {}): SoqlRu
           return;
         }
         const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-        downloadBlob(doc, `soql-all-${stamp}.csv`, new Blob(result.parts, { type: 'text/csv' }));
+        triggerDownloadBlob(
+          doc,
+          `soql-all-${stamp}.csv`,
+          new Blob(result.parts, { type: 'text/csv' }),
+          'text/csv',
+        );
         status.textContent = `Exported ${result.rows} row${result.rows === 1 ? '' : 's'} across ${result.pages} page${result.pages === 1 ? '' : 's'}`;
         showToast(`Exported ${result.rows} rows as CSV`, { doc, kind: 'success' });
       } catch (err) {
@@ -2404,6 +3505,7 @@ export function _soqlRunnerTestApi() {
     recordsToJson,
     recordsToTsv,
     generateLangGraphNode,
+    downloadDeleteBackup,
     readSoqlHistory,
     writeSoqlHistory,
     pushSoqlHistory,

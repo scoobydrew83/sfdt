@@ -155,7 +155,14 @@ describe('soap-explore — UI', () => {
 
     await new Promise((r) => setTimeout(r, 0));
     expect(api.apiSoap).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain('Payload is not valid JSON');
+    // The parser's own words, then ours, as separate nodes — see the matching
+    // case in rest-explore.test.ts for why the concatenated string went.
+    const panel = document.querySelector('.sfdt-console.sfdt-error');
+    expect(panel?.getAttribute('role')).toBe('alert');
+    expect(panel?.querySelector('.sfdt-sf-error-text')?.textContent).toContain('JSON at position');
+    expect(panel?.querySelector('.sfdt-sf-error-note')?.textContent).toBe(
+      'The payload must be valid JSON.',
+    );
   });
 
   it('requires an operation name', async () => {

@@ -130,7 +130,28 @@ describe('ai-assistant — metadata loading branches', () => {
     const feature = createAiAssistantFeature({ api, library: fakeLibrary() });
     feature.onActivate?.();
     await flush();
-    expect(document.querySelector('.sfdt-ai-panel-body')?.textContent).toContain('Error: 403 Forbidden');
+    // Was an unstyled `Error: …` line with no role; it is now the shared error
+    // panel, so the org's wording stands alone and the failure is announced.
+    const panel = document.querySelector('.sfdt-ai-panel-body .sfdt-console.sfdt-error');
+    expect(panel?.getAttribute('role')).toBe('alert');
+    expect(panel?.textContent).toBe('403 Forbidden');
+  });
+
+  it('still says something when the throw carries no value', async () => {
+    // `throw undefined` is legal, and renderSfError deliberately renders NOTHING
+    // for it — an empty panel must not be a live alert region. Swapping the
+    // "Fetching…" line for that empty panel would leave a blank view with no
+    // sign anything had failed.
+    const api = fakeApi({
+      getFlowMetadata: vi.fn(async () => {
+        throw undefined;
+      }) as unknown as SalesforceApiClient['getFlowMetadata'],
+    });
+    createAiAssistantFeature({ api, library: fakeLibrary() }).onActivate?.();
+    await flush();
+    const panel = document.querySelector('.sfdt-ai-panel-body .sfdt-console.sfdt-error');
+    expect(panel?.getAttribute('role')).toBe('alert');
+    expect(panel?.textContent).toBe('Could not load Flow metadata.');
   });
 });
 

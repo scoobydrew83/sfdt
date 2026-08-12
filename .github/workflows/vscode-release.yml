@@ -29,6 +29,9 @@ concurrency:
 
 jobs:
   publish:
+    # Publishing runs from this repo only. Other clones share this branch, so
+    # without the guard a mirrored push would try to release too.
+    if: github.repository == 'scoobydrew83/sfdt'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production

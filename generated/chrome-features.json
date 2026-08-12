@@ -518,6 +518,34 @@
       "bridgeRequired": false
     },
     {
+      "id": "soql-bulk-delete",
+      "name": "Bulk delete from SOQL results",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": false,
+      "workspace": false,
+      "sideButton": false,
+      "bridgeRequired": false
+    },
+    {
+      "id": "soql-nl-generate",
+      "name": "Generate SOQL from a description (AI)",
+      "contexts": [
+        "setup_flows",
+        "setup_other",
+        "flow_builder",
+        "flow_trigger_explorer"
+      ],
+      "enabledByDefault": false,
+      "workspace": false,
+      "sideButton": false,
+      "bridgeRequired": true
+    },
+    {
       "id": "soql-runner",
       "name": "SOQL Query Runner",
       "contexts": [

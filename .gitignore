@@ -41,13 +41,26 @@ skills/*-workspace/
 skills/*/evals/*
 !skills/*/evals/evals.json
 
+# Private working notes — separate repo: scoobydrew83/sfdt-work
+.work/
+
+# Session verdict drop-box, consumed and deleted by the Stop hook in
+# .claude/settings.json. Never commit one: a stale file re-records the same
+# verdict every session and manufactures the >=3 occurrences the improver gates on.
+VERDICT.md
+
 # Git worktrees
 .worktrees/
+.claude/worktrees/
 .gemini_security/
 codex.js
 .superpowers/
 .playwright-mcp/
 logs/
+# Process skills live in the private .work/ repo; this is a symlink to them.
+# Both lines are needed: `skills/*` covers a real directory's contents, and
+# `skills` covers the symlink itself (git tracks a symlink as a file).
+.claude/skills
 .claude/skills/*
 .agents/
 .stfolder/

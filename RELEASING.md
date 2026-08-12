@@ -71,15 +71,19 @@ The dist-tag is removed and the versions deprecated automatically when the PR cl
 Only if CI is down or a publish job is unrecoverable. Replicate the job's exact order:
 
 ```bash
-git checkout main && git pull && npm ci
+git checkout main && git pull --ff-only public main && npm ci
 npm run build:gui
 npm publish --workspace=@sfdt/flow-core --provenance --access public
 npm publish --provenance --access public                      # @sfdt/cli
 npm publish --workspace=@sfdt/plugin --provenance --access public
-git tag vX.Y.Z && git push --tags
-git tag -f v0 vX.Y.Z && git push -f origin v0                 # floating action tag
-gh release create vX.Y.Z --generate-notes
+git tag vX.Y.Z && git push public vX.Y.Z
+git tag -f v0 vX.Y.Z && git push -f public v0                 # floating action tag
+gh release create vX.Y.Z --repo scoobydrew83/sfdt --generate-notes
 ```
+
+> Everything published ships from the `public` remote — check `git remote -v`
+> before pushing tags. Never `git push --tags`: it pushes every local tag, not
+> just the release you meant.
 
 Then bump the Homebrew tap manually (`shasum -a 256` of the npm tarball → update the tap repo)
 and dispatch `docker-publish.yml` with the version. Prefer letting CI self-heal on the next
@@ -136,19 +140,37 @@ Releases promote `develop` to `main` **wholesale** — CLI, flow-core, plugin, e
 VS Code together. Never cut a side release branch and never cherry-pick a subset; both
 re-drift the branches.
 
-1. Land the version bump + CHANGELOG + lockfile sync on `develop` (normal PR).
-2. Open the promote PR `develop → main`. Merge it as a **merge commit — never squash**. Squashing rewrites the commits, so `develop` and `main` permanently disagree and every later PR shows CONFLICTING.
+Releases ship from the `public` remote (`scoobydrew83/sfdt`). A `pre-push` hook
+rejects anything but `develop`, `main`, and `v*`/`ext-v*`/`vscode-v*` tags going
+there, so there is no side release branch — `develop → main` is the only path
+into `main`.
+
+1. Land the version bump + CHANGELOG + lockfile sync on `develop`, then publish it:
+
+   ```bash
+   git pull --ff-only public develop
+   git push public develop
+   ```
+
+2. Open the promote PR `develop → main` **on public**. Merge it as a **merge commit — never squash**. Squashing rewrites the commits, so `develop` and `main` permanently disagree and every later PR shows CONFLICTING.
+
+   ```bash
+   gh pr create --repo scoobydrew83/sfdt --base main --head develop
+   ```
+
 3. Fast-forward `develop` back onto `main` so both sit at the same commit:
 
    ```bash
-   git checkout develop && git pull
-   git merge --ff-only origin/main && git push
+   git checkout develop && git pull --ff-only public develop
+   git merge --ff-only public/main
+   git push public develop
    ```
 
-4. Verify:
+4. Verify — against the `public` refs, which are the ones that shipped:
 
    ```bash
-   git rev-list --left-right --count main...develop   # must print: 0	0
+   git fetch public
+   git rev-list --left-right --count public/main...public/develop   # must print: 0	0
    ```
 
 **The release is not done until that check reads 0/0.** In v0.17.0 the promote step was
@@ -219,8 +241,11 @@ publish flow-core at the required version immediately, then verify
 ### Floating Action tag (`v0`) points at a broken release
 
 ```bash
-git tag -f v0 vX.Y.(Z-1) && git push -f origin v0    # back to last-good
+git tag -f v0 vX.Y.(Z-1) && git push -f public v0    # back to last-good
 ```
+
+Push to `public` — consumers resolve `v0` from the published repo, so moving the
+tag anywhere else leaves the broken release live.
 
 Leave the immutable `vX.Y.Z` tag alone. Ship a patch release; its publish job moves `v0`
 forward again.

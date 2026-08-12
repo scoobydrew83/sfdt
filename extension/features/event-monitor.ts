@@ -10,6 +10,7 @@ import { registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { setTone, button, toolbar } from '../lib/ui-controls.js';
+import { clearSfError, setSfError } from '../ui/panels.js';
 import { copyToClipboard } from '../ui/clipboard.js';
 
 const EVENT_MONITOR_SETTINGS_SCHEMA = z.object({
@@ -228,6 +229,7 @@ export function createEventMonitorFeature(options: {
       limitsContainer.style.display = showMetrics ? 'block' : 'none';
     }
     if (showMetrics && limitsContainer) {
+      clearSfError(limitsContainer);
       limitsContainer.textContent = 'Loading limits...';
       try {
         const res = await api.limits();
@@ -246,8 +248,12 @@ export function createEventMonitorFeature(options: {
           limitsContainer!.appendChild(p);
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        limitsContainer.textContent = `Failed to load limits: ${message}`;
+        // The error object, not `err.message`: a failure from
+        // lib/salesforce-api.ts carries the org's text and our guidance as
+        // separate parts on `.userFacing`, and flattening it here is the #308
+        // defect. Until C-FIX-4 round 4 this rendered as bare text in a
+        // hand-styled div — no class, no role, no white-space rule.
+        setSfError(limitsContainer, err, { doc });
       }
     }
   }

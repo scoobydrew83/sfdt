@@ -61,6 +61,8 @@ import {
   createCommandPaletteFeature,
   createPaletteOpener,
 } from '../features/command-palette.js';
+import { createSoqlBulkDeleteFeature } from '../features/soql-bulk-delete.js';
+import { createSoqlNlGenerateFeature } from '../features/soql-nl-generate.js';
 
 const SALESFORCE_HOST_PATTERN =
   /^https:\/\/[^/]+\.(salesforce\.com|salesforce-setup\.com|my\.salesforce\.com|lightning\.force\.com)\//i;
@@ -207,6 +209,17 @@ export default defineContentScript({
     // enabled-for-context action. Metadata-only feature so it gets an options
     // toggle + kill-switch id; the overlay is opened imperatively below.
     registry.register(createCommandPaletteFeature());
+    // Bulk delete from a SOQL/SOSL result set (C-P4-2): metadata-only, like the
+    // palette above — features/soql-runner.ts reads its enablement when it
+    // builds a result toolbar. Registered here so it has a kill-switch id and
+    // an options toggle. Ships OFF (`enabledByDefault: false`), and has no
+    // FEATURE_ICONS entry, so it never appears in the ⚡ menu or the palette.
+    registry.register(createSoqlBulkDeleteFeature());
+    // C-P4-5. Same shape as the line above: a control that lives inside the
+    // SOQL runner, registered here purely so it has a kill-switch id and an
+    // options toggle. Ships OFF (`enabledByDefault: false`) and has no
+    // FEATURE_ICONS entry, so it never appears in the ⚡ menu or the palette.
+    registry.register(createSoqlNlGenerateFeature());
 
     setContextSource(buildContextToFeatures(registry.listManifests()));
 

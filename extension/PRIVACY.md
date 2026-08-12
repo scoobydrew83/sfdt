@@ -1,6 +1,6 @@
 # Privacy Policy — SFDT for Salesforce (`@sfdt/extension`)
 
-**Last updated: 2026-06-25**
+**Last updated: 2026-08-12**
 
 This Chrome extension is designed for Salesforce admins and developers. Its full source code is published in the public [`sfdt` repository on GitHub](https://github.com/scoobydrew83/sfdt) — you can verify every claim below against the code.
 
@@ -76,6 +76,8 @@ The Workspace org picker and the Switch Org feature read your existing Salesforc
 To reach the API of the org you're viewing — including orgs served through Microsoft Defender (`.mcas.ms`) proxies, US GovCloud (`.mil`), or Salesforce China (`.sfcrmapps.cn`) — the background worker resolves the correct instance host and remembers it per host in memory-only session storage (`chrome.storage.session`, cleared when the browser closes). This cache stores only the resolved hostname and org id; it never stores the session cookie. In an incognito window the extension keeps a **separate** session (`incognito: "split"`), so incognito and normal browsing never share resolved sessions.
 
 When you use a feature that calls the local bridge (e.g. "Deploy this Flow"), the extension sends the Flow's developer name (e.g. `My_Flow`) to `http://127.0.0.1:7654` so the local sfdt CLI on your machine can run the deploy. The data goes from your browser to a process running on the same machine — it never leaves your device.
+
+**Generate query (SOQL Runner) — off by default.** When you switch this on and press Generate, the extension sends the description you typed plus a *schema table* for the objects involved — object and field API names, labels, data types, whether a field is required, and its inline help text — through the same local bridge. It does **not** send any record data: the prompt is assembled from the object describe only, and a check refuses the send outright if a value from the results table on screen ever appears in the assembled text. What the CLI then does with that prompt is the AI section below: it goes to whichever provider *you* configured, under your own API key. If you have not started the bridge, or the CLI project has `"features.ai": false`, nothing is sent and the panel tells you what to enable.
 
 ---
 

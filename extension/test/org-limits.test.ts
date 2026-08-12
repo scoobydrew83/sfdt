@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createOrgLimitsFeature, _orgLimitsTestApi } from '../features/org-limits.js';
-import type { SalesforceApiClient } from '../lib/salesforce-api.js';
+import { SalesforceRestError, type SalesforceApiClient } from '../lib/salesforce-api.js';
 
 const { shapeLimits, bandFor } = _orgLimitsTestApi();
 
@@ -102,5 +102,38 @@ describe('org-limits — modal', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(document.body.textContent).toContain('boom');
+  });
+
+  it('announces the failure to a screen reader', async () => {
+    // This feature was one of fifteen that hand-rolled the error block and set
+    // the classes without `role="alert"` — visually a red panel, silence to
+    // assistive tech. It now comes from ui/panels.ts, which cannot forget.
+    //
+    // A real SalesforceRestError, not a hand-made one: the split into org text
+    // and our guidance travels on `.userFacing`, and passing `err.message`
+    // instead of the error would flatten it back into one node. Driving the
+    // real object is what proves the whole chain — client → feature → panel —
+    // keeps the two apart.
+    setSalesforceUrl();
+    const ORG = 'REQUEST_LIMIT_EXCEEDED: TotalRequests Limit exceeded.';
+    const NOTE = "Check Setup › Company Information › 'API Requests, Last 24 Hours'.";
+    const api = fakeApi({
+      limits: vi.fn(async () => {
+        throw new SalesforceRestError([ORG, NOTE].join('\n'), 403, [], {
+          orgText: ORG,
+          notes: [NOTE],
+        });
+      }) as unknown as SalesforceApiClient['limits'],
+    });
+    await createOrgLimitsFeature({ api }).onActivate?.();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const panel = document.querySelector('.sfdt-console.sfdt-error');
+    expect(panel?.getAttribute('role')).toBe('alert');
+    // …and the org's text and the guidance are separate nodes, so neither can
+    // collapse into the other whatever CSS the surface carries.
+    expect(panel?.querySelector('.sfdt-sf-error-text')?.textContent).toBe(ORG);
+    expect(panel?.querySelector('.sfdt-sf-error-note')?.textContent).toBe(NOTE);
   });
 });

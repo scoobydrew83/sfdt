@@ -95,4 +95,27 @@ describe('runFixLoop history', () => {
       await fs.remove(logDir);
     }
   });
+
+  // The suite scrubs SFDT_HARNESS_TELEMETRY (test/setup-env.js) so a plain
+  // `npm test` never appends synthetic rows to the tracked JSONL. Set it
+  // explicitly here so the mirroring path is still covered — and assert that
+  // `org` stays out of it, since that file is committed to a public repo.
+  it('mirrors an agent-fix row to SFDT_HARNESS_TELEMETRY without leaking org', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-tele-'));
+    const telemetry = path.join(dir, 'telemetry.jsonl');
+    process.env.SFDT_HARNESS_TELEMETRY = telemetry;
+    try {
+      const validate = vi.fn().mockResolvedValueOnce({ ok: true, output: '' });
+      await runFixLoop({ failureOutput: 'boom', config: { ...baseConfig, logDir: dir }, org: 'dev', validate });
+
+      const rows = (await fs.readFile(telemetry, 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ type: 'agent-fix', status: 'pass' });
+      expect(rows[0].org).toBeUndefined();
+      expect(rows[0].timestamp).toEqual(expect.any(String));
+    } finally {
+      delete process.env.SFDT_HARNESS_TELEMETRY;
+      await fs.remove(dir);
+    }
+  });
 });

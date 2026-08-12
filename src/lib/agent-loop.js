@@ -3,6 +3,7 @@ import { runAiPrompt, providerSupportsAgenticTools } from './ai.js';
 import { getPrompt } from './prompts.js';
 import { redactSensitiveData } from './audit-logger.js';
 import { recordRun } from './run-history.js';
+import { mirrorTelemetry } from './harness-telemetry.js';
 
 /**
  * Bounded coding-agent auto-fix loop for failed deployments.
@@ -51,13 +52,19 @@ export async function runFixLoop({ failureOutput, config, projectRoot, org, vali
   // not discarded by the caller. Best-effort (recordRun never throws).
   const finish = async (outcome) => {
     const logDir = config?.logDir ?? (projectRoot ? path.join(projectRoot, 'logs') : null);
-    await recordRun(logDir, {
+    const base = {
       type: 'agent-fix',
-      org,
-      durationMs: Date.now() - started,
       status: outcome.fixed ? 'pass' : 'fail',
       summary: { turns: outcome.turns.length, ran: outcome.ran },
-    });
+    };
+    await recordRun(logDir, { ...base, org, durationMs: Date.now() - started });
+    // Mirror into the tracked JSONL so agent-fix rows reach the weekly improver
+    // in CI — the db above is gitignored and never leaves this machine. Only
+    // when SFDT_HARNESS_TELEMETRY names a path (the sfdt dev checkout); see
+    // harness-telemetry.js for why this is opt-in rather than automatic.
+    // `org` is deliberately not mirrored: that file is committed to a public
+    // repo, and the improver clusters by category, never by org.
+    mirrorTelemetry({ ...base, timestamp: new Date().toISOString() }, process.env.SFDT_HARNESS_TELEMETRY);
     return outcome;
   };
 

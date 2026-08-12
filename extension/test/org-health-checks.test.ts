@@ -8,6 +8,20 @@ import {
 import { createOrgHealthFeature } from '../features/org-health.js';
 import { setWorkspaceViewSink } from '../ui/present-view.js';
 import type { SalesforceApiClient } from '../lib/salesforce-api.js';
+import { SFDT_COMPONENT_CSS } from '../lib/ui-styles.js';
+
+// The classes the shared sheet says preserve newlines, read out of the sheet —
+// the same derivation `test/error-render-newlines.test.ts` makes, for the same
+// reason: a test that vouches for '.sfdt-msg' by name keeps vouching for it
+// after someone deletes the `white-space` declaration from the rule.
+const WHITE_SPACE_CLASSES: ReadonlySet<string> = (() => {
+  const out = new Set<string>();
+  for (const rule of SFDT_COMPONENT_CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    if (!/white-space:\s*(?:pre|pre-line|pre-wrap)\b/.test(rule[2]!)) continue;
+    for (const sel of rule[1]!.matchAll(/\.(sfdt-[\w-]+)/g)) out.add(sel[1]!);
+  }
+  return out;
+})();
 
 const {
   coverageBand,
@@ -205,5 +219,51 @@ describe('org-health-live feature', () => {
     const text = document.body.textContent ?? '';
     expect(text).toContain('Could not run: INVALID_TYPE: coverage');
     expect(text).toContain('Apex API-version spread'); // sibling check still ran
+  });
+
+  it("keeps the guidance line on its own line when a check's error is two lines", async () => {
+    // #308, inside `features/` — the directory the newlines guard scans — and
+    // invisible to it for four rounds. The chain is four hops and every one of
+    // them is ordinary code:
+    //
+    //   lib/salesforce-api.ts   throws `${headline}\n${advice}`, because a
+    //                           Salesforce error has carried its "what to do"
+    //                           line on a second line since sf-error-guidance.ts;
+    //   run() above             folds it into `summary` as `Could not run: …`;
+    //   renderCheckRow()        writes `check.summary` into a span;
+    //   lib/ui-styles.ts        gives `.sfdt-muted` a font and a colour and no
+    //                           `white-space` rule at all.
+    //
+    // So the guidance ran into the org's own text, on screen, for real. The
+    // guard could not see it because `summary` is a struct FIELD written in one
+    // function and read in another — the cross-function funnel both guards
+    // document as open — so the enforcement for this one is here, as a rendered
+    // DOM fact, rather than as another source pattern.
+    //
+    // Asserted against the sheet rather than against the string 'sfdt-msg':
+    // vouching for a class name from a hardcoded list keeps vouching for it
+    // after someone deletes the declaration from the rule.
+    const toolingQuery = vi.fn(async (soql: string) => {
+      if (soql.includes('ApexOrgWideCoverage'))
+        throw new Error(
+          "INVALID_TYPE: sObject type 'ApexOrgWideCoverage' is not supported.\nCheck the object exists and your user can see it.",
+        );
+      return envelope([{ ApiVersion: 62 }]);
+    });
+    const feature = createOrgHealthFeature({ api: fakeApi({ toolingQuery }) });
+    await feature.onActivate?.();
+    await flush();
+
+    const summary = [...document.querySelectorAll('span')].find((el) =>
+      (el.textContent ?? '').startsWith('Could not run:'),
+    );
+    expect(summary, 'the failed check must render a summary').toBeDefined();
+    expect(summary!.textContent).toContain('\nCheck the object exists');
+    expect(
+      [...summary!.classList].some((c) => WHITE_SPACE_CLASSES.has(c)),
+      `the summary renders a multi-line org error but wears only [${[...summary!.classList].join(', ')}], ` +
+        `and the classes in the sheet that declare a white-space rule are [${[...WHITE_SPACE_CLASSES].join(', ')}] — ` +
+        'the guidance line will be collapsed onto the org text',
+    ).toBe(true);
   });
 });

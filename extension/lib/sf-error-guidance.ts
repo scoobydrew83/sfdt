@@ -148,29 +148,125 @@ export function buildUserFacingMessage(
   details: readonly SalesforceRestErrorDetail[] | null | undefined,
   status: number,
 ): string {
+  const { orgText, notes } = buildUserFacingParts(headline, details, status);
+  return [orgText, ...notes].join('\n');
+}
+
+/**
+ * A composed failure, kept in its parts: what the ORG said, and what WE added.
+ *
+ * `orgText` may itself be multi-line — an Apex compile error or a stack trace
+ * arrives that way — which is exactly why this type exists.
+ */
+export interface SfErrorParts {
+  /** The org's own wording, in full and never ours. */
+  orgText: string;
+  /** Only what we appended: codes, fields, advice, `Also:` records. */
+  notes: string[];
+}
+
+/**
+ * The same composition as `buildUserFacingMessage`, before it is flattened.
+ *
+ * The flattening is lossy and cannot be undone by re-reading the string: a
+ * first draft of the renderer took line one as the org's text and every line
+ * after it as ours, which is right for a single-line org message and WRONG for
+ * a multi-line one — it re-labels the org's own continuation lines as our
+ * advice and paints them in our colour. That is the PR #308 defect inverted,
+ * so the parts travel with the error instead of being guessed at the far end.
+ */
+export function buildUserFacingParts(
+  headline: string,
+  details: readonly SalesforceRestErrorDetail[] | null | undefined,
+  status: number,
+): SfErrorParts {
   const records = Array.isArray(details) ? details.filter((d) => d && typeof d === 'object') : [];
-  const lines: string[] = [headline];
+  const notes: string[] = [];
 
   if (records.length === 0) {
     // No structured record — say only what the status establishes.
     const advice = guidanceForStatus(status);
-    if (advice) lines.push(advice);
-    return lines.join('\n');
+    if (advice) notes.push(advice);
+    return { orgText: headline, notes };
   }
 
   const [first, ...rest] = records;
   const firstAnnotation = annotate(first!);
-  if (firstAnnotation) lines.push(firstAnnotation);
+  if (firstAnnotation) notes.push(firstAnnotation);
 
   // The org can return several records; the headline only ever showed the
   // first. The rest are real errors about the same request and must not be
-  // silently dropped.
+  // silently dropped. They are the ORG's words, but they reach the renderer
+  // through this list, so they are prefixed to say so.
   for (const record of rest) {
     const message = typeof record.message === 'string' ? record.message : '';
     const annotation = annotate(record);
-    if (message) lines.push(`Also: ${message}`);
-    if (annotation) lines.push(annotation);
+    if (message) notes.push(`Also: ${message}`);
+    if (annotation) notes.push(annotation);
   }
 
-  return lines.join('\n');
+  return { orgText: headline, notes };
+}
+
+/**
+ * An error that carried its composition with it rather than joining it away.
+ * `SalesforceRestError` implements this; nothing else has to.
+ *
+ * This is an in-page property, not a wire field: `structuredClone` and
+ * `postMessage` do not carry it (they do not carry an Error's own properties at
+ * all), so it would be lost by anything crossing the worker boundary. Nothing
+ * does today — `buildRequestError` runs page-side, after the proxy has already
+ * resolved a plain `SfApiFetchResponse` — but a future move of error
+ * construction INTO the worker would silently drop the split and fall back to
+ * the flattened `.message`, which renders as one node rather than wrongly.
+ */
+export interface CarriesUserFacingParts {
+  readonly userFacing: SfErrorParts;
+}
+
+/**
+ * The parts to render for whatever a `catch` caught.
+ *
+ * When the error carried its composition (every failure raised by
+ * `lib/salesforce-api.ts`), the split is exact. When it did not — a plain
+ * string, a `TypeError`, a message a feature composed itself — this returns the
+ * whole thing as the ORG's text and adds nothing. Guessing where our words
+ * start is what produced the mislabelling described on `buildUserFacingParts`;
+ * a renderer that declines to guess loses nothing, because the single node it
+ * emits is `pre-wrap` and keeps every newline the message already had.
+ */
+export function sfErrorParts(error: unknown): SfErrorParts {
+  const carried = (error as Partial<CarriesUserFacingParts> | null | undefined)?.userFacing;
+  if (
+    carried &&
+    typeof carried === 'object' &&
+    typeof carried.orgText === 'string' &&
+    Array.isArray(carried.notes)
+  ) {
+    return {
+      orgText: carried.orgText,
+      notes: carried.notes.filter((n): n is string => typeof n === 'string' && n.trim() !== ''),
+    };
+  }
+  return { orgText: errorText(error), notes: [] };
+}
+
+/**
+ * Normalises whatever a `catch` caught into a string.
+ *
+ * Scope, stated honestly: this is NOT a codebase-wide de-duplication.
+ * `err instanceof Error ? err.message : String(err)` is still written out by
+ * hand in 46 places across `features/`, `ui/`, `lib/` and `entrypoints/`, and
+ * this PR does not touch them — most feed a toast or a status line, not a
+ * panel. It exists so the shared error PATH (`sfErrorParts` below, and the one
+ * call site that needs a string beside the panel) has a single definition of
+ * what a non-`Error` throw looks like on screen. `null`/`undefined` produce
+ * nothing rather than the words "null"/"undefined", which is what lets a
+ * pre-built, still-empty panel be created with `renderSfError(null)`.
+ */
+export function errorText(error: unknown): string {
+  if (error === null || error === undefined) return '';
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return String(error);
 }

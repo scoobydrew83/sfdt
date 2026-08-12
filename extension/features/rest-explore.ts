@@ -12,7 +12,7 @@ import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { button, toolbar } from '../lib/ui-controls.js';
 import { openMenu } from '../ui/menu.js';
-import { errorPanel as buildErrorPanel } from '../ui/panels.js';
+import { clearSfError, renderSfError, setSfError } from '../ui/panels.js';
 import { createHistory } from '../lib/history.js';
 import { copyToClipboard } from '../ui/clipboard.js';
 
@@ -136,7 +136,7 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
     status.className = 'sfdt-muted';
     main.appendChild(status);
 
-    const errorPanel = buildErrorPanel('', doc);
+    const errorPanel = renderSfError(null, { doc });
     errorPanel.style.display = 'none';
     main.appendChild(errorPanel);
 
@@ -215,15 +215,18 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
       onClose: () => { view = null; },
     });
 
-    function showError(message: string): void {
-      errorPanel.textContent = message;
+    // `unknown`, not `string` — see the note on the SOQL runner's showError.
+    // `guidance` is OUR line, rendered as its own node below whatever the error
+    // itself said, so a caller never has to compose the two into one string.
+    function showError(message: unknown, guidance?: string): void {
+      setSfError(errorPanel, message, { doc, guidance });
       errorPanel.style.display = 'block';
       responsePane.style.display = 'none';
       copyBtn.style.display = 'none';
     }
 
     function clearError(): void {
-      errorPanel.textContent = '';
+      clearSfError(errorPanel);
       errorPanel.style.display = 'none';
     }
 
@@ -259,7 +262,7 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
           try {
             parsedBody = JSON.parse(bodyTextarea.value);
           } catch (err) {
-            showError(`Body is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+            showError(err, 'The request body must be valid JSON.');
             return;
           }
         }
@@ -286,7 +289,7 @@ export function createRestExploreFeature(options: RestExploreOptions = {}): Feat
             await pushRestHistory(entry);
           }
         } catch (err) {
-          showError(err instanceof Error ? err.message : String(err));
+          showError(err);
           status.textContent = '';
         } finally {
           sendBtn.disabled = false;

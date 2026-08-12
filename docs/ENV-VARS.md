@@ -59,6 +59,7 @@ These are read by the CLI itself rather than passed to shell scripts, so they ar
 | Variable | Effect |
 |----------|--------|
 | `SFDT_ALLOW_UNSAFE_CONFIG` | Set to exactly `1` to load the `.sfdt/config.json` keys that are otherwise refused: `plugins[]`, `pluginOptions.autoDiscover`, `mcp.salesforce.command`/`args`, a non-loopback `ai.baseURL`, and a notification channel's `headersEnv` beside a literal remote URL. See [ARCHITECTURE §18](./ARCHITECTURE.md#18-threat-boundaries) |
+| `SFDT_HARNESS_TELEMETRY` | Path to a JSONL file that `agent-loop.js` mirrors `agent-fix` rows into, on top of the machine-local run-history db. Unset in normal use — this exists for the sfdt source checkout, where the tracked `.harness/telemetry.jsonl` is what the weekly `harness-improver` workflow mines in CI. `org` is never mirrored, since that file is committed to a public repo. `tools/record-verdict.mjs` writes the same file via `--telemetry`, but redacts verdict criterion text into a `criteriaCount` on the way — the verbatim text goes to `--private-telemetry` (default `.work/telemetry.jsonl`, written only when that directory already exists) |
 
 `config.json` is committed by convention (`sfdt init` gitignores only `*.local.json`), so it
 arrives with whatever repository was cloned. The keys above execute code or choose where

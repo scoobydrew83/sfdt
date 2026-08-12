@@ -3,6 +3,18 @@ import { createOrgHealthFeature, bandFor, shapeChecks } from '../features/org-he
 import { describeFinding } from '@sfdt/flow-core';
 import type { SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 import type { SalesforceApiClient } from '../lib/salesforce-api.js';
+import { SFDT_COMPONENT_CSS } from '../lib/ui-styles.js';
+
+// Read out of the sheet, not listed here — see the same derivation in
+// test/error-render-newlines.test.ts and test/org-health-checks.test.ts.
+const WHITE_SPACE_CLASSES: ReadonlySet<string> = (() => {
+  const out = new Set<string>();
+  for (const rule of SFDT_COMPONENT_CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    if (!/white-space:\s*(?:pre|pre-line|pre-wrap)\b/.test(rule[2]!)) continue;
+    for (const sel of rule[1]!.matchAll(/\.(sfdt-[\w-]+)/g)) out.add(sel[1]!);
+  }
+  return out;
+})();
 
 function clearBody(): void {
   while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
@@ -92,6 +104,56 @@ describe('org-health — modal', () => {
     const body = document.body.textContent ?? '';
     expect(body).toContain('bridge offline');
     expect(body).toContain('sfdt ui');
+  });
+
+  it('keeps a snapshot summary on two lines when the CLI reports a two-line failure', async () => {
+    // The same field, the same span, the same missing rule as the live rows in
+    // org-health-checks.ts — these ones just arrive from the CLI snapshot
+    // instead of from a settled rejection. `sfdt audit` reports a failed check
+    // by putting the error text in `summary`, and a Salesforce error has been
+    // two lines since lib/sf-error-guidance.ts. Fixing only the live half would
+    // have left the identical bug one function away, which is the shape this
+    // line of work keeps shipping.
+    setSalesforceUrl();
+    const bridge = fakeBridge({
+      ok: true,
+      requestId: 'r1',
+      data: {
+        audit: {
+          timestamp: 't',
+          data: {
+            org: 'dev',
+            checks: [
+              {
+                id: 'mfa',
+                title: 'MFA coverage',
+                status: 'error',
+                summary:
+                  'INVALID_SESSION_ID: Session expired or invalid\nLog in again, then re-run the check.',
+                findings: [],
+              },
+            ],
+          },
+        },
+        monitor: null,
+      },
+    });
+    const feature = createOrgHealthFeature({
+      bridgeFactory: async () => bridge,
+      api: fakeLiveApi(),
+    });
+    await feature.onActivate?.();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('INVALID_SESSION_ID'));
+
+    const summary = [...document.querySelectorAll('span')].find((el) =>
+      (el.textContent ?? '').startsWith('INVALID_SESSION_ID'),
+    );
+    expect(summary, 'the failed check must render a summary').toBeDefined();
+    expect(summary!.textContent).toContain('\nLog in again');
+    expect(
+      [...summary!.classList].some((c) => WHITE_SPACE_CLASSES.has(c)),
+      `the summary renders a multi-line failure but wears only [${[...summary!.classList].join(', ')}]`,
+    ).toBe(true);
   });
 
   it('shows an empty hint when a snapshot has no checks', async () => {

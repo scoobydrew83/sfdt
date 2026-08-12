@@ -12,7 +12,7 @@ import { button, field, glyph, toolbar } from '../lib/ui-controls.js';
 import { createLimitTiles, pickLimitSnapshot } from '../ui/apex-limit-tiles.js';
 import { renderApexLogBody } from '../ui/apex-log-console.js';
 import { confirmDialog } from '../ui/confirm-dialog.js';
-import { errorPanel } from '../ui/panels.js';
+import { clearSfError, renderSfError, setSfError } from '../ui/panels.js';
 
 const DEBUG_LOG_SETTINGS_SCHEMA = z.object({
   pageSize: z.number().int().min(1).max(200).default(50),
@@ -240,7 +240,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
     // Org-side failure (session, permissions, a bad query). A div rather than a
     // <pre> on purpose: the log pane below is the only <pre> in this view, and
     // tests — like a user's eye — reach for it by that.
-    const errPanel = errorPanel('', doc);
+    const errPanel = renderSfError(null, { doc });
     errPanel.style.display = 'none';
     main.appendChild(errPanel);
 
@@ -316,6 +316,9 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       tr.setAttribute('aria-current', 'true');
       logPane.style.display = 'block';
       logPane.className = 'sfdt-console';
+      // The pane is reused, so a previous failure's role="alert" would still be
+      // on it — announcing the next log body as an error.
+      clearSfError(logPane);
       logPane.textContent = 'Loading log…';
       limits.render(null);
       try {
@@ -326,8 +329,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
         // costing a second fetch behind a second button.
         limits.render(pickLimitSnapshot(parseApexLog(raw).limits));
       } catch (err) {
-        logPane.className = 'sfdt-console sfdt-error';
-        logPane.textContent = err instanceof Error ? err.message : String(err);
+        setSfError(logPane, err, { doc });
       }
     }
 
@@ -447,6 +449,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       try {
         const result = await api.toolingQuery<ApexLogRow>(buildApexLogQuery(config.pageSize));
         loaded = result.records;
+        clearSfError(errPanel);
         errPanel.style.display = 'none';
         renderRows();
       } catch (err) {
@@ -454,7 +457,7 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
         while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
         selectedRow = null;
         status.textContent = '';
-        errPanel.textContent = err instanceof Error ? err.message : String(err);
+        setSfError(errPanel, err, { doc });
         errPanel.style.display = 'block';
       }
     }
@@ -475,38 +478,54 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
       return ids;
     }
 
-    // Bulk delete — clears ALL of the org's ApexLog rows (the standard "clear my
-    // debug logs" dev action), not just the loaded page.
-    async function deleteAll(): Promise<void> {
+    const logNoun = (n: number): string => `log${n === 1 ? '' : 's'}`;
+
+    /**
+     * Count every ApexLog in the org, with a busy affordance on the trigger.
+     *
+     * Split out of `deleteAll()`, and the split IS the fix rather than tidying.
+     * This phase is a genuinely slow paginated fetch that needs the button
+     * disabled; the confirm dialog that follows restores focus to whatever
+     * opened it, and `.focus()` on a disabled element is a specified no-op. One
+     * `disabled` held across both phases therefore cancels the focus restore —
+     * #326's B1, which was fixed in the SOQL runner and left live here, with
+     * the whole suite green. Moving a single line was not available: it would
+     * have taken the busy affordance off the fetch. Separating the two gives
+     * each phase its own, and `test/confirm-dialog-trigger-contract.test.ts`
+     * now fails if they are ever put back in one body.
+     *
+     * Returns null when the count failed; the user has already been told.
+     */
+    async function countAllLogIds(): Promise<string[] | null> {
+      // Disabling the FOCUSED element hands focus to <body> in a real browser,
+      // so the busy affordance would otherwise do exactly the damage the split
+      // prevents: the dialog captures `doc.activeElement` when it opens, and by
+      // then the trigger would no longer be it. Remembered against the same
+      // expression the dialog reads, and put back with the button.
+      const hadFocus = doc.activeElement === deleteBtn;
       deleteBtn.disabled = true;
-      let ids: string[];
       try {
         status.textContent = 'Counting logs…';
-        ids = await fetchAllLogIds();
+        return await fetchAllLogIds();
       } catch (err) {
         showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
+        return null;
+      } finally {
+        // Re-enabled BEFORE anything can open a dialog. See above.
         deleteBtn.disabled = false;
-        await load();
-        return;
+        // …and only when the disable is what lost the focus. If the user moved
+        // it somewhere real while the org was being counted, leave it there —
+        // a busy affordance that yanks focus back is its own bug.
+        if (hadFocus && (doc.activeElement === null || doc.activeElement === doc.body)) {
+          deleteBtn.focus();
+        }
       }
-      if (ids.length === 0) {
-        showToast('No debug logs to delete.', { doc, kind: 'info' });
-        deleteBtn.disabled = false;
-        await load();
-        return;
-      }
-      const noun = `log${ids.length === 1 ? '' : 's'}`;
-      const ok = await confirmDialog({
-        doc,
-        title: 'Delete debug logs',
-        message: `Delete ${ids.length} ${noun}?`,
-        confirmLabel: 'Delete',
-      });
-      if (!ok) {
-        deleteBtn.disabled = false;
-        return;
-      }
-      status.textContent = `Deleting ${ids.length} ${noun}…`;
+    }
+
+    /** The destructive phase. The trigger goes disabled HERE, past the confirm. */
+    async function deleteLogs(ids: readonly string[]): Promise<void> {
+      deleteBtn.disabled = true;
+      status.textContent = `Deleting ${ids.length} ${logNoun(ids.length)}…`;
       try {
         // Chunked concurrency so a large org doesn't fire thousands of requests
         // at once (or serialise into a multi-minute hang). ponytail: fixed
@@ -517,12 +536,47 @@ export function createDebugLogViewerFeature(options: DebugLogViewerOptions = {})
             ids.slice(i, i + CHUNK).map((id) => api.apiRequest('DELETE', buildLogDeleteEndpoint(id))),
           );
         }
-        showToast(`Deleted ${ids.length} ${noun}.`, { doc, kind: 'success' });
+        showToast(`Deleted ${ids.length} ${logNoun(ids.length)}.`, { doc, kind: 'success' });
       } catch (err) {
         showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
       } finally {
         deleteBtn.disabled = false;
         await load();
+      }
+    }
+
+    // One run at a time. This is the re-entrancy guard the trigger's `disabled`
+    // used to be, and it is a flag for the reason ui/confirm-dialog.ts's caller
+    // contract gives: a disabled trigger cannot be focused, so it cannot be the
+    // thing that keeps a modal from being opened twice.
+    let deleteInFlight = false;
+
+    // Bulk delete — clears ALL of the org's ApexLog rows (the standard "clear my
+    // debug logs" dev action), not just the loaded page.
+    async function deleteAll(): Promise<void> {
+      if (deleteInFlight) return;
+      deleteInFlight = true;
+      try {
+        const ids = await countAllLogIds();
+        if (ids === null) {
+          await load();
+          return;
+        }
+        if (ids.length === 0) {
+          showToast('No debug logs to delete.', { doc, kind: 'info' });
+          await load();
+          return;
+        }
+        const ok = await confirmDialog({
+          doc,
+          title: 'Delete debug logs',
+          message: `Delete ${ids.length} ${logNoun(ids.length)}?`,
+          confirmLabel: 'Delete',
+        });
+        if (!ok) return;
+        await deleteLogs(ids);
+      } finally {
+        deleteInFlight = false;
       }
     }
 

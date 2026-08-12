@@ -61,6 +61,8 @@ import { createApiVersionAuditFeature } from '../features/api-version-audit.js';
 import { createCommandPaletteFeature } from '../features/command-palette.js';
 // --- Background/options-only feature (entrypoints/background.ts + options) ---
 import { createContextMenuInspectFeature } from '../features/context-menu-inspect.js';
+import { createSoqlBulkDeleteFeature } from '../features/soql-bulk-delete.js';
+import { createSoqlNlGenerateFeature } from '../features/soql-nl-generate.js';
 // --- Workspace-only factories (entrypoints/app/main.ts) ---
 import { createApexTestRunnerFeature } from '../features/apex-test-runner.js';
 import { BRIDGE_REQUIRED } from '../lib/feature-defaults.js';
@@ -137,6 +139,14 @@ function instantiateAllFeatures(): Feature[] {
     // command-palette (P2-2): metadata-only overlay feature (no icon / side
     // button); opened imperatively from content.ts, kill-switchable like any other.
     createCommandPaletteFeature(),
+    // soql-bulk-delete (C-P4-2): metadata-only kill switch + options toggle for
+    // the SOQL runner's destructive result-toolbar action. Ships OFF — see the
+    // SHIPS_OFF_BY_DESIGN allowlist below.
+    createSoqlBulkDeleteFeature(),
+    // soql-nl-generate (C-P4-5): metadata-only kill switch + options toggle for
+    // the SOQL runner's "Generate query" prompt panel. Ships OFF — see the
+    // SHIPS_OFF_BY_DESIGN allowlist below.
+    createSoqlNlGenerateFeature(),
     // context-menu-inspect (P1-8): a worker-backed feature — its "Inspect this
     // record" menu lives in entrypoints/background.ts and its toggle in the
     // options page; it injects no content-script UI (no icon, no side button).
@@ -223,23 +233,52 @@ describe('feature-manifests.json parity', () => {
 
 // `enabledByDefault` became authoritative at runtime — before this, an absent
 // stored preference meant "enabled" no matter what the manifest said. Honouring
-// the flag is only behaviour-preserving because no shipped feature declares
-// false; these tests make that a checked invariant instead of an assumption, so
-// a future `enabledByDefault: false` cannot silently switch a feature off for
-// existing users without someone updating this file on purpose.
-describe('enabledByDefault is authoritative without flipping any shipped feature off', () => {
+// the flag is only behaviour-preserving for features that ship ON; these tests
+// make the ships-OFF set an explicit, reviewed ALLOWLIST rather than an
+// assumption, so a future `enabledByDefault: false` cannot silently switch a
+// feature off for existing users without someone editing this list on purpose.
+//
+// Membership is a product decision, not a technical one: a feature belongs here
+// only if shipping it on by default would do something the user did not ask
+// for. Adding an id is a deliberate act, and reviewers should treat it as one.
+const SHIPS_OFF_BY_DESIGN: readonly string[] = [
+  // C-P4-2. Destructive and irreversible: it deletes org records in bulk. Every
+  // other feature in the extension either reads, or writes something the user
+  // typed into it. Opt-in is the whole point — see features/soql-bulk-delete.ts.
+  'soql-bulk-delete',
+  // C-P4-5. It moves data OUT of the browser: the user's description plus the
+  // selected objects' field metadata go through the bridge to whatever provider
+  // the CLI is configured with. Nothing destructive happens, but an egress the
+  // user did not ask for is exactly the "did something you did not ask for"
+  // this list is about — see features/soql-nl-generate.ts.
+  'soql-nl-generate',
+];
+
+describe('enabledByDefault is authoritative, and only the allowlisted features ship off', () => {
   const noStoredPreferences = SettingsSchema.parse({}) as Settings;
   const realManifests = instantiateAllFeatures().map((f) => f.manifest);
+  const shipsOn = realManifests.filter((m) => !SHIPS_OFF_BY_DESIGN.includes(m.id));
 
-  it('has no shipped feature declaring enabledByDefault: false', () => {
+  it('ships exactly the allowlisted features off by default', () => {
     const shipsOff = realManifests
       .filter((m) => m.enabledByDefault === false)
-      .map((m) => m.id);
-    expect(shipsOff).toEqual([]);
+      .map((m) => m.id)
+      .sort();
+    expect(shipsOff).toEqual([...SHIPS_OFF_BY_DESIGN].sort());
   });
 
-  it('resolves every shipped feature to enabled for a user with no stored preferences', () => {
-    const resolvedOff = realManifests
+  it('resolves every allowlisted feature to DISABLED for a user with no stored preferences', () => {
+    // The half that actually matters for C-P4-2: `enabledByDefault: false` in a
+    // manifest is worthless if isFeatureEnabled() does not honour it. This is
+    // the runtime assertion that the destructive feature is genuinely off out
+    // of the box, seeded from the checked-in feature-manifests.json.
+    for (const id of SHIPS_OFF_BY_DESIGN) {
+      expect(isFeatureEnabled(noStoredPreferences, id)).toBe(false);
+    }
+  });
+
+  it('resolves every other shipped feature to enabled for a user with no stored preferences', () => {
+    const resolvedOff = shipsOn
       .map((m) => m.id)
       .filter((id) => !isFeatureEnabled(noStoredPreferences, id));
     expect(resolvedOff).toEqual([]);
@@ -253,7 +292,9 @@ describe('enabledByDefault is authoritative without flipping any shipped feature
     expect(jsonIds.length).toBeGreaterThan(0);
     expect(new Set(realManifests.map((m) => m.id))).toEqual(new Set(jsonIds));
     for (const id of jsonIds) {
-      expect(isFeatureEnabled(noStoredPreferences, id)).toBe(true);
+      expect(isFeatureEnabled(noStoredPreferences, id)).toBe(
+        !SHIPS_OFF_BY_DESIGN.includes(id),
+      );
     }
   });
 

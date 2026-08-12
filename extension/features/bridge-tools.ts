@@ -23,6 +23,8 @@ import { loadSettings } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { recordActivity } from '../lib/activity-log.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { renderSfError } from '../ui/panels.js';
+import { errorText } from '../lib/sf-error-guidance.js';
 import type { SfdtRequest, SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 import { button, toolbar } from '../lib/ui-controls.js';
 
@@ -105,18 +107,16 @@ function createBridgeToolFeature(spec: ToolSpec, options: BridgeToolOptions): Fe
     view = null;
   }
 
-  function renderError(results: HTMLElement, status: HTMLSpanElement, message: string): void {
-    const panel = doc.createElement('div');
-    panel.classList.add('sfdt-console', 'sfdt-error');
-    panel.textContent = message;
-    results.appendChild(panel);
+  function renderError(results: HTMLElement, status: HTMLSpanElement, message: unknown): void {
+    results.appendChild(renderSfError(message, { doc }));
     status.textContent = 'Failed';
     // The single failure sink for runOnce — every early return routes through
     // here, so one call covers a bad request, a !ok bridge reply, and a throw.
+    // The activity log wants a string; the panel wants the error itself.
     void recordActivity({
       featureId: spec.id,
       action: spec.name,
-      resource: message,
+      resource: errorText(message),
       status: 'failed',
     });
   }
@@ -132,7 +132,7 @@ function createBridgeToolFeature(spec: ToolSpec, options: BridgeToolOptions): Fe
     try {
       request = await getRequest();
     } catch (err) {
-      renderError(results, status, err instanceof Error ? err.message : String(err));
+      renderError(results, status, err);
       return;
     }
     try {
@@ -146,7 +146,7 @@ function createBridgeToolFeature(spec: ToolSpec, options: BridgeToolOptions): Fe
       status.textContent = 'Done';
       void recordActivity({ featureId: spec.id, action: spec.name, status: 'success' });
     } catch (err) {
-      renderError(results, status, err instanceof Error ? err.message : String(err));
+      renderError(results, status, err);
     }
   }
 

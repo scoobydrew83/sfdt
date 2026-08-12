@@ -40,6 +40,8 @@ import { createDebugLogViewerFeature } from '../../features/debug-log-viewer.js'
 import { createSavedSoqlFeature } from '../../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../../features/org-switcher.js';
 import { createContextMenuInspectFeature } from '../../features/context-menu-inspect.js';
+import { createSoqlBulkDeleteFeature } from '../../features/soql-bulk-delete.js';
+import { createSoqlNlGenerateFeature } from '../../features/soql-nl-generate.js';
 import { BRIDGE_REQUIRED } from '../../lib/feature-defaults.js';
 
 
@@ -51,6 +53,19 @@ import { BRIDGE_REQUIRED } from '../../lib/feature-defaults.js';
 //
 // Bare element selectors are fine on THIS surface (it owns its whole document,
 // unlike the content-script sheet), so form controls stay element-scoped.
+//
+// `.status` carries `white-space: pre-line` because two sites below render an
+// org failure into it — the bridge ping's `response.error` and the save
+// handler's caught value — and since `lib/sf-error-guidance.ts` that text is
+// `[orgText, ...notes].join('\n')`. Without the rule the guidance line runs into
+// the org's own text on one line: the #308 defect, on a surface the newlines
+// guard could not see, because its walk was flat and everything under
+// `entrypoints/*/` was unreachable even with the directory in SCANNED_DIRS.
+//
+// Keep prose out of the sheet itself. `STYLES` is assigned through
+// `styleTag.textContent`, so a CSS comment naming a thrown value makes the
+// stylesheet read as a rendered failure and the guard fires on the style tag —
+// which it did, at `main.ts:221`, on the first draft of this note.
 const STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
   body {
@@ -127,6 +142,8 @@ const STYLES = `
     padding: var(--sfdt-space-1) var(--sfdt-space-2);
     border-radius: var(--sfdt-radius);
     display: none;
+    /* Multi-line org text: see the note above STYLES. */
+    white-space: pre-line;
   }
   .status.show { display: inline-block; }
   .status.ok { background: var(--sfdt-color-success-bg); color: var(--sfdt-color-success-text); }
@@ -235,6 +252,14 @@ async function render(): Promise<void> {
   registry.register(createSavedSoqlFeature());
   registry.register(createOrgSwitcherFeature());
   registry.register(createContextMenuInspectFeature());
+  // C-P4-2. Metadata-only and OFF by default, so its row on this page carries
+  // the "Off by default" pill and is the only way the SOQL runner's Delete
+  // rows control ever appears.
+  registry.register(createSoqlBulkDeleteFeature());
+  // C-P4-5. Also OFF by default — it sends org schema through the bridge to an
+  // AI provider — so its row carries the "Off by default" pill and ticking it
+  // is the only way the runner's "Generate query" control is ever built.
+  registry.register(createSoqlNlGenerateFeature());
 
   const settings = await loadSettings();
   while (root.firstChild) root.removeChild(root.firstChild);

@@ -11,6 +11,7 @@ import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { SF_API_VERSION } from '../lib/api-version.js';
 import { button, toolbar } from '../lib/ui-controls.js';
 import { openMenu } from '../ui/menu.js';
+import { clearSfError, renderSfError, setSfError } from '../ui/panels.js';
 import { createHistory } from '../lib/history.js';
 import { copyToClipboard } from '../ui/clipboard.js';
 
@@ -204,8 +205,7 @@ export function createSoapExploreFeature(options: {
     statusPanel.className = 'sfdt-muted';
     main.appendChild(statusPanel);
 
-    const errorPanel = doc.createElement('div');
-    errorPanel.classList.add('sfdt-console', 'sfdt-error');
+    const errorPanel = renderSfError(null, { doc });
     errorPanel.style.display = 'none';
     main.appendChild(errorPanel);
 
@@ -283,15 +283,18 @@ export function createSoapExploreFeature(options: {
       },
     });
 
-    function showError(message: string): void {
-      errorPanel.textContent = message;
+    // `unknown`, not `string` — see the note on the SOQL runner's showError.
+    // `guidance` is OUR line, rendered as its own node below whatever the error
+    // itself said, so a caller never has to compose the two into one string.
+    function showError(message: unknown, guidance?: string): void {
+      setSfError(errorPanel, message, { doc, guidance });
       errorPanel.style.display = 'block';
       responsePane.style.display = 'none';
       copyBtn.style.display = 'none';
     }
 
     function clearError(): void {
-      errorPanel.textContent = '';
+      clearSfError(errorPanel);
       errorPanel.style.display = 'none';
     }
 
@@ -309,7 +312,7 @@ export function createSoapExploreFeature(options: {
       try {
         parsedPayload = JSON.parse(payloadTextarea.value);
       } catch (err: any) {
-        showError(`Payload is not valid JSON: ${err.message}`);
+        showError(err, 'The payload must be valid JSON.');
         return;
       }
 
@@ -341,7 +344,7 @@ export function createSoapExploreFeature(options: {
           });
         }
       } catch (err: any) {
-        showError(err.message || String(err));
+        showError(err);
         statusPanel.textContent = '';
       } finally {
         isWorking = false;

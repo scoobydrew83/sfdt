@@ -38,6 +38,7 @@ import {
   type WorkflowFieldUpdateCandidate,
 } from '../lib/field-impact.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { renderSfError } from '../ui/panels.js';
 import { escapeSoql } from '@sfdt/flow-core';
 import { button, toolbar } from '../lib/ui-controls.js';
 
@@ -873,10 +874,7 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
         results.appendChild(buildLegend());
       } catch (err) {
         status.textContent = 'Failed';
-        const errorPanel = doc.createElement('div');
-        errorPanel.classList.add('sfdt-console', 'sfdt-error');
-        errorPanel.textContent = message(err);
-        results.appendChild(errorPanel);
+        results.appendChild(renderSfError(err, { doc }));
       } finally {
         runBtn.disabled = false;
       }

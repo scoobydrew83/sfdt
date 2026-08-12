@@ -11,6 +11,10 @@ on:
 
 jobs:
   test:
+    # develop is pushed to more than one remote, so a push-triggered run would
+    # grade the same commit twice. This repo owns push (develop/main); elsewhere
+    # the suite runs on pull_request only.
+    if: github.event_name != 'push' || github.repository == 'scoobydrew83/sfdt'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -44,6 +48,8 @@ jobs:
         run: npm publish --dry-run --workspace=@sfdt/plugin
 
   gui-build:
+    # Same push/pull_request split as `test` above.
+    if: github.event_name != 'push' || github.repository == 'scoobydrew83/sfdt'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -152,7 +158,7 @@ jobs:
   publish-beta:
     needs: [test, gui-build]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    if: github.repository == 'scoobydrew83/sfdt' && (github.ref == 'refs/heads/develop' && github.event_name == 'push')
     environment: beta
     permissions:
       contents: write
@@ -224,7 +230,7 @@ jobs:
   publish:
     needs: [test, gui-build]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.repository == 'scoobydrew83/sfdt' && (github.ref == 'refs/heads/main' && github.event_name == 'push')
     environment: production
     permissions:
       contents: write

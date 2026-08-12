@@ -31,7 +31,11 @@ window that reports the chosen org's URL, so the existing tools run unchanged.
 ## Features
 
 Every feature is opt-in (toggle it off in the options page), and any feature can be remotely
-disabled without a Web Store re-review via `sfdt feature-flags disable <id>`.
+disabled without a Web Store re-review via `sfdt feature-flags disable <id>`. Two features ship
+**switched off** and are not built at all until you tick their row — `soql-bulk-delete`, because
+it deletes records, and `soql-nl-generate`, because it moves org schema out of the browser. The
+options page badges both *Off by default*; `enabledByDefault` in the catalog below is what
+actually decides, so read it there rather than trusting this sentence.
 
 **The authoritative list — every feature id, its display name, the Salesforce contexts it runs
 in, and whether it needs the bridge — is [`generated/chrome-features.json`](../generated/chrome-features.json).**
@@ -58,7 +62,11 @@ What those features cover, described in categories that outlive any individual f
   what references a component; tracing what *writes* a given field; and exporting a dense
   Markdown schema for an LLM prompt.
 - **Query and API consoles** — SOQL and SOSL with autocomplete, history, bookmarks and CSV
-  export, plus REST and SOAP explorers against the org you are already authenticated to.
+  export, plus REST and SOAP explorers against the org you are already authenticated to. Two
+  opt-in additions hang off a SOQL result set, both off by default per the note above: describing
+  a query in plain English and having the SOQL written into the editor — never executed — and a
+  guarded bulk delete that hands your browser a backup CSV and takes a typed confirmation before
+  anything reaches the org.
 - **Apex, logs and events** — anonymous Apex execution, asynchronous test runs, code coverage,
   debug-log retrieval and profiling, trace-flag / debug-level management, and live
   platform-event monitoring.

@@ -18,6 +18,7 @@ import { loadSettings, registerSettingsShape } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { recordActivity } from '../lib/activity-log.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { clearSfError, setSfError } from '../ui/panels.js';
 import { parseApexLog } from '../lib/apex-log/index.js';
 import type { ParsedLog } from '../lib/apex-log/types.js';
 import { presentApexLogAnalyzer } from '../ui/apex-log-analyzer.js';
@@ -498,6 +499,9 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
       limits.render(null);
       resultPane.style.display = 'none';
       resultPane.className = 'sfdt-console';
+      // Reused pane: drop the role="alert" a previous failure left on it, or
+      // this run's output is announced as an error.
+      clearSfError(resultPane);
       setStatus('', 'Running');
 
       // Trace-flag setup is best-effort: failing to arm log capture must never
@@ -618,9 +622,8 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         }
       } catch (err) {
         setStatus('error', 'Failed');
-        resultPane.textContent = err instanceof Error ? err.message : String(err);
+        setSfError(resultPane, err, { doc });
         resultPane.style.display = 'block';
-        resultPane.className = 'sfdt-console sfdt-error';
       } finally {
         runBtn.disabled = false;
         analyzeBtn.disabled = false;
@@ -645,6 +648,10 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
     openLogBtn.addEventListener('click', async () => {
       if (!capturedLogId) return;
       logPane.style.display = 'block';
+      // Both branches below render a log INTO this pane, so a failed fetch's
+      // error styling and role="alert" have to come off first — otherwise the
+      // retry that succeeds is still announced as the failure.
+      clearSfError(logPane);
       if (capturedLogBody !== null) {
         renderApexLogBody(logPane, capturedLogBody, doc);
         return;
@@ -654,7 +661,10 @@ export function createApexAnonymousFeature(options: ApexAnonymousOptions = {}): 
         capturedLogBody = await fetchLogBody(capturedLogId);
         renderApexLogBody(logPane, capturedLogBody, doc);
       } catch (err) {
-        logPane.textContent = err instanceof Error ? err.message : String(err);
+        // A Tooling failure fetching the body. This rendered as bare text in a
+        // plain console pane until C-FIX-4: no error styling and no
+        // `role="alert"`, so the failure was indistinguishable from a log.
+        setSfError(logPane, err, { doc });
       }
     });
 
