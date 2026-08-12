@@ -159,7 +159,7 @@ jobs:
             Repository: ${{ github.repository }} (default branch: ${{ github.event.repository.default_branch }}). You are running unattended on a schedule.
 
             Binding constraints for this run:
-            - **Telemetry source.** `sfdt history` reads a machine-local db that does not exist on this runner, so mine `.harness/telemetry.jsonl` instead — one JSON row per line, same shape the db returns (`type`, `timestamp`, `status`, `summary`). Filter it to `type` of `verdict`, `escalation`, and `agent-fix`, then cluster by category (criterion text, file area, skill name, error signature).
+            - **Telemetry source.** `sfdt history` reads a machine-local db that does not exist on this runner, so mine `.harness/telemetry.jsonl` instead — one JSON row per line, same shape the db returns (`type`, `timestamp`, `status`, `summary`). Filter it to `type` of `verdict`, `escalation`, and `agent-fix`, then cluster by category (phase, escalation category slug, file area, skill name, error signature). Verdict rows here are redacted — they carry `summary.criteriaCount`, not the criterion text, which stays in the maintainer's private mirror — so cluster verdicts by `summary.phase` and never expect free text on them.
             - A category qualifies only at **>=3 occurrences**. Ignore singletons.
             - Open **at most 3 PRs**, one per finding, branch `harness/<category-slug>`, smallest possible diff.
             - Every PR body MUST cite the motivating rows — timestamp and phase for each — under a "Motivating history" heading. A PR that cannot cite >=3 rows must not be opened.

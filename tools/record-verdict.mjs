@@ -26,7 +26,7 @@
  */
 
 import path from 'path';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { recordRun, queryRuns } from '../src/lib/run-history.js';
 import { mirrorTelemetry } from '../src/lib/harness-telemetry.js';
@@ -51,6 +51,13 @@ Options:
                      FAIL for the same phase triggers an escalation row.
   --telemetry <path> Tracked JSONL mirror of the rows, mined by the weekly
                      harness-improver in CI (default: <repo>/.harness/telemetry.jsonl).
+                     Verdict rows are REDACTED here — verbatim criterion text is
+                     replaced by a count, because this file ships in a public repo.
+  --private-telemetry <path>
+                     JSONL mirror that keeps the full criterion text
+                     (default: <repo>/.work/telemetry.jsonl). Written only when
+                     its directory already exists, so machines and CI runners
+                     without a .work checkout are left alone.
   --json             Emit the recorded row(s) as JSON.
   -h, --help         Show this help.
 
@@ -63,10 +70,41 @@ phase, also records a row of type 'escalation'.`,
 const logDir = opt('--log-dir', path.join(process.cwd(), 'logs'));
 const category = opt('--category', 'uncategorized');
 const telemetryPath = opt('--telemetry', path.join(REPO_ROOT, '.harness', 'telemetry.jsonl'));
+const privateTelemetryPath = opt(
+  '--private-telemetry',
+  path.join(REPO_ROOT, '.work', 'telemetry.jsonl'),
+);
+
+/**
+ * Strip verbatim criterion text from a row bound for the public JSONL.
+ *
+ * A verdict's `criteria` carry the sentences written in the VERDICT block, and
+ * `.harness/telemetry.jsonl` is committed to a public repo — so the text stays
+ * in the private mirror and only its count crosses over. The improver still
+ * sees that a verdict happened, its phase, and its status, so clustering by
+ * phase and escalation category survives. Escalation rows have no free text
+ * (phase + category slug + a count) and pass through untouched.
+ */
+function redactForPublic(row) {
+  const criteria = row.summary?.criteria;
+  if (!Array.isArray(criteria)) return row;
+  const { criteria: _dropped, ...summary } = row.summary;
+  return { ...row, summary: { ...summary, criteriaCount: criteria.length } };
+}
 
 // Mirroring lives in src/lib/harness-telemetry.js so this tool and the
 // agent-fix path in agent-loop.js write the JSONL through one implementation.
-const mirror = (row) => mirrorTelemetry(row, telemetryPath);
+//
+// mirrorTelemetry mkdir -p's its destination, which is right for the tracked
+// .harness/ file but wrong for .work/ — that path is a checkout of a separate
+// private repo, and conjuring an empty one on a machine that has no such
+// checkout would be surprising. So the private mirror is existence-gated.
+const mirror = (row) => {
+  if (existsSync(path.dirname(privateTelemetryPath))) {
+    mirrorTelemetry(row, privateTelemetryPath);
+  }
+  return mirrorTelemetry(redactForPublic(row), telemetryPath);
+};
 
 // --- read the block ---
 const file = opt('--file', null);
