@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.2] - 2026-08-12
+
+A dependency-maintenance release. **No CLI behaviour changes** — no command, flag, config key
+or output format differs from 0.22.1. It exists to carry the dependency updates below to npm,
+since `@sfdt/flow-core` and `@sfdt/plugin` publish only as part of a CLI release.
+
+### Security
+
+- **`js-yaml` advanced to 4.3.1** ([GHSA-5p4m-2wfm-xmqj](https://github.com/advisories/GHSA-5p4m-2wfm-xmqj),
+  high, CVSS 7.5 — quadratic CPU consumption resolving `!!omap`) and **`nanoid` to 3.3.18**.
+  Both are **development-only and were never reachable from shipped code**: no file under
+  `src/`, `bin/`, `scripts/`, `host/src/` or `packages/*/src/` imports a YAML library at all —
+  `sfdt ci init` assembles its pipelines as plain strings, which is precisely why 0.22.1 had to
+  *validate* the values it interpolates rather than lean on a serialiser to escape them. They
+  reached the tree through `eslint` and `@vscode/vsce`, neither of which is installed by
+  consumers or present in the published tarball. Updated because both fixed versions satisfy
+  every declared range, so there was no reason not to. `npm audit` now reports zero
+  vulnerabilities.
+- **The repo's lockfile no longer installs a nine-versions-stale copy of the CLI into itself.**
+  `packages/plugin` needs `@sfdt/cli` as a real installed dependency — it resolves the binary
+  through `require.resolve('@sfdt/cli/bin/sfdt.js')`, and npm will not symlink a monorepo *root*
+  package into `node_modules` — but the lockfile had pinned that nested copy at **0.14.1** since
+  the range `>=0.14.1` was first resolved, dragging along its own `@modelcontextprotocol/sdk`
+  1.29.0 and `@sfdt/flow-core` 0.9.7. It now resolves to the current published 0.22.1 and the
+  stale sub-tree is deduped away. **No consumer was ever affected** — a `>=` range resolves to
+  the newest published CLI on install — and the declared range is deliberately left at
+  `>=0.14.1`, since narrowing it to `^0.22.1` would cap installed plugins below CLI 0.23.0 and
+  defeat the point of a thin forwarder always running the newest CLI.
+
+### Changed
+
+- **`@modelcontextprotocol/sdk` moved from `~1.29.0` to `~1.30.0`**, plus a routine sweep of
+  development dependencies. `@sfdt/plugin` picks up `@oclif/core` 4.13.3 and `oclif` 4.23.30.
+- **`@sfdt/plugin` is republished at 0.22.2** in lockstep with the CLI, as it always is. Its
+  behaviour mirrors the CLI's, so it carries no changelog of its own.
+- **`@sfdt/flow-core` stays at 0.11.0.** Nothing under `packages/flow-core/` changed since
+  0.22.1, and the published version already matches, so the release job's idempotent publish
+  step skips it.
+
+### Fixed
+
+- **Six test-suite source walkers no longer check a path's type and then read it separately.**
+  CodeQL flagged `js/file-system-race` (high) on one of them; the shape was in all six guards
+  that walk the extension tree, and `readdirSync(dir, { withFileTypes: true })` replaces it with
+  less code and 125 fewer `statSync` calls per guard. The security framing does not survive
+  contact — these are test-only walkers over the repo's own checkout, `extension/test/` ships in
+  neither the extension build nor any tarball — but a one-file fix would have left five siblings
+  to flag whenever they were next touched. `withFileTypes` differs on one point that matters: a
+  dirent does not follow symlinks, so a symlinked directory reports `isSymbolicLink()` rather
+  than `isDirectory()`. Checked rather than assumed — no symlinks exist under the scanned
+  directories, and both walks were run side by side over the same roots: 125 files each, sorted
+  lists identical. The suites' own `> 100 files scanned` assertion is a floor, not an equality,
+  so it could not have caught a walk that quietly lost a subdirectory.
+
+### Internal
+
+- **Harness telemetry mirroring for `runFixLoop`, off unless a path is passed.** `src/lib/harness-telemetry.js`
+  can append a run-history row to a tracked JSONL so the weekly harness-improver can mine it in
+  CI, where the gitignored machine-local run-history db never reaches. It is opt-in through an
+  explicit destination path and does nothing without one, deliberately: `runFixLoop` is shipped
+  code that runs against other people's projects, so mirroring unconditionally would try to write
+  inside the installed package directory — unwritable on a global install — and would sweep end
+  users' org names and failure trends into a file bound for a public repo. Writes are best-effort
+  and never throw, per golden principle #5. **No user-visible change in this version.**
+
 ## [0.22.1] - 2026-08-03
 
 ### Security
