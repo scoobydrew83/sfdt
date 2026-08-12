@@ -1,6 +1,6 @@
 # Privacy Policy — SFDT for Salesforce (`@sfdt/extension`)
 
-**Last updated: 2026-06-25**
+**Last updated: 2026-08-12**
 
 This Chrome extension is designed for Salesforce admins and developers. Its full source code is published in the public [`sfdt` repository on GitHub](https://github.com/scoobydrew83/sfdt) — you can verify every claim below against the code.
 
