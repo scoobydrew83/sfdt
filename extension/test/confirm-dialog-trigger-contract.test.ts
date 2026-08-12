@@ -140,7 +140,7 @@
 // shape in order to assert on it is describing the contract.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import ts from 'typescript';
@@ -397,9 +397,9 @@ export function disablesTriggerBeforeDialog(source: string): string[] {
 function sourceFiles(): string[] {
   const out: string[] = [];
   const walk = (abs: string): void => {
-    for (const name of readdirSync(abs)) {
-      const full = path.join(abs, name);
-      if (statSync(full).isDirectory()) walk(full);
+    for (const ent of readdirSync(abs, { withFileTypes: true })) {
+      const full = path.join(abs, ent.name);
+      if (ent.isDirectory()) walk(full);
       else if (full.endsWith('.ts') && !full.endsWith('.d.ts')) out.push(full);
     }
   };

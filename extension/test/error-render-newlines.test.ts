@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { SFDT_COMPONENT_CSS } from '../lib/ui-styles.js';
@@ -185,10 +185,10 @@ const escapeForRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, 
 function sourceFiles(): string[] {
   const out: string[] = [];
   const walk = (abs: string): void => {
-    for (const name of readdirSync(abs)) {
-      const p = path.join(abs, name);
-      if (statSync(p).isDirectory()) walk(p);
-      else if (name.endsWith('.ts')) out.push(p);
+    for (const ent of readdirSync(abs, { withFileTypes: true })) {
+      const p = path.join(abs, ent.name);
+      if (ent.isDirectory()) walk(p);
+      else if (ent.name.endsWith('.ts')) out.push(p);
     }
   };
   for (const dir of SCANNED_DIRS) walk(path.join(ROOT, dir));

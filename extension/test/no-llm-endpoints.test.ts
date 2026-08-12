@@ -33,7 +33,7 @@
 // describe the rule are not excluded — they are simply outside SCANNED_DIRS.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -94,9 +94,9 @@ const DEFINING_ARTIFACTS: { file: string; because: string }[] = [
 
 function collect(dir: string): string[] {
   const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...collect(full));
+  for (const ent of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, ent.name);
+    if (ent.isDirectory()) out.push(...collect(full));
     else if (full.endsWith('.ts')) out.push(full);
   }
   return out;

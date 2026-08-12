@@ -10,7 +10,7 @@
 // sfApiStream Port, so no page-adjacent file is allowlisted.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { sfApiFetch } from '../lib/sf-api-proxy.js';
@@ -29,9 +29,9 @@ const SCANNED_FILES = [path.join(EXT_ROOT, 'entrypoints', 'content.ts')];
 
 function collectTsFiles(dir: string): string[] {
   const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) {
+  for (const ent of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, ent.name);
+    if (ent.isDirectory()) {
       out.push(...collectTsFiles(full));
     } else if (full.endsWith('.ts')) {
       out.push(full);
