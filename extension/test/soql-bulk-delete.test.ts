@@ -374,6 +374,50 @@ describe('planBulkDelete', () => {
     if (result.ok) expect(result.plan.sobject).toBe('Account');
   });
 
+  it('drops a row whose own envelope disagrees with the explicit object name', () => {
+    // The doc contract: "When both are available the explicit name wins, and rows
+    // that disagree with it are dropped rather than silently deleted against the
+    // wrong object." Every Id here is valid, so reaching 'unknown-object' means
+    // the rows were dropped by the disagreement — not by an unusable Id.
+    const contactRows = [
+      { attributes: { type: 'Contact' }, Id: '003000000000001AAA' },
+      { attributes: { type: 'Contact' }, Id: '003000000000002AAA' },
+    ];
+    expect(planBulkDelete(contactRows, { sobject: 'Account' })).toEqual({
+      ok: false,
+      reason: 'unknown-object',
+    });
+  });
+
+  it('keeps the agreeing rows and drops only the disagreeing one', () => {
+    // Guards the other half: the check must not be so blunt that one foreign row
+    // takes the whole plan down, and must not widen the plan to the foreign row.
+    const mixed = [
+      ACCOUNT_ROWS[0]!,
+      { attributes: { type: 'Contact' }, Id: '003000000000009AAA' },
+      ACCOUNT_ROWS[1]!,
+    ];
+    const result = planBulkDelete(mixed, { sobject: 'Account' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.sobject).toBe('Account');
+    expect(result.plan.ids).toEqual(['001000000000001AAA', '001000000000002AAA']);
+    expect(result.plan.ids).not.toContain('003000000000009AAA');
+    expect(result.plan.rows).toHaveLength(2);
+  });
+
+  it('still takes the declared name for a row with no envelope, alongside an enveloped one', () => {
+    // The declared name exists FOR the envelope-less SOSL rows — the disagreement
+    // check must not start dropping them, which is the obvious way to break this.
+    const result = planBulkDelete(
+      [ACCOUNT_ROWS[0]!, { Id: '001000000000009AAA', Name: 'No envelope' }],
+      { sobject: 'Account' },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.ids).toEqual(['001000000000001AAA', '001000000000009AAA']);
+  });
+
   it('refuses an object name that is not an API name, rather than escaping it into a URL', () => {
     expect(planBulkDelete(ACCOUNT_ROWS, { sobject: '../../limits' })).toEqual({
       ok: false,

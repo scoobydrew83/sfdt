@@ -179,7 +179,18 @@ export function planBulkDelete(
     if (typeof value !== 'string' || !isRecordId(value)) continue;
     if (seen.has(value)) continue;
 
-    const rowObject = declared && declared.length > 0 ? declared : attributesType(row);
+    let rowObject: string | null;
+    if (declared && declared.length > 0) {
+      // A row naming a DIFFERENT object than the caller declared is dropped, not
+      // deleted against the declared one. A row carrying no envelope takes the
+      // declared name — that is what `opts.sobject` exists for, since the SOSL
+      // result groups strip `attributes` when they are built.
+      const own = attributesType(row);
+      if (own !== null && own !== declared) continue;
+      rowObject = declared;
+    } else {
+      rowObject = attributesType(row);
+    }
     if (!rowObject) {
       // Keep looking: another row may carry the envelope. If none does we end
       // with no objects and report 'unknown-object' below.
