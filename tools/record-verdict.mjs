@@ -26,10 +26,10 @@
  */
 
 import path from 'path';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { recordRun, queryRuns } from '../src/lib/run-history.js';
-import { mirrorTelemetry } from '../src/lib/harness-telemetry.js';
+import { mirrorHarnessRow } from '../src/lib/harness-telemetry.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -75,36 +75,10 @@ const privateTelemetryPath = opt(
   path.join(REPO_ROOT, '.work', 'telemetry.jsonl'),
 );
 
-/**
- * Strip verbatim criterion text from a row bound for the public JSONL.
- *
- * A verdict's `criteria` carry the sentences written in the VERDICT block, and
- * `.harness/telemetry.jsonl` is committed to a public repo — so the text stays
- * in the private mirror and only its count crosses over. The improver still
- * sees that a verdict happened, its phase, and its status, so clustering by
- * phase and escalation category survives. Escalation rows have no free text
- * (phase + category slug + a count) and pass through untouched.
- */
-function redactForPublic(row) {
-  const criteria = row.summary?.criteria;
-  if (!Array.isArray(criteria)) return row;
-  const { criteria: _dropped, ...summary } = row.summary;
-  return { ...row, summary: { ...summary, criteriaCount: criteria.length } };
-}
-
 // Mirroring lives in src/lib/harness-telemetry.js so this tool and the
-// agent-fix path in agent-loop.js write the JSONL through one implementation.
-//
-// mirrorTelemetry mkdir -p's its destination, which is right for the tracked
-// .harness/ file but wrong for .work/ — that path is a checkout of a separate
-// private repo, and conjuring an empty one on a machine that has no such
-// checkout would be surprising. So the private mirror is existence-gated.
-const mirror = (row) => {
-  if (existsSync(path.dirname(privateTelemetryPath))) {
-    mirrorTelemetry(row, privateTelemetryPath);
-  }
-  return mirrorTelemetry(redactForPublic(row), telemetryPath);
-};
+// agent-fix path in agent-loop.js write the JSONL through one implementation —
+// including the public/private split and its redaction.
+const mirror = (row) => mirrorHarnessRow(row, { telemetryPath, privateTelemetryPath });
 
 // --- read the block ---
 const file = opt('--file', null);
