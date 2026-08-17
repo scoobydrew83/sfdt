@@ -14,6 +14,24 @@ sfdt mcp start
 
 This starts a JSON-RPC 2.0 stdio stream on standard input and output. All operational logs are routed to standard error (`stderr`) to keep the RPC channel clean.
 
+### Project routing
+
+The server supports both project-bound and multi-project clients:
+
+- When started inside an initialized Salesforce DX project, calls may omit `projectRoot`; SFDT uses the project containing both `sfdx-project.json` and `.sfdt/`.
+- When started outside a project, the server remains available for tool discovery and each tool call must provide `projectRoot`.
+- A call may always provide `projectRoot` to override the startup project. SFDT validates that path through the normal config loader before executing anything.
+
+`projectRoot` is available on every tool schema:
+
+```json
+{
+  "projectRoot": "/absolute/path/to/initialized-salesforce-project"
+}
+```
+
+Configuration is isolated per request, so concurrent calls can safely target different projects. The project must already contain `sfdx-project.json` and a valid `.sfdt/` configuration; otherwise the call returns an error before invoking a command. This routes the local project only—it does not authorize or implicitly select a Salesforce org.
+
 ---
 
 ## Config Options

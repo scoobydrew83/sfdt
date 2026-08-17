@@ -279,6 +279,11 @@ catalog-derived, see `generated/summary.json`). Design rules:
 - **Envelope unwrapping**: the server shells out to the CLI with `--json` and its
   `#parseCliJson` unwraps the sf-native `{ status, result }` envelope — it is the only stdout
   consumer; everything else reads snapshot files.
+- **Multi-project routing**: every tool schema exposes optional `projectRoot`. A server started
+  inside an initialized project preserves legacy cwd-bound behavior; a neutral server requires
+  `projectRoot` per call. `loadConfig(projectRoot)` validates the target before execution, and
+  `AsyncLocalStorage` keeps config, CLI cwd, logs, and parked results isolated across concurrent
+  requests. Never replace this with mutable shared request state.
 - Two tools are transport-internal, not command-backed: `sfdt_logs` and
   `sfdt_get_parked_result` (`MCP_INTERNAL_TOOLS`).
 

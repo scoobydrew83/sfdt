@@ -58,6 +58,7 @@ vi.mock('../../src/lib/mcp-parking.js', () => ({
 
 import { execa } from 'execa';
 import fs from 'fs-extra';
+import { loadConfig } from '../../src/lib/config.js';
 import { SfdtMcpServer, TOOLS } from '../../src/lib/mcp-server.js';
 import { parkIfNeeded, getParkedResult } from '../../src/lib/mcp-parking.js';
 
@@ -86,6 +87,28 @@ describe('SfdtMcpServer', () => {
     expect(result.cacheScope).toBe('global');
   });
 
+  it('advertises optional projectRoot on every tool schema', () => {
+    for (const tool of TOOLS) {
+      expect(tool.inputSchema.properties.projectRoot, tool.name).toEqual(
+        expect.objectContaining({ type: 'string' })
+      );
+    }
+  });
+
+  it('starts without a default project so clients can provide projectRoot per call', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined);
+    loadConfig.mockRejectedValueOnce(new Error('no configured project in cwd'));
+    mockRegisteredHandlers.clear();
+
+    const neutralServer = new SfdtMcpServer();
+    await neutralServer.start();
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(mockRegisteredHandlers.has('list-tools')).toBe(true);
+    expect(mockRegisteredHandlers.has('call-tool')).toBe(true);
+    exitSpy.mockRestore();
+  });
+
   describe('call-tool actions', () => {
     let callHandler;
 
@@ -96,6 +119,63 @@ describe('SfdtMcpServer', () => {
     const callTool = (name, args = {}) => {
       return callHandler({ params: { name, arguments: args } });
     };
+
+    it('routes a call through configuration loaded from explicit projectRoot', async () => {
+      loadConfig.mockResolvedValueOnce({
+        _projectRoot: '/workspace/customer-project',
+        _configDir: '/workspace/customer-project/.sfdt',
+        defaultOrg: 'customer-dev',
+        logDir: '/workspace/customer-project/logs',
+      });
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'preflight pass', stderr: '' });
+
+      await callTool('sfdt_preflight', {
+        projectRoot: '/workspace/customer-project',
+        strict: true,
+      });
+
+      expect(loadConfig).toHaveBeenCalledWith('/workspace/customer-project');
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['preflight', '--strict']),
+        expect.objectContaining({ cwd: '/workspace/customer-project' })
+      );
+    });
+
+    it('rejects an invalid explicit projectRoot without executing a command', async () => {
+      loadConfig.mockRejectedValueOnce(new Error('project is not initialized with .sfdt'));
+
+      const result = await callTool('sfdt_preflight', {
+        projectRoot: '/workspace/not-a-project',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project is not initialized');
+      expect(execa).not.toHaveBeenCalled();
+    });
+
+    it('isolates concurrent calls routed to different project roots', async () => {
+      loadConfig.mockImplementation(async (root) => ({
+        _projectRoot: root || '/project',
+        _configDir: `${root || '/project'}/.sfdt`,
+        logDir: `${root || '/project'}/logs`,
+      }));
+      execa.mockImplementation(async (_command, _args, options) => {
+        await new Promise((resolve) => setTimeout(resolve, options.cwd.endsWith('one') ? 10 : 1));
+        return { exitCode: 0, stdout: options.cwd, stderr: '' };
+      });
+
+      const [one, two] = await Promise.all([
+        callTool('sfdt_preflight', { projectRoot: '/workspace/one' }),
+        callTool('sfdt_preflight', { projectRoot: '/workspace/two' }),
+      ]);
+
+      expect(one.content[0].text).toContain('/workspace/one');
+      expect(two.content[0].text).toContain('/workspace/two');
+      expect(execa.mock.calls.map((call) => call[2].cwd)).toEqual(
+        expect.arrayContaining(['/workspace/one', '/workspace/two'])
+      );
+    });
 
     it('executes sfdt_preflight tool', async () => {
       execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'preflight pass', stderr: '' });
@@ -534,7 +614,9 @@ describe('MCP tool examples (advanced tool use)', () => {
   // where JSON schema alone under-specifies parameter conventions.
   const isInScope = (tool) => {
     const props = tool.inputSchema?.properties ?? {};
-    const names = Object.keys(props);
+    // projectRoot is common request-routing metadata, not an operation-specific
+    // parameter that makes an otherwise simple tool require examples.
+    const names = Object.keys(props).filter((name) => name !== 'projectRoot');
     if (names.length >= 2) return true;
     return names.some((n) => Array.isArray(props[n].enum) || props[n].type === 'array');
   };

@@ -6,6 +6,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "strict"
       ]
     },
@@ -15,6 +16,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "org"
       ]
     },
@@ -24,6 +26,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "source",
         "target"
       ]
@@ -34,6 +37,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "generateStubs",
         "fixPlan",
         "apexGuru",
@@ -46,6 +50,7 @@
       "confirmExecution": false,
       "internal": true,
       "inputProperties": [
+        "projectRoot",
         "type"
       ]
     },
@@ -55,6 +60,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "base",
         "head",
         "package",
@@ -67,6 +73,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "manifest",
         "targetOrg",
         "testLevel",
@@ -79,6 +86,7 @@
       "confirmExecution": true,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "manifest",
         "targetOrg",
         "testLevel",
@@ -97,6 +105,7 @@
       "confirmExecution": true,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "validationJobId",
         "targetOrg",
         "confirmExecution"
@@ -108,6 +117,7 @@
       "confirmExecution": true,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "confirmExecution"
       ]
     },
@@ -117,6 +127,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "org",
         "check"
       ]
@@ -127,6 +138,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "org",
         "check",
         "backup"
@@ -138,6 +150,7 @@
       "confirmExecution": true,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "source",
         "target",
         "metadata",
@@ -151,6 +164,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "type",
         "pr"
       ]
@@ -161,6 +175,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "type"
       ]
     },
@@ -170,6 +185,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "ai"
       ]
     },
@@ -179,6 +195,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "org"
       ]
     },
@@ -188,6 +205,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "org"
       ]
     },
@@ -197,6 +215,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "name",
         "org"
       ]
@@ -207,6 +226,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "org"
       ]
     },
@@ -216,6 +236,7 @@
       "confirmExecution": true,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "version",
         "package",
         "name",
@@ -228,6 +249,7 @@
       "confirmExecution": true,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "alias",
         "days",
         "confirmExecution"
@@ -239,6 +261,7 @@
       "confirmExecution": true,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "target",
         "confirmExecution"
       ]
@@ -249,6 +272,7 @@
       "confirmExecution": true,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "action",
         "size",
         "confirmExecution"
@@ -260,6 +284,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "set",
         "org"
       ]
@@ -270,6 +295,7 @@
       "confirmExecution": true,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "set",
         "org",
         "confirmExecution"
@@ -281,6 +307,7 @@
       "confirmExecution": true,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "set",
         "org",
         "confirmExecution"
@@ -292,6 +319,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "org",
         "logId",
         "limit"
@@ -303,6 +331,7 @@
       "confirmExecution": true,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "action",
         "org",
         "user",
@@ -318,6 +347,7 @@
       "confirmExecution": true,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "org",
         "file",
         "apexCode",
@@ -330,6 +360,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "classNames"
       ]
     },
@@ -339,6 +370,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "type",
         "limit"
       ]
@@ -349,6 +381,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "org",
         "localOnly"
       ]
@@ -359,6 +392,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "term",
         "category",
         "limit",
@@ -371,6 +405,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "sobject",
         "filter",
         "tooling",
@@ -383,6 +418,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "query",
         "org"
       ]
@@ -393,6 +429,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "query",
         "org"
       ]
@@ -403,6 +440,7 @@
       "confirmExecution": false,
       "internal": false,
       "inputProperties": [
+        "projectRoot",
         "query",
         "limit",
         "tooling",
@@ -415,6 +453,7 @@
       "confirmExecution": false,
       "internal": true,
       "inputProperties": [
+        "projectRoot",
         "ref"
       ]
     }
