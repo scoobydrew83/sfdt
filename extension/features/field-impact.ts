@@ -149,6 +149,38 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
     return badge;
   }
 
+  /**
+   * Components that reference the field WITHOUT writing it — validation rules,
+   * layouts, reports, email templates, list views.
+   *
+   * Its own block, deliberately below the writer table and visually distinct
+   * from it. Merging the two would answer "where does this field appear?" while
+   * the panel's heading promises "what writes it", and a validation rule sitting
+   * among the writers is exactly the confusion this feature exists to remove.
+   */
+  function buildReferences(vm: FieldImpactVM): HTMLElement | null {
+    if (vm.references.length === 0) return null;
+    const wrap = doc.createElement('section');
+
+    const heading = doc.createElement('h3');
+    heading.textContent = `Also referenced by (${vm.referenceCount}) — these do not write it`;
+    wrap.appendChild(heading);
+
+    const list = doc.createElement('dl');
+    for (const group of vm.references) {
+      const term = doc.createElement('dt');
+      term.textContent = group.type;
+      list.appendChild(term);
+      for (const name of group.names) {
+        const def = doc.createElement('dd');
+        def.textContent = name;
+        list.appendChild(def);
+      }
+    }
+    wrap.appendChild(list);
+    return wrap;
+  }
+
   function buildLegend(): HTMLElement {
     const legend = doc.createElement('p');
     legend.classList.add('sfdt-row', 'sfdt-wrap');
@@ -368,6 +400,8 @@ export function createFieldImpactFeature(options: FieldImpactOptions = {}): Fiel
         const notes = buildNotes(vm.notes);
         if (notes) results.appendChild(notes);
         if (vm.counts.total > 0) results.appendChild(buildTable(vm));
+        const refs = buildReferences(vm);
+        if (refs) results.appendChild(refs);
         results.appendChild(buildLegend());
       } catch (err) {
         status.textContent = 'Failed';

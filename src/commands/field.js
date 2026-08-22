@@ -40,6 +40,18 @@ function printImpact(vm) {
     console.log(chalk.dim(`${vm.counts.confirmed} confirmed, ${vm.counts.inferred} inferred, ${vm.counts.total} total`));
   }
 
+  // A SEPARATE section, never merged into the writer rows. "What writes this
+  // field" and "where does this field appear" are different questions; a
+  // validation rule listed among the writers would answer the wrong one.
+  if (vm.references.length > 0) {
+    console.log('');
+    console.log(chalk.bold(`Also referenced by (${vm.referenceCount}) — these do not write it`));
+    for (const group of vm.references) {
+      console.log(`  ${chalk.bold(group.type)}`);
+      for (const name of group.names) console.log(`    ${name}`);
+    }
+  }
+
   if (vm.notes.length > 0) {
     console.log('');
     console.log(chalk.bold('Scan scope'));

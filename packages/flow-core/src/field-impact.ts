@@ -33,7 +33,7 @@ import {
   FIELD_WRITE_KIND_LABELS,
   type FlowFieldWrite,
 } from './field-writes.js';
-import { escapeSoql } from './dependencies.js';
+import { escapeSoql, groupByType, type DependencyGroup } from './dependencies.js';
 
 export type FieldImpactStatus = 'confirmed' | 'inferred';
 
@@ -140,8 +140,27 @@ export interface FieldImpactRow {
 export interface FieldImpactVM {
   object: string;
   field: string;
+  /** WRITERS — components that change this field's value. */
   rows: FieldImpactRow[];
   counts: { confirmed: number; inferred: number; total: number };
+  /**
+   * OTHER REFERENCES — components that mention the field without writing it:
+   * validation rules, page layouts, reports, email templates, list views,
+   * formula fields, and anything else Salesforce records a dependency edge for.
+   *
+   * Deliberately a SEPARATE list from `rows`, not merged into it. "What writes
+   * this field" and "where does this field appear" are different questions with
+   * different consequences — a competitor that answers only the second will tell
+   * you a validation rule "uses" the field, which is true and useless when you
+   * are trying to work out what changed a value. Keeping them apart is what
+   * lets one command answer both without either answer contaminating the other.
+   *
+   * Every entry here is an edge Salesforce itself recorded, so the REFERENCE is
+   * confirmed. That says nothing about whether the component writes the field —
+   * by construction, the writers are in `rows`.
+   */
+  references: DependencyGroup[];
+  referenceCount: number;
   notes: string[];
 }
 
@@ -327,6 +346,10 @@ export function buildFieldImpactVM(input: FieldImpactInput): FieldImpactVM {
     field: input.field,
     rows,
     counts: { confirmed, inferred: rows.length - confirmed, total: rows.length },
+    // Empty unless a caller fills them in (analyzeFieldImpact does). The pure
+    // viewmodel is about WRITERS; references come from a separate scan.
+    references: [],
+    referenceCount: 0,
     notes: [...(input.notes ?? [])],
   };
 }
@@ -354,6 +377,8 @@ export const WORKFLOW_METADATA_CAP = 50;
 export const WORKFLOW_DETAIL_CONCURRENCY = 5;
 /** Apex text-search hits kept, per returned sObject type and in total. */
 export const APEX_HIT_CAP = 25;
+/** Non-Flow referencing components listed for one field. */
+export const REFERENCE_CAP = 200;
 
 // --------------------------------------------------------------------------
 // Pure Tooling query builders
@@ -433,6 +458,28 @@ export function workflowFieldUpdateDetailQuery(id: string): string {
   return (
     `SELECT Id, FullName, Metadata FROM WorkflowFieldUpdate` +
     ` WHERE Id = '${escapeSoql(id)}' LIMIT 1`
+  );
+}
+
+/**
+ * Everything OTHER than a flow that references this field.
+ *
+ * One query buys validation rules, page layouts, reports, email templates, list
+ * views and formula fields at once — every type Salesforce records an edge for.
+ * Four bespoke per-type scans would each need its own list-then-read-Metadata
+ * pass (Tooling serves compound `Metadata` one row at a time), cost an order of
+ * magnitude more round trips, and still miss whatever type nobody thought to
+ * add. Reports in particular have no queryable column list at all; the
+ * dependency edge is the only cheap record that a report uses a field.
+ *
+ * Flows are excluded because they are analysed properly elsewhere — a flow that
+ * merely READS the field must not appear as though it writes it.
+ */
+export function otherReferencesQuery(fieldId: string): string {
+  return (
+    `SELECT MetadataComponentName, MetadataComponentType FROM MetadataComponentDependency` +
+    ` WHERE RefMetadataComponentId = '${escapeSoql(fieldId)}' AND MetadataComponentType != 'Flow'` +
+    ` ORDER BY MetadataComponentType, MetadataComponentName LIMIT ${REFERENCE_CAP}`
   );
 }
 
@@ -548,9 +595,15 @@ export async function analyzeFieldImpact(
     notes: string[];
   }
 
-  async function fetchFlowCandidates(object: string, field: string): Promise<FlowFetch> {
+  async function fetchFlowCandidates(
+    object: string,
+    field: string,
+    resolved: { id: string | null; error: string | null },
+  ): Promise<FlowFetch> {
     const notes: string[] = [];
-    const { id: fieldId, error: fieldIdError } = await resolveCustomFieldId(object, field);
+    // Resolved by the caller and shared with the reference scan — two
+    // independent lookups would double the cost and could disagree.
+    const { id: fieldId, error: fieldIdError } = resolved;
     let versionIds: string[] = [];
     // Provenance decides how much benefit of the doubt each candidate's writes
     // get downstream (see FlowCandidate.discovery in lib/field-impact.ts).
@@ -930,18 +983,85 @@ export async function analyzeFieldImpact(
      * returns Flow and workflow results — with the gap stated — instead of losing
      * the whole answer.
      */
-    const [flows, workflows, apex] = await Promise.all([
-      fetchFlowCandidates(object, field),
-      fetchWorkflowFieldUpdates(object),
-      fetchApexHits(field),
-    ]);
-    return buildFieldImpactVM({
-      object,
-      field,
-      origin,
-      flows: flows.candidates,
-      workflowFieldUpdates: workflows.candidates,
-      apexHits: apex.hits,
-      notes: [...flows.notes, ...workflows.notes, ...apex.notes],
-    });
+  interface ReferenceFetch {
+    groups: DependencyGroup[];
+    total: number;
+    notes: string[];
+  }
+
+  /**
+   * Everything other than a flow that references the field.
+   *
+   * Answers "where does this field appear?" — a DIFFERENT question from "what
+   * writes it", and kept in its own section for that reason. A validation rule
+   * referencing the field is true and useless when you are working out what
+   * changed a value; it is exactly what you want when you are working out what
+   * a change would break.
+   */
+  async function fetchOtherReferences(fieldId: string | null): Promise<ReferenceFetch> {
+    // No CustomField id — a standard field, or a lookup that failed. Either way
+    // there is nothing to query, and the flow scan has already said so in words;
+    // repeating it here would double every such note.
+    if (!fieldId) return { groups: [], total: 0, notes: [] };
+    try {
+      const result = await q.toolingQuery<{
+        MetadataComponentName?: string;
+        MetadataComponentType?: string;
+      }>(otherReferencesQuery(fieldId));
+      const rows = result.records as unknown as Array<Record<string, unknown>>;
+      const notes: string[] = [];
+      if (rows.length >= REFERENCE_CAP) {
+        notes.push(
+          `The reference list hit its cap (${REFERENCE_CAP}); more components reference ` +
+            `${object}.${field} than are shown.`,
+        );
+      }
+      if (rows.length > 0) {
+        notes.push(
+          `${rows.length} component(s) REFERENCE ${object}.${field} without necessarily writing ` +
+            `it — validation rules, layouts, reports, email templates and list views appear here. ` +
+            `They are listed separately from writers on purpose: a reference tells you what a ` +
+            `change to this field would affect, not what changes its value.`,
+        );
+      }
+      return {
+        groups: groupByType(rows, 'MetadataComponentName', 'MetadataComponentType'),
+        total: rows.length,
+        notes,
+      };
+    } catch (err) {
+      return {
+        groups: [],
+        total: 0,
+        notes: [
+          `Other references could not be listed (${message(err)}), so NONE were checked — that is ` +
+            `a failed query, not a finding that nothing else uses ${object}.${field}.`,
+        ],
+      };
+    }
+  }
+
+  // Resolved ONCE and shared: the flow scan needs the CustomField id to narrow
+  // its candidates, and the reference scan needs it to list everything else.
+  // Two independent lookups would double the cost and could disagree.
+  const resolved = await resolveCustomFieldId(object, field);
+
+  const [flows, workflows, apex, refs] = await Promise.all([
+    fetchFlowCandidates(object, field, resolved),
+    fetchWorkflowFieldUpdates(object),
+    fetchApexHits(field),
+    fetchOtherReferences(resolved.id),
+  ]);
+  const vm = buildFieldImpactVM({
+    object,
+    field,
+    origin,
+    flows: flows.candidates,
+    workflowFieldUpdates: workflows.candidates,
+    apexHits: apex.hits,
+    notes: [...flows.notes, ...workflows.notes, ...apex.notes, ...refs.notes],
+  });
+  vm.references = refs.groups;
+  vm.referenceCount = refs.total;
+  return vm;
 }

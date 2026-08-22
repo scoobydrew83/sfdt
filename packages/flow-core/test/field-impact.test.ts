@@ -7,7 +7,9 @@ import {
   customFieldIdQuery,
   flowCandidateQuery,
   apexSearchSosl,
+  otherReferencesQuery,
   FLOW_CANDIDATE_CAP,
+  REFERENCE_CAP,
   APEX_HIT_CAP,
   type FieldImpactQueries,
 } from '../src/field-impact.js';
@@ -237,5 +239,98 @@ describe('buildFieldImpactVM ordering', () => {
     expect(vm.rows[0].sourceType).toBe('WorkflowFieldUpdate');
     expect(vm.rows[1].status).toBe('inferred');
     expect(vm.counts).toEqual({ confirmed: 1, inferred: 1, total: 2 });
+  });
+});
+
+describe('other references — "where does this field appear?"', () => {
+  it('excludes flows, which are analysed properly elsewhere', () => {
+    // A flow that merely READS the field must not surface as though it writes
+    // it, so the reference query leaves flows to the write analysis.
+    const q = otherReferencesQuery('00N1');
+    expect(q).toContain("MetadataComponentType != 'Flow'");
+    expect(q).toContain(`LIMIT ${REFERENCE_CAP}`);
+  });
+
+  it('reports validation rules, layouts and reports in ONE query, grouped by type', async () => {
+    // Four bespoke per-type scans would each need a list-then-read-Metadata
+    // pass and still miss whatever type nobody added. One dependency query gets
+    // every type Salesforce records.
+    const q = fakeQueries([
+      [/FROM CustomField/, [{ Id: '00N1' }]],
+      [/MetadataComponentType != 'Flow'/, [
+        { MetadataComponentName: 'Account_Region_Required', MetadataComponentType: 'ValidationRule' },
+        { MetadataComponentName: 'Account Layout', MetadataComponentType: 'Layout' },
+        { MetadataComponentName: 'Regional Pipeline', MetadataComponentType: 'Report' },
+        { MetadataComponentName: 'Welcome', MetadataComponentType: 'EmailTemplate' },
+      ]],
+    ]);
+    const vm = await analyzeFieldImpact(q, { object: 'Account', field: 'Region__c' });
+
+    expect(vm.referenceCount).toBe(4);
+    expect(vm.references.map((g) => g.type).sort()).toEqual([
+      'EmailTemplate', 'Layout', 'Report', 'ValidationRule',
+    ]);
+  });
+
+  it('keeps references OUT of the writer rows', async () => {
+    // The whole point of the split: a validation rule is not a writer, and
+    // counting it as one would answer the wrong question.
+    const q = fakeQueries([
+      [/FROM CustomField/, [{ Id: '00N1' }]],
+      [/MetadataComponentType != 'Flow'/, [
+        { MetadataComponentName: 'VR', MetadataComponentType: 'ValidationRule' },
+      ]],
+    ]);
+    const vm = await analyzeFieldImpact(q, { object: 'Account', field: 'Region__c' });
+
+    expect(vm.rows).toEqual([]);
+    expect(vm.counts.total).toBe(0);
+    expect(vm.referenceCount).toBe(1);
+    expect(vm.notes.some((n) => n.includes('without necessarily writing'))).toBe(true);
+  });
+
+  it('does not query references for a standard field, and does not repeat the reason', async () => {
+    // No CustomField id exists; the flow scan already explains that in words.
+    const q = fakeQueries([[/FROM FlowDefinition/, []]]);
+    const vm = await analyzeFieldImpact(q, { object: 'Opportunity', field: 'StageName' });
+
+    expect(q.seen.some((x) => /MetadataComponentType != 'Flow'/.test(x))).toBe(false);
+    expect(vm.references).toEqual([]);
+    expect(vm.notes.filter((n) => n.includes('is a standard field'))).toHaveLength(1);
+  });
+
+  it('reports a refused reference query as unchecked, not as "nothing else uses it"', async () => {
+    const q = fakeQueries([
+      [/FROM CustomField/, [{ Id: '00N1' }]],
+      [/MetadataComponentType != 'Flow'/, new Error('INSUFFICIENT_ACCESS')],
+    ]);
+    const vm = await analyzeFieldImpact(q, { object: 'Account', field: 'Region__c' });
+
+    expect(vm.notes.some((n) => n.includes('NONE were checked'))).toBe(true);
+    expect(vm.referenceCount).toBe(0);
+  });
+
+  it('discloses a capped reference list', async () => {
+    const rows = Array.from({ length: REFERENCE_CAP }, (_, i) => ({
+      MetadataComponentName: `R${i}`,
+      MetadataComponentType: 'Report',
+    }));
+    const q = fakeQueries([
+      [/FROM CustomField/, [{ Id: '00N1' }]],
+      [/MetadataComponentType != 'Flow'/, rows],
+    ]);
+    const vm = await analyzeFieldImpact(q, { object: 'Account', field: 'Region__c' });
+
+    expect(vm.notes.some((n) => n.includes('hit its cap'))).toBe(true);
+  });
+
+  it('resolves the CustomField id ONCE for both scans', async () => {
+    const q = fakeQueries([
+      [/FROM CustomField/, [{ Id: '00N1' }]],
+      [/MetadataComponentType != 'Flow'/, []],
+    ]);
+    await analyzeFieldImpact(q, { object: 'Account', field: 'Region__c' });
+
+    expect(q.seen.filter((x) => /FROM CustomField/.test(x))).toHaveLength(1);
   });
 });

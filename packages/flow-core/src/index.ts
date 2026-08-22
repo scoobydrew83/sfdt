@@ -247,6 +247,8 @@ export {
   workflowFieldUpdateDetailQuery,
   objectFromFullName,
   apexSearchSosl,
+  otherReferencesQuery,
+  REFERENCE_CAP,
 } from './field-impact.js';
 export type {
   FieldImpactQueries,

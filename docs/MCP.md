@@ -150,13 +150,15 @@ Shows a component's metadata dependencies — what it references and what refere
   * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
 
 #### `sfdt_field_impact`
-Shows what **writes** a field — flows (parsed, not merely referencing it), workflow field updates, and an Apex text search. Read-only.
+Shows what **writes** a field — flows (parsed, not merely referencing it), workflow field updates, and an Apex text search — plus, separately, everything that merely references it. Read-only.
 * **Arguments:**
   * `field` (string, **required**): qualified field, e.g. `Account.Region__c`.
   * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
   * `links` (boolean, optional): resolve the org instance URL so rows carry Setup deep links (one extra call).
 
-Every row is `confirmed` (the metadata itself states the write) or `inferred` (a lead only — an Apex text hit may read the field, mention it in a comment, or merely share a name). The result's `notes` say what was **not** scanned: which caps bound the scan, which queries were refused, and the Flow constructs the parser does not model. Those notes also travel in the envelope's `warnings`.
+Every row in `rows` is `confirmed` (the metadata itself states the write) or `inferred` (a lead only — an Apex text hit may read the field, mention it in a comment, or merely share a name).
+
+`references` is a SEPARATE list of components that mention the field **without writing it** — validation rules, layouts, reports, email templates, list views. Do not merge it into `rows`: "what writes this field" and "where does this field appear" are different questions, and a validation rule reported as a writer answers the wrong one. The result's `notes` say what was **not** scanned: which caps bound the scan, which queries were refused, and the Flow constructs the parser does not model. Those notes also travel in the envelope's `warnings`.
 
 An empty `rows` array means *no writer was found by three bounded scans* — never that none exists. A caller that reports it as "nothing writes this field" is overstating the result.
 

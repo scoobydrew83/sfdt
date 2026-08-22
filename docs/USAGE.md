@@ -1206,6 +1206,20 @@ sfdt field usage Account --population --json
 | Workflow field updates | Tooling `WorkflowFieldUpdate.Metadata.field` names the target field outright | `confirmed` |
 | Apex | Tooling SOSL text search over class and trigger source | **always `inferred`** — a text hit is not a write |
 
+Alongside the writers it lists **other references** — validation rules, page layouts, reports,
+email templates, list views and formula fields — in a separate section, from the dependency edges
+Salesforce records. These are kept apart from the writers on purpose:
+
+> *What writes this field* and *where does this field appear* are different questions with
+> different consequences. A validation rule referencing the field is useless when you are working
+> out what changed a value, and essential when you are working out what a change would break.
+
+One dependency query buys every referencing type at once. Four bespoke per-type scans would each
+need a list-then-read-`Metadata` pass (Tooling serves compound `Metadata` one row at a time), cost
+an order of magnitude more round trips, and still miss whatever type nobody thought to add.
+Reports in particular have no queryable column list — the dependency edge is the only cheap record
+that a report uses a field.
+
 The engine is [`@sfdt/flow-core`](../packages/flow-core)'s `analyzeFieldImpact`, shared verbatim
 with the Chrome extension's Field Impact panel, so both surfaces scan an org to the same depth
 and hedge in the same words.
