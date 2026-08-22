@@ -23,6 +23,7 @@ import {
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { setSfError } from '../ui/panels.js';
+import { confirmDialog } from '../ui/confirm-dialog.js';
 import { setTone, button, setLabel } from '../lib/ui-controls.js';
 import { copyToClipboard } from '../ui/clipboard.js';
 
@@ -238,6 +239,16 @@ export interface InspectRecordOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
+  /**
+   * Whether the `record-delete` capability is available right now.
+   *
+   * A callback rather than a boolean because the remote kill switch refreshes
+   * while the page is open — a value captured at construction would go stale
+   * exactly when it matters. Defaults to **false**: a caller that forgets to
+   * pass it gets no Delete button, which is the correct direction to fail for
+   * an irreversible action.
+   */
+  canDelete?: () => boolean;
 }
 
 /** The Inspect Record feature, plus an imperative opener for the context menu. */
@@ -250,6 +261,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
+  const canDelete = options.canDelete ?? (() => false);
 
   let view: ViewHandle | null = null;
   // The shared cache, not a private one: it already de-duplicates describes
@@ -346,7 +358,22 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     headerRow.className = 'sfdt-row';
     const cloneBtn = button({ label: 'Clone', iconName: 'copy', small: true, doc });
     cloneBtn.style.display = 'none';
+    // Constructed once (so its listener is attached once) but MOUNTED only when
+    // the capability gate passes — absent from the DOM, not merely hidden. A
+    // display:none button is still reachable by a query, by assistive tech in
+    // some configurations, and by anything walking the tree; for an
+    // irreversible action the honest state is "there is no such control".
+    const deleteBtn = button({ label: 'Delete', iconName: 'trash', variant: 'danger', small: true, doc });
     headerRow.append(viewToggleRow, cloneBtn);
+
+    /** Mount or unmount Delete to match the gate. Re-checked on every load. */
+    function syncDeleteAffordance(): void {
+      if (canDelete()) {
+        if (!deleteBtn.isConnected) headerRow.appendChild(deleteBtn);
+      } else if (deleteBtn.isConnected) {
+        deleteBtn.remove();
+      }
+    }
 
     const toolbar = doc.createElement('div');
     toolbar.className = 'sfdt-toolbar';
@@ -1045,6 +1072,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         updateSaveBar();
         viewToggleRow.style.display = 'inline-flex';
         cloneBtn.style.display = 'inline-flex';
+        syncDeleteAffordance();
         applyView();
       } catch (err) {
         showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
@@ -1094,6 +1122,86 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     };
 
     cloneBtn.addEventListener('click', startClone);
+
+    /**
+     * Delete the loaded record.
+     *
+     * Two gates, in this order: the capability must be on (checked again here,
+     * not just at render, so a kill switch that flipped after the button was
+     * drawn still stops the call), and the user must type the object's API name
+     * — decision 8. The phrase is the OBJECT, not the Id: an Id is sitting on
+     * screen to be copied, so typing it back proves nothing about intent, while
+     * typing `Account` is a statement about what class of thing is being
+     * destroyed. P4-2's bulk delete uses a different phrase for a different
+     * blast radius, deliberately not unified.
+     *
+     * The button is NOT disabled around the dialog — confirmDialog's caller
+     * contract: focus returns to whatever opened it, and a disabled element
+     * cannot receive focus, which strands a keyboard user on <body>.
+     */
+    deleteBtn.addEventListener('click', async () => {
+      if (!canDelete() || !activeRecordId || !activeSobjectName) return;
+      const confirmed = await confirmDialog({
+        title: `Delete this ${activeSobjectName}?`,
+        message: `${activeSobjectName} ${activeRecordId} will be deleted. This cannot be undone from here — a deleted record goes to the org's Recycle Bin, where retention is the org's setting, not ours.`,
+        confirmLabel: 'Delete record',
+        requireTyped: activeSobjectName,
+        doc,
+      });
+      if (!confirmed) return;
+
+      setLabel(deleteBtn, 'Deleting…');
+      try {
+        const apiVersion = api.apiVersion;
+        await api.apiRequest(
+          'DELETE',
+          `/services/data/${apiVersion}/sobjects/${activeSobjectName}/${activeRecordId}`,
+        );
+        showToast(`Deleted ${activeSobjectName} ${activeRecordId}`, { doc, kind: 'success' });
+        // Back to the empty state: the record on screen no longer exists, and
+        // leaving its fields rendered would invite an edit that cannot land.
+        resetToEmpty();
+      } catch (err) {
+        // Same three-state honesty as a save. A timed-out DELETE may well have
+        // committed, so saying "not deleted" would be a guess — and the retry
+        // it invites is harmless only if the guess was right.
+        const outcome = classifySaveError(err, '');
+        if (outcome.status === 'unknown') {
+          showToast(
+            `Delete outcome unknown — ${activeSobjectName} ${activeRecordId} may already be gone. Re-read before retrying.`,
+            { doc, kind: 'warning' },
+          );
+          await reloadActiveRecord().catch(() => resetToEmpty());
+        } else {
+          showToast(`Not deleted — ${err instanceof Error ? err.message : String(err)}`, { doc, kind: 'error' });
+        }
+      } finally {
+        setLabel(deleteBtn, 'Delete');
+      }
+    });
+
+    /** Clear the inspector back to "no record loaded". */
+    function resetToEmpty(): void {
+      activeRecordId = '';
+      activeSobjectName = '';
+      originalRecordData = {};
+      editedRecordData = {};
+      rawRecordData = {};
+      activeDescribe = null;
+      fieldErrorMessages = new Map();
+      setSaveBanner(null);
+      idInput.value = '';
+      recordObj.textContent = 'No record loaded';
+      recordIdSpan.textContent = '';
+      while (tableContainer.firstChild) tableContainer.removeChild(tableContainer.firstChild);
+      tableContainer.style.display = 'none';
+      saveBar.style.display = 'none';
+      statusBar.style.display = 'none';
+      viewToggleRow.style.display = 'none';
+      cloneBtn.style.display = 'none';
+      deleteBtn.remove();
+      currentView = 'fields';
+    }
 
     cancelChangesBtn.addEventListener('click', () => {
       editedRecordData = { ...originalRecordData };

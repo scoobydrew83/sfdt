@@ -61,6 +61,7 @@ import { createApiVersionAuditFeature } from '../features/api-version-audit.js';
 import { createCommandPaletteFeature } from '../features/command-palette.js';
 // --- Background/options-only feature (entrypoints/background.ts + options) ---
 import { createContextMenuInspectFeature } from '../features/context-menu-inspect.js';
+import { createRecordDeleteFeature } from '../features/record-delete.js';
 import { createSoqlBulkDeleteFeature } from '../features/soql-bulk-delete.js';
 import { createSoqlNlGenerateFeature } from '../features/soql-nl-generate.js';
 // --- Workspace-only factories (entrypoints/app/main.ts) ---
@@ -151,6 +152,7 @@ function instantiateAllFeatures(): Feature[] {
     // record" menu lives in entrypoints/background.ts and its toggle in the
     // options page; it injects no content-script UI (no icon, no side button).
     createContextMenuInspectFeature(),
+    createRecordDeleteFeature(),
     // entrypoints/app/main.ts additionally registers these Workspace-only
     // tools (all options default; main.ts only injects doc/win/api):
     createApexTestRunnerFeature(),
@@ -252,6 +254,13 @@ const SHIPS_OFF_BY_DESIGN: readonly string[] = [
   // user did not ask for is exactly the "did something you did not ask for"
   // this list is about — see features/soql-nl-generate.ts.
   'soql-nl-generate',
+  // P4-1 PR-4. Deleting a Salesforce record is irreversible from here — it goes
+  // to the org's Recycle Bin, whose retention is the org's setting and not
+  // ours. Every other thing the record inspector does is a read or an edit the
+  // user can correct; this one is not, which is the whole reason it carries its
+  // own feature id rather than a flag inside inspect-record. See
+  // features/record-delete.ts.
+  'record-delete',
 ];
 
 describe('enabledByDefault is authoritative, and only the allowlisted features ship off', () => {

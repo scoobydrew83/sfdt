@@ -6,6 +6,41 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ### Added
 
+- **Delete a record from the inspector — off by default, and its own switch (P4-1 PR-4).** The
+  record inspector could read, edit and clone; the one thing it could not do was the one thing
+  you cannot take back. Delete now exists, and everything about how it ships is a consequence of
+  that asymmetry.
+
+  It has its **own feature id**, `record-delete`, rather than a flag inside Inspect Record. That
+  is not tidiness: the remote kill switch is a list of feature *ids* and nothing else, so a
+  boolean tucked inside another feature's settings would be local-only and could never be
+  disabled centrally. Two ids means an org can turn delete off across every browser while the
+  inspector keeps working — and the test suite pins exactly that, because it is the only
+  observation that proves the decision.
+
+  It ships **off**, and `enabledByDefault: false` is the entire mechanism — no settings-layer
+  machinery was added, because the runtime already honours the manifest flag. With the toggle
+  off the Delete control is **not built at all**: absent from the DOM, not hidden by CSS. For an
+  irreversible action, "there is no such control" is the honest state; a hidden button is still
+  reachable by anything that walks the tree.
+
+  Confirming means typing the **object's API name** — `Account`, `Invoice__c` — not the record
+  Id. The Id is sitting on screen to be copied, so typing it back proves nothing about intent,
+  while typing the object is a statement about what class of thing is being destroyed. The
+  dialog is the shared `confirmDialog` every other destructive surface uses.
+
+  A timed-out delete reports **"Delete outcome unknown"** and re-reads, never "not deleted" — the
+  same honesty the save path got in PR-2, and for the same reason: the worker never answered, so
+  the record may well be gone, and a confident denial is what invites the retry that deletes the
+  wrong thing next time. An org refusal keeps the record on screen with its message; a success
+  clears the inspector to its empty state, because leaving the fields of a deleted record
+  rendered invites an edit that cannot land.
+
+  No new permission: it is an ordinary REST call on the session you already have, over the same
+  worker-proxied path as every other call. `PRIVACY.md` says so explicitly.
+
+### Added
+
 - **Clone a record into a form you can review before anything is created (P4-1 PR-3).** The inspector header gains **Clone**, which stages a new record prefilled from the one on screen and creates nothing until you press **Create**. That ordering is the feature, not a preference: a record with a unique constraint or a required lookup mostly fails a one-click insert, and a click that silently mints a duplicate is the kind of unguarded write this project does not ship. Prefilled fields are the ones Salesforce says are settable *on insert* — a different question from the one edit mode asks, which is why an org with Set Audit Fields enabled can prefill `CreatedDate` here while an auto-number or formula is excluded from both. Everything else still appears in the form, greyed and carrying its reason, so nothing vanishes from the view just because it is out of the request body.
 - **A blank box on the clone form means "let the org decide", so it is omitted rather than sent as null** — the two differ whenever a field has a default value. `false` and `0` are values and are sent. The POST body is built by `buildCreateBody` in `lib/record-edit.ts`, a sibling of `buildDirtyDiff` rather than a flag on it: a diff asks what changed against a baseline and carries a field-level-security guard that exists to stop an unreadable field being nulled over, while a create has no baseline at all, and folding them together would leave one caller reading a filter written for the other.
 - **A rejected create explains itself exactly the way a rejected save does** — the org's message on the exact field, a banner naming any field it blames that is not on screen — and says *the record was not created*, never that no changes were saved. On success the new Id appears with **Open in Salesforce** and **Inspect**, which loads it into the inspector you are already in.

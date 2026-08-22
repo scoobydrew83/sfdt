@@ -461,3 +461,114 @@ describe('inspect-record clone', () => {
     expect(text).not.toMatch(/No changes were saved/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Delete (PR-4) — gated, typed-confirmed, and honest about a timeout
+// ---------------------------------------------------------------------------
+
+const deleteButton = () =>
+  Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('Delete'));
+
+function mountWithDelete(canDelete: boolean, over: { apiRequest?: unknown } = {}) {
+  const record = { Id: REC, Name: 'Acme', AnnualRevenue: 100, Formula__c: 'calc', Locked__c: 'no' };
+  const apiGet = vi.fn(async (path: string) => {
+    if (path.includes('/describe')) return { name: 'Account', label: 'Account', fields: ACCOUNT_FIELDS };
+    if (path.includes(`/sobjects/Account/${REC}`)) return record;
+    return { sobjects: [{ name: 'Account', label: 'Account', keyPrefix: '001' }] };
+  });
+  const apiRequest = (over.apiRequest ?? vi.fn(async () => null)) as ReturnType<typeof vi.fn>;
+  const api = { query: vi.fn(), toolingQuery: vi.fn(), queryMore: vi.fn(), apiGet, apiRequest } as unknown as SalesforceApiClient;
+  return { apiRequest, feature: createInspectRecordFeature({ api, canDelete: () => canDelete }) };
+}
+
+/** Drive the typed-confirm dialog: fill the phrase, press the confirm button. */
+async function confirmTyped(phrase: string) {
+  const input = Array.from(document.querySelectorAll('input')).at(-1) as HTMLInputElement;
+  input.value = phrase;
+  input.dispatchEvent(new Event('input'));
+  await flush();
+  const btn = Array.from(document.querySelectorAll('button'))
+    .find((b) => b.textContent?.includes('Delete record')) as HTMLButtonElement;
+  btn.click();
+  await flush();
+}
+
+describe('inspect-record delete', () => {
+  it('shows no Delete button when the capability is off — the default', async () => {
+    const { feature } = mountWithDelete(false);
+    await feature.onActivate?.();
+    await flush();
+    expect(deleteButton()).toBeUndefined();
+  });
+
+  it('shows Delete once the capability is on', async () => {
+    const { feature } = mountWithDelete(true);
+    await feature.onActivate?.();
+    await flush();
+    expect(deleteButton()).toBeTruthy();
+  });
+
+  it('deletes nothing until the object API name is typed exactly', async () => {
+    const { feature, apiRequest } = mountWithDelete(true);
+    await feature.onActivate?.();
+    await flush();
+    deleteButton()!.click();
+    await flush();
+
+    // Wrong phrase: the confirm control must not enable.
+    const input = Array.from(document.querySelectorAll('input')).at(-1) as HTMLInputElement;
+    input.value = 'account';
+    input.dispatchEvent(new Event('input'));
+    await flush();
+    const confirm = Array.from(document.querySelectorAll('button'))
+      .find((b) => b.textContent?.includes('Delete record')) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    expect(apiRequest).not.toHaveBeenCalled();
+  });
+
+  it('issues a DELETE for the record once confirmed, and clears the inspector', async () => {
+    const { feature, apiRequest } = mountWithDelete(true);
+    await feature.onActivate?.();
+    await flush();
+    deleteButton()!.click();
+    await flush();
+    await confirmTyped('Account');
+
+    expect(apiRequest).toHaveBeenCalledWith('DELETE', expect.stringContaining(`/sobjects/Account/${REC}`));
+    // The record is gone, so leaving its fields on screen would invite an edit
+    // that cannot land.
+    expect(document.querySelector('tbody tr')).toBeNull();
+    expect(document.body.textContent).toMatch(/No record loaded/);
+  });
+
+  it('reports a timed-out delete as unknown, never as "not deleted"', async () => {
+    const timeout = Object.assign(new Error('Salesforce DELETE timed out after 120s'), {
+      sfdtKind: 'timeout', mutating: true, status: 0,
+    });
+    const { feature } = mountWithDelete(true, { apiRequest: vi.fn(async () => { throw timeout; }) });
+    await feature.onActivate?.();
+    await flush();
+    deleteButton()!.click();
+    await flush();
+    await confirmTyped('Account');
+
+    const text = document.body.textContent ?? '';
+    expect(text).toMatch(/Delete outcome unknown/);
+    expect(text).not.toMatch(/Not deleted/);
+  });
+
+  it('keeps the record on screen when the org refuses the delete', async () => {
+    const rejection = new SalesforceRestError('bad', 400, [
+      { message: 'insufficient access', errorCode: 'INSUFFICIENT_ACCESS_OR_READONLY', fields: [] },
+    ]);
+    const { feature } = mountWithDelete(true, { apiRequest: vi.fn(async () => { throw rejection; }) });
+    await feature.onActivate?.();
+    await flush();
+    deleteButton()!.click();
+    await flush();
+    await confirmTyped('Account');
+
+    expect(document.body.textContent).toMatch(/Not deleted/);
+    expect(rowFor('Name')).toBeTruthy();
+  });
+});

@@ -41,6 +41,7 @@ import { createSoqlRunnerFeature, writePendingQuery } from '../features/soql-run
 import { createSubflowGraphFeature } from '../features/subflow-graph.js';
 import { createTriggerConflictsFeature } from '../features/trigger-conflicts.js';
 import { createInspectRecordFeature } from '../features/inspect-record.js';
+import { isRecordDeleteEnabled } from '../features/record-delete.js';
 import { createSchemaBrowserFeature } from '../features/schema-browser.js';
 import { createShowApiNamesFeature } from '../features/show-api-names.js';
 import { createFieldImpactFeature } from '../features/field-impact.js';
@@ -156,7 +157,10 @@ export default defineContentScript({
     registry.register(createRestExploreFeature());
     // Kept as a reference so the P1-8 context-menu message can open the
     // inspector for a specific record Id (openFor), not just the page's URL.
-    const inspectRecord = createInspectRecordFeature();
+    // `canDelete` is a function DECLARATION below, not a closure over a `let`
+    // that is initialised further down — declarations hoist, so this reference
+    // is safe here regardless of where `disabledRemote` is assigned.
+    const inspectRecord = createInspectRecordFeature({ canDelete: recordDeleteEnabled });
     registry.register(inspectRecord);
     // Record-page ⚡ entry dispatches onActivate (reads the sObject from the URL);
     // the reference is also kept so the command palette can drill an object into
@@ -256,6 +260,17 @@ export default defineContentScript({
       } catch (err) {
         console.warn('[SFDT] kill-switch refresh failed:', err);
       }
+    }
+
+    /**
+     * Is the opt-in `record-delete` capability live right now?
+     *
+     * Read per call rather than captured: both halves change while the page is
+     * open — the user can tick the options row, and the kill switch refreshes
+     * on a timer.
+     */
+    function recordDeleteEnabled(): boolean {
+      return isRecordDeleteEnabled(currentSettings, disabledRemote);
     }
 
     function makeGate() {
