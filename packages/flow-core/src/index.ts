@@ -295,6 +295,19 @@ export {
 } from './field-usage-offline.js';
 export type { ReferenceKind, OfflineSourceType, OfflineHit } from './field-usage-offline.js';
 
+// Salesforce streaming (CometD/Bayeux). One protocol implementation shared by
+// the extension's background worker and `sfdt events tail` — a stateful
+// handshake with a replay extension is exactly the kind of thing two copies
+// would drift on.
+export {
+  SalesforceBayeuxClient,
+  eventChannelQuery,
+  eventChannelPath,
+  REPLAY_NEW_ONLY,
+  REPLAY_ALL_RETAINED,
+} from './streaming.js';
+export type { BayeuxMessage, EventChannelKind, EventChannelQuery } from './streaming.js';
+
 // Record editability model — shared by the CLI (`sfdt record`), the MCP tools
 // and the Chrome extension, so a field is refused identically on every surface.
 export {

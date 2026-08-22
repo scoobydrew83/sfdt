@@ -32,7 +32,14 @@ export function isRecordId(id) {
     && /[0-9]/.test(id.slice(0, 5));
 }
 
-function apiVersion(config) {
+/**
+ * `config.sourceApiVersion` as a REST path segment (`v62.0`), or the default.
+ *
+ * Exported because `events-runner.js` builds `/sobjects/<Event>__e/` paths too,
+ * and two copies of this normalisation would eventually disagree about whether
+ * `62` means `v62.0`.
+ */
+export function apiVersion(config) {
   const raw = config?.sourceApiVersion;
   if (raw === undefined || raw === null || raw === '') return DEFAULT_API_VERSION;
   const n = String(raw).replace(/^v/i, '');

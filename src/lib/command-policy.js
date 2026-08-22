@@ -347,6 +347,21 @@ export const COMMAND_POLICY = {
       sfdt_field_usage: { mutating: false },
     },
   },
+  events: {
+    // `publish` writes an event to the org's event bus. `list` and `tail` are
+    // read-only, but the command as a whole can mutate.
+    mutating: true,
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'org-health',
+    surfaces: { gui: false, vscode: true, chrome: true },
+    mcpTools: {
+      sfdt_events_list: { mutating: false },
+      sfdt_events_tail: { mutating: false },
+      sfdt_events_publish: { mutating: true },
+    },
+  },
   data: {
     mutating: true, // import/delete change org data
     requiresProject: true,

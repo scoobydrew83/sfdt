@@ -878,6 +878,36 @@
       "group": null
     },
     {
+      "id": "events-list",
+      "label": "List Channels",
+      "detail": "Every subscribable channel in the org",
+      "args": [
+        "events",
+        "list"
+      ],
+      "group": null
+    },
+    {
+      "id": "events-tail",
+      "label": "Tail",
+      "detail": "Subscribe and print events as they arrive",
+      "args": [
+        "events",
+        "tail"
+      ],
+      "group": null
+    },
+    {
+      "id": "events-publish",
+      "label": "Publish",
+      "detail": "Publish one platform event",
+      "args": [
+        "events",
+        "publish"
+      ],
+      "group": null
+    },
+    {
       "id": "field-impact",
       "label": "Impact",
       "detail": "Show what writes a field (flows, field updates, Apex)",

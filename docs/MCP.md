@@ -174,6 +174,34 @@ Fields come back in three states: `unreferenced: true`, `false`, and **`null` �
 
 `safeToRemove` is `null` unless `population: true` was passed, and is `true` only when the field is custom, scanned, unreferenced, measured at zero values, and neither required nor unique. Anything short of that carries a `keepReason` naming the condition it failed — including `population not measured`, which is what a metadata-only answer always is.
 
+#### `sfdt_events_list`
+Lists every subscribable streaming channel — custom and standard platform events, custom channels, and CDC entities — with each channel's Bayeux path. Read-only.
+* **Arguments:**
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+#### `sfdt_events_tail`
+Subscribes to a channel and collects events. **Always bounded** — returns after `timeoutSeconds`, or earlier once `max` events arrive or `expect` matches. Read-only.
+* **Arguments:**
+  * `channel` (string, **required**): channel name or full Bayeux path.
+  * `replay` (string, optional): `"new"` (default), `"all"` for the retention window, or a replay id.
+  * `timeoutSeconds` (number, optional): default 60.
+  * `max` (number, optional): stop after this many events.
+  * `expect` (object, optional): field → value; stops on the first match.
+  * `org` (string, optional): org alias.
+
+`replay: "all"` replays events already in the retention window (roughly 24h), which is how to inspect something that has already happened rather than waiting for it to recur. When `expect` is set, check `matched` — `false` means the event never arrived, which is usually the finding, not an error.
+
+#### `sfdt_events_publish`
+Publishes one platform event. **Mutating — requires `confirmExecution`.**
+* **Arguments:**
+  * `event` (string, **required**): platform event API name, ending in `__e`.
+  * `fields` (object, **required**): field API name → value.
+  * `org` (string, optional): org alias.
+  * `dryRun` (boolean, optional): return the request body without sending it.
+  * `confirmExecution` (boolean, **required**): must be true to publish.
+
+This fires **real subscribers** — flows, triggers, and any external system listening on the channel. CDC events cannot be published; they are produced by Salesforce.
+
 #### `sfdt_flow_scan`
 Analyzes a Salesforce org's Flows for quality issues and anti-patterns (via `@sfdt/flow-core`) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Read-only.
 * **Arguments:**

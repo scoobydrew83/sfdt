@@ -5330,6 +5330,193 @@
       "source": "src/commands/field.js"
     },
     {
+      "id": "events",
+      "path": [
+        "events"
+      ],
+      "description": "Platform Events and Change Data Capture: list, tail, publish",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "events list",
+          "path": [
+            "events",
+            "list"
+          ],
+          "description": "List every subscribable channel in the org",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "events tail",
+          "path": [
+            "events",
+            "tail"
+          ],
+          "description": "Subscribe to a channel and print events as they arrive",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "channel",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--replay <id>",
+              "name": "replay",
+              "required": false,
+              "default": null,
+              "description": "\"new\" (default), \"all\" for the retention window, or a replay id"
+            },
+            {
+              "flags": "--timeout <seconds>",
+              "name": "timeout",
+              "required": false,
+              "default": "60",
+              "description": "Stop after this long (default 60)"
+            },
+            {
+              "flags": "--max <n>",
+              "name": "max",
+              "required": false,
+              "default": "0",
+              "description": "Stop after this many events"
+            },
+            {
+              "flags": "--expect <Field=Value>",
+              "name": "expect",
+              "required": false,
+              "default": null,
+              "description": "Stop on the first matching event; exit 1 if none arrives"
+            },
+            {
+              "flags": "--out <file>",
+              "name": "out",
+              "required": false,
+              "default": null,
+              "description": "Append each event to a file as NDJSON"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit one envelope at the end instead of streaming"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "events publish",
+          "path": [
+            "events",
+            "publish"
+          ],
+          "description": "Publish one platform event",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "Event__e",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--field <Name=Value>",
+              "name": "field",
+              "required": false,
+              "default": null,
+              "description": "Repeatable. Splits on the first = only"
+            },
+            {
+              "flags": "--dry-run",
+              "name": "dryRun",
+              "required": false,
+              "default": null,
+              "description": "Print the exact body without sending it"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "org-health",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_events_list",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_events_tail",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_events_publish",
+          "mutating": true
+        }
+      ],
+      "source": "src/commands/events.js"
+    },
+    {
       "id": "version",
       "path": [
         "version"

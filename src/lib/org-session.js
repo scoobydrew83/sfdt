@@ -72,3 +72,49 @@ export async function getOrgInstanceUrl(orgAlias) {
   const url = result.instanceUrl ?? null;
   return url ? String(url).replace(/\/+$/, '') : null;
 }
+
+/**
+ * The org's access token, instance URL and API version — for the one caller
+ * that genuinely needs a token in this process.
+ *
+ * Everything else in this CLI shells to `sf` and lets it join the session
+ * itself, which is why "stored tokens: 0" is true. A CometD long-poll cannot
+ * work that way: it is a single HTTP connection held open for minutes, and `sf`
+ * has no subcommand that proxies one. So `sfdt events tail` holds a bearer
+ * token in memory for the life of the command.
+ *
+ * What that does and does not change:
+ *
+ *   - It is read from the `sf` keychain at the moment of use. Nothing is
+ *     written, cached to disk, or persisted between runs, so no new secret is
+ *     STORED anywhere.
+ *   - It is never logged, never placed in the JSON envelope, never put in a
+ *     snapshot or a notification payload, and never accepted from a flag or an
+ *     env var — it comes from the keychain or it does not come at all.
+ *   - `accessToken` / `sessionid` / `sid` are in `SENSITIVE_KEYS`
+ *     (`audit-logger.js`) so anything that does reach a log is redacted. That
+ *     is the backstop, not the plan.
+ *
+ * @param {string} orgAlias
+ * @returns {Promise<{accessToken: string, instanceUrl: string, apiVersion: string}>}
+ */
+export async function getOrgSession(orgAlias) {
+  const result = await displayOrg(orgAlias);
+  const accessToken = result.accessToken ?? null;
+  const instanceUrl = result.instanceUrl ?? null;
+  if (!accessToken || !instanceUrl) {
+    // Say what is missing without echoing any part of what WAS returned.
+    throw new Error(
+      `No usable session for "${orgAlias}" — \`sf org display\` returned no ${
+        accessToken ? 'instance URL' : 'access token'
+      }. Re-authenticate with \`sf org login web --alias ${orgAlias}\`.`,
+    );
+  }
+  return {
+    accessToken,
+    instanceUrl: String(instanceUrl).replace(/\/+$/, ''),
+    // `sf` reports this as e.g. "62.0"; the CometD endpoint wants the same
+    // number, and the Bayeux client strips a leading `v` if one is present.
+    apiVersion: String(result.apiVersion ?? '').trim() || '62.0',
+  };
+}

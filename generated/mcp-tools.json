@@ -225,6 +225,42 @@
       ]
     },
     {
+      "name": "sfdt_events_list",
+      "description": "List every subscribable streaming channel in the org — custom and standard platform events, custom channels, and Change Data Capture entities — with each channel's Bayeux path. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_events_tail",
+      "description": "Subscribe to a platform event or CDC channel and collect events. ALWAYS bounded — it returns after timeoutSeconds, or earlier once max events arrive or an expectation matches. Set replay to \"all\" to receive events already in the retention window (roughly 24h), which is how you inspect something that has already happened. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "channel",
+        "replay",
+        "timeoutSeconds",
+        "max",
+        "expect",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_events_publish",
+      "description": "Publish one platform event to the org's event bus. This FIRES real subscribers — flows, triggers, and any external system listening. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "event",
+        "fields",
+        "org",
+        "dryRun",
+        "confirmExecution"
+      ]
+    },
+    {
       "name": "sfdt_flow_scan",
       "description": "Analyze a Salesforce org's Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.",
       "confirmExecution": false,

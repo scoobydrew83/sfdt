@@ -12,6 +12,7 @@ import { presentView, type ViewHandle } from '../ui/present-view.js';
 import { setTone, button, toolbar } from '../lib/ui-controls.js';
 import { clearSfError, setSfError } from '../ui/panels.js';
 import { copyToClipboard } from '../ui/clipboard.js';
+import { eventChannelQuery, type EventChannelKind } from '@sfdt/flow-core';
 
 const EVENT_MONITOR_SETTINGS_SCHEMA = z.object({
   historyEnabled: z.boolean().default(true),
@@ -101,44 +102,34 @@ export function createEventMonitorFeature(options: {
     }
 
     const apiVersion = api.apiVersion;
-    let query = '';
     const list: ChannelOption[] = [];
 
+    // The SOQL lives in flow-core so `sfdt events list` enumerates exactly the
+    // same channels — one surface offering a channel the other does not is a
+    // support question nobody can answer.
+    const { soql, tooling } = eventChannelQuery(type as EventChannelKind);
+
     try {
-      if (type === 'standardPlatformEvent') {
-        query = "SELECT Label, QualifiedApiName FROM EntityDefinition WHERE IsCustomizable = FALSE AND IsEverCreatable = TRUE AND QualifiedApiName LIKE '%Event' AND (NOT QualifiedApiName LIKE '%ChangeEvent') ORDER BY Label ASC LIMIT 200";
+      if (type === 'standardPlatformEvent' || type === 'platformEvent') {
         const res = await api.apiGet<QueryEnvelope<{ Label: string; QualifiedApiName: string }>>(
           `/services/data/${apiVersion}/query`,
-          { q: query },
+          { q: soql },
         );
         if (res && res.records) {
           res.records.forEach((r) => {
             list.push({ name: r.QualifiedApiName, label: `${r.Label} (${r.QualifiedApiName})` });
           });
         }
-      } else if (type === 'platformEvent') {
-        query = "SELECT QualifiedApiName, Label FROM EntityDefinition WHERE isCustomizable = TRUE AND KeyPrefix LIKE 'e%' ORDER BY Label ASC";
-        const res = await api.apiGet<QueryEnvelope<{ Label: string; QualifiedApiName: string }>>(
-          `/services/data/${apiVersion}/query`,
-          { q: query },
-        );
-        if (res && res.records) {
-          res.records.forEach((r) => {
-            list.push({ name: r.QualifiedApiName, label: `${r.Label} (${r.QualifiedApiName})` });
-          });
-        }
-      } else if (type === 'customChannel') {
-        query = 'SELECT FullName, MasterLabel FROM PlatformEventChannel ORDER BY DeveloperName';
-        const res = await api.toolingQuery<{ FullName: string; MasterLabel: string }>(query);
+      } else if (tooling && type === 'customChannel') {
+        const res = await api.toolingQuery<{ FullName: string; MasterLabel: string }>(soql);
         if (res && res.records) {
           res.records.forEach((r) => {
             list.push({ name: r.FullName, label: `${r.MasterLabel} (${r.FullName})` });
           });
         }
-      } else if (type === 'changeEvent') {
+      } else if (tooling && type === 'changeEvent') {
         list.push({ name: 'ChangeEvents', label: 'All Change Events (ChangeEvents)' });
-        query = "SELECT MasterLabel, SelectedEntity FROM PlatformEventChannelMember WHERE EventChannel = 'ChangeEvents' ORDER BY MasterLabel";
-        const res = await api.toolingQuery<{ MasterLabel: string; SelectedEntity?: string }>(query);
+        const res = await api.toolingQuery<{ MasterLabel: string; SelectedEntity?: string }>(soql);
         if (res && res.records) {
           res.records.forEach((r) => {
             const label = r.SelectedEntity ? r.SelectedEntity.replace(/([A-Z])/g, ' $1').trim() : r.MasterLabel;

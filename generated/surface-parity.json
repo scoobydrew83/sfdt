@@ -635,6 +635,22 @@
       "sideEffects": null
     },
     {
+      "id": "events",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        "sfdt_events_list",
+        "sfdt_events_tail",
+        "sfdt_events_publish"
+      ],
+      "sideEffects": null
+    },
+    {
       "id": "version",
       "surfaces": {
         "cli": true,

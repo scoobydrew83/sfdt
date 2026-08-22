@@ -1185,6 +1185,97 @@ sfdt docs diagram --output docs/erd.mmd
 
 ---
 
+### sfdt events
+
+Platform Events and Change Data Capture.
+
+```bash
+sfdt events list                                    # what can I subscribe to?
+sfdt events tail Order_Placed__e                    # listen for 60s
+sfdt events tail AccountChangeEvent --replay all    # replay the retention window
+sfdt events publish Order_Placed__e --field Order_Id__c=A-1
+
+# publish, then assert it arrived — an integration test for CI
+sfdt events tail Order_Placed__e --expect Status__c=OK --timeout 30
+```
+
+The CometD/Bayeux protocol implementation is [`@sfdt/flow-core`](../packages/flow-core)'s, shared
+verbatim with the Chrome extension's background worker. A stateful handshake with a replay
+extension and a reconnect policy is exactly the kind of thing two copies would drift on, in ways
+that only show up against a real org.
+
+#### `list`
+
+Enumerates custom platform events (`__e`), standard platform events, custom `PlatformEventChannel`
+channels, and the entities enrolled in Change Data Capture — each with its Bayeux path. A kind
+whose query is refused is reported as *unchecked*; it never silently becomes "your org has none".
+
+#### `tail`
+
+| Option | Description |
+|---|---|
+| `--replay <id>` | `new` (default), `all` for everything still in the retention window, or a specific replay id |
+| `--timeout <seconds>` | Stop after this long. Default 60 — a tail is always bounded |
+| `--max <n>` | Stop after this many events |
+| `--expect <Field=Value>` | Repeatable. Stop on the first matching event; **exit 1 if none arrives** |
+| `--out <file>` | Append each event to a file as NDJSON |
+| `--json` | Emit one envelope at the end instead of streaming |
+
+`--replay all` is the one worth knowing: it replays events already in the retention window
+(roughly 24 hours, 72 for high-volume), so you can inspect something that has *already* happened
+rather than waiting for it to happen again.
+
+`--expect` walks dotted paths into the payload, so CDC's header is reachable:
+`--expect payload.ChangeEventHeader.changeType=CREATE`. It compares as strings and requires
+**every** pair. This is deliberately not a JSONPath dialect — a matcher nobody can predict is
+worse than one that only does the obvious thing.
+
+> **Why `--json` does not stream.** The JSON envelope is one object on stdout (golden principle
+> #6); a tail is a stream. Both cannot be true at once, so `--json` prints nothing live and emits
+> a single envelope at the end, bounded by `--timeout`/`--max`. Without `--json`, events stream to
+> stdout as NDJSON as they arrive and status goes to stderr. The invariant wins over the
+> convenience.
+
+Ctrl-C ends a tail cleanly, unsubscribing from the org rather than leaving it holding a
+subscription for a process that has exited.
+
+#### `publish`, and the reason it exists
+
+Publishing an event is an ordinary REST POST to `/sobjects/<Event>__e/` — no token, no streaming.
+`--dry-run` prints the exact body without sending it.
+
+Paired with `tail --expect`, it becomes a **publish-then-assert integration test that runs in your
+pipeline**:
+
+```yaml
+- run: npx --yes @sfdt/cli@latest events publish Order_Placed__e --field Order_Id__c=CI-$GITHUB_RUN_ID
+- run: npx --yes @sfdt/cli@latest events tail Order_Placed__e --expect Order_Id__c=CI-$GITHUB_RUN_ID --timeout 60
+```
+
+Publishing fires **real subscribers** — flows, triggers, and any external system listening. The
+MCP tool therefore declares `confirmExecution`.
+
+#### One command in this CLI holds a session token
+
+`tail` is the exception to how everything else here works. Every other command shells out to `sf`
+and lets it join the session, which is why sfdt stores no tokens. A CometD long-poll is a single
+HTTP connection held open for minutes and `sf` has no subcommand that proxies one, so `tail` reads
+an access token via `sf org display` and holds it **in memory for the life of the command**.
+
+What that does and does not change:
+
+- It is read from the `sf` keychain at the moment of use. Nothing is written, cached to disk, or
+  persisted between runs — **no new secret is stored anywhere**.
+- It is never logged, never placed in the JSON envelope, never put in a snapshot or a notification
+  payload, and never accepted from a flag or an environment variable.
+- `accessToken` / `sessionId` / `sid` are in the redaction list, so anything that *does* reach a
+  log is masked. That is the backstop, not the plan.
+
+All of this lives in one file, `src/lib/org-session.js`, so reviewing it is reading one file
+rather than grepping.
+
+---
+
 ### sfdt field
 
 Field-level analysis over an org. Read-only.

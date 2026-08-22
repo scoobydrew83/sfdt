@@ -59,6 +59,7 @@ describe('createCli', () => {
       'extension',
       'feature-flags',
       'field',
+      'events',
       'doctor',
       'mcp',
       'plugin',

@@ -350,6 +350,57 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_events_list',
+    description: 'List every subscribable streaming channel in the org — custom and standard platform events, custom channels, and Change Data Capture entities — with each channel\'s Bayeux path. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    },
+    examples: [
+      { description: 'What can I subscribe to in dev?', input: { org: 'dev' } }
+    ]
+  },
+  {
+    name: 'sfdt_events_tail',
+    description: 'Subscribe to a platform event or CDC channel and collect events. ALWAYS bounded — it returns after timeoutSeconds, or earlier once max events arrive or an expectation matches. Set replay to "all" to receive events already in the retention window (roughly 24h), which is how you inspect something that has already happened. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        channel: { type: 'string', description: 'Channel name (e.g. "Order_Placed__e", "AccountChangeEvent") or a full Bayeux path.' },
+        replay: { type: 'string', description: '"new" (default), "all" for the retention window, or a specific replay id.' },
+        timeoutSeconds: { type: 'number', description: 'How long to listen. Default 60.' },
+        max: { type: 'number', description: 'Stop after this many events.' },
+        expect: { type: 'object', description: 'Field to value, e.g. { "Status__c": "OK" }. Stops on the first match; the result reports matched:false if none arrived.', additionalProperties: true },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['channel']
+    },
+    examples: [
+      { description: 'Replay the last day of an event to see what happened', input: { channel: 'Order_Placed__e', replay: 'all', max: 20 } },
+      { description: 'Wait up to 30s for a specific event', input: { channel: 'Order_Placed__e', expect: { Status__c: 'OK' }, timeoutSeconds: 30 } }
+    ]
+  },
+  {
+    name: 'sfdt_events_publish',
+    description: 'Publish one platform event to the org\'s event bus. This FIRES real subscribers — flows, triggers, and any external system listening. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event: { type: 'string', description: 'Platform event API name, ending in __e.' },
+        fields: { type: 'object', description: 'Field API name to value.', additionalProperties: true },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        dryRun: { type: 'boolean', description: 'Return the exact request body without sending it.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to publish to the org.' }
+      },
+      required: ['event', 'fields', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Fire a test event', input: { event: 'Order_Placed__e', fields: { Order_Id__c: 'A-1' }, confirmExecution: true } }
+    ]
+  },
+  {
     name: 'sfdt_flow_scan',
     description: 'Analyze a Salesforce org\'s Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.',
     inputSchema: {
@@ -894,6 +945,33 @@ export class SfdtMcpServer {
         const cmdArgs = ['field', 'usage', args.object, '--json'];
         if (args.offline) cmdArgs.push('--offline');
         if (args.population) cmdArgs.push('--population');
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_events_list': {
+        const cmdArgs = ['events', 'list', '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_events_tail': {
+        const cmdArgs = ['events', 'tail', args.channel, '--json'];
+        if (args.replay) cmdArgs.push('--replay', String(args.replay));
+        if (args.timeoutSeconds) cmdArgs.push('--timeout', String(args.timeoutSeconds));
+        if (args.max) cmdArgs.push('--max', String(args.max));
+        for (const [k, v] of Object.entries(args.expect ?? {})) {
+          cmdArgs.push('--expect', `${k}=${v}`);
+        }
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_events_publish': {
+        const cmdArgs = ['events', 'publish', args.event, '--json'];
+        for (const [k, v] of Object.entries(args.fields ?? {})) {
+          cmdArgs.push('--field', `${k}=${v}`);
+        }
+        if (args.dryRun) cmdArgs.push('--dry-run');
         if (args.org) cmdArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);

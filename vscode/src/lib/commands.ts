@@ -205,6 +205,14 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     docsUrl: DOCS.configUtils,
     entries: [
       {
+        id: 'events', label: 'Platform Events', detail: 'Platform Events and Change Data Capture', icon: 'radio-tower',
+        children: [
+          { id: 'events-list', label: 'List Channels', detail: 'Every subscribable channel in the org', args: ['events', 'list'] },
+          { id: 'events-tail', label: 'Tail', detail: 'Subscribe and print events as they arrive', args: ['events', 'tail'] },
+          { id: 'events-publish', label: 'Publish', detail: 'Publish one platform event', args: ['events', 'publish'], destructive: true },
+        ],
+      },
+      {
         id: 'field', label: 'Field Usage', detail: 'Analyze how a field is used across an org', icon: 'search',
         children: [
           { id: 'field-impact', label: 'Impact', detail: 'Show what writes a field (flows, field updates, Apex)', args: ['field', 'impact'] },
