@@ -1,7 +1,7 @@
 import ora from 'ora';
 import chalk from 'chalk';
 import { loadConfig } from '../lib/config.js';
-import { runFieldImpact } from '../lib/field-impact-runner.js';
+import { runFieldImpact, runFieldUsage } from '../lib/field-impact-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
 
@@ -54,6 +54,55 @@ function printImpact(vm) {
   console.log(chalk.dim('An inferred row is a lead, not a write. See the scan scope above for what was not checked.'));
 }
 
+
+/**
+ * Render the sweep.
+ *
+ * Three bands, kept visually distinct because conflating them is the whole
+ * failure mode: **unreferenced** (nothing found), **unknown** (not scanned —
+ * NOT clean), and referenced. A standard field always lands in unknown, because
+ * a dependency sweep can say nothing about one.
+ */
+function printUsage(vm, { population }) {
+  console.log('');
+  console.log(chalk.bold(`Field usage · ${vm.object}`));
+  console.log('');
+
+  const band = (rows, title, colour) => {
+    if (rows.length === 0) return;
+    console.log(colour(`  ${title}`));
+    for (const row of rows) {
+      const flag = row.safeToRemove === true ? chalk.green(' ✔ safe to remove') : '';
+      const pop =
+        row.populated === null
+          ? ''
+          : chalk.dim(` · ${row.populated} value(s)${row.totalRecords ? ` of ${row.totalRecords}` : ''}`);
+      const why = row.keepReason && row.safeToRemove === false ? chalk.dim(` — ${row.keepReason}`) : '';
+      console.log(`    ${row.name.padEnd(38)} ${chalk.dim(row.type.padEnd(12))}${pop}${flag}${why}`);
+    }
+    console.log('');
+  };
+
+  band(vm.rows.filter((r) => r.unreferenced === true), 'No reference found', chalk.bold.yellow);
+  band(vm.rows.filter((r) => r.unreferenced === null), 'Not scanned — status unknown', chalk.bold.dim);
+  band(vm.rows.filter((r) => r.unreferenced === false), 'Referenced', chalk.bold.green);
+
+  console.log(
+    chalk.dim(
+      `${vm.counts.total} field(s): ${vm.counts.unreferenced} unreferenced, ` +
+        `${vm.counts.unknown} unknown, ${vm.counts.scanned - vm.counts.unreferenced} referenced` +
+        (population ? `, ${vm.counts.safeToRemove} safe to remove` : ''),
+    ),
+  );
+
+  if (vm.notes.length > 0) {
+    console.log('');
+    console.log(chalk.bold('Scan scope'));
+    for (const note of vm.notes) console.log(`  ${chalk.dim('·')} ${chalk.dim(note)}`);
+  }
+  console.log('');
+}
+
 /**
  * `sfdt field` — field-level analysis over an org.
  *
@@ -94,6 +143,38 @@ export function registerFieldCommand(program) {
           emitJsonError(err);
         } else {
           console.error(chalk.red(`Field impact failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
+        }
+      }
+    });
+
+  field
+    .command('usage <Object>')
+    .description('Sweep every field on an object for references, and optionally for data')
+    .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
+    .option('--population', 'Count non-null values per unreferenced field (one query each)')
+    .option('--json', 'Emit structured JSON to stdout')
+    .action(async (object, options) => {
+      const jsonMode = !!options.json;
+      const spinner = jsonMode ? null : ora(`Sweeping ${object}…`).start();
+      try {
+        const config = await loadConfig();
+        const orgAlias = resolveOrg(config, options);
+        const vm = await runFieldUsage(config, orgAlias, object, {
+          population: !!options.population,
+        });
+        spinner?.stop();
+        if (jsonMode) {
+          emitJson({ org: orgAlias, ...vm }, { warnings: vm.notes });
+          return;
+        }
+        printUsage(vm, { population: !!options.population });
+      } catch (err) {
+        spinner?.stop();
+        if (jsonMode) {
+          emitJsonError(err);
+        } else {
+          console.error(chalk.red(`Field usage failed: ${err.message}`));
           process.exitCode = resolveExitCode(err);
         }
       }

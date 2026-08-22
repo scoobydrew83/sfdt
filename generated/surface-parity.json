@@ -629,7 +629,8 @@
         "chrome": true
       },
       "mcpTools": [
-        "sfdt_field_impact"
+        "sfdt_field_impact",
+        "sfdt_field_usage"
       ],
       "sideEffects": null
     },

@@ -213,6 +213,17 @@
       ]
     },
     {
+      "name": "sfdt_field_usage",
+      "description": "Sweep EVERY field on an object for references, to find cleanup candidates. Batches the dependency lookup so N fields cost ceil(N/200) queries. Fields come back in three states: unreferenced (nothing found), referenced, and UNKNOWN (not scanned — a standard field has no CustomField record, so a dependency sweep can say nothing about it). Never conflate unknown with unreferenced. With population=true it also counts non-null values, and only then can a field be flagged safeToRemove: unreferenced AND empty AND not required/unique. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "object",
+        "population",
+        "org"
+      ]
+    },
+    {
       "name": "sfdt_flow_scan",
       "description": "Analyze a Salesforce org's Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.",
       "confirmExecution": false,

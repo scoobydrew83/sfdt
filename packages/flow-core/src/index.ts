@@ -261,6 +261,28 @@ export type {
   FieldImpactVM,
 } from './field-impact.js';
 
+// Object-wide field usage — the sweep that precedes a cleanup, plus the
+// population fold that makes `safeToRemove` mean something. Shared by
+// `sfdt field usage` and any surface that wants the same adjudication.
+export {
+  analyzeFieldUsage,
+  applyPopulation,
+  chunk,
+  customFieldsForObjectQuery,
+  dependencyBatchQuery,
+  developerName,
+  DEPENDENCY_CHUNK,
+  DEPENDENCY_ROW_CAP,
+  FIELD_ID_CAP,
+} from './field-usage.js';
+export type {
+  FieldUsageQueries,
+  FieldUsageFieldInput,
+  FieldUsageRow,
+  FieldUsageVM,
+  FieldPopulation,
+} from './field-usage.js';
+
 // Record editability model — shared by the CLI (`sfdt record`), the MCP tools
 // and the Chrome extension, so a field is refused identically on every surface.
 export {

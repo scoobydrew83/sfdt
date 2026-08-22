@@ -160,6 +160,17 @@ Every row is `confirmed` (the metadata itself states the write) or `inferred` (a
 
 An empty `rows` array means *no writer was found by three bounded scans* — never that none exists. A caller that reports it as "nothing writes this field" is overstating the result.
 
+#### `sfdt_field_usage`
+Sweeps **every** field on an object for references — the cleanup-candidate view. Read-only.
+* **Arguments:**
+  * `object` (string, **required**): sObject API name.
+  * `population` (boolean, optional): count non-null values per unreferenced field.
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+Fields come back in three states: `unreferenced: true`, `false`, and **`null` — not scanned**. A standard field has no `CustomField` record for a dependency edge to point at, and a failed batch leaves its fields `null` too. Never report `null` as unreferenced.
+
+`safeToRemove` is `null` unless `population: true` was passed, and is `true` only when the field is custom, scanned, unreferenced, measured at zero values, and neither required nor unique. Anything short of that carries a `keepReason` naming the condition it failed — including `population not measured`, which is what a metadata-only answer always is.
+
 #### `sfdt_flow_scan`
 Analyzes a Salesforce org's Flows for quality issues and anti-patterns (via `@sfdt/flow-core`) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Read-only.
 * **Arguments:**

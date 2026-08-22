@@ -342,7 +342,10 @@ export const COMMAND_POLICY = {
     supportsJson: true,
     docsCategory: 'metadata',
     surfaces: { gui: false, vscode: true, chrome: true },
-    mcpTools: { sfdt_field_impact: { mutating: false } },
+    mcpTools: {
+      sfdt_field_impact: { mutating: false },
+      sfdt_field_usage: { mutating: false },
+    },
   },
   data: {
     mutating: true, // import/delete change org data

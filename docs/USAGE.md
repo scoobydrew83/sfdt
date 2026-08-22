@@ -1190,9 +1190,12 @@ sfdt docs diagram --output docs/erd.mmd
 Field-level analysis over an org. Read-only.
 
 ```bash
-sfdt field impact Account.Region__c
-sfdt field impact Opportunity.StageName --org prod --links
-sfdt field impact Account.Region__c --json
+sfdt field impact Account.Region__c              # deep: what writes ONE field
+sfdt field impact Opportunity.StageName --links
+
+sfdt field usage Account                        # wide: every field on the object
+sfdt field usage Account --population            # …and how much data each holds
+sfdt field usage Account --population --json
 ```
 
 `impact` answers **"what writes this field?"** from three sources:
@@ -1215,11 +1218,47 @@ and hedge in the same words.
 | `--links` | Resolve the org instance URL so rows carry Setup / Flow Builder deep links. Costs one extra `sf` call, so it is opt-in; without it rows carry no URL rather than a broken relative one |
 | `--json` | Emit machine-readable output. The scan notes travel in the envelope's `warnings` as well as the body |
 
+`usage` sweeps **every** field on an object instead, which is the shape you want before a
+cleanup. It resolves the object's custom fields once, then batches the dependency lookup into
+`RefMetadataComponentId IN (…)` queries, so 300 fields cost `ceil(300 / 200)` round trips rather
+than 300.
+
+Fields come back in **three** states, and conflating any two of them is the whole failure mode:
+
+| State | Meaning |
+|---|---|
+| `unreferenced: true` | Nothing referenced it in the sources scanned |
+| `unreferenced: false` | Something did — `references` names what |
+| `unreferenced: null` | **Not scanned.** A standard field has no `CustomField` record for a dependency edge to point at, and a failed batch leaves its fields here too. This is *unknown*, not clean |
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
+| `--population` | Count non-null values for each unreferenced custom field (one query each, five in flight). Required before any field can be called safe to remove |
+| `--json` | Emit machine-readable output |
+
+#### Why `--population` is not optional in practice
+
+A reference-only sweep will happily report a field holding two million values as unreferenced,
+because metadata edges say nothing about data. So `safeToRemove` stays `null` until you have
+actually counted, and a field earns it only when **all** of these hold:
+
+- it is custom (a standard field is not yours to remove);
+- it was actually scanned, and nothing referenced it;
+- its population was actually measured, and is **zero** — a count that *failed* is not a count of
+  zero, and is refused;
+- it is not required, and not unique (a unique field may back an external key).
+
+Every field that misses the bar carries a `keepReason` saying which condition it failed, so the
+list explains itself rather than leaving you to guess why something you expected is absent.
+
 #### Read the scan scope, not just the rows
 
-Every run prints a **Scan scope** section, and it is not decoration. A run that could not read
-half the org and a run that read all of it both end in "no writer found"; the notes are the only
-thing that tells them apart. They state:
+Both subcommands print a **Scan scope** section, and it is not decoration. A run that could not
+read half the org and a run that read all of it both end in "no writer found"; the notes are the
+only thing that tells them apart. They state:
 
 - **Which queries were refused.** A `CustomField` lookup rejected for permissions is reported as
   refused — *not* as "this field has no dependency edge". A failed query is not a finding about
@@ -1231,6 +1270,10 @@ thing that tells them apart. They state:
   the two paths are not directly comparable, and the notes say so.
 - **What the Flow parser does not model** — Transform elements, invocable and quick actions, and
   the bodies of called subflows. A flow that writes the field only that way produces no row.
+
+- For `usage`, additionally: that `MetadataComponentDependency` does not record an edge for every
+  kind of reference, how many fields were left unknown and why, and whether a batch came back at
+  its row cap.
 
 An empty result therefore means *no writer was found by the sources scanned*. It is never proof
 that nothing writes the field.

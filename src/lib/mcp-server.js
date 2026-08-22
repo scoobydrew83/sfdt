@@ -332,6 +332,23 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_field_usage',
+    description: 'Sweep EVERY field on an object for references, to find cleanup candidates. Batches the dependency lookup so N fields cost ceil(N/200) queries. Fields come back in three states: unreferenced (nothing found), referenced, and UNKNOWN (not scanned — a standard field has no CustomField record, so a dependency sweep can say nothing about it). Never conflate unknown with unreferenced. With population=true it also counts non-null values, and only then can a field be flagged safeToRemove: unreferenced AND empty AND not required/unique. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        object: { type: 'string', description: 'sObject API name, e.g. "Account".' },
+        population: { type: 'boolean', description: 'Count non-null values per unreferenced field (one query each). Required before any field can be called safe to remove.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['object']
+    },
+    examples: [
+      { description: 'Find cleanup candidates on Account, with data counts', input: { object: 'Account', population: true } },
+      { description: 'Quick reference-only sweep', input: { object: 'Opportunity' } }
+    ]
+  },
+  {
     name: 'sfdt_flow_scan',
     description: 'Analyze a Salesforce org\'s Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.',
     inputSchema: {
@@ -869,6 +886,13 @@ export class SfdtMcpServer {
         const cmdArgs = ['field', 'impact', args.field, '--json'];
         if (args.org) cmdArgs.push('--org', args.org);
         if (args.links) cmdArgs.push('--links');
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_field_usage': {
+        const cmdArgs = ['field', 'usage', args.object, '--json'];
+        if (args.population) cmdArgs.push('--population');
+        if (args.org) cmdArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);
       }

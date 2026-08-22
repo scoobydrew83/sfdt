@@ -3,17 +3,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../src/lib/org-query.js', () => ({
   query: vi.fn(),
   search: vi.fn(),
+  count: vi.fn(),
+}));
+vi.mock('../../src/lib/soql-runner.js', () => ({
+  describeSObject: vi.fn(),
 }));
 vi.mock('../../src/lib/org-session.js', () => ({
   getOrgInstanceUrl: vi.fn(),
 }));
 
-import { query, search } from '../../src/lib/org-query.js';
+import { query, search, count } from '../../src/lib/org-query.js';
+import { describeSObject } from '../../src/lib/soql-runner.js';
 import { getOrgInstanceUrl } from '../../src/lib/org-session.js';
 import {
   parseFieldRef,
   toolingQueriesFor,
   runFieldImpact,
+  runFieldUsage,
 } from '../../src/lib/field-impact-runner.js';
 
 // The ANALYSIS is flow-core's and is tested there
@@ -30,6 +36,8 @@ import {
 beforeEach(() => {
   vi.mocked(query).mockReset();
   vi.mocked(search).mockReset();
+  vi.mocked(count).mockReset();
+  vi.mocked(describeSObject).mockReset();
   vi.mocked(getOrgInstanceUrl).mockReset();
   vi.mocked(query).mockResolvedValue([]);
   vi.mocked(search).mockResolvedValue([]);
@@ -130,5 +138,116 @@ describe('runFieldImpact', () => {
 
     const vm = await runFieldImpact('dev', 'Account.Region__c');
     expect(vm.notes.some((n) => n.includes('INSUFFICIENT_ACCESS'))).toBe(true);
+  });
+});
+
+// --------------------------------------------------------------------------
+// runFieldUsage — the sweep
+// --------------------------------------------------------------------------
+//
+// The adjudication is flow-core's and is tested there. What is asserted here is
+// what THIS layer decides: which fields are worth a COUNT(), that a failed count
+// stays null rather than becoming zero, and that skipping --population is stated
+// rather than left as a column of nulls.
+
+describe('runFieldUsage', () => {
+  const config = { _projectRoot: '/p', defaultOrg: 'dev' };
+
+  /** Route SOQL to a handler table; anything unmatched returns []. */
+  function routeQueries(handlers) {
+    vi.mocked(query).mockImplementation(async (_org, soql) => {
+      for (const [pattern, rows] of handlers) {
+        if (pattern.test(soql)) {
+          if (rows instanceof Error) throw rows;
+          return rows;
+        }
+      }
+      return [];
+    });
+  }
+
+  beforeEach(() => {
+    vi.mocked(describeSObject).mockResolvedValue({
+      org: 'dev',
+      name: 'Account',
+      fields: [
+        { name: 'Id', label: 'Id', type: 'id', custom: false, nillable: false, unique: false },
+        { name: 'Region__c', label: 'Region', type: 'picklist', custom: true, nillable: true, unique: false },
+        { name: 'Legacy__c', label: 'Legacy', type: 'string', custom: true, nillable: true, unique: false },
+      ],
+    });
+    routeQueries([[/FROM CustomField/, [
+      { Id: '00N1', DeveloperName: 'Region' },
+      { Id: '00N2', DeveloperName: 'Legacy' },
+    ]]]);
+    vi.mocked(count).mockResolvedValue(0);
+  });
+
+  it('says the data was not counted when --population is omitted', async () => {
+    const vm = await runFieldUsage(config, 'dev', 'Account');
+
+    expect(count).not.toHaveBeenCalled();
+    expect(vm.rows.every((r) => r.safeToRemove === null)).toBe(true);
+    expect(vm.notes.some((n) => n.includes('was NOT counted'))).toBe(true);
+  });
+
+  it('counts only the unreferenced custom fields, not every field', async () => {
+    // A referenced field is not a candidate whatever its data says, so counting
+    // it is a query spent to learn nothing.
+    routeQueries([
+      [/FROM CustomField/, [
+        { Id: '00N1', DeveloperName: 'Region' },
+        { Id: '00N2', DeveloperName: 'Legacy' },
+      ]],
+      [/MetadataComponentDependency/, [
+        { RefMetadataComponentId: '00N1', MetadataComponentName: 'T', MetadataComponentType: 'ApexTrigger' },
+      ]],
+    ]);
+
+    await runFieldUsage(config, 'dev', 'Account', { population: true });
+
+    const counted = vi.mocked(count).mock.calls.map(([, soql]) => soql);
+    expect(counted.some((s) => s.includes('Legacy__c != null'))).toBe(true);
+    expect(counted.some((s) => s.includes('Region__c != null'))).toBe(false);
+    // Plus the object total.
+    expect(counted.some((s) => s === 'SELECT COUNT() FROM Account')).toBe(true);
+  });
+
+  it('flags an unreferenced, empty field as safe to remove', async () => {
+    vi.mocked(count).mockResolvedValue(0);
+    const vm = await runFieldUsage(config, 'dev', 'Account', { population: true });
+
+    expect(vm.rows.find((r) => r.name === 'Legacy__c').safeToRemove).toBe(true);
+  });
+
+  it('does not flag a field whose count failed', async () => {
+    // A count that did not run is not a count of zero.
+    vi.mocked(count).mockRejectedValue(new Error('QUERY_TIMEOUT'));
+    const vm = await runFieldUsage(config, 'dev', 'Account', { population: true });
+
+    expect(vm.rows.find((r) => r.name === 'Legacy__c').safeToRemove).toBe(false);
+    expect(vm.notes.some((n) => n.includes('is not a count of zero'))).toBe(true);
+  });
+
+  it('warns that an empty object makes every count meaningless', async () => {
+    vi.mocked(count).mockResolvedValue(0);
+    const vm = await runFieldUsage(config, 'dev', 'Account', { population: true });
+
+    expect(vm.notes.some((n) => n.includes('no records at all'))).toBe(true);
+  });
+
+  it('maps a describe nillable:false to required', async () => {
+    vi.mocked(describeSObject).mockResolvedValue({
+      org: 'dev',
+      name: 'Account',
+      fields: [
+        { name: 'Req__c', label: 'Req', type: 'string', custom: true, nillable: false, unique: false },
+      ],
+    });
+    routeQueries([[/FROM CustomField/, [{ Id: '00N9', DeveloperName: 'Req' }]]]);
+    vi.mocked(count).mockResolvedValue(0);
+
+    const vm = await runFieldUsage(config, 'dev', 'Account', { population: true });
+    expect(vm.rows.find((r) => r.name === 'Req__c').keepReason).toBe('required');
   });
 });

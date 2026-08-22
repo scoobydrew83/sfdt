@@ -888,6 +888,16 @@
       "group": null
     },
     {
+      "id": "field-usage",
+      "label": "Usage Sweep",
+      "detail": "Find unreferenced fields on an object",
+      "args": [
+        "field",
+        "usage"
+      ],
+      "group": null
+    },
+    {
       "id": "record-get",
       "label": "Get",
       "detail": "Read a record and show what is editable",

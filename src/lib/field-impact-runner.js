@@ -1,5 +1,6 @@
-import { analyzeFieldImpact } from '@sfdt/flow-core';
-import { query, search } from './org-query.js';
+import { analyzeFieldImpact, analyzeFieldUsage, applyPopulation } from '@sfdt/flow-core';
+import { query, search, count } from './org-query.js';
+import { describeSObject } from './soql-runner.js';
 import { getOrgInstanceUrl } from './org-session.js';
 
 /**
@@ -70,4 +71,120 @@ export async function runFieldImpact(orgAlias, ref, { links = false } = {}) {
     }
   }
   return analyzeFieldImpact(toolingQueriesFor(orgAlias), { object, field, origin });
+}
+
+// --------------------------------------------------------------------------
+// `sfdt field usage <Object>` — the object-wide sweep
+// --------------------------------------------------------------------------
+
+/**
+ * Count non-null values for one field.
+ *
+ * `COUNT()` returns an empty `records` array with the real number in
+ * `totalSize`, which is exactly what `count()` in org-query.js already handles —
+ * counting `records.length` here would report 0 for every field.
+ *
+ * @returns {Promise<number|null>} null when the count could not be taken, which
+ *   is NOT the same as zero and must never be folded into one.
+ */
+async function countPopulated(orgAlias, object, field) {
+  try {
+    return await count(orgAlias, `SELECT COUNT() FROM ${object} WHERE ${field} != null`);
+  } catch {
+    return null;
+  }
+}
+
+/** Run `tasks` with at most `limit` in flight, preserving input order in the result. */
+async function mapWithConcurrency(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await fn(items[i], i);
+      }
+    }),
+  );
+  return out;
+}
+
+/** Concurrent `COUNT()` queries. Bounded so a wide object cannot flood the org. */
+export const POPULATION_CONCURRENCY = 5;
+
+/**
+ * Sweep every field on an object for references, and optionally for data.
+ *
+ * The adjudication — what counts as unreferenced, and what `safeToRemove`
+ * requires — is `@sfdt/flow-core`'s. This function supplies the describe, the
+ * transport, and the counts.
+ *
+ * @param {object} config - loaded sfdt config (for `describeSObject`)
+ * @param {string} orgAlias
+ * @param {string} object - sObject API name
+ * @param {object} [options]
+ * @param {boolean} [options.population] - Measure non-null counts per field.
+ *   Opt-in: it is one query per field.
+ * @returns {Promise<import('@sfdt/flow-core').FieldUsageVM>}
+ */
+export async function runFieldUsage(config, orgAlias, object, { population = false } = {}) {
+  const described = await describeSObject(config, object, { org: orgAlias });
+  const fields = described.fields.map((f) => ({
+    name: f.name,
+    label: f.label,
+    type: f.type,
+    custom: f.custom,
+    // A describe reports "required" as `nillable: false`.
+    required: f.nillable === false,
+    unique: f.unique,
+  }));
+
+  const vm = await analyzeFieldUsage(toolingQueriesFor(orgAlias), { object, fields });
+
+  if (!population) {
+    // Without counts `safeToRemove` stays null on every row, which is the
+    // honest answer — so say why, rather than leaving a column of nulls to be
+    // read as "no".
+    vm.notes.push(
+      'Field data was NOT counted (pass --population). Without it no field can be called safe to ' +
+        'remove: an unreferenced field may still hold values.',
+    );
+    return vm;
+  }
+
+  // Only fields that could actually be scanned AND came back clean are worth
+  // counting — counting the rest would be N queries spent to learn nothing,
+  // since a referenced field is not a removal candidate whatever its data says.
+  const candidates = vm.rows.filter((r) => r.custom && r.unreferenced === true);
+  const populations = await mapWithConcurrency(
+    candidates,
+    POPULATION_CONCURRENCY,
+    async (row) => ({ field: row.name, populated: await countPopulated(orgAlias, object, row.name) }),
+  );
+
+  let totalRecords = null;
+  try {
+    totalRecords = await count(orgAlias, `SELECT COUNT() FROM ${object}`);
+  } catch {
+    totalRecords = null;
+  }
+
+  applyPopulation(vm, populations, { totalRecords });
+
+  const failed = populations.filter((p) => p.populated === null).length;
+  if (failed > 0) {
+    vm.notes.push(
+      `${failed} population count(s) failed. Those fields are NOT reported as safe to remove — a ` +
+        'count that did not run is not a count of zero.',
+    );
+  }
+  if (totalRecords === 0) {
+    // Every count is trivially zero, so "empty" says nothing about the field.
+    vm.notes.push(
+      `${object} has no records at all, so every field counts zero. That is a fact about the ` +
+        'object, not evidence about any field.',
+    );
+  }
+  return vm;
 }

@@ -5247,6 +5247,48 @@
             }
           ],
           "subcommands": []
+        },
+        {
+          "id": "field usage",
+          "path": [
+            "field",
+            "usage"
+          ],
+          "description": "Sweep every field on an object for references, and optionally for data",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "Object",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--population",
+              "name": "population",
+              "required": false,
+              "default": null,
+              "description": "Count non-null values per unreferenced field (one query each)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
         }
       ],
       "mutating": false,
@@ -5264,6 +5306,10 @@
       "mcpTools": [
         {
           "name": "sfdt_field_impact",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_field_usage",
           "mutating": false
         }
       ],

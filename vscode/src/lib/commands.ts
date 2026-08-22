@@ -208,6 +208,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         id: 'field', label: 'Field Usage', detail: 'Analyze how a field is used across an org', icon: 'search',
         children: [
           { id: 'field-impact', label: 'Impact', detail: 'Show what writes a field (flows, field updates, Apex)', args: ['field', 'impact'] },
+          { id: 'field-usage', label: 'Usage Sweep', detail: 'Find unreferenced fields on an object', args: ['field', 'usage'] },
         ],
       },
       {
