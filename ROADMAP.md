@@ -60,9 +60,9 @@ Both defects were fixed on `develop` before this phase was written; the competit
 Design approved 2026-08-22; [docs/design/record-edit-clone.md](docs/design/record-edit-clone.md) holds the four-PR chain. Its two external prerequisites are workstream A above, both now merged, so the chain is unblocked.
 
 - **PR-1 — editability model + typed API errors** — `extension/lib/record-edit.ts`, DOM-free and I/O-free: `EDITABLE_TYPES`, `classifyFieldEditability()`, `formatForInput()`/`coerceForWire()`, `buildDirtyDiff()` and `mapSaveErrors()`. `buildDirtyDiff()` replaces the two independent `!==` loops `inspect-record` runs today with one computation. Shipped as a tested contract, deliberately unconsumed — **Shipped (stable)** (PR #307)
-- **PR-2 — edit mode in `inspect-record`** — consume `record-edit.ts`: typed editors per field, server field errors rendered on the exact field, re-read after save so formula/roll-up/audit fields cannot go stale — **Planned**
-- **PR-3 — clone** — **Planned**
-- **PR-4 — delete** behind its own feature id `record-delete`, so it is independently remotely-killable (a sub-flag inside `inspect-record` cannot be, per the design doc's recorded decision) — **Planned**
+- **PR-2 — edit mode in `inspect-record`** — per-type editors from `record-edit.ts`, read-only fields carrying their reason, one dirty diff for both the save bar and the PATCH body, the three-state save outcome (saved / no changes were saved / outcome unknown) branched on `sfApiErrorKind`, a post-success re-GET, server field errors on the exact field, and an unsaved-changes guard on Escape and the backdrop. Also retires this file's private describe types for the shared `DescribeCache` — **In develop**
+- **PR-3 — clone** — a staged create form prefilled from `createable` fields, creating nothing until Create is pressed; new `buildCreateBody` in `record-edit.ts` as a sibling of `buildDirtyDiff`; failures reuse PR-2's error mapping — **In develop**
+- **PR-4 — delete** (the only piece left) behind its own feature id `record-delete`, so it is independently remotely-killable (a sub-flag inside `inspect-record` cannot be, per the design doc's recorded decision) — **Planned**
 
 ### Also in this phase
 
