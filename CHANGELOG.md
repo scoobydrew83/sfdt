@@ -9,6 +9,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`sfdt field impact|usage` — field usage and impact on the CLI, MCP and VS Code, sharing one
+  model with the Chrome panel.** Field impact existed only inside the Chrome extension, one field
+  at a time; `sfdt dependencies` answered a component-level question instead.
+
+  The plan was to promote the pure viewmodel and rebuild the fetch layer CLI-side. Reading that
+  layer showed the plan was wrong: its ~330 lines are not query plumbing, they are twenty-odd
+  carefully worded **scope notes** — which query was refused versus which came back empty, when a
+  broad scan may assert a reference, what the Flow parser does not model. Those notes are the
+  product. So the whole scan moved to **`@sfdt/flow-core`** (`0.12.0 → 0.13.0`) as
+  `analyzeFieldImpact(queries, …)`, with every org call injected: the browser supplies its
+  worker-proxied Tooling client, the CLI supplies `sf data query --use-tooling-api`. The
+  extension's 84-case suite passes unchanged through a re-export shim, which is what proves the
+  move behaviour-preserving. The contract has one rule stated in three places: **an implementation
+  must let a refusal throw**, because resolving empty would tell the scan "your org has none of
+  these" and turn a permissions failure into a clean bill of health.
+
+  `impact` answers *what writes this field* — flows **parsed** rather than merely referenced,
+  workflow field updates, and an Apex text search that is always `inferred` because a text hit is
+  not a write. Alongside it, and deliberately in a **separate** list, are the components that
+  merely *reference* the field: validation rules, layouts, reports, email templates, list views.
+  One dependency query buys every type at once, where four bespoke per-type scans would each need
+  a list-then-read-`Metadata` pass and still miss whatever type nobody added. They are kept apart
+  because *what writes this field* and *where does this field appear* are different questions —
+  a validation rule listed among the writers is useless when you are working out what changed a
+  value, and essential when you are working out what a change would break.
+
+  `usage` sweeps a whole object, which is the shape you want before a cleanup. Field ids are
+  batched into `RefMetadataComponentId IN (…)` queries, so 300 fields cost `ceil(300/200)` round
+  trips rather than 300. Fields come back in **three** states, and conflating any two is the whole
+  failure mode: `unreferenced: true`, `false`, and **`null` — not scanned**. A standard field has
+  no `CustomField` record for an edge to point at; a refused lookup returns an empty id list that
+  looks exactly like "this object has no custom fields"; a failed batch marks only its own fields.
+  All three are `null`, with a note saying which applies.
+
+  `--population` counts non-null values, and is what makes *safe to remove* mean anything: a
+  reference-only tool will call a field holding two million values unused. `safeToRemove` stays
+  `null` until data is counted and is `true` only when the field is custom, scanned, unreferenced,
+  measured at **zero**, and neither required nor unique — a count that *failed* is not a count of
+  zero. Every rejection records a `keepReason`, so the list explains itself.
+
+  `--offline` runs the same sweep against the repository with **no org**, so it works on a pull
+  request before the field is deployed anywhere. A naive grep is worthless here, because profiles
+  and permission sets name every field they grant and layouts list most fields on the object: those
+  are **structural** references, and `unreferenced` is keyed on **logical** ones only (Apex, flows,
+  validation rules, formulas on other fields, reports, LWC, Aura). Structural hits are still shown,
+  labelled, because removing a field means removing those entries too. `--fail-on-unreferenced`
+  gates CI, on `true` only — a field whose status is unknown never fails a build, or the gate would
+  be firing on our inability to check.
+
+- **`sfdt events list|tail|publish` — Platform Events and Change Data Capture on the CLI, MCP and
+  VS Code.** Streaming existed only inside the Chrome extension.
+
+  The CometD/Bayeux client — handshake, subscribe with the replay extension, `/meta/connect`
+  long-poll, backoff — moved from the extension's background worker into **`@sfdt/flow-core`**
+  verbatim, rather than being reimplemented for Node. It was already fully injected and uses only
+  Node 22 globals, so it needed no adaptation; the Chrome-specific half (sid from cookies, host
+  derivation, `chrome.runtime.Port`) stayed put. Two copies of a stateful handshake with a replay
+  extension would have drifted on exactly the parts that only show up against a real org.
+
+  `list` enumerates every subscribable channel with its Bayeux path. `tail` subscribes and is
+  **always bounded**; `--replay all` replays the retention window, which is what makes it useful
+  for debugging something that already happened rather than waiting for it to recur. `publish`
+  fires a real event — an ordinary REST POST — and paired with `tail --expect` becomes a
+  **publish-then-assert integration test that runs in your pipeline**. The MCP publish tool
+  declares `confirmExecution`.
+
+  `--json` emits **one envelope at the end** rather than streaming: the JSON envelope is a single
+  object on stdout (golden principle #6) and a tail is a stream, and both cannot be true at once.
+  Without `--json`, events stream as NDJSON and status goes to stderr.
+
+  **`events tail` is the one command in this CLI that holds a session token in memory.** Every
+  other command shells to `sf` and lets it join the session, which is why sfdt stores no tokens.
+  A CometD long-poll is a connection this process must own and `sf` cannot proxy one. The token is
+  read from the `sf` keychain at the moment of use and never written, cached, persisted, logged,
+  enveloped, or accepted from a flag or environment variable; `accessToken`/`sessionId`/`sid`
+  joined the redaction list as a backstop. It lives in one file, `src/lib/org-session.js`, and
+  [SECURITY.md](SECURITY.md) now documents the posture rather than implying the CLI never touches
+  a token.
+
+- **Record delete in the Chrome inspector, off by default.** The last piece of the record
+  view/edit/clone/delete chain. It has its own feature id `record-delete` rather than a flag
+  inside `inspect-record`, because the remote kill switch is a list of feature ids and a nested
+  boolean could never be killed remotely. `enabledByDefault: false` is the whole opt-in. With the
+  gate closed the Delete control is **not built at all** — absent from the DOM, not hidden, since
+  a hidden button is still reachable by a devtools poke. Deleting requires typing the object's API
+  name, and a timed-out delete reports `unknown` rather than success or failure. No new Chrome
+  permission is involved.
+
 - **`sfdt record get|edit|clone` — single-record read and write on the CLI, MCP and VS Code,
   from the same model the browser uses.** Record view/edit/clone existed only inside the Chrome
   extension; the CLI had no record command at all, so nothing scriptable and no agent could read
