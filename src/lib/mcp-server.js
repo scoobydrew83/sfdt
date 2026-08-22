@@ -448,6 +448,39 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_permissions_matrix',
+    description: 'Show what each profile and permission set GRANTS on one object — object-level CRUD plus per-field read/edit. CRITICAL WORDING: these are GRANTED permissions, never "effective". Muting permission sets subtract access inside a permission set group and are Metadata-API only, so they cannot be queried and a user\'s real access may be LESS than shown. Do not describe the result as effective, actual, or final access. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        object: { type: 'string', description: 'sObject API name, e.g. "Account".' },
+        user: { type: 'string', description: 'Username. Narrows to that user\'s profile, permission sets and permission set groups. Requires an org.' },
+        offline: { type: 'boolean', description: 'Read profiles and permission sets from the repository instead of an org. Cannot be combined with user — assignments are not in source.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['object']
+    },
+    examples: [
+      { description: 'Who can edit fields on Account?', input: { object: 'Account' } },
+      { description: 'What does one user get on Opportunity?', input: { object: 'Opportunity', user: 'ana@example.com' } }
+    ]
+  },
+  {
+    name: 'sfdt_permissions_drift',
+    description: 'Compare what the org grants on an object against what this repository declares in its profiles and permission sets. Verdicts: extra-in-org (granted in the org but absent from source — the one a security review cares about), missing-in-org, changed, and only-in-org / only-in-repo for a parent present on one side. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        object: { type: 'string', description: 'sObject API name.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['object']
+    },
+    examples: [
+      { description: 'Has anyone granted access in prod that is not in source?', input: { object: 'Account', org: 'prod' } }
+    ]
+  },
+  {
     name: 'sfdt_flow_scan',
     description: 'Analyze a Salesforce org\'s Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.',
     inputSchema: {
@@ -1041,6 +1074,20 @@ export class SfdtMcpServer {
         if (args.latest !== undefined) cmdArgs.push('--latest', args.latest);
         if (args.owner !== undefined) cmdArgs.push('--owner', args.owner);
         if (args.notes !== undefined) cmdArgs.push('--notes', args.notes);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_permissions_matrix': {
+        const cmdArgs = ['permissions', 'matrix', args.object, '--json'];
+        if (args.user) cmdArgs.push('--user', args.user);
+        if (args.offline) cmdArgs.push('--offline');
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_permissions_drift': {
+        const cmdArgs = ['permissions', 'drift', args.object, '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);
       }

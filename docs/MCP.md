@@ -202,6 +202,26 @@ Publishes one platform event. **Mutating — requires `confirmExecution`.**
 
 This fires **real subscribers** — flows, triggers, and any external system listening on the channel. CDC events cannot be published; they are produced by Salesforce.
 
+#### `sfdt_permissions_matrix`
+Shows what each profile and permission set **grants** on one object — object-level CRUD plus per-field read/edit. Read-only.
+* **Arguments:**
+  * `object` (string, **required**): sObject API name.
+  * `user` (string, optional): username; narrows to that user's profile, permission sets and permission set groups. Requires an org.
+  * `offline` (boolean, optional): read from the repository instead of an org. Cannot be combined with `user` — assignments are not in source.
+  * `org` (string, optional): org alias.
+
+**Never describe this result as "effective", "actual" or "final" access.** Muting permission sets subtract access inside a permission set group and are Metadata-API only, so they cannot be queried and a user's real access may be **less** than shown. Every response carries that caveat in `notes`; pass it on rather than dropping it.
+
+An empty result is not "nobody has access" — Salesforce stores a permission entry only where access differs from the default.
+
+#### `sfdt_permissions_drift`
+Compares what the org grants on an object against what the repository declares. Read-only.
+* **Arguments:**
+  * `object` (string, **required**): sObject API name.
+  * `org` (string, optional): org alias.
+
+Verdicts: `extra-in-org` (granted in the org but absent from source — the one a security review cares about), `missing-in-org`, `changed`, and `only-in-org` / `only-in-repo` for a parent present on one side. Parents are matched by label, since the org knows them by id and the repo by filename.
+
 #### `sfdt_packages_list`
 Lists every package installed in the org, with its version and any annotation recorded in `.sfdt/packages.json`. Read-only.
 * **Arguments:**

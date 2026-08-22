@@ -294,6 +294,28 @@
       ]
     },
     {
+      "name": "sfdt_permissions_matrix",
+      "description": "Show what each profile and permission set GRANTS on one object — object-level CRUD plus per-field read/edit. CRITICAL WORDING: these are GRANTED permissions, never \"effective\". Muting permission sets subtract access inside a permission set group and are Metadata-API only, so they cannot be queried and a user's real access may be LESS than shown. Do not describe the result as effective, actual, or final access. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "object",
+        "user",
+        "offline",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_permissions_drift",
+      "description": "Compare what the org grants on an object against what this repository declares in its profiles and permission sets. Verdicts: extra-in-org (granted in the org but absent from source — the one a security review cares about), missing-in-org, changed, and only-in-org / only-in-repo for a parent present on one side. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "object",
+        "org"
+      ]
+    },
+    {
       "name": "sfdt_flow_scan",
       "description": "Analyze a Salesforce org's Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.",
       "confirmExecution": false,

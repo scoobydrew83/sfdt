@@ -1185,6 +1185,84 @@ sfdt docs diagram --output docs/erd.mmd
 
 ---
 
+### sfdt permissions
+
+Object and field access granted by profiles and permission sets. Read-only.
+
+```bash
+sfdt permissions matrix Account                      # who can see and edit what
+sfdt permissions matrix Account --user ana@acme.com  # what one user gets
+sfdt permissions matrix Account --offline            # from the repo, no org
+
+sfdt permissions drift Account --fail-on-drift       # org vs source, as a CI gate
+```
+
+#### It says "granted". It will never say "effective"
+
+This is the load-bearing decision, so it is stated first rather than footnoted.
+
+A user's real access is what their profile and permission sets grant **minus** whatever a *muting
+permission set* inside a permission set group takes away. Muting permission sets are **Metadata
+API only** — there is no queryable sObject for them — so any computed union can be **more
+permissive than reality**, and no amount of care with the queries changes that.
+
+A tool that calls that number "effective access" is not slightly imprecise; it is wrong in the
+direction that matters, and wrong in a way the reader cannot detect. So every result here is
+labelled *granted*, carries the caveat in words, and the word "effective" appears on no piece of
+data. A competitor claiming "effective" has the identical blind spot plus a false label.
+
+#### `matrix`
+
+Columns are profiles (prefixed `P:`) then permission sets, in a stable order so two runs are
+comparable by eye. Cells are `RW` / `R` / `—`, and edit implies read. Object-level CRUD, View All
+and Modify All are reported above the field grid, because a field grant is meaningless without it.
+
+Every query is **scoped to the one object**. A bare `SELECT … FROM FieldPermissions` is 100k–1M
+rows in a real org funnelled through `sf` stdout into `JSON.parse`; filtering by `SobjectType`
+makes this bounded by construction rather than by a cap that has to be explained. (The existing
+`audit lint-access` checks do run unbounded — they answer a different, cheaper question and are
+left alone.)
+
+`--user` resolves that user's profile, permission sets, **and permission set groups** — two hops,
+because the user is assigned the group while the grants live on its member sets. Skipping the
+second hop would silently drop every grant a group carries, and groups are where most large orgs
+put their access. When a group is involved the muting caveat is repeated pointing at it by name,
+since a group is exactly where muting is used.
+
+An empty result is **not** "nobody has access": Salesforce stores a permission entry only where
+access differs from the default, so absence is not denial. The output says so.
+
+#### `--offline` and `drift` — permissions as a deploy gate
+
+`--offline` reads `profiles/*.profile-meta.xml` and `permissionsets/*.permissionset-meta.xml` from
+the repository. No org, so it runs on a pull request. Its bound is different and is stated: source
+declares what is **committed**, and an org may carry grants nobody ever put in the repo.
+
+`drift` compares the two directly:
+
+| Verdict | Meaning |
+|---|---|
+| `extra-in-org` | Granted in the org but **absent from source** — the one a security review cares about |
+| `missing-in-org` | Declared in source but not granted in the org |
+| `changed` | Both grant it, at different levels |
+| `only-in-org` / `only-in-repo` | A profile or permission set present on one side only |
+
+Parents are matched by **label**, because the org identifies them by id and the repository by
+filename and those cannot be equated. That is a real limitation, so an unmatched parent is reported
+rather than dropped — and `--fail-on-drift` deliberately does **not** gate on it, since an
+unmatched parent is usually a naming mismatch rather than an access difference and a noisy gate
+gets turned off. Field-level differences are unambiguous, so those do gate.
+
+```yaml
+- name: Permissions must match source
+  run: npx --yes @sfdt/cli@latest permissions drift Account --org prod --fail-on-drift
+```
+
+Not added to the generated CI templates, for the same reason the field gate was not: it is
+per-object, so a generic template step would ship everyone a job with no object configured.
+
+---
+
 ### sfdt packages
 
 Installed package inventory, annotations, and cross-org version drift.

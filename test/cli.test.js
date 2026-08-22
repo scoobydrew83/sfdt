@@ -61,6 +61,7 @@ describe('createCli', () => {
       'field',
       'events',
       'packages',
+      'permissions',
       'doctor',
       'mcp',
       'plugin',

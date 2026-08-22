@@ -5683,6 +5683,133 @@
       "source": "src/commands/packages.js"
     },
     {
+      "id": "permissions",
+      "path": [
+        "permissions"
+      ],
+      "description": "Object and field access granted by profiles and permission sets",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "permissions matrix",
+          "path": [
+            "permissions",
+            "matrix"
+          ],
+          "description": "Show what each profile and permission set grants on an object",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "Object",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--user <username>",
+              "name": "user",
+              "required": false,
+              "default": null,
+              "description": "Narrow to one user: their profile, permission sets and groups"
+            },
+            {
+              "flags": "--offline",
+              "name": "offline",
+              "required": false,
+              "default": null,
+              "description": "Read profiles and permission sets from the repository instead of an org"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "permissions drift",
+          "path": [
+            "permissions",
+            "drift"
+          ],
+          "description": "Compare what the org grants against what this repository declares",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "Object",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--fail-on-drift",
+              "name": "failOnDrift",
+              "required": false,
+              "default": null,
+              "description": "Exit 1 when any field-level permission differs"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "org-health",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_permissions_matrix",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_permissions_drift",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/permissions.js"
+    },
+    {
       "id": "version",
       "path": [
         "version"

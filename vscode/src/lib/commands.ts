@@ -205,6 +205,13 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     docsUrl: DOCS.configUtils,
     entries: [
       {
+        id: 'permissions', label: 'Permissions', detail: 'Object and field access granted by profiles and permission sets', icon: 'shield',
+        children: [
+          { id: 'permissions-matrix', label: 'Matrix', detail: 'What each profile and permission set grants', args: ['permissions', 'matrix'] },
+          { id: 'permissions-drift', label: 'Drift vs Source', detail: 'Compare org grants against the repository', args: ['permissions', 'drift'] },
+        ],
+      },
+      {
         id: 'packages', label: 'Packages', detail: 'Installed package inventory and cross-org drift', icon: 'package',
         children: [
           { id: 'packages-list', label: 'List', detail: 'Installed packages with versions and notes', args: ['packages', 'list'] },

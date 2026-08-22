@@ -29,6 +29,18 @@ export function describeFinding(f: Record<string, unknown>): string {
     return `${str(f.user)}: ${str(f.observed)} setup changes in ${str(f.windowHours)}h ` +
       `(${str(f.observedPerDay)}/day vs a ${str(f.baselinePerDay)}/day baseline — ${str(f.ratio)}×)`;
   }
+  // Granted-permission finding: { permission:'granted', parent, field?, grant }.
+  // Placed HIGH and keyed off an explicit discriminant for the same reason the
+  // velocity anomaly is: a per-user permission row carries `username`, which the
+  // `f.username` arm below would render as an inactive-user line — a finding
+  // about ACCESS reported as a finding about a dormant login. The grant is named
+  // rather than implied, and the wording says "grants", never "has", because a
+  // muting permission set can subtract it.
+  if (f.permission === 'granted') {
+    const who = str(f.username) ?? str(f.parent);
+    const what = f.field ? `${str(f.object)}.${str(f.field)}` : str(f.object);
+    return `${who} grants ${str(f.grant)} on ${what}`;
+  }
   // Deprecated API versions: { type, name, apiVersion }
   if (f.name != null && f.apiVersion != null) {
     return `${f.type ? `${str(f.type)} ` : ''}${str(f.name)} (API ${str(f.apiVersion)})`;

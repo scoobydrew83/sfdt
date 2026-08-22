@@ -52,6 +52,7 @@ import { registerRecordCommand } from './commands/record.js';
 import { registerFieldCommand } from './commands/field.js';
 import { registerEventsCommand } from './commands/events.js';
 import { registerPackagesCommand } from './commands/packages.js';
+import { registerPermissionsCommand } from './commands/permissions.js';
 import { formatSplash } from './lib/output.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -129,6 +130,7 @@ export function createCli() {
   registerFieldCommand(program);
   registerEventsCommand(program);
   registerPackagesCommand(program);
+  registerPermissionsCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program

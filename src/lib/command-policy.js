@@ -347,6 +347,18 @@ export const COMMAND_POLICY = {
       sfdt_field_usage: { mutating: false },
     },
   },
+  permissions: {
+    mutating: false, // read-only: reports what is granted, changes nothing
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'org-health',
+    surfaces: { gui: false, vscode: true, chrome: false },
+    mcpTools: {
+      sfdt_permissions_matrix: { mutating: false },
+      sfdt_permissions_drift: { mutating: false },
+    },
+  },
   packages: {
     // `note` writes .sfdt/packages.json, a committed repo file. `list` and
     // `compare` are read-only.

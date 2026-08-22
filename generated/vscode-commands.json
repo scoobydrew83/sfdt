@@ -878,6 +878,26 @@
       "group": null
     },
     {
+      "id": "permissions-matrix",
+      "label": "Matrix",
+      "detail": "What each profile and permission set grants",
+      "args": [
+        "permissions",
+        "matrix"
+      ],
+      "group": null
+    },
+    {
+      "id": "permissions-drift",
+      "label": "Drift vs Source",
+      "detail": "Compare org grants against the repository",
+      "args": [
+        "permissions",
+        "drift"
+      ],
+      "group": null
+    },
+    {
       "id": "packages-list",
       "label": "List",
       "detail": "Installed packages with versions and notes",

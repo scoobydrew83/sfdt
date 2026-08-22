@@ -336,6 +336,32 @@ export type {
   PackageDriftVM,
 } from './packages.js';
 
+// Object and field permissions — what is GRANTED. Deliberately never
+// "effective": muting permission sets are Metadata-API only, so a computed
+// union can be more permissive than reality, and every result says so.
+export {
+  objectPermissionsQuery,
+  fieldPermissionsQuery,
+  userAssignmentsQuery,
+  groupComponentsQuery,
+  unqualifyField,
+  grantFromFlags,
+  maxGrant,
+  unionObjectGrants,
+  parentFromRow,
+  buildPermissionMatrix,
+  MUTING_NOTE,
+  NO_OBJECT_GRANT,
+} from './permissions.js';
+export type {
+  FieldGrant,
+  ObjectGrant,
+  PermissionParent,
+  FieldGrantRow,
+  PermissionMatrixVM,
+  PermissionQueries,
+} from './permissions.js';
+
 // Record editability model — shared by the CLI (`sfdt record`), the MCP tools
 // and the Chrome extension, so a field is refused identically on every surface.
 export {
