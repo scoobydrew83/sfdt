@@ -36,24 +36,44 @@ have moved to "Recently shipped" above. See [CHANGELOG.md](CHANGELOG.md) for eac
 
 Cross-workstream dispatch and status (including Chrome-extension items tracked outside this repo) lives on the internal Notion board "SFDT Master Backlog — Agent Dispatch Board"; this file remains the source of truth for the CLI items below.
 
-Two competitor reviews feed this section. The sf-pi integration review (2026-07-29) is cited as `docs/reviews/sf-pi-integration-review.md` but that file is **not present in this repo** — its three sequenced items (`sfdt apex`, `sfdt soql`, ApexGuru) all shipped in v0.22.0 regardless. The [SFDevTools competitive analysis](docs/reviews/sfdevtools-competitive-analysis.md) (2026-08-22) sources the tier-1 items below it.
+**Active phase: "Trustworthy writes"** (opened 2026-08-22). The 1.0 stabilization phase passed its verdict on 2026-08-12 (`.harness/telemetry.jsonl`), and what 1.0 itself now requires is written down in [docs/versioning.md](docs/versioning.md) rather than left implicit. This phase's theme: every remaining item on the competitive backlog is a *write* feature, and the transport underneath them misreports write outcomes. Fix that, then ship writes.
 
-Everything here re-implements capabilities natively — no dependency on the reviewed product, no code copied. FEATURES.json entries are seeded when a phase for them opens; the active phase remains 1.0 stabilization (F-001 first), whose stated intent is holding the surface still, so **nothing below is scheduled inside it**.
+Two competitor reviews feed this section. The sf-pi integration review (2026-07-29) is cited as `docs/reviews/sf-pi-integration-review.md` but that file is **not present in this repo** — its three sequenced items (`sfdt apex`, `sfdt soql`, ApexGuru) all shipped in v0.22.0 regardless. The [SFDevTools competitive analysis](docs/reviews/sfdevtools-competitive-analysis.md) (2026-08-22) sources the rest.
 
-- **Visual manifest builder (GUI · VS Code · Chrome)** — changeset-style checkbox builder: browse org inventory or local source by type, tick components, live package.xml / destructiveChanges.xml preview, save/deploy. One engine (`renderPackageXml` + `org-inventory.js`), GUI page inherited by VS Code via the dashboard iframe, Chrome via new read-only bridge kinds. Absorbs extension-plan items P5-4/P5-5 (pulled forward 2026-07-29). Mini-plan: [docs/design/visual-manifest-builder.md](docs/design/visual-manifest-builder.md) — **Planned**
+Everything here re-implements capabilities natively — no dependency on the reviewed product, no code copied.
 
-Sourced from the [SFDevTools competitive analysis](docs/reviews/sfdevtools-competitive-analysis.md) (2026-08-22), tier 1 — each extends an engine we already own rather than adding a surface:
+**FEATURES.json seeding for this phase is a separate, `develop`-direct commit.** `tools/check-features-edits.mjs` diffs the fork point against the working tree, so *any* branch that adds an entry fails `check:features` — and therefore `check:all-contracts` and CI. Only on the integration branch is the fork point HEAD and the diff empty. (The checker's own remediation text says to "land it in its own commit so the diff carries nothing else", which does not actually satisfy the rule from a branch; worth reconciling the text with the behaviour.)
 
-- **Effective FLS/OLS permission matrix** — resolve object and field access per profile *and* per user (profile + permission sets + permission set groups + muting), rendered as a read/write/none grid. `audit lint-access` / `lint-access-fields` already query `ObjectPermissions`/`FieldPermissions` in `src/lib/audit-runner.js`; the gap is *effective* resolution plus a matrix view, not new org access. Adds a GUI page and `sfdt_audit` inputs — **Planned**
-- **Cross-org permissions diff** — diff two orgs' effective matrices via the existing two-org comparison in `src/lib/org-diff.js`. Read-only; a writable bulk-fix path stays out until the approval ledger below exists. Depends on the matrix item — **Planned**
-- **Bulk API v2 data loading** — `sfdt data` is `sf data tree` only: no bulk path, no CSV field mapping, no upsert-by-external-ID. Extends `src/commands/data.js` over `sf data import bulk` / `sf data upsert bulk` (no new dependencies). The largest single capability gap a working Salesforce team would notice — **Planned**
+### Workstream A — the write transport (extension)
+
+Both are live defects on already-shipped features, both are scoped as standalone branches in [docs/design/record-edit-clone.md](docs/design/record-edit-clone.md) ("External prerequisites"), and workstream C cannot start until they land.
+
+- **`ext/fix-write-timeout`** — `extension/lib/salesforce-api.ts:16` sets `SEND_MESSAGE_TIMEOUT_MS = 5000` and `apiRequest()` inherits it, so a PATCH still in flight at 5 s throws `No Salesforce session available` — **a write that may have committed, reported as a failure**. Live on `data-import`, `field-creator`, `apex-anonymous`. Writes get an explicit timeout, and a transport failure becomes distinguishable at the call site from a server rejection — **Planned**
+- **`ext/enabled-by-default-authoritative`** — `isFeatureEnabled()` (`extension/lib/settings.ts:107`) returns `true` for any id with no stored entry, so the `enabledByDefault` flag in the manifest is never consulted and every new feature ships on. Runtime reads `manifest.enabledByDefault ?? true` — **Planned**
+
+### Workstream B — Bulk API v2 data loading (CLI)
+
+- **Bulk API v2 data loading** — `sfdt data` is `sf data tree` only: no bulk path, no CSV field mapping, no upsert-by-external-ID. `sf data delete bulk` is already wired (`src/lib/data-runner.js:127-153`) and the partial-success result shape bulk needs is already designed, so this is additive: widen `makeAction`'s signature to carry options, extend the data-set spec to discriminate tree-style from bulk-style, and add `buildImportBulkArgs`/`buildUpsertBulkArgs` beside the existing pure `buildExportArgs`. No new dependencies. The largest single capability gap a working Salesforce team would notice — **Planned**
+
+### Workstream C — record edit / clone / delete (Chrome)
+
+- **Record edit/clone/delete in `inspect-record`** — **approved 2026-08-22**; build the four-PR chain in [docs/design/record-edit-clone.md](docs/design/record-edit-clone.md). PR-1 rebases onto workstream A. Delete ships as its own feature id (`record-delete`) so it is independently kill-switchable — **Planned**
+
+### Also in this phase
+
 - **Setup Audit Trail anomaly layer** — velocity detection (N× baseline per user/section in a window) and a security-sensitive action list (password policy, session settings, permission changes, connected apps, certificates) over the `SetupAuditTrail` data `audit audittrail` already retrieves. Post-processing only, and it feeds `sfdt notify` — **Planned**
-- **Record edit/clone/delete in Chrome `inspect-record`** — design complete and awaiting approval since 2026-07-30 ([docs/design/record-edit-clone.md](docs/design/record-edit-clone.md)). Blocked on a decision, not on work — **Planned**
+- **Fix the two known flaky tests** — `test/lib/bridge-routes-extra.test.js` and `test/lib/gui-server-routes3.test.js` fail roughly 1 run in 8 under full-suite load (RELEASING.md §"Known flakes"). They already forced `npm test` out of `prepublishOnly`, and they can red the hard CI gate at random. Fixing them is a 1.0 requirement — **Planned**
+
+### Not in this phase
+
+- **Visual manifest builder** — this was listed here as Planned while [docs/design/visual-manifest-builder.md](docs/design/visual-manifest-builder.md) records it as **SHIPPED — all four PRs landed**. The design doc is correct; the entry was stale and is removed.
+- **Effective FLS/OLS permission matrix** and **cross-org permissions diff** — moved to Research. A previous revision of this file described them as extending an engine we already own. That was wrong, and the correction matters for scoping — see Research below.
 
 ## Research
 
-Directional, not sequenced. From the [SFDevTools competitive analysis](docs/reviews/sfdevtools-competitive-analysis.md) (2026-08-22), tiers 2–3:
+Directional, not sequenced. From the [SFDevTools competitive analysis](docs/reviews/sfdevtools-competitive-analysis.md) (2026-08-22), tiers 2–3.
 
+- **Effective FLS/OLS permission matrix** — resolve object and field access per profile *and* per user (profile + permission sets + permission set groups + muting) as a read/write/none grid, plus a cross-org diff. **Needs a design doc before any code.** The existing checks are not a starting point: `checkLintAccess`/`checkLintAccessFields` select `SobjectType`/`Field` and `PermissionsRead` only — no `ParentId`, which is exactly the axis a matrix needs — and fold it away with an existential OR. Four constraints the design must answer: (1) those two are the only unbounded queries in the audit runner, and `org-query.js` buffers `sf` stdout through `JSON.parse` with no `maxBuffer` override, so a real `FieldPermissions` scan (100k–1M+ rows) needs chunking by object; (2) `src/lib/org-diff.js` is a set-membership diff and cannot express `changed`, the only verdict a permissions diff cares about — it needs a sibling, not an extension; (3) **muting permission sets are not a queryable SObject** — Metadata API only, zero groundwork here — so v1 should scope them out explicitly rather than silently; (4) `describeFinding` in flow-core is a shape-sniffing if-chain that would render a matrix finding carrying `username` as an inactive-user line. The differentiated version is permissions as a **CI gate** — diff org permissions against what is in source and fail a deploy on drift, which a hosted product structurally cannot do — **Research**
 - **Approval ledger for org-mutating agent actions** — a staged before/after diff plus an append-only ledger distinct from `src/lib/run-history.js`, layered on the existing `confirmExecution` gating (golden principle #7). Valuable standalone, and the precondition for any org-*data* mutating MCP tool — **Research**
 - **Committed dashboard specs** — AI-authored dashboard definitions that live in the repo, are code-reviewed, and render in the GUI over `src/lib/soql-runner.js`. Deliberately not a hosted dashboard product; the spec shape is close to Studio's `ComponentSpec`, so one substrate could serve both — **Research**
 - **Package inventory + Platform Events/CDC promoted to CLI/MCP** — both exist Chrome-only today (`event-monitor`); `InstalledSubscriberPackage` via Tooling is new. Small, closes visible gaps — **Research**

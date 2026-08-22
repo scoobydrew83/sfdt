@@ -1,6 +1,9 @@
 # Mini-plan: Record Edit / Clone / Delete in inspect-record (Chrome)
 
-**Date:** 2026-07-30 · **Status:** Awaiting human approval — no code ships until sign-off
+**Date:** 2026-07-30 · **Status:** **APPROVED 2026-08-22** — scheduled into the "Trustworthy
+writes" phase. Build the PR chain as written below. PR-1 still cannot start until both
+[External prerequisites](#external-prerequisites) merge; those two are workstream A of the
+same phase, so the dependency is scheduled rather than open-ended.
 **Satisfies:** Chrome Extension Execution Plan item **P4-1** (Record edit / clone in
 inspect-record), an "**L** — mini-plan first" item and one of the plan's six named human
 checkpoints. Depends on P0-4 (worker-proxied API), which is merged.

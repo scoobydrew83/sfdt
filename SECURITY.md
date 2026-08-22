@@ -2,10 +2,13 @@
 
 ## Supported Versions
 
-| Version | Supported |
-| ------- | --------- |
-| 0.2.x   | Yes       |
-| < 0.2   | No        |
+| Version  | Supported |
+| -------- | --------- |
+| 0.22.x   | Yes       |
+| < 0.22   | No        |
+
+Only the latest minor line receives security fixes. See [docs/versioning.md](docs/versioning.md)
+for the support window and how it changes at 1.0.
 
 ## Reporting a Vulnerability
 
