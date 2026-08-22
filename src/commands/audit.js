@@ -22,7 +22,13 @@ const STATUS_COLOR = {
 function buildParams(config) {
   const a = config.audit ?? {};
   return {
-    audittrail: { lookbackDays: a.auditTrailLookbackDays ?? AUDIT_DEFAULTS.auditTrailLookbackDays },
+    audittrail: {
+      lookbackDays: a.auditTrailLookbackDays ?? AUDIT_DEFAULTS.auditTrailLookbackDays,
+      maxRows: a.auditTrailMaxRows ?? AUDIT_DEFAULTS.auditTrailMaxRows,
+      velocityWindowHours: a.auditTrailVelocityWindowHours ?? AUDIT_DEFAULTS.auditTrailVelocityWindowHours,
+      velocityFactor: a.auditTrailVelocityFactor ?? AUDIT_DEFAULTS.auditTrailVelocityFactor,
+      velocityMinEvents: a.auditTrailVelocityMinEvents ?? AUDIT_DEFAULTS.auditTrailVelocityMinEvents,
+    },
     licenses: { warnThreshold: a.licenseWarnThreshold ?? AUDIT_DEFAULTS.licenseWarnThreshold },
     'inactive-users': { lookbackDays: a.inactiveUserDays ?? AUDIT_DEFAULTS.inactiveUserDays },
     'api-versions': {

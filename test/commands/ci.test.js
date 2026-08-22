@@ -74,13 +74,31 @@ describe('generateCi', () => {
 
 describe('generateCi — back-compat with pre-partials output', () => {
   // The golden fixtures capture the rendered output (org golden-org, comment
-  // lines stripped) from before the auth/quality partial refactor. Monitor
-  // templates must render identically; deploy templates gain steps (quality
-  // scan, permissions) but every original line must survive, in order.
-  it.each(PROVIDERS)('%s monitor renders identically to the golden output', async (provider) => {
-    const golden = await fs.readFile(path.join(GOLDEN_DIR, `${provider}-monitor.yml`), 'utf-8');
+  // lines stripped) from before the auth/quality partial refactor. The
+  // guarantee is that **every original line survives, in order** — templates
+  // may gain steps, they may never silently lose one.
+  //
+  // Monitor was asserted byte-identical until the scheduled `audit all` step
+  // was added, which is a deliberate feature, not drift. Byte-equality would
+  // have made every future addition look like a regression while catching
+  // nothing that the line-survival check below does not; deploy has always
+  // been held to the weaker-but-truer form for exactly that reason.
+  it.each(PROVIDERS)('%s monitor keeps every golden line, in order', async (provider) => {
+    const golden = (await fs.readFile(path.join(GOLDEN_DIR, `${provider}-monitor.yml`), 'utf-8'))
+      .split('\n')
+      .filter((l) => l.trim());
+    const rendered = stripComments((await generateCi({ provider, type: 'monitor', org: 'golden-org' })).content).split('\n');
+    let cursor = 0;
+    for (const line of golden) {
+      const found = rendered.indexOf(line, cursor);
+      expect(found, `missing or out-of-order line in ${provider}-monitor: ${line}`).toBeGreaterThanOrEqual(cursor);
+      cursor = found + 1;
+    }
+  });
+
+  it.each(PROVIDERS)('%s monitor schedules the security audit', async (provider) => {
     const r = await generateCi({ provider, type: 'monitor', org: 'golden-org' });
-    expect(stripComments(r.content)).toBe(golden);
+    expect(r.content).toMatch(/audit all --org golden-org --notify --json/);
   });
 
   it.each(PROVIDERS)('%s deploy keeps every golden line, in order', async (provider) => {

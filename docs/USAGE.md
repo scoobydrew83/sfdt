@@ -1046,6 +1046,39 @@ sfdt audit licenses --json
 
 Exits non-zero when any check reports `fail` **or** `error` status, so an unreachable org or a missing permission can't read as healthy in CI. Check thresholds are configured under the `audit` block in `.sfdt/config.json`.
 
+#### The `audittrail` check
+
+Reads `SetupAuditTrail` over `audit.auditTrailLookbackDays` (default 30) and reports two
+different things.
+
+**Classified changes.** Each matching row carries a **severity** and a category. `critical`
+covers changes to who can get in or what they can reach — password policy, session settings,
+login IP ranges, Login-As, profile and permission-set assignment, connected apps, named
+credentials, certificates. `elevated` covers the rest (deletions, password resets, users frozen
+or deactivated). A `critical` row makes the check `fail`; `elevated` alone makes it `warn`.
+
+**Velocity anomalies.** The lookback is split: the most recent
+`audit.auditTrailVelocityWindowHours` (default 24) is the observation window, and everything
+older is that user's own baseline. A user whose observed changes-per-day exceeds
+`audit.auditTrailVelocityFactor` (default 3) × their baseline — and who cleared
+`audit.auditTrailVelocityMinEvents` (default 10) in absolute terms — is reported with **both
+rates**, so the number can be argued with. A user with no baseline activity is never flagged:
+first-seen is not a spike. Velocity runs over every row, not just the classified ones, because a
+burst of ordinary changes from one account is exactly the signal.
+
+Because a `critical` change or an anomaly makes the check `fail`, the run exits non-zero — so
+this is a **CI gate**, and it also clears the notifier's default `warn` threshold, so
+`--notify` reaches Slack/Teams without extra configuration. The generated
+`sfdt ci init --type monitor` templates now schedule `sfdt audit all --notify --json` alongside
+the monitor run.
+
+> **On completeness.** The sweep is capped at `audit.auditTrailMaxRows` (default 5000). When it
+> hits the cap the summary says so **and velocity is skipped** — the rows lost to a cap are the
+> oldest, which is precisely the baseline half of the split. This is deliberately not an
+> "unpaginated" claim: `sf data query` paginates, but the whole result crosses a subprocess
+> buffer, so an unbounded sweep of a busy org trades a silent truncation for a crash. Reporting
+> what was cut beats claiming a completeness that can't be delivered.
+
 ---
 
 ### sfdt monitor

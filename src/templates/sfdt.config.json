@@ -89,6 +89,10 @@
   "logRetention": 50,
   "audit": {
     "auditTrailLookbackDays": 30,
+    "auditTrailMaxRows": 5000,
+    "auditTrailVelocityWindowHours": 24,
+    "auditTrailVelocityFactor": 3,
+    "auditTrailVelocityMinEvents": 10,
     "licenseWarnThreshold": 0.75,
     "inactiveUserDays": 90,
     "minApiVersion": 45,

@@ -19,6 +19,16 @@ function str(v: unknown): string | undefined {
 }
 
 export function describeFinding(f: Record<string, unknown>): string {
+  // Setup-audit-trail velocity anomaly: { anomaly:'velocity', user, observed,
+  // windowHours, observedPerDay, baselinePerDay, ratio }. First, and keyed off
+  // an explicit discriminant rather than a shape, because it carries `user` —
+  // which the chain below reads as a person on a CHANGE row, not as the subject
+  // of a rate. Both numbers are in the line: a ratio with no baseline is a
+  // number the reader cannot argue with or act on.
+  if (f.anomaly === 'velocity') {
+    return `${str(f.user)}: ${str(f.observed)} setup changes in ${str(f.windowHours)}h ` +
+      `(${str(f.observedPerDay)}/day vs a ${str(f.baselinePerDay)}/day baseline — ${str(f.ratio)}×)`;
+  }
   // Deprecated API versions: { type, name, apiVersion }
   if (f.name != null && f.apiVersion != null) {
     return `${f.type ? `${str(f.type)} ` : ''}${str(f.name)} (API ${str(f.apiVersion)})`;
@@ -27,8 +37,14 @@ export function describeFinding(f: Record<string, unknown>): string {
   if (f.username != null) {
     return `${str(f.name) ?? str(f.username)} <${str(f.username)}>${f.lastLogin ? ` — last login ${str(f.lastLogin)}` : ''}`;
   }
-  // Setup audit trail: { date, action, section, user }
-  if (f.action != null) return `${str(f.date)}: ${str(f.action)} (${str(f.section)}) by ${str(f.user)}`;
+  // Setup audit trail: { date, action, section, user, severity?, category? }.
+  // severity/category are additive (P4 audit-trail work) — a row from an older
+  // snapshot simply has neither and renders exactly as it always did.
+  if (f.action != null) {
+    const sev = f.severity ? `[${str(f.severity)}] ` : '';
+    const what = f.category ? `${str(f.category)}: ` : '';
+    return `${sev}${str(f.date)}: ${what}${str(f.action)} (${str(f.section)}) by ${str(f.user)}`;
+  }
   // Failed async Apex jobs: { date, job, type, errors, status? (ExtendedStatus) }
   if (f.job != null) {
     const detail = f.status ? ` — ${str(f.status)}` : '';

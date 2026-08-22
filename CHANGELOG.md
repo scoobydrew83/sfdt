@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`sfdt audit audittrail` grew a severity model, a velocity baseline, and a gate that bites.**
+  The check used to sweep `SetupAuditTrail` for 17 substrings and report every hit as an
+  undifferentiated "suspicious change", with `warn` as its worst status — which meant it could
+  never trip `audit`'s own exit-code gate (`fail` or `error`) and never cleared the notifier's
+  default `warn` threshold. It was a report nobody was paged by.
+
+  Matches now carry a **severity** and a plain-English category. `critical` is reserved for
+  changes to who can get in or what they can reach — password policy, session settings, login IP
+  ranges, Login-As, profile and permission-set assignment, connected apps, named credentials,
+  certificates — and makes the check **fail**; everything else (deletions, password resets, users
+  frozen or deactivated) stays `elevated` and warns. The pattern list is ordered most-specific
+  first, so `changedpasswordpolicy` is a policy change rather than being swallowed by the
+  `changedpassword` entry beneath it.
+
+  **Velocity is measured against each user's own baseline, from one query.** The lookback splits
+  into an observation window (the most recent 24 h by default) and a baseline (everything
+  older), both expressed as changes per day so the two are comparable. A user above 3× their own
+  baseline — who also cleared an absolute floor of 10 events, so going from 1 change to 3 is not
+  an incident — is reported with **both rates**, because a ratio without its denominator is a
+  number nobody can act on. A user with no baseline is never flagged: first-seen is not a spike.
+  Velocity runs over every row rather than only the classified ones, since a burst of otherwise
+  ordinary changes from one account at 3am is the whole signal. *Considered and rejected:* a
+  baseline read from `logs/history.db` — `queryRuns` is exported and would have worked, but the
+  stored summary holds no per-user counts, and past runs have heterogeneous lookback windows, so
+  the baseline would have silently depended on how often somebody happened to run an audit.
+
+  **The row cap is now honest.** It moves to `audit.auditTrailMaxRows` (default 5000), and
+  hitting it is reported in the summary *and* skips velocity — the rows a cap discards are the
+  oldest, which is exactly the baseline half of the split, so a spike computed off a truncated
+  window would be fiction. Deliberately not billed as "unpaginated": `sf data query` paginates,
+  but the result crosses a subprocess buffer, so an unbounded sweep of a busy org would trade a
+  silent truncation for a crash.
+
+  New config keys under `audit`: `auditTrailMaxRows`, `auditTrailVelocityWindowHours`,
+  `auditTrailVelocityFactor`, `auditTrailVelocityMinEvents`.
+
+- **The generated monitor CI templates now schedule the security audit.** All four providers
+  gain a `sfdt audit all --notify --json` step beside the existing monitor run, so a project
+  scaffolded by `sfdt ci init --type monitor` gets anomaly alerting without wiring it by hand.
+  On GitHub and Azure the step is conditioned to run even when monitoring failed — a monitor
+  outage is the last moment you want the security audit skipped. *Considered and rejected:* a
+  fifth `--type audit`, which would mean four more templates and a `generated/` change for a job
+  that belongs on the schedule that already exists.
+
+  The golden-output test for monitor templates moves from byte-equality to the
+  "every original line survives, in order" assertion the deploy templates have always used.
+  Byte-equality would make every future addition read as a regression while catching nothing the
+  line-survival check misses.
+
+- **`describeFinding` renders the two new shapes.** Velocity anomalies get their own arm, keyed
+  off an explicit discriminant rather than a shape — they carry `user`, which the chain below
+  reads as a person on a change row rather than the subject of a rate. Classified audit rows
+  render their severity and category; a row from an older snapshot has neither and renders
+  exactly as it always did.
+
 ### Added
 
 - **`sfdt data load` — Bulk API v2 data loading.** `sfdt data` could only drive `sf data

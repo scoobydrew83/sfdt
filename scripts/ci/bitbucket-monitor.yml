@@ -16,5 +16,8 @@ pipelines:
             {{cliSetup}}
             {{authSteps}}
             - {{cli}} monitor all --org {{org}} --backup --notify --json
+            # Setup-audit-trail anomalies and critical security changes;
+            # exits non-zero on a critical change or a velocity spike.
+            - {{cli}} audit all --org {{org}} --notify --json
           artifacts:
             - logs/monitor-latest.json
