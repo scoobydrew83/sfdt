@@ -347,6 +347,21 @@ export const COMMAND_POLICY = {
       sfdt_field_usage: { mutating: false },
     },
   },
+  packages: {
+    // `note` writes .sfdt/packages.json, a committed repo file. `list` and
+    // `compare` are read-only.
+    mutating: true,
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'org-health',
+    surfaces: { gui: true, vscode: true, chrome: false },
+    mcpTools: {
+      sfdt_packages_list: { mutating: false },
+      sfdt_packages_compare: { mutating: false },
+      sfdt_packages_note: { mutating: true },
+    },
+  },
   events: {
     // `publish` writes an event to the org's event bus. `list` and `tail` are
     // read-only, but the command as a whole can mutate.

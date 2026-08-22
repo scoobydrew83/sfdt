@@ -1185,6 +1185,77 @@ sfdt docs diagram --output docs/erd.mmd
 
 ---
 
+### sfdt packages
+
+Installed package inventory, annotations, and cross-org version drift.
+
+```bash
+sfdt packages list                                    # what's installed, and is it behind?
+sfdt packages compare --source uat --target prod      # is prod behind UAT?
+sfdt packages compare --source uat --target prod --fail-on-drift
+sfdt packages note acme --latest 3.10.0 --url https://vendor.example/releases
+```
+
+#### There is no "check for updates" API, and this says so
+
+This is worth stating plainly, because every tool in this category implies otherwise:
+
+- **AppExchange has no public REST API** and no per-listing version feed.
+- **`SubscriberPackageVersion` is queryable only in a Dev Hub, for packages you own.** In a
+  subscriber org it tells you nothing about a third party's package.
+- **`InstalledSubscriberPackage`** — the Tooling object this command reads — gives you the
+  *installed* version and nothing about what exists upstream.
+
+So `sfdt packages` never claims to have checked. What it does instead:
+
+| `updateStatus` | What it actually means |
+|---|---|
+| `unknown` | Nothing was recorded to compare against. **Not** "up to date" |
+| `update-available` | Installed is behind a version **a human recorded**, with the date they recorded it |
+| `ahead-of-record` | Installed is *newer* than the record — the note is stale, not the org |
+| `current` | Matches the recorded version. Still a human's number, and the output says so |
+
+#### `compare` — the update question that *is* answerable
+
+Both orgs are already authenticated, so comparing them needs no vendor API at all. Per package the
+verdict is `same`, `source-ahead`, `target-ahead`, `only-in-source`, `only-in-target`, or
+**`unknown`** — a package installed in both whose version could not be read. `unknown` is kept
+distinct from `same` deliberately: folding them together would let `--fail-on-drift` pass on a
+comparison that never happened.
+
+`--fail-on-drift` exits 1 on a real difference and never on `unknown`, for the same reason the
+field gate does — a gate that fires on our inability to check gets deleted.
+
+> Version comparison is **numeric, per component**. Under a string compare `3.10.0` sorts below
+> `3.9.0`, so an org two minor versions ahead would report as behind and the gate would fire
+> backwards. There is a test for exactly this.
+
+#### `note` — why the annotation goes in your repo
+
+`sfdt packages note <namespace> --url … --latest … --owner …` writes **`.sfdt/packages.json`**, a
+committed file. That is the whole design: the vendor's URL, the version someone actually checked,
+and who owns the relationship become code-reviewed, shared by the team, and readable by CI —
+instead of living in one admin's browser and dying with the profile. A hosted product structurally
+cannot put your annotations in your repository.
+
+- Keyed by **namespace**, not the subscriber package id, because the id is per-org and the
+  annotation is about the *product*.
+- Merges **additively**: a field you do not pass is left alone, and keys written by a *newer* sfdt
+  are preserved untouched. Pass an empty string to clear a field.
+- `--latest` is validated. A value that does not parse as a version is refused rather than stored,
+  because a stored non-version compares against nothing forever while its owner believes the
+  package is being watched.
+- Recording a version stamps the date, so a two-year-old note reads as the weak evidence it is.
+
+The GUI dashboard's **Installed Packages** page is the editor for the same file.
+
+*Considered and rejected:* a Dev Hub `Package2Version` check. It is real, but only covers packages
+you publish yourself — not the AppExchange ones this feature exists for. And scraping vendor
+listings: the Chrome extension's CSP forbids external hosts outright, and HTML scraping of a
+vendor's site is fragile and impolite.
+
+---
+
 ### sfdt events
 
 Platform Events and Change Data Capture.

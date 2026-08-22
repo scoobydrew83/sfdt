@@ -60,6 +60,7 @@ describe('createCli', () => {
       'feature-flags',
       'field',
       'events',
+      'packages',
       'doctor',
       'mcp',
       'plugin',

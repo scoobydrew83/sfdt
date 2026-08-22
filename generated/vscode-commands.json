@@ -878,6 +878,26 @@
       "group": null
     },
     {
+      "id": "packages-list",
+      "label": "List",
+      "detail": "Installed packages with versions and notes",
+      "args": [
+        "packages",
+        "list"
+      ],
+      "group": null
+    },
+    {
+      "id": "packages-compare",
+      "label": "Compare Orgs",
+      "detail": "Version drift between two orgs",
+      "args": [
+        "packages",
+        "compare"
+      ],
+      "group": null
+    },
+    {
       "id": "events-list",
       "label": "List Channels",
       "detail": "Every subscribable channel in the org",

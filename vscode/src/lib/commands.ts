@@ -205,6 +205,13 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     docsUrl: DOCS.configUtils,
     entries: [
       {
+        id: 'packages', label: 'Packages', detail: 'Installed package inventory and cross-org drift', icon: 'package',
+        children: [
+          { id: 'packages-list', label: 'List', detail: 'Installed packages with versions and notes', args: ['packages', 'list'] },
+          { id: 'packages-compare', label: 'Compare Orgs', detail: 'Version drift between two orgs', args: ['packages', 'compare'] },
+        ],
+      },
+      {
         id: 'events', label: 'Platform Events', detail: 'Platform Events and Change Data Capture', icon: 'radio-tower',
         children: [
           { id: 'events-list', label: 'List Channels', detail: 'Every subscribable channel in the org', args: ['events', 'list'] },

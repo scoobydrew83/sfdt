@@ -651,6 +651,22 @@
       "sideEffects": null
     },
     {
+      "id": "packages",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_packages_list",
+        "sfdt_packages_compare",
+        "sfdt_packages_note"
+      ],
+      "sideEffects": null
+    },
+    {
       "id": "version",
       "surfaces": {
         "cli": true,

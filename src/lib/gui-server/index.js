@@ -28,6 +28,7 @@ import { DEFAULT_UI_PORT } from '../ui-port.js';
 import { parallelRetrieve } from '../parallel-retrieve.js';
 import { GRAPH_SOURCE_TYPES, resolveQueryFor, neighborsQuery } from '@sfdt/flow-core';
 import { runGapReport } from '../source-dependencies.js';
+import { listPackages, comparePackages, readPackageNotes, writePackageNote } from '../packages-runner.js';
 import { createCsrfToken, createOriginGuard, createRateLimiter, requireCsrfToken, requireCsrfTokenFromQueryOrHeader } from './security.js';
 import { mountBridgeRoutes } from '../bridge/routes.js';
 import { constantTimeEqual } from '../bridge/token.js';
@@ -505,6 +506,76 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       res.json(data ?? { timestamp: null, org: null, checks: [], summary: { total: 0, ok: 0, warn: 0, fail: 0, error: 0 } });
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Installed package inventory. The annotations come from .sfdt/packages.json,
+  // a committed repo file — so this page edits something the whole team shares
+  // and reviews, not browser-local state.
+  //
+  // Namespaced `installed-packages`, NOT `packages`: `/api/packages` already
+  // exists and means the sfdx-project.json packageDirectories. Two unrelated
+  // things under one path is how a route gets silently shadowed — which is
+  // exactly what happened on the first attempt at this.
+  app.get('/api/installed-packages', apiLimiter, async (req, res) => {
+    try {
+      const org = typeof req.query.org === 'string' && req.query.org
+        ? req.query.org
+        : sessionOrg ?? config.defaultOrg;
+      if (!org) return res.status(400).json({ error: 'No org selected' });
+      res.json(await listPackages(config, org));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/installed-packages/compare', apiLimiter, async (req, res) => {
+    try {
+      const { source, target } = req.query;
+      if (typeof source !== 'string' || !source) {
+        return res.status(400).json({ error: 'source is required' });
+      }
+      const to = typeof target === 'string' && target ? target : sessionOrg ?? config.defaultOrg;
+      if (!to) return res.status(400).json({ error: 'target is required' });
+      if (source === to) return res.status(400).json({ error: 'source and target are the same org' });
+      res.json(await comparePackages(source, to));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // The annotations alone, for rendering the editor without an org round-trip.
+  app.get('/api/installed-packages/notes', apiLimiter, async (_req, res) => {
+    try {
+      res.json(await readPackageNotes(config));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/installed-packages/notes', apiLimiter, async (req, res) => {
+    if (!requireCsrfToken(req, res, csrfToken)) return;
+    const { namespace, ...patch } = req.body ?? {};
+    if (!namespace || typeof namespace !== 'string') {
+      return res.status(400).json({ error: 'namespace is required' });
+    }
+    // Only the fields the note model knows about; anything else in the body is
+    // ignored rather than written through into a committed file.
+    const allowed = {};
+    for (const key of ['url', 'latestKnown', 'owner', 'notes']) {
+      if (patch[key] !== undefined) allowed[key] = patch[key];
+    }
+    if (Object.keys(allowed).length === 0) {
+      return res.status(400).json({ error: 'Nothing to record' });
+    }
+    try {
+      const result = await writePackageNote(config, namespace, allowed);
+      await logAuditEvent('packages-note', { namespace, fields: Object.keys(allowed) }, { actor: 'GUI Operator', ip: req.ip });
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      // Validation failures (an unparseable version, a non-http URL) are the
+      // caller's fault, not a server error.
+      res.status(400).json({ error: err.message });
     }
   });
 

@@ -261,6 +261,39 @@
       ]
     },
     {
+      "name": "sfdt_packages_list",
+      "description": "List every package installed in the org, with its version, and fold in any annotations recorded in .sfdt/packages.json. IMPORTANT: Salesforce exposes NO API for the latest available version of a managed package — AppExchange has no public API, and SubscriberPackageVersion is queryable only in a Dev Hub for packages you own. An updateStatus of \"update-available\" therefore means the installed version is behind a version a HUMAN recorded, never that an API was checked; \"unknown\" means nothing was recorded to compare against. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_packages_compare",
+      "description": "Compare installed package versions between two orgs — the one update question that IS fully answerable, since both orgs are already authenticated. Each package gets a verdict: same, source-ahead, target-ahead, only-in-source, only-in-target, or unknown (a version could not be read — NOT the same as matching). Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "source",
+        "target"
+      ]
+    },
+    {
+      "name": "sfdt_packages_note",
+      "description": "Record the vendor URL, the latest version you have confirmed, and the internal owner for one package. Writes .sfdt/packages.json, a COMMITTED repo file, so the annotation is shared and code-reviewed rather than trapped in one machine. Merges additively — fields not supplied are left alone. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "namespace",
+        "url",
+        "latest",
+        "owner",
+        "notes",
+        "confirmExecution"
+      ]
+    },
+    {
       "name": "sfdt_flow_scan",
       "description": "Analyze a Salesforce org's Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.",
       "confirmExecution": false,

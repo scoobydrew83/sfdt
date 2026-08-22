@@ -308,6 +308,34 @@ export {
 } from './streaming.js';
 export type { BayeuxMessage, EventChannelKind, EventChannelQuery } from './streaming.js';
 
+// Installed package inventory — the version model, the annotation fold, and the
+// cross-org drift comparator. Shared by `sfdt packages`, the MCP tools and the
+// GUI dashboard page.
+export {
+  installedPackagesQuery,
+  parseVersion,
+  versionFromParts,
+  formatVersion,
+  compareVersions,
+  toInstalledRow,
+  packageKey,
+  classifyUpdate,
+  analyzePackages,
+  comparePackageSets,
+} from './packages.js';
+export type {
+  PackageVersion,
+  InstalledPackageRow,
+  PackageNote,
+  UpdateStatus,
+  PackageRow,
+  PackageVM,
+  PackageQueries,
+  DriftVerdict,
+  PackageDriftRow,
+  PackageDriftVM,
+} from './packages.js';
+
 // Record editability model — shared by the CLI (`sfdt record`), the MCP tools
 // and the Chrome extension, so a field is refused identically on every surface.
 export {

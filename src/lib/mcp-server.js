@@ -401,6 +401,53 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_packages_list',
+    description: 'List every package installed in the org, with its version, and fold in any annotations recorded in .sfdt/packages.json. IMPORTANT: Salesforce exposes NO API for the latest available version of a managed package — AppExchange has no public API, and SubscriberPackageVersion is queryable only in a Dev Hub for packages you own. An updateStatus of "update-available" therefore means the installed version is behind a version a HUMAN recorded, never that an API was checked; "unknown" means nothing was recorded to compare against. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    },
+    examples: [
+      { description: 'What is installed in prod?', input: { org: 'prod' } }
+    ]
+  },
+  {
+    name: 'sfdt_packages_compare',
+    description: 'Compare installed package versions between two orgs — the one update question that IS fully answerable, since both orgs are already authenticated. Each package gets a verdict: same, source-ahead, target-ahead, only-in-source, only-in-target, or unknown (a version could not be read — NOT the same as matching). Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', description: 'Source org alias.' },
+        target: { type: 'string', description: 'Target org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['source']
+    },
+    examples: [
+      { description: 'Is prod behind UAT?', input: { source: 'uat', target: 'prod' } }
+    ]
+  },
+  {
+    name: 'sfdt_packages_note',
+    description: 'Record the vendor URL, the latest version you have confirmed, and the internal owner for one package. Writes .sfdt/packages.json, a COMMITTED repo file, so the annotation is shared and code-reviewed rather than trapped in one machine. Merges additively — fields not supplied are left alone. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        namespace: { type: 'string', description: 'Package namespace prefix (or its name, for an unmanaged package).' },
+        url: { type: 'string', description: 'Vendor listing or release-notes URL.' },
+        latest: { type: 'string', description: 'The version confirmed current, e.g. "3.10.0". Must parse as a version.' },
+        owner: { type: 'string', description: 'Who owns this vendor relationship internally.' },
+        notes: { type: 'string', description: 'Free-text note.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to write the file.' }
+      },
+      required: ['namespace', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Record that a package has a newer release', input: { namespace: 'acme', latest: '3.10.0', url: 'https://example.com/releases', confirmExecution: true } }
+    ]
+  },
+  {
     name: 'sfdt_flow_scan',
     description: 'Analyze a Salesforce org\'s Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.',
     inputSchema: {
@@ -973,6 +1020,27 @@ export class SfdtMcpServer {
         }
         if (args.dryRun) cmdArgs.push('--dry-run');
         if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_packages_list': {
+        const cmdArgs = ['packages', 'list', '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_packages_compare': {
+        const cmdArgs = ['packages', 'compare', '--source', args.source, '--json'];
+        if (args.target) cmdArgs.push('--target', args.target);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_packages_note': {
+        const cmdArgs = ['packages', 'note', args.namespace, '--json'];
+        if (args.url !== undefined) cmdArgs.push('--url', args.url);
+        if (args.latest !== undefined) cmdArgs.push('--latest', args.latest);
+        if (args.owner !== undefined) cmdArgs.push('--owner', args.owner);
+        if (args.notes !== undefined) cmdArgs.push('--notes', args.notes);
         const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);
       }

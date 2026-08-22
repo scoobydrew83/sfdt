@@ -202,6 +202,30 @@ Publishes one platform event. **Mutating — requires `confirmExecution`.**
 
 This fires **real subscribers** — flows, triggers, and any external system listening on the channel. CDC events cannot be published; they are produced by Salesforce.
 
+#### `sfdt_packages_list`
+Lists every package installed in the org, with its version and any annotation recorded in `.sfdt/packages.json`. Read-only.
+* **Arguments:**
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+**Do not report `updateStatus` as though an API was checked.** Salesforce exposes no API for the latest available version of a managed package — AppExchange has no public API, and `SubscriberPackageVersion` is queryable only in a Dev Hub for packages you own. `update-available` means the installed version is behind one a **human recorded**; `unknown` means nothing was recorded to compare against, which is *not* "up to date"; `ahead-of-record` means the note is stale, not the org.
+
+#### `sfdt_packages_compare`
+Compares installed package versions between two orgs — the one update question that is fully answerable, since both are already authenticated. Read-only.
+* **Arguments:**
+  * `source` (string, **required**): source org alias.
+  * `target` (string, optional): target org alias; defaults to `config.defaultOrg`.
+
+Verdicts: `same`, `source-ahead`, `target-ahead`, `only-in-source`, `only-in-target`, and `unknown` — installed in both but a version could not be read. `unknown` is **not** the same as matching.
+
+#### `sfdt_packages_note`
+Records the vendor URL, the latest confirmed version, and the internal owner for one package. **Mutating — requires `confirmExecution`.**
+* **Arguments:**
+  * `namespace` (string, **required**): namespace prefix, or the name for an unmanaged package.
+  * `url`, `latest`, `owner`, `notes` (strings, optional).
+  * `confirmExecution` (boolean, **required**).
+
+Writes `.sfdt/packages.json`, a **committed repo file**, so the annotation is shared and code-reviewed rather than trapped on one machine. Merges additively — fields not supplied are left alone, including keys written by a newer sfdt. `latest` must parse as a version or the write is refused.
+
 #### `sfdt_flow_scan`
 Analyzes a Salesforce org's Flows for quality issues and anti-patterns (via `@sfdt/flow-core`) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Read-only.
 * **Arguments:**

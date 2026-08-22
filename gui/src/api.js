@@ -190,6 +190,10 @@ export const api = {
   drift:                  () => fetchJson('/drift'),
   /** Org diagnose/audit snapshot. @returns {Promise<{timestamp:string|null, org:string|null, checks:Array, summary:object}>} */
   audit:                  () => fetchJson('/audit'),
+  installedPackages:      (org) => fetchJson(org ? `/installed-packages?org=${encodeURIComponent(org)}` : '/installed-packages'),
+  installedPackagesCompare: (source, target) => fetchJson(`/installed-packages/compare?source=${encodeURIComponent(source)}&target=${encodeURIComponent(target)}`),
+  packageNotes:           () => fetchJson('/installed-packages/notes'),
+  savePackageNote:        (namespace, patch) => postJson('/installed-packages/notes', { namespace, ...patch }),
   /** Org monitoring snapshot. @returns {Promise<{timestamp:string|null, org:string|null, checks:Array, summary:object}>} */
   monitor:                () => fetchJson('/monitor'),
   /** Redacted notification channel config. @returns {Promise<{enabled:boolean, channels:Array}>} */

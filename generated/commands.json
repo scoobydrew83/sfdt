@@ -5517,6 +5517,172 @@
       "source": "src/commands/events.js"
     },
     {
+      "id": "packages",
+      "path": [
+        "packages"
+      ],
+      "description": "Installed package inventory, annotations, and cross-org version drift",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "packages list",
+          "path": [
+            "packages",
+            "list"
+          ],
+          "description": "List installed packages with their versions and any recorded notes",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "packages compare",
+          "path": [
+            "packages",
+            "compare"
+          ],
+          "description": "Compare installed package versions between two orgs",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--source <alias>",
+              "name": "source",
+              "required": false,
+              "default": null,
+              "description": "Source org alias"
+            },
+            {
+              "flags": "--target <alias>",
+              "name": "target",
+              "required": false,
+              "default": null,
+              "description": "Target org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--fail-on-drift",
+              "name": "failOnDrift",
+              "required": false,
+              "default": null,
+              "description": "Exit 1 when any package differs"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "packages note",
+          "path": [
+            "packages",
+            "note"
+          ],
+          "description": "Record the vendor URL and latest known version for a package (writes .sfdt/packages.json)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "namespace",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--url <url>",
+              "name": "url",
+              "required": false,
+              "default": null,
+              "description": "Vendor listing or release-notes URL"
+            },
+            {
+              "flags": "--latest <version>",
+              "name": "latest",
+              "required": false,
+              "default": null,
+              "description": "The version you have confirmed is current, e.g. 3.10.0"
+            },
+            {
+              "flags": "--owner <name>",
+              "name": "owner",
+              "required": false,
+              "default": null,
+              "description": "Who owns this vendor relationship internally"
+            },
+            {
+              "flags": "--notes <text>",
+              "name": "notes",
+              "required": false,
+              "default": null,
+              "description": "Free-text note"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "org-health",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_packages_list",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_packages_compare",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_packages_note",
+          "mutating": true
+        }
+      ],
+      "source": "src/commands/packages.js"
+    },
+    {
       "id": "version",
       "path": [
         "version"
