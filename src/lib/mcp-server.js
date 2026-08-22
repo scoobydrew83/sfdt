@@ -338,7 +338,8 @@ export const TOOLS = [
       type: 'object',
       properties: {
         object: { type: 'string', description: 'sObject API name, e.g. "Account".' },
-        population: { type: 'boolean', description: 'Count non-null values per unreferenced field (one query each). Required before any field can be called safe to remove.' },
+        offline: { type: 'boolean', description: 'Scan the local repository instead of an org. No org needed. Results are always inferred and no field can be called safe to remove.' },
+        population: { type: 'boolean', description: 'Count non-null values per unreferenced field (one query each). Required before any field can be called safe to remove. Ignored with offline.' },
         org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
       },
       required: ['object']
@@ -891,6 +892,7 @@ export class SfdtMcpServer {
       }
       case 'sfdt_field_usage': {
         const cmdArgs = ['field', 'usage', args.object, '--json'];
+        if (args.offline) cmdArgs.push('--offline');
         if (args.population) cmdArgs.push('--population');
         if (args.org) cmdArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cmdArgs);

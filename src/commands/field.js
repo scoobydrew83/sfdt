@@ -2,6 +2,7 @@ import ora from 'ora';
 import chalk from 'chalk';
 import { loadConfig } from '../lib/config.js';
 import { runFieldImpact, runFieldUsage } from '../lib/field-impact-runner.js';
+import { runOfflineFieldUsage } from '../lib/field-usage-offline.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
 
@@ -116,6 +117,37 @@ function printUsage(vm, { population }) {
 }
 
 /**
+ * `--fail-on-unreferenced` — the CI gate.
+ *
+ * Gates on `unreferenced === true` only. A field whose status is UNKNOWN (a
+ * standard field, a failed batch) must never fail a build: the gate would then
+ * be firing on our inability to check rather than on anything about the repo,
+ * and the first thing anyone would do is delete the gate.
+ */
+function applyUnreferencedGate(vm, options, jsonMode) {
+  if (!options.failOnUnreferenced) return;
+  const offenders = vm.rows.filter((r) => r.unreferenced === true);
+  if (offenders.length === 0) return;
+  process.exitCode = 1;
+  if (jsonMode) return;
+  console.error(
+    chalk.red(
+      `\n✖ ${offenders.length} field(s) on ${vm.object} have no reference: ` +
+        offenders.map((r) => r.name).join(', '),
+    ),
+  );
+  if (vm.counts.unknown > 0) {
+    // Say what the gate could NOT judge, so a green run is not read as a clean
+    // bill of health for the whole object.
+    console.error(
+      chalk.dim(
+        `  ${vm.counts.unknown} further field(s) could not be checked and did not affect this result.`,
+      ),
+    );
+  }
+}
+
+/**
  * `sfdt field` — field-level analysis over an org.
  *
  * Read-only. The engine is `@sfdt/flow-core`'s `analyzeFieldImpact`, shared with
@@ -164,23 +196,35 @@ export function registerFieldCommand(program) {
     .command('usage <Object>')
     .description('Sweep every field on an object for references, and optionally for data')
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
+    .option('--offline', 'Scan the repository instead of an org — no org needed, CI-friendly')
     .option('--population', 'Count non-null values per unreferenced field (one query each)')
+    .option('--fail-on-unreferenced', 'Exit 1 when any field is unreferenced (a CI gate)')
     .option('--json', 'Emit structured JSON to stdout')
     .action(async (object, options) => {
       const jsonMode = !!options.json;
+      const offline = !!options.offline;
       const spinner = jsonMode ? null : ora(`Sweeping ${object}…`).start();
       try {
         const config = await loadConfig();
-        const orgAlias = resolveOrg(config, options);
-        const vm = await runFieldUsage(config, orgAlias, object, {
-          population: !!options.population,
-        });
+        let vm;
+        let orgAlias = null;
+        if (offline) {
+          // No org is resolved at all — not merely unused. A repo scan that
+          // still demanded an alias would be useless in the CI job it exists for.
+          vm = await runOfflineFieldUsage(config, object);
+        } else {
+          orgAlias = resolveOrg(config, options);
+          vm = await runFieldUsage(config, orgAlias, object, {
+            population: !!options.population,
+          });
+        }
         spinner?.stop();
+        applyUnreferencedGate(vm, options, jsonMode);
         if (jsonMode) {
-          emitJson({ org: orgAlias, ...vm }, { warnings: vm.notes });
+          emitJson({ org: orgAlias, mode: offline ? 'offline' : 'org', ...vm }, { warnings: vm.notes });
           return;
         }
-        printUsage(vm, { population: !!options.population });
+        printUsage(vm, { population: !!options.population && !offline });
       } catch (err) {
         spinner?.stop();
         if (jsonMode) {

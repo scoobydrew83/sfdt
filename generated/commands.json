@@ -5274,11 +5274,25 @@
               "description": "Org alias (defaults to config.defaultOrg)"
             },
             {
+              "flags": "--offline",
+              "name": "offline",
+              "required": false,
+              "default": null,
+              "description": "Scan the repository instead of an org — no org needed, CI-friendly"
+            },
+            {
               "flags": "--population",
               "name": "population",
               "required": false,
               "default": null,
               "description": "Count non-null values per unreferenced field (one query each)"
+            },
+            {
+              "flags": "--fail-on-unreferenced",
+              "name": "failOnUnreferenced",
+              "required": false,
+              "default": null,
+              "description": "Exit 1 when any field is unreferenced (a CI gate)"
             },
             {
               "flags": "--json",

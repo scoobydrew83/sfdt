@@ -898,6 +898,17 @@
       "group": null
     },
     {
+      "id": "field-usage-offline",
+      "label": "Usage Sweep (repo)",
+      "detail": "Find unreferenced fields from source, no org needed",
+      "args": [
+        "field",
+        "usage",
+        "--offline"
+      ],
+      "group": null
+    },
+    {
       "id": "record-get",
       "label": "Get",
       "detail": "Read a record and show what is editable",

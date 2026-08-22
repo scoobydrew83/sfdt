@@ -1195,7 +1195,9 @@ sfdt field impact Opportunity.StageName --links
 
 sfdt field usage Account                        # wide: every field on the object
 sfdt field usage Account --population            # …and how much data each holds
-sfdt field usage Account --population --json
+
+sfdt field usage Account --offline               # from the repo, no org at all
+sfdt field usage Account --offline --fail-on-unreferenced   # a CI gate
 ```
 
 `impact` answers **"what writes this field?"** from three sources:
@@ -1251,6 +1253,8 @@ Fields come back in **three** states, and conflating any two of them is the whol
 |---|---|
 | `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
 | `--population` | Count non-null values for each unreferenced custom field (one query each, five in flight). Required before any field can be called safe to remove |
+| `--offline` | Scan the repository instead of an org — no org needed, CI-friendly (see below) |
+| `--fail-on-unreferenced` | Exit 1 when any field is unreferenced. Gates on `true` only, never on unknown |
 | `--json` | Emit machine-readable output |
 
 #### Why `--population` is not optional in practice
@@ -1267,6 +1271,51 @@ actually counted, and a field earns it only when **all** of these hold:
 
 Every field that misses the bar carries a `keepReason` saying which condition it failed, so the
 list explains itself rather than leaving you to guess why something you expected is absent.
+
+#### `--offline`: the same question, asked of the repo
+
+`--offline` scans your source tree instead of an org. No org alias is resolved at all, so it runs
+on a pull request — before the field is deployed anywhere. That is the half a hosted console
+structurally cannot offer, because it needs your repository rather than your org.
+
+The field list comes from `objects/<Object>/fields/*.field-meta.xml`, so offline mode covers the
+fields tracked in *this repository* — standard fields and anything deployed but not committed are
+not included, and the notes say so.
+
+**Structural references do not count as use.** A naive grep reports every field as referenced,
+because profiles and permission sets carry a `fieldPermissions` entry for every field they grant,
+and layouts list most fields on the object. Those name a field because it *exists*, not because
+anything depends on its value. So:
+
+| Kind | Metadata | Counts as use? |
+|---|---|---|
+| **Logical** | Apex, triggers, flows, validation rules, formulas on other fields, reports, email templates, LWC, Aura, workflows, quick actions | **Yes** |
+| **Structural** | Layouts, profiles, permission sets, list views, record types, field sets | No — but still listed, marked `(structural)`, because removing the field means removing those entries too |
+
+Two smaller traps the scan handles: a field's own `.field-meta.xml` names it in `<fullName>` and
+is skipped for that field (while still being read for *other* fields' formulas), and matching is
+whole-token, so `Region__c` is not counted as used by a file that only mentions `Sub_Region__c`.
+
+Offline results are **always inferred** — a text match is not a reference, and a field name built
+at runtime by dynamic SOQL is invisible to any text scan. No field is ever reported as safe to
+remove from a repo scan: there is no data to count, and a field unreferenced in source may hold
+millions of values in every org it is deployed to.
+
+#### `--fail-on-unreferenced`: the CI gate
+
+Exits 1 when any field comes back unreferenced. It gates on `unreferenced === true` **only** — a
+field whose status is unknown never fails a build, because the gate would then be firing on our
+inability to check rather than on anything about your repo, and the first thing anyone would do is
+delete the gate. When fields were skipped, the failure message says how many.
+
+```yaml
+- name: Flag unreferenced fields
+  run: npx --yes @sfdt/cli@latest field usage Account --offline --fail-on-unreferenced
+```
+
+This is deliberately **not** added to the generated CI templates. The audit gate belongs there
+because it is cheap and org-wide; a field sweep is per-object, so a generic template step would
+ship everyone a job with no object configured. Add the snippet where it fits your repo.
 
 #### Read the scan scope, not just the rows
 

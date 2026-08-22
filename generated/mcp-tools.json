@@ -219,6 +219,7 @@
       "internal": false,
       "inputProperties": [
         "object",
+        "offline",
         "population",
         "org"
       ]

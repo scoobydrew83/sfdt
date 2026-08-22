@@ -209,6 +209,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         children: [
           { id: 'field-impact', label: 'Impact', detail: 'Show what writes a field (flows, field updates, Apex)', args: ['field', 'impact'] },
           { id: 'field-usage', label: 'Usage Sweep', detail: 'Find unreferenced fields on an object', args: ['field', 'usage'] },
+          { id: 'field-usage-offline', label: 'Usage Sweep (repo)', detail: 'Find unreferenced fields from source, no org needed', args: ['field', 'usage', '--offline'] },
         ],
       },
       {

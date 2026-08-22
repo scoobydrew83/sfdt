@@ -166,6 +166,7 @@ An empty `rows` array means *no writer was found by three bounded scans* — nev
 Sweeps **every** field on an object for references — the cleanup-candidate view. Read-only.
 * **Arguments:**
   * `object` (string, **required**): sObject API name.
+  * `offline` (boolean, optional): scan the local repository instead of an org — no org needed. Results are always inferred, and no field is ever reported as safe to remove.
   * `population` (boolean, optional): count non-null values per unreferenced field.
   * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
 

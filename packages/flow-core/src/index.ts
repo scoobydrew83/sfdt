@@ -285,6 +285,16 @@ export type {
   FieldPopulation,
 } from './field-usage.js';
 
+// Offline (repo) field usage — the CI-friendly half: no org, structural
+// references (layouts, profiles, permission sets) separated from logical ones.
+export {
+  classifyOfflineSource,
+  isSelfDefinition,
+  fieldReferenceRegex,
+  buildOfflineUsageVM,
+} from './field-usage-offline.js';
+export type { ReferenceKind, OfflineSourceType, OfflineHit } from './field-usage-offline.js';
+
 // Record editability model — shared by the CLI (`sfdt record`), the MCP tools
 // and the Chrome extension, so a field is refused identically on every surface.
 export {
