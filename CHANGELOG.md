@@ -9,6 +9,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`sfdt packages list|compare|note` — installed package inventory, annotations, and cross-org
+  version drift.** Nothing in this repo touched `InstalledSubscriberPackage` before; this was
+  greenfield.
+
+  The ask behind it was "can we check the API for updates?" For a third-party managed package the
+  honest answer is **no**: AppExchange has no public REST API and no per-listing version feed,
+  `SubscriberPackageVersion` is queryable only in a Dev Hub for packages you *own*, and
+  `InstalledSubscriberPackage` reports the installed version and nothing about what exists
+  upstream. Rather than imply otherwise, `updateStatus` names its evidence every time —
+  `unknown` (nothing recorded to compare against, explicitly **not** "up to date"),
+  `update-available` (behind a version *a human recorded*, with the date), `ahead-of-record`
+  (installed is newer, so the note is stale rather than the org), and `current` (matches the
+  record, and says out loud that a person put that number there).
+
+  `compare --source --target` is the update question that **is** answerable: both orgs are already
+  authenticated, so cross-org drift needs no vendor API at all, and "is prod behind UAT?" is what
+  people actually want to know. `--fail-on-drift` gates CI on real differences and never on
+  `unknown` — a package whose version could not be read is our inability to compare, not evidence
+  the orgs differ, and folding `unknown` into `same` would let the gate pass on a comparison that
+  never happened. Version comparison is **numeric per component**, because under a string compare
+  `3.10.0` sorts below `3.9.0` and the gate would fire backwards.
+
+  Annotations live in **`.sfdt/packages.json`, committed**. Since the only durable answer is one a
+  human writes down, where they write it down decides whether the feature is worth anything: in
+  the repo it is code-reviewed, shared, and readable by CI; in a browser it is one person's and
+  dies with the profile. Keyed by namespace (the subscriber package id is per-org; the annotation
+  is about the product), merged additively so keys written by a newer sfdt survive an older one
+  editing a neighbouring field, and `--latest` is validated because an unparseable string stores
+  fine and then compares against nothing forever. Deliberately not registered in `CONFIG_FILES` —
+  it is data, not configuration.
+
+  Surfaces: CLI, MCP (`sfdt_packages_note` writes a repo file ⇒ `confirmExecution`), a GUI
+  dashboard page that edits the same file with no new protocol, and VS Code.
+
+- **`sfdt permissions matrix|drift` — object and field access, per user, and as a deploy gate.**
+
+  The word this feature will not use is **"effective"**. A user's real access is what their
+  profile and permission sets grant *minus* whatever a muting permission set inside a permission
+  set group takes away — and muting permission sets are Metadata-API only, so a computed union can
+  be more permissive than reality. Every result is labelled *granted*, carries the caveat in words,
+  and a test asserts the word appears on no piece of data, only inside the note that disclaims it.
+
+  Every query is scoped to one object, which keeps a `FieldPermissions` scan (100k–1M rows
+  org-wide) bounded by construction. `ParentId` and `Parent.IsOwnedByProfile` are selected — the
+  axis the existing `audit lint-access` checks drop, and the reason they can only answer "does
+  anyone have read?". Those checks are unchanged; this is a new command, not an extension of them.
+
+  `--user` resolves the profile, permission sets **and permission set groups** — two hops, because
+  the user is assigned the group while the grants live on its member sets, and skipping the second
+  would silently lose every grant a group carries. `--offline` reads profiles and permission sets
+  from the repo with no org, and `drift` compares the two: `extra-in-org` — granted in the org but
+  absent from source — is the verdict a security review wants, and `--fail-on-drift` makes it a
+  deploy gate. Permissions as a CI gate is the thing a hosted product structurally cannot do.
+
 - **`sfdt field impact|usage` — field usage and impact on the CLI, MCP and VS Code, sharing one
   model with the Chrome panel.** Field impact existed only inside the Chrome extension, one field
   at a time; `sfdt dependencies` answered a component-level question instead.

@@ -70,6 +70,15 @@ Design approved 2026-08-22; [docs/design/record-edit-clone.md](docs/design/recor
 - **`sfdt record get|edit|clone`** — single-record read/write on the CLI, MCP and VS Code, with the editability model promoted to `@sfdt/flow-core` so the terminal, an agent and the browser refuse the same field for the same reason. A timed-out write reports `unknown`, never `saved` — **In develop**
 - **`sfdt field impact|usage`** — field usage and impact on the CLI, MCP and VS Code, from one model shared with the Chrome panel. `impact` answers "what writes this field?" (flows parsed rather than merely referenced, workflow field updates, an Apex text search) and lists everything that merely *references* it — validation rules, layouts, reports, email templates — in a **separate** section, because "what writes this" and "where does this appear" are different questions. `usage` sweeps a whole object, batching the dependency lookup so N fields cost `ceil(N/200)` queries, and reports three states (referenced / unreferenced / **unknown**) rather than two. `--population` counts data, and only then can a field be called safe to remove. `--offline` runs the same sweep against the repo with no org — where layouts, profiles and permission sets count as *structural* and do not mark a field used — with `--fail-on-unreferenced` as a CI gate — **In develop**
 - **`sfdt events list|tail|publish`** — Platform Events and CDC, with the CometD/Bayeux client promoted from the extension's background worker to `@sfdt/flow-core` rather than reimplemented. `--replay all` replays the retention window; `publish` + `tail --expect` is a publish-then-assert integration test that runs in CI. **`tail` is the one command in this CLI that holds a session token in memory** — `sf` cannot proxy a long-poll — read at point of use, never persisted; see [SECURITY.md](SECURITY.md) — **In develop**
+- **`sfdt packages list|compare|note`** — installed package inventory via Tooling
+  `InstalledSubscriberPackage`, annotations in a committed `.sfdt/packages.json`, and cross-org
+  version drift with `--fail-on-drift`. There is no API for the latest available version of a
+  managed package, so update status is derived from human-recorded versions and says so; the
+  answerable version of the question is the cross-org comparison — **In develop**
+- **`sfdt permissions matrix|drift`** — object and field access by profile, permission set and
+  user, plus a repo-vs-org drift gate. Reports what is **granted**, never "effective", because
+  muting permission sets cannot be queried and would make any stronger claim an upper bound
+  presented as a fact — **In develop**
 - **Fix the two known flaky tests** — `test/lib/bridge-routes-extra.test.js` and `test/lib/gui-server-routes3.test.js` fail roughly 1 run in 8 under full-suite load (RELEASING.md §"Known flakes"). They already forced `npm test` out of `prepublishOnly`, and they can red the hard CI gate at random. Fixing them is a 1.0 requirement — **Planned**
 
 ### Not in this phase
@@ -81,10 +90,17 @@ Design approved 2026-08-22; [docs/design/record-edit-clone.md](docs/design/recor
 
 Directional, not sequenced. From the [SFDevTools competitive analysis](docs/reviews/sfdevtools-competitive-analysis.md) (2026-08-22), tiers 2–3.
 
-- **Effective FLS/OLS permission matrix** — resolve object and field access per profile *and* per user (profile + permission sets + permission set groups + muting) as a read/write/none grid, plus a cross-org diff. **Needs a design doc before any code.** The existing checks are not a starting point: `checkLintAccess`/`checkLintAccessFields` select `SobjectType`/`Field` and `PermissionsRead` only — no `ParentId`, which is exactly the axis a matrix needs — and fold it away with an existential OR. Four constraints the design must answer: (1) those two are the only unbounded queries in the audit runner, and `org-query.js` buffers `sf` stdout through `JSON.parse` with no `maxBuffer` override, so a real `FieldPermissions` scan (100k–1M+ rows) needs chunking by object; (2) `src/lib/org-diff.js` is a set-membership diff and cannot express `changed`, the only verdict a permissions diff cares about — it needs a sibling, not an extension; (3) **muting permission sets are not a queryable SObject** — Metadata API only, zero groundwork here — so v1 should scope them out explicitly rather than silently; (4) `describeFinding` in flow-core is a shape-sniffing if-chain that would render a matrix finding carrying `username` as an inactive-user line. The differentiated version is permissions as a **CI gate** — diff org permissions against what is in source and fail a deploy on drift, which a hosted product structurally cannot do — **Research**
+- **Writable permission bulk-fix** — their Permissions Matrix stages and applies permission
+  changes. `sfdt permissions` is read-only and stays that way until the approval ledger below
+  exists: an org-data write driven from a matrix is exactly the class of action that needs a
+  staged before/after diff and an append-only record, not just a confirm prompt — **Research**
+- **Muting permission sets** — the one blind spot in `sfdt permissions`. They are Metadata-API
+  only, with no queryable sObject, so granted access is an upper bound on real access. Closing
+  this needs a Metadata API retrieve path the CLI does not have; until then every result says so
+  and nothing is described as "effective" — **Research**
 - **Approval ledger for org-mutating agent actions** — a staged before/after diff plus an append-only ledger distinct from `src/lib/run-history.js`, layered on the existing `confirmExecution` gating (golden principle #7). Valuable standalone, and the precondition for any org-*data* mutating MCP tool — **Research**
 - **Committed dashboard specs** — AI-authored dashboard definitions that live in the repo, are code-reviewed, and render in the GUI over `src/lib/soql-runner.js`. Deliberately not a hosted dashboard product; the spec shape is close to Studio's `ComponentSpec`, so one substrate could serve both — **Research**
-- **Package inventory promoted to CLI/MCP** — `InstalledSubscriberPackage` via Tooling. Small, closes a visible gap. (Platform Events/CDC, previously bundled into this item, **shipped** as `sfdt events` — see the phase list above.) — **Research**
+
 
 - **AI cost transparency and model tiering** — surface real token counts per turn (and zero for a local model), plus per-command model hints over `ai.provider`/`ai.model`. Our BYOK position makes this a strength, not a meter — **Research**
 - **Named agent presets as shareable objects** — packaging over the existing prompt library (`src/lib/prompts.js`) and skills pack (`sfdt skills export`) — **Research**
