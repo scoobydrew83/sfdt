@@ -66,7 +66,8 @@ Design approved 2026-08-22; [docs/design/record-edit-clone.md](docs/design/recor
 
 ### Also in this phase
 
-- **Setup Audit Trail anomaly layer** — velocity detection (N× baseline per user/section in a window) and a security-sensitive action list (password policy, session settings, permission changes, connected apps, certificates) over the `SetupAuditTrail` data `audit audittrail` already retrieves. Post-processing only, and it feeds `sfdt notify` — **Planned**
+- **Setup Audit Trail anomaly layer** — severity classification (critical vs elevated), per-user velocity against each user's own baseline from a split lookback window, a `fail` status so it gates CI and clears the notifier threshold, honest truncation reporting, and a scheduled `audit all` step in all four generated monitor CI templates — **In develop**
+- **`sfdt record get|edit|clone`** — single-record read/write on the CLI, MCP and VS Code, with the editability model promoted to `@sfdt/flow-core` so the terminal, an agent and the browser refuse the same field for the same reason. A timed-out write reports `unknown`, never `saved` — **In develop**
 - **Fix the two known flaky tests** — `test/lib/bridge-routes-extra.test.js` and `test/lib/gui-server-routes3.test.js` fail roughly 1 run in 8 under full-suite load (RELEASING.md §"Known flakes"). They already forced `npm test` out of `prepublishOnly`, and they can red the hard CI gate at random. Fixing them is a 1.0 requirement — **Planned**
 
 ### Not in this phase
