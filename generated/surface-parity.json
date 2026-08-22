@@ -410,6 +410,7 @@
       "mcpTools": [
         "sfdt_data_export",
         "sfdt_data_import",
+        "sfdt_data_load",
         "sfdt_data_delete"
       ],
       "sideEffects": null

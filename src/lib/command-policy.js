@@ -332,6 +332,7 @@ export const COMMAND_POLICY = {
     mcpTools: {
       sfdt_data_export: { mutating: false },
       sfdt_data_import: { mutating: true },
+      sfdt_data_load: { mutating: true },
       sfdt_data_delete: { mutating: true },
     },
   },

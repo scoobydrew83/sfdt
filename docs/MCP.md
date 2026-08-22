@@ -240,6 +240,10 @@ Inspects (`status`, read-only) or tops up (`fill`, requires `confirmExecution`) 
 Imports a data set into the org. **Requires `confirmExecution`.**
 * **Arguments:** `set` (**required**), `org`, `confirmExecution` (**required**).
 
+#### `sfdt_data_load`
+Loads a bulk data set (`bulk.json`) into the org over Bulk API v2 — insert, or upsert by external id. **Requires `confirmExecution`.**
+* **Arguments:** `set` (**required**, must be a bulk data set), `org`, `wait` (minutes), `async`, `confirmExecution` (**required**).
+
 #### `sfdt_data_delete`
 Bulk-deletes a data set in the org. Destructive — **requires `confirmExecution`.**
 * **Arguments:** `set` (**required**), `org`, `confirmExecution` (**required**).

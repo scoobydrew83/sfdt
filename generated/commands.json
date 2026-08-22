@@ -3103,7 +3103,7 @@
       "path": [
         "data"
       ],
-      "description": "Import/export org data sets (native sf tree commands) for sandbox & scratch seeding",
+      "description": "Import/export org data sets (sf tree commands, or Bulk API v2 via `load`) for sandbox & scratch seeding",
       "aliases": [],
       "hidden": false,
       "arguments": [],
@@ -3201,6 +3201,62 @@
           "subcommands": []
         },
         {
+          "id": "data load",
+          "path": [
+            "data",
+            "load"
+          ],
+          "description": "Load a bulk data set into an org over Bulk API v2 (sf data import|upsert bulk)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "set",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--wait <minutes>",
+              "name": "wait",
+              "required": false,
+              "default": null,
+              "description": "Minutes to wait for each job (default config.data.bulk.waitMinutes, or 10)"
+            },
+            {
+              "flags": "--async",
+              "name": "async",
+              "required": false,
+              "default": null,
+              "description": "Queue each job and return immediately instead of waiting"
+            },
+            {
+              "flags": "--line-ending <LF|CRLF>",
+              "name": "lineEnding",
+              "required": false,
+              "default": null,
+              "description": "CSV line ending (default config.data.bulk.lineEnding, or sf's own default)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
           "id": "data delete",
           "path": [
             "data",
@@ -3262,6 +3318,10 @@
         },
         {
           "name": "sfdt_data_import",
+          "mutating": true
+        },
+        {
+          "name": "sfdt_data_load",
           "mutating": true
         },
         {

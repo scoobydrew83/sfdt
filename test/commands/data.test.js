@@ -14,6 +14,7 @@ vi.mock('../../src/lib/data-runner.js', () => ({
   exportDataSet: vi.fn(),
   importDataSet: vi.fn(),
   deleteDataSet: vi.fn(),
+  bulkLoadDataSet: vi.fn(),
   listDataSets: vi.fn(),
   readQueries: vi.fn(),
   extractSObject: vi.fn(),
@@ -26,7 +27,7 @@ vi.mock('ora', () => ({
 
 import inquirer from 'inquirer';
 import { loadConfig } from '../../src/lib/config.js';
-import { exportDataSet, importDataSet, deleteDataSet, listDataSets, readQueries, extractSObject } from '../../src/lib/data-runner.js';
+import { exportDataSet, importDataSet, deleteDataSet, bulkLoadDataSet, listDataSets, readQueries, extractSObject } from '../../src/lib/data-runner.js';
 import { registerDataCommand } from '../../src/commands/data.js';
 
 function createProgram() {
@@ -52,14 +53,16 @@ describe('data command', () => {
   it('exports a data set using the default org', async () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'export', 'qa', '--json']);
-    expect(exportDataSet).toHaveBeenCalledWith(expect.any(Object), 'qa', 'dev');
+    // makeAction threads the parsed options through to every runner so the bulk
+    // verbs can read --wait/--async; the tree verbs simply ignore it.
+    expect(exportDataSet).toHaveBeenCalledWith(expect.any(Object), 'qa', 'dev', expect.any(Object));
     writeSpy.mockRestore();
   });
 
   it('imports a data set with an --org override', async () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'import', 'qa', '--org', 'staging', '--json']);
-    expect(importDataSet).toHaveBeenCalledWith(expect.any(Object), 'qa', 'staging');
+    expect(importDataSet).toHaveBeenCalledWith(expect.any(Object), 'qa', 'staging', expect.any(Object));
     writeSpy.mockRestore();
   });
 
@@ -228,5 +231,87 @@ describe('data delete confirmation', () => {
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('bulk api down'));
     expect(process.exitCode).toBe(1);
     errSpy.mockRestore();
+  });
+});
+
+describe('data load', () => {
+  beforeEach(() => {
+    bulkLoadDataSet.mockResolvedValue({
+      set: 'seed', org: 'dev', kind: 'bulk', waitMinutes: 10,
+      operations: [{ sobject: 'Account', operation: 'insert', file: 'a.csv', status: 'ok', processed: 3, failed: 0 }],
+    });
+  });
+
+  it('loads a bulk data set and leaves the exit code clean', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed']);
+    expect(bulkLoadDataSet).toHaveBeenCalledWith(
+      expect.anything(), 'seed', 'dev', expect.objectContaining({ async: false }));
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('exits non-zero when any operation failed, so CI can branch on it', async () => {
+    bulkLoadDataSet.mockResolvedValue({
+      set: 'seed', org: 'dev', kind: 'bulk', waitMinutes: 10,
+      operations: [
+        { sobject: 'Account', status: 'ok' },
+        { sobject: 'Contact', status: 'error', error: 'INVALID_FIELD' },
+      ],
+    });
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed']);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('emits errorCount in the JSON envelope alongside the raw result', async () => {
+    bulkLoadDataSet.mockResolvedValue({
+      set: 'seed', org: 'dev', kind: 'bulk', waitMinutes: 10,
+      operations: [{ sobject: 'Contact', status: 'error', error: 'boom' }],
+    });
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--json']);
+    const payload = JSON.parse(spy.mock.calls.at(-1)[0]);
+    spy.mockRestore();
+    expect(payload.result.errorCount).toBe(1);
+    expect(payload.result.operations[0].error).toBe('boom');
+  });
+
+  it('passes --wait through as a number of minutes', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--wait', '25']);
+    expect(bulkLoadDataSet).toHaveBeenCalledWith(
+      expect.anything(), 'seed', 'dev', expect.objectContaining({ waitMinutes: 25 }));
+  });
+
+  it('rejects a non-numeric --wait before it reaches sf', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--wait', 'soon']);
+    expect(bulkLoadDataSet).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('warns about fieldMap keys that matched no CSV column', async () => {
+    bulkLoadDataSet.mockResolvedValue({
+      set: 'seed', org: 'dev', kind: 'bulk', waitMinutes: 10,
+      operations: [{ sobject: 'Account', status: 'ok', unmatchedFieldMapKeys: ['Nmae'] }],
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed']);
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/Nmae/);
+    warn.mockRestore();
+  });
+});
+
+describe('data load --line-ending', () => {
+  beforeEach(() => {
+    bulkLoadDataSet.mockResolvedValue({ set: 'seed', org: 'dev', kind: 'bulk', operations: [] });
+  });
+
+  it('normalises case and passes it through', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--line-ending', 'crlf']);
+    expect(bulkLoadDataSet).toHaveBeenCalledWith(
+      expect.anything(), 'seed', 'dev', expect.objectContaining({ lineEnding: 'CRLF' }));
+  });
+
+  it('rejects an unknown value before it reaches sf', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--line-ending', 'CR']);
+    expect(bulkLoadDataSet).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
   });
 });

@@ -1154,32 +1154,80 @@ sfdt docs diagram --output docs/erd.mmd
 
 ### sfdt data
 
-Manage data sets via native `sf data export/import tree` for sandbox and scratch-org seeding.
+Manage data sets for sandbox and scratch-org seeding. A data set is a directory under
+`config.data.dir` (default `.sfdt/data`) and comes in one of two shapes:
+
+- **Tree** — `queries.json`, a list of SOQL statements. `export` writes a plan plus record
+  files via `sf data export tree`, `import` replays them. Preserves relationships; tops out in
+  the low thousands of records and cannot upsert.
+- **Bulk** — `bulk.json`, a list of CSV load operations run over Bulk API v2 by `load`. Scales,
+  and is the only path that can upsert by external id.
+
+A set carries one spec file or the other, never both.
 
 ```bash
 sfdt data list
 sfdt data export accounts --org production
 sfdt data import accounts --org scratch1
+sfdt data load seed --org scratch1                  # bulk.json, Bulk API v2
+sfdt data load seed --org scratch1 --wait 30
 sfdt data delete accounts --org scratch1            # prompts for confirmation
 sfdt data delete accounts --org scratch1 --yes      # skip the prompt
 ```
+
+**`bulk.json`:**
+
+```json
+{
+  "operations": [
+    { "sobject": "Account", "file": "accounts.csv", "operation": "insert" },
+    {
+      "sobject": "Contact",
+      "file": "contacts.csv",
+      "operation": "upsert",
+      "externalId": "External_Id__c",
+      "fieldMap": { "Company Name": "Name", "email": "Email" }
+    }
+  ]
+}
+```
+
+Operations run in declaration order — a bulk spec's order is usually a dependency order, and
+Bulk API v2 jobs are already parallel server-side. `file` must stay inside the data-set
+directory.
+
+`fieldMap` exists because `sf data import bulk` has no mapping flag: it matches CSV column
+headers to field API names verbatim. A declared map rewrites the header row (only the header,
+streamed, so a multi-hundred-MB CSV is never held in memory) into a sibling file under
+`.mapped/`, and that copy is what loads. A map key matching no column is reported as
+`unmatchedFieldMapKeys` and warned about — otherwise the load would succeed while the field
+silently failed to populate.
 
 **Arguments:**
 
 | Argument | Description |
 |---|---|
-| `<action>` | `list`, `export`, `import`, or `delete` |
-| `[set]` | Data-set name (required for `export`/`import`/`delete`) |
+| `<action>` | `list`, `export`, `import`, `load`, or `delete` |
+| `[set]` | Data-set name (required for `export`/`import`/`load`/`delete`) |
 
 **Options:**
 
 | Option | Description |
 |---|---|
 | `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
+| `--wait <minutes>` | For `load`: minutes to wait for each job. Defaults to `config.data.bulk.waitMinutes` (10) |
+| `--async` | For `load`: queue each job and return immediately instead of waiting |
+| `--line-ending <LF\|CRLF>` | For `load`: CSV line ending. Defaults to `config.data.bulk.lineEnding`, else sf's own default |
 | `-y, --yes` | For `delete`: skip the confirmation prompt. **Required** for non-interactive runs (`--json`, no TTY, or `SFDT_NON_INTERACTIVE`), which otherwise refuse to delete |
 | `--json` | Emit machine-readable output |
 
-> `sfdt data delete` bulk-removes every record a data set's queries match — by design for scratch/sandbox seed cleanup. It is not exposed over MCP.
+> `sfdt data delete` bulk-removes every record a data set's queries match — by design for
+> scratch/sandbox seed cleanup.
+
+`load` reports per-operation results and **exits 1 if any operation failed**, so CI can branch
+on the exit code; the JSON envelope carries `errorCount` alongside the raw result. Records
+rejected by Salesforce count as a failure even though `sf` itself exits 0 for a job that
+processed some rows and rejected others — a half-loaded data set is not a successful seed.
 
 ---
 

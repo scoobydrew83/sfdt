@@ -276,6 +276,19 @@
       ]
     },
     {
+      "name": "sfdt_data_load",
+      "description": "Load a bulk data set (bulk.json) into the org over Bulk API v2 — insert or upsert by external id. Mutating (writes records) — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "set",
+        "org",
+        "wait",
+        "async",
+        "confirmExecution"
+      ]
+    },
+    {
       "name": "sfdt_data_delete",
       "description": "Bulk-delete a configured data set in the org. Destructive — requires confirmExecution.",
       "confirmExecution": true,

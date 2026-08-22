@@ -908,6 +908,16 @@
       "group": null
     },
     {
+      "id": "data-load",
+      "label": "Load (Bulk API)",
+      "detail": "Load a bulk data set into the org over Bulk API v2",
+      "args": [
+        "data",
+        "load"
+      ],
+      "group": null
+    },
+    {
       "id": "data-delete",
       "label": "Delete",
       "detail": "Bulk-delete a data set in the org",

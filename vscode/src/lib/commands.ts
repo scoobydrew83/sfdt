@@ -210,6 +210,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           { id: 'data-list', label: 'List', detail: 'List configured data sets', args: ['data', 'list'] },
           { id: 'data-export', label: 'Export', detail: 'Export a data set from the org', args: ['data', 'export'] },
           { id: 'data-import', label: 'Import', detail: 'Import a data set into the org', args: ['data', 'import'] },
+          { id: 'data-load', label: 'Load (Bulk API)', detail: 'Load a bulk data set into the org over Bulk API v2', args: ['data', 'load'], destructive: true },
           { id: 'data-delete', label: 'Delete', detail: 'Bulk-delete a data set in the org', args: ['data', 'delete'], destructive: true },
         ],
       },

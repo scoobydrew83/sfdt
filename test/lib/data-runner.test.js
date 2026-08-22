@@ -7,8 +7,16 @@ vi.mock('fs-extra', () => ({ default: { readJson: vi.fn(), ensureDir: vi.fn() } 
 import { execa } from 'execa';
 import { glob } from 'glob';
 import fs from 'fs-extra';
+import path from 'path';
 import {
   extractSObject,
+  parseCsvHeader,
+  formatCsvHeader,
+  mapCsvHeader,
+  resolveBulkOperation,
+  buildImportBulkArgs,
+  buildUpsertBulkArgs,
+  summariseBulkResult,
   buildExportArgs,
   dataSetDir,
   readQueries,
@@ -162,5 +170,153 @@ describe('listDataSets', () => {
   it('lists set directories containing queries.json', async () => {
     glob.mockResolvedValueOnce(['qa/queries.json', 'demo/queries.json']);
     expect(await listDataSets(config)).toEqual(['demo', 'qa']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bulk API v2 loading
+// ---------------------------------------------------------------------------
+
+describe('parseCsvHeader', () => {
+  it('splits a plain header and trims whitespace', () => {
+    expect(parseCsvHeader('Name,Email, Phone ')).toEqual(['Name', 'Email', 'Phone']);
+  });
+
+  it('honours quoted columns containing commas', () => {
+    expect(parseCsvHeader('"Last, First",Email')).toEqual(['Last, First', 'Email']);
+  });
+
+  it('unescapes doubled quotes inside a quoted column', () => {
+    expect(parseCsvHeader('"He said ""hi""",Email')).toEqual(['He said "hi"', 'Email']);
+  });
+
+  it('keeps empty trailing columns rather than dropping them', () => {
+    expect(parseCsvHeader('Name,,Email,')).toEqual(['Name', '', 'Email', '']);
+  });
+});
+
+describe('formatCsvHeader', () => {
+  it('leaves simple names unquoted', () => {
+    expect(formatCsvHeader(['Name', 'Email'])).toBe('Name,Email');
+  });
+
+  it('quotes and escapes only where required', () => {
+    expect(formatCsvHeader(['Last, First', 'He said "hi"', 'Plain'])).toBe('"Last, First","He said ""hi""",Plain');
+  });
+});
+
+describe('mapCsvHeader', () => {
+  it('renames mapped columns and passes unmapped ones through', () => {
+    const r = mapCsvHeader('Company Name,email,Notes', { 'Company Name': 'Name', email: 'Email' });
+    expect(r.line).toBe('Name,Email,Notes');
+    expect(r.renamed).toBe(2);
+    expect(r.unmatched).toEqual([]);
+  });
+
+  it('reports fieldMap keys that matched no column — a silent no-op otherwise', () => {
+    const r = mapCsvHeader('Name,Email', { Nmae: 'Name', Phone: 'Phone' });
+    expect(r.line).toBe('Name,Email');
+    expect(r.renamed).toBe(0);
+    expect(r.unmatched).toEqual(['Nmae', 'Phone']);
+  });
+
+  it('re-quotes a mapped name that needs it', () => {
+    const r = mapCsvHeader('a', { a: 'Weird,Name' });
+    expect(r.line).toBe('"Weird,Name"');
+  });
+
+  it('is a no-op with no field map', () => {
+    expect(mapCsvHeader('Name,Email').line).toBe('Name,Email');
+  });
+});
+
+describe('resolveBulkOperation', () => {
+  const setDir = '/project/.sfdt/data/seed';
+
+  it('resolves a valid insert', () => {
+    const op = resolveBulkOperation({ sobject: 'Account', file: 'a.csv' }, setDir, 'seed', 0);
+    expect(op.operation).toBe('insert');
+    expect(op.filePath).toBe(path.join(setDir, 'a.csv'));
+  });
+
+  it('defaults operation to insert but keeps an explicit upsert', () => {
+    const op = resolveBulkOperation(
+      { sobject: 'Contact', file: 'c.csv', operation: 'upsert', externalId: 'Ext__c' }, setDir, 'seed', 0);
+    expect(op.operation).toBe('upsert');
+    expect(op.externalId).toBe('Ext__c');
+  });
+
+  it('rejects an upsert with no externalId', () => {
+    expect(() => resolveBulkOperation(
+      { sobject: 'Contact', file: 'c.csv', operation: 'upsert' }, setDir, 'seed', 0))
+      .toThrow(/needs "externalId"/);
+  });
+
+  it('rejects an unsupported operation and points delete at its own verb', () => {
+    expect(() => resolveBulkOperation(
+      { sobject: 'Account', file: 'a.csv', operation: 'delete' }, setDir, 'seed', 0))
+      .toThrow(/sfdt data delete/);
+  });
+
+  it('rejects a file path that escapes the data set directory', () => {
+    expect(() => resolveBulkOperation(
+      { sobject: 'Account', file: '../../../etc/passwd' }, setDir, 'seed', 0))
+      .toThrow(/must stay inside the data set directory/);
+  });
+
+  it('rejects an sobject that is not an API name', () => {
+    expect(() => resolveBulkOperation(
+      { sobject: 'Account; DROP', file: 'a.csv' }, setDir, 'seed', 0))
+      .toThrow(/must be an object API name/);
+  });
+
+  it('rejects a fieldMap that is not an object', () => {
+    expect(() => resolveBulkOperation(
+      { sobject: 'Account', file: 'a.csv', fieldMap: ['Name'] }, setDir, 'seed', 0))
+      .toThrow(/must be an object of/);
+  });
+});
+
+describe('buildImportBulkArgs / buildUpsertBulkArgs', () => {
+  const insert = { sobject: 'Account', operation: 'insert' };
+  const upsert = { sobject: 'Contact', operation: 'upsert', externalId: 'Ext__c' };
+
+  it('builds an insert with the default wait', () => {
+    expect(buildImportBulkArgs(insert, 'dev', '/tmp/a.csv')).toEqual([
+      'data', 'import', 'bulk', '--file', '/tmp/a.csv', '--sobject', 'Account',
+      '--target-org', 'dev', '--json', '--wait', '10',
+    ]);
+  });
+
+  it('builds an upsert carrying the external id', () => {
+    expect(buildUpsertBulkArgs(upsert, 'dev', '/tmp/c.csv', { waitMinutes: 3 })).toEqual([
+      'data', 'upsert', 'bulk', '--file', '/tmp/c.csv', '--sobject', 'Contact',
+      '--external-id', 'Ext__c', '--target-org', 'dev', '--json', '--wait', '3',
+    ]);
+  });
+
+  it('swaps --wait for --async when asked, never both', () => {
+    const args = buildImportBulkArgs(insert, 'dev', '/tmp/a.csv', { async: true, waitMinutes: 9 });
+    expect(args).toContain('--async');
+    expect(args).not.toContain('--wait');
+  });
+
+  it('passes the line ending through only when set', () => {
+    expect(buildImportBulkArgs(insert, 'dev', '/tmp/a.csv', { lineEnding: 'CRLF' }))
+      .toEqual(expect.arrayContaining(['--line-ending', 'CRLF']));
+    expect(buildImportBulkArgs(insert, 'dev', '/tmp/a.csv')).not.toContain('--line-ending');
+  });
+});
+
+describe('summariseBulkResult', () => {
+  it('reads the sf envelope counts', () => {
+    expect(summariseBulkResult({ result: { jobId: '750xx', numberRecordsProcessed: 100, numberRecordsFailed: 2 } }))
+      .toEqual({ jobId: '750xx', processed: 100, failed: 2 });
+  });
+
+  it('coerces string counts and tolerates a missing result', () => {
+    expect(summariseBulkResult({ result: { id: 'j1', recordsProcessed: '5', recordsFailed: '0' } }))
+      .toEqual({ jobId: 'j1', processed: 5, failed: 0 });
+    expect(summariseBulkResult(null)).toEqual({ jobId: null, processed: null, failed: null });
   });
 });

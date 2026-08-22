@@ -114,7 +114,10 @@
     "roles": ["developer", "admin", "user", "devops"]
   },
   "data": {
-    "dir": ".sfdt/data"
+    "dir": ".sfdt/data",
+    "bulk": {
+      "waitMinutes": 10
+    }
   },
   "soql": {
     "defaultLimit": 200,

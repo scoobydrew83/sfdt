@@ -422,6 +422,24 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_data_load',
+    description: 'Load a bulk data set (bulk.json) into the org over Bulk API v2 — insert or upsert by external id. Mutating (writes records) — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        set: { type: 'string', description: 'Data set name — must be a bulk data set (bulk.json), not a tree one.' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' },
+        wait: { type: 'integer', minimum: 0, description: 'Minutes to wait for each job. Defaults to config data.bulk.waitMinutes (10).' },
+        async: { type: 'boolean', description: 'Queue each job and return immediately instead of waiting.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to write records to the org.' }
+      },
+      required: ['set', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Load the seed data set into the dev org', input: { set: 'seed', org: 'dev', confirmExecution: true } }
+    ]
+  },
+  {
     name: 'sfdt_data_delete',
     description: 'Bulk-delete a configured data set in the org. Destructive — requires confirmExecution.',
     inputSchema: {
@@ -846,6 +864,18 @@ export class SfdtMcpServer {
         }
         const cliArgs = ['data', 'import', args.set, '--json'];
         if (args.org) cliArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_data_load': {
+        if (!args.confirmExecution) {
+          throw new Error('Loading a data set writes records to the org. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['data', 'load', args.set, '--json'];
+        if (args.org) cliArgs.push('--org', args.org);
+        if (args.wait != null) cliArgs.push('--wait', String(args.wait));
+        if (args.async) cliArgs.push('--async');
         const { stdout } = await this.#runCliCommand(cliArgs);
         return this.#parseCliJson(stdout);
       }

@@ -232,7 +232,15 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "dir": { "type": "string" }
+        "dir": { "type": "string" },
+        "bulk": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "waitMinutes": { "type": "integer", "minimum": 0 },
+            "lineEnding": { "type": "string", "enum": ["LF", "CRLF"] }
+          }
+        }
       }
     },
     "soql": {

@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`sfdt data load` — Bulk API v2 data loading.** `sfdt data` could only drive `sf data
+  export/import tree`, which preserves relationships but tops out in the low thousands of
+  records and cannot upsert at all — so seeding a sandbox from a real extract, or reconciling
+  against an external system's ids, had no path through sfdt. A data set may now carry a
+  `bulk.json` instead of a `queries.json`, listing CSV load operations run over Bulk API v2 by
+  the new `load` verb (`sf data import bulk` / `sf data upsert bulk`; no new dependencies).
+  Operations run in **declaration order and never concurrently** — a bulk spec's order is
+  usually a dependency order, and Bulk API v2 jobs are already parallel server-side.
+  `bulk.json` and `queries.json` in the same set is an error rather than a precedence rule, so
+  `data load` and `data import` cannot disagree about what a set contains, and `data list` now
+  globs both so a bulk set is never reported as absent.
+
+  **Field mapping.** `sf data import bulk` has no mapping flag — it matches CSV headers to
+  field API names verbatim. An operation may declare `fieldMap`, which rewrites **only the
+  header row** into a sibling file under `.mapped/`; that copy is what loads. The rewrite is
+  streamed rather than read whole, because Bulk API v2 exists precisely for files too large to
+  want in memory. A map key that matches no column is reported as `unmatchedFieldMapKeys` and
+  warned about: otherwise the load succeeds, the column keeps its original name, and the field
+  silently fails to populate.
+
+  **Partial success is not success.** Salesforce exits 0 for a job that processed some rows and
+  rejected others, so a non-zero `numberRecordsFailed` is recorded as an `error` for that
+  operation, and `load` exits 1 when any operation failed — a half-loaded data set is not a
+  successful seed, and CI branching on the exit code has no other signal. The `--json` envelope
+  carries `errorCount` alongside the raw per-operation results. A failing operation is recorded
+  and the run continues, matching `data delete`.
+
+  `file` paths are containment-checked against the data-set directory (a data set is exactly
+  the kind of thing that gets copied between projects), `--wait` is validated as whole minutes
+  before it can reach argv, and deletes are deliberately **not** a supported bulk operation —
+  they stay on `sfdt data delete`, which owns the confirmation gate. New config keys
+  `data.bulk.waitMinutes` (default 10) and `data.bulk.lineEnding`. Surfaced as the
+  `confirmExecution`-gated MCP tool `sfdt_data_load` and a VS Code "Load (Bulk API)" entry.
+
+### Fixed
+
+- **`docs/USAGE.md` no longer claims `sfdt data delete` is unexposed over MCP** — the
+  `sfdt_data_delete` tool has existed since the MCP mutating-tool expansion.
+
 ## [0.22.2] - 2026-08-12
 
 A dependency-maintenance release. **No CLI behaviour changes** — no command, flag, config key
