@@ -878,6 +878,36 @@
       "group": null
     },
     {
+      "id": "record-get",
+      "label": "Get",
+      "detail": "Read a record and show what is editable",
+      "args": [
+        "record",
+        "get"
+      ],
+      "group": null
+    },
+    {
+      "id": "record-edit",
+      "label": "Edit",
+      "detail": "Update fields on a record",
+      "args": [
+        "record",
+        "edit"
+      ],
+      "group": null
+    },
+    {
+      "id": "record-clone",
+      "label": "Clone",
+      "detail": "Create a copy of a record",
+      "args": [
+        "record",
+        "clone"
+      ],
+      "group": null
+    },
+    {
       "id": "data-list",
       "label": "List",
       "detail": "List configured data sets",

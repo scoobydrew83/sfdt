@@ -1,8 +1,7 @@
 import path from 'path';
 import fs from 'fs-extra';
-import { execa } from 'execa';
 import { glob } from 'glob';
-import { safeParse } from './org-query.js';
+import { orgRest, restErrorMessage } from './org-rest.js';
 import { archiveSnapshot } from './log-writer.js';
 import { recordRun } from './run-history.js';
 
@@ -45,34 +44,11 @@ const guruBase = (apiVersion) => `/services/data/v${apiVersion}/apexguru`;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Minimal REST helper over `sf api request rest`. sf colorizes this command's
- * output even without a TTY, which breaks JSON.parse — force color off
- * (same workaround as detectOrgRelease in org-release.js).
+ * ApexGuru's REST calls go through the shared transport in org-rest.js — the
+ * helper that used to live here, verbatim, before `sfdt record` needed it too.
  */
-export async function apexGuruRest(orgAlias, urlPath, { method = 'GET', body, timeoutMs } = {}) {
-  const args = ['api', 'request', 'rest', urlPath, '--target-org', orgAlias];
-  if (method !== 'GET') args.push('--method', method);
-  if (body !== undefined) args.push('--body', JSON.stringify(body));
-  const opts = { env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' } };
-  if (timeoutMs) opts.timeout = timeoutMs;
-  const resp = await execa('sf', args, opts);
-  return safeParse(resp.stdout);
-}
+export const apexGuruRest = orgRest;
 
-/**
- * Pull the friendliest message out of a failed `sf api request rest` call.
- * Salesforce REST errors arrive as `[{ message, errorCode }]`, sf CLI errors
- * as `{ message }` — check stdout then stderr, then fall back to the execa
- * message (e.g. ENOENT when the sf CLI itself is missing).
- */
-function restErrorMessage(err) {
-  for (const raw of [err?.stdout, err?.stderr]) {
-    const parsed = safeParse(raw);
-    const message = Array.isArray(parsed) ? parsed[0]?.message : parsed?.message;
-    if (message) return message;
-  }
-  return err?.shortMessage || err?.message || 'unknown error';
-}
 
 /**
  * Availability probe: GET apexguru/validate. Returns `{ available, reason }`

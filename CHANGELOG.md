@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`sfdt record get|edit|clone` — single-record read and write on the CLI, MCP and VS Code,
+  from the same model the browser uses.** Record view/edit/clone existed only inside the Chrome
+  extension; the CLI had no record command at all, so nothing scriptable and no agent could read
+  or amend one record safely.
+
+  The editability model moves to **`@sfdt/flow-core`** (`0.11.0 → 0.12.0`, consumer ranges in
+  lockstep) and the extension's `lib/record-edit.ts` becomes a re-export, so no feature code
+  changed and its 67 tests moved to flow-core and pass unchanged — which is what proves the move
+  behaviour-preserving rather than merely compiling. The point of one model is that a formula
+  field, an auto-number, or a field your permissions do not cover is refused **for the identical
+  stated reason** whether you are in a terminal, an agent, or the browser. Two copies of that
+  rule would be two answers waiting to diverge.
+
+  `get` prints every field — editable ones marked, read-only ones dimmed with the reason. Nothing
+  is dropped from the view, only from the request body. `edit` refuses a non-editable or unknown
+  field **locally, by name**, before anything reaches the org, and builds its PATCH from the
+  shared diff, which also omits any field missing from the record payload — so a field hidden
+  from you by field-level security can never be written to `null` over a value you were never
+  allowed to see. A value that already matches is a no-op, not a write: `100` is not different
+  from `"100"`. `--set` splits on the first `=` only, so a URL survives being a value.
+
+  **A write reports one of four outcomes and the exit code follows it.** `saved`, `no-op` and
+  `dry-run` exit 0. `rejected` exits 1 with the org's message on the exact field. And **`unknown`
+  exits 1 too** — a timed-out write may have committed, so the command says so instead of
+  claiming nothing was saved, and a script is told to go and look rather than to retry blindly.
+
+  Exposed as `sfdt_record_get` (read-only) plus `sfdt_record_edit` and `sfdt_record_clone`, both
+  `confirmExecution`-gated, and as a VS Code command group. The MCP half is the part a hosted
+  product structurally cannot offer: an agent in Claude Code or Cursor can read and amend an org
+  record, gated by confirmation, with nobody else's app in the loop.
+
+- **`src/lib/org-rest.js`** — the generic `sf api request rest` transport, extracted from
+  `apexguru-runner.js`, which held the only copy. A second copy would have been a second place to
+  forget the `NO_COLOR` workaround (sf colorizes even without a TTY, which breaks `JSON.parse`).
+  It also gains `restErrorDetails`, which pulls the `fields` array out of a rejection — the only
+  thing that says *which* field the org refused.
+
 ### Changed
 
 - **`sfdt audit audittrail` grew a severity model, a velocity baseline, and a gate that bites.**

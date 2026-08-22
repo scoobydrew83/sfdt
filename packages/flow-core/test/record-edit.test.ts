@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { FieldDescribe } from '../lib/describe-cache.js';
-import type { SalesforceRestErrorDetail } from '../lib/salesforce-api.js';
+import type { FieldDescribe } from '../src/record-edit.js';
+import type { SalesforceRestErrorDetail } from '../src/record-edit.js';
 import {
   EDITABLE_TYPES,
   SYSTEM_FIELD_NAMES,
@@ -11,7 +11,7 @@ import {
   buildDirtyDiff,
   mapSaveErrors,
   buildCreateBody,
-} from '../lib/record-edit.js';
+} from '../src/record-edit.js';
 
 // Minimal describe field. Everything the model reads is optional on
 // FieldDescribe, so the helper mirrors a real payload's defaults: writable,

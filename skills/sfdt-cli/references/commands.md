@@ -420,6 +420,7 @@ Compact reference for the rest of the CLI. Run `sfdt <command> --help` for the f
 |---------|---------|
 | `sfdt docs generate [--ai] [--no-ai] [--roles [list]] [--no-diagrams] [--json]` | MkDocs markdown for objects/Apex/Flows/LWC + ER diagram; `--roles` adds AI-authored per-component role guides |
 | `sfdt docs diagram [--output <file>]` | Standalone ER diagram |
+| `sfdt record get\|edit\|clone <id> [--org] [--sobject] [--set F=V] [--dry-run]` | Read, update, or copy ONE record. Editability comes from `@sfdt/flow-core` — the same model the Chrome extension uses — so a formula, auto-number or FLS-blocked field is refused locally with its reason instead of by a round trip. `--dry-run` prints the exact body. A timed-out write reports `unknown`, never `saved` |
 | `sfdt data list\|export\|import\|delete <set> [--org]` | Named data sets over `sf data export/import tree` for sandbox & scratch seeding |
 | `sfdt data load <set> [--org] [--wait <min>] [--async] [--line-ending LF\|CRLF]` | Load a `bulk.json` data set over Bulk API v2 (`sf data import\|upsert bulk`) — CSV field mapping and upsert by external id. Exits 1 if any operation failed |
 | `sfdt scratch create\|delete\|list` | Scratch org lifecycle using the configured definition file |

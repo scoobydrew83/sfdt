@@ -205,6 +205,14 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     docsUrl: DOCS.configUtils,
     entries: [
       {
+        id: 'record', label: 'Record', detail: 'Read, edit, or clone a single record', icon: 'symbol-field',
+        children: [
+          { id: 'record-get', label: 'Get', detail: 'Read a record and show what is editable', args: ['record', 'get'] },
+          { id: 'record-edit', label: 'Edit', detail: 'Update fields on a record', args: ['record', 'edit'], destructive: true },
+          { id: 'record-clone', label: 'Clone', detail: 'Create a copy of a record', args: ['record', 'clone'], destructive: true },
+        ],
+      },
+      {
         id: 'data', label: 'Data Sets', detail: 'Manage data sets', icon: 'database',
         children: [
           { id: 'data-list', label: 'List', detail: 'List configured data sets', args: ['data', 'list'] },

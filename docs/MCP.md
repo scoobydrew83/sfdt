@@ -236,6 +236,18 @@ Deletes a scratch org by alias/username. **Requires `confirmExecution`.**
 Inspects (`status`, read-only) or tops up (`fill`, requires `confirmExecution`) the scratch-org pool.
 * **Arguments:** `action` (`status` | `fill`, **required**), `size`, `confirmExecution` (required for `fill`).
 
+#### `sfdt_record_get`
+Reads one record and reports which fields are editable, and why the rest are not. Read-only.
+* **Arguments:** `id` (**required**), `sobject`, `org`.
+
+#### `sfdt_record_edit`
+Updates fields on one record. Non-editable and unknown fields are refused locally, with the reason, before anything is sent. **Requires `confirmExecution`.**
+* **Arguments:** `id` (**required**), `fields` (**required**, object of API name → value), `sobject`, `org`, `dryRun`, `confirmExecution` (**required**).
+
+#### `sfdt_record_clone`
+Creates a copy of a record from its createable fields, with optional overrides. **Requires `confirmExecution`.**
+* **Arguments:** `id` (**required**), `fields`, `sobject`, `org`, `dryRun`, `confirmExecution` (**required**).
+
 #### `sfdt_data_import`
 Imports a data set into the org. **Requires `confirmExecution`.**
 * **Arguments:** `set` (**required**), `org`, `confirmExecution` (**required**).

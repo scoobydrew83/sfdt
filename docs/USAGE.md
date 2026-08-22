@@ -1185,6 +1185,56 @@ sfdt docs diagram --output docs/erd.mmd
 
 ---
 
+### sfdt record
+
+Read, update, or copy a **single** record. The editability model is
+[`@sfdt/flow-core`](../packages/flow-core)'s — the same module the Chrome extension's inspector
+uses — so a field is refused here for the identical stated reason it is refused in the browser.
+
+```bash
+sfdt record get 001800000000001AAA
+sfdt record edit 001800000000001AAA --set Name="Acme Corp" --set Phone=555-0100
+sfdt record edit 001800000000001AAA --set Name=X --dry-run     # print the body, send nothing
+sfdt record clone 006800000000001AAA --set Name="Renewal FY27"
+```
+
+**Arguments:**
+
+| Argument | Description |
+|---|---|
+| `<action>` | `get`, `edit`, or `clone` |
+| `<id>` | 15 or 18 character record Id |
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
+| `--sobject <name>` | Name the object to skip key-prefix resolution (which costs a global describe) |
+| `--set <Field=Value>` | Repeatable. Splits on the **first** `=` only, so a value may contain one; an empty value is an explicit clear |
+| `--dry-run` | Print the exact request body without sending it |
+| `--json` | Emit machine-readable output |
+
+`get` prints every field — editable ones marked, read-only ones dimmed **with the reason**
+(`formula`, `auto-number`, `system`, `unsupported-type`, `no-permission`). Nothing is dropped
+from the view, only from the request body.
+
+`edit` refuses a non-editable or unknown field **locally, by name**, before anything reaches the
+org, and builds its PATCH from the shared diff — which also omits any field missing from the
+record payload, so a field hidden from you by field-level security can never be written to
+`null` over a value you were never allowed to see. A value that already matches is a no-op
+rather than a write (`100` is not different from `"100"`).
+
+A write reports one of four outcomes and the **exit code follows it**: `saved`, `no-op` and
+`dry-run` exit 0; `rejected` exits 1 with the org's message placed on the exact field; and
+**`unknown` also exits 1** — a timed-out write may have committed, so the command says the
+outcome is unknown rather than claiming nothing was saved, and a script is told to go and look.
+
+Exposed over MCP as `sfdt_record_get` (read-only) plus `sfdt_record_edit` and
+`sfdt_record_clone`, both `confirmExecution`-gated.
+
+---
+
 ### sfdt data
 
 Manage data sets for sandbox and scratch-org seeding. A data set is a directory under

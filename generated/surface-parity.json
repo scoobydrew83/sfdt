@@ -604,6 +604,22 @@
       "sideEffects": null
     },
     {
+      "id": "record",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        "sfdt_record_get",
+        "sfdt_record_edit",
+        "sfdt_record_clone"
+      ],
+      "sideEffects": null
+    },
+    {
       "id": "version",
       "surfaces": {
         "cli": true,

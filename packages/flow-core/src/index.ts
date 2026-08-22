@@ -222,3 +222,32 @@ export type {
   FieldWriteStatus,
   FlowFieldWrite,
 } from './field-writes.js';
+
+// Record editability model — shared by the CLI (`sfdt record`), the MCP tools
+// and the Chrome extension, so a field is refused identically on every surface.
+export {
+  EDITABLE_TYPES,
+  isEditableType,
+  SYSTEM_FIELD_NAMES,
+  classifyFieldEditability,
+  formatForInput,
+  coerceForWire,
+  buildDirtyDiff,
+  buildCreateBody,
+  mapSaveErrors,
+} from './record-edit.js';
+export type {
+  FieldDescribe,
+  SalesforceRestErrorDetail,
+  EditableType,
+  NotEditableReason,
+  EditabilityMode,
+  FieldEditability,
+  InputValue,
+  DirtyDiff,
+  DescribeLike,
+  CreateBody,
+  FieldSaveError,
+  BannerSaveError,
+  MappedSaveErrors,
+} from './record-edit.js';

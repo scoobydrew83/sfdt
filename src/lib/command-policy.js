@@ -322,6 +322,19 @@ export const COMMAND_POLICY = {
     surfaces: { gui: true, vscode: true, chrome: false },
     mcpTools: { sfdt_docs: { mutating: false } },
   },
+  record: {
+    mutating: true, // edit/clone write records
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'org-health',
+    surfaces: { gui: false, vscode: true, chrome: true },
+    mcpTools: {
+      sfdt_record_get: { mutating: false },
+      sfdt_record_edit: { mutating: true },
+      sfdt_record_clone: { mutating: true },
+    },
+  },
   data: {
     mutating: true, // import/delete change org data
     requiresProject: true,

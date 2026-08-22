@@ -255,6 +255,45 @@
       ]
     },
     {
+      "name": "sfdt_record_get",
+      "description": "Read one Salesforce record and report which fields are editable, and why the rest are not. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "id",
+        "sobject",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_record_edit",
+      "description": "Update fields on one record. Fields the org reports as non-editable are refused locally, with the reason, before anything is sent. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "id",
+        "fields",
+        "sobject",
+        "org",
+        "dryRun",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_record_clone",
+      "description": "Create a copy of a record from its createable fields, with optional overrides. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "id",
+        "fields",
+        "sobject",
+        "org",
+        "dryRun",
+        "confirmExecution"
+      ]
+    },
+    {
       "name": "sfdt_data_export",
       "description": "Export a configured data set from the org to local files. Reads from the org and writes local data files (read-only with respect to the org).",
       "confirmExecution": false,

@@ -391,6 +391,60 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_record_get',
+    description: 'Read one Salesforce record and report which fields are editable, and why the rest are not. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: '15 or 18 character record Id.' },
+        sobject: { type: 'string', description: 'Object API name. Optional — resolved from the Id key prefix when omitted.' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['id']
+    },
+    examples: [
+      { description: 'Read an Account and see what is writable', input: { id: '001800000000001AAA' } }
+    ]
+  },
+  {
+    name: 'sfdt_record_edit',
+    description: 'Update fields on one record. Fields the org reports as non-editable are refused locally, with the reason, before anything is sent. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: '15 or 18 character record Id.' },
+        fields: { type: 'object', description: 'Field API name to value, e.g. { "Name": "Acme" }.', additionalProperties: true },
+        sobject: { type: 'string', description: 'Object API name. Optional.' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' },
+        dryRun: { type: 'boolean', description: 'Return the exact request body without sending it.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to write to the org.' }
+      },
+      required: ['id', 'fields', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Rename an Account', input: { id: '001800000000001AAA', fields: { Name: 'Acme Corp' }, confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_record_clone',
+    description: 'Create a copy of a record from its createable fields, with optional overrides. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Record Id to copy.' },
+        fields: { type: 'object', description: 'Overrides applied to the copy.', additionalProperties: true },
+        sobject: { type: 'string', description: 'Object API name. Optional.' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' },
+        dryRun: { type: 'boolean', description: 'Return the exact request body without sending it.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to create a record.' }
+      },
+      required: ['id', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Clone an Opportunity under a new name', input: { id: '006800000000001AAA', fields: { Name: 'Renewal FY27' }, confirmExecution: true } }
+    ]
+  },
+  {
     name: 'sfdt_data_export',
     description: 'Export a configured data set from the org to local files. Reads from the org and writes local data files (read-only with respect to the org).',
     inputSchema: {
@@ -847,6 +901,44 @@ export class SfdtMcpServer {
         }
         const cliArgs = ['scratch', 'pool', action, '--json'];
         if (action === 'fill' && args.size != null) cliArgs.push('--size', String(args.size));
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_record_get': {
+        const cliArgs = ['record', 'get', args.id, '--json'];
+        if (args.sobject) cliArgs.push('--sobject', args.sobject);
+        if (args.org) cliArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_record_edit': {
+        if (!args.confirmExecution) {
+          throw new Error('Editing a record writes to the org. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['record', 'edit', args.id, '--json'];
+        for (const [field, value] of Object.entries(args.fields ?? {})) {
+          cliArgs.push('--set', `${field}=${value}`);
+        }
+        if (args.sobject) cliArgs.push('--sobject', args.sobject);
+        if (args.org) cliArgs.push('--org', args.org);
+        if (args.dryRun) cliArgs.push('--dry-run');
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_record_clone': {
+        if (!args.confirmExecution) {
+          throw new Error('Cloning a record creates one in the org. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['record', 'clone', args.id, '--json'];
+        for (const [field, value] of Object.entries(args.fields ?? {})) {
+          cliArgs.push('--set', `${field}=${value}`);
+        }
+        if (args.sobject) cliArgs.push('--sobject', args.sobject);
+        if (args.org) cliArgs.push('--org', args.org);
+        if (args.dryRun) cliArgs.push('--dry-run');
         const { stdout } = await this.#runCliCommand(cliArgs);
         return this.#parseCliJson(stdout);
       }

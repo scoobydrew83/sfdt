@@ -30,6 +30,7 @@ describe('createCli', () => {
       'apex',
       'pull',
       'quality',
+      'record',
       'preflight',
       'rollback',
       'smoke',

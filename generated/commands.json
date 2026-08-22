@@ -5002,6 +5002,200 @@
       "source": "src/commands/soql.js"
     },
     {
+      "id": "record",
+      "path": [
+        "record"
+      ],
+      "description": "Read, edit, or clone a single Salesforce record (shared editability model with the browser extension)",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "record get",
+          "path": [
+            "record",
+            "get"
+          ],
+          "description": "Read a record and show which fields are editable, and why the rest are not",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "id",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--sobject <name>",
+              "name": "sobject",
+              "required": false,
+              "default": null,
+              "description": "Skip key-prefix resolution by naming the object"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "record edit",
+          "path": [
+            "record",
+            "edit"
+          ],
+          "description": "Update fields on a record (PATCH). Non-editable fields are refused locally, with the reason",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "id",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--sobject <name>",
+              "name": "sobject",
+              "required": false,
+              "default": null,
+              "description": "Skip key-prefix resolution by naming the object"
+            },
+            {
+              "flags": "--set <Field=Value>",
+              "name": "set",
+              "required": false,
+              "default": null,
+              "description": "Field to set; repeatable"
+            },
+            {
+              "flags": "--dry-run",
+              "name": "dryRun",
+              "required": false,
+              "default": null,
+              "description": "Print the exact request body without sending it"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "record clone",
+          "path": [
+            "record",
+            "clone"
+          ],
+          "description": "Create a copy of a record from its createable fields, with optional overrides",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "id",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--sobject <name>",
+              "name": "sobject",
+              "required": false,
+              "default": null,
+              "description": "Skip key-prefix resolution by naming the object"
+            },
+            {
+              "flags": "--set <Field=Value>",
+              "name": "set",
+              "required": false,
+              "default": null,
+              "description": "Override a field on the copy; repeatable"
+            },
+            {
+              "flags": "--dry-run",
+              "name": "dryRun",
+              "required": false,
+              "default": null,
+              "description": "Print the exact request body without sending it"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "org-health",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_record_get",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_record_edit",
+          "mutating": true
+        },
+        {
+          "name": "sfdt_record_clone",
+          "mutating": true
+        }
+      ],
+      "source": "src/commands/record.js"
+    },
+    {
       "id": "version",
       "path": [
         "version"
