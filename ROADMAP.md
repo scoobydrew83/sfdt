@@ -36,7 +36,7 @@ have moved to "Recently shipped" above. See [CHANGELOG.md](CHANGELOG.md) for eac
 
 Cross-workstream dispatch and status (including Chrome-extension items tracked outside this repo) lives on the internal Notion board "SFDT Master Backlog — Agent Dispatch Board"; this file remains the source of truth for the CLI items below.
 
-**Active phase: "Trustworthy writes"** (opened 2026-08-22). The 1.0 stabilization phase passed its verdict on 2026-08-12 (`.harness/telemetry.jsonl`), and what 1.0 itself now requires is written down in [docs/versioning.md](docs/versioning.md) rather than left implicit. This phase's theme: every remaining item on the competitive backlog is a *write* feature, and the transport underneath them misreports write outcomes. Fix that, then ship writes.
+**Active phase: "Trustworthy writes"** (opened 2026-08-22). The 1.0 stabilization phase passed its verdict on 2026-08-12 (`.harness/telemetry.jsonl`), and what 1.0 itself now requires is written down in [docs/versioning.md](docs/versioning.md) rather than left implicit. This phase's theme: every remaining item on the competitive backlog is a *write* feature. The transport underneath them has already been made trustworthy (workstream A, shipped in extension v0.13.0) — so the phase is about spending that guarantee, not building it.
 
 Two competitor reviews feed this section. The sf-pi integration review (2026-07-29) is cited as `docs/reviews/sf-pi-integration-review.md` but that file is **not present in this repo** — its three sequenced items (`sfdt apex`, `sfdt soql`, ApexGuru) all shipped in v0.22.0 regardless. The [SFDevTools competitive analysis](docs/reviews/sfdevtools-competitive-analysis.md) (2026-08-22) sources the rest.
 
@@ -44,20 +44,25 @@ Everything here re-implements capabilities natively — no dependency on the rev
 
 **FEATURES.json seeding for this phase is a separate, `develop`-direct commit.** `tools/check-features-edits.mjs` diffs the fork point against the working tree, so *any* branch that adds an entry fails `check:features` — and therefore `check:all-contracts` and CI. Only on the integration branch is the fork point HEAD and the diff empty. (The checker's own remediation text says to "land it in its own commit so the diff carries nothing else", which does not actually satisfy the rule from a branch; worth reconciling the text with the behaviour.)
 
-### Workstream A — the write transport (extension)
+### Workstream A — the write transport (extension) — **already done**
 
-Both are live defects on already-shipped features, both are scoped as standalone branches in [docs/design/record-edit-clone.md](docs/design/record-edit-clone.md) ("External prerequisites"), and workstream C cannot start until they land.
+Both defects were fixed on `develop` before this phase was written; the competitive review that named them read `main`, which lags. Verified 2026-08-22 on `develop`:
 
-- **`ext/fix-write-timeout`** — `extension/lib/salesforce-api.ts:16` sets `SEND_MESSAGE_TIMEOUT_MS = 5000` and `apiRequest()` inherits it, so a PATCH still in flight at 5 s throws `No Salesforce session available` — **a write that may have committed, reported as a failure**. Live on `data-import`, `field-creator`, `apex-anonymous`. Writes get an explicit timeout, and a transport failure becomes distinguishable at the call site from a server rejection — **Planned**
-- **`ext/enabled-by-default-authoritative`** — `isFeatureEnabled()` (`extension/lib/settings.ts:107`) returns `true` for any id with no stored entry, so the `enabledByDefault` flag in the manifest is never consulted and every new feature ships on. Runtime reads `manifest.enabledByDefault ?? true` — **Planned**
+- **Write timeout** — `SEND_MESSAGE_TIMEOUT_MS` is gone. `extension/lib/salesforce-api.ts` now splits the budget: `READ_MESSAGE_TIMEOUT_MS = 30_000` and `WRITE_MESSAGE_TIMEOUT_MS = 120_000` (the platform's own ceiling for the longest synchronous operation these paths trigger), with SOAP split per call site so a polled `checkDeployStatus` cannot inherit the write framing. A bus timeout now *rejects* with `WORKER_TIMEOUT_ERROR_NAME` rather than resolving `null`, and every error carries an `sfdtKind` discriminant — `'timeout'` (outcome UNKNOWN, may have committed) vs `'no-session'` (definitely did not run) vs `'http-error'`. That is exactly the guarantee the record-edit design doc asked for — **Shipped (stable)**
+- **`enabledByDefault` authoritative** — `feature-registry.ts:130` calls `registerFeatureDefault(feature.manifest.id, feature.manifest.enabledByDefault)` and `settings.ts` resolves through it, so a manifest declaring `false` is genuinely off — **Shipped (stable)**
 
-### Workstream B — Bulk API v2 data loading (CLI)
+### Workstream B — Bulk API v2 data loading (CLI) — the open feature
 
 - **Bulk API v2 data loading** — `sfdt data` is `sf data tree` only: no bulk path, no CSV field mapping, no upsert-by-external-ID. `sf data delete bulk` is already wired (`src/lib/data-runner.js:127-153`) and the partial-success result shape bulk needs is already designed, so this is additive: widen `makeAction`'s signature to carry options, extend the data-set spec to discriminate tree-style from bulk-style, and add `buildImportBulkArgs`/`buildUpsertBulkArgs` beside the existing pure `buildExportArgs`. No new dependencies. The largest single capability gap a working Salesforce team would notice — **Planned**
 
-### Workstream C — record edit / clone / delete (Chrome)
+### Workstream C — record edit / clone / delete (Chrome) — PR-1 landed
 
-- **Record edit/clone/delete in `inspect-record`** — **approved 2026-08-22**; build the four-PR chain in [docs/design/record-edit-clone.md](docs/design/record-edit-clone.md). PR-1 rebases onto workstream A. Delete ships as its own feature id (`record-delete`) so it is independently kill-switchable — **Planned**
+Design approved 2026-08-22; [docs/design/record-edit-clone.md](docs/design/record-edit-clone.md) holds the four-PR chain. Its two external prerequisites are workstream A above, both now merged, so the chain is unblocked.
+
+- **PR-1 — editability model + typed API errors** — `extension/lib/record-edit.ts`, DOM-free and I/O-free: `EDITABLE_TYPES`, `classifyFieldEditability()`, `formatForInput()`/`coerceForWire()`, `buildDirtyDiff()` and `mapSaveErrors()`. `buildDirtyDiff()` replaces the two independent `!==` loops `inspect-record` runs today with one computation. Shipped as a tested contract, deliberately unconsumed — **Shipped (stable)** (PR #307)
+- **PR-2 — edit mode in `inspect-record`** — consume `record-edit.ts`: typed editors per field, server field errors rendered on the exact field, re-read after save so formula/roll-up/audit fields cannot go stale — **Planned**
+- **PR-3 — clone** — **Planned**
+- **PR-4 — delete** behind its own feature id `record-delete`, so it is independently remotely-killable (a sub-flag inside `inspect-record` cannot be, per the design doc's recorded decision) — **Planned**
 
 ### Also in this phase
 

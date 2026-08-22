@@ -1,9 +1,10 @@
 # Mini-plan: Record Edit / Clone / Delete in inspect-record (Chrome)
 
-**Date:** 2026-07-30 · **Status:** **APPROVED 2026-08-22** — scheduled into the "Trustworthy
-writes" phase. Build the PR chain as written below. PR-1 still cannot start until both
-[External prerequisites](#external-prerequisites) merge; those two are workstream A of the
-same phase, so the dependency is scheduled rather than open-ended.
+**Date:** 2026-07-30 · **Status:** **APPROVED 2026-08-22 — PR-1 landed, PR-2 next.**
+Both [External prerequisites](#external-prerequisites) merged and shipped in extension
+v0.13.0, so the chain is unblocked. PR-1 (`extension/lib/record-edit.ts`, PR #307) is in as a
+tested contract that no feature consumes yet — PR-2 is what consumes it. Build PR-2/3/4 as
+written below.
 **Satisfies:** Chrome Extension Execution Plan item **P4-1** (Record edit / clone in
 inspect-record), an "**L** — mini-plan first" item and one of the plan's six named human
 checkpoints. Depends on P0-4 (worker-proxied API), which is merged.
@@ -53,6 +54,16 @@ it does not contain them.**
 **Sequencing consequence: P4-1's PR-1 must rebase onto both once they merge, and cannot start
 until they do.** The rebase is not cosmetic in either case — see PR-1 and PR-4 below for what
 each changes about the work.
+
+> **RESOLVED 2026-08-22.** Both prerequisites merged and shipped in extension v0.13.0, and the
+> table above now describes history rather than current code. `SEND_MESSAGE_TIMEOUT_MS` no
+> longer exists: `salesforce-api.ts` splits `READ_MESSAGE_TIMEOUT_MS` (30 s) from
+> `WRITE_MESSAGE_TIMEOUT_MS` (120 s), a bus timeout *rejects* with `WORKER_TIMEOUT_ERROR_NAME`
+> instead of resolving `null`, and every thrown error carries an `sfdtKind` discriminant
+> (`'timeout'` / `'no-session'` / `'http-error'`) — which is precisely the "transport failure
+> distinguishable from a server rejection" guarantee decision 3 depends on. `enabledByDefault`
+> is honoured via `registerFeatureDefault()` in `feature-registry.ts`, so decision 2's
+> default-off `record-delete` works by declaring the flag, as designed.
 
 ## Decisions (2026-07-30, recorded — these are settled, not open questions)
 
