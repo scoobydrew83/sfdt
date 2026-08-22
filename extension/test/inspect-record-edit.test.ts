@@ -22,7 +22,8 @@ import type { FieldDescribe } from '../lib/describe-cache.js';
 function field(over: Partial<FieldDescribe> & { name: string; type: string }): FieldDescribe {
   return {
     label: over.name, relationshipName: null, referenceTo: [],
-    picklistValues: [], nillable: true, calculated: false, updateable: true,
+    picklistValues: [], nillable: true, calculated: false,
+    updateable: true, createable: true,
     ...over,
   } as FieldDescribe;
 }
@@ -161,7 +162,7 @@ const ACCOUNT_FIELDS = [
   field({ name: 'Name', type: 'string', label: 'Account Name' }),
   field({ name: 'AnnualRevenue', type: 'currency', label: 'Revenue', scale: 2 }),
   field({ name: 'Formula__c', type: 'string', label: 'Calc', calculated: true }),
-  field({ name: 'Locked__c', type: 'string', label: 'Locked', updateable: false }),
+  field({ name: 'Locked__c', type: 'string', label: 'Locked', updateable: false, createable: false }),
 ];
 
 const REC = '001800000000001AAA';
@@ -374,5 +375,89 @@ describe('inspect-record edit mode', () => {
     expect(document.querySelector('.sfdt-view-overlay')).toBeTruthy();
     expect(rowFor('Name')!.querySelector('input')!.value).toBe('Dirty');
 
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Clone (PR-3)
+// ---------------------------------------------------------------------------
+
+// Scoped to the clone pane: the fields table stays mounted (its container is
+// merely hidden), so an unscoped `tbody tr` query matches the wrong table.
+const clonePane = () => document.querySelector('.sfdt-clone-form')!;
+const cloneButton = () =>
+  Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('Clone'))!;
+const createButton = () =>
+  Array.from(clonePane().querySelectorAll('button')).find((b) => b.textContent?.includes('Create'))!;
+const cloneRowFor = (name: string) =>
+  Array.from(clonePane().querySelectorAll('tbody tr')).find(
+    (tr) => tr.querySelector('td:nth-child(2)')?.textContent === name,
+  );
+
+describe('inspect-record clone', () => {
+  it('stages a form and creates nothing until Create is pressed', async () => {
+    const { feature, apiRequest } = mount();
+    await feature.onActivate?.();
+    await flush();
+
+    cloneButton().click();
+    await flush();
+
+    expect(document.body.textContent).toMatch(/Nothing is created until you press Create/);
+    // Decision 6: clicking Clone must not insert.
+    expect(apiRequest).not.toHaveBeenCalled();
+  });
+
+  it('prefills createable fields and renders the rest with their reason', async () => {
+    const { feature } = mount();
+    await feature.onActivate?.();
+    await flush();
+    cloneButton().click();
+    await flush();
+
+    expect((cloneRowFor('Name')!.querySelector('input') as HTMLInputElement).value).toBe('Acme');
+    // Not createable: still shown, still explained, but no control.
+    const formulaRow = cloneRowFor('Formula__c')!;
+    expect(formulaRow.querySelector('input')).toBeNull();
+    expect(formulaRow.querySelector('td:nth-child(3) .sfdt-pill')?.textContent).toBe('formula');
+  });
+
+  it('POSTs only createable fields and offers the new record', async () => {
+    const apiRequest = vi.fn(async (_m: string, _p: string, _b?: unknown) => ({ id: '001800000000009AAA' }));
+    const { feature } = mount({ apiRequest });
+    await feature.onActivate?.();
+    await flush();
+    cloneButton().click();
+    await flush();
+    createButton().click();
+    await flush();
+
+    expect(apiRequest).toHaveBeenCalledWith('POST', expect.stringContaining('/sobjects/Account'), expect.anything());
+    const body = (apiRequest.mock.calls[0]![2] ?? {}) as Record<string, unknown>;
+    expect(Object.keys(body)).toContain('Name');
+    expect(Object.keys(body)).not.toContain('Formula__c');
+    expect(Object.keys(body)).not.toContain('Locked__c');
+
+    expect(document.body.textContent).toMatch(/001800000000009AAA/);
+    const labels = Array.from(document.querySelectorAll('button')).map((b) => b.textContent);
+    expect(labels.some((l) => l?.includes('Open in Salesforce'))).toBe(true);
+  });
+
+  it('maps a rejected create onto the exact field, and does not say a record was saved', async () => {
+    const rejection = new SalesforceRestError('bad', 400, [
+      { message: 'Name is required', errorCode: 'REQUIRED_FIELD_MISSING', fields: ['Name'] },
+    ]);
+    const { feature } = mount({ apiRequest: vi.fn(async () => { throw rejection; }) });
+    await feature.onActivate?.();
+    await flush();
+    cloneButton().click();
+    await flush();
+    createButton().click();
+    await flush();
+
+    expect(cloneRowFor('Name')!.querySelector('.sfdt-field-error')?.textContent).toBe('Name is required');
+    const text = document.body.textContent ?? '';
+    expect(text).toMatch(/The record was not created/);
+    expect(text).not.toMatch(/No changes were saved/);
   });
 });

@@ -591,3 +591,60 @@ export function mapSaveErrors(
 
   return { fieldErrors, bannerErrors };
 }
+
+/** What a staged clone will POST, and which fields it carries. */
+export interface CreateBody {
+  /** Null-prototype, for the same reason `DirtyDiff.patchBody` is. */
+  body: Record<string, unknown>;
+  includedFieldNames: string[];
+}
+
+/**
+ * Build the POST body for a clone (P4-1 PR-3).
+ *
+ * A sibling of `buildDirtyDiff` rather than a mode flag on it, because the two
+ * answer different questions and share almost nothing. A diff asks "what
+ * changed against a baseline", and its FLS guard exists to stop an unreadable
+ * field being nulled over; a create has no baseline at all, so every value the
+ * form holds is intentional, and the only question is whether Salesforce will
+ * accept it on insert. Folding them together would mean one of the two callers
+ * reading a filter written for the other.
+ *
+ * Filters, in order:
+ *
+ *  1. Editability in `'create'` mode — which asks `createable`, not
+ *     `updateable`. That difference is the whole point: `CreatedDate` is
+ *     settable on insert in an org with Set Audit Fields enabled and never
+ *     settable on update, and an auto-number or formula is settable in neither.
+ *  2. A value that is actually present. Blank means "leave it to the org", so
+ *     it is omitted rather than sent as null — sending null would override a
+ *     field's default value, which is not what an empty box means on a create
+ *     form. A `false` boolean and a `0` are values, not blanks.
+ */
+export function buildCreateBody(
+  describe: DescribeLike | null | undefined,
+  values: Record<string, unknown>,
+): CreateBody {
+  const body: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  const includedFieldNames: string[] = [];
+
+  const fields = describe?.fields;
+  if (!Array.isArray(fields)) return { body, includedFieldNames };
+
+  for (const field of fields) {
+    if (!field || typeof field !== 'object' || typeof field.name !== 'string') continue;
+    if (!classifyFieldEditability(field, 'create').editable) continue;
+    if (!Object.prototype.hasOwnProperty.call(values, field.name)) continue;
+
+    const wire = coerceForWire(field, values[field.name]);
+    // `null` here means the control was empty. On a create that is "let the org
+    // decide", not "store nothing" — the two differ whenever the field has a
+    // default value or is required.
+    if (wire === null || wire === undefined) continue;
+
+    body[field.name] = wire;
+    includedFieldNames.push(field.name);
+  }
+
+  return { body, includedFieldNames };
+}

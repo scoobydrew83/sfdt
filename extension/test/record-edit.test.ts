@@ -10,6 +10,7 @@ import {
   coerceForWire,
   buildDirtyDiff,
   mapSaveErrors,
+  buildCreateBody,
 } from '../lib/record-edit.js';
 
 // Minimal describe field. Everything the model reads is optional on
@@ -677,5 +678,73 @@ describe('mapSaveErrors', () => {
       'Name',
     ] as unknown as string[]);
     expect(r.fieldErrors).toHaveLength(1);
+  });
+});
+
+describe('buildCreateBody', () => {
+  const f = (over: Partial<FieldDescribe> & { name: string; type: string }): FieldDescribe => ({
+    label: over.name, relationshipName: null, referenceTo: [],
+    picklistValues: [], nillable: true, calculated: false,
+    ...over,
+  } as FieldDescribe);
+
+  it('asks the CREATE question, not the update one', () => {
+    // Set Audit Fields: settable on insert, never on update.
+    const describe = { fields: [
+      f({ name: 'CreatedDate', type: 'datetime', createable: true, updateable: false }),
+      f({ name: 'Name', type: 'string', createable: true, updateable: true }),
+    ] };
+    const { includedFieldNames } = buildCreateBody(describe, {
+      CreatedDate: '2026-01-01T00:00:00.000Z', Name: 'Acme',
+    });
+    expect(includedFieldNames).toEqual(['CreatedDate', 'Name']);
+  });
+
+  it('excludes formulas, auto-numbers and non-createable fields', () => {
+    const describe = { fields: [
+      f({ name: 'Formula__c', type: 'string', calculated: true, createable: true }),
+      f({ name: 'Num__c', type: 'string', autoNumber: true, createable: true }),
+      f({ name: 'Locked__c', type: 'string', createable: false }),
+      f({ name: 'Name', type: 'string', createable: true }),
+    ] };
+    const { body, includedFieldNames } = buildCreateBody(describe, {
+      Formula__c: 'x', Num__c: 'y', Locked__c: 'z', Name: 'Acme',
+    });
+    expect(includedFieldNames).toEqual(['Name']);
+    expect(JSON.stringify(body)).toBe('{"Name":"Acme"}');
+  });
+
+  it('omits blanks rather than sending null, so org defaults still apply', () => {
+    const describe = { fields: [
+      f({ name: 'Name', type: 'string', createable: true }),
+      f({ name: 'Empty__c', type: 'string', createable: true }),
+    ] };
+    const { body } = buildCreateBody(describe, { Name: 'Acme', Empty__c: '' });
+    expect('Empty__c' in body).toBe(false);
+  });
+
+  it('keeps false and zero — they are values, not blanks', () => {
+    const describe = { fields: [
+      f({ name: 'Flag__c', type: 'boolean', createable: true }),
+      f({ name: 'Count__c', type: 'int', createable: true }),
+    ] };
+    const { body } = buildCreateBody(describe, { Flag__c: false, Count__c: 0 });
+    expect(body.Flag__c).toBe(false);
+    expect(body.Count__c).toBe(0);
+  });
+
+  it('coerces to wire form, as the update path does', () => {
+    const describe = { fields: [f({ name: 'Amount__c', type: 'currency', createable: true })] };
+    expect(buildCreateBody(describe, { Amount__c: '1234.50' }).body.Amount__c).toBe(1234.5);
+  });
+
+  it('tolerates a missing or malformed describe', () => {
+    expect(buildCreateBody(null, { A: 1 })).toEqual({ body: {}, includedFieldNames: [] });
+    expect(buildCreateBody({ fields: [null as never, 42 as never] }, { A: 1 }).includedFieldNames).toEqual([]);
+  });
+
+  it('ignores a value for a field the describe never mentions', () => {
+    const describe = { fields: [f({ name: 'Name', type: 'string', createable: true })] };
+    expect(buildCreateBody(describe, { Ghost__c: 'x' }).includedFieldNames).toEqual([]);
   });
 });

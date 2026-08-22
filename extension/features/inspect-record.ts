@@ -16,6 +16,7 @@ import {
   classifyFieldEditability,
   formatForInput,
   buildDirtyDiff,
+  buildCreateBody,
   mapSaveErrors,
   type FieldEditability,
 } from '../lib/record-edit.js';
@@ -339,6 +340,14 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     jsonTabBtn.textContent = 'JSON';
     viewToggleRow.append(fieldsTabBtn, jsonTabBtn);
 
+    // Clone sits with the view toggle because it acts on the record identity,
+    // not on the current view of it. Hidden until a record is loaded.
+    const headerRow = doc.createElement('div');
+    headerRow.className = 'sfdt-row';
+    const cloneBtn = button({ label: 'Clone', iconName: 'copy', small: true, doc });
+    cloneBtn.style.display = 'none';
+    headerRow.append(viewToggleRow, cloneBtn);
+
     const toolbar = doc.createElement('div');
     toolbar.className = 'sfdt-toolbar';
 
@@ -396,6 +405,14 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     jsonContainer.appendChild(jsonPre);
     body.appendChild(jsonContainer);
 
+    // Clone: a staged create form. Deliberately a third view rather than a
+    // dialog over the table — it is a different record being composed, and
+    // showing it in place makes that unmistakable.
+    const cloneContainer = doc.createElement('div');
+    cloneContainer.className = 'sfdt-clone-form';
+    cloneContainer.style.cssText = 'display: none; flex-direction: column; gap: var(--sfdt-space-2); padding: var(--sfdt-space-4); flex: 1; min-height: 0; overflow: auto;';
+    body.appendChild(cloneContainer);
+
     // Footer carries two strips: the save bar (only while dirty) above a
     // permanent count line, so "how much am I not seeing?" is always answerable
     // — the filter and the null toggle both hide rows silently otherwise.
@@ -437,7 +454,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       title: 'Inspect Record',
       iconName: 'record',
       subtitle: recordInfo,
-      headerActions: viewToggleRow,
+      headerActions: headerRow,
       body,
       footer,
       doc,
@@ -454,7 +471,9 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     let editedRecordData: Record<string, unknown> = {};
     let rawRecordData: Record<string, unknown> = {};
     let activeDescribe: SObjectDescribe | null = null;
-    let currentView: 'fields' | 'json' = 'fields';
+    let currentView: 'fields' | 'json' | 'clone' = 'fields';
+    let cloneValues: Record<string, unknown> = {};
+    let cloneErrors = new Map<string, string>();
     // Field errors from the last rejected save, keyed lower-case because the org
     // echoes back its own casing, not the describe's.
     let fieldErrorMessages = new Map<string, string>();
@@ -473,13 +492,19 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
 
     function applyView(): void {
       const isJson = currentView === 'json';
-      styleToggleBtn(fieldsTabBtn, !isJson);
+      const isClone = currentView === 'clone';
+      const isFields = currentView === 'fields';
+      styleToggleBtn(fieldsTabBtn, isFields);
       styleToggleBtn(jsonTabBtn, isJson);
-      filterWrap.style.display = isJson ? 'none' : 'block';
-      checkboxLabel.style.display = isJson ? 'none' : 'inline-flex';
-      statusBar.style.display = isJson ? 'none' : 'flex';
-      tableContainer.style.display = isJson ? 'none' : 'block';
+      filterWrap.style.display = isFields ? 'block' : 'none';
+      checkboxLabel.style.display = isFields ? 'inline-flex' : 'none';
+      statusBar.style.display = isFields ? 'flex' : 'none';
+      tableContainer.style.display = isFields ? 'block' : 'none';
       jsonContainer.style.display = isJson ? 'flex' : 'none';
+      cloneContainer.style.display = isClone ? 'flex' : 'none';
+      // The save bar belongs to the record being edited, not to the draft.
+      if (!isFields) saveBar.style.display = 'none';
+      else updateSaveBar();
       if (isJson) renderJson();
     }
 
@@ -576,7 +601,8 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           const reasonChip = doc.createElement('span');
           reasonChip.className = 'sfdt-pill sfdt-square';
           reasonChip.id = `sfdt-why-${field.name}`;
-          reasonChip.textContent = READ_ONLY_CHIP[editability.reason] ?? 'read-only';
+          const reasonLabel = READ_ONLY_CHIP[editability.reason] ?? 'read-only';
+          reasonChip.textContent = reasonLabel;
           reasonChip.title = editability.message;
           readSpan.setAttribute('aria-describedby', reasonChip.id);
           const wrap = doc.createElement('div');
@@ -747,6 +773,209 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       if (currentView === 'json') renderJson();
     }
 
+    /**
+     * Seed the clone draft from the loaded record.
+     *
+     * Only `createable` fields are prefilled — asking the classification the
+     * CREATE question rather than the update one, which is what lets an org
+     * with Set Audit Fields prefill CreatedDate while an auto-number or formula
+     * is excluded in both modes.
+     */
+    function startClone(): void {
+      if (!activeDescribe) return;
+      cloneValues = {};
+      cloneErrors = new Map();
+      for (const field of activeDescribe.fields) {
+        if (!classifyFieldEditability(field, 'create').editable) continue;
+        cloneValues[field.name] = originalRecordData[field.name];
+      }
+      currentView = 'clone';
+      renderClone();
+      applyView();
+    }
+
+    /**
+     * Render the staged create form.
+     *
+     * Decision 6: clone does NOT insert on click. A record with unique
+     * constraints or required lookups mostly fails that way, and a click that
+     * silently mints a duplicate is the class of unguarded write this project
+     * does not ship. The user reviews the draft and presses Create.
+     */
+    function renderClone(): void {
+      if (!activeDescribe) return;
+      while (cloneContainer.firstChild) cloneContainer.removeChild(cloneContainer.firstChild);
+
+      const lead = doc.createElement('div');
+      lead.className = 'sfdt-caps';
+      lead.textContent = `New ${activeSobjectName} — prefilled from ${activeRecordId}. Nothing is created until you press Create.`;
+      cloneContainer.appendChild(lead);
+
+      const banner = doc.createElement('div');
+      banner.style.cssText = 'display: none; white-space: pre-line;';
+      banner.setAttribute('role', 'alert');
+      cloneContainer.appendChild(banner);
+
+      const table = doc.createElement('table');
+      table.className = 'sfdt-table';
+      const tbody = doc.createElement('tbody');
+      let firstBad: HTMLElement | null = null;
+
+      for (const field of activeDescribe.fields) {
+        const editability = classifyFieldEditability(field, 'create');
+        const tr = doc.createElement('tr');
+
+        const tdLabel = doc.createElement('td');
+        const strong = doc.createElement('span');
+        strong.className = 'sfdt-cell-strong';
+        strong.textContent = field.label;
+        tdLabel.appendChild(strong);
+
+        const tdApi = doc.createElement('td');
+        tdApi.className = 'sfdt-cell-code';
+        tdApi.textContent = field.name;
+
+        const tdValue = doc.createElement('td');
+        tdValue.classList.add('sfdt-anchor');
+
+        if (!editability.editable) {
+          // Same rule as edit mode: rendered, greyed, and carrying its reason —
+          // never dropped from the view just because it is out of the body.
+          const readSpan = doc.createElement('span');
+          readSpan.className = 'sfdt-null';
+          readSpan.textContent = String(originalRecordData[field.name] ?? '(null)');
+          const chip = doc.createElement('span');
+          chip.className = 'sfdt-pill sfdt-square';
+          chip.id = `sfdt-clone-why-${field.name}`;
+          const reasonLabel = READ_ONLY_CHIP[editability.reason] ?? 'read-only';
+          chip.textContent = reasonLabel;
+          chip.title = editability.message;
+          readSpan.setAttribute('aria-describedby', chip.id);
+          const wrap = doc.createElement('div');
+          wrap.className = 'sfdt-row sfdt-row-between';
+          wrap.append(readSpan, chip);
+          tdValue.appendChild(wrap);
+        } else {
+          const control = buildEditor(doc, field, editability, cloneValues[field.name]);
+          control.setAttribute('aria-label', `${field.label} value`);
+          control.addEventListener('change', () => {
+            cloneValues[field.name] = readEditor(control);
+          });
+          const cell = doc.createElement('div');
+          cell.appendChild(control);
+          const msg = cloneErrors.get(field.name.toLowerCase());
+          if (msg) {
+            tr.classList.add('sfdt-row-error');
+            const err = doc.createElement('div');
+            err.className = 'sfdt-field-error';
+            err.style.cssText = 'white-space: pre-line; color: var(--sfdt-color-danger-text);';
+            err.id = `sfdt-clone-err-${field.name}`;
+            err.setAttribute('role', 'alert');
+            err.textContent = msg;
+            control.setAttribute('aria-describedby', err.id);
+            cell.appendChild(err);
+            if (!firstBad) firstBad = tr;
+          }
+          tdValue.appendChild(cell);
+        }
+
+        tr.append(tdLabel, tdApi, tdValue);
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      cloneContainer.appendChild(table);
+
+      const actions = doc.createElement('div');
+      actions.className = 'sfdt-row';
+      const cancelClone = button({ label: 'Cancel', small: true, doc });
+      const createBtn = button({ label: 'Create', iconName: 'save', variant: 'primary', small: true, doc });
+      actions.append(cancelClone, createBtn);
+      cloneContainer.appendChild(actions);
+
+      const resultRow = doc.createElement('div');
+      resultRow.className = 'sfdt-row';
+      resultRow.style.display = 'none';
+      cloneContainer.appendChild(resultRow);
+
+      cancelClone.addEventListener('click', () => {
+        currentView = 'fields';
+        applyView();
+      });
+
+      createBtn.addEventListener('click', async () => {
+        const { body: createBody, includedFieldNames } = buildCreateBody(activeDescribe, cloneValues);
+        if (includedFieldNames.length === 0) {
+          showToast('Nothing to create — every field is empty or not settable on insert.', { doc, kind: 'warning' });
+          return;
+        }
+        cloneErrors = new Map();
+        banner.style.display = 'none';
+        createBtn.disabled = true;
+        setLabel(createBtn, 'Creating…');
+        try {
+          const apiVersion = api.apiVersion;
+          const created = await api.apiRequest<{ id?: string; Id?: string }>(
+            'POST',
+            `/services/data/${apiVersion}/sobjects/${activeSobjectName}`,
+            createBody,
+          );
+          const newId = created?.id ?? created?.Id ?? '';
+          showToast(`Created ${activeSobjectName} ${newId}`, { doc, kind: 'success' });
+          renderCloneResult(resultRow, newId);
+        } catch (err) {
+          // Identical mapping to a rejected save — one error path, so a create
+          // and an update explain themselves the same way.
+          const details = err instanceof SalesforceRestError ? err.details : [];
+          const rendered = (activeDescribe?.fields ?? []).map((f) => f.name);
+          const { fieldErrors, bannerErrors } = mapSaveErrors(details, rendered);
+          cloneErrors = new Map(fieldErrors.map((fe) => [fe.field.toLowerCase(), fe.message]));
+          const outcome = classifySaveError(err, bannerErrors.map((b) => b.text).join(' '));
+          const text = outcome.status === 'rejected'
+            ? formatSaveOutcome(outcome).replace('No changes were saved.', 'The record was not created.')
+            : formatSaveOutcome(outcome);
+          showToast(text, { doc, kind: outcome.status === 'unknown' ? 'warning' : 'error' });
+          renderClone();
+          const rerendered = cloneContainer.querySelector('.sfdt-row-error');
+          rerendered?.scrollIntoView({ block: 'center' });
+          const freshBanner = cloneContainer.querySelector('[role="alert"]') as HTMLElement | null;
+          if (freshBanner) {
+            freshBanner.style.display = 'block';
+            freshBanner.textContent = text;
+          }
+        } finally {
+          createBtn.disabled = false;
+          setLabel(createBtn, 'Create');
+        }
+      });
+
+      if (firstBad) firstBad.scrollIntoView({ block: 'center' });
+    }
+
+    /** The created-record row: its Id, and the two things you want next. */
+    function renderCloneResult(host: HTMLElement, newId: string): void {
+      while (host.firstChild) host.removeChild(host.firstChild);
+      host.style.display = 'flex';
+      const idSpan = doc.createElement('span');
+      idSpan.className = 'sfdt-mono';
+      idSpan.textContent = newId || '(no Id returned)';
+      setTone(idSpan, 'info');
+      host.appendChild(idSpan);
+      if (!newId) return;
+
+      const openBtn = button({ label: 'Open in Salesforce', iconName: 'external', small: true, doc });
+      openBtn.addEventListener('click', () => {
+        win.open(`${win.location.origin}/lightning/r/${activeSobjectName}/${newId}/view`, '_blank');
+      });
+      const inspectNew = button({ label: 'Inspect', iconName: 'search', small: true, doc });
+      inspectNew.addEventListener('click', () => {
+        idInput.value = newId;
+        currentView = 'fields';
+        applyView();
+        void loadRecord();
+      });
+      host.append(openBtn, inspectNew);
+    }
+
     async function navigateToRecord(targetId: string): Promise<void> {
       try {
         const resolvedSobj = await resolveSObjectFromId(targetId);
@@ -815,6 +1044,7 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         renderFields();
         updateSaveBar();
         viewToggleRow.style.display = 'inline-flex';
+        cloneBtn.style.display = 'inline-flex';
         applyView();
       } catch (err) {
         showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
@@ -862,6 +1092,8 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
         `Discard ${count} unsaved change${count === 1 ? '' : 's'} to this record?`,
       );
     };
+
+    cloneBtn.addEventListener('click', startClone);
 
     cancelChangesBtn.addEventListener('click', () => {
       editedRecordData = { ...originalRecordData };
