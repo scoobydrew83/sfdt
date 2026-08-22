@@ -620,6 +620,20 @@
       "sideEffects": null
     },
     {
+      "id": "field",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        "sfdt_field_impact"
+      ],
+      "sideEffects": null
+    },
+    {
       "id": "version",
       "surfaces": {
         "cli": true,

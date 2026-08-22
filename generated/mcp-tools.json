@@ -202,6 +202,17 @@
       ]
     },
     {
+      "name": "sfdt_field_impact",
+      "description": "Show what WRITES a Salesforce field — flows, workflow field updates and Apex — with each finding marked confirmed (the metadata states the write) or inferred (a lead only). The result carries scope notes saying what was NOT scanned; an empty row list means no writer was found by the bounded sources scanned, never that none exists. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "field",
+        "org",
+        "links"
+      ]
+    },
+    {
       "name": "sfdt_flow_scan",
       "description": "Analyze a Salesforce org's Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.",
       "confirmExecution": false,

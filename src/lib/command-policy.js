@@ -335,6 +335,15 @@ export const COMMAND_POLICY = {
       sfdt_record_clone: { mutating: true },
     },
   },
+  field: {
+    mutating: false, // read-only analysis over Tooling queries
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'metadata',
+    surfaces: { gui: false, vscode: true, chrome: true },
+    mcpTools: { sfdt_field_impact: { mutating: false } },
+  },
   data: {
     mutating: true, // import/delete change org data
     requiresProject: true,

@@ -58,6 +58,7 @@ describe('createCli', () => {
       'flow',
       'extension',
       'feature-flags',
+      'field',
       'doctor',
       'mcp',
       'plugin',

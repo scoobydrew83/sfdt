@@ -210,7 +210,7 @@ export {
 export type { InferredRef, InferredRefKind } from './dependency-parsers.js';
 
 // "What writes this field?" (P4-4) — the single Flow parsing engine for field
-// writes, consumed by the Chrome extension's Field Impact Analysis.
+// writes, consumed by the Field Impact model below.
 export {
   extractFieldWrites,
   filterFieldWrites,
@@ -222,6 +222,44 @@ export type {
   FieldWriteStatus,
   FlowFieldWrite,
 } from './field-writes.js';
+
+// Field Impact Analysis — the viewmodel, the scan caps and the pure Tooling
+// query builders. Shared by `sfdt field`, the MCP tools and the Chrome
+// extension so every surface scans an org to the same depth and applies the
+// same confirmed/inferred vocabulary to what it finds.
+export {
+  analyzeFieldImpact,
+  buildFieldImpactVM,
+  flowBuilderUrl,
+  setupRecordUrl,
+  STATUS_LEGEND,
+  FLOW_CANDIDATE_CAP,
+  FLOW_ANALYSE_CAP,
+  WORKFLOW_LIST_CAP,
+  WORKFLOW_METADATA_CAP,
+  WORKFLOW_DETAIL_CONCURRENCY,
+  APEX_HIT_CAP,
+  customFieldIdQuery,
+  flowCandidateQuery,
+  recentActiveFlowsQuery,
+  flowMetadataQuery,
+  workflowFieldUpdateListQuery,
+  workflowFieldUpdateDetailQuery,
+  objectFromFullName,
+  apexSearchSosl,
+} from './field-impact.js';
+export type {
+  FieldImpactQueries,
+  FieldImpactRequest,
+  FieldImpactStatus,
+  FieldImpactSourceType,
+  FlowCandidate,
+  WorkflowFieldUpdateCandidate,
+  ApexSearchHit,
+  FieldImpactInput,
+  FieldImpactRow,
+  FieldImpactVM,
+} from './field-impact.js';
 
 // Record editability model — shared by the CLI (`sfdt record`), the MCP tools
 // and the Chrome extension, so a field is refused identically on every surface.

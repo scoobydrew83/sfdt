@@ -205,6 +205,12 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     docsUrl: DOCS.configUtils,
     entries: [
       {
+        id: 'field', label: 'Field Usage', detail: 'Analyze how a field is used across an org', icon: 'search',
+        children: [
+          { id: 'field-impact', label: 'Impact', detail: 'Show what writes a field (flows, field updates, Apex)', args: ['field', 'impact'] },
+        ],
+      },
+      {
         id: 'record', label: 'Record', detail: 'Read, edit, or clone a single record', icon: 'symbol-field',
         children: [
           { id: 'record-get', label: 'Get', detail: 'Read a record and show what is editable', args: ['record', 'get'] },

@@ -878,6 +878,16 @@
       "group": null
     },
     {
+      "id": "field-impact",
+      "label": "Impact",
+      "detail": "Show what writes a field (flows, field updates, Apex)",
+      "args": [
+        "field",
+        "impact"
+      ],
+      "group": null
+    },
+    {
       "id": "record-get",
       "label": "Get",
       "detail": "Read a record and show what is editable",

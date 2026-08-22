@@ -315,6 +315,23 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_field_impact',
+    description: 'Show what WRITES a Salesforce field — flows, workflow field updates and Apex — with each finding marked confirmed (the metadata states the write) or inferred (a lead only). The result carries scope notes saying what was NOT scanned; an empty row list means no writer was found by the bounded sources scanned, never that none exists. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        field: { type: 'string', description: 'Qualified field, e.g. "Account.Region__c".' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        links: { type: 'boolean', description: 'Resolve the org instance URL so rows carry Setup deep links (one extra call).' }
+      },
+      required: ['field']
+    },
+    examples: [
+      { description: 'What writes Account.Region__c in dev', input: { field: 'Account.Region__c', org: 'dev' } },
+      { description: 'Check a standard field before changing an integration', input: { field: 'Opportunity.StageName' } }
+    ]
+  },
+  {
     name: 'sfdt_flow_scan',
     description: 'Analyze a Salesforce org\'s Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.',
     inputSchema: {
@@ -848,6 +865,13 @@ export class SfdtMcpServer {
         return this.#parseCliJson(stdout);
       }
 
+      case 'sfdt_field_impact': {
+        const cmdArgs = ['field', 'impact', args.field, '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        if (args.links) cmdArgs.push('--links');
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
       case 'sfdt_dependencies': {
         const cmdArgs = ['dependencies', args.name, '--json'];
         if (args.org) cmdArgs.push('--org', args.org);

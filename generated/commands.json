@@ -5196,6 +5196,80 @@
       "source": "src/commands/record.js"
     },
     {
+      "id": "field",
+      "path": [
+        "field"
+      ],
+      "description": "Analyze how a field is used across an org",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "field impact",
+          "path": [
+            "field",
+            "impact"
+          ],
+          "description": "Show what writes a field — flows, workflow field updates, and Apex",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "Object.Field",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--links",
+              "name": "links",
+              "required": false,
+              "default": null,
+              "description": "Resolve the org instance URL so results carry Setup deep links (one extra call)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": false,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "metadata",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_field_impact",
+          "mutating": false
+        }
+      ],
+      "source": "src/commands/field.js"
+    },
+    {
       "id": "version",
       "path": [
         "version"

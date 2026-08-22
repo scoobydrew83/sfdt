@@ -1185,6 +1185,58 @@ sfdt docs diagram --output docs/erd.mmd
 
 ---
 
+### sfdt field
+
+Field-level analysis over an org. Read-only.
+
+```bash
+sfdt field impact Account.Region__c
+sfdt field impact Opportunity.StageName --org prod --links
+sfdt field impact Account.Region__c --json
+```
+
+`impact` answers **"what writes this field?"** from three sources:
+
+| Source | How it is found | Status |
+|---|---|---|
+| Flows | `MetadataComponentDependency` narrows the candidates, then `@sfdt/flow-core` **parses** each flow's metadata to see which actually write the field | `confirmed` when the metadata states the write |
+| Workflow field updates | Tooling `WorkflowFieldUpdate.Metadata.field` names the target field outright | `confirmed` |
+| Apex | Tooling SOSL text search over class and trigger source | **always `inferred`** — a text hit is not a write |
+
+The engine is [`@sfdt/flow-core`](../packages/flow-core)'s `analyzeFieldImpact`, shared verbatim
+with the Chrome extension's Field Impact panel, so both surfaces scan an org to the same depth
+and hedge in the same words.
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
+| `--links` | Resolve the org instance URL so rows carry Setup / Flow Builder deep links. Costs one extra `sf` call, so it is opt-in; without it rows carry no URL rather than a broken relative one |
+| `--json` | Emit machine-readable output. The scan notes travel in the envelope's `warnings` as well as the body |
+
+#### Read the scan scope, not just the rows
+
+Every run prints a **Scan scope** section, and it is not decoration. A run that could not read
+half the org and a run that read all of it both end in "no writer found"; the notes are the only
+thing that tells them apart. They state:
+
+- **Which queries were refused.** A `CustomField` lookup rejected for permissions is reported as
+  refused — *not* as "this field has no dependency edge". A failed query is not a finding about
+  your org.
+- **Which caps bound the scan**, and what fell outside them.
+- **Which rule was applied.** A field with a dependency edge is scanned leniently (an unbindable
+  write is kept as a lead); a field without one falls back to a broad scan of recently-modified
+  active flows and is scanned *strictly* (only a write bound to the object counts). Results from
+  the two paths are not directly comparable, and the notes say so.
+- **What the Flow parser does not model** — Transform elements, invocable and quick actions, and
+  the bodies of called subflows. A flow that writes the field only that way produces no row.
+
+An empty result therefore means *no writer was found by the sources scanned*. It is never proof
+that nothing writes the field.
+
+---
+
 ### sfdt record
 
 Read, update, or copy a **single** record. The editability model is
