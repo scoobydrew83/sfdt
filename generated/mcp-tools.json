@@ -316,6 +316,78 @@
       ]
     },
     {
+      "name": "sfdt_automation_list",
+      "description": "List every automation component in the org and whether it is on — flows (including Process Builder), validation rules, duplicate rules, workflow rules and Apex triggers. Each row carries its writeMode, because the five types are NOT written the same way: flows, validation rules and duplicate rules are a Tooling record write, while workflow rules and Apex triggers require a METADATA DEPLOY (which in production runs tests). Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "type",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_automation_set",
+      "description": "Turn one automation component on or off. This changes how the org behaves for EVERY user immediately. The prior state is recorded in the ledger, so sfdt_ledger_undo can reverse it. For a workflow rule or Apex trigger this performs a metadata deploy, not a record update — in production that runs tests. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "type",
+        "name",
+        "enable",
+        "org",
+        "dryRun",
+        "production",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_permissions_grant",
+      "description": "Grant or remove field access for a PERMISSION SET. Profiles are refused: Salesforce does not permit direct updates to profile-owned permission entries, which must go through the Metadata API. The prior grant is recorded in the ledger so sfdt_ledger_undo can restore it. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "parent",
+        "fields",
+        "level",
+        "org",
+        "dryRun",
+        "production",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_permissions_fix",
+      "description": "Apply the field grants this REPOSITORY declares but the org is missing, for one object — the bulk fix, driven by code-reviewed source rather than a UI. Only missing-in-org grants are applied; grants the org has that source does not are deliberately left alone, because removing access nobody asked to remove is a different and riskier decision. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "object",
+        "org",
+        "dryRun",
+        "production",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_ledger_list",
+      "description": "List org changes sfdt has recorded, newest first, with the state each replaced. Status is derived: applied, failed, undone, or PENDING — pending means the change was recorded but its outcome never was, so the command may have been interrupted mid-write and the org should be checked. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "limit"
+      ]
+    },
+    {
+      "name": "sfdt_ledger_undo",
+      "description": "Reverse a recorded org change, restoring the state it replaced. Appends a compensating entry rather than editing history. Refuses a second undo of the same change, and refuses one that was recorded as failed. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "id",
+        "confirmExecution"
+      ]
+    },
+    {
       "name": "sfdt_flow_scan",
       "description": "Analyze a Salesforce org's Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.",
       "confirmExecution": false,

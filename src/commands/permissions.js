@@ -1,6 +1,9 @@
 import ora from 'ora';
 import chalk from 'chalk';
+import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
+import { applyPermissionChange, applyDriftFix } from '../lib/permissions-write-runner.js';
+import { guardProduction } from '../lib/org-facts.js';
 import {
   runPermissionMatrix,
   runOfflinePermissionMatrix,
@@ -119,11 +122,58 @@ function applyDriftGate(vm, options, jsonMode) {
 }
 
 /**
- * `sfdt permissions` — object and field access.
+ * Confirm a change that alters who can see or edit data.
  *
- * Read-only throughout. Reports what is **granted**; never "effective" — muting
+ * Follows `data.js`'s bulk-delete pattern: `--yes` skips it, and a
+ * non-interactive context REFUSES rather than auto-confirming.
+ */
+async function confirmChange(message, detail, options, jsonMode) {
+  if (options.yes) return true;
+  const nonInteractive = jsonMode || process.env.SFDT_NON_INTERACTIVE === 'true' || !process.stdin.isTTY;
+  if (nonInteractive) {
+    throw new Error(`Refusing to ${message} without confirmation — re-run with --yes to proceed.`);
+  }
+  console.log(chalk.yellow(`\n⚠  This will ${message}.`));
+  for (const line of detail) console.log(chalk.dim(`     ${line}`));
+  const { confirmed } = await inquirer.prompt([
+    { type: 'confirm', name: 'confirmed', message: 'Proceed?', default: false },
+  ]);
+  if (!confirmed) console.log(chalk.dim('Aborted — nothing changed.'));
+  return confirmed;
+}
+
+function printWriteResult(result, level) {
+  if (result.outcome === 'no-op') {
+    console.log(chalk.dim('\nEvery field is already at that level — nothing to do.\n'));
+    return;
+  }
+  if (result.outcome === 'dry-run') {
+    console.log(chalk.bold(`\nWould set on ${result.parent}:`));
+    for (const p of result.planned.filter((x) => x.from !== x.to)) {
+      console.log(`  ${p.qualified.padEnd(40)} ${chalk.dim(p.from)} → ${chalk.cyan(p.to)}`);
+    }
+    console.log('');
+    return;
+  }
+  console.log(chalk.green(`\n✔ ${result.applied.length} change(s) on ${result.parent} → ${level}`));
+  for (const a of result.applied) {
+    console.log(`  ${a.field.padEnd(40)} ${chalk.dim(`${a.from} → ${a.to} (${a.action})`)}`);
+  }
+  console.log(chalk.dim(`\n  Recorded as ${result.ledgerId} — reverse with \`sfdt ledger undo ${result.ledgerId}\`\n`));
+}
+
+/**
+ * `sfdt permissions` — object and field access, read and write.
+ *
+ * `matrix` and `drift` read. `grant`, `revoke` and `fix` write, each behind a
+ * production guard, a confirmation, `--dry-run`, and a ledger entry that records
+ * the prior grant so `sfdt ledger undo` can restore it.
+ *
+ * Everything reported is what is **granted**; never "effective" — muting
  * permission sets subtract access and cannot be queried, so any computed union
- * is an upper bound, and every result says so rather than footnoting it.
+ * is an upper bound, and every result says so rather than footnoting it. That
+ * matters more now that this command can also CHANGE those grants: the thing it
+ * shows you before you act is still an upper bound.
  */
 export function registerPermissionsCommand(program) {
   const permissions = program
@@ -194,6 +244,111 @@ export function registerPermissionsCommand(program) {
         if (jsonMode) emitJsonError(err);
         else {
           console.error(chalk.red(`Permissions drift failed: ${err.message}`));
+          process.exitCode = resolveExitCode(err);
+        }
+      }
+    });
+
+  for (const [verb, defaultLevel] of [['grant', 'read'], ['revoke', 'none']]) {
+    permissions
+      .command(`${verb} <Object.Field...>`)
+      .description(`${verb === 'grant' ? 'Grant' : 'Remove'} field access for a permission set`)
+      .requiredOption('--parent <label>', 'Permission set label (profiles are not writable this way)')
+      .option('--level <level>', 'read or edit (grant only)', defaultLevel)
+      .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
+      .option('--dry-run', 'Show exactly what would change, and change nothing')
+      .option('--yes', 'Skip the confirmation prompt')
+      .option('--production', 'Acknowledge that the target org is production')
+      .option('--json', 'Emit structured JSON to stdout')
+      .action(async (fields, options) => {
+        const jsonMode = !!options.json;
+        try {
+          const config = await loadConfig();
+          const orgAlias = resolveOrg(config, options);
+          const level = verb === 'revoke' ? 'none' : options.level;
+
+          if (!options.dryRun) {
+            await guardProduction(orgAlias, options, 'change who can see or edit data in it');
+            const ok = await confirmChange(
+              `set ${fields.length} field grant(s) to "${level}" on ${options.parent} in ${orgAlias}`,
+              [...fields, 'Recorded in the ledger; reversible with `sfdt ledger undo`.'],
+              options,
+              jsonMode,
+            );
+            if (!ok) return;
+          }
+
+          const result = await applyPermissionChange(config, orgAlias, {
+            parent: options.parent,
+            fields,
+            level,
+            dryRun: !!options.dryRun,
+          });
+
+          if (jsonMode) {
+            emitJson(result);
+            return;
+          }
+          printWriteResult(result, level);
+        } catch (err) {
+          if (jsonMode) emitJsonError(err);
+          else {
+            console.error(chalk.red(`Permissions ${verb} failed: ${err.message}`));
+            process.exitCode = resolveExitCode(err);
+          }
+        }
+      });
+  }
+
+  permissions
+    .command('fix <Object>')
+    .description('Apply the grants source declares but the org is missing (the bulk fix)')
+    .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
+    .option('--dry-run', 'Show exactly what would change, and change nothing')
+    .option('--yes', 'Skip the confirmation prompt')
+    .option('--production', 'Acknowledge that the target org is production')
+    .option('--json', 'Emit structured JSON to stdout')
+    .action(async (object, options) => {
+      const jsonMode = !!options.json;
+      const spinner = jsonMode ? null : ora('Comparing org against source…').start();
+      try {
+        const config = await loadConfig();
+        const orgAlias = resolveOrg(config, options);
+        spinner?.stop();
+
+        if (!options.dryRun) {
+          await guardProduction(orgAlias, options, 'change who can see or edit data in it');
+          const ok = await confirmChange(
+            `apply this repository's declared grants for ${object} to ${orgAlias}`,
+            [
+              'Only grants MISSING in the org are applied.',
+              'Grants the org has but source does not are left alone.',
+              'Recorded in the ledger; reversible with `sfdt ledger undo`.',
+            ],
+            options,
+            jsonMode,
+          );
+          if (!ok) return;
+        }
+
+        const result = await applyDriftFix(config, orgAlias, object, { dryRun: !!options.dryRun });
+        if (jsonMode) {
+          emitJson(result, { warnings: result.notes ?? [] });
+          return;
+        }
+        if (result.outcome === 'no-op') {
+          console.log(chalk.green(`\n✔ ${object}: the org already grants everything source declares.\n`));
+          return;
+        }
+        console.log('');
+        for (const batch of result.results ?? []) printWriteResult(batch, 'source');
+        for (const note of result.notes ?? []) console.log(`  ${chalk.dim('·')} ${chalk.dim(note)}`);
+        console.log('');
+      } catch (err) {
+        spinner?.stop();
+        if (jsonMode) emitJsonError(err);
+        else {
+          console.error(chalk.red(`Permissions fix failed: ${err.message}`));
           process.exitCode = resolveExitCode(err);
         }
       }

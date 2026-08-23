@@ -677,7 +677,39 @@
       },
       "mcpTools": [
         "sfdt_permissions_matrix",
-        "sfdt_permissions_drift"
+        "sfdt_permissions_drift",
+        "sfdt_permissions_grant",
+        "sfdt_permissions_fix"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "automation",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_automation_list",
+        "sfdt_automation_set"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "ledger",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_ledger_list",
+        "sfdt_ledger_undo"
       ],
       "sideEffects": null
     },

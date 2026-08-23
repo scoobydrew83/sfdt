@@ -202,6 +202,42 @@ Publishes one platform event. **Mutating — requires `confirmExecution`.**
 
 This fires **real subscribers** — flows, triggers, and any external system listening on the channel. CDC events cannot be published; they are produced by Salesforce.
 
+#### `sfdt_automation_list`
+Lists every automation component and whether it is on — flows (including Process Builder), validation rules, duplicate rules, workflow rules and Apex triggers. Read-only.
+* **Arguments:** `type` (optional), `org` (optional).
+
+Each row carries `writeMode`. The five types are **not** written the same way: `tooling-metadata` is a record write; `metadata-deploy` (workflow rules, Apex triggers) is a retrieve-edit-deploy, and in production an Apex trigger's Status change *is* a code deployment that runs tests. Do not present them as equivalent toggles.
+
+#### `sfdt_automation_set`
+Turns one automation component on or off. **Mutating — requires `confirmExecution`.**
+* **Arguments:** `type`, `name` (both **required**), `enable` (**required**), `org`, `dryRun`, `production`, `confirmExecution` (**required**).
+
+This changes how the org behaves for **every user, immediately**. The prior state is recorded, so `sfdt_ledger_undo` reverses it. Production is refused unless `production: true`; detection fails safe, so an org whose sandbox status cannot be read is treated as production.
+
+#### `sfdt_permissions_grant`
+Grants or removes field access for a **permission set**. **Mutating — requires `confirmExecution`.**
+* **Arguments:** `parent`, `fields`, `level` (all **required**), `org`, `dryRun`, `production`, `confirmExecution` (**required**).
+
+Profiles are refused: Salesforce does not permit direct updates to profile-owned permission entries. Use `level: "none"` to remove access.
+
+#### `sfdt_permissions_fix`
+Applies the grants the **repository** declares but the org is missing, for one object. **Mutating — requires `confirmExecution`.**
+* **Arguments:** `object` (**required**), `org`, `dryRun`, `production`, `confirmExecution` (**required**).
+
+Only `missing-in-org` grants are applied. Grants the org has that source does not are left alone — removing access nobody asked to remove is a different decision, and a riskier one. Do not describe this as "syncing permissions"; it is one-directional by design.
+
+#### `sfdt_ledger_list`
+Lists recorded org changes, newest first, with the state each replaced. Read-only.
+* **Arguments:** `limit` (optional).
+
+`status` is derived: `applied`, `failed`, `undone`, or **`pending`** — pending means the change was recorded but its outcome never was, so the command may have been interrupted mid-write and the org should be checked before anything is undone.
+
+#### `sfdt_ledger_undo`
+Reverses a recorded change, restoring the state it replaced. **Mutating — requires `confirmExecution`.**
+* **Arguments:** `id` (**required**), `confirmExecution` (**required**).
+
+Appends a compensating entry rather than editing history. A second undo of the same change is refused, as is one recorded as failed.
+
 #### `sfdt_permissions_matrix`
 Shows what each profile and permission set **grants** on one object — object-level CRUD plus per-field read/edit. Read-only.
 * **Arguments:**

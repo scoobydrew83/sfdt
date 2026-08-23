@@ -21,6 +21,13 @@ enforcement (existing check, planned lint, or gc-scan).
    audit logs, or notifications wraps in try/catch and degrades silently —
    measurement must never break the work being measured. *(pattern source:
    `run-history.js`, `audit-logger.js`)*
+   **One carve-out: `src/lib/ledger.js`.** `recordIntent` THROWS, and callers
+   must let it — if the before-state of an org change cannot be recorded, the
+   change must not be made. An unrecorded change is an unreversible one, and
+   handing someone a changed org with no way back is a worse failure than an
+   aborted command. This is the only place the principle is deliberately
+   inverted; recording the *outcome* afterwards stays best-effort, because by
+   then the org has already changed.
 6. **Envelope on stdout, raw on disk.** JSON output uses the sf-native
    `{status, result, warnings}` envelope on stdout only; on-disk snapshots
    (`logs/*-latest.json`) stay raw. *(gc-scan)*

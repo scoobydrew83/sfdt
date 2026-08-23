@@ -481,6 +481,106 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_automation_list',
+    description: 'List every automation component in the org and whether it is on — flows (including Process Builder), validation rules, duplicate rules, workflow rules and Apex triggers. Each row carries its writeMode, because the five types are NOT written the same way: flows, validation rules and duplicate rules are a Tooling record write, while workflow rules and Apex triggers require a METADATA DEPLOY (which in production runs tests). Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: 'Restrict to one type: flow, validation-rule, duplicate-rule, workflow-rule, apex-trigger.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    },
+    examples: [
+      { description: 'What automation is switched off?', input: { org: 'dev' } }
+    ]
+  },
+  {
+    name: 'sfdt_automation_set',
+    description: 'Turn one automation component on or off. This changes how the org behaves for EVERY user immediately. The prior state is recorded in the ledger, so sfdt_ledger_undo can reverse it. For a workflow rule or Apex trigger this performs a metadata deploy, not a record update — in production that runs tests. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: 'flow, validation-rule, duplicate-rule, workflow-rule, or apex-trigger.' },
+        name: { type: 'string', description: 'Component name, or Object.Name where the type is named per object.' },
+        enable: { type: 'boolean', description: 'true to turn on, false to turn off.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        dryRun: { type: 'boolean', description: 'Return exactly what would be written without writing it.' },
+        production: { type: 'boolean', description: 'Acknowledge that the target org is production. Required there; detection fails safe.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to change the org.' }
+      },
+      required: ['type', 'name', 'enable', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Deactivate a validation rule', input: { type: 'validation-rule', name: 'Account.Region_Required', enable: false, confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_permissions_grant',
+    description: 'Grant or remove field access for a PERMISSION SET. Profiles are refused: Salesforce does not permit direct updates to profile-owned permission entries, which must go through the Metadata API. The prior grant is recorded in the ledger so sfdt_ledger_undo can restore it. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        parent: { type: 'string', description: 'Permission set label or API name.' },
+        fields: { type: 'array', items: { type: 'string' }, description: 'Qualified field names, e.g. ["Account.Region__c"].' },
+        level: { type: 'string', description: '"read", "edit", or "none" to remove access.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        dryRun: { type: 'boolean', description: 'Return the planned changes without applying them.' },
+        production: { type: 'boolean', description: 'Acknowledge that the target org is production.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to change the org.' }
+      },
+      required: ['parent', 'fields', 'level', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Give Sales Ops read on a field', input: { parent: 'Sales Ops', fields: ['Account.Region__c'], level: 'read', confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_permissions_fix',
+    description: 'Apply the field grants this REPOSITORY declares but the org is missing, for one object — the bulk fix, driven by code-reviewed source rather than a UI. Only missing-in-org grants are applied; grants the org has that source does not are deliberately left alone, because removing access nobody asked to remove is a different and riskier decision. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        object: { type: 'string', description: 'sObject API name.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        dryRun: { type: 'boolean', description: 'Return the planned changes without applying them.' },
+        production: { type: 'boolean', description: 'Acknowledge that the target org is production.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to change the org.' }
+      },
+      required: ['object', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Bring prod in line with source for Account', input: { object: 'Account', org: 'prod', confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_ledger_list',
+    description: 'List org changes sfdt has recorded, newest first, with the state each replaced. Status is derived: applied, failed, undone, or PENDING — pending means the change was recorded but its outcome never was, so the command may have been interrupted mid-write and the org should be checked. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'How many to return (default 50).' }
+      }
+    },
+    examples: [
+      { description: 'What has sfdt changed recently?', input: { limit: 20 } }
+    ]
+  },
+  {
+    name: 'sfdt_ledger_undo',
+    description: 'Reverse a recorded org change, restoring the state it replaced. Appends a compensating entry rather than editing history. Refuses a second undo of the same change, and refuses one that was recorded as failed. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The change id from sfdt_ledger_list.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to change the org.' }
+      },
+      required: ['id', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Put back a permission change', input: { id: '…', confirmExecution: true } }
+    ]
+  },
+  {
     name: 'sfdt_flow_scan',
     description: 'Analyze a Salesforce org\'s Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.',
     inputSchema: {
@@ -1089,6 +1189,61 @@ export class SfdtMcpServer {
         const cmdArgs = ['permissions', 'drift', args.object, '--json'];
         if (args.org) cmdArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_automation_list': {
+        const cmdArgs = ['automation', 'list', '--json'];
+        if (args.type) cmdArgs.push('--type', args.type);
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_automation_set': {
+        if (!args.confirmExecution) {
+          throw new Error('Toggling automation changes how the org behaves for every user. Pass confirmExecution: true to proceed.');
+        }
+        const cmdArgs = ['automation', args.enable ? 'enable' : 'disable', args.type, args.name, '--json', '--yes'];
+        if (args.dryRun) cmdArgs.push('--dry-run');
+        if (args.production) cmdArgs.push('--production');
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_permissions_grant': {
+        if (!args.confirmExecution) {
+          throw new Error('Changing field permissions alters who can see org data. Pass confirmExecution: true to proceed.');
+        }
+        const verb = args.level === 'none' ? 'revoke' : 'grant';
+        const cmdArgs = ['permissions', verb, ...args.fields, '--parent', args.parent, '--json', '--yes'];
+        if (verb === 'grant') cmdArgs.push('--level', args.level);
+        if (args.dryRun) cmdArgs.push('--dry-run');
+        if (args.production) cmdArgs.push('--production');
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_permissions_fix': {
+        if (!args.confirmExecution) {
+          throw new Error('Applying source permissions alters who can see org data. Pass confirmExecution: true to proceed.');
+        }
+        const cmdArgs = ['permissions', 'fix', args.object, '--json', '--yes'];
+        if (args.dryRun) cmdArgs.push('--dry-run');
+        if (args.production) cmdArgs.push('--production');
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_ledger_list': {
+        const cmdArgs = ['ledger', 'list', '--json'];
+        if (args.limit) cmdArgs.push('--limit', String(args.limit));
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_ledger_undo': {
+        if (!args.confirmExecution) {
+          throw new Error('Undoing a change writes to the org. Pass confirmExecution: true to proceed.');
+        }
+        const { stdout } = await this.#runCliCommand(['ledger', 'undo', args.id, '--json']);
         return this.#parseCliJson(stdout);
       }
       case 'sfdt_dependencies': {

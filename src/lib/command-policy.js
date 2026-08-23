@@ -348,7 +348,8 @@ export const COMMAND_POLICY = {
     },
   },
   permissions: {
-    mutating: false, // read-only: reports what is granted, changes nothing
+    // `grant`/`revoke`/`fix` change who can see and edit org data.
+    mutating: true,
     requiresProject: true,
     requiresOrg: true,
     supportsJson: true,
@@ -357,6 +358,36 @@ export const COMMAND_POLICY = {
     mcpTools: {
       sfdt_permissions_matrix: { mutating: false },
       sfdt_permissions_drift: { mutating: false },
+      sfdt_permissions_grant: { mutating: true },
+      sfdt_permissions_fix: { mutating: true },
+    },
+  },
+  automation: {
+    // Toggling automation changes how the org behaves for every user.
+    mutating: true,
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'org-health',
+    surfaces: { gui: false, vscode: true, chrome: false },
+    mcpTools: {
+      sfdt_automation_list: { mutating: false },
+      sfdt_automation_set: { mutating: true },
+    },
+  },
+  ledger: {
+    // `undo` reverses a recorded org change, which is itself an org write.
+    mutating: true,
+    requiresProject: true,
+    // Reading and verifying the ledger is entirely local; only `undo` touches
+    // an org, and it gets the org from the entry it is reversing.
+    requiresOrg: false,
+    supportsJson: true,
+    docsCategory: 'config-utils',
+    surfaces: { gui: false, vscode: true, chrome: false },
+    mcpTools: {
+      sfdt_ledger_list: { mutating: false },
+      sfdt_ledger_undo: { mutating: true },
     },
   },
   packages: {

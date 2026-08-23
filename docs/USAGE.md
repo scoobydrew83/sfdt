@@ -1185,9 +1185,109 @@ sfdt docs diagram --output docs/erd.mmd
 
 ---
 
+### sfdt ledger
+
+The append-only record of every org change sfdt makes, and how to reverse one.
+
+```bash
+sfdt ledger list                 # what has sfdt changed?
+sfdt ledger show <id>            # including the state it replaced
+sfdt ledger verify               # has the file been tampered with?
+sfdt ledger undo <id>            # put it back
+```
+
+`automation disable` and `permissions grant` record the state that preceded them before they
+touch the org. That is what makes them reversible — and it is the thing a stage-and-approve UI
+cannot do, because approval only ever looks forward. You find out a change was wrong *after* it
+lands, which is exactly when a recorded before-state is worth having.
+
+**It is not `run-history` and not `audit.json`.** Neither of those is append-only: run history
+deletes all but the newest 200 rows per type on every insert and stores only counts; the GUI audit
+log rewrites its whole array capped at 1000, so any past entry can be silently altered by the next
+write. Both are right for what they do. Neither can answer *what was there before*.
+
+**Hash-chained.** Each entry's hash covers its content plus the previous entry's, so editing or
+deleting any line breaks the chain. `verify` names the first break by both its recorded sequence
+number and its current line — when those diverge, that gap is itself the evidence a line was
+removed. Only the first break is reported: everything after it is unverifiable, and listing them
+all would present consequences as if they were problems.
+
+**Nothing is ever mutated.** Undo appends a compensating entry rather than flipping a flag on the
+original, so `ledger verify` still passes afterwards. A second undo of the same change is refused —
+it would re-apply it.
+
+| Status | Meaning |
+|---|---|
+| `applied` | The write succeeded |
+| `failed` | The write was attempted and rejected |
+| `undone` | Reversed by a later entry |
+| **`pending`** | Recorded, but its outcome never was — the command may have been interrupted mid-write. **Check the org before undoing it.** |
+
+> **A deliberate exception to golden principle #5.** That principle says anything writing history
+> degrades silently, so measurement cannot break the measured. The ledger is the one carve-out: if
+> the before-state cannot be recorded, **the org write does not happen**. An unrecorded change is
+> an unreversible one, and handing you a changed org with no way back is a worse failure than an
+> aborted command. Recording the *outcome* afterwards stays best-effort, because by then the org
+> has already changed.
+
+---
+
+### sfdt automation
+
+The on/off grid across every kind of Salesforce automation, and the toggles behind it.
+
+```bash
+sfdt automation list                                          # what's on?
+sfdt automation list --type validation-rule
+sfdt automation disable validation-rule Account.Region_Required --dry-run
+sfdt automation disable validation-rule Account.Region_Required
+sfdt automation enable flow Set_Region
+```
+
+#### Five types, three write mechanisms
+
+A grid of uniform toggles implies every row costs the same. It does not, and this is the part a
+single button hides:
+
+| Type | Written by | Cost |
+|---|---|---|
+| Flow (incl. Process Builder) | Tooling `Metadata.activeVersionNumber` | A record write |
+| Validation rule | Tooling `Metadata.active` | A record write |
+| Duplicate rule | Tooling `Metadata.isActive` | A record write |
+| **Workflow rule** | **Metadata deploy** | Retrieve, edit, deploy |
+| **Apex trigger** | **Metadata deploy** | In production a Status change *is* a code deployment — **it runs tests** |
+
+Process Builder is **not** a sixth type: a process *is* a Flow, differing only by `ProcessType`.
+Listing it separately would be marketing rather than modelling.
+
+#### The read that is a correctness requirement
+
+`Metadata` is a compound field, and writing it **replaces** the object rather than merging. So a
+validation-rule toggle reads the whole `Metadata`, changes one key, and writes all of it back.
+Sending `{ active: false }` alone would compile, read fine, and discard the rule's formula and
+error message the first time it ran. The code refuses to build a write from metadata it never read.
+
+That read is also, conveniently, the before-state — which is why every toggle is reversible.
+
+Deactivating a flow sets `activeVersionNumber` to `0`, which **discards which version was
+active**. The ledger records it, so `sfdt ledger undo` restores that exact version; if the version
+has since been deleted, the undo fails cleanly rather than activating a different one.
+
+#### Three brakes on every write
+
+- **`--dry-run`** prints the exact body that would be sent and writes nothing.
+- **A production guard.** A write against a non-sandbox org is refused unless `--production` is
+  passed. Detection **fails safe**: some org shapes omit `isSandbox` entirely, and a failed lookup
+  or a missing value is treated as production, because dropping the guard on an org you could not
+  identify is the wrong way to be wrong.
+- **A confirmation**, unless `--yes`. In a non-interactive context (JSON mode, CI, no TTY) it
+  **refuses** rather than auto-confirming — a prompt in CI is either a hang or a silent yes.
+
+---
+
 ### sfdt permissions
 
-Object and field access granted by profiles and permission sets. Read-only.
+Object and field access granted by profiles and permission sets. `matrix` and `drift` read; `grant`, `revoke` and `fix` write.
 
 ```bash
 sfdt permissions matrix Account                      # who can see and edit what
@@ -1231,6 +1331,36 @@ since a group is exactly where muting is used.
 
 An empty result is **not** "nobody has access": Salesforce stores a permission entry only where
 access differs from the default, so absence is not denial. The output says so.
+
+#### `grant`, `revoke` and `fix` — the writable half
+
+```bash
+sfdt permissions grant Account.Region__c --parent "Sales Ops" --level read
+sfdt permissions revoke Account.Secret__c --parent "Sales Ops"
+sfdt permissions fix Account --dry-run
+```
+
+`ObjectPermissions` and `FieldPermissions` are ordinary updatable sObjects, so these are plain REST
+writes. Three shapes are needed, because Salesforce models "no access" as the **absence** of a row
+rather than a row saying no: create one to grant, patch it to change a level, delete it to remove
+access. Granting `edit` always sends `read` too — the org rejects edit without it.
+
+**Profiles are refused, by name and up front.** Salesforce does not permit direct DML on
+profile-owned permission entries; those must go through the Metadata API, so change them in source
+and deploy. Refusing explicitly beats letting the org return an opaque
+`INSUFFICIENT_ACCESS_OR_READONLY` that reads like a problem with *your* access.
+
+**`fix` is the bulk fix, and its shape is the argument for it.** It applies exactly what
+`permissions drift` found `missing-in-org` — with **your repository** as the intended state, so the
+target was code-reviewed before it was applied rather than clicked through in a browser. Grants the
+org has that source does not (`extra-in-org`) are deliberately **left alone**: removing access
+nobody asked to remove is a different and far riskier decision.
+
+Same three brakes as `automation`: `--dry-run`, the production guard, and a confirmation that
+refuses rather than auto-confirms when non-interactive. Every change is recorded in the ledger, so
+`sfdt ledger undo` restores the prior grants — including after a *partial* failure, since the
+recorded before-state covers the whole batch and restoring a field already at its recorded level is
+a no-op.
 
 #### `--offline` and `drift` — permissions as a deploy gate
 

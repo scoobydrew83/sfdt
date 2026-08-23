@@ -362,6 +362,27 @@ export type {
   PermissionQueries,
 } from './permissions.js';
 
+// Automation state — the five kinds of Salesforce automation, and the three
+// different ways they are written. Shared so every surface surfaces the cost
+// difference rather than presenting one uniform toggle.
+export {
+  AUTOMATION_TYPES,
+  findAutomationType,
+  automationListQuery,
+  metadataFetchQuery,
+  toAutomationRow,
+  toggledMetadata,
+  activeMetadataKey,
+  buildAutomationGrid,
+} from './automation.js';
+export type {
+  AutomationWriteMode,
+  AutomationType,
+  AutomationRow,
+  AutomationGridVM,
+  AutomationQueries,
+} from './automation.js';
+
 // Record editability model — shared by the CLI (`sfdt record`), the MCP tools
 // and the Chrome extension, so a field is refused identically on every surface.
 export {

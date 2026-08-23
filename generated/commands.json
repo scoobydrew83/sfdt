@@ -5783,9 +5783,205 @@
             }
           ],
           "subcommands": []
+        },
+        {
+          "id": "permissions grant",
+          "path": [
+            "permissions",
+            "grant"
+          ],
+          "description": "Grant field access for a permission set",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "Object.Field",
+              "required": true,
+              "variadic": true,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--parent <label>",
+              "name": "parent",
+              "required": true,
+              "default": null,
+              "description": "Permission set label (profiles are not writable this way)"
+            },
+            {
+              "flags": "--level <level>",
+              "name": "level",
+              "required": false,
+              "default": "read",
+              "description": "read or edit (grant only)"
+            },
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--dry-run",
+              "name": "dryRun",
+              "required": false,
+              "default": null,
+              "description": "Show exactly what would change, and change nothing"
+            },
+            {
+              "flags": "--yes",
+              "name": "yes",
+              "required": false,
+              "default": null,
+              "description": "Skip the confirmation prompt"
+            },
+            {
+              "flags": "--production",
+              "name": "production",
+              "required": false,
+              "default": null,
+              "description": "Acknowledge that the target org is production"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "permissions revoke",
+          "path": [
+            "permissions",
+            "revoke"
+          ],
+          "description": "Remove field access for a permission set",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "Object.Field",
+              "required": true,
+              "variadic": true,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--parent <label>",
+              "name": "parent",
+              "required": true,
+              "default": null,
+              "description": "Permission set label (profiles are not writable this way)"
+            },
+            {
+              "flags": "--level <level>",
+              "name": "level",
+              "required": false,
+              "default": "none",
+              "description": "read or edit (grant only)"
+            },
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--dry-run",
+              "name": "dryRun",
+              "required": false,
+              "default": null,
+              "description": "Show exactly what would change, and change nothing"
+            },
+            {
+              "flags": "--yes",
+              "name": "yes",
+              "required": false,
+              "default": null,
+              "description": "Skip the confirmation prompt"
+            },
+            {
+              "flags": "--production",
+              "name": "production",
+              "required": false,
+              "default": null,
+              "description": "Acknowledge that the target org is production"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "permissions fix",
+          "path": [
+            "permissions",
+            "fix"
+          ],
+          "description": "Apply the grants source declares but the org is missing (the bulk fix)",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "Object",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--dry-run",
+              "name": "dryRun",
+              "required": false,
+              "default": null,
+              "description": "Show exactly what would change, and change nothing"
+            },
+            {
+              "flags": "--yes",
+              "name": "yes",
+              "required": false,
+              "default": null,
+              "description": "Skip the confirmation prompt"
+            },
+            {
+              "flags": "--production",
+              "name": "production",
+              "required": false,
+              "default": null,
+              "description": "Acknowledge that the target org is production"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
         }
       ],
-      "mutating": false,
+      "mutating": true,
       "requiresProject": true,
       "requiresOrg": true,
       "supportsJson": true,
@@ -5805,9 +6001,353 @@
         {
           "name": "sfdt_permissions_drift",
           "mutating": false
+        },
+        {
+          "name": "sfdt_permissions_grant",
+          "mutating": true
+        },
+        {
+          "name": "sfdt_permissions_fix",
+          "mutating": true
         }
       ],
       "source": "src/commands/permissions.js"
+    },
+    {
+      "id": "automation",
+      "path": [
+        "automation"
+      ],
+      "description": "Validation rules, flows, workflow rules, triggers and duplicate rules — state and toggles",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "automation list",
+          "path": [
+            "automation",
+            "list"
+          ],
+          "description": "Show every automation component and whether it is on",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--type <id>",
+              "name": "type",
+              "required": false,
+              "default": null,
+              "description": "Restrict to one type: flow, validation-rule, duplicate-rule, workflow-rule, apex-trigger"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "automation enable",
+          "path": [
+            "automation",
+            "enable"
+          ],
+          "description": "Turn one automation component on",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "type",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            },
+            {
+              "name": "name",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--dry-run",
+              "name": "dryRun",
+              "required": false,
+              "default": null,
+              "description": "Show exactly what would be written, and write nothing"
+            },
+            {
+              "flags": "--yes",
+              "name": "yes",
+              "required": false,
+              "default": null,
+              "description": "Skip the confirmation prompt"
+            },
+            {
+              "flags": "--production",
+              "name": "production",
+              "required": false,
+              "default": null,
+              "description": "Acknowledge that the target org is production"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "automation disable",
+          "path": [
+            "automation",
+            "disable"
+          ],
+          "description": "Turn one automation component off",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "type",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            },
+            {
+              "name": "name",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--dry-run",
+              "name": "dryRun",
+              "required": false,
+              "default": null,
+              "description": "Show exactly what would be written, and write nothing"
+            },
+            {
+              "flags": "--yes",
+              "name": "yes",
+              "required": false,
+              "default": null,
+              "description": "Skip the confirmation prompt"
+            },
+            {
+              "flags": "--production",
+              "name": "production",
+              "required": false,
+              "default": null,
+              "description": "Acknowledge that the target org is production"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": true,
+      "supportsJson": true,
+      "docsCategory": "org-health",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_automation_list",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_automation_set",
+          "mutating": true
+        }
+      ],
+      "source": "src/commands/automation.js"
+    },
+    {
+      "id": "ledger",
+      "path": [
+        "ledger"
+      ],
+      "description": "The append-only record of org changes made by sfdt, and how to reverse them",
+      "aliases": [],
+      "hidden": false,
+      "arguments": [],
+      "options": [],
+      "subcommands": [
+        {
+          "id": "ledger list",
+          "path": [
+            "ledger",
+            "list"
+          ],
+          "description": "List recorded org changes, newest first",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--limit <n>",
+              "name": "limit",
+              "required": false,
+              "default": "50",
+              "description": "How many to show"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "ledger show",
+          "path": [
+            "ledger",
+            "show"
+          ],
+          "description": "Show one change in full, including the state that preceded it",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "id",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "ledger verify",
+          "path": [
+            "ledger",
+            "verify"
+          ],
+          "description": "Check the hash chain for tampering",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        },
+        {
+          "id": "ledger undo",
+          "path": [
+            "ledger",
+            "undo"
+          ],
+          "description": "Reverse a recorded change, restoring the state it replaced",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [
+            {
+              "name": "id",
+              "required": true,
+              "variadic": false,
+              "description": ""
+            }
+          ],
+          "options": [
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            }
+          ],
+          "subcommands": []
+        }
+      ],
+      "mutating": true,
+      "requiresProject": true,
+      "requiresOrg": false,
+      "supportsJson": true,
+      "docsCategory": "config-utils",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        {
+          "name": "sfdt_ledger_list",
+          "mutating": false
+        },
+        {
+          "name": "sfdt_ledger_undo",
+          "mutating": true
+        }
+      ],
+      "source": "src/commands/ledger.js"
     },
     {
       "id": "version",

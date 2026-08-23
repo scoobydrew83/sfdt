@@ -53,6 +53,8 @@ import { registerFieldCommand } from './commands/field.js';
 import { registerEventsCommand } from './commands/events.js';
 import { registerPackagesCommand } from './commands/packages.js';
 import { registerPermissionsCommand } from './commands/permissions.js';
+import { registerAutomationCommand } from './commands/automation.js';
+import { registerLedgerCommand } from './commands/ledger.js';
 import { formatSplash } from './lib/output.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -131,6 +133,8 @@ export function createCli() {
   registerEventsCommand(program);
   registerPackagesCommand(program);
   registerPermissionsCommand(program);
+  registerAutomationCommand(program);
+  registerLedgerCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program
