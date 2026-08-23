@@ -79,26 +79,46 @@ Design approved 2026-08-22; [docs/design/record-edit-clone.md](docs/design/recor
   user, plus a repo-vs-org drift gate. Reports what is **granted**, never "effective", because
   muting permission sets cannot be queried and would make any stronger claim an upper bound
   presented as a fact — **In develop**
+- **`sfdt automation list|enable|disable`, `sfdt permissions grant|revoke|fix`, `sfdt ledger`** —
+  the first commands that change org *configuration*, and the append-only, hash-chained record
+  that makes them reversible. One grid over five automation types replaces three read-only
+  `audit inactive-*` checks that select no `Id` and so can report a problem but never fix one.
+  The grid states which types cost a **metadata deploy** rather than a record write — workflow
+  rules and Apex triggers — because a production deploy runs tests, and that is the cost a single
+  toggle button hides. `permissions fix <Object>` is the bulk fix, applying exactly the
+  `missing-in-org` rows `permissions drift` finds, with the repository as the intended state.
+  Four brakes: `--dry-run`, a production guard that now blocks and fails safe, a confirmation that
+  refuses rather than auto-confirms when non-interactive, and the ledger. **No write here has been
+  executed against a live org** — see the changelog entry, which names each unproven claim —
+  **In develop**
+
+  *Correction:* this file previously said `sfdt permissions` "is read-only and stays that way
+  until the approval ledger below exists". That is no longer true and is recorded here rather
+  than quietly deleted. The ledger that was built is a **record**, not a gate: writes apply
+  immediately and the before-state makes them reversible afterwards, which is when a wrong
+  permission change is actually discovered. A staged approve-then-apply queue remains unbuilt and
+  stays in Research.
+
 - **Fix the two known flaky tests** — `test/lib/bridge-routes-extra.test.js` and `test/lib/gui-server-routes3.test.js` fail roughly 1 run in 8 under full-suite load (RELEASING.md §"Known flakes"). They already forced `npm test` out of `prepublishOnly`, and they can red the hard CI gate at random. Fixing them is a 1.0 requirement — **Planned**
 
 ### Not in this phase
 
 - **Visual manifest builder** — this was listed here as Planned while [docs/design/visual-manifest-builder.md](docs/design/visual-manifest-builder.md) records it as **SHIPPED — all four PRs landed**. The design doc is correct; the entry was stale and is removed.
-- **Effective FLS/OLS permission matrix** and **cross-org permissions diff** — moved to Research. A previous revision of this file described them as extending an engine we already own. That was wrong, and the correction matters for scoping — see Research below.
+- **Effective FLS/OLS permission matrix** and **cross-org permissions diff** — a previous revision of this file described them as extending an engine we already own. That was wrong, and it was corrected here to Research. Both then shipped in this phase instead, as `sfdt permissions` (see "Also in this phase") — with the word "effective" deliberately not used, because muting permission sets remain unqueryable.
 
 ## Research
 
 Directional, not sequenced. From the [SFDevTools competitive analysis](docs/reviews/sfdevtools-competitive-analysis.md) (2026-08-22), tiers 2–3.
 
-- **Writable permission bulk-fix** — their Permissions Matrix stages and applies permission
-  changes. `sfdt permissions` is read-only and stays that way until the approval ledger below
-  exists: an org-data write driven from a matrix is exactly the class of action that needs a
-  staged before/after diff and an append-only record, not just a confirm prompt — **Research**
 - **Muting permission sets** — the one blind spot in `sfdt permissions`. They are Metadata-API
   only, with no queryable sObject, so granted access is an upper bound on real access. Closing
   this needs a Metadata API retrieve path the CLI does not have; until then every result says so
   and nothing is described as "effective" — **Research**
-- **Approval ledger for org-mutating agent actions** — a staged before/after diff plus an append-only ledger distinct from `src/lib/run-history.js`, layered on the existing `confirmExecution` gating (golden principle #7). Valuable standalone, and the precondition for any org-*data* mutating MCP tool — **Research**
+- **Approval ledger as a *gate*** — the shipped ledger (see "Also in this phase") is a **record**:
+  writes apply immediately and the recorded before-state makes them reversible. A staged
+  approve-then-apply workflow — where a change waits in a queue for a second person — is a
+  different feature and is not built. Whether it is worth building on top of a ledger that already
+  reverses is an open question, not a commitment — **Research**
 - **Committed dashboard specs** — AI-authored dashboard definitions that live in the repo, are code-reviewed, and render in the GUI over `src/lib/soql-runner.js`. Deliberately not a hosted dashboard product; the spec shape is close to Studio's `ComponentSpec`, so one substrate could serve both — **Research**
 
 

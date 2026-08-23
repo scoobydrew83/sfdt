@@ -9,6 +9,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`sfdt automation list|enable|disable`, `sfdt permissions grant|revoke|fix`, and `sfdt ledger`
+  — the first commands in this CLI that change org *configuration*, and the record that makes
+  them reversible.** Everything shipped before this reads an org, deploys metadata from a
+  reviewed repo, or writes a file. These change a live org's behaviour for every user at once,
+  so the shape of the guarantee mattered more than the features.
+
+  **The ledger is a record, not a gate.** `logs/ledger.jsonl` is append-only and hash-chained:
+  each entry's hash covers the previous one, so a line edited or removed afterwards breaks the
+  chain and `ledger verify` names the first break — by stored `seq` *and* by line number, because
+  the two diverge exactly when the file has been tampered with. Every write records the state it
+  is about to replace **before** the org is touched, so `ledger undo` can put it back. Undo
+  appends a compensating entry and never rewrites the original, so the chain still verifies
+  afterwards; a second undo of the same change is refused. `ledger.js` knows nothing about flows
+  or permissions — each writing feature registers a reverser by `kind`, and an entry whose kind
+  has no reverser is reported as *not automatically reversible* with its before-state printed,
+  never silently skipped.
+
+  This is a deliberate exception to golden principle #5, now written into that file rather than
+  quietly contradicted: telemetry never throws, but `recordIntent` **does**, and callers let it.
+  If the before-state cannot be recorded the write must not happen — an unrecorded change is an
+  unreversible one, and handing someone a changed org with no way back is worse than an aborted
+  command. Recording the *outcome* afterwards stays best-effort, because by then the org has
+  already changed. Neither existing store could serve: `run-history.js` deletes all but 200 rows
+  per type on every insert and keeps only counts, and `audit-logger.js` rewrites its whole array
+  capped at 1000. A row you can `DELETE` is not a ledger.
+
+  **`automation`** is one grid over five types where three read-only `audit inactive-*` checks
+  used to be. Those checks select no `Id` and query only the inactive side, so they can report a
+  problem and never fix one; they are untouched. Process Builder is **not** a sixth type — a
+  process *is* a Flow, differing by `ProcessType`, and listing it separately would be marketing.
+  What the grid does say out loud is that the five do not cost the same to toggle: flows,
+  validation rules and duplicate rules are Tooling record writes, while workflow rules and Apex
+  triggers need a **metadata deploy** — and a production deploy runs tests, so toggling a trigger
+  there is a deployment with everything that implies. That cost is printed at the point of use,
+  not buried in a doc.
+
+  The dangerous operation is that a Tooling `Metadata` write **replaces** the object rather than
+  merging into it: `{active:false}` alone would discard a validation rule's formula and error
+  message. Rather than document that, `toggledMetadata()` throws when handed metadata that was
+  never read, so a write that was not preceded by a read cannot be constructed — and the read
+  *is* the before-state, which makes the ledger entry free. Deactivating a flow discards which
+  version was active, so that number is recorded; undo restores that exact version or fails
+  cleanly rather than activating a different one.
+
+  **`permissions grant|revoke|fix`** is the writable half of the matrix. `permissions fix
+  <Object>` is the bulk fix: it applies exactly the `missing-in-org` rows `permissions drift`
+  already finds, with **your repository as the intended state** — the target is code-reviewed before it is applied, which a
+  staging UI cannot offer, and reversible after, which is when people actually discover a
+  permission change was wrong. Profiles are refused up front by name: Salesforce does not permit
+  direct DML on profile-owned permission entries. That is documented behaviour rather than
+  something proven here, and refusing is the safe direction to be wrong in.
+
+  Four brakes, none optional: `--dry-run` on every write; a **production guard** promoted out of
+  `deploy.js` into `src/lib/org-facts.js` that now *blocks* instead of merely picking a test
+  level, and fails safe — an org whose `isSandbox` cannot be read is treated as production; the
+  `data.js` confirmation pattern verbatim, which **refuses** rather than auto-confirming when
+  non-interactive; and the ledger. On MCP every write tool declares `confirmExecution`, including
+  `sfdt_ledger_undo` — undoing is itself a write. `confirmExecution` is not forwarded into the
+  CLI, so the CLI's `--yes` is an independent gate rather than a proxy for it, and the docs say
+  so instead of implying one guard covers both.
+
+  **Not verified against a live org.** `sf` is not installed here, so no write in this work has
+  ever executed for real. Specifically unproven: the Tooling `Metadata` PATCH shape per type,
+  `DuplicateRule` and `ApexTrigger.Status` (neither had any precedent in this repo), and the
+  profile-DML refusal. What *is* proven is the layer above the wire: every request body, refusal,
+  guard and ledger entry is unit-tested against a mocked `sf`. The failure mode here is a changed
+  org rather than a wrong report, which is why the gap is named instead of implied.
+
 - **`sfdt packages list|compare|note` — installed package inventory, annotations, and cross-org
   version drift.** Nothing in this repo touched `InstalledSubscriberPackage` before; this was
   greenfield.
