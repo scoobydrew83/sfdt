@@ -170,9 +170,18 @@ export async function writePackageNote(config, key, patch, { now } = {}) {
     existing.latestCheckedAt = now ?? new Date().toISOString().slice(0, 10);
   }
 
+  // Assembled on a NULL-PROTOTYPE object rather than an object literal. The
+  // UNSAFE_KEYS refusal above already rejects the three dangerous names; this
+  // removes the thing they would have reached, so the write is inert even if a
+  // future caller finds a path around the guard. `JSON.stringify` treats a
+  // null-prototype object exactly like a plain one, so the file shape is
+  // unchanged.
+  const packages = Object.assign(Object.create(null), store.packages);
+  packages[key] = existing;
+
   const next = {
     version: NOTES_FORMAT_VERSION,
-    packages: { ...store.packages, [key]: existing },
+    packages,
   };
   const file = notesPath(config);
   await fs.ensureDir(path.dirname(file));
