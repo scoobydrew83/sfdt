@@ -3308,6 +3308,13 @@
               "required": false,
               "default": null,
               "description": "Skip the confirmation prompt (required for non-interactive use)"
+            },
+            {
+              "flags": "--production",
+              "name": "production",
+              "required": false,
+              "default": null,
+              "description": "Acknowledge that the target org is production"
             }
           ],
           "subcommands": []

@@ -142,6 +142,47 @@ describe('data command', () => {
   });
 });
 
+describe('data delete is guarded against production', () => {
+  // Bulk delete removes every record the set's queries match — the most
+  // destructive operation in this CLI. Before this it was the one write that
+  // was EASIER to run against production than a permission grant: it had a
+  // confirmation but no production guard.
+  beforeEach(() => {
+    readQueries.mockResolvedValue(['SELECT Id FROM Account']);
+    extractSObject.mockReturnValue('Account');
+    deleteDataSet.mockResolvedValue({ set: 'seed', org: 'dev', sobjects: [] });
+  });
+
+  it('asks the production guard, naming what is about to happen', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'seed', '--yes']);
+
+    expect(guardProduction).toHaveBeenCalledWith(
+      'dev',
+      expect.anything(),
+      expect.stringMatching(/bulk-delete records/),
+    );
+  });
+
+  it('refuses BEFORE prompting, so a refused org is never asked about', async () => {
+    // Order matters: a guard that ran after the prompt would make the operator
+    // confirm a deletion the CLI was always going to refuse.
+    process.stdin.isTTY = true;
+    const refusal = new Error('"prod" looks like a production org — re-run with --production');
+    guardProduction.mockRejectedValueOnce(refusal);
+
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'seed']);
+
+    expect(inquirer.prompt, 'the operator must not be prompted for a refused org').not.toHaveBeenCalled();
+    expect(deleteDataSet).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('still deletes on a sandbox without --production', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'seed', '--yes']);
+    expect(deleteDataSet).toHaveBeenCalled();
+  });
+});
+
 describe('data delete confirmation', () => {
   it('deletes without prompting when --yes is passed', async () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);

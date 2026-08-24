@@ -72,6 +72,15 @@ function makeDeleteAction() {
       const config = await loadConfig();
       const org = resolveOrg(config, options);
 
+      // Guard BEFORE the prompt: if the org is refused there is nothing to ask
+      // about. Bulk delete is the most destructive operation this CLI has — it
+      // removes every record the set's queries match — so it should not be the
+      // one write that is easier to run against production than a permission
+      // grant. The confirmation below is deliberately NOT replaced by the shared
+      // `confirmChange`: it prints the actual queries and the objects they
+      // resolve to, and that blast-radius preview is the part worth keeping.
+      await guardProduction(org, options, 'bulk-delete records in it');
+
       if (!options.yes) {
         const nonInteractive =
           jsonMode || process.env.SFDT_NON_INTERACTIVE === 'true' || !process.stdin.isTTY;
@@ -318,5 +327,6 @@ export function registerDataCommand(program) {
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
     .option('--json', 'Emit structured JSON to stdout')
     .option('-y, --yes', 'Skip the confirmation prompt (required for non-interactive use)')
+    .option('--production', 'Acknowledge that the target org is production')
     .action(makeDeleteAction());
 }

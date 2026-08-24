@@ -1863,18 +1863,20 @@ silently failed to populate.
 | `--async` | For `load`: queue each job and return immediately instead of waiting |
 | `--line-ending <LF\|CRLF>` | For `load`: CSV line ending. Defaults to `config.data.bulk.lineEnding`, else sf's own default |
 | `-y, --yes` | For `delete` and `load`: skip the confirmation prompt. **Required** for non-interactive runs (`--json`, no TTY, or `SFDT_NON_INTERACTIVE`), which otherwise refuse rather than auto-confirm |
-| `--production` | For `load`: acknowledge that the target org is production. Detection fails safe — an org whose sandbox status cannot be read is treated as production |
+| `--production` | For `load` and `delete`: acknowledge that the target org is production. Detection fails safe — an org whose sandbox status cannot be read is treated as production |
 | `--json` | Emit machine-readable output |
 
 > `sfdt data load` inserts or **upserts**, and an upsert overwrites records that are already
 > there. It carries two brakes: a production guard (`--production`) and a confirmation that
-> refuses rather than auto-confirms when non-interactive. `delete` carries the confirmation but
-> **not** the production guard. Note `load` is **not** recorded in the
+> refuses rather than auto-confirms when non-interactive. Note `load` is **not** recorded in the
 > ledger: `sfdt ledger undo` covers org *configuration* changes, not bulk data writes, so a load
 > has to be reversed by loading corrected data.
 
 > `sfdt data delete` bulk-removes every record a data set's queries match — by design for
-> scratch/sandbox seed cleanup.
+> scratch/sandbox seed cleanup. It carries the same two brakes as `load`, and the guard is checked
+> **before** the prompt, so a refused org is never one you are asked to confirm. Its confirmation
+> prints the actual queries and the objects they resolve to rather than a generic warning: for the
+> most destructive operation here, the blast radius is the thing worth showing.
 
 `load` reports per-operation results and **exits 1 if any operation failed**, so CI can branch
 on the exit code; the JSON envelope carries `errorCount` alongside the raw result. Records

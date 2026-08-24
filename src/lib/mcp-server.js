@@ -771,6 +771,7 @@ export const TOOLS = [
       properties: {
         set: { type: 'string', description: 'Data set name (from config).' },
         org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' },
+        production: { type: 'boolean', description: 'Acknowledge that the target org is production. Required there; detection fails safe.' },
         confirmExecution: { type: 'boolean', description: 'Must be true to delete records in the org.' }
       },
       required: ['set', 'confirmExecution']
@@ -1470,6 +1471,7 @@ export class SfdtMcpServer {
           throw new Error('Deleting a data set is destructive. Pass confirmExecution: true to proceed.');
         }
         const cliArgs = ['data', 'delete', args.set, '--yes', '--json'];
+        if (args.production) cliArgs.push('--production');
         if (args.org) cliArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cliArgs);
         return this.#parseCliJson(stdout);
