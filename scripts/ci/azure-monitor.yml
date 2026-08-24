@@ -26,3 +26,12 @@ steps:
     env:
       SLACK_WEBHOOK_URL: $(SLACK_WEBHOOK_URL)
       TEAMS_WEBHOOK_URL: $(TEAMS_WEBHOOK_URL)
+  # Setup-audit-trail anomalies and critical security changes; exits non-zero
+  # on a critical change or a per-user velocity spike.
+  # `condition: always()` so a monitor failure does not skip the security audit.
+  - script: npx --yes @sfdt/cli@latest audit all --org {{org}} --notify --json
+    displayName: Run org audit
+    condition: always()
+    env:
+      SLACK_WEBHOOK_URL: $(SLACK_WEBHOOK_URL)
+      TEAMS_WEBHOOK_URL: $(TEAMS_WEBHOOK_URL)

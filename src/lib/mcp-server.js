@@ -315,6 +315,272 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_field_impact',
+    description: 'Show what WRITES a Salesforce field — flows, workflow field updates and Apex — with each finding marked confirmed (the metadata states the write) or inferred (a lead only). The result carries scope notes saying what was NOT scanned; an empty row list means no writer was found by the bounded sources scanned, never that none exists. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        field: { type: 'string', description: 'Qualified field, e.g. "Account.Region__c".' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        links: { type: 'boolean', description: 'Resolve the org instance URL so rows carry Setup deep links (one extra call).' }
+      },
+      required: ['field']
+    },
+    examples: [
+      { description: 'What writes Account.Region__c in dev', input: { field: 'Account.Region__c', org: 'dev' } },
+      { description: 'Check a standard field before changing an integration', input: { field: 'Opportunity.StageName' } }
+    ]
+  },
+  {
+    name: 'sfdt_field_usage',
+    description: 'Sweep EVERY field on an object for references, to find cleanup candidates. Batches the dependency lookup so N fields cost ceil(N/200) queries. Fields come back in three states: unreferenced (nothing found), referenced, and UNKNOWN (not scanned — a standard field has no CustomField record, so a dependency sweep can say nothing about it). Never conflate unknown with unreferenced. With population=true it also counts non-null values, and only then can a field be flagged safeToRemove: unreferenced AND empty AND not required/unique. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        object: { type: 'string', description: 'sObject API name, e.g. "Account".' },
+        offline: { type: 'boolean', description: 'Scan the local repository instead of an org. No org needed. Results are always inferred and no field can be called safe to remove.' },
+        population: { type: 'boolean', description: 'Count non-null values per unreferenced field (one query each). Required before any field can be called safe to remove. Ignored with offline.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['object']
+    },
+    examples: [
+      { description: 'Find cleanup candidates on Account, with data counts', input: { object: 'Account', population: true } },
+      { description: 'Quick reference-only sweep', input: { object: 'Opportunity' } }
+    ]
+  },
+  {
+    name: 'sfdt_events_list',
+    description: 'List every subscribable streaming channel in the org — custom and standard platform events, custom channels, and Change Data Capture entities — with each channel\'s Bayeux path. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    },
+    examples: [
+      { description: 'What can I subscribe to in dev?', input: { org: 'dev' } }
+    ]
+  },
+  {
+    name: 'sfdt_events_tail',
+    description: 'Subscribe to a platform event or CDC channel and collect events. ALWAYS bounded — it returns after timeoutSeconds, or earlier once max events arrive or an expectation matches. Set replay to "all" to receive events already in the retention window (roughly 24h), which is how you inspect something that has already happened. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        channel: { type: 'string', description: 'Channel name (e.g. "Order_Placed__e", "AccountChangeEvent") or a full Bayeux path.' },
+        replay: { type: 'string', description: '"new" (default), "all" for the retention window, or a specific replay id.' },
+        timeoutSeconds: { type: 'number', description: 'How long to listen. Default 60.' },
+        max: { type: 'number', description: 'Stop after this many events.' },
+        expect: { type: 'object', description: 'Field to value, e.g. { "Status__c": "OK" }. Stops on the first match; the result reports matched:false if none arrived.', additionalProperties: true },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['channel']
+    },
+    examples: [
+      { description: 'Replay the last day of an event to see what happened', input: { channel: 'Order_Placed__e', replay: 'all', max: 20 } },
+      { description: 'Wait up to 30s for a specific event', input: { channel: 'Order_Placed__e', expect: { Status__c: 'OK' }, timeoutSeconds: 30 } }
+    ]
+  },
+  {
+    name: 'sfdt_events_publish',
+    description: 'Publish one platform event to the org\'s event bus. This FIRES real subscribers — flows, triggers, and any external system listening. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event: { type: 'string', description: 'Platform event API name, ending in __e.' },
+        fields: { type: 'object', description: 'Field API name to value.', additionalProperties: true },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        dryRun: { type: 'boolean', description: 'Return the exact request body without sending it.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to publish to the org.' }
+      },
+      required: ['event', 'fields', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Fire a test event', input: { event: 'Order_Placed__e', fields: { Order_Id__c: 'A-1' }, confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_packages_list',
+    description: 'List every package installed in the org, with its version, and fold in any annotations recorded in .sfdt/packages.json. IMPORTANT: Salesforce exposes NO API for the latest available version of a managed package — AppExchange has no public API, and SubscriberPackageVersion is queryable only in a Dev Hub for packages you own. An updateStatus of "update-available" therefore means the installed version is behind a version a HUMAN recorded, never that an API was checked; "unknown" means nothing was recorded to compare against. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    },
+    examples: [
+      { description: 'What is installed in prod?', input: { org: 'prod' } }
+    ]
+  },
+  {
+    name: 'sfdt_packages_compare',
+    description: 'Compare installed package versions between two orgs — the one update question that IS fully answerable, since both orgs are already authenticated. Each package gets a verdict: same, source-ahead, target-ahead, only-in-source, only-in-target, or unknown (a version could not be read — NOT the same as matching). Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', description: 'Source org alias.' },
+        target: { type: 'string', description: 'Target org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['source']
+    },
+    examples: [
+      { description: 'Is prod behind UAT?', input: { source: 'uat', target: 'prod' } }
+    ]
+  },
+  {
+    name: 'sfdt_packages_note',
+    description: 'Record the vendor URL, the latest version you have confirmed, and the internal owner for one package. Writes .sfdt/packages.json, a COMMITTED repo file, so the annotation is shared and code-reviewed rather than trapped in one machine. Merges additively — fields not supplied are left alone. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        namespace: { type: 'string', description: 'Package namespace prefix (or its name, for an unmanaged package).' },
+        url: { type: 'string', description: 'Vendor listing or release-notes URL.' },
+        latest: { type: 'string', description: 'The version confirmed current, e.g. "3.10.0". Must parse as a version.' },
+        owner: { type: 'string', description: 'Who owns this vendor relationship internally.' },
+        notes: { type: 'string', description: 'Free-text note.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to write the file.' }
+      },
+      required: ['namespace', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Record that a package has a newer release', input: { namespace: 'acme', latest: '3.10.0', url: 'https://example.com/releases', confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_permissions_matrix',
+    description: 'Show what each profile and permission set GRANTS on one object — object-level CRUD plus per-field read/edit. CRITICAL WORDING: these are GRANTED permissions, never "effective". Muting permission sets subtract access inside a permission set group and are Metadata-API only, so they cannot be queried and a user\'s real access may be LESS than shown. Do not describe the result as effective, actual, or final access. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        object: { type: 'string', description: 'sObject API name, e.g. "Account".' },
+        user: { type: 'string', description: 'Username. Narrows to that user\'s profile, permission sets and permission set groups. Requires an org.' },
+        offline: { type: 'boolean', description: 'Read profiles and permission sets from the repository instead of an org. Cannot be combined with user — assignments are not in source.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['object']
+    },
+    examples: [
+      { description: 'Who can edit fields on Account?', input: { object: 'Account' } },
+      { description: 'What does one user get on Opportunity?', input: { object: 'Opportunity', user: 'ana@example.com' } }
+    ]
+  },
+  {
+    name: 'sfdt_permissions_drift',
+    description: 'Compare what the org grants on an object against what this repository declares in its profiles and permission sets. Verdicts: extra-in-org (granted in the org but absent from source — the one a security review cares about), missing-in-org, changed, and only-in-org / only-in-repo for a parent present on one side. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        object: { type: 'string', description: 'sObject API name.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['object']
+    },
+    examples: [
+      { description: 'Has anyone granted access in prod that is not in source?', input: { object: 'Account', org: 'prod' } }
+    ]
+  },
+  {
+    name: 'sfdt_automation_list',
+    description: 'List every automation component in the org and whether it is on — flows (including Process Builder), validation rules, duplicate rules, workflow rules and Apex triggers. Each row carries its writeMode, because the five types are NOT written the same way: flows, validation rules and duplicate rules are a Tooling record write, while workflow rules and Apex triggers require a METADATA DEPLOY (which in production runs tests). Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: 'Restrict to one type: flow, validation-rule, duplicate-rule, workflow-rule, apex-trigger.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' }
+      }
+    },
+    examples: [
+      { description: 'What automation is switched off?', input: { org: 'dev' } }
+    ]
+  },
+  {
+    name: 'sfdt_automation_set',
+    description: 'Turn one automation component on or off. This changes how the org behaves for EVERY user immediately. The prior state is recorded in the ledger, so sfdt_ledger_undo can reverse it. For a workflow rule or Apex trigger this performs a metadata deploy, not a record update — in production that runs tests. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: 'flow, validation-rule, duplicate-rule, workflow-rule, or apex-trigger.' },
+        name: { type: 'string', description: 'Component name, or Object.Name where the type is named per object.' },
+        enable: { type: 'boolean', description: 'true to turn on, false to turn off.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        dryRun: { type: 'boolean', description: 'Return exactly what would be written without writing it.' },
+        production: { type: 'boolean', description: 'Acknowledge that the target org is production. Required there; detection fails safe.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to change the org.' }
+      },
+      required: ['type', 'name', 'enable', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Deactivate a validation rule', input: { type: 'validation-rule', name: 'Account.Region_Required', enable: false, confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_permissions_grant',
+    description: 'Grant or remove field access for a PERMISSION SET. Profiles are refused: Salesforce does not permit direct updates to profile-owned permission entries, which must go through the Metadata API. The prior grant is recorded in the ledger so sfdt_ledger_undo can restore it. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        parent: { type: 'string', description: 'Permission set label or API name.' },
+        fields: { type: 'array', items: { type: 'string' }, description: 'Qualified field names, e.g. ["Account.Region__c"].' },
+        level: { type: 'string', description: '"read", "edit", or "none" to remove access.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        dryRun: { type: 'boolean', description: 'Return the planned changes without applying them.' },
+        production: { type: 'boolean', description: 'Acknowledge that the target org is production.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to change the org.' }
+      },
+      required: ['parent', 'fields', 'level', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Give Sales Ops read on a field', input: { parent: 'Sales Ops', fields: ['Account.Region__c'], level: 'read', confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_permissions_fix',
+    description: 'Apply the field grants this REPOSITORY declares but the org is missing, for one object — the bulk fix, driven by code-reviewed source rather than a UI. Only missing-in-org grants are applied; grants the org has that source does not are deliberately left alone, because removing access nobody asked to remove is a different and riskier decision. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        object: { type: 'string', description: 'sObject API name.' },
+        org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
+        dryRun: { type: 'boolean', description: 'Return the planned changes without applying them.' },
+        production: { type: 'boolean', description: 'Acknowledge that the target org is production.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to change the org.' }
+      },
+      required: ['object', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Bring prod in line with source for Account', input: { object: 'Account', org: 'prod', confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_ledger_list',
+    description: 'List org changes sfdt has recorded, newest first, with the state each replaced. Status is derived: applied, failed, undone, or PENDING — pending means the change was recorded but its outcome never was, so the command may have been interrupted mid-write and the org should be checked. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'How many to return (default 50).' }
+      }
+    },
+    examples: [
+      { description: 'What has sfdt changed recently?', input: { limit: 20 } }
+    ]
+  },
+  {
+    name: 'sfdt_ledger_undo',
+    description: 'Reverse a recorded org change, restoring the state it replaced. Appends a compensating entry rather than editing history. Refuses a second undo of the same change, and refuses one that was recorded as failed. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The change id from sfdt_ledger_list.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to change the org.' }
+      },
+      required: ['id', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Put back a permission change', input: { id: '…', confirmExecution: true } }
+    ]
+  },
+  {
     name: 'sfdt_flow_scan',
     description: 'Analyze a Salesforce org\'s Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.',
     inputSchema: {
@@ -391,6 +657,60 @@ export const TOOLS = [
     ]
   },
   {
+    name: 'sfdt_record_get',
+    description: 'Read one Salesforce record and report which fields are editable, and why the rest are not. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: '15 or 18 character record Id.' },
+        sobject: { type: 'string', description: 'Object API name. Optional — resolved from the Id key prefix when omitted.' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' }
+      },
+      required: ['id']
+    },
+    examples: [
+      { description: 'Read an Account and see what is writable', input: { id: '001800000000001AAA' } }
+    ]
+  },
+  {
+    name: 'sfdt_record_edit',
+    description: 'Update fields on one record. Fields the org reports as non-editable are refused locally, with the reason, before anything is sent. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: '15 or 18 character record Id.' },
+        fields: { type: 'object', description: 'Field API name to value, e.g. { "Name": "Acme" }.', additionalProperties: true },
+        sobject: { type: 'string', description: 'Object API name. Optional.' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' },
+        dryRun: { type: 'boolean', description: 'Return the exact request body without sending it.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to write to the org.' }
+      },
+      required: ['id', 'fields', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Rename an Account', input: { id: '001800000000001AAA', fields: { Name: 'Acme Corp' }, confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_record_clone',
+    description: 'Create a copy of a record from its createable fields, with optional overrides. Mutating — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Record Id to copy.' },
+        fields: { type: 'object', description: 'Overrides applied to the copy.', additionalProperties: true },
+        sobject: { type: 'string', description: 'Object API name. Optional.' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' },
+        dryRun: { type: 'boolean', description: 'Return the exact request body without sending it.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to create a record.' }
+      },
+      required: ['id', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Clone an Opportunity under a new name', input: { id: '006800000000001AAA', fields: { Name: 'Renewal FY27' }, confirmExecution: true } }
+    ]
+  },
+  {
     name: 'sfdt_data_export',
     description: 'Export a configured data set from the org to local files. Reads from the org and writes local data files (read-only with respect to the org).',
     inputSchema: {
@@ -419,6 +739,24 @@ export const TOOLS = [
     },
     examples: [
       { description: 'Import the accounts data set into the dev org', input: { set: 'accounts', org: 'dev', confirmExecution: true } }
+    ]
+  },
+  {
+    name: 'sfdt_data_load',
+    description: 'Load a bulk data set (bulk.json) into the org over Bulk API v2 — insert or upsert by external id. Mutating (writes records) — requires confirmExecution.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        set: { type: 'string', description: 'Data set name — must be a bulk data set (bulk.json), not a tree one.' },
+        org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' },
+        wait: { type: 'integer', minimum: 0, description: 'Minutes to wait for each job. Defaults to config data.bulk.waitMinutes (10).' },
+        async: { type: 'boolean', description: 'Queue each job and return immediately instead of waiting.' },
+        confirmExecution: { type: 'boolean', description: 'Must be true to write records to the org.' }
+      },
+      required: ['set', 'confirmExecution']
+    },
+    examples: [
+      { description: 'Load the seed data set into the dev org', input: { set: 'seed', org: 'dev', confirmExecution: true } }
     ]
   },
   {
@@ -776,6 +1114,138 @@ export class SfdtMcpServer {
         return this.#parseCliJson(stdout);
       }
 
+      case 'sfdt_field_impact': {
+        const cmdArgs = ['field', 'impact', args.field, '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        if (args.links) cmdArgs.push('--links');
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_field_usage': {
+        const cmdArgs = ['field', 'usage', args.object, '--json'];
+        if (args.offline) cmdArgs.push('--offline');
+        if (args.population) cmdArgs.push('--population');
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_events_list': {
+        const cmdArgs = ['events', 'list', '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_events_tail': {
+        const cmdArgs = ['events', 'tail', args.channel, '--json'];
+        if (args.replay) cmdArgs.push('--replay', String(args.replay));
+        if (args.timeoutSeconds) cmdArgs.push('--timeout', String(args.timeoutSeconds));
+        if (args.max) cmdArgs.push('--max', String(args.max));
+        for (const [k, v] of Object.entries(args.expect ?? {})) {
+          cmdArgs.push('--expect', `${k}=${v}`);
+        }
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_events_publish': {
+        const cmdArgs = ['events', 'publish', args.event, '--json'];
+        for (const [k, v] of Object.entries(args.fields ?? {})) {
+          cmdArgs.push('--field', `${k}=${v}`);
+        }
+        if (args.dryRun) cmdArgs.push('--dry-run');
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_packages_list': {
+        const cmdArgs = ['packages', 'list', '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_packages_compare': {
+        const cmdArgs = ['packages', 'compare', '--source', args.source, '--json'];
+        if (args.target) cmdArgs.push('--target', args.target);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_packages_note': {
+        const cmdArgs = ['packages', 'note', args.namespace, '--json'];
+        if (args.url !== undefined) cmdArgs.push('--url', args.url);
+        if (args.latest !== undefined) cmdArgs.push('--latest', args.latest);
+        if (args.owner !== undefined) cmdArgs.push('--owner', args.owner);
+        if (args.notes !== undefined) cmdArgs.push('--notes', args.notes);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_permissions_matrix': {
+        const cmdArgs = ['permissions', 'matrix', args.object, '--json'];
+        if (args.user) cmdArgs.push('--user', args.user);
+        if (args.offline) cmdArgs.push('--offline');
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_permissions_drift': {
+        const cmdArgs = ['permissions', 'drift', args.object, '--json'];
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_automation_list': {
+        const cmdArgs = ['automation', 'list', '--json'];
+        if (args.type) cmdArgs.push('--type', args.type);
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_automation_set': {
+        if (!args.confirmExecution) {
+          throw new Error('Toggling automation changes how the org behaves for every user. Pass confirmExecution: true to proceed.');
+        }
+        const cmdArgs = ['automation', args.enable ? 'enable' : 'disable', args.type, args.name, '--json', '--yes'];
+        if (args.dryRun) cmdArgs.push('--dry-run');
+        if (args.production) cmdArgs.push('--production');
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_permissions_grant': {
+        if (!args.confirmExecution) {
+          throw new Error('Changing field permissions alters who can see org data. Pass confirmExecution: true to proceed.');
+        }
+        const verb = args.level === 'none' ? 'revoke' : 'grant';
+        const cmdArgs = ['permissions', verb, ...args.fields, '--parent', args.parent, '--json', '--yes'];
+        if (verb === 'grant') cmdArgs.push('--level', args.level);
+        if (args.dryRun) cmdArgs.push('--dry-run');
+        if (args.production) cmdArgs.push('--production');
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_permissions_fix': {
+        if (!args.confirmExecution) {
+          throw new Error('Applying source permissions alters who can see org data. Pass confirmExecution: true to proceed.');
+        }
+        const cmdArgs = ['permissions', 'fix', args.object, '--json', '--yes'];
+        if (args.dryRun) cmdArgs.push('--dry-run');
+        if (args.production) cmdArgs.push('--production');
+        if (args.org) cmdArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_ledger_list': {
+        const cmdArgs = ['ledger', 'list', '--json'];
+        if (args.limit) cmdArgs.push('--limit', String(args.limit));
+        const { stdout } = await this.#runCliCommand(cmdArgs);
+        return this.#parseCliJson(stdout);
+      }
+      case 'sfdt_ledger_undo': {
+        if (!args.confirmExecution) {
+          throw new Error('Undoing a change writes to the org. Pass confirmExecution: true to proceed.');
+        }
+        const { stdout } = await this.#runCliCommand(['ledger', 'undo', args.id, '--json']);
+        return this.#parseCliJson(stdout);
+      }
       case 'sfdt_dependencies': {
         const cmdArgs = ['dependencies', args.name, '--json'];
         if (args.org) cmdArgs.push('--org', args.org);
@@ -833,6 +1303,44 @@ export class SfdtMcpServer {
         return this.#parseCliJson(stdout);
       }
 
+      case 'sfdt_record_get': {
+        const cliArgs = ['record', 'get', args.id, '--json'];
+        if (args.sobject) cliArgs.push('--sobject', args.sobject);
+        if (args.org) cliArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_record_edit': {
+        if (!args.confirmExecution) {
+          throw new Error('Editing a record writes to the org. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['record', 'edit', args.id, '--json'];
+        for (const [field, value] of Object.entries(args.fields ?? {})) {
+          cliArgs.push('--set', `${field}=${value}`);
+        }
+        if (args.sobject) cliArgs.push('--sobject', args.sobject);
+        if (args.org) cliArgs.push('--org', args.org);
+        if (args.dryRun) cliArgs.push('--dry-run');
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_record_clone': {
+        if (!args.confirmExecution) {
+          throw new Error('Cloning a record creates one in the org. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['record', 'clone', args.id, '--json'];
+        for (const [field, value] of Object.entries(args.fields ?? {})) {
+          cliArgs.push('--set', `${field}=${value}`);
+        }
+        if (args.sobject) cliArgs.push('--sobject', args.sobject);
+        if (args.org) cliArgs.push('--org', args.org);
+        if (args.dryRun) cliArgs.push('--dry-run');
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
       case 'sfdt_data_export': {
         const cliArgs = ['data', 'export', args.set, '--json'];
         if (args.org) cliArgs.push('--org', args.org);
@@ -846,6 +1354,18 @@ export class SfdtMcpServer {
         }
         const cliArgs = ['data', 'import', args.set, '--json'];
         if (args.org) cliArgs.push('--org', args.org);
+        const { stdout } = await this.#runCliCommand(cliArgs);
+        return this.#parseCliJson(stdout);
+      }
+
+      case 'sfdt_data_load': {
+        if (!args.confirmExecution) {
+          throw new Error('Loading a data set writes records to the org. Pass confirmExecution: true to proceed.');
+        }
+        const cliArgs = ['data', 'load', args.set, '--json'];
+        if (args.org) cliArgs.push('--org', args.org);
+        if (args.wait != null) cliArgs.push('--wait', String(args.wait));
+        if (args.async) cliArgs.push('--async');
         const { stdout } = await this.#runCliCommand(cliArgs);
         return this.#parseCliJson(stdout);
       }

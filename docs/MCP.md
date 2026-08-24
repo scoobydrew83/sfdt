@@ -149,6 +149,139 @@ Shows a component's metadata dependencies — what it references and what refere
   * `name` (string, **required**): component name (e.g. an Apex class or field API name).
   * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
 
+#### `sfdt_field_impact`
+Shows what **writes** a field — flows (parsed, not merely referencing it), workflow field updates, and an Apex text search — plus, separately, everything that merely references it. Read-only.
+* **Arguments:**
+  * `field` (string, **required**): qualified field, e.g. `Account.Region__c`.
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+  * `links` (boolean, optional): resolve the org instance URL so rows carry Setup deep links (one extra call).
+
+Every row in `rows` is `confirmed` (the metadata itself states the write) or `inferred` (a lead only — an Apex text hit may read the field, mention it in a comment, or merely share a name).
+
+`references` is a SEPARATE list of components that mention the field **without writing it** — validation rules, layouts, reports, email templates, list views. Do not merge it into `rows`: "what writes this field" and "where does this field appear" are different questions, and a validation rule reported as a writer answers the wrong one. The result's `notes` say what was **not** scanned: which caps bound the scan, which queries were refused, and the Flow constructs the parser does not model. Those notes also travel in the envelope's `warnings`.
+
+An empty `rows` array means *no writer was found by three bounded scans* — never that none exists. A caller that reports it as "nothing writes this field" is overstating the result.
+
+#### `sfdt_field_usage`
+Sweeps **every** field on an object for references — the cleanup-candidate view. Read-only.
+* **Arguments:**
+  * `object` (string, **required**): sObject API name.
+  * `offline` (boolean, optional): scan the local repository instead of an org — no org needed. Results are always inferred, and no field is ever reported as safe to remove.
+  * `population` (boolean, optional): count non-null values per unreferenced field.
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+Fields come back in three states: `unreferenced: true`, `false`, and **`null` — not scanned**. A standard field has no `CustomField` record for a dependency edge to point at, and a failed batch leaves its fields `null` too. Never report `null` as unreferenced.
+
+`safeToRemove` is `null` unless `population: true` was passed, and is `true` only when the field is custom, scanned, unreferenced, measured at zero values, and neither required nor unique. Anything short of that carries a `keepReason` naming the condition it failed — including `population not measured`, which is what a metadata-only answer always is.
+
+#### `sfdt_events_list`
+Lists every subscribable streaming channel — custom and standard platform events, custom channels, and CDC entities — with each channel's Bayeux path. Read-only.
+* **Arguments:**
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+#### `sfdt_events_tail`
+Subscribes to a channel and collects events. **Always bounded** — returns after `timeoutSeconds`, or earlier once `max` events arrive or `expect` matches. Read-only.
+* **Arguments:**
+  * `channel` (string, **required**): channel name or full Bayeux path.
+  * `replay` (string, optional): `"new"` (default), `"all"` for the retention window, or a replay id.
+  * `timeoutSeconds` (number, optional): default 60.
+  * `max` (number, optional): stop after this many events.
+  * `expect` (object, optional): field → value; stops on the first match.
+  * `org` (string, optional): org alias.
+
+`replay: "all"` replays events already in the retention window (roughly 24h), which is how to inspect something that has already happened rather than waiting for it to recur. When `expect` is set, check `matched` — `false` means the event never arrived, which is usually the finding, not an error.
+
+#### `sfdt_events_publish`
+Publishes one platform event. **Mutating — requires `confirmExecution`.**
+* **Arguments:**
+  * `event` (string, **required**): platform event API name, ending in `__e`.
+  * `fields` (object, **required**): field API name → value.
+  * `org` (string, optional): org alias.
+  * `dryRun` (boolean, optional): return the request body without sending it.
+  * `confirmExecution` (boolean, **required**): must be true to publish.
+
+This fires **real subscribers** — flows, triggers, and any external system listening on the channel. CDC events cannot be published; they are produced by Salesforce.
+
+#### `sfdt_automation_list`
+Lists every automation component and whether it is on — flows (including Process Builder), validation rules, duplicate rules, workflow rules and Apex triggers. Read-only.
+* **Arguments:** `type` (optional), `org` (optional).
+
+Each row carries `writeMode`. The five types are **not** written the same way: `tooling-metadata` is a record write; `metadata-deploy` (workflow rules, Apex triggers) is a retrieve-edit-deploy, and in production an Apex trigger's Status change *is* a code deployment that runs tests. Do not present them as equivalent toggles.
+
+#### `sfdt_automation_set`
+Turns one automation component on or off. **Mutating — requires `confirmExecution`.**
+* **Arguments:** `type`, `name` (both **required**), `enable` (**required**), `org`, `dryRun`, `production`, `confirmExecution` (**required**).
+
+This changes how the org behaves for **every user, immediately**. The prior state is recorded, so `sfdt_ledger_undo` reverses it. Production is refused unless `production: true`; detection fails safe, so an org whose sandbox status cannot be read is treated as production.
+
+#### `sfdt_permissions_grant`
+Grants or removes field access for a **permission set**. **Mutating — requires `confirmExecution`.**
+* **Arguments:** `parent`, `fields`, `level` (all **required**), `org`, `dryRun`, `production`, `confirmExecution` (**required**).
+
+Profiles are refused: Salesforce does not permit direct updates to profile-owned permission entries. Use `level: "none"` to remove access.
+
+#### `sfdt_permissions_fix`
+Applies the grants the **repository** declares but the org is missing, for one object. **Mutating — requires `confirmExecution`.**
+* **Arguments:** `object` (**required**), `org`, `dryRun`, `production`, `confirmExecution` (**required**).
+
+Only `missing-in-org` grants are applied. Grants the org has that source does not are left alone — removing access nobody asked to remove is a different decision, and a riskier one. Do not describe this as "syncing permissions"; it is one-directional by design.
+
+#### `sfdt_ledger_list`
+Lists recorded org changes, newest first, with the state each replaced. Read-only.
+* **Arguments:** `limit` (optional).
+
+`status` is derived: `applied`, `failed`, `undone`, or **`pending`** — pending means the change was recorded but its outcome never was, so the command may have been interrupted mid-write and the org should be checked before anything is undone.
+
+#### `sfdt_ledger_undo`
+Reverses a recorded change, restoring the state it replaced. **Mutating — requires `confirmExecution`.**
+* **Arguments:** `id` (**required**), `confirmExecution` (**required**).
+
+Appends a compensating entry rather than editing history. A second undo of the same change is refused, as is one recorded as failed.
+
+#### `sfdt_permissions_matrix`
+Shows what each profile and permission set **grants** on one object — object-level CRUD plus per-field read/edit. Read-only.
+* **Arguments:**
+  * `object` (string, **required**): sObject API name.
+  * `user` (string, optional): username; narrows to that user's profile, permission sets and permission set groups. Requires an org.
+  * `offline` (boolean, optional): read from the repository instead of an org. Cannot be combined with `user` — assignments are not in source.
+  * `org` (string, optional): org alias.
+
+**Never describe this result as "effective", "actual" or "final" access.** Muting permission sets subtract access inside a permission set group and are Metadata-API only, so they cannot be queried and a user's real access may be **less** than shown. Every response carries that caveat in `notes`; pass it on rather than dropping it.
+
+An empty result is not "nobody has access" — Salesforce stores a permission entry only where access differs from the default.
+
+#### `sfdt_permissions_drift`
+Compares what the org grants on an object against what the repository declares. Read-only.
+* **Arguments:**
+  * `object` (string, **required**): sObject API name.
+  * `org` (string, optional): org alias.
+
+Verdicts: `extra-in-org` (granted in the org but absent from source — the one a security review cares about), `missing-in-org`, `changed`, and `only-in-org` / `only-in-repo` for a parent present on one side. Parents are matched by label, since the org knows them by id and the repo by filename.
+
+#### `sfdt_packages_list`
+Lists every package installed in the org, with its version and any annotation recorded in `.sfdt/packages.json`. Read-only.
+* **Arguments:**
+  * `org` (string, optional): org alias; defaults to `config.defaultOrg`.
+
+**Do not report `updateStatus` as though an API was checked.** Salesforce exposes no API for the latest available version of a managed package — AppExchange has no public API, and `SubscriberPackageVersion` is queryable only in a Dev Hub for packages you own. `update-available` means the installed version is behind one a **human recorded**; `unknown` means nothing was recorded to compare against, which is *not* "up to date"; `ahead-of-record` means the note is stale, not the org.
+
+#### `sfdt_packages_compare`
+Compares installed package versions between two orgs — the one update question that is fully answerable, since both are already authenticated. Read-only.
+* **Arguments:**
+  * `source` (string, **required**): source org alias.
+  * `target` (string, optional): target org alias; defaults to `config.defaultOrg`.
+
+Verdicts: `same`, `source-ahead`, `target-ahead`, `only-in-source`, `only-in-target`, and `unknown` — installed in both but a version could not be read. `unknown` is **not** the same as matching.
+
+#### `sfdt_packages_note`
+Records the vendor URL, the latest confirmed version, and the internal owner for one package. **Mutating — requires `confirmExecution`.**
+* **Arguments:**
+  * `namespace` (string, **required**): namespace prefix, or the name for an unmanaged package.
+  * `url`, `latest`, `owner`, `notes` (strings, optional).
+  * `confirmExecution` (boolean, **required**).
+
+Writes `.sfdt/packages.json`, a **committed repo file**, so the annotation is shared and code-reviewed rather than trapped on one machine. Merges additively — fields not supplied are left alone, including keys written by a newer sfdt. `latest` must parse as a version or the write is refused.
+
 #### `sfdt_flow_scan`
 Analyzes a Salesforce org's Flows for quality issues and anti-patterns (via `@sfdt/flow-core`) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Read-only.
 * **Arguments:**
@@ -236,9 +369,25 @@ Deletes a scratch org by alias/username. **Requires `confirmExecution`.**
 Inspects (`status`, read-only) or tops up (`fill`, requires `confirmExecution`) the scratch-org pool.
 * **Arguments:** `action` (`status` | `fill`, **required**), `size`, `confirmExecution` (required for `fill`).
 
+#### `sfdt_record_get`
+Reads one record and reports which fields are editable, and why the rest are not. Read-only.
+* **Arguments:** `id` (**required**), `sobject`, `org`.
+
+#### `sfdt_record_edit`
+Updates fields on one record. Non-editable and unknown fields are refused locally, with the reason, before anything is sent. **Requires `confirmExecution`.**
+* **Arguments:** `id` (**required**), `fields` (**required**, object of API name → value), `sobject`, `org`, `dryRun`, `confirmExecution` (**required**).
+
+#### `sfdt_record_clone`
+Creates a copy of a record from its createable fields, with optional overrides. **Requires `confirmExecution`.**
+* **Arguments:** `id` (**required**), `fields`, `sobject`, `org`, `dryRun`, `confirmExecution` (**required**).
+
 #### `sfdt_data_import`
 Imports a data set into the org. **Requires `confirmExecution`.**
 * **Arguments:** `set` (**required**), `org`, `confirmExecution` (**required**).
+
+#### `sfdt_data_load`
+Loads a bulk data set (`bulk.json`) into the org over Bulk API v2 — insert, or upsert by external id. **Requires `confirmExecution`.**
+* **Arguments:** `set` (**required**, must be a bulk data set), `org`, `wait` (minutes), `async`, `confirmExecution` (**required**).
 
 #### `sfdt_data_delete`
 Bulk-deletes a data set in the org. Destructive — **requires `confirmExecution`.**

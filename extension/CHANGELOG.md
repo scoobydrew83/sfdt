@@ -4,6 +4,59 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Added
+
+- **Delete a record from the inspector — off by default, and its own switch (P4-1 PR-4).** The
+  record inspector could read, edit and clone; the one thing it could not do was the one thing
+  you cannot take back. Delete now exists, and everything about how it ships is a consequence of
+  that asymmetry.
+
+  It has its **own feature id**, `record-delete`, rather than a flag inside Inspect Record. That
+  is not tidiness: the remote kill switch is a list of feature *ids* and nothing else, so a
+  boolean tucked inside another feature's settings would be local-only and could never be
+  disabled centrally. Two ids means an org can turn delete off across every browser while the
+  inspector keeps working — and the test suite pins exactly that, because it is the only
+  observation that proves the decision.
+
+  It ships **off**, and `enabledByDefault: false` is the entire mechanism — no settings-layer
+  machinery was added, because the runtime already honours the manifest flag. With the toggle
+  off the Delete control is **not built at all**: absent from the DOM, not hidden by CSS. For an
+  irreversible action, "there is no such control" is the honest state; a hidden button is still
+  reachable by anything that walks the tree.
+
+  Confirming means typing the **object's API name** — `Account`, `Invoice__c` — not the record
+  Id. The Id is sitting on screen to be copied, so typing it back proves nothing about intent,
+  while typing the object is a statement about what class of thing is being destroyed. The
+  dialog is the shared `confirmDialog` every other destructive surface uses.
+
+  A timed-out delete reports **"Delete outcome unknown"** and re-reads, never "not deleted" — the
+  same honesty the save path got in PR-2, and for the same reason: the worker never answered, so
+  the record may well be gone, and a confident denial is what invites the retry that deletes the
+  wrong thing next time. An org refusal keeps the record on screen with its message; a success
+  clears the inspector to its empty state, because leaving the fields of a deleted record
+  rendered invites an edit that cannot land.
+
+  No new permission: it is an ordinary REST call on the session you already have, over the same
+  worker-proxied path as every other call. `PRIVACY.md` says so explicitly.
+
+### Added
+
+- **Clone a record into a form you can review before anything is created (P4-1 PR-3).** The inspector header gains **Clone**, which stages a new record prefilled from the one on screen and creates nothing until you press **Create**. That ordering is the feature, not a preference: a record with a unique constraint or a required lookup mostly fails a one-click insert, and a click that silently mints a duplicate is the kind of unguarded write this project does not ship. Prefilled fields are the ones Salesforce says are settable *on insert* — a different question from the one edit mode asks, which is why an org with Set Audit Fields enabled can prefill `CreatedDate` here while an auto-number or formula is excluded from both. Everything else still appears in the form, greyed and carrying its reason, so nothing vanishes from the view just because it is out of the request body.
+- **A blank box on the clone form means "let the org decide", so it is omitted rather than sent as null** — the two differ whenever a field has a default value. `false` and `0` are values and are sent. The POST body is built by `buildCreateBody` in `lib/record-edit.ts`, a sibling of `buildDirtyDiff` rather than a flag on it: a diff asks what changed against a baseline and carries a field-level-security guard that exists to stop an unreadable field being nulled over, while a create has no baseline at all, and folding them together would leave one caller reading a filter written for the other.
+- **A rejected create explains itself exactly the way a rejected save does** — the org's message on the exact field, a banner naming any field it blames that is not on screen — and says *the record was not created*, never that no changes were saved. On success the new Id appears with **Open in Salesforce** and **Inspect**, which loads it into the inspector you are already in.
+
+### Changed
+
+- **Inspect Record edits every field with the control that field deserves, and tells you exactly what happened when you save (P4-1 PR-2).** Every non-boolean field used to get one plain `<input type="text">` — dates, picklists, numbers and lookups alike — and it wrote a *string* back while the loaded record held JSON-typed values, so `100` versus `'100'` made untouched numbers read as unsaved changes. Fields now render through `lib/record-edit.ts`'s classification: a `<select>` built from the describe's own picklist values, `date` / `datetime-local` / `time` inputs, a number input whose `step` comes from the field's scale, `email`/`tel`/`url` hints, a textarea, and a multi-select that reads back as an array. A `date` is still handled as a plain string end to end and never passes through `Date`, which is what stops the value shifting a day west of UTC; `datetime` and `time` carry their seconds and get a matching `step`, because an earlier minute-precision version silently rewrote `14:35:45` to `14:35:00` on fields nobody touched.
+- **A field you cannot edit now says why, instead of just refusing to accept typing.** Formula fields, auto-numbers, system and audit fields, unsupported types and fields your permissions do not cover all still appear in the table — nothing is filtered out of the *view*, only out of the payload — each carrying a short reason chip wired to its value with `aria-describedby`, and the full sentence on hover. The wording for the permissions case is deliberately non-committal ("read-only for you"): describe is evaluated per user, so a field *you* cannot edit is indistinguishable from one nobody can, and we do not assert a cause we cannot verify.
+- **One computation now answers "what changed".** The save bar and the PATCH body were two independent `!==` walks that could disagree with each other and with the editors; both are now `buildDirtyDiff`, which normalises before comparing, considers only fields it has classified editable, and — the security-relevant part — omits any field absent from the record payload, because a field hidden from you by field-level security arrives as `undefined` and must never be PATCHed as `null` over a value you were never allowed to see.
+- **Saving claims one of exactly three things, and never anything in between.** A PATCH is one DML transaction: Salesforce commits the whole body or rolls all of it back, so there is no partial apply to report. **Saved** re-reads the record from the org rather than trusting our own echo — the previous code promoted the values it *sent* to the new baseline, so formula fields, roll-up summaries, audit fields and anything a trigger touched quietly stopped matching the org. **No changes were saved** appears only when the org actually answered, with the rejection placed on the exact field that failed (and a banner naming any field the response blames that is not on screen), and your edits preserved verbatim so you fix and retry rather than retype. **Save outcome unknown** is the third, and it is the one that did not exist: when the request times out the worker never answered, so the write may well have committed — the record is reloaded and the UI says so, instead of reporting a bogus "No Salesforce session available" over a save that succeeded. The branch is taken from the error's own `sfdtKind` discriminant, never from matching its prose, and an error we cannot classify is treated as *unknown* rather than *rejected*, because claiming nothing was saved is only honest when the response arrived.
+- **A field error can no longer land on a row you are not looking at.** On a rejected save the field filter clears, null values are shown, and the view scrolls to the first bad row — that silent failure is precisely what putting errors on the exact field is meant to prevent.
+- **Escape and clicking the backdrop ask before discarding unsaved edits**; the ✕ still closes immediately, because pressing it is the decision. `ui/present-view.ts` gains an optional `confirmClose` veto that only the dismissal paths consult.
+- **Inspect Record uses the shared describe cache** instead of its own private copy of `FieldDescribe` and its own two maps — the second describe layer the design forbids, and the reason picklist values and permission flags were on the wire but unreadable.
+
+  Not yet verified against a live org: the manual acceptance checks in the mini-plan (a `date` edited near midnight, a `datetime` round trip, a throttled network producing the unknown-outcome path, and an FLS-restricted field's reason) need an unpacked build and a real org, and remain outstanding.
+
 ## [0.13.0] - 2026-08-12
 
 ### Added

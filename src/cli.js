@@ -48,6 +48,13 @@ import { registerRetrofitCommand } from './commands/retrofit.js';
 import { registerHistoryCommand } from './commands/history.js';
 import { registerVersionsCommand } from './commands/versions.js';
 import { registerSoqlCommand } from './commands/soql.js';
+import { registerRecordCommand } from './commands/record.js';
+import { registerFieldCommand } from './commands/field.js';
+import { registerEventsCommand } from './commands/events.js';
+import { registerPackagesCommand } from './commands/packages.js';
+import { registerPermissionsCommand } from './commands/permissions.js';
+import { registerAutomationCommand } from './commands/automation.js';
+import { registerLedgerCommand } from './commands/ledger.js';
 import { formatSplash } from './lib/output.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -121,6 +128,13 @@ export function createCli() {
   registerHistoryCommand(program);
   registerVersionsCommand(program);
   registerSoqlCommand(program);
+  registerRecordCommand(program);
+  registerFieldCommand(program);
+  registerEventsCommand(program);
+  registerPackagesCommand(program);
+  registerPermissionsCommand(program);
+  registerAutomationCommand(program);
+  registerLedgerCommand(program);
 
   // Explicit `sfdt version` subcommand (mirrors the -v / --version flag)
   program

@@ -26,6 +26,8 @@ import {
   CHECK_IDS,
   AUDIT_DEFAULTS,
   checkAuditTrail,
+  classifyAuditAction,
+  detectVelocityAnomalies,
   checkLicenses,
   checkMfa,
   checkMfaReadiness,
@@ -600,5 +602,162 @@ describe('runAudit', () => {
     const snapshot = await runAudit('dev', { checks: ['licenses'] });
     expect(snapshot.checks).toHaveLength(1);
     expect(snapshot.checks[0].id).toBe('licenses');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Setup Audit Trail: classification, velocity, truncation honesty
+// ---------------------------------------------------------------------------
+
+describe('classifyAuditAction', () => {
+  it('rates identity and access changes critical', () => {
+    for (const action of [
+      'changedpasswordpolicy', 'changedsessionsettings', 'manageipranges',
+      'suOrgAdminLogin', 'changedProfile', 'PermSetAssign', 'connectedapp',
+      'namedcredential', 'certificate',
+    ]) {
+      expect(classifyAuditAction({ Action: action })?.severity, action).toBe('critical');
+    }
+  });
+
+  it('rates routine-but-notable changes elevated', () => {
+    for (const action of ['deleted', 'frozeUser', 'deactivateuser', 'resetpassword']) {
+      expect(classifyAuditAction({ Action: action })?.severity, action).toBe('elevated');
+    }
+  });
+
+  it('prefers the more specific match — a policy change is not just a password change', () => {
+    const c = classifyAuditAction({ Action: 'changedpasswordpolicy' });
+    expect(c).toEqual({ severity: 'critical', category: 'Password policy' });
+  });
+
+  it('matches on Section as well as Action, case-insensitively', () => {
+    expect(classifyAuditAction({ Action: 'x', Section: 'Certificate and Key Management' })?.category)
+      .toBe('Certificate or key');
+  });
+
+  it('returns null for benign rows and tolerates empty ones', () => {
+    expect(classifyAuditAction({ Action: 'changedLayout', Section: 'Page Layouts' })).toBeNull();
+    expect(classifyAuditAction({})).toBeNull();
+    expect(classifyAuditAction(null)).toBeNull();
+  });
+});
+
+describe('detectVelocityAnomalies', () => {
+  const NOW = Date.parse('2026-08-22T12:00:00Z');
+  const opts = { now: NOW, lookbackDays: 30, windowHours: 24, factor: 3, minEvents: 10 };
+  const rowsAt = (user, count, hoursAgo) =>
+    Array.from({ length: count }, () => ({
+      CreatedBy: { Name: user },
+      CreatedDate: new Date(NOW - hoursAgo * 3600_000).toISOString(),
+    }));
+
+  it('flags a user well above their own baseline, reporting both rates', () => {
+    const rows = [...rowsAt('Mallory', 40, 2), ...rowsAt('Mallory', 29, 24 * 10)];
+    const [a] = detectVelocityAnomalies(rows, opts);
+    expect(a.user).toBe('Mallory');
+    expect(a.observed).toBe(40);
+    // 40/day observed against ~1/day baseline.
+    expect(a.baselinePerDay).toBeCloseTo(1, 1);
+    expect(a.ratio).toBeGreaterThanOrEqual(3);
+  });
+
+  it('does not flag a small absolute burst — 1 to 3 changes is not an incident', () => {
+    const rows = [...rowsAt('Quiet', 3, 2), ...rowsAt('Quiet', 29, 24 * 10)];
+    expect(detectVelocityAnomalies(rows, opts)).toEqual([]);
+  });
+
+  it('does not flag a first-seen user — no baseline is not a spike', () => {
+    const rows = rowsAt('Newcomer', 50, 2);
+    expect(detectVelocityAnomalies(rows, opts)).toEqual([]);
+  });
+
+  it('leaves a steady heavy user alone', () => {
+    // 20/day now, ~20/day for the previous 29 days.
+    const rows = [...rowsAt('Busy', 20, 2), ...rowsAt('Busy', 580, 24 * 10)];
+    expect(detectVelocityAnomalies(rows, opts)).toEqual([]);
+  });
+
+  it('attributes delegated (Login-As) work to the delegate', () => {
+    const rows = [
+      ...Array.from({ length: 40 }, () => ({
+        DelegateUser: 'contractor@x.com',
+        CreatedDate: new Date(NOW - 2 * 3600_000).toISOString(),
+      })),
+      ...Array.from({ length: 29 }, () => ({
+        DelegateUser: 'contractor@x.com',
+        CreatedDate: new Date(NOW - 240 * 3600_000).toISOString(),
+      })),
+    ];
+    expect(detectVelocityAnomalies(rows, opts)[0].user).toBe('contractor@x.com');
+  });
+
+  it('ignores rows with an unparseable date rather than throwing', () => {
+    const rows = [{ CreatedBy: { Name: 'X' }, CreatedDate: 'not-a-date' }, ...rowsAt('X', 40, 2), ...rowsAt('X', 29, 240)];
+    expect(() => detectVelocityAnomalies(rows, opts)).not.toThrow();
+    expect(detectVelocityAnomalies(rows, opts)[0].observed).toBe(40);
+  });
+
+  it('sorts the loudest spike first', () => {
+    const rows = [
+      ...rowsAt('Small', 12, 2), ...rowsAt('Small', 90, 240),
+      ...rowsAt('Huge', 60, 2), ...rowsAt('Huge', 29, 240),
+    ];
+    const out = detectVelocityAnomalies(rows, opts);
+    expect(out[0].user).toBe('Huge');
+  });
+});
+
+describe('checkAuditTrail severity and truncation', () => {
+  const row = (over) => ({
+    Action: 'changedLayout', Section: 'Page Layouts',
+    CreatedDate: new Date().toISOString(), CreatedBy: { Name: 'Admin' }, ...over,
+  });
+
+  it('FAILS on a critical change, so it gates CI and clears the notify threshold', async () => {
+    query.mockResolvedValueOnce([row({ Action: 'changedpasswordpolicy' })]);
+    const r = await checkAuditTrail('dev');
+    expect(r.status).toBe('fail');
+    expect(r.findings[0].severity).toBe('critical');
+    expect(r.findings[0].category).toBe('Password policy');
+    expect(r.summary).toMatch(/1 critical/);
+  });
+
+  it('only warns when everything found is elevated', async () => {
+    query.mockResolvedValueOnce([row({ Action: 'deleted' })]);
+    const r = await checkAuditTrail('dev');
+    expect(r.status).toBe('warn');
+    expect(r.summary).toMatch(/1 elevated/);
+  });
+
+  it('fails on a velocity anomaly even with no suspect action at all', async () => {
+    const now = Date.now();
+    const rows = [
+      ...Array.from({ length: 40 }, () => row({ CreatedDate: new Date(now - 3600_000).toISOString() })),
+      ...Array.from({ length: 29 }, () => row({ CreatedDate: new Date(now - 240 * 3600_000).toISOString() })),
+    ];
+    query.mockResolvedValueOnce(rows);
+    const r = await checkAuditTrail('dev');
+    expect(r.status).toBe('fail');
+    const anomaly = r.findings.find((f) => f.anomaly === 'velocity');
+    expect(anomaly.user).toBe('Admin');
+    expect(anomaly.ratio).toBeGreaterThanOrEqual(3);
+    expect(r.summary).toMatch(/above 3× their own baseline/);
+  });
+
+  it('reports truncation instead of presenting a partial scan as clean', async () => {
+    query.mockResolvedValueOnce(Array.from({ length: 5 }, () => row()));
+    const r = await checkAuditTrail('dev', { maxRows: 5 });
+    expect(r.summary).toMatch(/TRUNCATED at 5 rows/);
+    // The baseline half is exactly what a truncated window loses, so velocity
+    // must not be claimed off it.
+    expect(r.summary).toMatch(/velocity was skipped/);
+    expect(r.findings.some((f) => f.anomaly === 'velocity')).toBe(false);
+  });
+
+  it('puts the row cap into the query', async () => {
+    query.mockResolvedValueOnce([]);
+    await checkAuditTrail('dev', { maxRows: 1234 });
+    expect(query.mock.calls[0][1]).toContain('LIMIT 1234');
   });
 });

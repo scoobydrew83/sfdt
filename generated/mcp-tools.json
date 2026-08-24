@@ -202,6 +202,192 @@
       ]
     },
     {
+      "name": "sfdt_field_impact",
+      "description": "Show what WRITES a Salesforce field — flows, workflow field updates and Apex — with each finding marked confirmed (the metadata states the write) or inferred (a lead only). The result carries scope notes saying what was NOT scanned; an empty row list means no writer was found by the bounded sources scanned, never that none exists. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "field",
+        "org",
+        "links"
+      ]
+    },
+    {
+      "name": "sfdt_field_usage",
+      "description": "Sweep EVERY field on an object for references, to find cleanup candidates. Batches the dependency lookup so N fields cost ceil(N/200) queries. Fields come back in three states: unreferenced (nothing found), referenced, and UNKNOWN (not scanned — a standard field has no CustomField record, so a dependency sweep can say nothing about it). Never conflate unknown with unreferenced. With population=true it also counts non-null values, and only then can a field be flagged safeToRemove: unreferenced AND empty AND not required/unique. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "object",
+        "offline",
+        "population",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_events_list",
+      "description": "List every subscribable streaming channel in the org — custom and standard platform events, custom channels, and Change Data Capture entities — with each channel's Bayeux path. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_events_tail",
+      "description": "Subscribe to a platform event or CDC channel and collect events. ALWAYS bounded — it returns after timeoutSeconds, or earlier once max events arrive or an expectation matches. Set replay to \"all\" to receive events already in the retention window (roughly 24h), which is how you inspect something that has already happened. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "channel",
+        "replay",
+        "timeoutSeconds",
+        "max",
+        "expect",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_events_publish",
+      "description": "Publish one platform event to the org's event bus. This FIRES real subscribers — flows, triggers, and any external system listening. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "event",
+        "fields",
+        "org",
+        "dryRun",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_packages_list",
+      "description": "List every package installed in the org, with its version, and fold in any annotations recorded in .sfdt/packages.json. IMPORTANT: Salesforce exposes NO API for the latest available version of a managed package — AppExchange has no public API, and SubscriberPackageVersion is queryable only in a Dev Hub for packages you own. An updateStatus of \"update-available\" therefore means the installed version is behind a version a HUMAN recorded, never that an API was checked; \"unknown\" means nothing was recorded to compare against. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_packages_compare",
+      "description": "Compare installed package versions between two orgs — the one update question that IS fully answerable, since both orgs are already authenticated. Each package gets a verdict: same, source-ahead, target-ahead, only-in-source, only-in-target, or unknown (a version could not be read — NOT the same as matching). Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "source",
+        "target"
+      ]
+    },
+    {
+      "name": "sfdt_packages_note",
+      "description": "Record the vendor URL, the latest version you have confirmed, and the internal owner for one package. Writes .sfdt/packages.json, a COMMITTED repo file, so the annotation is shared and code-reviewed rather than trapped in one machine. Merges additively — fields not supplied are left alone. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "namespace",
+        "url",
+        "latest",
+        "owner",
+        "notes",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_permissions_matrix",
+      "description": "Show what each profile and permission set GRANTS on one object — object-level CRUD plus per-field read/edit. CRITICAL WORDING: these are GRANTED permissions, never \"effective\". Muting permission sets subtract access inside a permission set group and are Metadata-API only, so they cannot be queried and a user's real access may be LESS than shown. Do not describe the result as effective, actual, or final access. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "object",
+        "user",
+        "offline",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_permissions_drift",
+      "description": "Compare what the org grants on an object against what this repository declares in its profiles and permission sets. Verdicts: extra-in-org (granted in the org but absent from source — the one a security review cares about), missing-in-org, changed, and only-in-org / only-in-repo for a parent present on one side. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "object",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_automation_list",
+      "description": "List every automation component in the org and whether it is on — flows (including Process Builder), validation rules, duplicate rules, workflow rules and Apex triggers. Each row carries its writeMode, because the five types are NOT written the same way: flows, validation rules and duplicate rules are a Tooling record write, while workflow rules and Apex triggers require a METADATA DEPLOY (which in production runs tests). Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "type",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_automation_set",
+      "description": "Turn one automation component on or off. This changes how the org behaves for EVERY user immediately. The prior state is recorded in the ledger, so sfdt_ledger_undo can reverse it. For a workflow rule or Apex trigger this performs a metadata deploy, not a record update — in production that runs tests. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "type",
+        "name",
+        "enable",
+        "org",
+        "dryRun",
+        "production",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_permissions_grant",
+      "description": "Grant or remove field access for a PERMISSION SET. Profiles are refused: Salesforce does not permit direct updates to profile-owned permission entries, which must go through the Metadata API. The prior grant is recorded in the ledger so sfdt_ledger_undo can restore it. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "parent",
+        "fields",
+        "level",
+        "org",
+        "dryRun",
+        "production",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_permissions_fix",
+      "description": "Apply the field grants this REPOSITORY declares but the org is missing, for one object — the bulk fix, driven by code-reviewed source rather than a UI. Only missing-in-org grants are applied; grants the org has that source does not are deliberately left alone, because removing access nobody asked to remove is a different and riskier decision. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "object",
+        "org",
+        "dryRun",
+        "production",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_ledger_list",
+      "description": "List org changes sfdt has recorded, newest first, with the state each replaced. Status is derived: applied, failed, undone, or PENDING — pending means the change was recorded but its outcome never was, so the command may have been interrupted mid-write and the org should be checked. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "limit"
+      ]
+    },
+    {
+      "name": "sfdt_ledger_undo",
+      "description": "Reverse a recorded org change, restoring the state it replaced. Appends a compensating entry rather than editing history. Refuses a second undo of the same change, and refuses one that was recorded as failed. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "id",
+        "confirmExecution"
+      ]
+    },
+    {
       "name": "sfdt_flow_scan",
       "description": "Analyze a Salesforce org's Flows for quality issues and anti-patterns (via @sfdt/flow-core) — lists FlowDefinitions and fetches each active version from the org, then runs the health checks. Returns the flow-scan report. Read-only.",
       "confirmExecution": false,
@@ -255,6 +441,45 @@
       ]
     },
     {
+      "name": "sfdt_record_get",
+      "description": "Read one Salesforce record and report which fields are editable, and why the rest are not. Read-only.",
+      "confirmExecution": false,
+      "internal": false,
+      "inputProperties": [
+        "id",
+        "sobject",
+        "org"
+      ]
+    },
+    {
+      "name": "sfdt_record_edit",
+      "description": "Update fields on one record. Fields the org reports as non-editable are refused locally, with the reason, before anything is sent. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "id",
+        "fields",
+        "sobject",
+        "org",
+        "dryRun",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_record_clone",
+      "description": "Create a copy of a record from its createable fields, with optional overrides. Mutating — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "id",
+        "fields",
+        "sobject",
+        "org",
+        "dryRun",
+        "confirmExecution"
+      ]
+    },
+    {
       "name": "sfdt_data_export",
       "description": "Export a configured data set from the org to local files. Reads from the org and writes local data files (read-only with respect to the org).",
       "confirmExecution": false,
@@ -272,6 +497,19 @@
       "inputProperties": [
         "set",
         "org",
+        "confirmExecution"
+      ]
+    },
+    {
+      "name": "sfdt_data_load",
+      "description": "Load a bulk data set (bulk.json) into the org over Bulk API v2 — insert or upsert by external id. Mutating (writes records) — requires confirmExecution.",
+      "confirmExecution": true,
+      "internal": false,
+      "inputProperties": [
+        "set",
+        "org",
+        "wait",
+        "async",
         "confirmExecution"
       ]
     },

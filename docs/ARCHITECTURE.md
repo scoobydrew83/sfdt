@@ -113,6 +113,23 @@ its cwd inside the *user's* project. `/validate-npm-paths` checks this before re
 consuming code. A key present in the template but missing from the schema fails
 `validateConfig()` at runtime.
 
+**Three local stores, three different jobs.** `logs/history.db` (`run-history.js`) indexes RUNS —
+counts only, pruned to 200 per type. `logs/audit.json` (`audit-logger.js`) is the GUI's action log —
+a JSON array, rewritten whole, capped at 1000. `logs/ledger.jsonl` (`ledger.js`) is the change
+ledger: append-only, hash-chained, and the only one that records the STATE a change replaced. The
+first two are not append-only — one deletes rows, the other rewrites the file — which is exactly why
+the ledger is a third store rather than a column on either. It is also the one carve-out to golden
+principle #5: a ledger write that fails aborts the org write it was about to record.
+
+**`.sfdt/` also holds DATA files, which are not config and must not be treated as such.**
+`packages.json` (installed-package annotations, `src/lib/packages-runner.js`) and
+`telemetry-snapshot.json` live in the same directory but are deliberately absent from
+`CONFIG_FILES`: they are not merged into the config object, not validated by the AJV schema, and
+carry no three-place obligation. Registering one would drag arbitrary user data through
+`additionalProperties: false` and make every new field a schema change. Each data file owns its own
+reader, its own validation, and its own `version` field so a future shape change is detectable
+rather than silently mis-parsed.
+
 ## 5. Script vs native-Node ownership
 
 The original core is bash; new features are native Node. Current split:

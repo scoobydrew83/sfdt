@@ -2,31 +2,36 @@ import { CONTEXTS, extractRecordContext } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import {
   getSalesforceApi,
+  sfApiErrorKind,
+  SalesforceRestError,
   type SalesforceApiClient,
 } from '../lib/salesforce-api.js';
+import {
+  getDescribeCache,
+  type FieldDescribe,
+  type SObjectDescribe,
+  type GlobalDescribe,
+} from '../lib/describe-cache.js';
+import {
+  classifyFieldEditability,
+  formatForInput,
+  buildDirtyDiff,
+  buildCreateBody,
+  mapSaveErrors,
+  type FieldEditability,
+} from '../lib/record-edit.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
+import { setSfError } from '../ui/panels.js';
+import { confirmDialog } from '../ui/confirm-dialog.js';
 import { setTone, button, setLabel } from '../lib/ui-controls.js';
 import { copyToClipboard } from '../ui/clipboard.js';
 
-interface GlobalDescribe {
-  sobjects: { name: string; label: string; keyPrefix: string | null }[];
-}
-
-interface FieldDescribe {
-  name: string;
-  label: string;
-  type: string;
-  updateable: boolean;
-  relationshipName: string | null;
-  referenceTo: string[];
-}
-
-interface SObjectDescribe {
-  name: string;
-  label: string;
-  fields: FieldDescribe[];
-}
+// Describe types come from lib/describe-cache.ts. This file used to declare its
+// own narrow FieldDescribe (name/label/type/updateable/relationshipName/
+// referenceTo) and its own two caches; the shared ones already carry
+// picklistValues, scale, and the P4-1 permission block, and re-declaring them
+// here is exactly the second describe layer the design forbids.
 
 export function isRecordId(id: string): boolean {
   return typeof id === 'string'
@@ -35,10 +40,215 @@ export function isRecordId(id: string): boolean {
     && /[0-9]/.test(id.slice(0, 5));
 }
 
+/**
+ * What a save attempt turned out to be.
+ *
+ * A single PATCH is ONE DML transaction: Salesforce commits every field in the
+ * body or rolls the whole thing back. There is no per-field partial apply to
+ * report, so the UI claims exactly one of these and never anything in between.
+ *
+ * `unknown` is the one that matters. It exists because "rejected" is only a
+ * truthful claim when the response actually ARRIVED — a bus timeout means the
+ * worker never answered, so the write may well have committed. Reporting that
+ * as a failure invites a retry that duplicates it.
+ */
+export type SaveOutcome =
+  | { status: 'saved'; fieldCount: number }
+  | { status: 'rejected'; bannerText: string }
+  | { status: 'unknown'; detail: string }
+  | { status: 'no-session'; detail: string };
+
+/**
+ * The outcome as text.
+ *
+ * Text rather than DOM, and pure rather than inline, so the three claims can be
+ * asserted exactly — the same reason `formatBulkDeleteReport` in
+ * features/soql-bulk-delete.ts is shaped this way. The wording is the contract:
+ * "No changes were saved" and "Save outcome unknown" are what the design doc
+ * commits to, and a test that pins them is what stops a later edit softening
+ * the distinction back into one vague "save failed".
+ */
+export function formatSaveOutcome(outcome: SaveOutcome): string {
+  switch (outcome.status) {
+    case 'saved':
+      return outcome.fieldCount === 1 ? 'Saved 1 field.' : `Saved ${outcome.fieldCount} fields.`;
+    case 'rejected':
+      return `No changes were saved. ${outcome.bannerText}`.trim();
+    case 'unknown':
+      return `Save outcome unknown — the record has been reloaded. ${outcome.detail}`.trim();
+    case 'no-session':
+      return `Not saved — no Salesforce session. ${outcome.detail}`.trim();
+  }
+}
+
+/**
+ * Classify a caught save error into an outcome.
+ *
+ * Branches on `sfApiErrorKind`'s discriminant, never on the shape of the
+ * message — the same rule soql-bulk-delete follows. An unrecognised error is
+ * treated as `unknown` rather than `rejected`: if we cannot tell that the org
+ * answered, we must not claim nothing was saved.
+ */
+export function classifySaveError(err: unknown, bannerText: string): SaveOutcome {
+  const detail = err instanceof Error ? err.message : String(err);
+  switch (sfApiErrorKind(err)) {
+    case 'http-error':
+      return { status: 'rejected', bannerText };
+    case 'no-session':
+      return { status: 'no-session', detail };
+    case 'timeout':
+    default:
+      return { status: 'unknown', detail };
+  }
+}
+
+/** Short chip text per reason. The full sentence rides on `title`. */
+const READ_ONLY_CHIP: Readonly<Record<string, string>> = {
+  formula: 'formula',
+  'auto-number': 'auto-number',
+  system: 'system',
+  'unsupported-type': 'not editable here',
+  'no-permission': 'read-only for you',
+};
+
+/** A value carrying milliseconds needs a finer step, or the browser reports stepMismatch. */
+function stepFor(value: string): string {
+  return /\.\d{1,3}$/.test(value) ? '0.001' : '1';
+}
+
+/**
+ * Build the control for one editable field.
+ *
+ * The type-to-control mapping is the design's rule — a field is editable iff
+ * the DOM offers a native, lossless control and the wire format is unambiguous
+ * — so every branch here has a counterpart in `EDITABLE_TYPES`. The initial
+ * value always comes from `formatForInput`, never from `String(value)`: that is
+ * what keeps a `date` off the `Date` constructor (and so off the day-shift bug
+ * west of UTC) and what preserves the seconds a datetime carries.
+ */
+export function buildEditor(
+  doc: Document,
+  field: FieldDescribe,
+  editability: FieldEditability & { editable: true },
+  value: unknown,
+): HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement {
+  const formatted = formatForInput(field, value);
+
+  if (editability.type === 'picklist' || editability.type === 'multipicklist') {
+    const select = doc.createElement('select');
+    select.className = 'sfdt-field';
+    if (editability.type === 'multipicklist') select.multiple = true;
+    else {
+      const blank = doc.createElement('option');
+      blank.value = '';
+      blank.textContent = '(none)';
+      select.appendChild(blank);
+    }
+    const selected = new Set(Array.isArray(formatted) ? formatted : [String(formatted)]);
+    // Decision 5: a dependent picklist renders its FULL value set. `validFor`
+    // is a base64 bitmap and decoding it is its own correctness surface; the
+    // org rejects an invalid combination, and that rejection lands on this
+    // exact field because the error mapping makes it.
+    for (const pv of field.picklistValues ?? []) {
+      const opt = doc.createElement('option');
+      opt.value = pv.value;
+      opt.textContent = pv.label || pv.value;
+      if (selected.has(pv.value)) opt.selected = true;
+      select.appendChild(opt);
+    }
+    // An unrestricted picklist accepts values outside the list, so the current
+    // value must survive even when the describe has never heard of it.
+    for (const v of selected) {
+      if (!v) continue;
+      if (!(field.picklistValues ?? []).some((pv) => pv.value === v)) {
+        const opt = doc.createElement('option');
+        opt.value = v;
+        opt.textContent = `${v} (not in picklist)`;
+        opt.selected = true;
+        select.appendChild(opt);
+      }
+    }
+    // Setting `selected` on an option appended after the others does not
+    // reliably move a single-select's value — say it outright.
+    if (!select.multiple) {
+      const first = [...selected][0];
+      if (first !== undefined) select.value = String(first);
+    }
+    if (field.dependentPicklist === true) {
+      select.title = `Depends on ${field.controllerName ?? 'another field'} — invalid combinations are rejected on save.`;
+    }
+    return select;
+  }
+
+  if (editability.type === 'textarea') {
+    const ta = doc.createElement('textarea');
+    ta.className = 'sfdt-field';
+    ta.rows = 3;
+    ta.value = String(formatted);
+    return ta;
+  }
+
+  const input = doc.createElement('input');
+  input.className = 'sfdt-field';
+  const text = String(formatted);
+  switch (editability.type) {
+    case 'int': case 'double': case 'long': case 'currency': case 'percent':
+      input.type = 'number';
+      if (typeof field.scale === 'number' && field.scale > 0) {
+        input.step = (1 / 10 ** field.scale).toFixed(field.scale);
+      }
+      break;
+    case 'date':
+      input.type = 'date';
+      break;
+    case 'datetime':
+      input.type = 'datetime-local';
+      input.step = stepFor(text);
+      break;
+    case 'time':
+      input.type = 'time';
+      input.step = stepFor(text);
+      break;
+    // No client-side format validation on these three — the server is
+    // authoritative, and a browser that refuses a value the org would have
+    // accepted is a worse failure than a round trip.
+    case 'email': input.type = 'email'; break;
+    case 'phone': input.type = 'tel'; break;
+    case 'url': input.type = 'url'; break;
+    case 'reference':
+      input.type = 'text';
+      input.placeholder = (field.referenceTo ?? []).join(', ') || 'Record Id';
+      break;
+    default:
+      input.type = 'text';
+  }
+  input.value = text;
+  return input;
+}
+
+/** Read a control back. Multi-selects yield an array; everything else its string. */
+export function readEditor(el: HTMLElement): unknown {
+  if (el instanceof HTMLSelectElement && el.multiple) {
+    return Array.from(el.selectedOptions).map((o) => o.value);
+  }
+  if (el instanceof HTMLInputElement && el.type === 'checkbox') return el.checked;
+  return (el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value;
+}
+
 export interface InspectRecordOptions {
   doc?: Document;
   win?: Window;
   api?: SalesforceApiClient;
+  /**
+   * Whether the `record-delete` capability is available right now.
+   *
+   * A callback rather than a boolean because the remote kill switch refreshes
+   * while the page is open — a value captured at construction would go stale
+   * exactly when it matters. Defaults to **false**: a caller that forgets to
+   * pass it gets no Delete button, which is the correct direction to fail for
+   * an irreversible action.
+   */
+  canDelete?: () => boolean;
 }
 
 /** The Inspect Record feature, plus an imperative opener for the context menu. */
@@ -51,39 +261,60 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
   const doc = options.doc ?? document;
   const win = options.win ?? window;
   const api = options.api ?? getSalesforceApi();
+  const canDelete = options.canDelete ?? (() => false);
 
   let view: ViewHandle | null = null;
-  let globalDescribeCached: GlobalDescribe | null = null;
-  const sobjectDescribesCached = new Map<string, SObjectDescribe>();
+  // The shared cache, not a private one: it already de-duplicates describes
+  // across every feature in the page, so the inspector's second look at an
+  // object it has seen is free rather than merely cheap.
+  const describes = getDescribeCache(api);
 
   function close(): void {
     view?.close();
     view = null;
   }
 
-  async function getGlobalDescribe(): Promise<GlobalDescribe> {
-    if (globalDescribeCached) return globalDescribeCached;
-    const apiVersion = api.apiVersion;
-    const data = await api.apiGet<GlobalDescribe>(`/services/data/${apiVersion}/sobjects/`);
-    globalDescribeCached = data && Array.isArray(data.sobjects) ? data : { sobjects: [] };
-    return globalDescribeCached;
+  /**
+   * Await a DescribeCache entry.
+   *
+   * The cache is built for reactive surfaces: it answers synchronously with
+   * `{status:'loading'}` and notifies subscribers when the fetch lands. The
+   * inspector's flow is `await`-shaped, so rather than restructure it — or,
+   * worse, keep a private second cache alongside — this waits on the cache's
+   * own notification. One cache, two consumption styles.
+   */
+  function awaitEntry<T>(read: () => { status: string; data?: T; error?: string }): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const settle = (): boolean => {
+        const entry = read();
+        if (entry.status === 'ready' && entry.data !== undefined) {
+          resolve(entry.data);
+          return true;
+        }
+        if (entry.status === 'error') {
+          // The cache has already annotated this with the org's errorCode and
+          // guidance; re-wrapping it would only bury that.
+          reject(new Error(entry.error ?? 'Describe failed'));
+          return true;
+        }
+        return false;
+      };
+      if (settle()) return;
+      const unsubscribe = describes.subscribe(() => {
+        if (settle()) unsubscribe();
+      });
+    });
   }
 
   async function getSObjectDescribe(name: string): Promise<SObjectDescribe> {
-    const key = name.toLowerCase();
-    const cached = sobjectDescribesCached.get(key);
-    if (cached) return cached;
-    const apiVersion = api.apiVersion;
-    const data = await api.apiGet<SObjectDescribe>(`/services/data/${apiVersion}/sobjects/${name}/describe`);
-    const enriched = data && Array.isArray(data.fields) ? data : { name, label: name, fields: [] };
-    sobjectDescribesCached.set(key, enriched);
-    return enriched;
+    const data = await awaitEntry<SObjectDescribe>(() => describes.getSObject('rest', name));
+    return data && Array.isArray(data.fields) ? data : ({ name, label: name, fields: [] } as SObjectDescribe);
   }
 
   async function resolveSObjectFromId(id: string): Promise<string | null> {
     const prefix = id.slice(0, 3);
-    const globalDesc = await getGlobalDescribe();
-    const match = globalDesc.sobjects.find((s) => s.keyPrefix === prefix);
+    const globalDesc = await awaitEntry<GlobalDescribe>(() => describes.getGlobal('rest'));
+    const match = globalDesc?.sobjects?.find((sobj) => sobj.keyPrefix === prefix);
     return match ? match.name : null;
   }
 
@@ -120,6 +351,29 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     jsonTabBtn.type = 'button';
     jsonTabBtn.textContent = 'JSON';
     viewToggleRow.append(fieldsTabBtn, jsonTabBtn);
+
+    // Clone sits with the view toggle because it acts on the record identity,
+    // not on the current view of it. Hidden until a record is loaded.
+    const headerRow = doc.createElement('div');
+    headerRow.className = 'sfdt-row';
+    const cloneBtn = button({ label: 'Clone', iconName: 'copy', small: true, doc });
+    cloneBtn.style.display = 'none';
+    // Constructed once (so its listener is attached once) but MOUNTED only when
+    // the capability gate passes — absent from the DOM, not merely hidden. A
+    // display:none button is still reachable by a query, by assistive tech in
+    // some configurations, and by anything walking the tree; for an
+    // irreversible action the honest state is "there is no such control".
+    const deleteBtn = button({ label: 'Delete', iconName: 'trash', variant: 'danger', small: true, doc });
+    headerRow.append(viewToggleRow, cloneBtn);
+
+    /** Mount or unmount Delete to match the gate. Re-checked on every load. */
+    function syncDeleteAffordance(): void {
+      if (canDelete()) {
+        if (!deleteBtn.isConnected) headerRow.appendChild(deleteBtn);
+      } else if (deleteBtn.isConnected) {
+        deleteBtn.remove();
+      }
+    }
 
     const toolbar = doc.createElement('div');
     toolbar.className = 'sfdt-toolbar';
@@ -178,10 +432,23 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     jsonContainer.appendChild(jsonPre);
     body.appendChild(jsonContainer);
 
+    // Clone: a staged create form. Deliberately a third view rather than a
+    // dialog over the table — it is a different record being composed, and
+    // showing it in place makes that unmistakable.
+    const cloneContainer = doc.createElement('div');
+    cloneContainer.className = 'sfdt-clone-form';
+    cloneContainer.style.cssText = 'display: none; flex-direction: column; gap: var(--sfdt-space-2); padding: var(--sfdt-space-4); flex: 1; min-height: 0; overflow: auto;';
+    body.appendChild(cloneContainer);
+
     // Footer carries two strips: the save bar (only while dirty) above a
     // permanent count line, so "how much am I not seeing?" is always answerable
     // — the filter and the null toggle both hide rows silently otherwise.
     const footer = doc.createElement('div');
+    // Form-level save banner: object-level validation rules, row locks, trigger
+    // addError() on the record, and any field error whose field is not rendered
+    // (which is why the banner names that field explicitly).
+    const saveBanner = doc.createElement('div');
+    saveBanner.style.display = 'none';
     const saveBar = doc.createElement('div');
     saveBar.className = 'sfdt-toolbar sfdt-toolbar-foot';
     saveBar.style.display = 'none';
@@ -204,17 +471,22 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     const hiddenNote = doc.createElement('span');
     hiddenNote.className = 'sfdt-caps';
     statusBar.append(countNote, hiddenNote);
-    footer.append(saveBar, statusBar);
+    footer.append(saveBanner, saveBar, statusBar);
+
+    // Assigned once the record state below exists. presentView only calls it on
+    // a dismissal (Escape, backdrop), never on an explicit close().
+    let confirmDiscard: () => boolean = () => true;
 
     view = presentView({
       title: 'Inspect Record',
       iconName: 'record',
       subtitle: recordInfo,
-      headerActions: viewToggleRow,
+      headerActions: headerRow,
       body,
       footer,
       doc,
       width: '900px',
+      confirmClose: () => confirmDiscard(),
       onClose: () => {
         view = null;
       },
@@ -226,7 +498,14 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
     let editedRecordData: Record<string, unknown> = {};
     let rawRecordData: Record<string, unknown> = {};
     let activeDescribe: SObjectDescribe | null = null;
-    let currentView: 'fields' | 'json' = 'fields';
+    let currentView: 'fields' | 'json' | 'clone' = 'fields';
+    let cloneValues: Record<string, unknown> = {};
+    let cloneErrors = new Map<string, string>();
+    // Field errors from the last rejected save, keyed lower-case because the org
+    // echoes back its own casing, not the describe's.
+    let fieldErrorMessages = new Map<string, string>();
+    // Set during a render pass so a failed save can scroll to the first bad row.
+    let firstErrorRow: HTMLElement | null = null;
 
     // `.sfdt-segment > button[aria-pressed="true"]` carries the appearance; this
     // only has to state the truth the CSS selects on.
@@ -240,18 +519,25 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
 
     function applyView(): void {
       const isJson = currentView === 'json';
-      styleToggleBtn(fieldsTabBtn, !isJson);
+      const isClone = currentView === 'clone';
+      const isFields = currentView === 'fields';
+      styleToggleBtn(fieldsTabBtn, isFields);
       styleToggleBtn(jsonTabBtn, isJson);
-      filterWrap.style.display = isJson ? 'none' : 'block';
-      checkboxLabel.style.display = isJson ? 'none' : 'inline-flex';
-      statusBar.style.display = isJson ? 'none' : 'flex';
-      tableContainer.style.display = isJson ? 'none' : 'block';
+      filterWrap.style.display = isFields ? 'block' : 'none';
+      checkboxLabel.style.display = isFields ? 'inline-flex' : 'none';
+      statusBar.style.display = isFields ? 'flex' : 'none';
+      tableContainer.style.display = isFields ? 'block' : 'none';
       jsonContainer.style.display = isJson ? 'flex' : 'none';
+      cloneContainer.style.display = isClone ? 'flex' : 'none';
+      // The save bar belongs to the record being edited, not to the draft.
+      if (!isFields) saveBar.style.display = 'none';
+      else updateSaveBar();
       if (isJson) renderJson();
     }
 
     function renderFields(): void {
       if (!activeDescribe) return;
+      firstErrorRow = null;
       while (tableContainer.firstChild) tableContainer.removeChild(tableContainer.firstChild);
 
       const table = doc.createElement('table');
@@ -323,93 +609,88 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           tr.classList.add('sfdt-row-flagged');
         }
 
-        if (field.type === 'boolean') {
-          const chk = doc.createElement('input');
-          chk.type = 'checkbox';
-          chk.checked = !!rawValue;
-          chk.disabled = !field.updateable;
-          chk.addEventListener('change', () => {
-            editedRecordData[field.name] = chk.checked;
-            updateSaveBarVisibility();
-            renderFields();
-          });
-          tdValue.appendChild(chk);
-        } else if (field.updateable) {
-          const editWrapper = doc.createElement('div');
-          editWrapper.style.cssText = 'display: flex; align-items: center; justify-content: space-between; gap: var(--sfdt-space-2); width: 100%;';
-          const valSpan = doc.createElement('span');
-          valSpan.textContent = isNull ? '(null)' : valStr;
-          valSpan.style.cssText = isNull
-            ? 'color: var(--sfdt-color-text-muted); font-style: italic; cursor: pointer; flex: 1;'
-            : 'cursor: pointer; flex: 1;';
-          if (isRecordId(valStr)) {
-            setTone(valSpan, 'info');
-            valSpan.classList.add('sfdt-link');
-          }
+        const editability = classifyFieldEditability(field, 'update');
 
-          editWrapper.appendChild(valSpan);
-
-          const editInput = doc.createElement('input');
-          editInput.className = 'sfdt-field';
-          editInput.type = 'text';
-          editInput.setAttribute('aria-label', `${field.label} value`);
-          editInput.value = isNull ? '' : valStr;
-          editInput.style.cssText = 'display: none; flex: 1; padding: 2px 6px; border-color: var(--sfdt-color-brand);';
-          editWrapper.appendChild(editInput);
-
-          const startEdit = () => {
-            valSpan.style.display = 'none';
-            editInput.style.display = 'inline-block';
-            editInput.focus();
-          };
-
-          const finishEdit = () => {
-            valSpan.style.display = 'inline-block';
-            editInput.style.display = 'none';
-            const nextVal = editInput.value.trim() === '' ? null : editInput.value;
-            if (nextVal !== valStr) {
-              editedRecordData[field.name] = nextVal;
-              updateSaveBarVisibility();
-              renderFields();
-            }
-          };
-
-          valSpan.addEventListener('click', (e) => {
-            if (isRecordId(valStr) && e.ctrlKey) {
-              e.preventDefault();
-              void navigateToRecord(valStr);
-            } else {
-              startEdit();
-            }
-          });
-
-          editInput.addEventListener('blur', finishEdit);
-          editInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') finishEdit();
-            if (e.key === 'Escape') {
-              // Escape here means "abandon this cell edit", not "close the
-              // inspector" — presentAsModal now listens for Escape on the
-              // document, so without this the whole view would vanish and take
-              // every other unsaved edit with it.
-              e.stopPropagation();
-              editInput.value = isNull ? '' : valStr;
-              valSpan.style.display = 'inline-block';
-              editInput.style.display = 'none';
-            }
-          });
-
-          tdValue.appendChild(editWrapper);
-        } else {
-          // Read-only cell
+        if (!editability.editable) {
+          // AC-2: nothing is filtered out of the VIEW, only out of the payload.
+          // The row still renders, and it carries the reason — a field that
+          // simply refuses to accept typing, with no explanation, is the
+          // silent-drop this criterion exists to prevent.
           const readSpan = doc.createElement('span');
           readSpan.textContent = isNull ? '(null)' : valStr;
           if (isNull) {
-            readSpan.style.cssText = 'color: var(--sfdt-color-text-muted); font-style: italic;';
+            readSpan.className = 'sfdt-null';
           } else if (isRecordId(valStr)) {
-            readSpan.style.cssText = 'color: var(--sfdt-color-brand-text); text-decoration: underline; cursor: pointer;';
+            setTone(readSpan, 'info');
+            readSpan.classList.add('sfdt-link');
             readSpan.addEventListener('click', () => void navigateToRecord(valStr));
           }
-          tdValue.appendChild(readSpan);
+          const reasonChip = doc.createElement('span');
+          reasonChip.className = 'sfdt-pill sfdt-square';
+          reasonChip.id = `sfdt-why-${field.name}`;
+          const reasonLabel = READ_ONLY_CHIP[editability.reason] ?? 'read-only';
+          reasonChip.textContent = reasonLabel;
+          reasonChip.title = editability.message;
+          readSpan.setAttribute('aria-describedby', reasonChip.id);
+          const wrap = doc.createElement('div');
+          wrap.className = 'sfdt-row sfdt-row-between';
+          wrap.append(readSpan, reasonChip);
+          tdValue.appendChild(wrap);
+        } else if (field.type === 'boolean') {
+          const chk = doc.createElement('input');
+          chk.type = 'checkbox';
+          chk.checked = formatForInput(field, rawValue) === true;
+          chk.setAttribute('aria-label', `${field.label} value`);
+          chk.addEventListener('change', () => {
+            editedRecordData[field.name] = chk.checked;
+            updateSaveBar();
+            renderFields();
+          });
+          tdValue.appendChild(chk);
+        } else if (editability.editable) {
+          const control = buildEditor(doc, field, editability, rawValue);
+          control.setAttribute('aria-label', `${field.label} value`);
+          const commit = () => {
+            editedRecordData[field.name] = readEditor(control);
+            updateSaveBar();
+            renderFields();
+          };
+          // `change` rather than `input`: renderFields() rebuilds the whole
+          // table, so committing per keystroke would tear the focused control
+          // out from under the caret on every character.
+          control.addEventListener('change', commit);
+          if (control instanceof HTMLInputElement && control.type !== 'checkbox') {
+            control.addEventListener('blur', commit);
+            control.addEventListener('keydown', (e) => {
+              if ((e as KeyboardEvent).key === 'Enter') commit();
+              if ((e as KeyboardEvent).key === 'Escape') {
+                // Abandon this cell, not the inspector. present-view listens on
+                // the document, so without stopping this the whole view would
+                // close and take every other unsaved edit with it.
+                e.stopPropagation();
+                control.value = String(formatForInput(field, originalRecordData[field.name]));
+              }
+            });
+          }
+          const wrap = doc.createElement('div');
+          wrap.className = 'sfdt-row';
+          wrap.appendChild(control);
+          if (fieldErrorMessages.has(field.name.toLowerCase())) {
+            tr.classList.add('sfdt-row-error');
+            const err = doc.createElement('div');
+            err.className = 'sfdt-field-error';
+            err.style.cssText = 'white-space: pre-line; color: var(--sfdt-color-danger-text);';
+            err.id = `sfdt-err-${field.name}`;
+            err.setAttribute('role', 'alert');
+            err.textContent = fieldErrorMessages.get(field.name.toLowerCase()) ?? '';
+            control.setAttribute('aria-describedby', err.id);
+            const cell = doc.createElement('div');
+            cell.append(wrap, err);
+            tdValue.appendChild(cell);
+            if (!firstErrorRow) firstErrorRow = tr;
+          } else {
+            tdValue.appendChild(wrap);
+          }
         }
 
         tr.appendChild(tdLabel);
@@ -436,15 +717,290 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       statusBar.style.display = currentView === 'json' ? 'none' : 'flex';
     }
 
-    function updateSaveBarVisibility(): void {
-      let dirtyCount = 0;
-      for (const k of Object.keys(originalRecordData)) {
-        if (originalRecordData[k] !== editedRecordData[k]) dirtyCount += 1;
-      }
+    /**
+     * The one dirty computation.
+     *
+     * The save bar and the PATCH body are now the same call, so they cannot
+     * disagree — before P4-1 this file ran two independent `!==` walks for the
+     * two questions, and the editors wrote strings while the baseline held
+     * JSON-typed values, so an untouched number could read as dirty in one and
+     * clean in the other.
+     */
+    function currentDiff() {
+      return buildDirtyDiff(activeDescribe, originalRecordData, editedRecordData);
+    }
+
+    function updateSaveBar(): void {
+      const { changedFieldNames } = currentDiff();
+      const dirtyCount = changedFieldNames.length;
       saveBar.style.display = dirtyCount ? 'flex' : 'none';
       dirtyNote.textContent = dirtyCount === 1
         ? '1 unsaved change'
         : `${dirtyCount} unsaved changes`;
+    }
+
+    /** True while the record holds edits that have not reached the org. */
+    function isDirty(): boolean {
+      return currentDiff().changedFieldNames.length > 0;
+    }
+
+    /**
+     * Show or clear the form-level save banner.
+     *
+     * Rendered through the shared `setSfError` when there is an error to carry,
+     * so the org's own words and our guidance land as separate nodes — the org's
+     * text can be multi-line (an Apex compile error is), and re-splitting
+     * `err.message` by hand loses that.
+     */
+    function setSaveBanner(text: string | null, err?: unknown): void {
+      if (!text) {
+        saveBanner.style.display = 'none';
+        while (saveBanner.firstChild) saveBanner.removeChild(saveBanner.firstChild);
+        return;
+      }
+      saveBanner.style.display = 'block';
+      while (saveBanner.firstChild) saveBanner.removeChild(saveBanner.firstChild);
+      saveBanner.setAttribute('role', 'alert');
+      // Our verdict first — "No changes were saved" is the sentence the user
+      // needs before anything else — then the org's own words underneath it, in
+      // their own nodes.
+      const lead = doc.createElement('div');
+      lead.className = 'sfdt-cell-strong';
+      lead.textContent = text;
+      saveBanner.appendChild(lead);
+      if (err !== undefined) {
+        const orgWords = doc.createElement('div');
+        setSfError(orgWords, err, { doc });
+        saveBanner.appendChild(orgWords);
+      }
+    }
+
+    /**
+     * Re-read the record from the org and rebuild both maps from the response.
+     *
+     * Used after a success AND after an unknown outcome — in both cases the only
+     * trustworthy answer about what the record now holds is the server's.
+     */
+    async function reloadActiveRecord(): Promise<void> {
+      if (!activeRecordId || !activeSobjectName || !activeDescribe) return;
+      const apiVersion = api.apiVersion;
+      const fresh = await api.apiGet<Record<string, unknown>>(
+        `/services/data/${apiVersion}/sobjects/${activeSobjectName}/${activeRecordId}`,
+      );
+      rawRecordData = fresh ?? {};
+      originalRecordData = {};
+      editedRecordData = {};
+      for (const field of activeDescribe.fields) {
+        const val = rawRecordData[field.name];
+        originalRecordData[field.name] = val;
+        editedRecordData[field.name] = val;
+      }
+      renderFields();
+      updateSaveBar();
+      if (currentView === 'json') renderJson();
+    }
+
+    /**
+     * Seed the clone draft from the loaded record.
+     *
+     * Only `createable` fields are prefilled — asking the classification the
+     * CREATE question rather than the update one, which is what lets an org
+     * with Set Audit Fields prefill CreatedDate while an auto-number or formula
+     * is excluded in both modes.
+     */
+    function startClone(): void {
+      if (!activeDescribe) return;
+      cloneValues = {};
+      cloneErrors = new Map();
+      for (const field of activeDescribe.fields) {
+        if (!classifyFieldEditability(field, 'create').editable) continue;
+        cloneValues[field.name] = originalRecordData[field.name];
+      }
+      currentView = 'clone';
+      renderClone();
+      applyView();
+    }
+
+    /**
+     * Render the staged create form.
+     *
+     * Decision 6: clone does NOT insert on click. A record with unique
+     * constraints or required lookups mostly fails that way, and a click that
+     * silently mints a duplicate is the class of unguarded write this project
+     * does not ship. The user reviews the draft and presses Create.
+     */
+    function renderClone(): void {
+      if (!activeDescribe) return;
+      while (cloneContainer.firstChild) cloneContainer.removeChild(cloneContainer.firstChild);
+
+      const lead = doc.createElement('div');
+      lead.className = 'sfdt-caps';
+      lead.textContent = `New ${activeSobjectName} — prefilled from ${activeRecordId}. Nothing is created until you press Create.`;
+      cloneContainer.appendChild(lead);
+
+      const banner = doc.createElement('div');
+      banner.style.cssText = 'display: none; white-space: pre-line;';
+      banner.setAttribute('role', 'alert');
+      cloneContainer.appendChild(banner);
+
+      const table = doc.createElement('table');
+      table.className = 'sfdt-table';
+      const tbody = doc.createElement('tbody');
+      let firstBad: HTMLElement | null = null;
+
+      for (const field of activeDescribe.fields) {
+        const editability = classifyFieldEditability(field, 'create');
+        const tr = doc.createElement('tr');
+
+        const tdLabel = doc.createElement('td');
+        const strong = doc.createElement('span');
+        strong.className = 'sfdt-cell-strong';
+        strong.textContent = field.label;
+        tdLabel.appendChild(strong);
+
+        const tdApi = doc.createElement('td');
+        tdApi.className = 'sfdt-cell-code';
+        tdApi.textContent = field.name;
+
+        const tdValue = doc.createElement('td');
+        tdValue.classList.add('sfdt-anchor');
+
+        if (!editability.editable) {
+          // Same rule as edit mode: rendered, greyed, and carrying its reason —
+          // never dropped from the view just because it is out of the body.
+          const readSpan = doc.createElement('span');
+          readSpan.className = 'sfdt-null';
+          readSpan.textContent = String(originalRecordData[field.name] ?? '(null)');
+          const chip = doc.createElement('span');
+          chip.className = 'sfdt-pill sfdt-square';
+          chip.id = `sfdt-clone-why-${field.name}`;
+          const reasonLabel = READ_ONLY_CHIP[editability.reason] ?? 'read-only';
+          chip.textContent = reasonLabel;
+          chip.title = editability.message;
+          readSpan.setAttribute('aria-describedby', chip.id);
+          const wrap = doc.createElement('div');
+          wrap.className = 'sfdt-row sfdt-row-between';
+          wrap.append(readSpan, chip);
+          tdValue.appendChild(wrap);
+        } else {
+          const control = buildEditor(doc, field, editability, cloneValues[field.name]);
+          control.setAttribute('aria-label', `${field.label} value`);
+          control.addEventListener('change', () => {
+            cloneValues[field.name] = readEditor(control);
+          });
+          const cell = doc.createElement('div');
+          cell.appendChild(control);
+          const msg = cloneErrors.get(field.name.toLowerCase());
+          if (msg) {
+            tr.classList.add('sfdt-row-error');
+            const err = doc.createElement('div');
+            err.className = 'sfdt-field-error';
+            err.style.cssText = 'white-space: pre-line; color: var(--sfdt-color-danger-text);';
+            err.id = `sfdt-clone-err-${field.name}`;
+            err.setAttribute('role', 'alert');
+            err.textContent = msg;
+            control.setAttribute('aria-describedby', err.id);
+            cell.appendChild(err);
+            if (!firstBad) firstBad = tr;
+          }
+          tdValue.appendChild(cell);
+        }
+
+        tr.append(tdLabel, tdApi, tdValue);
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      cloneContainer.appendChild(table);
+
+      const actions = doc.createElement('div');
+      actions.className = 'sfdt-row';
+      const cancelClone = button({ label: 'Cancel', small: true, doc });
+      const createBtn = button({ label: 'Create', iconName: 'save', variant: 'primary', small: true, doc });
+      actions.append(cancelClone, createBtn);
+      cloneContainer.appendChild(actions);
+
+      const resultRow = doc.createElement('div');
+      resultRow.className = 'sfdt-row';
+      resultRow.style.display = 'none';
+      cloneContainer.appendChild(resultRow);
+
+      cancelClone.addEventListener('click', () => {
+        currentView = 'fields';
+        applyView();
+      });
+
+      createBtn.addEventListener('click', async () => {
+        const { body: createBody, includedFieldNames } = buildCreateBody(activeDescribe, cloneValues);
+        if (includedFieldNames.length === 0) {
+          showToast('Nothing to create — every field is empty or not settable on insert.', { doc, kind: 'warning' });
+          return;
+        }
+        cloneErrors = new Map();
+        banner.style.display = 'none';
+        createBtn.disabled = true;
+        setLabel(createBtn, 'Creating…');
+        try {
+          const apiVersion = api.apiVersion;
+          const created = await api.apiRequest<{ id?: string; Id?: string }>(
+            'POST',
+            `/services/data/${apiVersion}/sobjects/${activeSobjectName}`,
+            createBody,
+          );
+          const newId = created?.id ?? created?.Id ?? '';
+          showToast(`Created ${activeSobjectName} ${newId}`, { doc, kind: 'success' });
+          renderCloneResult(resultRow, newId);
+        } catch (err) {
+          // Identical mapping to a rejected save — one error path, so a create
+          // and an update explain themselves the same way.
+          const details = err instanceof SalesforceRestError ? err.details : [];
+          const rendered = (activeDescribe?.fields ?? []).map((f) => f.name);
+          const { fieldErrors, bannerErrors } = mapSaveErrors(details, rendered);
+          cloneErrors = new Map(fieldErrors.map((fe) => [fe.field.toLowerCase(), fe.message]));
+          const outcome = classifySaveError(err, bannerErrors.map((b) => b.text).join(' '));
+          const text = outcome.status === 'rejected'
+            ? formatSaveOutcome(outcome).replace('No changes were saved.', 'The record was not created.')
+            : formatSaveOutcome(outcome);
+          showToast(text, { doc, kind: outcome.status === 'unknown' ? 'warning' : 'error' });
+          renderClone();
+          const rerendered = cloneContainer.querySelector('.sfdt-row-error');
+          rerendered?.scrollIntoView({ block: 'center' });
+          const freshBanner = cloneContainer.querySelector('[role="alert"]') as HTMLElement | null;
+          if (freshBanner) {
+            freshBanner.style.display = 'block';
+            freshBanner.textContent = text;
+          }
+        } finally {
+          createBtn.disabled = false;
+          setLabel(createBtn, 'Create');
+        }
+      });
+
+      if (firstBad) firstBad.scrollIntoView({ block: 'center' });
+    }
+
+    /** The created-record row: its Id, and the two things you want next. */
+    function renderCloneResult(host: HTMLElement, newId: string): void {
+      while (host.firstChild) host.removeChild(host.firstChild);
+      host.style.display = 'flex';
+      const idSpan = doc.createElement('span');
+      idSpan.className = 'sfdt-mono';
+      idSpan.textContent = newId || '(no Id returned)';
+      setTone(idSpan, 'info');
+      host.appendChild(idSpan);
+      if (!newId) return;
+
+      const openBtn = button({ label: 'Open in Salesforce', iconName: 'external', small: true, doc });
+      openBtn.addEventListener('click', () => {
+        win.open(`${win.location.origin}/lightning/r/${activeSobjectName}/${newId}/view`, '_blank');
+      });
+      const inspectNew = button({ label: 'Inspect', iconName: 'search', small: true, doc });
+      inspectNew.addEventListener('click', () => {
+        idInput.value = newId;
+        currentView = 'fields';
+        applyView();
+        void loadRecord();
+      });
+      host.append(openBtn, inspectNew);
     }
 
     async function navigateToRecord(targetId: string): Promise<void> {
@@ -507,12 +1063,16 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
           editedRecordData[field.name] = val;
         }
 
+        fieldErrorMessages = new Map();
+        setSaveBanner(null);
         recordObj.textContent = `${sobject} · `;
         recordIdSpan.textContent = recordId;
 
         renderFields();
-        updateSaveBarVisibility();
+        updateSaveBar();
         viewToggleRow.style.display = 'inline-flex';
+        cloneBtn.style.display = 'inline-flex';
+        syncDeleteAffordance();
         applyView();
       } catch (err) {
         showToast(err instanceof Error ? err.message : String(err), { doc, kind: 'error' });
@@ -549,37 +1109,170 @@ export function createInspectRecordFeature(options: InspectRecordOptions = {}): 
       await copyToClipboard(JSON.stringify(rawRecordData, null, 2), { doc, win: win, label: 'Record JSON copied to clipboard' });
     });
 
+    // CONVENTIONS.md item 2: a surface holding unsaved input must not
+    // click-outside-dismiss. Escape and the backdrop now ask first; the ✕ and
+    // an explicit close() still go straight through, because pressing the close
+    // button IS the decision.
+    confirmDiscard = () => {
+      if (!isDirty()) return true;
+      const count = currentDiff().changedFieldNames.length;
+      return win.confirm(
+        `Discard ${count} unsaved change${count === 1 ? '' : 's'} to this record?`,
+      );
+    };
+
+    cloneBtn.addEventListener('click', startClone);
+
+    /**
+     * Delete the loaded record.
+     *
+     * Two gates, in this order: the capability must be on (checked again here,
+     * not just at render, so a kill switch that flipped after the button was
+     * drawn still stops the call), and the user must type the object's API name
+     * — decision 8. The phrase is the OBJECT, not the Id: an Id is sitting on
+     * screen to be copied, so typing it back proves nothing about intent, while
+     * typing `Account` is a statement about what class of thing is being
+     * destroyed. P4-2's bulk delete uses a different phrase for a different
+     * blast radius, deliberately not unified.
+     *
+     * The button is NOT disabled around the dialog — confirmDialog's caller
+     * contract: focus returns to whatever opened it, and a disabled element
+     * cannot receive focus, which strands a keyboard user on <body>.
+     */
+    deleteBtn.addEventListener('click', async () => {
+      if (!canDelete() || !activeRecordId || !activeSobjectName) return;
+      const confirmed = await confirmDialog({
+        title: `Delete this ${activeSobjectName}?`,
+        message: `${activeSobjectName} ${activeRecordId} will be deleted. This cannot be undone from here — a deleted record goes to the org's Recycle Bin, where retention is the org's setting, not ours.`,
+        confirmLabel: 'Delete record',
+        requireTyped: activeSobjectName,
+        doc,
+      });
+      if (!confirmed) return;
+
+      setLabel(deleteBtn, 'Deleting…');
+      try {
+        const apiVersion = api.apiVersion;
+        await api.apiRequest(
+          'DELETE',
+          `/services/data/${apiVersion}/sobjects/${activeSobjectName}/${activeRecordId}`,
+        );
+        showToast(`Deleted ${activeSobjectName} ${activeRecordId}`, { doc, kind: 'success' });
+        // Back to the empty state: the record on screen no longer exists, and
+        // leaving its fields rendered would invite an edit that cannot land.
+        resetToEmpty();
+      } catch (err) {
+        // Same three-state honesty as a save. A timed-out DELETE may well have
+        // committed, so saying "not deleted" would be a guess — and the retry
+        // it invites is harmless only if the guess was right.
+        const outcome = classifySaveError(err, '');
+        if (outcome.status === 'unknown') {
+          showToast(
+            `Delete outcome unknown — ${activeSobjectName} ${activeRecordId} may already be gone. Re-read before retrying.`,
+            { doc, kind: 'warning' },
+          );
+          await reloadActiveRecord().catch(() => resetToEmpty());
+        } else {
+          showToast(`Not deleted — ${err instanceof Error ? err.message : String(err)}`, { doc, kind: 'error' });
+        }
+      } finally {
+        setLabel(deleteBtn, 'Delete');
+      }
+    });
+
+    /** Clear the inspector back to "no record loaded". */
+    function resetToEmpty(): void {
+      activeRecordId = '';
+      activeSobjectName = '';
+      originalRecordData = {};
+      editedRecordData = {};
+      rawRecordData = {};
+      activeDescribe = null;
+      fieldErrorMessages = new Map();
+      setSaveBanner(null);
+      idInput.value = '';
+      recordObj.textContent = 'No record loaded';
+      recordIdSpan.textContent = '';
+      while (tableContainer.firstChild) tableContainer.removeChild(tableContainer.firstChild);
+      tableContainer.style.display = 'none';
+      saveBar.style.display = 'none';
+      statusBar.style.display = 'none';
+      viewToggleRow.style.display = 'none';
+      cloneBtn.style.display = 'none';
+      deleteBtn.remove();
+      currentView = 'fields';
+    }
+
     cancelChangesBtn.addEventListener('click', () => {
       editedRecordData = { ...originalRecordData };
-      updateSaveBarVisibility();
+      fieldErrorMessages = new Map();
+      setSaveBanner(null);
+      updateSaveBar();
       renderFields();
     });
 
     saveChangesBtn.addEventListener('click', async () => {
-      const patchBody: Record<string, unknown> = {};
-      for (const k of Object.keys(originalRecordData)) {
-        if (originalRecordData[k] !== editedRecordData[k]) {
-          patchBody[k] = editedRecordData[k];
-        }
-      }
-      if (Object.keys(patchBody).length === 0) return;
+      const { patchBody, changedFieldNames } = currentDiff();
+      if (changedFieldNames.length === 0) return;
+
+      // Clear last attempt's errors before this one, or a fixed field keeps its
+      // red message.
+      fieldErrorMessages = new Map();
+      setSaveBanner(null);
 
       saveChangesBtn.disabled = true;
       setLabel(saveChangesBtn, 'Saving…');
       try {
         const apiVersion = api.apiVersion;
+        // Note: patchBody has a null prototype (buildDirtyDiff builds it with
+        // Object.create(null) so a field named __proto__ lands as an own key).
+        // Don't call .hasOwnProperty on it or coerce it to a string.
         await api.apiRequest(
           'PATCH',
           `/services/data/${apiVersion}/sobjects/${activeSobjectName}/${activeRecordId}`,
-          patchBody
+          patchBody,
         );
-        showToast('Record saved successfully', { doc, kind: 'success' });
-        // Update original to match the newly saved state
-        originalRecordData = { ...editedRecordData };
-        updateSaveBarVisibility();
-        renderFields();
+        const outcome: SaveOutcome = { status: 'saved', fieldCount: changedFieldNames.length };
+        showToast(formatSaveOutcome(outcome), { doc, kind: 'success' });
+        // Re-GET rather than trusting our own echo. Formula fields, roll-up
+        // summaries, audit fields and anything a trigger touched are only
+        // knowable from the server's copy — the old
+        // `originalRecordData = { ...editedRecordData }` promoted the values we
+        // SENT to the baseline, so the record on screen quietly stopped being
+        // the record in the org.
+        await reloadActiveRecord();
       } catch (err) {
-        showToast(`Save failed: ${err instanceof Error ? err.message : String(err)}`, { doc, kind: 'error' });
+        const details = err instanceof SalesforceRestError ? err.details : [];
+        const rendered = (activeDescribe?.fields ?? []).map((f) => f.name);
+        const { fieldErrors, bannerErrors } = mapSaveErrors(details, rendered);
+        fieldErrorMessages = new Map(
+          fieldErrors.map((fe) => [fe.field.toLowerCase(), fe.message]),
+        );
+        const bannerText = bannerErrors.map((b) => b.text).join(' ');
+        const outcome = classifySaveError(err, bannerText);
+
+        if (outcome.status === 'unknown') {
+          // The worker never answered: the write MAY have committed. Say so and
+          // reload, so what the user sees next is the org's answer rather than
+          // our guess.
+          setSaveBanner(formatSaveOutcome(outcome));
+          showToast(formatSaveOutcome(outcome), { doc, kind: 'warning' });
+          await reloadActiveRecord();
+        } else {
+          setSaveBanner(formatSaveOutcome(outcome), err);
+          showToast(formatSaveOutcome(outcome), { doc, kind: 'error' });
+          // An error must never land on a row the current filter is hiding —
+          // that is the silent failure this whole criterion exists to prevent.
+          if (fieldErrors.length > 0) {
+            filterInput.value = '';
+            showNullsCheckbox.checked = true;
+          }
+          // Dirty edits are preserved verbatim: nothing was saved, so the user
+          // fixes and retries rather than retyping.
+          renderFields();
+          updateSaveBar();
+          firstErrorRow?.scrollIntoView({ block: 'center' });
+        }
       } finally {
         saveChangesBtn.disabled = false;
         setLabel(saveChangesBtn, 'Save Changes');

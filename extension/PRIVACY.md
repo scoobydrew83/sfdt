@@ -79,6 +79,15 @@ When you use a feature that calls the local bridge (e.g. "Deploy this Flow"), th
 
 **Generate query (SOQL Runner) — off by default.** When you switch this on and press Generate, the extension sends the description you typed plus a *schema table* for the objects involved — object and field API names, labels, data types, whether a field is required, and its inline help text — through the same local bridge. It does **not** send any record data: the prompt is assembled from the object describe only, and a check refuses the send outright if a value from the results table on screen ever appears in the assembled text. What the CLI then does with that prompt is the AI section below: it goes to whichever provider *you* configured, under your own API key. If you have not started the bridge, or the CLI project has `"features.ai": false`, nothing is sent and the panel tells you what to enable.
 
+**Delete record (Inspect Record) — off by default.** Deleting a record is the one thing the
+extension can do that you cannot undo from here, so it ships **off** and has its own toggle on
+the options page, separate from Inspect Record itself. With it off, no Delete control is built
+at all — it is absent from the page, not hidden. With it on, deleting still requires typing the
+object's API name to confirm. The deleted record goes to your org's Recycle Bin, whose retention
+is governed by your org's settings, not by this extension. **No new permission is involved:**
+the delete is an ordinary REST call against the Salesforce session you are already using, over
+the same worker-proxied path as every other call described above.
+
 ---
 
 ## Permissions

@@ -31,6 +31,20 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 export const AUDIT_DEFAULTS = {
   auditTrailLookbackDays: 30,
+  // Row cap for the SetupAuditTrail sweep. Deliberately a cap rather than an
+  // unbounded fetch: `sf data query` auto-paginates, but the whole result
+  // crosses a subprocess stdout buffer on its way back, so an unbounded sweep
+  // of a busy org trades a silent truncation for an ENOBUFS. The check reports
+  // when it hits this, which is the part that was missing.
+  auditTrailMaxRows: 5000,
+  // The most recent N hours are the observation window; the rest of the
+  // lookback is the baseline each user is measured against.
+  auditTrailVelocityWindowHours: 24,
+  // Observed daily rate must exceed this multiple of the user's own baseline.
+  auditTrailVelocityFactor: 3,
+  // …and clear this absolute floor, so a user going from 1 change to 3 is not
+  // an incident. Without it every quiet admin trips the multiple on any busy day.
+  auditTrailVelocityMinEvents: 10,
   licenseWarnThreshold: ORG_HEALTH_THRESHOLDS.usageAmber, // 0.75 (was 0.9 before flow-core unification)
   inactiveUserDays: ORG_HEALTH_THRESHOLDS.inactiveUserDays, // 90
   minApiVersion: ORG_HEALTH_THRESHOLDS.minApiVersionFloor, // 45
@@ -51,27 +65,124 @@ const SOAP_LOGIN_RETIREMENT = { minApi: 31, maxApi: 64 };
 const ECA_MIGRATION_NOTE =
   'Salesforce is moving Connected Apps to default-off (blocked until admin-approved); plan migration to External Client Apps.';
 
-// Setup-audit-trail actions/sections that warrant a closer look. Matched as
-// case-insensitive substrings against the Action and Section columns.
+/**
+ * Setup-audit-trail actions worth a closer look, each carrying a severity and a
+ * plain-English category.
+ *
+ * The list used to be flat strings, which made every hit equal: a deleted
+ * report and a changed password policy produced the same undifferentiated
+ * "suspicious change" line, and the check could only ever return `warn`. That
+ * is why it never gated anything.
+ *
+ * `critical` means the change alters who can get in or what they can reach —
+ * the class of change a reviewer wants to see the same day. `elevated` is worth
+ * reading but not worth failing a pipeline over. Patterns are matched
+ * case-insensitively as substrings against `Action` and `Section`, as before.
+ */
 const SUSPECT_PATTERNS = [
-  'deleted',
-  'changedpassword',
-  'resetpassword',
-  'suorgadminlogin', // "Login as" another user
-  'frozeuser',
-  'PermSetAssign',
-  'PermSetLicenseAssign',
-  'changedprofile',
-  'changedadmin',
-  'deactivateuser',
-  'connectedapp',
-  'remoteaccess',
-  'certificate',
-  'namedcredential',
-  'changedsessionsettings',
-  'changedpasswordpolicy',
-  'manageipranges',
+  // Authentication and session posture.
+  { pattern: 'changedpasswordpolicy', severity: 'critical', category: 'Password policy' },
+  { pattern: 'changedsessionsettings', severity: 'critical', category: 'Session settings' },
+  { pattern: 'manageipranges', severity: 'critical', category: 'Login IP ranges' },
+  { pattern: 'changedpassword', severity: 'elevated', category: 'Password change' },
+  { pattern: 'resetpassword', severity: 'elevated', category: 'Password reset' },
+  // Identity and impersonation.
+  { pattern: 'suorgadminlogin', severity: 'critical', category: 'Login as another user' },
+  { pattern: 'changedprofile', severity: 'critical', category: 'Profile assignment' },
+  { pattern: 'changedadmin', severity: 'critical', category: 'Admin change' },
+  { pattern: 'permsetassign', severity: 'critical', category: 'Permission set assignment' },
+  { pattern: 'permsetlicenseassign', severity: 'critical', category: 'Permission set licence' },
+  { pattern: 'frozeuser', severity: 'elevated', category: 'User frozen' },
+  { pattern: 'deactivateuser', severity: 'elevated', category: 'User deactivated' },
+  // Integration surface — each of these is a door into the org.
+  { pattern: 'connectedapp', severity: 'critical', category: 'Connected app' },
+  { pattern: 'remoteaccess', severity: 'critical', category: 'Remote access' },
+  { pattern: 'namedcredential', severity: 'critical', category: 'Named credential' },
+  { pattern: 'certificate', severity: 'critical', category: 'Certificate or key' },
+  // Destructive, but routine enough that it is not a pipeline stopper.
+  { pattern: 'deleted', severity: 'elevated', category: 'Deletion' },
 ];
+
+/**
+ * Classify one SetupAuditTrail row.
+ *
+ * Returns null when nothing matches. The FIRST match wins and the list is
+ * ordered most-specific first, so `changedpasswordpolicy` is a policy change
+ * rather than being swallowed by the `changedpassword` entry underneath it.
+ */
+export function classifyAuditAction(row) {
+  const hay = `${row?.Action || ''} ${row?.Section || ''}`.toLowerCase();
+  if (!hay.trim()) return null;
+  for (const entry of SUSPECT_PATTERNS) {
+    if (hay.includes(entry.pattern)) {
+      return { severity: entry.severity, category: entry.category };
+    }
+  }
+  return null;
+}
+
+/** Who a row is attributed to. Delegated (Login-As) work is still that user's. */
+function auditActor(row) {
+  return row?.CreatedBy?.Name ?? row?.DelegateUser ?? 'Unknown';
+}
+
+/**
+ * Per-user change velocity, measured against each user's own baseline.
+ *
+ * The window is split rather than compared across runs: the most recent
+ * `windowHours` is the observation, everything older in the same lookback is
+ * the baseline, and both are expressed as changes per day so windows of
+ * different lengths are comparable.
+ *
+ * Why not read past runs out of logs/history.db? `queryRuns` is right there and
+ * exported, but the stored summary carries only {ok, warn, fail, error, total}
+ * — no per-user counts — so a cross-run baseline would need new persisted
+ * state. Worse, past runs have heterogeneous lookback windows and orgs, so the
+ * baseline would silently depend on how often the user happens to run an audit.
+ * One query, split in two, depends on nothing but itself.
+ *
+ * A user with no baseline activity is NOT reported: first-seen is not a spike,
+ * and treating it as one makes every new admin an incident on their first day.
+ */
+export function detectVelocityAnomalies(rows, { now, lookbackDays, windowHours, factor, minEvents }) {
+  const windowMs = windowHours * 60 * 60 * 1000;
+  const cutoff = now - windowMs;
+  const lookbackMs = lookbackDays * DAY_MS;
+  const baselineDays = Math.max((lookbackMs - windowMs) / DAY_MS, 1);
+  const observedDays = Math.max(windowMs / DAY_MS, 1 / 24);
+
+  const perUser = new Map();
+  for (const row of rows) {
+    const at = Date.parse(row?.CreatedDate ?? '');
+    if (!Number.isFinite(at)) continue;
+    const user = auditActor(row);
+    const bucket = perUser.get(user) ?? { observed: 0, baseline: 0 };
+    if (at >= cutoff) bucket.observed += 1;
+    else bucket.baseline += 1;
+    perUser.set(user, bucket);
+  }
+
+  const anomalies = [];
+  for (const [user, { observed, baseline }] of perUser) {
+    if (observed < minEvents) continue;
+    if (baseline === 0) continue;
+    const observedRate = observed / observedDays;
+    const baselineRate = baseline / baselineDays;
+    if (baselineRate <= 0) continue;
+    const ratio = observedRate / baselineRate;
+    if (ratio < factor) continue;
+    anomalies.push({
+      user,
+      observed,
+      windowHours,
+      observedPerDay: Number(observedRate.toFixed(2)),
+      baselinePerDay: Number(baselineRate.toFixed(2)),
+      ratio: Number(ratio.toFixed(1)),
+    });
+  }
+  // Loudest first: the report truncates, so the biggest spike must survive it.
+  return anomalies.sort((a, b) => b.ratio - a.ratio);
+}
 
 // SOQL datetime literal helper (shared) — strips the milliseconds Salesforce rejects.
 const ISODate = toSoqlDate;
@@ -79,33 +190,95 @@ const ISODate = toSoqlDate;
 /**
  * Recent suspicious setup activity from SetupAuditTrail.
  */
-export async function checkAuditTrail(orgAlias, { lookbackDays = AUDIT_DEFAULTS.auditTrailLookbackDays } = {}) {
+export async function checkAuditTrail(orgAlias, {
+  lookbackDays = AUDIT_DEFAULTS.auditTrailLookbackDays,
+  maxRows = AUDIT_DEFAULTS.auditTrailMaxRows,
+  velocityWindowHours = AUDIT_DEFAULTS.auditTrailVelocityWindowHours,
+  velocityFactor = AUDIT_DEFAULTS.auditTrailVelocityFactor,
+  velocityMinEvents = AUDIT_DEFAULTS.auditTrailVelocityMinEvents,
+} = {}) {
   const id = 'audittrail';
   const title = 'Suspicious setup activity';
   try {
-    const since = ISODate(Date.now() - lookbackDays * DAY_MS);
+    const now = Date.now();
+    const since = ISODate(now - lookbackDays * DAY_MS);
     const records = await query(
       orgAlias,
       `SELECT Action, Section, CreatedDate, CreatedBy.Name, Display, DelegateUser ` +
-        `FROM SetupAuditTrail WHERE CreatedDate >= ${since} ORDER BY CreatedDate DESC LIMIT 500`,
+        `FROM SetupAuditTrail WHERE CreatedDate >= ${since} ORDER BY CreatedDate DESC LIMIT ${maxRows}`,
     );
-    const findings = records
-      .filter((r) => {
-        const hay = `${r.Action || ''} ${r.Section || ''}`.toLowerCase();
-        return SUSPECT_PATTERNS.some((p) => hay.includes(p.toLowerCase()));
-      })
-      .map((r) => ({
+
+    // Hitting the cap means the window is INCOMPLETE, and the rows we lost are
+    // the oldest — which is exactly the baseline half of the velocity split.
+    // Say so. A truncated scan reported as a clean result is the failure mode
+    // this check exists to prevent (same reasoning as checkMfa's cap note).
+    const truncated = records.length >= maxRows;
+
+    const findings = [];
+    let criticalCount = 0;
+    for (const r of records) {
+      const classified = classifyAuditAction(r);
+      if (!classified) continue;
+      if (classified.severity === 'critical') criticalCount += 1;
+      findings.push({
         action: r.Action,
         section: r.Section,
-        user: r.CreatedBy?.Name ?? r.DelegateUser ?? 'Unknown',
+        user: auditActor(r),
         date: r.CreatedDate,
         detail: r.Display,
-      }));
-    return result(id, title, findings.length ? 'warn' : 'ok',
-      findings.length
-        ? `${findings.length} suspicious change(s) in the last ${lookbackDays} days`
-        : `No suspicious setup changes in the last ${lookbackDays} days`,
-      findings);
+        severity: classified.severity,
+        category: classified.category,
+      });
+    }
+
+    // Velocity runs over EVERY row, not just the classified ones: a burst of
+    // ordinary changes from one account at 3am is the signal, and filtering to
+    // the suspect list first would discard exactly the volume that makes it one.
+    const anomalies = truncated
+      ? []
+      : detectVelocityAnomalies(records, {
+          now,
+          lookbackDays,
+          windowHours: velocityWindowHours,
+          factor: velocityFactor,
+          minEvents: velocityMinEvents,
+        });
+    for (const a of anomalies) {
+      findings.push({
+        anomaly: 'velocity',
+        user: a.user,
+        observed: a.observed,
+        windowHours: a.windowHours,
+        observedPerDay: a.observedPerDay,
+        baselinePerDay: a.baselinePerDay,
+        ratio: a.ratio,
+      });
+    }
+
+    // `fail` is what makes this check gate CI and clear the notifier's default
+    // `warn` threshold — both of which already exist and neither of which this
+    // check could ever reach while its worst status was `warn`.
+    const status = criticalCount > 0 || anomalies.length > 0
+      ? 'fail'
+      : findings.length > 0
+        ? 'warn'
+        : 'ok';
+
+    const parts = [];
+    if (criticalCount) parts.push(`${criticalCount} critical`);
+    const elevated = findings.filter((f) => f.severity === 'elevated').length;
+    if (elevated) parts.push(`${elevated} elevated`);
+    if (anomalies.length) {
+      parts.push(`${anomalies.length} user(s) above ${velocityFactor}× their own baseline`);
+    }
+    let summary = parts.length
+      ? `${parts.join(', ')} in the last ${lookbackDays} days`
+      : `No suspicious setup changes in the last ${lookbackDays} days`;
+    if (truncated) {
+      summary += ` — TRUNCATED at ${maxRows} rows, so older changes were not read and velocity was skipped; narrow the window or raise audit.auditTrailMaxRows`;
+    }
+
+    return result(id, title, status, summary, findings);
   } catch (err) {
     return errored(id, title, err);
   }

@@ -121,3 +121,47 @@ export function safeParse(text) {
  * in WHERE clauses. Accepts anything `new Date()` accepts (ms epoch, ISO string).
  */
 export const toSoqlDate = (d) => new Date(d).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+/**
+ * Run a SOSL search and return its `searchRecords`.
+ *
+ * `sf data search` rather than `sf data query` — a different subcommand with a
+ * different result shape (`searchRecords`, not `records`), which is why this is
+ * a separate export rather than a flag on `query()`.
+ *
+ * Tooling objects (ApexClass, ApexTrigger) are only searchable with
+ * `--use-tooling-api`, so a Tooling SOSL that comes back empty and one that was
+ * rejected are NOT the same thing. Callers must let a rejection surface as a
+ * scope note rather than treating it as "nothing found" — an empty result read
+ * as proof of no Apex reference is exactly the false-clean this whole module
+ * exists to avoid.
+ *
+ * @param {string} orgAlias
+ * @param {string} sosl - `FIND {term} …`
+ * @param {object} [options]
+ * @param {boolean} [options.tooling] - Search Tooling objects (`--use-tooling-api`).
+ * @param {number} [options.timeoutMs]
+ * @returns {Promise<Array<object>>} Search records (empty array when none).
+ */
+export async function search(orgAlias, sosl, { tooling = false, timeoutMs } = {}) {
+  if (!orgAlias) {
+    throw new Error('No org specified — pass --org <alias> or set defaultOrg in .sfdt/config.json');
+  }
+  const args = ['data', 'search', '--query', sosl, '--target-org', orgAlias, '--json'];
+  if (tooling) args.push('--use-tooling-api');
+
+  let result;
+  try {
+    result = timeoutMs ? await execa('sf', args, { timeout: timeoutMs }) : await execa('sf', args);
+  } catch (err) {
+    const fromOut = safeParse(err.stdout);
+    const parsed = fromOut?.message ? fromOut : safeParse(err.stderr);
+    if (parsed?.message) {
+      const e = new Error(parsed.message);
+      e.stderr = err.stderr;
+      throw e;
+    }
+    throw err;
+  }
+  return safeParse(result.stdout)?.result?.searchRecords ?? [];
+}

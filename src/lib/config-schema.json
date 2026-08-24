@@ -195,6 +195,10 @@
       "additionalProperties": false,
       "properties": {
         "auditTrailLookbackDays": { "type": "integer", "minimum": 1 },
+        "auditTrailMaxRows": { "type": "integer", "minimum": 1 },
+        "auditTrailVelocityWindowHours": { "type": "integer", "minimum": 1 },
+        "auditTrailVelocityFactor": { "type": "number", "minimum": 1 },
+        "auditTrailVelocityMinEvents": { "type": "integer", "minimum": 1 },
         "licenseWarnThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
         "inactiveUserDays": { "type": "integer", "minimum": 1 },
         "minApiVersion": { "type": "number", "minimum": 1 },
@@ -232,7 +236,15 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "dir": { "type": "string" }
+        "dir": { "type": "string" },
+        "bulk": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "waitMinutes": { "type": "integer", "minimum": 0 },
+            "lineEnding": { "type": "string", "enum": ["LF", "CRLF"] }
+          }
+        }
       }
     },
     "soql": {

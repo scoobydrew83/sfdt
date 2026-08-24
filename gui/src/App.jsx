@@ -7,6 +7,7 @@ import TestRuns from './pages/TestRuns.jsx';
 import PreflightPage from './pages/Preflight.jsx';
 import DriftPage from './pages/Drift.jsx';
 import AuditPage from './pages/Audit.jsx';
+import PackagesPage from './pages/Packages.jsx';
 import MonitorPage from './pages/Monitor.jsx';
 import ComparePage from './pages/Compare.jsx';
 import ScanPage from './pages/Scan.jsx';
@@ -69,6 +70,7 @@ const ICONS = {
   soql: IconTerminal,
   scratch: IconCloudDown,
   data: IconList,
+  'installed-packages': IconList,
   docs: IconFileText,
   notifications: IconActivity,
   settings: IconSettings,
@@ -99,6 +101,7 @@ const PAGES = {
   soql: SoqlConsolePage,
   scratch: ScratchPage,
   data: DataPage,
+  'installed-packages': PackagesPage,
   docs: DocsPage,
   notifications: NotificationsPage,
   settings: SettingsPage,

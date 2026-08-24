@@ -322,6 +322,104 @@ export const COMMAND_POLICY = {
     surfaces: { gui: true, vscode: true, chrome: false },
     mcpTools: { sfdt_docs: { mutating: false } },
   },
+  record: {
+    mutating: true, // edit/clone write records
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'org-health',
+    surfaces: { gui: false, vscode: true, chrome: true },
+    mcpTools: {
+      sfdt_record_get: { mutating: false },
+      sfdt_record_edit: { mutating: true },
+      sfdt_record_clone: { mutating: true },
+    },
+  },
+  field: {
+    mutating: false, // read-only analysis over Tooling queries
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'metadata',
+    surfaces: { gui: false, vscode: true, chrome: true },
+    mcpTools: {
+      sfdt_field_impact: { mutating: false },
+      sfdt_field_usage: { mutating: false },
+    },
+  },
+  permissions: {
+    // `grant`/`revoke`/`fix` change who can see and edit org data.
+    mutating: true,
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'org-health',
+    surfaces: { gui: false, vscode: true, chrome: false },
+    mcpTools: {
+      sfdt_permissions_matrix: { mutating: false },
+      sfdt_permissions_drift: { mutating: false },
+      sfdt_permissions_grant: { mutating: true },
+      sfdt_permissions_fix: { mutating: true },
+    },
+  },
+  automation: {
+    // Toggling automation changes how the org behaves for every user.
+    mutating: true,
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'org-health',
+    surfaces: { gui: false, vscode: true, chrome: false },
+    mcpTools: {
+      sfdt_automation_list: { mutating: false },
+      sfdt_automation_set: { mutating: true },
+    },
+  },
+  ledger: {
+    // `undo` reverses a recorded org change, which is itself an org write.
+    mutating: true,
+    requiresProject: true,
+    // Reading and verifying the ledger is entirely local; only `undo` touches
+    // an org, and it gets the org from the entry it is reversing.
+    requiresOrg: false,
+    supportsJson: true,
+    docsCategory: 'config-utils',
+    surfaces: { gui: false, vscode: true, chrome: false },
+    mcpTools: {
+      sfdt_ledger_list: { mutating: false },
+      sfdt_ledger_undo: { mutating: true },
+    },
+  },
+  packages: {
+    // `note` writes .sfdt/packages.json, a committed repo file. `list` and
+    // `compare` are read-only.
+    mutating: true,
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'org-health',
+    surfaces: { gui: true, vscode: true, chrome: false },
+    mcpTools: {
+      sfdt_packages_list: { mutating: false },
+      sfdt_packages_compare: { mutating: false },
+      sfdt_packages_note: { mutating: true },
+    },
+  },
+  events: {
+    // `publish` writes an event to the org's event bus. `list` and `tail` are
+    // read-only, but the command as a whole can mutate.
+    mutating: true,
+    requiresProject: true,
+    requiresOrg: true,
+    supportsJson: true,
+    docsCategory: 'org-health',
+    surfaces: { gui: false, vscode: true, chrome: true },
+    mcpTools: {
+      sfdt_events_list: { mutating: false },
+      sfdt_events_tail: { mutating: false },
+      sfdt_events_publish: { mutating: true },
+    },
+  },
   data: {
     mutating: true, // import/delete change org data
     requiresProject: true,
@@ -332,6 +430,7 @@ export const COMMAND_POLICY = {
     mcpTools: {
       sfdt_data_export: { mutating: false },
       sfdt_data_import: { mutating: true },
+      sfdt_data_load: { mutating: true },
       sfdt_data_delete: { mutating: true },
     },
   },

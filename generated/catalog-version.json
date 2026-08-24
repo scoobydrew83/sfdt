@@ -3,6 +3,6 @@
   "cliVersion": "0.22.2",
   "extensionVersion": "0.13.0",
   "vscodeVersion": "0.6.0",
-  "flowCoreVersion": "0.11.0",
+  "flowCoreVersion": "0.13.0",
   "bridgeProtocol": "1.3"
 }

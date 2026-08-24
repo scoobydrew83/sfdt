@@ -410,6 +410,7 @@
       "mcpTools": [
         "sfdt_data_export",
         "sfdt_data_import",
+        "sfdt_data_load",
         "sfdt_data_delete"
       ],
       "sideEffects": null
@@ -599,6 +600,116 @@
         "sfdt_soql_validate",
         "sfdt_soql_plan",
         "sfdt_soql_query"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "record",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        "sfdt_record_get",
+        "sfdt_record_edit",
+        "sfdt_record_clone"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "field",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        "sfdt_field_impact",
+        "sfdt_field_usage"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "events",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": true
+      },
+      "mcpTools": [
+        "sfdt_events_list",
+        "sfdt_events_tail",
+        "sfdt_events_publish"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "packages",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": true,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_packages_list",
+        "sfdt_packages_compare",
+        "sfdt_packages_note"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "permissions",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_permissions_matrix",
+        "sfdt_permissions_drift",
+        "sfdt_permissions_grant",
+        "sfdt_permissions_fix"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "automation",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_automation_list",
+        "sfdt_automation_set"
+      ],
+      "sideEffects": null
+    },
+    {
+      "id": "ledger",
+      "surfaces": {
+        "cli": true,
+        "sfPlugin": true,
+        "gui": false,
+        "vscode": true,
+        "chrome": false
+      },
+      "mcpTools": [
+        "sfdt_ledger_list",
+        "sfdt_ledger_undo"
       ],
       "sideEffects": null
     },
