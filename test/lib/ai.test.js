@@ -277,6 +277,51 @@ describe('runAiPrompt (provider routing)', () => {
     expect(execa.mock.calls.some(([cmd]) => cmd === 'claude')).toBe(true);
   });
 
+  it('sends a sandbox flag for allowedTools: [] — the most restrictive request, not the least', async () => {
+    // `allowedTools: []` means "no tools at all". The old `.length > 0` gate
+    // silently dropped --allowedTools entirely for the empty array, leaving the
+    // DEFAULT provider running under claude's ambient permission defaults.
+    // buildSnapshotSummary (notifier.js) passes [] while feeding the model
+    // org-derived text — exactly where a prompt injection lands. Both sibling
+    // providers already carried this fix; claude did not.
+    // Regression guard for security finding H2 (2026-08-23 pre-release review).
+    execa
+      .mockResolvedValueOnce({ exitCode: 0 }) // isClaudeAvailable
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
+
+    vi.resetModules();
+    const { runAiPrompt: freshRun } = await import('../../src/lib/ai.js');
+    const config = makeConfig({ ai: { provider: 'claude' } });
+
+    await freshRun('summarise this org data', { config, aiEnabled: true, allowedTools: [] });
+
+    const call = execa.mock.calls.find(([cmd, a]) => cmd === 'claude' && Array.isArray(a) && a.includes('-p'));
+    expect(call, 'the claude prompt invocation should exist').toBeDefined();
+    const args = call[1];
+    const idx = args.indexOf('--allowedTools');
+    expect(idx, 'an empty allowlist must still send --allowedTools').toBeGreaterThan(-1);
+    // A sentinel rather than '' — an empty flag value is ambiguous and a CLI
+    // reading it as "unset" would reinstate the bug.
+    expect(args[idx + 1]).toBe('__none__');
+    expect(args[idx + 1]).not.toBe('');
+  });
+
+  it('passes a non-empty allowlist through verbatim', async () => {
+    execa
+      .mockResolvedValueOnce({ exitCode: 0 })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
+
+    vi.resetModules();
+    const { runAiPrompt: freshRun } = await import('../../src/lib/ai.js');
+    const config = makeConfig({ ai: { provider: 'claude' } });
+
+    await freshRun('p', { config, aiEnabled: true, allowedTools: ['Read', 'Grep'] });
+
+    const call = execa.mock.calls.find(([cmd, a]) => cmd === 'claude' && Array.isArray(a) && a.includes('-p'));
+    const args = call[1];
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe('Read,Grep');
+  });
+
   it('returns null and logs when claude is not available', async () => {
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     execa.mockResolvedValue({ exitCode: 1 }); // isClaudeAvailable → false
