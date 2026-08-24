@@ -42,6 +42,26 @@ export const NOTES_FORMAT_VERSION = 1;
 /** Fields this version of sfdt understands. Anything else is preserved untouched. */
 const KNOWN_NOTE_FIELDS = ['url', 'latestKnown', 'owner', 'notes', 'latestCheckedAt'];
 
+/**
+ * Property names that must never become a key in the notes store.
+ *
+ * The key is a package namespace supplied by the caller — a CLI argument, or
+ * `args.namespace` on the `sfdt_packages_note` MCP tool, which an LLM may be
+ * driving from org-derived text. It lands as a property name on the `packages`
+ * object and is persisted to `.sfdt/packages.json`, a file that is COMMITTED and
+ * therefore arrives with the repository rather than from the person running the
+ * command — the same threat model `config-trust.js` states for config.
+ *
+ * A computed key in an object literal creates an own property rather than
+ * reassigning the prototype, so this is not live prototype pollution today. It is
+ * refused anyway, at both boundaries: a `constructor` key makes a plain-object
+ * LOOKUP return a function rather than a note, and "not exploitable in the exact
+ * shape we happen to write it today" is not a property worth depending on.
+ *
+ * Same set, and same reasoning, as the guard in `audit-logger.js`.
+ */
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 function notesPath(config) {
   const dir = config?._configDir ?? path.join(config?._projectRoot ?? process.cwd(), '.sfdt');
   return path.join(dir, NOTES_FILE);
@@ -67,6 +87,15 @@ export async function readPackageNotes(config) {
   }
   if (!parsed || typeof parsed !== 'object' || typeof parsed.packages !== 'object' || parsed.packages === null) {
     throw new Error(`${file} is missing a "packages" object.`);
+  }
+  // Keys from the file are untrusted (see UNSAFE_KEYS): the file is committed, so
+  // a poisoned key travels with a clone. Dropped rather than refused, because one
+  // bad key should not make an otherwise readable store unusable.
+  const unsafe = Object.keys(parsed.packages).filter((k) => UNSAFE_KEYS.has(k));
+  if (unsafe.length > 0) {
+    parsed.packages = Object.fromEntries(
+      Object.entries(parsed.packages).filter(([k]) => !UNSAFE_KEYS.has(k)),
+    );
   }
   if (parsed.version !== undefined && Number(parsed.version) > NOTES_FORMAT_VERSION) {
     // Refuse rather than guess: a newer sfdt may mean something different by
@@ -114,11 +143,20 @@ export function validateNote(patch) {
  * @param {string} [now] - ISO timestamp, injected so tests are deterministic.
  */
 export async function writePackageNote(config, key, patch, { now } = {}) {
+  if (typeof key !== 'string' || key.trim() === '') {
+    throw new Error('A package note needs a namespace (or package name) to file it under.');
+  }
+  if (UNSAFE_KEYS.has(key)) {
+    throw new Error(`"${key}" cannot be used as a package key — it is a JavaScript property name, not a namespace.`);
+  }
+
   const errors = validateNote(patch);
   if (errors.length > 0) throw new Error(errors.join(' '));
 
   const store = await readPackageNotes(config);
-  const existing = { ...(store.packages[key] ?? {}) };
+  // `hasOwn`, not a bare index: a bare lookup for an inherited name would return
+  // something off Object.prototype instead of a note.
+  const existing = Object.hasOwn(store.packages, key) ? { ...store.packages[key] } : {};
 
   for (const field of KNOWN_NOTE_FIELDS) {
     if (!(field in patch)) continue;

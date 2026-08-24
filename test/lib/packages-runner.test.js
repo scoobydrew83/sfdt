@@ -35,6 +35,37 @@ afterEach(async () => {
 
 const notesFile = () => path.join(root, '.sfdt', 'packages.json');
 
+describe('a package key cannot be a JavaScript property name', () => {
+  // The key is caller-supplied (CLI arg, or `args.namespace` on the MCP tool an
+  // LLM may drive from org text) and lands as a property name in
+  // `.sfdt/packages.json` — a COMMITTED file, so a poisoned key travels with a
+  // clone. Flagged by CodeQL as remote property injection on the release PR.
+  it.each(['__proto__', 'constructor', 'prototype'])('refuses %s as a key', async (key) => {
+    await expect(writePackageNote(config, key, { owner: 'x' })).rejects.toThrow(
+      /not a namespace/,
+    );
+  });
+
+  it('refuses an empty or non-string key', async () => {
+    await expect(writePackageNote(config, '', { owner: 'x' })).rejects.toThrow(/needs a namespace/);
+    await expect(writePackageNote(config, '   ', { owner: 'x' })).rejects.toThrow(/needs a namespace/);
+  });
+
+  it('still accepts a normal namespace and an unmanaged package name with spaces', async () => {
+    await expect(writePackageNote(config, 'ecflc', { owner: 'a' })).resolves.toMatchObject({ key: 'ecflc' });
+    await expect(writePackageNote(config, 'Flow Components', { owner: 'b' })).resolves.toMatchObject({
+      key: 'Flow Components',
+    });
+  });
+
+  it('does not return a prototype member when a note is absent', async () => {
+    // A bare `store.packages[key]` lookup for an inherited name would hand back
+    // something off Object.prototype instead of a note.
+    const res = await writePackageNote(config, 'brandnew', { owner: 'c' });
+    expect(res.note).toEqual({ owner: 'c' });
+  });
+});
+
 describe('readPackageNotes', () => {
   it('treats a missing file as empty — most projects never annotate one', async () => {
     await expect(readPackageNotes(config)).resolves.toEqual({
